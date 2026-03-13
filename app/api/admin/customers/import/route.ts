@@ -3,6 +3,8 @@ import { auth } from "@/lib/auth";
 import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 
+export const dynamic = 'force-dynamic';
+
 // ── Simple CSV parser (no external lib) ───────────────────────────────────────
 function parseCSVLine(line: string): string[] {
   const result: string[] = [];

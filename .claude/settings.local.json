@@ -22,7 +22,8 @@
       "Bash(cd \"C:/Users/HP/OneDrive/VS Code/orbit-oms\" && ./node_modules/.bin/tsc --noEmit 2>&1 | cat)",
       "Bash(cd \"C:/Users/HP/OneDrive/VS Code/orbit-oms\" && npx shadcn@latest add popover checkbox --yes 2>&1)",
       "Bash(cd \"C:/Users/HP/OneDrive/VS Code/orbit-oms\" && npx tsc --noEmit 2>&1)",
-      "Bash(cd \"C:/Users/HP/OneDrive/VS Code/orbit-oms\" && npx prisma validate 2>&1)"
+      "Bash(cd \"C:/Users/HP/OneDrive/VS Code/orbit-oms\" && npx prisma validate 2>&1)",
+      "Bash(cd \"C:/Users/HP/OneDrive/VS Code/orbit-oms\" && node -e \"\nconst fs = require\\('fs'\\);\nconst path = require\\('path'\\);\n\nfunction findRouteFiles\\(dir\\) {\n  const results = [];\n  for \\(const entry of fs.readdirSync\\(dir, { withFileTypes: true }\\)\\) {\n    const full = path.join\\(dir, entry.name\\);\n    if \\(entry.isDirectory\\(\\)\\) results.push\\(...findRouteFiles\\(full\\)\\);\n    else if \\(entry.name === 'route.ts'\\) results.push\\(full\\);\n  }\n  return results;\n}\n\nconst files = findRouteFiles\\('app/api/admin'\\);\nfiles.forEach\\(f => {\n  let content = fs.readFileSync\\(f, 'utf8'\\);\n  if \\(content.includes\\('force-dynamic'\\)\\) { console.log\\('skip:', f\\); return; }\n  const lines = content.split\\('\\\\n'\\);\n  let lastImport = -1;\n  lines.forEach\\(\\(l, i\\) => { if \\(l.startsWith\\('import '\\)\\) lastImport = i; }\\);\n  if \\(lastImport >= 0\\) {\n    lines.splice\\(lastImport + 1, 0, '', \\\\\"export const dynamic = 'force-dynamic';\\\\\"\\);\n    fs.writeFileSync\\(f, lines.join\\('\\\\n'\\)\\);\n    console.log\\('updated:', f\\);\n  }\n}\\);\n\")"
     ]
   }
 }

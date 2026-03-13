@@ -5,6 +5,8 @@ import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 
+export const dynamic = 'force-dynamic';
+
 const patchSchema = z.union([
   z.object({ isActive: z.boolean() }),
   z.object({ password: z.string().min(8) }),

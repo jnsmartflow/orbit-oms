@@ -4,6 +4,8 @@ import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 
+export const dynamic = 'force-dynamic';
+
 const createSchema = z.object({
   subCode: z.string().min(1).max(100),
   description: z.string().max(500).optional().nullable(),

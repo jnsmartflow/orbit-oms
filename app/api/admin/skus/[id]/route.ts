@@ -4,6 +4,8 @@ import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 
+export const dynamic = 'force-dynamic';
+
 const CONTAINER_TYPES = ["tin", "drum", "carton", "bag"] as const;
 
 const patchSchema = z.object({

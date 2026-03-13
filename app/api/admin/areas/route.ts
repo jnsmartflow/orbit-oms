@@ -4,6 +4,8 @@ import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   const session = await auth();
   requireRole(session, [ROLES.ADMIN]);

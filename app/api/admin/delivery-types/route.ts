@@ -3,6 +3,8 @@ import { auth } from "@/lib/auth";
 import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   const session = await auth();
   requireRole(session, [ROLES.ADMIN]);
