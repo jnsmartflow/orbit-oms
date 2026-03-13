@@ -1,6 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { SystemConfigForm } from "@/components/admin/system-config-form";
 
+export const dynamic = 'force-dynamic';
+
 export default async function SystemConfigPage() {
   const rows = await prisma.system_config.findMany({
     orderBy: { id: "asc" },

@@ -1,6 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { SubAreasTable } from "@/components/admin/sub-areas-table";
 
+export const dynamic = 'force-dynamic';
+
 export default async function SubAreasPage() {
   const [subAreas, areas] = await Promise.all([
     prisma.sub_area_master.findMany({

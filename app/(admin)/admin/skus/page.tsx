@@ -1,6 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { SkusTable } from "@/components/admin/skus-table";
 
+export const dynamic = 'force-dynamic';
+
 export default async function SkusPage() {
   const [skus, total] = await Promise.all([
     prisma.sku_master.findMany({

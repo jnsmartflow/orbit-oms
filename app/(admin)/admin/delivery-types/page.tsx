@@ -1,6 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
+export const dynamic = 'force-dynamic';
+
 export default async function DeliveryTypesPage() {
   const types = await prisma.delivery_type_master.findMany({ orderBy: { id: "asc" } });
 

@@ -1,6 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { CustomersTable } from "@/components/admin/customers-table";
 
+export const dynamic = 'force-dynamic';
+
 export default async function CustomersPage() {
   const [customers, total, areas, subAreas] = await Promise.all([
     prisma.delivery_point_master.findMany({

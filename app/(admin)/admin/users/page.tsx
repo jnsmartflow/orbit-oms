@@ -2,6 +2,8 @@ import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { UsersTable } from "@/components/admin/users-table";
 
+export const dynamic = 'force-dynamic';
+
 export default async function UsersPage() {
   const session = await auth();
 

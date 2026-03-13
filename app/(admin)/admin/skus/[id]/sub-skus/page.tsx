@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { SubSkusManager } from "@/components/admin/sub-skus-manager";
 
+export const dynamic = 'force-dynamic';
+
 interface Props {
   params: { id: string };
 }

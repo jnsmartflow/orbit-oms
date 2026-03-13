@@ -1,6 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { AreasTable } from "@/components/admin/areas-table";
 
+export const dynamic = 'force-dynamic';
+
 export default async function AreasPage() {
   const [areas, deliveryTypes, routes] = await Promise.all([
     prisma.area_master.findMany({

@@ -1,6 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { SalesOfficersTable } from "@/components/admin/sales-officers-table";
 
+export const dynamic = 'force-dynamic';
+
 export default async function SalesOfficersPage() {
   const officers = await prisma.sales_officer_master.findMany({
     orderBy: { name: "asc" },
