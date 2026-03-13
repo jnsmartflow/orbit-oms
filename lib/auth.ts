@@ -1,21 +1,9 @@
-import NextAuth, { type DefaultSession } from "next-auth";
+import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
-
-// ── Type augmentation ──────────────────────────────────────────────────────────
-declare module "next-auth" {
-  interface Session {
-    user: {
-      id: string;
-      role: string;
-    } & DefaultSession["user"];
-  }
-  interface User {
-    role: string;
-  }
-}
+import { authConfig } from "@/auth.config";
 
 // ── Validation schema ──────────────────────────────────────────────────────────
 const loginSchema = z.object({
@@ -23,8 +11,11 @@ const loginSchema = z.object({
   password: z.string().min(1),
 });
 
-// ── NextAuth config ────────────────────────────────────────────────────────────
+// ── Full NextAuth config — Node.js runtime only ───────────────────────────────
+// Spreads the Edge-compatible authConfig and adds the Credentials provider
+// which requires Prisma + bcrypt (not available in Edge Runtime).
 export const { handlers, signIn, signOut, auth } = NextAuth({
+  ...authConfig,
   providers: [
     Credentials({
       name: "Credentials",
@@ -57,26 +48,4 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       },
     }),
   ],
-  session: {
-    strategy: "jwt",
-  },
-  callbacks: {
-    async jwt({ token, user }) {
-      if (user) {
-        token.id = user.id;
-        token.role = user.role;
-      }
-      return token;
-    },
-    async session({ session, token }) {
-      if (token) {
-        session.user.id = (token.id as string | undefined) ?? "";
-        session.user.role = (token.role as string | undefined) ?? "";
-      }
-      return session;
-    },
-  },
-  pages: {
-    signIn: "/login",
-  },
 });
