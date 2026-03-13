@@ -13,6 +13,7 @@ import { Separator } from "@/components/ui/separator";
 // ── Types ──────────────────────────────────────────────────────────────────────
 export interface AreaOption { id: number; name: string }
 export interface SubAreaOption { id: number; name: string; areaId: number }
+export interface SalesOfficerOption { id: number; name: string }
 
 export interface ContactDraft {
   _key: string;
@@ -29,10 +30,12 @@ export interface CustomerFull {
   customerName: string;
   areaId: number;
   subAreaId: number | null;
+  salesOfficerId: number | null;
   latitude: number | null;
   longitude: number | null;
   isKeyCustomer: boolean;
   isKeySite: boolean;
+  acceptsPartialDelivery: boolean;
   isActive: boolean;
   workingHoursStart: string | null;
   workingHoursEnd: string | null;
@@ -46,6 +49,7 @@ interface CustomerSheetProps {
   editing: CustomerFull | null;
   areas: AreaOption[];
   subAreas: SubAreaOption[];
+  salesOfficers: SalesOfficerOption[];
   onSaved: (customer: CustomerFull) => void;
 }
 
@@ -63,10 +67,12 @@ function buildInitialForm(editing: CustomerFull | null) {
       customerName: "",
       areaId: "",
       subAreaId: "",
+      salesOfficerId: "",
       latitude: "",
       longitude: "",
       isKeyCustomer: false,
       isKeySite: false,
+      acceptsPartialDelivery: true,
       isActive: true,
       workingHoursStart: "",
       workingHoursEnd: "",
@@ -79,10 +85,12 @@ function buildInitialForm(editing: CustomerFull | null) {
     customerName: editing.customerName,
     areaId: editing.areaId.toString(),
     subAreaId: editing.subAreaId?.toString() ?? "",
+    salesOfficerId: editing.salesOfficerId?.toString() ?? "",
     latitude: editing.latitude?.toString() ?? "",
     longitude: editing.longitude?.toString() ?? "",
     isKeyCustomer: editing.isKeyCustomer,
     isKeySite: editing.isKeySite,
+    acceptsPartialDelivery: editing.acceptsPartialDelivery,
     isActive: editing.isActive,
     workingHoursStart: editing.workingHoursStart ?? "",
     workingHoursEnd: editing.workingHoursEnd ?? "",
@@ -99,7 +107,7 @@ function buildInitialForm(editing: CustomerFull | null) {
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
-export function CustomerSheet({ open, onOpenChange, editing, areas, subAreas, onSaved }: CustomerSheetProps) {
+export function CustomerSheet({ open, onOpenChange, editing, areas, subAreas, salesOfficers, onSaved }: CustomerSheetProps) {
   const [form, setForm] = useState(() => buildInitialForm(editing));
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
@@ -183,10 +191,12 @@ export function CustomerSheet({ open, onOpenChange, editing, areas, subAreas, on
       customerName: form.customerName.trim(),
       areaId: parseInt(form.areaId, 10),
       subAreaId: form.subAreaId ? parseInt(form.subAreaId, 10) : null,
+      salesOfficerId: form.salesOfficerId ? parseInt(form.salesOfficerId, 10) : null,
       latitude: form.latitude ? parseFloat(form.latitude) : null,
       longitude: form.longitude ? parseFloat(form.longitude) : null,
       isKeyCustomer: form.isKeyCustomer,
       isKeySite: form.isKeySite,
+      acceptsPartialDelivery: form.acceptsPartialDelivery,
       isActive: form.isActive,
       workingHoursStart: form.workingHoursStart || null,
       workingHoursEnd: form.workingHoursEnd || null,
@@ -305,6 +315,25 @@ export function CustomerSheet({ open, onOpenChange, editing, areas, subAreas, on
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="c-so">Sales Officer</Label>
+              <Select
+                value={form.salesOfficerId}
+                onValueChange={(v) => setField("salesOfficerId", !v || v === "none" ? "" : v)}
+              >
+                <SelectTrigger id="c-so">
+                  <SelectValue placeholder="None" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  {salesOfficers.map((so) => (
+                    <SelectItem key={so.id} value={so.id.toString()}>{so.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <Label htmlFor="c-lat">Latitude</Label>
                 <Input
@@ -346,6 +375,7 @@ export function CustomerSheet({ open, onOpenChange, editing, areas, subAreas, on
                 [
                   { key: "isKeyCustomer", label: "Key Customer" },
                   { key: "isKeySite", label: "Key Site" },
+                  { key: "acceptsPartialDelivery", label: "Accepts Partial Delivery" },
                   { key: "isActive", label: "Active" },
                 ] as const
               ).map(({ key, label }) => (

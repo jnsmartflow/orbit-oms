@@ -39,18 +39,36 @@ model users {
 }
 
 model delivery_type_master {
-  id        Int            @id @default(autoincrement())
-  name      String         @unique
-  createdAt DateTime       @default(now())
-  areas     area_master[]
+  id          Int                      @id @default(autoincrement())
+  name        String                   @unique
+  createdAt   DateTime                 @default(now())
+  areas       area_master[]
+  vehicles    vehicle_master[]
+  cutoffSlots dispatch_cutoff_master[]
+}
+
+model dispatch_cutoff_master {
+  id               Int                  @id @default(autoincrement())
+  deliveryTypeId   Int
+  deliveryType     delivery_type_master @relation(fields: [deliveryTypeId], references: [id])
+  slotNumber       Int
+  cutoffTime       String
+  label            String
+  isDefaultForType Boolean              @default(false)
+  isActive         Boolean              @default(true)
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
+  @@unique([deliveryTypeId, slotNumber])
 }
 
 model route_master {
-  id        Int              @id @default(autoincrement())
-  name      String           @unique
-  isActive  Boolean          @default(true)
-  createdAt DateTime         @default(now())
-  areaRoutes area_route_map[]
+  id          Int              @id @default(autoincrement())
+  name        String           @unique
+  description String?
+  isActive    Boolean          @default(true)
+  createdAt   DateTime         @default(now())
+  areaRoutes  area_route_map[]
 }
 
 model area_master {
@@ -86,32 +104,38 @@ model sub_area_master {
 }
 
 model sales_officer_master {
-  id        Int      @id @default(autoincrement())
-  name      String
-  email     String   @unique
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
+  id             Int                    @id @default(autoincrement())
+  name           String
+  employeeCode   String
+  email          String?                @unique
+  phone          String?
+  isActive       Boolean                @default(true)
+  createdAt      DateTime               @default(now())
+  deliveryPoints delivery_point_master[]
 }
 
 model delivery_point_master {
-  id                 Int                       @id @default(autoincrement())
-  customerCode       String                    @unique
-  customerName       String
-  areaId             Int
-  area               area_master               @relation(fields: [areaId], references: [id])
-  subAreaId          Int?
-  subArea            sub_area_master?          @relation(fields: [subAreaId], references: [id])
-  isKeyCustomer      Boolean                   @default(false)
-  isKeySite          Boolean                   @default(false)
-  workingHoursStart  String?
-  workingHoursEnd    String?
-  noDeliveryDays     String[]
-  latitude           Float?
-  longitude          Float?
-  isActive           Boolean                   @default(true)
-  createdAt          DateTime                  @default(now())
-  updatedAt          DateTime                  @updatedAt
-  contacts           delivery_point_contacts[]
+  id                     Int                       @id @default(autoincrement())
+  customerCode           String                    @unique
+  customerName           String
+  areaId                 Int
+  area                   area_master               @relation(fields: [areaId], references: [id])
+  subAreaId              Int?
+  subArea                sub_area_master?          @relation(fields: [subAreaId], references: [id])
+  salesOfficerId         Int?
+  salesOfficer           sales_officer_master?     @relation(fields: [salesOfficerId], references: [id])
+  isKeyCustomer          Boolean                   @default(false)
+  isKeySite              Boolean                   @default(false)
+  acceptsPartialDelivery Boolean                   @default(true)
+  workingHoursStart      String?
+  workingHoursEnd        String?
+  noDeliveryDays         String[]
+  latitude               Float?
+  longitude              Float?
+  isActive               Boolean                   @default(true)
+  createdAt              DateTime                  @default(now())
+  updatedAt              DateTime                  @updatedAt
+  contacts               delivery_point_contacts[]
 }
 
 model delivery_point_contacts {
@@ -230,8 +254,16 @@ model order_status_logs {
 // ─────────────────────────────────────────────
 
 model vehicle_master {
-  id        Int      @id @default(autoincrement())
-  createdAt DateTime @default(now())
+  id             Int                  @id @default(autoincrement())
+  vehicleNumber  String               @unique
+  vehicleType    String
+  capacityKg     Float
+  capacityCbm    Float?
+  deliveryTypeId Int
+  deliveryType   delivery_type_master @relation(fields: [deliveryTypeId], references: [id])
+  isActive       Boolean              @default(true)
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
 }
 
 model dispatch_plans {

@@ -9,7 +9,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from "@/components/ui/sheet";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { MultiSelect } from "@/components/shared/multi-select";
 
 interface DeliveryType { id: number; name: string; }
 interface Route { id: number; name: string; }
@@ -26,7 +25,7 @@ interface AreasTableProps {
   routes: Route[];
 }
 
-const EMPTY_FORM = { name: "", deliveryTypeId: "", routeIds: [] as number[] };
+const EMPTY_FORM = { name: "", deliveryTypeId: "", routeId: "" };
 
 export function AreasTable({ initialAreas, deliveryTypes, routes }: AreasTableProps) {
   const [areas, setAreas] = useState<AreaRow[]>(initialAreas);
@@ -38,7 +37,7 @@ export function AreasTable({ initialAreas, deliveryTypes, routes }: AreasTablePr
 
   function openAdd() {
     setEditTarget(null);
-    setForm({ name: "", deliveryTypeId: deliveryTypes[0]?.id.toString() ?? "", routeIds: [] });
+    setForm({ name: "", deliveryTypeId: deliveryTypes[0]?.id.toString() ?? "", routeId: "" });
     setSheetOpen(true);
   }
 
@@ -47,7 +46,7 @@ export function AreasTable({ initialAreas, deliveryTypes, routes }: AreasTablePr
     setForm({
       name: area.name,
       deliveryTypeId: area.deliveryType.id.toString(),
-      routeIds: area.routes.map((r) => r.id),
+      routeId: area.routes[0]?.id.toString() ?? "",
     });
     setSheetOpen(true);
   }
@@ -58,12 +57,16 @@ export function AreasTable({ initialAreas, deliveryTypes, routes }: AreasTablePr
       toast.error("Name and delivery type are required.");
       return;
     }
+    if (!form.routeId) {
+      toast.error("A route is required.");
+      return;
+    }
     setSaving(true);
     try {
       const body = {
         name: form.name.trim(),
         deliveryTypeId: parseInt(form.deliveryTypeId, 10),
-        routeIds: form.routeIds,
+        routeIds: [parseInt(form.routeId, 10)],
       };
 
       const res = editTarget
@@ -190,13 +193,18 @@ export function AreasTable({ initialAreas, deliveryTypes, routes }: AreasTablePr
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label>Assigned Routes</Label>
-              <MultiSelect
-                options={routes}
-                selected={form.routeIds}
-                onChange={(ids) => setForm((p) => ({ ...p, routeIds: ids }))}
-                placeholder="Select routes…"
-              />
+              <Label>Route <span className="text-destructive">*</span></Label>
+              <Select
+                value={form.routeId}
+                onValueChange={(v) => setForm((p) => ({ ...p, routeId: v ?? "" }))}
+              >
+                <SelectTrigger><SelectValue placeholder="Select route" /></SelectTrigger>
+                <SelectContent>
+                  {routes.map((r) => (
+                    <SelectItem key={r.id} value={r.id.toString()}>{r.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <SheetFooter className="pt-2">
               <Button type="button" variant="outline" onClick={() => setSheetOpen(false)} disabled={saving}>Cancel</Button>

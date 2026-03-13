@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 const NAV_ITEMS = [
   { label: "Dashboard", href: "/admin" },
   { label: "System Config", href: "/admin/system-config" },
+  { label: "Dispatch Cutoffs", href: "/admin/dispatch-cutoffs" },
   { label: "Users", href: "/admin/users" },
   { label: "Roles", href: "/admin/roles" },
   { label: "Delivery Types", href: "/admin/delivery-types" },

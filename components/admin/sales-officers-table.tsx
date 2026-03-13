@@ -12,7 +12,9 @@ import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from "@/com
 interface OfficerRow {
   id: number;
   name: string;
-  email: string;
+  employeeCode: string;
+  email: string | null;
+  phone: string | null;
   isActive: boolean;
 }
 
@@ -20,7 +22,7 @@ interface SalesOfficersTableProps {
   initialOfficers: OfficerRow[];
 }
 
-const EMPTY = { name: "", email: "" };
+const EMPTY = { name: "", employeeCode: "", email: "", phone: "" };
 
 export function SalesOfficersTable({ initialOfficers }: SalesOfficersTableProps) {
   const [officers, setOfficers] = useState<OfficerRow[]>(initialOfficers);
@@ -40,7 +42,12 @@ export function SalesOfficersTable({ initialOfficers }: SalesOfficersTableProps)
 
   function openEdit(officer: OfficerRow) {
     setEditing(officer);
-    setForm({ name: officer.name, email: officer.email });
+    setForm({
+      name: officer.name,
+      employeeCode: officer.employeeCode,
+      email: officer.email ?? "",
+      phone: officer.phone ?? "",
+    });
     setFieldErrors({});
     setSheetOpen(true);
   }
@@ -53,8 +60,10 @@ export function SalesOfficersTable({ initialOfficers }: SalesOfficersTableProps)
   function validate(): boolean {
     const errs: Record<string, string> = {};
     if (!form.name.trim()) errs.name = "Name is required.";
-    if (!form.email.trim()) errs.email = "Email is required.";
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) errs.email = "Invalid email.";
+    if (!form.employeeCode.trim()) errs.employeeCode = "Employee code is required.";
+    if (form.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
+      errs.email = "Invalid email format.";
+    }
     setFieldErrors(errs);
     return Object.keys(errs).length === 0;
   }
@@ -64,7 +73,12 @@ export function SalesOfficersTable({ initialOfficers }: SalesOfficersTableProps)
     if (!validate()) return;
     setSaving(true);
     try {
-      const body = { name: form.name.trim(), email: form.email.trim().toLowerCase() };
+      const body = {
+        name: form.name.trim(),
+        employeeCode: form.employeeCode.trim(),
+        email: form.email.trim() || null,
+        phone: form.phone.trim() || null,
+      };
       const res = editing
         ? await fetch(`/api/admin/sales-officers/${editing.id}`, {
             method: "PATCH",
@@ -133,7 +147,9 @@ export function SalesOfficersTable({ initialOfficers }: SalesOfficersTableProps)
           <TableHeader>
             <TableRow>
               <TableHead>Name</TableHead>
+              <TableHead>Employee Code</TableHead>
               <TableHead>Email</TableHead>
+              <TableHead>Phone</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
@@ -141,7 +157,7 @@ export function SalesOfficersTable({ initialOfficers }: SalesOfficersTableProps)
           <TableBody>
             {officers.length === 0 && (
               <TableRow>
-                <TableCell colSpan={4} className="text-center text-slate-500 py-8">
+                <TableCell colSpan={6} className="text-center text-slate-500 py-8">
                   No sales officers yet.
                 </TableCell>
               </TableRow>
@@ -149,7 +165,13 @@ export function SalesOfficersTable({ initialOfficers }: SalesOfficersTableProps)
             {officers.map((officer) => (
               <TableRow key={officer.id}>
                 <TableCell className="font-medium">{officer.name}</TableCell>
-                <TableCell className="text-slate-600">{officer.email}</TableCell>
+                <TableCell className="font-mono text-sm text-slate-600">{officer.employeeCode}</TableCell>
+                <TableCell className="text-slate-600">
+                  {officer.email ?? <span className="text-slate-300">—</span>}
+                </TableCell>
+                <TableCell className="text-slate-500">
+                  {officer.phone ?? <span className="text-slate-300">—</span>}
+                </TableCell>
                 <TableCell>
                   <Badge variant={officer.isActive ? "default" : "secondary"}>
                     {officer.isActive ? "Active" : "Inactive"}
@@ -177,13 +199,13 @@ export function SalesOfficersTable({ initialOfficers }: SalesOfficersTableProps)
       </div>
 
       <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
-        <SheetContent className="w-full sm:max-w-md">
+        <SheetContent className="w-full sm:max-w-md overflow-y-auto">
           <SheetHeader>
             <SheetTitle>{editing ? "Edit Sales Officer" : "Add Sales Officer"}</SheetTitle>
           </SheetHeader>
           <form onSubmit={handleSubmit} className="flex flex-col gap-4 py-4">
             <div className="space-y-1.5">
-              <Label htmlFor="so-name">Name</Label>
+              <Label htmlFor="so-name">Name <span className="text-destructive">*</span></Label>
               <Input
                 id="so-name"
                 value={form.name}
@@ -192,14 +214,36 @@ export function SalesOfficersTable({ initialOfficers }: SalesOfficersTableProps)
               {fieldErrors.name && <p className="text-xs text-destructive">{fieldErrors.name}</p>}
             </div>
             <div className="space-y-1.5">
+              <Label htmlFor="so-code">Employee Code <span className="text-destructive">*</span></Label>
+              <Input
+                id="so-code"
+                value={form.employeeCode}
+                onChange={(e) => setField("employeeCode", e.target.value)}
+                placeholder="SAP employee code"
+              />
+              {fieldErrors.employeeCode && (
+                <p className="text-xs text-destructive">{fieldErrors.employeeCode}</p>
+              )}
+            </div>
+            <div className="space-y-1.5">
               <Label htmlFor="so-email">Email</Label>
               <Input
                 id="so-email"
                 type="email"
                 value={form.email}
                 onChange={(e) => setField("email", e.target.value)}
+                placeholder="Optional"
               />
               {fieldErrors.email && <p className="text-xs text-destructive">{fieldErrors.email}</p>}
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="so-phone">Phone</Label>
+              <Input
+                id="so-phone"
+                value={form.phone}
+                onChange={(e) => setField("phone", e.target.value)}
+                placeholder="Optional"
+              />
             </div>
             <SheetFooter className="pt-2">
               <Button type="button" variant="outline" onClick={() => setSheetOpen(false)} disabled={saving}>

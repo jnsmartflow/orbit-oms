@@ -1,16 +1,18 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Check, Pencil, X } from "lucide-react";
+import { Label } from "@/components/ui/label";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from "@/components/ui/sheet";
 
 interface RouteRow {
   id: number;
   name: string;
+  description?: string | null;
   isActive: boolean;
   areaCount: number;
 }
@@ -19,55 +21,66 @@ interface RoutesTableProps {
   initialRoutes: RouteRow[];
 }
 
+const EMPTY_FORM = { name: "", description: "" };
+
 export function RoutesTable({ initialRoutes }: RoutesTableProps) {
   const [routes, setRoutes] = useState<RouteRow[]>(initialRoutes);
-  const [addName, setAddName] = useState("");
-  const [adding, setAdding] = useState(false);
-  const [editingId, setEditingId] = useState<number | null>(null);
-  const [editName, setEditName] = useState("");
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<RouteRow | null>(null);
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [saving, setSaving] = useState(false);
   const [togglingId, setTogglingId] = useState<number | null>(null);
-  const editInputRef = useRef<HTMLInputElement>(null);
 
-  async function handleAdd(e: React.FormEvent) {
+  function openAdd() {
+    setEditTarget(null);
+    setForm(EMPTY_FORM);
+    setSheetOpen(true);
+  }
+
+  function openEdit(route: RouteRow) {
+    setEditTarget(route);
+    setForm({ name: route.name, description: route.description ?? "" });
+    setSheetOpen(true);
+  }
+
+  async function handleSave(e: React.FormEvent) {
     e.preventDefault();
-    if (!addName.trim()) return;
-    setAdding(true);
+    if (!form.name.trim()) {
+      toast.error("Route name is required.");
+      return;
+    }
+    setSaving(true);
     try {
-      const res = await fetch("/api/admin/routes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: addName.trim() }),
-      });
+      const body = {
+        name: form.name.trim(),
+        description: form.description.trim() || null,
+      };
+
+      const res = editTarget
+        ? await fetch(`/api/admin/routes/${editTarget.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          })
+        : await fetch("/api/admin/routes", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
+
       const data = await res.json();
-      if (!res.ok) { toast.error(data.error ?? "Failed to create route."); return; }
-      setRoutes((prev) => [...prev, data]);
-      setAddName("");
-      toast.success(`Route "${data.name}" created.`);
-    } catch { toast.error("Network error."); } finally { setAdding(false); }
-  }
+      if (!res.ok) { toast.error(data.error ?? "Failed to save route."); return; }
 
-  function startEdit(route: RouteRow) {
-    setEditingId(route.id);
-    setEditName(route.name);
-    setTimeout(() => editInputRef.current?.focus(), 50);
+      if (editTarget) {
+        setRoutes((prev) => prev.map((r) => (r.id === data.id ? data : r)));
+        toast.success("Route updated.");
+      } else {
+        setRoutes((prev) => [...prev, data]);
+        toast.success(`Route "${data.name}" created.`);
+      }
+      setSheetOpen(false);
+    } catch { toast.error("Network error."); } finally { setSaving(false); }
   }
-
-  async function commitEdit(id: number) {
-    if (!editName.trim()) { cancelEdit(); return; }
-    try {
-      const res = await fetch(`/api/admin/routes/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: editName.trim() }),
-      });
-      const data = await res.json();
-      if (!res.ok) { toast.error(data.error ?? "Failed to update route."); return; }
-      setRoutes((prev) => prev.map((r) => (r.id === id ? data : r)));
-      toast.success("Route updated.");
-    } catch { toast.error("Network error."); } finally { cancelEdit(); }
-  }
-
-  function cancelEdit() { setEditingId(null); setEditName(""); }
 
   async function handleToggle(route: RouteRow) {
     setTogglingId(route.id);
@@ -85,29 +98,18 @@ export function RoutesTable({ initialRoutes }: RoutesTableProps) {
   }
 
   return (
-    <div>
+    <>
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-xl font-semibold text-slate-900">Routes</h1>
+        <Button size="sm" onClick={openAdd}>+ Add Route</Button>
       </div>
-
-      {/* Add route form */}
-      <form onSubmit={handleAdd} className="flex gap-2 mb-4">
-        <Input
-          placeholder="New route name…"
-          value={addName}
-          onChange={(e) => setAddName(e.target.value)}
-          className="max-w-xs"
-        />
-        <Button type="submit" size="sm" disabled={adding || !addName.trim()}>
-          {adding ? "Adding…" : "Add Route"}
-        </Button>
-      </form>
 
       <div className="rounded-md border bg-white overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead>Route Name</TableHead>
+              <TableHead>Description</TableHead>
               <TableHead>Areas</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="text-right">Actions</TableHead>
@@ -116,41 +118,16 @@ export function RoutesTable({ initialRoutes }: RoutesTableProps) {
           <TableBody>
             {routes.length === 0 && (
               <TableRow>
-                <TableCell colSpan={4} className="text-center text-slate-500 py-8">
+                <TableCell colSpan={5} className="text-center text-slate-500 py-8">
                   No routes yet.
                 </TableCell>
               </TableRow>
             )}
             {routes.map((route) => (
               <TableRow key={route.id}>
-                <TableCell>
-                  {editingId === route.id ? (
-                    <div className="flex items-center gap-1">
-                      <Input
-                        ref={editInputRef}
-                        value={editName}
-                        onChange={(e) => setEditName(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") commitEdit(route.id);
-                          if (e.key === "Escape") cancelEdit();
-                        }}
-                        className="h-7 py-0 text-sm w-44"
-                      />
-                      <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => commitEdit(route.id)}>
-                        <Check className="h-3.5 w-3.5 text-green-600" />
-                      </Button>
-                      <Button size="icon" variant="ghost" className="h-7 w-7" onClick={cancelEdit}>
-                        <X className="h-3.5 w-3.5 text-slate-400" />
-                      </Button>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-medium">{route.name}</span>
-                      <Button size="icon" variant="ghost" className="h-6 w-6 opacity-50 hover:opacity-100" onClick={() => startEdit(route)}>
-                        <Pencil className="h-3 w-3" />
-                      </Button>
-                    </div>
-                  )}
+                <TableCell className="font-medium">{route.name}</TableCell>
+                <TableCell className="text-slate-500 text-sm">
+                  {route.description ?? <span className="text-slate-300">—</span>}
                 </TableCell>
                 <TableCell className="text-slate-500">{route.areaCount}</TableCell>
                 <TableCell>
@@ -159,20 +136,63 @@ export function RoutesTable({ initialRoutes }: RoutesTableProps) {
                   </Badge>
                 </TableCell>
                 <TableCell className="text-right">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={togglingId === route.id}
-                    onClick={() => handleToggle(route)}
-                  >
-                    {route.isActive ? "Deactivate" : "Activate"}
-                  </Button>
+                  <div className="flex items-center justify-end gap-2">
+                    <Button size="sm" variant="outline" onClick={() => openEdit(route)}>Edit</Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={togglingId === route.id}
+                      onClick={() => handleToggle(route)}
+                    >
+                      {route.isActive ? "Deactivate" : "Activate"}
+                    </Button>
+                  </div>
                 </TableCell>
               </TableRow>
             ))}
           </TableBody>
         </Table>
       </div>
-    </div>
+
+      <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
+        <SheetContent className="w-full sm:max-w-md overflow-y-auto">
+          <SheetHeader>
+            <SheetTitle>{editTarget ? "Edit Route" : "Add Route"}</SheetTitle>
+          </SheetHeader>
+          <form onSubmit={handleSave} className="flex flex-col gap-4 py-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="rt-name">Route Name <span className="text-destructive">*</span></Label>
+              <Input
+                id="rt-name"
+                value={form.name}
+                onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
+                placeholder="e.g. Varacha"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="rt-desc">Description</Label>
+              <textarea
+                id="rt-desc"
+                value={form.description}
+                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
+                  setForm((p) => ({ ...p, description: e.target.value }))
+                }
+                placeholder="Optional description"
+                rows={3}
+                className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+              />
+            </div>
+            <SheetFooter className="pt-2">
+              <Button type="button" variant="outline" onClick={() => setSheetOpen(false)} disabled={saving}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={saving}>
+                {saving ? "Saving…" : editTarget ? "Save Changes" : "Create Route"}
+              </Button>
+            </SheetFooter>
+          </form>
+        </SheetContent>
+      </Sheet>
+    </>
   );
 }

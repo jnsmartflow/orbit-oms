@@ -19,7 +19,9 @@ export async function GET() {
 
 const createSchema = z.object({
   name: z.string().min(1).max(100),
-  email: z.string().email().max(200),
+  employeeCode: z.string().min(1).max(50),
+  email: z.string().email().max(200).optional().nullable(),
+  phone: z.string().max(30).optional().nullable(),
 });
 
 export async function POST(req: Request) {
@@ -31,15 +33,22 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: parsed.error.flatten().fieldErrors }, { status: 400 });
   }
 
-  const email = parsed.data.email.trim().toLowerCase();
+  const email = parsed.data.email ? parsed.data.email.trim().toLowerCase() : null;
 
-  const existing = await prisma.sales_officer_master.findUnique({ where: { email } });
-  if (existing) {
-    return NextResponse.json({ error: "Email already exists." }, { status: 409 });
+  if (email) {
+    const existing = await prisma.sales_officer_master.findUnique({ where: { email } });
+    if (existing) {
+      return NextResponse.json({ error: "Email already exists." }, { status: 409 });
+    }
   }
 
   const officer = await prisma.sales_officer_master.create({
-    data: { name: parsed.data.name.trim(), email },
+    data: {
+      name: parsed.data.name.trim(),
+      employeeCode: parsed.data.employeeCode.trim(),
+      email,
+      phone: parsed.data.phone?.trim() || null,
+    },
   });
 
   return NextResponse.json(officer, { status: 201 });

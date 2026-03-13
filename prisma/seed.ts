@@ -8,7 +8,6 @@ async function main() {
 
   // ── system_config ──────────────────────────────────────────
   const configRows = [
-    { key: "dispatch_cutoff_time", value: "10:30" },
     { key: "soft_lock_minutes_before_cutoff", value: "30" },
     { key: "hard_lock_minutes_before_cutoff", value: "15" },
     { key: "ready_escalation_minutes", value: "10" },
@@ -59,6 +58,30 @@ async function main() {
     });
   }
   console.log(`  ✓ delivery_type_master — ${deliveryTypes.length} rows`);
+
+  // ── dispatch_cutoff_master ─────────────────────────────────
+  const localType = await prisma.delivery_type_master.findUniqueOrThrow({ where: { name: "Local" } });
+  const upcountryType = await prisma.delivery_type_master.findUniqueOrThrow({ where: { name: "Upcountry" } });
+
+  const cutoffSlots = [
+    { deliveryTypeId: localType.id, slotNumber: 1, label: "Morning",   cutoffTime: "", isDefaultForType: false },
+    { deliveryTypeId: localType.id, slotNumber: 2, label: "Afternoon", cutoffTime: "", isDefaultForType: false },
+    { deliveryTypeId: localType.id, slotNumber: 3, label: "Evening",   cutoffTime: "", isDefaultForType: false },
+    { deliveryTypeId: localType.id, slotNumber: 4, label: "Night",     cutoffTime: "", isDefaultForType: false },
+    { deliveryTypeId: upcountryType.id, slotNumber: 1, label: "Morning",   cutoffTime: "", isDefaultForType: false },
+    { deliveryTypeId: upcountryType.id, slotNumber: 2, label: "Afternoon", cutoffTime: "", isDefaultForType: false },
+    { deliveryTypeId: upcountryType.id, slotNumber: 3, label: "Evening",   cutoffTime: "", isDefaultForType: false },
+    { deliveryTypeId: upcountryType.id, slotNumber: 4, label: "Night",     cutoffTime: "", isDefaultForType: true  },
+  ];
+
+  for (const slot of cutoffSlots) {
+    await prisma.dispatch_cutoff_master.upsert({
+      where: { deliveryTypeId_slotNumber: { deliveryTypeId: slot.deliveryTypeId, slotNumber: slot.slotNumber } },
+      update: { label: slot.label, isDefaultForType: slot.isDefaultForType },
+      create: slot,
+    });
+  }
+  console.log(`  ✓ dispatch_cutoff_master — ${cutoffSlots.length} rows`);
 
   // ── delivery_priority_master ───────────────────────────────
   const priorities = [

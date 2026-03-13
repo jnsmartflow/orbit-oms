@@ -7,8 +7,11 @@ import { z } from "zod";
 export const dynamic = 'force-dynamic';
 
 const patchSchema = z.object({
-  name: z.string().min(1).max(100).optional(),
-  description: z.string().max(500).optional().nullable(),
+  vehicleNumber: z.string().min(1).max(50).optional(),
+  vehicleType: z.string().min(1).max(100).optional(),
+  capacityKg: z.number().positive().optional(),
+  capacityCbm: z.number().positive().optional().nullable(),
+  deliveryTypeId: z.number().int().positive().optional(),
   isActive: z.boolean().optional(),
 });
 
@@ -24,18 +27,22 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     return NextResponse.json({ error: parsed.error.flatten().fieldErrors }, { status: 400 });
   }
 
-  if (parsed.data.name) {
-    const conflict = await prisma.route_master.findFirst({
-      where: { name: { equals: parsed.data.name, mode: "insensitive" }, NOT: { id } },
+  if (parsed.data.vehicleNumber) {
+    const vehicleNumber = parsed.data.vehicleNumber.trim().toUpperCase();
+    const conflict = await prisma.vehicle_master.findFirst({
+      where: { vehicleNumber, NOT: { id } },
     });
-    if (conflict) return NextResponse.json({ error: "Route name already exists." }, { status: 409 });
+    if (conflict) {
+      return NextResponse.json({ error: "Vehicle number already exists." }, { status: 409 });
+    }
+    parsed.data.vehicleNumber = vehicleNumber;
   }
 
-  const route = await prisma.route_master.update({
+  const vehicle = await prisma.vehicle_master.update({
     where: { id },
     data: parsed.data,
-    include: { _count: { select: { areaRoutes: true } } },
+    include: { deliveryType: { select: { id: true, name: true } } },
   });
 
-  return NextResponse.json({ ...route, areaCount: route._count.areaRoutes, _count: undefined });
+  return NextResponse.json(vehicle);
 }

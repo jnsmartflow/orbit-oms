@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { CustomerSheet, type AreaOption, type SubAreaOption, type CustomerFull } from "./customer-sheet";
+import { CustomerSheet, type AreaOption, type SubAreaOption, type SalesOfficerOption, type CustomerFull } from "./customer-sheet";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 interface CustomerRow {
@@ -34,10 +34,11 @@ interface CustomersTableProps {
   initialTotal: number;
   areas: AreaOption[];
   subAreas: SubAreaOption[];
+  salesOfficers: SalesOfficerOption[];
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
-export function CustomersTable({ initialCustomers, initialTotal, areas, subAreas }: CustomersTableProps) {
+export function CustomersTable({ initialCustomers, initialTotal, areas, subAreas, salesOfficers }: CustomersTableProps) {
   const [customers, setCustomers] = useState<CustomerRow[]>(initialCustomers);
   const [total, setTotal] = useState(initialTotal);
   const [totalPages, setTotalPages] = useState(Math.ceil(initialTotal / 25));
@@ -325,6 +326,7 @@ export function CustomersTable({ initialCustomers, initialTotal, areas, subAreas
         editing={editingCustomer}
         areas={areas}
         subAreas={subAreas}
+        salesOfficers={salesOfficers}
         onSaved={handleSaved}
       />
 

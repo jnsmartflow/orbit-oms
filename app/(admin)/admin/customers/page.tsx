@@ -4,7 +4,7 @@ import { CustomersTable } from "@/components/admin/customers-table";
 export const dynamic = 'force-dynamic';
 
 export default async function CustomersPage() {
-  const [customers, total, areas, subAreas] = await Promise.all([
+  const [customers, total, areas, subAreas, salesOfficers] = await Promise.all([
     prisma.delivery_point_master.findMany({
       take: 25,
       orderBy: { customerName: "asc" },
@@ -21,6 +21,11 @@ export default async function CustomersPage() {
     prisma.sub_area_master.findMany({
       orderBy: { name: "asc" },
       select: { id: true, name: true, areaId: true },
+    }),
+    prisma.sales_officer_master.findMany({
+      where: { isActive: true },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
     }),
   ]);
 
@@ -39,6 +44,7 @@ export default async function CustomersPage() {
       initialTotal={total}
       areas={areas}
       subAreas={subAreas}
+      salesOfficers={salesOfficers}
     />
   );
 }

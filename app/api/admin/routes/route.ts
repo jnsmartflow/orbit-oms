@@ -20,7 +20,10 @@ export async function GET() {
   );
 }
 
-const createSchema = z.object({ name: z.string().min(1).max(100) });
+const createSchema = z.object({
+  name: z.string().min(1).max(100),
+  description: z.string().max(500).optional().nullable(),
+});
 
 export async function POST(req: Request) {
   const session = await auth();
@@ -39,7 +42,7 @@ export async function POST(req: Request) {
   }
 
   const route = await prisma.route_master.create({
-    data: { name: parsed.data.name },
+    data: { name: parsed.data.name, description: parsed.data.description ?? null },
     include: { _count: { select: { areaRoutes: true } } },
   });
 

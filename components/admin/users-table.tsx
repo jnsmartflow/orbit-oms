@@ -8,6 +8,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { AddUserSheet } from "./add-user-sheet";
+import { EditUserSheet, type UserRowForEdit } from "./edit-user-sheet";
 import { ResetPasswordDialog } from "./reset-password-dialog";
 
 interface Role {
@@ -32,12 +33,17 @@ interface UsersTableProps {
 
 export function UsersTable({ initialUsers, roles, currentUserId }: UsersTableProps) {
   const [users, setUsers] = useState<UserRow[]>(initialUsers);
-  const [sheetOpen, setSheetOpen] = useState(false);
+  const [addSheetOpen, setAddSheetOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<UserRowForEdit | null>(null);
   const [resetTarget, setResetTarget] = useState<{ id: number; name: string } | null>(null);
   const [togglingId, setTogglingId] = useState<number | null>(null);
 
   function handleCreated(user: UserRow) {
     setUsers((prev) => [...prev, user]);
+  }
+
+  function handleUpdated(user: UserRow) {
+    setUsers((prev) => prev.map((u) => (u.id === user.id ? user : u)));
   }
 
   async function handleToggleActive(user: UserRow) {
@@ -71,7 +77,7 @@ export function UsersTable({ initialUsers, roles, currentUserId }: UsersTablePro
     <>
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-xl font-semibold text-slate-900">Users</h1>
-        <Button size="sm" onClick={() => setSheetOpen(true)}>
+        <Button size="sm" onClick={() => setAddSheetOpen(true)}>
           + Add User
         </Button>
       </div>
@@ -118,6 +124,13 @@ export function UsersTable({ initialUsers, roles, currentUserId }: UsersTablePro
                     <Button
                       size="sm"
                       variant="outline"
+                      onClick={() => setEditTarget(user)}
+                    >
+                      Edit
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
                       disabled={togglingId === user.id || user.id === currentUserId}
                       onClick={() => handleToggleActive(user)}
                     >
@@ -128,7 +141,7 @@ export function UsersTable({ initialUsers, roles, currentUserId }: UsersTablePro
                       variant="outline"
                       onClick={() => setResetTarget({ id: user.id, name: user.name })}
                     >
-                      Reset Password
+                      Reset PW
                     </Button>
                   </div>
                 </TableCell>
@@ -139,10 +152,18 @@ export function UsersTable({ initialUsers, roles, currentUserId }: UsersTablePro
       </div>
 
       <AddUserSheet
-        open={sheetOpen}
-        onOpenChange={setSheetOpen}
+        open={addSheetOpen}
+        onOpenChange={setAddSheetOpen}
         roles={roles}
         onCreated={handleCreated}
+      />
+
+      <EditUserSheet
+        open={!!editTarget}
+        onOpenChange={(o) => { if (!o) setEditTarget(null); }}
+        user={editTarget}
+        roles={roles}
+        onUpdated={handleUpdated}
       />
 
       <ResetPasswordDialog

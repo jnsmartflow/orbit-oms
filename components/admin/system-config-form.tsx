@@ -20,12 +20,6 @@ interface ConfigMeta {
 }
 
 const CONFIG_META: Record<string, ConfigMeta> = {
-  dispatch_cutoff_time: {
-    label: "Dispatch Cutoff Time",
-    description: "Daily cutoff for same-day slot assignment (HH:MM format).",
-    type: "time",
-    section: "timing",
-  },
   soft_lock_minutes_before_cutoff: {
     label: "Soft Lock (minutes before cutoff)",
     description: "Minutes before cutoff when a draft plan transitions to soft lock.",

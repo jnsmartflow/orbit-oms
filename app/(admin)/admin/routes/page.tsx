@@ -14,6 +14,7 @@ export default async function RoutesPage() {
       initialRoutes={routes.map((r) => ({
         id: r.id,
         name: r.name,
+        description: r.description,
         isActive: r.isActive,
         areaCount: r._count.areaRoutes,
       }))}
