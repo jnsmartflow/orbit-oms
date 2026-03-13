@@ -1,0 +1,265 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────
+// PHASE 1 — Full definitions (16 tables)
+// ─────────────────────────────────────────────
+
+model system_config {
+  id        Int      @id @default(autoincrement())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+model role_master {
+  id          Int     @id @default(autoincrement())
+  name        String  @unique
+  description String?
+  users       users[]
+}
+
+model users {
+  id        Int         @id @default(autoincrement())
+  email     String      @unique
+  password  String
+  name      String
+  roleId    Int
+  role      role_master @relation(fields: [roleId], references: [id])
+  isActive  Boolean     @default(true)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+}
+
+model delivery_type_master {
+  id        Int            @id @default(autoincrement())
+  name      String         @unique
+  createdAt DateTime       @default(now())
+  areas     area_master[]
+}
+
+model route_master {
+  id        Int              @id @default(autoincrement())
+  name      String           @unique
+  isActive  Boolean          @default(true)
+  createdAt DateTime         @default(now())
+  areaRoutes area_route_map[]
+}
+
+model area_master {
+  id             Int                    @id @default(autoincrement())
+  name           String
+  deliveryTypeId Int
+  deliveryType   delivery_type_master   @relation(fields: [deliveryTypeId], references: [id])
+  isActive       Boolean                @default(true)
+  createdAt      DateTime               @default(now())
+  areaRoutes     area_route_map[]
+  subAreas       sub_area_master[]
+  deliveryPoints delivery_point_master[]
+}
+
+model area_route_map {
+  id      Int         @id @default(autoincrement())
+  areaId  Int
+  area    area_master @relation(fields: [areaId], references: [id])
+  routeId Int
+  route   route_master @relation(fields: [routeId], references: [id])
+
+  @@unique([areaId, routeId])
+}
+
+model sub_area_master {
+  id             Int                    @id @default(autoincrement())
+  name           String
+  areaId         Int
+  area           area_master            @relation(fields: [areaId], references: [id])
+  isActive       Boolean                @default(true)
+  createdAt      DateTime               @default(now())
+  deliveryPoints delivery_point_master[]
+}
+
+model sales_officer_master {
+  id        Int      @id @default(autoincrement())
+  name      String
+  email     String   @unique
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+}
+
+model delivery_point_master {
+  id                 Int                       @id @default(autoincrement())
+  customerCode       String                    @unique
+  customerName       String
+  areaId             Int
+  area               area_master               @relation(fields: [areaId], references: [id])
+  subAreaId          Int?
+  subArea            sub_area_master?          @relation(fields: [subAreaId], references: [id])
+  isKeyCustomer      Boolean                   @default(false)
+  isKeySite          Boolean                   @default(false)
+  workingHoursStart  String?
+  workingHoursEnd    String?
+  noDeliveryDays     String[]
+  latitude           Float?
+  longitude          Float?
+  isActive           Boolean                   @default(true)
+  createdAt          DateTime                  @default(now())
+  updatedAt          DateTime                  @updatedAt
+  contacts           delivery_point_contacts[]
+}
+
+model delivery_point_contacts {
+  id              Int                   @id @default(autoincrement())
+  deliveryPointId Int
+  deliveryPoint   delivery_point_master @relation(fields: [deliveryPointId], references: [id])
+  name            String
+  phone           String?
+  email           String?
+  isPrimary       Boolean               @default(false)
+  createdAt       DateTime              @default(now())
+}
+
+model sku_master {
+  id                 Int            @id @default(autoincrement())
+  skuCode            String         @unique
+  skuName            String
+  packSize           String
+  containerType      String
+  unitsPerCarton     Int?
+  grossWeightPerUnit Float
+  isActive           Boolean        @default(true)
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+  subSkus            sku_sub_master[]
+}
+
+model sku_sub_master {
+  id          Int        @id @default(autoincrement())
+  skuId       Int
+  sku         sku_master @relation(fields: [skuId], references: [id])
+  subCode     String     @unique
+  description String?
+  createdAt   DateTime   @default(now())
+}
+
+model delivery_priority_master {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  sortOrder Int
+  createdAt DateTime @default(now())
+}
+
+model dispatch_status_master {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  createdAt DateTime @default(now())
+}
+
+model tinting_status_master {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  createdAt DateTime @default(now())
+}
+
+// ─────────────────────────────────────────────
+// PHASE 2 STUBS — Import tables (5)
+// ─────────────────────────────────────────────
+
+model import_batches {
+  id        Int      @id @default(autoincrement())
+  createdAt DateTime @default(now())
+}
+
+model import_raw_summary {
+  id        Int      @id @default(autoincrement())
+  createdAt DateTime @default(now())
+}
+
+model import_raw_line_items {
+  id        Int      @id @default(autoincrement())
+  createdAt DateTime @default(now())
+}
+
+model import_enriched_line_items {
+  id        Int      @id @default(autoincrement())
+  createdAt DateTime @default(now())
+}
+
+model import_obd_query_summary {
+  id        Int      @id @default(autoincrement())
+  createdAt DateTime @default(now())
+}
+
+// ─────────────────────────────────────────────
+// PHASE 2 STUBS — Orders + Tinting + Support (5)
+// ─────────────────────────────────────────────
+
+model orders {
+  id        Int      @id @default(autoincrement())
+  createdAt DateTime @default(now())
+}
+
+model order_splits {
+  id        Int      @id @default(autoincrement())
+  createdAt DateTime @default(now())
+}
+
+model tint_assignments {
+  id        Int      @id @default(autoincrement())
+  createdAt DateTime @default(now())
+}
+
+model tint_logs {
+  id        Int      @id @default(autoincrement())
+  createdAt DateTime @default(now())
+}
+
+model order_status_logs {
+  id        Int      @id @default(autoincrement())
+  createdAt DateTime @default(now())
+}
+
+// ─────────────────────────────────────────────
+// PHASE 3 STUBS — Dispatch + Warehouse (7)
+// ─────────────────────────────────────────────
+
+model vehicle_master {
+  id        Int      @id @default(autoincrement())
+  createdAt DateTime @default(now())
+}
+
+model dispatch_plans {
+  id        Int      @id @default(autoincrement())
+  createdAt DateTime @default(now())
+}
+
+model dispatch_plan_vehicles {
+  id        Int      @id @default(autoincrement())
+  createdAt DateTime @default(now())
+}
+
+model dispatch_plan_orders {
+  id        Int      @id @default(autoincrement())
+  createdAt DateTime @default(now())
+}
+
+model dispatch_change_queue {
+  id        Int      @id @default(autoincrement())
+  createdAt DateTime @default(now())
+}
+
+model pick_lists {
+  id        Int      @id @default(autoincrement())
+  createdAt DateTime @default(now())
+}
+
+model pick_list_items {
+  id        Int      @id @default(autoincrement())
+  createdAt DateTime @default(now())
+}
