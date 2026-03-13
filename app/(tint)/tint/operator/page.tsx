@@ -2,6 +2,8 @@ import { auth } from "@/lib/auth";
 import { requireRole, ROLES } from "@/lib/rbac";
 import { SignOutButton } from "@/components/shared/sign-out-button";
 
+export const dynamic = 'force-dynamic';
+
 export default async function TintOperatorPage() {
   const session = await auth();
   requireRole(session, [ROLES.TINT_OPERATOR]);

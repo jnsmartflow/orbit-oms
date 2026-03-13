@@ -4,6 +4,8 @@ import "./globals.css";
 import { SessionProvider } from "@/components/shared/session-provider";
 import { Toaster } from "@/components/ui/sonner";
 
+export const dynamic = 'force-dynamic';
+
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {

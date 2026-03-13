@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { auth } from "@/lib/auth";
 
+export const dynamic = 'force-dynamic';
+
 const ROLE_HOME: Record<string, string> = {
   admin: "/admin",
   dispatcher: "/dispatcher",

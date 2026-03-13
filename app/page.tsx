@@ -1,6 +1,8 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 
+export const dynamic = 'force-dynamic';
+
 const ROLE_REDIRECTS: Record<string, string> = {
   admin: "/admin",
   dispatcher: "/dispatcher",
