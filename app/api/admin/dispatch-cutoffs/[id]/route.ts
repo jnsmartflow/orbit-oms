@@ -23,6 +23,19 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (!parsed.success) return NextResponse.json({ error: parsed.error.errors[0].message }, { status: 400 });
   const existing = await prisma.dispatch_cutoff_master.findUnique({ where: { id } });
   if (!existing) return NextResponse.json({ error: "Slot not found" }, { status: 404 });
-  const updated = await prisma.dispatch_cutoff_master.update({ where: { id }, data: parsed.data, include: { deliveryType: true } });
+  // If setting as default, clear existing default for same delivery type first
+  if (parsed.data.isDefaultForType === true) {
+    await prisma.dispatch_cutoff_master.updateMany({
+      where: { deliveryTypeId: existing.deliveryTypeId, isDefaultForType: true },
+      data: { isDefaultForType: false },
+    });
+  }
+
+  const updated = await prisma.dispatch_cutoff_master.update({
+    where: { id },
+    data: parsed.data,
+    include: { deliveryType: true },
+  });
+
   return NextResponse.json(updated);
 }

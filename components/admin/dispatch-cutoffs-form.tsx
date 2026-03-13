@@ -5,7 +5,6 @@ import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
@@ -117,6 +116,33 @@ export function DispatchCutoffsForm({ initialSlots, deliveryTypes }: DispatchCut
     }
   }
 
+  // ── Set default slot for delivery type ──────────────────────────────────────
+  async function handleSetDefault(slot: CutoffSlot) {
+    try {
+      const res = await fetch(`/api/admin/dispatch-cutoffs/${slot.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isDefaultForType: true }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        toast.error(data.error ?? "Failed to set default.");
+        return;
+      }
+      // Update local state — set this slot as default, remove from others in same delivery type
+      setSlots((prev) =>
+        prev.map((s) => ({
+          ...s,
+          isDefaultForType:
+            s.deliveryTypeId === slot.deliveryTypeId ? s.id === slot.id : s.isDefaultForType,
+        }))
+      );
+      toast.success(`${slot.label} set as default for ${slot.deliveryType.name}.`);
+    } catch {
+      toast.error("Network error. Please try again.");
+    }
+  }
+
   // ── Add new slot ─────────────────────────────────────────────────────────────
   async function handleAddSlot() {
     if (!newDeliveryTypeId) { toast.error("Please select a delivery type."); return; }
@@ -171,13 +197,11 @@ export function DispatchCutoffsForm({ initialSlots, deliveryTypes }: DispatchCut
     const isDirty = label !== slot.label || cutoffTime !== slot.cutoffTime;
 
     return (
-      <div className="flex items-center gap-4 py-3 border-b last:border-0">
-        {/* Slot number badge */}
+      <div className="flex items-center gap-3 py-3 border-b last:border-0">
         <span className="w-8 text-center text-xs font-semibold text-slate-400">
           S{slot.slotNumber}
         </span>
 
-        {/* Label input */}
         <div className="flex-1">
           <Input
             value={label}
@@ -187,7 +211,6 @@ export function DispatchCutoffsForm({ initialSlots, deliveryTypes }: DispatchCut
           />
         </div>
 
-        {/* Cutoff time input */}
         <div className="w-28">
           <Input
             value={cutoffTime}
@@ -197,28 +220,36 @@ export function DispatchCutoffsForm({ initialSlots, deliveryTypes }: DispatchCut
           />
         </div>
 
-        {/* Default badge */}
-        <div className="w-20 flex justify-center">
-          {slot.isDefaultForType && (
-            <Badge variant="secondary" className="text-xs">Default</Badge>
+        <div className="w-24 flex justify-center">
+          {slot.isDefaultForType ? (
+            <Badge variant="secondary" className="text-xs bg-blue-100 text-blue-700 border-blue-300">
+              ★ Default
+            </Badge>
+          ) : (
+            <button
+              onClick={() => handleSetDefault(slot)}
+              className="text-xs text-slate-400 hover:text-blue-600 underline underline-offset-2"
+            >
+              Set default
+            </button>
           )}
         </div>
 
-        {/* Active toggle */}
-        <div className="flex items-center gap-2">
-          <Switch
-            checked={slot.isActive}
-            onCheckedChange={(val) => handleToggleActive(slot, val)}
-          />
-          <span className={`text-xs w-14 ${slot.isActive ? "text-green-600" : "text-slate-400"}`}>
-            {slot.isActive ? "Active" : "Inactive"}
-          </span>
+        <div className="w-28 flex justify-center">
+          <button
+            onClick={() => handleToggleActive(slot, !slot.isActive)}
+            className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
+              slot.isActive
+                ? "bg-green-50 text-green-700 border-green-300 hover:bg-green-100"
+                : "bg-red-50 text-red-600 border-red-300 hover:bg-red-100"
+            }`}
+          >
+            {slot.isActive ? "● Active" : "○ Inactive"}
+          </button>
         </div>
 
-        {/* Save button — only shows if dirty */}
         <Button
           size="sm"
-          variant="outline"
           disabled={!isDirty || saving === slot.id}
           onClick={() => handleSaveSlot(slot, label, cutoffTime)}
           className="w-16 text-xs"
