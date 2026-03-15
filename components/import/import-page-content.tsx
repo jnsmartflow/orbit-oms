@@ -235,7 +235,7 @@ export function ImportPageContent({ viewOrdersHref = "/support" }: ImportPageCon
     try {
       const fd = new FormData();
       fd.append("headerFile", headerFile);
-      fd.append("lineFile", lineFile);
+      if (lineFile) fd.append("lineFile", lineFile);
       const res = await fetch("/api/import/obd?action=preview", {
         method: "POST",
         body: fd,
@@ -295,7 +295,7 @@ export function ImportPageContent({ viewOrdersHref = "/support" }: ImportPageCon
             onClear={() => setHeaderFile(null)}
           />
           <FileZone
-            label="Line Items File"
+            label="Line Items File (Optional)"
             file={lineFile}
             inputRef={lineInputRef}
             onFile={setLineFile}
@@ -305,7 +305,7 @@ export function ImportPageContent({ viewOrdersHref = "/support" }: ImportPageCon
 
         <button
           onClick={handlePreviewSubmit}
-          disabled={!headerFile || !lineFile || isLoading}
+          disabled={!headerFile || isLoading}
           className="w-full bg-[#1a237e] text-white rounded-lg py-3 font-medium flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[#1a237e]/90 transition-colors"
         >
           {isLoading && <Loader2 className="animate-spin" size={18} />}

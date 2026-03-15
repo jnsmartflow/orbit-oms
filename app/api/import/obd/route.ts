@@ -198,24 +198,26 @@ async function handlePreview(req: Request, session: Session): Promise<NextRespon
   const headerFileEntry = formData.get("headerFile");
   const lineFileEntry   = formData.get("lineFile");
 
-  if (!(headerFileEntry instanceof File) || !(lineFileEntry instanceof File)) {
-    return NextResponse.json({ error: "Both headerFile and lineFile are required" }, { status: 400 });
+  if (!(headerFileEntry instanceof File)) {
+    return NextResponse.json({ error: "headerFile is required" }, { status: 400 });
   }
+
+  const hasLineFile = lineFileEntry instanceof File;
 
   // ── STEP A — Parse XLS files ─────────────────────────────────────────────
   let headerRows: RawHeaderRow[];
-  let lineRows:   RawLineRow[];
+  let lineRows:   RawLineRow[] = [];
 
   try {
     const headerBuf = Buffer.from(await headerFileEntry.arrayBuffer());
-    const lineBuf   = Buffer.from(await lineFileEntry.arrayBuffer());
-
     const headerWb  = XLSX.read(headerBuf, { type: "buffer", cellDates: false });
-    const lineWb    = XLSX.read(lineBuf,   { type: "buffer", cellDates: false });
-
     headerRows = parseSheet<RawHeaderRow>(headerWb, "LogisticsTrackerWareHouse");
 
-    lineRows = parseSheet<RawLineRow>(lineWb, "Sheet1");
+    if (hasLineFile) {
+      const lineBuf = Buffer.from(await (lineFileEntry as File).arrayBuffer());
+      const lineWb  = XLSX.read(lineBuf, { type: "buffer", cellDates: false });
+      lineRows = parseSheet<RawLineRow>(lineWb, "Sheet1");
+    }
   } catch {
     return NextResponse.json(
       { error: "Cannot parse file. Check sheet names." },
@@ -245,15 +247,17 @@ async function handlePreview(req: Request, session: Session): Promise<NextRespon
   const existingObdSet  = new Set(existingOrders.map((o) => o.obdNumber));
   const existingCustSet = new Set(existingCustomers.map((c) => c.customerCode));
 
-  // ── STEP C — Validate line items (1 bulk query) ───────────────────────────
-  const allSkuCodes = lineRows.map((r) => toStr(r["sku_codes"])).filter(Boolean);
+  // ── STEP C — Validate line items (1 bulk query, skipped if no line file) ──
+  let existingSkuSet = new Set<string>();
 
-  const existingSkus = await prisma.sku_master.findMany({
-    where:  { skuCode: { in: allSkuCodes } },
-    select: { skuCode: true },
-  });
-
-  const existingSkuSet = new Set(existingSkus.map((s) => s.skuCode));
+  if (hasLineFile && lineRows.length > 0) {
+    const allSkuCodes = lineRows.map((r) => toStr(r["sku_codes"])).filter(Boolean);
+    const existingSkus = await prisma.sku_master.findMany({
+      where:  { skuCode: { in: allSkuCodes } },
+      select: { skuCode: true },
+    });
+    existingSkuSet = new Set(existingSkus.map((s) => s.skuCode));
+  }
 
   // Group line rows by obdNumber for fast lookup
   const linesByObd = new Map<string, RawLineRow[]>();
@@ -279,7 +283,7 @@ async function handlePreview(req: Request, session: Session): Promise<NextRespon
           batchRef,
           importedById: userId,
           headerFile:   headerFileEntry.name,
-          lineFile:     lineFileEntry.name,
+          lineFile:     hasLineFile ? (lineFileEntry as File).name : "",
           status:       "processing",
         },
       });
@@ -621,14 +625,16 @@ async function handleConfirm(req: Request, session: Session): Promise<NextRespon
         }
 
         // ── STEP E c — Create OBD query summary ────────────────────────────
+        // When no line items, fall back to header-file values for totals
+        const hasLines = validLines.length > 0;
         await tx.import_obd_query_summary.create({
           data: {
             obdNumber:    summary.obdNumber,
             orderId:      order.id,
             totalLines:   validLines.length,
-            totalUnitQty: totalLineQty,
+            totalUnitQty: hasLines ? totalLineQty : (summary.totalUnitQty ?? 0),
             totalWeight:  summary.grossWeight ?? 0,
-            totalVolume,
+            totalVolume:  hasLines ? totalVolume  : (summary.volume ?? 0),
             hasTinting,
           },
         });
