@@ -229,7 +229,7 @@ export function ImportPageContent({ viewOrdersHref = "/support" }: ImportPageCon
   }
 
   async function handlePreviewSubmit() {
-    if (!headerFile || !lineFile) return;
+    if (!headerFile) return;
     setIsLoading(true);
     setError(null);
     try {
