@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import type { Session } from "next-auth";
+import type { Prisma } from "@prisma/client";
 import * as XLSX from "xlsx";
 import { auth } from "@/lib/auth";
 import { requireRole, ROLES } from "@/lib/rbac";
@@ -272,141 +273,237 @@ async function handlePreview(req: Request, session: Session): Promise<NextRespon
   const batchRef = await generateBatchRef();
   const userId   = parseInt(session.user.id, 10);
 
-  // ── STEP E — Write to DB in one Prisma transaction ────────────────────────
-  const previewObds: ImportObdPreview[] = [];
-  let   createdBatchId = 0;
-
+  // ── STEP E1 — Create import_batches row (outside any transaction) ─────────
+  let batchId: number;
   try {
-    await prisma.$transaction(async (tx) => {
-      const batch = await tx.import_batches.create({
-        data: {
-          batchRef,
-          importedById: userId,
-          headerFile:   headerFileEntry.name,
-          lineFile:     hasLineFile ? (lineFileEntry as File).name : "",
-          status:       "processing",
-        },
-      });
-
-      createdBatchId = batch.id;
-
-      for (const hr of headerRows) {
-        const obdNumber = toStr(hr["OBD Number"]);
-        if (!obdNumber) continue;
-
-        const shipToId         = toStr(hr["ShipToCustomerId"]) || null;
-        const emailDate        = parseDateCell(hr["OBD Email Date"]);
-        const emailTime        = parseTimeCell(hr["OBD Email Time"]);
-        const invoiceDate      = parseDateCell(hr["InvoiceDate"]);
-
-        let rowStatus: "valid" | "duplicate" | "error" = "valid";
-        let rowError:  string | null = null;
-
-        if (existingObdSet.has(obdNumber)) {
-          rowStatus = "duplicate";
-        } else if (shipToId && !existingCustSet.has(shipToId)) {
-          rowStatus = "error";
-          rowError  = `Unknown customer: ${shipToId}`;
-        }
-
-        const summary = await tx.import_raw_summary.create({
-          data: {
-            batchId:             batch.id,
-            obdNumber,
-            sapStatus:           toStr(hr["Status"])              || null,
-            smu:                 toStr(hr["SMU"])                 || null,
-            smuCode:             toStr(hr["SMU Code"])            || null,
-            materialType:        toStr(hr["MaterialType"])        || null,
-            natureOfTransaction: toStr(hr["NatureOfTransaction"]) || null,
-            warehouse:           toStr(hr["Warehouse"])           || null,
-            obdEmailDate:        emailDate,
-            obdEmailTime:        emailTime,
-            totalUnitQty:        toInt(hr["UnitQty"]),
-            grossWeight:         toNum(hr["GrossWeight"]),
-            volume:              toNum(hr["Volume"]),
-            billToCustomerId:    toStr(hr["Bill To Customer Id"])   || null,
-            billToCustomerName:  toStr(hr["Bill To Customer Name"]) || null,
-            shipToCustomerId:    shipToId,
-            shipToCustomerName:  toStr(hr["Ship To Customer Name"]) || null,
-            invoiceNo:           toStr(hr["InvoiceNo"]) || null,
-            invoiceDate,
-            rowStatus,
-            rowError,
-          },
-        });
-
-        // Process line items for this OBD
-        const obdLines     = linesByObd.get(obdNumber) ?? [];
-        const previewLines: ImportLinePreview[] = [];
-
-        for (const lr of obdLines) {
-          const skuCodeRaw  = toStr(lr["sku_codes"]);
-          const lineIdRaw   = toInt(lr["line_id"]) ?? 0;
-          const unitQty     = toInt(lr["unit_qty"]) ?? 0;
-          const volumeLine  = toNum(lr["volume_line"]);
-          const isTinting   = parseBooleanCell(lr["Tinting"]);
-
-          let lineStatus: "valid" | "error" = "valid";
-          let lineError:  string | null     = null;
-
-          if (!skuCodeRaw || !existingSkuSet.has(skuCodeRaw)) {
-            lineStatus = "error";
-            lineError  = `Unknown SKU: ${skuCodeRaw}`;
-          }
-
-          const lineItem = await tx.import_raw_line_items.create({
-            data: {
-              rawSummaryId:      summary.id,
-              obdNumber,
-              lineId:            lineIdRaw,
-              skuCodeRaw,
-              skuDescriptionRaw: toStr(lr["sku_description"]) || null,
-              batchCode:         toStr(lr["batch_code"])       || null,
-              unitQty,
-              volumeLine,
-              isTinting,
-              rowStatus:         lineStatus,
-              rowError:          lineError,
-            },
-          });
-
-          previewLines.push({
-            rawLineItemId:     lineItem.id,
-            lineId:            lineIdRaw,
-            skuCodeRaw,
-            skuDescriptionRaw: toStr(lr["sku_description"]) || null,
-            unitQty,
-            isTinting,
-            rowStatus:         lineStatus,
-            rowError:          lineError,
-          });
-        }
-
-        const tintLineCount = previewLines.filter((l) => l.isTinting).length;
-
-        previewObds.push({
-          rawSummaryId:      summary.id,
-          obdNumber,
-          shipToCustomerId:  shipToId,
-          shipToCustomerName: toStr(hr["Ship To Customer Name"]) || null,
-          obdEmailDate:      emailDate?.toISOString() ?? null,
-          totalUnitQty:      toInt(hr["UnitQty"]),
-          grossWeight:       toNum(hr["GrossWeight"]),
-          rowStatus,
-          rowError,
-          lineCount:         previewLines.length,
-          tintLineCount,
-          orderType:         tintLineCount > 0 ? "tint" : "non_tint",
-          lines:             previewLines,
-        });
-      }
+    const batch = await prisma.import_batches.create({
+      data: {
+        batchRef,
+        importedById: userId,
+        headerFile:   headerFileEntry.name,
+        lineFile:     hasLineFile ? (lineFileEntry as File).name : "",
+        status:       "processing",
+      },
     });
+    batchId = batch.id;
   } catch (err) {
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Failed to write import data" },
+      { error: err instanceof Error ? err.message : "Failed to create batch" },
       { status: 500 },
     );
   }
+
+  // ── STEP E2 — Build in-memory interims + summaryData array ───────────────
+
+  // Interim line shape (in-memory, before DB IDs are known)
+  interface LineInterim {
+    lineId:            number;
+    skuCodeRaw:        string;
+    skuDescriptionRaw: string | null;
+    batchCode:         string | null;
+    unitQty:           number;
+    volumeLine:        number | null;
+    isTinting:         boolean;
+    rowStatus:         "valid" | "error";
+    rowError:          string | null;
+  }
+
+  // Interim OBD shape
+  interface ObdInterim {
+    obdNumber:          string;
+    shipToId:           string | null;
+    shipToCustomerName: string | null;
+    emailDate:          Date | null;
+    totalUnitQty:       number | null;
+    grossWeight:        number | null;
+    rowStatus:          "valid" | "duplicate" | "error";
+    rowError:           string | null;
+    lines:              LineInterim[];
+  }
+
+  const obdInterims:  ObdInterim[] = [];
+  const summaryData: Prisma.import_raw_summaryCreateManyInput[] = [];
+
+  for (const hr of headerRows) {
+    const obdNumber = toStr(hr["OBD Number"]);
+    if (!obdNumber) continue;
+
+    const shipToId          = toStr(hr["ShipToCustomerId"]) || null;
+    const shipToCustomerName = toStr(hr["Ship To Customer Name"]) || null;
+    const emailDate         = parseDateCell(hr["OBD Email Date"]);
+    const emailTime         = parseTimeCell(hr["OBD Email Time"]);
+    const invoiceDate       = parseDateCell(hr["InvoiceDate"]);
+
+    let rowStatus: "valid" | "duplicate" | "error" = "valid";
+    let rowError:  string | null = null;
+
+    if (existingObdSet.has(obdNumber)) {
+      rowStatus = "duplicate";
+    } else if (shipToId && !existingCustSet.has(shipToId)) {
+      rowStatus = "error";
+      rowError  = `Unknown customer: ${shipToId}`;
+    }
+
+    // Build line interims for this OBD
+    const obdLines   = linesByObd.get(obdNumber) ?? [];
+    const lines: LineInterim[] = obdLines.map((lr) => {
+      const skuCodeRaw = toStr(lr["sku_codes"]);
+      const lineIdRaw  = toInt(lr["line_id"]) ?? 0;
+      const unitQty    = toInt(lr["unit_qty"]) ?? 0;
+      const volumeLine = toNum(lr["volume_line"]);
+      const isTinting  = parseBooleanCell(lr["Tinting"]);
+
+      let lineStatus: "valid" | "error" = "valid";
+      let lineError:  string | null     = null;
+      if (!skuCodeRaw || !existingSkuSet.has(skuCodeRaw)) {
+        lineStatus = "error";
+        lineError  = `Unknown SKU: ${skuCodeRaw}`;
+      }
+
+      return {
+        lineId:            lineIdRaw,
+        skuCodeRaw,
+        skuDescriptionRaw: toStr(lr["sku_description"]) || null,
+        batchCode:         toStr(lr["batch_code"])       || null,
+        unitQty,
+        volumeLine,
+        isTinting,
+        rowStatus:         lineStatus,
+        rowError:          lineError,
+      };
+    });
+
+    obdInterims.push({
+      obdNumber, shipToId, shipToCustomerName, emailDate,
+      totalUnitQty: toInt(hr["UnitQty"]),
+      grossWeight:  toNum(hr["GrossWeight"]),
+      rowStatus, rowError, lines,
+    });
+
+    summaryData.push({
+      batchId,
+      obdNumber,
+      sapStatus:           toStr(hr["Status"])              || null,
+      smu:                 toStr(hr["SMU"])                 || null,
+      smuCode:             toStr(hr["SMU Code"])            || null,
+      materialType:        toStr(hr["MaterialType"])        || null,
+      natureOfTransaction: toStr(hr["NatureOfTransaction"]) || null,
+      warehouse:           toStr(hr["Warehouse"])           || null,
+      obdEmailDate:        emailDate,
+      obdEmailTime:        emailTime,
+      totalUnitQty:        toInt(hr["UnitQty"]),
+      grossWeight:         toNum(hr["GrossWeight"]),
+      volume:              toNum(hr["Volume"]),
+      billToCustomerId:    toStr(hr["Bill To Customer Id"])   || null,
+      billToCustomerName:  toStr(hr["Bill To Customer Name"]) || null,
+      shipToCustomerId:    shipToId,
+      shipToCustomerName,
+      invoiceNo:           toStr(hr["InvoiceNo"]) || null,
+      invoiceDate,
+      rowStatus,
+      rowError,
+    });
+  }
+
+  // ── STEP E3 — Bulk insert summaries (1 query) ─────────────────────────────
+  try {
+    await prisma.import_raw_summary.createMany({ data: summaryData });
+  } catch (err) {
+    await prisma.import_batches
+      .update({ where: { id: batchId }, data: { status: "failed" } })
+      .catch(() => undefined);
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Failed to write summaries" },
+      { status: 500 },
+    );
+  }
+
+  // ── STEP E4 — Fetch inserted summary IDs ─────────────────────────────────
+  const insertedSummaries = await prisma.import_raw_summary.findMany({
+    where:  { batchId },
+    select: { id: true, obdNumber: true },
+  });
+  const summaryIdMap = new Map(insertedSummaries.map((s) => [s.obdNumber, s.id]));
+
+  // ── STEP E5 — Bulk insert line items (1 query) ────────────────────────────
+  const lineItemData = obdInterims.flatMap((obd) => {
+    const rawSummaryId = summaryIdMap.get(obd.obdNumber);
+    if (!rawSummaryId) return [];
+    return obd.lines.map((line) => ({
+      rawSummaryId,
+      obdNumber:         obd.obdNumber,
+      lineId:            line.lineId,
+      skuCodeRaw:        line.skuCodeRaw,
+      skuDescriptionRaw: line.skuDescriptionRaw,
+      batchCode:         line.batchCode,
+      unitQty:           line.unitQty,
+      volumeLine:        line.volumeLine,
+      isTinting:         line.isTinting,
+      rowStatus:         line.rowStatus,
+      rowError:          line.rowError,
+    }));
+  });
+
+  if (lineItemData.length > 0) {
+    try {
+      await prisma.import_raw_line_items.createMany({ data: lineItemData });
+    } catch (err) {
+      await prisma.import_batches
+        .update({ where: { id: batchId }, data: { status: "failed" } })
+        .catch(() => undefined);
+      return NextResponse.json(
+        { error: err instanceof Error ? err.message : "Failed to write line items" },
+        { status: 500 },
+      );
+    }
+  }
+
+  // ── STEP E6 — Fetch inserted line item IDs (for preview response keys) ────
+  const summaryIds = Array.from(summaryIdMap.values());
+  const insertedLines = summaryIds.length > 0
+    ? await prisma.import_raw_line_items.findMany({
+        where:  { rawSummaryId: { in: summaryIds } },
+        select: { id: true, obdNumber: true, lineId: true },
+      })
+    : [];
+  // Key: "obdNumber:lineId" → DB id
+  const lineDbIdMap = new Map(
+    insertedLines.map((l) => [`${l.obdNumber}:${l.lineId}`, l.id]),
+  );
+
+  // ── STEP E7 — Build previewObds from in-memory interims + DB IDs ──────────
+  const previewObds: ImportObdPreview[] = obdInterims.map((obd) => {
+    const rawSummaryId = summaryIdMap.get(obd.obdNumber) ?? 0;
+
+    const previewLines: ImportLinePreview[] = obd.lines.map((line) => ({
+      rawLineItemId:     lineDbIdMap.get(`${obd.obdNumber}:${line.lineId}`) ?? 0,
+      lineId:            line.lineId,
+      skuCodeRaw:        line.skuCodeRaw,
+      skuDescriptionRaw: line.skuDescriptionRaw,
+      unitQty:           line.unitQty,
+      isTinting:         line.isTinting,
+      rowStatus:         line.rowStatus,
+      rowError:          line.rowError,
+    }));
+
+    const tintLineCount = previewLines.filter((l) => l.isTinting).length;
+
+    return {
+      rawSummaryId,
+      obdNumber:          obd.obdNumber,
+      shipToCustomerId:   obd.shipToId,
+      shipToCustomerName: obd.shipToCustomerName,
+      obdEmailDate:       obd.emailDate?.toISOString() ?? null,
+      totalUnitQty:       obd.totalUnitQty,
+      grossWeight:        obd.grossWeight,
+      rowStatus:          obd.rowStatus,
+      rowError:           obd.rowError,
+      lineCount:          previewLines.length,
+      tintLineCount,
+      orderType:          tintLineCount > 0 ? "tint" : "non_tint",
+      lines:              previewLines,
+    };
+  });
 
   // ── STEP F — Build summary counts and return ─────────────────────────────
   const validObds     = previewObds.filter((o) => o.rowStatus === "valid").length;
@@ -417,7 +514,7 @@ async function handlePreview(req: Request, session: Session): Promise<NextRespon
   const errorLines    = allLines.filter((l) => l.rowStatus === "error").length;
 
   const payload: ImportPreviewResponse = {
-    batchId:  createdBatchId,
+    batchId,
     batchRef,
     summary: {
       totalObds:     previewObds.length,
