@@ -625,158 +625,225 @@ async function handleConfirm(req: Request, session: Session): Promise<NextRespon
     });
   }
 
-  // ── STEP C–E: Execute in single transaction ───────────────────────────────
+  // ── STEP C — Build all data arrays in memory ─────────────────────────────
+
+  // Per-summary interim: computed fields needed for multiple insert arrays
+  interface OrderInterim {
+    obdNumber:           string;
+    orderType:           string;
+    workflowStage:       string;
+    hasTinting:          boolean;
+    validLines:          typeof rawSummaries[0]["rawLineItems"];
+    totalLineQty:        number;
+    totalVolume:         number;
+    // order row data (minus id)
+    orderData:           Prisma.ordersCreateManyInput;
+  }
+
+  const orderInterims: OrderInterim[] = [];
+
+  for (const summary of rawSummaries) {
+    const customer = summary.shipToCustomerId
+      ? (customerByCode.get(summary.shipToCustomerId) ?? null)
+      : null;
+
+    const deliveryTypeId =
+      customer?.deliveryTypeOverrideId ??
+      customer?.area?.deliveryTypeId ??
+      localDeliveryTypeId;
+
+    const configs = deliveryTypeId
+      ? (slotsByDeliveryType.get(deliveryTypeId) ?? [])
+      : [];
+
+    const { dispatchSlot, dispatchSlotDeadline } = resolveSlot(
+      configs,
+      summary.obdEmailTime,
+      summary.obdEmailDate,
+    );
+
+    const validLines    = summary.rawLineItems; // already filtered to rowStatus=valid
+    const hasTinting    = validLines.some((l) => l.isTinting);
+    const orderType     = hasTinting ? "tint" : "non_tint";
+    const workflowStage = orderType === "tint"
+      ? "pending_tint_assignment"
+      : "pending_support";
+
+    const priorityLevel = (customer?.isKeyCustomer || customer?.isKeySite) ? 1 : 3;
+
+    // Pre-compute line totals
+    let totalLineQty = 0;
+    let totalVolume  = 0;
+    for (const line of validLines) {
+      if (!skuByCode.get(line.skuCodeRaw)) continue;
+      totalLineQty += line.unitQty;
+      totalVolume  += line.volumeLine ?? 0;
+    }
+
+    orderInterims.push({
+      obdNumber: summary.obdNumber,
+      orderType,
+      workflowStage,
+      hasTinting,
+      validLines,
+      totalLineQty,
+      totalVolume,
+      orderData: {
+        obdNumber:           summary.obdNumber,
+        batchId:             batch.id,
+        customerId:          customer?.id ?? null,
+        shipToCustomerId:    summary.shipToCustomerId ?? summary.obdNumber,
+        shipToCustomerName:  summary.shipToCustomerName,
+        orderType,
+        workflowStage,
+        dispatchSlot,
+        dispatchSlotDeadline,
+        priorityLevel,
+        invoiceNo:           summary.invoiceNo,
+        invoiceDate:         summary.invoiceDate,
+        obdEmailDate:        summary.obdEmailDate,
+        sapStatus:           summary.sapStatus,
+        materialType:        summary.materialType,
+        natureOfTransaction: summary.natureOfTransaction,
+        warehouse:           summary.warehouse,
+        totalUnitQty:        summary.totalUnitQty,
+        grossWeight:         summary.grossWeight,
+        volume:              summary.volume,
+      },
+    });
+  }
+
+  // ── STEP D1 — Bulk create orders ──────────────────────────────────────────
+  const confirmedObdNumbers = orderInterims.map((o) => o.obdNumber);
   let ordersCreated = 0;
   let linesEnriched = 0;
 
   try {
-    await prisma.$transaction(async (tx) => {
-      for (const summary of rawSummaries) {
-        const customer = summary.shipToCustomerId
-          ? (customerByCode.get(summary.shipToCustomerId) ?? null)
-          : null;
-
-        // ── STEP C — Determine slot ─────────────────────────────────────────
-        // Spec: deliveryTypeId from customer override → area → fall back to Local
-        const deliveryTypeId =
-          customer?.deliveryTypeOverrideId ??
-          customer?.area?.deliveryTypeId ??
-          localDeliveryTypeId;
-
-        const configs = deliveryTypeId
-          ? (slotsByDeliveryType.get(deliveryTypeId) ?? [])
-          : [];
-
-        const { dispatchSlot, dispatchSlotDeadline } = resolveSlot(
-          configs,
-          summary.obdEmailTime,
-          summary.obdEmailDate,
-        );
-
-        // ── STEP D — Determine orderType and workflowStage ─────────────────
-        const validLines    = summary.rawLineItems; // already filtered to rowStatus=valid
-        const hasTinting    = validLines.some((l) => l.isTinting);
-        const orderType     = hasTinting ? "tint" : "non_tint";
-        const workflowStage = orderType === "tint"
-          ? "pending_tint_assignment"
-          : "pending_support";
-
-        const priorityLevel =
-          (customer?.isKeyCustomer || customer?.isKeySite) ? 1 : 3;
-
-        // ── STEP E a — Create order ─────────────────────────────────────────
-        const order = await tx.orders.create({
-          data: {
-            obdNumber:           summary.obdNumber,
-            batchId:             batch.id,
-            customerId:          customer?.id ?? null,
-            shipToCustomerId:    summary.shipToCustomerId ?? summary.obdNumber,
-            shipToCustomerName:  summary.shipToCustomerName,
-            orderType,
-            workflowStage,
-            dispatchSlot,
-            dispatchSlotDeadline,
-            priorityLevel,
-            invoiceNo:           summary.invoiceNo,
-            invoiceDate:         summary.invoiceDate,
-            obdEmailDate:        summary.obdEmailDate,
-            sapStatus:           summary.sapStatus,
-            materialType:        summary.materialType,
-            natureOfTransaction: summary.natureOfTransaction,
-            warehouse:           summary.warehouse,
-            totalUnitQty:        summary.totalUnitQty,
-            grossWeight:         summary.grossWeight,
-            volume:              summary.volume,
-          },
-        });
-
-        ordersCreated++;
-
-        // ── STEP E b — Enrich line items ────────────────────────────────────
-        // NOTE: sku_master.grossWeightPerUnit is not yet in the DB schema (v11
-        // schema spec lists it; Prisma schema currently omits it). lineWeight is
-        // stored as 0 until the field is added and a migration is run.
-        let totalLineQty = 0;
-        let totalVolume  = 0;
-
-        for (const line of validLines) {
-          const sku = skuByCode.get(line.skuCodeRaw);
-          if (!sku) continue;
-
-          const lineWeight = 0; // TODO: replace with unitQty × sku.grossWeightPerUnit once field is added
-
-          await tx.import_enriched_line_items.create({
-            data: {
-              rawLineItemId: line.id,
-              skuId:         sku.id,
-              unitQty:       line.unitQty,
-              volumeLine:    line.volumeLine,
-              lineWeight,
-              isTinting:     line.isTinting,
-            },
-          });
-
-          totalLineQty  += line.unitQty;
-          totalVolume   += line.volumeLine ?? 0;
-          linesEnriched++;
-        }
-
-        // ── STEP E c — Create OBD query summary ────────────────────────────
-        // When no line items, fall back to header-file values for totals
-        const hasLines = validLines.length > 0;
-        await tx.import_obd_query_summary.create({
-          data: {
-            obdNumber:    summary.obdNumber,
-            orderId:      order.id,
-            totalLines:   validLines.length,
-            totalUnitQty: hasLines ? totalLineQty : (summary.totalUnitQty ?? 0),
-            totalWeight:  summary.grossWeight ?? 0,
-            totalVolume:  hasLines ? totalVolume  : (summary.volume ?? 0),
-            hasTinting,
-          },
-        });
-
-        // ── STEP E d — INSERT order_status_logs (NEVER skip) ───────────────
-        await tx.order_status_logs.create({
-          data: {
-            orderId:     order.id,
-            fromStage:   null,
-            toStage:     workflowStage,
-            changedById: userId,
-            note:        `Created via import batch ${batch.batchRef}`,
-          },
-        });
-      }
-
-      // ── STEP E e — Update import_batches ─────────────────────────────────
-      const allBatchRows = await tx.import_raw_summary.findMany({
-        where:  { batchId },
-        select: { rowStatus: true },
-      });
-      const skippedObds = allBatchRows.filter((s) => s.rowStatus === "duplicate").length;
-      const failedObds  = allBatchRows.filter((s) => s.rowStatus === "error").length;
-
-      await tx.import_batches.update({
-        where: { id: batchId },
-        data: {
-          status:     "completed",
-          totalObds:  confirmedObdIds.length,
-          skippedObds,
-          failedObds,
-        },
-      });
+    await prisma.orders.createMany({
+      data: orderInterims.map((o) => o.orderData),
     });
+    ordersCreated = orderInterims.length;
   } catch (err) {
-    // Best-effort: mark batch as failed outside the rolled-back transaction
     await prisma.import_batches
       .update({ where: { id: batchId }, data: { status: "failed" } })
       .catch(() => undefined);
-
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Import failed" },
+      { error: err instanceof Error ? err.message : "Failed to create orders" },
       { status: 500 },
     );
   }
+
+  // ── STEP D2 — Fetch inserted order IDs ───────────────────────────────────
+  const insertedOrders = await prisma.orders.findMany({
+    where:  { obdNumber: { in: confirmedObdNumbers }, batchId: batch.id },
+    select: { id: true, obdNumber: true },
+  });
+  const orderIdMap = new Map(insertedOrders.map((o) => [o.obdNumber, o.id]));
+
+  // ── STEP D3 — Bulk create import_obd_query_summary ───────────────────────
+  const querySummaryData: Prisma.import_obd_query_summaryCreateManyInput[] =
+    orderInterims.map((o) => {
+      const orderId  = orderIdMap.get(o.obdNumber) ?? 0;
+      const hasLines = o.validLines.length > 0;
+      // find matching rawSummary for fallback totals
+      const rs = rawSummaries.find((s) => s.obdNumber === o.obdNumber);
+      return {
+        obdNumber:    o.obdNumber,
+        orderId,
+        totalLines:   o.validLines.length,
+        totalUnitQty: hasLines ? o.totalLineQty : (rs?.totalUnitQty ?? 0),
+        totalWeight:  rs?.grossWeight ?? 0,
+        totalVolume:  hasLines ? o.totalVolume  : (rs?.volume ?? 0),
+        hasTinting:   o.hasTinting,
+      };
+    });
+
+  try {
+    await prisma.import_obd_query_summary.createMany({ data: querySummaryData });
+  } catch (err) {
+    await prisma.import_batches
+      .update({ where: { id: batchId }, data: { status: "failed" } })
+      .catch(() => undefined);
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Failed to create query summaries" },
+      { status: 500 },
+    );
+  }
+
+  // ── STEP D4 — Bulk create order_status_logs ───────────────────────────────
+  const statusLogData: Prisma.order_status_logsCreateManyInput[] =
+    orderInterims.map((o) => ({
+      orderId:     orderIdMap.get(o.obdNumber) ?? 0,
+      fromStage:   null,
+      toStage:     o.workflowStage,
+      changedById: userId,
+      note:        `Created via import batch ${batch.batchRef}`,
+    }));
+
+  try {
+    await prisma.order_status_logs.createMany({ data: statusLogData });
+  } catch (err) {
+    await prisma.import_batches
+      .update({ where: { id: batchId }, data: { status: "failed" } })
+      .catch(() => undefined);
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Failed to create status logs" },
+      { status: 500 },
+    );
+  }
+
+  // ── STEP D5 — Bulk create import_enriched_line_items ─────────────────────
+  // NOTE: lineWeight stored as 0 — sku_master.grossWeightPerUnit not yet in schema
+  const enrichedData: Prisma.import_enriched_line_itemsCreateManyInput[] = [];
+  for (const o of orderInterims) {
+    for (const line of o.validLines) {
+      const sku = skuByCode.get(line.skuCodeRaw);
+      if (!sku) continue;
+      enrichedData.push({
+        rawLineItemId: line.id,
+        skuId:         sku.id,
+        unitQty:       line.unitQty,
+        volumeLine:    line.volumeLine,
+        lineWeight:    0,
+        isTinting:     line.isTinting,
+      });
+      linesEnriched++;
+    }
+  }
+
+  if (enrichedData.length > 0) {
+    try {
+      await prisma.import_enriched_line_items.createMany({ data: enrichedData });
+    } catch (err) {
+      await prisma.import_batches
+        .update({ where: { id: batchId }, data: { status: "failed" } })
+        .catch(() => undefined);
+      return NextResponse.json(
+        { error: err instanceof Error ? err.message : "Failed to enrich line items" },
+        { status: 500 },
+      );
+    }
+  }
+
+  // ── STEP D6 — Update import_batches status ────────────────────────────────
+  const allBatchRows = await prisma.import_raw_summary.findMany({
+    where:  { batchId },
+    select: { rowStatus: true },
+  });
+  const skippedObds = allBatchRows.filter((s) => s.rowStatus === "duplicate").length;
+  const failedObds  = allBatchRows.filter((s) => s.rowStatus === "error").length;
+
+  await prisma.import_batches
+    .update({
+      where: { id: batchId },
+      data: {
+        status:     "completed",
+        totalObds:  confirmedObdIds.length,
+        skippedObds,
+        failedObds,
+      },
+    })
+    .catch(() => undefined);
 
   // ── STEP F — Return ImportConfirmResponse ─────────────────────────────────
   const result: ImportConfirmResponse = {
