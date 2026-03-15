@@ -1,22 +1,25 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { CsvImportModal, parseFile, type CsvColumn } from "@/components/admin/csv-import-modal";
+import { Upload, Download } from "lucide-react";
 
 interface DeliveryType { id: number; name: string; }
 interface Route { id: number; name: string; }
 interface AreaRow {
   id: number; name: string; isActive: boolean; createdAt: string;
-  deliveryType: DeliveryType;
-  routes: Route[];
-  subAreaCount: number;
+  deliveryType:  DeliveryType;
+  primaryRoute:  Route | null;
+  routes:        Route[];
+  subAreaCount:  number;
 }
 
 interface AreasTableProps {
@@ -25,7 +28,14 @@ interface AreasTableProps {
   routes: Route[];
 }
 
-const EMPTY_FORM = { name: "", deliveryTypeId: "", routeId: "" };
+const EMPTY_FORM = { name: "", deliveryTypeId: "", primaryRouteId: "", routeId: "" };
+
+
+const IMPORT_COLUMNS: CsvColumn[] = [
+  { key: "name",         label: "Name",          required: true  },
+  { key: "deliverytype", label: "Delivery Type",  required: true  },
+  { key: "primaryroute", label: "Primary Route",  required: false },
+];
 
 export function AreasTable({ initialAreas, deliveryTypes, routes }: AreasTableProps) {
   const [areas, setAreas] = useState<AreaRow[]>(initialAreas);
@@ -34,19 +44,24 @@ export function AreasTable({ initialAreas, deliveryTypes, routes }: AreasTablePr
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [togglingId, setTogglingId] = useState<number | null>(null);
+  const importFileRef                  = useRef<HTMLInputElement>(null);
+  const [importRows,   setImportRows]  = useState<Record<string, string>[]>([]);
+  const [importFile,   setImportFile]  = useState("");
+  const [importOpen,   setImportOpen]  = useState(false);
 
   function openAdd() {
     setEditTarget(null);
-    setForm({ name: "", deliveryTypeId: deliveryTypes[0]?.id.toString() ?? "", routeId: "" });
+    setForm({ name: "", deliveryTypeId: deliveryTypes[0]?.id.toString() ?? "", primaryRouteId: "", routeId: "" });
     setSheetOpen(true);
   }
 
   function openEdit(area: AreaRow) {
     setEditTarget(area);
     setForm({
-      name: area.name,
+      name:           area.name,
       deliveryTypeId: area.deliveryType.id.toString(),
-      routeId: area.routes[0]?.id.toString() ?? "",
+      primaryRouteId: area.primaryRoute?.id.toString() ?? "",
+      routeId:        area.routes[0]?.id.toString() ?? "",
     });
     setSheetOpen(true);
   }
@@ -64,9 +79,10 @@ export function AreasTable({ initialAreas, deliveryTypes, routes }: AreasTablePr
     setSaving(true);
     try {
       const body = {
-        name: form.name.trim(),
+        name:           form.name.trim(),
         deliveryTypeId: parseInt(form.deliveryTypeId, 10),
-        routeIds: [parseInt(form.routeId, 10)],
+        primaryRouteId: form.primaryRouteId ? parseInt(form.primaryRouteId, 10) : null,
+        routeIds:       form.routeId ? [parseInt(form.routeId, 10)] : [],
       };
 
       const res = editTarget
@@ -110,19 +126,77 @@ export function AreasTable({ initialAreas, deliveryTypes, routes }: AreasTablePr
     } catch { toast.error("Network error."); } finally { setTogglingId(null); }
   }
 
+  async function handleImportFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+    try {
+      const rows = await parseFile(file);
+      setImportRows(rows);
+      setImportFile(file.name);
+      setImportOpen(true);
+    } catch (err) {
+      toast.error((err as Error).message ?? "Failed to parse file.");
+    }
+  }
+
+  function handleTemplateDownload() {
+    const csv = "name,deliverytype,primaryroute\nVaracha Road,Local,Varacha\nBharuch,Upcountry,Bharuch";
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "template-areas.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function handleImportConfirm(validRows: Record<string, string>[]) {
+    const res = await fetch("/api/admin/areas/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ rows: validRows }),
+    });
+    const data = await res.json();
+    if (!res.ok) { toast.error(data.error ?? "Import failed."); return; }
+    toast.success(`${data.imported} imported, ${data.skipped} skipped.`);
+    setImportOpen(false);
+    window.location.reload();
+  }
+
   return (
     <>
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-xl font-semibold text-slate-900">Areas</h1>
-        <Button size="sm" onClick={openAdd}>+ Add Area</Button>
+        <h1 className="text-lg font-bold text-[#1a237e]">Areas</h1>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            className="flex items-center gap-1.5 text-[#1a237e] border border-[#c7d2fe] bg-[#eef2ff] hover:bg-[#e0e7ff] text-xs font-medium px-3 py-2 rounded-md"
+            onClick={handleTemplateDownload}
+          >
+            <Download className="h-3.5 w-3.5" />
+            Download Template
+          </button>
+          <button
+            type="button"
+            className="flex items-center gap-1.5 bg-white hover:bg-[#f7f8fa] text-[#374151] border border-[#e5e7eb] text-xs font-medium px-3 py-2 rounded-md"
+            onClick={() => importFileRef.current?.click()}
+          >
+            <Upload className="h-3.5 w-3.5" />
+            Import File
+          </button>
+          <Button size="sm" onClick={openAdd} className="oa-btn-primary">+ Add Area</Button>
+        </div>
+        <input ref={importFileRef} type="file" accept=".csv,.xls,.xlsx" className="hidden" onChange={handleImportFileSelect} />
       </div>
 
-      <div className="rounded-md border bg-white overflow-x-auto">
+      <div className="oa-table">
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead>Area Name</TableHead>
               <TableHead>Delivery Type</TableHead>
+              <TableHead>Primary Route</TableHead>
               <TableHead>Routes</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="text-right">Actions</TableHead>
@@ -131,7 +205,7 @@ export function AreasTable({ initialAreas, deliveryTypes, routes }: AreasTablePr
           <TableBody>
             {areas.length === 0 && (
               <TableRow>
-                <TableCell colSpan={5} className="text-center text-slate-500 py-8">No areas yet.</TableCell>
+                <TableCell colSpan={6} className="text-center text-slate-500 py-8">No areas yet.</TableCell>
               </TableRow>
             )}
             {areas.map((area) => (
@@ -139,6 +213,9 @@ export function AreasTable({ initialAreas, deliveryTypes, routes }: AreasTablePr
                 <TableCell className="font-medium">{area.name}</TableCell>
                 <TableCell>
                   <Badge variant="outline">{area.deliveryType.name}</Badge>
+                </TableCell>
+                <TableCell className="text-slate-600 text-sm">
+                  {area.primaryRoute ? area.primaryRoute.name : <span className="text-slate-300">—</span>}
                 </TableCell>
                 <TableCell className="text-slate-600 text-sm">
                   {area.routes.length === 0
@@ -152,11 +229,12 @@ export function AreasTable({ initialAreas, deliveryTypes, routes }: AreasTablePr
                 </TableCell>
                 <TableCell>
                   <div className="flex items-center justify-end gap-2">
-                    <Button size="sm" variant="outline" onClick={() => openEdit(area)}>Edit</Button>
+                    <Button size="sm" variant="outline" onClick={() => openEdit(area)} className="oa-btn-ghost">Edit</Button>
                     <Button
                       size="sm" variant="outline"
                       disabled={togglingId === area.id}
                       onClick={() => handleToggle(area)}
+                      className="oa-btn-ghost"
                     >
                       {area.isActive ? "Deactivate" : "Activate"}
                     </Button>
@@ -169,11 +247,11 @@ export function AreasTable({ initialAreas, deliveryTypes, routes }: AreasTablePr
       </div>
 
       <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
-        <SheetContent className="w-full sm:max-w-md overflow-y-auto">
+        <SheetContent className="w-full sm:max-w-2xl overflow-y-auto">
           <SheetHeader>
             <SheetTitle>{editTarget ? "Edit Area" : "Add Area"}</SheetTitle>
           </SheetHeader>
-          <form onSubmit={handleSave} className="flex flex-col gap-4 py-4">
+          <form onSubmit={handleSave} className="oa-sheet-form flex flex-col gap-5 px-6 pb-0">
             <div className="space-y-1.5">
               <Label htmlFor="area-name">Area Name</Label>
               <Input id="area-name" value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} />
@@ -193,6 +271,23 @@ export function AreasTable({ initialAreas, deliveryTypes, routes }: AreasTablePr
               </Select>
             </div>
             <div className="space-y-1.5">
+              <Label>Primary Route</Label>
+              <Select
+                value={form.primaryRouteId}
+                onValueChange={(v) => setForm((p) => ({ ...p, primaryRouteId: v ?? "" }))}
+              >
+                <SelectTrigger><SelectValue placeholder="Select primary route…" /></SelectTrigger>
+                <SelectContent>
+                  {routes.map((r) => (
+                    <SelectItem key={r.id} value={r.id.toString()}>{r.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-slate-400">
+                The default route for this area. Used for dispatch planning and customer inheritance.
+              </p>
+            </div>
+            <div className="space-y-1.5">
               <Label>Route <span className="text-destructive">*</span></Label>
               <Select
                 value={form.routeId}
@@ -206,13 +301,37 @@ export function AreasTable({ initialAreas, deliveryTypes, routes }: AreasTablePr
                 </SelectContent>
               </Select>
             </div>
-            <SheetFooter className="pt-2">
-              <Button type="button" variant="outline" onClick={() => setSheetOpen(false)} disabled={saving}>Cancel</Button>
-              <Button type="submit" disabled={saving}>{saving ? "Saving…" : editTarget ? "Save Changes" : "Create Area"}</Button>
-            </SheetFooter>
+            <div className="sticky bottom-0 bg-white border-t border-[#e5e7eb] -mx-6 px-6 py-4 flex gap-3 mt-6">
+              <Button type="button" variant="outline" className="flex-1 h-10 text-sm border-[#e5e7eb] text-[#374151] hover:bg-[#f7f8fa] rounded-lg oa-btn-ghost" onClick={() => setSheetOpen(false)} disabled={saving}>Cancel</Button>
+              <Button type="submit" className="flex-1 h-10 text-sm bg-[#1a237e] hover:bg-[#283593] text-white rounded-lg font-semibold oa-btn-primary" disabled={saving}>{saving ? "Saving…" : editTarget ? "Save Changes" : "Create Area"}</Button>
+            </div>
           </form>
         </SheetContent>
       </Sheet>
+      <CsvImportModal
+        title="Areas"
+        columns={IMPORT_COLUMNS}
+        rows={importRows}
+        fileName={importFile}
+        validateRow={(row) => {
+          if (!row.name?.trim()) return "Name is required";
+          const dt = row.deliverytype?.trim();
+          if (!dt) return "Delivery type is required";
+          const dtExists = deliveryTypes.some((d) => d.name.toLowerCase() === dt.toLowerCase());
+          if (!dtExists) return `Delivery type "${dt}" not found`;
+          const pr = row.primaryroute?.trim();
+          if (pr) {
+            const prExists = routes.some((r) => r.name.toLowerCase() === pr.toLowerCase());
+            if (!prExists) return `Route "${pr}" not found`;
+          }
+          if (areas.some((a) => a.name.toLowerCase() === row.name.trim().toLowerCase()))
+            return "Already exists — will be skipped";
+          return null;
+        }}
+        onConfirm={handleImportConfirm}
+        isOpen={importOpen}
+        onClose={() => setImportOpen(false)}
+      />
     </>
   );
 }

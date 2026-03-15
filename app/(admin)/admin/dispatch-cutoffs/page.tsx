@@ -4,20 +4,26 @@ import { DispatchCutoffsForm } from "@/components/admin/dispatch-cutoffs-form";
 export const dynamic = "force-dynamic";
 
 export default async function DispatchCutoffsPage() {
-  const slots = await prisma.dispatch_cutoff_master.findMany({
-    orderBy: [{ deliveryTypeId: "asc" }, { slotNumber: "asc" }],
-    include: { deliveryType: true },
-  });
-  const deliveryTypes = await prisma.delivery_type_master.findMany({ orderBy: { id: "asc" } });
+  const [configs, deliveryTypes] = await Promise.all([
+    prisma.delivery_type_slot_config.findMany({
+      orderBy: [{ deliveryTypeId: "asc" }, { sortOrder: "asc" }],
+      include: {
+        deliveryType: { select: { id: true, name: true } },
+        slot: { select: { id: true, name: true, slotTime: true, isNextDay: true } },
+      },
+    }),
+    prisma.delivery_type_master.findMany({ orderBy: { id: "asc" } }),
+  ]);
+
   return (
     <div>
       <div className="mb-6">
-        <h1 className="text-xl font-semibold text-slate-900">Dispatch Cutoff Slots</h1>
+        <h1 className="text-xl font-semibold text-slate-900">Dispatch Slot Config</h1>
         <p className="text-sm text-slate-500 mt-1">
-          Configure cutoff times for each delivery type. Disable a slot to stop order assignment to it.
+          Per-delivery-type slot rules. Toggle active/default status. Slot windows are set at seed time.
         </p>
       </div>
-      <DispatchCutoffsForm initialSlots={slots} deliveryTypes={deliveryTypes} />
+      <DispatchCutoffsForm initialConfigs={configs} deliveryTypes={deliveryTypes} />
     </div>
   );
 }

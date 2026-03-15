@@ -67,7 +67,7 @@ export function ResetPasswordDialog({
         <DialogHeader>
           <DialogTitle>Reset Password — {userName}</DialogTitle>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4 py-2">
+        <form onSubmit={handleSubmit} className="oa-sheet-form flex flex-col gap-4 py-2">
           <div className="space-y-1.5">
             <Label htmlFor="rp-password">New Password</Label>
             <Input
@@ -89,10 +89,10 @@ export function ResetPasswordDialog({
             />
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
+            <Button type="button" variant="outline" className="oa-btn-ghost" onClick={() => onOpenChange(false)} disabled={saving}>
               Cancel
             </Button>
-            <Button type="submit" disabled={saving}>
+            <Button type="submit" className="oa-btn-primary" disabled={saving}>
               {saving ? "Saving…" : "Update Password"}
             </Button>
           </DialogFooter>

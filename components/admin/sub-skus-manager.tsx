@@ -74,7 +74,7 @@ export function SubSkusManager({ skuId, skuCode, skuName, initialSubSkus }: SubS
   return (
     <div>
       <div className="mb-5">
-        <h1 className="text-xl font-semibold text-slate-900">Sub-SKUs</h1>
+        <h1 className="text-lg font-bold text-[#1a237e]">Sub-SKUs</h1>
         <p className="text-sm text-slate-500 mt-1">
           {skuCode} — {skuName}
         </p>
@@ -112,7 +112,7 @@ export function SubSkusManager({ skuId, skuCode, skuName, initialSubSkus }: SubS
       </form>
 
       {/* Table */}
-      <div className="rounded-md border bg-white overflow-x-auto">
+      <div className="oa-table">
         <Table>
           <TableHeader>
             <TableRow>

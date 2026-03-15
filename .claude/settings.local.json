@@ -32,7 +32,20 @@
       "Bash(cd \"C:\\\\Users\\\\HP\\\\OneDrive\\\\VS Code\\\\orbit-oms\" && npx tsc --noEmit 2>&1)",
       "Bash(cd \"C:\\\\Users\\\\HP\\\\OneDrive\\\\VS Code\\\\orbit-oms\" && npx prisma generate 2>&1)",
       "Bash(cd \"C:\\\\Users\\\\HP\\\\OneDrive\\\\VS Code\\\\orbit-oms\" && npx prisma validate 2>&1)",
-      "Bash(cd \"C:\\\\Users\\\\HP\\\\OneDrive\\\\VS Code\\\\orbit-oms\" && npx prisma db push 2>&1)"
+      "Bash(cd \"C:\\\\Users\\\\HP\\\\OneDrive\\\\VS Code\\\\orbit-oms\" && npx prisma db push 2>&1)",
+      "Bash(cd \"C:\\\\Users\\\\HP\\\\OneDrive\\\\VS Code\\\\orbit-oms\" && npx prisma generate 2>&1 | tail -5)",
+      "Bash(cd \"C:\\\\Users\\\\HP\\\\OneDrive\\\\VS Code\\\\orbit-oms\" && npm run seed 2>&1)",
+      "Bash(find \"C:/Users/HP/OneDrive/VS Code/orbit-oms/app/\\(admin\\)/admin\" -name \"page.tsx\" | sort)",
+      "Bash(cd \"C:\\\\Users\\\\HP\\\\OneDrive\\\\VS Code\\\\orbit-oms\" && npx tsc --noEmit 2>&1 | head -50)",
+      "Bash(ls \"C:\\\\Users\\\\HP\\\\OneDrive\\\\VS Code\\\\orbit-oms\\\\app\\\\\\(admin\\)\\\\admin\\\\roles/\" 2>&1)",
+      "Bash(cd \"C:/Users/HP/OneDrive/VS Code/orbit-oms\" && sed -i 's/className=\"w-full sm:max-w-md overflow-y-auto\"/className=\"w-full sm:max-w-2xl overflow-y-auto\"/g' components/admin/add-user-sheet.tsx components/admin/areas-table.tsx components/admin/base-colours-table.tsx components/admin/contact-roles-table.tsx components/admin/edit-user-sheet.tsx components/admin/product-categories-table.tsx components/admin/product-names-table.tsx components/admin/routes-table.tsx components/admin/sales-officers-table.tsx components/admin/slot-rules-table.tsx components/admin/slots-table.tsx components/admin/so-groups-table.tsx components/admin/transporters-table.tsx components/admin/vehicles-table.tsx)",
+      "Bash(node -e \"const l = require\\('C:/Users/HP/OneDrive/VS Code/orbit-oms/node_modules/lucide-react'\\); console.log\\('ContactRound' in l, 'BookUser' in l, 'UserRoundCheck' in l\\);\")",
+      "Bash(cd \"C:\\\\Users\\\\HP\\\\OneDrive\\\\VS Code\\\\orbit-oms\" && npx tsc --noEmit 2>&1 | tail -20)",
+      "Bash(cd \"C:\\\\Users\\\\HP\\\\OneDrive\\\\VS Code\\\\orbit-oms\" && npx tsc --noEmit 2>&1 | head -40)",
+      "Bash(cd \"C:\\\\Users\\\\HP\\\\OneDrive\\\\VS Code\\\\orbit-oms\" && npx tsc --noEmit 2>&1 | head -20)",
+      "Bash(taskkill /F /IM node.exe 2>&1; sleep 2 && cd \"C:\\\\Users\\\\HP\\\\OneDrive\\\\VS Code\\\\orbit-oms\" && npx prisma generate 2>&1)",
+      "Bash(cd \"C:\\\\Users\\\\HP\\\\OneDrive\\\\VS Code\\\\orbit-oms\" && taskkill //F //IM node.exe 2>&1 || true)",
+      "Bash(cd:*)"
     ]
   }
 }

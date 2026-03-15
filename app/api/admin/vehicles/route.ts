@@ -4,26 +4,29 @@ import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
 export async function GET() {
   const session = await auth();
   requireRole(session, [ROLES.ADMIN]);
 
   const vehicles = await prisma.vehicle_master.findMany({
-    orderBy: { vehicleNumber: "asc" },
-    include: { deliveryType: { select: { id: true, name: true } } },
+    orderBy: { vehicleNo: "asc" },
+    include: { transporter: { select: { id: true, name: true } } },
   });
 
   return NextResponse.json(vehicles);
 }
 
 const createSchema = z.object({
-  vehicleNumber: z.string().min(1).max(50),
-  vehicleType: z.string().min(1).max(100),
-  capacityKg: z.number().positive(),
-  capacityCbm: z.number().positive().optional().nullable(),
-  deliveryTypeId: z.number().int().positive(),
+  vehicleNo:           z.string().min(1).max(50),
+  category:            z.string().min(1).max(100),
+  capacityKg:          z.number().positive(),
+  maxCustomers:        z.number().int().positive().optional().nullable(),
+  deliveryTypeAllowed: z.string().min(1).max(100),
+  transporterId:       z.number().int().positive(),
+  driverName:          z.string().max(200).optional().nullable(),
+  driverPhone:         z.string().max(20).optional().nullable(),
 });
 
 export async function POST(req: Request) {
@@ -35,16 +38,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: parsed.error.flatten().fieldErrors }, { status: 400 });
   }
 
-  const vehicleNumber = parsed.data.vehicleNumber.trim().toUpperCase();
+  const vehicleNo = parsed.data.vehicleNo.trim().toUpperCase();
 
-  const existing = await prisma.vehicle_master.findUnique({ where: { vehicleNumber } });
+  const existing = await prisma.vehicle_master.findUnique({ where: { vehicleNo } });
   if (existing) {
     return NextResponse.json({ error: "Vehicle number already exists." }, { status: 409 });
   }
 
   const vehicle = await prisma.vehicle_master.create({
-    data: { ...parsed.data, vehicleNumber },
-    include: { deliveryType: { select: { id: true, name: true } } },
+    data: { ...parsed.data, vehicleNo },
+    include: { transporter: { select: { id: true, name: true } } },
   });
 
   return NextResponse.json(vehicle, { status: 201 });

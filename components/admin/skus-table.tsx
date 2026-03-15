@@ -1,49 +1,67 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import Link from "next/link";
 import { toast } from "sonner";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Upload, Download } from "lucide-react";
 import { SkuSheet, type SkuRow, CONTAINER_TYPES } from "./sku-sheet";
-import { cn } from "@/lib/utils";
+import { CsvImportModal, parseFile, type CsvColumn } from "@/components/admin/csv-import-modal";
 
-interface ImportResult {
-  created: number;
-  updated: number;
-  failed: { row: number; reason: string }[];
-}
+// ── Types ──────────────────────────────────────────────────────────────────────
+
+interface NameOption { id: number; name: string; }
 
 interface SkusTableProps {
-  initialSkus: SkuRow[];
-  initialTotal: number;
+  initialSkus:   SkuRow[];
+  initialTotal:  number;
+  categories:    NameOption[];
+  productNames:  NameOption[];
+  baseColours:   NameOption[];
 }
 
-export function SkusTable({ initialSkus, initialTotal }: SkusTableProps) {
-  const [skus, setSkus] = useState<SkuRow[]>(initialSkus);
-  const [total, setTotal] = useState(initialTotal);
+
+const IMPORT_COLUMNS: CsvColumn[] = [
+  { key: "skucode",        label: "SKU Code",         required: true  },
+  { key: "skuname",        label: "SKU Name",         required: true  },
+  { key: "category",       label: "Category",         required: true  },
+  { key: "productname",    label: "Product Name",     required: true  },
+  { key: "basecolour",     label: "Base Colour",      required: true  },
+  { key: "packsize",       label: "Pack Size",        required: true  },
+  { key: "containertype",  label: "Container Type",   required: true  },
+  { key: "unitspercarton", label: "Units / Carton",   required: false },
+];
+
+const VALID_CONTAINER_TYPES = new Set(["tin", "drum", "carton", "bag"]);
+
+// ── Component ──────────────────────────────────────────────────────────────────
+
+export function SkusTable({ initialSkus, initialTotal, categories, productNames, baseColours }: SkusTableProps) {
+  const [skus,       setSkus]       = useState<SkuRow[]>(initialSkus);
+  const [total,      setTotal]      = useState(initialTotal);
   const [totalPages, setTotalPages] = useState(Math.ceil(initialTotal / 25));
-  const [page, setPage] = useState(1);
-  const [loading, setLoading] = useState(false);
+  const [page,       setPage]       = useState(1);
+  const [loading,    setLoading]    = useState(false);
 
   // Filters
-  const [searchInput, setSearchInput] = useState("");
+  const [searchInput,     setSearchInput]     = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [filterCategory,  setFilterCategory]  = useState("all");
   const [filterContainer, setFilterContainer] = useState("all");
-  const [filterActive, setFilterActive] = useState("all");
+  const [filterActive,    setFilterActive]    = useState("all");
 
   // Sheet
-  const [sheetOpen, setSheetOpen] = useState(false);
+  const [sheetOpen,  setSheetOpen]  = useState(false);
   const [editingSku, setEditingSku] = useState<SkuRow | null>(null);
 
   // CSV import
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [importing, setImporting] = useState(false);
-  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const importFileRef                  = useRef<HTMLInputElement>(null);
+  const [importRows,   setImportRows]  = useState<Record<string, string>[]>([]);
+  const [importFile,   setImportFile]  = useState("");
+  const [importOpen,   setImportOpen]  = useState(false);
 
   const isFirstRender = useRef(true);
 
@@ -58,14 +76,14 @@ export function SkusTable({ initialSkus, initialTotal }: SkusTableProps) {
     if (isFirstRender.current) { isFirstRender.current = false; return; }
     fetchPage(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debouncedSearch, filterContainer, filterActive]);
+  }, [debouncedSearch, filterCategory, filterContainer, filterActive]);
 
-  // ── Fetch ────────────────────────────────────────────────────────────────
   function buildParams(pageNum: number) {
     const p = new URLSearchParams({ page: pageNum.toString() });
-    if (debouncedSearch) p.set("search", debouncedSearch);
+    if (debouncedSearch)           p.set("search",        debouncedSearch);
+    if (filterCategory !== "all")  p.set("categoryId",    filterCategory);
     if (filterContainer !== "all") p.set("containerType", filterContainer);
-    if (filterActive !== "all") p.set("isActive", filterActive === "active" ? "true" : "false");
+    if (filterActive !== "all")    p.set("isActive",      filterActive === "active" ? "true" : "false");
     return p;
   }
 
@@ -86,9 +104,8 @@ export function SkusTable({ initialSkus, initialTotal }: SkusTableProps) {
     }
   }
 
-  // ── Sheet handlers ───────────────────────────────────────────────────────
-  function openAdd() { setEditingSku(null); setSheetOpen(true); }
-  function openEdit(sku: SkuRow) { setEditingSku(sku); setSheetOpen(true); }
+  function openAdd()             { setEditingSku(null); setSheetOpen(true); }
+  function openEdit(sku: SkuRow) { setEditingSku(sku);  setSheetOpen(true); }
 
   function handleSaved(saved: SkuRow) {
     if (editingSku) {
@@ -98,41 +115,70 @@ export function SkusTable({ initialSkus, initialTotal }: SkusTableProps) {
     }
   }
 
-  // ── CSV import ───────────────────────────────────────────────────────────
-  async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleImportFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
     e.target.value = "";
-    setImporting(true);
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-      const res = await fetch("/api/admin/skus/import", { method: "POST", body: formData });
-      const data: ImportResult = await res.json();
-      if (!res.ok) { toast.error((data as any).error ?? "Import failed."); return; }
-      setImportResult(data);
-      if (data.created + data.updated > 0) fetchPage(1);
-    } catch {
-      toast.error("Network error during import.");
-    } finally {
-      setImporting(false);
+      const rows = await parseFile(file);
+      setImportRows(rows);
+      setImportFile(file.name);
+      setImportOpen(true);
+    } catch (err) {
+      toast.error((err as Error).message ?? "Failed to parse file.");
     }
   }
 
-  // ── Render ───────────────────────────────────────────────────────────────
+  function handleTemplateDownload() {
+    const csv = "code,name,category,productname,basecolour,size,containertype,unitspercarton\nWS-WHT-20L,WS White 20L,Emulsion,WS,White Base,20L,Bucket,24\nWS-DEP-20L,WS Deep 20L,Emulsion,WS,Deep Base,20L,Bucket,24";
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "template-skus.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function handleImportConfirm(validRows: Record<string, string>[]) {
+    const res = await fetch("/api/admin/skus/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ rows: validRows }),
+    });
+    const data = await res.json();
+    if (!res.ok) { toast.error(data.error ?? "Import failed."); return; }
+    toast.success(`${data.imported} imported, ${data.skipped} skipped.`);
+    setImportOpen(false);
+    fetchPage(1);
+  }
+
   return (
     <>
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-xl font-semibold text-slate-900">
+        <h1 className="text-lg font-bold text-[#1a237e]">
           SKUs
           {total > 0 && <span className="ml-2 text-sm font-normal text-slate-400">{total} total</span>}
         </h1>
         <div className="flex gap-2">
-          <Button size="sm" variant="outline" disabled={importing} onClick={() => fileInputRef.current?.click()}>
-            {importing ? "Importing…" : "Import CSV"}
-          </Button>
-          <Button size="sm" onClick={openAdd}>+ Add SKU</Button>
+          <button
+            type="button"
+            className="flex items-center gap-1.5 text-[#1a237e] border border-[#c7d2fe] bg-[#eef2ff] hover:bg-[#e0e7ff] text-xs font-medium px-3 py-2 rounded-md"
+            onClick={handleTemplateDownload}
+          >
+            <Download className="h-3.5 w-3.5" />
+            Download Template
+          </button>
+          <button
+            type="button"
+            className="flex items-center gap-1.5 bg-white hover:bg-[#f7f8fa] text-[#374151] border border-[#e5e7eb] text-xs font-medium px-3 py-2 rounded-md"
+            onClick={() => importFileRef.current?.click()}
+          >
+            <Upload className="h-3.5 w-3.5" />
+            Import File
+          </button>
+          <Button size="sm" className="oa-btn-primary" onClick={openAdd}>+ Add SKU</Button>
         </div>
       </div>
 
@@ -144,6 +190,17 @@ export function SkusTable({ initialSkus, initialTotal }: SkusTableProps) {
           onChange={(e) => setSearchInput(e.target.value)}
           className="max-w-xs"
         />
+        <Select value={filterCategory} onValueChange={(v) => setFilterCategory(v ?? "all")}>
+          <SelectTrigger className="w-44">
+            <SelectValue placeholder="All categories" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All categories</SelectItem>
+            {categories.map((c) => (
+              <SelectItem key={c.id} value={c.id.toString()}>{c.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <Select value={filterContainer} onValueChange={(v) => setFilterContainer(v ?? "all")}>
           <SelectTrigger className="w-40">
             <SelectValue placeholder="All types" />
@@ -170,16 +227,17 @@ export function SkusTable({ initialSkus, initialTotal }: SkusTableProps) {
       </div>
 
       {/* Table */}
-      <div className={`rounded-md border bg-white overflow-x-auto transition-opacity ${loading ? "opacity-60" : ""}`}>
+      <div className={`oa-table transition-opacity ${loading ? "opacity-60" : ""}`}>
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead>SKU Code</TableHead>
-              <TableHead>SKU Name</TableHead>
+              <TableHead>Product Name</TableHead>
+              <TableHead>Category</TableHead>
+              <TableHead>Base Colour</TableHead>
               <TableHead>Pack Size</TableHead>
               <TableHead>Container</TableHead>
               <TableHead>Units/Carton</TableHead>
-              <TableHead>Weight (kg)</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
@@ -187,7 +245,7 @@ export function SkusTable({ initialSkus, initialTotal }: SkusTableProps) {
           <TableBody>
             {skus.length === 0 && (
               <TableRow>
-                <TableCell colSpan={8} className="text-center text-slate-500 py-8">
+                <TableCell colSpan={9} className="text-center text-slate-500 py-8">
                   {loading ? "Loading…" : "No SKUs found."}
                 </TableCell>
               </TableRow>
@@ -195,13 +253,14 @@ export function SkusTable({ initialSkus, initialTotal }: SkusTableProps) {
             {skus.map((sku) => (
               <TableRow key={sku.id}>
                 <TableCell className="font-mono text-sm text-slate-700">{sku.skuCode}</TableCell>
-                <TableCell className="font-medium">{sku.skuName}</TableCell>
+                <TableCell className="font-medium">{sku.productName.name}</TableCell>
+                <TableCell className="text-slate-600 text-sm">{sku.productCategory.name}</TableCell>
+                <TableCell className="text-slate-600 text-sm">{sku.baseColour.name}</TableCell>
                 <TableCell className="text-slate-600">{sku.packSize || "—"}</TableCell>
                 <TableCell className="capitalize text-slate-600">{sku.containerType}</TableCell>
                 <TableCell className="text-slate-600">
                   {sku.containerType === "drum" ? <span className="text-slate-300">N/A</span> : (sku.unitsPerCarton ?? "—")}
                 </TableCell>
-                <TableCell className="text-slate-600">{sku.grossWeightPerUnit}</TableCell>
                 <TableCell>
                   <Badge variant={sku.isActive ? "default" : "secondary"}>
                     {sku.isActive ? "Active" : "Inactive"}
@@ -209,15 +268,9 @@ export function SkusTable({ initialSkus, initialTotal }: SkusTableProps) {
                 </TableCell>
                 <TableCell>
                   <div className="flex items-center justify-end gap-2">
-                    <Button size="sm" variant="outline" onClick={() => openEdit(sku)}>
+                    <Button size="sm" variant="outline" className="oa-btn-ghost" onClick={() => openEdit(sku)}>
                       Edit
                     </Button>
-                    <Link
-                      href={`/admin/skus/${sku.id}/sub-skus`}
-                      className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
-                    >
-                      Sub-SKUs
-                    </Link>
                   </div>
                 </TableCell>
               </TableRow>
@@ -233,10 +286,10 @@ export function SkusTable({ initialSkus, initialTotal }: SkusTableProps) {
             Page {page} of {totalPages} · {total} SKUs
           </p>
           <div className="flex gap-2">
-            <Button size="sm" variant="outline" disabled={page <= 1 || loading} onClick={() => fetchPage(page - 1)}>
+            <Button size="sm" variant="outline" className="oa-btn-ghost" disabled={page <= 1 || loading} onClick={() => fetchPage(page - 1)}>
               Previous
             </Button>
-            <Button size="sm" variant="outline" disabled={page >= totalPages || loading} onClick={() => fetchPage(page + 1)}>
+            <Button size="sm" variant="outline" className="oa-btn-ghost" disabled={page >= totalPages || loading} onClick={() => fetchPage(page + 1)}>
               Next
             </Button>
           </div>
@@ -244,7 +297,7 @@ export function SkusTable({ initialSkus, initialTotal }: SkusTableProps) {
       )}
 
       {/* Hidden file input */}
-      <input ref={fileInputRef} type="file" accept=".csv" className="hidden" onChange={handleFileSelect} />
+      <input ref={importFileRef} type="file" accept=".csv,.xls,.xlsx" className="hidden" onChange={handleImportFileSelect} />
 
       {/* SKU sheet */}
       <SkuSheet
@@ -254,37 +307,36 @@ export function SkusTable({ initialSkus, initialTotal }: SkusTableProps) {
         onSaved={handleSaved}
       />
 
-      {/* Import result dialog */}
-      <Dialog open={!!importResult} onOpenChange={(o) => { if (!o) setImportResult(null); }}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Import Complete</DialogTitle>
-          </DialogHeader>
-          {importResult && (
-            <div className="space-y-3 text-sm">
-              <div className="flex gap-6">
-                <span className="text-green-700 font-medium">{importResult.created} created</span>
-                <span className="text-blue-700 font-medium">{importResult.updated} updated</span>
-                {importResult.failed.length > 0 && (
-                  <span className="text-destructive font-medium">{importResult.failed.length} failed</span>
-                )}
-              </div>
-              {importResult.failed.length > 0 && (
-                <div className="max-h-60 overflow-y-auto rounded-md border bg-slate-50 p-3 space-y-1">
-                  {importResult.failed.map((f) => (
-                    <p key={f.row} className="text-slate-700">
-                      <span className="font-medium">Row {f.row}:</span> {f.reason}
-                    </p>
-                  ))}
-                </div>
-              )}
-              <div className="flex justify-end">
-                <Button size="sm" onClick={() => setImportResult(null)}>Close</Button>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+      {/* CSV import modal */}
+      <CsvImportModal
+        title="SKUs"
+        columns={IMPORT_COLUMNS}
+        rows={importRows}
+        fileName={importFile}
+        validateRow={(row) => {
+          if (!row.skucode?.trim())    return "skuCode is required";
+          if (!row.skuname?.trim())    return "skuName is required";
+          if (!row.packsize?.trim())   return "packSize is required";
+          const ct = row.containertype?.trim().toLowerCase();
+          if (ct && !VALID_CONTAINER_TYPES.has(ct)) return `Invalid containerType "${ct}"`;
+          const cat = row.category?.trim();
+          if (!cat) return "category is required";
+          if (!categories.some((c) => c.name.toLowerCase() === cat.toLowerCase()))
+            return `Category "${cat}" not found`;
+          const pn = row.productname?.trim();
+          if (!pn) return "productName is required";
+          if (!productNames.some((n) => n.name.toLowerCase() === pn.toLowerCase()))
+            return `Product name "${pn}" not found`;
+          const bc = row.basecolour?.trim();
+          if (!bc) return "baseColour is required";
+          if (!baseColours.some((b) => b.name.toLowerCase() === bc.toLowerCase()))
+            return `Base colour "${bc}" not found`;
+          return null;
+        }}
+        onConfirm={handleImportConfirm}
+        isOpen={importOpen}
+        onClose={() => setImportOpen(false)}
+      />
     </>
   );
 }

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import {
-  Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter,
+  Sheet, SheetContent, SheetHeader, SheetTitle,
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -100,11 +100,11 @@ export function AddUserSheet({ open, onOpenChange, roles, onCreated }: AddUserSh
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-full sm:max-w-md overflow-y-auto">
+      <SheetContent className="w-full sm:max-w-2xl overflow-y-auto">
         <SheetHeader>
           <SheetTitle>Add User</SheetTitle>
         </SheetHeader>
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4 py-4">
+        <form onSubmit={handleSubmit} className="oa-sheet-form flex flex-col gap-5 px-6 pb-0">
           <div className="space-y-1.5">
             <Label htmlFor="u-name">Name</Label>
             <Input id="u-name" value={form.name} onChange={(e) => set("name", e.target.value)} />
@@ -141,14 +141,10 @@ export function AddUserSheet({ open, onOpenChange, roles, onCreated }: AddUserSh
             <Input id="u-confirm" type="password" value={form.confirmPassword} onChange={(e) => set("confirmPassword", e.target.value)} />
             {fieldErrors.confirmPassword && <p className="text-xs text-destructive">{fieldErrors.confirmPassword}</p>}
           </div>
-          <SheetFooter className="pt-2">
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={saving}>
-              {saving ? "Creating…" : "Create User"}
-            </Button>
-          </SheetFooter>
+          <div className="sticky bottom-0 bg-white border-t border-[#e5e7eb] -mx-6 px-6 py-4 flex gap-3 mt-6">
+            <Button type="button" variant="outline" className="flex-1 h-10 text-sm border-[#e5e7eb] text-[#374151] hover:bg-[#f7f8fa] rounded-lg oa-btn-ghost" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
+            <Button type="submit" className="flex-1 h-10 text-sm bg-[#1a237e] hover:bg-[#283593] text-white rounded-lg font-semibold oa-btn-primary" disabled={saving}>{saving ? "Creating…" : "Create User"}</Button>
+          </div>
         </form>
       </SheetContent>
     </Sheet>

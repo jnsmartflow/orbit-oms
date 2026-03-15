@@ -1,66 +1,90 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { CsvImportModal, parseFile, type CsvColumn } from "@/components/admin/csv-import-modal";
+import { Upload, Download } from "lucide-react";
 
-// Note: "Both" delivery type is not supported in Phase 1.
-// The dropdown shows Local / Upcountry only (sourced from delivery_type_master).
+interface Transporter { id: number; name: string; }
 
-interface DeliveryType { id: number; name: string; }
 interface VehicleRow {
-  id: number;
-  vehicleNumber: string;
-  vehicleType: string;
-  capacityKg: number;
-  capacityCbm: number | null;
-  deliveryType: DeliveryType;
-  isActive: boolean;
+  id:                  number;
+  vehicleNo:           string;
+  category:            string;
+  capacityKg:          number;
+  maxCustomers:        number | null;
+  deliveryTypeAllowed: string;
+  transporter:         Transporter;
+  driverName:          string | null;
+  driverPhone:         string | null;
+  isActive:            boolean;
 }
 
 interface VehiclesTableProps {
   initialVehicles: VehicleRow[];
-  deliveryTypes: DeliveryType[];
+  transporters:    Transporter[];
 }
 
 const EMPTY_FORM = {
-  vehicleNumber: "",
-  vehicleType: "",
-  capacityKg: "",
-  capacityCbm: "",
-  deliveryTypeId: "",
+  vehicleNo:           "",
+  category:            "",
+  capacityKg:          "",
+  maxCustomers:        "",
+  deliveryTypeAllowed: "",
+  transporterId:       "",
+  driverName:          "",
+  driverPhone:         "",
 };
 
-export function VehiclesTable({ initialVehicles, deliveryTypes }: VehiclesTableProps) {
-  const [vehicles, setVehicles] = useState<VehicleRow[]>(initialVehicles);
-  const [sheetOpen, setSheetOpen] = useState(false);
+const IMPORT_COLUMNS: CsvColumn[] = [
+  { key: "vehicleno",           label: "Vehicle No.",         required: true  },
+  { key: "category",            label: "Category",            required: true  },
+  { key: "capacitykg",          label: "Capacity (kg)",       required: true  },
+  { key: "deliverytypeallowed", label: "Delivery Type",       required: true  },
+  { key: "transporter",         label: "Transporter",         required: true  },
+  { key: "drivername",          label: "Driver Name",         required: false },
+  { key: "driverphone",         label: "Driver Phone",        required: false },
+  { key: "maxcustomers",        label: "Max Customers",       required: false },
+];
+
+export function VehiclesTable({ initialVehicles, transporters }: VehiclesTableProps) {
+  const [vehicles,   setVehicles]   = useState<VehicleRow[]>(initialVehicles);
+  const [sheetOpen,  setSheetOpen]  = useState(false);
   const [editTarget, setEditTarget] = useState<VehicleRow | null>(null);
-  const [form, setForm] = useState(EMPTY_FORM);
-  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-  const [saving, setSaving] = useState(false);
+  const [form,       setForm]       = useState(EMPTY_FORM);
+  const [fieldErrors,setFieldErrors]= useState<Record<string, string>>({});
+  const [saving,     setSaving]     = useState(false);
   const [togglingId, setTogglingId] = useState<number | null>(null);
+  const importFileRef                = useRef<HTMLInputElement>(null);
+  const [importRows,  setImportRows] = useState<Record<string, string>[]>([]);
+  const [importFile,  setImportFile] = useState("");
+  const [importOpen,  setImportOpen] = useState(false);
 
   function openAdd() {
     setEditTarget(null);
-    setForm({ ...EMPTY_FORM, deliveryTypeId: deliveryTypes[0]?.id.toString() ?? "" });
+    setForm({ ...EMPTY_FORM, transporterId: transporters[0]?.id.toString() ?? "" });
     setFieldErrors({});
     setSheetOpen(true);
   }
 
-  function openEdit(vehicle: VehicleRow) {
-    setEditTarget(vehicle);
+  function openEdit(v: VehicleRow) {
+    setEditTarget(v);
     setForm({
-      vehicleNumber: vehicle.vehicleNumber,
-      vehicleType: vehicle.vehicleType,
-      capacityKg: vehicle.capacityKg.toString(),
-      capacityCbm: vehicle.capacityCbm?.toString() ?? "",
-      deliveryTypeId: vehicle.deliveryType.id.toString(),
+      vehicleNo:           v.vehicleNo,
+      category:            v.category,
+      capacityKg:          v.capacityKg.toString(),
+      maxCustomers:        v.maxCustomers?.toString() ?? "",
+      deliveryTypeAllowed: v.deliveryTypeAllowed,
+      transporterId:       v.transporter.id.toString(),
+      driverName:          v.driverName ?? "",
+      driverPhone:         v.driverPhone ?? "",
     });
     setFieldErrors({});
     setSheetOpen(true);
@@ -73,17 +97,18 @@ export function VehiclesTable({ initialVehicles, deliveryTypes }: VehiclesTableP
 
   function validate(): boolean {
     const errs: Record<string, string> = {};
-    if (!form.vehicleNumber.trim()) errs.vehicleNumber = "Vehicle number is required.";
-    if (!form.vehicleType.trim()) errs.vehicleType = "Vehicle type is required.";
+    if (!form.vehicleNo.trim())           errs.vehicleNo = "Vehicle number is required.";
+    if (!form.category.trim())            errs.category = "Category is required.";
+    if (!form.deliveryTypeAllowed.trim()) errs.deliveryTypeAllowed = "Delivery type is required.";
+    if (!form.transporterId)              errs.transporterId = "Transporter is required.";
     if (!form.capacityKg) {
       errs.capacityKg = "Capacity (kg) is required.";
     } else if (isNaN(parseFloat(form.capacityKg)) || parseFloat(form.capacityKg) <= 0) {
       errs.capacityKg = "Must be a positive number.";
     }
-    if (form.capacityCbm && (isNaN(parseFloat(form.capacityCbm)) || parseFloat(form.capacityCbm) <= 0)) {
-      errs.capacityCbm = "Must be a positive number.";
+    if (form.maxCustomers && (isNaN(parseInt(form.maxCustomers, 10)) || parseInt(form.maxCustomers, 10) <= 0)) {
+      errs.maxCustomers = "Must be a positive integer.";
     }
-    if (!form.deliveryTypeId) errs.deliveryTypeId = "Delivery type is required.";
     setFieldErrors(errs);
     return Object.keys(errs).length === 0;
   }
@@ -94,11 +119,14 @@ export function VehiclesTable({ initialVehicles, deliveryTypes }: VehiclesTableP
     setSaving(true);
     try {
       const body = {
-        vehicleNumber: form.vehicleNumber.trim().toUpperCase(),
-        vehicleType: form.vehicleType.trim(),
-        capacityKg: parseFloat(form.capacityKg),
-        capacityCbm: form.capacityCbm ? parseFloat(form.capacityCbm) : null,
-        deliveryTypeId: parseInt(form.deliveryTypeId, 10),
+        vehicleNo:           form.vehicleNo.trim().toUpperCase(),
+        category:            form.category.trim(),
+        capacityKg:          parseFloat(form.capacityKg),
+        maxCustomers:        form.maxCustomers ? parseInt(form.maxCustomers, 10) : null,
+        deliveryTypeAllowed: form.deliveryTypeAllowed.trim(),
+        transporterId:       parseInt(form.transporterId, 10),
+        driverName:          form.driverName.trim() || null,
+        driverPhone:         form.driverPhone.trim() || null,
       };
 
       const res = editTarget
@@ -116,7 +144,7 @@ export function VehiclesTable({ initialVehicles, deliveryTypes }: VehiclesTableP
       const data = await res.json();
       if (!res.ok) {
         if (res.status === 409) {
-          setFieldErrors({ vehicleNumber: "Vehicle number already exists." });
+          setFieldErrors({ vehicleNo: "Vehicle number already exists." });
         } else {
           toast.error(data.error ?? "Failed to save.");
         }
@@ -128,7 +156,7 @@ export function VehiclesTable({ initialVehicles, deliveryTypes }: VehiclesTableP
         toast.success("Vehicle updated.");
       } else {
         setVehicles((prev) => [...prev, data]);
-        toast.success(`Vehicle "${data.vehicleNumber}" created.`);
+        toast.success(`Vehicle "${data.vehicleNo}" created.`);
       }
       setSheetOpen(false);
     } catch { toast.error("Network error."); } finally { setSaving(false); }
@@ -149,22 +177,80 @@ export function VehiclesTable({ initialVehicles, deliveryTypes }: VehiclesTableP
     } catch { toast.error("Network error."); } finally { setTogglingId(null); }
   }
 
+  function handleTemplateDownload() {
+    const csv = "vehicleno,category,capacitykg,deliverytypeallowed,transporter,drivername,driverphone,maxcustomers\nGJ05AB1234,Light,900,Local,Sharma Logistics,Raj Kumar,9898989898,5\nGJ05CD5678,Medium,2000,Upcountry,Patel Transport,Suresh Patel,9797979797,8";
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "template-vehicles.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function handleImportFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+    try {
+      const parsed = await parseFile(file);
+      setImportRows(parsed);
+      setImportFile(file.name);
+      setImportOpen(true);
+    } catch (err) {
+      toast.error((err as Error).message ?? "Failed to parse file.");
+    }
+  }
+
+  async function handleImportConfirm(validRows: Record<string, string>[]) {
+    const res = await fetch("/api/admin/vehicles/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ rows: validRows }),
+    });
+    const data = await res.json();
+    if (!res.ok) { toast.error(data.error ?? "Import failed."); return; }
+    toast.success(`${data.imported} imported, ${data.skipped} skipped.`);
+    setImportOpen(false);
+    window.location.reload();
+  }
+
   return (
     <>
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-xl font-semibold text-slate-900">Vehicles</h1>
-        <Button size="sm" onClick={openAdd}>+ Add Vehicle</Button>
+        <h1 className="text-lg font-bold text-[#1a237e]">Vehicles</h1>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            className="flex items-center gap-1.5 text-xs font-medium text-[#1a237e] border border-[#c7d2fe] bg-[#eef2ff] hover:bg-[#e0e7ff] px-3 py-2 rounded-md"
+            onClick={handleTemplateDownload}
+          >
+            <Download className="h-3.5 w-3.5" />
+            Download Template
+          </button>
+          <button
+            type="button"
+            className="flex items-center gap-1.5 text-xs font-medium bg-white hover:bg-[#f7f8fa] text-[#374151] border border-[#e5e7eb] px-3 py-2 rounded-md"
+            onClick={() => importFileRef.current?.click()}
+          >
+            <Upload className="h-3.5 w-3.5" />
+            Import File
+          </button>
+          <Button size="sm" onClick={openAdd} className="oa-btn-primary">+ Add Vehicle</Button>
+        </div>
+        <input ref={importFileRef} type="file" accept=".csv,.xls,.xlsx" className="hidden" onChange={handleImportFileSelect} />
       </div>
 
-      <div className="rounded-md border bg-white overflow-x-auto">
+      <div className="oa-table">
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead>Vehicle No.</TableHead>
-              <TableHead>Type</TableHead>
+              <TableHead>Category</TableHead>
               <TableHead>Capacity (kg)</TableHead>
-              <TableHead>Capacity (CBM)</TableHead>
               <TableHead>Delivery Type</TableHead>
+              <TableHead>Transporter</TableHead>
+              <TableHead>Driver</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
@@ -172,37 +258,37 @@ export function VehiclesTable({ initialVehicles, deliveryTypes }: VehiclesTableP
           <TableBody>
             {vehicles.length === 0 && (
               <TableRow>
-                <TableCell colSpan={7} className="text-center text-slate-500 py-8">
+                <TableCell colSpan={8} className="text-center text-slate-500 py-8">
                   No vehicles yet.
                 </TableCell>
               </TableRow>
             )}
-            {vehicles.map((vehicle) => (
-              <TableRow key={vehicle.id}>
-                <TableCell className="font-mono font-medium">{vehicle.vehicleNumber}</TableCell>
-                <TableCell>{vehicle.vehicleType}</TableCell>
-                <TableCell>{vehicle.capacityKg.toLocaleString()}</TableCell>
-                <TableCell className="text-slate-500">
-                  {vehicle.capacityCbm != null ? vehicle.capacityCbm : <span className="text-slate-300">—</span>}
+            {vehicles.map((v) => (
+              <TableRow key={v.id}>
+                <TableCell className="font-mono font-medium">{v.vehicleNo}</TableCell>
+                <TableCell>{v.category}</TableCell>
+                <TableCell>{v.capacityKg.toLocaleString()}</TableCell>
+                <TableCell className="text-slate-600">{v.deliveryTypeAllowed}</TableCell>
+                <TableCell className="text-slate-600">{v.transporter.name}</TableCell>
+                <TableCell className="text-slate-500 text-sm">
+                  {v.driverName ?? <span className="text-slate-300">—</span>}
                 </TableCell>
                 <TableCell>
-                  <Badge variant="outline">{vehicle.deliveryType.name}</Badge>
-                </TableCell>
-                <TableCell>
-                  <Badge variant={vehicle.isActive ? "default" : "secondary"}>
-                    {vehicle.isActive ? "Active" : "Inactive"}
+                  <Badge variant={v.isActive ? "default" : "secondary"}>
+                    {v.isActive ? "Active" : "Inactive"}
                   </Badge>
                 </TableCell>
                 <TableCell className="text-right">
                   <div className="flex items-center justify-end gap-2">
-                    <Button size="sm" variant="outline" onClick={() => openEdit(vehicle)}>Edit</Button>
+                    <Button size="sm" variant="outline" onClick={() => openEdit(v)} className="oa-btn-ghost">Edit</Button>
                     <Button
                       size="sm"
                       variant="outline"
-                      disabled={togglingId === vehicle.id}
-                      onClick={() => handleToggle(vehicle)}
+                      disabled={togglingId === v.id}
+                      onClick={() => handleToggle(v)}
+                      className="oa-btn-ghost"
                     >
-                      {vehicle.isActive ? "Deactivate" : "Activate"}
+                      {v.isActive ? "Deactivate" : "Activate"}
                     </Button>
                   </div>
                 </TableCell>
@@ -213,100 +299,136 @@ export function VehiclesTable({ initialVehicles, deliveryTypes }: VehiclesTableP
       </div>
 
       <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
-        <SheetContent className="w-full sm:max-w-md overflow-y-auto">
+        <SheetContent className="w-full sm:max-w-2xl overflow-y-auto">
           <SheetHeader>
             <SheetTitle>{editTarget ? "Edit Vehicle" : "Add Vehicle"}</SheetTitle>
           </SheetHeader>
-          <form onSubmit={handleSave} className="flex flex-col gap-4 py-4">
+          <form onSubmit={handleSave} className="oa-sheet-form flex flex-col gap-5 px-6 pb-0">
             <div className="space-y-1.5">
-              <Label htmlFor="v-number">Vehicle Number <span className="text-destructive">*</span></Label>
+              <Label>Vehicle Number <span className="text-destructive">*</span></Label>
               <Input
-                id="v-number"
-                value={form.vehicleNumber}
-                onChange={(e) => setField("vehicleNumber", e.target.value.toUpperCase())}
+                value={form.vehicleNo}
+                onChange={(e) => setField("vehicleNo", e.target.value.toUpperCase())}
                 placeholder="e.g. GJ05AB1234"
               />
-              {fieldErrors.vehicleNumber && (
-                <p className="text-xs text-destructive">{fieldErrors.vehicleNumber}</p>
-              )}
+              {fieldErrors.vehicleNo && <p className="text-xs text-destructive">{fieldErrors.vehicleNo}</p>}
             </div>
+
             <div className="space-y-1.5">
-              <Label htmlFor="v-type">Vehicle Type <span className="text-destructive">*</span></Label>
+              <Label>Category <span className="text-destructive">*</span></Label>
               <Input
-                id="v-type"
-                value={form.vehicleType}
-                onChange={(e) => setField("vehicleType", e.target.value)}
-                placeholder="e.g. Tata Ace, Bolero Pickup, 407"
+                value={form.category}
+                onChange={(e) => setField("category", e.target.value)}
+                placeholder="e.g. Light, Medium, Heavy"
               />
-              {fieldErrors.vehicleType && (
-                <p className="text-xs text-destructive">{fieldErrors.vehicleType}</p>
-              )}
+              {fieldErrors.category && <p className="text-xs text-destructive">{fieldErrors.category}</p>}
             </div>
+
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
-                <Label htmlFor="v-kg">Capacity (kg) <span className="text-destructive">*</span></Label>
+                <Label>Capacity (kg) <span className="text-destructive">*</span></Label>
                 <Input
-                  id="v-kg"
-                  type="number"
-                  step="any"
-                  min="0"
+                  type="number" step="any" min="0"
                   value={form.capacityKg}
                   onChange={(e) => setField("capacityKg", e.target.value)}
                   placeholder="e.g. 900"
                 />
-                {fieldErrors.capacityKg && (
-                  <p className="text-xs text-destructive">{fieldErrors.capacityKg}</p>
-                )}
+                {fieldErrors.capacityKg && <p className="text-xs text-destructive">{fieldErrors.capacityKg}</p>}
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="v-cbm">Capacity (CBM)</Label>
+                <Label>Max Customers</Label>
                 <Input
-                  id="v-cbm"
-                  type="number"
-                  step="any"
-                  min="0"
-                  value={form.capacityCbm}
-                  onChange={(e) => setField("capacityCbm", e.target.value)}
+                  type="number" step="1" min="1"
+                  value={form.maxCustomers}
+                  onChange={(e) => setField("maxCustomers", e.target.value)}
                   placeholder="Optional"
                 />
-                {fieldErrors.capacityCbm && (
-                  <p className="text-xs text-destructive">{fieldErrors.capacityCbm}</p>
-                )}
+                {fieldErrors.maxCustomers && <p className="text-xs text-destructive">{fieldErrors.maxCustomers}</p>}
               </div>
             </div>
+
             <div className="space-y-1.5">
-              <Label>Delivery Type <span className="text-destructive">*</span></Label>
-              <Select
-                value={form.deliveryTypeId}
-                onValueChange={(v) => setField("deliveryTypeId", v ?? "")}
-              >
+              <Label>Delivery Type Allowed <span className="text-destructive">*</span></Label>
+              <Input
+                value={form.deliveryTypeAllowed}
+                onChange={(e) => setField("deliveryTypeAllowed", e.target.value)}
+                placeholder="e.g. Local, Upcountry, Both"
+              />
+              {fieldErrors.deliveryTypeAllowed && <p className="text-xs text-destructive">{fieldErrors.deliveryTypeAllowed}</p>}
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Transporter <span className="text-destructive">*</span></Label>
+              <Select value={form.transporterId} onValueChange={(v) => setField("transporterId", v ?? "")}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Select type" />
+                  <SelectValue placeholder="Select transporter" />
                 </SelectTrigger>
                 <SelectContent>
-                  {deliveryTypes.map((dt) => (
-                    <SelectItem key={dt.id} value={dt.id.toString()}>{dt.name}</SelectItem>
+                  {transporters.map((t) => (
+                    <SelectItem key={t.id} value={t.id.toString()}>{t.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-              {fieldErrors.deliveryTypeId && (
-                <p className="text-xs text-destructive">{fieldErrors.deliveryTypeId}</p>
-              )}
-              <p className="text-xs text-slate-400">
-                &quot;Both&quot; is not supported in Phase 1. Use Local or Upcountry.
-              </p>
+              {fieldErrors.transporterId && <p className="text-xs text-destructive">{fieldErrors.transporterId}</p>}
             </div>
-            <SheetFooter className="pt-2">
-              <Button type="button" variant="outline" onClick={() => setSheetOpen(false)} disabled={saving}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={saving}>
-                {saving ? "Saving…" : editTarget ? "Save Changes" : "Create Vehicle"}
-              </Button>
-            </SheetFooter>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label>Driver Name</Label>
+                <Input
+                  value={form.driverName}
+                  onChange={(e) => setField("driverName", e.target.value)}
+                  placeholder="Optional"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Driver Phone</Label>
+                <Input
+                  value={form.driverPhone}
+                  onChange={(e) => setField("driverPhone", e.target.value)}
+                  placeholder="Optional"
+                />
+              </div>
+            </div>
+
+            <div className="sticky bottom-0 bg-white border-t border-[#e5e7eb] -mx-6 px-6 py-4 flex gap-3 mt-6">
+              <Button type="button" variant="outline" className="flex-1 h-10 text-sm border-[#e5e7eb] text-[#374151] hover:bg-[#f7f8fa] rounded-lg oa-btn-ghost" onClick={() => setSheetOpen(false)} disabled={saving}>Cancel</Button>
+              <Button type="submit" className="flex-1 h-10 text-sm bg-[#1a237e] hover:bg-[#283593] text-white rounded-lg font-semibold oa-btn-primary" disabled={saving}>{saving ? "Saving…" : editTarget ? "Save Changes" : "Create Vehicle"}</Button>
+            </div>
           </form>
         </SheetContent>
       </Sheet>
+      <CsvImportModal
+        title="Vehicles"
+        columns={IMPORT_COLUMNS}
+        rows={importRows}
+        fileName={importFile}
+        validateRow={(row) => {
+          if (!row.vehicleno?.trim()) return "Vehicle No. is required";
+          const cat = row.category?.trim();
+          if (!cat) return "Category is required";
+          if (!["light", "medium", "heavy"].includes(cat.toLowerCase()))
+            return `Category must be Light, Medium or Heavy`;
+          if (!row.capacitykg?.trim()) return "Capacity (kg) is required";
+          if (isNaN(parseFloat(row.capacitykg)) || parseFloat(row.capacitykg) <= 0)
+            return "Capacity must be a positive number";
+          if (!row.deliverytypeallowed?.trim()) return "Delivery Type is required";
+          const tp = row.transporter?.trim();
+          if (!tp) return "Transporter is required";
+          if (!transporters.some((t) => t.name.toLowerCase() === tp.toLowerCase()))
+            return `Transporter "${tp}" not found`;
+          if (row.maxcustomers?.trim()) {
+            const mc = parseInt(row.maxcustomers.trim(), 10);
+            if (isNaN(mc) || mc <= 0) return "Max Customers must be a positive integer";
+          }
+          if (vehicles.some((v) => v.vehicleNo.toLowerCase() === row.vehicleno.trim().toUpperCase().toLowerCase()))
+            return "Already exists — will be skipped";
+          return null;
+        }}
+        onConfirm={handleImportConfirm}
+        isOpen={importOpen}
+        onClose={() => setImportOpen(false)}
+      />
     </>
   );
 }

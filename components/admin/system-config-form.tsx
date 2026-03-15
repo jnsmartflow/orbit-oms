@@ -22,49 +22,49 @@ interface ConfigMeta {
 const CONFIG_META: Record<string, ConfigMeta> = {
   soft_lock_minutes_before_cutoff: {
     label: "Soft Lock (minutes before cutoff)",
-    description: "Minutes before cutoff when a draft plan transitions to soft lock.",
+    description: "Plan enters soft-lock, approval queue opens.",
     type: "integer",
     section: "timing",
   },
   hard_lock_minutes_before_cutoff: {
     label: "Hard Lock (minutes before cutoff)",
-    description: "Minutes before cutoff when a soft-locked plan transitions to hard lock.",
+    description: "New orders auto-routed to next slot.",
     type: "integer",
     section: "timing",
   },
   ready_escalation_minutes: {
-    label: "Ready Escalation (minutes)",
-    description: "Minutes after material is ready before an escalation alert fires.",
+    label: "Escalation Timer (minutes)",
+    description: "Fires if dispatcher hasn't acted after material ready.",
     type: "integer",
-    section: "planning",
+    section: "timing",
   },
   upgrade_small_overflow_pct: {
     label: "Overflow Upgrade Threshold (%)",
-    description: "Maximum overflow percentage before a vehicle upgrade is suggested.",
+    description: "Max overflow before upgrade suggested over bump.",
     type: "integer",
     section: "planning",
   },
   upgrade_max_dealer_combo: {
-    label: "Max Dealer Combination",
-    description: "Maximum number of dealers in a concentration check for split suggestions.",
+    label: "Max Dealer Combo (split check)",
+    description: "Dealers checked for concentration before split.",
     type: "integer",
     section: "planning",
   },
   aging_priority_days: {
     label: "Aging Priority Days",
-    description: "Days before an order automatically gains tier-3 priority.",
+    description: "Days before order elevates to tier-3 priority.",
     type: "integer",
     section: "planning",
   },
   aging_alert_days: {
     label: "Aging Alert Days",
-    description: "Days before an aging order triggers an escalation alert.",
+    description: "Days before escalation alert fires.",
     type: "integer",
     section: "planning",
   },
   change_queue_urgent_alert: {
-    label: "Urgent Orders Bypass Change Queue",
-    description: "When enabled, urgent orders skip the change queue and are actioned immediately.",
+    label: "Urgent Hold Alert",
+    description: "Show prominent notification for Urgent orders on Hold.",
     type: "boolean",
     section: "planning",
   },
@@ -205,10 +205,10 @@ export function SystemConfigForm({ initialRows }: SystemConfigFormProps) {
 
   return (
     <div className="space-y-6">
-      {/* Timing & Slots */}
+      {/* Timing & Locks */}
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-base">Timing &amp; Slots</CardTitle>
+          <CardTitle className="text-base">Timing &amp; Locks</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="mb-4">{timingKeys.map(renderField)}</div>
@@ -217,6 +217,7 @@ export function SystemConfigForm({ initialRows }: SystemConfigFormProps) {
               onClick={() => handleSave("timing")}
               disabled={saving === "timing"}
               size="sm"
+              className="oa-btn-primary"
             >
               {saving === "timing" ? "Saving…" : "Save"}
             </Button>
@@ -236,6 +237,7 @@ export function SystemConfigForm({ initialRows }: SystemConfigFormProps) {
               onClick={() => handleSave("planning")}
               disabled={saving === "planning"}
               size="sm"
+              className="oa-btn-primary"
             >
               {saving === "planning" ? "Saving…" : "Save"}
             </Button>

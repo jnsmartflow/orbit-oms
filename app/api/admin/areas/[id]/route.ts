@@ -7,10 +7,11 @@ import { z } from "zod";
 export const dynamic = 'force-dynamic';
 
 const patchSchema = z.object({
-  name: z.string().min(1).max(100).optional(),
+  name:           z.string().min(1).max(100).optional(),
   deliveryTypeId: z.number().int().positive().optional(),
-  routeIds: z.array(z.number().int().positive()).optional(),
-  isActive: z.boolean().optional(),
+  primaryRouteId: z.number().int().positive().optional().nullable(),
+  routeIds:       z.array(z.number().int().positive()).optional(),
+  isActive:       z.boolean().optional(),
 });
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
@@ -41,20 +42,22 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       where: { id },
       data: scalarData,
       include: {
-        deliveryType: { select: { id: true, name: true } },
-        areaRoutes: { include: { route: { select: { id: true, name: true } } } },
-        _count: { select: { subAreas: true } },
+        deliveryType:  { select: { id: true, name: true } },
+        primaryRoute:  { select: { id: true, name: true } },
+        areaRoutes:    { include: { route: { select: { id: true, name: true } } } },
+        _count:        { select: { subAreas: true } },
       },
     });
   });
 
   return NextResponse.json({
-    id: area.id,
-    name: area.name,
-    isActive: area.isActive,
-    createdAt: area.createdAt,
+    id:           area.id,
+    name:         area.name,
+    isActive:     area.isActive,
+    createdAt:    area.createdAt,
     deliveryType: area.deliveryType,
-    routes: area.areaRoutes.map((ar) => ar.route),
+    primaryRoute: area.primaryRoute,
+    routes:       area.areaRoutes.map((ar) => ar.route),
     subAreaCount: area._count.subAreas,
   });
 }

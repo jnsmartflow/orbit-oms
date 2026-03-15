@@ -3,109 +3,90 @@ import { auth } from "@/lib/auth";
 import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
-const CONTAINER_TYPES = new Set(["tin", "drum", "carton", "bag"]);
-
-// ── Simple CSV parser ─────────────────────────────────────────────────────────
-function parseCSVLine(line: string): string[] {
-  const result: string[] = [];
-  let current = "";
-  let inQuotes = false;
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-    if (ch === '"') { inQuotes = !inQuotes; }
-    else if (ch === "," && !inQuotes) { result.push(current.trim()); current = ""; }
-    else { current += ch; }
-  }
-  result.push(current.trim());
-  return result;
-}
-
-function parseCSV(text: string): Record<string, string>[] {
-  const lines = text.split(/\r?\n/).filter((l) => l.trim());
-  if (lines.length < 2) return [];
-  const headers = parseCSVLine(lines[0]).map((h) => h.toLowerCase().trim());
-  return lines.slice(1).map((line) => {
-    const values = parseCSVLine(line);
-    return Object.fromEntries(headers.map((h, i) => [h, values[i] ?? ""]));
-  });
-}
+const VALID_CONTAINER_TYPES = new Set(["tin", "drum", "carton", "bag"]);
 
 export async function POST(req: Request) {
   const session = await auth();
   requireRole(session, [ROLES.ADMIN]);
 
-  const formData = await req.formData();
-  const file = formData.get("file") as File | null;
-  if (!file) return NextResponse.json({ error: "No file provided." }, { status: 400 });
+  const body = await req.json() as { rows: Record<string, string>[] };
+  const rows = body.rows ?? [];
 
-  const rows = parseCSV(await file.text());
   if (rows.length === 0) {
-    return NextResponse.json({ error: "CSV is empty or missing headers." }, { status: 400 });
+    return NextResponse.json({ imported: 0, skipped: 0, failed: 0, errors: [] });
   }
 
-  let created = 0;
-  let updated = 0;
-  const failed: { row: number; reason: string }[] = [];
+  const [categories, productNames, baseColours] = await Promise.all([
+    prisma.product_category.findMany({ select: { id: true, name: true } }),
+    prisma.product_name.findMany({ select: { id: true, name: true } }),
+    prisma.base_colour.findMany({ select: { id: true, name: true } }),
+  ]);
+  const catMap    = new Map(categories.map((c) => [c.name.toLowerCase(), c.id]));
+  const nameMap   = new Map(productNames.map((n) => [n.name.toLowerCase(), n.id]));
+  const colourMap = new Map(baseColours.map((b) => [b.name.toLowerCase(), b.id]));
 
-  for (let i = 0; i < rows.length; i++) {
-    const row = rows[i];
-    const rowNum = i + 2;
+  const errors: { row: number; reason: string }[] = [];
+  const data: {
+    skuCode:           string;
+    skuName:           string;
+    productCategoryId: number;
+    productNameId:     number;
+    baseColourId:      number;
+    packSize:          string;
+    containerType:     string;
+    unitsPerCarton:    number | null;
+    isActive:          boolean;
+  }[] = [];
 
-    const skuCode = (row["skucode"] ?? "").trim().toUpperCase();
-    const skuName = (row["skuname"] ?? "").trim();
-    const containerType = (row["containertype"] ?? "").trim().toLowerCase();
-    const grossWeightStr = (row["grossweightperunit"] ?? "").trim();
+  rows.forEach((r, i) => {
+    const skuCode       = r.skucode?.trim().toUpperCase() ?? "";
+    const skuName       = r.skuname?.trim() ?? "";
+    const category      = r.category?.trim() ?? "";
+    const productName   = r.productname?.trim() ?? "";
+    const baseColour    = r.basecolour?.trim() ?? "";
+    const packSize      = r.packsize?.trim() ?? "";
+    const containerType = r.containertype?.trim().toLowerCase() ?? "tin";
+    const unitsRaw      = r.unitspercarton?.trim() ?? "";
 
-    if (!skuCode) { failed.push({ row: rowNum, reason: "skuCode is required." }); continue; }
-    if (!skuName) { failed.push({ row: rowNum, reason: "skuName is required." }); continue; }
-    if (containerType && !CONTAINER_TYPES.has(containerType)) {
-      failed.push({ row: rowNum, reason: `Invalid containerType "${containerType}". Must be: tin, drum, carton, bag.` });
-      continue;
+    if (!skuCode)    { errors.push({ row: i + 2, reason: "skuCode is required." }); return; }
+    if (!skuName)    { errors.push({ row: i + 2, reason: "skuName is required." }); return; }
+    if (!packSize)   { errors.push({ row: i + 2, reason: "packSize is required." }); return; }
+    if (containerType && !VALID_CONTAINER_TYPES.has(containerType)) {
+      errors.push({ row: i + 2, reason: `Invalid containerType "${containerType}".` }); return;
     }
 
-    const grossWeightPerUnit = parseFloat(grossWeightStr);
-    if (!grossWeightStr || isNaN(grossWeightPerUnit) || grossWeightPerUnit <= 0) {
-      failed.push({ row: rowNum, reason: "grossWeightPerUnit must be a positive number." });
-      continue;
-    }
+    const productCategoryId = catMap.get(category.toLowerCase());
+    const productNameId     = nameMap.get(productName.toLowerCase());
+    const baseColourId      = colourMap.get(baseColour.toLowerCase());
 
-    const packSize = (row["packsize"] ?? "").trim();
-    const unitsPerCartonStr = (row["unitspercarton"] ?? "").trim();
-    const unitsPerCarton = unitsPerCartonStr ? parseInt(unitsPerCartonStr, 10) : null;
+    if (!productCategoryId) { errors.push({ row: i + 2, reason: `Category "${category}" not found.` }); return; }
+    if (!productNameId)     { errors.push({ row: i + 2, reason: `Product name "${productName}" not found.` }); return; }
+    if (!baseColourId)      { errors.push({ row: i + 2, reason: `Base colour "${baseColour}" not found.` }); return; }
 
-    try {
-      const existing = await prisma.sku_master.findUnique({ where: { skuCode } });
-      if (existing) {
-        await prisma.sku_master.update({
-          where: { skuCode },
-          data: {
-            skuName,
-            packSize,
-            ...(containerType && { containerType }),
-            unitsPerCarton,
-            grossWeightPerUnit,
-          },
-        });
-        updated++;
-      } else {
-        await prisma.sku_master.create({
-          data: {
-            skuCode,
-            skuName,
-            packSize,
-            containerType: containerType || "tin",
-            unitsPerCarton,
-            grossWeightPerUnit,
-          },
-        });
-        created++;
-      }
-    } catch (err) {
-      failed.push({ row: rowNum, reason: `Database error: ${(err as Error).message}` });
-    }
-  }
+    const unitsPerCarton = unitsRaw ? parseInt(unitsRaw, 10) : null;
 
-  return NextResponse.json({ created, updated, failed });
+    data.push({
+      skuCode,
+      skuName,
+      productCategoryId,
+      productNameId,
+      baseColourId,
+      packSize,
+      containerType: containerType || "tin",
+      unitsPerCarton,
+      isActive: true,
+    });
+  });
+
+  const result = await prisma.sku_master.createMany({
+    data,
+    skipDuplicates: true,
+  });
+
+  const imported = result.count;
+  const skipped  = data.length - imported;
+
+  return NextResponse.json({ imported, skipped, failed: errors.length, errors });
 }

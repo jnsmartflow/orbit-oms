@@ -4,19 +4,27 @@ import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
 const CONTAINER_TYPES = ["tin", "drum", "carton", "bag"] as const;
 
 const patchSchema = z.object({
-  skuCode: z.string().min(1).max(50).optional(),
-  skuName: z.string().min(1).max(200).optional(),
-  packSize: z.string().max(20).optional(),
-  containerType: z.enum(CONTAINER_TYPES).optional(),
-  unitsPerCarton: z.number().int().positive().optional().nullable(),
-  grossWeightPerUnit: z.number().positive().optional(),
-  isActive: z.boolean().optional(),
+  skuCode:           z.string().min(1).max(50).optional(),
+  skuName:           z.string().min(1).max(200).optional(),
+  packSize:          z.string().max(20).optional(),
+  containerType:     z.enum(CONTAINER_TYPES).optional(),
+  unitsPerCarton:    z.number().int().positive().optional().nullable(),
+  productCategoryId: z.number().int().positive().optional(),
+  productNameId:     z.number().int().positive().optional(),
+  baseColourId:      z.number().int().positive().optional(),
+  isActive:          z.boolean().optional(),
 });
+
+const include = {
+  productCategory: { select: { name: true } },
+  productName:     { select: { name: true } },
+  baseColour:      { select: { name: true } },
+} as const;
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
   const session = await auth();
@@ -46,6 +54,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       ...(skuCode && { skuCode: skuCode.trim().toUpperCase() }),
       ...rest,
     },
+    include,
   });
 
   return NextResponse.json(sku);

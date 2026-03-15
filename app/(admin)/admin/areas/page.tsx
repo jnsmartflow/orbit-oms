@@ -8,9 +8,10 @@ export default async function AreasPage() {
     prisma.area_master.findMany({
       orderBy: { name: "asc" },
       include: {
-        deliveryType: { select: { id: true, name: true } },
-        areaRoutes: { include: { route: { select: { id: true, name: true } } } },
-        _count: { select: { subAreas: true } },
+        deliveryType:  { select: { id: true, name: true } },
+        primaryRoute:  { select: { id: true, name: true } },
+        areaRoutes:    { include: { route: { select: { id: true, name: true } } } },
+        _count:        { select: { subAreas: true } },
       },
     }),
     prisma.delivery_type_master.findMany({ orderBy: { id: "asc" } }),
@@ -20,12 +21,13 @@ export default async function AreasPage() {
   return (
     <AreasTable
       initialAreas={areas.map((a) => ({
-        id: a.id,
-        name: a.name,
-        isActive: a.isActive,
-        createdAt: a.createdAt.toISOString(),
+        id:           a.id,
+        name:         a.name,
+        isActive:     a.isActive,
+        createdAt:    a.createdAt.toISOString(),
         deliveryType: a.deliveryType,
-        routes: a.areaRoutes.map((ar) => ar.route),
+        primaryRoute: a.primaryRoute,
+        routes:       a.areaRoutes.map((ar) => ar.route),
         subAreaCount: a._count.subAreas,
       }))}
       deliveryTypes={deliveryTypes}

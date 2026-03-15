@@ -1,13 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { CsvImportModal, parseFile, type CsvColumn } from "@/components/admin/csv-import-modal";
+import { Upload, Download } from "lucide-react";
 
 interface OfficerRow {
   id: number;
@@ -24,6 +26,13 @@ interface SalesOfficersTableProps {
 
 const EMPTY = { name: "", employeeCode: "", email: "", phone: "" };
 
+const IMPORT_COLUMNS: CsvColumn[] = [
+  { key: "name",         label: "Name",          required: true  },
+  { key: "email",        label: "Email",         required: true  },
+  { key: "phone",        label: "Phone",         required: false },
+  { key: "employeecode", label: "Employee Code", required: false },
+];
+
 export function SalesOfficersTable({ initialOfficers }: SalesOfficersTableProps) {
   const [officers, setOfficers] = useState<OfficerRow[]>(initialOfficers);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -32,6 +41,10 @@ export function SalesOfficersTable({ initialOfficers }: SalesOfficersTableProps)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [togglingId, setTogglingId] = useState<number | null>(null);
+  const importFileRef               = useRef<HTMLInputElement>(null);
+  const [importRows,  setImportRows] = useState<Record<string, string>[]>([]);
+  const [importFile,  setImportFile] = useState("");
+  const [importOpen,  setImportOpen] = useState(false);
 
   function openAdd() {
     setEditing(null);
@@ -135,14 +148,71 @@ export function SalesOfficersTable({ initialOfficers }: SalesOfficersTableProps)
     }
   }
 
+  function handleTemplateDownload() {
+    const csv = "name,email,phone,employeecode\nAmit Shah,amit.shah@company.com,9898989898,EMP-001\nKavita Mehta,kavita.mehta@company.com,9797979797,EMP-002";
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "template-sales-officers.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function handleImportFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+    try {
+      const parsed = await parseFile(file);
+      setImportRows(parsed);
+      setImportFile(file.name);
+      setImportOpen(true);
+    } catch (err) {
+      toast.error((err as Error).message ?? "Failed to parse file.");
+    }
+  }
+
+  async function handleImportConfirm(validRows: Record<string, string>[]) {
+    const res = await fetch("/api/admin/sales-officers/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ rows: validRows }),
+    });
+    const data = await res.json();
+    if (!res.ok) { toast.error(data.error ?? "Import failed."); return; }
+    toast.success(`${data.imported} imported, ${data.skipped} skipped.`);
+    setImportOpen(false);
+    window.location.reload();
+  }
+
   return (
     <>
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-xl font-semibold text-slate-900">Sales Officers</h1>
-        <Button size="sm" onClick={openAdd}>+ Add Sales Officer</Button>
+        <h1 className="text-lg font-bold text-[#1a237e]">Sales Officers</h1>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            className="flex items-center gap-1.5 text-xs font-medium text-[#1a237e] border border-[#c7d2fe] bg-[#eef2ff] hover:bg-[#e0e7ff] px-3 py-2 rounded-md"
+            onClick={handleTemplateDownload}
+          >
+            <Download className="h-3.5 w-3.5" />
+            Download Template
+          </button>
+          <button
+            type="button"
+            className="flex items-center gap-1.5 text-xs font-medium bg-white hover:bg-[#f7f8fa] text-[#374151] border border-[#e5e7eb] px-3 py-2 rounded-md"
+            onClick={() => importFileRef.current?.click()}
+          >
+            <Upload className="h-3.5 w-3.5" />
+            Import File
+          </button>
+          <Button size="sm" className="oa-btn-primary" onClick={openAdd}>+ Add Sales Officer</Button>
+        </div>
+        <input ref={importFileRef} type="file" accept=".csv,.xls,.xlsx" className="hidden" onChange={handleImportFileSelect} />
       </div>
 
-      <div className="rounded-md border bg-white overflow-x-auto">
+      <div className="oa-table">
         <Table>
           <TableHeader>
             <TableRow>
@@ -179,12 +249,13 @@ export function SalesOfficersTable({ initialOfficers }: SalesOfficersTableProps)
                 </TableCell>
                 <TableCell>
                   <div className="flex items-center justify-end gap-2">
-                    <Button size="sm" variant="outline" onClick={() => openEdit(officer)}>
+                    <Button size="sm" variant="outline" className="oa-btn-ghost" onClick={() => openEdit(officer)}>
                       Edit
                     </Button>
                     <Button
                       size="sm"
                       variant="outline"
+                      className="oa-btn-ghost"
                       disabled={togglingId === officer.id}
                       onClick={() => handleToggle(officer)}
                     >
@@ -199,11 +270,11 @@ export function SalesOfficersTable({ initialOfficers }: SalesOfficersTableProps)
       </div>
 
       <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
-        <SheetContent className="w-full sm:max-w-md overflow-y-auto">
+        <SheetContent className="w-full sm:max-w-2xl overflow-y-auto">
           <SheetHeader>
             <SheetTitle>{editing ? "Edit Sales Officer" : "Add Sales Officer"}</SheetTitle>
           </SheetHeader>
-          <form onSubmit={handleSubmit} className="flex flex-col gap-4 py-4">
+          <form onSubmit={handleSubmit} className="oa-sheet-form flex flex-col gap-5 px-6 pb-0">
             <div className="space-y-1.5">
               <Label htmlFor="so-name">Name <span className="text-destructive">*</span></Label>
               <Input
@@ -245,17 +316,31 @@ export function SalesOfficersTable({ initialOfficers }: SalesOfficersTableProps)
                 placeholder="Optional"
               />
             </div>
-            <SheetFooter className="pt-2">
-              <Button type="button" variant="outline" onClick={() => setSheetOpen(false)} disabled={saving}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={saving}>
-                {saving ? "Saving…" : editing ? "Save Changes" : "Create"}
-              </Button>
-            </SheetFooter>
+            <div className="sticky bottom-0 bg-white border-t border-[#e5e7eb] -mx-6 px-6 py-4 flex gap-3 mt-6">
+              <Button type="button" variant="outline" className="flex-1 h-10 text-sm border-[#e5e7eb] text-[#374151] hover:bg-[#f7f8fa] rounded-lg oa-btn-ghost" onClick={() => setSheetOpen(false)} disabled={saving}>Cancel</Button>
+              <Button type="submit" className="flex-1 h-10 text-sm bg-[#1a237e] hover:bg-[#283593] text-white rounded-lg font-semibold oa-btn-primary" disabled={saving}>{saving ? "Saving…" : editing ? "Save Changes" : "Create"}</Button>
+            </div>
           </form>
         </SheetContent>
       </Sheet>
+      <CsvImportModal
+        title="Sales Officers"
+        columns={IMPORT_COLUMNS}
+        rows={importRows}
+        fileName={importFile}
+        validateRow={(row) => {
+          if (!row.name?.trim()) return "Name is required";
+          if (!row.email?.trim()) return "Email is required";
+          if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(row.email.trim()))
+            return "Invalid email format";
+          if (officers.some((o) => o.email?.toLowerCase() === row.email.trim().toLowerCase()))
+            return "Already exists — will be skipped";
+          return null;
+        }}
+        onConfirm={handleImportConfirm}
+        isOpen={importOpen}
+        onClose={() => setImportOpen(false)}
+      />
     </>
   );
 }

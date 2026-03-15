@@ -76,13 +76,13 @@ export function UsersTable({ initialUsers, roles, currentUserId }: UsersTablePro
   return (
     <>
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-xl font-semibold text-slate-900">Users</h1>
-        <Button size="sm" onClick={() => setAddSheetOpen(true)}>
+        <h1 className="text-lg font-bold text-[#1a237e]">Users</h1>
+        <Button size="sm" onClick={() => setAddSheetOpen(true)} className="oa-btn-primary">
           + Add User
         </Button>
       </div>
 
-      <div className="rounded-md border bg-white overflow-x-auto">
+      <div className="oa-table">
         <Table>
           <TableHeader>
             <TableRow>
@@ -125,6 +125,7 @@ export function UsersTable({ initialUsers, roles, currentUserId }: UsersTablePro
                       size="sm"
                       variant="outline"
                       onClick={() => setEditTarget(user)}
+                      className="oa-btn-ghost"
                     >
                       Edit
                     </Button>
@@ -133,6 +134,7 @@ export function UsersTable({ initialUsers, roles, currentUserId }: UsersTablePro
                       variant="outline"
                       disabled={togglingId === user.id || user.id === currentUserId}
                       onClick={() => handleToggleActive(user)}
+                      className="oa-btn-ghost"
                     >
                       {user.isActive ? "Deactivate" : "Activate"}
                     </Button>
@@ -140,6 +142,7 @@ export function UsersTable({ initialUsers, roles, currentUserId }: UsersTablePro
                       size="sm"
                       variant="outline"
                       onClick={() => setResetTarget({ id: user.id, name: user.name })}
+                      className="oa-btn-ghost"
                     >
                       Reset PW
                     </Button>

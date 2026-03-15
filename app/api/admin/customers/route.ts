@@ -7,44 +7,63 @@ import { z } from "zod";
 export const dynamic = 'force-dynamic';
 
 const contactSchema = z.object({
-  name: z.string().min(1).max(100),
-  phone: z.string().max(30).optional().nullable(),
-  email: z.string().max(200).optional().nullable(),
-  isPrimary: z.boolean().default(false),
+  name:          z.string().min(1).max(100),
+  phone:         z.string().max(30).optional().nullable(),
+  email:         z.string().max(200).optional().nullable(),
+  isPrimary:     z.boolean().default(false),
+  contactRoleId: z.number().int().positive().optional().nullable(),
 });
 
 const createSchema = z.object({
-  customerCode: z.string().min(1).max(50),
-  customerName: z.string().min(1).max(200),
-  areaId: z.number().int().positive(),
-  subAreaId: z.number().int().positive().optional().nullable(),
-  salesOfficerId: z.number().int().positive().optional().nullable(),
-  latitude: z.number().optional().nullable(),
-  longitude: z.number().optional().nullable(),
-  isKeyCustomer: z.boolean().default(false),
-  isKeySite: z.boolean().default(false),
+  customerCode:           z.string().min(1).max(50),
+  customerName:           z.string().min(1).max(200),
+  areaId:                 z.number().int().positive(),
+  subAreaId:              z.number().int().positive().optional().nullable(),
+  salesOfficerId:         z.number().int().positive().optional().nullable(),
+  primaryRouteId:         z.number().int().positive().optional().nullable(),
+  deliveryTypeOverrideId: z.number().int().positive().optional().nullable(),
+  salesOfficerGroupId:    z.number().int().positive().optional().nullable(),
+  customerRating:         z.enum(["A", "B", "C"]).optional().nullable(),
+  latitude:               z.number().optional().nullable(),
+  longitude:              z.number().optional().nullable(),
+  isKeyCustomer:          z.boolean().default(false),
+  isKeySite:              z.boolean().default(false),
   acceptsPartialDelivery: z.boolean().default(true),
-  isActive: z.boolean().default(true),
-  workingHoursStart: z.string().max(10).optional().nullable(),
-  workingHoursEnd: z.string().max(10).optional().nullable(),
-  noDeliveryDays: z.array(z.string()).default([]),
-  contacts: z.array(contactSchema).default([]),
+  isActive:               z.boolean().default(true),
+  workingHoursStart:      z.string().max(10).optional().nullable(),
+  workingHoursEnd:        z.string().max(10).optional().nullable(),
+  noDeliveryDays:         z.array(z.string()).default([]),
+  contacts:               z.array(contactSchema).default([]),
 });
+
+const listInclude = {
+  area:              { select: { id: true, name: true } },
+  subArea:           { select: { id: true, name: true } },
+  salesOfficerGroup: { select: { id: true, name: true } },
+} as const;
+
+const fullInclude = {
+  area:                 { select: { id: true, name: true } },
+  subArea:              { select: { id: true, name: true } },
+  primaryRoute:         { select: { id: true, name: true } },
+  deliveryTypeOverride: { select: { id: true, name: true } },
+  salesOfficerGroup:    { select: { id: true, name: true } },
+  contacts:             { orderBy: [{ isPrimary: "desc" as const }, { id: "asc" as const }] },
+};
 
 export async function GET(req: Request) {
   const session = await auth();
   requireRole(session, [ROLES.ADMIN]);
 
   const { searchParams } = new URL(req.url);
-  const page = Math.max(1, parseInt(searchParams.get("page") ?? "1", 10));
-  const limit = 25;
-  const search = searchParams.get("search")?.trim() ?? "";
-  const areaIdParam = searchParams.get("areaId");
-  const areaId = areaIdParam ? parseInt(areaIdParam, 10) : undefined;
+  const page          = Math.max(1, parseInt(searchParams.get("page") ?? "1", 10));
+  const limit         = 25;
+  const search        = searchParams.get("search")?.trim() ?? "";
+  const areaIdParam   = searchParams.get("areaId");
+  const areaId        = areaIdParam ? parseInt(areaIdParam, 10) : undefined;
   const isKeyCustomer = searchParams.get("isKeyCustomer") === "true" ? true : undefined;
   const isActiveParam = searchParams.get("isActive");
-  const isActive =
-    isActiveParam === "true" ? true : isActiveParam === "false" ? false : undefined;
+  const isActive      = isActiveParam === "true" ? true : isActiveParam === "false" ? false : undefined;
 
   const where = {
     ...(search && {
@@ -55,29 +74,21 @@ export async function GET(req: Request) {
     }),
     ...(areaId && !isNaN(areaId) && { areaId }),
     ...(isKeyCustomer !== undefined && { isKeyCustomer }),
-    ...(isActive !== undefined && { isActive }),
+    ...(isActive      !== undefined && { isActive }),
   };
 
   const [customers, total] = await prisma.$transaction([
     prisma.delivery_point_master.findMany({
       where,
-      skip: (page - 1) * limit,
-      take: limit,
+      skip:    (page - 1) * limit,
+      take:    limit,
       orderBy: { customerName: "asc" },
-      include: {
-        area: { select: { id: true, name: true } },
-        subArea: { select: { id: true, name: true } },
-      },
+      include: listInclude,
     }),
     prisma.delivery_point_master.count({ where }),
   ]);
 
-  return NextResponse.json({
-    data: customers,
-    total,
-    page,
-    totalPages: Math.ceil(total / limit),
-  });
+  return NextResponse.json({ data: customers, total, page, totalPages: Math.ceil(total / limit) });
 }
 
 export async function POST(req: Request) {
@@ -104,11 +115,7 @@ export async function POST(req: Request) {
         customerCode,
         ...(contacts.length > 0 && { contacts: { create: contacts } }),
       },
-      include: {
-        area: { select: { id: true, name: true } },
-        subArea: { select: { id: true, name: true } },
-        contacts: { orderBy: [{ isPrimary: "desc" }, { id: "asc" }] },
-      },
+      include: fullInclude,
     });
   });
 

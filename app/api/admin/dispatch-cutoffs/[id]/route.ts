@@ -7,34 +7,41 @@ import { z } from "zod";
 export const dynamic = "force-dynamic";
 
 const patchSchema = z.object({
-  label: z.string().min(1).optional(),
-  cutoffTime: z.string().regex(/^\d{2}:\d{2}$/, "Must be HH:MM format").optional(),
-  isActive: z.boolean().optional(),
-  isDefaultForType: z.boolean().optional(),
+  isActive:  z.boolean().optional(),
+  isDefault: z.boolean().optional(),
 });
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
   const session = await auth();
   requireRole(session, [ROLES.ADMIN]);
+
   const id = parseInt(params.id);
   if (isNaN(id)) return NextResponse.json({ error: "Invalid ID" }, { status: 400 });
+
   const body = await req.json();
   const parsed = patchSchema.safeParse(body);
-  if (!parsed.success) return NextResponse.json({ error: parsed.error.errors[0].message }, { status: 400 });
-  const existing = await prisma.dispatch_cutoff_master.findUnique({ where: { id } });
-  if (!existing) return NextResponse.json({ error: "Slot not found" }, { status: 404 });
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error.errors[0].message }, { status: 400 });
+  }
+
+  const existing = await prisma.delivery_type_slot_config.findUnique({ where: { id } });
+  if (!existing) return NextResponse.json({ error: "Config not found" }, { status: 404 });
+
   // If setting as default, clear existing default for same delivery type first
-  if (parsed.data.isDefaultForType === true) {
-    await prisma.dispatch_cutoff_master.updateMany({
-      where: { deliveryTypeId: existing.deliveryTypeId, isDefaultForType: true },
-      data: { isDefaultForType: false },
+  if (parsed.data.isDefault === true) {
+    await prisma.delivery_type_slot_config.updateMany({
+      where: { deliveryTypeId: existing.deliveryTypeId, isDefault: true },
+      data: { isDefault: false },
     });
   }
 
-  const updated = await prisma.dispatch_cutoff_master.update({
+  const updated = await prisma.delivery_type_slot_config.update({
     where: { id },
     data: parsed.data,
-    include: { deliveryType: true },
+    include: {
+      deliveryType: { select: { id: true, name: true } },
+      slot: { select: { id: true, name: true, slotTime: true, isNextDay: true } },
+    },
   });
 
   return NextResponse.json(updated);

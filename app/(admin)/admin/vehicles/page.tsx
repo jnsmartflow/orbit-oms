@@ -1,29 +1,32 @@
 import { prisma } from "@/lib/prisma";
 import { VehiclesTable } from "@/components/admin/vehicles-table";
 
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
 export default async function VehiclesPage() {
-  const [vehicles, deliveryTypes] = await Promise.all([
+  const [vehicles, transporters] = await Promise.all([
     prisma.vehicle_master.findMany({
-      orderBy: { vehicleNumber: "asc" },
-      include: { deliveryType: { select: { id: true, name: true } } },
+      orderBy: { vehicleNo: "asc" },
+      include: { transporter: { select: { id: true, name: true } } },
     }),
-    prisma.delivery_type_master.findMany({ orderBy: { id: "asc" } }),
+    prisma.transporter_master.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
   ]);
 
   return (
     <VehiclesTable
       initialVehicles={vehicles.map((v) => ({
-        id: v.id,
-        vehicleNumber: v.vehicleNumber,
-        vehicleType: v.vehicleType,
-        capacityKg: v.capacityKg,
-        capacityCbm: v.capacityCbm,
-        deliveryType: v.deliveryType,
-        isActive: v.isActive,
+        id:                  v.id,
+        vehicleNo:           v.vehicleNo,
+        category:            v.category,
+        capacityKg:          v.capacityKg,
+        maxCustomers:        v.maxCustomers,
+        deliveryTypeAllowed: v.deliveryTypeAllowed,
+        transporter:         v.transporter,
+        driverName:          v.driverName,
+        driverPhone:         v.driverPhone,
+        isActive:            v.isActive,
       }))}
-      deliveryTypes={deliveryTypes.map((dt) => ({ id: dt.id, name: dt.name }))}
+      transporters={transporters.map((t) => ({ id: t.id, name: t.name }))}
     />
   );
 }

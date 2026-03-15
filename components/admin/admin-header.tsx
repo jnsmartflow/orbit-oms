@@ -1,7 +1,6 @@
 "use client";
 
 import { signOut } from "next-auth/react";
-import { Button } from "@/components/ui/button";
 
 interface AdminHeaderProps {
   userName: string;
@@ -10,21 +9,37 @@ interface AdminHeaderProps {
 
 export function AdminHeader({ userName, userRole }: AdminHeaderProps) {
   return (
-    <header className="h-14 flex items-center justify-between px-6 border-b bg-white shrink-0">
-      <div />
-      <div className="flex items-center gap-4">
-        <span className="text-sm text-slate-600">
-          <span className="font-medium text-slate-900">{userName}</span>
+    <header
+      className="shrink-0 flex items-center justify-end px-5"
+      style={{
+        height:       '48px',
+        background:   'var(--white)',
+        borderBottom: '1px solid var(--border)',
+      }}
+    >
+      <div className="flex items-center gap-3">
+        <span style={{ fontSize: '12px', color: 'var(--text-2)' }}>
+          <span style={{ fontWeight: 600, color: 'var(--text)' }}>{userName}</span>
           {" · "}
-          <span className="text-slate-500">{userRole}</span>
+          <span style={{ color: 'var(--muted)' }}>{userRole}</span>
         </span>
-        <Button
-          variant="outline"
-          size="sm"
+        <button
           onClick={() => signOut({ callbackUrl: "/login" })}
+          className="rounded-md transition-colors"
+          style={{
+            padding:     '4px 10px',
+            fontSize:    '12px',
+            fontWeight:  500,
+            color:       'var(--text-2)',
+            background:  'var(--white)',
+            border:      '1px solid var(--border)',
+            cursor:      'pointer',
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg)')}
+          onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--white)')}
         >
           Sign out
-        </Button>
+        </button>
       </div>
     </header>
   );

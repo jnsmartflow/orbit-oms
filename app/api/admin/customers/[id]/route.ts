@@ -7,30 +7,44 @@ import { z } from "zod";
 export const dynamic = 'force-dynamic';
 
 const contactUpsertSchema = z.object({
-  id: z.number().int().positive().optional(),
-  name: z.string().min(1).max(100),
-  phone: z.string().max(30).optional().nullable(),
-  email: z.string().max(200).optional().nullable(),
-  isPrimary: z.boolean().default(false),
+  id:            z.number().int().positive().optional(),
+  name:          z.string().min(1).max(100),
+  phone:         z.string().max(30).optional().nullable(),
+  email:         z.string().max(200).optional().nullable(),
+  isPrimary:     z.boolean().default(false),
+  contactRoleId: z.number().int().positive().optional().nullable(),
 });
 
 const patchSchema = z.object({
-  customerCode: z.string().min(1).max(50).optional(),
-  customerName: z.string().min(1).max(200).optional(),
-  areaId: z.number().int().positive().optional(),
-  subAreaId: z.number().int().positive().optional().nullable(),
-  salesOfficerId: z.number().int().positive().optional().nullable(),
-  latitude: z.number().optional().nullable(),
-  longitude: z.number().optional().nullable(),
-  isKeyCustomer: z.boolean().optional(),
-  isKeySite: z.boolean().optional(),
+  customerCode:           z.string().min(1).max(50).optional(),
+  customerName:           z.string().min(1).max(200).optional(),
+  areaId:                 z.number().int().positive().optional(),
+  subAreaId:              z.number().int().positive().optional().nullable(),
+  salesOfficerId:         z.number().int().positive().optional().nullable(),
+  primaryRouteId:         z.number().int().positive().optional().nullable(),
+  deliveryTypeOverrideId: z.number().int().positive().optional().nullable(),
+  salesOfficerGroupId:    z.number().int().positive().optional().nullable(),
+  customerRating:         z.enum(["A", "B", "C"]).optional().nullable(),
+  latitude:               z.number().optional().nullable(),
+  longitude:              z.number().optional().nullable(),
+  isKeyCustomer:          z.boolean().optional(),
+  isKeySite:              z.boolean().optional(),
   acceptsPartialDelivery: z.boolean().optional(),
-  isActive: z.boolean().optional(),
-  workingHoursStart: z.string().max(10).optional().nullable(),
-  workingHoursEnd: z.string().max(10).optional().nullable(),
-  noDeliveryDays: z.array(z.string()).optional(),
-  contacts: z.array(contactUpsertSchema).optional(),
+  isActive:               z.boolean().optional(),
+  workingHoursStart:      z.string().max(10).optional().nullable(),
+  workingHoursEnd:        z.string().max(10).optional().nullable(),
+  noDeliveryDays:         z.array(z.string()).optional(),
+  contacts:               z.array(contactUpsertSchema).optional(),
 });
+
+const fullInclude = {
+  area:                 { select: { id: true, name: true } },
+  subArea:              { select: { id: true, name: true } },
+  primaryRoute:         { select: { id: true, name: true } },
+  deliveryTypeOverride: { select: { id: true, name: true } },
+  salesOfficerGroup:    { select: { id: true, name: true } },
+  contacts:             { orderBy: [{ isPrimary: "desc" as const }, { id: "asc" as const }] },
+};
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
   const session = await auth();
@@ -39,15 +53,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
   const id = parseInt(params.id, 10);
   if (isNaN(id)) return NextResponse.json({ error: "Invalid id." }, { status: 400 });
 
-  const customer = await prisma.delivery_point_master.findUnique({
-    where: { id },
-    include: {
-      area: { select: { id: true, name: true } },
-      subArea: { select: { id: true, name: true } },
-      contacts: { orderBy: [{ isPrimary: "desc" }, { id: "asc" }] },
-    },
-  });
-
+  const customer = await prisma.delivery_point_master.findUnique({ where: { id }, include: fullInclude });
   if (!customer) return NextResponse.json({ error: "Not found." }, { status: 404 });
   return NextResponse.json(customer);
 }
@@ -68,7 +74,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 
   if (customerCode) {
     const upperCode = customerCode.trim().toUpperCase();
-    const conflict = await prisma.delivery_point_master.findFirst({
+    const conflict  = await prisma.delivery_point_master.findFirst({
       where: { customerCode: upperCode, NOT: { id } },
     });
     if (conflict) {
@@ -99,7 +105,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
         if (contactId) {
           await tx.delivery_point_contacts.update({
             where: { id: contactId },
-            data: contactData,
+            data:  contactData,
           });
         } else {
           await tx.delivery_point_contacts.create({
@@ -109,14 +115,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       }
     }
 
-    return tx.delivery_point_master.findUnique({
-      where: { id },
-      include: {
-        area: { select: { id: true, name: true } },
-        subArea: { select: { id: true, name: true } },
-        contacts: { orderBy: [{ isPrimary: "desc" }, { id: "asc" }] },
-      },
-    });
+    return tx.delivery_point_master.findUnique({ where: { id }, include: fullInclude });
   });
 
   return NextResponse.json(customer);

@@ -1,13 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { CsvImportModal, parseFile, type CsvColumn } from "@/components/admin/csv-import-modal";
+import { Upload, Download } from "lucide-react";
 
 interface RouteRow {
   id: number;
@@ -23,6 +25,12 @@ interface RoutesTableProps {
 
 const EMPTY_FORM = { name: "", description: "" };
 
+
+const IMPORT_COLUMNS: CsvColumn[] = [
+  { key: "name",        label: "Name",        required: true  },
+  { key: "description", label: "Description", required: false },
+];
+
 export function RoutesTable({ initialRoutes }: RoutesTableProps) {
   const [routes, setRoutes] = useState<RouteRow[]>(initialRoutes);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -30,6 +38,10 @@ export function RoutesTable({ initialRoutes }: RoutesTableProps) {
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [togglingId, setTogglingId] = useState<number | null>(null);
+  const importFileRef                  = useRef<HTMLInputElement>(null);
+  const [importRows,   setImportRows]  = useState<Record<string, string>[]>([]);
+  const [importFile,   setImportFile]  = useState("");
+  const [importOpen,   setImportOpen]  = useState(false);
 
   function openAdd() {
     setEditTarget(null);
@@ -97,14 +109,71 @@ export function RoutesTable({ initialRoutes }: RoutesTableProps) {
     } catch { toast.error("Network error."); } finally { setTogglingId(null); }
   }
 
+  async function handleImportFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+    try {
+      const rows = await parseFile(file);
+      setImportRows(rows);
+      setImportFile(file.name);
+      setImportOpen(true);
+    } catch (err) {
+      toast.error((err as Error).message ?? "Failed to parse file.");
+    }
+  }
+
+  function handleTemplateDownload() {
+    const csv = "name,description\nVaracha,Varacha Road route\nBharuch,Bharuch highway";
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "template-routes.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function handleImportConfirm(validRows: Record<string, string>[]) {
+    const res = await fetch("/api/admin/routes/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ rows: validRows }),
+    });
+    const data = await res.json();
+    if (!res.ok) { toast.error(data.error ?? "Import failed."); return; }
+    toast.success(`${data.imported} imported, ${data.skipped} skipped.`);
+    setImportOpen(false);
+    window.location.reload();
+  }
+
   return (
     <>
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-xl font-semibold text-slate-900">Routes</h1>
-        <Button size="sm" onClick={openAdd}>+ Add Route</Button>
+        <h1 className="text-lg font-bold text-[#1a237e]">Routes</h1>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            className="flex items-center gap-1.5 text-[#1a237e] border border-[#c7d2fe] bg-[#eef2ff] hover:bg-[#e0e7ff] text-xs font-medium px-3 py-2 rounded-md"
+            onClick={handleTemplateDownload}
+          >
+            <Download className="h-3.5 w-3.5" />
+            Download Template
+          </button>
+          <button
+            type="button"
+            className="flex items-center gap-1.5 bg-white hover:bg-[#f7f8fa] text-[#374151] border border-[#e5e7eb] text-xs font-medium px-3 py-2 rounded-md"
+            onClick={() => importFileRef.current?.click()}
+          >
+            <Upload className="h-3.5 w-3.5" />
+            Import File
+          </button>
+          <Button size="sm" className="oa-btn-primary" onClick={openAdd}>+ Add Route</Button>
+        </div>
+        <input ref={importFileRef} type="file" accept=".csv,.xls,.xlsx" className="hidden" onChange={handleImportFileSelect} />
       </div>
 
-      <div className="rounded-md border bg-white overflow-x-auto">
+      <div className="oa-table">
         <Table>
           <TableHeader>
             <TableRow>
@@ -137,10 +206,11 @@ export function RoutesTable({ initialRoutes }: RoutesTableProps) {
                 </TableCell>
                 <TableCell className="text-right">
                   <div className="flex items-center justify-end gap-2">
-                    <Button size="sm" variant="outline" onClick={() => openEdit(route)}>Edit</Button>
+                    <Button size="sm" variant="outline" className="oa-btn-ghost" onClick={() => openEdit(route)}>Edit</Button>
                     <Button
                       size="sm"
                       variant="outline"
+                      className="oa-btn-ghost"
                       disabled={togglingId === route.id}
                       onClick={() => handleToggle(route)}
                     >
@@ -155,11 +225,11 @@ export function RoutesTable({ initialRoutes }: RoutesTableProps) {
       </div>
 
       <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
-        <SheetContent className="w-full sm:max-w-md overflow-y-auto">
+        <SheetContent className="w-full sm:max-w-2xl overflow-y-auto">
           <SheetHeader>
             <SheetTitle>{editTarget ? "Edit Route" : "Add Route"}</SheetTitle>
           </SheetHeader>
-          <form onSubmit={handleSave} className="flex flex-col gap-4 py-4">
+          <form onSubmit={handleSave} className="oa-sheet-form flex flex-col gap-5 px-6 pb-0">
             <div className="space-y-1.5">
               <Label htmlFor="rt-name">Route Name <span className="text-destructive">*</span></Label>
               <Input
@@ -182,17 +252,28 @@ export function RoutesTable({ initialRoutes }: RoutesTableProps) {
                 className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
               />
             </div>
-            <SheetFooter className="pt-2">
-              <Button type="button" variant="outline" onClick={() => setSheetOpen(false)} disabled={saving}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={saving}>
-                {saving ? "Saving…" : editTarget ? "Save Changes" : "Create Route"}
-              </Button>
-            </SheetFooter>
+            <div className="sticky bottom-0 bg-white border-t border-[#e5e7eb] -mx-6 px-6 py-4 flex gap-3 mt-6">
+              <Button type="button" variant="outline" className="flex-1 h-10 text-sm border-[#e5e7eb] text-[#374151] hover:bg-[#f7f8fa] rounded-lg oa-btn-ghost" onClick={() => setSheetOpen(false)} disabled={saving}>Cancel</Button>
+              <Button type="submit" className="flex-1 h-10 text-sm bg-[#1a237e] hover:bg-[#283593] text-white rounded-lg font-semibold oa-btn-primary" disabled={saving}>{saving ? "Saving…" : editTarget ? "Save Changes" : "Create Route"}</Button>
+            </div>
           </form>
         </SheetContent>
       </Sheet>
+      <CsvImportModal
+        title="Routes"
+        columns={IMPORT_COLUMNS}
+        rows={importRows}
+        fileName={importFile}
+        validateRow={(row) => {
+          if (!row.name?.trim()) return "Name is required";
+          if (routes.some((r) => r.name.toLowerCase() === row.name.trim().toLowerCase()))
+            return "Already exists — will be skipped";
+          return null;
+        }}
+        onConfirm={handleImportConfirm}
+        isOpen={importOpen}
+        onClose={() => setImportOpen(false)}
+      />
     </>
   );
 }

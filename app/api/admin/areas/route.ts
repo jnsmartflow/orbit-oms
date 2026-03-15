@@ -13,29 +13,32 @@ export async function GET() {
   const areas = await prisma.area_master.findMany({
     orderBy: { name: "asc" },
     include: {
-      deliveryType: { select: { id: true, name: true } },
-      areaRoutes: { include: { route: { select: { id: true, name: true } } } },
-      _count: { select: { subAreas: true } },
+      deliveryType:  { select: { id: true, name: true } },
+      primaryRoute:  { select: { id: true, name: true } },
+      areaRoutes:    { include: { route: { select: { id: true, name: true } } } },
+      _count:        { select: { subAreas: true } },
     },
   });
 
   return NextResponse.json(
     areas.map((a) => ({
-      id: a.id,
-      name: a.name,
-      isActive: a.isActive,
-      createdAt: a.createdAt,
+      id:           a.id,
+      name:         a.name,
+      isActive:     a.isActive,
+      createdAt:    a.createdAt,
       deliveryType: a.deliveryType,
-      routes: a.areaRoutes.map((ar) => ar.route),
+      primaryRoute: a.primaryRoute,
+      routes:       a.areaRoutes.map((ar) => ar.route),
       subAreaCount: a._count.subAreas,
     }))
   );
 }
 
 const createSchema = z.object({
-  name: z.string().min(1).max(100),
+  name:           z.string().min(1).max(100),
   deliveryTypeId: z.number().int().positive(),
-  routeIds: z.array(z.number().int().positive()).min(0),
+  primaryRouteId: z.number().int().positive().optional().nullable(),
+  routeIds:       z.array(z.number().int().positive()).min(0),
 });
 
 export async function POST(req: Request) {
@@ -47,31 +50,41 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: parsed.error.flatten().fieldErrors }, { status: 400 });
   }
 
-  const { name, deliveryTypeId, routeIds } = parsed.data;
+  const { name, deliveryTypeId, primaryRouteId, routeIds } = parsed.data;
+
+  if (primaryRouteId) {
+    const routeExists = await prisma.route_master.findUnique({ where: { id: primaryRouteId } });
+    if (!routeExists) {
+      return NextResponse.json({ error: "Primary route not found." }, { status: 400 });
+    }
+  }
 
   const area = await prisma.area_master.create({
     data: {
       name,
       deliveryTypeId,
+      primaryRouteId: primaryRouteId ?? null,
       areaRoutes: {
         create: routeIds.map((routeId) => ({ routeId })),
       },
     },
     include: {
-      deliveryType: { select: { id: true, name: true } },
-      areaRoutes: { include: { route: { select: { id: true, name: true } } } },
-      _count: { select: { subAreas: true } },
+      deliveryType:  { select: { id: true, name: true } },
+      primaryRoute:  { select: { id: true, name: true } },
+      areaRoutes:    { include: { route: { select: { id: true, name: true } } } },
+      _count:        { select: { subAreas: true } },
     },
   });
 
   return NextResponse.json(
     {
-      id: area.id,
-      name: area.name,
-      isActive: area.isActive,
-      createdAt: area.createdAt,
+      id:           area.id,
+      name:         area.name,
+      isActive:     area.isActive,
+      createdAt:    area.createdAt,
       deliveryType: area.deliveryType,
-      routes: area.areaRoutes.map((ar) => ar.route),
+      primaryRoute: area.primaryRoute,
+      routes:       area.areaRoutes.map((ar) => ar.route),
       subAreaCount: area._count.subAreas,
     },
     { status: 201 }

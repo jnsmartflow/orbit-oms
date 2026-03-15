@@ -9,7 +9,25 @@ datasource db {
 }
 
 // ─────────────────────────────────────────────
-// PHASE 1 — Full definitions (16 tables)
+// ENUMS
+// ─────────────────────────────────────────────
+
+enum StatusDomain {
+  dispatch
+  tinting
+  pick_list
+  import
+  workflow
+  priority
+}
+
+enum SlotRuleType {
+  time_based
+  default
+}
+
+// ─────────────────────────────────────────────
+// PHASE 1 — Config / Status
 // ─────────────────────────────────────────────
 
 model system_config {
@@ -27,48 +45,155 @@ model role_master {
 }
 
 model users {
-  id        Int         @id @default(autoincrement())
-  email     String      @unique
-  password  String
-  name      String
-  roleId    Int
-  role      role_master @relation(fields: [roleId], references: [id])
-  isActive  Boolean     @default(true)
-  createdAt DateTime    @default(now())
-  updatedAt DateTime    @updatedAt
+  id                        Int                @id @default(autoincrement())
+  email                     String             @unique
+  password                  String
+  name                      String
+  roleId                    Int
+  role                      role_master        @relation(fields: [roleId], references: [id])
+  isActive                  Boolean            @default(true)
+  createdAt                 DateTime           @default(now())
+  updatedAt                 DateTime           @updatedAt
+  // Phase 2 back-relations
+  importBatches             import_batches[]
+  statusLogs                order_status_logs[]
+  tintAssignmentsAsOperator tint_assignments[] @relation("TintAssignmentOperator")
+  tintAssignmentsAsManager  tint_assignments[] @relation("TintAssignmentManager")
+  tintLogs                  tint_logs[]
 }
+
+model status_master {
+  id          Int          @id @default(autoincrement())
+  domain      StatusDomain
+  code        String
+  label       String
+  sortOrder   Int
+  isActive    Boolean      @default(true)
+  description String?
+  createdAt   DateTime     @default(now())
+
+  @@unique([domain, code])
+}
+
+// ─────────────────────────────────────────────
+// PHASE 1 — SKU Hierarchy
+// ─────────────────────────────────────────────
+
+model product_category {
+  id           Int            @id @default(autoincrement())
+  name         String         @unique
+  isActive     Boolean        @default(true)
+  createdAt    DateTime       @default(now())
+  productNames product_name[]
+  skus         sku_master[]
+}
+
+model product_name {
+  id         Int              @id @default(autoincrement())
+  name       String           @unique
+  categoryId Int
+  category   product_category @relation(fields: [categoryId], references: [id])
+  isActive   Boolean          @default(true)
+  createdAt  DateTime         @default(now())
+  skus       sku_master[]
+}
+
+model base_colour {
+  id        Int          @id @default(autoincrement())
+  name      String       @unique
+  isActive  Boolean      @default(true)
+  createdAt DateTime     @default(now())
+  skus      sku_master[]
+}
+
+model sku_master {
+  id                Int                          @id @default(autoincrement())
+  skuCode           String                       @unique
+  skuName           String
+  productCategoryId Int
+  productCategory   product_category             @relation(fields: [productCategoryId], references: [id])
+  productNameId     Int
+  productName       product_name                 @relation(fields: [productNameId], references: [id])
+  baseColourId      Int
+  baseColour        base_colour                  @relation(fields: [baseColourId], references: [id])
+  packSize          String
+  containerType     String
+  unitsPerCarton    Int?
+  isActive          Boolean                      @default(true)
+  createdAt         DateTime                     @default(now())
+  updatedAt         DateTime                     @updatedAt
+  // Phase 2 back-relation
+  enrichedLineItems import_enriched_line_items[]
+}
+
+// ─────────────────────────────────────────────
+// PHASE 1 — Transporter / Vehicle
+// ─────────────────────────────────────────────
+
+model transporter_master {
+  id            Int              @id @default(autoincrement())
+  name          String           @unique
+  contactPerson String?
+  phone         String?
+  email         String?
+  isActive      Boolean          @default(true)
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  vehicles      vehicle_master[]
+}
+
+// ─────────────────────────────────────────────
+// PHASE 1 — Geography & Delivery
+// ─────────────────────────────────────────────
 
 model delivery_type_master {
-  id          Int                      @id @default(autoincrement())
-  name        String                   @unique
-  createdAt   DateTime                 @default(now())
-  areas       area_master[]
-  vehicles    vehicle_master[]
-  cutoffSlots dispatch_cutoff_master[]
+  id                Int                         @id @default(autoincrement())
+  name              String                      @unique
+  createdAt         DateTime                    @default(now())
+  areas             area_master[]
+  slotConfigs       delivery_type_slot_config[]
+  customerOverrides delivery_point_master[]     @relation("CustomerDeliveryTypeOverride")
 }
 
-model dispatch_cutoff_master {
-  id               Int                  @id @default(autoincrement())
-  deliveryTypeId   Int
-  deliveryType     delivery_type_master @relation(fields: [deliveryTypeId], references: [id])
-  slotNumber       Int
-  cutoffTime       String
-  label            String
-  isDefaultForType Boolean              @default(false)
-  isActive         Boolean              @default(true)
-  createdAt        DateTime             @default(now())
-  updatedAt        DateTime             @updatedAt
+model slot_master {
+  id          Int                         @id @default(autoincrement())
+  name        String                      @unique
+  slotTime    String
+  isNextDay   Boolean                     @default(false)
+  isActive    Boolean                     @default(true)
+  sortOrder   Int
+  createdAt   DateTime                    @default(now())
+  updatedAt   DateTime                    @updatedAt
+  slotConfigs delivery_type_slot_config[]
+}
 
-  @@unique([deliveryTypeId, slotNumber])
+model delivery_type_slot_config {
+  id             Int                  @id @default(autoincrement())
+  deliveryTypeId Int
+  deliveryType   delivery_type_master @relation(fields: [deliveryTypeId], references: [id])
+  slotId         Int
+  slot           slot_master          @relation(fields: [slotId], references: [id])
+  slotRuleType   SlotRuleType
+  windowStart    String?
+  windowEnd      String?
+  isDefault      Boolean              @default(false)
+  isActive       Boolean              @default(true)
+  sortOrder      Int
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  @@unique([deliveryTypeId, slotId])
 }
 
 model route_master {
-  id          Int              @id @default(autoincrement())
-  name        String           @unique
-  description String?
-  isActive    Boolean          @default(true)
-  createdAt   DateTime         @default(now())
-  areaRoutes  area_route_map[]
+  id                    Int                     @id @default(autoincrement())
+  name                  String                  @unique
+  description           String?
+  isActive              Boolean                 @default(true)
+  createdAt             DateTime                @default(now())
+  areaRoutes            area_route_map[]
+  primaryAreas          area_master[]           @relation("AreaPrimaryRoute")
+  customerPrimaryRoutes delivery_point_master[] @relation("CustomerPrimaryRoute")
 }
 
 model area_master {
@@ -76,6 +201,8 @@ model area_master {
   name           String
   deliveryTypeId Int
   deliveryType   delivery_type_master   @relation(fields: [deliveryTypeId], references: [id])
+  primaryRouteId Int?
+  primaryRoute   route_master?          @relation("AreaPrimaryRoute", fields: [primaryRouteId], references: [id])
   isActive       Boolean                @default(true)
   createdAt      DateTime               @default(now())
   areaRoutes     area_route_map[]
@@ -84,9 +211,9 @@ model area_master {
 }
 
 model area_route_map {
-  id      Int         @id @default(autoincrement())
+  id      Int          @id @default(autoincrement())
   areaId  Int
-  area    area_master @relation(fields: [areaId], references: [id])
+  area    area_master  @relation(fields: [areaId], references: [id])
   routeId Int
   route   route_master @relation(fields: [routeId], references: [id])
 
@@ -103,6 +230,10 @@ model sub_area_master {
   deliveryPoints delivery_point_master[]
 }
 
+// ─────────────────────────────────────────────
+// PHASE 1 — Sales Officer
+// ─────────────────────────────────────────────
+
 model sales_officer_master {
   id             Int                    @id @default(autoincrement())
   name           String
@@ -112,6 +243,30 @@ model sales_officer_master {
   isActive       Boolean                @default(true)
   createdAt      DateTime               @default(now())
   deliveryPoints delivery_point_master[]
+  groups         sales_officer_group[]
+}
+
+model sales_officer_group {
+  id             Int                    @id @default(autoincrement())
+  name           String                 @unique
+  salesOfficerId Int
+  salesOfficer   sales_officer_master   @relation(fields: [salesOfficerId], references: [id])
+  isActive       Boolean                @default(true)
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+  customers      delivery_point_master[]
+}
+
+// ─────────────────────────────────────────────
+// PHASE 1 — Customers
+// ─────────────────────────────────────────────
+
+model contact_role_master {
+  id        Int                       @id @default(autoincrement())
+  name      String                    @unique
+  isActive  Boolean                   @default(true)
+  createdAt DateTime                  @default(now())
+  contacts  delivery_point_contacts[]
 }
 
 model delivery_point_master {
@@ -124,6 +279,13 @@ model delivery_point_master {
   subArea                sub_area_master?          @relation(fields: [subAreaId], references: [id])
   salesOfficerId         Int?
   salesOfficer           sales_officer_master?     @relation(fields: [salesOfficerId], references: [id])
+  primaryRouteId         Int?
+  primaryRoute           route_master?             @relation("CustomerPrimaryRoute", fields: [primaryRouteId], references: [id])
+  deliveryTypeOverrideId Int?
+  deliveryTypeOverride   delivery_type_master?     @relation("CustomerDeliveryTypeOverride", fields: [deliveryTypeOverrideId], references: [id])
+  salesOfficerGroupId    Int?
+  salesOfficerGroup      sales_officer_group?      @relation(fields: [salesOfficerGroupId], references: [id])
+  customerRating         String?
   isKeyCustomer          Boolean                   @default(false)
   isKeySite              Boolean                   @default(false)
   acceptsPartialDelivery Boolean                   @default(true)
@@ -136,6 +298,8 @@ model delivery_point_master {
   createdAt              DateTime                  @default(now())
   updatedAt              DateTime                  @updatedAt
   contacts               delivery_point_contacts[]
+  // Phase 2 back-relation
+  orders                 orders[]
 }
 
 model delivery_point_contacts {
@@ -146,107 +310,186 @@ model delivery_point_contacts {
   phone           String?
   email           String?
   isPrimary       Boolean               @default(false)
+  contactRoleId   Int?
+  contactRole     contact_role_master?  @relation(fields: [contactRoleId], references: [id])
   createdAt       DateTime              @default(now())
 }
 
-model sku_master {
-  id                 Int            @id @default(autoincrement())
-  skuCode            String         @unique
-  skuName            String
-  packSize           String
-  containerType      String
-  unitsPerCarton     Int?
-  grossWeightPerUnit Float
-  isActive           Boolean        @default(true)
-  createdAt          DateTime       @default(now())
-  updatedAt          DateTime       @updatedAt
-  subSkus            sku_sub_master[]
-}
-
-model sku_sub_master {
-  id          Int        @id @default(autoincrement())
-  skuId       Int
-  sku         sku_master @relation(fields: [skuId], references: [id])
-  subCode     String     @unique
-  description String?
-  createdAt   DateTime   @default(now())
-}
-
-model delivery_priority_master {
-  id        Int      @id @default(autoincrement())
-  name      String   @unique
-  sortOrder Int
-  createdAt DateTime @default(now())
-}
-
-model dispatch_status_master {
-  id        Int      @id @default(autoincrement())
-  name      String   @unique
-  createdAt DateTime @default(now())
-}
-
-model tinting_status_master {
-  id        Int      @id @default(autoincrement())
-  name      String   @unique
-  createdAt DateTime @default(now())
-}
-
 // ─────────────────────────────────────────────
-// PHASE 2 STUBS — Import tables (5)
+// PHASE 2 — Import tables (5)
 // ─────────────────────────────────────────────
 
 model import_batches {
-  id        Int      @id @default(autoincrement())
-  createdAt DateTime @default(now())
+  id           Int                  @id @default(autoincrement())
+  batchRef     String               @unique
+  importedById Int
+  importedBy   users                @relation(fields: [importedById], references: [id])
+  headerFile   String
+  lineFile     String
+  totalObds    Int                  @default(0)
+  skippedObds  Int                  @default(0)
+  failedObds   Int                  @default(0)
+  status       String               @default("processing")
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+  rawSummaries import_raw_summary[]
+  orders       orders[]
 }
 
 model import_raw_summary {
-  id        Int      @id @default(autoincrement())
-  createdAt DateTime @default(now())
+  id                  Int                    @id @default(autoincrement())
+  batchId             Int
+  batch               import_batches         @relation(fields: [batchId], references: [id])
+  obdNumber           String
+  sapStatus           String?
+  smu                 String?
+  smuCode             String?
+  materialType        String?
+  natureOfTransaction String?
+  warehouse           String?
+  obdEmailDate        DateTime?
+  obdEmailTime        String?
+  totalUnitQty        Int?
+  grossWeight         Float?
+  volume              Float?
+  billToCustomerId    String?
+  billToCustomerName  String?
+  shipToCustomerId    String?
+  shipToCustomerName  String?
+  invoiceNo           String?
+  invoiceDate         DateTime?
+  rowStatus           String                 @default("valid")
+  rowError            String?
+  createdAt           DateTime               @default(now())
+  rawLineItems        import_raw_line_items[]
 }
 
 model import_raw_line_items {
-  id        Int      @id @default(autoincrement())
-  createdAt DateTime @default(now())
+  id               Int                         @id @default(autoincrement())
+  rawSummaryId     Int
+  rawSummary       import_raw_summary          @relation(fields: [rawSummaryId], references: [id])
+  obdNumber        String
+  lineId           Int
+  skuCodeRaw       String
+  skuDescriptionRaw String?
+  batchCode        String?
+  unitQty          Int
+  volumeLine       Float?
+  isTinting        Boolean                     @default(false)
+  rowStatus        String                      @default("valid")
+  rowError         String?
+  createdAt        DateTime                    @default(now())
+  enrichedLineItem import_enriched_line_items?
 }
 
 model import_enriched_line_items {
-  id        Int      @id @default(autoincrement())
-  createdAt DateTime @default(now())
+  id            Int                   @id @default(autoincrement())
+  rawLineItemId Int                   @unique
+  rawLineItem   import_raw_line_items @relation(fields: [rawLineItemId], references: [id])
+  skuId         Int
+  sku           sku_master            @relation(fields: [skuId], references: [id])
+  unitQty       Int
+  volumeLine    Float?
+  lineWeight    Float
+  isTinting     Boolean
+  createdAt     DateTime              @default(now())
 }
 
 model import_obd_query_summary {
-  id        Int      @id @default(autoincrement())
-  createdAt DateTime @default(now())
+  id           Int      @id @default(autoincrement())
+  obdNumber    String   @unique
+  orderId      Int?     @unique
+  order        orders?  @relation(fields: [orderId], references: [id])
+  totalLines   Int
+  totalUnitQty Int
+  totalWeight  Float
+  totalVolume  Float
+  hasTinting   Boolean
+  createdAt    DateTime @default(now())
 }
 
 // ─────────────────────────────────────────────
-// PHASE 2 STUBS — Orders + Tinting + Support (5)
+// PHASE 2 — Orders + Tinting + Support (5)
 // ─────────────────────────────────────────────
 
 model orders {
-  id        Int      @id @default(autoincrement())
-  createdAt DateTime @default(now())
+  id                  Int                       @id @default(autoincrement())
+  obdNumber           String                    @unique
+  batchId             Int
+  batch               import_batches            @relation(fields: [batchId], references: [id])
+  customerId          Int?
+  customer            delivery_point_master?    @relation(fields: [customerId], references: [id])
+  shipToCustomerId    String
+  shipToCustomerName  String?
+  orderType           String
+  workflowStage       String                    @default("order_created")
+  dispatchSlot        String?
+  dispatchSlotDeadline DateTime?
+  priorityLevel       Int                       @default(3)
+  dispatchStatus      String?
+  invoiceNo           String?
+  invoiceDate         DateTime?
+  obdEmailDate        DateTime?
+  sapStatus           String?
+  materialType        String?
+  natureOfTransaction String?
+  warehouse           String?
+  totalUnitQty        Int?
+  grossWeight         Float?
+  volume              Float?
+  isActive            Boolean                   @default(true)
+  createdAt           DateTime                  @default(now())
+  updatedAt           DateTime                  @updatedAt
+  querySnapshot       import_obd_query_summary?
+  statusLogs          order_status_logs[]
+  tintAssignments     tint_assignments[]
+  tintLogs            tint_logs[]
+  splits              order_splits[]
 }
 
 model order_splits {
   id        Int      @id @default(autoincrement())
+  orderId   Int
+  order     orders   @relation(fields: [orderId], references: [id])
   createdAt DateTime @default(now())
 }
 
 model tint_assignments {
-  id        Int      @id @default(autoincrement())
-  createdAt DateTime @default(now())
+  id           Int      @id @default(autoincrement())
+  orderId      Int
+  order        orders   @relation(fields: [orderId], references: [id])
+  assignedToId Int
+  assignedTo   users    @relation("TintAssignmentOperator", fields: [assignedToId], references: [id])
+  assignedById Int
+  assignedBy   users    @relation("TintAssignmentManager", fields: [assignedById], references: [id])
+  status       String   @default("assigned")
+  startedAt    DateTime?
+  completedAt  DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }
 
 model tint_logs {
-  id        Int      @id @default(autoincrement())
-  createdAt DateTime @default(now())
+  id            Int      @id @default(autoincrement())
+  orderId       Int
+  order         orders   @relation(fields: [orderId], references: [id])
+  action        String
+  performedById Int
+  performedBy   users    @relation(fields: [performedById], references: [id])
+  note          String?
+  createdAt     DateTime @default(now())
 }
 
 model order_status_logs {
-  id        Int      @id @default(autoincrement())
-  createdAt DateTime @default(now())
+  id          Int      @id @default(autoincrement())
+  orderId     Int
+  order       orders   @relation(fields: [orderId], references: [id])
+  fromStage   String?
+  toStage     String
+  changedById Int
+  changedBy   users    @relation(fields: [changedById], references: [id])
+  note        String?
+  createdAt   DateTime @default(now())
 }
 
 // ─────────────────────────────────────────────
@@ -254,16 +497,18 @@ model order_status_logs {
 // ─────────────────────────────────────────────
 
 model vehicle_master {
-  id             Int                  @id @default(autoincrement())
-  vehicleNumber  String               @unique
-  vehicleType    String
-  capacityKg     Float
-  capacityCbm    Float?
-  deliveryTypeId Int
-  deliveryType   delivery_type_master @relation(fields: [deliveryTypeId], references: [id])
-  isActive       Boolean              @default(true)
-  createdAt      DateTime             @default(now())
-  updatedAt      DateTime             @updatedAt
+  id                  Int                @id @default(autoincrement())
+  vehicleNo           String             @unique
+  category            String
+  capacityKg          Float
+  maxCustomers        Int?
+  deliveryTypeAllowed String
+  transporterId       Int
+  transporter         transporter_master @relation(fields: [transporterId], references: [id])
+  driverName          String?
+  driverPhone         String?
+  isActive            Boolean            @default(true)
+  createdAt           DateTime           @default(now())
 }
 
 model dispatch_plans {
