@@ -5,6 +5,7 @@ import * as XLSX from "xlsx";
 import { auth } from "@/lib/auth";
 import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
+import { checkPermission } from "@/lib/permissions";
 import type {
   ImportLinePreview,
   ImportObdPreview,
@@ -862,6 +863,10 @@ async function handleConfirm(req: Request, session: Session): Promise<NextRespon
 export async function POST(req: Request): Promise<NextResponse> {
   const session = await auth();
   requireRole(session, [ROLES.ADMIN, ROLES.DISPATCHER, ROLES.SUPPORT]);
+  if (session!.user.role !== "admin") {
+    const allowed = await checkPermission(session!.user.role, "import_obd", "canImport");
+    if (!allowed) return NextResponse.json({ error: "Permission denied" }, { status: 403 });
+  }
 
   const { searchParams } = new URL(req.url);
   const action = searchParams.get("action");

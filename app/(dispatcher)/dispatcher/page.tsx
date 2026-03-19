@@ -1,12 +1,17 @@
 import { auth } from "@/lib/auth";
-import { requireRole, ROLES } from "@/lib/rbac";
+import { redirect } from "next/navigation";
+import { checkPermission } from "@/lib/permissions";
 import { SignOutButton } from "@/components/shared/sign-out-button";
 
 export const dynamic = 'force-dynamic';
 
 export default async function DispatcherPage() {
   const session = await auth();
-  requireRole(session, [ROLES.DISPATCHER]);
+  if (!session?.user) redirect("/login");
+  if (session.user.role !== "admin") {
+    const allowed = await checkPermission(session.user.role, "dispatcher", "canView");
+    if (!allowed) redirect("/unauthorized");
+  }
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center gap-4">

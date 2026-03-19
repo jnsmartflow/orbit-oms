@@ -21,6 +21,8 @@ interface SkusTableProps {
   categories:    NameOption[];
   productNames:  NameOption[];
   baseColours:   NameOption[];
+  canEdit?:      boolean;
+  canImport?:    boolean;
 }
 
 
@@ -39,7 +41,7 @@ const VALID_CONTAINER_TYPES = new Set(["tin", "drum", "carton", "bag"]);
 
 // ── Component ──────────────────────────────────────────────────────────────────
 
-export function SkusTable({ initialSkus, initialTotal, categories, productNames, baseColours }: SkusTableProps) {
+export function SkusTable({ initialSkus, initialTotal, categories, productNames, baseColours, canEdit = true, canImport = true }: SkusTableProps) {
   const [skus,       setSkus]       = useState<SkuRow[]>(initialSkus);
   const [total,      setTotal]      = useState(initialTotal);
   const [totalPages, setTotalPages] = useState(Math.ceil(initialTotal / 25));
@@ -162,23 +164,29 @@ export function SkusTable({ initialSkus, initialTotal, categories, productNames,
           {total > 0 && <span className="ml-2 text-sm font-normal text-slate-400">{total} total</span>}
         </h1>
         <div className="flex gap-2">
-          <button
-            type="button"
-            className="flex items-center gap-1.5 text-[#1a237e] border border-[#c7d2fe] bg-[#eef2ff] hover:bg-[#e0e7ff] text-xs font-medium px-3 py-2 rounded-md"
-            onClick={handleTemplateDownload}
-          >
-            <Download className="h-3.5 w-3.5" />
-            Download Template
-          </button>
-          <button
-            type="button"
-            className="flex items-center gap-1.5 bg-white hover:bg-[#f7f8fa] text-[#374151] border border-[#e5e7eb] text-xs font-medium px-3 py-2 rounded-md"
-            onClick={() => importFileRef.current?.click()}
-          >
-            <Upload className="h-3.5 w-3.5" />
-            Import File
-          </button>
-          <Button size="sm" className="oa-btn-primary" onClick={openAdd}>+ Add SKU</Button>
+          {canImport && (
+            <button
+              type="button"
+              className="flex items-center gap-1.5 text-[#1a237e] border border-[#c7d2fe] bg-[#eef2ff] hover:bg-[#e0e7ff] text-xs font-medium px-3 py-2 rounded-md"
+              onClick={handleTemplateDownload}
+            >
+              <Download className="h-3.5 w-3.5" />
+              Download Template
+            </button>
+          )}
+          {canImport && (
+            <button
+              type="button"
+              className="flex items-center gap-1.5 bg-white hover:bg-[#f7f8fa] text-[#374151] border border-[#e5e7eb] text-xs font-medium px-3 py-2 rounded-md"
+              onClick={() => importFileRef.current?.click()}
+            >
+              <Upload className="h-3.5 w-3.5" />
+              Import File
+            </button>
+          )}
+          {canEdit && (
+            <Button size="sm" className="oa-btn-primary" onClick={openAdd}>+ Add SKU</Button>
+          )}
         </div>
       </div>
 
@@ -268,9 +276,11 @@ export function SkusTable({ initialSkus, initialTotal, categories, productNames,
                 </TableCell>
                 <TableCell>
                   <div className="flex items-center justify-end gap-2">
-                    <Button size="sm" variant="outline" className="oa-btn-ghost" onClick={() => openEdit(sku)}>
-                      Edit
-                    </Button>
+                    {canEdit && (
+                      <Button size="sm" variant="outline" className="oa-btn-ghost" onClick={() => openEdit(sku)}>
+                        Edit
+                      </Button>
+                    )}
                   </div>
                 </TableCell>
               </TableRow>

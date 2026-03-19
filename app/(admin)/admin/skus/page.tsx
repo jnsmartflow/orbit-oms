@@ -1,3 +1,6 @@
+import { auth } from "@/lib/auth";
+import { redirect } from "next/navigation";
+import { checkPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { SkusTable } from "@/components/admin/skus-table";
 
@@ -10,6 +13,13 @@ const include = {
 } as const;
 
 export default async function SkusPage() {
+  const session = await auth();
+  if (!session?.user) redirect("/login");
+  if (session.user.role !== "admin") {
+    const allowed = await checkPermission(session.user.role, "skus", "canView");
+    if (!allowed) redirect("/unauthorized");
+  }
+
   const [skus, total, categories, productNames, baseColours] = await Promise.all([
     prisma.sku_master.findMany({
       take:    25,

@@ -1,9 +1,19 @@
+import { auth } from "@/lib/auth";
+import { redirect } from "next/navigation";
+import { checkPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { VehiclesTable } from "@/components/admin/vehicles-table";
 
 export const dynamic = "force-dynamic";
 
 export default async function VehiclesPage() {
+  const session = await auth();
+  if (!session?.user) redirect("/login");
+  if (session.user.role !== "admin") {
+    const allowed = await checkPermission(session.user.role, "vehicles", "canView");
+    if (!allowed) redirect("/unauthorized");
+  }
+
   const [vehicles, transporters] = await Promise.all([
     prisma.vehicle_master.findMany({
       orderBy: { vehicleNo: "asc" },

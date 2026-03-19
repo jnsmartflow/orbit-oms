@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
+import { checkPermission } from "@/lib/permissions";
 import type { Prisma } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
@@ -11,6 +12,10 @@ const LIMIT = 25;
 export async function GET(req: Request): Promise<NextResponse> {
   const session = await auth();
   requireRole(session, [ROLES.SUPPORT, ROLES.ADMIN]);
+  if (session!.user.role !== "admin") {
+    const allowed = await checkPermission(session!.user.role, "support_queue", "canView");
+    if (!allowed) return NextResponse.json({ error: "Permission denied" }, { status: 403 });
+  }
 
   const { searchParams } = new URL(req.url);
   const search         = searchParams.get("search")?.trim() ?? "";

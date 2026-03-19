@@ -2,33 +2,39 @@
 
 import { useRoleSidebar } from "./role-sidebar-provider";
 import { RoleSidebar } from "./role-sidebar";
-import type { RoleNavLink } from "./role-sidebar";
+import type { RoleSidebarRole } from "./role-sidebar";
+import type { NavItemConfig } from "@/lib/permissions";
 
 interface RoleLayoutClientProps {
-  userName:  string;
-  userRole:  string;
-  links:     RoleNavLink[];
-  maxWidth?: string;
-  children:  React.ReactNode;
+  role:         RoleSidebarRole;
+  userName:     string;
+  userInitials: string;
+  navItems:     NavItemConfig[];
+  children:     React.ReactNode;
 }
 
 export function RoleLayoutClient({
+  role,
   userName,
-  userRole,
-  links,
-  maxWidth = "max-w-7xl",
+  userInitials,
+  navItems,
   children,
 }: RoleLayoutClientProps) {
   const { isCollapsed } = useRoleSidebar();
 
   return (
-    <div style={{ background: "var(--bg)", minHeight: "100vh" }}>
-      <RoleSidebar userName={userName} userRole={userRole} links={links} />
+    <div className="min-h-screen bg-[#f0f2f8]">
+      <RoleSidebar
+        role={role}
+        userName={userName}
+        userInitials={userInitials}
+        navItems={navItems}
+      />
       <div
         className="transition-all duration-200"
-        style={{ marginLeft: isCollapsed ? "72px" : "240px" }}
+        style={{ marginLeft: isCollapsed ? "72px" : "220px" }}
       >
-        <main className={`${maxWidth} mx-auto px-6 py-8`}>{children}</main>
+        {children}
       </div>
     </div>
   );

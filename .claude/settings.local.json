@@ -45,7 +45,10 @@
       "Bash(cd \"C:\\\\Users\\\\HP\\\\OneDrive\\\\VS Code\\\\orbit-oms\" && npx tsc --noEmit 2>&1 | head -20)",
       "Bash(taskkill /F /IM node.exe 2>&1; sleep 2 && cd \"C:\\\\Users\\\\HP\\\\OneDrive\\\\VS Code\\\\orbit-oms\" && npx prisma generate 2>&1)",
       "Bash(cd \"C:\\\\Users\\\\HP\\\\OneDrive\\\\VS Code\\\\orbit-oms\" && taskkill //F //IM node.exe 2>&1 || true)",
-      "Bash(cd:*)"
+      "Bash(cd:*)",
+      "Bash(ls:*)",
+      "Bash(Get-Process node:*)",
+      "Bash(taskkill:*)"
     ]
   }
 }

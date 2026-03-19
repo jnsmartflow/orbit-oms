@@ -1,9 +1,19 @@
+import { auth } from "@/lib/auth";
+import { redirect } from "next/navigation";
+import { checkPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { AreasTable } from "@/components/admin/areas-table";
 
 export const dynamic = 'force-dynamic';
 
 export default async function AreasPage() {
+  const session = await auth();
+  if (!session?.user) redirect("/login");
+  if (session.user.role !== "admin") {
+    const allowed = await checkPermission(session.user.role, "routes_areas", "canView");
+    if (!allowed) redirect("/unauthorized");
+  }
+
   const [areas, deliveryTypes, routes] = await Promise.all([
     prisma.area_master.findMany({
       orderBy: { name: "asc" },

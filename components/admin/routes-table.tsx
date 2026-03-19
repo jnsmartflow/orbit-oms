@@ -2,13 +2,12 @@
 
 import { useRef, useState } from "react";
 import { toast } from "sonner";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { CsvImportModal, parseFile, type CsvColumn } from "@/components/admin/csv-import-modal";
+import { StatusBadge } from "@/components/shared/status-badge";
 import { Upload, Download } from "lucide-react";
 
 interface RouteRow {
@@ -21,17 +20,18 @@ interface RouteRow {
 
 interface RoutesTableProps {
   initialRoutes: RouteRow[];
+  canEdit?:      boolean;
+  canImport?:    boolean;
 }
 
 const EMPTY_FORM = { name: "", description: "" };
-
 
 const IMPORT_COLUMNS: CsvColumn[] = [
   { key: "name",        label: "Name",        required: true  },
   { key: "description", label: "Description", required: false },
 ];
 
-export function RoutesTable({ initialRoutes }: RoutesTableProps) {
+export function RoutesTable({ initialRoutes, canEdit = true, canImport = true }: RoutesTableProps) {
   const [routes, setRoutes] = useState<RouteRow[]>(initialRoutes);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<RouteRow | null>(null);
@@ -147,81 +147,104 @@ export function RoutesTable({ initialRoutes }: RoutesTableProps) {
     window.location.reload();
   }
 
+  const total = routes.length;
+  const activeCount = routes.filter((x) => x.isActive).length;
+
   return (
     <>
-      <div className="flex items-center justify-between mb-4">
-        <h1 className="text-lg font-bold text-[#1a237e]">Routes</h1>
+      <div className="flex items-start justify-between mb-5">
+        <div>
+          <h1 className="text-[18px] font-extrabold text-gray-900 tracking-tight">Routes</h1>
+          <p className="text-[12px] text-gray-400 mt-0.5">{total} total · {activeCount} active</p>
+        </div>
         <div className="flex gap-2">
-          <button
-            type="button"
-            className="flex items-center gap-1.5 text-[#1a237e] border border-[#c7d2fe] bg-[#eef2ff] hover:bg-[#e0e7ff] text-xs font-medium px-3 py-2 rounded-md"
-            onClick={handleTemplateDownload}
-          >
-            <Download className="h-3.5 w-3.5" />
-            Download Template
-          </button>
-          <button
-            type="button"
-            className="flex items-center gap-1.5 bg-white hover:bg-[#f7f8fa] text-[#374151] border border-[#e5e7eb] text-xs font-medium px-3 py-2 rounded-md"
-            onClick={() => importFileRef.current?.click()}
-          >
-            <Upload className="h-3.5 w-3.5" />
-            Import File
-          </button>
-          <Button size="sm" className="oa-btn-primary" onClick={openAdd}>+ Add Route</Button>
+          {canImport && (
+            <button
+              type="button"
+              className="flex items-center gap-1.5 bg-white border border-[#cdd1e8] text-gray-600 text-[12.5px] font-medium px-3 py-2 rounded-lg hover:bg-gray-50"
+              onClick={handleTemplateDownload}
+            >
+              <Download className="h-3.5 w-3.5" />
+              Download Template
+            </button>
+          )}
+          {canImport && (
+            <button
+              type="button"
+              className="flex items-center gap-1.5 bg-white border border-[#cdd1e8] text-gray-600 text-[12.5px] font-medium px-3 py-2 rounded-lg hover:bg-gray-50"
+              onClick={() => importFileRef.current?.click()}
+            >
+              <Upload className="h-3.5 w-3.5" />
+              Import File
+            </button>
+          )}
+          {canEdit && (
+            <button
+              type="button"
+              className="bg-[#1a237e] hover:bg-[#283593] text-white text-[12.5px] font-semibold px-4 py-2 rounded-lg flex items-center gap-1.5"
+              onClick={openAdd}
+            >
+              + Add Route
+            </button>
+          )}
         </div>
         <input ref={importFileRef} type="file" accept=".csv,.xls,.xlsx" className="hidden" onChange={handleImportFileSelect} />
       </div>
 
-      <div className="oa-table">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Route Name</TableHead>
-              <TableHead>Description</TableHead>
-              <TableHead>Areas</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
+      <div className="bg-white border border-[#e2e5f1] rounded-xl overflow-hidden shadow-sm">
+        <table className="w-full border-collapse">
+          <thead className="bg-[#f7f8fc]">
+            <tr>
+              <th className="text-[10.5px] font-bold uppercase tracking-[.5px] text-gray-400 py-2.5 px-4 text-left border-b border-[#e2e5f1]">Route Name</th>
+              <th className="text-[10.5px] font-bold uppercase tracking-[.5px] text-gray-400 py-2.5 px-4 text-left border-b border-[#e2e5f1]">Description</th>
+              <th className="text-[10.5px] font-bold uppercase tracking-[.5px] text-gray-400 py-2.5 px-4 text-left border-b border-[#e2e5f1]">Areas</th>
+              <th className="text-[10.5px] font-bold uppercase tracking-[.5px] text-gray-400 py-2.5 px-4 text-left border-b border-[#e2e5f1]">Status</th>
+              <th className="text-[10.5px] font-bold uppercase tracking-[.5px] text-gray-400 py-2.5 px-4 text-right border-b border-[#e2e5f1]">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
             {routes.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={5} className="text-center text-slate-500 py-8">
-                  No routes yet.
-                </TableCell>
-              </TableRow>
+              <tr>
+                <td colSpan={5} className="text-center text-gray-400 py-8 text-[12.5px]">No routes yet.</td>
+              </tr>
             )}
             {routes.map((route) => (
-              <TableRow key={route.id}>
-                <TableCell className="font-medium">{route.name}</TableCell>
-                <TableCell className="text-slate-500 text-sm">
-                  {route.description ?? <span className="text-slate-300">—</span>}
-                </TableCell>
-                <TableCell className="text-slate-500">{route.areaCount}</TableCell>
-                <TableCell>
-                  <Badge variant={route.isActive ? "default" : "secondary"}>
-                    {route.isActive ? "Active" : "Inactive"}
-                  </Badge>
-                </TableCell>
-                <TableCell className="text-right">
+              <tr key={route.id} className="border-b border-[#e2e5f1] hover:bg-[#f5f7ff] transition-colors last:border-0">
+                <td className="py-3 px-4 text-[12.5px] text-gray-900 font-semibold">{route.name}</td>
+                <td className="py-3 px-4 text-[12.5px] text-gray-700">
+                  {route.description ?? <span className="text-gray-300">—</span>}
+                </td>
+                <td className="py-3 px-4 text-[12.5px] text-gray-700">{route.areaCount}</td>
+                <td className="py-3 px-4 text-[12.5px] text-gray-700">
+                  <StatusBadge variant={route.isActive ? "active" : "inactive"} />
+                </td>
+                <td className="py-3 px-4 text-right">
                   <div className="flex items-center justify-end gap-2">
-                    <Button size="sm" variant="outline" className="oa-btn-ghost" onClick={() => openEdit(route)}>Edit</Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="oa-btn-ghost"
-                      disabled={togglingId === route.id}
-                      onClick={() => handleToggle(route)}
-                    >
-                      {route.isActive ? "Deactivate" : "Activate"}
-                    </Button>
+                    {canEdit && (
+                      <button
+                        type="button"
+                        className="text-[11.5px] font-medium text-gray-500 border border-[#e2e5f1] bg-white hover:bg-[#f5f7ff] hover:text-[#1a237e] hover:border-[#c5cae9] px-3 py-1.5 rounded-lg transition-colors"
+                        onClick={() => openEdit(route)}
+                      >
+                        Edit →
+                      </button>
+                    )}
+                    {canEdit && (
+                      <button
+                        type="button"
+                        className="text-[11.5px] font-medium text-gray-500 border border-[#e2e5f1] bg-white hover:bg-[#f5f7ff] px-3 py-1.5 rounded-lg transition-colors disabled:opacity-40"
+                        disabled={togglingId === route.id}
+                        onClick={() => handleToggle(route)}
+                      >
+                        {route.isActive ? "Deactivate" : "Activate"}
+                      </button>
+                    )}
                   </div>
-                </TableCell>
-              </TableRow>
+                </td>
+              </tr>
             ))}
-          </TableBody>
-        </Table>
+          </tbody>
+        </table>
       </div>
 
       <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>

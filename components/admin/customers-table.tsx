@@ -53,10 +53,12 @@ interface CustomersTableProps {
   deliveryTypes:    DeliveryTypeOption[];
   soGroups:         SOGroupOption[];
   contactRoles:     ContactRoleOption[];
+  canEdit?:         boolean;
+  canImport?:       boolean;
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
-export function CustomersTable({ initialCustomers, initialTotal, areas, subAreas, salesOfficers, routes, deliveryTypes, soGroups, contactRoles }: CustomersTableProps) {
+export function CustomersTable({ initialCustomers, initialTotal, areas, subAreas, salesOfficers, routes, deliveryTypes, soGroups, contactRoles, canEdit = true, canImport = true }: CustomersTableProps) {
   const [customers, setCustomers] = useState<CustomerRow[]>(initialCustomers);
   const [total, setTotal] = useState(initialTotal);
   const [totalPages, setTotalPages] = useState(Math.ceil(initialTotal / 25));
@@ -207,18 +209,24 @@ export function CustomersTable({ initialCustomers, initialTotal, areas, subAreas
           {total > 0 && <span className="ml-2 text-sm font-normal text-slate-400">{total} total</span>}
         </h1>
         <div className="flex gap-2">
-          <button
-            type="button"
-            className="flex items-center gap-1.5 text-xs font-medium text-[#1a237e] border border-[#c7d2fe] bg-[#eef2ff] hover:bg-[#e0e7ff] px-3 py-2 rounded-md"
-            onClick={handleTemplateDownload}
-          >
-            <Download className="h-3.5 w-3.5" />
-            Download Template
-          </button>
-          <Button size="sm" variant="outline" className="oa-btn-ghost" disabled={importing} onClick={() => fileInputRef.current?.click()}>
-            {importing ? "Importing…" : "Import CSV"}
-          </Button>
-          <Button size="sm" className="oa-btn-primary" onClick={openAdd}>+ Add Customer</Button>
+          {canImport && (
+            <button
+              type="button"
+              className="flex items-center gap-1.5 text-xs font-medium text-[#1a237e] border border-[#c7d2fe] bg-[#eef2ff] hover:bg-[#e0e7ff] px-3 py-2 rounded-md"
+              onClick={handleTemplateDownload}
+            >
+              <Download className="h-3.5 w-3.5" />
+              Download Template
+            </button>
+          )}
+          {canImport && (
+            <Button size="sm" variant="outline" className="oa-btn-ghost" disabled={importing} onClick={() => fileInputRef.current?.click()}>
+              {importing ? "Importing…" : "Import CSV"}
+            </Button>
+          )}
+          {canEdit && (
+            <Button size="sm" className="oa-btn-primary" onClick={openAdd}>+ Add Customer</Button>
+          )}
         </div>
       </div>
 
@@ -323,15 +331,17 @@ export function CustomersTable({ initialCustomers, initialTotal, areas, subAreas
                   </Badge>
                 </TableCell>
                 <TableCell className="text-right">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="oa-btn-ghost"
-                    disabled={loadingEdit && editingId === c.id}
-                    onClick={() => openEdit(c.id)}
-                  >
-                    {loadingEdit && editingId === c.id ? "Loading…" : "Edit"}
-                  </Button>
+                  {canEdit && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="oa-btn-ghost"
+                      disabled={loadingEdit && editingId === c.id}
+                      onClick={() => openEdit(c.id)}
+                    >
+                      {loadingEdit && editingId === c.id ? "Loading…" : "Edit"}
+                    </Button>
+                  )}
                 </TableCell>
               </TableRow>
             ))}
@@ -369,13 +379,15 @@ export function CustomersTable({ initialCustomers, initialTotal, areas, subAreas
       )}
 
       {/* Hidden file input for CSV */}
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept=".csv"
-        className="hidden"
-        onChange={handleFileSelect}
-      />
+      {canImport && (
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".csv"
+          className="hidden"
+          onChange={handleFileSelect}
+        />
+      )}
 
       {/* Customer sheet */}
       <CustomerSheet

@@ -30,6 +30,8 @@ interface VehicleRow {
 interface VehiclesTableProps {
   initialVehicles: VehicleRow[];
   transporters:    Transporter[];
+  canEdit?:        boolean;
+  canImport?:      boolean;
 }
 
 const EMPTY_FORM = {
@@ -54,7 +56,7 @@ const IMPORT_COLUMNS: CsvColumn[] = [
   { key: "maxcustomers",        label: "Max Customers",       required: false },
 ];
 
-export function VehiclesTable({ initialVehicles, transporters }: VehiclesTableProps) {
+export function VehiclesTable({ initialVehicles, transporters, canEdit = true, canImport = true }: VehiclesTableProps) {
   const [vehicles,   setVehicles]   = useState<VehicleRow[]>(initialVehicles);
   const [sheetOpen,  setSheetOpen]  = useState(false);
   const [editTarget, setEditTarget] = useState<VehicleRow | null>(null);
@@ -220,23 +222,29 @@ export function VehiclesTable({ initialVehicles, transporters }: VehiclesTablePr
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-lg font-bold text-[#1a237e]">Vehicles</h1>
         <div className="flex gap-2">
-          <button
-            type="button"
-            className="flex items-center gap-1.5 text-xs font-medium text-[#1a237e] border border-[#c7d2fe] bg-[#eef2ff] hover:bg-[#e0e7ff] px-3 py-2 rounded-md"
-            onClick={handleTemplateDownload}
-          >
-            <Download className="h-3.5 w-3.5" />
-            Download Template
-          </button>
-          <button
-            type="button"
-            className="flex items-center gap-1.5 text-xs font-medium bg-white hover:bg-[#f7f8fa] text-[#374151] border border-[#e5e7eb] px-3 py-2 rounded-md"
-            onClick={() => importFileRef.current?.click()}
-          >
-            <Upload className="h-3.5 w-3.5" />
-            Import File
-          </button>
-          <Button size="sm" onClick={openAdd} className="oa-btn-primary">+ Add Vehicle</Button>
+          {canImport && (
+            <button
+              type="button"
+              className="flex items-center gap-1.5 text-xs font-medium text-[#1a237e] border border-[#c7d2fe] bg-[#eef2ff] hover:bg-[#e0e7ff] px-3 py-2 rounded-md"
+              onClick={handleTemplateDownload}
+            >
+              <Download className="h-3.5 w-3.5" />
+              Download Template
+            </button>
+          )}
+          {canImport && (
+            <button
+              type="button"
+              className="flex items-center gap-1.5 text-xs font-medium bg-white hover:bg-[#f7f8fa] text-[#374151] border border-[#e5e7eb] px-3 py-2 rounded-md"
+              onClick={() => importFileRef.current?.click()}
+            >
+              <Upload className="h-3.5 w-3.5" />
+              Import File
+            </button>
+          )}
+          {canEdit && (
+            <Button size="sm" onClick={openAdd} className="oa-btn-primary">+ Add Vehicle</Button>
+          )}
         </div>
         <input ref={importFileRef} type="file" accept=".csv,.xls,.xlsx" className="hidden" onChange={handleImportFileSelect} />
       </div>
@@ -280,16 +288,20 @@ export function VehiclesTable({ initialVehicles, transporters }: VehiclesTablePr
                 </TableCell>
                 <TableCell className="text-right">
                   <div className="flex items-center justify-end gap-2">
-                    <Button size="sm" variant="outline" onClick={() => openEdit(v)} className="oa-btn-ghost">Edit</Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={togglingId === v.id}
-                      onClick={() => handleToggle(v)}
-                      className="oa-btn-ghost"
-                    >
-                      {v.isActive ? "Deactivate" : "Activate"}
-                    </Button>
+                    {canEdit && (
+                      <Button size="sm" variant="outline" onClick={() => openEdit(v)} className="oa-btn-ghost">Edit</Button>
+                    )}
+                    {canEdit && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={togglingId === v.id}
+                        onClick={() => handleToggle(v)}
+                        className="oa-btn-ghost"
+                      >
+                        {v.isActive ? "Deactivate" : "Activate"}
+                      </Button>
+                    )}
                   </div>
                 </TableCell>
               </TableRow>

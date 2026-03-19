@@ -2,14 +2,13 @@
 
 import { useRef, useState } from "react";
 import { toast } from "sonner";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { CsvImportModal, parseFile, type CsvColumn } from "@/components/admin/csv-import-modal";
+import { StatusBadge } from "@/components/shared/status-badge";
 import { Upload, Download } from "lucide-react";
 
 interface DeliveryType { id: number; name: string; }
@@ -29,7 +28,6 @@ interface AreasTableProps {
 }
 
 const EMPTY_FORM = { name: "", deliveryTypeId: "", primaryRouteId: "", routeId: "" };
-
 
 const IMPORT_COLUMNS: CsvColumn[] = [
   { key: "name",         label: "Name",          required: true  },
@@ -164,14 +162,20 @@ export function AreasTable({ initialAreas, deliveryTypes, routes }: AreasTablePr
     window.location.reload();
   }
 
+  const total = areas.length;
+  const activeCount = areas.filter((x) => x.isActive).length;
+
   return (
     <>
-      <div className="flex items-center justify-between mb-4">
-        <h1 className="text-lg font-bold text-[#1a237e]">Areas</h1>
+      <div className="flex items-start justify-between mb-5">
+        <div>
+          <h1 className="text-[18px] font-extrabold text-gray-900 tracking-tight">Areas</h1>
+          <p className="text-[12px] text-gray-400 mt-0.5">{total} total · {activeCount} active</p>
+        </div>
         <div className="flex gap-2">
           <button
             type="button"
-            className="flex items-center gap-1.5 text-[#1a237e] border border-[#c7d2fe] bg-[#eef2ff] hover:bg-[#e0e7ff] text-xs font-medium px-3 py-2 rounded-md"
+            className="flex items-center gap-1.5 bg-white border border-[#cdd1e8] text-gray-600 text-[12.5px] font-medium px-3 py-2 rounded-lg hover:bg-gray-50"
             onClick={handleTemplateDownload}
           >
             <Download className="h-3.5 w-3.5" />
@@ -179,71 +183,81 @@ export function AreasTable({ initialAreas, deliveryTypes, routes }: AreasTablePr
           </button>
           <button
             type="button"
-            className="flex items-center gap-1.5 bg-white hover:bg-[#f7f8fa] text-[#374151] border border-[#e5e7eb] text-xs font-medium px-3 py-2 rounded-md"
+            className="flex items-center gap-1.5 bg-white border border-[#cdd1e8] text-gray-600 text-[12.5px] font-medium px-3 py-2 rounded-lg hover:bg-gray-50"
             onClick={() => importFileRef.current?.click()}
           >
             <Upload className="h-3.5 w-3.5" />
             Import File
           </button>
-          <Button size="sm" onClick={openAdd} className="oa-btn-primary">+ Add Area</Button>
+          <button
+            type="button"
+            className="bg-[#1a237e] hover:bg-[#283593] text-white text-[12.5px] font-semibold px-4 py-2 rounded-lg flex items-center gap-1.5"
+            onClick={openAdd}
+          >
+            + Add Area
+          </button>
         </div>
         <input ref={importFileRef} type="file" accept=".csv,.xls,.xlsx" className="hidden" onChange={handleImportFileSelect} />
       </div>
 
-      <div className="oa-table">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Area Name</TableHead>
-              <TableHead>Delivery Type</TableHead>
-              <TableHead>Primary Route</TableHead>
-              <TableHead>Routes</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
+      <div className="bg-white border border-[#e2e5f1] rounded-xl overflow-hidden shadow-sm">
+        <table className="w-full border-collapse">
+          <thead className="bg-[#f7f8fc]">
+            <tr>
+              <th className="text-[10.5px] font-bold uppercase tracking-[.5px] text-gray-400 py-2.5 px-4 text-left border-b border-[#e2e5f1]">Area Name</th>
+              <th className="text-[10.5px] font-bold uppercase tracking-[.5px] text-gray-400 py-2.5 px-4 text-left border-b border-[#e2e5f1]">Delivery Type</th>
+              <th className="text-[10.5px] font-bold uppercase tracking-[.5px] text-gray-400 py-2.5 px-4 text-left border-b border-[#e2e5f1]">Primary Route</th>
+              <th className="text-[10.5px] font-bold uppercase tracking-[.5px] text-gray-400 py-2.5 px-4 text-left border-b border-[#e2e5f1]">Routes</th>
+              <th className="text-[10.5px] font-bold uppercase tracking-[.5px] text-gray-400 py-2.5 px-4 text-left border-b border-[#e2e5f1]">Status</th>
+              <th className="text-[10.5px] font-bold uppercase tracking-[.5px] text-gray-400 py-2.5 px-4 text-right border-b border-[#e2e5f1]">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
             {areas.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={6} className="text-center text-slate-500 py-8">No areas yet.</TableCell>
-              </TableRow>
+              <tr>
+                <td colSpan={6} className="text-center text-gray-400 py-8 text-[12.5px]">No areas yet.</td>
+              </tr>
             )}
             {areas.map((area) => (
-              <TableRow key={area.id}>
-                <TableCell className="font-medium">{area.name}</TableCell>
-                <TableCell>
-                  <Badge variant="outline">{area.deliveryType.name}</Badge>
-                </TableCell>
-                <TableCell className="text-slate-600 text-sm">
-                  {area.primaryRoute ? area.primaryRoute.name : <span className="text-slate-300">—</span>}
-                </TableCell>
-                <TableCell className="text-slate-600 text-sm">
+              <tr key={area.id} className="border-b border-[#e2e5f1] hover:bg-[#f5f7ff] transition-colors last:border-0">
+                <td className="py-3 px-4 text-[12.5px] text-gray-900 font-semibold">{area.name}</td>
+                <td className="py-3 px-4 text-[12.5px] text-gray-700">
+                  <span className="text-[11px] bg-[#f7f8fc] border border-[#e2e5f1] text-gray-600 px-2 py-0.5 rounded font-medium">{area.deliveryType.name}</span>
+                </td>
+                <td className="py-3 px-4 text-[12.5px] text-gray-700">
+                  {area.primaryRoute ? area.primaryRoute.name : <span className="text-gray-300">—</span>}
+                </td>
+                <td className="py-3 px-4 text-[12.5px] text-gray-700">
                   {area.routes.length === 0
-                    ? <span className="text-slate-400">—</span>
+                    ? <span className="text-gray-400">—</span>
                     : area.routes.map((r) => r.name).join(", ")}
-                </TableCell>
-                <TableCell>
-                  <Badge variant={area.isActive ? "default" : "secondary"}>
-                    {area.isActive ? "Active" : "Inactive"}
-                  </Badge>
-                </TableCell>
-                <TableCell>
+                </td>
+                <td className="py-3 px-4 text-[12.5px] text-gray-700">
+                  <StatusBadge variant={area.isActive ? "active" : "inactive"} />
+                </td>
+                <td className="py-3 px-4 text-right">
                   <div className="flex items-center justify-end gap-2">
-                    <Button size="sm" variant="outline" onClick={() => openEdit(area)} className="oa-btn-ghost">Edit</Button>
-                    <Button
-                      size="sm" variant="outline"
+                    <button
+                      type="button"
+                      className="text-[11.5px] font-medium text-gray-500 border border-[#e2e5f1] bg-white hover:bg-[#f5f7ff] hover:text-[#1a237e] hover:border-[#c5cae9] px-3 py-1.5 rounded-lg transition-colors"
+                      onClick={() => openEdit(area)}
+                    >
+                      Edit →
+                    </button>
+                    <button
+                      type="button"
+                      className="text-[11.5px] font-medium text-gray-500 border border-[#e2e5f1] bg-white hover:bg-[#f5f7ff] px-3 py-1.5 rounded-lg transition-colors disabled:opacity-40"
                       disabled={togglingId === area.id}
                       onClick={() => handleToggle(area)}
-                      className="oa-btn-ghost"
                     >
                       {area.isActive ? "Deactivate" : "Activate"}
-                    </Button>
+                    </button>
                   </div>
-                </TableCell>
-              </TableRow>
+                </td>
+              </tr>
             ))}
-          </TableBody>
-        </Table>
+          </tbody>
+        </table>
       </div>
 
       <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>

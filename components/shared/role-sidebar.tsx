@@ -5,65 +5,89 @@ import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { cn } from "@/lib/utils";
 import {
-  Upload, Headphones, Palette, Brush, LayoutDashboard, Circle,
+  ClipboardList, Layers, User, Zap, Upload,
+  Truck, Warehouse, Users, Package, MapPin,
 } from "lucide-react";
 import { useRoleSidebar } from "./role-sidebar-provider";
+import type { NavItemConfig } from "@/lib/permissions";
 
-export interface RoleNavLink {
-  label: string;
-  href:  string;
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+export type RoleSidebarRole =
+  | "support"
+  | "tint_manager"
+  | "tint_operator"
+  | "import"
+  | "support_import";
+
+export interface RoleSidebarProps {
+  role:         RoleSidebarRole;
+  userName:     string;
+  userInitials: string;
+  navItems:     NavItemConfig[];
 }
 
-function getNavIcon(href: string, size = 18) {
-  if (href.includes("/import"))        return <Upload          size={size} />;
-  if (href.includes("/support"))       return <Headphones      size={size} />;
-  if (href.includes("/tint/manager"))  return <Palette         size={size} />;
-  if (href.includes("/tint/operator")) return <Brush           size={size} />;
-  if (href.includes("/admin"))         return <LayoutDashboard size={size} />;
-  return <Circle size={size} />;
-}
+// ── Icon map ──────────────────────────────────────────────────────────────────
 
-interface RoleSidebarProps {
-  userName: string;
-  userRole: string;
-  links:    RoleNavLink[];
-}
+const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
+  import_obd:    Upload,
+  support_queue: ClipboardList,
+  tint_manager:  Layers,
+  tint_operator: Zap,
+  dispatcher:    Truck,
+  warehouse:     Warehouse,
+  customers:     Users,
+  skus:          Package,
+  routes_areas:  MapPin,
+  vehicles:      Truck,
+};
 
-export function RoleSidebar({ userName, userRole, links }: RoleSidebarProps) {
+const DEFAULT_ICON = User;
+
+const ROLE_LABELS: Record<RoleSidebarRole, string> = {
+  support:        "Support Team",
+  tint_manager:   "Tint Manager",
+  tint_operator:  "Tint Operator",
+  import:         "Import",
+  support_import: "Support Team",
+};
+
+// ── Component ─────────────────────────────────────────────────────────────────
+
+export function RoleSidebar({ role, userName, userInitials, navItems }: RoleSidebarProps) {
   const pathname              = usePathname();
   const { isCollapsed, toggle } = useRoleSidebar();
 
+  const roleLabel = ROLE_LABELS[role];
+
   function isActive(href: string) {
-    return pathname === href || pathname.startsWith(href + "/");
+    return pathname === href;
   }
 
-  // ── Expanded nav ───────────────────────────────────────────────────────────
+  // ── Expanded nav ────────────────────────────────────────────────────────────
 
   const expandedNav = (
-    <nav className="flex flex-col py-3 overflow-y-auto flex-1 scrollbar-hide">
+    <nav className="flex flex-col py-2 overflow-y-auto flex-1 scrollbar-hide">
+      <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 px-4 pt-4 pb-1 select-none">
+        {roleLabel}
+      </p>
       <div className="flex flex-col">
-        {links.map((link) => {
-          const active = isActive(link.href);
+        {navItems.map((item) => {
+          const Icon   = ICON_MAP[item.pageKey] ?? DEFAULT_ICON;
+          const active = isActive(item.href);
           return (
             <Link
-              key={link.href}
-              href={link.href}
+              key={item.href}
+              href={item.href}
               className={cn(
-                "flex items-center gap-2.5 mx-2 my-[1px] py-[7px] px-3 rounded-md transition-colors text-[13px]",
-                active ? "font-semibold" : "font-normal hover:bg-[#f7f8fa]"
+                "flex items-center gap-2.5 mx-2 my-[1px] py-2 rounded-lg text-[12.5px] transition-colors",
+                active
+                  ? "bg-[#e8eaf6] text-[#1a237e] font-semibold pl-[10px] border-l-2 border-[#1a237e]"
+                  : "font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-900 pl-3"
               )}
-              style={active ? {
-                background:  "#eef2ff",
-                color:       "var(--navy)",
-                borderLeft:  "3px solid var(--navy)",
-                paddingLeft: "9px",
-              } : {
-                color:      "var(--text-2)",
-                borderLeft: "3px solid transparent",
-              }}
             >
-              <span className="shrink-0">{getNavIcon(link.href, 16)}</span>
-              {link.label}
+              <Icon className="h-[15px] w-[15px] shrink-0" />
+              {item.label}
             </Link>
           );
         })}
@@ -71,139 +95,94 @@ export function RoleSidebar({ userName, userRole, links }: RoleSidebarProps) {
     </nav>
   );
 
-  // ── Collapsed nav (icons only + tooltips) ─────────────────────────────────
+  // ── Collapsed nav (icons + tooltips) ────────────────────────────────────────
 
   const collapsedNav = (
-    <nav className="flex flex-col py-3 overflow-y-auto flex-1 scrollbar-hide">
-      <div className="flex flex-col items-center gap-0.5">
-        {links.map((link) => {
-          const active = isActive(link.href);
-          return (
-            <div key={link.href} className="relative group w-full flex justify-center">
-              <Link
-                href={link.href}
-                className={cn(
-                  "flex items-center justify-center h-9 w-9 rounded-md transition-colors",
-                  active ? "bg-[#eef2ff]" : "hover:bg-[#f7f8fa]"
-                )}
-                style={{ color: active ? "var(--navy)" : "var(--text-2)" }}
-                title={link.label}
-              >
-                {getNavIcon(link.href, 20)}
-              </Link>
-              {/* Tooltip */}
-              <div className="pointer-events-none absolute left-full ml-2 top-1/2 -translate-y-1/2 z-[200] hidden group-hover:block">
-                <div className="bg-[#1a237e] text-white text-xs px-2 py-1 rounded-md whitespace-nowrap shadow-lg">
-                  {link.label}
-                </div>
+    <nav className="flex flex-col py-2 overflow-y-auto flex-1 scrollbar-hide items-center">
+      {navItems.map((item) => {
+        const Icon   = ICON_MAP[item.pageKey] ?? DEFAULT_ICON;
+        const active = isActive(item.href);
+        return (
+          <div key={item.href} className="relative group w-full flex justify-center mb-0.5">
+            <Link
+              href={item.href}
+              className={cn(
+                "flex items-center justify-center h-9 w-9 rounded-lg transition-colors",
+                active
+                  ? "bg-[#e8eaf6] text-[#1a237e]"
+                  : "text-gray-400 hover:bg-gray-50 hover:text-gray-700"
+              )}
+              title={item.label}
+            >
+              <Icon className="h-[17px] w-[17px]" />
+            </Link>
+            {/* Tooltip */}
+            <div className="pointer-events-none absolute left-full ml-2 top-1/2 -translate-y-1/2 z-[200] hidden group-hover:block">
+              <div className="bg-[#1a237e] text-white text-[11px] px-2.5 py-1 rounded-md whitespace-nowrap shadow-lg">
+                {item.label}
               </div>
             </div>
-          );
-        })}
-      </div>
+          </div>
+        );
+      })}
     </nav>
   );
 
   return (
     <aside
-      className="hidden md:flex md:fixed md:inset-y-0 md:left-0 md:z-50 flex-col transition-all duration-200"
+      className="hidden md:flex md:fixed md:inset-y-0 md:left-0 md:z-50 flex-col bg-white shadow-sm transition-all duration-200"
       style={{
-        width:       isCollapsed ? "72px" : "240px",
-        background:  "var(--white)",
-        borderRight: "1px solid var(--border)",
+        width:       isCollapsed ? "72px" : "220px",
+        borderRight: "1px solid #e2e5f1",
       }}
     >
-      {/* Brand header — clicking "O" toggles collapse */}
+      {/* Brand block */}
       <div
-        className="flex items-center shrink-0"
-        style={{ height: "48px", background: "var(--navy)", padding: isCollapsed ? "0" : "0 12px" }}
+        className={cn(
+          "flex items-center shrink-0 border-b border-[#e2e5f1]",
+          isCollapsed ? "justify-center px-0 h-[52px]" : "gap-2.5 px-4 h-[52px]",
+        )}
       >
-        {isCollapsed ? (
-          <div className="w-full flex items-center justify-center">
-            <button
-              onClick={toggle}
-              className="w-11 h-11 bg-[#1a237e] rounded-lg flex items-center justify-center text-white font-bold text-lg cursor-pointer hover:bg-[#283593] transition-colors flex-shrink-0"
-              title="Expand menu"
-            >
-              O
-            </button>
-          </div>
-        ) : (
-          <div className="flex items-center gap-2.5">
-            <button
-              onClick={toggle}
-              className="w-10 h-10 bg-[#1a237e] rounded-lg flex items-center justify-center text-white font-bold text-lg cursor-pointer hover:bg-[#283593] transition-colors flex-shrink-0"
-              title="Collapse menu"
-            >
-              O
-            </button>
-            <span className="text-white font-semibold text-sm tracking-tight whitespace-nowrap">
-              Orbit OMS
-            </span>
+        <button
+          onClick={toggle}
+          className="w-9 h-9 bg-[#1a237e] rounded-xl flex items-center justify-center text-white font-extrabold text-[14px] cursor-pointer hover:bg-[#283593] transition-colors flex-shrink-0"
+          title={isCollapsed ? "Expand menu" : "Collapse menu"}
+        >
+          O
+        </button>
+        {!isCollapsed && (
+          <div className="min-w-0">
+            <p className="text-[14px] font-bold text-gray-900 leading-tight">Orbit OMS</p>
+            <p className="text-[10px] text-gray-400 leading-tight">{roleLabel}</p>
           </div>
         )}
       </div>
 
       {isCollapsed ? collapsedNav : expandedNav}
 
-      {/* User info + sign out — hidden when collapsed */}
-      {!isCollapsed && (
-        <div
-          className="shrink-0 px-4 py-3 flex flex-col gap-2"
-          style={{ borderTop: "1px solid var(--border)" }}
+      {/* User block */}
+      <div
+        className={cn(
+          "shrink-0 border-t border-[#e2e5f1]",
+          isCollapsed
+            ? "flex justify-center py-3"
+            : "flex items-center gap-2.5 px-4 py-3",
+        )}
+      >
+        <button
+          onClick={() => signOut({ callbackUrl: "/login" })}
+          className="w-8 h-8 rounded-full bg-[#1a237e] text-white flex items-center justify-center text-[11px] font-bold flex-shrink-0 hover:bg-[#283593] transition-colors"
+          title="Sign out"
         >
-          <span style={{ fontSize: "12px", color: "var(--text-2)" }}>
-            <span style={{ fontWeight: 600, color: "var(--text)" }}>{userName}</span>
-            {" · "}
-            <span style={{ color: "var(--muted)" }}>{userRole}</span>
-          </span>
-          <button
-            onClick={() => signOut({ callbackUrl: "/login" })}
-            className="w-full rounded-md transition-colors text-left"
-            style={{
-              padding:    "4px 10px",
-              fontSize:   "12px",
-              fontWeight: 500,
-              color:      "var(--text-2)",
-              background: "var(--white)",
-              border:     "1px solid var(--border)",
-              cursor:     "pointer",
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = "var(--bg)")}
-            onMouseLeave={(e) => (e.currentTarget.style.background = "var(--white)")}
-          >
-            Sign out
-          </button>
-        </div>
-      )}
-
-      {/* Collapsed: sign-out icon button */}
-      {isCollapsed && (
-        <div
-          className="shrink-0 flex justify-center py-3"
-          style={{ borderTop: "1px solid var(--border)" }}
-        >
-          <div className="relative group">
-            <button
-              onClick={() => signOut({ callbackUrl: "/login" })}
-              className="flex items-center justify-center h-9 w-9 rounded-md hover:bg-[#f7f8fa] transition-colors"
-              style={{ color: "var(--text-2)" }}
-              title="Sign out"
-            >
-              {/* Simple exit icon using CSS */}
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M6 2H3a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                <path d="M10 5l3 3-3 3M13 8H6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-            </button>
-            <div className="pointer-events-none absolute left-full ml-2 top-1/2 -translate-y-1/2 z-[200] hidden group-hover:block">
-              <div className="bg-[#1a237e] text-white text-xs px-2 py-1 rounded-md whitespace-nowrap shadow-lg">
-                Sign out
-              </div>
-            </div>
+          {userInitials}
+        </button>
+        {!isCollapsed && (
+          <div className="min-w-0">
+            <p className="text-[12px] font-semibold text-gray-800 truncate">{userName}</p>
+            <p className="text-[10px] text-gray-400 truncate">{roleLabel}</p>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </aside>
   );
 }

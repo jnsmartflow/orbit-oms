@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
+import { checkPermission } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +21,10 @@ class WrongStageError extends Error {
 export async function POST(req: Request): Promise<NextResponse> {
   const session = await auth();
   requireRole(session, [ROLES.TINT_OPERATOR]);
+  if (session!.user.role !== "admin") {
+    const allowed = await checkPermission(session!.user.role, "tint_operator", "canEdit");
+    if (!allowed) return NextResponse.json({ error: "Permission denied" }, { status: 403 });
+  }
 
   const parsed = bodySchema.safeParse(await req.json());
   if (!parsed.success) {

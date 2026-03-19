@@ -3,12 +3,17 @@ import { auth } from "@/lib/auth";
 import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
+import { checkPermission } from "@/lib/permissions";
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   const session = await auth();
   requireRole(session, [ROLES.ADMIN]);
+  if (session!.user.role !== "admin") {
+    const allowed = await checkPermission(session!.user.role, "routes_areas", "canView");
+    if (!allowed) return NextResponse.json({ error: "Permission denied" }, { status: 403 });
+  }
 
   const subAreas = await prisma.sub_area_master.findMany({
     orderBy: [{ area: { name: "asc" } }, { name: "asc" }],
@@ -26,6 +31,10 @@ const createSchema = z.object({
 export async function POST(req: Request) {
   const session = await auth();
   requireRole(session, [ROLES.ADMIN]);
+  if (session!.user.role !== "admin") {
+    const allowed = await checkPermission(session!.user.role, "routes_areas", "canEdit");
+    if (!allowed) return NextResponse.json({ error: "Permission denied" }, { status: 403 });
+  }
 
   const parsed = createSchema.safeParse(await req.json());
   if (!parsed.success) {

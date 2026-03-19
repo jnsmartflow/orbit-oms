@@ -4,8 +4,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  directUrl  = env("DIRECT_URL")
 }
 
 // ─────────────────────────────────────────────
@@ -42,6 +43,20 @@ model role_master {
   name        String  @unique
   description String?
   users       users[]
+}
+
+model role_permissions {
+  id        Int      @id @default(autoincrement())
+  roleSlug  String   // matches ROLES constants: "admin","dispatcher","support","tint_manager","tint_operator","floor_supervisor","picker"
+  pageKey   String   // e.g. "support_queue", "tint_manager", "import_obd", "customers", etc.
+  canView   Boolean  @default(false)
+  canImport Boolean  @default(false)
+  canExport Boolean  @default(false)
+  canEdit   Boolean  @default(false)
+  canDelete Boolean  @default(false)
+  updatedAt DateTime @updatedAt
+
+  @@unique([roleSlug, pageKey])
 }
 
 model users {

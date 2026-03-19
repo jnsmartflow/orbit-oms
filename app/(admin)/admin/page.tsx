@@ -1,17 +1,9 @@
+import Link from "next/link";
+import { Users, MapPin, Package, Building2 } from "lucide-react";
 import { prisma } from "@/lib/prisma";
+import { StatCard } from "@/components/shared/stat-card";
 
 export const dynamic = "force-dynamic";
-
-const STAT_ICONS: Record<string, string> = {
-  "Active Users":        "👤",
-  "Active Routes":       "🛣️",
-  "Active SKUs":         "📦",
-  "Active Customers":    "🏪",
-  "Active Transporters": "🚚",
-  "Active SO Groups":    "👥",
-  "Orders Today":        "📋",
-  "Pending Support":     "🔔",
-};
 
 export default async function AdminDashboard() {
   const todayStart = new Date();
@@ -26,7 +18,7 @@ export default async function AdminDashboard() {
     activeSoGroups,
     ordersToday,
     pendingSupport,
-    recentCustomers,
+    recentUsers,
   ] = await Promise.all([
     prisma.users.count({ where: { isActive: true } }),
     prisma.route_master.count({ where: { isActive: true } }),
@@ -36,123 +28,134 @@ export default async function AdminDashboard() {
     prisma.sales_officer_group.count({ where: { isActive: true } }),
     prisma.orders.count({ where: { createdAt: { gte: todayStart } } }),
     prisma.orders.count({ where: { workflowStage: "pending_support" } }),
-    prisma.delivery_point_master.findMany({
-      take: 5,
+    prisma.users.findMany({
+      take: 8,
       orderBy: { createdAt: "desc" },
       select: {
-        id:           true,
-        customerName: true,
-        createdAt:    true,
-        area:         { select: { name: true } },
+        id:        true,
+        name:      true,
+        role:      { select: { name: true } },
+        createdAt: true,
       },
     }),
   ]);
 
-  const stats = [
-    { title: "Active Users",        value: activeUsers },
-    { title: "Active Routes",       value: activeRoutes },
-    { title: "Active SKUs",         value: activeSkus },
-    { title: "Active Customers",    value: activeCustomers },
-    { title: "Active Transporters", value: activeTransporters },
-    { title: "Active SO Groups",    value: activeSoGroups },
-    { title: "Orders Today",        value: ordersToday },
-    { title: "Pending Support",     value: pendingSupport },
-  ];
+  // Suppress unused-variable warnings — kept for future dashboard sections
+  void activeTransporters;
+  void activeSoGroups;
+  void ordersToday;
+  void pendingSupport;
+
+  const today = new Date().toLocaleDateString("en-GB", {
+    weekday: "short",
+    day:     "numeric",
+    month:   "short",
+    year:    "numeric",
+  });
 
   return (
     <div>
-      <div className="mb-5">
-        <h1 className="text-lg font-bold" style={{ color: 'var(--navy)' }}>Dashboard</h1>
-        <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>Admin overview</p>
+      {/* Page header */}
+      <div className="mb-6">
+        <h1 className="text-[18px] font-extrabold text-gray-900 tracking-tight">Dashboard</h1>
+        <p className="text-[12px] text-gray-400 mt-0.5">Depot overview — {today}</p>
       </div>
 
       {/* Stat cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-        {stats.map((stat) => (
-          <div
-            key={stat.title}
-            style={{
-              background:   'var(--white)',
-              border:       '1px solid var(--border)',
-              borderRadius: '8px',
-              padding:      '16px',
-              boxShadow:    'var(--shadow-sm)',
-            }}
-          >
-            <div className="flex items-center gap-2 mb-1">
-              <span style={{ fontSize: '20px' }}>{STAT_ICONS[stat.title]}</span>
-              <p
-                style={{
-                  fontSize:   '24px',
-                  fontWeight: 800,
-                  color:      'var(--navy)',
-                  lineHeight: 1,
-                }}
-              >
-                {stat.value}
-              </p>
-            </div>
-            <p
-              style={{
-                fontSize:      '10px',
-                color:         'var(--muted)',
-                textTransform: 'uppercase',
-                letterSpacing: '0.5px',
-                marginTop:     '4px',
-              }}
-            >
-              {stat.title}
-            </p>
-          </div>
-        ))}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <StatCard
+          label="Active Users"
+          value={activeUsers}
+          icon={<Users size={18} />}
+          iconBg="bg-indigo-50"
+          iconColor="text-indigo-600"
+          valueColor="text-indigo-600"
+        />
+        <StatCard
+          label="Active Routes"
+          value={activeRoutes}
+          icon={<MapPin size={18} />}
+          iconBg="bg-blue-50"
+          iconColor="text-blue-600"
+          valueColor="text-blue-600"
+        />
+        <StatCard
+          label="Active SKUs"
+          value={activeSkus}
+          icon={<Package size={18} />}
+          iconBg="bg-violet-50"
+          iconColor="text-violet-600"
+          valueColor="text-violet-600"
+        />
+        <StatCard
+          label="Active Customers"
+          value={activeCustomers}
+          icon={<Building2 size={18} />}
+          iconBg="bg-emerald-50"
+          iconColor="text-emerald-600"
+          valueColor="text-emerald-600"
+        />
       </div>
 
-      {/* Recent customers */}
-      <div
-        style={{
-          background:   'var(--white)',
-          border:       '1px solid var(--border)',
-          borderRadius: '8px',
-          boxShadow:    'var(--shadow-sm)',
-          overflow:     'hidden',
-        }}
-      >
-        <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--border-lt)' }}>
-          <h2 style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-2)' }}>
-            Recently Added Customers
-          </h2>
+      {/* Recent users table */}
+      <div className="bg-white rounded-xl border border-[#e2e5f1] shadow-sm overflow-hidden">
+        {/* Card header */}
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-[#e2e5f1]">
+          <span className="text-[13px] font-bold text-gray-900">Recent Users</span>
+          <Link
+            href="/admin/users"
+            className="text-[12px] text-[#1a237e] font-medium hover:underline"
+          >
+            View all →
+          </Link>
         </div>
-        <ul>
-          {recentCustomers.length === 0 && (
-            <li style={{ padding: '16px', fontSize: '12px', color: 'var(--muted-lt)' }}>
-              No customers yet.
-            </li>
-          )}
-          {recentCustomers.map((c) => (
-            <li
-              key={c.id}
-              style={{
-                display:        'flex',
-                alignItems:     'center',
-                justifyContent: 'space-between',
-                padding:        '10px 16px',
-                borderBottom:   '1px solid var(--border-lt)',
-              }}
-            >
-              <div>
-                <p style={{ fontSize: '13px', fontWeight: 500, color: 'var(--text)' }}>
-                  {c.customerName}
-                </p>
-                <p style={{ fontSize: '11px', color: 'var(--muted)' }}>{c.area.name}</p>
-              </div>
-              <p style={{ fontSize: '11px', color: 'var(--muted-lt)' }}>
-                {c.createdAt.toLocaleDateString("en-IN", {
-                  day: "2-digit", month: "short", year: "numeric",
-                })}
-              </p>
-            </li>
-          ))}
-        </ul>
+
+        {/* Table */}
+        <table className="w-full border-collapse">
+          <thead className="bg-[#f7f8fc]">
+            <tr>
+              {["Name", "Role", "Created"].map((col) => (
+                <th
+                  key={col}
+                  className="py-2.5 px-5 text-left text-[10.5px] font-bold uppercase tracking-wide text-gray-400 border-b border-[#e2e5f1]"
+                >
+                  {col}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {recentUsers.length === 0 && (
+              <tr>
+                <td colSpan={3} className="py-6 px-5 text-[12px] text-gray-400 text-center">
+                  No users yet.
+                </td>
+              </tr>
+            )}
+            {recentUsers.map((u) => (
+              <tr
+                key={u.id}
+                className="border-b border-[#e2e5f1] last:border-0 hover:bg-[#f7f8fc] transition-colors"
+              >
+                <td className="py-3 px-5 font-semibold text-[13px] text-gray-900">
+                  {u.name}
+                </td>
+                <td className="py-3 px-5">
+                  <span className="text-[10px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded font-semibold">
+                    {u.role.name}
+                  </span>
+                </td>
+                <td className="py-3 px-5 font-mono text-[11.5px] text-gray-400">
+                  {u.createdAt.toLocaleDateString("en-GB", {
+                    day:   "2-digit",
+                    month: "short",
+                    year:  "numeric",
+                  })}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   );
