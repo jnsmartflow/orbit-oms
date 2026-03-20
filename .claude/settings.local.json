@@ -48,7 +48,17 @@
       "Bash(cd:*)",
       "Bash(ls:*)",
       "Bash(Get-Process node:*)",
-      "Bash(taskkill:*)"
+      "Bash(taskkill:*)",
+      "Bash(npx prisma:*)",
+      "Bash(npx tsc:*)",
+      "Bash(node:*)",
+      "Bash(find 'C:\\\\Users\\\\HP\\\\OneDrive\\\\VS Code\\\\orbit-oms\\\\node_modules\\\\@base-ui\\\\react' -name *outside* -o -name *dismiss*)",
+      "Bash(find 'C:\\\\Users\\\\HP\\\\OneDrive\\\\VS Code\\\\orbit-oms\\\\node_modules\\\\@base-ui\\\\react' -name *.js)",
+      "Bash(xargs grep:*)",
+      "Bash(find 'C:\\\\Users\\\\HP\\\\OneDrive\\\\VS Code\\\\orbit-oms\\\\node_modules\\\\@base-ui\\\\utils' -name *.js)",
+      "Bash(find 'C:\\\\Users\\\\HP\\\\OneDrive\\\\VS Code\\\\orbit-oms\\\\node_modules\\\\@base-ui' -name *.js)",
+      "Bash(find 'C:\\\\Users\\\\HP\\\\OneDrive\\\\VS Code\\\\orbit-oms\\\\node_modules\\\\@base-ui' -name ReactStore* -o -name reactStore*)",
+      "Bash(find 'C:\\\\Users\\\\HP\\\\OneDrive\\\\VS Code\\\\orbit-oms\\\\node_modules\\\\@base-ui' -name useTransitionStatus*)"
     ]
   }
 }

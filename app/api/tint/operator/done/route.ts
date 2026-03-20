@@ -57,7 +57,7 @@ export async function POST(req: Request): Promise<NextResponse> {
         data:  { status: "done", completedAt: new Date() },
       });
 
-      // 4. Update order — moves directly to pending_support (tinting_done skipped)
+      // 4. Update order stage — moves directly to support queue
       await tx.orders.update({
         where: { id: orderId },
         data:  { workflowStage: "pending_support" },
@@ -79,7 +79,7 @@ export async function POST(req: Request): Promise<NextResponse> {
           fromStage:   "tinting_in_progress",
           toStage:     "pending_support",
           changedById: userId,
-          note:        "Tinting completed",
+          note:        "Tinting completed — moved to support queue",
         },
       });
     });

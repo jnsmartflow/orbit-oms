@@ -1,36 +1,65 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Loader2, PackageOpen, X, Layers, Clock, CheckCircle2, AlertCircle } from "lucide-react";
+import { Loader2, PackageOpen, X, Layers, Clock, CheckCircle2, AlertCircle, Eye } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { StatCard } from "@/components/shared/stat-card";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { ObdCode } from "@/components/shared/obd-code";
+import { SkuDetailsSheet } from "@/components/tint/sku-details-sheet";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-interface TintAssignment {
-  id: number;
-  status: string;
-  createdAt: string;
+interface SplitLineItem {
+  rawLineItem: {
+    skuCodeRaw:        string;
+    skuDescriptionRaw: string | null;
+    unitQty:           number;
+    volumeLine:        number | null;
+    isTinting:         boolean;
+  };
+}
+
+interface OperatorSplit {
+  id:          number;
+  splitNumber: number;
+  status:      string;
+  totalVolume: number | null;
+  articleTag:  string | null;
+  createdAt:   string;
+  order: {
+    obdNumber:          string;
+    shipToCustomerName: string | null;
+    dispatchSlot:       string | null;
+    customer: {
+      customerName: string;
+      area: { name: string };
+    } | null;
+  };
+  lineItems: SplitLineItem[];
 }
 
 interface OperatorOrder {
-  id: number;
-  obdNumber: string;
-  workflowStage: string;
-  dispatchSlot?: string | null;
+  id:                 number;
+  obdNumber:          string;
+  workflowStage:      string;
+  dispatchSlot:       string | null;
+  createdAt:          string;
   shipToCustomerName: string | null;
-  createdAt: string;
   customer: {
     customerName: string;
-    area: { name: string };
+    area:         { name: string };
   } | null;
+  tintAssignments: {
+    status:    string;
+    startedAt: string | null;
+  }[];
   querySnapshot: {
-    totalWeight: number;
-    totalLines: number;
+    totalUnitQty: number;
+    totalVolume:  number;
+    articleTag:   string | null;
+    totalLines:   number;
   } | null;
-  tintAssignments: TintAssignment[];
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -46,9 +75,9 @@ function timeAgo(iso: string): string {
   return `${days}d ago`;
 }
 
-function getProgressPct(stage: string): number {
-  if (stage === "tinting_done")        return 100;
-  if (stage === "tinting_in_progress") return 50;
+function getProgressPct(status: string): number {
+  if (status === "tinting_done")        return 100;
+  if (status === "tinting_in_progress") return 50;
   return 0;
 }
 
@@ -69,41 +98,50 @@ function getProgressTextColor(pct: number): string {
 
 type StageBadgeVariant = "pending" | "in-progress" | "done";
 
-function stageBadgeVariant(stage: string): StageBadgeVariant {
-  if (stage === "tinting_in_progress") return "in-progress";
-  if (stage === "tinting_done")        return "done";
+function stageBadgeVariant(status: string): StageBadgeVariant {
+  if (status === "tinting_in_progress") return "in-progress";
+  if (status === "tinting_done")        return "done";
   return "pending";
 }
 
-// ── Job card ──────────────────────────────────────────────────────────────────
+// ── Split card ─────────────────────────────────────────────────────────────────
 
-interface OrderCardProps {
-  order:           OperatorOrder;
+interface SplitCardProps {
+  split:           OperatorSplit;
   isActionLoading: boolean;
   onStart:         () => void;
   onDone:          () => void;
 }
 
-function OrderCard({ order, isActionLoading, onStart, onDone }: OrderCardProps) {
-  const isPending    = order.workflowStage === "pending_tint_assignment";
-  const isInProgress = order.workflowStage === "tinting_in_progress";
-  const isDone       = order.workflowStage === "tinting_done";
-  const weight       = order.querySnapshot?.totalWeight;
-  const lines        = order.querySnapshot?.totalLines;
-  const customerName = order.customer?.customerName ?? order.shipToCustomerName ?? "—";
-  const area         = order.customer?.area.name ?? "—";
-  const pct          = getProgressPct(order.workflowStage);
+function SplitCard({ split, isActionLoading, onStart, onDone }: SplitCardProps) {
+  const [skuSheetOpen, setSkuSheetOpen] = useState(false);
+  const isPending    = split.status === "tint_assigned";
+  const isInProgress = split.status === "tinting_in_progress";
+  const isDone       = split.status === "tinting_done";
+  const customerName = split.order.customer?.customerName ?? split.order.shipToCustomerName ?? "—";
+  const area         = split.order.customer?.area.name ?? "—";
+  const pct          = getProgressPct(split.status);
 
   return (
+    <>
     <div className="bg-white border border-[#e2e5f1] rounded-xl p-4 shadow-sm mb-3 cursor-pointer hover:shadow-md hover:border-[#cdd1e8] transition-all">
 
-      {/* Top row: OBD + status badge + slot/date */}
+      {/* Top row: OBD + split number + status badge + slot/date */}
       <div className="flex items-center gap-2">
-        <ObdCode code={order.obdNumber} />
-        <StatusBadge variant={stageBadgeVariant(order.workflowStage)} size="sm" />
+        <ObdCode code={split.order.obdNumber} />
+        <span className="text-[11px] text-gray-400">Split #{split.splitNumber}</span>
+        <StatusBadge variant={stageBadgeVariant(split.status)} size="sm" />
         <span className="ml-auto text-[11px] text-gray-400 font-mono shrink-0">
-          {order.dispatchSlot ?? timeAgo(order.createdAt)}
+          {split.order.dispatchSlot ?? timeAgo(split.createdAt)}
         </span>
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); setSkuSheetOpen(true); }}
+          className="p-1 rounded-md text-gray-400 hover:text-violet-600 hover:bg-violet-50 transition-colors"
+          title="View SKU lines"
+        >
+          <Eye size={13} />
+        </button>
       </div>
 
       {/* Customer name */}
@@ -115,10 +153,10 @@ function OrderCard({ order, isActionLoading, onStart, onDone }: OrderCardProps) 
       {/* Meta grid */}
       <div className="mt-2.5 bg-[#f7f8fc] border border-[#e2e5f1] rounded-lg p-2.5 grid grid-cols-2 gap-2">
         {[
-          { label: "Weight",        value: weight != null ? `${weight.toFixed(1)} kg` : "—" },
-          { label: "SKU Count",     value: lines != null ? String(lines) : "—" },
-          { label: "Slot",          value: order.dispatchSlot ?? "—" },
-          { label: "Delivery Type", value: "—" },
+          { label: "Articles", value: split.articleTag ?? "—" },
+          { label: "Volume",   value: split.totalVolume != null ? `${split.totalVolume} L` : "—" },
+          { label: "Slot",     value: split.order.dispatchSlot ?? "—" },
+          { label: "Status",   value: split.status },
         ].map((cell) => (
           <div key={cell.label}>
             <div className="text-[9.5px] font-bold uppercase tracking-[.4px] text-gray-400 mb-0.5">
@@ -173,6 +211,111 @@ function OrderCard({ order, isActionLoading, onStart, onDone }: OrderCardProps) 
           </span>
         )}
       </div>
+
+    </div>
+
+    <SkuDetailsSheet
+      open={skuSheetOpen}
+      onClose={() => setSkuSheetOpen(false)}
+      obdNumber={split.order.obdNumber}
+      customerName={customerName}
+      lineItems={split.lineItems.map((item) => item.rawLineItem)}
+    />
+    </>
+  );
+}
+
+// ── Regular order card ─────────────────────────────────────────────────────────
+
+interface RegularOrderCardProps {
+  order:           OperatorOrder;
+  isActionLoading: boolean;
+  onStart:         () => void;
+  onDone:          () => void;
+}
+
+function RegularOrderCard({ order, isActionLoading, onStart, onDone }: RegularOrderCardProps) {
+  const isPending    = order.workflowStage === "tint_assigned";
+  const isInProgress = order.workflowStage === "tinting_in_progress";
+  const customerName = order.customer?.customerName ?? order.shipToCustomerName ?? "—";
+  const area         = order.customer?.area.name ?? "—";
+  const pct          = getProgressPct(isInProgress ? "tinting_in_progress" : "tint_assigned");
+
+  return (
+    <div className="bg-white border border-[#e2e5f1] rounded-xl p-4 shadow-sm mb-3 cursor-pointer hover:shadow-md hover:border-[#cdd1e8] transition-all">
+
+      {/* Top row: OBD + status badge + slot/date */}
+      <div className="flex items-center gap-2">
+        <ObdCode code={order.obdNumber} />
+        <StatusBadge variant={stageBadgeVariant(order.workflowStage)} size="sm" />
+        <span className="ml-auto text-[11px] text-gray-400 font-mono shrink-0">
+          {order.dispatchSlot ?? timeAgo(order.createdAt)}
+        </span>
+      </div>
+
+      {/* Customer name */}
+      <p className="text-[14px] font-bold text-gray-900 mt-1 truncate">{customerName}</p>
+
+      {/* Area */}
+      <p className="text-[12px] text-gray-400">{area}</p>
+
+      {/* Meta grid */}
+      <div className="mt-2.5 bg-[#f7f8fc] border border-[#e2e5f1] rounded-lg p-2.5 grid grid-cols-2 gap-2">
+        {[
+          { label: "Articles", value: order.querySnapshot?.articleTag ?? "—" },
+          { label: "Volume",   value: order.querySnapshot?.totalVolume != null ? `${order.querySnapshot.totalVolume} L` : "—" },
+          { label: "Slot",     value: order.dispatchSlot ?? "—" },
+          { label: "Status",   value: order.workflowStage },
+        ].map((cell) => (
+          <div key={cell.label}>
+            <div className="text-[9.5px] font-bold uppercase tracking-[.4px] text-gray-400 mb-0.5">
+              {cell.label}
+            </div>
+            <div className="text-[12px] font-semibold text-gray-900">{cell.value}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Progress bar */}
+      <div className="mt-2.5">
+        <div className="flex justify-between mb-1">
+          <span className="text-[10.5px] font-semibold text-gray-400">Tinting Progress</span>
+          <span className={cn("text-[11px] font-bold", getProgressTextColor(pct))}>{pct}%</span>
+        </div>
+        <div className="h-[5px] bg-gray-100 rounded-full overflow-hidden">
+          <div
+            className={cn("h-full rounded-full transition-[width] duration-500", getProgressBarColor(pct))}
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      </div>
+
+      {/* Action button */}
+      <div className="pt-3 border-t border-[#e2e5f1] mt-3">
+        {isPending && (
+          <button
+            type="button"
+            onClick={onStart}
+            disabled={isActionLoading}
+            className="w-full bg-[#1a237e] text-white py-2.5 rounded-lg font-semibold text-[13px] flex items-center justify-center gap-2 hover:bg-[#283593] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isActionLoading && <Loader2 className="animate-spin" size={15} />}
+            Start Job
+          </button>
+        )}
+        {isInProgress && (
+          <button
+            type="button"
+            onClick={onDone}
+            disabled={isActionLoading}
+            className="w-full bg-green-600 text-white py-2.5 rounded-lg font-semibold text-[13px] flex items-center justify-center gap-2 hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isActionLoading && <Loader2 className="animate-spin" size={15} />}
+            Mark as Done ✓
+          </button>
+        )}
+      </div>
+
     </div>
   );
 }
@@ -180,16 +323,22 @@ function OrderCard({ order, isActionLoading, onStart, onDone }: OrderCardProps) 
 // ── Page Content ──────────────────────────────────────────────────────────────
 
 export function TintOperatorContent() {
-  const [orders,        setOrders]        = useState<OperatorOrder[]>([]);
-  const [isLoading,     setIsLoading]     = useState(true);
-  const [actionLoading, setActionLoading] = useState<number | null>(null);
-  const [error,         setError]         = useState<string | null>(null);
+  const [assignedSplits,  setAssignedSplits]  = useState<OperatorSplit[]>([]);
+  const [assignedOrders,  setAssignedOrders]  = useState<OperatorOrder[]>([]);
+  const [isLoading,       setIsLoading]       = useState(true);
+  const [splitActionLoading, setSplitActionLoading] = useState<number | null>(null);
+  const [orderActionLoading, setOrderActionLoading] = useState<number | null>(null);
+  const [error,           setError]           = useState<string | null>(null);
 
   const fetchOrders = useCallback(async () => {
     try {
       const res  = await fetch("/api/tint/operator/my-orders");
-      const data = (await res.json()) as { orders: OperatorOrder[] };
-      setOrders(data.orders);
+      const data = (await res.json()) as {
+        assignedOrders: OperatorOrder[];
+        assignedSplits: OperatorSplit[];
+      };
+      setAssignedOrders(data.assignedOrders);
+      setAssignedSplits(data.assignedSplits);
     } catch {
       // leave stale
     }
@@ -200,8 +349,29 @@ export function TintOperatorContent() {
     fetchOrders().finally(() => setIsLoading(false));
   }, [fetchOrders]);
 
-  async function postAction(endpoint: string, orderId: number) {
-    setActionLoading(orderId);
+  async function postSplitAction(endpoint: string, splitId: number) {
+    setSplitActionLoading(splitId);
+    setError(null);
+    try {
+      const res = await fetch(endpoint, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ splitId }),
+      });
+      if (!res.ok) {
+        const err = (await res.json()) as { error?: string };
+        throw new Error(typeof err.error === "string" ? err.error : "Action failed");
+      }
+      await fetchOrders();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Action failed");
+    } finally {
+      setSplitActionLoading(null);
+    }
+  }
+
+  async function postOrderAction(endpoint: string, orderId: number) {
+    setOrderActionLoading(orderId);
     setError(null);
     try {
       const res = await fetch(endpoint, {
@@ -217,20 +387,27 @@ export function TintOperatorContent() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Action failed");
     } finally {
-      setActionLoading(null);
+      setOrderActionLoading(null);
     }
   }
 
   // ── Derived stats ─────────────────────────────────────────────────────────
 
-  const inProgressOrders = orders.filter((o) => o.workflowStage === "tinting_in_progress");
-  const todoOrders       = orders.filter((o) => o.workflowStage === "pending_tint_assignment");
-  const doneOrders       = orders.filter((o) => o.workflowStage === "tinting_done");
+  const inProgressSplits = assignedSplits.filter((s) => s.status === "tinting_in_progress");
+  const todoSplits       = assignedSplits.filter((s) => s.status === "tint_assigned");
 
-  // Sort: in-progress first, then pending, then done
-  const sortedOrders = [...inProgressOrders, ...todoOrders, ...doneOrders];
+  const inProgressOrders = assignedOrders.filter((o) => o.workflowStage === "tinting_in_progress");
+  const todoOrders       = assignedOrders.filter((o) => o.workflowStage === "tint_assigned");
 
-  const bothEmpty = inProgressOrders.length === 0 && todoOrders.length === 0;
+  const myQueueCount    = todoSplits.length    + todoOrders.length;
+  const inProgressCount = inProgressSplits.length + inProgressOrders.length;
+
+  const bothEmpty = myQueueCount === 0 && inProgressCount === 0;
+
+  // Sort splits: in-progress first, then pending
+  const sortedSplits = [...inProgressSplits, ...todoSplits];
+  // Sort orders: in-progress first, then pending
+  const sortedOrders = [...inProgressOrders, ...todoOrders];
 
   // ── Loading ───────────────────────────────────────────────────────────────
 
@@ -266,7 +443,7 @@ export function TintOperatorContent() {
       <div className="px-6 pb-4 grid grid-cols-1 sm:grid-cols-3 gap-4">
         <StatCard
           label="My Queue"
-          value={todoOrders.length}
+          value={myQueueCount}
           icon={<Layers size={18} />}
           iconBg="bg-indigo-50"
           iconColor="text-indigo-600"
@@ -274,7 +451,7 @@ export function TintOperatorContent() {
         />
         <StatCard
           label="In Progress"
-          value={inProgressOrders.length}
+          value={inProgressCount}
           icon={<Clock size={18} />}
           iconBg="bg-amber-50"
           iconColor="text-amber-600"
@@ -282,7 +459,7 @@ export function TintOperatorContent() {
         />
         <StatCard
           label="Completed Today"
-          value={doneOrders.length}
+          value={0}
           icon={<CheckCircle2 size={18} />}
           iconBg="bg-green-50"
           iconColor="text-green-600"
@@ -318,15 +495,29 @@ export function TintOperatorContent() {
             <p className="text-[12px] text-gray-400 mt-1">Check back later or contact your Tint Manager</p>
           </div>
         ) : (
-          sortedOrders.map((order) => (
-            <OrderCard
-              key={order.id}
-              order={order}
-              isActionLoading={actionLoading === order.id}
-              onStart={() => postAction("/api/tint/operator/start", order.id)}
-              onDone={() => postAction("/api/tint/operator/done", order.id)}
-            />
-          ))
+          <>
+            {/* Regular assigned orders */}
+            {sortedOrders.map((order) => (
+              <RegularOrderCard
+                key={`order-${order.id}`}
+                order={order}
+                isActionLoading={orderActionLoading === order.id}
+                onStart={() => postOrderAction("/api/tint/operator/start", order.id)}
+                onDone={() => postOrderAction("/api/tint/operator/done", order.id)}
+              />
+            ))}
+
+            {/* Split cards */}
+            {sortedSplits.map((split) => (
+              <SplitCard
+                key={`split-${split.id}`}
+                split={split}
+                isActionLoading={splitActionLoading === split.id}
+                onStart={() => postSplitAction("/api/tint/operator/split/start", split.id)}
+                onDone={() => postSplitAction("/api/tint/operator/split/done", split.id)}
+              />
+            ))}
+          </>
         )}
       </div>
 

@@ -40,7 +40,7 @@ export async function POST(req: Request): Promise<NextResponse> {
       // 1. Load order — verify stage
       const order = await tx.orders.findUnique({ where: { id: orderId } });
       if (!order) throw new Error("Order not found");
-      if (order.workflowStage !== "pending_tint_assignment") throw new WrongStageError();
+      if (order.workflowStage !== "tint_assigned") throw new WrongStageError();
 
       // 2. Verify assignment
       const assignment = await tx.tint_assignments.findFirst({
@@ -77,7 +77,7 @@ export async function POST(req: Request): Promise<NextResponse> {
       await tx.order_status_logs.create({
         data: {
           orderId,
-          fromStage:   "pending_tint_assignment",
+          fromStage:   "tint_assigned",
           toStage:     "tinting_in_progress",
           changedById: userId,
         },

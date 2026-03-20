@@ -72,9 +72,13 @@ model users {
   // Phase 2 back-relations
   importBatches             import_batches[]
   statusLogs                order_status_logs[]
-  tintAssignmentsAsOperator tint_assignments[] @relation("TintAssignmentOperator")
-  tintAssignmentsAsManager  tint_assignments[] @relation("TintAssignmentManager")
+  tintAssignmentsAsOperator tint_assignments[]  @relation("TintAssignmentOperator")
+  tintAssignmentsAsManager  tint_assignments[]  @relation("TintAssignmentManager")
   tintLogs                  tint_logs[]
+  // Phase 3 back-relations
+  splitsAsOperator          order_splits[]      @relation("SplitOperator")
+  splitsAsManager           order_splits[]      @relation("SplitManager")
+  splitStatusLogs           split_status_logs[] @relation("SplitStatusLogUser")
 }
 
 model status_master {
@@ -391,22 +395,26 @@ model import_raw_line_items {
   unitQty          Int
   volumeLine       Float?
   isTinting        Boolean                     @default(false)
+  article          Int?
+  articleTag       String?
   rowStatus        String                      @default("valid")
   rowError         String?
   createdAt        DateTime                    @default(now())
   enrichedLineItem import_enriched_line_items?
+  splitLineItems   split_line_items[]
 }
 
 model import_enriched_line_items {
   id            Int                   @id @default(autoincrement())
   rawLineItemId Int                   @unique
   rawLineItem   import_raw_line_items @relation(fields: [rawLineItemId], references: [id])
-  skuId         Int
-  sku           sku_master            @relation(fields: [skuId], references: [id])
+  skuId         Int?
+  sku           sku_master?           @relation(fields: [skuId], references: [id])
   unitQty       Int
   volumeLine    Float?
-  lineWeight    Float
+  lineWeight    Float?
   isTinting     Boolean
+  note          String?
   createdAt     DateTime              @default(now())
 }
 
@@ -419,8 +427,10 @@ model import_obd_query_summary {
   totalUnitQty Int
   totalWeight  Float
   totalVolume  Float
-  hasTinting   Boolean
-  createdAt    DateTime @default(now())
+  hasTinting    Boolean
+  totalArticle  Int      @default(0)
+  articleTag    String?
+  createdAt     DateTime @default(now())
 }
 
 // ─────────────────────────────────────────────
@@ -453,6 +463,7 @@ model orders {
   grossWeight         Float?
   volume              Float?
   isActive            Boolean                   @default(true)
+  sequenceOrder       Int                       @default(0)
   createdAt           DateTime                  @default(now())
   updatedAt           DateTime                  @updatedAt
   querySnapshot       import_obd_query_summary?
@@ -463,36 +474,83 @@ model orders {
 }
 
 model order_splits {
-  id        Int      @id @default(autoincrement())
-  orderId   Int
-  order     orders   @relation(fields: [orderId], references: [id])
-  createdAt DateTime @default(now())
+  id             Int                 @id @default(autoincrement())
+  orderId        Int
+  order          orders              @relation(fields: [orderId], references: [id])
+  splitNumber    Int
+  assignedToId   Int
+  assignedTo     users               @relation("SplitOperator", fields: [assignedToId], references: [id])
+  assignedById   Int
+  assignedBy     users               @relation("SplitManager", fields: [assignedById], references: [id])
+  status         String              @default("tint_assigned")
+  dispatchStatus String?
+  priorityLevel  Int                 @default(3)
+  dispatchSlot   String?
+  totalQty       Int                 @default(0)
+  totalVolume    Float?
+  articleTag     String?
+  note           String?
+  sequenceOrder  Int                 @default(0)
+  startedAt      DateTime?
+  completedAt    DateTime?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  lineItems      split_line_items[]
+  statusLogs     split_status_logs[]
+  tintLogs       tint_logs[]
+  tintAssignment tint_assignments?
+}
+
+model split_line_items {
+  id            Int                   @id @default(autoincrement())
+  splitId       Int
+  split         order_splits          @relation(fields: [splitId], references: [id])
+  rawLineItemId Int
+  rawLineItem   import_raw_line_items @relation(fields: [rawLineItemId], references: [id])
+  assignedQty   Int
+  createdAt     DateTime              @default(now())
+}
+
+model split_status_logs {
+  id          Int          @id @default(autoincrement())
+  splitId     Int
+  split       order_splits @relation(fields: [splitId], references: [id])
+  fromStage   String?
+  toStage     String
+  changedById Int
+  changedBy   users        @relation("SplitStatusLogUser", fields: [changedById], references: [id])
+  note        String?
+  createdAt   DateTime     @default(now())
 }
 
 model tint_assignments {
-  id           Int      @id @default(autoincrement())
+  id           Int           @id @default(autoincrement())
   orderId      Int
-  order        orders   @relation(fields: [orderId], references: [id])
+  order        orders        @relation(fields: [orderId], references: [id])
+  splitId      Int?          @unique
+  split        order_splits? @relation(fields: [splitId], references: [id])
   assignedToId Int
-  assignedTo   users    @relation("TintAssignmentOperator", fields: [assignedToId], references: [id])
+  assignedTo   users         @relation("TintAssignmentOperator", fields: [assignedToId], references: [id])
   assignedById Int
-  assignedBy   users    @relation("TintAssignmentManager", fields: [assignedById], references: [id])
-  status       String   @default("assigned")
+  assignedBy   users         @relation("TintAssignmentManager", fields: [assignedById], references: [id])
+  status       String        @default("assigned")
   startedAt    DateTime?
   completedAt  DateTime?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
 }
 
 model tint_logs {
-  id            Int      @id @default(autoincrement())
+  id            Int           @id @default(autoincrement())
   orderId       Int
-  order         orders   @relation(fields: [orderId], references: [id])
+  order         orders        @relation(fields: [orderId], references: [id])
+  splitId       Int?
+  split         order_splits? @relation(fields: [splitId], references: [id])
   action        String
   performedById Int
-  performedBy   users    @relation(fields: [performedById], references: [id])
+  performedBy   users         @relation(fields: [performedById], references: [id])
   note          String?
-  createdAt     DateTime @default(now())
+  createdAt     DateTime      @default(now())
 }
 
 model order_status_logs {

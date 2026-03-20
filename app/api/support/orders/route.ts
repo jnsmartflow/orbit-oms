@@ -58,6 +58,23 @@ export async function GET(req: Request): Promise<NextResponse> {
             select: { totalWeight: true, totalLines: true, hasTinting: true },
           },
           batch: { select: { batchRef: true } },
+          splits: {
+            where: {
+              status: {
+                in: ["tinting_done", "pending_support", "dispatch_confirmation", "dispatched"],
+              },
+            },
+            select: {
+              id:             true,
+              splitNumber:    true,
+              status:         true,
+              totalQty:       true,
+              articleTag:     true,
+              dispatchStatus: true,
+              completedAt:    true,
+              assignedTo:     { select: { id: true, name: true } },
+            },
+          },
         },
         orderBy: { createdAt: "desc" },
         skip:  (page - 1) * LIMIT,

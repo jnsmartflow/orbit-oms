@@ -29,13 +29,13 @@ async function main() {
 
   // ── role_master ────────────────────────────────────────────────────────────
   const roles = [
-    "Admin",
-    "Dispatcher",
-    "Support",
-    "Tint Manager",
-    "Tint Operator",
-    "Floor Supervisor",
-    "Picker",
+    "admin",
+    "dispatcher",
+    "support",
+    "tint_manager",
+    "tint_operator",
+    "floor_supervisor",
+    "picker",
   ];
 
   for (const name of roles) {
@@ -46,6 +46,64 @@ async function main() {
     });
   }
   console.log(`  ✓ role_master — ${roles.length} rows`);
+
+  // ── role_permissions ────────────────────────────────────────────────────────
+  // Default permissions per role. Admin always bypasses this check in code.
+  // canView/canEdit are the most commonly checked actions.
+  const permRows: {
+    roleSlug: string;
+    pageKey:  string;
+    canView:  boolean;
+    canEdit:  boolean;
+    canImport:boolean;
+    canExport:boolean;
+    canDelete:boolean;
+  }[] = [
+    // tint_operator — full access to their own page
+    { roleSlug: "tint_operator", pageKey: "tint_operator", canView: true,  canEdit: true,  canImport: false, canExport: false, canDelete: false },
+
+    // tint_manager — full access to tint manager page + read-only shared pages
+    { roleSlug: "tint_manager",  pageKey: "tint_manager",  canView: true,  canEdit: true,  canImport: false, canExport: false, canDelete: false },
+    { roleSlug: "tint_manager",  pageKey: "customers",     canView: true,  canEdit: false, canImport: false, canExport: false, canDelete: false },
+    { roleSlug: "tint_manager",  pageKey: "skus",          canView: true,  canEdit: false, canImport: false, canExport: false, canDelete: false },
+    { roleSlug: "tint_manager",  pageKey: "routes_areas",  canView: true,  canEdit: false, canImport: false, canExport: false, canDelete: false },
+    { roleSlug: "tint_manager",  pageKey: "vehicles",      canView: true,  canEdit: false, canImport: false, canExport: false, canDelete: false },
+
+    // support — full access to support queue + read-only shared pages
+    { roleSlug: "support",       pageKey: "support_queue", canView: true,  canEdit: true,  canImport: false, canExport: false, canDelete: false },
+    { roleSlug: "support",       pageKey: "customers",     canView: true,  canEdit: false, canImport: false, canExport: false, canDelete: false },
+    { roleSlug: "support",       pageKey: "skus",          canView: true,  canEdit: false, canImport: false, canExport: false, canDelete: false },
+    { roleSlug: "support",       pageKey: "routes_areas",  canView: true,  canEdit: false, canImport: false, canExport: false, canDelete: false },
+    { roleSlug: "support",       pageKey: "vehicles",      canView: true,  canEdit: false, canImport: false, canExport: false, canDelete: false },
+    { roleSlug: "support",       pageKey: "import_obd",    canView: true,  canEdit: false, canImport: true,  canExport: false, canDelete: false },
+
+    // dispatcher — full access to dispatcher page + read-only shared pages
+    { roleSlug: "dispatcher",    pageKey: "dispatcher",    canView: true,  canEdit: true,  canImport: false, canExport: false, canDelete: false },
+    { roleSlug: "dispatcher",    pageKey: "customers",     canView: true,  canEdit: false, canImport: false, canExport: false, canDelete: false },
+    { roleSlug: "dispatcher",    pageKey: "skus",          canView: true,  canEdit: false, canImport: false, canExport: false, canDelete: false },
+    { roleSlug: "dispatcher",    pageKey: "routes_areas",  canView: true,  canEdit: false, canImport: false, canExport: false, canDelete: false },
+    { roleSlug: "dispatcher",    pageKey: "vehicles",      canView: true,  canEdit: false, canImport: false, canExport: false, canDelete: false },
+    { roleSlug: "dispatcher",    pageKey: "import_obd",    canView: true,  canEdit: false, canImport: true,  canExport: false, canDelete: false },
+
+    // floor_supervisor + picker — warehouse access only
+    { roleSlug: "floor_supervisor", pageKey: "warehouse",  canView: true,  canEdit: true,  canImport: false, canExport: false, canDelete: false },
+    { roleSlug: "picker",           pageKey: "warehouse",  canView: true,  canEdit: true,  canImport: false, canExport: false, canDelete: false },
+  ];
+
+  for (const row of permRows) {
+    await prisma.role_permissions.upsert({
+      where: { roleSlug_pageKey: { roleSlug: row.roleSlug, pageKey: row.pageKey } },
+      update: {
+        canView:   row.canView,
+        canEdit:   row.canEdit,
+        canImport: row.canImport,
+        canExport: row.canExport,
+        canDelete: row.canDelete,
+      },
+      create: row,
+    });
+  }
+  console.log(`  ✓ role_permissions — ${permRows.length} rows`);
 
   // ── status_master ──────────────────────────────────────────────────────────
   const statusRows: {
@@ -292,7 +350,7 @@ async function main() {
   console.log(`  ✓ sales_officer_group — ${soGroups.length} rows`);
 
   // ── admin user ─────────────────────────────────────────────────────────────
-  const adminRole    = await prisma.role_master.findUniqueOrThrow({ where: { name: "Admin" } });
+  const adminRole    = await prisma.role_master.findUniqueOrThrow({ where: { name: "admin" } });
   const passwordHash = await bcrypt.hash("Admin@123", 10);
 
   await prisma.users.upsert({

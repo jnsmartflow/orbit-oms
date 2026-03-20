@@ -43,7 +43,9 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           id: user.id.toString(),
           email: user.email,
           name: user.name,
-          role: user.role.name,
+          // Normalize to snake_case to match ROLES constants and role_permissions.roleSlug
+          // e.g. "Tint Operator" → "tint_operator", "Admin" → "admin"
+          role: user.role.name.toLowerCase().replace(/\s+/g, "_"),
         };
       },
     }),

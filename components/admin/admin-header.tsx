@@ -45,7 +45,7 @@ function LiveTime() {
   });
 
   return (
-    <span className="font-mono text-[11px] text-gray-400 bg-gray-50 border border-gray-200 px-3 py-1 rounded-md whitespace-nowrap">
+    <span suppressHydrationWarning className="font-mono text-[11px] text-gray-400 bg-gray-50 border border-gray-200 px-3 py-1 rounded-md whitespace-nowrap">
       {today} · {time}
     </span>
   );

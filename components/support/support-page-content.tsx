@@ -69,6 +69,27 @@ interface TintAssignment {
   assignedTo: { name: string | null };
 }
 
+interface SplitItem {
+  id:             number;
+  splitNumber:    number;
+  status:         string;
+  totalQty:       number;
+  totalVolume:    number | null;
+  articleTag:     string | null;
+  dispatchStatus: string | null;
+  assignedTo:     { id: number; name: string | null };
+  lineItems: {
+    assignedQty: number;
+    rawLineItem: {
+      skuCodeRaw:        string;
+      skuDescriptionRaw: string | null;
+      unitQty:           number;
+      volumeLine:        number | null;
+      isTinting:         boolean;
+    };
+  }[];
+}
+
 interface OrderDetail extends OrderListItem {
   sapStatus: string | null;
   materialType: string | null;
@@ -76,6 +97,7 @@ interface OrderDetail extends OrderListItem {
   obdEmailDate: string | null;
   statusLogs: StatusLog[];
   tintAssignments: TintAssignment[];
+  splits?: SplitItem[];
 }
 
 interface LineItem {
@@ -295,6 +317,25 @@ export function SupportPageContent() {
       setSheetError(err instanceof Error ? err.message : "Save failed");
     } finally {
       setIsSaving(false);
+    }
+  }
+
+  async function handleSplitDispatchStatus(splitId: number, dispatchStatus: string) {
+    try {
+      await fetch(`/api/support/splits/${splitId}`, {
+        method:  "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ dispatchStatus }),
+      });
+      void fetchOrders();
+      // Refresh sheet detail to reflect updated split status
+      if (selectedOrder) {
+        const res  = await fetch(`/api/support/orders/${selectedOrder.order.id}`);
+        const data = (await res.json()) as OrderDetailResponse;
+        setSelectedOrder(data);
+      }
+    } catch (err) {
+      console.error("Failed to update split dispatch status:", err);
     }
   }
 
@@ -704,6 +745,110 @@ export function SupportPageContent() {
                     </div>
                   )}
                 </div>
+
+                {/* ── Tint Splits ──────────────────────────────────────── */}
+                {selectedOrder.order.splits && selectedOrder.order.splits.length > 0 && (
+                  <div>
+                    <p className="text-[10px] font-extrabold uppercase tracking-[.6px] text-gray-400 border-b border-[#e2e5f1] pb-2 mb-3">
+                      Tint Splits ({selectedOrder.order.splits.length})
+                    </p>
+
+                    {/* OBD progress summary */}
+                    <div className="flex items-center gap-3 mb-3 bg-[#f7f8fc] border border-[#e2e5f1] rounded-lg px-3 py-2 text-[11.5px]">
+                      <span className="text-gray-500">
+                        {selectedOrder.order.splits.filter((s) =>
+                          ["tinting_done", "pending_support", "dispatch_confirmation", "dispatched"]
+                            .includes(s.status)
+                        ).length} of {selectedOrder.order.splits.length} splits done
+                      </span>
+                      <span className="text-gray-300">·</span>
+                      <span className="text-gray-500">
+                        {selectedOrder.order.splits.reduce((sum, s) => sum + s.totalQty, 0)} qty assigned
+                      </span>
+                    </div>
+
+                    {/* Each split card */}
+                    {selectedOrder.order.splits.map((split) => (
+                      <div key={split.id} className="mb-3 rounded-xl border border-[#e2e5f1] overflow-hidden">
+
+                        {/* Split header */}
+                        <div className="flex items-center justify-between px-3 py-2 bg-[#f7f8fc] border-b border-[#e2e5f1]">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[11px] font-bold text-gray-700">
+                              Split {split.splitNumber}
+                            </span>
+                            <span className={cn(
+                              "text-[10px] font-bold px-2 py-0.5 rounded-full border",
+                              split.status === "tinting_done" || split.status === "pending_support"
+                                ? "bg-green-50 text-green-700 border-green-200"
+                                : split.status === "tinting_in_progress"
+                                ? "bg-blue-50 text-blue-700 border-blue-200"
+                                : "bg-amber-50 text-amber-700 border-amber-200"
+                            )}>
+                              {split.status.replace(/_/g, " ")}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 text-[11px] text-gray-400">
+                            <span>{split.assignedTo.name}</span>
+                            <span>·</span>
+                            <span>{split.articleTag ?? `${split.totalQty} units`}</span>
+                          </div>
+                        </div>
+
+                        {/* Split dispatch actions — only for done/support splits */}
+                        {["tinting_done", "pending_support", "dispatch_confirmation"].includes(split.status) && (
+                          <div className="px-3 py-2.5 flex items-center gap-2">
+                            <div className="flex gap-1.5 flex-1">
+                              {(["dispatch", "hold", "waiting_for_confirmation"] as const).map((ds) => (
+                                <button
+                                  key={ds}
+                                  type="button"
+                                  onClick={() => void handleSplitDispatchStatus(split.id, ds)}
+                                  className={cn(
+                                    "flex-1 py-1.5 rounded-lg text-[11px] font-semibold border transition-colors",
+                                    split.dispatchStatus === ds
+                                      ? ds === "hold"
+                                        ? "bg-red-50 border-red-300 text-red-700"
+                                        : ds === "dispatch"
+                                        ? "bg-green-50 border-green-300 text-green-700"
+                                        : "bg-amber-50 border-amber-300 text-amber-700"
+                                      : "bg-white border-[#cdd1e8] text-gray-400 hover:bg-[#f7f8fc]"
+                                  )}
+                                >
+                                  {ds === "waiting_for_confirmation" ? "Waiting"
+                                    : ds.charAt(0).toUpperCase() + ds.slice(1)}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Split line items */}
+                        <div className="px-3 pb-2.5">
+                          {split.lineItems.map((item, idx) => (
+                            <div
+                              key={idx}
+                              className={cn(
+                                "flex items-center gap-2 py-1 text-[11px]",
+                                idx < split.lineItems.length - 1 ? "border-b border-[#f0f1f8]" : ""
+                              )}
+                            >
+                              <span className="font-mono text-violet-700 flex-shrink-0">
+                                {item.rawLineItem.skuCodeRaw}
+                              </span>
+                              <span className="text-gray-500 flex-1 truncate">
+                                {item.rawLineItem.skuDescriptionRaw}
+                              </span>
+                              <span className="text-gray-700 font-semibold flex-shrink-0">
+                                {item.assignedQty} units
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
 
                 {/* ── Line Items ───────────────────────────────────────── */}
                 <div>

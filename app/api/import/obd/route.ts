@@ -305,6 +305,8 @@ async function handlePreview(req: Request, session: Session): Promise<NextRespon
     unitQty:           number;
     volumeLine:        number | null;
     isTinting:         boolean;
+    article:           number | null;
+    articleTag:        string | null;
     rowStatus:         "valid" | "error";
     rowError:          string | null;
   }
@@ -353,12 +355,17 @@ async function handlePreview(req: Request, session: Session): Promise<NextRespon
       const unitQty    = toInt(lr["unit_qty"]) ?? 0;
       const volumeLine = toNum(lr["volume_line"]);
       const isTinting  = parseBooleanCell(lr["Tinting"]);
+      const article    = lr["article"]     != null ? parseInt(String(lr["article"]), 10)  : null;
+      const articleTag = lr["article_tag"] != null ? String(lr["article_tag"]).trim()     : null;
 
       let lineStatus: "valid" | "error" = "valid";
       let lineError:  string | null     = null;
-      if (!skuCodeRaw || !existingSkuSet.has(skuCodeRaw)) {
+      if (!skuCodeRaw) {
         lineStatus = "error";
-        lineError  = `Unknown SKU: ${skuCodeRaw}`;
+        lineError  = "Missing SKU code";
+      } else if (!existingSkuSet.has(skuCodeRaw)) {
+        // Warning only — unknown SKUs are enriched with skuId=null (best-effort)
+        lineError = `Unknown SKU: ${skuCodeRaw} — manual mapping required`;
       }
 
       return {
@@ -369,6 +376,8 @@ async function handlePreview(req: Request, session: Session): Promise<NextRespon
         unitQty,
         volumeLine,
         isTinting,
+        article:    isNaN(article as number) ? null : article,
+        articleTag: articleTag || null,
         rowStatus:         lineStatus,
         rowError:          lineError,
       };
@@ -440,6 +449,8 @@ async function handlePreview(req: Request, session: Session): Promise<NextRespon
       unitQty:           line.unitQty,
       volumeLine:        line.volumeLine,
       isTinting:         line.isTinting,
+      article:           line.article,
+      articleTag:        line.articleTag,
       rowStatus:         line.rowStatus,
       rowError:          line.rowError,
     }));
@@ -566,7 +577,18 @@ async function handleConfirm(req: Request, session: Session): Promise<NextRespon
     },
     include: {
       rawLineItems: {
-        where: { rowStatus: "valid" },
+        select: {
+          id:         true,
+          obdNumber:  true,
+          lineId:     true,
+          skuCodeRaw: true,
+          unitQty:    true,
+          volumeLine: true,
+          isTinting:  true,
+          article:    true,
+          articleTag: true,
+          rowStatus:  true,
+        },
       },
     },
   });
@@ -672,11 +694,10 @@ async function handleConfirm(req: Request, session: Session): Promise<NextRespon
 
     const priorityLevel = (customer?.isKeyCustomer || customer?.isKeySite) ? 1 : 3;
 
-    // Pre-compute line totals
+    // Pre-compute line totals (include all lines, even unknown SKUs)
     let totalLineQty = 0;
     let totalVolume  = 0;
     for (const line of validLines) {
-      if (!skuByCode.get(line.skuCodeRaw)) continue;
       totalLineQty += line.unitQty;
       totalVolume  += line.volumeLine ?? 0;
     }
@@ -748,6 +769,31 @@ async function handleConfirm(req: Request, session: Session): Promise<NextRespon
       const hasLines = o.validLines.length > 0;
       // find matching rawSummary for fallback totals
       const rs = rawSummaries.find((s) => s.obdNumber === o.obdNumber);
+
+      // Sum total articles across all valid lines
+      const totalArticle = o.validLines.reduce((sum, l) => sum + (l.article ?? 0), 0);
+
+      // Group by tag type and sum — e.g. "30 Drum, 2 Carton, 1 Tin"
+      const tagTotals: Record<string, number> = {};
+      for (const l of o.validLines) {
+        if (!l.articleTag) continue;
+        // Parse tag parts — each part is like "30 Drum" or "1 Carton" or "2 Tin"
+        const parts = l.articleTag.split(' ');
+        if (parts.length >= 2) {
+          const qty  = parseInt(parts[0], 10);
+          const type = parts.slice(1).join(' ');  // handles "Carton" and "Tin"
+          if (!isNaN(qty) && type) {
+            tagTotals[type] = (tagTotals[type] ?? 0) + qty;
+          }
+        }
+      }
+      // Build summary string in order: Drum → Bag → Carton → Tin
+      const typeOrder = ['Drum', 'Bag', 'Carton', 'Tin'];
+      const articleTagStr = typeOrder
+        .filter(t => tagTotals[t] > 0)
+        .map(t => `${tagTotals[t]} ${t}`)
+        .join(', ') || null;
+
       return {
         obdNumber:    o.obdNumber,
         orderId,
@@ -756,6 +802,8 @@ async function handleConfirm(req: Request, session: Session): Promise<NextRespon
         totalWeight:  rs?.grossWeight ?? 0,
         totalVolume:  hasLines ? o.totalVolume  : (rs?.volume ?? 0),
         hasTinting:   o.hasTinting,
+        totalArticle,
+        articleTag:   articleTagStr,
       };
     });
 
@@ -794,19 +842,20 @@ async function handleConfirm(req: Request, session: Session): Promise<NextRespon
   }
 
   // ── STEP D5 — Bulk create import_enriched_line_items ─────────────────────
+  // Best-effort enrichment: unknown SKUs get skuId=null rather than being skipped.
   // NOTE: lineWeight stored as 0 — sku_master.grossWeightPerUnit not yet in schema
   const enrichedData: Prisma.import_enriched_line_itemsCreateManyInput[] = [];
   for (const o of orderInterims) {
     for (const line of o.validLines) {
       const sku = skuByCode.get(line.skuCodeRaw);
-      if (!sku) continue;
       enrichedData.push({
         rawLineItemId: line.id,
-        skuId:         sku.id,
+        skuId:         sku?.id ?? null,
         unitQty:       line.unitQty,
         volumeLine:    line.volumeLine,
-        lineWeight:    0,
+        lineWeight:    sku ? 0 : null,
         isTinting:     line.isTinting,
+        note:          sku ? null : "Unknown SKU — manual mapping required",
       });
       linesEnriched++;
     }

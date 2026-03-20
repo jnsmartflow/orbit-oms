@@ -16,35 +16,75 @@ export async function GET(): Promise<NextResponse> {
 
   const userId = parseInt(session!.user.id, 10);
 
-  const orders = await prisma.orders.findMany({
-    where: {
-      orderType:     "tint",
-      workflowStage: { in: ["pending_tint_assignment", "tinting_in_progress"] },
-      tintAssignments: {
-        some: {
-          assignedToId: userId,
-          status:       { not: "done" },
+  const [assignedOrders, assignedSplits] = await Promise.all([
+    // Query 1: Regular assigned orders (non-split flow)
+    prisma.orders.findMany({
+      where: {
+        workflowStage: { in: ["tint_assigned", "tinting_in_progress"] },
+        tintAssignments: {
+          some: {
+            assignedToId: userId,
+            status: { not: "done" },
+          },
         },
       },
-    },
-    include: {
-      customer: {
-        select: {
-          customerName: true,
-          area: { select: { name: true } },
+      include: {
+        customer: {
+          include: {
+            area: { select: { name: true } },
+          },
+        },
+        tintAssignments: {
+          where:   { assignedToId: userId },
+          select:  { status: true, startedAt: true },
+          orderBy: { createdAt: "desc" },
+          take:    1,
+        },
+        querySnapshot: {
+          select: {
+            totalUnitQty: true,
+            totalVolume:  true,
+            articleTag:   true,
+            totalLines:   true,
+          },
         },
       },
-      querySnapshot: {
-        select: { totalWeight: true, totalLines: true },
-      },
-      tintAssignments: {
-        where:   { assignedToId: userId, status: { not: "done" } },
-        orderBy: { createdAt: "desc" },
-        take:    1,
-      },
-    },
-    orderBy: { createdAt: "asc" },
-  });
+      orderBy: { createdAt: "asc" },
+    }),
 
-  return NextResponse.json({ orders });
+    // Query 2: Splits assigned to this operator
+    prisma.order_splits.findMany({
+      where: {
+        assignedToId: userId,
+        status: { in: ["tint_assigned", "tinting_in_progress"] },
+      },
+      include: {
+        order: {
+          include: {
+            customer: {
+              include: {
+                area: { select: { name: true } },
+              },
+            },
+          },
+        },
+        lineItems: {
+          include: {
+            rawLineItem: {
+              select: {
+                skuCodeRaw:        true,
+                skuDescriptionRaw: true,
+                unitQty:           true,
+                volumeLine:        true,
+                isTinting:         true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: { createdAt: "asc" },
+    }),
+  ]);
+
+  return NextResponse.json({ assignedOrders, assignedSplits });
 }

@@ -40,6 +40,25 @@ export async function GET(
       tintAssignments: {
         include: { assignedTo: { select: { name: true } } },
       },
+      splits: {
+        include: {
+          assignedTo: { select: { id: true, name: true } },
+          lineItems: {
+            include: {
+              rawLineItem: {
+                select: {
+                  skuCodeRaw:        true,
+                  skuDescriptionRaw: true,
+                  unitQty:           true,
+                  volumeLine:        true,
+                  isTinting:         true,
+                },
+              },
+            },
+          },
+        },
+        orderBy: { splitNumber: "asc" },
+      },
     },
   });
 

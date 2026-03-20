@@ -177,9 +177,16 @@ export function RoleSidebar({ role, userName, userInitials, navItems }: RoleSide
           {userInitials}
         </button>
         {!isCollapsed && (
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <p className="text-[12px] font-semibold text-gray-800 truncate">{userName}</p>
             <p className="text-[10px] text-gray-400 truncate">{roleLabel}</p>
+            <button
+              type="button"
+              onClick={() => signOut({ callbackUrl: "/login" })}
+              className="text-[10px] text-red-500 hover:text-red-700 font-medium mt-0.5 transition-colors"
+            >
+              Sign out
+            </button>
           </div>
         )}
       </div>
