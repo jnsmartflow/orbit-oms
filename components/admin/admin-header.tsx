@@ -66,12 +66,14 @@ export function AdminHeader({ userName: _userName, userRole: _userRole }: AdminH
     <header className="shrink-0 flex items-center justify-between px-5 bg-white border-b border-[#e2e5f1] shadow-sm"
       style={{ height: "52px" }}
     >
-      {/* Left: breadcrumb */}
-      <nav className="flex items-center gap-1.5 text-[12px]">
-        <span className="text-gray-400 font-medium">Admin</span>
-        <ChevronRight className="h-3 w-3 text-gray-300" />
-        <span className="text-gray-700 font-semibold">{pageName}</span>
-      </nav>
+      {/* Left: breadcrumb — hidden on tint manager page (has its own topbar) */}
+      {!pathname.includes('tint-manager') && (
+        <nav className="flex items-center gap-1.5 text-[12px]">
+          <span className="text-gray-400 font-medium">Admin</span>
+          <ChevronRight className="h-3 w-3 text-gray-300" />
+          <span className="text-gray-700 font-semibold">{pageName}</span>
+        </nav>
+      )}
 
       {/* Right: time + sign-out */}
       <div className="flex items-center gap-3">
