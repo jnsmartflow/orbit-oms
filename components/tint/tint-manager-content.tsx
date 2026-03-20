@@ -1928,7 +1928,7 @@ export function TintManagerContent() {
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="h-screen overflow-hidden flex flex-col bg-[#f0f2f8]">
+    <div className="min-h-screen bg-[#f0f2f8]">
 
       {/* ── Topbar ───────────────────────────────────────────────────────── */}
       <div className="h-[52px] bg-white border-b border-[#e2e5f1] px-6 flex items-center sticky top-0 z-40">
@@ -2289,8 +2289,8 @@ export function TintManagerContent() {
       </div>
 
       {/* ── Kanban board ─────────────────────────────────────────────────── */}
-      <div className="flex-1 overflow-hidden px-3 pb-3">
-        <div className="grid grid-cols-4 gap-2 h-full">
+      <div className="px-3 pb-6">
+        <div className="grid grid-cols-4 gap-2">
           {COLUMNS.map((col) => {
             const isPendingCol = col.stage === "pending_tint_assignment";
 
@@ -2383,7 +2383,7 @@ export function TintManagerContent() {
             return (
               <div
                 key={col.stage}
-                className="bg-[#f7f8fc] border border-[#e2e5f1] rounded-[12px] overflow-hidden flex flex-col h-full"
+                className="bg-[#f7f8fc] border border-[#e2e5f1] rounded-[12px] overflow-hidden"
               >
                 {/* Column header */}
                 <div className="bg-white border-b border-[#e2e5f1] px-4 py-3 flex items-center gap-2">
@@ -2395,7 +2395,7 @@ export function TintManagerContent() {
                 </div>
 
                 {/* Card list */}
-                <div className="flex-1 overflow-y-auto p-2 flex flex-col gap-2">
+                <div className="p-2 flex flex-col gap-2">
                   {itemCount === 0 ? (
                     <div className="flex flex-col items-center py-12 text-center">
                       <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center mb-3">
