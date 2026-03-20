@@ -2395,7 +2395,7 @@ export function TintManagerContent() {
                 </div>
 
                 {/* Card list */}
-                <div className="p-2 flex flex-col gap-2">
+                <div className="p-2 flex flex-col gap-2 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 326px)' }}>
                   {itemCount === 0 ? (
                     <div className="flex flex-col items-center py-12 text-center">
                       <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center mb-3">
