@@ -11,12 +11,6 @@ const bodySchema = z.object({
   orderId: z.number().int().positive(),
 });
 
-class NoActiveAssignmentError extends Error {
-  constructor() { super("NO_ACTIVE_ASSIGNMENT"); }
-}
-class WrongStageError extends Error {
-  constructor() { super("WRONG_STAGE"); }
-}
 
 export async function POST(req: Request): Promise<NextResponse> {
   const session = await auth();
@@ -35,72 +29,62 @@ export async function POST(req: Request): Promise<NextResponse> {
   const userId = parseInt(session!.user.id, 10);
 
   try {
-    await prisma.$transaction(async (tx) => {
-      // 1. Load order — verify stage
-      const order = await tx.orders.findUnique({ where: { id: orderId } });
-      if (!order) throw new Error("Order not found");
-      if (order.workflowStage !== "tinting_in_progress") throw new WrongStageError();
+    // 1. Load order — verify stage
+    const order = await prisma.orders.findUnique({ where: { id: orderId } })
+    if (!order) {
+      return NextResponse.json({ error: "Order not found" }, { status: 404 })
+    }
+    if (order.workflowStage !== "tinting_in_progress") {
+      return NextResponse.json({ error: "Order is not currently in tinting" }, { status: 409 })
+    }
 
-      // 2. Verify active assignment
-      const assignment = await tx.tint_assignments.findFirst({
-        where: {
-          orderId,
-          assignedToId: userId,
-          status:       "in_progress",
-        },
-      });
-      if (!assignment) throw new NoActiveAssignmentError();
+    // 2. Verify active assignment
+    const activeAssignment = await prisma.tint_assignments.findFirst({
+      where: {
+        orderId,
+        assignedToId: userId,
+        status:       "tinting_in_progress",
+      },
+    })
+    if (!activeAssignment) {
+      return NextResponse.json({ error: "No active assignment found for this order" }, { status: 403 })
+    }
 
-      // 3. Update tint_assignments
-      await tx.tint_assignments.update({
-        where: { id: assignment.id },
-        data:  { status: "done", completedAt: new Date() },
-      });
+    // 3. Update tint_assignments
+    await prisma.tint_assignments.update({
+      where: { id: activeAssignment.id },
+      data:  { status: "tinting_done", completedAt: new Date() },
+    })
 
-      // 4. Update order stage — moves directly to support queue
-      await tx.orders.update({
-        where: { id: orderId },
-        data:  { workflowStage: "pending_support" },
-      });
+    // 4. Update order stage
+    await prisma.orders.update({
+      where: { id: orderId },
+      data:  { workflowStage: "pending_support" },
+    })
 
-      // 5. INSERT tint_logs (never skip)
-      await tx.tint_logs.create({
-        data: {
-          orderId,
-          action:        "completed",
-          performedById: userId,
-        },
-      });
+    // 5. INSERT tint_logs
+    await prisma.tint_logs.create({
+      data: {
+        orderId,
+        action:        "completed",
+        performedById: userId,
+      },
+    })
 
-      // 6. INSERT order_status_logs (never skip)
-      await tx.order_status_logs.create({
-        data: {
-          orderId,
-          fromStage:   "tinting_in_progress",
-          toStage:     "pending_support",
-          changedById: userId,
-          note:        "Tinting completed — moved to support queue",
-        },
-      });
-    });
+    // 6. INSERT order_status_logs
+    await prisma.order_status_logs.create({
+      data: {
+        orderId,
+        fromStage:   "tinting_in_progress",
+        toStage:     "pending_support",
+        changedById: userId,
+        note:        "Tinting completed — moved to support queue",
+      },
+    })
+
+    return NextResponse.json({ success: true })
   } catch (err) {
-    if (err instanceof NoActiveAssignmentError) {
-      return NextResponse.json(
-        { error: "No active assignment found for this order" },
-        { status: 403 },
-      );
-    }
-    if (err instanceof WrongStageError) {
-      return NextResponse.json(
-        { error: "Order is not currently in tinting" },
-        { status: 409 },
-      );
-    }
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Failed to complete order" },
-      { status: 500 },
-    );
+    console.error("done error:", err)
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
-
-  return NextResponse.json({ success: true });
 }

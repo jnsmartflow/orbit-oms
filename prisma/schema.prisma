@@ -79,6 +79,7 @@ model users {
   splitsAsOperator          order_splits[]      @relation("SplitOperator")
   splitsAsManager           order_splits[]      @relation("SplitManager")
   splitStatusLogs           split_status_logs[] @relation("SplitStatusLogUser")
+  tinterIssueEntries        tinter_issue_entries[]
 }
 
 model status_master {
@@ -471,6 +472,7 @@ model orders {
   tintAssignments     tint_assignments[]
   tintLogs            tint_logs[]
   splits              order_splits[]
+  tinterIssueEntries  tinter_issue_entries[]
 }
 
 model order_splits {
@@ -495,10 +497,13 @@ model order_splits {
   completedAt    DateTime?
   createdAt      DateTime            @default(now())
   updatedAt      DateTime            @updatedAt
-  lineItems      split_line_items[]
-  statusLogs     split_status_logs[]
-  tintLogs       tint_logs[]
-  tintAssignment tint_assignments?
+  tiSubmitted        Boolean             @default(false)
+  operatorSequence   Int                 @default(0)
+  lineItems          split_line_items[]
+  statusLogs         split_status_logs[]
+  tintLogs           tint_logs[]
+  tintAssignment     tint_assignments?
+  tinterIssueEntries tinter_issue_entries[]
 }
 
 model split_line_items {
@@ -533,11 +538,14 @@ model tint_assignments {
   assignedTo   users         @relation("TintAssignmentOperator", fields: [assignedToId], references: [id])
   assignedById Int
   assignedBy   users         @relation("TintAssignmentManager", fields: [assignedById], references: [id])
-  status       String        @default("assigned")
-  startedAt    DateTime?
-  completedAt  DateTime?
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
+  status             String        @default("assigned")
+  startedAt          DateTime?
+  completedAt        DateTime?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+  tiSubmitted        Boolean       @default(false)
+  operatorSequence   Int           @default(0)
+  tinterIssueEntries tinter_issue_entries[]
 }
 
 model tint_logs {
@@ -612,4 +620,35 @@ model pick_lists {
 model pick_list_items {
   id        Int      @id @default(autoincrement())
   createdAt DateTime @default(now())
+}
+
+model tinter_issue_entries {
+  id               Int               @id @default(autoincrement())
+  orderId          Int
+  splitId          Int?
+  tintAssignmentId Int?
+  submittedById    Int
+  baseSku          String
+  tinQty           Decimal           @default(0)
+  YOX              Decimal           @default(0)
+  LFY              Decimal           @default(0)
+  GRN              Decimal           @default(0)
+  TBL              Decimal           @default(0)
+  WHT              Decimal           @default(0)
+  MAG              Decimal           @default(0)
+  FFR              Decimal           @default(0)
+  BLK              Decimal           @default(0)
+  OXR              Decimal           @default(0)
+  HEY              Decimal           @default(0)
+  HER              Decimal           @default(0)
+  COB              Decimal           @default(0)
+  COG              Decimal           @default(0)
+  createdAt        DateTime          @default(now())
+
+  order          orders            @relation(fields: [orderId], references: [id])
+  split          order_splits?     @relation(fields: [splitId], references: [id])
+  tintAssignment tint_assignments? @relation(fields: [tintAssignmentId], references: [id])
+  submittedBy    users             @relation(fields: [submittedById], references: [id])
+
+  @@map("tinter_issue_entries")
 }

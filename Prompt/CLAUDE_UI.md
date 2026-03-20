@@ -72,8 +72,6 @@ bg-[#f0f2f8] min-h-screen
   ↓
   Stat bar (px-3 py-2.5, grid grid-cols-4 gap-3)
   ↓
-  Sticky column strip (sibling above board, appears when scrollY > 180)
-  ↓
   Board (px-3 pb-6)
 ```
 
@@ -426,7 +424,6 @@ Active filter summary pill:
 | Slot chip click | Filters cards by dispatchSlot, count shown inside chip |
 | Active pill × | Clears ALL filters simultaneously |
 | Operator workload card click | Sets operatorFilter, click again deselects |
-| Scroll past stat cards | Sticky column strip slides in from above (scrollY > 180) |
 | 🗂 Layers icon (split cards) | Opens SplitDetailSheet — fetches /api/tint/manager/orders/[id]/splits |
 | Re-assign (inside SplitDetailSheet) | Calls onReassign() + closes sheet → opens split reassign modal |
 

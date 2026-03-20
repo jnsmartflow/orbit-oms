@@ -36,7 +36,7 @@ export async function GET(): Promise<NextResponse> {
         },
         tintAssignments: {
           where:   { assignedToId: userId },
-          select:  { status: true, startedAt: true },
+          select:  { id: true, status: true, startedAt: true, tiSubmitted: true, operatorSequence: true },
           orderBy: { createdAt: "desc" },
           take:    1,
         },
@@ -86,5 +86,47 @@ export async function GET(): Promise<NextResponse> {
     }),
   ]);
 
-  return NextResponse.json({ assignedOrders, assignedSplits });
+  // Query 3: Raw line items for assigned orders (orders has no direct Prisma relation to import_raw_line_items)
+  const obdNumbers = assignedOrders.map(o => o.obdNumber);
+  const rawLineItemsRows = obdNumbers.length > 0
+    ? await prisma.import_raw_line_items.findMany({
+        where: { obdNumber: { in: obdNumbers } },
+        select: {
+          id:                true,
+          obdNumber:         true,
+          skuCodeRaw:        true,
+          skuDescriptionRaw: true,
+          unitQty:           true,
+          volumeLine:        true,
+          isTinting:         true,
+        },
+      })
+    : [];
+
+  const lineItemsByObd = rawLineItemsRows.reduce<Record<string, typeof rawLineItemsRows>>(
+    (acc, li) => {
+      if (!acc[li.obdNumber]) acc[li.obdNumber] = [];
+      acc[li.obdNumber].push(li);
+      return acc;
+    },
+    {},
+  );
+
+  const ordersWithLineItems = assignedOrders.map(o => ({
+    ...o,
+    rawLineItems: lineItemsByObd[o.obdNumber] ?? [],
+  }));
+
+  const hasActiveJob =
+    ordersWithLineItems.some(o => o.tintAssignments[0]?.status === "tinting_in_progress") ||
+    assignedSplits.some(s => s.status === "tinting_in_progress");
+
+  ordersWithLineItems.sort(
+    (a, b) =>
+      (a.tintAssignments[0]?.operatorSequence ?? 0) -
+      (b.tintAssignments[0]?.operatorSequence ?? 0),
+  );
+  assignedSplits.sort((a, b) => a.operatorSequence - b.operatorSequence);
+
+  return NextResponse.json({ assignedOrders: ordersWithLineItems, assignedSplits, hasActiveJob });
 }

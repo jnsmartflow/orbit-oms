@@ -11,13 +11,6 @@ const bodySchema = z.object({
   orderId: z.number().int().positive(),
 });
 
-// Sentinel thrown inside the transaction so we can map it to a specific HTTP response.
-class NotAssignedError extends Error {
-  constructor() { super("NOT_ASSIGNED"); }
-}
-class WrongStageError extends Error {
-  constructor() { super("WRONG_STAGE"); }
-}
 
 export async function POST(req: Request): Promise<NextResponse> {
   const session = await auth();
@@ -35,66 +28,97 @@ export async function POST(req: Request): Promise<NextResponse> {
   const { orderId } = parsed.data;
   const userId = parseInt(session!.user.id, 10);
 
-  try {
-    await prisma.$transaction(async (tx) => {
-      // 1. Load order — verify stage
-      const order = await tx.orders.findUnique({ where: { id: orderId } });
-      if (!order) throw new Error("Order not found");
-      if (order.workflowStage !== "tint_assigned") throw new WrongStageError();
+  // Guard 1 — TI gate: operator must have submitted the Tinter Issue form first
+  const assignment = await prisma.tint_assignments.findFirst({
+    where: {
+      orderId,
+      assignedToId: userId,
+      status: { not: "cancelled" },
+    },
+    select: { tiSubmitted: true },
+  });
 
-      // 2. Verify assignment
-      const assignment = await tx.tint_assignments.findFirst({
-        where: {
-          orderId,
-          assignedToId: userId,
-          status: { not: "done" },
-        },
-      });
-      if (!assignment) throw new NotAssignedError();
+  if (!assignment) {
+    return NextResponse.json({ error: "Assignment not found" }, { status: 404 });
+  }
 
-      // 3. Update tint_assignments
-      await tx.tint_assignments.update({
-        where: { id: assignment.id },
-        data:  { status: "in_progress", startedAt: new Date() },
-      });
-
-      // 4. Update order stage
-      await tx.orders.update({
-        where: { id: orderId },
-        data:  { workflowStage: "tinting_in_progress" },
-      });
-
-      // 5. INSERT tint_logs (never skip)
-      await tx.tint_logs.create({
-        data: {
-          orderId,
-          action:        "started",
-          performedById: userId,
-        },
-      });
-
-      // 6. INSERT order_status_logs (never skip)
-      await tx.order_status_logs.create({
-        data: {
-          orderId,
-          fromStage:   "tint_assigned",
-          toStage:     "tinting_in_progress",
-          changedById: userId,
-        },
-      });
-    });
-  } catch (err) {
-    if (err instanceof NotAssignedError) {
-      return NextResponse.json({ error: "Not assigned to this order" }, { status: 403 });
-    }
-    if (err instanceof WrongStageError) {
-      return NextResponse.json({ error: "Order is not pending tint assignment" }, { status: 409 });
-    }
+  if (!assignment.tiSubmitted) {
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Failed to start order" },
-      { status: 500 },
+      { error: "Please submit the Tinter Issue form before starting" },
+      { status: 400 },
     );
   }
 
-  return NextResponse.json({ success: true });
+  // Guard 2 — One-job rule: operator may not have two jobs in progress simultaneously
+  const activeJob = await prisma.$queryRaw`
+    SELECT "operatorId" FROM operator_active_job
+    WHERE "operatorId" = ${Number(session!.user.id)}
+    LIMIT 1
+  `;
+
+  if ((activeJob as unknown[]).length > 0) {
+    return NextResponse.json(
+      { error: "You already have a job in progress. Complete it first." },
+      { status: 400 },
+    );
+  }
+
+  try {
+    // 1. Load order — verify stage
+    const order = await prisma.orders.findUnique({ where: { id: orderId } })
+    if (!order) {
+      return NextResponse.json({ error: "Order not found" }, { status: 404 })
+    }
+    if (!["tint_assigned", "tinting_in_progress"].includes(order.workflowStage)) {
+      return NextResponse.json({ error: "Order is not in a startable stage" }, { status: 409 })
+    }
+
+    // 2. Verify assignment
+    const activeAssignment = await prisma.tint_assignments.findFirst({
+      where: {
+        orderId,
+        assignedToId: userId,
+        status: { not: "cancelled" },
+      },
+    })
+    if (!activeAssignment) {
+      return NextResponse.json({ error: "Not assigned to this order" }, { status: 403 })
+    }
+
+    // 3. Update tint_assignments
+    await prisma.tint_assignments.update({
+      where: { id: activeAssignment.id },
+      data:  { status: "tinting_in_progress", startedAt: new Date() },
+    })
+
+    // 4. Update order stage
+    await prisma.orders.update({
+      where: { id: orderId },
+      data:  { workflowStage: "tinting_in_progress" },
+    })
+
+    // 5. INSERT tint_logs
+    await prisma.tint_logs.create({
+      data: {
+        orderId,
+        action:        "started",
+        performedById: userId,
+      },
+    })
+
+    // 6. INSERT order_status_logs
+    await prisma.order_status_logs.create({
+      data: {
+        orderId,
+        fromStage:   "tint_assigned",
+        toStage:     "tinting_in_progress",
+        changedById: userId,
+      },
+    })
+
+    return NextResponse.json({ success: true })
+  } catch (err) {
+    console.error("start error:", err)
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+  }
 }

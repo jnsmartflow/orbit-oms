@@ -34,54 +34,88 @@ export async function POST(req: Request): Promise<NextResponse> {
   const { splitId } = parsed.data;
   const userId = parseInt(session!.user.id, 10);
 
-  try {
-    await prisma.$transaction(async (tx) => {
-      // 1. Load split — verify ownership and stage
-      const split = await tx.order_splits.findUnique({ where: { id: splitId } });
-      if (!split) throw new Error("Split not found");
-      if (split.assignedToId !== userId) throw new NotAssignedError();
-      if (split.status !== "tint_assigned") throw new WrongStageError();
+  // Guard 1 — TI gate: operator must have submitted the Tinter Issue form first
+  const split = await prisma.order_splits.findFirst({
+    where: {
+      id: Number(splitId),
+      assignedToId: Number(session!.user.id),
+      status: { not: "cancelled" },
+    },
+    select: { tiSubmitted: true },
+  });
 
-      // 2a. Update order_splits
-      await tx.order_splits.update({
-        where: { id: splitId },
-        data:  { status: "tinting_in_progress", startedAt: new Date() },
-      });
-
-      // 2b. INSERT split_status_logs
-      await tx.split_status_logs.create({
-        data: {
-          splitId,
-          fromStage:   "tint_assigned",
-          toStage:     "tinting_in_progress",
-          changedById: userId,
-          note:        "Operator started tinting",
-        },
-      });
-
-      // 2c. INSERT tint_logs
-      await tx.tint_logs.create({
-        data: {
-          orderId:       split.orderId,
-          splitId,
-          action:        "split_started",
-          performedById: userId,
-          note:          "Split started",
-        },
-      });
-    });
-  } catch (err) {
-    if (err instanceof NotAssignedError) {
-      return NextResponse.json({ error: "Not assigned to this split" }, { status: 403 });
-    }
-    if (err instanceof WrongStageError) {
-      return NextResponse.json({ error: "Split is not in tint_assigned stage" }, { status: 409 });
-    }
+  if (!split) {
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Failed to start split" },
-      { status: 500 },
+      { error: "Split not found or not assigned to you" },
+      { status: 404 },
     );
   }
 
-  return NextResponse.json({ success: true });
+  if (!split.tiSubmitted) {
+    return NextResponse.json(
+      { error: "Please submit the Tinter Issue form before starting" },
+      { status: 400 },
+    );
+  }
+
+  // Guard 2 — One-job rule: operator may not have two jobs in progress simultaneously
+  const activeJob = await prisma.$queryRaw`
+    SELECT "operatorId" FROM operator_active_job
+    WHERE "operatorId" = ${Number(session!.user.id)}
+    LIMIT 1
+  `;
+
+  if ((activeJob as unknown[]).length > 0) {
+    return NextResponse.json(
+      { error: "You already have a job in progress. Complete it first." },
+      { status: 400 },
+    );
+  }
+
+  try {
+    // 1. Verify split ownership and stage
+    const splitRow = await prisma.order_splits.findUnique({
+      where: { id: splitId },
+    });
+    if (!splitRow) {
+      return NextResponse.json({ error: "Split not found" }, { status: 404 });
+    }
+    if (splitRow.assignedToId !== userId) {
+      return NextResponse.json({ error: "Not assigned to you" }, { status: 403 });
+    }
+    if (splitRow.status !== "tint_assigned") {
+      return NextResponse.json({ error: "Split is not in tint_assigned stage" }, { status: 400 });
+    }
+
+    // 2a. Update order_splits
+    await prisma.order_splits.update({
+      where: { id: splitId },
+      data: { status: "tinting_in_progress", startedAt: new Date() },
+    });
+
+    // 2b. Insert split_status_logs
+    await prisma.split_status_logs.create({
+      data: {
+        splitId,
+        fromStage:   "tint_assigned",
+        toStage:     "tinting_in_progress",
+        changedById: userId,
+      },
+    });
+
+    // 2c. Insert tint_logs
+    await prisma.tint_logs.create({
+      data: {
+        orderId:       splitRow.orderId,
+        splitId,
+        action:        "split_started",
+        performedById: userId,
+      },
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (err) {
+    console.error("split/start error:", err);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
 }

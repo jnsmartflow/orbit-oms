@@ -1,7 +1,7 @@
 # CLAUDE_CONTEXT.md — Orbit OMS
 # Load this file at the start of every Claude Code session.
 # Command: claude "Read CLAUDE_CONTEXT.md fully before doing anything else."
-# Version: Phase 3 · Schema v12 · Config Master v2 · Updated March 2026
+# Version: Phase 3 · Schema v13 · Config Master v2 · Updated March 2026
 
 ---
 
@@ -33,9 +33,10 @@ Scale: ~25–35 dispatch plans per day, ~100–200 OBDs (orders) per day, single
 
 ---
 
-## 3. Database — 41 tables, 4 groups (Schema v12)
+## 3. Database — 42 tables, 4 groups (Schema v13)
 
-Schema v12 = Schema v11 + Tint Splits architecture (order_splits expanded, split_line_items, split_status_logs added).
+Schema v13 = Schema v12 + Tinter Issue architecture
+(tinter_issue_entries added; order_splits + tint_assignments expanded).
 
 ### Group 1: Setup / Master tables (23 tables — Phase 1 ✅ complete)
 
@@ -92,22 +93,30 @@ import_enriched_line_items — Lines enriched with sku_master join.
 import_obd_query_summary   — Per-OBD totals: weight, qty, volume, hasTinting, totalArticle, articleTag.
 ```
 
-### Group 3: Orders + Tinting + Support (8 tables — Phase 2 ✅ + Phase 3 splits ✅)
+### Group 3: Orders + Tinting + Support (9 tables — Phase 2 ✅ + Phase 3 ✅ + v13 ✅)
 
 ```
 orders                     — Parent container. One row per OBD post-import.
                              workflowStage tracks overall OBD status.
                              PRIMARY UNIT OF WORK IS order_splits (not orders) for tint flow.
-order_splits               — EXPANDED v12. One row per tint batch/split.
+order_splits               — EXPANDED v13. One row per tint batch/split.
                              Each split = portion of OBD assigned to one operator.
                              Has its own full lifecycle. Splits are independent.
-split_line_items           — NEW v12. One row per line assigned to a split.
+                             NEW v13 fields: tiSubmitted, operatorSequence
+split_line_items           — One row per line assigned to a split.
                              Fields: splitId, rawLineItemId, assignedQty.
-split_status_logs          — NEW v12. INSERT-ONLY. Audit trail per split.
+split_status_logs          — INSERT-ONLY. Audit trail per split.
 tint_assignments           — One row per whole-OBD assignment (non-split flow).
                              Also has optional splitId FK for split context.
+                             NEW v13 fields: tiSubmitted, operatorSequence
 tint_logs                  — INSERT-ONLY. Immutable. orderId + optional splitId.
 order_status_logs          — INSERT-ONLY. Immutable. Per-order audit trail.
+tinter_issue_entries       — NEW v13. INSERT-ONLY. One row per base batch TI entry.
+                             Linked to either splitId OR tintAssignmentId (never both).
+                             Fields: orderId, splitId?, tintAssignmentId?,
+                             submittedById, baseSku, tinQty,
+                             YOX, LFY, GRN, TBL, WHT, MAG, FFR, BLK,
+                             OXR, HEY, HER, COB, COG, createdAt
 ```
 
 ### Group 4: Dispatch + Warehouse (7 tables — Phase 3 stubs)
@@ -207,7 +216,7 @@ Query pattern: always filter `WHERE domain = '<domain>'`.
 | Dispatcher | /dispatcher | Build plans, assign vehicles, confirm, act on Hold notifications |
 | Support | /support | View ALL orders + splits, set dispatch_status, priority, slot override |
 | Tint Manager | /tint/manager | Create splits, assign tint operators, monitor tint pipeline, set dispatchStatus + priority on orders AND splits directly from Kanban |
-| Tint Operator | /tint/operator | Start/Done on assigned OBDs and splits |
+| Tint Operator | /tint/operator | Start/Done on assigned OBDs and splits. Fill Tinter Issue form. |
 | Floor Supervisor | /warehouse/supervisor | Assign pickers, verify material, control loading |
 | Picker | /warehouse/picker | Own assigned OBDs only |
 
@@ -236,7 +245,8 @@ dispatched
 ### Split-level (order_splits.status) — independent per split
 ```
 tint_assigned             ← Split created + assigned to operator
-  ↓ (operator clicks Start)
+  ↓ (operator fills TI form → tiSubmitted = true)
+  ↓ (operator clicks Start — TI gate + one-job guard must pass)
 tinting_in_progress
   ↓ (operator clicks Done)
 tinting_done              ← Split stays here, visible in Completed column today
@@ -250,9 +260,8 @@ dispatched
 
 **Key rules:**
 - Each split moves through stages independently — does NOT wait for other splits
-- `tinting_done` IS a resting stage for splits (unlike orders where it was skipped)
-- Completed column shows splits with `status IN ('tinting_done', 'pending_support') AND completedAt >= startOfToday`
-- Completed column resets at midnight
+- `tinting_done` IS a resting stage for splits
+- Completed column shows splits with `completedAt >= startOfToday`
 - When ALL splits are done AND no remaining unassigned qty → `orders.workflowStage = 'pending_support'`
 - `cancelled` splits are excluded from all qty calculations
 
@@ -344,11 +353,16 @@ Displayed on Tint Manager cards inline in OBD row: `9105750091 · Route · 19 Ma
 ### order_splits key fields
 ```
 id, orderId, splitNumber, assignedToId, assignedById
-status         — tint_assigned | tinting_in_progress | tinting_done | pending_support | dispatch_confirmation | dispatched | cancelled
-dispatchStatus — dispatch | hold | waiting_for_confirmation | null
-totalQty       — sum of split_line_items.assignedQty
-totalVolume    — proportional volume from lines
-articleTag     — e.g. "30 Drum" or "1 Carton 2 Tin"
+status           — tint_assigned | tinting_in_progress | tinting_done | pending_support | dispatch_confirmation | dispatched | cancelled
+dispatchStatus   — dispatch | hold | waiting_for_confirmation | null
+totalQty         — sum of split_line_items.assignedQty
+totalVolume      — proportional volume from lines
+articleTag       — e.g. "30 Drum" or "1 Carton 2 Tin"
+sequenceOrder    — TM Kanban manual reorder position (NOT the operator queue)
+tiSubmitted      — NEW v13. bool. True once operator submits TI form for this split
+operatorSequence — NEW v13. int. Operator's personal queue position.
+                   Set at split creation time via next_operator_sequence().
+                   DISTINCT from sequenceOrder — never confuse these two.
 startedAt, completedAt, createdAt, updatedAt
 ```
 
@@ -358,6 +372,7 @@ id, splitId, rawLineItemId, assignedQty, createdAt
 ```
 
 ### Business rules
+
 | Rule | Detail |
 |---|---|
 | Create + assign | Always one step — manager picks operator while building split |
@@ -370,25 +385,31 @@ id, splitId, rawLineItemId, assignedQty, createdAt
 | Operator visibility | Operator sees BOTH regular assigned orders AND their splits |
 | Cancel split | Only allowed when status = tint_assigned. Deletes split_line_items + order_splits. |
 | Completed column | Shows splits with completedAt >= startOfToday. Resets at midnight. |
+| TI required | Operator MUST submit tinter_issue_entries before Start is allowed |
+| One job at a time | Operator can only have ONE job in tinting_in_progress at a time |
+| Sequential order | Operator works jobs in operatorSequence order (lowest first) |
 
-### API routes (v12)
+### API routes (v13)
 
 | Method | Route | Auth | Purpose |
 |---|---|---|---|
 | GET | `/api/tint/manager/orders` | TM, Admin | Orders (Pending) + activeSplits + completedSplits |
 | GET | `/api/tint/manager/operators` | TM, Admin | Active tint operators |
-| POST | `/api/tint/manager/assign` | TM, Admin | Assign whole OBD to one operator |
+| POST | `/api/tint/manager/assign` | TM, Admin | Assign whole OBD to one operator. Sets operatorSequence. |
 | POST | `/api/tint/manager/cancel-assignment` | TM, Admin | Cancel whole OBD assignment |
-| POST | `/api/tint/manager/splits/create` | TM, Admin | Create splits for an OBD |
+| POST | `/api/tint/manager/splits/create` | TM, Admin | Create splits. Sets operatorSequence per split. |
 | POST | `/api/tint/manager/splits/reassign` | TM, Admin | Reassign a split to different operator |
 | POST | `/api/tint/manager/splits/cancel` | TM, Admin | Cancel a split (tint_assigned only) |
-| GET | `/api/tint/operator/my-orders` | Operator | Both assigned orders AND splits |
-| POST | `/api/tint/operator/start` | Operator | Start whole OBD assignment |
-| POST | `/api/tint/operator/done` | Operator | Complete whole OBD assignment |
-| POST | `/api/tint/operator/split/start` | Operator | Start a split |
-| POST | `/api/tint/operator/split/done` | Operator | Complete a split → status = tinting_done |
+| PATCH | `/api/tint/manager/reorder` | TM, Admin | Move Up / Move Down on Assigned column cards |
 | PATCH | `/api/tint/manager/orders/[id]/status` | TM, Admin | Set dispatchStatus + priority on an order |
 | PATCH | `/api/tint/manager/splits/[id]/status` | TM, Admin | Set dispatchStatus + priority on a split |
+| GET | `/api/tint/operator/my-orders` | Operator | Both assigned orders AND splits. Returns tiSubmitted, operatorSequence, startedAt, hasActiveJob. Sorted by operatorSequence ASC. |
+| POST | `/api/tint/operator/tinter-issue` | Operator, Admin | Submit TI entries. Sets tiSubmitted=true on split/assignment. |
+| GET | `/api/tint/operator/tinter-issue/[id]` | Operator, Admin | Fetch existing TI entries for pre-fill |
+| POST | `/api/tint/operator/start` | Operator | Start whole OBD. Guards: tiSubmitted=true + no active job. |
+| POST | `/api/tint/operator/done` | Operator | Complete whole OBD assignment |
+| POST | `/api/tint/operator/split/start` | Operator | Start a split. Guards: tiSubmitted=true + no active job. |
+| POST | `/api/tint/operator/split/done` | Operator | Complete a split → status = tinting_done |
 | GET | `/api/support/orders` | Support, Admin | All orders with splits included |
 | PATCH | `/api/support/orders/[id]` | Support, Admin | Update order dispatch/priority/slot |
 | PATCH | `/api/support/splits/[id]` | Support, Admin | Update split dispatch/priority/slot |
@@ -396,7 +417,63 @@ id, splitId, rawLineItemId, assignedQty, createdAt
 
 ---
 
-## 12. Tint Manager Kanban — v4 (4-column, splits-aware, full UI)
+## 12. Tinter Issue Architecture (v13)
+
+### What it is
+Before an operator can Start any job, they must fill the Tinter Issue form.
+This records what base paint and tinter shades were issued for that job.
+
+### tinter_issue_entries key fields
+```
+id
+orderId           — FK → orders (always required)
+splitId           — FK → order_splits (null for whole-OBD assignments)
+tintAssignmentId  — FK → tint_assignments (null for split flow)
+submittedById     — FK → users
+baseSku           — text e.g. "WC-DB-20"
+tinQty            — decimal
+YOX, LFY, GRN, TBL, WHT, MAG, FFR, BLK, OXR, HEY, HER, COB, COG
+                  — decimal, default 0 (13 shade columns, ml or grams)
+createdAt
+```
+- INSERT-ONLY — never update or delete
+- One or more rows per job (multiple base batches allowed)
+- splitId and tintAssignmentId are mutually exclusive (DB constraint enforced)
+
+### TI gate — enforced on Start
+```
+Split flow:    order_splits.tiSubmitted must = true
+Whole-OBD:     tint_assignments.tiSubmitted must = true
+If false → 400 "Please submit the Tinter Issue form before starting"
+```
+
+### One-job rule — enforced on Start
+```
+Check operator_active_job view for this operator.
+If any row found → 400 "You already have a job in progress. Complete it first."
+```
+
+### operatorSequence vs sequenceOrder — NEVER confuse these
+| Field | Table | Set by | Purpose |
+|---|---|---|---|
+| `sequenceOrder` | order_splits, tint_assignments | Tint Manager (Move Up/Down) | TM Kanban column ordering |
+| `operatorSequence` | order_splits, tint_assignments | assign/create-split API via `next_operator_sequence()` | Operator's personal queue order |
+
+### DB helpers
+- `next_operator_sequence(operatorId)` — function. Returns MAX+1 across active jobs for that operator.
+- `operator_active_job` — view. One row per operator currently in tinting_in_progress.
+
+### Operator sequential rules
+- Operator can only have ONE job in `tinting_in_progress` at a time
+- Jobs must be worked in `operatorSequence` order (lowest first) — cannot skip
+- `tiSubmitted` must be true before Start is allowed (hard gate)
+- Operator CAN pre-fill TI for future jobs while current job is running
+- `operatorSequence` is set at assignment time via `next_operator_sequence()` function
+- `sequenceOrder` (TM Kanban) and `operatorSequence` (operator queue) are DIFFERENT fields on the same row
+
+---
+
+## 13. Tint Manager Kanban — v4 (4-column, splits-aware, full UI)
 
 ### Column data sources
 
@@ -442,8 +519,6 @@ After save → `fetchOrders()` refreshes the board.
 
 When a split is cancelled → sequenceOrder resets to 0 in splits/cancel/route.ts
 When an order assignment is cancelled → sequenceOrder resets to 0 in cancel-assignment/route.ts
-This ensures reassigned orders/splits always start at the bottom of the Assigned column
-rather than inheriting their old position.
 
 ### Assign vs Create Split — business rule
 - `hasSplits = (order.splits ?? []).filter(s => s.status !== 'cancelled').length > 0`
@@ -470,26 +545,6 @@ CASE 4 — Active splits exist, remainingQty = 0:
 
 Any other workflowStage → BLOCK
 
-### Assign modal — isReassign logic
-The modal title and confirm button text are determined by:
-
-  const isReassign =
-    selectedOrder.workflowStage === 'tint_assigned' &&
-    (selectedOrder.remainingQty ?? 0) === 0 &&
-    (selectedOrder.splits ?? []).filter(s => s.status !== 'cancelled').length > 0
-
-  Modal title:   isReassign ? 'Re-assign Operator' : 'Assign Operator'
-  Button text:   isReassign ? 'Confirm Re-assign'  : 'Assign Operator'
-
-This correctly shows "Assign" (not "Re-assign") when:
-  - Order returned to Pending after all splits cancelled
-  - Order has remainingQty > 0 and is showing in Pending
-
-### Cancel split resets workflowStage
-When a split is cancelled and ALL remaining splits for the OBD are now cancelled:
-  `orders.workflowStage` resets to `'pending_tint_assignment'`
-This is handled in `/api/tint/manager/splits/cancel/route.ts`.
-
 ### + button — status popover
 Present on ALL cards in ALL 4 columns (KanbanCard and SplitKanbanCard).
 Uses fixed positioning anchored via `getBoundingClientRect()` to avoid overflow clipping.
@@ -508,152 +563,11 @@ Single bar with 4 filter groups separated by 0.5px vertical dividers.
 All filters are client-side — no API call on filter change.
 
 Group 1 — SLOT: [All · {count}] [10:30 · {count}] [12:30 · {count}] [15:30 · {count}]
-  Counts computed from loaded orders by matching dispatchSlot.
-  Active chip: bg `#1a237e`, text white. Count badge inside: `rgba(255,255,255,.22)`.
-
 Group 2 — PRIORITY: [All] [🚨 Urgent] [Normal]
-  Urgent active: bg `#fcebeb`, text `#791f1f`, border `#f09595`
-  Normal active: bg `#eeedfe`, text `#3c3489`, border `#afa9ec`
-
 Group 3 — DISPATCH: [All] [🚚 Dispatch] [Hold] [Waiting]
-  Dispatch active: bg `#eaf3de`, text `#27500a`, border `#97c459`
-  Hold active: bg `#fcebeb`, text `#791f1f`, border `#f09595`
-  Waiting active: bg `#faeeda`, text `#633806`, border `#fac775`
-
 Group 4 — TYPE: [All] [Split] [Whole]
-  Split = has non-cancelled splits. Whole = no non-cancelled splits.
 
-Right side:
-- Active filter summary pill — only visible when any filter is non-default
-  Style: bg `#e8eaf6`, border `#c5cae9`, color `#1a237e`, border-radius 6px
-  Content: `● {slot} · {priority} · {dispatch} · {type} · {operator}` (only active parts)
-  × button clears ALL filters at once
-- Operator dropdown — filters cards by assigned operator name
-
-Filter state variables:
-```
-slotFilter:     'all' | '10:30' | '12:30' | '15:30'
-priorityFilter: 'all' | 'urgent' | 'normal'
-dispatchFilter: 'all' | 'dispatch' | 'hold' | 'waiting_for_confirmation'
-typeFilter:     'all' | 'split' | 'whole'
-searchQuery:    string
-```
-
-### Universal search
-Input in topbar right side, width 220px expanding to 260px on focus.
-Client-side only — no API call on search.
-Searches across: `obdNumber`, `customer.customerName`, `salesOfficer.name`, `lineItems[].skuCodeRaw`
-Inline dropdown (max 4 results) with tag + value rows appears on 2+ chars typed.
-Tags: "Customer" | "OBD" | "SKU"
-Clear (×) button appears when input has value. Closes dropdown on outside click.
-
-### Operator workload bar
-Collapsible bar between filter bar and stat cards. Collapsed by default.
-Toggle label: "OPERATOR WORKLOAD ▼ show / ▲ hide"
-When expanded: one card per operator who has activity today.
-Each operator card shows: navy avatar (initials), name, 3 count badges:
-  amber = assigned count | blue = in-progress count | green = done count
-Clicking an operator card sets `operatorFilter`. Clicking again deselects.
-Stats computed client-side from `activeSplits + completedSplits + orders` — no new API call.
-
-### Stat cards (v2 — compact with volume)
-Grid: `grid-cols-4 gap-3`, card padding: `10px 14px`.
-Each card: icon circle (32px) + right column:
-  Row 1: number (`text-[20px] font-extrabold`) + label (`text-[10px] font-bold uppercase`) — `items-baseline gap-2 mb-1`
-  Row 2: `"{totalVolume} L · {subLabel}"` — `text-[11px] text-gray-400`
-Volume per column:
-  Pending:     orders with `workflowStage = pending_tint_assignment` OR `remainingQty > 0`
-  Assigned:    activeSplits (`tint_assigned`) + orders (`tint_assigned`, `remainingQty = 0`)
-  In Progress: activeSplits (`tinting_in_progress`) + orders (`tinting_in_progress`, `remainingQty = 0`)
-  Completed:   completedSplits + orders (`pending_support`)
-Format: `>= 1000` → `"1,234 L"` with comma. `0 or null` → `"— L"`
-
-### Sticky column header strip
-Appears when `window.scrollY > 180` (user scrolls past stat cards).
-Implementation: `sticky` positioning inside content flow as a sibling div above the board.
-NOT fixed positioning — sticky inherits correct width and margins automatically.
-`showColStrip` state + `window.scroll` listener (`passive: true`) controls visibility.
-When hidden: `h-0 overflow-hidden opacity-0 pointer-events-none`
-When visible: `opacity-100`, smooth `transition-opacity duration-300 ease-in-out`
-Design: `grid grid-cols-4 gap-2 px-3`, `bg-[#f0f2f8]` wrapper (grey shows in gaps).
-Each cell: `bg-white px-4 py-3` — matches exact column header style, no rounded corners.
-Counts in strip stay in sync with filtered board counts — no extra state.
-
-### Card structure (v2 — updated layout)
-Icon row and badge row are SEPARATE rows — never combined:
-```
-Row 1 (icons): h-[24px], justify-end, gap-1
-  Order cards:  👁 Eye + + Plus + ··· MoreHorizontal
-  Split cards:  👁 Eye     — opens SkuDetailsSheet showing ONLY this split's lines
-               🗂 Layers  — opens SplitDetailSheet with full split details + OBD history
-               +  Plus    — opens status popover (priority + dispatch)
-               ··· MoreHorizontal — dropdown menu
-
-Row 2 (badges): min-h-[22px], flex-wrap, gap-1.5
-  Priority badge (Normal/Urgent) + dispatch status badge (if set) + split badge (split cards)
-```
-
-Card bottom section (Pending only, inside `mt-2.5 pt-2.5 border-t`):
-  `hasSplits = false` → navy Assign button (`py-3`)
-  `hasSplits = true`  → outlined Create Split button (`py-3`, `border-[#1a237e]`, `text-[#1a237e]`)
-
-Two-badge status trail applies to BOTH `KanbanCard` (orders) AND `SplitKanbanCard` in Completed column:
-  Left badge: always `✓ Tinting Done` (green)
-  Right badge: based on `dispatchStatus` → Dispatch | Hold | Waiting | Pending Support (blue fallback)
-
-Topbar is `sticky top-0 z-40`.
-Filter bar is `sticky top-[52px] z-40`.
-
-### SplitDetailSheet
-Triggered by: Layers icon (🗂) on any SplitKanbanCard in any column.
-Implementation: fixed overlay portal (NOT shadcn Sheet) — avoids
-overflow:hidden clipping from kanban column wrapper.
-Width: 420px, right-anchored, full height.
-Data: fetched fresh on open from GET /api/tint/manager/orders/[id]/splits.
-
-Sheet sections:
-  Header:
-    subtitle: "SPLIT #{splitNumber} · {obdNumber}"
-    title: customerName
-
-  Body (scrollable):
-    Section 1 — ASSIGNED OPERATOR
-      Operator row: avatar + name + assigned time
-      If colStage = tint_assigned:
-        Re-assign button (outline, full width) → calls onReassign() + closes sheet
-
-    Section 2 — SKU LINES
-      Current split line items only
-      Each line: skuCodeRaw + skuDescriptionRaw + QTY (assignedQty) + VOLUME (volumeLine)
-
-    Section 3 — STATUS
-      Current split status badge
-      If completed: two-badge status trail (✓ Tinting Done → dispatch status)
-
-    Divider
-
-    Section 4 — ALL SPLITS FOR THIS OBD
-      All splits from API ordered by splitNumber ASC
-      EXCLUDES cancelled splits (status !== 'cancelled')
-      Each split card:
-        bg-[#f7f8fc] border border-[#e2e5f1] rounded-xl px-4 py-3
-        Top row: Split #{N} + status badge + dispatch badge + date (right)
-        Middle: operator avatar + name + articleTag (right)
-        Bottom: line items — skuCode + description + qty units
-      Current split highlighted: border-[#1a237e] bg-[#e8eaf6]
-
-  Footer:
-    Close button only — all stages
-    Re-assign is in body (section 1), NOT in footer
-    Cancel Split is NOT in sheet — use ··· menu on card instead
-
-Behaviour per stage:
-  tint_assigned       → body has Re-assign button + Close footer
-  tinting_in_progress → read only, Close footer only
-  completed           → read only + status trail, Close footer only
-
-### Two-badge status trail — right badge logic
-Applies to BOTH KanbanCard (orders) and SplitKanbanCard in Completed column.
+### Two-badge status trail
 Left badge: always "✓ Tinting Done" (green — bg #eaf3de, border #97c459, text #27500a)
 Right badge determined by dispatchStatus:
   'dispatch'                 → 🚚 Dispatch (green)
@@ -661,39 +575,66 @@ Right badge determined by dispatchStatus:
   'waiting_for_confirmation' → Waiting (amber)
   null / undefined           → Pending Support (blue — bg #eff6ff, border #bfdbfe, text #1e40af)
 
-### Pending card features (v2)
-- Icon row (top right): 👁 + + + ···
-- Badge row: Normal/Urgent + dispatch status badge (if set)
-- Customer name
-- OBD row: `OBDNo · Route · Date Time`
-- Meta grid: SMU | Sales Officer | Articles | Volume
-- Split indicator (when `hasSplits = true`): amber pill `X Splits Active · Y remaining`
-- Footer: Assign button (`hasSplits = false`) OR Create Split button (`hasSplits = true`)
+---
 
-### Split/Order card features (v2)
-- Icon row (top right): + + ··· (no eye)
-- Badge row: Split #N + Normal/Urgent + dispatch status badge (if set)
-- Customer name
-- OBD row: `OBDNo · Date Time`
-- Meta grid: SMU | Sales Officer | Articles | Volume
-- Operator row: avatar + name + timestamp (`px-3 py-2`)
-- Status trail (Completed only): `✓ Tinting Done → [dispatch status badge]`
-- `...` menu: `tint_assigned` → Re-assign + Cancel | other stages → No actions available
+## 14. Tint Operator screen — v4 (65/35 split layout, TI-aware)
+
+### Layout
+```
+Topbar (52px) — title + layout toggle (split ↔ focus) + clock
+Stat bar (4 cells) — Pending | In Progress | Completed Today | Volume Done
+Split container:
+  LEFT 35%  — Queue panel (bg white)
+    Remaining volume today hint
+    Queue cards: Active → Next up → #2 #3... queued (grayed)
+    Each card shows: TI Done ✓ / TI Needed badge
+    "Fill TI now while you're free" nudge on Next Up card
+    Completed Today section below divider
+  RIGHT 65% — Job Detail panel (bg #f0f2f8)
+    Job identity topbar: customer + OBD + stage badges + elapsed timer
+    Stage colour strip (blue = in progress, amber = assigned)
+    Meta strip: Articles · Volume · Slot · Sales Officer
+    SKU lines table with TINT markers
+    Tinter Issue Form (always visible inline)
+    Footer: Submit TI & Start / Start Job / Mark as Done
+```
+
+### Layout toggle
+- Split icon — 65/35 side by side (default, tablet)
+- Focus icon — right panel full width, queue hidden
+- Focus mode: floating FAB (bottom-left) opens queue slide-up sheet
+
+### Operator workflow
+```
+1. Job appears in queue (assigned by TM)
+2. Operator taps queue card → full detail loads on right
+3. Operator fills Tinter Issue Form (inline right panel)
+4. Taps "Submit TI & Start" → tiSubmitted=true, status→tinting_in_progress
+5. Elapsed timer starts
+6. Taps "Mark as Done" → status→tinting_done, moves to Completed Today
+7. Next job auto-loads in right panel
+8. Operator CAN pre-fill TI for future jobs while current job runs
+```
+
+### Queue card states
+- **Active** — blue header, "Active" badge, elapsed timer
+- **Next up** — navy-light header, "Next up" badge, Start enabled if TI done
+- **Queued** — grey header, "#N" badge, 55% opacity, TI form accessible
+- **Completed** — green header, trail badge, done time
+
+### Key constraints
+- ONE job in `tinting_in_progress` at a time per operator (hard rule)
+- Jobs worked in `operatorSequence` order (lowest first, cannot skip)
+- `tiSubmitted` must be true before Start is allowed (hard gate)
+- Operator CAN fill TI for any queued job at any time
+
+### Component file
+`components/tint/tint-operator-content.tsx` — NEEDS FULL REWRITE
+Reference: `tint-operator-final.html` (final approved design mockup)
 
 ---
 
-## 13. Tint Operator screen — v3 (splits-aware)
-
-Operator sees BOTH:
-1. Regular assigned orders (via tint_assignments, workflowStage = tint_assigned/tinting_in_progress)
-2. Splits assigned to them (via order_splits, status = tint_assigned/tinting_in_progress)
-
-Each card shows only the lines relevant to that operator (split lines or all OBD lines).
-Start/Done actions use different routes for orders vs splits.
-
----
-
-## 14. Support queue — v3 (splits-aware)
+## 15. Support queue — v3 (splits-aware)
 
 Orders table shows all orders as before.
 Edit sheet for tint orders shows:
@@ -704,7 +645,7 @@ Edit sheet for tint orders shows:
 
 ---
 
-## 15. SKU structure (v12)
+## 16. SKU structure (v12)
 
 ```
 product_category → product_name → sku_master ← base_colour
@@ -714,7 +655,7 @@ product_category → product_name → sku_master ← base_colour
 
 ---
 
-## 16. Sales Officer Group pattern
+## 17. Sales Officer Group pattern
 
 ```
 sales_officer_group.salesOfficerId → sales_officer_master
@@ -723,7 +664,7 @@ delivery_point_master.salesOfficerGroupId → sales_officer_group
 
 ---
 
-## 17. Customer route/type inheritance
+## 18. Customer route/type inheritance
 
 1. Area level (default): `area_master.deliveryTypeId` + `area_master.primaryRouteId`
 2. Customer level (override): `delivery_point_master.deliveryTypeOverrideId` + `delivery_point_master.primaryRouteId`
@@ -732,17 +673,18 @@ Check customer-level first → fall back to area if null.
 
 ---
 
-## 18. Audit trail rules — non-negotiable
+## 19. Audit trail rules — non-negotiable
 
 - `tint_logs` — INSERT-ONLY. Every tint/split action = new row.
 - `order_status_logs` — INSERT-ONLY. Every order change = new row.
 - `split_status_logs` — INSERT-ONLY. Every split stage change = new row.
+- `tinter_issue_entries` — INSERT-ONLY. Every TI submission = new row(s).
 
 Any UPDATE or DELETE on these tables is architecturally wrong.
 
 ---
 
-## 19. DB connection rule
+## 20. DB connection rule
 
 ⚠️ Direct Prisma DB connection from local machine is unreliable.
 All DB schema changes must be done via **Supabase SQL Editor**.
@@ -752,14 +694,14 @@ After SQL applied: run `npx prisma generate` in VS Code terminal.
 
 ---
 
-## 20. Folder structure
+## 21. Folder structure
 
 ```
 /app
   /api/admin          — Admin CRUD API routes
   /api/auth           — NextAuth
   /api/tint/manager   — Tint Manager APIs (orders, assign, splits/*)
-  /api/tint/operator  — Tint Operator APIs (my-orders, start, done, split/*)
+  /api/tint/operator  — Tint Operator APIs (my-orders, start, done, split/*, tinter-issue)
   /api/support        — Support APIs (orders, splits)
   /api/import         — Import API (obd)
   /(admin)            — Admin role layout group
@@ -780,33 +722,33 @@ After SQL applied: run `npx prisma generate` in VS Code terminal.
   rbac.ts             — requireRole() guard
   config.ts           — system_config reader
 /prisma
-  schema.prisma       — Source of truth — Schema v12
+  schema.prisma       — Source of truth — Schema v13
   seed.ts             — Seed script
 ```
 
 ---
 
-## 21. Phase completion status
+## 22. Phase completion status
 
 | Phase | Status |
 |---|---|
 | Phase 1 — Foundation (schema, admin, auth) | ✅ Complete |
 | Phase 2 — Order pipeline (import, support, tint manager v1, operator) | ✅ Complete |
-| Phase 3 — Tint splits + UI polish | ✅ Splits complete · UI polish in progress |
+| Phase 3 — Tint splits + UI polish | ✅ Splits complete · Operator screen redesign in progress |
 | Phase 4 — Dispatch planning | ⏳ Not started |
 | Phase 5 — Warehouse execution | ⏳ Not started |
 
 ---
 
-## 22. Session start checklist
+## 23. Session start checklist
 
 Before generating any code, confirm:
 1. You have read this file fully
-2. Schema v12 is your reference — 41 tables
+2. Schema is now **v13** — 42 tables
 3. `order_splits` is the PRIMARY unit of work for tinting — not `orders`
 4. `split_line_items` stores per-line qty assignments per split
 5. `split_status_logs` is INSERT-ONLY — never update or delete
-6. `tint_logs` and `order_status_logs` are INSERT-ONLY — never update or delete
+6. `tint_logs`, `order_status_logs`, `tinter_issue_entries` are INSERT-ONLY
 7. Each split has its own independent lifecycle through all stages
 8. `tinting_done` IS a resting stage for splits (stays there until Support acts)
 9. Completed column shows splits with `completedAt >= today` — resets at midnight
@@ -827,18 +769,29 @@ Before generating any code, confirm:
 24. Topbar is `sticky top-0 z-40`, filter bar is `sticky top-[52px] z-40` — never remove these classes
 25. `+` button popover uses fixed positioning via `getBoundingClientRect()` to avoid `overflow:hidden` clipping
 26. Two-badge status trail renders on BOTH `KanbanCard` (orders) AND `SplitKanbanCard` in Completed column
-28. Assigned column sorts CLIENT-SIDE: sequenceOrder → priorityLevel → obdEmailDate+Time ASC.
-       Server-side orderBy keeps only sequenceOrder ASC as pre-sort.
-32. Status trail right badge: dispatch→green | hold→red | waiting→amber | null→blue Pending Support
-33. isReassign logic checks workflowStage + remainingQty + non-cancelled splits count
-34. Assign API has 4 explicit cases — Cases 1+2 always allowed, Case 3 allowed, Case 4 blocked
-35. SplitKanbanCard has Eye (SKU sheet) + Layers (SplitDetailSheet) + Plus + ···
-36. SplitDetailSheet uses fixed overlay portal — NOT shadcn Sheet
-37. SplitDetailSheet fetches fresh from GET /api/tint/manager/orders/[id]/splits on open
-38. Split history excludes cancelled splits (filter status !== 'cancelled')
-39. Re-assign is in sheet body (tint_assigned only) — Cancel is via ··· menu only
-40. SplitCard type requires order.id, rawLineItem.volumeLine, rawLineItem.isTinting
+27. Assigned column sorts CLIENT-SIDE: sequenceOrder → priorityLevel → obdEmailDate+Time ASC
+28. Status trail right badge: dispatch→green | hold→red | waiting→amber | null→blue Pending Support
+29. isReassign logic checks workflowStage + remainingQty + non-cancelled splits count
+30. Assign API has 4 explicit cases — Cases 1+2 always allowed, Case 3 allowed, Case 4 blocked
+31. SplitKanbanCard has Eye (SKU sheet) + Layers (SplitDetailSheet) + Plus + ···
+32. SplitDetailSheet uses fixed overlay portal — NOT shadcn Sheet
+33. SplitDetailSheet fetches fresh from GET /api/tint/manager/orders/[id]/splits on open
+34. Split history excludes cancelled splits (filter status !== 'cancelled')
+35. Re-assign is in sheet body (tint_assigned only) — Cancel is via ··· menu only
+36. SplitCard type requires order.id, rawLineItem.volumeLine, rawLineItem.isTinting
+37. `operatorSequence` ≠ `sequenceOrder` — NEVER confuse these two fields
+38. TI gate: tiSubmitted must be true before ANY Start action is allowed
+39. One-job rule: operator cannot have two jobs in tinting_in_progress simultaneously
+40. `operator_active_job` view enforces the one-job rule — always check it on Start
+41. `next_operator_sequence(operatorId)` function sets operatorSequence at assignment time
+42. Operator screen is a 65/35 split: LEFT 35% = queue, RIGHT 65% = job detail + TI form inline
+43. tint-operator-content.tsx needs full rewrite — reference tint-operator-final.html
+44. No $transaction blocks in any API route — use sequential Prisma calls (Vercel + Supabase pooler constraint)
+45. tinter_issue_entries: splitId and tintAssignmentId are mutually exclusive — DB constraint enforced
+46. GET /api/tint/operator/my-orders must return: tiSubmitted, operatorSequence, startedAt, hasActiveJob per job
+47. my-orders queue sorted by operatorSequence ASC
+48. POST /api/tint/operator/tinter-issue: validates ownership before insert, sets tiSubmitted=true after insert
 
 ---
 
-*Version: Phase 3 · Schema v12 · Config Master v2 · Kanban v4.3 · March 2026*
+*Version: Phase 3 · Schema v13 · Config Master v2 · Operator Screen v4 · March 2026*
