@@ -2170,7 +2170,7 @@ export function TintManagerContent() {
       </div>
 
       {/* ── Stat bar ─────────────────────────────────────────────────────── */}
-      <div className="px-3 py-3 grid grid-cols-4 gap-3">
+      <div className="px-3 py-2.5 grid grid-cols-4 gap-3">
         {([
           {
             count:     pendingCount,
@@ -2395,7 +2395,7 @@ export function TintManagerContent() {
                 </div>
 
                 {/* Card list */}
-                <div className="p-2 flex flex-col gap-2 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 380px)', scrollbarWidth: 'thin' }}>
+                <div className="p-2 flex flex-col gap-2">
                   {itemCount === 0 ? (
                     <div className="flex flex-col items-center py-12 text-center">
                       <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center mb-3">
