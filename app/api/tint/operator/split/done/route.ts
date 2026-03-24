@@ -17,6 +17,13 @@ class NotAssignedError extends Error {
 class WrongStageError extends Error {
   constructor() { super("WRONG_STAGE"); }
 }
+class TIIncompleteError extends Error {
+  missingLines: { rawLineItemId: number; skuCodeRaw: string; skuDescriptionRaw: string | null }[];
+  constructor(missingLines: { rawLineItemId: number; skuCodeRaw: string; skuDescriptionRaw: string | null }[]) {
+    super("TI_INCOMPLETE");
+    this.missingLines = missingLines;
+  }
+}
 
 export async function POST(req: Request): Promise<NextResponse> {
   const session = await auth();
@@ -43,6 +50,37 @@ export async function POST(req: Request): Promise<NextResponse> {
       if (split.status !== "tinting_in_progress") throw new WrongStageError();
 
       const now = new Date();
+
+      // TI completion gate — all isTinting lines must have at least one TI entry
+      const splitLineItems = await tx.split_line_items.findMany({
+        where: { splitId },
+        include: { rawLineItem: { select: { isTinting: true, skuCodeRaw: true, skuDescriptionRaw: true } } },
+      });
+      const isTintingLines = splitLineItems.filter(sl => sl.rawLineItem.isTinting);
+      if (isTintingLines.length > 0) {
+        const [entriesA, entriesB] = await Promise.all([
+          tx.tinter_issue_entries.findMany({
+            where: { splitId, rawLineItemId: { not: null } },
+            select: { rawLineItemId: true },
+          }),
+          tx.tinter_issue_entries_b.findMany({
+            where: { splitId, rawLineItemId: { not: null } },
+            select: { rawLineItemId: true },
+          }),
+        ]);
+        const covered = new Set<number>([
+          ...entriesA.map(e => e.rawLineItemId!),
+          ...entriesB.map(e => e.rawLineItemId!),
+        ]);
+        const missingLines = isTintingLines
+          .filter(sl => !covered.has(sl.rawLineItemId))
+          .map(sl => ({
+            rawLineItemId: sl.rawLineItemId,
+            skuCodeRaw:    sl.rawLineItem.skuCodeRaw,
+            skuDescriptionRaw: sl.rawLineItem.skuDescriptionRaw,
+          }));
+        if (missingLines.length > 0) throw new TIIncompleteError(missingLines);
+      }
 
       // 2a. Update order_splits: mark tinting_done
       await tx.order_splits.update({
@@ -78,6 +116,13 @@ export async function POST(req: Request): Promise<NextResponse> {
     }
     if (err instanceof WrongStageError) {
       return NextResponse.json({ error: "Split is not in tinting_in_progress stage" }, { status: 409 });
+    }
+    if (err instanceof TIIncompleteError) {
+      return NextResponse.json({
+        error:        "TI incomplete",
+        message:      "Tinter Issue entries are missing for some SKU lines. Please complete all entries before marking done.",
+        missingLines: err.missingLines,
+      }, { status: 400 });
     }
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Failed to complete split" },

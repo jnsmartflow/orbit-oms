@@ -127,6 +127,30 @@ interface SplitCard {
   };
 }
 
+interface CompletedAssignment {
+  id:          number;
+  completedAt: string | null;
+  smu:         string | null;
+  obdEmailDate: string | null;
+  obdEmailTime: string | null;
+  assignedTo:  { id: number; name: string | null };
+  order: {
+    id:                 number;
+    obdNumber:          string;
+    shipToCustomerName: string | null;
+    customer: {
+      customerName:      string;
+      area:              { name: string };
+      salesOfficerGroup: { salesOfficer: { name: string } } | null;
+    } | null;
+    querySnapshot: {
+      totalVolume:  number;
+      totalLines:   number;
+      articleTag:   string | null;
+    } | null;
+  };
+}
+
 interface Operator {
   id:   number;
   name: string | null;
@@ -1476,9 +1500,10 @@ function SplitKanbanCard({
 // ── Page Content ──────────────────────────────────────────────────────────────
 
 export function TintManagerContent() {
-  const [orders,          setOrders]          = useState<TintOrder[]>([]);
-  const [activeSplits,    setActiveSplits]    = useState<SplitCard[]>([]);
-  const [completedSplits, setCompletedSplits] = useState<SplitCard[]>([]);
+  const [orders,               setOrders]               = useState<TintOrder[]>([]);
+  const [activeSplits,         setActiveSplits]         = useState<SplitCard[]>([]);
+  const [completedSplits,      setCompletedSplits]      = useState<SplitCard[]>([]);
+  const [completedAssignments, setCompletedAssignments] = useState<CompletedAssignment[]>([]);
   const [operators, setOperators] = useState<Operator[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [now,       setNow]       = useState<Date>(() => new Date());
@@ -1544,13 +1569,15 @@ export function TintManagerContent() {
     try {
       const res  = await fetch("/api/tint/manager/orders");
       const data = (await res.json()) as {
-        orders:          TintOrder[];
-        activeSplits:    SplitCard[];
-        completedSplits: SplitCard[];
+        orders:               TintOrder[];
+        activeSplits:         SplitCard[];
+        completedSplits:      SplitCard[];
+        completedAssignments: CompletedAssignment[];
       };
       setOrders(data.orders);
       setActiveSplits(data.activeSplits);
       setCompletedSplits(data.completedSplits);
+      setCompletedAssignments(data.completedAssignments ?? []);
     } catch {
       // leave stale
     }
@@ -1565,14 +1592,16 @@ export function TintManagerContent() {
           fetch("/api/tint/manager/operators"),
         ]);
         const ordersData = (await ordersRes.json()) as {
-          orders:          TintOrder[];
-          activeSplits:    SplitCard[];
-          completedSplits: SplitCard[];
+          orders:               TintOrder[];
+          activeSplits:         SplitCard[];
+          completedSplits:      SplitCard[];
+          completedAssignments: CompletedAssignment[];
         };
         const opsData    = (await opsRes.json())    as { operators: Operator[] };
         setOrders(ordersData.orders);
         setActiveSplits(ordersData.activeSplits);
         setCompletedSplits(ordersData.completedSplits);
+        setCompletedAssignments(ordersData.completedAssignments ?? []);
         setOperators(opsData.operators);
       } finally {
         setIsLoading(false);
@@ -2370,8 +2399,46 @@ export function TintManagerContent() {
               ? filteredActiveSplits.filter((s) => s.status === "tinting_in_progress")
               : filteredCompletedSplits;
 
+            // For the Completed column, also include whole-OBD assignments shaped as TintOrder
+            const colAssignmentItems: TintOrder[] = col.stage === "completed"
+              ? (() => {
+                  const existingOrderIds = new Set(colOrderItems.map((o) => o.id));
+                  return completedAssignments
+                    .filter((a) => !existingOrderIds.has(a.order.id))
+                    .map((a): TintOrder => ({
+                      id:                 a.order.id,
+                      obdNumber:          a.order.obdNumber,
+                      workflowStage:      "pending_support",
+                      dispatchSlot:       null,
+                      dispatchStatus:     null,
+                      priorityLevel:      5,
+                      sequenceOrder:      null,
+                      createdAt:          a.completedAt ?? "",
+                      shipToCustomerName: a.order.shipToCustomerName,
+                      smu:                a.smu,
+                      obdEmailDate:       a.obdEmailDate,
+                      obdEmailTime:       a.obdEmailTime,
+                      customer:           a.order.customer ?? null,
+                      querySnapshot:      a.order.querySnapshot ?? null,
+                      tintAssignments: [{
+                        id:          a.id,
+                        status:      "tinting_done",
+                        assignedTo:  a.assignedTo,
+                        startedAt:   null,
+                        completedAt: a.completedAt,
+                        updatedAt:   a.completedAt ?? "",
+                      }],
+                      lineItems:      [],
+                      existingSplits: [],
+                      splits:         [],
+                      remainingQty:   0,
+                    }));
+                })()
+              : [];
+
             const allColItems: ColItem[] = [
               ...colOrderItems.map((o) => ({ type: "order" as const, data: o })),
+              ...colAssignmentItems.map((o) => ({ type: "order" as const, data: o })),
               ...colSplitItems.map((s) => ({ type: "split" as const, data: s })),
             ];
 

@@ -58,7 +58,13 @@
       "Bash(find 'C:\\\\Users\\\\HP\\\\OneDrive\\\\VS Code\\\\orbit-oms\\\\node_modules\\\\@base-ui\\\\utils' -name *.js)",
       "Bash(find 'C:\\\\Users\\\\HP\\\\OneDrive\\\\VS Code\\\\orbit-oms\\\\node_modules\\\\@base-ui' -name *.js)",
       "Bash(find 'C:\\\\Users\\\\HP\\\\OneDrive\\\\VS Code\\\\orbit-oms\\\\node_modules\\\\@base-ui' -name ReactStore* -o -name reactStore*)",
-      "Bash(find 'C:\\\\Users\\\\HP\\\\OneDrive\\\\VS Code\\\\orbit-oms\\\\node_modules\\\\@base-ui' -name useTransitionStatus*)"
+      "Bash(find 'C:\\\\Users\\\\HP\\\\OneDrive\\\\VS Code\\\\orbit-oms\\\\node_modules\\\\@base-ui' -name useTransitionStatus*)",
+      "Bash(find \"C:/Users/HP/OneDrive/VS Code/orbit-oms/app/\\(tint\\)\" -name \"layout.tsx\")",
+      "Bash(find '/c/Users/HP/OneDrive/VS Code' -name challan*)",
+      "Bash(grep -n \"export.*$delivery_point_masterPayload\" \"C:\\\\Users\\\\HP\\\\OneDrive\\\\VS Code\\\\orbit-oms\\\\node_modules\\\\.prisma\\\\client\\\\index.d.ts\")",
+      "Bash(echo \"VALIDATE_EXIT:$?\")",
+      "Bash(echo \"TSC_EXIT:$?\")",
+      "Bash(echo \"EXIT:$?\")"
     ]
   }
 }

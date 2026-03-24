@@ -27,6 +27,19 @@ enum SlotRuleType {
   default
 }
 
+enum TinterType {
+  TINTER
+  ACOTONE
+}
+
+enum PackCode {
+  ml_500 @map("500ml")
+  L_1    @map("1L")
+  L_4    @map("4L")
+  L_10   @map("10L")
+  L_20   @map("20L")
+}
+
 // ─────────────────────────────────────────────
 // PHASE 1 — Config / Status
 // ─────────────────────────────────────────────
@@ -80,6 +93,10 @@ model users {
   splitsAsManager           order_splits[]      @relation("SplitManager")
   splitStatusLogs           split_status_logs[] @relation("SplitStatusLogUser")
   tinterIssueEntries        tinter_issue_entries[]
+  tinterIssueEntriesB       tinter_issue_entries_b[]
+  shadeMasters              shade_master[]
+  // Phase 3.5 back-relations
+  challansPrinted           delivery_challans[] @relation("ChallanPrintedBy")
 }
 
 model status_master {
@@ -167,12 +184,13 @@ model transporter_master {
 // ─────────────────────────────────────────────
 
 model delivery_type_master {
-  id                Int                         @id @default(autoincrement())
-  name              String                      @unique
-  createdAt         DateTime                    @default(now())
-  areas             area_master[]
-  slotConfigs       delivery_type_slot_config[]
-  customerOverrides delivery_point_master[]     @relation("CustomerDeliveryTypeOverride")
+  id                      Int                         @id @default(autoincrement())
+  name                    String                      @unique
+  createdAt               DateTime                    @default(now())
+  areas                   area_master[]
+  slotConfigs             delivery_type_slot_config[]
+  dispatchDeliveryPoints  delivery_point_master[]     @relation("DispatchDeliveryType")
+  reportingDeliveryPoints delivery_point_master[]     @relation("ReportingDeliveryType")
 }
 
 model slot_master {
@@ -281,6 +299,26 @@ model sales_officer_group {
 // PHASE 1 — Customers
 // ─────────────────────────────────────────────
 
+model customer_type_master {
+  id             Int                     @id @default(autoincrement())
+  name           String                  @unique
+  isActive       Boolean                 @default(true)
+  createdAt      DateTime                @default(now())
+  deliveryPoints delivery_point_master[]
+
+  @@map("customer_type_master")
+}
+
+model premises_type_master {
+  id             Int                     @id @default(autoincrement())
+  name           String                  @unique
+  isActive       Boolean                 @default(true)
+  createdAt      DateTime                @default(now())
+  deliveryPoints delivery_point_master[]
+
+  @@map("premises_type_master")
+}
+
 model contact_role_master {
   id        Int                       @id @default(autoincrement())
   name      String                    @unique
@@ -301,10 +339,17 @@ model delivery_point_master {
   salesOfficer           sales_officer_master?     @relation(fields: [salesOfficerId], references: [id])
   primaryRouteId         Int?
   primaryRoute           route_master?             @relation("CustomerPrimaryRoute", fields: [primaryRouteId], references: [id])
-  deliveryTypeOverrideId Int?
-  deliveryTypeOverride   delivery_type_master?     @relation("CustomerDeliveryTypeOverride", fields: [deliveryTypeOverrideId], references: [id])
-  salesOfficerGroupId    Int?
+  dispatchDeliveryTypeId   Int?
+  dispatchDeliveryType     delivery_type_master?     @relation("DispatchDeliveryType", fields: [dispatchDeliveryTypeId], references: [id])
+  reportingDeliveryTypeId  Int?
+  reportingDeliveryType    delivery_type_master?     @relation("ReportingDeliveryType", fields: [reportingDeliveryTypeId], references: [id])
+  customerTypeId           Int?
+  customerType             customer_type_master?     @relation(fields: [customerTypeId], references: [id])
+  premisesTypeId           Int?
+  premisesType             premises_type_master?     @relation(fields: [premisesTypeId], references: [id])
+  salesOfficerGroupId      Int?
   salesOfficerGroup      sales_officer_group?      @relation(fields: [salesOfficerGroupId], references: [id])
+  address                String?
   customerRating         String?
   isKeyCustomer          Boolean                   @default(false)
   isKeySite              Boolean                   @default(false)
@@ -378,6 +423,7 @@ model import_raw_summary {
   shipToCustomerName  String?
   invoiceNo           String?
   invoiceDate         DateTime?
+  smuNumber           String?
   rowStatus           String                 @default("valid")
   rowError            String?
   createdAt           DateTime               @default(now())
@@ -401,8 +447,11 @@ model import_raw_line_items {
   rowStatus        String                      @default("valid")
   rowError         String?
   createdAt        DateTime                    @default(now())
-  enrichedLineItem import_enriched_line_items?
-  splitLineItems   split_line_items[]
+  enrichedLineItem    import_enriched_line_items?
+  splitLineItems      split_line_items[]
+  challanFormulas     delivery_challan_formulas[]
+  tinterIssueEntries  tinter_issue_entries[]
+  tinterIssueEntriesB tinter_issue_entries_b[]
 }
 
 model import_enriched_line_items {
@@ -473,6 +522,8 @@ model orders {
   tintLogs            tint_logs[]
   splits              order_splits[]
   tinterIssueEntries  tinter_issue_entries[]
+  tinterIssueEntriesB tinter_issue_entries_b[]
+  challan             delivery_challans?
 }
 
 model order_splits {
@@ -503,7 +554,8 @@ model order_splits {
   statusLogs         split_status_logs[]
   tintLogs           tint_logs[]
   tintAssignment     tint_assignments?
-  tinterIssueEntries tinter_issue_entries[]
+  tinterIssueEntries  tinter_issue_entries[]
+  tinterIssueEntriesB tinter_issue_entries_b[]
 }
 
 model split_line_items {
@@ -545,7 +597,8 @@ model tint_assignments {
   updatedAt          DateTime      @updatedAt
   tiSubmitted        Boolean       @default(false)
   operatorSequence   Int           @default(0)
-  tinterIssueEntries tinter_issue_entries[]
+  tinterIssueEntries  tinter_issue_entries[]
+  tinterIssueEntriesB tinter_issue_entries_b[]
 }
 
 model tint_logs {
@@ -643,12 +696,137 @@ model tinter_issue_entries {
   HER              Decimal           @default(0)
   COB              Decimal           @default(0)
   COG              Decimal           @default(0)
+  tinterType       TinterType        @default(TINTER)
+  packCode         PackCode?
+  rawLineItemId    Int?
   createdAt        DateTime          @default(now())
 
-  order          orders            @relation(fields: [orderId], references: [id])
-  split          order_splits?     @relation(fields: [splitId], references: [id])
-  tintAssignment tint_assignments? @relation(fields: [tintAssignmentId], references: [id])
-  submittedBy    users             @relation(fields: [submittedById], references: [id])
+  order          orders                @relation(fields: [orderId], references: [id])
+  split          order_splits?         @relation(fields: [splitId], references: [id])
+  tintAssignment tint_assignments?     @relation(fields: [tintAssignmentId], references: [id])
+  submittedBy    users                 @relation(fields: [submittedById], references: [id])
+  rawLineItem    import_raw_line_items? @relation(fields: [rawLineItemId], references: [id])
 
   @@map("tinter_issue_entries")
+}
+
+// ─────────────────────────────────────────────
+// PHASE 3.5 — Delivery Challan (2)
+// ─────────────────────────────────────────────
+
+model delivery_challans {
+  id            Int                         @id @default(autoincrement())
+  orderId       Int                         @unique
+  order         orders                      @relation(fields: [orderId], references: [id])
+  challanNumber String                      @unique
+  transporter   String?
+  vehicleNo     String?
+  printedAt     DateTime?
+  printedBy     Int?
+  printedByUser users?                      @relation("ChallanPrintedBy", fields: [printedBy], references: [id])
+  createdAt     DateTime                    @default(now())
+  updatedAt     DateTime                    @updatedAt
+  formulas      delivery_challan_formulas[]
+}
+
+model delivery_challan_formulas {
+  id            Int               @id @default(autoincrement())
+  challanId     Int
+  challan       delivery_challans @relation(fields: [challanId], references: [id])
+  rawLineItemId Int
+  rawLineItem   import_raw_line_items @relation(fields: [rawLineItemId], references: [id])
+  formula       String
+  updatedAt     DateTime          @updatedAt
+
+  @@unique([challanId, rawLineItemId])
+}
+
+// ─────────────────────────────────────────────
+// SHADE MASTER — Acotone TI + Shade Memory
+// ─────────────────────────────────────────────
+
+model tinter_issue_entries_b {
+  id               Int               @id @default(autoincrement())
+  orderId          Int
+  splitId          Int?
+  tintAssignmentId Int?
+  submittedById    Int
+  baseSku          String
+  tinQty           Decimal           @default(0)
+  YE2              Decimal           @default(0)
+  YE1              Decimal           @default(0)
+  XY1              Decimal           @default(0)
+  XR1              Decimal           @default(0)
+  WH1              Decimal           @default(0)
+  RE2              Decimal           @default(0)
+  RE1              Decimal           @default(0)
+  OR1              Decimal           @default(0)
+  NO2              Decimal           @default(0)
+  NO1              Decimal           @default(0)
+  MA1              Decimal           @default(0)
+  GR1              Decimal           @default(0)
+  BU2              Decimal           @default(0)
+  BU1              Decimal           @default(0)
+  tinterType       TinterType        @default(ACOTONE)
+  packCode         PackCode?
+  rawLineItemId    Int?
+  createdAt        DateTime          @default(now())
+
+  order          orders                @relation(fields: [orderId], references: [id])
+  split          order_splits?         @relation(fields: [splitId], references: [id])
+  tintAssignment tint_assignments?     @relation(fields: [tintAssignmentId], references: [id])
+  submittedBy    users                 @relation(fields: [submittedById], references: [id])
+  rawLineItem    import_raw_line_items? @relation(fields: [rawLineItemId], references: [id])
+
+  @@map("tinter_issue_entries_b")
+}
+
+model shade_master {
+  id                  Int        @id @default(autoincrement())
+  shadeName           String
+  shipToCustomerId    String
+  shipToCustomerName  String
+  tinterType          TinterType
+  packCode            PackCode?
+  skuCode             String?
+  baseSku             String
+  tinQty              Decimal    @default(0)
+  // TINTER columns
+  YOX                 Decimal?   @default(0)
+  LFY                 Decimal?   @default(0)
+  GRN                 Decimal?   @default(0)
+  TBL                 Decimal?   @default(0)
+  WHT                 Decimal?   @default(0)
+  MAG                 Decimal?   @default(0)
+  FFR                 Decimal?   @default(0)
+  BLK                 Decimal?   @default(0)
+  OXR                 Decimal?   @default(0)
+  HEY                 Decimal?   @default(0)
+  HER                 Decimal?   @default(0)
+  COB                 Decimal?   @default(0)
+  COG                 Decimal?   @default(0)
+  // ACOTONE columns
+  YE2                 Decimal?   @default(0)
+  YE1                 Decimal?   @default(0)
+  XY1                 Decimal?   @default(0)
+  XR1                 Decimal?   @default(0)
+  WH1                 Decimal?   @default(0)
+  RE2                 Decimal?   @default(0)
+  RE1                 Decimal?   @default(0)
+  OR1                 Decimal?   @default(0)
+  NO2                 Decimal?   @default(0)
+  NO1                 Decimal?   @default(0)
+  MA1                 Decimal?   @default(0)
+  GR1                 Decimal?   @default(0)
+  BU2                 Decimal?   @default(0)
+  BU1                 Decimal?   @default(0)
+  createdById         Int
+  isActive            Boolean    @default(true)
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
+
+  createdBy users @relation(fields: [createdById], references: [id])
+
+  @@unique([shipToCustomerId, shadeName, skuCode, packCode, tinterType], name: "shade_master_unique")
+  @@map("shade_master")
 }

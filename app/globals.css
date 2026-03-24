@@ -1,3 +1,9 @@
+/* @page — paged-media rule; must be top-level, never inside @media print */
+@page {
+  size: A4 portrait;
+  margin: 10mm;
+}
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -287,4 +293,152 @@
   border: none;
   border-top: 1px dashed #e5e7eb;
   margin: 20px 0;
+}
+
+/* ── Delivery Challan — global print rules (matches challan-mock-v5-final.html) */
+
+@media print {
+  /* ── Color fidelity ──────────────────────────────────────────────────────── */
+  html, body {
+    background: #fff;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* ── Isolation: hide all page chrome, reveal challan only ───────────────── */
+  body * { visibility: hidden !important; }
+
+  #challan-print-area,
+  #challan-print-area * { visibility: visible !important; }
+
+  #challan-print-area {
+    position:   absolute !important;
+    top:        0 !important;
+    left:       0 !important;
+    width:      100% !important;
+    border:     1.5px solid #333 !important;
+    box-shadow: none !important;
+  }
+
+  /* ── S1 Header ───────────────────────────────────────────────────────────── */
+  #challan-print-area .ch-header { background: #fff !important; border-bottom: 3px solid #000 !important; }
+  #challan-print-area .ch-header img { filter: none !important; height: 56px !important; width: auto !important; }
+  #challan-print-area .ch-hdr-tagline { background: #f5f5f5 !important; border-top: 1px solid #ddd !important; color: #444 !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+  #challan-print-area .ch-hdr-title   { color: #000 !important; font-size: 15px !important; font-weight: 600 !important; letter-spacing: 0.12em !important; }
+  #challan-print-area .ch-hdr-copy    { color: #555 !important; letter-spacing: 0.08em !important; }
+  #challan-print-area .ch-hdr-no-lbl  { color: #555 !important; }
+  #challan-print-area .ch-hdr-no-val  { color: #000 !important; }
+
+  /* ── S2 Reference strip ─────────────────────────────────────────────────── */
+  #challan-print-area .ch-ref {
+    background:    #f5f5f5 !important;
+    border-top:    1.5px solid #424242 !important;
+    border-bottom: 1px solid #9e9e9e !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  #challan-print-area .ch-ref-item + .ch-ref-item { border-left: 1px solid #aaa !important; }
+  #challan-print-area .ch-ref-lbl       { color: #555 !important; }
+  #challan-print-area .ch-ref-val       { color: #000 !important; }
+  #challan-print-area .ch-ref-val.muted { color: #888 !important; }
+
+  /* ── S3 Party boxes ─────────────────────────────────────────────────────── */
+  #challan-print-area .ch-party { border-bottom: 1px solid #999 !important; }
+
+  #challan-print-area .ch-party-box {
+    background: #f5f5f5 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  #challan-print-area .ch-party-box:last-child { border-left-color: #999 !important; }
+
+  #challan-print-area .ch-party-hdr {
+    background:          #e5e5e5 !important;
+    border-bottom-color: #999 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  #challan-print-area .ch-party-hdr-lbl  { color: #000 !important; }
+  #challan-print-area .ch-party-hdr-meta { color: #555 !important; }
+  #challan-print-area .ch-code-lbl       { color: #777 !important; }
+  #challan-print-area .ch-code-val       { color: #000 !important; }
+  #challan-print-area .ch-party-name     { color: #000 !important; }
+  #challan-print-area .ch-party-addr     { color: #333 !important; }
+
+  #challan-print-area .ch-contact-strip {
+    background:       #ebebeb !important;
+    border-top-color: #999 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  #challan-print-area .ch-contact-role,
+  #challan-print-area .role-cust,
+  #challan-print-area .role-so,
+  #challan-print-area .role-site  { color: #333 !important; }
+  #challan-print-area .ch-contact-name  { color: #000 !important; }
+  #challan-print-area .ch-contact-phone { color: #222 !important; }
+
+  /* ── S4 Table ───────────────────────────────────────────────────────────── */
+  #challan-print-area .ch-table {
+    border-top:    1px solid #888 !important;
+    border-bottom: 1px solid #888 !important;
+  }
+  #challan-print-area .ch-table thead tr {
+    background: #222 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  #challan-print-area .ch-table thead th {
+    color:      #fff !important;
+    background: #222 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  #challan-print-area .ch-table tbody tr:nth-child(even) td {
+    background: #f3f3f3 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  #challan-print-area .ch-table tbody td                  { color: #111 !important; border-bottom-color: #ddd !important; }
+  #challan-print-area .ch-table tbody td.formula          { color: #000 !important; font-style: italic !important; }
+  #challan-print-area .ch-table tbody td.tint-yes         { color: #000 !important; font-weight: 700 !important; }
+
+  #challan-print-area .ch-table tfoot tr {
+    background: #e8e8e8 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  #challan-print-area .ch-table tfoot td            { border-top: 2px solid #000 !important; color: #000 !important; }
+  #challan-print-area .ch-table tfoot td.totals-lbl { color: #444 !important; }
+
+  /* ── Formula: hide inputs, show print spans ─────────────────────────────── */
+  #challan-print-area input             { display: none !important; }
+  #challan-print-area .cp-formula-print { display: inline !important; }
+
+  /* ── S5 Footer ──────────────────────────────────────────────────────────── */
+  #challan-print-area .ch-footer {
+    background: #f2f2f2 !important;
+    border-top: 1px solid #888 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  #challan-print-area .ch-footer-lbl   { color: #333 !important; }
+  #challan-print-area .ch-footer-terms { color: #222 !important; }
+  #challan-print-area .ch-dispatch-lbl { color: #444 !important; }
+  #challan-print-area .ch-dispatch-val { color: #000 !important; border-bottom: 1px solid #555 !important; border-style: solid !important; }
+  #challan-print-area .ch-sig-line     { background: #000 !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+  #challan-print-area .ch-sig-sub      { color: #444 !important; }
+
+  /* ── S6 Bottom bar ───────────────────────────────────────────────────────── */
+  #challan-print-area .ch-btm {
+    background: #fff !important;
+    border-top: 1px solid #888 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  #challan-print-area .ch-btm-txt   { color: #555 !important; }
+  #challan-print-area .ch-btm-gstin { color: #111 !important; font-weight: 700 !important; }
+
+  /* ── Screen-only elements ───────────────────────────────────────────────── */
+  .print-hide { visibility: hidden !important; display: none !important; }
 }

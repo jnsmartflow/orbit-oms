@@ -13,7 +13,7 @@ export default async function TintManagerCustomersPage() {
   if (!canView) redirect("/unauthorized");
   const perms = await getPagePermissions(session.user.role, "customers");
 
-  const [customers, total, areas, subAreas, salesOfficers, routes, deliveryTypes, soGroups, contactRoles] =
+  const [customers, total, areas, subAreas, salesOfficers, routes, deliveryTypes, soGroups, contactRoles, customerTypes, premisesTypes] =
     await Promise.all([
       prisma.delivery_point_master.findMany({
         take:    25,
@@ -42,6 +42,12 @@ export default async function TintManagerCustomersPage() {
       prisma.contact_role_master.findMany({
         where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true },
       }),
+      prisma.customer_type_master.findMany({
+        where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true },
+      }),
+      prisma.premises_type_master.findMany({
+        where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true },
+      }),
     ]);
 
   return (
@@ -50,6 +56,7 @@ export default async function TintManagerCustomersPage() {
         id:                c.id,
         customerCode:      c.customerCode,
         customerName:      c.customerName,
+        address:           c.address ?? null,
         area:              c.area,
         subArea:           c.subArea,
         salesOfficerGroup: c.salesOfficerGroup,
@@ -70,6 +77,8 @@ export default async function TintManagerCustomersPage() {
         salesOfficer: g.salesOfficer,
       }))}
       contactRoles={contactRoles}
+      customerTypes={customerTypes}
+      premisesTypes={premisesTypes}
       canEdit={perms.canEdit}
       canImport={perms.canImport}
     />

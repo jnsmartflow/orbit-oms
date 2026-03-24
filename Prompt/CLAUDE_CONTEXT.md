@@ -1,7 +1,7 @@
 # CLAUDE_CONTEXT.md — Orbit OMS
 # Load this file at the start of every Claude Code session.
 # Command: claude "Read CLAUDE_CONTEXT.md fully before doing anything else."
-# Version: Phase 3 · Schema v13 · Config Master v2 · Updated March 2026
+# Version: Phase 3 · Schema v14 · Config Master v2 · Updated March 2026
 
 ---
 
@@ -33,10 +33,10 @@ Scale: ~25–35 dispatch plans per day, ~100–200 OBDs (orders) per day, single
 
 ---
 
-## 3. Database — 42 tables, 4 groups (Schema v13)
+## 3. Database — 44 tables, 4 groups (Schema v14)
 
-Schema v13 = Schema v12 + Tinter Issue architecture
-(tinter_issue_entries added; order_splits + tint_assignments expanded).
+Schema v14 = Schema v13 + Delivery Challan architecture
+(delivery_challans + delivery_challan_formulas added; smuNumber column added to import_raw_summary).
 
 ### Group 1: Setup / Master tables (23 tables — Phase 1 ✅ complete)
 
@@ -44,7 +44,7 @@ Schema v13 = Schema v12 + Tinter Issue architecture
 ── Config / Status ──────────────────────────────────────────────────────────
 status_master              — UNIFIED status table. All workflow statuses.
                              Domains: dispatch | tinting | pick_list | import | workflow | priority
-system_config              — Key-value store. 8 keys. Always read from DB — never hardcode.
+system_config              — Key-value store. Always read from DB — never hardcode.
 role_master                — 7 roles
 
 ── SKU Hierarchy ────────────────────────────────────────────────────────────
@@ -87,7 +87,9 @@ users                      — Depot staff accounts
 
 ```
 import_batches             — One row per import session.
-import_raw_summary         — One row per OBD from header XLS. 18 mapped columns. obdEmailDate + obdEmailTime stored here.
+import_raw_summary         — One row per OBD from header XLS. 18 mapped columns + smuNumber (v14).
+                             obdEmailDate + obdEmailTime stored here.
+                             NEW v14: smuNumber TEXT (nullable — populated when import updated)
 import_raw_line_items      — One row per line item. 10 columns including article + articleTag.
 import_enriched_line_items — Lines enriched with sku_master join.
 import_obd_query_summary   — Per-OBD totals: weight, qty, volume, hasTinting, totalArticle, articleTag.
@@ -129,6 +131,18 @@ dispatch_plan_orders
 dispatch_change_queue      — Hold notifications for dispatcher
 pick_lists
 pick_list_items
+```
+
+### Group 5: Delivery Challan (2 tables — NEW v14)
+
+```
+delivery_challans          — One row per order. Auto-created on first challan open.
+                             Fields: id, orderId (UNIQUE), challanNumber, transporter,
+                             vehicleNo, printedAt, printedBy, createdAt, updatedAt
+delivery_challan_formulas  — Per-line tinting formula entered by TM before print.
+                             Fields: id, challanId, rawLineItemId, formula, updatedAt
+                             UNIQUE(challanId, rawLineItemId)
+                             Only rows where isTinting = true are valid.
 ```
 
 ---
@@ -215,7 +229,7 @@ Query pattern: always filter `WHERE domain = '<domain>'`.
 | Admin | /admin | All master data CRUD, system_config, user management |
 | Dispatcher | /dispatcher | Build plans, assign vehicles, confirm, act on Hold notifications |
 | Support | /support | View ALL orders + splits, set dispatch_status, priority, slot override |
-| Tint Manager | /tint/manager | Create splits, assign tint operators, monitor tint pipeline, set dispatchStatus + priority on orders AND splits directly from Kanban |
+| Tint Manager | /tint/manager | Create splits, assign tint operators, monitor tint pipeline, set dispatchStatus + priority on orders AND splits directly from Kanban. Access Delivery Challans. |
 | Tint Operator | /tint/operator | Start/Done on assigned OBDs and splits. Fill Tinter Issue form. |
 | Floor Supervisor | /warehouse/supervisor | Assign pickers, verify material, control loading |
 | Picker | /warehouse/picker | Own assigned OBDs only |
@@ -322,7 +336,7 @@ Displayed on Tint Manager cards inline in OBD row: `9105750091 · Route · 19 Ma
 
 ---
 
-## 10. system_config — 8 keys
+## 10. system_config keys
 
 | Key | Default | Purpose |
 |---|---|---|
@@ -334,6 +348,16 @@ Displayed on Tint Manager cards inline in OBD row: `9105750091 · Route · 19 Ma
 | `aging_priority_days` | 2 | Days before tier-3 priority |
 | `aging_alert_days` | 3 | Days before escalation alert |
 | `change_queue_urgent_alert` | true | Urgent Hold notifications |
+| `company_name` | Akzonobel India Limited | Challan header |
+| `company_subtitle` | Decorative Paints | Challan header |
+| `depot_address` | Shiv Logistics Park… | Challan header |
+| `depot_mobile` | 7436055511 / 9054867133 | Challan header |
+| `gstin` | 24AAACI6297A1ZT | Challan header |
+| `tejas_contact` | 9173363377 | Challan header |
+| `registered_office` | B01A, South City… | Challan footer |
+| `website` | www.akzonobel.co.in | Challan footer |
+
+**All system_config values must always be read from DB — never hardcode.**
 
 ---
 
@@ -372,7 +396,6 @@ id, splitId, rawLineItemId, assignedQty, createdAt
 ```
 
 ### Business rules
-
 | Rule | Detail |
 |---|---|
 | Create + assign | Always one step — manager picks operator while building split |
@@ -400,16 +423,15 @@ id, splitId, rawLineItemId, assignedQty, createdAt
 | POST | `/api/tint/manager/splits/create` | TM, Admin | Create splits. Sets operatorSequence per split. |
 | POST | `/api/tint/manager/splits/reassign` | TM, Admin | Reassign a split to different operator |
 | POST | `/api/tint/manager/splits/cancel` | TM, Admin | Cancel a split (tint_assigned only) |
-| PATCH | `/api/tint/manager/reorder` | TM, Admin | Move Up / Move Down on Assigned column cards |
-| PATCH | `/api/tint/manager/orders/[id]/status` | TM, Admin | Set dispatchStatus + priority on an order |
-| PATCH | `/api/tint/manager/splits/[id]/status` | TM, Admin | Set dispatchStatus + priority on a split |
 | GET | `/api/tint/operator/my-orders` | Operator | Both assigned orders AND splits. Returns tiSubmitted, operatorSequence, startedAt, hasActiveJob. Sorted by operatorSequence ASC. |
-| POST | `/api/tint/operator/tinter-issue` | Operator, Admin | Submit TI entries. Sets tiSubmitted=true on split/assignment. |
-| GET | `/api/tint/operator/tinter-issue/[id]` | Operator, Admin | Fetch existing TI entries for pre-fill |
+| POST | `/api/tint/operator/tinter-issue` | Operator | Submit TI entries. Sets tiSubmitted=true on split/assignment. |
+| GET | `/api/tint/operator/tinter-issue/[id]` | Operator | Fetch existing TI entries for pre-fill |
 | POST | `/api/tint/operator/start` | Operator | Start whole OBD. Guards: tiSubmitted=true + no active job. |
 | POST | `/api/tint/operator/done` | Operator | Complete whole OBD assignment |
 | POST | `/api/tint/operator/split/start` | Operator | Start a split. Guards: tiSubmitted=true + no active job. |
 | POST | `/api/tint/operator/split/done` | Operator | Complete a split → status = tinting_done |
+| PATCH | `/api/tint/manager/orders/[id]/status` | TM, Admin | Set dispatchStatus + priority on an order |
+| PATCH | `/api/tint/manager/splits/[id]/status` | TM, Admin | Set dispatchStatus + priority on a split |
 | GET | `/api/support/orders` | Support, Admin | All orders with splits included |
 | PATCH | `/api/support/orders/[id]` | Support, Admin | Update order dispatch/priority/slot |
 | PATCH | `/api/support/splits/[id]` | Support, Admin | Update split dispatch/priority/slot |
@@ -462,14 +484,6 @@ If any row found → 400 "You already have a job in progress. Complete it first.
 ### DB helpers
 - `next_operator_sequence(operatorId)` — function. Returns MAX+1 across active jobs for that operator.
 - `operator_active_job` — view. One row per operator currently in tinting_in_progress.
-
-### Operator sequential rules
-- Operator can only have ONE job in `tinting_in_progress` at a time
-- Jobs must be worked in `operatorSequence` order (lowest first) — cannot skip
-- `tiSubmitted` must be true before Start is allowed (hard gate)
-- Operator CAN pre-fill TI for future jobs while current job is running
-- `operatorSequence` is set at assignment time via `next_operator_sequence()` function
-- `sequenceOrder` (TM Kanban) and `operatorSequence` (operator queue) are DIFFERENT fields on the same row
 
 ---
 
@@ -698,32 +712,39 @@ After SQL applied: run `npx prisma generate` in VS Code terminal.
 
 ```
 /app
-  /api/admin          — Admin CRUD API routes
-  /api/auth           — NextAuth
-  /api/tint/manager   — Tint Manager APIs (orders, assign, splits/*)
-  /api/tint/operator  — Tint Operator APIs (my-orders, start, done, split/*, tinter-issue)
-  /api/support        — Support APIs (orders, splits)
-  /api/import         — Import API (obd)
-  /(admin)            — Admin role layout group
-  /(dispatcher)       — Dispatcher role layout group
-  /(support)          — Support role layout group
-  /(tint)             — Tint team layout group
-  /(warehouse)        — Supervisor + picker layout group
+  /api/admin                        — Admin CRUD API routes
+  /api/auth                         — NextAuth
+  /api/tint/manager                 — Tint Manager APIs (orders, assign, splits/*)
+  /api/tint/manager/challans        — NEW v14. Challan list API
+  /api/tint/manager/challans/[id]   — NEW v14. GET single challan | PATCH save edits
+  /api/tint/operator                — Tint Operator APIs (my-orders, start, done, split/*, tinter-issue)
+  /api/support                      — Support APIs (orders, splits)
+  /api/import                       — Import API (obd)
+  /(admin)                          — Admin role layout group
+  /(dispatcher)                     — Dispatcher role layout group
+  /(support)                        — Support role layout group
+  /(tint)                           — Tint team layout group
+  /(tint)/challan                   — NEW v14. Delivery Challan page (TM + Admin)
+  /(warehouse)                      — Supervisor + picker layout group
 /components
-  /ui                 — shadcn/ui primitives (do not edit)
-  /shared             — Reusable app components
-  /admin              — Admin-specific components
-  /tint               — tint-manager-content.tsx, tint-operator-content.tsx,
-                        split-builder-modal.tsx, sku-details-sheet.tsx
-  /support            — support-page-content.tsx
+  /ui                               — shadcn/ui primitives (do not edit)
+  /shared                           — Reusable app components
+  /admin                            — Admin-specific components
+  /tint                             — tint-manager-content.tsx, tint-operator-content.tsx,
+                                      split-builder-modal.tsx, sku-details-sheet.tsx
+                                      challan-content.tsx      — NEW v14. 65/35 split panel
+                                      challan-document.tsx     — NEW v14. Printable challan
+  /support                          — support-page-content.tsx
 /lib
-  prisma.ts           — Prisma client singleton
-  auth.ts             — NextAuth config
-  rbac.ts             — requireRole() guard
-  config.ts           — system_config reader
+  prisma.ts                         — Prisma client singleton
+  auth.ts                           — NextAuth config
+  rbac.ts                           — requireRole() guard
+  config.ts                         — system_config reader
 /prisma
-  schema.prisma       — Source of truth — Schema v13
-  seed.ts             — Seed script
+  schema.prisma                     — Source of truth — Schema v14
+  seed.ts                           — Seed script
+  migrations/v14_delivery_challans.sql — NEW v14. Migration SQL
+  migrations/add_address_to_delivery_point_master.sql — NEW v14. address column on delivery_point_master
 ```
 
 ---
@@ -735,6 +756,7 @@ After SQL applied: run `npx prisma generate` in VS Code terminal.
 | Phase 1 — Foundation (schema, admin, auth) | ✅ Complete |
 | Phase 2 — Order pipeline (import, support, tint manager v1, operator) | ✅ Complete |
 | Phase 3 — Tint splits + UI polish | ✅ Splits complete · Operator screen redesign in progress |
+| Phase 3.5 — Delivery Challan | ✅ Complete |
 | Phase 4 — Dispatch planning | ⏳ Not started |
 | Phase 5 — Warehouse execution | ⏳ Not started |
 
@@ -744,7 +766,7 @@ After SQL applied: run `npx prisma generate` in VS Code terminal.
 
 Before generating any code, confirm:
 1. You have read this file fully
-2. Schema is now **v13** — 42 tables
+2. Schema is now **v14** — 44 tables
 3. `order_splits` is the PRIMARY unit of work for tinting — not `orders`
 4. `split_line_items` stores per-line qty assignments per split
 5. `split_status_logs` is INSERT-ONLY — never update or delete
@@ -784,14 +806,360 @@ Before generating any code, confirm:
 39. One-job rule: operator cannot have two jobs in tinting_in_progress simultaneously
 40. `operator_active_job` view enforces the one-job rule — always check it on Start
 41. `next_operator_sequence(operatorId)` function sets operatorSequence at assignment time
-42. Operator screen is a 65/35 split: LEFT 35% = queue, RIGHT 65% = job detail + TI form inline
+42. Operator screen is a 65/35 split: LEFT = queue, RIGHT = job detail + TI form inline
 43. tint-operator-content.tsx needs full rewrite — reference tint-operator-final.html
-44. No $transaction blocks in any API route — use sequential Prisma calls (Vercel + Supabase pooler constraint)
-45. tinter_issue_entries: splitId and tintAssignmentId are mutually exclusive — DB constraint enforced
-46. GET /api/tint/operator/my-orders must return: tiSubmitted, operatorSequence, startedAt, hasActiveJob per job
-47. my-orders queue sorted by operatorSequence ASC
-48. POST /api/tint/operator/tinter-issue: validates ownership before insert, sets tiSubmitted=true after insert
+44. delivery_challans row auto-created on first GET of an order — never client-generated
+45. Challan number format: CHN-{YEAR}-{5-digit sequential} — generated server-side only
+46. Formula column editable ONLY on rows where isTinting = true — reject others with 400
+47. smuNumber is nullable — show placeholder text if null, never throw an error
+48. Schema v14 = v13 + delivery_challans + delivery_challan_formulas + smuNumber column
+49. @media print hides sidebar, topbar, left panel, action bar — test before marking done
+50. Challan screen is 65/35 split — LEFT = order list, RIGHT = challan preview + print
+51. `@page` must be top-level in globals.css — never nested inside `@media print` (PostCSS extracts it and breaks the containing block)
+52. Print visibility pattern: `body * { visibility: hidden }` + `#challan-print-area * { visibility: visible }` — NOT `display:none` on body children (hides print area too)
+53. Address stored as free text with `\n` line breaks — never split on comma; `formatAddress()` in challan-document.tsx splits on `\n` only
+54. `system_config` keys for challan must exist in DB before challan API returns company details — never hardcode fallback values
+55. Logo filter: `brightness(0) invert(1)` on screen (white logo on navy header); `filter: none` in print (restores original blue logo on white page)
 
 ---
 
-*Version: Phase 3 · Schema v13 · Config Master v2 · Operator Screen v4 · March 2026*
+## 24. Delivery Challan — feature spec (v14)
+
+### What it is
+A print-ready delivery challan screen for the Tint Manager (and Admin) role.
+Accessible at `/(tint)/challan`.
+Shows orders where `import_raw_summary.smu = 'Retail Offtake' OR smu = 'Project'`.
+
+### Route & auth
+- Route: `/(tint)/challan`
+- Page file: `/app/(tint)/challan/page.tsx`
+- Auth: TM + Admin roles only — `requireRole(['TINT_MANAGER', 'ADMIN'])`
+- Navigation: "Delivery Challans" entry in TM sidebar
+
+### Schema v14 — two new tables + one new column
+
+#### delivery_challans
+```sql
+CREATE TABLE IF NOT EXISTS delivery_challans (
+  id            SERIAL PRIMARY KEY,
+  "orderId"     INTEGER NOT NULL UNIQUE REFERENCES orders(id),
+  "challanNumber" TEXT NOT NULL UNIQUE,
+  transporter   TEXT,
+  "vehicleNo"   TEXT,
+  "printedAt"   TIMESTAMPTZ,
+  "printedBy"   INTEGER REFERENCES users(id),
+  "createdAt"   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  "updatedAt"   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
+
+#### delivery_challan_formulas
+```sql
+CREATE TABLE IF NOT EXISTS delivery_challan_formulas (
+  id              SERIAL PRIMARY KEY,
+  "challanId"     INTEGER NOT NULL REFERENCES delivery_challans(id),
+  "rawLineItemId" INTEGER NOT NULL REFERENCES import_raw_line_items(id),
+  formula         TEXT NOT NULL,
+  "updatedAt"     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE("challanId", "rawLineItemId")
+);
+```
+
+#### smuNumber column on import_raw_summary
+```sql
+ALTER TABLE import_raw_summary ADD COLUMN IF NOT EXISTS "smuNumber" TEXT;
+```
+
+#### Challan number generation (server-side only)
+Format: `CHN-{YEAR}-{5-digit sequential}`
+Example: `CHN-2026-00041`
+Logic: `'CHN-' + year + '-' + String(maxId + 1).padStart(5, '0')`
+Never generate on client.
+
+### Approved challan layout (mockup v5 — locked)
+
+Reference file: `challan-mockup-v5.html`
+
+```
+┌─────────────────────────────────────────────────────┐
+│ HEADER (navy #1a237e)                               │
+│  Left: Company name + depot tagline                 │
+│  Center: DELIVERY CHALLAN · Original Copy           │
+│  Right: Challan No. only — NO date in header        │
+├─────────────────────────────────────────────────────┤
+│ REFERENCE STRIP (4 fields only)                     │
+│  SMU Number | OBD No. | OBD Date | Warehouse        │
+│  SMU Number = smuNumber (nullable — placeholder)    │
+├──────────────────┬──────────────────────────────────┤
+│ BILL TO          │ SHIP TO                          │
+│  Name            │  Name                            │
+│  Address         │  Address                         │
+│  Customer Code   │  Ship-to Code                    │
+│  GSTIN           │  Route · Area (in header)        │
+│  ─────────────── │  ──────────────────────────────  │
+│  [Customer]      │  [Sales Officer] [Site/Receiver] │
+│  name + phone    │  name+phone  |  name+phone       │
+├──────────────────┴──────────────────────────────────┤
+│ LINE ITEMS TABLE                                    │
+│  Title row: "Line Items" + tinting summary badge    │
+│  Columns: # | SKU | Description | Formula* |        │
+│           Pack | Qty | Volume (L) | Tinting         │
+│  * Formula: editable input (amber border) ONLY      │
+│    on rows where isTinting = true                   │
+│    Non-tinting rows show — (read-only)              │
+│  Totals row: Total Qty | Total Volume | Gross Wt    │
+├─────────────────────────────────────────────────────┤
+│ FOOTER (3 columns)                                  │
+│  Left: Terms text                                   │
+│        Transporter: [editable input]                │
+│        Vehicle No: [editable input]                 │
+│  Center: Dispatched By — signature line             │
+│  Right: Receiver's Acknowledgement — signature line │
+├─────────────────────────────────────────────────────┤
+│ BOTTOM BAR (navy)                                   │
+│  Registered office address · website  |  GSTIN      │
+└─────────────────────────────────────────────────────┘
+```
+
+### Data sources — field by field
+
+| Section | Field | Source |
+|---|---|---|
+| Header | Company name | system_config: company_name |
+| Header | Depot tagline | system_config: company_subtitle + depot_address |
+| Header | Challan No. | delivery_challans.challanNumber |
+| Ref strip | SMU Number | import_raw_summary.smuNumber (nullable) |
+| Ref strip | OBD No. | import_raw_summary.obdNumber |
+| Ref strip | OBD Date | import_raw_summary.obdEmailDate |
+| Ref strip | Warehouse | import_raw_summary.warehouse |
+| Bill To | Name | import_raw_summary.billToCustomerName |
+| Bill To | Address | delivery_point_master.address (bill-to) |
+| Bill To | Customer Code | import_raw_summary.shipToCustomerId |
+| Bill To | GSTIN | delivery_point_master.gstin (if available) |
+| Bill To | Contact | delivery_point_contacts (role = Owner or Manager) |
+| Ship To | Name | import_raw_summary.shipToCustomerName |
+| Ship To | Address | delivery_point_master.address (ship-to) |
+| Ship To | Ship-to Code | import_raw_summary.shipToCustomerId |
+| Ship To | Route + Area | delivery_point_master → route_master + area_master |
+| Ship To | SO contact | sales_officer_master via delivery_point_master.salesOfficerGroupId → sales_officer_group |
+| Ship To | Site contact | delivery_point_contacts (role = Site Engineer or Contractor) |
+| Line items | SKU Code | import_raw_line_items.skuCodeRaw |
+| Line items | Description | import_raw_line_items.skuDescriptionRaw |
+| Line items | Formula | delivery_challan_formulas.formula (editable, isTinting rows only) |
+| Line items | Pack Size | import_raw_line_items.articleTag |
+| Line items | Qty | import_raw_line_items.unitQty |
+| Line items | Volume | import_raw_line_items.volumeLine |
+| Line items | Tinting | import_raw_line_items.isTinting |
+| Totals | Total Qty | import_obd_query_summary.totalUnitQty |
+| Totals | Total Volume | import_obd_query_summary.totalVolume |
+| Totals | Gross Weight | import_raw_summary.grossWeight |
+| Footer | Transporter | delivery_challans.transporter (editable) |
+| Footer | Vehicle No. | delivery_challans.vehicleNo (editable) |
+| Bottom bar | Regd. office | system_config: registered_office |
+| Bottom bar | Website | system_config: website |
+| Bottom bar | GSTIN | system_config: gstin |
+
+### Editable fields — 3 total
+
+| Field | Location | Condition |
+|---|---|---|
+| Transporter | Footer, left column | Always editable |
+| Vehicle No. | Footer, left column | Always editable |
+| Formula | Table, per row | Only where isTinting = true |
+
+### API routes (v14 — new)
+
+| Method | Route | Auth | Purpose |
+|---|---|---|---|
+| GET | `/api/tint/manager/challans` | TM, Admin | Paginated list of Retail Offtake + Project orders |
+| GET | `/api/tint/manager/challans/[orderId]` | TM, Admin | Full challan data. Auto-creates delivery_challans if not exists. |
+| PATCH | `/api/tint/manager/challans/[orderId]` | TM, Admin | Save transporter, vehicleNo, formulas, printedAt |
+
+#### GET /api/tint/manager/challans — query params
+- `date` — filter by obdEmailDate
+- `route` — filter by route name
+- `smu` — filter by smu value
+- `search` — ILIKE match on obdNumber or billToCustomerName
+
+#### GET /api/tint/manager/challans/[orderId] — behaviour
+- If no delivery_challans row → auto-create with generated challanNumber
+- Returns everything needed to render challan — no frontend joins
+
+#### PATCH /api/tint/manager/challans/[orderId] — body type
+```typescript
+{
+  transporter?: string
+  vehicleNo?: string
+  formulas?: { rawLineItemId: number; formula: string }[]
+  printedAt?: string
+  printedBy?: number
+}
+```
+- Validate: formula rawLineItemIds must have isTinting = true for this order
+- Upsert delivery_challan_formulas ON CONFLICT (challanId, rawLineItemId)
+
+### Screen layout
+
+LEFT PANEL (65%) — Order list
+- Search input: OBD no. or customer name
+- Filters: date | route | SMU type
+- Card shows: OBD No · Customer Name · OBD Date · SMU badge · Challan No (if exists)
+- Green left border = challan already generated
+- Navy left border + light bg = currently selected
+- Empty state when no orders match
+
+RIGHT PANEL (35%) — Challan preview
+- Action bar: Edit | Save | Print buttons + challan number badge
+- `<ChallanDocument />` component rendered below action bar
+- Edit mode: formula inputs + transporter + vehicleNo become active
+- Save: PATCH then refresh
+- Print: save if dirty → window.print()
+- Empty state: "Select an order to preview challan"
+
+### Print behaviour (@media print)
+Hide: sidebar, topbar, left panel, action bar, all UI chrome
+Show: challan document only, full page width
+Font size: 11px minimum for readability
+Inputs render as plain text (no dashed borders)
+
+### Tinting summary badge
+- Shown next to "Line Items" section label
+- Text: `Tinting Required — N lines` where N = count of isTinting = true rows
+- Only rendered when import_obd_query_summary.hasTinting = true
+- Style: amber background #fef3c7, border #f59e0b, text #78350f
+
+---
+
+## 25. Delivery Challan Screen — v1 (built, March 2026)
+
+### Route and auth
+- Page: `/app/(tint)/challan/page.tsx`
+- Route group: `/(tint)` — uses TM sidebar layout
+- Auth: `requireRole(session, [ROLES.TINT_MANAGER, ROLES.ADMIN])`
+- Nav entry: "Delivery Challans" in TM sidebar
+
+### Layout — 35/65 split
+- LEFT 35%: order list panel — search + 3 filter dropdowns (date, route, SMU)
+  - Fetches from `GET /api/tint/manager/challans` with query params
+  - Card: OBD No. · Customer Name · OBD Date · SMU badge · Challan No. (if exists)
+  - Green left border = challan already generated for this order
+  - Navy left border + light blue bg = currently selected
+- RIGHT 65%: challan preview panel
+  - Action bar: Edit button (toggle to Save) + Print button + challan number badge
+  - `<ChallanDocument />` rendered below action bar
+  - Empty state: "Select an order to preview challan"
+- Component files: `challan-content.tsx` (split panel) + `challan-document.tsx` (print document)
+
+### Challan document sections
+
+#### S1 Header (bg #0d47a1)
+Two-row layout:
+- Row 1: [Logo | "DELIVERY CHALLAN" title | Challan No.]
+  - Logo: `/public/akzonobel-logo.png`, 64px height, `filter: brightness(0) invert(1)` on screen
+  - Title: 16px, weight 400, `rgba(255,255,255,0.85)`, letter-spacing 0.35em
+  - Challan No.: right-aligned, label + value
+- Row 2: Address strip — `{companySubtitle} · {depotAddress}` centred, `rgba(255,255,255,0.5)`
+- Print override: white bg, `border-bottom: 3px solid #000`, logo `filter: none`, title black weight 600
+
+#### S2 Reference strip
+4 fields only: SMU Number | OBD No. | OBD Date | Warehouse
+- `smuNumber` is nullable — show "—" placeholder if null, never throw
+- Source: `import_raw_summary`
+- Print: `bg #f5f5f5`, `border-top: 1.5px solid #424242`, `border-bottom: 1px solid #9e9e9e`
+
+#### S3 Party grid (2 columns)
+Bill To column:
+- Name ← `import_raw_summary.billToCustomerName`
+- Address ← `delivery_point_master.address` (bill-to customer), formatted with `formatAddress()`
+- Customer Code ← `import_raw_summary.billToCustomerId`
+- Contact (Owner or Manager role) ← `delivery_point_contacts`
+
+Ship To column:
+- Name ← `import_raw_summary.shipToCustomerName`
+- Address ← `delivery_point_master.address` (ship-to customer), formatted with `formatAddress()`
+- Ship-to Code ← `import_raw_summary.shipToCustomerId`
+- Route · Area ← `delivery_point_master → route_master + area_master`
+- Sales Officer ← `sales_officer_master` via `salesOfficerGroupId → sales_officer_group`
+- Site contact (Site Engineer or Contractor role) ← `delivery_point_contacts`
+
+Address resolution note: if billToCode === shipToCode the API re-fetches once for the full ship-to record (with route/SO fields) rather than reusing the bill-to fetch that lacks those fields.
+
+#### S4 Line items table
+Columns: # | SKU Code | Description | Formula | Pack (articleTag) | Qty | Volume (L) | Tinting
+- Formula column: editable amber-bordered input ONLY on `isTinting = true` rows; `—` on others
+- Tinting column: `✓` badge for tinting rows
+- "Line Items" label + tinting summary badge: `Tinting Required — N lines` (amber, shown only if `hasTinting = true`)
+- Totals row: Total Qty | Total Volume | Gross Weight
+
+#### Footer (3 columns)
+- Left: terms text + Transporter field (editable) + Vehicle No. field (editable)
+- Centre: Dispatched By — signature block
+- Right: Receiver's Acknowledgement — signature block
+
+#### Bottom bar
+Registered office · website | GSTIN — all from `system_config`
+
+### Editable fields (3 total, toggle via Edit/Save button)
+| Field | Location | Saved to |
+|---|---|---|
+| Transporter | Footer left | `delivery_challans.transporter` |
+| Vehicle No. | Footer left | `delivery_challans.vehicleNo` |
+| Formula | Table, per tinting row | `delivery_challan_formulas.formula` |
+
+### Challan number generation
+- Server-side ONLY in `GET /api/tint/manager/challans/[orderId]`
+- Format: `CHN-{YEAR}-{MAX(id)+1 padded to 5 digits}`
+- Auto-created on first GET — `delivery_challans` row inserted if not yet exists
+- Never generated on client
+
+### Formula save flow
+- PATCH body: `{ formulas: [{ rawLineItemId, formula }] }`
+- API validates each `rawLineItemId` has `isTinting = true` for this order — rejects with 400 if not
+- Upsert: `delivery_challan_formulas` ON CONFLICT `(challanId, rawLineItemId)` DO UPDATE formula
+- Runs inside `prisma.$transaction` with the challan header update
+
+### Print approach (globals.css @media print)
+- `@page` rule is TOP-LEVEL in globals.css — never nest it inside `@media print`
+- Visibility pattern: `body * { visibility: hidden }` + `#challan-print-area * { visibility: visible }`
+  - Never use `display: none` on body children — it hides the print area too
+- All challan print rules prefixed with `#challan-print-area .ch-*`
+- `print-color-adjust: exact` and `-webkit-print-color-adjust: exact` on any bg-coloured element
+- Print delay: 500ms before `window.print()` to ensure React renders fully
+
+### Address formatting
+- Addresses entered in admin form via `<Textarea>` with Shift+Enter line breaks
+- Stored as free text with `\n` separators in `delivery_point_master.address` (TEXT column)
+- `formatAddress(address)`: `.split("\n").map(trim).filter(Boolean)` — newlines only, never commas
+- Each line rendered as `<span style={{ display: "block" }}>` inside the party box
+
+### Border hierarchy for print
+```
+Outer frame / section dividers:  1.5px solid #333
+Reference strip top border:       1.5px solid #424242
+Reference strip bottom border:    1px  solid #9e9e9e
+Party box / table outer borders:  1px  solid #546e7a
+Table cell inner lines:           1px  solid #bdbdbd
+```
+
+### Address field on delivery_point_master
+- Added `address TEXT` column via `add_address_to_delivery_point_master.sql`
+- Exposed in admin customer form as `<Textarea rows={3}>` — enters with Shift+Enter line breaks
+- Added to customers table view (truncated at 40 chars)
+- Mapped in all 4 role-specific customers pages (admin, dispatcher, support, tint/manager)
+- Exposed in both admin customer API routes (`createSchema` + `patchSchema`)
+
+### New files created in this phase
+```
+/app/(tint)/challan/page.tsx
+/app/api/tint/manager/challans/route.ts
+/app/api/tint/manager/challans/[orderId]/route.ts
+/components/tint/challan-content.tsx
+/components/tint/challan-document.tsx
+/components/ui/textarea.tsx                          — thin shadcn/ui-style wrapper (no new package)
+/prisma/migrations/v14_delivery_challans.sql
+/prisma/migrations/add_address_to_delivery_point_master.sql
+```
+
+---
+
+*Version: Phase 3 · Schema v14 · Config Master v2 · Operator Screen v4 · Challan v1 · March 2026*

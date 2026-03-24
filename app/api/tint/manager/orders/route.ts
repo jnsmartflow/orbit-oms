@@ -18,8 +18,8 @@ export async function GET(): Promise<NextResponse> {
     const now          = new Date();
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
 
-    // ── All four queries in parallel ──────────────────────────────────────────
-    const [activeOrders, completedTodayOrders, activeSplits, completedSplits] = await Promise.all([
+    // ── All five queries in parallel ──────────────────────────────────────────
+    const [activeOrders, completedTodayOrders, activeSplits, completedSplits, completedAssignments] = await Promise.all([
 
       // Set A — pending orders (Pending Assignment column)
       prisma.orders.findMany({
@@ -83,7 +83,7 @@ export async function GET(): Promise<NextResponse> {
           workflowStage: "pending_support",
           tintAssignments: {
             some: {
-              status:      "done",
+              status:      "tinting_done",
               completedAt: { gte: startOfToday },
             },
           },
@@ -104,7 +104,7 @@ export async function GET(): Promise<NextResponse> {
           },
           tintAssignments: {
             where: {
-              status:      "done",
+              status:      "tinting_done",
               completedAt: { gte: startOfToday },
             },
             include: { assignedTo: { select: { id: true, name: true } } },
@@ -187,6 +187,33 @@ export async function GET(): Promise<NextResponse> {
         },
         orderBy: { completedAt: "desc" },
       }),
+
+      // Set E — completed tint_assignments today (whole-OBD Completed column)
+      prisma.tint_assignments.findMany({
+        where: {
+          status:      "tinting_done",
+          completedAt: { gte: startOfToday },
+        },
+        include: {
+          order: {
+            include: {
+              customer: {
+                include: {
+                  area:              { select: { name: true } },
+                  salesOfficerGroup: {
+                    include: { salesOfficer: { select: { name: true } } },
+                  },
+                },
+              },
+              querySnapshot: {
+                select: { totalVolume: true, totalArticle: true, articleTag: true, totalLines: true },
+              },
+            },
+          },
+          assignedTo: { select: { id: true, name: true } },
+        },
+        orderBy: { completedAt: "desc" },
+      }),
     ]);
 
     const orders = [...activeOrders, ...completedTodayOrders];
@@ -196,6 +223,7 @@ export async function GET(): Promise<NextResponse> {
       ...orders.map((o) => o.obdNumber),
       ...activeSplits.map((s) => s.order.obdNumber),
       ...completedSplits.map((s) => s.order.obdNumber),
+      ...completedAssignments.map((a) => a.order.obdNumber),
     ]));
 
     const rawSummaries = allObdNumbers.length > 0
@@ -311,10 +339,18 @@ export async function GET(): Promise<NextResponse> {
       obdEmailTime: obdDateMap.get(s.order.obdNumber)?.time ?? null,
     }));
 
+    const completedAssignmentsWithSmu = completedAssignments.map((a) => ({
+      ...a,
+      smu:          smuMap.get(a.order.obdNumber) ?? null,
+      obdEmailDate: obdDateMap.get(a.order.obdNumber)?.date ?? null,
+      obdEmailTime: obdDateMap.get(a.order.obdNumber)?.time ?? null,
+    }));
+
     return NextResponse.json({
-      orders:          ordersWithLines,
-      activeSplits:    activeSplitsWithSmu,
-      completedSplits: completedSplitsWithSmu,
+      orders:               ordersWithLines,
+      activeSplits:         activeSplitsWithSmu,
+      completedSplits:      completedSplitsWithSmu,
+      completedAssignments: completedAssignmentsWithSmu,
     });
 
   } catch (err) {

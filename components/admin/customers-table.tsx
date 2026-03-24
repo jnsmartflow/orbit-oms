@@ -14,6 +14,7 @@ import {
   CustomerSheet,
   type AreaOption, type SubAreaOption, type SalesOfficerOption,
   type RouteOption, type DeliveryTypeOption, type SOGroupOption, type ContactRoleOption,
+  type CustomerTypeOption, type PremisesTypeOption,
   type CustomerFull,
 } from "./customer-sheet";
 
@@ -22,6 +23,7 @@ interface CustomerRow {
   id:                 number;
   customerCode:       string;
   customerName:       string;
+  address:            string | null;
   area:               { id: number; name: string };
   subArea:            { id: number; name: string } | null;
   salesOfficerGroup:  { id: number; name: string } | null;
@@ -53,12 +55,14 @@ interface CustomersTableProps {
   deliveryTypes:    DeliveryTypeOption[];
   soGroups:         SOGroupOption[];
   contactRoles:     ContactRoleOption[];
+  customerTypes:    CustomerTypeOption[];
+  premisesTypes:    PremisesTypeOption[];
   canEdit?:         boolean;
   canImport?:       boolean;
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
-export function CustomersTable({ initialCustomers, initialTotal, areas, subAreas, salesOfficers, routes, deliveryTypes, soGroups, contactRoles, canEdit = true, canImport = true }: CustomersTableProps) {
+export function CustomersTable({ initialCustomers, initialTotal, areas, subAreas, salesOfficers, routes, deliveryTypes, soGroups, contactRoles, customerTypes, premisesTypes, canEdit = true, canImport = true }: CustomersTableProps) {
   const [customers, setCustomers] = useState<CustomerRow[]>(initialCustomers);
   const [total, setTotal] = useState(initialTotal);
   const [totalPages, setTotalPages] = useState(Math.ceil(initialTotal / 25));
@@ -275,6 +279,7 @@ export function CustomersTable({ initialCustomers, initialTotal, areas, subAreas
             <TableRow>
               <TableHead>Code</TableHead>
               <TableHead>Customer Name</TableHead>
+              <TableHead>Address</TableHead>
               <TableHead>Area</TableHead>
               <TableHead>Sub-area</TableHead>
               <TableHead>SO Group</TableHead>
@@ -288,7 +293,7 @@ export function CustomersTable({ initialCustomers, initialTotal, areas, subAreas
           <TableBody>
             {customers.length === 0 && (
               <TableRow>
-                <TableCell colSpan={10} className="text-center text-slate-500 py-8">
+                <TableCell colSpan={11} className="text-center text-slate-500 py-8">
                   {loading ? "Loading…" : "No customers found."}
                 </TableCell>
               </TableRow>
@@ -297,6 +302,13 @@ export function CustomersTable({ initialCustomers, initialTotal, areas, subAreas
               <TableRow key={c.id}>
                 <TableCell className="font-mono text-sm text-slate-600">{c.customerCode}</TableCell>
                 <TableCell className="font-medium">{c.customerName}</TableCell>
+                <TableCell className="text-slate-500 text-sm max-w-[180px]">
+                  {c.address
+                    ? c.address.length > 40
+                      ? <span title={c.address}>{c.address.slice(0, 40)}…</span>
+                      : c.address
+                    : <span className="text-slate-300">—</span>}
+                </TableCell>
                 <TableCell className="text-slate-600">{c.area?.name ?? "—"}</TableCell>
                 <TableCell className="text-slate-500">{c.subArea?.name ?? "—"}</TableCell>
                 <TableCell className="text-slate-600 text-sm">
@@ -401,6 +413,8 @@ export function CustomersTable({ initialCustomers, initialTotal, areas, subAreas
         deliveryTypes={deliveryTypes}
         soGroups={soGroups}
         contactRoles={contactRoles}
+        customerTypes={customerTypes}
+        premisesTypes={premisesTypes}
         onSaved={handleSaved}
       />
 

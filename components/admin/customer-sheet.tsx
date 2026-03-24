@@ -6,6 +6,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
@@ -18,6 +19,8 @@ export interface RouteOption        { id: number; name: string }
 export interface DeliveryTypeOption { id: number; name: string }
 export interface SOGroupOption      { id: number; name: string; salesOfficer: { name: string } }
 export interface ContactRoleOption  { id: number; name: string }
+export interface CustomerTypeOption { id: number; name: string }
+export interface PremisesTypeOption { id: number; name: string }
 
 export interface ContactDraft {
   _key:          string;
@@ -33,12 +36,16 @@ export interface CustomerFull {
   id:                    number;
   customerCode:          string;
   customerName:          string;
+  address:               string | null;
   areaId:                number;
   subAreaId:             number | null;
   salesOfficerId:        number | null;
   primaryRouteId:        number | null;
-  deliveryTypeOverrideId: number | null;
-  salesOfficerGroupId:   number | null;
+  dispatchDeliveryTypeId:  number | null;
+  reportingDeliveryTypeId: number | null;
+  customerTypeId:          number | null;
+  premisesTypeId:          number | null;
+  salesOfficerGroupId:     number | null;
   customerRating:        string | null;
   latitude:              number | null;
   longitude:             number | null;
@@ -70,6 +77,8 @@ interface CustomerSheetProps {
   deliveryTypes:  DeliveryTypeOption[];
   soGroups:       SOGroupOption[];
   contactRoles:   ContactRoleOption[];
+  customerTypes:  CustomerTypeOption[];
+  premisesTypes:  PremisesTypeOption[];
   onSaved:        (customer: CustomerFull) => void;
 }
 
@@ -91,12 +100,16 @@ function buildInitialForm(editing: CustomerFull | null) {
     return {
       customerCode:          "",
       customerName:          "",
+      address:               "",
       areaId:                "",
       subAreaId:             "",
       salesOfficerId:        "",
       primaryRouteId:        "",
-      deliveryTypeOverrideId: "",
-      salesOfficerGroupId:   "",
+      dispatchDeliveryTypeId:  "",
+      reportingDeliveryTypeId: "",
+      customerTypeId:          "",
+      premisesTypeId:          "",
+      salesOfficerGroupId:     "",
       customerRating:        "",
       latitude:              "",
       longitude:             "",
@@ -113,12 +126,16 @@ function buildInitialForm(editing: CustomerFull | null) {
   return {
     customerCode:          editing.customerCode,
     customerName:          editing.customerName,
+    address:               editing.address ?? "",
     areaId:                editing.areaId.toString(),
     subAreaId:             editing.subAreaId?.toString() ?? "",
     salesOfficerId:        editing.salesOfficerId?.toString() ?? "",
     primaryRouteId:        editing.primaryRouteId?.toString() ?? "",
-    deliveryTypeOverrideId: editing.deliveryTypeOverrideId?.toString() ?? "",
-    salesOfficerGroupId:   editing.salesOfficerGroupId?.toString() ?? "",
+    dispatchDeliveryTypeId:  editing.dispatchDeliveryTypeId?.toString()  ?? "",
+    reportingDeliveryTypeId: editing.reportingDeliveryTypeId?.toString() ?? "",
+    customerTypeId:          editing.customerTypeId?.toString()          ?? "",
+    premisesTypeId:          editing.premisesTypeId?.toString()          ?? "",
+    salesOfficerGroupId:     editing.salesOfficerGroupId?.toString()     ?? "",
     customerRating:        editing.customerRating ?? "",
     latitude:              editing.latitude?.toString() ?? "",
     longitude:             editing.longitude?.toString() ?? "",
@@ -146,6 +163,7 @@ export function CustomerSheet({
   open, onOpenChange, editing,
   areas, subAreas, salesOfficers,
   routes, deliveryTypes, soGroups, contactRoles,
+  customerTypes, premisesTypes,
   onSaved,
 }: CustomerSheetProps) {
   const [form, setForm] = useState(() => buildInitialForm(editing));
@@ -223,12 +241,16 @@ export function CustomerSheet({
     const body = {
       customerCode:           form.customerCode.trim().toUpperCase(),
       customerName:           form.customerName.trim(),
+      address:                form.address.trim() || null,
       areaId:                 parseInt(form.areaId, 10),
       subAreaId:              form.subAreaId             ? parseInt(form.subAreaId, 10)              : null,
       salesOfficerId:         form.salesOfficerId        ? parseInt(form.salesOfficerId, 10)         : null,
       primaryRouteId:         form.primaryRouteId        ? parseInt(form.primaryRouteId, 10)         : null,
-      deliveryTypeOverrideId: form.deliveryTypeOverrideId ? parseInt(form.deliveryTypeOverrideId, 10) : null,
-      salesOfficerGroupId:    form.salesOfficerGroupId   ? parseInt(form.salesOfficerGroupId, 10)   : null,
+      dispatchDeliveryTypeId:  form.dispatchDeliveryTypeId  ? parseInt(form.dispatchDeliveryTypeId, 10)  : null,
+      reportingDeliveryTypeId: form.reportingDeliveryTypeId ? parseInt(form.reportingDeliveryTypeId, 10) : null,
+      customerTypeId:          form.customerTypeId          ? parseInt(form.customerTypeId, 10)          : null,
+      premisesTypeId:          form.premisesTypeId          ? parseInt(form.premisesTypeId, 10)          : null,
+      salesOfficerGroupId:     form.salesOfficerGroupId     ? parseInt(form.salesOfficerGroupId, 10)     : null,
       customerRating:         form.customerRating || null,
       latitude:               form.latitude  ? parseFloat(form.latitude)  : null,
       longitude:              form.longitude ? parseFloat(form.longitude) : null,
@@ -301,6 +323,16 @@ export function CustomerSheet({
                 {fieldErrors.customerName && <p className="text-xs text-destructive">{fieldErrors.customerName}</p>}
               </div>
             </div>
+            <div className="space-y-1.5 mt-4">
+              <Label htmlFor="c-address">Address</Label>
+              <Textarea
+                id="c-address"
+                rows={3}
+                value={form.address}
+                onChange={(e) => setField("address", e.target.value)}
+                placeholder={"Enter address with line breaks e.g.\nShop No. 12, Varacha Main Road\nNear Hirabaug Circle\nSurat - 395006, Gujarat"}
+              />
+            </div>
           </div>
 
           <div className="oa-sheet-divider" />
@@ -360,8 +392,8 @@ export function CustomerSheet({
               <div className="space-y-1.5">
                 <Label>Delivery Type Override</Label>
                 <Select
-                  value={form.deliveryTypeOverrideId}
-                  onValueChange={(v) => setField("deliveryTypeOverrideId", !v || v === "none" ? "" : v)}
+                  value={form.dispatchDeliveryTypeId}
+                  onValueChange={(v) => setField("dispatchDeliveryTypeId", !v || v === "none" ? "" : v)}
                 >
                   <SelectTrigger><SelectValue placeholder="Use area default" /></SelectTrigger>
                   <SelectContent>

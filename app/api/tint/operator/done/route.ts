@@ -50,6 +50,38 @@ export async function POST(req: Request): Promise<NextResponse> {
       return NextResponse.json({ error: "No active assignment found for this order" }, { status: 403 })
     }
 
+    // TI completion gate — all isTinting lines must have at least one TI entry
+    const isTintingRawLines = await prisma.import_raw_line_items.findMany({
+      where: { obdNumber: order.obdNumber, isTinting: true },
+      select: { id: true, skuCodeRaw: true, skuDescriptionRaw: true },
+    });
+    if (isTintingRawLines.length > 0) {
+      const [entriesA, entriesB] = await Promise.all([
+        prisma.tinter_issue_entries.findMany({
+          where: { tintAssignmentId: activeAssignment.id, rawLineItemId: { not: null } },
+          select: { rawLineItemId: true },
+        }),
+        prisma.tinter_issue_entries_b.findMany({
+          where: { tintAssignmentId: activeAssignment.id, rawLineItemId: { not: null } },
+          select: { rawLineItemId: true },
+        }),
+      ]);
+      const covered = new Set<number>([
+        ...entriesA.map(e => e.rawLineItemId!),
+        ...entriesB.map(e => e.rawLineItemId!),
+      ]);
+      const missingLines = isTintingRawLines
+        .filter(l => !covered.has(l.id))
+        .map(l => ({ rawLineItemId: l.id, skuCodeRaw: l.skuCodeRaw, skuDescriptionRaw: l.skuDescriptionRaw }));
+      if (missingLines.length > 0) {
+        return NextResponse.json({
+          error:        "TI incomplete",
+          message:      "Tinter Issue entries are missing for some SKU lines. Please complete all entries before marking done.",
+          missingLines,
+        }, { status: 400 });
+      }
+    }
+
     // 3. Update tint_assignments
     await prisma.tint_assignments.update({
       where: { id: activeAssignment.id },

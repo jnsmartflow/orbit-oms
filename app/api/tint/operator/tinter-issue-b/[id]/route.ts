@@ -7,7 +7,7 @@ import { PackCode } from "@prisma/client";
 export const dynamic = "force-dynamic";
 
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: { id: string } },
 ): Promise<NextResponse> {
   const session = await auth();
@@ -21,7 +21,7 @@ export async function GET(
     return NextResponse.json({ error: "Invalid id" }, { status: 400 });
   }
 
-  const { searchParams } = new URL(_req.url);
+  const { searchParams } = new URL(req.url);
   const type = searchParams.get("type");
 
   if (type !== "split" && type !== "assignment") {
@@ -31,28 +31,29 @@ export async function GET(
     );
   }
 
-  // Step 2 — Query tinter_issue_entries
-  const entries = await prisma.tinter_issue_entries.findMany({
+  // Step 2 — Query tinter_issue_entries_b
+  const entries = await prisma.tinter_issue_entries_b.findMany({
     where: type === "split" ? { splitId: id } : { tintAssignmentId: id },
     select: {
       id:           true,
       rawLineItemId: true,
-      packCode:     true,
       baseSku:      true,
       tinQty:       true,
-      YOX:          true,
-      LFY:          true,
-      GRN:          true,
-      TBL:          true,
-      WHT:          true,
-      MAG:          true,
-      FFR:          true,
-      BLK:          true,
-      OXR:          true,
-      HEY:          true,
-      HER:          true,
-      COB:          true,
-      COG:          true,
+      packCode:     true,
+      YE2:          true,
+      YE1:          true,
+      XY1:          true,
+      XR1:          true,
+      WH1:          true,
+      RE2:          true,
+      RE1:          true,
+      OR1:          true,
+      NO2:          true,
+      NO1:          true,
+      MA1:          true,
+      GR1:          true,
+      BU2:          true,
+      BU1:          true,
       createdAt:    true,
     },
     orderBy: { createdAt: "asc" },
@@ -83,7 +84,7 @@ export async function PATCH(
 
   const userId = parseInt(session!.user.id, 10);
 
-  const entry = await prisma.tinter_issue_entries.findUnique({ where: { id: entryId } });
+  const entry = await prisma.tinter_issue_entries_b.findUnique({ where: { id: entryId } });
   if (!entry) return NextResponse.json({ error: "Entry not found" }, { status: 404 });
 
   let stageOk = false;
@@ -108,7 +109,7 @@ export async function PATCH(
 
   const {
     baseSku, tinQty, packCode: packCodeRaw, rawLineItemId,
-    YOX, LFY, GRN, TBL, WHT, MAG, FFR, BLK, OXR, HEY, HER, COB, COG,
+    YE2, YE1, XY1, XR1, WH1, RE2, RE1, OR1, NO2, NO1, MA1, GR1, BU2, BU1,
   } = body as Record<string, unknown>;
 
   if (!baseSku || typeof baseSku !== "string") {
@@ -118,18 +119,18 @@ export async function PATCH(
     return NextResponse.json({ error: "Invalid packCode" }, { status: 400 });
   }
 
-  const updated = await prisma.tinter_issue_entries.update({
+  const updated = await prisma.tinter_issue_entries_b.update({
     where: { id: entryId },
     data: {
       baseSku:       String(baseSku).trim(),
       tinQty:        Number(tinQty ?? 0),
       packCode:      (packCodeRaw ?? null) as PackCode | null,
       rawLineItemId: rawLineItemId != null ? Number(rawLineItemId) : entry.rawLineItemId,
-      YOX: Number(YOX ?? 0), LFY: Number(LFY ?? 0), GRN: Number(GRN ?? 0),
-      TBL: Number(TBL ?? 0), WHT: Number(WHT ?? 0), MAG: Number(MAG ?? 0),
-      FFR: Number(FFR ?? 0), BLK: Number(BLK ?? 0), OXR: Number(OXR ?? 0),
-      HEY: Number(HEY ?? 0), HER: Number(HER ?? 0), COB: Number(COB ?? 0),
-      COG: Number(COG ?? 0),
+      YE2: Number(YE2 ?? 0), YE1: Number(YE1 ?? 0), XY1: Number(XY1 ?? 0),
+      XR1: Number(XR1 ?? 0), WH1: Number(WH1 ?? 0), RE2: Number(RE2 ?? 0),
+      RE1: Number(RE1 ?? 0), OR1: Number(OR1 ?? 0), NO2: Number(NO2 ?? 0),
+      NO1: Number(NO1 ?? 0), MA1: Number(MA1 ?? 0), GR1: Number(GR1 ?? 0),
+      BU2: Number(BU2 ?? 0), BU1: Number(BU1 ?? 0),
     },
   });
 

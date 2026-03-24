@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Delivery Challan — Final Mock v5</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: #d0d4db;
+  font-family: 'Inter', Arial, sans-serif;
+  padding: 40px 16px;
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+}
+.page-label {
+  font-size: 10px; font-weight: 600; color: #7a828f;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  align-self: flex-start; margin-left: calc(50% - 385px);
+}
+
+/* ═══════════════════════════════════════════════
+   CHALLAN WRAPPER
+   border encloses ALL sections including footer
+   ═══════════════════════════════════════════════ */
+.challan {
+  width: 770px;
+  background: #fff;
+  box-shadow: 0 6px 32px rgba(0,0,0,0.18);
+  display: flex;
+  flex-direction: column;
+  font-family: 'Inter', Arial, sans-serif;
+  font-size: 11px;
+  color: #111;
+  border: 1.5px solid #333;
+  overflow: hidden; /* ensures border wraps all children */
+}
+
+/* ═══════════════════════════════════════════════
+   S1 — HEADER (navy on screen)
+   ═══════════════════════════════════════════════ */
+.ch-header {
+  background: #1a237e;
+  padding: 16px 24px;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+.ch-hdr-left {
+  flex: 1; min-width: 0;
+  display: flex; flex-direction: column; gap: 3px;
+}
+.ch-hdr-company {
+  font-size: 15px; font-weight: 800; color: #fff;
+  letter-spacing: -0.01em; line-height: 1;
+}
+.ch-hdr-tagline {
+  font-size: 8.5px; color: rgba(255,255,255,0.55);
+  letter-spacing: 0.03em; margin-top: 2px;
+}
+.ch-hdr-center {
+  flex: 1.2; text-align: center;
+}
+.ch-hdr-title {
+  font-size: 21px; font-weight: 800; color: #fff;
+  letter-spacing: 0.18em; text-transform: uppercase; line-height: 1.1;
+}
+.ch-hdr-copy {
+  font-size: 7.5px; color: rgba(255,255,255,0.45);
+  letter-spacing: 0.14em; text-transform: uppercase; margin-top: 4px;
+}
+.ch-hdr-right {
+  flex: 0.9; text-align: right;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 4px;
+}
+.ch-hdr-no-lbl {
+  font-size: 7.5px; color: rgba(255,255,255,0.55);
+  letter-spacing: 0.1em; text-transform: uppercase; font-weight: 600;
+}
+.ch-hdr-no-val {
+  font-size: 13px; font-weight: 700; color: #fff; letter-spacing: 0.02em;
+}
+
+/* ═══════════════════════════════════════════════
+   S2 — REFERENCE STRIP (3 equal columns)
+   ═══════════════════════════════════════════════ */
+.ch-ref {
+  background: #f5f5f5;
+  border-bottom: 2px solid #1a237e;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr; /* equal thirds */
+  flex-shrink: 0;
+}
+.ch-ref-item {
+  padding: 8px 20px;
+  display: flex; flex-direction: column; gap: 3px;
+}
+.ch-ref-item + .ch-ref-item { border-left: 1px solid #ccc; }
+.ch-ref-lbl {
+  font-size: 7.5px; font-weight: 700; color: #666;
+  letter-spacing: 0.1em; text-transform: uppercase;
+}
+.ch-ref-val { font-size: 12px; font-weight: 600; color: #111; }
+.ch-ref-val.muted {
+  color: #999; font-style: italic; font-weight: 400; font-size: 11px;
+}
+
+/* ═══════════════════════════════════════════════
+   S3 — PARTY SECTION (flush, full width)
+   Order: Code → Name → Address → Contact strip
+   ═══════════════════════════════════════════════ */
+.ch-party {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  flex-shrink: 0;
+  border-bottom: 1px solid #dde3f0;
+}
+.ch-party-box {
+  background: #f8faff;
+  display: flex; flex-direction: column;
+}
+.ch-party-box:last-child { border-left: 1px solid #dde3f0; }
+
+.ch-party-hdr {
+  background: #eef1fb;
+  border-bottom: 1px solid #dde3f0;
+  padding: 5px 16px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.ch-party-hdr-lbl {
+  font-size: 8px; font-weight: 800; color: #1a237e;
+  letter-spacing: 0.14em; text-transform: uppercase;
+}
+.ch-party-hdr-meta { font-size: 8px; color: #7c8db5; }
+
+.ch-party-bdy {
+  padding: 10px 16px 0;
+  flex: 1; display: flex; flex-direction: column; gap: 0;
+}
+
+/* Code block — first */
+.ch-party-code-block {
+  display: flex; flex-direction: column; gap: 1px;
+  margin-bottom: 8px;
+}
+.ch-code-lbl {
+  font-size: 7px; font-weight: 700; color: #94a3b8;
+  text-transform: uppercase; letter-spacing: 0.08em;
+}
+.ch-code-val {
+  font-size: 11px; font-weight: 600; color: #1a237e;
+  font-family: 'Courier New', monospace;
+}
+
+/* Name — second */
+.ch-party-name {
+  font-size: 13px; font-weight: 700; color: #1e293b;
+  line-height: 1.3; margin-bottom: 4px;
+}
+
+/* Address — third */
+.ch-party-addr {
+  font-size: 10px; color: #475569; line-height: 1.65;
+  padding-bottom: 10px;
+}
+
+/* Contact strip — always rendered, at bottom of box */
+.ch-contact-strip {
+  border-top: 1px solid #dde3f0;
+  background: #eef1fb;
+  display: grid;
+  margin-top: auto;
+}
+.ch-contact-strip.cols-1 { grid-template-columns: 1fr; }
+.ch-contact-strip.cols-2 { grid-template-columns: 1fr 1fr; }
+.ch-contact-cell {
+  padding: 6px 16px;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.ch-contact-cell + .ch-contact-cell { border-left: 1px dashed #dde3f0; }
+.ch-contact-role {
+  font-size: 7px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.1em;
+}
+.role-cust { color: #1565c0; }
+.role-so   { color: #2e7d32; }
+.role-site { color: #6a1b9a; }
+.ch-contact-name  { font-size: 10.5px; font-weight: 600; color: #1e293b; }
+.ch-contact-phone { font-size: 10px; color: #475569; font-family: 'Courier New', monospace; }
+/* empty contact placeholder */
+.ch-contact-empty {
+  height: 13px; border-bottom: 1px solid #e2e8f0;
+  display: inline-block; min-width: 80px;
+}
+
+/* ═══════════════════════════════════════════════
+   S4 — LINE ITEMS TABLE (full width, flush)
+   ═══════════════════════════════════════════════ */
+.ch-table-wrap { padding: 10px 0 0; flex: 1; }
+.ch-table-lbl {
+  font-size: 8px; font-weight: 700; color: #94a3b8;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  margin-bottom: 5px; padding: 0 16px;
+}
+.ch-table {
+  width: 100%;
+  border-collapse: collapse;
+  border-top: 1px solid #dde3ed;
+  border-bottom: 1px solid #dde3ed;
+}
+.ch-table thead tr { background: #1a237e; }
+.ch-table thead th {
+  padding: 8px 10px;
+  font-size: 9px; font-weight: 700;
+  color: #fff; text-transform: uppercase;
+  letter-spacing: 0.08em; text-align: left; white-space: nowrap;
+}
+.ch-table thead th:first-child { padding-left: 16px; }
+.ch-table thead th:last-child  { padding-right: 16px; }
+.ch-table thead th.tc { text-align: center; }
+.ch-table thead th.tr { text-align: right; }
+
+.ch-table tbody tr:nth-child(odd)  { background: #fff; }
+.ch-table tbody tr:nth-child(even) { background: #f8f9fc; }
+.ch-table tbody td {
+  padding: 9px 10px;
+  border-bottom: 1px solid #eef1f7;
+  font-size: 11px; color: #334155;
+  vertical-align: middle;
+  font-family: 'Inter', Arial, sans-serif; /* consistent font */
+}
+.ch-table tbody td:first-child { padding-left: 16px; }
+.ch-table tbody td:last-child  { padding-right: 16px; }
+.ch-table tbody td.sr   { text-align: center; color: #94a3b8; font-size: 10px; width: 32px; }
+.ch-table tbody td.sku  { font-size: 10px; color: #334155; width: 90px; } /* same font as body */
+.ch-table tbody td.desc { font-weight: 500; color: #1e293b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
+.ch-table tbody td.formula { font-size: 10.5px; color: #1a237e; font-weight: 500; width: 110px; }
+.ch-table tbody td.formula-empty { color: #cbd5e1; text-align: center; }
+.ch-table tbody td.tc { text-align: center; }
+.ch-table tbody td.tr { text-align: right; }
+.ch-table tbody td.tint-yes { text-align: center; font-weight: 600; font-size: 10px; color: #78350f; }
+.ch-table tbody td.tint-no  { text-align: center; color: #cbd5e1; }
+.ch-table tbody tr.blank td { height: 28px; border-bottom: 1px solid #f5f7fb; }
+
+.ch-table tfoot tr { background: #eef1f9; }
+.ch-table tfoot td {
+  padding: 9px 10px;
+  border-top: 2px solid #1a237e;
+  font-size: 12px; font-weight: 700; color: #1e293b;
+}
+.ch-table tfoot td:first-child { padding-left: 16px; }
+.ch-table tfoot td:last-child  { padding-right: 16px; }
+.ch-table tfoot td.totals-lbl {
+  font-size: 8.5px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.1em;
+  color: #64748b; text-align: right;
+}
+
+/* ═══════════════════════════════════════════════
+   S5 — FOOTER (always at bottom)
+   ═══════════════════════════════════════════════ */
+.ch-footer {
+  background: #f8f9fb;
+  border-top: 1px solid #dde3ed;
+  padding: 14px 24px;
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr;
+  gap: 20px;
+  flex-shrink: 0;
+}
+.ch-footer-col { display: flex; flex-direction: column; gap: 5px; }
+.ch-footer-lbl {
+  font-size: 7.5px; font-weight: 700; color: #7c8db5;
+  letter-spacing: 0.12em; text-transform: uppercase;
+}
+.ch-footer-terms { font-size: 9px; color: #64748b; line-height: 1.65; }
+.ch-footer-spacer { flex: 1; min-height: 20px; }
+.ch-dispatch-row {
+  display: flex; gap: 20px;
+  margin-top: 8px; padding-top: 8px;
+  border-top: 1px dashed #e2e8f0;
+}
+.ch-dispatch-field { display: flex; flex-direction: column; gap: 3px; }
+.ch-dispatch-lbl {
+  font-size: 7.5px; font-weight: 700; color: #94a3b8;
+  letter-spacing: 0.1em; text-transform: uppercase;
+}
+.ch-dispatch-val {
+  font-size: 11px; color: #64748b;
+  border-bottom: 1.5px dashed #94a3b8;
+  padding-bottom: 2px; min-width: 90px;
+}
+.ch-sig-line { height: 1px; background: #334155; margin-top: 24px; }
+.ch-sig-sub  { font-size: 7.5px; color: #94a3b8; margin-top: 3px; }
+.ch-footer-col.center { align-items: center; }
+.ch-footer-col.right  { align-items: flex-end; }
+
+/* ═══════════════════════════════════════════════
+   S6 — BOTTOM BAR (navy on screen)
+   ═══════════════════════════════════════════════ */
+.ch-btm {
+  background: #1a237e;
+  padding: 5px 24px;
+  display: flex; justify-content: space-between; align-items: center;
+  flex-shrink: 0;
+}
+.ch-btm-txt   { font-size: 7px; color: rgba(255,255,255,0.45); letter-spacing: 0.03em; }
+.ch-btm-gstin { font-size: 7px; color: rgba(255,255,255,0.65); font-weight: 600; letter-spacing: 0.06em; }
+
+/* ═══════════════════════════════════════════════
+   @media print — OPTION 4
+   Screen = navy theme
+   Print = white + black text + borders only
+   No background graphics dependency
+   ═══════════════════════════════════════════════ */
+@page { size: A4 portrait; margin: 10mm; }
+
+@media print {
+  body { background: #fff; padding: 0; }
+  .page-label { display: none; }
+  .challan { box-shadow: none; width: 100%; min-height: auto; border: 1.5px solid #333; }
+
+  /* Header — white bg, thick black bottom border */
+  .ch-header { background: #fff !important; border-bottom: 3px solid #000 !important; padding: 12px 20px !important; }
+  .ch-hdr-company { color: #000 !important; font-size: 13px !important; }
+  .ch-hdr-tagline { color: #444 !important; }
+  .ch-hdr-title   { color: #000 !important; font-size: 18px !important; }
+  .ch-hdr-copy    { color: #555 !important; }
+  .ch-hdr-no-lbl  { color: #555 !important; }
+  .ch-hdr-no-val  { color: #000 !important; }
+
+  /* Reference strip */
+  .ch-ref {
+    background: #f0f0f0 !important;
+    border-bottom: 2px solid #000 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  .ch-ref-item + .ch-ref-item { border-left: 1px solid #aaa !important; }
+  .ch-ref-lbl              { color: #555 !important; }
+  .ch-ref-val              { color: #000 !important; }
+  .ch-ref-val.muted        { color: #888 !important; }
+
+  /* Party boxes */
+  .ch-party { border-bottom: 1px solid #999 !important; }
+  .ch-party-box {
+    background: #f5f5f5 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  .ch-party-box:last-child { border-left-color: #999 !important; }
+  .ch-party-hdr {
+    background: #e5e5e5 !important;
+    border-bottom-color: #999 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  .ch-party-hdr-lbl  { color: #000 !important; }
+  .ch-party-hdr-meta { color: #555 !important; }
+  .ch-code-lbl       { color: #777 !important; }
+  .ch-code-val       { color: #000 !important; }
+  .ch-party-name     { color: #000 !important; }
+  .ch-party-addr     { color: #333 !important; }
+  .ch-contact-strip {
+    background: #ebebeb !important;
+    border-top-color: #999 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  .ch-contact-role, .role-cust, .role-so, .role-site { color: #333 !important; }
+  .ch-contact-name  { color: #000 !important; }
+  .ch-contact-phone { color: #222 !important; }
+
+  /* Table */
+  .ch-table { border-top: 1px solid #888 !important; border-bottom: 1px solid #888 !important; }
+  .ch-table thead tr {
+    background: #222 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  .ch-table thead th {
+    color: #fff !important;
+    background: #222 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  .ch-table tbody tr:nth-child(even) td {
+    background: #f3f3f3 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  .ch-table tbody td         { color: #111 !important; border-bottom-color: #ddd !important; }
+  .ch-table tbody td.formula { color: #000 !important; font-style: italic !important; }
+  .ch-table tbody td.tint-yes { color: #000 !important; font-weight: 700 !important; }
+  .ch-table tfoot tr {
+    background: #e8e8e8 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  .ch-table tfoot td          { border-top: 2px solid #000 !important; color: #000 !important; }
+  .ch-table tfoot td.totals-lbl { color: #444 !important; }
+
+  /* Footer */
+  .ch-footer {
+    background: #f2f2f2 !important;
+    border-top: 1px solid #888 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  .ch-footer-lbl   { color: #333 !important; }
+  .ch-footer-terms { color: #222 !important; }
+  .ch-dispatch-lbl { color: #444 !important; }
+  .ch-dispatch-val { color: #000 !important; border-bottom: 1px solid #555 !important; border-style: solid !important; }
+  .ch-sig-line { background: #000 !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+  .ch-sig-sub  { color: #444 !important; }
+
+  /* Bottom bar — white with border */
+  .ch-btm {
+    background: #fff !important;
+    border-top: 1px solid #888 !important;
+  }
+  .ch-btm-txt   { color: #555 !important; }
+  .ch-btm-gstin { color: #111 !important; font-weight: 700 !important; }
+}
+</style>
+</head>
+<body>
+
+<div class="page-label">OrbitOMS · Delivery Challan · Final Mock v5 — approved design reference</div>
+
+<div class="challan">
+
+  <!-- S1: HEADER -->
+  <div class="ch-header">
+    <div class="ch-hdr-left">
+      <div class="ch-hdr-company">AkzoNobel India Limited</div>
+      <div class="ch-hdr-tagline">Decorative Paints &nbsp;·&nbsp; Surat Depot, Shiv Logistics Park, Kosmada, Gujarat 395006</div>
+    </div>
+    <div class="ch-hdr-center">
+      <div class="ch-hdr-title">Delivery Challan</div>
+      <div class="ch-hdr-copy">Original Copy</div>
+    </div>
+    <div class="ch-hdr-right">
+      <div class="ch-hdr-no-lbl">Challan No.</div>
+      <div class="ch-hdr-no-val">CHN-2026-00041</div>
+    </div>
+  </div>
+
+  <!-- S2: REFERENCE STRIP — 3 equal columns -->
+  <div class="ch-ref">
+    <div class="ch-ref-item">
+      <div class="ch-ref-lbl">SMU Number</div>
+      <div class="ch-ref-val muted">— pending import update</div>
+    </div>
+    <div class="ch-ref-item">
+      <div class="ch-ref-lbl">OBD No.</div>
+      <div class="ch-ref-val">9105790231</div>
+    </div>
+    <div class="ch-ref-item">
+      <div class="ch-ref-lbl">Warehouse</div>
+      <div class="ch-ref-val">Surat Depot</div>
+    </div>
+  </div>
+
+  <!-- S3: PARTY SECTION — Code → Name → Address → Contact -->
+  <div class="ch-party">
+
+    <!-- BILL TO -->
+    <div class="ch-party-box">
+      <div class="ch-party-hdr">
+        <span class="ch-party-hdr-lbl">Bill To</span>
+      </div>
+      <div class="ch-party-bdy">
+        <div class="ch-party-code-block">
+          <div class="ch-code-lbl">Customer Code</div>
+          <div class="ch-code-val">3495259</div>
+        </div>
+        <div class="ch-party-name">Aai Shree Khodiyar Hardware &amp; Paint</div>
+        <div class="ch-party-addr">
+          Shop No. 12, Varacha Main Road<br/>
+          Near Hirabaug Circle, Varacha<br/>
+          Surat – 395006, Gujarat
+        </div>
+      </div>
+      <div class="ch-contact-strip cols-1">
+        <div class="ch-contact-cell">
+          <div class="ch-contact-role role-cust">Customer</div>
+          <div class="ch-contact-name">Ramesh Bhai (Owner)</div>
+          <div class="ch-contact-phone">9586812511</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SHIP TO -->
+    <div class="ch-party-box">
+      <div class="ch-party-hdr">
+        <span class="ch-party-hdr-lbl">Ship To</span>
+        <span class="ch-party-hdr-meta">Varacha &nbsp;·&nbsp; Outer Ring Road</span>
+      </div>
+      <div class="ch-party-bdy">
+        <div class="ch-party-code-block">
+          <div class="ch-code-lbl">Ship-to Code</div>
+          <div class="ch-code-val">3600595</div>
+        </div>
+        <div class="ch-party-name">Divine World School Site</div>
+        <div class="ch-party-addr">
+          Nr. Kankuba Circle, Dukhiya Na Darbar Road<br/>
+          Outer Ring Road<br/>
+          Surat – 394107, Gujarat
+        </div>
+      </div>
+      <div class="ch-contact-strip cols-2">
+        <div class="ch-contact-cell">
+          <div class="ch-contact-role role-so">Sales Officer</div>
+          <div class="ch-contact-name">Tejas Patel</div>
+          <div class="ch-contact-phone">9173363377</div>
+        </div>
+        <div class="ch-contact-cell">
+          <div class="ch-contact-role role-site">Site / Receiver</div>
+          <div class="ch-contact-name">Suresh (Contractor)</div>
+          <div class="ch-contact-phone">9876500011</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- S4: LINE ITEMS TABLE -->
+  <div class="ch-table-wrap">
+    <div class="ch-table-lbl">Line Items</div>
+    <table class="ch-table">
+      <thead>
+        <tr>
+          <th style="width:32px;text-align:center;">#</th>
+          <th style="width:90px;">SKU Code</th>
+          <th>Material Description</th>
+          <th style="width:110px;">Formula</th>
+          <th class="tr" style="width:40px;">Qty</th>
+          <th class="tr" style="width:68px;">Volume (L)</th>
+          <th class="tc" style="width:52px;">Tinting</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="sr">1</td>
+          <td class="sku">IN70449481</td>
+          <td class="desc">87YR 12/005 20% DRK Ultra-94 20L</td>
+          <td class="formula">87YR 12/005</td>
+          <td class="tr" style="font-weight:600;">1</td>
+          <td class="tr">20.00</td>
+          <td class="tint-yes">Tint</td>
+        </tr>
+        <tr>
+          <td class="sr">2</td>
+          <td class="sku">IN70338820</td>
+          <td class="desc">Beautiful Walls Interior WB Primer 20L</td>
+          <td class="formula-empty">—</td>
+          <td class="tr" style="font-weight:600;">2</td>
+          <td class="tr">40.00</td>
+          <td class="tint-no">—</td>
+        </tr>
+        <tr>
+          <td class="sr">3</td>
+          <td class="sku">IN70512234</td>
+          <td class="desc">Dulux Pentalite Interior Emulsion WH 4L</td>
+          <td class="formula-empty">—</td>
+          <td class="tr" style="font-weight:600;">6</td>
+          <td class="tr">24.00</td>
+          <td class="tint-no">—</td>
+        </tr>
+        <tr>
+          <td class="sr">4</td>
+          <td class="sku">IN70615500</td>
+          <td class="desc">Weathercoat Allguard Textured 20KG</td>
+          <td class="formula-empty">—</td>
+          <td class="tr" style="font-weight:600;">4</td>
+          <td class="tr">—</td>
+          <td class="tint-no">—</td>
+        </tr>
+        <tr class="blank"><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+        <tr class="blank"><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+        <tr class="blank"><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+        <tr class="blank"><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+        <tr class="blank"><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+      </tbody>
+      <tfoot>
+        <tr>
+          <td></td>
+          <td colspan="3" class="totals-lbl">Totals</td>
+          <td class="tr">13</td>
+          <td class="tr" style="font-weight:800;">84.00 L</td>
+          <td></td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+
+  <!-- S5: FOOTER -->
+  <div class="ch-footer">
+    <div class="ch-footer-col">
+      <div class="ch-footer-lbl">Terms &amp; Conditions</div>
+      <div class="ch-footer-terms">
+        Goods once dispatched cannot be returned without prior written
+        approval from the depot manager. Rejection or shortage must be
+        reported within 3 days of delivery date.
+      </div>
+      <div class="ch-footer-spacer"></div>
+      <div class="ch-dispatch-row">
+        <div class="ch-dispatch-field">
+          <div class="ch-dispatch-lbl">Transporter</div>
+          <div class="ch-dispatch-val">___________________</div>
+        </div>
+        <div class="ch-dispatch-field">
+          <div class="ch-dispatch-lbl">Vehicle No.</div>
+          <div class="ch-dispatch-val">_______________</div>
+        </div>
+      </div>
+    </div>
+    <div class="ch-footer-col center">
+      <div class="ch-footer-lbl">Dispatched By</div>
+      <div class="ch-footer-spacer"></div>
+      <div class="ch-sig-line" style="width:130px;"></div>
+      <div class="ch-sig-sub">Name, Designation &amp; Signature</div>
+    </div>
+    <div class="ch-footer-col right">
+      <div class="ch-footer-lbl">Receiver's Acknowledgement</div>
+      <div class="ch-footer-spacer"></div>
+      <div class="ch-sig-line" style="width:150px;"></div>
+      <div class="ch-sig-sub">Sign, Stamp &amp; Date of Receipt</div>
+    </div>
+  </div>
+
+  <!-- S6: BOTTOM BAR -->
+  <div class="ch-btm">
+    <div class="ch-btm-txt">Regd. Office: B01A, South City Business Park, 770, Anandapur, Eastern Metropolitan Bypass, Near Fortis Hospital, Kolkata – 700107, West Bengal &nbsp;·&nbsp; www.akzonobel.co.in</div>
+    <div class="ch-btm-gstin">GSTIN: 24AAACI6297A1ZT</div>
+  </div>
+
+</div>
+</body>
+</html>

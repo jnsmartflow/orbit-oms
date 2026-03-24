@@ -22,8 +22,14 @@ export default async function TintManagerLayout({
     if (!allowed) redirect("/unauthorized");
   }
 
-  const allPerms     = await getAllPermissionsForRole(session.user.role);
-  const navItems     = buildNavItems(allPerms, session.user.role);
+  const allPerms = await getAllPermissionsForRole(session.user.role);
+  const navItems = [
+    ...buildNavItems(allPerms, session.user.role),
+    // Delivery Challans — always visible for TM; page has its own auth guard
+    { pageKey: "delivery_challans", label: "Delivery Challans", href: "/challan" },
+    // Shade Master — always visible for TM; page has its own auth guard
+    { pageKey: "shade_master", label: "Shade Master", href: "/tint/shades" },
+  ];
   const userName     = session.user.name ?? "User";
   const userInitials = getInitials(userName);
 

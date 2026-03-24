@@ -18,12 +18,16 @@ const contactSchema = z.object({
 const createSchema = z.object({
   customerCode:           z.string().min(1).max(50),
   customerName:           z.string().min(1).max(200),
+  address:                z.string().max(500).optional().nullable(),
   areaId:                 z.number().int().positive(),
   subAreaId:              z.number().int().positive().optional().nullable(),
   salesOfficerId:         z.number().int().positive().optional().nullable(),
   primaryRouteId:         z.number().int().positive().optional().nullable(),
-  deliveryTypeOverrideId: z.number().int().positive().optional().nullable(),
-  salesOfficerGroupId:    z.number().int().positive().optional().nullable(),
+  dispatchDeliveryTypeId:  z.number().int().positive().optional().nullable(),
+  reportingDeliveryTypeId: z.number().int().positive().optional().nullable(),
+  customerTypeId:          z.number().int().positive().optional().nullable(),
+  premisesTypeId:          z.number().int().positive().optional().nullable(),
+  salesOfficerGroupId:     z.number().int().positive().optional().nullable(),
   customerRating:         z.enum(["A", "B", "C"]).optional().nullable(),
   latitude:               z.number().optional().nullable(),
   longitude:              z.number().optional().nullable(),
@@ -47,8 +51,11 @@ const fullInclude = {
   area:                 { select: { id: true, name: true } },
   subArea:              { select: { id: true, name: true } },
   primaryRoute:         { select: { id: true, name: true } },
-  deliveryTypeOverride: { select: { id: true, name: true } },
-  salesOfficerGroup:    { select: { id: true, name: true } },
+  dispatchDeliveryType:  { select: { id: true, name: true } },
+  reportingDeliveryType: { select: { id: true, name: true } },
+  customerType:          { select: { id: true, name: true } },
+  premisesType:          { select: { id: true, name: true } },
+  salesOfficerGroup:     { select: { id: true, name: true } },
   contacts:             { orderBy: [{ isPrimary: "desc" as const }, { id: "asc" as const }] },
 };
 
@@ -64,11 +71,13 @@ export async function GET(req: Request) {
   const page          = Math.max(1, parseInt(searchParams.get("page") ?? "1", 10));
   const limit         = 25;
   const search        = searchParams.get("search")?.trim() ?? "";
-  const areaIdParam   = searchParams.get("areaId");
-  const areaId        = areaIdParam ? parseInt(areaIdParam, 10) : undefined;
-  const isKeyCustomer = searchParams.get("isKeyCustomer") === "true" ? true : undefined;
-  const isActiveParam = searchParams.get("isActive");
-  const isActive      = isActiveParam === "true" ? true : isActiveParam === "false" ? false : undefined;
+  const areaIdParam        = searchParams.get("areaId");
+  const areaId             = areaIdParam ? parseInt(areaIdParam, 10) : undefined;
+  const deliveryTypeParam  = searchParams.get("dispatchDeliveryTypeId");
+  const dispatchDeliveryTypeId = deliveryTypeParam ? parseInt(deliveryTypeParam, 10) : undefined;
+  const isKeyCustomer      = searchParams.get("isKeyCustomer") === "true" ? true : undefined;
+  const isActiveParam      = searchParams.get("isActive");
+  const isActive           = isActiveParam === "true" ? true : isActiveParam === "false" ? false : undefined;
 
   const where = {
     ...(search && {
@@ -78,6 +87,12 @@ export async function GET(req: Request) {
       ],
     }),
     ...(areaId && !isNaN(areaId) && { areaId }),
+    ...(dispatchDeliveryTypeId && !isNaN(dispatchDeliveryTypeId) && {
+      OR: [
+        { dispatchDeliveryTypeId },
+        { dispatchDeliveryTypeId: null, area: { deliveryTypeId: dispatchDeliveryTypeId } },
+      ],
+    }),
     ...(isKeyCustomer !== undefined && { isKeyCustomer }),
     ...(isActive      !== undefined && { isActive }),
   };
@@ -87,7 +102,7 @@ export async function GET(req: Request) {
       where,
       skip:    (page - 1) * limit,
       take:    limit,
-      orderBy: { customerName: "asc" },
+      orderBy: [{ area: { name: "asc" } }, { subArea: { name: "asc" } }, { customerName: "asc" }],
       include: listInclude,
     }),
     prisma.delivery_point_master.count({ where }),

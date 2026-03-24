@@ -71,6 +71,7 @@ const NAV_SECTIONS: NavSection[] = [
       { label: "Import Orders", href: "/admin/import" },
       { label: "Support Queue", href: "/admin/support" },
       { label: "Tint Manager",  href: "/admin/tint-manager" },
+      { label: "Shade Master",  href: "/tint/shades" },
     ],
   },
 ];
@@ -104,6 +105,7 @@ const ICONS: Record<string, NavIcon> = {
   "Import Orders":       Upload,
   "Support Queue":       ClipboardList,
   "Tint Manager":        Palette,
+  "Shade Master":        Palette,
   "My Tint Jobs":        Paintbrush,
 };
 

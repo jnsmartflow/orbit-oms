@@ -611,7 +611,7 @@ async function handleConfirm(req: Request, session: Session): Promise<NextRespon
         customerCode:           true,
         isKeyCustomer:          true,
         isKeySite:              true,
-        deliveryTypeOverrideId: true,
+        dispatchDeliveryTypeId: true,
         area: { select: { deliveryTypeId: true } },
       },
     }),
@@ -671,7 +671,7 @@ async function handleConfirm(req: Request, session: Session): Promise<NextRespon
       : null;
 
     const deliveryTypeId =
-      customer?.deliveryTypeOverrideId ??
+      customer?.dispatchDeliveryTypeId ??
       customer?.area?.deliveryTypeId ??
       localDeliveryTypeId;
 

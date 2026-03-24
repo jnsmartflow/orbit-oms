@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { hasRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
+import { PackCode } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
 
@@ -19,24 +20,17 @@ export async function POST(req: Request): Promise<NextResponse> {
   }
 
   const {
-    orderId,
     splitId,
     tintAssignmentId,
     entries,
   } = body as {
-    orderId?: unknown;
     splitId?: unknown;
     tintAssignmentId?: unknown;
     entries?: unknown;
   };
 
-  // Validate orderId
-  if (typeof orderId !== "number") {
-    return NextResponse.json({ error: "orderId is required" }, { status: 400 });
-  }
-
   // Validate mutual exclusivity of splitId / tintAssignmentId
-  const hasSplit = splitId !== undefined && splitId !== null;
+  const hasSplit      = splitId !== undefined && splitId !== null;
   const hasAssignment = tintAssignmentId !== undefined && tintAssignmentId !== null;
 
   if (!hasSplit && !hasAssignment) {
@@ -67,12 +61,18 @@ export async function POST(req: Request): Promise<NextResponse> {
         { status: 400 },
       );
     }
+    if (entry.packCode !== undefined && entry.packCode !== null &&
+        !(entry.packCode as string in PackCode)) {
+      return NextResponse.json({ error: "Invalid packCode in entry" }, { status: 400 });
+    }
   }
 
   const userId = parseInt(session!.user.id, 10);
 
   try {
-    // Step 1 — Validate the target row exists and belongs to this operator
+    // Step 1 — Validate the target row exists and belongs to this operator; derive orderId
+    let orderId: number;
+
     if (hasSplit) {
       const split = await prisma.order_splits.findFirst({
         where: { id: Number(splitId), assignedToId: userId },
@@ -83,6 +83,7 @@ export async function POST(req: Request): Promise<NextResponse> {
           { status: 404 },
         );
       }
+      orderId = split.orderId;
     } else {
       const assignment = await prisma.tint_assignments.findFirst({
         where: { id: Number(tintAssignmentId), assignedToId: userId },
@@ -93,40 +94,45 @@ export async function POST(req: Request): Promise<NextResponse> {
           { status: 404 },
         );
       }
+      orderId = assignment.orderId;
     }
 
-    // Step 2 — Insert all entries into tinter_issue_entries
+    // Step 2 — Insert all entries into tinter_issue_entries_b
     const typedEntries = entries as Array<{
       baseSku: string;
       tinQty?: unknown;
+      packCode?: unknown;
       rawLineItemId?: unknown;
-      YOX?: unknown; LFY?: unknown; GRN?: unknown; TBL?: unknown; WHT?: unknown;
-      MAG?: unknown; FFR?: unknown; BLK?: unknown; OXR?: unknown; HEY?: unknown;
-      HER?: unknown; COB?: unknown; COG?: unknown;
+      YE2?: unknown; YE1?: unknown; XY1?: unknown; XR1?: unknown;
+      WH1?: unknown; RE2?: unknown; RE1?: unknown; OR1?: unknown;
+      NO2?: unknown; NO1?: unknown; MA1?: unknown; GR1?: unknown;
+      BU2?: unknown; BU1?: unknown;
     }>;
 
-    await prisma.tinter_issue_entries.createMany({
+    await prisma.tinter_issue_entries_b.createMany({
       data: typedEntries.map((entry) => ({
-        orderId:           Number(orderId),
-        splitId:           hasSplit ? Number(splitId) : null,
-        tintAssignmentId:  hasAssignment ? Number(tintAssignmentId) : null,
-        rawLineItemId:     entry.rawLineItemId !== undefined && entry.rawLineItemId !== null ? Number(entry.rawLineItemId) : null,
-        submittedById:     userId,
-        baseSku:           entry.baseSku.trim(),
-        tinQty:            Number(entry.tinQty ?? 0),
-        YOX:               Number(entry.YOX ?? 0),
-        LFY:               Number(entry.LFY ?? 0),
-        GRN:               Number(entry.GRN ?? 0),
-        TBL:               Number(entry.TBL ?? 0),
-        WHT:               Number(entry.WHT ?? 0),
-        MAG:               Number(entry.MAG ?? 0),
-        FFR:               Number(entry.FFR ?? 0),
-        BLK:               Number(entry.BLK ?? 0),
-        OXR:               Number(entry.OXR ?? 0),
-        HEY:               Number(entry.HEY ?? 0),
-        HER:               Number(entry.HER ?? 0),
-        COB:               Number(entry.COB ?? 0),
-        COG:               Number(entry.COG ?? 0),
+        orderId,
+        splitId:          hasSplit ? Number(splitId) : null,
+        tintAssignmentId: hasAssignment ? Number(tintAssignmentId) : null,
+        rawLineItemId:    entry.rawLineItemId !== undefined && entry.rawLineItemId !== null ? Number(entry.rawLineItemId) : null,
+        submittedById:    userId,
+        baseSku:          entry.baseSku.trim(),
+        tinQty:           Number(entry.tinQty ?? 0),
+        packCode:         (entry.packCode ?? null) as PackCode | null,
+        YE2: Number(entry.YE2 ?? 0),
+        YE1: Number(entry.YE1 ?? 0),
+        XY1: Number(entry.XY1 ?? 0),
+        XR1: Number(entry.XR1 ?? 0),
+        WH1: Number(entry.WH1 ?? 0),
+        RE2: Number(entry.RE2 ?? 0),
+        RE1: Number(entry.RE1 ?? 0),
+        OR1: Number(entry.OR1 ?? 0),
+        NO2: Number(entry.NO2 ?? 0),
+        NO1: Number(entry.NO1 ?? 0),
+        MA1: Number(entry.MA1 ?? 0),
+        GR1: Number(entry.GR1 ?? 0),
+        BU2: Number(entry.BU2 ?? 0),
+        BU1: Number(entry.BU1 ?? 0),
       })),
     });
 
@@ -146,7 +152,7 @@ export async function POST(req: Request): Promise<NextResponse> {
     // Step 4 — Return response
     return NextResponse.json({ success: typedEntries.length }, { status: 200 });
   } catch (err) {
-    console.error("[tinter-issue POST]", err);
+    console.error("[tinter-issue-b POST]", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

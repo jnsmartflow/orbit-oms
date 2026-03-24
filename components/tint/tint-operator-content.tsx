@@ -1,8 +1,12 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { Loader2, Eye } from "lucide-react";
+import { Loader2, Eye, ChevronDown, Palette } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Switch } from "@/components/ui/switch";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { ObdCode } from "@/components/shared/obd-code";
 import { SkuDetailsSheet } from "@/components/tint/sku-details-sheet";
@@ -10,6 +14,7 @@ import { SkuDetailsSheet } from "@/components/tint/sku-details-sheet";
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface SplitLineItem {
+  rawLineItemId?: number;
   rawLineItem: {
     skuCodeRaw:        string;
     skuDescriptionRaw: string | null;
@@ -33,6 +38,7 @@ interface OperatorSplit {
   orderId:          number;
   order: {
     obdNumber:          string;
+    shipToCustomerId:   string;
     shipToCustomerName: string | null;
     dispatchSlot:       string | null;
     customer: {
@@ -49,6 +55,7 @@ interface OperatorOrder {
   workflowStage:      string;
   dispatchSlot:       string | null;
   createdAt:          string;
+  shipToCustomerId:   string;
   shipToCustomerName: string | null;
   customer: {
     customerName: string;
@@ -78,12 +85,67 @@ interface OperatorOrder {
   }[];
 }
 
-interface TIEntry {
-  baseSku: string;
-  tinQty:  number;
+interface ShadeMasterRecord {
+  id:                number;
+  shadeName:         string;
+  shipToCustomerId:  string;
+  shipToCustomerName: string;
+  tinterType:        "TINTER" | "ACOTONE";
+  packCode:          string | null;
+  skuCode:           string | null;
+  baseSku:           string;
+  tinQty:            number;
   YOX: number; LFY: number; GRN: number; TBL: number; WHT: number;
   MAG: number; FFR: number; BLK: number; OXR: number; HEY: number;
   HER: number; COB: number; COG: number;
+  YE2: number; YE1: number; XY1: number; XR1: number; WH1: number;
+  RE2: number; RE1: number; OR1: number; NO2: number; NO1: number;
+  MA1: number; GR1: number; BU2: number; BU1: number;
+}
+
+interface TintingLine {
+  rawLineItemId:     number;
+  skuCodeRaw:        string;
+  skuDescriptionRaw: string | null;
+  unitQty:           number;
+  volumeLine:        number | null;
+  packCode:          string;
+}
+
+interface TIFormEntry {
+  id:                  string;
+  rawLineItemId:       number | null;
+  skuCodeRaw:          string;
+  skuDescriptionRaw:   string;
+  unitQty:             number;
+  packCode:            string;
+  tinQty:              number;
+  shadeValues:         Record<string, number>;
+  suggestions:         ShadeSuggestion[];
+  suggestionsLoading:  boolean;
+  suggestionsExpanded: boolean;
+  saveAsShade:         boolean;
+  shadeName:           string;
+  shadeNameError:      string;
+  flashActive:         boolean;
+  selectedShadeName:   string | null;
+  selectedShadeId:     number | null;
+  showAllColumns:      boolean;
+}
+
+interface ShadeSuggestion extends ShadeMasterRecord {
+  lastUsedAt: string | null;
+}
+
+interface TIEntryRecord {
+  id:            number;
+  table:         "TINTER" | "ACOTONE";
+  rawLineItemId: number | null;
+  baseSku:       string;
+  tinQty:        number;
+  packCode:      string | null;
+  shadeValues:   Record<string, number>;
+  createdAt:     string;
 }
 
 interface Job {
@@ -101,7 +163,35 @@ interface Job {
   totalVolume:      number | null;
   lineItems:        SplitLineItem[];
   orderId:          number;
-  tintAssignmentId: number | null;
+  tintAssignmentId:  number | null;
+  shipToCustomerId:  string;
+  shipToCustomerName: string | null;
+}
+
+interface CompletedAssignment {
+  id:          number;
+  completedAt: string | null;
+  order: {
+    obdNumber:          string;
+    shipToCustomerId:   string;
+    shipToCustomerName: string | null;
+    customer:           { customerName: string; area: { name: string } } | null;
+    querySnapshot:      { totalVolume: number } | null;
+  };
+}
+
+interface CompletedSplit {
+  id:          number;
+  splitNumber: number;
+  totalVolume: number | null;
+  completedAt: string | null;
+  orderId:     number;
+  order: {
+    obdNumber:          string;
+    shipToCustomerId:   string;
+    shipToCustomerName: string | null;
+    customer:           { customerName: string; area: { name: string } } | null;
+  };
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -122,12 +212,61 @@ const SHADES = [
   { code: "COG", bg: "#ecfdf5", border: "#059669", text: "#064e3b" },
 ] as const;
 
-function defaultTIEntry(): TIEntry {
+const ACOTONE_SHADES = [
+  { code: "YE2", bg: "#fef9c3", border: "#eab308", text: "#713f12" },
+  { code: "YE1", bg: "#fef3c7", border: "#f59e0b", text: "#92400e" },
+  { code: "XY1", bg: "#fde68a", border: "#d97706", text: "#78350f" },
+  { code: "XR1", bg: "#ffedd5", border: "#f97316", text: "#7c2d12" },
+  { code: "WH1", bg: "#f9fafb", border: "#9ca3af", text: "#374151" },
+  { code: "RE2", bg: "#fce7f3", border: "#ec4899", text: "#831843" },
+  { code: "RE1", bg: "#fee2e2", border: "#ef4444", text: "#7f1d1d" },
+  { code: "OR1", bg: "#fff7ed", border: "#fb923c", text: "#9a3412" },
+  { code: "NO2", bg: "#f1f5f9", border: "#94a3b8", text: "#334155" },
+  { code: "NO1", bg: "#e2e8f0", border: "#64748b", text: "#1e293b" },
+  { code: "MA1", bg: "#ede9fe", border: "#8b5cf6", text: "#4c1d95" },
+  { code: "GR1", bg: "#d1fae5", border: "#10b981", text: "#065f46" },
+  { code: "BU2", bg: "#dbeafe", border: "#3b82f6", text: "#1e3a8a" },
+  { code: "BU1", bg: "#e0e7ff", border: "#6366f1", text: "#312e81" },
+] as const;
+
+const PACK_CODES = [
+  { value: "ml_500", label: "500ml" },
+  { value: "L_1",    label: "1L" },
+  { value: "L_4",    label: "4L" },
+  { value: "L_10",   label: "10L" },
+  { value: "L_20",   label: "20L" },
+] as const;
+
+function defaultTIFormEntry(): TIFormEntry {
   return {
-    baseSku: "", tinQty: 0,
-    YOX: 0, LFY: 0, GRN: 0, TBL: 0, WHT: 0, MAG: 0,
-    FFR: 0, BLK: 0, OXR: 0, HEY: 0, HER: 0, COB: 0, COG: 0,
+    id:                  Math.random().toString(36).slice(2),
+    rawLineItemId:       null,
+    skuCodeRaw:          "",
+    skuDescriptionRaw:   "",
+    unitQty:             0,
+    packCode:            "",
+    tinQty:              0,
+    shadeValues:         {},
+    suggestions:         [],
+    suggestionsLoading:  false,
+    suggestionsExpanded: false,
+    saveAsShade:         false,
+    shadeName:           "",
+    shadeNameError:      "",
+    flashActive:         false,
+    selectedShadeName:   null,
+    selectedShadeId:     null,
+    showAllColumns:      true,
   };
+}
+
+function derivePackCode(volumeLine: number | null, unitQty: number): string {
+  const perUnit = (unitQty > 0 && volumeLine != null) ? volumeLine / unitQty : 0;
+  if (perUnit >= 20) return "L_20";
+  if (perUnit >= 10) return "L_10";
+  if (perUnit >= 4)  return "L_4";
+  if (perUnit >= 1)  return "L_1";
+  return "ml_500";
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -401,9 +540,11 @@ const pulseKeyframes = `
 `;
 
 export function TintOperatorContent() {
-  const [assignedSplits,  setAssignedSplits]  = useState<OperatorSplit[]>([]);
-  const [assignedOrders,  setAssignedOrders]  = useState<OperatorOrder[]>([]);
-  const [isLoading,       setIsLoading]       = useState(true);
+  const [assignedSplits,   setAssignedSplits]   = useState<OperatorSplit[]>([]);
+  const [assignedOrders,   setAssignedOrders]   = useState<OperatorOrder[]>([]);
+  const [completedOrders,  setCompletedOrders]  = useState<CompletedAssignment[]>([]);
+  const [completedSplits,  setCompletedSplits]  = useState<CompletedSplit[]>([]);
+  const [isLoading,        setIsLoading]        = useState(true);
   const [splitActionLoading, setSplitActionLoading] = useState<number | null>(null);
   const [orderActionLoading, setOrderActionLoading] = useState<number | null>(null);
   const [error,           setError]           = useState<string | null>(null);
@@ -414,20 +555,47 @@ export function TintOperatorContent() {
   const [queueSheetOpen,  setQueueSheetOpen]  = useState(false);
   const [clock,           setClock]           = useState("");
   const [elapsed,         setElapsed]         = useState("00:00:00");
-  const [tiEntries,       setTiEntries]       = useState<TIEntry[]>(() => [defaultTIEntry()]);
-  const [tiActionLoading, setTiActionLoading] = useState(false);
+  // ── TI form state ────────────────────────────────────────────────────────
+  const [tinterType,         setTinterType]         = useState<"TINTER" | "ACOTONE">("TINTER");
+  const [tiEntries,          setTiEntries]          = useState<TIFormEntry[]>(() => [defaultTIFormEntry()]);
+  const [allSavedShades,     setAllSavedShades]     = useState<ShadeMasterRecord[]>([]);
+  const [allShadesLoading,   setAllShadesLoading]   = useState(false);
+  const [allShadesComboOpen, setAllShadesComboOpen] = useState<string | null>(null);
+  const [allShadesSearch,    setAllShadesSearch]    = useState("");
+  const [tiActionLoading,    setTiActionLoading]    = useState(false);
+  const [conflictDialog,     setConflictDialog]     = useState<{
+    existingId:   number;
+    shadeName:    string;
+    entryId:      string;
+    job:          Job;
+    remainingIds: string[];
+  } | null>(null);
+  const [tiSuccessToast,      setTiSuccessToast]      = useState(false);
+  const [tiUpdateToast,       setTiUpdateToast]       = useState(false);
+  const [tiIncompleteWarning, setTiIncompleteWarning] = useState<{
+    rawLineItemId:     number;
+    skuCodeRaw:        string;
+    skuDescriptionRaw: string | null;
+  }[] | null>(null);
+  const [existingTIEntries,  setExistingTIEntries]  = useState<Map<number, TIEntryRecord>>(new Map());
+  const [tiEntriesLoading,   setTiEntriesLoading]   = useState(false);
+  const [editingEntryId,     setEditingEntryId]     = useState<{ id: number; table: "TINTER" | "ACOTONE" } | null>(null);
 
   const fetchOrders = useCallback(async () => {
     try {
       const res  = await fetch("/api/tint/operator/my-orders");
       const data = (await res.json()) as {
-        assignedOrders: OperatorOrder[];
-        assignedSplits: OperatorSplit[];
-        hasActiveJob:   boolean;
+        assignedOrders:  OperatorOrder[];
+        assignedSplits:  OperatorSplit[];
+        hasActiveJob:    boolean;
+        completedOrders: CompletedAssignment[];
+        completedSplits: CompletedSplit[];
       };
       setAssignedOrders(data.assignedOrders);
       setAssignedSplits(data.assignedSplits);
       setHasActiveJob(data.hasActiveJob);
+      setCompletedOrders(data.completedOrders ?? []);
+      setCompletedSplits(data.completedSplits ?? []);
 
       const allJobs = [
         ...data.assignedSplits
@@ -446,6 +614,52 @@ export function TintOperatorContent() {
       }
     } catch {
       // leave stale
+    }
+  }, []);
+
+  const loadExistingTIEntries = useCallback(async (job: Job) => {
+    const fetchId   = job.type === "split" ? job.id : job.tintAssignmentId;
+    const fetchType = job.type === "split" ? "split" : "assignment";
+    if (!fetchId) { setExistingTIEntries(new Map()); return; }
+    setTiEntriesLoading(true);
+    try {
+      const [resA, resB] = await Promise.all([
+        fetch(`/api/tint/operator/tinter-issue/${fetchId}?type=${fetchType}`),
+        fetch(`/api/tint/operator/tinter-issue-b/${fetchId}?type=${fetchType}`),
+      ]);
+      type RawEntry = Record<string, unknown> & {
+        id: number; rawLineItemId: number | null; baseSku: string;
+        tinQty: unknown; packCode: string | null; createdAt: string;
+      };
+      const rawA = resA.ok ? (await resA.json()) as { entries: RawEntry[] } : null;
+      const rawB = resB.ok ? (await resB.json()) as { entries: RawEntry[] } : null;
+
+      const TINTER_COLS  = ["YOX","LFY","GRN","TBL","WHT","MAG","FFR","BLK","OXR","HEY","HER","COB","COG"] as const;
+      const ACOTONE_COLS = ["YE2","YE1","XY1","XR1","WH1","RE2","RE1","OR1","NO2","NO1","MA1","GR1","BU2","BU1"] as const;
+
+      const map = new Map<number, TIEntryRecord>();
+
+      for (const e of rawA?.entries ?? []) {
+        if (e.rawLineItemId == null) continue;
+        const sv: Record<string, number> = {};
+        for (const col of TINTER_COLS) sv[col] = Number(e[col] ?? 0);
+        const rec: TIEntryRecord = { id: e.id, table: "TINTER", rawLineItemId: e.rawLineItemId, baseSku: e.baseSku, tinQty: Number(e.tinQty), packCode: e.packCode, shadeValues: sv, createdAt: e.createdAt };
+        const ex = map.get(e.rawLineItemId);
+        if (!ex || new Date(e.createdAt) > new Date(ex.createdAt)) map.set(e.rawLineItemId, rec);
+      }
+      for (const e of rawB?.entries ?? []) {
+        if (e.rawLineItemId == null) continue;
+        const sv: Record<string, number> = {};
+        for (const col of ACOTONE_COLS) sv[col] = Number(e[col] ?? 0);
+        const rec: TIEntryRecord = { id: e.id, table: "ACOTONE", rawLineItemId: e.rawLineItemId, baseSku: e.baseSku, tinQty: Number(e.tinQty), packCode: e.packCode, shadeValues: sv, createdAt: e.createdAt };
+        const ex = map.get(e.rawLineItemId);
+        if (!ex || new Date(e.createdAt) > new Date(ex.createdAt)) map.set(e.rawLineItemId, rec);
+      }
+      setExistingTIEntries(map);
+    } catch {
+      // leave stale
+    } finally {
+      setTiEntriesLoading(false);
     }
   }, []);
 
@@ -533,15 +747,17 @@ export function TintOperatorContent() {
         status:           s.status,
         tiSubmitted:      s.tiSubmitted,
         startedAt:        s.startedAt,
-        customerName:     s.order.customer?.customerName ?? s.order.shipToCustomerName ?? "—",
-        obdNumber:        s.order.obdNumber,
-        splitNumber:      s.splitNumber,
-        dispatchSlot:     s.order.dispatchSlot,
-        articleTag:       s.articleTag,
-        totalVolume:      s.totalVolume,
-        lineItems:        s.lineItems,
-        orderId:          s.orderId,
-        tintAssignmentId: null,
+        customerName:      s.order.customer?.customerName ?? s.order.shipToCustomerName ?? "—",
+        obdNumber:         s.order.obdNumber,
+        splitNumber:       s.splitNumber,
+        dispatchSlot:      s.order.dispatchSlot,
+        articleTag:        s.articleTag,
+        totalVolume:       s.totalVolume,
+        lineItems:         s.lineItems,
+        orderId:           s.orderId,
+        tintAssignmentId:  null,
+        shipToCustomerId:  s.order.shipToCustomerId,
+        shipToCustomerName: s.order.shipToCustomerName,
       }));
 
     const orderJobs: Job[] = assignedOrders
@@ -555,15 +771,17 @@ export function TintOperatorContent() {
           : o.tintAssignments[0]?.status ?? "",
         tiSubmitted:      o.tintAssignments[0]?.tiSubmitted ?? false,
         startedAt:        o.tintAssignments[0]?.startedAt ?? null,
-        customerName:     o.customer?.customerName ?? o.shipToCustomerName ?? "—",
-        obdNumber:        o.obdNumber,
-        splitNumber:      undefined,
-        dispatchSlot:     o.dispatchSlot,
-        articleTag:       o.querySnapshot?.articleTag ?? null,
-        totalVolume:      o.querySnapshot?.totalVolume ?? null,
-        lineItems:        o.rawLineItems.map(li => ({ rawLineItem: li })),
-        orderId:          o.id,
-        tintAssignmentId: o.tintAssignments[0]?.id ?? null,
+        customerName:      o.customer?.customerName ?? o.shipToCustomerName ?? "—",
+        obdNumber:         o.obdNumber,
+        splitNumber:       undefined,
+        dispatchSlot:      o.dispatchSlot,
+        articleTag:        o.querySnapshot?.articleTag ?? null,
+        totalVolume:       o.querySnapshot?.totalVolume ?? null,
+        lineItems:         o.rawLineItems.map(li => ({ rawLineItemId: li.id, rawLineItem: li })),
+        orderId:           o.id,
+        tintAssignmentId:  o.tintAssignments[0]?.id ?? null,
+        shipToCustomerId:  o.shipToCustomerId,
+        shipToCustomerName: o.shipToCustomerName,
       }));
 
     return [...splitJobs, ...orderJobs].sort(
@@ -571,15 +789,24 @@ export function TintOperatorContent() {
     );
   }, [assignedSplits, assignedOrders]);
 
-  const completedSplits = useMemo(
-    () => assignedSplits.filter(s => s.status === "tinting_done"),
-    [assignedSplits],
-  );
-
   const selectedJob = useMemo(
     () => jobs.find(j => j.id === selectedJobId && j.type === selectedJobType) ?? null,
     [jobs, selectedJobId, selectedJobType],
   );
+
+  const tintingLines = useMemo<TintingLine[]>(() => {
+    if (!selectedJob) return [];
+    return selectedJob.lineItems
+      .filter(li => li.rawLineItem.isTinting)
+      .map(li => ({
+        rawLineItemId:     li.rawLineItemId ?? 0,
+        skuCodeRaw:        li.rawLineItem.skuCodeRaw,
+        skuDescriptionRaw: li.rawLineItem.skuDescriptionRaw,
+        unitQty:           li.rawLineItem.unitQty,
+        volumeLine:        li.rawLineItem.volumeLine,
+        packCode:          derivePackCode(li.rawLineItem.volumeLine, li.rawLineItem.unitQty),
+      }));
+  }, [selectedJob]);
 
   useEffect(() => {
     if (!selectedJob?.startedAt || selectedJob.status !== "tinting_in_progress") {
@@ -599,14 +826,46 @@ export function TintOperatorContent() {
     return () => clearInterval(id);
   }, [selectedJob?.startedAt, selectedJob?.status]);
 
+  // Reset TI form state when job changes
   useEffect(() => {
-    setTiEntries([defaultTIEntry()]);
+    setTinterType("TINTER");
+    setTiEntries([defaultTIFormEntry()]);
+    setAllSavedShades([]);
+    setAllShadesLoading(false);
+    setAllShadesComboOpen(null);
+    setAllShadesSearch("");
+    setConflictDialog(null);
+    setTiSuccessToast(false);
+    setTiUpdateToast(false);
+    setTiIncompleteWarning(null);
+    setExistingTIEntries(new Map());
+    setEditingEntryId(null);
   }, [selectedJobId, selectedJobType]);
+
+  // Load all saved shades when job or tinterType changes
+  useEffect(() => {
+    if (!selectedJob?.shipToCustomerId) { setAllSavedShades([]); return; }
+    setAllShadesLoading(true);
+    fetch(`/api/tint/operator/shades?shipToCustomerId=${encodeURIComponent(selectedJob.shipToCustomerId)}&tinterType=${tinterType}`)
+      .then(r => r.ok ? r.json() : null)
+      .then((d: { data: ShadeMasterRecord[] } | null) => { if (d) setAllSavedShades(d.data); })
+      .catch(() => {})
+      .finally(() => setAllShadesLoading(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedJob?.shipToCustomerId, tinterType]);
+
+  // Load existing TI entries when job changes
+  useEffect(() => {
+    if (selectedJob) loadExistingTIEntries(selectedJob);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedJob?.id, selectedJob?.type, selectedJob?.tintAssignmentId]);
 
   const pendingCount    = jobs.filter(j => j.status === "tint_assigned").length;
   const inProgressCount = jobs.filter(j => j.status === "tinting_in_progress").length;
-  const completedCount  = completedSplits.length;
-  const volumeDone      = completedSplits.reduce((s, sp) => s + (sp.totalVolume ?? 0), 0);
+  const completedCount  = completedOrders.length + completedSplits.length;
+  const volumeDone      =
+    completedSplits.reduce((s, sp) => s + (sp.totalVolume ?? 0), 0) +
+    completedOrders.reduce((s, co) => s + (co.order.querySnapshot?.totalVolume ?? 0), 0);
   const remainingVolume = jobs
     .filter(j => j.status !== "tinting_in_progress")
     .reduce((s, j) => s + (j.totalVolume ?? 0), 0);
@@ -628,38 +887,337 @@ export function TintOperatorContent() {
   // Sort orders: in-progress first, then pending
   const sortedOrders = [...inProgressOrders, ...todoOrders];
 
-  async function submitTI(job: Job) {
-    const validEntries = tiEntries.filter(e => e.baseSku.trim() !== "");
-    if (validEntries.length === 0) {
-      setError("Please fill at least one Base SKU entry.");
+  // ── TI form functions ─────────────────────────────────────────────────────
+
+  function handleTinterTypeChange(type: "TINTER" | "ACOTONE") {
+    setTinterType(type);
+    setTiEntries(prev => prev.map(e => ({
+      ...e,
+      shadeValues: {}, suggestions: [], suggestionsLoading: false,
+      selectedShadeName: null, selectedShadeId: null, showAllColumns: true,
+    })));
+    setAllSavedShades([]);
+  }
+
+  function handleSkuSelect(entryId: string, rawLineItemId: number) {
+    const line = tintingLines.find(l => l.rawLineItemId === rawLineItemId);
+    if (!line || !selectedJob) return;
+
+    const existing = existingTIEntries.get(rawLineItemId);
+
+    setTiEntries(prev => prev.map(e => e.id !== entryId ? e : {
+      ...e,
+      rawLineItemId:      line.rawLineItemId,
+      skuCodeRaw:         line.skuCodeRaw,
+      skuDescriptionRaw:  line.skuDescriptionRaw ?? "",
+      unitQty:            line.unitQty,
+      packCode:           line.packCode,
+      tinQty:             existing ? existing.tinQty : line.unitQty,
+      shadeValues:        existing ? existing.shadeValues : {},
+      suggestions:        [],
+      suggestionsLoading: !existing && !!line.packCode,
+      suggestionsExpanded: false,
+      flashActive:        !!existing,
+      selectedShadeName:  null,
+      selectedShadeId:    null,
+      showAllColumns:     existing ? false : true,
+    }));
+
+    if (existing) {
+      setTinterType(existing.table);
+      setEditingEntryId({ id: existing.id, table: existing.table });
+      setTimeout(() => {
+        setTiEntries(prev => prev.map(e => e.id !== entryId ? e : { ...e, flashActive: false }));
+      }, 1500);
+      return;
+    }
+
+    // No existing entry — new entry mode
+    setEditingEntryId(null);
+    if (!line.packCode) return;
+    const url = `/api/tint/operator/shades?shipToCustomerId=${encodeURIComponent(selectedJob.shipToCustomerId)}&tinterType=${tinterType}&skuCode=${encodeURIComponent(line.skuCodeRaw)}&packCode=${encodeURIComponent(line.packCode)}`;
+    fetch(url)
+      .then(r => r.ok ? r.json() : null)
+      .then((d: { data: ShadeSuggestion[] } | null) => {
+        setTiEntries(prev => prev.map(e => e.id !== entryId ? e : {
+          ...e, suggestions: d?.data ?? [], suggestionsLoading: false,
+        }));
+      })
+      .catch(() => {
+        setTiEntries(prev => prev.map(e => e.id !== entryId ? e : { ...e, suggestionsLoading: false }));
+      });
+  }
+
+  function applyShadeToEntry(entryId: string, shade: ShadeMasterRecord) {
+    const cols = tinterType === "TINTER" ? SHADES : ACOTONE_SHADES;
+    const shadeValues: Record<string, number> = {};
+    for (const col of cols) {
+      shadeValues[col.code] = Number(shade[col.code as keyof ShadeMasterRecord]) || 0;
+    }
+
+    // Auto-match SKU line if the shade has a skuCode
+    const matchedLine = shade.skuCode
+      ? (tintingLines.find(l => l.skuCodeRaw === shade.skuCode) ?? null)
+      : null;
+
+    setTiEntries(prev => prev.map(e => {
+      if (e.id !== entryId) return e;
+      return {
+        ...e,
+        tinQty:            matchedLine ? matchedLine.unitQty : shade.tinQty,
+        shadeValues,
+        flashActive:       true,
+        selectedShadeName: shade.shadeName,
+        selectedShadeId:   shade.id,
+        showAllColumns:    false,
+        ...(matchedLine ? {
+          rawLineItemId:     matchedLine.rawLineItemId,
+          skuCodeRaw:        matchedLine.skuCodeRaw,
+          skuDescriptionRaw: matchedLine.skuDescriptionRaw ?? "",
+          unitQty:           matchedLine.unitQty,
+          packCode:          matchedLine.packCode,
+          suggestions:       [],
+          suggestionsLoading: false,
+        } : {}),
+      };
+    }));
+    setTimeout(() => {
+      setTiEntries(prev => prev.map(e => e.id !== entryId ? e : { ...e, flashActive: false }));
+    }, 1500);
+  }
+
+  function buildShadeBody(entry: TIFormEntry, job: Job): Record<string, unknown> {
+    const cols = tinterType === "TINTER" ? SHADES : ACOTONE_SHADES;
+    const body: Record<string, unknown> = {
+      shadeName:          entry.shadeName.trim(),
+      shipToCustomerId:   job.shipToCustomerId,
+      shipToCustomerName: job.shipToCustomerName ?? job.customerName,
+      tinterType,
+      packCode:           entry.packCode || null,
+      skuCode:            entry.skuCodeRaw || null,
+      baseSku:            entry.skuCodeRaw,
+      tinQty:             entry.tinQty,
+    };
+    for (const col of cols) {
+      body[col.code] = entry.shadeValues[col.code] ?? 0;
+    }
+    return body;
+  }
+
+  async function saveShadesThenSubmitTI(job: Job, entryIds: string[]) {
+    for (const entryId of entryIds) {
+      const entry = tiEntries.find(e => e.id === entryId);
+      if (!entry?.saveAsShade) continue;
+      const shadeRes = await fetch("/api/tint/operator/shades", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(buildShadeBody(entry, job)),
+      });
+      if (shadeRes.status === 409) {
+        const data = (await shadeRes.json()) as { existingId: number; shadeName: string };
+        setConflictDialog({
+          existingId:   data.existingId,
+          shadeName:    data.shadeName,
+          entryId,
+          job,
+          remainingIds: entryIds.slice(entryIds.indexOf(entryId) + 1),
+        });
+        setTiActionLoading(false);
+        return;
+      }
+      if (!shadeRes.ok) throw new Error("Failed to save shade formula");
+    }
+    // All shades saved — submit TI
+    const cols    = tinterType === "TINTER" ? SHADES : ACOTONE_SHADES;
+    const entries = tiEntries.filter(e => e.skuCodeRaw && e.tinQty > 0);
+    if (tinterType === "TINTER") {
+      const res = await fetch("/api/tint/operator/tinter-issue", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          orderId:          job.orderId,
+          splitId:          job.type === "split" ? job.id : undefined,
+          tintAssignmentId: job.type === "order" ? job.tintAssignmentId : undefined,
+          entries: entries.map(e => ({
+            rawLineItemId: e.rawLineItemId || undefined,
+            baseSku: e.skuCodeRaw, tinQty: e.tinQty, packCode: e.packCode || null,
+            ...Object.fromEntries(cols.map(c => [c.code, e.shadeValues[c.code] ?? 0])),
+          })),
+        }),
+      });
+      if (!res.ok) { const err = (await res.json()) as { error?: string }; throw new Error(err.error ?? "Failed to submit TI"); }
+    } else {
+      const res = await fetch("/api/tint/operator/tinter-issue-b", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          splitId:          job.type === "split" ? job.id : undefined,
+          tintAssignmentId: job.type === "order" ? job.tintAssignmentId : undefined,
+          entries: entries.map(e => ({
+            rawLineItemId: e.rawLineItemId || undefined,
+            baseSku: e.skuCodeRaw, tinQty: e.tinQty, packCode: e.packCode || null,
+            ...Object.fromEntries(cols.map(c => [c.code, e.shadeValues[c.code] ?? 0])),
+          })),
+        }),
+      });
+      if (!res.ok) { const err = (await res.json()) as { error?: string }; throw new Error(err.error ?? "Failed to submit TI"); }
+    }
+    await fetchOrders();
+    await loadExistingTIEntries(job);
+    if (job.status === "tinting_in_progress") {
+      setTiEntries([defaultTIFormEntry()]);
+      setTiIncompleteWarning(null);
+      setTiSuccessToast(true);
+      setTimeout(() => setTiSuccessToast(false), 3000);
+    } else {
+      await startJob(job);
+    }
+  }
+
+  async function handleSubmitTIAndStart(job: Job) {
+    if (tiEntries.length === 0) { setError("Add at least one entry"); return; }
+    for (const e of tiEntries) {
+      if (!e.skuCodeRaw) { setError("Select a SKU line for all entries"); return; }
+      if (e.tinQty <= 0) { setError("Tin Qty must be greater than 0 for all entries"); return; }
+    }
+    for (const e of tiEntries) {
+      if (e.saveAsShade && !e.shadeName.trim()) {
+        setTiEntries(prev => prev.map(en => en.id === e.id ? { ...en, shadeNameError: "Shade name is required" } : en));
+        return;
+      }
+    }
+    setTiActionLoading(true);
+    setError(null);
+    try {
+      const saveIds = tiEntries.filter(e => e.saveAsShade).map(e => e.id);
+      await saveShadesThenSubmitTI(job, saveIds);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to submit TI");
+    } finally {
+      setTiActionLoading(false);
+    }
+  }
+
+  async function handleConflictOverwrite() {
+    if (!conflictDialog) return;
+    const { existingId, job, entryId, remainingIds } = conflictDialog;
+    setConflictDialog(null);
+    setTiActionLoading(true);
+    setError(null);
+    try {
+      const entry = tiEntries.find(e => e.id === entryId);
+      if (entry) {
+        const res = await fetch(`/api/tint/operator/shades/${existingId}`, {
+          method: "PUT", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(buildShadeBody(entry, job)),
+        });
+        if (!res.ok) throw new Error("Failed to overwrite shade formula");
+      }
+      if (remainingIds[0] === "__EDIT__") {
+        await doPatchEntry(job);
+      } else {
+        await saveShadesThenSubmitTI(job, remainingIds);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to overwrite shade");
+    } finally {
+      setTiActionLoading(false);
+    }
+  }
+
+  function handleStripRowClick(rawLineItemId: number) {
+    const line = tintingLines.find(l => l.rawLineItemId === rawLineItemId);
+    if (!line) return;
+    const existing = existingTIEntries.get(rawLineItemId);
+    if (existing) {
+      setTinterType(existing.table);
+      setEditingEntryId({ id: existing.id, table: existing.table });
+      setTiEntries(prev => {
+        const first = prev[0] ?? defaultTIFormEntry();
+        return [{
+          ...first,
+          rawLineItemId:      line.rawLineItemId,
+          skuCodeRaw:         line.skuCodeRaw,
+          skuDescriptionRaw:  line.skuDescriptionRaw ?? "",
+          unitQty:            line.unitQty,
+          packCode:           line.packCode,
+          tinQty:             existing.tinQty,
+          shadeValues:        existing.shadeValues,
+          suggestions:        [],
+          suggestionsLoading: false,
+          suggestionsExpanded: false,
+          flashActive:        true,
+          selectedShadeName:  null,
+          selectedShadeId:    null,
+          showAllColumns:     false,
+        }, ...prev.slice(1)];
+      });
+      setTimeout(() => {
+        setTiEntries(prev => prev.map((e, i) => i === 0 ? { ...e, flashActive: false } : e));
+      }, 1500);
+    } else {
+      setEditingEntryId(null);
+      const firstId = tiEntries[0]?.id;
+      if (firstId) handleSkuSelect(firstId, rawLineItemId);
+    }
+    document.getElementById("ti-form-section")?.scrollIntoView({ behavior: "smooth" });
+  }
+
+  async function doPatchEntry(job: Job) {
+    if (!editingEntryId) return;
+    const entry = tiEntries[0];
+    if (!entry) return;
+    const cols = editingEntryId.table === "TINTER" ? SHADES : ACOTONE_SHADES;
+    const endpoint = editingEntryId.table === "TINTER"
+      ? `/api/tint/operator/tinter-issue/${editingEntryId.id}`
+      : `/api/tint/operator/tinter-issue-b/${editingEntryId.id}`;
+    const res = await fetch(endpoint, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        baseSku:       entry.skuCodeRaw,
+        tinQty:        entry.tinQty,
+        packCode:      entry.packCode || null,
+        rawLineItemId: entry.rawLineItemId ?? undefined,
+        ...Object.fromEntries(cols.map(c => [c.code, entry.shadeValues[c.code] ?? 0])),
+      }),
+    });
+    if (!res.ok) {
+      const err = (await res.json()) as { error?: string };
+      throw new Error(err.error ?? "Failed to update entry");
+    }
+    await loadExistingTIEntries(job);
+    setEditingEntryId(null);
+    setTiEntries(prev => [defaultTIFormEntry(), ...prev.slice(1)]);
+    setTiUpdateToast(true);
+    setTimeout(() => setTiUpdateToast(false), 3000);
+  }
+
+  async function handleUpdateEntry(job: Job) {
+    const entry = tiEntries[0];
+    if (!entry || !editingEntryId) return;
+    if (!entry.skuCodeRaw) { setError("Select a SKU line for entry 1"); return; }
+    if (entry.tinQty <= 0) { setError("Tin Qty must be greater than 0 for entry 1"); return; }
+    if (entry.saveAsShade && !entry.shadeName.trim()) {
+      setTiEntries(prev => prev.map((en, i) => i === 0 ? { ...en, shadeNameError: "Shade name is required" } : en));
       return;
     }
     setTiActionLoading(true);
     setError(null);
     try {
-      const splitRow = job.type === "split"
-        ? assignedSplits.find(s => s.id === job.id)
-        : null;
-      const body = {
-        orderId:          job.orderId,
-        splitId:          job.type === "split" ? job.id : undefined,
-        tintAssignmentId: job.type === "order" ? job.tintAssignmentId : undefined,
-        entries:          validEntries,
-      };
-      // suppress unused var warning
-      void splitRow;
-      const res = await fetch("/api/tint/operator/tinter-issue", {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify(body),
-      });
-      if (!res.ok) {
-        const err = (await res.json()) as { error?: string };
-        throw new Error(err.error ?? "Failed to submit TI");
+      if (entry.saveAsShade) {
+        const shadeRes = await fetch("/api/tint/operator/shades", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(buildShadeBody(entry, job)),
+        });
+        if (shadeRes.status === 409) {
+          const data = (await shadeRes.json()) as { existingId: number; shadeName: string };
+          setConflictDialog({ existingId: data.existingId, shadeName: data.shadeName, entryId: entry.id, job, remainingIds: ["__EDIT__"] });
+          setTiActionLoading(false);
+          return;
+        }
+        if (!shadeRes.ok) throw new Error("Failed to save shade formula");
       }
-      await fetchOrders();
+      await doPatchEntry(job);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to submit TI");
+      setError(err instanceof Error ? err.message : "Failed to update entry");
     } finally {
       setTiActionLoading(false);
     }
@@ -674,23 +1232,59 @@ export function TintOperatorContent() {
   }
 
   async function markDone(job: Job) {
+    setTiIncompleteWarning(null);
+    type DoneErrBody = { error?: string; message?: string; missingLines?: { rawLineItemId: number; skuCodeRaw: string; skuDescriptionRaw: string | null }[] };
     if (job.type === "split") {
-      await postSplitAction("/api/tint/operator/split/done", job.id);
+      setSplitActionLoading(job.id);
+      setError(null);
+      try {
+        const res = await fetch("/api/tint/operator/split/done", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body:   JSON.stringify({ splitId: job.id }),
+        });
+        if (!res.ok) {
+          const data = (await res.json()) as DoneErrBody;
+          if (data.error === "TI incomplete") {
+            setTiIncompleteWarning(data.missingLines ?? []);
+            return;
+          }
+          throw new Error(data.error ?? "Action failed");
+        }
+        await fetchOrders();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Action failed");
+      } finally {
+        setSplitActionLoading(null);
+      }
     } else {
-      await postOrderAction("/api/tint/operator/done", job.id);
+      setOrderActionLoading(job.id);
+      setError(null);
+      try {
+        const res = await fetch("/api/tint/operator/done", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body:   JSON.stringify({ orderId: job.id }),
+        });
+        if (!res.ok) {
+          const data = (await res.json()) as DoneErrBody;
+          if (data.error === "TI incomplete") {
+            setTiIncompleteWarning(data.missingLines ?? []);
+            return;
+          }
+          throw new Error(data.error ?? "Action failed");
+        }
+        await fetchOrders();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Action failed");
+      } finally {
+        setOrderActionLoading(null);
+      }
     }
-  }
-
-  async function submitTIAndStart(job: Job) {
-    await submitTI(job);
-    // fetchOrders is called inside submitTI — after it resolves,
-    // the job's tiSubmitted will be true and hasActiveJob is refreshed.
-    // We do not auto-call startJob here — operator taps Start separately.
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
+    <>
     <div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden" }}>
       <style>{pulseKeyframes}</style>
 
@@ -962,11 +1556,36 @@ export function TintOperatorContent() {
                 </span>
               </div>
 
-              {completedSplits.length === 0 && (
+              {completedOrders.length === 0 && completedSplits.length === 0 && (
                 <p style={{ fontSize: 11, color: "#9ca3af", textAlign: "center", padding: "12px 0" }}>
                   No completed jobs yet today.
                 </p>
               )}
+
+              {completedOrders.map(co => {
+                const customerName = co.order.customer?.customerName ?? co.order.shipToCustomerName ?? "—";
+                const doneTime = co.completedAt
+                  ? new Date(co.completedAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false })
+                  : "—";
+                return (
+                  <div key={`co-${co.id}`} style={{ border: "1px solid #e2e5f1", borderRadius: 12, overflow: "hidden", marginBottom: 7, opacity: 0.65 }}>
+                    <div style={{ padding: "8px 11px", background: "#f0fdf4", borderBottom: "1px solid #bbf7d0" }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: "#111827" }}>{customerName}</div>
+                      <div style={{ fontFamily: "monospace", fontSize: 9, fontWeight: 600, color: "#7c3aed", marginTop: 2 }}>
+                        {co.order.obdNumber}
+                      </div>
+                    </div>
+                    <div style={{ padding: "7px 11px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <span style={{ fontSize: 10, fontWeight: 600, color: "#27500a", background: "#eaf3de", border: "1px solid #97c459", padding: "2px 7px", borderRadius: 5 }}>
+                        ✓ Tinting Done
+                      </span>
+                      <span style={{ fontFamily: "monospace", fontSize: 11, fontWeight: 600, color: "#16a34a", background: "#f0fdf4", border: "1px solid #bbf7d0", padding: "2px 8px", borderRadius: 6 }}>
+                        {doneTime}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
 
               {completedSplits.map(sp => {
                 const customerName = sp.order.customer?.customerName ?? sp.order.shipToCustomerName ?? "—";
@@ -974,7 +1593,7 @@ export function TintOperatorContent() {
                   ? new Date(sp.completedAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false })
                   : "—";
                 return (
-                  <div key={sp.id} style={{ border: "1px solid #e2e5f1", borderRadius: 12, overflow: "hidden", marginBottom: 7, opacity: 0.65 }}>
+                  <div key={`cs-${sp.id}`} style={{ border: "1px solid #e2e5f1", borderRadius: 12, overflow: "hidden", marginBottom: 7, opacity: 0.65 }}>
                     <div style={{ padding: "8px 11px", background: "#f0fdf4", borderBottom: "1px solid #bbf7d0" }}>
                       <div style={{ fontSize: 12, fontWeight: 700, color: "#111827" }}>{customerName}</div>
                       <div style={{ fontFamily: "monospace", fontSize: 9, fontWeight: 600, color: "#7c3aed", marginTop: 2 }}>
@@ -1003,6 +1622,26 @@ export function TintOperatorContent() {
           overflow: "hidden",
           background: "#f0f2f8",
         }}>
+
+          {/* Update toast */}
+          {tiUpdateToast && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 16px", background: "#f0fdf4", borderBottom: "1px solid #bbf7d0", flexShrink: 0 }}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.5" style={{ flexShrink: 0 }}>
+                <polyline points="20 6 9 17 4 12"/>
+              </svg>
+              <span style={{ fontSize: 12.5, fontWeight: 600, color: "#15803d" }}>TI entry updated</span>
+            </div>
+          )}
+
+          {/* Success toast */}
+          {tiSuccessToast && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 16px", background: "#f0fdf4", borderBottom: "1px solid #bbf7d0", flexShrink: 0 }}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.5" style={{ flexShrink: 0 }}>
+                <polyline points="20 6 9 17 4 12"/>
+              </svg>
+              <span style={{ fontSize: 12.5, fontWeight: 600, color: "#15803d" }}>TI entries saved</span>
+            </div>
+          )}
 
           {/* Error banner */}
           {error && (
@@ -1159,8 +1798,85 @@ export function TintOperatorContent() {
                   )}
                 </div>
 
+                {/* TI Status Strip */}
+                {tintingLines.length > 0 && (
+                  <div style={{ padding: "0 16px 8px" }}>
+                    <div style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".6px", color: "#9ca3af", marginBottom: 8, display: "flex", alignItems: "center", gap: 8 }}>
+                      TI Coverage
+                      <div style={{ flex: 1, height: 1, background: "#e2e5f1" }} />
+                      {tiEntriesLoading && <span style={{ fontSize: 9, fontWeight: 600, color: "#9ca3af" }}>loading…</span>}
+                    </div>
+                    <div style={{ background: "#f7f8fc", border: "1px solid #e2e5f1", borderRadius: 10, overflow: "hidden" }}>
+                      {tintingLines.map((line, i) => {
+                        const done    = existingTIEntries.has(line.rawLineItemId);
+                        const tiEntry = done ? existingTIEntries.get(line.rawLineItemId)! : null;
+                        const shadeStr = tiEntry
+                          ? Object.entries(tiEntry.shadeValues)
+                              .filter(([, v]) => v > 0)
+                              .map(([k, v]) => `${k}: ${v}`)
+                              .join("  ")
+                          : "";
+                        return (
+                          <div
+                            key={line.rawLineItemId}
+                            onClick={() => handleStripRowClick(line.rawLineItemId)}
+                            style={{
+                              display: "flex", alignItems: done ? "flex-start" : "center", gap: 8,
+                              padding: "8px 12px",
+                              borderBottom: i < tintingLines.length - 1 ? "1px solid #e2e5f1" : undefined,
+                              cursor: "pointer",
+                              background: done ? "#f0fdf4" : "#fffbeb",
+                            }}
+                          >
+                            <span style={{ fontSize: 14, flexShrink: 0, marginTop: done ? 1 : 0 }}>{done ? "✅" : "⏳"}</span>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div>
+                                <span style={{ fontSize: 11.5, fontWeight: 700, color: "#111827", fontFamily: "monospace" }}>{line.skuCodeRaw}</span>
+                                {line.skuDescriptionRaw && <span style={{ fontSize: 11, color: "#6b7280" }}> · {line.skuDescriptionRaw}</span>}
+                                <span style={{ fontSize: 10.5, color: "#9ca3af" }}> · {line.unitQty} qty · {PACK_CODES.find(p => p.value === line.packCode)?.label ?? line.packCode}</span>
+                              </div>
+                              {tiEntry && shadeStr && (
+                                <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 3, flexWrap: "wrap" }}>
+                                  <span style={{
+                                    fontSize: 9, fontWeight: 700, padding: "1px 5px", borderRadius: 3, flexShrink: 0,
+                                    background: tiEntry.table === "TINTER" ? "#e0e7ff" : "#fef9c3",
+                                    color:      tiEntry.table === "TINTER" ? "#3730a3" : "#713f12",
+                                    border:     `1px solid ${tiEntry.table === "TINTER" ? "#a5b4fc" : "#fde047"}`,
+                                  }}>
+                                    {tiEntry.table === "TINTER" ? "Tinter" : "Acotone"}
+                                  </span>
+                                  <span style={{ fontSize: 10.5, color: "#6b7280", fontFamily: "monospace" }}>{shadeStr}</span>
+                                </div>
+                              )}
+                            </div>
+                            <span style={{
+                              fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 5, flexShrink: 0,
+                              marginTop: done ? 1 : 0,
+                              ...(done
+                                ? { background: "#dcfce7", border: "1px solid #86efac", color: "#15803d" }
+                                : { background: "#fef9c3", border: "1px solid #fde047", color: "#854d0e" }),
+                            }}>
+                              {done ? "TI Done" : "Pending"}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {(() => {
+                      const covered = tintingLines.filter(l => existingTIEntries.has(l.rawLineItemId)).length;
+                      const total   = tintingLines.length;
+                      const allDone = covered === total;
+                      return (
+                        <p style={{ fontSize: 11, fontWeight: 600, marginTop: 6, color: allDone ? "#15803d" : "#92400e" }}>
+                          {covered} of {total} lines covered
+                        </p>
+                      );
+                    })()}
+                  </div>
+                )}
+
                 {/* TI Form */}
-                <div style={{ padding: "0 16px 8px" }}>
+                <div id="ti-form-section" style={{ padding: "0 16px 8px" }}>
 
                   {/* Section title */}
                   <div style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".6px", color: "#9ca3af", marginBottom: 10, display: "flex", alignItems: "center", gap: 8 }}>
@@ -1168,135 +1884,295 @@ export function TintOperatorContent() {
                     <div style={{ flex: 1, height: 1, background: "#e2e5f1" }} />
                   </div>
 
-                  <div style={{ background: "#fff", border: "1px solid #e2e5f1", borderRadius: 12, overflow: "hidden" }}>
+                  {/* No tinting lines */}
+                  {tintingLines.length === 0 && (
+                    <div style={{ background: "#fff", border: "1px solid #e2e5f1", borderRadius: 12, padding: "16px", textAlign: "center" }}>
+                      <p style={{ fontSize: 12, color: "#9ca3af" }}>No tinting lines in this job — start directly.</p>
+                    </div>
+                  )}
 
-                    {/* Submitted banner — shown when tiSubmitted = true */}
-                    {selectedJob.tiSubmitted && (
-                      <div style={{ background: "#e8eaf6", borderBottom: "1px solid #c5cae9", padding: "9px 13px", display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#1a237e" strokeWidth="2.5">
-                          <polyline points="20 6 9 17 4 12"/>
-                        </svg>
-                        <span style={{ fontSize: 11, fontWeight: 700, color: "#1a237e" }}>TI Submitted</span>
-                        <span style={{ fontSize: 10.5, color: "#5c6bc0", fontWeight: 500, marginLeft: "auto" }}>
-                          Form is read-only
-                        </span>
+                  {/* Single-form */}
+                  {tintingLines.length > 0 && (
+                    <div style={{ background: "#fff", border: "1px solid #e2e5f1", borderRadius: 12, overflow: "hidden" }}>
+
+                      {/* Tinter type selector */}
+                      <div style={{ padding: "10px 14px", borderBottom: "1px solid #f0f2f8", display: "flex", gap: 6 }}>
+                        {(["TINTER", "ACOTONE"] as const).map(t => (
+                          <button key={t} type="button"
+                            onClick={() => handleTinterTypeChange(t)}
+                            style={{ padding: "5px 16px", borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: "pointer", border: "1px solid",
+                              background: tinterType === t ? "#1a237e" : "#fff",
+                              color: tinterType === t ? "#fff" : "#6b7280",
+                              borderColor: tinterType === t ? "#1a237e" : "#d1d5db" }}>
+                            {t === "TINTER" ? "Tinter" : "Acotone"}
+                          </button>
+                        ))}
                       </div>
-                    )}
 
-                    {/* TI entries */}
-                    {tiEntries.map((entry, idx) => (
-                      <div key={idx} style={{ padding: "12px 14px", borderBottom: "1px solid #e2e5f1" }}>
-
-                        {/* Entry header */}
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                          <span style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".5px", color: "#9ca3af" }}>
-                            Entry {idx + 1}
-                          </span>
-                          {idx > 0 && !selectedJob.tiSubmitted && (
-                            <button
-                              type="button"
-                              onClick={() => setTiEntries(prev => prev.filter((_, i) => i !== idx))}
-                              style={{ width: 24, height: 24, borderRadius: 6, border: "1px solid #fca5a5", background: "#fef2f2", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#dc2626" }}
-                            >
-                              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-                              </svg>
-                            </button>
-                          )}
+                      {/* All saved shades combobox (shared, shown once above entries) */}
+                      <div style={{ padding: "10px 14px", borderBottom: "1px solid #f0f2f8" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 5 }}>
+                          <span style={{ fontSize: 9.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".4px", color: "#9ca3af" }}>All Saved Shades</span>
+                          <span style={{ fontSize: 9.5, color: "#d1d5db" }}>(optional — applies to focused entry)</span>
                         </div>
-
-                        {/* Base SKU + Tin Qty row */}
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 100px", gap: 8, marginBottom: 12 }}>
-                          <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                            <span style={{ fontSize: 9.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".4px", color: "#9ca3af" }}>Base SKU</span>
-                            <input
-                              type="text"
-                              placeholder="e.g. WC-DB-20"
-                              disabled={selectedJob.tiSubmitted}
-                              value={entry.baseSku}
-                              onChange={e => setTiEntries(prev => prev.map((en, i) => i === idx ? { ...en, baseSku: e.target.value } : en))}
-                              style={{ height: 34, background: "#f7f8fc", border: "1px solid #e2e5f1", borderRadius: 8, padding: "0 10px", fontSize: 12, fontWeight: 500, color: "#111827", outline: "none", opacity: selectedJob.tiSubmitted ? 0.6 : 1 }}
-                            />
-                          </div>
-                          <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                            <span style={{ fontSize: 9.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".4px", color: "#9ca3af" }}>Tin Qty</span>
-                            <input
-                              type="number"
-                              min={0}
-                              step={0.1}
-                              placeholder="0"
-                              disabled={selectedJob.tiSubmitted}
-                              value={entry.tinQty || ""}
-                              onChange={e => setTiEntries(prev => prev.map((en, i) => i === idx ? { ...en, tinQty: Number(e.target.value) } : en))}
-                              style={{ height: 34, background: "#f7f8fc", border: "1px solid #e2e5f1", borderRadius: 8, padding: "0 10px", fontSize: 12, fontWeight: 500, color: "#111827", outline: "none", opacity: selectedJob.tiSubmitted ? 0.6 : 1 }}
-                            />
-                          </div>
-                        </div>
-
-                        {/* Shade quantities */}
-                        <div style={{ fontSize: 9.5, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".5px", color: "#9ca3af", marginBottom: 7 }}>
-                          Shade Quantities
-                        </div>
-
-                        {/* Row 1: first 7 shades */}
-                        <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 5, marginBottom: 5 }}>
-                          {SHADES.slice(0, 7).map(shade => (
-                            <div key={shade.code} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
-                              <div style={{ fontSize: 9, fontWeight: 800, padding: "3px 0", borderRadius: 5, width: "100%", textAlign: "center", background: shade.bg, border: `1.5px solid ${shade.border}`, color: shade.text }}>
-                                {shade.code}
-                              </div>
-                              <input
-                                type="number"
-                                min={0}
-                                step={0.01}
-                                placeholder="—"
-                                disabled={selectedJob.tiSubmitted}
-                                value={(entry[shade.code as keyof TIEntry] as number) || ""}
-                                onChange={e => setTiEntries(prev => prev.map((en, i) => i === idx ? { ...en, [shade.code]: Number(e.target.value) } : en))}
-                                style={{ width: "100%", padding: "5px 2px", borderRadius: 5, fontSize: 11, fontWeight: 700, textAlign: "center", background: shade.bg, border: `1.5px solid ${shade.border}`, color: shade.text, outline: "none", fontFamily: "monospace", opacity: selectedJob.tiSubmitted ? 0.6 : 1 }}
-                              />
+                        <Popover open={allShadesComboOpen !== null} onOpenChange={(open) => {
+                          if (!open) { setAllShadesComboOpen(null); setAllShadesSearch(""); }
+                        }}>
+                          <PopoverTrigger
+                            onClick={() => {
+                              const firstEntryId = tiEntries[0]?.id ?? null;
+                              setAllShadesComboOpen(firstEntryId);
+                            }}
+                            style={{ width: "100%", height: 34, background: "#f7f8fc", border: "1px solid #e2e5f1", borderRadius: 8, padding: "0 10px", fontSize: 12, fontWeight: 500, color: "#111827", outline: "none", display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer" }}>
+                            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12, color: "#9ca3af" }}>
+                              {allShadesLoading ? "Loading…" : "Browse all shades…"}
+                            </span>
+                            <ChevronDown size={13} style={{ flexShrink: 0, color: "#9ca3af", marginLeft: 4 }} />
+                          </PopoverTrigger>
+                          <PopoverContent align="start" className="w-72 p-0">
+                            <div style={{ padding: 8 }}>
+                              <input type="text" placeholder="Search shades…" value={allShadesSearch}
+                                onChange={e => setAllShadesSearch(e.target.value)}
+                                style={{ width: "100%", height: 30, border: "1px solid #e2e5f1", borderRadius: 6, padding: "0 8px", fontSize: 11.5, outline: "none" }} />
                             </div>
-                          ))}
-                        </div>
-
-                        {/* Row 2: last 6 shades */}
-                        <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 5 }}>
-                          {SHADES.slice(7).map(shade => (
-                            <div key={shade.code} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
-                              <div style={{ fontSize: 9, fontWeight: 800, padding: "3px 0", borderRadius: 5, width: "100%", textAlign: "center", background: shade.bg, border: `1.5px solid ${shade.border}`, color: shade.text }}>
-                                {shade.code}
-                              </div>
-                              <input
-                                type="number"
-                                min={0}
-                                step={0.01}
-                                placeholder="—"
-                                disabled={selectedJob.tiSubmitted}
-                                value={(entry[shade.code as keyof TIEntry] as number) || ""}
-                                onChange={e => setTiEntries(prev => prev.map((en, i) => i === idx ? { ...en, [shade.code]: Number(e.target.value) } : en))}
-                                style={{ width: "100%", padding: "5px 2px", borderRadius: 5, fontSize: 11, fontWeight: 700, textAlign: "center", background: shade.bg, border: `1.5px solid ${shade.border}`, color: shade.text, outline: "none", fontFamily: "monospace", opacity: selectedJob.tiSubmitted ? 0.6 : 1 }}
-                              />
+                            <div style={{ maxHeight: 200, overflowY: "auto" }}>
+                              {allSavedShades
+                                .filter(s => !allShadesSearch || s.shadeName.toLowerCase().includes(allShadesSearch.toLowerCase()))
+                                .map(shade => (
+                                  <div key={shade.id}
+                                    onClick={() => {
+                                      const targetId = allShadesComboOpen ?? tiEntries[0]?.id;
+                                      if (targetId) applyShadeToEntry(targetId, shade);
+                                      setAllShadesComboOpen(null);
+                                      setAllShadesSearch("");
+                                    }}
+                                    style={{ padding: "7px 12px", cursor: "pointer", fontSize: 12, fontWeight: 500, color: "#111827", borderTop: "1px solid #f3f4f6" }}>
+                                    <span style={{ fontWeight: 600 }}>{shade.shadeName}</span>
+                                    <span style={{ color: "#9ca3af", fontSize: 11 }}> · {PACK_CODES.find(p => p.value === shade.packCode)?.label ?? shade.packCode ?? "—"}</span>
+                                  </div>
+                                ))}
                             </div>
-                          ))}
-                        </div>
-
+                          </PopoverContent>
+                        </Popover>
                       </div>
-                    ))}
 
-                    {/* Add entry button — hidden when tiSubmitted */}
-                    {!selectedJob.tiSubmitted && (
+                      {/* Entries */}
+                      {tiEntries.map((entry, idx) => {
+                        const shadeColumns = tinterType === "TINTER" ? SHADES : ACOTONE_SHADES;
+                        const flash = entry.flashActive;
+                        const visibleSugs = entry.suggestionsExpanded ? entry.suggestions : entry.suggestions.slice(0, 3);
+
+                        return (
+                          <div key={entry.id} style={{ borderBottom: "1px solid #e2e5f1" }}>
+                            {/* Entry header */}
+                            <div style={{ padding: "8px 14px", background: "#f7f8fc", borderBottom: "1px solid #f0f2f8", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                <span style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".5px", color: "#9ca3af" }}>Entry {idx + 1}</span>
+                                {idx === 0 && editingEntryId && (
+                                  <>
+                                    <span style={{ fontSize: 9.5, fontWeight: 700, padding: "2px 6px", borderRadius: 4, background: "#e0e7ff", border: "1px solid #a5b4fc", color: "#3730a3" }}>
+                                      Editing existing entry
+                                    </span>
+                                    <button type="button"
+                                      onClick={() => { setEditingEntryId(null); setTiEntries(prev => [defaultTIFormEntry(), ...prev.slice(1)]); }}
+                                      style={{ fontSize: 10.5, fontWeight: 600, color: "#6b7280", background: "none", border: "none", cursor: "pointer", textDecoration: "underline", padding: 0 }}>
+                                      Cancel edit
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                              {tiEntries.length > 1 && (
+                                <button type="button"
+                                  onClick={() => setTiEntries(prev => prev.filter(e => e.id !== entry.id))}
+                                  style={{ width: 22, height: 22, borderRadius: 5, border: "1px solid #fca5a5", background: "#fef2f2", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#dc2626" }}>
+                                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                                </button>
+                              )}
+                            </div>
+
+                            <div style={{ padding: "12px 14px" }}>
+                              {/* 1. Base SKU Dropdown */}
+                              <div style={{ marginBottom: 10 }}>
+                                <span style={{ fontSize: 9.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".4px", color: "#9ca3af", display: "block", marginBottom: 4 }}>Base SKU</span>
+                                <select
+                                  value={entry.rawLineItemId ?? ""}
+                                  onChange={e => {
+                                    const val = Number(e.target.value);
+                                    if (val) handleSkuSelect(entry.id, val);
+                                  }}
+                                  style={{ width: "100%", height: 34, background: "#f7f8fc", border: "1px solid #e2e5f1", borderRadius: 8, padding: "0 8px", fontSize: 12, fontWeight: 500, color: entry.rawLineItemId ? "#111827" : "#9ca3af", outline: "none" }}>
+                                  <option value="">Select SKU line…</option>
+                                  {tintingLines.map(line => (
+                                    <option key={line.rawLineItemId} value={line.rawLineItemId}>
+                                      {line.skuCodeRaw}{line.skuDescriptionRaw ? ` · ${line.skuDescriptionRaw}` : ""} · {line.unitQty} qty · {PACK_CODES.find(p => p.value === line.packCode)?.label ?? line.packCode}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+
+                              {/* 2. Suggestions panel — only when SKU selected and suggestions exist */}
+                              {entry.skuCodeRaw && (entry.suggestionsLoading || entry.suggestions.length > 0) && (
+                                <div style={{ marginBottom: 10, padding: "8px 10px", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 8 }}>
+                                  <div style={{ fontSize: 9.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".4px", color: "#92400e", marginBottom: 5, display: "flex", alignItems: "center", gap: 5 }}>
+                                    Suggestions
+                                    {entry.suggestionsLoading && <span style={{ fontSize: 9, fontWeight: 500, color: "#d97706" }}>loading…</span>}
+                                  </div>
+                                  {visibleSugs.map(sug => (
+                                    <div key={sug.id} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                                      <div style={{ flex: 1, minWidth: 0 }}>
+                                        <span style={{ fontSize: 11.5, fontWeight: 700, color: "#111827" }}>🎨 {sug.shadeName}</span>
+                                        <span style={{ fontSize: 10.5, color: "#6b7280", marginLeft: 4 }}>· {PACK_CODES.find(p => p.value === sug.packCode)?.label ?? sug.packCode ?? "—"}</span>
+                                        <div style={{ fontSize: 9.5, color: "#9ca3af" }}>
+                                          {sug.lastUsedAt ? `Last used: ${new Date(sug.lastUsedAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}` : "First time"}
+                                        </div>
+                                      </div>
+                                      <button type="button"
+                                        onClick={() => applyShadeToEntry(entry.id, sug)}
+                                        style={{ fontSize: 10.5, fontWeight: 700, padding: "3px 10px", borderRadius: 5, background: "#f59e0b", color: "#fff", border: "none", cursor: "pointer", flexShrink: 0 }}>
+                                        Use this
+                                      </button>
+                                    </div>
+                                  ))}
+                                  {entry.suggestions.length > 3 && (
+                                    <button type="button"
+                                      onClick={() => setTiEntries(prev => prev.map(e => e.id === entry.id ? { ...e, suggestionsExpanded: !e.suggestionsExpanded } : e))}
+                                      style={{ fontSize: 10.5, fontWeight: 600, color: "#92400e", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+                                      {entry.suggestionsExpanded ? "Show less" : `+${entry.suggestions.length - 3} more`}
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* 4+5. Tin Qty + Pack Size display */}
+                              <div style={{ display: "grid", gridTemplateColumns: "1fr 100px", gap: 8, marginBottom: 12 }}>
+                                <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                                  <span style={{ fontSize: 9.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".4px", color: "#9ca3af" }}>Tin Qty</span>
+                                  <input type="number" min={0} step={0.1} placeholder="0" value={entry.tinQty || ""}
+                                    onChange={e => setTiEntries(prev => prev.map(en => en.id === entry.id ? { ...en, tinQty: Number(e.target.value) } : en))}
+                                    style={{ height: 34, background: flash ? "#fffbeb" : "#f7f8fc", border: `1px solid ${flash ? "#fcd34d" : "#e2e5f1"}`, borderRadius: 8, padding: "0 10px", fontSize: 12, fontWeight: 500, color: "#111827", outline: "none", transition: "background .3s,border-color .3s" }} />
+                                </div>
+                                <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                                  <span style={{ fontSize: 9.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".4px", color: "#9ca3af" }}>Pack Size</span>
+                                  <div style={{ height: 34, background: "#f0f2f8", border: "1px solid #e2e5f1", borderRadius: 8, padding: "0 10px", fontSize: 12, fontWeight: 600, color: entry.packCode ? "#111827" : "#9ca3af", display: "flex", alignItems: "center" }}>
+                                    {entry.packCode ? (PACK_CODES.find(p => p.value === entry.packCode)?.label ?? entry.packCode) : "—"}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Selected shade indicator */}
+                              {entry.selectedShadeName !== null && (
+                                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                                  <span style={{
+                                    display: "inline-flex", alignItems: "center", gap: 5,
+                                    background: "#e8eaf6", border: "1px solid #1a237e", borderRadius: 999,
+                                    padding: "3px 10px", fontSize: 11, color: "#1a237e", fontWeight: 600,
+                                  }}>
+                                    <Palette size={11} />
+                                    {entry.selectedShadeName}
+                                  </span>
+                                  <button type="button"
+                                    onClick={() => setTiEntries(prev => prev.map(en => en.id === entry.id ? {
+                                      ...en,
+                                      selectedShadeName: null, selectedShadeId: null,
+                                      shadeValues: {}, showAllColumns: true,
+                                    } : en))}
+                                    style={{ fontSize: 10.5, fontWeight: 700, color: "#dc2626", background: "none", border: "none", cursor: "pointer", padding: "0 2px" }}>
+                                    Clear ×
+                                  </button>
+                                </div>
+                              )}
+
+                              {/* 6. Shade Columns Grid */}
+                              {(() => {
+                                const allCols = shadeColumns as readonly { code: string; bg: string; border: string; text: string }[];
+                                const activeCols = allCols.filter(col => (entry.shadeValues[col.code] ?? 0) > 0);
+                                const displayCols = (!entry.showAllColumns && activeCols.length > 0) ? activeCols : allCols;
+                                const hiddenCount = allCols.length - activeCols.length;
+                                const showToggle = entry.selectedShadeName !== null && activeCols.length > 0;
+                                return (
+                                  <>
+                                    <div style={{ fontSize: 9.5, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".5px", color: "#9ca3af", marginBottom: 7 }}>Shade Quantities</div>
+                                    <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 5, marginBottom: 5 }}>
+                                      {displayCols.slice(0, 7).map(shade => (
+                                        <div key={shade.code} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+                                          <div style={{ fontSize: 9, fontWeight: 800, padding: "3px 0", borderRadius: 5, width: "100%", textAlign: "center", background: shade.bg, border: `1.5px solid ${shade.border}`, color: shade.text }}>{shade.code}</div>
+                                          <input type="number" min={0} step={0.01} placeholder="—"
+                                            value={entry.shadeValues[shade.code] || ""}
+                                            onChange={e => setTiEntries(prev => prev.map(en => en.id === entry.id ? { ...en, shadeValues: { ...en.shadeValues, [shade.code]: Number(e.target.value) } } : en))}
+                                            style={{ width: "100%", padding: "5px 2px", borderRadius: 5, fontSize: 11, fontWeight: 700, textAlign: "center", background: flash ? "#fffbeb" : shade.bg, border: `1.5px solid ${flash ? "#fcd34d" : shade.border}`, color: shade.text, outline: "none", fontFamily: "monospace", transition: "background .3s,border-color .3s" }} />
+                                        </div>
+                                      ))}
+                                    </div>
+                                    {displayCols.length > 7 && (
+                                      <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 5, marginBottom: 5 }}>
+                                        {displayCols.slice(7).map(shade => (
+                                          <div key={shade.code} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+                                            <div style={{ fontSize: 9, fontWeight: 800, padding: "3px 0", borderRadius: 5, width: "100%", textAlign: "center", background: shade.bg, border: `1.5px solid ${shade.border}`, color: shade.text }}>{shade.code}</div>
+                                            <input type="number" min={0} step={0.01} placeholder="—"
+                                              value={entry.shadeValues[shade.code] || ""}
+                                              onChange={e => setTiEntries(prev => prev.map(en => en.id === entry.id ? { ...en, shadeValues: { ...en.shadeValues, [shade.code]: Number(e.target.value) } } : en))}
+                                              style={{ width: "100%", padding: "5px 2px", borderRadius: 5, fontSize: 11, fontWeight: 700, textAlign: "center", background: flash ? "#fffbeb" : shade.bg, border: `1.5px solid ${flash ? "#fcd34d" : shade.border}`, color: shade.text, outline: "none", fontFamily: "monospace", transition: "background .3s,border-color .3s" }} />
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                    {showToggle && (
+                                      <button type="button"
+                                        onClick={() => setTiEntries(prev => prev.map(en => en.id === entry.id ? { ...en, showAllColumns: !en.showAllColumns } : en))}
+                                        style={{ fontSize: 10.5, fontWeight: 600, color: "#1a237e", background: "none", border: "none", cursor: "pointer", padding: "3px 0 8px", display: "block" }}>
+                                        {!entry.showAllColumns
+                                          ? `+ Show all columns (${hiddenCount} hidden)`
+                                          : `− Show active columns only`}
+                                      </button>
+                                    )}
+                                    {!showToggle && <div style={{ marginBottom: 10 }} />}
+                                  </>
+                                );
+                              })()}
+
+                              {/* 7. Save as Shade Toggle — only when SKU selected */}
+                              {entry.skuCodeRaw && (
+                                <div style={{ borderTop: "1px solid #f0f2f8", paddingTop: 10 }}>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                    <Switch
+                                      checked={entry.saveAsShade}
+                                      onCheckedChange={(v: boolean) => setTiEntries(prev => prev.map(en => en.id === entry.id ? { ...en, saveAsShade: v, shadeNameError: "" } : en))}
+                                      className="data-[checked]:bg-[#1a237e] data-[unchecked]:bg-[#d1d5db]"
+                                    />
+                                    <span style={{ fontSize: 12, fontWeight: 600, color: "#374151" }}>Save as shade formula</span>
+                                  </div>
+                                  <div style={{ overflow: "hidden", maxHeight: entry.saveAsShade ? "80px" : "0px", transition: "max-height 200ms ease", marginTop: entry.saveAsShade ? 8 : 0 }}>
+                                    <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                                      <span style={{ fontSize: 9.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".4px", color: "#9ca3af" }}>
+                                        Shade name <span style={{ color: "#ef4444" }}>*</span>
+                                      </span>
+                                      <input type="text" placeholder="e.g. Ivory White"
+                                        value={entry.shadeName}
+                                        onChange={e => setTiEntries(prev => prev.map(en => en.id === entry.id ? { ...en, shadeName: e.target.value, shadeNameError: "" } : en))}
+                                        style={{ height: 34, background: "#f7f8fc", border: `1px solid ${entry.shadeNameError ? "#ef4444" : "#e2e5f1"}`, borderRadius: 8, padding: "0 10px", fontSize: 12, fontWeight: 500, color: "#111827", outline: "none" }} />
+                                      {entry.shadeNameError && <span style={{ fontSize: 10.5, color: "#ef4444" }}>{entry.shadeNameError}</span>}
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                      {/* Add Another Entry */}
                       <div
-                        onClick={() => setTiEntries(prev => [...prev, defaultTIEntry()])}
-                        style={{ padding: "9px 14px", display: "flex", alignItems: "center", justifyContent: "center", gap: 5, fontSize: 11.5, fontWeight: 700, color: "#1a237e", cursor: "pointer", borderTop: "1px solid #e2e5f1", background: "#e8eaf6" }}
-                      >
+                        onClick={() => setTiEntries(prev => [...prev, defaultTIFormEntry()])}
+                        style={{ padding: "10px 14px", display: "flex", alignItems: "center", justifyContent: "center", gap: 5, fontSize: 11.5, fontWeight: 700, color: "#1a237e", cursor: "pointer", background: "#e8eaf6" }}>
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                           <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
                         </svg>
-                        Add Another Base Entry
+                        Add Another Entry
                       </div>
-                    )}
 
-                  </div>
+                    </div>
+                  )}
+
                 </div>
 
               </div>
@@ -1316,30 +2192,87 @@ export function TintOperatorContent() {
                     ? splitActionLoading === selectedJob.id
                     : orderActionLoading === selectedJob.id) || tiActionLoading;
 
-                  // Case 1 — In progress → Mark as Done
+                  // Case 1 — In progress → Add TI Entry + Mark as Done
                   if (selectedJob.status === "tinting_in_progress") {
+                    const isTILoading   = tiActionLoading;
+                    const isDoneLoading = selectedJob.type === "split"
+                      ? splitActionLoading === selectedJob.id
+                      : orderActionLoading === selectedJob.id;
+                    const anyLoading = isTILoading || isDoneLoading;
                     return (
-                      <button
-                        type="button"
-                        onClick={() => markDone(selectedJob)}
-                        disabled={isLoading}
-                        style={{ flex: 1, background: "#16a34a", color: "#fff", border: "none", borderRadius: 10, padding: "11px 0", fontSize: 13, fontWeight: 700, cursor: isLoading ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 7, opacity: isLoading ? 0.6 : 1 }}
-                      >
-                        {isLoading
-                          ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" style={{ animation: "spin .7s linear infinite" }}><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
-                          : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
-                        }
-                        Mark as Done
-                      </button>
+                      <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8 }}>
+                        {/* TI incomplete warning */}
+                        {tiIncompleteWarning && tiIncompleteWarning.length > 0 && (
+                          <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 8, padding: "10px 12px" }}>
+                            <p style={{ fontSize: 12, fontWeight: 700, color: "#92400e", margin: "0 0 5px 0" }}>
+                              Some tinting lines are missing TI entries:
+                            </p>
+                            <ul style={{ fontSize: 11.5, color: "#b45309", margin: "0 0 6px 14px", padding: 0 }}>
+                              {tiIncompleteWarning.map(line => (
+                                <li key={line.rawLineItemId}>
+                                  {line.skuCodeRaw}{line.skuDescriptionRaw ? ` · ${line.skuDescriptionRaw}` : ""}
+                                </li>
+                              ))}
+                            </ul>
+                            <p style={{ fontSize: 11, color: "#92400e", margin: 0 }}>
+                              Please fill TI entries for these lines before marking Done.
+                            </p>
+                          </div>
+                        )}
+                        <div style={{ display: "flex", gap: 8 }}>
+                          <button
+                            type="button"
+                            onClick={() => editingEntryId ? handleUpdateEntry(selectedJob) : handleSubmitTIAndStart(selectedJob)}
+                            disabled={anyLoading}
+                            style={{ flex: 1, background: "#1a237e", color: "#fff", border: "none", borderRadius: 10, padding: "11px 0", fontSize: 13, fontWeight: 700, cursor: anyLoading ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 7, opacity: anyLoading ? 0.6 : 1 }}
+                          >
+                            {isTILoading
+                              ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" style={{ animation: "spin .7s linear infinite" }}><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+                              : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                            }
+                            {editingEntryId ? "Update TI Entry" : "Add TI Entry"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => markDone(selectedJob)}
+                            disabled={anyLoading}
+                            style={{ flex: 1, background: "#16a34a", color: "#fff", border: "none", borderRadius: 10, padding: "11px 0", fontSize: 13, fontWeight: 700, cursor: anyLoading ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 7, opacity: anyLoading ? 0.6 : 1 }}
+                          >
+                            {isDoneLoading
+                              ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" style={{ animation: "spin .7s linear infinite" }}><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+                              : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
+                            }
+                            Mark as Done
+                          </button>
+                        </div>
+                      </div>
                     );
                   }
 
-                  // Case 2 — TI not submitted → Submit TI & Start
+                  // Case 2 — TI not submitted
                   if (!selectedJob.tiSubmitted) {
+                    // No tinting lines → Start directly
+                    if (tintingLines.length === 0) {
+                      return (
+                        <button
+                          type="button"
+                          onClick={() => startJob(selectedJob)}
+                          disabled={isLoading}
+                          style={{ flex: 1, background: "#1a237e", color: "#fff", border: "none", borderRadius: 10, padding: "11px 0", fontSize: 13, fontWeight: 700, cursor: isLoading ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 7, opacity: isLoading ? 0.6 : 1 }}
+                        >
+                          {isLoading
+                            ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" style={{ animation: "spin .7s linear infinite" }}><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+                            : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                          }
+                          Start Job
+                        </button>
+                      );
+                    }
+                    // Tinting lines exist → Submit TI & Start
                     return (
                       <button
                         type="button"
-                        onClick={() => submitTIAndStart(selectedJob)}
+                        onClick={() => editingEntryId ? handleUpdateEntry(selectedJob) : handleSubmitTIAndStart(selectedJob)}
                         disabled={isLoading}
                         style={{ flex: 1, background: "#1a237e", color: "#fff", border: "none", borderRadius: 10, padding: "11px 0", fontSize: 13, fontWeight: 700, cursor: isLoading ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 7, opacity: isLoading ? 0.6 : 1 }}
                       >
@@ -1347,7 +2280,7 @@ export function TintOperatorContent() {
                           ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" style={{ animation: "spin .7s linear infinite" }}><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
                           : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
                         }
-                        Submit TI &amp; Start
+                        {editingEntryId ? "Update TI Entry" : "Submit TI & Start"}
                       </button>
                     );
                   }
@@ -1364,20 +2297,36 @@ export function TintOperatorContent() {
                     );
                   }
 
-                  // Case 4 — TI submitted, no active job → Start Job
+                  // Case 4 — TI submitted, no active job → Start Job (or Update TI Entry if in edit mode)
                   return (
-                    <button
-                      type="button"
-                      onClick={() => startJob(selectedJob)}
-                      disabled={isLoading}
-                      style={{ flex: 1, background: "#1a237e", color: "#fff", border: "none", borderRadius: 10, padding: "11px 0", fontSize: 13, fontWeight: 700, cursor: isLoading ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 7, opacity: isLoading ? 0.6 : 1 }}
-                    >
-                      {isLoading
-                        ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" style={{ animation: "spin .7s linear infinite" }}><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
-                        : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                      }
-                      Start Job
-                    </button>
+                    <div style={{ flex: 1, display: "flex", gap: 8 }}>
+                      {editingEntryId && (
+                        <button
+                          type="button"
+                          onClick={() => handleUpdateEntry(selectedJob)}
+                          disabled={isLoading}
+                          style={{ flex: 1, background: "#1a237e", color: "#fff", border: "none", borderRadius: 10, padding: "11px 0", fontSize: 13, fontWeight: 700, cursor: isLoading ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 7, opacity: isLoading ? 0.6 : 1 }}
+                        >
+                          {isLoading
+                            ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" style={{ animation: "spin .7s linear infinite" }}><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+                            : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                          }
+                          Update TI Entry
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => startJob(selectedJob)}
+                        disabled={isLoading}
+                        style={{ flex: 1, background: "#1a237e", color: "#fff", border: "none", borderRadius: 10, padding: "11px 0", fontSize: 13, fontWeight: 700, cursor: isLoading ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 7, opacity: isLoading ? 0.6 : 1 }}
+                      >
+                        {isLoading
+                          ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" style={{ animation: "spin .7s linear infinite" }}><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+                          : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                        }
+                        Start Job
+                      </button>
+                    </div>
                   );
                 })()}
               </div>
@@ -1533,11 +2482,36 @@ export function TintOperatorContent() {
             Completed Today
           </div>
 
-          {completedSplits.length === 0 && (
+          {completedOrders.length === 0 && completedSplits.length === 0 && (
             <p style={{ fontSize: 11, color: "#9ca3af", textAlign: "center", padding: "8px 0" }}>
               No completed jobs yet today.
             </p>
           )}
+
+          {completedOrders.map(co => {
+            const customerName = co.order.customer?.customerName ?? co.order.shipToCustomerName ?? "—";
+            const doneTime = co.completedAt
+              ? new Date(co.completedAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false })
+              : "—";
+            return (
+              <div key={`sheet-co-${co.id}`} style={{ border: "1px solid #e2e5f1", borderRadius: 12, overflow: "hidden", marginBottom: 7, opacity: 0.65 }}>
+                <div style={{ padding: "8px 11px", background: "#f0fdf4", borderBottom: "1px solid #bbf7d0" }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: "#111827" }}>{customerName}</div>
+                  <div style={{ fontFamily: "monospace", fontSize: 9, fontWeight: 600, color: "#7c3aed", marginTop: 2 }}>
+                    {co.order.obdNumber}
+                  </div>
+                </div>
+                <div style={{ padding: "7px 11px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <span style={{ fontSize: 10, fontWeight: 600, color: "#27500a", background: "#eaf3de", border: "1px solid #97c459", padding: "2px 7px", borderRadius: 5 }}>
+                    ✓ Tinting Done
+                  </span>
+                  <span style={{ fontFamily: "monospace", fontSize: 11, fontWeight: 600, color: "#16a34a", background: "#f0fdf4", border: "1px solid #bbf7d0", padding: "2px 8px", borderRadius: 6 }}>
+                    {doneTime}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
 
           {completedSplits.map(sp => {
             const customerName = sp.order.customer?.customerName ?? sp.order.shipToCustomerName ?? "—";
@@ -1545,7 +2519,7 @@ export function TintOperatorContent() {
               ? new Date(sp.completedAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false })
               : "—";
             return (
-              <div key={`sheet-done-${sp.id}`} style={{ border: "1px solid #e2e5f1", borderRadius: 12, overflow: "hidden", marginBottom: 7, opacity: 0.65 }}>
+              <div key={`sheet-cs-${sp.id}`} style={{ border: "1px solid #e2e5f1", borderRadius: 12, overflow: "hidden", marginBottom: 7, opacity: 0.65 }}>
                 <div style={{ padding: "8px 11px", background: "#f0fdf4", borderBottom: "1px solid #bbf7d0" }}>
                   <div style={{ fontSize: 12, fontWeight: 700, color: "#111827" }}>{customerName}</div>
                   <div style={{ fontFamily: "monospace", fontSize: 9, fontWeight: 600, color: "#7c3aed", marginTop: 2 }}>
@@ -1568,5 +2542,25 @@ export function TintOperatorContent() {
       </div>
 
     </div>
+
+      {/* Conflict Dialog */}
+      <Dialog open={!!conflictDialog} onOpenChange={(open: boolean) => { if (!open) setConflictDialog(null); }}>
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Shade already exists</DialogTitle>
+            <DialogDescription>
+              A shade named &quot;{conflictDialog?.shadeName}&quot; already exists for this customer with this SKU and pack size. Overwrite it?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConflictDialog(null)}>Cancel</Button>
+            <Button onClick={handleConflictOverwrite} disabled={tiActionLoading}>
+              {tiActionLoading && <Loader2 className={cn("animate-spin mr-1")} size={13} />}
+              Overwrite
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

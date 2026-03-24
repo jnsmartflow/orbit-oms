@@ -6,7 +6,7 @@ import { signOut } from "next-auth/react";
 import { cn } from "@/lib/utils";
 import {
   ClipboardList, Layers, User, Zap, Upload,
-  Truck, Warehouse, Users, Package, MapPin,
+  Truck, Warehouse, Users, Package, MapPin, FileText, Palette,
 } from "lucide-react";
 import { useRoleSidebar } from "./role-sidebar-provider";
 import type { NavItemConfig } from "@/lib/permissions";
@@ -30,16 +30,18 @@ export interface RoleSidebarProps {
 // ── Icon map ──────────────────────────────────────────────────────────────────
 
 const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
-  import_obd:    Upload,
-  support_queue: ClipboardList,
-  tint_manager:  Layers,
-  tint_operator: Zap,
-  dispatcher:    Truck,
-  warehouse:     Warehouse,
-  customers:     Users,
-  skus:          Package,
-  routes_areas:  MapPin,
-  vehicles:      Truck,
+  import_obd:          Upload,
+  support_queue:       ClipboardList,
+  tint_manager:        Layers,
+  tint_operator:       Zap,
+  dispatcher:          Truck,
+  warehouse:           Warehouse,
+  customers:           Users,
+  skus:                Package,
+  routes_areas:        MapPin,
+  vehicles:            Truck,
+  delivery_challans:   FileText,
+  shade_master:        Palette,
 };
 
 const DEFAULT_ICON = User;
@@ -61,6 +63,8 @@ export function RoleSidebar({ role, userName, userInitials, navItems }: RoleSide
   const roleLabel = ROLE_LABELS[role];
 
   function isActive(href: string) {
+    // Prefix match for routes with nested pages (e.g. /challan)
+    if (href === "/challan") return pathname.startsWith("/challan");
     return pathname === href;
   }
 
