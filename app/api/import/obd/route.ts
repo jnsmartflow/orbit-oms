@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createHmac, timingSafeEqual } from "crypto";
 import type { Session } from "next-auth";
 import type { Prisma } from "@prisma/client";
 import * as XLSX from "xlsx";
@@ -6,6 +7,8 @@ import { auth } from "@/lib/auth";
 import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { checkPermission } from "@/lib/permissions";
+import { IMPORT_TEMPLATES } from "@/lib/import-templates";
+import type { ImportTemplateId } from "@/lib/import-templates";
 import type {
   ImportLinePreview,
   ImportObdPreview,
@@ -197,34 +200,67 @@ async function handlePreview(req: Request, session: Session): Promise<NextRespon
     return NextResponse.json({ error: "Failed to parse multipart form data" }, { status: 400 });
   }
 
-  const headerFileEntry = formData.get("headerFile");
-  const lineFileEntry   = formData.get("lineFile");
-
-  if (!(headerFileEntry instanceof File)) {
-    return NextResponse.json({ error: "headerFile is required" }, { status: 400 });
-  }
-
-  const hasLineFile = lineFileEntry instanceof File;
+  // ── Template resolution ───────────────────────────────────────────────────
+  const rawTemplateId = formData.get("templateId") as string | null;
+  const templateId: ImportTemplateId =
+    rawTemplateId && rawTemplateId in IMPORT_TEMPLATES
+      ? (rawTemplateId as ImportTemplateId)
+      : "two_file_v1";
+  const template = IMPORT_TEMPLATES[templateId];
 
   // ── STEP A — Parse XLS files ─────────────────────────────────────────────
   let headerRows: RawHeaderRow[];
   let lineRows:   RawLineRow[] = [];
+  let batchFileName: string;
+  let lineFileName  = "";
 
-  try {
-    const headerBuf = Buffer.from(await headerFileEntry.arrayBuffer());
-    const headerWb  = XLSX.read(headerBuf, { type: "buffer", cellDates: false });
-    headerRows = parseSheet<RawHeaderRow>(headerWb, "LogisticsTrackerWareHouse");
-
-    if (hasLineFile) {
-      const lineBuf = Buffer.from(await (lineFileEntry as File).arrayBuffer());
-      const lineWb  = XLSX.read(lineBuf, { type: "buffer", cellDates: false });
-      lineRows = parseSheet<RawLineRow>(lineWb, "Sheet1");
+  if (template.files.combined) {
+    // combined_v2: single workbook, two sheets
+    const combinedEntry = formData.get("combinedFile");
+    if (!(combinedEntry instanceof File)) {
+      return NextResponse.json({ error: "combinedFile is required" }, { status: 400 });
     }
-  } catch {
-    return NextResponse.json(
-      { error: "Cannot parse file. Check sheet names." },
-      { status: 400 },
-    );
+    batchFileName = combinedEntry.name;
+    try {
+      const buf = Buffer.from(await combinedEntry.arrayBuffer());
+      const wb  = XLSX.read(buf, { type: "buffer", cellDates: false });
+      headerRows = parseSheet<RawHeaderRow>(wb, template.sheets.header);
+      if (template.sheets.lineItems) {
+        const lineSheet = wb.Sheets[template.sheets.lineItems];
+        if (lineSheet) {
+          lineRows = XLSX.utils.sheet_to_json<RawLineRow>(lineSheet, { raw: true, defval: null });
+        }
+      }
+    } catch {
+      return NextResponse.json(
+        { error: "Cannot parse file. Check sheet names." },
+        { status: 400 },
+      );
+    }
+  } else {
+    // two_file_v1: separate header file + optional line file
+    const headerFileEntry = formData.get("headerFile");
+    const lineFileEntry   = formData.get("lineFile");
+    if (!(headerFileEntry instanceof File)) {
+      return NextResponse.json({ error: "headerFile is required" }, { status: 400 });
+    }
+    batchFileName = headerFileEntry.name;
+    try {
+      const headerBuf = Buffer.from(await headerFileEntry.arrayBuffer());
+      const headerWb  = XLSX.read(headerBuf, { type: "buffer", cellDates: false });
+      headerRows = parseSheet<RawHeaderRow>(headerWb, template.sheets.header);
+      if (lineFileEntry instanceof File && template.sheets.lineItems) {
+        lineFileName = lineFileEntry.name;
+        const lineBuf = Buffer.from(await lineFileEntry.arrayBuffer());
+        const lineWb  = XLSX.read(lineBuf, { type: "buffer", cellDates: false });
+        lineRows = parseSheet<RawLineRow>(lineWb, template.sheets.lineItems);
+      }
+    } catch {
+      return NextResponse.json(
+        { error: "Cannot parse file. Check sheet names." },
+        { status: 400 },
+      );
+    }
   }
 
   if (headerRows.length === 0) {
@@ -252,7 +288,7 @@ async function handlePreview(req: Request, session: Session): Promise<NextRespon
   // ── STEP C — Validate line items (1 bulk query, skipped if no line file) ──
   let existingSkuSet = new Set<string>();
 
-  if (hasLineFile && lineRows.length > 0) {
+  if (lineRows.length > 0) {
     const allSkuCodes = lineRows.map((r) => toStr(r["sku_codes"])).filter(Boolean);
     const existingSkus = await prisma.sku_master.findMany({
       where:  { skuCode: { in: allSkuCodes } },
@@ -281,8 +317,8 @@ async function handlePreview(req: Request, session: Session): Promise<NextRespon
       data: {
         batchRef,
         importedById: userId,
-        headerFile:   headerFileEntry.name,
-        lineFile:     hasLineFile ? (lineFileEntry as File).name : "",
+        headerFile:   `[${templateId}] ${batchFileName}`,
+        lineFile:     lineFileName,
         status:       "processing",
       },
     });
@@ -907,18 +943,661 @@ async function handleConfirm(req: Request, session: Session): Promise<NextRespon
   return NextResponse.json(result);
 }
 
+// ── HMAC verification ─────────────────────────────────────────────────────────
+
+function verifyHmacSignature(req: Request): boolean {
+  const secret = process.env.IMPORT_HMAC_SECRET;
+  if (!secret) return false;
+
+  const keyId     = req.headers.get("X-Import-Key-Id");
+  const tsHeader  = req.headers.get("X-Import-Timestamp");
+  const sigHeader = req.headers.get("X-Import-Signature");
+
+  if (keyId !== "auto-import-v1") return false;
+  if (!tsHeader || !sigHeader) return false;
+
+  const ts = parseInt(tsHeader, 10);
+  if (isNaN(ts)) return false;
+
+  const now = Math.floor(Date.now() / 1000);
+  if (Math.abs(now - ts) > 300) return false;
+
+  const expectedSig = createHmac("sha256", secret).update(tsHeader).digest("hex");
+
+  try {
+    const expectedBuf = Buffer.from(expectedSig, "utf8");
+    const actualBuf   = Buffer.from(sigHeader,   "utf8");
+    if (expectedBuf.length !== actualBuf.length) return false;
+    return timingSafeEqual(expectedBuf, actualBuf);
+  } catch {
+    return false;
+  }
+}
+
+// ── AUTO-IMPORT handler ───────────────────────────────────────────────────────
+
+async function handleAutoImport(req: Request): Promise<NextResponse> {
+  if (!verifyHmacSignature(req)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  let formData: FormData;
+  try {
+    formData = await req.formData();
+  } catch {
+    return NextResponse.json({ error: "Failed to parse multipart form data" }, { status: 400 });
+  }
+
+  const combinedEntry = formData.get("combinedFile");
+  if (!(combinedEntry instanceof File)) {
+    return NextResponse.json({ error: "combinedFile is required" }, { status: 400 });
+  }
+
+  // ── Parse combined file (LogisticsTrackerWareHouse + LineItems) ───────────
+  let headerRows: RawHeaderRow[];
+  let lineRows:   RawLineRow[] = [];
+
+  try {
+    const buf = Buffer.from(await combinedEntry.arrayBuffer());
+    const wb  = XLSX.read(buf, { type: "buffer", cellDates: false });
+    headerRows = parseSheet<RawHeaderRow>(wb, "LogisticsTrackerWareHouse");
+    const lineSheet = wb.Sheets["LineItems"];
+    if (lineSheet) {
+      lineRows = XLSX.utils.sheet_to_json<RawLineRow>(lineSheet, { raw: true, defval: null });
+    }
+  } catch {
+    return NextResponse.json(
+      { error: "Cannot parse file. Check sheet names." },
+      { status: 400 },
+    );
+  }
+
+  if (headerRows.length === 0) {
+    return NextResponse.json({ error: "Header sheet has no data rows" }, { status: 422 });
+  }
+
+  // ── STEP B — Validate headers (2 bulk queries) ────────────────────────────
+  const allObdNumbers    = headerRows.map((r) => toStr(r["OBD Number"])).filter(Boolean);
+  const allCustomerCodes = headerRows.map((r) => toStr(r["ShipToCustomerId"])).filter(Boolean);
+
+  const [existingOrders, existingCustomers] = await Promise.all([
+    prisma.orders.findMany({
+      where:  { obdNumber: { in: allObdNumbers } },
+      select: { obdNumber: true },
+    }),
+    prisma.delivery_point_master.findMany({
+      where:  { customerCode: { in: allCustomerCodes } },
+      select: { customerCode: true },
+    }),
+  ]);
+
+  const existingObdSet  = new Set(existingOrders.map((o) => o.obdNumber));
+  const existingCustSet = new Set(existingCustomers.map((c) => c.customerCode));
+
+  // ── STEP C — Validate line items (1 bulk query) ───────────────────────────
+  let existingSkuSet = new Set<string>();
+
+  if (lineRows.length > 0) {
+    const allSkuCodes = lineRows.map((r) => toStr(r["sku_codes"])).filter(Boolean);
+    const existingSkus = await prisma.sku_master.findMany({
+      where:  { skuCode: { in: allSkuCodes } },
+      select: { skuCode: true },
+    });
+    existingSkuSet = new Set(existingSkus.map((s) => s.skuCode));
+  }
+
+  const linesByObd = new Map<string, RawLineRow[]>();
+  for (const lr of lineRows) {
+    const obd = toStr(lr["obd_number"]);
+    if (!obd) continue;
+    if (!linesByObd.has(obd)) linesByObd.set(obd, []);
+    linesByObd.get(obd)!.push(lr);
+  }
+
+  // ── STEP D — Generate batchRef ────────────────────────────────────────────
+  const batchRef = await generateBatchRef();
+
+  // ── STEP E1 — Create import_batches row ───────────────────────────────────
+  let batchId: number;
+  try {
+    const batch = await prisma.import_batches.create({
+      data: {
+        batchRef,
+        importedById: 1,
+        headerFile:   `[auto-import] ${combinedEntry.name}`,
+        lineFile:     "",
+        status:       "processing",
+      },
+    });
+    batchId = batch.id;
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Failed to create batch" },
+      { status: 500 },
+    );
+  }
+
+  // ── STEP E2 — Build in-memory interims ────────────────────────────────────
+  interface AutoLineInterim {
+    lineId:            number;
+    skuCodeRaw:        string;
+    skuDescriptionRaw: string | null;
+    batchCode:         string | null;
+    unitQty:           number;
+    volumeLine:        number | null;
+    isTinting:         boolean;
+    article:           number | null;
+    articleTag:        string | null;
+    rowStatus:         "valid" | "error";
+    rowError:          string | null;
+  }
+
+  interface AutoObdInterim {
+    obdNumber:          string;
+    shipToId:           string | null;
+    shipToCustomerName: string | null;
+    emailDate:          Date | null;
+    totalUnitQty:       number | null;
+    grossWeight:        number | null;
+    rowStatus:          "valid" | "duplicate" | "error";
+    rowError:           string | null;
+    lines:              AutoLineInterim[];
+  }
+
+  const obdInterims:  AutoObdInterim[] = [];
+  const summaryData: Prisma.import_raw_summaryCreateManyInput[] = [];
+
+  for (const hr of headerRows) {
+    const obdNumber = toStr(hr["OBD Number"]);
+    if (!obdNumber) continue;
+
+    const shipToId           = toStr(hr["ShipToCustomerId"]) || null;
+    const shipToCustomerName = toStr(hr["Ship To Customer Name"]) || null;
+    const emailDate          = parseDateCell(hr["OBD Email Date"]);
+    const emailTime          = parseTimeCell(hr["OBD Email Time"]);
+    const invoiceDate        = parseDateCell(hr["InvoiceDate"]);
+
+    let rowStatus: "valid" | "duplicate" | "error" = "valid";
+    let rowError:  string | null = null;
+
+    if (existingObdSet.has(obdNumber)) {
+      rowStatus = "duplicate";
+    } else if (shipToId && !existingCustSet.has(shipToId)) {
+      rowStatus = "error";
+      rowError  = `Unknown customer: ${shipToId}`;
+    }
+
+    const obdLines = linesByObd.get(obdNumber) ?? [];
+    const lines: AutoLineInterim[] = obdLines.map((lr) => {
+      const skuCodeRaw = toStr(lr["sku_codes"]);
+      const lineIdRaw  = toInt(lr["line_id"]) ?? 0;
+      const unitQty    = toInt(lr["unit_qty"]) ?? 0;
+      const volumeLine = toNum(lr["volume_line"]);
+      const isTinting  = parseBooleanCell(lr["Tinting"]);
+      const article    = lr["article"]     != null ? parseInt(String(lr["article"]), 10)  : null;
+      const articleTag = lr["article_tag"] != null ? String(lr["article_tag"]).trim()     : null;
+
+      let lineStatus: "valid" | "error" = "valid";
+      let lineError:  string | null     = null;
+      if (!skuCodeRaw) {
+        lineStatus = "error";
+        lineError  = "Missing SKU code";
+      } else if (!existingSkuSet.has(skuCodeRaw)) {
+        lineError = `Unknown SKU: ${skuCodeRaw} — manual mapping required`;
+      }
+
+      return {
+        lineId:            lineIdRaw,
+        skuCodeRaw,
+        skuDescriptionRaw: toStr(lr["sku_description"]) || null,
+        batchCode:         toStr(lr["batch_code"])       || null,
+        unitQty,
+        volumeLine,
+        isTinting,
+        article:    isNaN(article as number) ? null : article,
+        articleTag: articleTag || null,
+        rowStatus:  lineStatus,
+        rowError:   lineError,
+      };
+    });
+
+    obdInterims.push({
+      obdNumber, shipToId, shipToCustomerName, emailDate,
+      totalUnitQty: toInt(hr["UnitQty"]),
+      grossWeight:  toNum(hr["GrossWeight"]),
+      rowStatus, rowError, lines,
+    });
+
+    summaryData.push({
+      batchId,
+      obdNumber,
+      sapStatus:           toStr(hr["Status"])              || null,
+      smu:                 toStr(hr["SMU"])                 || null,
+      smuCode:             toStr(hr["SMU Code"])            || null,
+      materialType:        toStr(hr["MaterialType"])        || null,
+      natureOfTransaction: toStr(hr["NatureOfTransaction"]) || null,
+      warehouse:           toStr(hr["Warehouse"])           || null,
+      obdEmailDate:        emailDate,
+      obdEmailTime:        emailTime,
+      totalUnitQty:        toInt(hr["UnitQty"]),
+      grossWeight:         toNum(hr["GrossWeight"]),
+      volume:              toNum(hr["Volume"]),
+      billToCustomerId:    toStr(hr["Bill To Customer Id"])   || null,
+      billToCustomerName:  toStr(hr["Bill To Customer Name"]) || null,
+      shipToCustomerId:    shipToId,
+      shipToCustomerName,
+      invoiceNo:           toStr(hr["InvoiceNo"]) || null,
+      invoiceDate,
+      rowStatus,
+      rowError,
+    });
+  }
+
+  // ── STEP E3 — Bulk insert summaries ──────────────────────────────────────
+  try {
+    await prisma.import_raw_summary.createMany({ data: summaryData });
+  } catch (err) {
+    await prisma.import_batches
+      .update({ where: { id: batchId }, data: { status: "failed" } })
+      .catch(() => undefined);
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Failed to write summaries" },
+      { status: 500 },
+    );
+  }
+
+  // ── STEP E4 — Fetch inserted summary IDs + rowStatus ─────────────────────
+  const insertedSummaries = await prisma.import_raw_summary.findMany({
+    where:  { batchId },
+    select: { id: true, obdNumber: true, rowStatus: true },
+  });
+  const summaryIdMap = new Map(insertedSummaries.map((s) => [s.obdNumber, s.id]));
+
+  // ── STEP E5 — Bulk insert line items ─────────────────────────────────────
+  const lineItemData = obdInterims.flatMap((obd) => {
+    const rawSummaryId = summaryIdMap.get(obd.obdNumber);
+    if (!rawSummaryId) return [];
+    return obd.lines.map((line) => ({
+      rawSummaryId,
+      obdNumber:         obd.obdNumber,
+      lineId:            line.lineId,
+      skuCodeRaw:        line.skuCodeRaw,
+      skuDescriptionRaw: line.skuDescriptionRaw,
+      batchCode:         line.batchCode,
+      unitQty:           line.unitQty,
+      volumeLine:        line.volumeLine,
+      isTinting:         line.isTinting,
+      article:           line.article,
+      articleTag:        line.articleTag,
+      rowStatus:         line.rowStatus,
+      rowError:          line.rowError,
+    }));
+  });
+
+  if (lineItemData.length > 0) {
+    try {
+      await prisma.import_raw_line_items.createMany({ data: lineItemData });
+    } catch (err) {
+      await prisma.import_batches
+        .update({ where: { id: batchId }, data: { status: "failed" } })
+        .catch(() => undefined);
+      return NextResponse.json(
+        { error: err instanceof Error ? err.message : "Failed to write line items" },
+        { status: 500 },
+      );
+    }
+  }
+
+  // ── Determine valid / duplicate / error counts ────────────────────────────
+  const validSummaryIds = insertedSummaries
+    .filter((s) => s.rowStatus === "valid")
+    .map((s) => s.id);
+  const duplicateCount = insertedSummaries.filter((s) => s.rowStatus === "duplicate").length;
+  const errorCount     = insertedSummaries.filter((s) => s.rowStatus === "error").length;
+
+  if (validSummaryIds.length === 0) {
+    await prisma.import_batches
+      .update({
+        where: { id: batchId },
+        data:  { status: "completed", totalObds: 0, skippedObds: duplicateCount, failedObds: errorCount },
+      })
+      .catch(() => undefined);
+    return NextResponse.json({
+      success:           true,
+      batchRef,
+      ordersCreated:     0,
+      skippedDuplicates: duplicateCount,
+      errors:            errorCount,
+    });
+  }
+
+  // ── CONFIRM — load confirmed raw rows ─────────────────────────────────────
+  const autoRawSummaries = await prisma.import_raw_summary.findMany({
+    where: {
+      id:        { in: validSummaryIds },
+      batchId,
+      rowStatus: { not: "duplicate" },
+    },
+    include: {
+      rawLineItems: {
+        select: {
+          id:         true,
+          obdNumber:  true,
+          lineId:     true,
+          skuCodeRaw: true,
+          unitQty:    true,
+          volumeLine: true,
+          isTinting:  true,
+          article:    true,
+          articleTag: true,
+          rowStatus:  true,
+        },
+      },
+    },
+  });
+
+  // ── CONFIRM — bulk preload for enrichment ─────────────────────────────────
+  const confirmCustomerCodes = autoRawSummaries
+    .map((s) => s.shipToCustomerId)
+    .filter((c): c is string => c !== null);
+
+  const confirmSkuCodes = autoRawSummaries
+    .flatMap((s) => s.rawLineItems)
+    .map((l) => l.skuCodeRaw)
+    .filter((c): c is string => Boolean(c));
+
+  const [confirmCustomers, confirmSkus, confirmSlotConfigs, confirmLocalDeliveryType] =
+    await Promise.all([
+      prisma.delivery_point_master.findMany({
+        where:  { customerCode: { in: confirmCustomerCodes } },
+        select: {
+          id:                     true,
+          customerCode:           true,
+          isKeyCustomer:          true,
+          isKeySite:              true,
+          dispatchDeliveryTypeId: true,
+          area: { select: { deliveryTypeId: true } },
+        },
+      }),
+      prisma.sku_master.findMany({
+        where:  { skuCode: { in: confirmSkuCodes } },
+        select: { id: true, skuCode: true },
+      }),
+      prisma.delivery_type_slot_config.findMany({
+        where:   { isActive: true },
+        include: { slot: { select: { name: true, slotTime: true, isNextDay: true } } },
+        orderBy: { sortOrder: "asc" },
+      }),
+      prisma.delivery_type_master.findFirst({
+        where:  { name: "Local" },
+        select: { id: true },
+      }),
+    ]);
+
+  const confirmCustomerByCode      = new Map(confirmCustomers.map((c) => [c.customerCode, c]));
+  const confirmSkuByCode           = new Map(confirmSkus.map((s) => [s.skuCode, s]));
+  const confirmLocalDeliveryTypeId = confirmLocalDeliveryType?.id ?? null;
+
+  const confirmSlotsByDeliveryType = new Map<number, SlotConfig[]>();
+  for (const cfg of confirmSlotConfigs) {
+    if (!confirmSlotsByDeliveryType.has(cfg.deliveryTypeId)) {
+      confirmSlotsByDeliveryType.set(cfg.deliveryTypeId, []);
+    }
+    confirmSlotsByDeliveryType.get(cfg.deliveryTypeId)!.push({
+      slotRuleType: cfg.slotRuleType,
+      windowStart:  cfg.windowStart,
+      windowEnd:    cfg.windowEnd,
+      isDefault:    cfg.isDefault,
+      slot:         cfg.slot,
+    });
+  }
+
+  // ── CONFIRM — build order interims ────────────────────────────────────────
+  interface AutoOrderInterim {
+    obdNumber:     string;
+    orderType:     string;
+    workflowStage: string;
+    hasTinting:    boolean;
+    validLines:    typeof autoRawSummaries[0]["rawLineItems"];
+    totalLineQty:  number;
+    totalVolume:   number;
+    orderData:     Prisma.ordersCreateManyInput;
+  }
+
+  const autoOrderInterims: AutoOrderInterim[] = [];
+
+  for (const summary of autoRawSummaries) {
+    const customer = summary.shipToCustomerId
+      ? (confirmCustomerByCode.get(summary.shipToCustomerId) ?? null)
+      : null;
+
+    const deliveryTypeId =
+      customer?.dispatchDeliveryTypeId ??
+      customer?.area?.deliveryTypeId ??
+      confirmLocalDeliveryTypeId;
+
+    const configs = deliveryTypeId
+      ? (confirmSlotsByDeliveryType.get(deliveryTypeId) ?? [])
+      : [];
+
+    const { dispatchSlot, dispatchSlotDeadline } = resolveSlot(
+      configs,
+      summary.obdEmailTime,
+      summary.obdEmailDate,
+    );
+
+    const validLines    = summary.rawLineItems;
+    const hasTinting    = validLines.some((l) => l.isTinting);
+    const orderType     = hasTinting ? "tint" : "non_tint";
+    const workflowStage = orderType === "tint" ? "pending_tint_assignment" : "pending_support";
+    const priorityLevel = (customer?.isKeyCustomer || customer?.isKeySite) ? 1 : 3;
+
+    let totalLineQty = 0;
+    let totalVolume  = 0;
+    for (const line of validLines) {
+      totalLineQty += line.unitQty;
+      totalVolume  += line.volumeLine ?? 0;
+    }
+
+    autoOrderInterims.push({
+      obdNumber: summary.obdNumber,
+      orderType,
+      workflowStage,
+      hasTinting,
+      validLines,
+      totalLineQty,
+      totalVolume,
+      orderData: {
+        obdNumber:           summary.obdNumber,
+        batchId,
+        customerId:          customer?.id ?? null,
+        shipToCustomerId:    summary.shipToCustomerId ?? summary.obdNumber,
+        shipToCustomerName:  summary.shipToCustomerName,
+        orderType,
+        workflowStage,
+        dispatchSlot,
+        dispatchSlotDeadline,
+        priorityLevel,
+        invoiceNo:           summary.invoiceNo,
+        invoiceDate:         summary.invoiceDate,
+        obdEmailDate:        summary.obdEmailDate,
+        sapStatus:           summary.sapStatus,
+        materialType:        summary.materialType,
+        natureOfTransaction: summary.natureOfTransaction,
+        warehouse:           summary.warehouse,
+        totalUnitQty:        summary.totalUnitQty,
+        grossWeight:         summary.grossWeight,
+        volume:              summary.volume,
+      },
+    });
+  }
+
+  // ── CONFIRM D1 — Bulk create orders ───────────────────────────────────────
+  const confirmedObdNumbers = autoOrderInterims.map((o) => o.obdNumber);
+  let ordersCreated = 0;
+  let linesEnriched = 0;
+
+  try {
+    await prisma.orders.createMany({ data: autoOrderInterims.map((o) => o.orderData) });
+    ordersCreated = autoOrderInterims.length;
+  } catch (err) {
+    await prisma.import_batches
+      .update({ where: { id: batchId }, data: { status: "failed" } })
+      .catch(() => undefined);
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Failed to create orders" },
+      { status: 500 },
+    );
+  }
+
+  // ── CONFIRM D2 — Fetch inserted order IDs ─────────────────────────────────
+  const insertedOrders = await prisma.orders.findMany({
+    where:  { obdNumber: { in: confirmedObdNumbers }, batchId },
+    select: { id: true, obdNumber: true },
+  });
+  const orderIdMap = new Map(insertedOrders.map((o) => [o.obdNumber, o.id]));
+
+  // ── CONFIRM D3 — Bulk create import_obd_query_summary ────────────────────
+  const querySummaryData: Prisma.import_obd_query_summaryCreateManyInput[] =
+    autoOrderInterims.map((o) => {
+      const orderId  = orderIdMap.get(o.obdNumber) ?? 0;
+      const hasLines = o.validLines.length > 0;
+      const rs       = autoRawSummaries.find((s) => s.obdNumber === o.obdNumber);
+
+      const totalArticle = o.validLines.reduce((sum, l) => sum + (l.article ?? 0), 0);
+
+      const tagTotals: Record<string, number> = {};
+      for (const l of o.validLines) {
+        if (!l.articleTag) continue;
+        const parts = l.articleTag.split(" ");
+        if (parts.length >= 2) {
+          const qty  = parseInt(parts[0], 10);
+          const type = parts.slice(1).join(" ");
+          if (!isNaN(qty) && type) tagTotals[type] = (tagTotals[type] ?? 0) + qty;
+        }
+      }
+      const typeOrder     = ["Drum", "Bag", "Carton", "Tin"];
+      const articleTagStr = typeOrder
+        .filter((t) => tagTotals[t] > 0)
+        .map((t) => `${tagTotals[t]} ${t}`)
+        .join(", ") || null;
+
+      return {
+        obdNumber:    o.obdNumber,
+        orderId,
+        totalLines:   o.validLines.length,
+        totalUnitQty: hasLines ? o.totalLineQty : (rs?.totalUnitQty ?? 0),
+        totalWeight:  rs?.grossWeight ?? 0,
+        totalVolume:  hasLines ? o.totalVolume  : (rs?.volume ?? 0),
+        hasTinting:   o.hasTinting,
+        totalArticle,
+        articleTag:   articleTagStr,
+      };
+    });
+
+  try {
+    await prisma.import_obd_query_summary.createMany({ data: querySummaryData });
+  } catch (err) {
+    await prisma.import_batches
+      .update({ where: { id: batchId }, data: { status: "failed" } })
+      .catch(() => undefined);
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Failed to create query summaries" },
+      { status: 500 },
+    );
+  }
+
+  // ── CONFIRM D4 — Bulk create order_status_logs ────────────────────────────
+  const statusLogData: Prisma.order_status_logsCreateManyInput[] =
+    autoOrderInterims.map((o) => ({
+      orderId:     orderIdMap.get(o.obdNumber) ?? 0,
+      fromStage:   null,
+      toStage:     o.workflowStage,
+      changedById: 1,
+      note:        `Created via auto-import batch ${batchRef}`,
+    }));
+
+  try {
+    await prisma.order_status_logs.createMany({ data: statusLogData });
+  } catch (err) {
+    await prisma.import_batches
+      .update({ where: { id: batchId }, data: { status: "failed" } })
+      .catch(() => undefined);
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Failed to create status logs" },
+      { status: 500 },
+    );
+  }
+
+  // ── CONFIRM D5 — Bulk create import_enriched_line_items ──────────────────
+  const enrichedData: Prisma.import_enriched_line_itemsCreateManyInput[] = [];
+  for (const o of autoOrderInterims) {
+    for (const line of o.validLines) {
+      const sku = confirmSkuByCode.get(line.skuCodeRaw);
+      enrichedData.push({
+        rawLineItemId: line.id,
+        skuId:         sku?.id ?? null,
+        unitQty:       line.unitQty,
+        volumeLine:    line.volumeLine,
+        lineWeight:    sku ? 0 : null,
+        isTinting:     line.isTinting,
+        note:          sku ? null : "Unknown SKU — manual mapping required",
+      });
+      linesEnriched++;
+    }
+  }
+
+  if (enrichedData.length > 0) {
+    try {
+      await prisma.import_enriched_line_items.createMany({ data: enrichedData });
+    } catch (err) {
+      await prisma.import_batches
+        .update({ where: { id: batchId }, data: { status: "failed" } })
+        .catch(() => undefined);
+      return NextResponse.json(
+        { error: err instanceof Error ? err.message : "Failed to enrich line items" },
+        { status: 500 },
+      );
+    }
+  }
+
+  // ── CONFIRM D6 — Update import_batches status ─────────────────────────────
+  await prisma.import_batches
+    .update({
+      where: { id: batchId },
+      data: {
+        status:      "completed",
+        totalObds:   validSummaryIds.length,
+        skippedObds: duplicateCount,
+        failedObds:  errorCount,
+      },
+    })
+    .catch(() => undefined);
+
+  return NextResponse.json({
+    success:           true,
+    batchRef,
+    ordersCreated,
+    skippedDuplicates: duplicateCount,
+    errors:            errorCount,
+  });
+}
+
 // ── Main handler ──────────────────────────────────────────────────────────────
 
 export async function POST(req: Request): Promise<NextResponse> {
+  const url = new URL(req.url, "http://localhost");
+  const action = url.searchParams.get("action");
+
+  if (action === "auto") return handleAutoImport(req);
+
+  // All other actions require session auth
   const session = await auth();
   requireRole(session, [ROLES.ADMIN, ROLES.DISPATCHER, ROLES.SUPPORT]);
   if (session!.user.role !== "admin") {
     const allowed = await checkPermission(session!.user.role, "import_obd", "canImport");
     if (!allowed) return NextResponse.json({ error: "Permission denied" }, { status: 403 });
   }
-
-  const { searchParams } = new URL(req.url);
-  const action = searchParams.get("action");
 
   if (action === "preview") return handlePreview(req, session!);
   if (action === "confirm") return handleConfirm(req, session!);
