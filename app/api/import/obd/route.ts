@@ -949,24 +949,19 @@ function verifyHmacSignature(req: Request): boolean {
   const secret = process.env.IMPORT_HMAC_SECRET;
   if (!secret) return false;
 
-  const keyId     = req.headers.get("X-Import-Key-Id");
-  const tsHeader  = req.headers.get("X-Import-Timestamp");
-  const sigHeader = req.headers.get("X-Import-Signature");
+  const keyId = req.headers.get("x-import-key-id");
+  const sig   = req.headers.get("x-import-signature");
 
   if (keyId !== "auto-import-v1") return false;
-  if (!tsHeader || !sigHeader) return false;
+  if (!sig) return false;
 
-  const ts = parseInt(tsHeader, 10);
-  if (isNaN(ts)) return false;
-
-  const now = Math.floor(Date.now() / 1000);
-  if (Math.abs(now - ts) > 300) return false;
-
-  const expectedSig = createHmac("sha256", secret).update(tsHeader).digest("hex");
+  const expectedSig = createHmac("sha256", secret)
+    .update("auto-import-v1")
+    .digest("hex");
 
   try {
     const expectedBuf = Buffer.from(expectedSig, "utf8");
-    const actualBuf   = Buffer.from(sigHeader,   "utf8");
+    const actualBuf   = Buffer.from(sig,          "utf8");
     if (expectedBuf.length !== actualBuf.length) return false;
     return timingSafeEqual(expectedBuf, actualBuf);
   } catch {
