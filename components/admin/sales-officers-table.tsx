@@ -14,7 +14,6 @@ import { Upload, Download } from "lucide-react";
 interface OfficerRow {
   id: number;
   name: string;
-  employeeCode: string;
   email: string | null;
   phone: string | null;
   isActive: boolean;
@@ -24,13 +23,12 @@ interface SalesOfficersTableProps {
   initialOfficers: OfficerRow[];
 }
 
-const EMPTY = { name: "", employeeCode: "", email: "", phone: "" };
+const EMPTY = { name: "", email: "", phone: "" };
 
 const IMPORT_COLUMNS: CsvColumn[] = [
-  { key: "name",         label: "Name",          required: true  },
-  { key: "email",        label: "Email",         required: true  },
-  { key: "phone",        label: "Phone",         required: false },
-  { key: "employeecode", label: "Employee Code", required: false },
+  { key: "name",  label: "Name",  required: true  },
+  { key: "email", label: "Email", required: true  },
+  { key: "phone", label: "Phone", required: false },
 ];
 
 export function SalesOfficersTable({ initialOfficers }: SalesOfficersTableProps) {
@@ -57,7 +55,6 @@ export function SalesOfficersTable({ initialOfficers }: SalesOfficersTableProps)
     setEditing(officer);
     setForm({
       name: officer.name,
-      employeeCode: officer.employeeCode,
       email: officer.email ?? "",
       phone: officer.phone ?? "",
     });
@@ -73,7 +70,6 @@ export function SalesOfficersTable({ initialOfficers }: SalesOfficersTableProps)
   function validate(): boolean {
     const errs: Record<string, string> = {};
     if (!form.name.trim()) errs.name = "Name is required.";
-    if (!form.employeeCode.trim()) errs.employeeCode = "Employee code is required.";
     if (form.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
       errs.email = "Invalid email format.";
     }
@@ -88,7 +84,6 @@ export function SalesOfficersTable({ initialOfficers }: SalesOfficersTableProps)
     try {
       const body = {
         name: form.name.trim(),
-        employeeCode: form.employeeCode.trim(),
         email: form.email.trim() || null,
         phone: form.phone.trim() || null,
       };
@@ -149,7 +144,7 @@ export function SalesOfficersTable({ initialOfficers }: SalesOfficersTableProps)
   }
 
   function handleTemplateDownload() {
-    const csv = "name,email,phone,employeecode\nAmit Shah,amit.shah@company.com,9898989898,EMP-001\nKavita Mehta,kavita.mehta@company.com,9797979797,EMP-002";
+    const csv = "name,email,phone\nAmit Shah,amit.shah@company.com,9898989898\nKavita Mehta,kavita.mehta@company.com,9797979797";
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -217,7 +212,6 @@ export function SalesOfficersTable({ initialOfficers }: SalesOfficersTableProps)
           <TableHeader>
             <TableRow>
               <TableHead>Name</TableHead>
-              <TableHead>Employee Code</TableHead>
               <TableHead>Email</TableHead>
               <TableHead>Phone</TableHead>
               <TableHead>Status</TableHead>
@@ -227,7 +221,7 @@ export function SalesOfficersTable({ initialOfficers }: SalesOfficersTableProps)
           <TableBody>
             {officers.length === 0 && (
               <TableRow>
-                <TableCell colSpan={6} className="text-center text-slate-500 py-8">
+                <TableCell colSpan={5} className="text-center text-slate-500 py-8">
                   No sales officers yet.
                 </TableCell>
               </TableRow>
@@ -235,7 +229,6 @@ export function SalesOfficersTable({ initialOfficers }: SalesOfficersTableProps)
             {officers.map((officer) => (
               <TableRow key={officer.id}>
                 <TableCell className="font-medium">{officer.name}</TableCell>
-                <TableCell className="font-mono text-sm text-slate-600">{officer.employeeCode}</TableCell>
                 <TableCell className="text-slate-600">
                   {officer.email ?? <span className="text-slate-300">—</span>}
                 </TableCell>
@@ -283,18 +276,6 @@ export function SalesOfficersTable({ initialOfficers }: SalesOfficersTableProps)
                 onChange={(e) => setField("name", e.target.value)}
               />
               {fieldErrors.name && <p className="text-xs text-destructive">{fieldErrors.name}</p>}
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="so-code">Employee Code <span className="text-destructive">*</span></Label>
-              <Input
-                id="so-code"
-                value={form.employeeCode}
-                onChange={(e) => setField("employeeCode", e.target.value)}
-                placeholder="SAP employee code"
-              />
-              {fieldErrors.employeeCode && (
-                <p className="text-xs text-destructive">{fieldErrors.employeeCode}</p>
-              )}
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="so-email">Email</Label>

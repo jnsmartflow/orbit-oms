@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Search, Plus, Download, Upload, Users, MapPin, Truck, BarChart2, Flag, Clock, Mail, User } from "lucide-react";
+import { Search, Plus, Download, Upload, Users, MapPin, Truck, BarChart2, Flag, Clock, Mail, User, ChevronRight, Layers } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -27,6 +27,7 @@ interface CustomerListRow {
   area:              { id: number; name: string } | null;
   subArea:           { id: number; name: string } | null;
   salesOfficerGroup: { id: number; name: string } | null;
+  premisesType:      { id: number; name: string } | null;
   customerRating:    string | null;
   isKeyCustomer:     boolean;
   isActive:          boolean;
@@ -48,6 +49,12 @@ export interface CustomersSplitViewProps {
   premisesTypes:    PremisesTypeOption[];
   canEdit?:         boolean;
   canImport?:       boolean;
+}
+
+interface ImportResult {
+  created: number;
+  skipped: number;
+  failed:  { row: number; reason: string }[];
 }
 
 // ── Form state type ────────────────────────────────────────────────────────────
@@ -169,6 +176,12 @@ function FieldLabel({ children, required }: { children: React.ReactNode; require
 const inputCls = "w-full text-[12.5px] text-[#111827] bg-white border border-[#e5e7eb] rounded-lg px-[9px] py-[6px] outline-none focus:border-[#1a237e] focus:ring-2 focus:ring-[#1a237e]/8 transition-all";
 const hintCls  = "text-[11px] text-[#9ca3af] mt-0.5";
 
+// ── Group type ─────────────────────────────────────────────────────────────────
+type CustomerGroup = {
+  name:  string;
+  items: CustomerListRow[];
+};
+
 // ── Main component ─────────────────────────────────────────────────────────────
 export function CustomersSplitView({
   initialCustomers, initialTotal,
@@ -186,8 +199,11 @@ export function CustomersSplitView({
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [filterArea, setFilterArea]           = useState("");
   const [filterDeliveryType, setFilterDeliveryType] = useState("");
+  const [filterPremisesType, setFilterPremisesType] = useState("");
   const [filterKey, setFilterKey]             = useState(false);
   const [filterActive, setFilterActive]       = useState(false);
+  const [groupByName, setGroupByName]         = useState(false);
+  const [expandedGroups, setExpandedGroups]   = useState<Set<string>>(new Set());
 
   const totalPages = Math.max(1, Math.ceil(total / 25));
 
@@ -224,6 +240,11 @@ export function CustomersSplitView({
   const resizeStartXRef               = useRef(0);
   const resizeStartWidthRef           = useRef(340);
 
+  // ── Import state ─────────────────────────────────────────────────────────────
+  const fileInputRef                    = useRef<HTMLInputElement>(null);
+  const [importing, setImporting]       = useState(false);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+
   // ── Debounce search ─────────────────────────────────────────────────────────
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(searchInput), 300);
@@ -232,7 +253,7 @@ export function CustomersSplitView({
 
   // ── Fetch list ──────────────────────────────────────────────────────────────
   const fetchList = useCallback(async (
-    pg: number, search: string, areaId: string, deliveryType: string, keyOnly: boolean, activeOnly: boolean,
+    pg: number, search: string, areaId: string, deliveryType: string, premisesType: string, keyOnly: boolean, activeOnly: boolean, pageSize = 25,
   ) => {
     setListLoading(true);
     try {
@@ -240,8 +261,10 @@ export function CustomersSplitView({
       if (search)       params.set("search", search);
       if (areaId)       params.set("areaId", areaId);
       if (deliveryType) params.set("dispatchDeliveryTypeId", deliveryType);
+      if (premisesType) params.set("premisesTypeId", premisesType);
       if (keyOnly)      params.set("isKeyCustomer", "true");
       if (activeOnly)   params.set("isActive", "true");
+      params.set("pageSize", pageSize.toString());
       const res  = await fetch(`/api/admin/customers?${params}`);
       const data = await res.json();
       if (res.ok) { setCustomers(data.data ?? []); setTotal(data.total ?? 0); }
@@ -251,11 +274,12 @@ export function CustomersSplitView({
   }, []);
 
   useEffect(() => {
-    fetchList(page, debouncedSearch, filterArea, filterDeliveryType, filterKey, filterActive);
-  }, [page, debouncedSearch, filterArea, filterDeliveryType, filterKey, filterActive, fetchList]);
+    const pageSize = groupByName ? 250 : 25;
+    fetchList(page, debouncedSearch, filterArea, filterDeliveryType, filterPremisesType, filterKey, filterActive, pageSize);
+  }, [page, debouncedSearch, filterArea, filterDeliveryType, filterPremisesType, filterKey, filterActive, groupByName, fetchList]);
 
   // Reset page on filter change
-  useEffect(() => { setPage(1); }, [debouncedSearch, filterArea, filterDeliveryType, filterKey, filterActive]);
+  useEffect(() => { setPage(1); }, [debouncedSearch, filterArea, filterDeliveryType, filterPremisesType, filterKey, filterActive]);
 
   // ── Load full customer ──────────────────────────────────────────────────────
   async function loadCustomer(id: number) {
@@ -272,7 +296,13 @@ export function CustomersSplitView({
         setIsNew(false);
         setActiveTab("sec-basic");
         setTimeout(() => formScrollRef.current?.scrollTo({ top: 0 }), 0);
+      } else {
+        toast.error(data.error ?? `Failed to load customer (${res.status})`);
+        setSelectedId(null);
       }
+    } catch (err) {
+      toast.error("Network error loading customer.");
+      setSelectedId(null);
     } finally {
       setLoadingEdit(false);
     }
@@ -422,12 +452,14 @@ export function CustomersSplitView({
           next[idx] = {
             id: data.id, customerCode: data.customerCode, customerName: data.customerName,
             area: data.area, subArea: data.subArea, salesOfficerGroup: data.salesOfficerGroup,
+            premisesType: data.premisesType ?? null,
             customerRating: data.customerRating, isKeyCustomer: data.isKeyCustomer, isActive: data.isActive,
           };
           return next;
         }
         return [{ id: data.id, customerCode: data.customerCode, customerName: data.customerName,
           area: data.area, subArea: data.subArea, salesOfficerGroup: data.salesOfficerGroup,
+          premisesType: data.premisesType ?? null,
           customerRating: data.customerRating, isKeyCustomer: data.isKeyCustomer, isActive: data.isActive,
         }, ...prev];
       });
@@ -508,11 +540,34 @@ export function CustomersSplitView({
 
   // ── CSV template download ────────────────────────────────────────────────────
   function downloadTemplate() {
-    const headers = ["customerCode","customerName","address","areaName","subAreaName","salesOfficerName","routeName","deliveryTypeName","customerRating","isKeyCustomer","isKeySite","acceptsPartialDelivery","isActive","latitude","longitude","workingHoursStart","workingHoursEnd","noDeliveryDays"];
-    const csv = headers.join(",") + "\n";
+    const csv = [
+      "customerCode,customerName,address,areaName,subAreaName,salesOfficerName,routeName,deliveryTypeName,customerTypeName,premisesTypeName,customerRating,isKeyCustomer,isKeySite,acceptsPartialDelivery,isActive,latitude,longitude,workingHoursStart,workingHoursEnd,noDeliveryDays,contact1_name,contact1_phone,contact1_role,contact1_isPrimary,contact2_name,contact2_phone,contact2_role,contact2_isPrimary,contact3_name,contact3_phone,contact3_role,contact3_isPrimary",
+      'C001,Ambika Paints,"Shop No 1, Varacha Road",Varacha Road,Varacha North,Rajesh Shah,Varacha,Local,Retail,Shop,A,true,false,true,true,21.1702,72.8311,09:00,18:00,,Ramesh Patel,9876543210,Owner,true,Suresh Shah,9876543211,Manager,false,,,,',
+      'C002,Mahadev Traders,,Adajan,,,,,,,B,false,false,true,true,,,,,Sat|Sun,Mahesh Kumar,9876543212,Owner,true,,,,,,,',
+    ].join("\n");
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
-    const a   = document.createElement("a"); a.href = url; a.download = "customers-template.csv"; a.click();
+    const a   = document.createElement("a"); a.href = url; a.download = "template-customers.csv"; a.click();
     URL.revokeObjectURL(url);
+  }
+
+  async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+    setImporting(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res  = await fetch("/api/admin/customers/import", { method: "POST", body: formData });
+      const data: ImportResult = await res.json();
+      if (!res.ok) { toast.error((data as any).error ?? "Import failed."); return; }
+      setImportResult(data);
+      if (data.created > 0) fetchList(1, debouncedSearch, filterArea, filterDeliveryType, filterPremisesType, filterKey, filterActive, groupByName ? 250 : 25);
+    } catch {
+      toast.error("Network error during import.");
+    } finally {
+      setImporting(false);
+    }
   }
 
   // ── Derived helpers ──────────────────────────────────────────────────────────
@@ -526,6 +581,54 @@ export function CustomersSplitView({
     B: "bg-amber-100 text-amber-800 border border-amber-300",
     C: "bg-red-100 text-red-800 border border-red-300",
   };
+
+  const groups = useMemo<CustomerGroup[]>(() => {
+    const map = new Map<string, CustomerListRow[]>();
+    for (const c of customers) {
+      if (!map.has(c.customerName)) map.set(c.customerName, []);
+      map.get(c.customerName)!.push(c);
+    }
+    return Array.from(map.entries())
+      .sort(([, a], [, b]) =>
+        b.length - a.length ||
+        a[0].customerName.localeCompare(b[0].customerName)
+      )
+      .map(([name, items]) => ({
+        name,
+        items: [...items].sort((a, b) => a.customerCode.localeCompare(b.customerCode)),
+      }));
+  }, [customers]);
+
+  function toggleGroup(name: string) {
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      next.has(name) ? next.delete(name) : next.add(name);
+      return next;
+    });
+  }
+
+  const completionScore = useMemo(() => {
+    let score = 0;
+    if (form.customerName.trim())                                          score++;
+    if (form.address.trim())                                               score++;
+    if (form.areaId)                                                       score++;
+    if (form.primaryRouteId)                                               score++;
+    if (form.salesOfficerGroupId)                                          score++;
+    if (form.customerTypeId)                                               score++;
+    if (form.premisesTypeId)                                               score++;
+    if (form.latitude.trim() && form.longitude.trim())                     score++;
+    if (form.workingHoursStart.trim() && form.workingHoursEnd.trim())      score++;
+    if (form.contacts.length > 0 && form.contacts[0].name.trim())         score++;
+    return score;
+  }, [form]);
+
+  const completionPct = Math.round((completionScore / 10) * 100);
+
+  const completionColor =
+    completionPct <= 40 ? "red"
+    : completionPct <= 70 ? "amber"
+    : completionPct < 100 ? "blue"
+    : "green";
 
   // ── Render ───────────────────────────────────────────────────────────────────
   return (
@@ -541,8 +644,12 @@ export function CustomersSplitView({
             <button onClick={downloadTemplate} className="flex items-center gap-1.5 text-[12.5px] font-medium text-[#374151] border border-[#e5e7eb] bg-white hover:bg-[#f7f8fa] px-3.5 py-[7px] rounded-lg transition-colors">
               <Download className="w-3.5 h-3.5" />CSV template
             </button>
-            <button className="flex items-center gap-1.5 text-[12.5px] font-medium text-[#374151] border border-[#e5e7eb] bg-white hover:bg-[#f7f8fa] px-3.5 py-[7px] rounded-lg transition-colors">
-              <Upload className="w-3.5 h-3.5" />Import CSV
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={importing}
+              className="flex items-center gap-1.5 text-[12.5px] font-medium text-[#374151] border border-[#e5e7eb] bg-white hover:bg-[#f7f8fa] px-3.5 py-[7px] rounded-lg transition-colors"
+            >
+              <Upload className="w-3.5 h-3.5" />{importing ? "Importing…" : "Import CSV"}
             </button>
           </>
         )}
@@ -550,6 +657,15 @@ export function CustomersSplitView({
           <button onClick={requestNew} className="flex items-center gap-1.5 text-[12.5px] font-medium text-white bg-[#1a237e] hover:bg-[#283593] px-3.5 py-[7px] rounded-lg transition-colors">
             <Plus className="w-3.5 h-3.5" />Add customer
           </button>
+        )}
+        {canImport && (
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv"
+            className="hidden"
+            onChange={handleFileSelect}
+          />
         )}
       </div>
 
@@ -592,6 +708,15 @@ export function CustomersSplitView({
                   {deliveryTypes.map((dt) => <SelectItem key={dt.id} value={dt.id.toString()}>{dt.name}</SelectItem>)}
                 </SelectContent>
               </Select>
+              <Select value={filterPremisesType || "all"} onValueChange={(v) => setFilterPremisesType(!v || v === "all" ? "" : v)}>
+                <SelectTrigger className="flex-1 h-8 text-[12px] border-[#e5e7eb] bg-[#f7f8fa]">
+                  <SelectValue>{(v: any) => !v || v === "all" ? "All premises" : (premisesTypes.find((p) => p.id.toString() === v)?.name ?? v)}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All premises</SelectItem>
+                  {premisesTypes.map((p) => <SelectItem key={p.id} value={p.id.toString()}>{p.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
             </div>
             <div className="flex gap-1.5 items-center">
               <button
@@ -606,6 +731,12 @@ export function CustomersSplitView({
               >
                 <span className={`w-1.5 h-1.5 rounded-full ${filterActive ? "bg-[#1a237e]" : "bg-[#9ca3af]"}`} />Active
               </button>
+              <button
+                onClick={() => { setGroupByName((v) => !v); setPage(1); }}
+                className={`flex items-center gap-1 text-[11px] font-medium px-2.5 py-[5px] rounded-full border transition-all flex-shrink-0 ${groupByName ? "bg-[#e8eaf6] text-[#1a237e] border-[#c5cae9]" : "bg-[#f7f8fa] text-[#6b7280] border-[#e5e7eb] hover:border-[#d1d5db]"}`}
+              >
+                <Layers className="w-3 h-3" />Group
+              </button>
             </div>
           </div>
 
@@ -615,7 +746,7 @@ export function CustomersSplitView({
               <div className="flex items-center justify-center h-20 text-[12px] text-[#9ca3af]">Loading…</div>
             ) : customers.length === 0 ? (
               <div className="flex items-center justify-center h-20 text-[12px] text-[#9ca3af]">No customers found</div>
-            ) : customers.map((c) => (
+            ) : !groupByName ? customers.map((c) => (
               <div
                 key={c.id}
                 onClick={() => requestSelectId(c.id)}
@@ -636,29 +767,103 @@ export function CustomersSplitView({
                   <div className="flex flex-wrap gap-1">
                     <span className={`text-[10px] font-medium px-1.5 py-px rounded-full border ${c.isActive ? "bg-[#e8f5e9] text-[#2e7d32] border-[#a5d6a7]" : "bg-[#f0f1f5] text-[#9ca3af] border-[#e5e7eb]"}`}>{c.isActive ? "Active" : "Inactive"}</span>
                     {c.isKeyCustomer && <span className="text-[10px] font-medium px-1.5 py-px rounded-full border bg-[#fef3c7] text-[#b45309] border-[#fcd34d]">Key</span>}
+                    {c.premisesType && <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-[#f3e8ff] text-[#7c3aed] border border-[#e9d5ff]">{c.premisesType.name}</span>}
                     {c.salesOfficerGroup && <span className="text-[10px] font-medium px-1.5 py-px rounded-full border bg-[#e8eaf6] text-[#3949ab] border-[#c5cae9] truncate max-w-[100px]">{c.salesOfficerGroup.name}</span>}
                   </div>
                 </div>
               </div>
-            ))}
+            )) : groups.map((group) => {
+              const isExpanded = expandedGroups.has(group.name);
+              return (
+                <div key={group.name}>
+                  {/* Group header */}
+                  <div
+                    onClick={() => toggleGroup(group.name)}
+                    className="flex items-center gap-2 px-3.5 py-[8px] border-b border-[#e5e7eb] cursor-pointer bg-[#f7f8fc] hover:bg-[#f0f2f8] transition-colors sticky top-0 z-[5]"
+                  >
+                    <ChevronRight
+                      className={`w-3.5 h-3.5 text-[#9ca3af] flex-shrink-0 transition-transform duration-150 ${isExpanded ? "rotate-90" : ""}`}
+                    />
+                    <span className="text-[12.5px] font-semibold text-[#111827] flex-1 truncate">
+                      {group.name}
+                    </span>
+                    <span className="text-[10px] font-bold px-[7px] py-[1px] rounded-full bg-[#e8eaf6] text-[#3949ab] border border-[#c5cae9] flex-shrink-0">
+                      {group.items.length}
+                    </span>
+                  </div>
+                  {/* Customer item rows */}
+                  {isExpanded && group.items.map((c) => (
+                    <div
+                      key={c.id}
+                      onClick={() => requestSelectId(c.id)}
+                      className={`flex items-stretch border-b border-[#e5e7eb] cursor-pointer transition-colors ${c.id === selectedId ? "bg-[#eef0fb]" : "hover:bg-[#f7f8fa]"}`}
+                    >
+                      <div className="w-[23px] flex-shrink-0" />
+                      <div className={`w-[3px] flex-shrink-0 rounded-r-[2px] transition-colors ${c.id === selectedId ? "bg-[#1a237e]" : "bg-transparent"}`} />
+                      <div className="flex-1 px-3 py-[9px] min-w-0">
+                        {/* Row 1: code · area */}
+                        <div className="flex items-center gap-1.5 mb-1">
+                          <span className="font-mono text-[11px] text-[#374151] font-medium">
+                            {c.customerCode}
+                          </span>
+                          {c.area && (
+                            <>
+                              <span className="w-[3px] h-[3px] rounded-full bg-[#d1d5db] flex-shrink-0" />
+                              <span className="text-[11.5px] text-[#6b7280] truncate">
+                                {c.area.name}{c.subArea ? ` · ${c.subArea.name}` : ""}
+                              </span>
+                            </>
+                          )}
+                          {c.customerRating && (
+                            <span className={`text-[10px] font-bold px-1.5 py-px rounded flex-shrink-0 ml-auto ${ratingStyles[c.customerRating] ?? ""}`}>
+                              {c.customerRating}
+                            </span>
+                          )}
+                        </div>
+                        {/* Row 2: badges */}
+                        <div className="flex flex-wrap gap-1">
+                          <span className={`text-[10px] font-medium px-1.5 py-px rounded-full border ${c.isActive ? "bg-[#e8f5e9] text-[#2e7d32] border-[#a5d6a7]" : "bg-[#f0f1f5] text-[#9ca3af] border-[#e5e7eb]"}`}>
+                            {c.isActive ? "Active" : "Inactive"}
+                          </span>
+                          {c.isKeyCustomer && (
+                            <span className="text-[10px] font-medium px-1.5 py-px rounded-full border bg-[#fef3c7] text-[#b45309] border-[#fcd34d]">Key</span>
+                          )}
+                          {c.salesOfficerGroup && (
+                            <span className="text-[10px] font-medium px-1.5 py-px rounded-full border bg-[#e8eaf6] text-[#3949ab] border-[#c5cae9] truncate max-w-[100px]">
+                              {c.salesOfficerGroup.name}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
           </div>
 
           {/* Footer */}
-          <div className="px-3.5 py-2.5 border-t border-[#e5e7eb] flex items-center justify-between flex-shrink-0 bg-white">
-            <span className="text-[11px] text-[#9ca3af]">Showing {customers.length} of {total}</span>
-            <div className="flex gap-1">
-              <button
-                disabled={page <= 1}
-                onClick={() => setPage((p) => p - 1)}
-                className="text-[11px] px-2.5 py-1 rounded-md border border-[#e5e7eb] bg-[#f7f8fa] text-[#6b7280] disabled:opacity-40 disabled:cursor-not-allowed hover:enabled:border-[#d1d5db] transition-colors"
-              >← Prev</button>
-              <button
-                disabled={page >= totalPages}
-                onClick={() => setPage((p) => p + 1)}
-                className="text-[11px] px-2.5 py-1 rounded-md border border-[#e5e7eb] bg-[#f7f8fa] text-[#6b7280] disabled:opacity-40 disabled:cursor-not-allowed hover:enabled:border-[#d1d5db] transition-colors"
-              >Next →</button>
+          {groupByName ? (
+            <div className="px-3.5 py-2.5 border-t border-[#e5e7eb] flex-shrink-0 bg-white">
+              <span className="text-[11px] text-[#9ca3af]">Showing {customers.length} of {total} · Search first to narrow results</span>
             </div>
-          </div>
+          ) : (
+            <div className="px-3.5 py-2.5 border-t border-[#e5e7eb] flex items-center justify-between flex-shrink-0 bg-white">
+              <span className="text-[11px] text-[#9ca3af]">Showing {customers.length} of {total}</span>
+              <div className="flex gap-1">
+                <button
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => p - 1)}
+                  className="text-[11px] px-2.5 py-1 rounded-md border border-[#e5e7eb] bg-[#f7f8fa] text-[#6b7280] disabled:opacity-40 disabled:cursor-not-allowed hover:enabled:border-[#d1d5db] transition-colors"
+                >← Prev</button>
+                <button
+                  disabled={page >= totalPages}
+                  onClick={() => setPage((p) => p + 1)}
+                  className="text-[11px] px-2.5 py-1 rounded-md border border-[#e5e7eb] bg-[#f7f8fa] text-[#6b7280] disabled:opacity-40 disabled:cursor-not-allowed hover:enabled:border-[#d1d5db] transition-colors"
+                >Next →</button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* ── Resize handle ──────────────────────────────────────────────────── */}
@@ -725,6 +930,47 @@ export function CustomersSplitView({
                     )}
                   </button>
                 ))}
+                <div className="ml-auto flex items-center gap-2 pr-4 flex-shrink-0">
+                  <span className={`text-[11px] font-bold px-2 py-[2px] rounded-full border flex-shrink-0 ${
+                    completionColor === "red"   ? "bg-red-50 text-red-600 border-red-200"
+                    : completionColor === "amber" ? "bg-amber-50 text-amber-600 border-amber-200"
+                    : completionColor === "blue"  ? "bg-blue-50 text-blue-600 border-blue-200"
+                    : "bg-green-50 text-green-700 border-green-200"
+                  }`}>
+                    {completionPct}%
+                  </span>
+                  <div className="w-[72px] h-[5px] bg-[#f0f1f5] rounded-full overflow-hidden flex-shrink-0">
+                    <div
+                      className={`h-full rounded-full transition-all duration-300 ${
+                        completionColor === "red"   ? "bg-red-500"
+                        : completionColor === "amber" ? "bg-amber-400"
+                        : completionColor === "blue"  ? "bg-blue-500"
+                        : "bg-green-500"
+                      }`}
+                      style={{ width: `${completionPct}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* ── Save bar ──────────────────────────────────────────────── */}
+              <div className="h-[54px] bg-white border-b border-[#e5e7eb] flex items-center justify-between px-5 flex-shrink-0">
+                <div className="flex items-center gap-2 text-[12px] text-[#6b7280]">
+                  {dirty && <><span className="w-1.5 h-1.5 rounded-full bg-amber-500 flex-shrink-0" /><span>Unsaved changes</span></>}
+                </div>
+                <div className="flex gap-2">
+                  {dirty && (
+                    <Button
+                      type="button" variant="outline" size="sm"
+                      onClick={() => { setForm(savedForm ?? EMPTY_FORM); setFieldErrors({}); }}
+                      className="text-[12.5px] border-[#e5e7eb] text-[#374151] hover:bg-[#f7f8fa]"
+                    >Discard</Button>
+                  )}
+                  <Button
+                    type="submit" size="sm" disabled={saving || !canEdit}
+                    className="text-[12.5px] bg-[#1a237e] hover:bg-[#283593] text-white"
+                  >{saving ? "Saving…" : (editingFull ? "Save changes" : "Create customer")}</Button>
+                </div>
               </div>
 
               {/* Scroll area */}
@@ -1024,27 +1270,6 @@ export function CustomersSplitView({
                 </div>
 
                 {/* spacer for save bar */}
-                <div className="h-[68px] flex-shrink-0" />
-              </div>
-
-              {/* ── Save bar ──────────────────────────────────────────────── */}
-              <div className="h-[54px] bg-white border-t border-[#e5e7eb] flex items-center justify-between px-5 flex-shrink-0">
-                <div className="flex items-center gap-2 text-[12px] text-[#6b7280]">
-                  {dirty && <><span className="w-1.5 h-1.5 rounded-full bg-amber-500 flex-shrink-0" /><span>Unsaved changes</span></>}
-                </div>
-                <div className="flex gap-2">
-                  {dirty && (
-                    <Button
-                      type="button" variant="outline" size="sm"
-                      onClick={() => { setForm(savedForm ?? EMPTY_FORM); setFieldErrors({}); }}
-                      className="text-[12.5px] border-[#e5e7eb] text-[#374151] hover:bg-[#f7f8fa]"
-                    >Discard</Button>
-                  )}
-                  <Button
-                    type="submit" size="sm" disabled={saving || !canEdit}
-                    className="text-[12.5px] bg-[#1a237e] hover:bg-[#283593] text-white"
-                  >{saving ? "Saving…" : (editingFull ? "Save changes" : "Create customer")}</Button>
-                </div>
               </div>
             </form>
           )}
@@ -1052,6 +1277,39 @@ export function CustomersSplitView({
       </div>
 
       {/* ── Confirm discard dialog ─────────────────────────────────────────── */}
+      <Dialog open={!!importResult} onOpenChange={(o) => { if (!o) setImportResult(null); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Import Complete</DialogTitle>
+          </DialogHeader>
+          {importResult && (
+            <div className="space-y-3 text-sm">
+              <div className="flex gap-6">
+                <span className="text-green-700 font-medium">{importResult.created} created</span>
+                {importResult.skipped > 0 && (
+                  <span className="text-slate-500 font-medium">{importResult.skipped} skipped (already exist)</span>
+                )}
+                {importResult.failed.length > 0 && (
+                  <span className="text-destructive font-medium">{importResult.failed.length} failed</span>
+                )}
+              </div>
+              {importResult.failed.length > 0 && (
+                <div className="max-h-60 overflow-y-auto rounded-md border bg-slate-50 p-3 space-y-1">
+                  {importResult.failed.map((f) => (
+                    <p key={f.row} className="text-slate-700">
+                      <span className="font-medium">Row {f.row}:</span> {f.reason}
+                    </p>
+                  ))}
+                </div>
+              )}
+              <div className="flex justify-end">
+                <Button size="sm" className="bg-[#1a237e] hover:bg-[#283593] text-white" onClick={() => setImportResult(null)}>Close</Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={confirmOpen} onOpenChange={(o) => { if (!o) handleCancelDiscard(); }}>
         <DialogContent className="max-w-sm">
           <DialogHeader>

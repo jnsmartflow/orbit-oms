@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Loader2, Eye, ChevronDown, Palette } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Switch } from "@/components/ui/switch";
@@ -31,11 +31,13 @@ interface OperatorSplit {
   totalVolume:      number | null;
   articleTag:       string | null;
   createdAt:        string;
-  tiSubmitted:      boolean;
-  operatorSequence: number;
-  startedAt:        string | null;
-  completedAt:      string | null;
-  orderId:          number;
+  tiSubmitted:       boolean;
+  tiCoveredLines:    number;
+  totalTintingLines: number;
+  operatorSequence:  number;
+  startedAt:         string | null;
+  completedAt:       string | null;
+  orderId:           number;
   order: {
     obdNumber:          string;
     shipToCustomerId:   string;
@@ -61,6 +63,8 @@ interface OperatorOrder {
     customerName: string;
     area:         { name: string };
   } | null;
+  tiCoveredLines:    number;
+  totalTintingLines: number;
   tintAssignments: {
     id:               number;
     status:           string;
@@ -163,9 +167,11 @@ interface Job {
   totalVolume:      number | null;
   lineItems:        SplitLineItem[];
   orderId:          number;
-  tintAssignmentId:  number | null;
-  shipToCustomerId:  string;
+  tintAssignmentId:   number | null;
+  shipToCustomerId:   string;
   shipToCustomerName: string | null;
+  tiCoveredLines:     number;
+  totalTintingLines:  number;
 }
 
 interface CompletedAssignment {
@@ -581,6 +587,9 @@ export function TintOperatorContent() {
   const [tiEntriesLoading,   setTiEntriesLoading]   = useState(false);
   const [editingEntryId,     setEditingEntryId]     = useState<{ id: number; table: "TINTER" | "ACOTONE" } | null>(null);
 
+  const coverageStripRef  = useRef<HTMLDivElement>(null);
+  const autoSelectDoneRef = useRef(false);
+
   const fetchOrders = useCallback(async () => {
     try {
       const res  = await fetch("/api/tint/operator/my-orders");
@@ -758,6 +767,8 @@ export function TintOperatorContent() {
         tintAssignmentId:  null,
         shipToCustomerId:  s.order.shipToCustomerId,
         shipToCustomerName: s.order.shipToCustomerName,
+        tiCoveredLines:    s.tiCoveredLines,
+        totalTintingLines: s.totalTintingLines,
       }));
 
     const orderJobs: Job[] = assignedOrders
@@ -782,6 +793,8 @@ export function TintOperatorContent() {
         tintAssignmentId:  o.tintAssignments[0]?.id ?? null,
         shipToCustomerId:  o.shipToCustomerId,
         shipToCustomerName: o.shipToCustomerName,
+        tiCoveredLines:    o.tiCoveredLines,
+        totalTintingLines: o.totalTintingLines,
       }));
 
     return [...splitJobs, ...orderJobs].sort(
@@ -840,6 +853,7 @@ export function TintOperatorContent() {
     setTiIncompleteWarning(null);
     setExistingTIEntries(new Map());
     setEditingEntryId(null);
+    autoSelectDoneRef.current = false;
   }, [selectedJobId, selectedJobType]);
 
   // Load all saved shades when job or tinterType changes
@@ -859,6 +873,17 @@ export function TintOperatorContent() {
     if (selectedJob) loadExistingTIEntries(selectedJob);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedJob?.id, selectedJob?.type, selectedJob?.tintAssignmentId]);
+
+  // Auto-select single tinting line when there is exactly one line and no TI entry yet
+  useEffect(() => {
+    if (tiEntriesLoading) return;
+    if (autoSelectDoneRef.current) return;
+    if (tintingLines.length !== 1) return;
+    if (existingTIEntries.size !== 0) return;
+    autoSelectDoneRef.current = true;
+    handleSkuSelect(tiEntries[0].id, tintingLines[0].rawLineItemId);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tiEntriesLoading, tintingLines.length, existingTIEntries.size]);
 
   const pendingCount    = jobs.filter(j => j.status === "tint_assigned").length;
   const inProgressCount = jobs.filter(j => j.status === "tinting_in_progress").length;
@@ -1061,6 +1086,7 @@ export function TintOperatorContent() {
     }
     await fetchOrders();
     await loadExistingTIEntries(job);
+    setTimeout(() => coverageStripRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 200);
     if (job.status === "tinting_in_progress") {
       setTiEntries([defaultTIFormEntry()]);
       setTiIncompleteWarning(null);
@@ -1184,6 +1210,7 @@ export function TintOperatorContent() {
       throw new Error(err.error ?? "Failed to update entry");
     }
     await loadExistingTIEntries(job);
+    setTimeout(() => coverageStripRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 200);
     setEditingEntryId(null);
     setTiEntries(prev => [defaultTIFormEntry(), ...prev.slice(1)]);
     setTiUpdateToast(true);
@@ -1504,21 +1531,23 @@ export function TintOperatorContent() {
                         </div>
                       </div>
 
-                      {/* TI badge */}
-                      {isActive ? (
-                        <span style={{ fontSize: 9.5, fontWeight: 700, padding: "3px 7px", borderRadius: 5, background: "#f7f8fc", border: "1px solid #e2e5f1", color: "#9ca3af", whiteSpace: "nowrap", flexShrink: 0 }}>
-                          TI Done
-                        </span>
-                      ) : job.tiSubmitted ? (
-                        <span style={{ fontSize: 9.5, fontWeight: 700, padding: "3px 7px", borderRadius: 5, background: "#f0fdf4", border: "1px solid #bbf7d0", color: "#16a34a", display: "flex", alignItems: "center", gap: 3, whiteSpace: "nowrap", flexShrink: 0 }}>
-                          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
-                          TI Done
-                        </span>
-                      ) : (
-                        <span style={{ fontSize: 9.5, fontWeight: 700, padding: "3px 7px", borderRadius: 5, background: "#fef2f2", border: "1px solid #fca5a5", color: "#dc2626", whiteSpace: "nowrap", flexShrink: 0 }}>
-                          TI Needed
-                        </span>
-                      )}
+                      {/* TI coverage badge */}
+                      {(() => {
+                        const covered = job.tiCoveredLines;
+                        const total   = job.totalTintingLines;
+                        const allDone = total > 0 && covered >= total;
+                        if (total === 0) return null;
+                        return allDone ? (
+                          <span style={{ fontSize: 9.5, fontWeight: 700, padding: "3px 7px", borderRadius: 5, background: "#f0fdf4", border: "1px solid #bbf7d0", color: "#16a34a", display: "flex", alignItems: "center", gap: 3, whiteSpace: "nowrap", flexShrink: 0 }}>
+                            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
+                            TI {covered}/{total}
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: 9.5, fontWeight: 700, padding: "3px 7px", borderRadius: 5, background: "#fef2f2", border: "1px solid #fca5a5", color: "#dc2626", whiteSpace: "nowrap", flexShrink: 0 }}>
+                            TI {covered}/{total}
+                          </span>
+                        );
+                      })()}
                     </div>
 
                     {/* Fill TI nudge — Next Up card only, TI not done */}
@@ -1800,7 +1829,7 @@ export function TintOperatorContent() {
 
                 {/* TI Status Strip */}
                 {tintingLines.length > 0 && (
-                  <div style={{ padding: "0 16px 8px" }}>
+                  <div ref={coverageStripRef} style={{ padding: "0 16px 8px" }}>
                     <div style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".6px", color: "#9ca3af", marginBottom: 8, display: "flex", alignItems: "center", gap: 8 }}>
                       TI Coverage
                       <div style={{ flex: 1, height: 1, background: "#e2e5f1" }} />

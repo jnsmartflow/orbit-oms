@@ -122,8 +122,25 @@ export async function GET(): Promise<NextResponse> {
     }),
   ]);
 
+  // Intermediate sets for downstream queries
+  const obdNumbers         = assignedOrders.map(o => o.obdNumber);
+  const allAssignedOrderIds = assignedOrders.map(o => o.id);
+  const allAssignedSplitIds = assignedSplits.map(s => s.id);
+  const allObdNumbers = [
+    ...assignedOrders.map(o => o.obdNumber),
+    ...assignedSplits.map(s => s.order.obdNumber),
+    ...completedOrders.map(c => c.order.obdNumber),
+    ...completedSplits.map(s => s.order.obdNumber),
+  ];
+  const uniqueObdNumbers    = Array.from(new Set(allObdNumbers));
+  const hasCoverageTargets  = allAssignedOrderIds.length > 0 || allAssignedSplitIds.length > 0;
+
+  // Build OR conditions for TI coverage queries
+  const coverageOr: ({ orderId: { in: number[] }; splitId: null } | { splitId: { in: number[] } })[] = [];
+  if (allAssignedOrderIds.length > 0) coverageOr.push({ orderId: { in: allAssignedOrderIds }, splitId: null });
+  if (allAssignedSplitIds.length > 0) coverageOr.push({ splitId: { in: allAssignedSplitIds } });
+
   // Query 3a: Raw line items for assigned orders (orders has no direct Prisma relation to import_raw_line_items)
-  const obdNumbers = assignedOrders.map(o => o.obdNumber);
   const rawLineItemsRows = obdNumbers.length > 0
     ? await prisma.import_raw_line_items.findMany({
         where: { obdNumber: { in: obdNumbers } },
@@ -139,6 +156,28 @@ export async function GET(): Promise<NextResponse> {
       })
     : [];
 
+  // Query 3b: import_raw_summary — authoritative source of shipToCustomerId/Name
+  const rawSummaries = uniqueObdNumbers.length > 0
+    ? await prisma.import_raw_summary.findMany({
+        where:  { obdNumber: { in: uniqueObdNumbers } },
+        select: { obdNumber: true, shipToCustomerId: true, shipToCustomerName: true },
+      })
+    : [];
+
+  // Query 3c–3d in parallel: TI coverage entries (both tinter tables)
+  const [tinterCovRaw, acotoneCovRaw] = hasCoverageTargets
+    ? await Promise.all([
+        prisma.tinter_issue_entries.findMany({
+          where:  { OR: coverageOr },
+          select: { orderId: true, splitId: true, rawLineItemId: true },
+        }),
+        prisma.tinter_issue_entries_b.findMany({
+          where:  { OR: coverageOr },
+          select: { orderId: true, splitId: true, rawLineItemId: true },
+        }),
+      ])
+    : [[], []] as [{ orderId: number; splitId: number | null; rawLineItemId: number | null }[], { orderId: number; splitId: number | null; rawLineItemId: number | null }[]];
+
   const lineItemsByObd = rawLineItemsRows.reduce<Record<string, typeof rawLineItemsRows>>(
     (acc, li) => {
       if (!acc[li.obdNumber]) acc[li.obdNumber] = [];
@@ -148,22 +187,14 @@ export async function GET(): Promise<NextResponse> {
     {},
   );
 
-  // Query 3b: import_raw_summary — authoritative source of shipToCustomerId/Name
-  // (shade_master stores values from import_raw_summary; orders.shipToCustomerId may be empty)
-  const allObdNumbers = [
-    ...assignedOrders.map(o => o.obdNumber),
-    ...assignedSplits.map(s => s.order.obdNumber),
-    ...completedOrders.map(c => c.order.obdNumber),
-    ...completedSplits.map(s => s.order.obdNumber),
-  ];
-  const uniqueObdNumbers = Array.from(new Set(allObdNumbers));
-
-  const rawSummaries = uniqueObdNumbers.length > 0
-    ? await prisma.import_raw_summary.findMany({
-        where:  { obdNumber: { in: uniqueObdNumbers } },
-        select: { obdNumber: true, shipToCustomerId: true, shipToCustomerName: true },
-      })
-    : [];
+  // Build TI coverage map: key = "split:<id>" | "order:<id>", value = Set of covered rawLineItemIds
+  const coverageMap = new Map<string, Set<number>>();
+  for (const e of [...tinterCovRaw, ...acotoneCovRaw]) {
+    if (e.rawLineItemId == null) continue;
+    const key = e.splitId != null ? `split:${e.splitId}` : `order:${e.orderId}`;
+    if (!coverageMap.has(key)) coverageMap.set(key, new Set());
+    coverageMap.get(key)!.add(e.rawLineItemId);
+  }
 
   const shipToCustomerIdMap   = new Map(rawSummaries.map(r => [r.obdNumber, r.shipToCustomerId ?? ""]));
   const shipToCustomerNameMap = new Map(rawSummaries.map(r => [r.obdNumber, r.shipToCustomerName ?? null]));
@@ -173,6 +204,8 @@ export async function GET(): Promise<NextResponse> {
     rawLineItems:       lineItemsByObd[o.obdNumber] ?? [],
     shipToCustomerId:   shipToCustomerIdMap.get(o.obdNumber) || o.shipToCustomerId,
     shipToCustomerName: shipToCustomerNameMap.get(o.obdNumber) ?? o.shipToCustomerName,
+    tiCoveredLines:     coverageMap.get(`order:${o.id}`)?.size ?? 0,
+    totalTintingLines:  (lineItemsByObd[o.obdNumber] ?? []).filter(li => li.isTinting).length,
   }));
 
   const splitsWithCustomer = assignedSplits.map(s => ({
@@ -182,6 +215,8 @@ export async function GET(): Promise<NextResponse> {
       shipToCustomerId:   shipToCustomerIdMap.get(s.order.obdNumber) || s.order.shipToCustomerId,
       shipToCustomerName: shipToCustomerNameMap.get(s.order.obdNumber) ?? s.order.shipToCustomerName,
     },
+    tiCoveredLines:    coverageMap.get(`split:${s.id}`)?.size ?? 0,
+    totalTintingLines: s.lineItems.filter(li => li.rawLineItem.isTinting).length,
   }));
 
   const completedOrdersEnhanced = completedOrders.map(c => ({

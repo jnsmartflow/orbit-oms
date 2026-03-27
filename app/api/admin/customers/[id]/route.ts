@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { requireRole, ROLES } from "@/lib/rbac";
+import { checkPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 
@@ -55,19 +56,35 @@ const fullInclude = {
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
   const session = await auth();
-  requireRole(session, [ROLES.ADMIN]);
+  requireRole(session, [ROLES.ADMIN, ROLES.DISPATCHER, ROLES.SUPPORT, ROLES.TINT_MANAGER, ROLES.TINT_OPERATOR, ROLES.FLOOR_SUPERVISOR]);
+  if (session!.user.role !== "admin") {
+    const allowed = await checkPermission(session!.user.role, "customers", "canView");
+    if (!allowed) return NextResponse.json({ error: "Permission denied" }, { status: 403 });
+  }
 
   const id = parseInt(params.id, 10);
   if (isNaN(id)) return NextResponse.json({ error: "Invalid id." }, { status: 400 });
 
-  const customer = await prisma.delivery_point_master.findUnique({ where: { id }, include: fullInclude });
-  if (!customer) return NextResponse.json({ error: "Not found." }, { status: 404 });
-  return NextResponse.json(customer);
+  try {
+    const customer = await prisma.delivery_point_master.findUnique({
+      where: { id },
+      include: fullInclude,
+    });
+    if (!customer) return NextResponse.json({ error: "Not found." }, { status: 404 });
+    return NextResponse.json(customer);
+  } catch (err) {
+    console.error("GET /api/admin/customers/[id] error:", err);
+    return NextResponse.json({ error: "Failed to load customer." }, { status: 500 });
+  }
 }
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
   const session = await auth();
-  requireRole(session, [ROLES.ADMIN]);
+  requireRole(session, [ROLES.ADMIN, ROLES.DISPATCHER, ROLES.SUPPORT, ROLES.TINT_MANAGER, ROLES.TINT_OPERATOR, ROLES.FLOOR_SUPERVISOR]);
+  if (session!.user.role !== "admin") {
+    const allowed = await checkPermission(session!.user.role, "customers", "canEdit");
+    if (!allowed) return NextResponse.json({ error: "Permission denied" }, { status: 403 });
+  }
 
   const id = parseInt(params.id, 10);
   if (isNaN(id)) return NextResponse.json({ error: "Invalid id." }, { status: 400 });
@@ -79,18 +96,18 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 
   const { contacts, customerCode, ...rest } = parsed.data;
 
-  if (customerCode) {
-    const upperCode = customerCode.trim().toUpperCase();
-    const conflict  = await prisma.delivery_point_master.findFirst({
-      where: { customerCode: upperCode, NOT: { id } },
-    });
-    if (conflict) {
-      return NextResponse.json({ error: "Customer code already exists." }, { status: 409 });
+  try {
+    if (customerCode) {
+      const upperCode = customerCode.trim().toUpperCase();
+      const conflict = await prisma.delivery_point_master.findFirst({
+        where: { customerCode: upperCode, NOT: { id } },
+      });
+      if (conflict) {
+        return NextResponse.json({ error: "Customer code already exists." }, { status: 409 });
+      }
     }
-  }
 
-  const customer = await prisma.$transaction(async (tx) => {
-    await tx.delivery_point_master.update({
+    await prisma.delivery_point_master.update({
       where: { id },
       data: {
         ...(customerCode && { customerCode: customerCode.trim().toUpperCase() }),
@@ -100,30 +117,33 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 
     if (contacts !== undefined) {
       const incomingIds = contacts.filter((c) => c.id).map((c) => c.id!);
-
-      await tx.delivery_point_contacts.deleteMany({
+      await prisma.delivery_point_contacts.deleteMany({
         where:
           incomingIds.length > 0
             ? { deliveryPointId: id, NOT: { id: { in: incomingIds } } }
             : { deliveryPointId: id },
       });
-
       for (const { id: contactId, ...contactData } of contacts) {
         if (contactId) {
-          await tx.delivery_point_contacts.update({
+          await prisma.delivery_point_contacts.update({
             where: { id: contactId },
-            data:  contactData,
+            data: contactData,
           });
         } else {
-          await tx.delivery_point_contacts.create({
+          await prisma.delivery_point_contacts.create({
             data: { ...contactData, deliveryPointId: id },
           });
         }
       }
     }
 
-    return tx.delivery_point_master.findUnique({ where: { id }, include: fullInclude });
-  });
-
-  return NextResponse.json(customer);
+    const customer = await prisma.delivery_point_master.findUnique({
+      where: { id },
+      include: fullInclude,
+    });
+    return NextResponse.json(customer);
+  } catch (err) {
+    console.error("PATCH /api/admin/customers/[id] error:", err);
+    return NextResponse.json({ error: "Failed to save customer." }, { status: 500 });
+  }
 }

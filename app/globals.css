@@ -63,6 +63,7 @@
     background: var(--bg);
     font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
     font-size: 13px;
+    overflow-x: hidden;
   }
 }
 

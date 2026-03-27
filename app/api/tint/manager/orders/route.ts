@@ -260,28 +260,6 @@ export async function GET(): Promise<NextResponse> {
       linesByObd.get(line.obdNumber)!.push(line);
     }
 
-    // ── Existing split line items per order (for split builder existingSplits) ─
-    const allOrderIds = orders.map((o) => o.id);
-    const splitLineItems = allOrderIds.length > 0
-      ? await prisma.split_line_items.findMany({
-          where:  { split: { orderId: { in: allOrderIds } } },
-          select: {
-            rawLineItemId: true,
-            assignedQty:   true,
-            split:         { select: { orderId: true } },
-          },
-        })
-      : [];
-    const existingSplitsByOrderId = new Map<number, { rawLineItemId: number; assignedQty: number }[]>();
-    for (const item of splitLineItems) {
-      const oid = item.split.orderId;
-      if (!existingSplitsByOrderId.has(oid)) existingSplitsByOrderId.set(oid, []);
-      existingSplitsByOrderId.get(oid)!.push({
-        rawLineItemId: item.rawLineItemId,
-        assignedQty:   item.assignedQty,
-      });
-    }
-
     // ── Assemble final payloads ────────────────────────────────────────────────
     const ordersWithLines = orders.map((o) => {
       // Compute remainingQty: total raw-line unitQty minus qty assigned to non-cancelled splits.
@@ -321,7 +299,7 @@ export async function GET(): Promise<NextResponse> {
         obdEmailDate:   obdDateMap.get(o.obdNumber)?.date ?? null,
         obdEmailTime:   obdDateMap.get(o.obdNumber)?.time ?? null,
         lineItems:      linesByObd.get(o.obdNumber) ?? [],
-        existingSplits: existingSplitsByOrderId.get(o.id) ?? [],
+        existingSplits: splitsData.flatMap((s) => s.lineItems),
         remainingQty:   effectiveRemainingQty,
       };
     });

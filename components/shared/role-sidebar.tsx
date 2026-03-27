@@ -6,7 +6,7 @@ import { signOut } from "next-auth/react";
 import { cn } from "@/lib/utils";
 import {
   ClipboardList, Layers, User, Zap, Upload,
-  Truck, Warehouse, Users, Package, MapPin, FileText, Palette,
+  Truck, Warehouse, Users, Package, MapPin, FileText, Palette, BarChart2,
 } from "lucide-react";
 import { useRoleSidebar } from "./role-sidebar-provider";
 import type { NavItemConfig } from "@/lib/permissions";
@@ -42,6 +42,7 @@ const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   vehicles:            Truck,
   delivery_challans:   FileText,
   shade_master:        Palette,
+  ti_report:           BarChart2,
 };
 
 const DEFAULT_ICON = User;
@@ -63,8 +64,6 @@ export function RoleSidebar({ role, userName, userInitials, navItems }: RoleSide
   const roleLabel = ROLE_LABELS[role];
 
   function isActive(href: string) {
-    // Prefix match for routes with nested pages (e.g. /challan)
-    if (href === "/challan") return pathname.startsWith("/challan");
     return pathname === href;
   }
 

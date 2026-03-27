@@ -13,7 +13,6 @@ export default async function SalesOfficersPage() {
       initialOfficers={officers.map((o) => ({
         id: o.id,
         name: o.name,
-        employeeCode: o.employeeCode,
         email: o.email,
         phone: o.phone,
         isActive: o.isActive,

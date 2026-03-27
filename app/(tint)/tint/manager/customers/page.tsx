@@ -2,7 +2,7 @@ import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { checkPermission, getPagePermissions } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
-import { CustomersTable } from "@/components/admin/customers-table";
+import { CustomersSplitView } from "@/components/admin/customers-split-view";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +12,6 @@ export default async function TintManagerCustomersPage() {
   const canView = await checkPermission(session.user.role, "customers", "canView");
   if (!canView) redirect("/unauthorized");
   const perms = await getPagePermissions(session.user.role, "customers");
-
   const [customers, total, areas, subAreas, salesOfficers, routes, deliveryTypes, soGroups, contactRoles, customerTypes, premisesTypes] =
     await Promise.all([
       prisma.delivery_point_master.findMany({
@@ -22,10 +21,19 @@ export default async function TintManagerCustomersPage() {
           area:              { select: { id: true, name: true } },
           subArea:           { select: { id: true, name: true } },
           salesOfficerGroup: { select: { id: true, name: true } },
+          premisesType:      { select: { id: true, name: true } },
         },
       }),
       prisma.delivery_point_master.count(),
-      prisma.area_master.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
+      prisma.area_master.findMany({
+        orderBy: { name: "asc" },
+        select: {
+          id: true,
+          name: true,
+          deliveryType: { select: { id: true, name: true } },
+          primaryRoute: { select: { id: true, name: true } },
+        },
+      }),
       prisma.sub_area_master.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true, areaId: true } }),
       prisma.sales_officer_master.findMany({
         where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true },
@@ -51,7 +59,7 @@ export default async function TintManagerCustomersPage() {
     ]);
 
   return (
-    <CustomersTable
+    <CustomersSplitView
       initialCustomers={customers.map((c) => ({
         id:                c.id,
         customerCode:      c.customerCode,
@@ -60,6 +68,7 @@ export default async function TintManagerCustomersPage() {
         area:              c.area,
         subArea:           c.subArea,
         salesOfficerGroup: c.salesOfficerGroup,
+        premisesType:      c.premisesType ?? null,
         customerRating:    c.customerRating,
         isKeyCustomer:     c.isKeyCustomer,
         isKeySite:         c.isKeySite,
@@ -80,7 +89,7 @@ export default async function TintManagerCustomersPage() {
       customerTypes={customerTypes}
       premisesTypes={premisesTypes}
       canEdit={perms.canEdit}
-      canImport={perms.canImport}
+      canImport={false}
     />
   );
 }

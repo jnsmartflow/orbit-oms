@@ -45,6 +45,7 @@ const listInclude = {
   area:              { select: { id: true, name: true } },
   subArea:           { select: { id: true, name: true } },
   salesOfficerGroup: { select: { id: true, name: true } },
+  premisesType:      { select: { id: true, name: true } },
 } as const;
 
 const fullInclude = {
@@ -69,7 +70,7 @@ export async function GET(req: Request) {
 
   const { searchParams } = new URL(req.url);
   const page          = Math.max(1, parseInt(searchParams.get("page") ?? "1", 10));
-  const limit         = 25;
+  const pageSize      = Math.min(parseInt(searchParams.get("pageSize") ?? "25", 10), 500);
   const search        = searchParams.get("search")?.trim() ?? "";
   const areaIdParam        = searchParams.get("areaId");
   const areaId             = areaIdParam ? parseInt(areaIdParam, 10) : undefined;
@@ -78,6 +79,8 @@ export async function GET(req: Request) {
   const isKeyCustomer      = searchParams.get("isKeyCustomer") === "true" ? true : undefined;
   const isActiveParam      = searchParams.get("isActive");
   const isActive           = isActiveParam === "true" ? true : isActiveParam === "false" ? false : undefined;
+  const premisesTypeParam  = searchParams.get("premisesTypeId");
+  const premisesTypeId     = premisesTypeParam ? parseInt(premisesTypeParam, 10) : undefined;
 
   const where = {
     ...(search && {
@@ -95,20 +98,21 @@ export async function GET(req: Request) {
     }),
     ...(isKeyCustomer !== undefined && { isKeyCustomer }),
     ...(isActive      !== undefined && { isActive }),
+    ...(premisesTypeId && !isNaN(premisesTypeId) && { premisesTypeId }),
   };
 
   const [customers, total] = await prisma.$transaction([
     prisma.delivery_point_master.findMany({
       where,
-      skip:    (page - 1) * limit,
-      take:    limit,
+      skip:    (page - 1) * pageSize,
+      take:    pageSize,
       orderBy: [{ area: { name: "asc" } }, { subArea: { name: "asc" } }, { customerName: "asc" }],
       include: listInclude,
     }),
     prisma.delivery_point_master.count({ where }),
   ]);
 
-  return NextResponse.json({ data: customers, total, page, totalPages: Math.ceil(total / limit) });
+  return NextResponse.json({ data: customers, total, page, totalPages: Math.ceil(total / pageSize) });
 }
 
 export async function POST(req: Request) {

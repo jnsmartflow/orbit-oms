@@ -23,7 +23,7 @@ export function RoleLayoutClient({
   const { isCollapsed } = useRoleSidebar();
 
   return (
-    <div className="min-h-screen bg-[#f0f2f8]">
+    <div className="min-h-screen bg-[#f0f2f8] overflow-hidden">
       <RoleSidebar
         role={role}
         userName={userName}
@@ -31,8 +31,11 @@ export function RoleLayoutClient({
         navItems={navItems}
       />
       <div
-        className="transition-all duration-200"
-        style={{ marginLeft: isCollapsed ? "72px" : "220px" }}
+        className="transition-all duration-200 min-h-screen overflow-hidden"
+        style={{
+          marginLeft: isCollapsed ? "72px" : "220px",
+          maxWidth:   isCollapsed ? "calc(100vw - 72px)" : "calc(100vw - 220px)",
+        }}
       >
         {children}
       </div>

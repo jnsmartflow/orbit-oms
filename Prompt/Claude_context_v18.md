@@ -1,6 +1,6 @@
 # CLAUDE_CONTEXT.md — Orbit OMS
 # Load this file at the start of every Claude Code session.
-# Command: claude "Read CLAUDE_CONTEXT.md fully before doing anything else."
+# Command: claude "Read CLAUDE_CONTEXT_v18.md fully before doing anything else."
 # Version: Phase 3 · Schema v14 · Config Master v2 · Updated March 2026
 
 ---
@@ -591,7 +591,117 @@ Right badge determined by dispatchStatus:
 
 ---
 
-## 14. Tint Operator screen — v4 (65/35 split layout, TI-aware)
+## 14. TM Table View — v1 (NEW v18)
+
+### What it is
+An alternate view for the Tint Manager screen. The manager can toggle between Card (Kanban) and Table view. Both views share the same data — no additional API call.
+
+### Toggle
+- Located in topbar, right side, before refresh button
+- Icons: LayoutGrid (Cards) | TableIcon (Table)
+- State: `viewMode = "card" | "table"`
+- Persisted in `sessionStorage` key: `"tm_view_mode"`
+- Default: `"card"`
+
+### New file
+`components/tint/tint-table-view.tsx`
+
+### Component: TintTableViewProps
+```typescript
+filteredOrders:          TintOrder[]
+filteredActiveSplits:    SplitCard[]
+filteredCompletedSplits: SplitCard[]
+completedAssignments:    CompletedAssignment[]
+onOrderClick:            (order: TintOrder) => void
+onSplitClick:            (split: SplitCard) => void
+onStatusPopover:         (id: number, type: "order" | "split", btn: HTMLButtonElement) => void
+onAssign:                (order: TintOrder) => void
+onCreateSplit:           (order: TintOrder) => void
+onMoveUp:                (id: number, type: "order" | "split") => void
+onMoveDown:              (id: number, type: "order" | "split") => void
+onCancelAssignment:      (order: TintOrder) => void
+onReassignSplit:         (split: SplitCard) => void
+onCancelSplit:           (split: SplitCard) => void
+```
+
+### 4 sections (stacked, no sticky headers)
+1. **Pending Assignment** — order rows only
+2. **Assigned** — order rows + split rows
+3. **In Progress** — order rows + split rows
+4. **Completed Today** — split rows + whole-OBD assignment rows
+
+Section headers scroll normally — no `sticky` positioning in table view.
+
+### Section header design (per-stage light tinted — SCHEME_MAP constant)
+| Stage | bg | border-bottom | label color | dot |
+|---|---|---|---|---|
+| Pending | #f0f1ff | 2px solid #6366f1 | #3730a3 | bg-indigo-500 |
+| Assigned | #fffbeb | 2px solid #f59e0b | #92400e | bg-amber-400 |
+| In Progress | #eff6ff | 2px solid #3b82f6 | #1e40af | bg-blue-400 |
+| Completed | #f0fdf4 | 2px solid #22c55e | #166534 | bg-green-400 |
+Count pill: per-stage tinted bg/text/border. Note text: text-gray-500.
+
+### Columns per section
+All sections: OBD No. | Customer | Area | SMU | Slot | Priority | Articles | Volume | Sales Officer | (actions)
+Assigned adds: Operator | Assigned At
+In Progress adds: Operator | Started At | Elapsed
+Completed adds: Operator | Completed At | Dispatch Status
+
+### Row types
+- **Order rows** — data from TintOrder. Background: alternating white/#fafbfe.
+- **Split rows** — amber tinted bg (#fffbf0 / hover #fff3d6). Show "Split #N" sub-label under OBD number.
+- **Elapsed badge** — blue if < 2h, red if ≥ 2h. Timer updates every 60s via `setInterval`.
+
+### ··· menu (RowActionsMenu component)
+Uses `createPortal` + `getBoundingClientRect()` to escape `overflow:hidden` on table wrappers.
+Same escape pattern as StatusPopover.
+
+#### Actions per section/row type
+| Context | Actions |
+|---|---|
+| Pending — fresh order (hasSplits=false) | Assign Operator + Create Split |
+| Pending — has active splits (hasSplits=true) | Create Split only |
+| Assigned — order row | Move Up, Move Down, Cancel Assignment |
+| Assigned — split row | Move Up, Move Down, Reassign, Cancel Split |
+| In Progress | No actions |
+| Completed | No actions |
+
+### hasSplits logic — CRITICAL (use filteredActiveSplits as authoritative source)
+```typescript
+const orderActiveSplits = filteredActiveSplits.filter(
+  s => s.order.id === order.id &&
+  (s.status === "tint_assigned" || s.status === "tinting_in_progress")
+);
+const hasSplits =
+  (order.splits ?? []).filter(s => s.status !== "cancelled").length > 0 ||
+  (order.existingSplits ?? []).length > 0 ||
+  orderActiveSplits.length > 0;
+```
+`order.splits` and `order.existingSplits` can be stale/empty after cancel-split resets workflowStage.
+`orderActiveSplits` (from `filteredActiveSplits` Set C) is the authoritative source.
+**Compute `orderActiveSplits` BEFORE `hasSplits`** — it feeds into both hasSplits and the amber badge.
+
+### Pending section — split sub-rows NOT rendered
+- Only order rows appear in Pending section.
+- Do NOT render split sub-rows under pending order rows.
+- Active splits shown via amber "N units remaining" badge in OBD cell when `orderActiveSplits.length > 0 && remainingQty > 0`.
+- This matches Kanban Pending column: OBD card with split indicator pill, not split cards.
+
+### Row click behaviour
+- Order rows → opens SkuDetailsSheet (state: `tableSkuOrder`, `tableSkuOpen`)
+- Split rows → opens SplitDetailSheet (state: `tableSplitData`, `tableSplitOpen`)
+
+### Modals — rendered outside viewMode conditional
+All modals and sheets (SplitBuilderModal, AssignModal, SplitReassignModal, SkuDetailsSheet, SplitDetailSheet, StatusPopover) are rendered **OUTSIDE** both `{viewMode === "card"}` and `{viewMode === "table"}` blocks so they work in both views.
+
+Table view has its own state vars:
+- `tableSkuOrder`, `tableSkuOpen` — for SkuDetailsSheet
+- `tableSplitData`, `tableSplitOpen` — for SplitDetailSheet
+- `tablePopover`, `tablePopoverSaving`, `tableAnchorRef` — for StatusPopover
+
+---
+
+## 15. Tint Operator screen — v4 (65/35 split layout, TI-aware)
 
 ### Layout
 ```
@@ -648,7 +758,7 @@ Reference: `tint-operator-final.html` (final approved design mockup)
 
 ---
 
-## 15. Support queue — v3 (splits-aware)
+## 16. Support queue — v3 (splits-aware)
 
 Orders table shows all orders as before.
 Edit sheet for tint orders shows:
@@ -659,7 +769,7 @@ Edit sheet for tint orders shows:
 
 ---
 
-## 16. SKU structure (v12)
+## 17. SKU structure (v12)
 
 ```
 product_category → product_name → sku_master ← base_colour
@@ -669,7 +779,7 @@ product_category → product_name → sku_master ← base_colour
 
 ---
 
-## 17. Sales Officer Group pattern
+## 18. Sales Officer Group pattern
 
 ```
 sales_officer_group.salesOfficerId → sales_officer_master
@@ -678,7 +788,7 @@ delivery_point_master.salesOfficerGroupId → sales_officer_group
 
 ---
 
-## 18. Customer route/type inheritance
+## 19. Customer route/type inheritance
 
 1. Area level (default): `area_master.deliveryTypeId` + `area_master.primaryRouteId`
 2. Customer level (override): `delivery_point_master.deliveryTypeOverrideId` + `delivery_point_master.primaryRouteId`
@@ -687,7 +797,7 @@ Check customer-level first → fall back to area if null.
 
 ---
 
-## 19. Audit trail rules — non-negotiable
+## 20. Audit trail rules — non-negotiable
 
 - `tint_logs` — INSERT-ONLY. Every tint/split action = new row.
 - `order_status_logs` — INSERT-ONLY. Every order change = new row.
@@ -698,7 +808,7 @@ Any UPDATE or DELETE on these tables is architecturally wrong.
 
 ---
 
-## 20. DB connection rule
+## 21. DB connection rule
 
 ⚠️ Direct Prisma DB connection from local machine is unreliable.
 All DB schema changes must be done via **Supabase SQL Editor**.
@@ -708,7 +818,7 @@ After SQL applied: run `npx prisma generate` in VS Code terminal.
 
 ---
 
-## 21. Folder structure
+## 22. Folder structure
 
 ```
 /app
@@ -717,6 +827,8 @@ After SQL applied: run `npx prisma generate` in VS Code terminal.
   /api/tint/manager                 — Tint Manager APIs (orders, assign, splits/*)
   /api/tint/manager/challans        — NEW v14. Challan list API
   /api/tint/manager/challans/[id]   — NEW v14. GET single challan | PATCH save edits
+  /api/tint/manager/ti-report       — NEW v17. GET TI report with filters (dateFrom, dateTo, operatorId, tinterType, obdSearch)
+  /api/tint/manager/operators       — NEW v17. GET tint operators list
   /api/tint/operator                — Tint Operator APIs (my-orders, start, done, split/*, tinter-issue)
   /api/support                      — Support APIs (orders, splits)
   /api/import                       — Import API (obd)
@@ -725,6 +837,7 @@ After SQL applied: run `npx prisma generate` in VS Code terminal.
   /(support)                        — Support role layout group
   /(tint)                           — Tint team layout group
   /(tint)/challan                   — NEW v14. Delivery Challan page (TM + Admin)
+  /(tint)/ti-report                 — NEW v17. TI Report page (TM + Admin)
   /(warehouse)                      — Supervisor + picker layout group
 /components
   /ui                               — shadcn/ui primitives (do not edit)
@@ -732,8 +845,10 @@ After SQL applied: run `npx prisma generate` in VS Code terminal.
   /admin                            — Admin-specific components
   /tint                             — tint-manager-content.tsx, tint-operator-content.tsx,
                                       split-builder-modal.tsx, sku-details-sheet.tsx
+                                      tint-table-view.tsx      — NEW v18. Table view component
                                       challan-content.tsx      — NEW v14. 65/35 split panel
                                       challan-document.tsx     — NEW v14. Printable challan
+                                      ti-report-content.tsx    — NEW v17. TI Report page component
   /support                          — support-page-content.tsx
 /lib
   prisma.ts                         — Prisma client singleton
@@ -749,7 +864,7 @@ After SQL applied: run `npx prisma generate` in VS Code terminal.
 
 ---
 
-## 22. Phase completion status
+## 23. Phase completion status
 
 | Phase | Status |
 |---|---|
@@ -757,12 +872,15 @@ After SQL applied: run `npx prisma generate` in VS Code terminal.
 | Phase 2 — Order pipeline (import, support, tint manager v1, operator) | ✅ Complete |
 | Phase 3 — Tint splits + UI polish | ✅ Splits complete · Operator screen redesign in progress |
 | Phase 3.5 — Delivery Challan | ✅ Complete |
+| Phase 3.6 — Shade Master + Acotone + Smart TI form | ✅ Complete |
+| Phase 3.7 — TI Report + Operator improvements | ✅ Complete |
+| Phase 3.8 — TM Table View + Customer Grouping | ✅ Complete |
 | Phase 4 — Dispatch planning | ⏳ Not started |
 | Phase 5 — Warehouse execution | ⏳ Not started |
 
 ---
 
-## 23. Session start checklist
+## 24. Session start checklist
 
 Before generating any code, confirm:
 1. You have read this file fully
@@ -820,10 +938,18 @@ Before generating any code, confirm:
 53. Address stored as free text with `\n` line breaks — never split on comma; `formatAddress()` in challan-document.tsx splits on `\n` only
 54. `system_config` keys for challan must exist in DB before challan API returns company details — never hardcode fallback values
 55. Logo filter: `brightness(0) invert(1)` on screen (white logo on navy header); `filter: none` in print (restores original blue logo on white page)
+56. TI report date filter uses `tinter_issue_entries.createdAt` — NOT `orders.obdEmailDate` (which is nullable and often NULL)
+57. `tinter_issue_entries_b` has NO `tinterType` column in the actual DB — always use explicit `select` (not `include`) when querying it, and hardcode `"ACOTONE"` for the type field in the response map
+58. TINTER insert bug history: `orderId` must be derived from DB (split or assignment row), never read from request body — the fix made the TINTER route match the ACOTONE pattern
+59. TM Table View uses `createPortal` for ··· menu dropdowns to escape `overflow:hidden` on table wrappers — same pattern as StatusPopover
+60. `hasSplits` in TM Table View MUST use `filteredActiveSplits` (Set C) as authoritative source — `order.splits` and `order.existingSplits` can be stale/empty after cancel-split resets workflowStage. Compute `orderActiveSplits` BEFORE `hasSplits` in pendingRows.map()
+61. Modals shared between Card and Table view must be rendered OUTSIDE both `{viewMode === "card"}` and `{viewMode === "table"}` blocks — they need to work in both views
+62. `GET /api/admin/customers` reads `pageSize` from query params (default 25, max cap 500) — do not hardcode 25 in that route
+63. Pending section of Table View shows order rows ONLY — no split sub-rows. Split sub-rows appear only in Assigned and In Progress sections.
 
 ---
 
-## 24. Delivery Challan — feature spec (v14)
+## 25. Delivery Challan — feature spec (v14)
 
 ### What it is
 A print-ready delivery challan screen for the Tint Manager (and Admin) role.
@@ -906,7 +1032,7 @@ Reference file: `challan-mockup-v5.html`
 │           Pack | Qty | Volume (L) | Tinting         │
 │  * Formula: editable input (amber border) ONLY      │
 │    on rows where isTinting = true                   │
-│    Non-tinting rows show — (read-only)              │
+│  Non-tinting rows show — (read-only)               │
 │  Totals row: Total Qty | Total Volume | Gross Wt    │
 ├─────────────────────────────────────────────────────┤
 │ FOOTER (3 columns)                                  │
@@ -1030,7 +1156,7 @@ Inputs render as plain text (no dashed borders)
 
 ---
 
-## 25. Delivery Challan Screen — v1 (built, March 2026)
+## 26. Delivery Challan Screen — v1 (built, March 2026)
 
 ### Route and auth
 - Page: `/app/(tint)/challan/page.tsx`
@@ -1162,4 +1288,137 @@ Table cell inner lines:           1px  solid #bdbdbd
 
 ---
 
-*Version: Phase 3 · Schema v14 · Config Master v2 · Operator Screen v4 · Challan v1 · March 2026*
+## 27. TI Report — feature spec (v17)
+
+### What it is
+A read-only reporting screen for the Tint Manager (and Admin) showing all tinter issue entries across both TINTER and ACOTONE machines, with filters and CSV export.
+
+### Route & auth
+- Route: `/(tint)/ti-report`
+- Component: `components/tint/ti-report-content.tsx`
+- Auth: `TINT_MANAGER` + `ADMIN`
+- Navigation: "TI Report" entry in TM sidebar (BarChart2 icon, pageKey `ti_report`)
+
+### API: GET /api/tint/manager/ti-report
+
+#### Query params
+| Param | Description |
+|---|---|
+| `dateFrom` | Filter entries where `createdAt >= dateFrom T00:00:00.000Z` |
+| `dateTo` | Filter entries where `createdAt <= dateTo T23:59:59.999Z` |
+| `operatorId` | Filter by `submittedById` |
+| `tinterType` | `"TINTER"` or `"ACOTONE"` — skips the other table entirely |
+| `obdSearch` | ILIKE search on `orders → import_obd_query_summary.obdNumber` |
+
+#### CRITICAL: date filter uses `createdAt` on TI tables
+- Filter field: `tinter_issue_entries.createdAt` / `tinter_issue_entries_b.createdAt`
+- Do NOT use `orders.obdEmailDate` — it is `DateTime?` and often NULL
+
+#### CRITICAL: tinter_issue_entries_b has no `tinterType` column in DB
+- The Prisma schema defines `tinterType` on the model but the migration was never applied
+- Always query `tinter_issue_entries_b` with explicit `select` (listing individual fields)
+- Never use `include` alone — Prisma auto-selects all scalars and crashes at runtime
+- Always hardcode `tinterType: "ACOTONE" as const` in the response map (never read from DB)
+- `tinter_issue_entries` (TINTER) has the column — using `include` there is safe
+
+#### Response shape
+```typescript
+{
+  rows: TIRow[];      // combined TINTER + ACOTONE, sorted by createdAt DESC
+  summary: {
+    totalEntries: number;
+    totalTinQty:  number;
+    byType: { TINTER: number; ACOTONE: number };
+  };
+}
+```
+
+#### TINTER shades (13): YOX, LFY, GRN, TBL, WHT, MAG, FFR, BLK, OXR, HEY, HER, COB, COG
+#### ACOTONE shades (14): YE2, YE1, XY1, XR1, WH1, RE2, RE1, OR1, NO2, NO1, MA1, GR1, BU2, BU1
+
+### Component features
+- Date range pickers (default: today, uses `toISOString().split("T")[0]` for UTC date)
+- Operator dropdown (fetched from `GET /api/tint/manager/operators`)
+- Tinter type dropdown (All / TINTER / ACOTONE)
+- OBD search input (300ms debounce)
+- Summary stat cards (Entries, Total Tin Qty, By Type breakdown)
+- Data table — shade columns show only if any row has a non-zero value
+- Client-side CSV export — all 27 shade columns always included in header
+- `if (res.ok)` guard around state update — 500 errors silently leave table empty (investigate server logs)
+
+---
+
+## 28. Customer Admin Screen — v1 (NEW v18)
+
+### Customer Grouping feature
+
+#### What it is
+Toggle on the Customers admin screen to group customers by `customerName` — useful for finding duplicates and multi-site customers.
+
+#### Group toggle
+- Button in filter chip row, after Active chip
+- Icon: `Layers`, label: "Group"
+- State: `groupByName = false` (default)
+- Same chip style as Key/Active filter chips
+
+#### Fetch behaviour
+- `groupByName ON` → `pageSize=250`, `page=1`, hide pagination footer
+- `groupByName OFF` → `pageSize=25`, `page=1`, restore pagination
+- Footer hint when grouped: "Showing N of total · Search first to narrow results"
+
+#### API change — GET /api/admin/customers
+- Now reads `pageSize` from query params
+- Default: 25, max cap: 500
+- Param name: `"pageSize"`
+- **Do not hardcode 25** in that route — always read from query param
+
+#### Grouping logic (client-side)
+- Groups by `customerName` (case-sensitive)
+- Sorted: group size DESC, then alphabetical tiebreaker
+- Within group: items sorted by `customerCode` ASC
+- Groups with 1 item still render as groups (no special handling)
+
+#### Group header row
+- `sticky top-0 z-[5]`, bg `#f7f8fc`, hover bg `#f0f2f8`
+- ChevronRight icon rotates 90° when expanded
+- Name + count pill (bg `#e8eaf6`, text `#3949ab`)
+- Click → toggle expand/collapse (default: all expanded)
+
+#### Customer item rows (inside expanded group)
+- Indented: `w-[23px]` spacer + selected indicator bar
+- Shows: customerCode · area · subArea (customerName omitted — shown in group header)
+- Same badges as ungrouped view: Active/Inactive, Key, SO group
+
+---
+
+### Form Completion Indicator feature
+
+#### What it is
+Progress bar + percentage badge in the tab strip of the customer edit form, showing how complete the customer profile is.
+
+#### Scoring (10 points total, 1 point each)
+| Field | Points |
+|---|---|
+| customerName | 1 |
+| address | 1 |
+| areaId | 1 |
+| primaryRouteId | 1 |
+| salesOfficerGroupId | 1 |
+| customerTypeId | 1 |
+| premisesTypeId | 1 |
+| latitude + longitude (both required) | 1 |
+| workingHoursStart + workingHoursEnd (both required) | 1 |
+| At least one contact with name | 1 |
+
+#### Display
+- Badge + progress bar, right side of tab strip
+- Only shown when form is open (`isNew` or `editingFull !== null`)
+- Colors:
+  - 0–40%: red
+  - 41–70%: amber
+  - 71–99%: blue
+  - 100%: green
+
+---
+
+*Version: Phase 3 · Schema v16 · Context v18 · TM Table View v1 · Config Master v2 · Operator Screen v5 · TI Report v1 · March 2026*

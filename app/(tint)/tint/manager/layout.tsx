@@ -26,9 +26,11 @@ export default async function TintManagerLayout({
   const navItems = [
     ...buildNavItems(allPerms, session.user.role),
     // Delivery Challans — always visible for TM; page has its own auth guard
-    { pageKey: "delivery_challans", label: "Delivery Challans", href: "/challan" },
+    { pageKey: "delivery_challans", label: "Delivery Challans", href: "/tint/manager/challan" },
     // Shade Master — always visible for TM; page has its own auth guard
-    { pageKey: "shade_master", label: "Shade Master", href: "/tint/shades" },
+    { pageKey: "shade_master", label: "Shade Master", href: "/tint/manager/shades" },
+    // TI Report — always visible for TM; page has its own auth guard
+    { pageKey: "ti_report", label: "TI Report", href: "/tint/manager/ti-report" },
   ];
   const userName     = session.user.name ?? "User";
   const userInitials = getInitials(userName);

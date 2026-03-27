@@ -18,8 +18,7 @@ export async function GET() {
 }
 
 const createSchema = z.object({
-  name: z.string().min(1).max(100),
-  employeeCode: z.string().min(1).max(50),
+  name:  z.string().min(1).max(100),
   email: z.string().email().max(200).optional().nullable(),
   phone: z.string().max(30).optional().nullable(),
 });
@@ -44,10 +43,10 @@ export async function POST(req: Request) {
 
   const officer = await prisma.sales_officer_master.create({
     data: {
-      name: parsed.data.name.trim(),
-      employeeCode: parsed.data.employeeCode.trim(),
+      name:         parsed.data.name.trim(),
+      employeeCode: "",
       email,
-      phone: parsed.data.phone?.trim() || null,
+      phone:        parsed.data.phone?.trim() || null,
     },
   });
 

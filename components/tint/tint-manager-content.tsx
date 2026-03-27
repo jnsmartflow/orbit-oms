@@ -6,7 +6,7 @@ import {
   Loader2, Clock, CheckCircle2, Zap, Gift,
   AlertCircle, Layers,
   Eye, Plus, MoreHorizontal, UserPlus, RefreshCw, X, Scissors,
-  Truck, Search, ChevronDown, ChevronUp,
+  Truck, Search, ChevronDown, ChevronUp, LayoutGrid, Table as TableIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -14,6 +14,7 @@ import { ObdCode } from "@/components/shared/obd-code";
 import { SkuDetailsSheet } from "@/components/tint/sku-details-sheet";
 import { SplitBuilderModal } from "@/components/tint/split-builder-modal";
 import type { SplitBuilderModalProps } from "@/components/tint/split-builder-modal";
+import { TintTableView } from "@/components/tint/tint-table-view";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -26,7 +27,7 @@ interface TintAssignmentInfo {
   updatedAt:   string;
 }
 
-interface TintOrder {
+export interface TintOrder {
   id:                 number;
   obdNumber:          string;
   workflowStage:      string;
@@ -88,7 +89,7 @@ interface TintOrder {
   }[];
 }
 
-interface SplitCard {
+export interface SplitCard {
   id:             number;
   splitNumber:    number;
   status:         string;
@@ -127,7 +128,7 @@ interface SplitCard {
   };
 }
 
-interface CompletedAssignment {
+export interface CompletedAssignment {
   id:          number;
   completedAt: string | null;
   smu:         string | null;
@@ -1538,6 +1539,34 @@ export function TintManagerContent() {
 
   const [showColStrip, setShowColStrip] = useState(false);
 
+  const [viewMode, setViewMode] = useState<"card" | "table">(() => {
+    if (typeof window !== "undefined") {
+      return (sessionStorage.getItem("tm_view_mode") as "card" | "table") ?? "card";
+    }
+    return "card";
+  });
+
+  const tableAnchorRef = useRef<HTMLButtonElement | null>(null);
+
+  const [tablePopover, setTablePopover] = useState<{
+    id:              number;
+    type:            "order" | "split";
+    position:        { top: number; right: number };
+    currentDispatch: string | null;
+    currentPriority: "normal" | "urgent";
+  } | null>(null);
+  const [tablePopoverSaving, setTablePopoverSaving] = useState(false);
+
+  const [tableSkuOrder, setTableSkuOrder] = useState<TintOrder | null>(null);
+  const [tableSkuOpen,  setTableSkuOpen]  = useState(false);
+
+  const [tableSplitData, setTableSplitData] = useState<{
+    splitId:  number;
+    orderId:  number;
+    colStage: ColStage;
+  } | null>(null);
+  const [tableSplitOpen, setTableSplitOpen] = useState(false);
+
   // ── Clock ─────────────────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -1709,6 +1738,66 @@ export function TintManagerContent() {
     + orders.filter(o => o.workflowStage === "pending_support")
       .reduce((s, o) => s + (o.querySnapshot?.totalVolume ?? 0), 0);
 
+  function handleTableStatusPopover(
+    id: number,
+    type: "order" | "split",
+    buttonEl: HTMLButtonElement,
+  ) {
+    tableAnchorRef.current = buttonEl;
+    const rect = buttonEl.getBoundingClientRect();
+    const position = { top: rect.bottom + 6, right: window.innerWidth - rect.right };
+
+    if (type === "order") {
+      const order = filteredOrders.find((o) => o.id === id);
+      if (!order) return;
+      setTablePopover({
+        id, type, position,
+        currentDispatch: order.dispatchStatus,
+        currentPriority: order.priorityLevel <= 2 ? "urgent" : "normal",
+      });
+    } else {
+      const split = filteredActiveSplits.find((s) => s.id === id)
+        ?? filteredCompletedSplits.find((s) => s.id === id);
+      if (!split) return;
+      setTablePopover({
+        id, type, position,
+        currentDispatch: split.dispatchStatus,
+        currentPriority: (split.priorityLevel ?? 5) <= 2 ? "urgent" : "normal",
+      });
+    }
+  }
+
+  async function handleTableStatusSave(
+    dispatch: string | null,
+    priority: "normal" | "urgent",
+  ) {
+    if (!tablePopover) return;
+    setTablePopoverSaving(true);
+    try {
+      const body: Record<string, string | null> = {};
+      if (dispatch !== tablePopover.currentDispatch) body.dispatchStatus = dispatch;
+      if (priority !== tablePopover.currentPriority) body.priority = priority;
+      if (Object.keys(body).length === 0) { setTablePopover(null); return; }
+
+      const url = tablePopover.type === "order"
+        ? `/api/tint/manager/orders/${tablePopover.id}/status`
+        : `/api/tint/manager/splits/${tablePopover.id}/status`;
+
+      const res = await fetch(url, {
+        method:  "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error("Failed to save");
+      setTablePopover(null);
+      void fetchOrders();
+    } catch (err) {
+      console.error("Table status save failed:", err);
+    } finally {
+      setTablePopoverSaving(false);
+    }
+  }
+
   function clearAllFilters() {
     setSlotFilter("all");
     setPriorityFilter("all");
@@ -1792,6 +1881,19 @@ export function TintManagerContent() {
       void fetchOrders();
     } catch (err) {
       console.error("Reorder failed:", err);
+    }
+  }
+
+  async function handleCancelAssignment(order: TintOrder) {
+    try {
+      await fetch("/api/tint/manager/cancel-assignment", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ orderId: order.id }),
+      });
+      void fetchOrders();
+    } catch (err) {
+      console.error("Cancel assignment failed:", err);
     }
   }
 
@@ -1968,6 +2070,35 @@ export function TintManagerContent() {
           </span>
         </div>
         <div className="flex items-center gap-3">
+          {/* View toggle */}
+          <div className="flex items-center bg-[#f7f8fc] border border-[#e2e5f1] rounded-lg p-0.5">
+            <button
+              type="button"
+              onClick={() => { setViewMode("card"); sessionStorage.setItem("tm_view_mode", "card"); }}
+              className={cn(
+                "flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors",
+                viewMode === "card"
+                  ? "bg-white text-[#1a237e] shadow-sm border border-[#e2e5f1]"
+                  : "text-gray-400 hover:text-gray-600",
+              )}
+            >
+              <LayoutGrid size={12} />
+              Cards
+            </button>
+            <button
+              type="button"
+              onClick={() => { setViewMode("table"); sessionStorage.setItem("tm_view_mode", "table"); }}
+              className={cn(
+                "flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors",
+                viewMode === "table"
+                  ? "bg-white text-[#1a237e] shadow-sm border border-[#e2e5f1]"
+                  : "text-gray-400 hover:text-gray-600",
+              )}
+            >
+              <TableIcon size={12} />
+              Table
+            </button>
+          </div>
           {/* Search bar */}
           <div ref={searchRef} className="relative">
             <div className="relative flex items-center">
@@ -2318,6 +2449,7 @@ export function TintManagerContent() {
       </div>
 
       {/* ── Kanban board ─────────────────────────────────────────────────── */}
+      {viewMode === "card" && (
       <div className="px-3 pb-6">
         <div className="grid grid-cols-4 gap-2">
           {COLUMNS.map((col) => {
@@ -2536,6 +2668,35 @@ export function TintManagerContent() {
           })}
         </div>
       </div>
+      )}
+
+      {/* ── Table view ───────────────────────────────────────────────────── */}
+      {viewMode === "table" && (
+        <TintTableView
+          filteredOrders={filteredOrders}
+          filteredActiveSplits={filteredActiveSplits}
+          filteredCompletedSplits={filteredCompletedSplits}
+          completedAssignments={completedAssignments}
+          onOrderClick={(order) => { setTableSkuOrder(order); setTableSkuOpen(true); }}
+          onSplitClick={(split) => {
+            const colStage: ColStage = split.status === "tint_assigned"
+              ? "tint_assigned"
+              : split.status === "tinting_in_progress"
+              ? "tinting_in_progress"
+              : "completed";
+            setTableSplitData({ splitId: split.id, orderId: split.order.id, colStage });
+            setTableSplitOpen(true);
+          }}
+          onStatusPopover={handleTableStatusPopover}
+          onAssign={(order) => openAssignModal(order)}
+          onCreateSplit={(order) => openSplitBuilder(order)}
+          onMoveUp={(id, type) => { void handleReorder(type, id, "up"); }}
+          onMoveDown={(id, type) => { void handleReorder(type, id, "down"); }}
+          onCancelAssignment={(order) => { void handleCancelAssignment(order); }}
+          onReassignSplit={(split) => openSplitReassign(split)}
+          onCancelSplit={(split) => { void handleCancelSplit(split.id); }}
+        />
+      )}
 
       {/* ── Split Builder modal ──────────────────────────────────────────── */}
       {splitBuilderOrder && (
@@ -2761,6 +2922,47 @@ export function TintManagerContent() {
             )}
           </div>
         </div>
+      )}
+
+      {/* ── Table view: SKU details sheet ─────────────────────────────────── */}
+      {tableSkuOrder && (
+        <SkuDetailsSheet
+          open={tableSkuOpen}
+          onClose={() => setTableSkuOpen(false)}
+          obdNumber={tableSkuOrder.obdNumber}
+          customerName={
+            tableSkuOrder.customer?.customerName ??
+            tableSkuOrder.shipToCustomerName ?? "—"
+          }
+          lineItems={tableSkuOrder.lineItems ?? []}
+          splits={tableSkuOrder.splits ?? []}
+        />
+      )}
+
+      {/* ── Table view: Split detail sheet ────────────────────────────────── */}
+      {tableSplitData && (
+        <SplitDetailSheet
+          open={tableSplitOpen}
+          onClose={() => setTableSplitOpen(false)}
+          splitId={tableSplitData.splitId}
+          orderId={tableSplitData.orderId}
+          colStage={tableSplitData.colStage}
+          onReassign={() => setTableSplitOpen(false)}
+          onCancel={() => { setTableSplitOpen(false); void fetchOrders(); }}
+        />
+      )}
+
+      {/* ── Table view: Status popover ─────────────────────────────────────── */}
+      {tablePopover && (
+        <StatusPopover
+          position={tablePopover.position}
+          anchorRef={tableAnchorRef as RefObject<HTMLButtonElement>}
+          currentDispatch={tablePopover.currentDispatch}
+          currentPriority={tablePopover.currentPriority}
+          onSave={handleTableStatusSave}
+          onClose={() => setTablePopover(null)}
+          isSaving={tablePopoverSaving}
+        />
       )}
 
     </div>

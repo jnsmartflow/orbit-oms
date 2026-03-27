@@ -7,10 +7,9 @@ import { z } from "zod";
 export const dynamic = 'force-dynamic';
 
 const patchSchema = z.object({
-  name: z.string().min(1).max(100).optional(),
-  employeeCode: z.string().min(1).max(50).optional(),
-  email: z.string().email().max(200).optional().nullable(),
-  phone: z.string().max(30).optional().nullable(),
+  name:     z.string().min(1).max(100).optional(),
+  email:    z.string().email().max(200).optional().nullable(),
+  phone:    z.string().max(30).optional().nullable(),
   isActive: z.boolean().optional(),
 });
 
@@ -29,7 +28,6 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const updateData: Record<string, unknown> = {};
 
   if (parsed.data.name !== undefined) updateData.name = parsed.data.name.trim();
-  if (parsed.data.employeeCode !== undefined) updateData.employeeCode = parsed.data.employeeCode.trim();
   if (parsed.data.phone !== undefined) updateData.phone = parsed.data.phone?.trim() || null;
   if (parsed.data.isActive !== undefined) updateData.isActive = parsed.data.isActive;
 

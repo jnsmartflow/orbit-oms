@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { hasRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
+import { PackCode } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
 
@@ -19,24 +20,17 @@ export async function POST(req: Request): Promise<NextResponse> {
   }
 
   const {
-    orderId,
     splitId,
     tintAssignmentId,
     entries,
   } = body as {
-    orderId?: unknown;
     splitId?: unknown;
     tintAssignmentId?: unknown;
     entries?: unknown;
   };
 
-  // Validate orderId
-  if (typeof orderId !== "number") {
-    return NextResponse.json({ error: "orderId is required" }, { status: 400 });
-  }
-
   // Validate mutual exclusivity of splitId / tintAssignmentId
-  const hasSplit = splitId !== undefined && splitId !== null;
+  const hasSplit      = splitId !== undefined && splitId !== null;
   const hasAssignment = tintAssignmentId !== undefined && tintAssignmentId !== null;
 
   if (!hasSplit && !hasAssignment) {
@@ -67,12 +61,18 @@ export async function POST(req: Request): Promise<NextResponse> {
         { status: 400 },
       );
     }
+    if (entry.packCode !== undefined && entry.packCode !== null &&
+        !(entry.packCode as string in PackCode)) {
+      return NextResponse.json({ error: "Invalid packCode in entry" }, { status: 400 });
+    }
   }
 
   const userId = parseInt(session!.user.id, 10);
 
   try {
-    // Step 1 — Validate the target row exists and belongs to this operator
+    // Step 1 — Validate the target row exists and belongs to this operator; derive orderId
+    let orderId: number;
+
     if (hasSplit) {
       const split = await prisma.order_splits.findFirst({
         where: { id: Number(splitId), assignedToId: userId },
@@ -83,6 +83,7 @@ export async function POST(req: Request): Promise<NextResponse> {
           { status: 404 },
         );
       }
+      orderId = split.orderId;
     } else {
       const assignment = await prisma.tint_assignments.findFirst({
         where: { id: Number(tintAssignmentId), assignedToId: userId },
@@ -93,12 +94,14 @@ export async function POST(req: Request): Promise<NextResponse> {
           { status: 404 },
         );
       }
+      orderId = assignment.orderId;
     }
 
     // Step 2 — Insert all entries into tinter_issue_entries
     const typedEntries = entries as Array<{
       baseSku: string;
       tinQty?: unknown;
+      packCode?: unknown;
       rawLineItemId?: unknown;
       YOX?: unknown; LFY?: unknown; GRN?: unknown; TBL?: unknown; WHT?: unknown;
       MAG?: unknown; FFR?: unknown; BLK?: unknown; OXR?: unknown; HEY?: unknown;
@@ -107,26 +110,27 @@ export async function POST(req: Request): Promise<NextResponse> {
 
     await prisma.tinter_issue_entries.createMany({
       data: typedEntries.map((entry) => ({
-        orderId:           Number(orderId),
-        splitId:           hasSplit ? Number(splitId) : null,
-        tintAssignmentId:  hasAssignment ? Number(tintAssignmentId) : null,
-        rawLineItemId:     entry.rawLineItemId !== undefined && entry.rawLineItemId !== null ? Number(entry.rawLineItemId) : null,
-        submittedById:     userId,
-        baseSku:           entry.baseSku.trim(),
-        tinQty:            Number(entry.tinQty ?? 0),
-        YOX:               Number(entry.YOX ?? 0),
-        LFY:               Number(entry.LFY ?? 0),
-        GRN:               Number(entry.GRN ?? 0),
-        TBL:               Number(entry.TBL ?? 0),
-        WHT:               Number(entry.WHT ?? 0),
-        MAG:               Number(entry.MAG ?? 0),
-        FFR:               Number(entry.FFR ?? 0),
-        BLK:               Number(entry.BLK ?? 0),
-        OXR:               Number(entry.OXR ?? 0),
-        HEY:               Number(entry.HEY ?? 0),
-        HER:               Number(entry.HER ?? 0),
-        COB:               Number(entry.COB ?? 0),
-        COG:               Number(entry.COG ?? 0),
+        orderId,
+        splitId:          hasSplit ? Number(splitId) : null,
+        tintAssignmentId: hasAssignment ? Number(tintAssignmentId) : null,
+        rawLineItemId:    entry.rawLineItemId !== undefined && entry.rawLineItemId !== null ? Number(entry.rawLineItemId) : null,
+        submittedById:    userId,
+        baseSku:          entry.baseSku.trim(),
+        tinQty:           Number(entry.tinQty ?? 0),
+        packCode:         (entry.packCode ?? null) as PackCode | null,
+        YOX: Number(entry.YOX ?? 0),
+        LFY: Number(entry.LFY ?? 0),
+        GRN: Number(entry.GRN ?? 0),
+        TBL: Number(entry.TBL ?? 0),
+        WHT: Number(entry.WHT ?? 0),
+        MAG: Number(entry.MAG ?? 0),
+        FFR: Number(entry.FFR ?? 0),
+        BLK: Number(entry.BLK ?? 0),
+        OXR: Number(entry.OXR ?? 0),
+        HEY: Number(entry.HEY ?? 0),
+        HER: Number(entry.HER ?? 0),
+        COB: Number(entry.COB ?? 0),
+        COG: Number(entry.COG ?? 0),
       })),
     });
 
