@@ -9,6 +9,8 @@ import {
   X,
   ChevronDown,
   ChevronRight,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import {
   Table,
@@ -24,6 +26,11 @@ import type {
   ImportLinePreview,
   ImportConfirmResponse,
 } from "@/lib/import-types";
+import {
+  IMPORT_TEMPLATES,
+  DEFAULT_TEMPLATE_ID,
+} from "@/lib/import-templates";
+import type { ImportTemplateId } from "@/lib/import-templates";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -186,8 +193,11 @@ interface ImportPageContentProps {
 
 export function ImportPageContent({ viewOrdersHref = "/support" }: ImportPageContentProps) {
   const [stage, setStage] = useState<Stage>("upload");
+  const [templateId, setTemplateId] = useState<ImportTemplateId>(DEFAULT_TEMPLATE_ID);
   const [headerFile, setHeaderFile] = useState<File | null>(null);
   const [lineFile, setLineFile] = useState<File | null>(null);
+  const [combinedFile, setCombinedFile] = useState<File | null>(null);
+  const [previewEnabled, setPreviewEnabled] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [previewData, setPreviewData] = useState<ImportPreviewResponse | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -197,11 +207,15 @@ export function ImportPageContent({ viewOrdersHref = "/support" }: ImportPageCon
 
   const headerInputRef = useRef<HTMLInputElement>(null);
   const lineInputRef = useRef<HTMLInputElement>(null);
+  const combinedInputRef = useRef<HTMLInputElement>(null);
 
   function resetAll() {
     setStage("upload");
+    setTemplateId(DEFAULT_TEMPLATE_ID);
     setHeaderFile(null);
     setLineFile(null);
+    setCombinedFile(null);
+    setPreviewEnabled(false);
     setIsLoading(false);
     setPreviewData(null);
     setSelectedIds(new Set());
@@ -229,13 +243,20 @@ export function ImportPageContent({ viewOrdersHref = "/support" }: ImportPageCon
   }
 
   async function handlePreviewSubmit() {
-    if (!headerFile) return;
+    const tmpl = IMPORT_TEMPLATES[templateId];
+    const canSubmit = tmpl.files.combined ? !!combinedFile : !!headerFile;
+    if (!canSubmit) return;
     setIsLoading(true);
     setError(null);
     try {
       const fd = new FormData();
-      fd.append("headerFile", headerFile);
-      if (lineFile) fd.append("lineFile", lineFile);
+      fd.append("templateId", templateId);
+      if (tmpl.files.combined && combinedFile) {
+        fd.append("combinedFile", combinedFile);
+      } else {
+        if (headerFile) fd.append("headerFile", headerFile);
+        if (lineFile) fd.append("lineFile", lineFile);
+      }
       const res = await fetch("/api/import/obd?action=preview", {
         method: "POST",
         body: fd,
@@ -282,34 +303,149 @@ export function ImportPageContent({ viewOrdersHref = "/support" }: ImportPageCon
     }
   }
 
+  async function handleImportNow() {
+    const tmpl = IMPORT_TEMPLATES[templateId];
+    setIsLoading(true);
+    setError(null);
+    try {
+      // STEP A — preview (creates batch, validates OBDs)
+      const fd = new FormData();
+      fd.append("templateId", templateId);
+      if (tmpl.files.combined && combinedFile) {
+        fd.append("combinedFile", combinedFile);
+      } else {
+        if (headerFile) fd.append("headerFile", headerFile);
+        if (lineFile) fd.append("lineFile", lineFile);
+      }
+      const previewRes = await fetch("/api/import/obd?action=preview", {
+        method: "POST",
+        body: fd,
+      });
+      const preview = (await previewRes.json()) as ImportPreviewResponse & { error?: string };
+      if (!previewRes.ok) throw new Error(preview.error ?? "Import failed");
+
+      const validIds = preview.obds
+        .filter((o) => o.rowStatus === "valid")
+        .map((o) => o.rawSummaryId);
+
+      if (validIds.length === 0) {
+        throw new Error("No valid OBDs found — nothing was imported");
+      }
+
+      setPreviewData(preview);
+
+      // STEP B — confirm immediately with all valid IDs
+      const confirmRes = await fetch("/api/import/obd?action=confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ batchId: preview.batchId, confirmedObdIds: validIds }),
+      });
+      const confirmed = (await confirmRes.json()) as ImportConfirmResponse & { error?: string };
+      if (!confirmRes.ok) throw new Error(confirmed.error ?? "Import failed");
+
+      // STEP C — go straight to result
+      setConfirmResult(confirmed);
+      setStage("result");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Import failed");
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
   // ── Stage 1: Upload ──────────────────────────────────────────────────────────
   if (stage === "upload") {
+    const tmpl = IMPORT_TEMPLATES[templateId];
+    const isDisabled = isLoading || (tmpl.files.combined ? !combinedFile : !headerFile);
+
     return (
       <div>
+        {/* Template selector + Preview toggle — same row */}
+        <div className="mb-6">
+          <div className="flex items-end gap-4">
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Import Template
+              </label>
+              <select
+                value={templateId}
+                onChange={(e) => {
+                  setTemplateId(e.target.value as ImportTemplateId);
+                  setHeaderFile(null);
+                  setLineFile(null);
+                  setCombinedFile(null);
+                  if (headerInputRef.current) headerInputRef.current.value = "";
+                  if (lineInputRef.current) lineInputRef.current.value = "";
+                  if (combinedInputRef.current) combinedInputRef.current.value = "";
+                }}
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-[#1a237e]/30 focus:border-[#1a237e]"
+              >
+                {Object.values(IMPORT_TEMPLATES).map((t) => (
+                  <option key={t.id} value={t.id}>{t.label}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex flex-col items-end gap-1 shrink-0 pb-0.5">
+              <span className="text-sm font-medium text-slate-700">Preview</span>
+              <button
+                onClick={() => setPreviewEnabled((v) => !v)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                  previewEnabled
+                    ? "bg-[#1a237e] text-white"
+                    : "bg-slate-200 text-slate-600 hover:bg-slate-300"
+                }`}
+              >
+                {previewEnabled ? <Eye size={13} /> : <EyeOff size={13} />}
+                {previewEnabled ? "On" : "Off"}
+              </button>
+            </div>
+          </div>
+          <p className="mt-1 text-xs text-slate-400">{tmpl.description}</p>
+          {previewEnabled && (
+            <p className="mt-1.5 text-xs text-amber-600">
+              Preview enabled — you will review OBDs before confirming import
+            </p>
+          )}
+        </div>
+
+        {/* File zones — driven by selected template */}
         <div className="flex flex-row gap-6 mb-6">
-          <FileZone
-            label="OBD Header File"
-            file={headerFile}
-            inputRef={headerInputRef}
-            onFile={setHeaderFile}
-            onClear={() => setHeaderFile(null)}
-          />
-          <FileZone
-            label="Line Items File (Optional)"
-            file={lineFile}
-            inputRef={lineInputRef}
-            onFile={setLineFile}
-            onClear={() => setLineFile(null)}
-          />
+          {tmpl.files.combined && (
+            <FileZone
+              label={tmpl.files.combined.label}
+              file={combinedFile}
+              inputRef={combinedInputRef}
+              onFile={setCombinedFile}
+              onClear={() => setCombinedFile(null)}
+            />
+          )}
+          {tmpl.files.header && (
+            <FileZone
+              label={tmpl.files.header.label}
+              file={headerFile}
+              inputRef={headerInputRef}
+              onFile={setHeaderFile}
+              onClear={() => setHeaderFile(null)}
+            />
+          )}
+          {tmpl.files.lineItems && (
+            <FileZone
+              label={tmpl.files.lineItems.label}
+              file={lineFile}
+              inputRef={lineInputRef}
+              onFile={setLineFile}
+              onClear={() => setLineFile(null)}
+            />
+          )}
         </div>
 
         <button
-          onClick={handlePreviewSubmit}
-          disabled={!headerFile || isLoading}
+          onClick={previewEnabled ? handlePreviewSubmit : handleImportNow}
+          disabled={isDisabled}
           className="w-full bg-[#1a237e] text-white rounded-lg py-3 font-medium flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[#1a237e]/90 transition-colors"
         >
           {isLoading && <Loader2 className="animate-spin" size={18} />}
-          {isLoading ? "Processing…" : "Preview Import"}
+          {isLoading ? "Importing…" : previewEnabled ? "Preview Import" : "Import Now"}
         </button>
 
         {error && (
