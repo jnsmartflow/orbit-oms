@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
 
 export async function GET() {
   const session = await auth();
-  requireRole(session, [ROLES.ADMIN]);
+  requireRole(session, [ROLES.ADMIN, ROLES.DISPATCHER, ROLES.SUPPORT, ROLES.TINT_MANAGER, ROLES.TINT_OPERATOR, ROLES.FLOOR_SUPERVISOR]);
 
   const officers = await prisma.sales_officer_master.findMany({
     orderBy: { name: "asc" },
