@@ -10,7 +10,11 @@ export const dynamic = 'force-dynamic';
 export async function GET() {
   const session = await auth();
   requireRole(session, [ROLES.ADMIN, ROLES.DISPATCHER, ROLES.SUPPORT, ROLES.TINT_MANAGER, ROLES.TINT_OPERATOR, ROLES.FLOOR_SUPERVISOR]);
-  if (session!.user.role !== "admin") {
+  if (
+    session!.user.role !== "admin" &&
+    session!.user.role !== ROLES.TINT_MANAGER &&
+    session!.user.role !== ROLES.SUPPORT
+  ) {
     const allowed = await checkPermission(session!.user.role, "routes_areas", "canView");
     if (!allowed) return NextResponse.json({ error: "Permission denied" }, { status: 403 });
   }
