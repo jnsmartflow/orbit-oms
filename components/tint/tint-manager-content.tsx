@@ -15,6 +15,7 @@ import { SkuDetailsSheet } from "@/components/tint/sku-details-sheet";
 import { SplitBuilderModal } from "@/components/tint/split-builder-modal";
 import type { SplitBuilderModalProps } from "@/components/tint/split-builder-modal";
 import { TintTableView } from "@/components/tint/tint-table-view";
+import { CustomerMissingSheet } from "@/components/shared/customer-missing-sheet";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -37,6 +38,8 @@ export interface TintOrder {
   sequenceOrder:      number | null;
   createdAt:          string;
   shipToCustomerName: string | null;
+  shipToCustomerId:   string | null;
+  customerMissing:    boolean;
   smu:                string | null;
   obdEmailDate:       string | null;
   obdEmailTime:       string | null;
@@ -394,16 +397,17 @@ const CARDS_PER_PAGE = 5;
 // ── Kanban card ───────────────────────────────────────────────────────────────
 
 interface KanbanCardProps {
-  order:          TintOrder;
-  stage:          ColStage;
-  onAssign:       () => void;
-  onCreateSplit:  () => void;
-  onRefresh:      () => void;
-  onMoveUp:       () => void;
-  onMoveDown:     () => void;
+  order:              TintOrder;
+  stage:              ColStage;
+  onAssign:           () => void;
+  onCreateSplit:      () => void;
+  onRefresh:          () => void;
+  onMoveUp:           () => void;
+  onMoveDown:         () => void;
+  onCustomerMissing?: () => void;
 }
 
-function KanbanCard({ order, stage, onAssign, onCreateSplit, onRefresh, onMoveUp, onMoveDown }: KanbanCardProps) {
+function KanbanCard({ order, stage, onAssign, onCreateSplit, onRefresh, onMoveUp, onMoveDown, onCustomerMissing }: KanbanCardProps) {
   const [skuSheetOpen, setSkuSheetOpen] = useState(false);
   const [menuOpen,     setMenuOpen]     = useState(false);
   const [popoverOpen,  setPopoverOpen]  = useState(false);
@@ -665,6 +669,15 @@ function KanbanCard({ order, stage, onAssign, onCreateSplit, onRefresh, onMoveUp
 
         {/* 2. Customer name */}
         <p className="text-[13.5px] font-bold text-gray-900 leading-snug mb-1">{customerName}</p>
+        {order.customerMissing && (
+          <button
+            type="button"
+            onClick={onCustomerMissing}
+            className="mb-1 inline-flex items-center gap-1 text-[10.5px] font-semibold text-amber-700 bg-amber-100 hover:bg-amber-200 px-1.5 py-0.5 rounded transition-colors"
+          >
+            ⚠ Customer Missing
+          </button>
+        )}
 
         {/* 3. OBD + area */}
         <div className="flex items-center gap-1 text-[11px] text-gray-400 mb-2.5">
@@ -1559,6 +1572,9 @@ export function TintManagerContent() {
 
   const [tableSkuOrder, setTableSkuOrder] = useState<TintOrder | null>(null);
   const [tableSkuOpen,  setTableSkuOpen]  = useState(false);
+
+  const [missingSheetOpen,  setMissingSheetOpen]  = useState(false);
+  const [missingSheetOrder, setMissingSheetOrder] = useState<TintOrder | null>(null);
 
   const [tableSplitData, setTableSplitData] = useState<{
     splitId:  number;
@@ -2547,6 +2563,8 @@ export function TintManagerContent() {
                       sequenceOrder:      null,
                       createdAt:          a.completedAt ?? "",
                       shipToCustomerName: a.order.shipToCustomerName,
+                      shipToCustomerId:   null,
+                      customerMissing:    false,
                       smu:                a.smu,
                       obdEmailDate:       a.obdEmailDate,
                       obdEmailTime:       a.obdEmailTime,
@@ -2615,6 +2633,7 @@ export function TintManagerContent() {
                           onRefresh={() => { void fetchOrders(); }}
                           onMoveUp={() => handleReorder("order", item.data.id, "up")}
                           onMoveDown={() => handleReorder("order", item.data.id, "down")}
+                          onCustomerMissing={() => { setMissingSheetOrder(item.data); setMissingSheetOpen(true); }}
                         />
                       ) : (
                         <SplitKanbanCard
@@ -2695,6 +2714,7 @@ export function TintManagerContent() {
           onCancelAssignment={(order) => { void handleCancelAssignment(order); }}
           onReassignSplit={(split) => openSplitReassign(split)}
           onCancelSplit={(split) => { void handleCancelSplit(split.id); }}
+          onCustomerMissing={(order) => { setMissingSheetOrder(order); setMissingSheetOpen(true); }}
         />
       )}
 
@@ -2964,6 +2984,15 @@ export function TintManagerContent() {
           isSaving={tablePopoverSaving}
         />
       )}
+
+      {/* ── Customer Missing Sheet ─────────────────────────────────────────── */}
+      <CustomerMissingSheet
+        open={missingSheetOpen}
+        onOpenChange={setMissingSheetOpen}
+        shipToCustomerId={missingSheetOrder?.shipToCustomerId}
+        shipToCustomerName={missingSheetOrder?.shipToCustomerName}
+        onResolved={() => { setMissingSheetOpen(false); void fetchOrders(); }}
+      />
 
     </div>
   );

@@ -20,6 +20,7 @@ export interface TintTableViewProps {
   onCancelAssignment:      (order: TintOrder) => void;
   onReassignSplit:         (split: SplitCard) => void;
   onCancelSplit:           (split: SplitCard) => void;
+  onCustomerMissing?:      (order: TintOrder) => void;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -347,6 +348,7 @@ export function TintTableView({
   onCancelAssignment,
   onReassignSplit,
   onCancelSplit,
+  onCustomerMissing,
 }: TintTableViewProps) {
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
@@ -419,6 +421,8 @@ export function TintTableView({
       sequenceOrder:      null,
       createdAt:          a.completedAt ?? "",
       shipToCustomerName: a.order.shipToCustomerName,
+      shipToCustomerId:   null,
+      customerMissing:    false,
       smu:                a.smu,
       obdEmailDate:       a.obdEmailDate,
       obdEmailTime:       a.obdEmailTime,
@@ -498,7 +502,18 @@ export function TintTableView({
                         </span>
                       )}
                     </td>
-                    <td className={tdCls}><span className="font-medium text-gray-900 text-[12.5px]">{order.customer?.customerName ?? order.shipToCustomerName ?? "—"}</span></td>
+                    <td className={tdCls}>
+                      <span className="font-medium text-gray-900 text-[12.5px]">{order.customer?.customerName ?? order.shipToCustomerName ?? "—"}</span>
+                      {order.customerMissing && (
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); onCustomerMissing?.(order); }}
+                          className="mt-0.5 flex items-center gap-1 text-[10.5px] font-semibold text-amber-700 bg-amber-100 hover:bg-amber-200 px-1.5 py-0.5 rounded transition-colors"
+                        >
+                          ⚠ Customer Missing
+                        </button>
+                      )}
+                    </td>
                     <td className={tdCls}>{order.customer?.area.name ?? "—"}</td>
                     <td className={tdCls}><SmuBadge smu={order.smu} /></td>
                     <td className={tdCls}><SlotBadge slot={order.dispatchSlot} /></td>
@@ -549,7 +564,18 @@ export function TintTableView({
                   {assignedOrderRows.map((order) => (
                     <tr key={`ao-${order.id}`} onClick={() => onOrderClick(order)} className={ROW_CLS}>
                       <ObdOrderCell order={order} />
-                      <td className={tdCls}><span className="font-medium text-gray-900 text-[12.5px]">{order.customer?.customerName ?? order.shipToCustomerName ?? "—"}</span></td>
+                      <td className={tdCls}>
+                        <span className="font-medium text-gray-900 text-[12.5px]">{order.customer?.customerName ?? order.shipToCustomerName ?? "—"}</span>
+                        {order.customerMissing && (
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); onCustomerMissing?.(order); }}
+                            className="mt-0.5 flex items-center gap-1 text-[10.5px] font-semibold text-amber-700 bg-amber-100 hover:bg-amber-200 px-1.5 py-0.5 rounded transition-colors"
+                          >
+                            ⚠ Customer Missing
+                          </button>
+                        )}
+                      </td>
                       <td className={tdCls}>{order.customer?.area.name ?? "—"}</td>
                       <td className={tdCls}><SmuBadge smu={order.smu} /></td>
                       <td className={tdCls}><SlotBadge slot={order.dispatchSlot} /></td>
@@ -636,7 +662,18 @@ export function TintTableView({
                     return (
                       <tr key={`ipo-${order.id}`} onClick={() => onOrderClick(order)} className={ROW_CLS}>
                         <ObdOrderCell order={order} />
-                        <td className={tdCls}><span className="font-medium text-gray-900 text-[12.5px]">{order.customer?.customerName ?? order.shipToCustomerName ?? "—"}</span></td>
+                        <td className={tdCls}>
+                          <span className="font-medium text-gray-900 text-[12.5px]">{order.customer?.customerName ?? order.shipToCustomerName ?? "—"}</span>
+                          {order.customerMissing && (
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); onCustomerMissing?.(order); }}
+                              className="mt-0.5 flex items-center gap-1 text-[10.5px] font-semibold text-amber-700 bg-amber-100 hover:bg-amber-200 px-1.5 py-0.5 rounded transition-colors"
+                            >
+                              ⚠ Customer Missing
+                            </button>
+                          )}
+                        </td>
                         <td className={tdCls}>{order.customer?.area.name ?? "—"}</td>
                         <td className={tdCls}><SmuBadge smu={order.smu} /></td>
                         <td className={tdCls}><SlotBadge slot={order.dispatchSlot} /></td>

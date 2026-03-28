@@ -70,6 +70,8 @@ interface CustomerSheetProps {
   open:           boolean;
   onOpenChange:   (open: boolean) => void;
   editing:        CustomerFull | null;
+  initialCode?:   string;
+  initialName?:   string;
   areas:          AreaOption[];
   subAreas:       SubAreaOption[];
   salesOfficers:  SalesOfficerOption[];
@@ -95,11 +97,11 @@ function newContact(): ContactDraft {
   return { _key: `${Date.now()}-${Math.random()}`, name: "", phone: "", email: "", isPrimary: false, contactRoleId: "" };
 }
 
-function buildInitialForm(editing: CustomerFull | null) {
+function buildInitialForm(editing: CustomerFull | null, initialCode?: string, initialName?: string) {
   if (!editing) {
     return {
-      customerCode:          "",
-      customerName:          "",
+      customerCode:          initialCode ?? "",
+      customerName:          initialName ?? "",
       address:               "",
       areaId:                "",
       subAreaId:             "",
@@ -161,18 +163,19 @@ function buildInitialForm(editing: CustomerFull | null) {
 // ── Component ─────────────────────────────────────────────────────────────────
 export function CustomerSheet({
   open, onOpenChange, editing,
+  initialCode, initialName,
   areas, subAreas, salesOfficers,
   routes, deliveryTypes, soGroups, contactRoles,
   customerTypes, premisesTypes,
   onSaved,
 }: CustomerSheetProps) {
-  const [form, setForm] = useState(() => buildInitialForm(editing));
+  const [form, setForm] = useState(() => buildInitialForm(editing, initialCode, initialName));
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    if (open) { setForm(buildInitialForm(editing)); setFieldErrors({}); }
-  }, [open, editing]);
+    if (open) { setForm(buildInitialForm(editing, initialCode, initialName)); setFieldErrors({}); }
+  }, [open, editing, initialCode, initialName]);
 
   const filteredSubAreas = subAreas.filter((s) => s.areaId === parseInt(form.areaId, 10));
   const selectedSOGroup  = soGroups.find((g) => g.id.toString() === form.salesOfficerGroupId);

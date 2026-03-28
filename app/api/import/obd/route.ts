@@ -355,7 +355,7 @@ async function handlePreview(req: Request, session: Session): Promise<NextRespon
     emailDate:          Date | null;
     totalUnitQty:       number | null;
     grossWeight:        number | null;
-    rowStatus:          "valid" | "duplicate" | "error";
+    rowStatus:          "valid" | "duplicate" | "error" | "warning";
     rowError:           string | null;
     lines:              LineInterim[];
   }
@@ -373,13 +373,13 @@ async function handlePreview(req: Request, session: Session): Promise<NextRespon
     const emailTime         = parseTimeCell(hr["OBD Email Time"]);
     const invoiceDate       = parseDateCell(hr["InvoiceDate"]);
 
-    let rowStatus: "valid" | "duplicate" | "error" = "valid";
+    let rowStatus: "valid" | "duplicate" | "error" | "warning" = "valid";
     let rowError:  string | null = null;
 
     if (existingObdSet.has(obdNumber)) {
       rowStatus = "duplicate";
     } else if (shipToId && !existingCustSet.has(shipToId)) {
-      rowStatus = "error";
+      rowStatus = "warning";
       rowError  = `Unknown customer: ${shipToId}`;
     }
 
@@ -557,6 +557,7 @@ async function handlePreview(req: Request, session: Session): Promise<NextRespon
   const validObds     = previewObds.filter((o) => o.rowStatus === "valid").length;
   const duplicateObds = previewObds.filter((o) => o.rowStatus === "duplicate").length;
   const errorObds     = previewObds.filter((o) => o.rowStatus === "error").length;
+  const warningObds   = previewObds.filter((o) => o.rowStatus === "warning").length;
   const allLines      = previewObds.flatMap((o) => o.lines);
   const validLines    = allLines.filter((l) => l.rowStatus === "valid").length;
   const errorLines    = allLines.filter((l) => l.rowStatus === "error").length;
@@ -569,6 +570,7 @@ async function handlePreview(req: Request, session: Session): Promise<NextRespon
       validObds,
       duplicateObds,
       errorObds,
+      warningObds,
       totalLines:    allLines.length,
       validLines,
       errorLines,
@@ -767,6 +769,7 @@ async function handleConfirm(req: Request, session: Session): Promise<NextRespon
         totalUnitQty:        summary.totalUnitQty,
         grossWeight:         summary.grossWeight,
         volume:              summary.volume,
+        customerMissing:     summary.rowStatus === "warning",
       },
     });
   }
@@ -1094,7 +1097,7 @@ async function handleAutoImport(req: Request): Promise<NextResponse> {
     emailDate:          Date | null;
     totalUnitQty:       number | null;
     grossWeight:        number | null;
-    rowStatus:          "valid" | "duplicate" | "error";
+    rowStatus:          "valid" | "duplicate" | "error" | "warning";
     rowError:           string | null;
     lines:              AutoLineInterim[];
   }
@@ -1112,13 +1115,13 @@ async function handleAutoImport(req: Request): Promise<NextResponse> {
     const emailTime          = parseTimeCell(hr["OBD Email Time"]);
     const invoiceDate        = parseDateCell(hr["InvoiceDate"]);
 
-    let rowStatus: "valid" | "duplicate" | "error" = "valid";
+    let rowStatus: "valid" | "duplicate" | "error" | "warning" = "valid";
     let rowError:  string | null = null;
 
     if (existingObdSet.has(obdNumber)) {
       rowStatus = "duplicate";
     } else if (shipToId && !existingCustSet.has(shipToId)) {
-      rowStatus = "error";
+      rowStatus = "warning";
       rowError  = `Unknown customer: ${shipToId}`;
     }
 
@@ -1245,7 +1248,7 @@ async function handleAutoImport(req: Request): Promise<NextResponse> {
 
   // ── Determine valid / duplicate / error counts ────────────────────────────
   const validSummaryIds = insertedSummaries
-    .filter((s) => s.rowStatus === "valid")
+    .filter((s) => s.rowStatus === "valid" || s.rowStatus === "warning")
     .map((s) => s.id);
   const duplicateCount = insertedSummaries.filter((s) => s.rowStatus === "duplicate").length;
   const errorCount     = insertedSummaries.filter((s) => s.rowStatus === "error").length;
@@ -1423,6 +1426,7 @@ async function handleAutoImport(req: Request): Promise<NextResponse> {
         totalUnitQty:        summary.totalUnitQty,
         grossWeight:         summary.grossWeight,
         volume:              summary.volume,
+        customerMissing:     summary.rowStatus === "warning",
       },
     });
   }

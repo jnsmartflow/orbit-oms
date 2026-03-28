@@ -164,6 +164,12 @@ function OBDStatusBadge({ status }: { status: ImportObdPreview["rowStatus"] }) {
         Duplicate
       </span>
     );
+  if (status === "warning")
+    return (
+      <span className="bg-amber-100 text-amber-700 text-xs font-medium px-2 py-0.5 rounded">
+        ⚠ Warning
+      </span>
+    );
   return (
     <span className="bg-red-100 text-red-700 text-xs font-medium px-2 py-0.5 rounded">
       Error
@@ -267,7 +273,7 @@ export function ImportPageContent({ viewOrdersHref = "/support" }: ImportPageCon
       setSelectedIds(
         new Set(
           data.obds
-            .filter((o) => o.rowStatus === "valid")
+            .filter((o) => o.rowStatus === "valid" || o.rowStatus === "warning")
             .map((o) => o.rawSummaryId),
         ),
       );
@@ -325,7 +331,7 @@ export function ImportPageContent({ viewOrdersHref = "/support" }: ImportPageCon
       if (!previewRes.ok) throw new Error(preview.error ?? "Import failed");
 
       const validIds = preview.obds
-        .filter((o) => o.rowStatus === "valid")
+        .filter((o) => o.rowStatus === "valid" || o.rowStatus === "warning")
         .map((o) => o.rawSummaryId);
 
       if (validIds.length === 0) {
@@ -467,6 +473,9 @@ export function ImportPageContent({ viewOrdersHref = "/support" }: ImportPageCon
         <div className="flex flex-row gap-3 mb-6 flex-wrap">
           <Pill label="Total OBDs" count={summary.totalObds} className="bg-slate-100 text-slate-700" />
           <Pill label="Valid" count={summary.validObds} className="bg-green-100 text-green-700" />
+          {summary.warningObds > 0 && (
+            <Pill label="Warnings" count={summary.warningObds} className="bg-amber-100 text-amber-700" />
+          )}
           <Pill label="Duplicates" count={summary.duplicateObds} className="bg-yellow-100 text-yellow-700" />
           <Pill label="Errors" count={summary.errorObds} className="bg-red-100 text-red-700" />
           <Pill label="Total Lines" count={summary.totalLines} className="bg-slate-100 text-slate-700" />
@@ -483,7 +492,7 @@ export function ImportPageContent({ viewOrdersHref = "/support" }: ImportPageCon
                 setSelectedIds(
                   new Set(
                     obds
-                      .filter((o) => o.rowStatus === "valid")
+                      .filter((o) => o.rowStatus === "valid" || o.rowStatus === "warning")
                       .map((o) => o.rawSummaryId),
                   ),
                 )
@@ -528,6 +537,8 @@ export function ImportPageContent({ viewOrdersHref = "/support" }: ImportPageCon
                         ? "bg-yellow-50"
                         : obd.rowStatus === "error"
                         ? "bg-red-50"
+                        : obd.rowStatus === "warning"
+                        ? "bg-amber-50"
                         : "bg-white"
                     }
                   >
@@ -622,7 +633,9 @@ export function ImportPageContent({ viewOrdersHref = "/support" }: ImportPageCon
                       <div className="flex flex-col gap-1">
                         <OBDStatusBadge status={obd.rowStatus} />
                         {obd.rowError && (
-                          <span className="text-red-500 text-xs">{obd.rowError}</span>
+                          <span className={`text-xs ${obd.rowStatus === "warning" ? "text-amber-600" : "text-red-500"}`}>
+                            {obd.rowError}
+                          </span>
                         )}
                       </div>
                     </TableCell>
@@ -704,14 +717,28 @@ export function ImportPageContent({ viewOrdersHref = "/support" }: ImportPageCon
                 {error}
               </div>
             )}
-            <button
-              onClick={handleConfirm}
-              disabled={selectedIds.size === 0 || isLoading}
-              className="bg-[#1a237e] text-white rounded-lg px-6 py-2.5 font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[#1a237e]/90 transition-colors"
-            >
-              {isLoading && <Loader2 className="animate-spin" size={18} />}
-              Confirm Import ({selectedIds.size} OBDs)
-            </button>
+            {(() => {
+              const selectedWarnings = obds.filter(
+                (o) => o.rowStatus === "warning" && selectedIds.has(o.rawSummaryId),
+              ).length;
+              return (
+                <>
+                  {selectedWarnings > 0 && (
+                    <p className="text-xs text-amber-600">
+                      {selectedWarnings} OBD{selectedWarnings > 1 ? "s" : ""} will import with ⚠ Customer Missing flag
+                    </p>
+                  )}
+                  <button
+                    onClick={handleConfirm}
+                    disabled={selectedIds.size === 0 || isLoading}
+                    className="bg-[#1a237e] text-white rounded-lg px-6 py-2.5 font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[#1a237e]/90 transition-colors"
+                  >
+                    {isLoading && <Loader2 className="animate-spin" size={18} />}
+                    Confirm Import ({selectedIds.size} OBDs)
+                  </button>
+                </>
+              );
+            })()}
           </div>
         </div>
       </div>

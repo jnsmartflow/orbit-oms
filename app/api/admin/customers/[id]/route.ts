@@ -141,6 +141,14 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       where: { id },
       include: fullInclude,
     });
+
+    if (customer?.customerCode) {
+      await prisma.orders.updateMany({
+        where: { customerMissing: true, shipToCustomerId: customer.customerCode },
+        data:  { customerMissing: false },
+      });
+    }
+
     return NextResponse.json(customer);
   } catch (err) {
     console.error("PATCH /api/admin/customers/[id] error:", err);

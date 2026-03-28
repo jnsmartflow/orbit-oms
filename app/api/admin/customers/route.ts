@@ -147,5 +147,10 @@ export async function POST(req: Request) {
     });
   });
 
+  await prisma.orders.updateMany({
+    where: { customerMissing: true, shipToCustomerId: customerCode },
+    data:  { customerMissing: false },
+  });
+
   return NextResponse.json(customer, { status: 201 });
 }

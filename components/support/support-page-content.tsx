@@ -17,6 +17,7 @@ import {
 import { StatCard } from "@/components/shared/stat-card";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { ObdCode } from "@/components/shared/obd-code";
+import { CustomerMissingSheet } from "@/components/shared/customer-missing-sheet";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -29,6 +30,8 @@ interface OrderListItem {
   dispatchStatus: string | null;
   priorityLevel: number;
   shipToCustomerName: string | null;
+  shipToCustomerId: string | null;
+  customerMissing: boolean;
   grossWeight: number | null;
   invoiceNo: string | null;
   createdAt: string;
@@ -204,6 +207,9 @@ export function SupportPageContent() {
 
   const [slots, setSlots] = useState<SlotOption[]>([]);
   const [historyExpanded, setHistoryExpanded] = useState(false);
+
+  const [missingSheetOpen, setMissingSheetOpen] = useState(false);
+  const [missingSheetOrder, setMissingSheetOrder] = useState<OrderListItem | null>(null);
 
   const [editForm, setEditForm] = useState<EditForm>({
     dispatchStatus: "",
@@ -513,6 +519,15 @@ export function SupportPageContent() {
                       <div className="font-semibold text-[12.5px] text-gray-900 max-w-[150px] truncate">
                         {order.customer?.customerName ?? order.shipToCustomerName ?? "—"}
                       </div>
+                      {order.customerMissing && (
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); setMissingSheetOrder(order); setMissingSheetOpen(true); }}
+                          className="mt-0.5 inline-flex items-center gap-1 text-[10.5px] font-semibold text-amber-700 bg-amber-100 hover:bg-amber-200 px-1.5 py-0.5 rounded transition-colors"
+                        >
+                          ⚠ Customer Missing
+                        </button>
+                      )}
                     </td>
                     {/* Area */}
                     <td className="py-3 px-4 text-[12px] text-gray-500">
@@ -591,6 +606,15 @@ export function SupportPageContent() {
           )}
         </div>
       </div>
+
+      {/* ── Customer Missing Sheet ───────────────────────────────────────── */}
+      <CustomerMissingSheet
+        open={missingSheetOpen}
+        onOpenChange={setMissingSheetOpen}
+        shipToCustomerId={missingSheetOrder?.shipToCustomerId}
+        shipToCustomerName={missingSheetOrder?.shipToCustomerName}
+        onResolved={() => { setMissingSheetOpen(false); void fetchOrders(); }}
+      />
 
       {/* ── Edit Sheet ───────────────────────────────────────────────────── */}
       <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>

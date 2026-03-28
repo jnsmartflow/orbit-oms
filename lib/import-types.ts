@@ -17,7 +17,7 @@ export interface ImportObdPreview {
   obdEmailDate: string | null
   totalUnitQty: number | null
   grossWeight: number | null
-  rowStatus: 'valid' | 'duplicate' | 'error'
+  rowStatus: 'valid' | 'duplicate' | 'error' | 'warning'
   rowError: string | null
   lineCount: number
   tintLineCount: number
@@ -33,6 +33,7 @@ export interface ImportPreviewResponse {
     validObds: number
     duplicateObds: number
     errorObds: number
+    warningObds: number
     totalLines: number
     validLines: number
     errorLines: number

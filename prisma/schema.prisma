@@ -512,6 +512,7 @@ model orders {
   totalUnitQty        Int?
   grossWeight         Float?
   volume              Float?
+  customerMissing     Boolean                   @default(false)
   isActive            Boolean                   @default(true)
   sequenceOrder       Int                       @default(0)
   createdAt           DateTime                  @default(now())
