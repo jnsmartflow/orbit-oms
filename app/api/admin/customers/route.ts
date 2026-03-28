@@ -149,7 +149,7 @@ export async function POST(req: Request) {
 
   await prisma.orders.updateMany({
     where: { customerMissing: true, shipToCustomerId: customerCode },
-    data:  { customerMissing: false },
+    data:  { customerMissing: false, customerId: customer.id },
   });
 
   return NextResponse.json(customer, { status: 201 });

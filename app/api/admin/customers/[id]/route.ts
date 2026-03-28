@@ -145,7 +145,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     if (customer?.customerCode) {
       await prisma.orders.updateMany({
         where: { customerMissing: true, shipToCustomerId: customer.customerCode },
-        data:  { customerMissing: false },
+        data:  { customerMissing: false, customerId: customer.id },
       });
     }
 
