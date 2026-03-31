@@ -45,10 +45,8 @@ interface RawHeaderRow {
 
 interface RawLineRow {
   "obd_number"?:      unknown;
-  "line_id"?:         unknown;
   "sku_codes"?:       unknown;
   "sku_description"?: unknown;
-  "batch_code"?:      unknown;
   "unit_qty"?:        unknown;
   "volume_line"?:     unknown;
   "Tinting"?:         unknown;
@@ -60,7 +58,7 @@ type SlotConfig = {
   windowStart:  string | null;
   windowEnd:    string | null;
   isDefault:    boolean;
-  slot: { name: string; slotTime: string; isNextDay: boolean };
+  slot: { id: number; name: string; slotTime: string; isNextDay: boolean };
 };
 
 // ── XLSX helpers ──────────────────────────────────────────────────────────────
@@ -135,11 +133,11 @@ function resolveSlot(
   configs: SlotConfig[],
   emailTime: string | null,
   emailDate: Date | null,
-): { dispatchSlot: string | null; dispatchSlotDeadline: Date | null } {
+): { dispatchSlot: string | null; dispatchSlotDeadline: Date | null; slotId: number | null } {
   if (!emailDate) {
     const defaultCfg = configs.find((c) => c.isDefault) ?? null;
-    if (!defaultCfg) return { dispatchSlot: null, dispatchSlotDeadline: null };
-    return { dispatchSlot: defaultCfg.slot.name, dispatchSlotDeadline: null };
+    if (!defaultCfg) return { dispatchSlot: null, dispatchSlotDeadline: null, slotId: null };
+    return { dispatchSlot: defaultCfg.slot.name, dispatchSlotDeadline: null, slotId: defaultCfg.slot.id };
   }
 
   let matched: SlotConfig | null = null;
@@ -163,14 +161,31 @@ function resolveSlot(
     matched = configs.find((c) => c.isDefault) ?? null;
   }
 
-  if (!matched) return { dispatchSlot: null, dispatchSlotDeadline: null };
+  if (!matched) return { dispatchSlot: null, dispatchSlotDeadline: null, slotId: null };
 
   const [slotH, slotM] = matched.slot.slotTime.split(":").map(Number);
   const deadline = new Date(emailDate);
   deadline.setHours(slotH, slotM, 0, 0);
   if (matched.slot.isNextDay) deadline.setDate(deadline.getDate() + 1);
 
-  return { dispatchSlot: matched.slot.name, dispatchSlotDeadline: deadline };
+  return { dispatchSlot: matched.slot.name, dispatchSlotDeadline: deadline, slotId: matched.slot.id };
+}
+
+// ── Merge IST email time into date ───────────────────────────────────────────
+
+function mergeEmailDateTime(emailDate: Date | null, emailTime: string | null): Date | null {
+  if (!emailDate || !emailTime) return emailDate;
+  const [h, m] = emailTime.split(":").map(Number);
+  // Source time is IST (UTC+5:30) — convert to UTC for storage
+  const istMinutes = h * 60 + m;
+  const utcMinutes = istMinutes - 330; // subtract 5h30m
+  const utcH = Math.floor(((utcMinutes % 1440) + 1440) % 1440 / 60);
+  const utcM = ((utcMinutes % 60) + 60) % 60;
+  const dt = new Date(emailDate);
+  dt.setUTCHours(utcH, utcM, 0, 0);
+  // If IST time was before 05:30 (e.g. 01:00 IST = previous day 19:30 UTC)
+  if (utcMinutes < 0) dt.setUTCDate(dt.getUTCDate() - 1);
+  return dt;
 }
 
 // ── batchRef generation ───────────────────────────────────────────────────────
@@ -385,9 +400,9 @@ async function handlePreview(req: Request, session: Session): Promise<NextRespon
 
     // Build line interims for this OBD
     const obdLines   = linesByObd.get(obdNumber) ?? [];
-    const lines: LineInterim[] = obdLines.map((lr) => {
+    const lines: LineInterim[] = obdLines.map((lr, idx) => {
       const skuCodeRaw = toStr(lr["sku_codes"]);
-      const lineIdRaw  = toInt(lr["line_id"]) ?? 0;
+      const lineIdRaw  = idx + 1;
       const unitQty    = toInt(lr["unit_qty"]) ?? 0;
       const volumeLine = toNum(lr["volume_line"]);
       const isTinting  = parseBooleanCell(lr["Tinting"]);
@@ -408,7 +423,7 @@ async function handlePreview(req: Request, session: Session): Promise<NextRespon
         lineId:            lineIdRaw,
         skuCodeRaw,
         skuDescriptionRaw: toStr(lr["sku_description"]) || null,
-        batchCode:         toStr(lr["batch_code"])       || null,
+        batchCode:         null,
         unitQty,
         volumeLine,
         isTinting,
@@ -659,7 +674,7 @@ async function handleConfirm(req: Request, session: Session): Promise<NextRespon
     }),
     prisma.delivery_type_slot_config.findMany({
       where:   { isActive: true },
-      include: { slot: { select: { name: true, slotTime: true, isNextDay: true } } },
+      include: { slot: { select: { id: true, name: true, slotTime: true, isNextDay: true } } },
       orderBy: { sortOrder: "asc" },
     }),
     prisma.delivery_type_master.findFirst({
@@ -717,11 +732,13 @@ async function handleConfirm(req: Request, session: Session): Promise<NextRespon
       ? (slotsByDeliveryType.get(deliveryTypeId) ?? [])
       : [];
 
-    const { dispatchSlot, dispatchSlotDeadline } = resolveSlot(
+    const { dispatchSlot, dispatchSlotDeadline, slotId } = resolveSlot(
       configs,
       summary.obdEmailTime,
       summary.obdEmailDate,
     );
+
+    const emailDateTime = mergeEmailDateTime(summary.obdEmailDate, summary.obdEmailTime);
 
     const validLines    = summary.rawLineItems; // already filtered to rowStatus=valid
     const hasTinting    = validLines.some((l) => l.isTinting);
@@ -758,10 +775,13 @@ async function handleConfirm(req: Request, session: Session): Promise<NextRespon
         workflowStage,
         dispatchSlot,
         dispatchSlotDeadline,
+        slotId,
+        originalSlotId:      slotId,
         priorityLevel,
         invoiceNo:           summary.invoiceNo,
         invoiceDate:         summary.invoiceDate,
-        obdEmailDate:        summary.obdEmailDate,
+        obdEmailDate:        emailDateTime,
+        smu:                 summary.smu,
         sapStatus:           summary.sapStatus,
         materialType:        summary.materialType,
         natureOfTransaction: summary.natureOfTransaction,
@@ -1109,6 +1129,9 @@ async function handleAutoImport(req: Request): Promise<NextResponse> {
     const obdNumber = toStr(hr["OBD Number"]);
     if (!obdNumber) continue;
 
+    // Skip duplicates entirely in auto-import — no need to store raw data for existing OBDs
+    if (existingObdSet.has(obdNumber)) continue;
+
     const shipToId           = toStr(hr["ShipToCustomerId"]) || null;
     const shipToCustomerName = toStr(hr["Ship To Customer Name"]) || null;
     const emailDate          = parseDateCell(hr["OBD Email Date"]);
@@ -1118,9 +1141,7 @@ async function handleAutoImport(req: Request): Promise<NextResponse> {
     let rowStatus: "valid" | "duplicate" | "error" | "warning" = "valid";
     let rowError:  string | null = null;
 
-    if (existingObdSet.has(obdNumber)) {
-      rowStatus = "duplicate";
-    } else if (shipToId && !existingCustSet.has(shipToId)) {
+    if (shipToId && !existingCustSet.has(shipToId)) {
       rowStatus = "warning";
       rowError  = `Unknown customer: ${shipToId}`;
     }
@@ -1250,7 +1271,8 @@ async function handleAutoImport(req: Request): Promise<NextResponse> {
   const validSummaryIds = insertedSummaries
     .filter((s) => s.rowStatus === "valid" || s.rowStatus === "warning")
     .map((s) => s.id);
-  const duplicateCount = insertedSummaries.filter((s) => s.rowStatus === "duplicate").length;
+  // Duplicates were skipped before writing — count from original header rows
+  const duplicateCount = allObdNumbers.filter((obd) => existingObdSet.has(obd)).length;
   const errorCount     = insertedSummaries.filter((s) => s.rowStatus === "error").length;
 
   if (validSummaryIds.length === 0) {
@@ -1323,7 +1345,7 @@ async function handleAutoImport(req: Request): Promise<NextResponse> {
       }),
       prisma.delivery_type_slot_config.findMany({
         where:   { isActive: true },
-        include: { slot: { select: { name: true, slotTime: true, isNextDay: true } } },
+        include: { slot: { select: { id: true, name: true, slotTime: true, isNextDay: true } } },
         orderBy: { sortOrder: "asc" },
       }),
       prisma.delivery_type_master.findFirst({
@@ -1378,11 +1400,13 @@ async function handleAutoImport(req: Request): Promise<NextResponse> {
       ? (confirmSlotsByDeliveryType.get(deliveryTypeId) ?? [])
       : [];
 
-    const { dispatchSlot, dispatchSlotDeadline } = resolveSlot(
+    const { dispatchSlot, dispatchSlotDeadline, slotId } = resolveSlot(
       configs,
       summary.obdEmailTime,
       summary.obdEmailDate,
     );
+
+    const emailDateTime = mergeEmailDateTime(summary.obdEmailDate, summary.obdEmailTime);
 
     const validLines    = summary.rawLineItems;
     const hasTinting    = validLines.some((l) => l.isTinting);
@@ -1415,10 +1439,13 @@ async function handleAutoImport(req: Request): Promise<NextResponse> {
         workflowStage,
         dispatchSlot,
         dispatchSlotDeadline,
+        slotId,
+        originalSlotId:      slotId,
         priorityLevel,
         invoiceNo:           summary.invoiceNo,
         invoiceDate:         summary.invoiceDate,
-        obdEmailDate:        summary.obdEmailDate,
+        obdEmailDate:        emailDateTime,
+        smu:                 summary.smu,
         sapStatus:           summary.sapStatus,
         materialType:        summary.materialType,
         natureOfTransaction: summary.natureOfTransaction,

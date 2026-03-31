@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Planning Board v8 - Improved CTA</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; }
+    .scrollbar-thin::-webkit-scrollbar { width: 4px; }
+    .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+    .scrollbar-thin::-webkit-scrollbar-thumb { background: #e5e7eb; border-radius: 2px; }
+    
+    .panel-closed { transform: translateX(100%); }
+    .panel-open { transform: translateX(0); }
+    .panel-transition { transition: transform 0.15s ease-out; }
+    
+    .trip-content { max-height: 0; overflow: hidden; transition: max-height 0.15s ease-out; }
+    .trip-content.expanded { max-height: 500px; }
+  </style>
+</head>
+<body class="bg-[#f8f9fa] min-h-screen text-[13px] text-gray-600">
+  
+  <!-- HEADER -->
+  <header class="bg-white border-b border-gray-200 px-5 py-2.5 flex items-center gap-4 sticky top-0 z-40">
+    <h1 class="text-[14px] font-semibold text-gray-800">Planning Board</h1>
+    
+    <div class="flex items-center gap-1.5 text-[11px] text-gray-500">
+      <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+        <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+      </svg>
+      <span>30 Mar 2026</span>
+    </div>
+    
+    <button class="p-1.5 text-gray-400 hover:text-gray-600 rounded">
+      <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+        <path d="M23 4v6h-6M1 20v-6h6M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
+      </svg>
+    </button>
+    
+    <div class="flex-1"></div>
+    
+    <div class="flex items-center gap-4 text-[11px] text-gray-400">
+      <span><span class="text-gray-600">12</span> Customers</span>
+      <span><span class="text-gray-600">18</span> OBDs</span>
+      <span><span class="text-gray-600">6</span> Trips</span>
+    </div>
+  </header>
+
+  <!-- TABS + SLOTS -->
+  <div class="bg-white border-b border-gray-200 px-5 py-3">
+    
+    <!-- Delivery Type -->
+    <div class="flex items-center gap-4 mb-3 text-[11px]">
+      <button class="font-semibold text-gray-800 border-b-2 border-gray-800 pb-1">Local <span class="text-gray-400 font-normal">8</span></button>
+      <button class="text-gray-400 hover:text-gray-600 pb-1">Upcountry <span>4</span></button>
+      <button class="text-gray-300 pb-1">IGT <span>0</span></button>
+      <button class="text-gray-300 pb-1">Cross <span>0</span></button>
+    </div>
+    
+    <!-- Slots -->
+    <div class="flex gap-2">
+      <div class="flex-1 rounded-lg bg-red-50 border border-red-200 px-3 py-2 cursor-pointer">
+        <div class="flex items-center justify-between">
+          <span class="text-[11px] font-medium text-gray-700">Morning</span>
+          <span class="text-[10px] font-medium text-red-600">12 min</span>
+        </div>
+        <div class="flex items-center justify-between mt-1">
+          <span class="text-[10px] text-gray-400">2 of 4</span>
+          <div class="w-10 h-1 bg-red-200 rounded-full"><div class="h-full bg-red-400 rounded-full" style="width:50%"></div></div>
+        </div>
+      </div>
+      
+      <div class="flex-1 rounded-lg bg-white border border-gray-200 px-3 py-2 cursor-pointer hover:border-gray-300">
+        <div class="flex items-center justify-between">
+          <span class="text-[11px] font-medium text-gray-700">Afternoon</span>
+          <span class="text-[10px] text-gray-400">2h 12m</span>
+        </div>
+        <div class="flex items-center justify-between mt-1">
+          <span class="text-[10px] text-gray-400">0 of 3</span>
+          <div class="w-10 h-1 bg-gray-100 rounded-full"></div>
+        </div>
+      </div>
+      
+      <div class="flex-1 rounded-lg bg-white border border-gray-200 px-3 py-2 cursor-pointer hover:border-gray-300">
+        <div class="flex items-center justify-between">
+          <span class="text-[11px] font-medium text-gray-700">Evening</span>
+          <span class="text-[10px] text-gray-400">5h 12m</span>
+        </div>
+        <div class="flex items-center justify-between mt-1">
+          <span class="text-[10px] text-gray-400">0 of 2</span>
+          <div class="w-10 h-1 bg-gray-100 rounded-full"></div>
+        </div>
+      </div>
+      
+      <div class="flex-1 rounded-lg bg-white border border-gray-200 px-3 py-2 cursor-pointer hover:border-gray-300">
+        <div class="flex items-center justify-between">
+          <span class="text-[11px] font-medium text-gray-700">Night</span>
+          <span class="text-[10px] text-gray-400">8h 12m</span>
+        </div>
+        <div class="flex items-center justify-between mt-1">
+          <span class="text-[10px] text-gray-400">0 of 1</span>
+          <div class="w-10 h-1 bg-gray-100 rounded-full"></div>
+        </div>
+      </div>
+      
+      <div class="flex-1 rounded-lg bg-gray-50 border border-gray-100 px-3 py-2 opacity-50">
+        <div class="flex items-center justify-between">
+          <span class="text-[11px] text-gray-400">Next Day</span>
+          <span class="text-[10px] text-gray-400">✓</span>
+        </div>
+        <div class="flex items-center justify-between mt-1">
+          <span class="text-[10px] text-gray-300">3 of 3</span>
+          <div class="w-10 h-1 bg-gray-200 rounded-full"><div class="h-full bg-gray-300 rounded-full" style="width:100%"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MAIN -->
+  <div class="flex h-[calc(100vh-140px)]">
+    
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <!-- LEFT: Unassigned - REDESIGNED -->
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <div class="w-[300px] border-r border-gray-200 bg-white flex flex-col">
+      
+      <!-- Header -->
+      <div class="px-3 py-2.5 border-b border-gray-100 flex items-center justify-between">
+        <span class="text-[11px] font-medium text-gray-700">Unassigned</span>
+        <span class="text-[10px] text-gray-400">4 customers · 1,890 kg</span>
+      </div>
+      
+      <!-- Auto Draft - PROMINENT -->
+      <div class="px-3 py-3 border-b border-gray-100 bg-gradient-to-r from-indigo-50 to-white">
+        <button class="w-full h-10 bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-medium rounded-lg flex items-center justify-center gap-2 shadow-sm transition-colors">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+          </svg>
+          Auto Draft All
+        </button>
+        <p class="text-[9px] text-gray-500 mt-2 text-center">Groups by route · Max 1,500 kg per trip</p>
+      </div>
+      
+      <!-- Grouping Filters -->
+      <div class="px-3 py-2 border-b border-gray-100 flex items-center gap-2">
+        <span class="text-[9px] text-gray-400">Group:</span>
+        <button class="text-[9px] px-2 py-1 rounded bg-gray-800 text-white">Route</button>
+        <button class="text-[9px] px-2 py-1 rounded bg-gray-100 text-gray-600 hover:bg-gray-200">Area</button>
+        <button class="text-[9px] px-2 py-1 rounded bg-gray-100 text-gray-600 hover:bg-gray-200">Priority</button>
+      </div>
+      
+      <!-- Customer List -->
+      <div class="flex-1 overflow-y-auto scrollbar-thin p-2 space-y-1.5">
+        
+        <!-- Route Group Header -->
+        <div class="px-2 py-1.5 text-[9px] font-medium text-gray-500 uppercase tracking-wide bg-gray-50 rounded flex items-center justify-between">
+          <span>Varachha Route</span>
+          <span class="text-gray-400 font-normal">2 · 1,593 kg</span>
+        </div>
+        
+        <!-- Customer - Selected -->
+        <div class="rounded-lg border border-gray-300 bg-gray-50 p-2.5 cursor-pointer" onclick="openPanel()">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-1.5">
+              <span class="w-1.5 h-1.5 rounded-full bg-red-400" title="P1"></span>
+              <span class="text-[10px] text-amber-500">★</span>
+              <span class="text-[11px] font-medium text-gray-800">Maruti Paints</span>
+            </div>
+            <div class="w-4 h-4 bg-gray-700 rounded flex items-center justify-center">
+              <svg width="10" height="10" fill="none" stroke="white" stroke-width="2.5" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
+            </div>
+          </div>
+          <div class="flex items-center justify-between mt-1">
+            <span class="text-[9px] text-gray-400">Khatodara · 3 OBDs</span>
+            <span class="text-[11px] font-medium text-gray-600">953 kg</span>
+          </div>
+        </div>
+        
+        <!-- Customer - Selected -->
+        <div class="rounded-lg border border-gray-300 bg-gray-50 p-2.5 cursor-pointer">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-1.5">
+              <span class="w-1.5 h-1.5 rounded-full bg-amber-400" title="P2"></span>
+              <span class="text-[11px] font-medium text-gray-800">Sharma Paint House</span>
+            </div>
+            <div class="w-4 h-4 bg-gray-700 rounded flex items-center justify-center">
+              <svg width="10" height="10" fill="none" stroke="white" stroke-width="2.5" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
+            </div>
+          </div>
+          <div class="flex items-center justify-between mt-1">
+            <span class="text-[9px] text-gray-400">Nana Varachha · 1 OBD</span>
+            <span class="text-[11px] font-medium text-gray-600">640 kg</span>
+          </div>
+        </div>
+        
+        <!-- Route Group Header -->
+        <div class="px-2 py-1.5 text-[9px] font-medium text-gray-500 uppercase tracking-wide bg-gray-50 rounded flex items-center justify-between mt-3">
+          <span>Adajan Route</span>
+          <span class="text-gray-400 font-normal">1 · 234 kg</span>
+        </div>
+        
+        <!-- Customer - Unselected -->
+        <div class="rounded-lg border border-gray-200 bg-white p-2.5 cursor-pointer hover:border-gray-300">
+          <div class="flex items-center gap-1.5">
+            <span class="w-1.5 h-1.5 rounded-full bg-gray-300"></span>
+            <span class="text-[11px] font-medium text-gray-700">Krishna Hardware</span>
+          </div>
+          <div class="flex items-center justify-between mt-1">
+            <span class="text-[9px] text-gray-400">Adajan Gam · 2 OBDs</span>
+            <span class="text-[11px] font-medium text-gray-600">234 kg</span>
+          </div>
+        </div>
+        
+        <!-- Route Group Header -->
+        <div class="px-2 py-1.5 text-[9px] font-medium text-gray-500 uppercase tracking-wide bg-gray-50 rounded flex items-center justify-between mt-3">
+          <span>Katargam Route</span>
+          <span class="text-gray-400 font-normal">1 · 63 kg</span>
+        </div>
+        
+        <!-- Customer - Unselected -->
+        <div class="rounded-lg border border-gray-200 bg-white p-2.5 cursor-pointer hover:border-gray-300">
+          <div class="flex items-center gap-1.5">
+            <span class="text-[11px] font-medium text-gray-700">Patel & Sons</span>
+          </div>
+          <div class="flex items-center justify-between mt-1">
+            <span class="text-[9px] text-gray-400">Katargam Circle · 1 OBD</span>
+            <span class="text-[11px] font-medium text-gray-600">63 kg</span>
+          </div>
+        </div>
+        
+      </div>
+      
+      <!-- Selection Actions - BOTTOM -->
+      <div class="px-3 py-3 border-t border-gray-200 bg-gray-50">
+        <div class="flex items-center justify-between text-[10px] text-gray-500 mb-2">
+          <span><span class="font-medium text-gray-700">2</span> selected</span>
+          <span class="font-medium text-gray-700">1,593 kg</span>
+        </div>
+        <div class="flex gap-2">
+          <button class="flex-1 h-8 bg-gray-800 hover:bg-gray-900 text-white text-[10px] font-medium rounded-lg">
+            + Create Trip
+          </button>
+          <button class="h-8 px-3 text-gray-600 text-[10px] font-medium border border-gray-300 rounded-lg hover:bg-white">
+            Add to ▾
+          </button>
+        </div>
+      </div>
+      
+    </div>
+    
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <!-- RIGHT: Trips -->
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <div class="flex-1 flex flex-col">
+      
+      <div class="px-4 py-2.5 flex items-center justify-between">
+        <span class="text-[11px] font-medium text-gray-700">Trips <span class="text-gray-400 font-normal">6</span></span>
+      </div>
+      
+      <div class="flex-1 overflow-y-auto scrollbar-thin px-4 pb-4 space-y-2">
+        
+        <!-- TRIP 1 - Draft, Expanded -->
+        <div class="bg-white rounded-lg border border-gray-200">
+          <div class="px-3 py-2.5 flex items-center justify-between cursor-pointer" onclick="toggleTrip('trip1')">
+            <div class="flex items-center gap-2.5">
+              <span class="text-[14px]">🚚</span>
+              <div>
+                <div class="flex items-center gap-2">
+                  <span class="text-[11px] font-medium text-gray-800">Trip 1</span>
+                  <span class="text-[9px] text-gray-400">Draft</span>
+                  <span class="text-[9px] text-gray-400">·</span>
+                  <span class="text-[9px] text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">Varachha Route</span>
+                </div>
+                <span class="text-[9px] text-gray-400">No vehicle assigned</span>
+              </div>
+            </div>
+            <div class="flex items-center gap-3">
+              <div class="text-right">
+                <span class="text-[12px] font-medium text-gray-700">1,280 kg</span>
+                <span class="text-[9px] text-gray-400 ml-1">3 cust</span>
+              </div>
+              <svg id="trip1-chevron" width="14" height="14" fill="none" stroke="#9ca3af" stroke-width="1.5" viewBox="0 0 24 24" class="transition-transform rotate-180"><path d="M19 9l-7 7-7-7"/></svg>
+            </div>
+          </div>
+          
+          <div id="trip1-content" class="trip-content expanded">
+            <div class="px-3 py-3 border-t border-gray-100 flex flex-wrap gap-2">
+              
+              <!-- Customer Pill -->
+              <div class="rounded-lg border border-gray-200 bg-white p-3 min-w-[180px] flex-1 max-w-[220px] cursor-pointer hover:border-gray-300 hover:shadow-sm transition-all" onclick="event.stopPropagation(); openPanel()">
+                <div class="flex items-center justify-between mb-1.5">
+                  <div class="flex items-center gap-1.5">
+                    <span class="w-2 h-2 rounded-full bg-red-400" title="P1"></span>
+                    <span class="text-[11px] font-medium text-gray-800">U P Rang Bhandar</span>
+                    <span class="text-[10px] text-amber-500">★</span>
+                  </div>
+                  <span class="w-2 h-2 rounded-full bg-amber-400" title="Pick pending"></span>
+                </div>
+                <div class="text-[10px] text-gray-500 mb-1.5">
+                  2 OBDs · <span class="font-medium text-gray-700">450 kg</span> · 24 units
+                </div>
+                <div class="flex items-center gap-2 text-[9px]">
+                  <span class="text-gray-400">Khatodara</span>
+                  <span class="text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded flex items-center gap-0.5">
+                    <span>🎨</span> Tinting
+                  </span>
+                </div>
+              </div>
+              
+              <!-- Picked -->
+              <div class="rounded-lg border border-gray-100 bg-gray-50 p-3 min-w-[180px] flex-1 max-w-[220px]">
+                <div class="flex items-center justify-between mb-1.5">
+                  <span class="text-[11px] font-medium text-gray-500">Patel Hardware</span>
+                  <svg width="12" height="12" fill="none" stroke="#9ca3af" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
+                </div>
+                <div class="text-[10px] text-gray-400 mb-1.5">
+                  1 OBD · <span class="font-medium text-gray-500">312 kg</span> · 8 units
+                </div>
+                <div class="text-[9px] text-gray-400">Kapodara</div>
+              </div>
+              
+              <!-- Needs pick -->
+              <div class="rounded-lg border border-gray-200 bg-white p-3 min-w-[180px] flex-1 max-w-[220px] cursor-pointer hover:border-gray-300 hover:shadow-sm transition-all">
+                <div class="flex items-center justify-between mb-1.5">
+                  <div class="flex items-center gap-1.5">
+                    <span class="w-2 h-2 rounded-full bg-gray-300" title="P3"></span>
+                    <span class="text-[11px] font-medium text-gray-800">Krishna Traders</span>
+                  </div>
+                  <span class="w-2 h-2 rounded-full bg-amber-400" title="Pick pending"></span>
+                </div>
+                <div class="text-[10px] text-gray-500 mb-1.5">
+                  2 OBDs · <span class="font-medium text-gray-700">518 kg</span> · 32 units
+                </div>
+                <div class="text-[9px] text-gray-400">Nana Varachha</div>
+              </div>
+              
+            </div>
+            
+            <div class="px-3 py-2.5 bg-gray-50 border-t border-gray-100 flex items-center justify-between">
+              <span class="text-[9px] text-gray-400">1 of 3 picked</span>
+              <button class="h-7 px-4 bg-gray-800 text-white text-[10px] font-medium rounded">Confirm</button>
+            </div>
+          </div>
+        </div>
+        
+        <!-- TRIP 2 - Draft, Collapsed for brevity -->
+        <div class="bg-white rounded-lg border border-gray-200">
+          <div class="px-3 py-2.5 flex items-center justify-between cursor-pointer" onclick="toggleTrip('trip2')">
+            <div class="flex items-center gap-2.5">
+              <span class="text-[14px]">🚚</span>
+              <div>
+                <div class="flex items-center gap-2">
+                  <span class="text-[11px] font-medium text-gray-800">Trip 2</span>
+                  <span class="text-[9px] text-gray-400">Draft</span>
+                  <span class="text-[9px] text-gray-400">·</span>
+                  <span class="text-[9px] text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">Udhana Route</span>
+                </div>
+                <span class="text-[9px] text-gray-400">GJ-05-ZZ-9012 · Tempo</span>
+              </div>
+            </div>
+            <div class="flex items-center gap-3">
+              <div class="text-right">
+                <span class="text-[12px] font-medium text-gray-700">1,850 kg</span>
+                <span class="text-[9px] text-gray-400 ml-1">4 cust</span>
+              </div>
+              <svg id="trip2-chevron" width="14" height="14" fill="none" stroke="#9ca3af" stroke-width="1.5" viewBox="0 0 24 24" class="transition-transform rotate-180"><path d="M19 9l-7 7-7-7"/></svg>
+            </div>
+          </div>
+          
+          <div id="trip2-content" class="trip-content expanded">
+            <div class="px-3 py-3 border-t border-gray-100 flex flex-wrap gap-2">
+              <div class="rounded-lg border border-gray-100 bg-gray-50 p-3 min-w-[180px] flex-1 max-w-[220px]">
+                <div class="flex items-center justify-between mb-1.5">
+                  <span class="text-[11px] font-medium text-gray-500">ABC Paints</span>
+                  <svg width="12" height="12" fill="none" stroke="#9ca3af" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
+                </div>
+                <div class="text-[10px] text-gray-400 mb-1.5">1 OBD · 320 kg · 12 units</div>
+                <div class="text-[9px] text-gray-400">Udhana Darwaja</div>
+              </div>
+              <div class="rounded-lg border border-gray-100 bg-gray-50 p-3 min-w-[180px] flex-1 max-w-[220px]">
+                <div class="flex items-center justify-between mb-1.5">
+                  <span class="text-[11px] font-medium text-gray-500">XYZ Traders</span>
+                  <svg width="12" height="12" fill="none" stroke="#9ca3af" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
+                </div>
+                <div class="text-[10px] text-gray-400 mb-1.5">2 OBDs · 580 kg · 28 units</div>
+                <div class="text-[9px] text-gray-400">Bamroli</div>
+              </div>
+              <div class="rounded-lg border border-gray-200 bg-white p-3 min-w-[180px] flex-1 max-w-[220px]">
+                <div class="flex items-center justify-between mb-1.5">
+                  <div class="flex items-center gap-1.5">
+                    <span class="w-2 h-2 rounded-full bg-amber-400"></span>
+                    <span class="text-[11px] font-medium text-gray-800">New Store</span>
+                  </div>
+                  <span class="w-2 h-2 rounded-full bg-amber-400"></span>
+                </div>
+                <div class="text-[10px] text-gray-500 mb-1.5">1 OBD · 450 kg · 18 units</div>
+                <div class="flex items-center gap-2 text-[9px]">
+                  <span class="text-gray-400">Pandesara</span>
+                  <span class="text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded">🎨 Tinting</span>
+                </div>
+              </div>
+              <div class="rounded-lg border border-gray-200 bg-white p-3 min-w-[180px] flex-1 max-w-[220px]">
+                <div class="flex items-center justify-between mb-1.5">
+                  <span class="text-[11px] font-medium text-gray-800">Raj Hardware</span>
+                  <span class="w-2 h-2 rounded-full bg-amber-400"></span>
+                </div>
+                <div class="text-[10px] text-gray-500 mb-1.5">1 OBD · 500 kg · 20 units</div>
+                <div class="text-[9px] text-gray-400">Sachin GIDC</div>
+              </div>
+            </div>
+            <div class="px-3 py-2.5 bg-gray-50 border-t border-gray-100 flex items-center justify-between">
+              <span class="text-[9px] text-gray-400">2 of 4 picked</span>
+              <button class="h-7 px-4 bg-gray-800 text-white text-[10px] font-medium rounded">Confirm</button>
+            </div>
+          </div>
+        </div>
+        
+        <!-- TRIP 3 - Confirmed, Collapsed -->
+        <div class="bg-white rounded-lg border border-gray-200">
+          <div class="px-3 py-2.5 flex items-center justify-between cursor-pointer" onclick="toggleTrip('trip3')">
+            <div class="flex items-center gap-2.5">
+              <span class="text-[14px]">🚚</span>
+              <div>
+                <div class="flex items-center gap-2">
+                  <span class="text-[11px] font-medium text-gray-800">Trip 3</span>
+                  <span class="text-[9px] text-gray-500">Confirmed</span>
+                  <span class="text-[9px] text-gray-400">·</span>
+                  <span class="text-[9px] text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">Adajan Route</span>
+                </div>
+                <span class="text-[9px] text-gray-400">GJ-05-XX-1234 · Tempo</span>
+              </div>
+            </div>
+            <div class="flex items-center gap-3">
+              <div class="text-right">
+                <span class="text-[12px] font-medium text-gray-700">1,450 kg</span>
+                <div class="flex items-center gap-1 justify-end">
+                  <span class="text-[9px] text-gray-400">3/4</span>
+                  <span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                </div>
+              </div>
+              <svg id="trip3-chevron" width="14" height="14" fill="none" stroke="#9ca3af" stroke-width="1.5" viewBox="0 0 24 24" class="transition-transform"><path d="M19 9l-7 7-7-7"/></svg>
+            </div>
+          </div>
+          <div id="trip3-content" class="trip-content"></div>
+        </div>
+        
+        <!-- TRIP 4 - Confirmed, All picked -->
+        <div class="bg-white rounded-lg border border-gray-200">
+          <div class="px-3 py-2.5 flex items-center justify-between cursor-pointer" onclick="toggleTrip('trip4')">
+            <div class="flex items-center gap-2.5">
+              <span class="text-[14px]">🚚</span>
+              <div>
+                <div class="flex items-center gap-2">
+                  <span class="text-[11px] font-medium text-gray-800">Trip 4</span>
+                  <span class="text-[9px] text-gray-500">Confirmed</span>
+                  <span class="text-[9px] text-gray-400">·</span>
+                  <span class="text-[9px] text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">Katargam Route</span>
+                </div>
+                <span class="text-[9px] text-gray-400">GJ-05-AA-7890 · Mini Truck</span>
+              </div>
+            </div>
+            <div class="flex items-center gap-3">
+              <div class="text-right">
+                <span class="text-[12px] font-medium text-gray-700">2,200 kg</span>
+                <div class="flex items-center gap-1 justify-end">
+                  <span class="text-[9px] text-gray-400">6/6</span>
+                  <svg width="10" height="10" fill="none" stroke="#9ca3af" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
+                </div>
+              </div>
+              <svg id="trip4-chevron" width="14" height="14" fill="none" stroke="#9ca3af" stroke-width="1.5" viewBox="0 0 24 24" class="transition-transform"><path d="M19 9l-7 7-7-7"/></svg>
+            </div>
+          </div>
+          <div id="trip4-content" class="trip-content"></div>
+        </div>
+        
+        <!-- TRIP 5 - Ready -->
+        <div class="bg-white rounded-lg border border-gray-200">
+          <div class="px-3 py-2.5 flex items-center justify-between">
+            <div class="flex items-center gap-2.5">
+              <span class="text-[14px]">🚚</span>
+              <div>
+                <div class="flex items-center gap-2">
+                  <span class="text-[11px] font-medium text-gray-800">Trip 5</span>
+                  <span class="text-[9px] text-gray-500">All Picked</span>
+                  <span class="text-[9px] text-gray-400">·</span>
+                  <span class="text-[9px] text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">Ring Road Route</span>
+                </div>
+                <span class="text-[9px] text-gray-400">GJ-05-YY-5678 · Full Truck</span>
+              </div>
+            </div>
+            <div class="flex items-center gap-3">
+              <div class="text-right">
+                <span class="text-[12px] font-medium text-gray-700">4,500 kg</span>
+                <span class="text-[9px] text-gray-400 ml-1">8 cust</span>
+              </div>
+              <button class="h-7 px-3 bg-green-600 hover:bg-green-700 text-white text-[10px] font-medium rounded flex items-center gap-1">
+                <svg width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
+                Dispatch
+              </button>
+            </div>
+          </div>
+        </div>
+        
+        <!-- TRIP 6 - Empty -->
+        <div class="rounded-lg border border-dashed border-gray-300 px-3 py-2.5 flex items-center justify-between">
+          <div class="flex items-center gap-2.5">
+            <span class="text-[14px] opacity-30">🚚</span>
+            <span class="text-[11px] text-gray-400">Trip 6 · Empty</span>
+          </div>
+          <button class="text-[9px] text-gray-400 hover:text-red-500">Delete</button>
+        </div>
+        
+      </div>
+    </div>
+  </div>
+
+  <!-- DETAIL PANEL -->
+  <div id="detailPanel" class="fixed right-0 top-0 h-full w-[340px] bg-white shadow-xl border-l border-gray-200 z-50 panel-transition panel-closed">
+    <div class="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+      <span class="text-[12px] font-medium text-gray-800">Customer Details</span>
+      <button onclick="closePanel()" class="p-1 text-gray-400 hover:text-gray-600 rounded">
+        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="p-4 space-y-4 overflow-y-auto h-[calc(100%-100px)] scrollbar-thin">
+      <div>
+        <div class="flex items-center gap-2 mb-1">
+          <span class="w-2 h-2 rounded-full bg-red-400"></span>
+          <span class="text-[10px] text-amber-500">★ Key Customer</span>
+        </div>
+        <h2 class="text-[14px] font-semibold text-gray-800">U P Rang Bhandar</h2>
+        <p class="text-[10px] text-gray-400 mt-0.5">Khatodara, Varachha Route</p>
+      </div>
+      <div class="grid grid-cols-3 gap-2">
+        <div class="bg-gray-50 rounded p-2.5 text-center">
+          <div class="text-[15px] font-semibold text-gray-700">450</div>
+          <div class="text-[9px] text-gray-400">kg</div>
+        </div>
+        <div class="bg-gray-50 rounded p-2.5 text-center">
+          <div class="text-[15px] font-semibold text-gray-700">2</div>
+          <div class="text-[9px] text-gray-400">OBDs</div>
+        </div>
+        <div class="bg-gray-50 rounded p-2.5 text-center">
+          <div class="text-[15px] font-semibold text-gray-700">24</div>
+          <div class="text-[9px] text-gray-400">Units</div>
+        </div>
+      </div>
+      <div class="bg-purple-50 border border-purple-100 rounded-lg p-3">
+        <div class="flex items-center gap-2 text-[10px] text-purple-700">
+          <span>🎨</span>
+          <span class="font-medium">Tinting Required</span>
+        </div>
+        <div class="text-[9px] text-purple-600 mt-1">1 OBD waiting at Tint Station</div>
+      </div>
+      <div>
+        <div class="text-[9px] font-medium text-gray-500 uppercase tracking-wide mb-2">OBDs (2)</div>
+        <div class="space-y-2">
+          <div class="rounded border border-gray-100 bg-gray-50 p-3">
+            <div class="flex items-center justify-between mb-1.5">
+              <span class="font-mono text-[10px] text-gray-600">9105942597</span>
+              <span class="text-[8px] text-gray-400">✓ Picked</span>
+            </div>
+            <div class="flex gap-3 text-[9px] text-gray-500">
+              <span>200 kg</span>
+              <span>12 units</span>
+              <span>3 Drum, 2 Tin</span>
+            </div>
+          </div>
+          <div class="rounded border border-gray-200 bg-white p-3">
+            <div class="flex items-center justify-between mb-1.5">
+              <div class="flex items-center gap-2">
+                <span class="font-mono text-[10px] text-gray-700">9105942598</span>
+                <span class="text-[8px] text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded">🎨 Tinting</span>
+              </div>
+              <span class="w-2 h-2 rounded-full bg-amber-400"></span>
+            </div>
+            <div class="flex gap-3 text-[9px] text-gray-500">
+              <span>250 kg</span>
+              <span>12 units</span>
+              <span>5 Drum</span>
+            </div>
+            <button class="mt-2 text-[9px] text-gray-600 bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded">Mark Picked</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="absolute bottom-0 left-0 right-0 px-4 py-3 border-t border-gray-100 bg-gray-50">
+      <div class="text-[9px] text-gray-400 mb-2">In: Trip 1 · Draft · Varachha Route</div>
+      <button class="w-full h-7 text-red-500 text-[10px] border border-gray-200 rounded hover:bg-red-50 hover:border-red-200">
+        Remove from Trip
+      </button>
+    </div>
+  </div>
+  
+  <div id="overlay" class="fixed inset-0 bg-black/10 z-40 hidden" onclick="closePanel()"></div>
+
+  <script>
+    function openPanel() {
+      document.getElementById('detailPanel').classList.remove('panel-closed');
+      document.getElementById('detailPanel').classList.add('panel-open');
+      document.getElementById('overlay').classList.remove('hidden');
+    }
+    
+    function closePanel() {
+      document.getElementById('detailPanel').classList.add('panel-closed');
+      document.getElementById('detailPanel').classList.remove('panel-open');
+      document.getElementById('overlay').classList.add('hidden');
+    }
+    
+    function toggleTrip(tripId) {
+      const content = document.getElementById(tripId + '-content');
+      const chevron = document.getElementById(tripId + '-chevron');
+      if (content.classList.contains('expanded')) {
+        content.classList.remove('expanded');
+        chevron.classList.remove('rotate-180');
+      } else {
+        content.classList.add('expanded');
+        chevron.classList.add('rotate-180');
+      }
+    }
+  </script>
+
+</body>
+</html>

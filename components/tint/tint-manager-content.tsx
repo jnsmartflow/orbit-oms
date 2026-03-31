@@ -1657,7 +1657,7 @@ export function TintManagerContent() {
 
   // ── Client-side filtering ─────────────────────────────────────────────────
 
-  const filteredOrders = orders.filter((o) => {
+  const filteredOrders = (orders ?? []).filter((o) => {
     if (slotFilter !== "all" && !(o.dispatchSlot ?? "").includes(slotFilter)) return false;
     if (priorityFilter === "urgent" && !(o.priorityLevel <= 2)) return false;
     if (priorityFilter === "normal" && !(o.priorityLevel > 2)) return false;

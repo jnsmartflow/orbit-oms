@@ -175,9 +175,18 @@ export async function PATCH(
       await tx.order_status_logs.create({ data: entry });
     }
 
-    // If setting to 'hold' → stub row in dispatch_change_queue (Phase 3 stub)
+    // If setting to 'hold' → record in dispatch_change_queue
     if (dispatchStatus === "hold") {
-      await tx.dispatch_change_queue.create({ data: {} });
+      await tx.dispatch_change_queue.create({
+        data: {
+          orderId: id,
+          changeType: "hold",
+          previousValue: order.dispatchStatus,
+          newValue: "hold",
+          changedById: userId,
+          notes: note ?? "Placed on hold by support",
+        },
+      });
     }
 
     // Update the order

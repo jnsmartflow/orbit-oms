@@ -2,102 +2,133 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
-import { checkPermission } from "@/lib/permissions";
 import type { Prisma } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
 
-const LIMIT = 25;
-
 export async function GET(req: Request): Promise<NextResponse> {
   const session = await auth();
-  requireRole(session, [ROLES.SUPPORT, ROLES.ADMIN]);
-  if (session!.user.role !== "admin") {
-    const allowed = await checkPermission(session!.user.role, "support_queue", "canView");
-    if (!allowed) return NextResponse.json({ error: "Permission denied" }, { status: 403 });
-  }
+  requireRole(session, [ROLES.SUPPORT, ROLES.ADMIN, ROLES.DISPATCHER]);
 
   const { searchParams } = new URL(req.url);
-  const search         = searchParams.get("search")?.trim() ?? "";
-  const stage          = searchParams.get("stage")?.trim() ?? "";
-  const orderType      = searchParams.get("orderType")?.trim() ?? "";
-  const dispatchStatus = searchParams.get("dispatchStatus")?.trim() ?? "";
-  const page           = Math.max(1, parseInt(searchParams.get("page") ?? "1", 10));
+  const dateParam = searchParams.get("date")?.trim() ?? "";
+  const section   = searchParams.get("section")?.trim() ?? "";
+  const slotIdStr = searchParams.get("slotId")?.trim() ?? "";
+  const status    = searchParams.get("status")?.trim() ?? "";
+  const priority  = searchParams.get("priority")?.trim() ?? "";
+  const search    = searchParams.get("search")?.trim() ?? "";
+
+  // Default date = today
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const dateStr  = dateParam || todayStr;
+  const dateStart = new Date(dateStr + "T00:00:00.000Z");
+  const dateEnd   = new Date(dateStr + "T23:59:59.999Z");
+
+  if (!section || !["overdue", "slot", "hold"].includes(section)) {
+    return NextResponse.json({ error: "Invalid or missing section param" }, { status: 400 });
+  }
+
+  if (section === "slot" && !slotIdStr) {
+    return NextResponse.json({ error: "slotId required for section=slot" }, { status: 400 });
+  }
 
   // ── Build where clause ───────────────────────────────────────────────────
   const where: Prisma.ordersWhereInput = {};
 
-  if (search) {
+  if (section === "overdue") {
+    where.obdEmailDate = { lt: dateStart };
+    where.workflowStage = { notIn: ["dispatched", "cancelled"] };
     where.OR = [
-      { obdNumber:         { contains: search, mode: "insensitive" } },
+      { dispatchStatus: null },
+      { dispatchStatus: { not: "dispatch" } },
+    ];
+  } else if (section === "slot") {
+    where.slotId = parseInt(slotIdStr, 10);
+    where.obdEmailDate = { gte: dateStart, lte: dateEnd };
+    where.workflowStage = {
+      notIn: ["dispatched", "cancelled", "order_created", "pending_tint_assignment"],
+    };
+  } else if (section === "hold") {
+    where.dispatchStatus = "hold";
+    where.workflowStage = { notIn: ["dispatched", "cancelled"] };
+  }
+
+  // Status sub-filter
+  if (status === "pending") {
+    where.workflowStage = { in: ["pending_support", "tinting_done"] };
+    where.dispatchStatus = null;
+  } else if (status === "dispatch") {
+    where.dispatchStatus = "dispatch";
+  } else if (status === "tinting") {
+    where.workflowStage = { in: ["tinting_in_progress", "tint_assigned"] };
+  }
+
+  // Priority filter
+  if (priority) {
+    where.priorityLevel = parseInt(priority, 10);
+  }
+
+  // Search filter
+  if (search) {
+    const searchFilter: Prisma.ordersWhereInput[] = [
+      { obdNumber: { contains: search, mode: "insensitive" } },
       { shipToCustomerName: { contains: search, mode: "insensitive" } },
     ];
+    if (where.OR) {
+      // Wrap existing OR with search OR using AND
+      where.AND = [
+        { OR: where.OR as Prisma.ordersWhereInput[] },
+        { OR: searchFilter },
+      ];
+      delete where.OR;
+    } else {
+      where.OR = searchFilter;
+    }
   }
-  if (stage)     where.workflowStage  = stage;
-  if (orderType) where.orderType       = orderType;
 
-  if (dispatchStatus === "not_set") {
-    where.dispatchStatus = null;
-  } else if (dispatchStatus) {
-    where.dispatchStatus = dispatchStatus;
-  }
-
-  // ── Queries ───────────────────────────────────────────────────────────────
-  const [orders, total, pendingSupportCount, pendingTintCount, onHoldCount] =
-    await Promise.all([
-      prisma.orders.findMany({
-        where,
-        include: {
-          customer: {
+  // ── Query ────────────────────────────────────────────────────────────────
+  const orders = await prisma.orders.findMany({
+    where,
+    include: {
+      customer: {
+        select: {
+          id: true,
+          customerName: true,
+          dispatchDeliveryType: { select: { name: true } },
+          area: {
             select: {
-              customerName: true,
-              area: { select: { name: true } },
-            },
-          },
-          querySnapshot: {
-            select: { totalWeight: true, totalLines: true, hasTinting: true },
-          },
-          batch: { select: { batchRef: true } },
-          splits: {
-            where: {
-              status: {
-                in: ["tinting_done", "pending_support", "dispatch_confirmation", "dispatched"],
-              },
-            },
-            select: {
-              id:             true,
-              splitNumber:    true,
-              status:         true,
-              totalQty:       true,
-              articleTag:     true,
-              dispatchStatus: true,
-              completedAt:    true,
-              assignedTo:     { select: { id: true, name: true } },
+              name: true,
+              primaryRoute: { select: { name: true } },
+              deliveryType: { select: { name: true } },
             },
           },
         },
-        orderBy: { createdAt: "desc" },
-        skip:  (page - 1) * LIMIT,
-        take:  LIMIT,
-      }),
-      prisma.orders.count({ where }),
-      prisma.orders.count({ where: { ...where, workflowStage: "pending_support" } }),
-      prisma.orders.count({
-        where: {
-          ...where,
-          workflowStage: { in: ["pending_tint_assignment", "tinting_in_progress"] },
+      },
+      slot: {
+        select: { name: true },
+      },
+      querySnapshot: {
+        select: {
+          hasTinting: true,
+          totalUnitQty: true,
+          articleTag: true,
         },
-      }),
-      prisma.orders.count({ where: { ...where, dispatchStatus: "hold" } }),
-    ]);
-
-  return NextResponse.json({
-    orders,
-    total,
-    page,
-    totalPages:          Math.ceil(total / LIMIT),
-    pendingSupportCount,
-    pendingTintCount,
-    onHoldCount,
+      },
+      splits: {
+        where: { status: { not: "cancelled" } },
+        select: {
+          id: true,
+          status: true,
+          dispatchStatus: true,
+        },
+      },
+    },
+    orderBy: [
+      { priorityLevel: "asc" },
+      { obdEmailDate: "asc" },
+      { obdNumber: "asc" },
+    ],
   });
+
+  return NextResponse.json({ orders });
 }

@@ -64,7 +64,8 @@
       "Bash(grep -n \"export.*$delivery_point_masterPayload\" \"C:\\\\Users\\\\HP\\\\OneDrive\\\\VS Code\\\\orbit-oms\\\\node_modules\\\\.prisma\\\\client\\\\index.d.ts\")",
       "Bash(echo \"VALIDATE_EXIT:$?\")",
       "Bash(echo \"TSC_EXIT:$?\")",
-      "Bash(echo \"EXIT:$?\")"
+      "Bash(echo \"EXIT:$?\")",
+      "Bash(curl:*)"
     ]
   }
 }

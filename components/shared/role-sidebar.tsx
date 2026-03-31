@@ -6,7 +6,7 @@ import { signOut } from "next-auth/react";
 import { cn } from "@/lib/utils";
 import {
   ClipboardList, Layers, User, Zap, Upload,
-  Truck, Warehouse, Users, Package, MapPin, FileText, Palette, BarChart2,
+  Truck, Warehouse, Users, Package, MapPin, FileText, Palette, BarChart2, LayoutDashboard,
 } from "lucide-react";
 import { useRoleSidebar } from "./role-sidebar-provider";
 import type { NavItemConfig } from "@/lib/permissions";
@@ -18,7 +18,9 @@ export type RoleSidebarRole =
   | "tint_manager"
   | "tint_operator"
   | "import"
-  | "support_import";
+  | "support_import"
+  | "planning"
+  | "warehouse";
 
 export interface RoleSidebarProps {
   role:         RoleSidebarRole;
@@ -32,6 +34,7 @@ export interface RoleSidebarProps {
 const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   import_obd:          Upload,
   support_queue:       ClipboardList,
+  planning_board:      LayoutDashboard,
   tint_manager:        Layers,
   tint_operator:       Zap,
   dispatcher:          Truck,
@@ -53,6 +56,8 @@ const ROLE_LABELS: Record<RoleSidebarRole, string> = {
   tint_operator:  "Tint Operator",
   import:         "Import",
   support_import: "Support Team",
+  planning:       "Planning Board",
+  warehouse:      "Warehouse",
 };
 
 // ── Component ─────────────────────────────────────────────────────────────────

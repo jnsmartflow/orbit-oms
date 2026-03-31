@@ -1,0 +1,55 @@
+"use client";
+
+import { RefreshCw, Calendar } from "lucide-react";
+
+interface PlanningHeaderProps {
+  date: string;
+  onDateChange: (date: string) => void;
+  onRefresh: () => void;
+  stats: { customers: number; obds: number; trips: number };
+}
+
+export function PlanningHeader({ date, onDateChange, onRefresh, stats }: PlanningHeaderProps) {
+  const todayIST = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+  const minDate = new Date(Date.now() - 30 * 86400000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+
+  return (
+    <header className="bg-white border-b border-gray-200 px-5 py-2.5 flex items-center gap-4 sticky top-0 z-40">
+      <h1 className="text-[14px] font-semibold text-gray-800">Planning Board</h1>
+
+      <div className="flex items-center gap-1.5 text-[11px] text-gray-500">
+        <Calendar size={14} className="text-gray-400" />
+        <input
+          type="date"
+          value={date}
+          onChange={(e) => onDateChange(e.target.value)}
+          max={todayIST}
+          min={minDate}
+          className="bg-transparent text-[11px] text-gray-500 border-none outline-none cursor-pointer"
+        />
+      </div>
+
+      <button
+        type="button"
+        onClick={onRefresh}
+        className="p-1.5 text-gray-400 hover:text-gray-600 rounded transition-colors"
+      >
+        <RefreshCw size={14} />
+      </button>
+
+      <div className="flex-1" />
+
+      <div className="flex items-center gap-4 text-[11px] text-gray-400">
+        <span>
+          <span className="text-gray-600">{stats.customers}</span> Customers
+        </span>
+        <span>
+          <span className="text-gray-600">{stats.obds}</span> OBDs
+        </span>
+        <span>
+          <span className="text-gray-600">{stats.trips}</span> Trips
+        </span>
+      </div>
+    </header>
+  );
+}

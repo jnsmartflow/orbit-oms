@@ -97,6 +97,20 @@ model users {
   shadeMasters              shade_master[]
   // Phase 3.5 back-relations
   challansPrinted           delivery_challans[] @relation("ChallanPrintedBy")
+  // Phase 4 back-relations
+  plansCreated              dispatch_plans[]         @relation("PlanCreatedBy")
+  plansConfirmed            dispatch_plans[]         @relation("PlanConfirmedBy")
+  plansDispatched           dispatch_plans[]         @relation("PlanDispatchedBy")
+  dispatchPlanOrders        dispatch_plan_orders[]   @relation("DPOrderAddedBy")
+  pickListsAsPicker         pick_lists[]             @relation("PickListPicker")
+  pickListsAssigned         pick_lists[]             @relation("PickListAssignedBy")
+  pickListsVerified         pick_lists[]             @relation("PickListVerifiedBy")
+  changesCreated            dispatch_change_queue[]  @relation("ChangeCreatedBy")
+  changesAcknowledged       dispatch_change_queue[]  @relation("ChangeAcknowledgedBy")
+  splitsPickedBy            order_splits[]           @relation("SplitPickedBy")
+  ordersPickedBy            orders[]                 @relation("OrderPickedBy")
+  pickAssignmentsAsPicker   pick_assignments[]       @relation("PickAssignmentPicker")
+  pickAssignmentsAssigned   pick_assignments[]       @relation("PickAssignmentAssignedBy")
 }
 
 model status_master {
@@ -202,7 +216,10 @@ model slot_master {
   sortOrder   Int
   createdAt   DateTime                    @default(now())
   updatedAt   DateTime                    @updatedAt
-  slotConfigs delivery_type_slot_config[]
+  slotConfigs           delivery_type_slot_config[]
+  orders                orders[]                    @relation("OrderCurrentSlot")
+  ordersOriginalSlot    orders[]                    @relation("OrderOriginalSlot")
+  dispatchPlans         dispatch_plans[]
 }
 
 model delivery_type_slot_config {
@@ -500,11 +517,16 @@ model orders {
   workflowStage       String                    @default("order_created")
   dispatchSlot        String?
   dispatchSlotDeadline DateTime?
+  slotId              Int?
+  slot                slot_master?              @relation("OrderCurrentSlot", fields: [slotId], references: [id])
+  originalSlotId      Int?
+  originalSlot        slot_master?              @relation("OrderOriginalSlot", fields: [originalSlotId], references: [id])
   priorityLevel       Int                       @default(3)
   dispatchStatus      String?
   invoiceNo           String?
   invoiceDate         DateTime?
   obdEmailDate        DateTime?
+  smu                 String?
   sapStatus           String?
   materialType        String?
   natureOfTransaction String?
@@ -525,6 +547,16 @@ model orders {
   tinterIssueEntries  tinter_issue_entries[]
   tinterIssueEntriesB tinter_issue_entries_b[]
   challan             delivery_challans?
+  // Phase 4 pick fields (for non-tinting orders without splits)
+  isPicked            Boolean                   @default(false)
+  pickedAt            DateTime?
+  pickedById          Int?
+  pickedBy            users?                    @relation("OrderPickedBy", fields: [pickedById], references: [id])
+  // Phase 4 back-relations
+  dispatchPlanOrders  dispatch_plan_orders[]
+  pickListItems       pick_list_items[]
+  changeQueue         dispatch_change_queue[]
+  pickAssignment      pick_assignments?
 }
 
 model order_splits {
@@ -557,6 +589,11 @@ model order_splits {
   tintAssignment     tint_assignments?
   tinterIssueEntries  tinter_issue_entries[]
   tinterIssueEntriesB tinter_issue_entries_b[]
+  // Phase 4 pick fields
+  isPicked             Boolean              @default(false)
+  pickedAt             DateTime?
+  pickedById           Int?
+  pickedBy             users?               @relation("SplitPickedBy", fields: [pickedById], references: [id])
 }
 
 model split_line_items {
@@ -567,6 +604,7 @@ model split_line_items {
   rawLineItem   import_raw_line_items @relation(fields: [rawLineItemId], references: [id])
   assignedQty   Int
   createdAt     DateTime              @default(now())
+  pickListItems pick_list_items[]
 }
 
 model split_status_logs {
@@ -628,7 +666,7 @@ model order_status_logs {
 }
 
 // ─────────────────────────────────────────────
-// PHASE 3 STUBS — Dispatch + Warehouse (7)
+// PHASE 4 — Dispatch + Warehouse
 // ─────────────────────────────────────────────
 
 model vehicle_master {
@@ -644,36 +682,128 @@ model vehicle_master {
   driverPhone         String?
   isActive            Boolean            @default(true)
   createdAt           DateTime           @default(now())
+  dispatchPlans       dispatch_plans[]
 }
 
 model dispatch_plans {
-  id        Int      @id @default(autoincrement())
-  createdAt DateTime @default(now())
-}
+  id             Int                    @id @default(autoincrement())
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+  planDate       DateTime               @db.Date
+  slotId         Int
+  slot           slot_master            @relation(fields: [slotId], references: [id])
+  vehicleId      Int?
+  vehicle        vehicle_master?        @relation(fields: [vehicleId], references: [id])
+  tripNumber     Int                    @default(1) @db.SmallInt
+  status         String                 @default("draft")
+  totalOrders    Int                    @default(0)
+  totalWeightKg  Float                  @default(0)
+  totalVolume    Float                  @default(0)
+  createdById    Int
+  createdBy      users                  @relation("PlanCreatedBy", fields: [createdById], references: [id])
+  confirmedAt    DateTime?
+  confirmedById  Int?
+  confirmedBy    users?                 @relation("PlanConfirmedBy", fields: [confirmedById], references: [id])
+  dispatchedAt   DateTime?
+  dispatchedById Int?
+  dispatchedBy   users?                 @relation("PlanDispatchedBy", fields: [dispatchedById], references: [id])
+  notes          String?
+  orders         dispatch_plan_orders[]
+  pickLists      pick_lists[]
+  changeQueue    dispatch_change_queue[]
 
-model dispatch_plan_vehicles {
-  id        Int      @id @default(autoincrement())
-  createdAt DateTime @default(now())
+  @@unique([planDate, slotId, vehicleId, tripNumber])
 }
 
 model dispatch_plan_orders {
-  id        Int      @id @default(autoincrement())
-  createdAt DateTime @default(now())
-}
+  id            Int            @id @default(autoincrement())
+  createdAt     DateTime       @default(now())
+  planId        Int
+  plan          dispatch_plans @relation(fields: [planId], references: [id], onDelete: Cascade)
+  orderId       Int
+  order         orders         @relation(fields: [orderId], references: [id])
+  sequenceOrder Int            @default(0) @db.SmallInt
+  addedById     Int
+  addedBy       users          @relation("DPOrderAddedBy", fields: [addedById], references: [id])
+  clearedAt     DateTime?      @db.Timestamptz
 
-model dispatch_change_queue {
-  id        Int      @id @default(autoincrement())
-  createdAt DateTime @default(now())
+  @@unique([planId, orderId])
 }
 
 model pick_lists {
-  id        Int      @id @default(autoincrement())
-  createdAt DateTime @default(now())
+  id           Int            @id @default(autoincrement())
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  planId       Int
+  plan         dispatch_plans @relation(fields: [planId], references: [id], onDelete: Cascade)
+  pickerId     Int?
+  picker       users?         @relation("PickListPicker", fields: [pickerId], references: [id])
+  status       String         @default("pending_pick")
+  assignedAt   DateTime?
+  assignedById Int?
+  assignedBy   users?         @relation("PickListAssignedBy", fields: [assignedById], references: [id])
+  startedAt    DateTime?
+  completedAt  DateTime?
+  verifiedAt   DateTime?
+  verifiedById Int?
+  verifiedBy   users?         @relation("PickListVerifiedBy", fields: [verifiedById], references: [id])
+  notes        String?
+  items        pick_list_items[]
 }
 
 model pick_list_items {
-  id        Int      @id @default(autoincrement())
-  createdAt DateTime @default(now())
+  id              Int              @id @default(autoincrement())
+  createdAt       DateTime         @default(now())
+  pickListId      Int
+  pickList        pick_lists       @relation(fields: [pickListId], references: [id], onDelete: Cascade)
+  splitLineItemId Int?
+  splitLineItem   split_line_items? @relation(fields: [splitLineItemId], references: [id])
+  orderId         Int
+  order           orders           @relation(fields: [orderId], references: [id])
+  skuCode         String?
+  skuDescription  String?
+  qtyRequired     Int              @default(0)
+  qtyPicked       Int              @default(0)
+  isPicked        Boolean          @default(false)
+  isVerified      Boolean          @default(false)
+  pickedAt        DateTime?
+  verifiedAt      DateTime?
+  notes           String?
+}
+
+model dispatch_change_queue {
+  id               Int             @id @default(autoincrement())
+  createdAt        DateTime        @default(now())
+  orderId          Int
+  order            orders          @relation(fields: [orderId], references: [id])
+  planId           Int?
+  plan             dispatch_plans? @relation(fields: [planId], references: [id], onDelete: SetNull)
+  changeType       String          @default("hold")
+  previousValue    String?
+  newValue         String?
+  changedById      Int
+  changedBy        users           @relation("ChangeCreatedBy", fields: [changedById], references: [id])
+  isAcknowledged   Boolean         @default(false)
+  acknowledgedAt   DateTime?
+  acknowledgedById Int?
+  acknowledgedBy   users?          @relation("ChangeAcknowledgedBy", fields: [acknowledgedById], references: [id])
+  notes            String?
+}
+
+model pick_assignments {
+  id           Int       @id @default(autoincrement())
+  orderId      Int       @unique @map("order_id")
+  order        orders    @relation(fields: [orderId], references: [id])
+  pickerId     Int       @map("picker_id")
+  picker       users     @relation("PickAssignmentPicker", fields: [pickerId], references: [id])
+  sequence     Int
+  assignedAt   DateTime  @default(now()) @map("assigned_at")
+  assignedById Int       @map("assigned_by_id")
+  assignedBy   users     @relation("PickAssignmentAssignedBy", fields: [assignedById], references: [id])
+  status       String    @default("assigned")
+  pickedAt     DateTime? @map("picked_at")
+  notes        String?
+  clearedAt    DateTime? @db.Timestamptz
 }
 
 model tinter_issue_entries {

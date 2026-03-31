@@ -10,11 +10,12 @@ export interface NavItemConfig {
 
 const PAGE_NAV_MAP: NavItemConfig[] = [
   { pageKey: "import_obd",    label: "Import OBDs",   href: "/import" },
-  { pageKey: "support_queue", label: "Support Queue",  href: "/support" },
-  { pageKey: "tint_manager",  label: "Tint Manager",   href: "/tint/manager" },
+  { pageKey: "support_queue",  label: "Support Queue",   href: "/support" },
+  { pageKey: "planning_board", label: "Planning Board",  href: "/planning" },
+  { pageKey: "tint_manager",   label: "Tint Manager",    href: "/tint/manager" },
   { pageKey: "tint_operator", label: "Tint Operator",  href: "/tint/operator" },
   { pageKey: "dispatcher",    label: "Dispatcher",     href: "/dispatcher" },
-  { pageKey: "warehouse",     label: "Warehouse",      href: "/warehouse/supervisor" },
+  { pageKey: "warehouse",     label: "Warehouse",       href: "/warehouse" },
   { pageKey: "customers",     label: "Customers",      href: "/admin/customers" },
   { pageKey: "skus",          label: "SKUs",           href: "/admin/skus" },
   { pageKey: "routes_areas",  label: "Routes",         href: "/admin/routes" },
@@ -72,6 +73,7 @@ export type PageKey =
   | "support_queue"
   | "tint_manager"
   | "tint_operator"
+  | "planning_board"
   | "dispatcher"
   | "warehouse";
 
@@ -109,7 +111,7 @@ const ALL_FALSE: PagePermissions = {
 const ALL_PAGE_KEYS: PageKey[] = [
   "dashboard", "users", "system_config", "permissions",
   "customers", "skus", "routes_areas", "vehicles",
-  "import_obd", "support_queue", "tint_manager", "tint_operator",
+  "import_obd", "support_queue", "planning_board", "tint_manager", "tint_operator",
   "dispatcher", "warehouse",
 ];
 
