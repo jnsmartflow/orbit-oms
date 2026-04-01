@@ -6,11 +6,9 @@ import { authConfig } from "./auth.config";
 const { auth } = NextAuth(authConfig);
 
 const PUBLIC_PATHS = ["/login", "/unauthorized", "/not-ready", "/api/auth", "/api/health"];
-
-// Routes blocked for non-admin users in Phase 1
 const PHASE1_BLOCKED = ["/support", "/planning", "/warehouse", "/operations", "/dispatcher"];
 
-export function middleware(req: NextRequest) {
+export default auth(function middleware(req) {
   const { pathname } = req.nextUrl;
 
   // Always allow public paths
@@ -18,7 +16,7 @@ export function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // Allow HMAC auto-import requests through before session check
+  // Allow HMAC auto-import
   if (
     pathname === "/api/import/obd" &&
     req.headers.get("x-import-key-id") === "auto-import-v1"
@@ -26,17 +24,21 @@ export function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // Phase 1 route guard — block non-admin users from unrolled-out sections
+  // Phase 1 route guard
   if (PHASE1_BLOCKED.some((p) => pathname.startsWith(p))) {
-    const session = (req as any).auth;
-    const role = session?.user?.role;
+    const role = req.auth?.user?.role;
     if (role && role !== "admin") {
       return NextResponse.redirect(new URL("/not-ready", req.url));
     }
   }
 
-  return (auth as any)(req);
-}
+  // No session → redirect to login
+  if (!req.auth) {
+    return NextResponse.redirect(new URL("/login", req.url));
+  }
+
+  return NextResponse.next();
+});
 
 export const config = {
   matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
