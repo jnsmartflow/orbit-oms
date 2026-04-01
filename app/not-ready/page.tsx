@@ -1,6 +1,13 @@
+"use client";
+
 import Link from "next/link";
+import { useEffect } from "react";
+import { signOut } from "next-auth/react";
 
 export default function NotReadyPage() {
+  useEffect(() => {
+    signOut({ callbackUrl: "/login" });
+  }, []);
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
       <div className="w-full max-w-sm text-center">
