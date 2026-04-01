@@ -22,7 +22,7 @@ export async function GET(
   { params }: { params: { orderId: string } },
 ): Promise<NextResponse> {
   const session = await auth();
-  requireRole(session, [ROLES.TINT_MANAGER, ROLES.ADMIN]);
+  requireRole(session, [ROLES.TINT_MANAGER, ROLES.ADMIN, ROLES.OPERATIONS]);
 
   const orderId = parseInt(params.orderId, 10);
   if (isNaN(orderId)) {
@@ -354,7 +354,7 @@ export async function PATCH(
   { params }: { params: { orderId: string } },
 ): Promise<NextResponse> {
   const session = await auth();
-  requireRole(session, [ROLES.TINT_MANAGER, ROLES.ADMIN]);
+  requireRole(session, [ROLES.TINT_MANAGER, ROLES.ADMIN, ROLES.OPERATIONS]);
 
   const orderId = parseInt(params.orderId, 10);
   if (isNaN(orderId)) {

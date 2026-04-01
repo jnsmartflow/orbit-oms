@@ -11,7 +11,7 @@ export async function GET(req: Request): Promise<NextResponse> {
   const todayIST = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
 
   const session = await auth();
-  requireRole(session, [ROLES.DISPATCHER, ROLES.FLOOR_SUPERVISOR, ROLES.ADMIN]);
+  requireRole(session, [ROLES.DISPATCHER, ROLES.FLOOR_SUPERVISOR, ROLES.ADMIN, ROLES.OPERATIONS]);
 
   const { searchParams } = new URL(req.url);
   const date = searchParams.get("date") ?? todayIST;
@@ -69,6 +69,7 @@ export async function GET(req: Request): Promise<NextResponse> {
         },
       },
       slot: { select: { id: true, name: true, sortOrder: true, slotTime: true, isNextDay: true } },
+      originalSlot: { select: { name: true } },
       querySnapshot: {
         select: {
           totalUnitQty: true,

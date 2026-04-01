@@ -21,6 +21,8 @@ interface OrderItem {
   pickAssignment: { id: number; sequence: number; pickerId: number } | null;
   isCarriedOver: boolean;
   daysOverdue: number;
+  originalSlotId: number | null;
+  originalSlotName: string | null;
 }
 
 interface CustomerGroup {
@@ -51,7 +53,7 @@ export async function GET(req: Request): Promise<NextResponse> {
   const todayIST = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
 
   const session = await auth();
-  requireRole(session, [ROLES.FLOOR_SUPERVISOR, ROLES.ADMIN]);
+  requireRole(session, [ROLES.FLOOR_SUPERVISOR, ROLES.ADMIN, ROLES.OPERATIONS]);
 
   const { searchParams } = new URL(req.url);
   const date = searchParams.get("date") ?? todayIST;
@@ -93,6 +95,7 @@ export async function GET(req: Request): Promise<NextResponse> {
         },
       },
       slot: { select: { id: true, name: true, sortOrder: true, slotTime: true, isNextDay: true } },
+      originalSlot: { select: { name: true } },
       querySnapshot: {
         select: {
           totalUnitQty: true,
@@ -246,6 +249,8 @@ export async function GET(req: Request): Promise<NextResponse> {
             : null,
           isCarriedOver,
           daysOverdue,
+          originalSlotId: o.originalSlotId ?? null,
+          originalSlotName: o.originalSlot?.name ?? null,
         };
       }),
     };

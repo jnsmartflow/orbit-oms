@@ -11,7 +11,7 @@ export async function GET(
   { params }: { params: { id: string } },
 ): Promise<NextResponse> {
   const session = await auth();
-  if (!hasRole(session, [ROLES.TINT_OPERATOR, ROLES.ADMIN])) {
+  if (!hasRole(session, [ROLES.TINT_OPERATOR, ROLES.ADMIN, ROLES.OPERATIONS])) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -68,7 +68,7 @@ export async function PATCH(
   { params }: { params: { id: string } },
 ): Promise<NextResponse> {
   const session = await auth();
-  if (!hasRole(session, [ROLES.TINT_OPERATOR, ROLES.ADMIN])) {
+  if (!hasRole(session, [ROLES.TINT_OPERATOR, ROLES.ADMIN, ROLES.OPERATIONS])) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -83,6 +83,7 @@ export async function PATCH(
   }
 
   const userId = parseInt(session!.user.id, 10);
+  const isOpsOrAdmin = ["operations", "admin"].includes(session!.user.role ?? "");
 
   const entry = await prisma.tinter_issue_entries_b.findUnique({ where: { id: entryId } });
   if (!entry) return NextResponse.json({ error: "Entry not found" }, { status: 404 });
@@ -91,14 +92,14 @@ export async function PATCH(
   if (entry.splitId) {
     const split = await prisma.order_splits.findUnique({ where: { id: entry.splitId } });
     if (!split) return NextResponse.json({ error: "Split not found" }, { status: 404 });
-    if (split.assignedToId !== userId && entry.submittedById !== userId) {
+    if (!isOpsOrAdmin && split.assignedToId !== userId && entry.submittedById !== userId) {
       return NextResponse.json({ error: "Not authorized to edit this entry" }, { status: 403 });
     }
     stageOk = ["tint_assigned", "tinting_in_progress"].includes(split.status);
   } else if (entry.tintAssignmentId) {
     const assignment = await prisma.tint_assignments.findUnique({ where: { id: entry.tintAssignmentId } });
     if (!assignment) return NextResponse.json({ error: "Assignment not found" }, { status: 404 });
-    if (assignment.assignedToId !== userId && entry.submittedById !== userId) {
+    if (!isOpsOrAdmin && assignment.assignedToId !== userId && entry.submittedById !== userId) {
       return NextResponse.json({ error: "Not authorized to edit this entry" }, { status: 403 });
     }
     stageOk = ["assigned", "tinting_in_progress"].includes(assignment.status);

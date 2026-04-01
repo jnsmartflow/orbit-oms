@@ -14,8 +14,8 @@ const bodySchema = z.object({
 
 export async function POST(req: Request): Promise<NextResponse> {
   const session = await auth();
-  requireRole(session, [ROLES.TINT_OPERATOR]);
-  if (session!.user.role !== "admin") {
+  requireRole(session, [ROLES.TINT_OPERATOR, ROLES.OPERATIONS]);
+  if (session!.user.role !== "admin" && session!.user.role !== ROLES.OPERATIONS) {
     const allowed = await checkPermission(session!.user.role, "tint_operator", "canEdit");
     if (!allowed) return NextResponse.json({ error: "Permission denied" }, { status: 403 });
   }
@@ -27,6 +27,7 @@ export async function POST(req: Request): Promise<NextResponse> {
 
   const { orderId } = parsed.data;
   const userId = parseInt(session!.user.id, 10);
+  const isOpsOrAdmin = ["operations", "admin"].includes(session!.user.role ?? "");
 
   try {
     // 1. Load order — verify stage
@@ -42,7 +43,7 @@ export async function POST(req: Request): Promise<NextResponse> {
     const activeAssignment = await prisma.tint_assignments.findFirst({
       where: {
         orderId,
-        assignedToId: userId,
+        ...(isOpsOrAdmin ? {} : { assignedToId: userId }),
         status:       "tinting_in_progress",
       },
     })

@@ -1619,9 +1619,9 @@ export function TintManagerContent() {
         completedSplits:      SplitCard[];
         completedAssignments: CompletedAssignment[];
       };
-      setOrders(data.orders);
-      setActiveSplits(data.activeSplits);
-      setCompletedSplits(data.completedSplits);
+      setOrders(data.orders ?? []);
+      setActiveSplits(data.activeSplits ?? []);
+      setCompletedSplits(data.completedSplits ?? []);
       setCompletedAssignments(data.completedAssignments ?? []);
     } catch {
       // leave stale
@@ -1643,11 +1643,11 @@ export function TintManagerContent() {
           completedAssignments: CompletedAssignment[];
         };
         const opsData    = (await opsRes.json())    as { operators: Operator[] };
-        setOrders(ordersData.orders);
-        setActiveSplits(ordersData.activeSplits);
-        setCompletedSplits(ordersData.completedSplits);
+        setOrders(ordersData.orders ?? []);
+        setActiveSplits(ordersData.activeSplits ?? []);
+        setCompletedSplits(ordersData.completedSplits ?? []);
         setCompletedAssignments(ordersData.completedAssignments ?? []);
-        setOperators(opsData.operators);
+        setOperators(opsData.operators ?? []);
       } finally {
         setIsLoading(false);
       }
@@ -2038,7 +2038,7 @@ export function TintManagerContent() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-[#f0f2f8]">
+      <div className="min-h-screen bg-[#f8f9fa]">
         <div className="h-[52px] bg-white border-b border-[#e2e5f1]" />
         <div className="px-6 pb-6 mt-4">
           <div className="grid grid-cols-4 gap-4">
@@ -2075,7 +2075,7 @@ export function TintManagerContent() {
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-[#f0f2f8]">
+    <div className="min-h-screen bg-[#f8f9fa]">
 
       {/* ── Topbar ───────────────────────────────────────────────────────── */}
       <div className="h-[52px] bg-white border-b border-[#e2e5f1] px-6 flex items-center sticky top-0 z-40">
@@ -2387,8 +2387,7 @@ export function TintManagerContent() {
         ] as const).map((card) => (
           <div
             key={card.label}
-            className="bg-white border border-[#e2e5f1] rounded-xl flex items-center gap-[10px]"
-            style={{ padding: "10px 14px" }}
+            className="bg-white border border-[#e2e5f1] rounded-xl flex items-center gap-[10px] px-[14px] py-[10px]"
           >
             <div
               className={cn(
@@ -2426,7 +2425,7 @@ export function TintManagerContent() {
             : "opacity-0 pointer-events-none h-0 overflow-hidden",
         )}
       >
-        <div className="grid grid-cols-4 px-3" style={{ gap: "8px" }}>
+        <div className="grid grid-cols-4 px-3 gap-2">
           {COLUMNS.map((col) => {
             const count =
               col.stage === "pending_tint_assignment"

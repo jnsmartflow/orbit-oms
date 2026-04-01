@@ -24,6 +24,8 @@ export interface OrderItem {
   pickAssignment: { id: number; sequence: number; pickerId: number } | null;
   isCarriedOver: boolean;
   daysOverdue: number;
+  originalSlotId: number | null;
+  originalSlotName: string | null;
 }
 
 export interface CustomerGroup {

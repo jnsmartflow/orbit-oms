@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 export async function POST(req: Request): Promise<NextResponse> {
   const session = await auth();
-  if (!hasRole(session, [ROLES.TINT_OPERATOR, ROLES.ADMIN])) {
+  if (!hasRole(session, [ROLES.TINT_OPERATOR, ROLES.ADMIN, ROLES.OPERATIONS])) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -68,6 +68,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   }
 
   const userId = parseInt(session!.user.id, 10);
+  const isOpsOrAdmin = ["operations", "admin"].includes(session!.user.role ?? "");
 
   try {
     // Step 1 — Validate the target row exists and belongs to this operator; derive orderId
@@ -75,7 +76,7 @@ export async function POST(req: Request): Promise<NextResponse> {
 
     if (hasSplit) {
       const split = await prisma.order_splits.findFirst({
-        where: { id: Number(splitId), assignedToId: userId },
+        where: { id: Number(splitId), ...(isOpsOrAdmin ? {} : { assignedToId: userId }) },
       });
       if (!split) {
         return NextResponse.json(
@@ -86,7 +87,7 @@ export async function POST(req: Request): Promise<NextResponse> {
       orderId = split.orderId;
     } else {
       const assignment = await prisma.tint_assignments.findFirst({
-        where: { id: Number(tintAssignmentId), assignedToId: userId },
+        where: { id: Number(tintAssignmentId), ...(isOpsOrAdmin ? {} : { assignedToId: userId }) },
       });
       if (!assignment) {
         return NextResponse.json(

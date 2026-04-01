@@ -15,8 +15,8 @@ export async function GET(
   { params }: { params: { id: string } },
 ): Promise<NextResponse> {
   const session = await auth();
-  requireRole(session, [ROLES.SUPPORT, ROLES.ADMIN]);
-  if (session!.user.role !== "admin") {
+  requireRole(session, [ROLES.SUPPORT, ROLES.ADMIN, ROLES.OPERATIONS]);
+  if (session!.user.role !== "admin" && session!.user.role !== ROLES.OPERATIONS) {
     const allowed = await checkPermission(session!.user.role, "support_queue", "canView");
     if (!allowed) return NextResponse.json({ error: "Permission denied" }, { status: 403 });
   }
@@ -89,8 +89,8 @@ export async function PATCH(
   { params }: { params: { id: string } },
 ): Promise<NextResponse> {
   const session = await auth();
-  requireRole(session, [ROLES.SUPPORT, ROLES.ADMIN]);
-  if (session!.user.role !== "admin") {
+  requireRole(session, [ROLES.SUPPORT, ROLES.ADMIN, ROLES.OPERATIONS]);
+  if (session!.user.role !== "admin" && session!.user.role !== ROLES.OPERATIONS) {
     const allowed = await checkPermission(session!.user.role, "support_queue", "canEdit");
     if (!allowed) return NextResponse.json({ error: "Permission denied" }, { status: 403 });
   }

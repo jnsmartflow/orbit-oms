@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Support Page — Mockup v9 (Locked)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+
+    .top-tab { position: relative; padding-bottom: 8px; }
+    .top-tab.active::after {
+      content: ''; position: absolute; bottom: 0; left: 0; right: 0;
+      height: 2px; background: #111827; border-radius: 1px;
+    }
+
+    .order-row:hover { background-color: #fafafa; }
+    .tabular-nums { font-variant-numeric: tabular-nums; }
+    input[type="checkbox"] {
+      width: 14px; height: 14px; border-radius: 3px;
+      border: 1.5px solid #d1d5db; cursor: pointer; accent-color: #4f46e5;
+    }
+    .smu-header { cursor: pointer; user-select: none; }
+    .smu-header:hover { background-color: #f9fafb; }
+
+    .slot-pill {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 3px 10px; border: 1px solid #e5e7eb; border-radius: 6px;
+      font-size: 12px; background: white; color: #6b7280;
+      white-space: nowrap; cursor: pointer; height: 28px;
+    }
+    .slot-pill.active { border-color: #111827; color: #111827; font-weight: 500; }
+    .slot-pill.done { background: #f9fafb; color: #9ca3af; border-color: #f3f4f6; }
+
+    .sticky-bar {
+      position: fixed; bottom: 0; left: 56px; right: 0;
+      transform: translateY(100%); transition: transform 0.2s ease; z-index: 50;
+    }
+    .sticky-bar.visible { transform: translateY(0); }
+
+    /* Badge */
+    .badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      font-size: 11px; font-weight: 500; padding: 2px 10px;
+      border-radius: 12px; cursor: pointer; position: relative;
+      transition: all 0.1s; border: 1px solid transparent;
+    }
+    .badge:hover { filter: brightness(0.95); }
+    .badge-unset { background: #f3f4f6; color: #9ca3af; border-color: #e5e7eb; }
+    .badge-unset::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: #d1d5db; }
+    .badge-dispatch { background: #f0fdf4; color: #16a34a; border-color: #bbf7d0; }
+    .badge-dispatch::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: #16a34a; }
+    .badge-hold { background: #fffbeb; color: #d97706; border-color: #fde68a; }
+    .badge-hold::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: #d97706; }
+    .badge-dispatched { background: #ecfdf5; color: #059669; border-color: #a7f3d0; }
+    .badge-dispatched::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: #059669; }
+    .badge-fifo { background: #f9fafb; color: #6b7280; border-color: #e5e7eb; }
+    .badge-p1 { background: #fef2f2; color: #dc2626; border-color: #fecaca; }
+    .badge-p2 { background: #fffbeb; color: #d97706; border-color: #fde68a; }
+    .badge-p3 { background: #f9fafb; color: #6b7280; border-color: #e5e7eb; }
+
+    .badge-pop {
+      position: absolute; top: calc(100% + 4px); left: 0;
+      background: white; border: 1px solid #e5e7eb; border-radius: 8px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.1); padding: 4px;
+      z-index: 30; display: none; min-width: 100px;
+    }
+    .badge-pop.show { display: block; }
+    .badge-pop-item {
+      display: flex; align-items: center; gap: 6px;
+      padding: 6px 10px; font-size: 12px; color: #374151;
+      border-radius: 4px; cursor: pointer; white-space: nowrap;
+    }
+    .badge-pop-item:hover { background: #f3f4f6; }
+    .badge-pop-item .dot { width: 6px; height: 6px; border-radius: 50%; }
+
+    .pill-slot {
+      font-size: 11px; padding: 2px 20px 2px 8px;
+      border: 1px solid #e5e7eb; border-radius: 12px;
+      background: white; color: #6b7280; cursor: pointer;
+      appearance: none; font-weight: 500; height: 24px; line-height: 1;
+      background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%239ca3af' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+      background-position: right 4px center; background-repeat: no-repeat; background-size: 12px;
+    }
+    .pill-slot:focus { outline: none; border-color: #a5b4fc; box-shadow: 0 0 0 2px rgba(165,180,252,0.15); }
+
+    /* Group by dropdown */
+    .dd {
+      font-size: 12px; padding: 2px 18px 2px 6px;
+      border: 1px solid #e5e7eb; border-radius: 4px;
+      background: white; color: #374151; cursor: pointer; appearance: none;
+      background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%239ca3af' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+      background-position: right 2px center; background-repeat: no-repeat; background-size: 14px;
+      height: 26px; line-height: 1;
+    }
+    .dd:focus { outline: none; border-color: #9ca3af; }
+
+    /* ══ TABLE GRID — balanced spacing ══ */
+    .table-grid {
+      display: grid;
+      grid-template-columns: 32px 120px minmax(140px, 1fr) minmax(80px, 0.6fr) 44px 36px 96px 68px minmax(100px, 0.7fr);
+      align-items: center;
+      gap: 0 10px;
+    }
+
+    .filter-pill {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 4px 12px; border: 1px solid #e5e7eb; border-radius: 20px;
+      font-size: 12px; color: #6b7280; background: white;
+      cursor: pointer; white-space: nowrap; font-weight: 500;
+      transition: all 0.15s;
+    }
+    .filter-pill:hover { border-color: #d1d5db; background: #f9fafb; }
+    .filter-pill.active { border-color: #111827; color: #111827; background: white; }
+    .filter-pill .count {
+      font-size: 10px; font-weight: 600; background: #f3f4f6;
+      color: #6b7280; padding: 1px 6px; border-radius: 10px;
+    }
+    .filter-pill.active .count { background: #111827; color: white; }
+  </style>
+</head>
+<body class="bg-white text-gray-900 pb-16">
+
+<div class="flex">
+  <!-- Sidebar -->
+  <div class="w-14 min-h-screen bg-white border-r border-gray-100 flex-shrink-0 fixed top-0 left-0 z-40">
+    <div class="flex flex-col items-center pt-4 gap-5">
+      <div class="w-7 h-7 rounded-full bg-indigo-500 flex items-center justify-center">
+        <span class="text-white text-[10px] font-bold">O</span>
+      </div>
+      <div class="w-4 h-4 rounded bg-gray-200"></div>
+      <div class="w-4 h-4 rounded bg-gray-200"></div>
+      <div class="w-4 h-4 rounded bg-indigo-100 border border-indigo-200"></div>
+      <div class="w-4 h-4 rounded bg-gray-200"></div>
+      <div class="w-4 h-4 rounded bg-gray-200"></div>
+    </div>
+  </div>
+
+  <!-- Main -->
+  <div class="flex-1 ml-14 min-h-screen">
+
+    <!-- ══════ HEADER ══════ -->
+    <div class="flex items-center justify-between px-5 py-3 border-b border-gray-100">
+      <div class="flex items-center gap-3">
+        <h1 class="text-base font-semibold text-gray-900">Support Queue</h1>
+        <div class="flex items-center gap-1.5 text-xs text-gray-400">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+          <span>31-03-2026</span>
+          <button class="p-0.5 hover:bg-gray-100 rounded ml-0.5">
+            <svg class="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="flex items-center gap-3 text-xs text-gray-400">
+        <span><span class="text-gray-600 font-medium">61</span> Pending</span>
+        <span><span class="text-gray-600 font-medium">5</span> Dispatched</span>
+        <span><span class="text-gray-600 font-medium">0</span> Tinting</span>
+        <span class="text-gray-200">|</span>
+        <span><span class="text-gray-600 font-medium">66</span> OBDs</span>
+      </div>
+    </div>
+
+    <!-- ══════ TOP TABS: All | Hold ══════ -->
+    <div class="flex items-center gap-5 px-5 border-b border-gray-100">
+      <button class="top-tab active py-2.5 text-xs font-medium text-gray-900" onclick="showMainTab('all')">
+        All <span class="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full ml-0.5">66</span>
+      </button>
+      <button class="top-tab py-2.5 text-xs text-gray-400 hover:text-gray-600" onclick="showMainTab('hold')">
+        Hold <span class="text-[10px] bg-amber-50 text-amber-500 px-1.5 py-0.5 rounded-full ml-0.5">3</span>
+      </button>
+    </div>
+
+    <!-- ══════════════════════════════════════════ -->
+    <!--  ALL TAB                                    -->
+    <!-- ══════════════════════════════════════════ -->
+    <div id="all-content">
+
+      <!-- Status filter pills -->
+      <div class="px-5 py-2 border-b border-gray-50 flex items-center gap-2">
+        <div class="filter-pill active" onclick="filterTab(this)">All <span class="count">66</span></div>
+        <div class="filter-pill" onclick="filterTab(this)">
+          <span class="w-1.5 h-1.5 rounded-full bg-gray-300 inline-block"></span> Pending <span class="count">18</span>
+        </div>
+        <div class="filter-pill" onclick="filterTab(this)">
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block"></span> Dispatch <span class="count">43</span>
+        </div>
+        <div class="filter-pill" onclick="filterTab(this)">
+          <svg class="w-3 h-3 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>
+          Dispatched <span class="count">5</span>
+        </div>
+      </div>
+
+      <!-- Slot bar -->
+      <div class="px-5 py-1.5 border-b border-gray-50 flex items-center gap-2">
+        <div class="slot-pill done">
+          <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>
+          Morning
+        </div>
+        <div class="slot-pill done">
+          <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>
+          Afternoon
+        </div>
+        <div class="slot-pill done">
+          <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>
+          Evening
+        </div>
+        <div class="slot-pill active">
+          Night <span class="text-[10px] text-gray-400 ml-0.5">61 pending</span>
+          <span class="text-[10px] text-gray-300">·</span>
+          <span class="text-[10px] text-gray-400">5 done</span>
+        </div>
+        <div class="slot-pill">
+          Next Day Morning <span class="text-[10px] text-gray-400 ml-0.5">0</span>
+        </div>
+      </div>
+
+      <!-- Toolbar -->
+      <div class="flex items-center justify-between px-5 py-1.5 border-b border-gray-50">
+        <span class="text-xs text-gray-400 cursor-pointer hover:text-gray-600">Select All</span>
+        <div class="flex items-center gap-2.5">
+          <div class="flex items-center gap-1.5 text-xs text-gray-400">
+            Group by
+            <select class="dd"><option>None</option><option>SMU</option><option>Route</option></select>
+          </div>
+          <button class="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 px-2 py-1 border border-gray-200 rounded bg-white">
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+            Export
+          </button>
+          <div class="relative">
+            <svg class="w-3.5 h-3.5 absolute left-2 top-1/2 -translate-y-1/2 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+            <input type="text" placeholder="Search..." class="pl-7 pr-2 py-1 text-xs border border-gray-200 rounded bg-white focus:outline-none focus:border-gray-300 w-40">
+          </div>
+        </div>
+      </div>
+
+      <!-- Table -->
+      <div class="px-5">
+
+        <!-- SMU Group (shown when Group by = SMU) -->
+        <div class="smu-header flex items-center gap-2 py-2 px-1 rounded" onclick="this.nextElementSibling.classList.toggle('hidden')">
+          <svg class="w-3.5 h-3.5 text-gray-400 rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+          <span class="text-xs font-medium text-gray-700">Deco Retail</span>
+          <span class="text-[11px] text-gray-400">53 pending · 5 dispatched</span>
+        </div>
+
+        <div>
+          <!-- Column headers -->
+          <div class="table-grid py-1.5 px-1 text-[10px] font-medium text-gray-400 uppercase tracking-wider border-b border-gray-100">
+            <div></div>
+            <div>OBD / Date</div>
+            <div>Customer</div>
+            <div>Route / Type</div>
+            <div class="text-right">Vol</div>
+            <div>Age</div>
+            <div>Dispatch</div>
+            <div>Priority</div>
+            <div>Slot</div>
+          </div>
+
+          <!-- PENDING ROW 1 -->
+          <div class="order-row table-grid py-2 px-1 border-b border-gray-50/80">
+            <div><input type="checkbox"></div>
+            <div>
+              <div class="text-xs font-medium text-gray-800 tabular-nums">9106037254</div>
+              <div class="text-[10px] text-gray-400">31 Mar · 11:18</div>
+            </div>
+            <div>
+              <div class="text-xs font-medium text-gray-700 truncate">Shree Khodiyar Paint And …</div>
+              <div class="text-[10px] text-gray-400">SH-762284</div>
+            </div>
+            <div>
+              <div class="text-xs text-gray-600">Varachha</div>
+              <span class="text-[10px] text-gray-400">Local</span>
+            </div>
+            <div class="text-xs text-gray-700 text-right tabular-nums">3.2</div>
+            <div><span class="text-[10px] text-amber-600 bg-amber-50 px-1 py-px rounded">6h</span></div>
+            <div class="relative">
+              <span class="badge badge-unset" onclick="togglePop(this)">—</span>
+              <div class="badge-pop">
+                <div class="badge-pop-item"><span class="dot bg-emerald-500"></span> Dispatch</div>
+                <div class="badge-pop-item"><span class="dot bg-amber-500"></span> Hold</div>
+              </div>
+            </div>
+            <div class="relative">
+              <span class="badge badge-fifo" onclick="togglePop(this)">FIFO</span>
+              <div class="badge-pop">
+                <div class="badge-pop-item"><span class="dot bg-gray-400"></span> FIFO</div>
+                <div class="badge-pop-item"><span class="dot bg-red-500"></span> P1</div>
+                <div class="badge-pop-item"><span class="dot bg-amber-500"></span> P2</div>
+                <div class="badge-pop-item"><span class="dot bg-gray-400"></span> P3</div>
+              </div>
+            </div>
+            <div>
+              <select class="pill-slot"><option>Night</option><option>Morning</option><option>Afternoon</option><option>Evening</option><option>Next Day</option></select>
+              <div class="text-[10px] text-gray-400 mt-px leading-none">↻ Afternoon</div>
+            </div>
+          </div>
+
+          <!-- PENDING ROW 2: Missing -->
+          <div class="order-row table-grid py-2 px-1 border-b border-gray-50/80">
+            <div><input type="checkbox"></div>
+            <div>
+              <div class="text-xs font-medium text-gray-800 tabular-nums">9106044939</div>
+              <div class="text-[10px] text-gray-400">31 Mar · 11:38</div>
+            </div>
+            <div>
+              <div class="flex items-center gap-1">
+                <span class="text-xs font-medium text-gray-700 truncate">AMBIKA COLOUR WORLD</span>
+                <span class="text-[10px] text-amber-600 bg-amber-50 px-1 py-px rounded flex-shrink-0">⚠ Missing</span>
+              </div>
+              <div class="text-[10px] text-gray-400">SH-118387</div>
+            </div>
+            <div><span class="text-xs text-gray-300">—</span></div>
+            <div class="text-xs text-gray-700 text-right tabular-nums">18.5</div>
+            <div><span class="text-[10px] text-amber-600 bg-amber-50 px-1 py-px rounded">6h</span></div>
+            <div class="relative">
+              <span class="badge badge-unset" onclick="togglePop(this)">—</span>
+              <div class="badge-pop">
+                <div class="badge-pop-item"><span class="dot bg-emerald-500"></span> Dispatch</div>
+                <div class="badge-pop-item"><span class="dot bg-amber-500"></span> Hold</div>
+              </div>
+            </div>
+            <div class="relative">
+              <span class="badge badge-fifo" onclick="togglePop(this)">FIFO</span>
+              <div class="badge-pop">
+                <div class="badge-pop-item"><span class="dot bg-gray-400"></span> FIFO</div>
+                <div class="badge-pop-item"><span class="dot bg-red-500"></span> P1</div>
+                <div class="badge-pop-item"><span class="dot bg-amber-500"></span> P2</div>
+                <div class="badge-pop-item"><span class="dot bg-gray-400"></span> P3</div>
+              </div>
+            </div>
+            <div>
+              <select class="pill-slot"><option>Night</option></select>
+              <div class="text-[10px] text-gray-400 mt-px leading-none">↻ Afternoon</div>
+            </div>
+          </div>
+
+          <!-- PENDING ROW 3: Overdue -->
+          <div class="order-row table-grid py-2 px-1 border-b border-gray-50/80">
+            <div><input type="checkbox"></div>
+            <div>
+              <div class="flex items-center gap-1">
+                <span class="text-xs font-medium text-gray-800 tabular-nums">9106037877</span>
+                <span class="text-[10px] text-red-600 bg-red-50 px-1 py-px rounded font-medium">2d</span>
+              </div>
+              <div class="text-[10px] text-gray-400">29 Mar · 12:30</div>
+            </div>
+            <div>
+              <div class="text-xs font-medium text-gray-700 truncate">Shreenathji Colour & Hard…</div>
+              <div class="text-[10px] text-gray-400">SH-3252244</div>
+            </div>
+            <div>
+              <div class="text-xs text-gray-600">Adajan</div>
+              <span class="text-[10px] text-gray-400">Local</span>
+            </div>
+            <div class="text-xs text-gray-700 text-right tabular-nums">8.0</div>
+            <div><span class="text-[10px] text-red-600 bg-red-50 px-1 py-px rounded">2d</span></div>
+            <div class="relative">
+              <span class="badge badge-unset" onclick="togglePop(this)">—</span>
+              <div class="badge-pop">
+                <div class="badge-pop-item"><span class="dot bg-emerald-500"></span> Dispatch</div>
+                <div class="badge-pop-item"><span class="dot bg-amber-500"></span> Hold</div>
+              </div>
+            </div>
+            <div class="relative">
+              <span class="badge badge-fifo" onclick="togglePop(this)">FIFO</span>
+              <div class="badge-pop">
+                <div class="badge-pop-item"><span class="dot bg-gray-400"></span> FIFO</div>
+                <div class="badge-pop-item"><span class="dot bg-red-500"></span> P1</div>
+                <div class="badge-pop-item"><span class="dot bg-amber-500"></span> P2</div>
+                <div class="badge-pop-item"><span class="dot bg-gray-400"></span> P3</div>
+              </div>
+            </div>
+            <div>
+              <select class="pill-slot"><option>Night</option></select>
+              <div class="text-[10px] text-gray-400 mt-px leading-none">↻ Evening</div>
+            </div>
+          </div>
+
+          <!-- PENDING ROW 4: Set to Dispatch + P1 -->
+          <div class="order-row table-grid py-2 px-1 border-b border-gray-50/80 bg-indigo-50/20">
+            <div><input type="checkbox" checked></div>
+            <div>
+              <div class="text-xs font-medium text-gray-800 tabular-nums">9106044938</div>
+              <div class="text-[10px] text-gray-400">31 Mar · 11:38</div>
+            </div>
+            <div>
+              <div class="flex items-center gap-1">
+                <span class="text-xs font-medium text-gray-700 truncate">EKLAVYA COLOR WORLD</span>
+                <span class="text-[10px] text-purple-500 flex-shrink-0">🎨</span>
+              </div>
+              <div class="text-[10px] text-gray-400">SH-3493291</div>
+            </div>
+            <div>
+              <div class="text-xs text-gray-600">Adajan</div>
+              <span class="text-[10px] text-gray-400">Local</span>
+            </div>
+            <div class="text-xs text-gray-700 text-right tabular-nums">1.4</div>
+            <div><span class="text-[10px] text-amber-600 bg-amber-50 px-1 py-px rounded">6h</span></div>
+            <div class="relative">
+              <span class="badge badge-dispatch" onclick="togglePop(this)">Dispatch</span>
+              <div class="badge-pop">
+                <div class="badge-pop-item"><span class="dot bg-gray-300"></span> Unset</div>
+                <div class="badge-pop-item"><span class="dot bg-emerald-500"></span> Dispatch</div>
+                <div class="badge-pop-item"><span class="dot bg-amber-500"></span> Hold</div>
+              </div>
+            </div>
+            <div class="relative">
+              <span class="badge badge-p1" onclick="togglePop(this)">P1</span>
+              <div class="badge-pop">
+                <div class="badge-pop-item"><span class="dot bg-gray-400"></span> FIFO</div>
+                <div class="badge-pop-item"><span class="dot bg-red-500"></span> P1</div>
+                <div class="badge-pop-item"><span class="dot bg-amber-500"></span> P2</div>
+                <div class="badge-pop-item"><span class="dot bg-gray-400"></span> P3</div>
+              </div>
+            </div>
+            <div>
+              <select class="pill-slot"><option>Night</option></select>
+              <div class="text-[10px] text-gray-400 mt-px leading-none">↻ Afternoon</div>
+            </div>
+          </div>
+
+          <!-- PENDING ROW 5: Set to Hold -->
+          <div class="order-row table-grid py-2 px-1 border-b border-gray-50/80 bg-indigo-50/20">
+            <div><input type="checkbox" checked></div>
+            <div>
+              <div class="text-xs font-medium text-gray-800 tabular-nums">9106044942</div>
+              <div class="text-[10px] text-gray-400">31 Mar · 11:50</div>
+            </div>
+            <div>
+              <div class="text-xs font-medium text-gray-700 truncate">National Paint Traders</div>
+              <div class="text-[10px] text-gray-400">SH-667432</div>
+            </div>
+            <div>
+              <div class="text-xs text-gray-600">Surat City</div>
+              <span class="text-[10px] text-gray-400">Local</span>
+            </div>
+            <div class="text-xs text-gray-700 text-right tabular-nums">4.2</div>
+            <div><span class="text-[10px] text-amber-600 bg-amber-50 px-1 py-px rounded">5h</span></div>
+            <div class="relative">
+              <span class="badge badge-hold" onclick="togglePop(this)">Hold</span>
+              <div class="badge-pop">
+                <div class="badge-pop-item"><span class="dot bg-gray-300"></span> Unset</div>
+                <div class="badge-pop-item"><span class="dot bg-emerald-500"></span> Dispatch</div>
+                <div class="badge-pop-item"><span class="dot bg-amber-500"></span> Hold</div>
+              </div>
+            </div>
+            <div class="relative">
+              <span class="badge badge-fifo" onclick="togglePop(this)">FIFO</span>
+              <div class="badge-pop">
+                <div class="badge-pop-item"><span class="dot bg-gray-400"></span> FIFO</div>
+                <div class="badge-pop-item"><span class="dot bg-red-500"></span> P1</div>
+                <div class="badge-pop-item"><span class="dot bg-amber-500"></span> P2</div>
+                <div class="badge-pop-item"><span class="dot bg-gray-400"></span> P3</div>
+              </div>
+            </div>
+            <div><select class="pill-slot"><option>Night</option></select></div>
+          </div>
+
+          <div class="text-[10px] text-gray-400 px-4 py-1.5">+ 13 more pending…</div>
+
+          <!-- DISPATCH ROWS (pre-filled, muted) -->
+          <div class="order-row table-grid py-1.5 px-1 border-b border-gray-50/50">
+            <div><input type="checkbox"></div>
+            <div>
+              <div class="text-xs text-gray-500 tabular-nums">9106037255</div>
+              <div class="text-[10px] text-gray-300">31 Mar · 11:18</div>
+            </div>
+            <div>
+              <div class="text-xs text-gray-500">Mistry Brothers</div>
+              <div class="text-[10px] text-gray-300">SH-878709</div>
+            </div>
+            <div>
+              <div class="text-xs text-gray-400">Olpad</div>
+              <span class="text-[10px] text-gray-300">Upcountry</span>
+            </div>
+            <div class="text-xs text-gray-400 text-right tabular-nums">0.5</div>
+            <div><span class="text-[10px] text-gray-400">6h</span></div>
+            <div class="relative">
+              <span class="badge badge-dispatch" onclick="togglePop(this)">Dispatch</span>
+              <div class="badge-pop">
+                <div class="badge-pop-item"><span class="dot bg-gray-300"></span> Unset</div>
+                <div class="badge-pop-item"><span class="dot bg-emerald-500"></span> Dispatch</div>
+                <div class="badge-pop-item"><span class="dot bg-amber-500"></span> Hold</div>
+              </div>
+            </div>
+            <div><span class="text-[10px] text-gray-400">FIFO</span></div>
+            <div><span class="text-[10px] text-gray-400">Night</span></div>
+          </div>
+
+          <div class="order-row table-grid py-1.5 px-1 border-b border-gray-50/50">
+            <div><input type="checkbox"></div>
+            <div>
+              <div class="text-xs text-gray-500 tabular-nums">9106044934</div>
+              <div class="text-[10px] text-gray-300">31 Mar · 11:38</div>
+            </div>
+            <div>
+              <div class="text-xs text-gray-500">S. Mohanlal & Sons</div>
+              <div class="text-[10px] text-gray-300">SH-3147852</div>
+            </div>
+            <div>
+              <div class="text-xs text-gray-400">Adajan</div>
+              <span class="text-[10px] text-gray-300">Local</span>
+            </div>
+            <div class="text-xs text-gray-400 text-right tabular-nums">12.0</div>
+            <div><span class="text-[10px] text-gray-400">6h</span></div>
+            <div class="relative">
+              <span class="badge badge-dispatch" onclick="togglePop(this)">Dispatch</span>
+              <div class="badge-pop">
+                <div class="badge-pop-item"><span class="dot bg-gray-300"></span> Unset</div>
+                <div class="badge-pop-item"><span class="dot bg-emerald-500"></span> Dispatch</div>
+                <div class="badge-pop-item"><span class="dot bg-amber-500"></span> Hold</div>
+              </div>
+            </div>
+            <div><span class="badge badge-p1" onclick="togglePop(this)">P1</span></div>
+            <div>
+              <span class="text-[10px] text-gray-400">Night</span>
+              <span class="text-[10px] text-gray-300 ml-0.5">↻ Aftn</span>
+            </div>
+          </div>
+
+          <div class="order-row table-grid py-1.5 px-1 border-b border-gray-50/50">
+            <div><input type="checkbox"></div>
+            <div>
+              <div class="text-xs text-gray-500 tabular-nums">9106044943</div>
+              <div class="text-[10px] text-gray-300">31 Mar · 12:05</div>
+            </div>
+            <div>
+              <div class="text-xs text-gray-500">Krishna Paint House</div>
+              <div class="text-[10px] text-gray-300">SH-554231</div>
+            </div>
+            <div>
+              <div class="text-xs text-gray-400">Varachha</div>
+              <span class="text-[10px] text-gray-300">Local</span>
+            </div>
+            <div class="text-xs text-gray-400 text-right tabular-nums">2.8</div>
+            <div><span class="text-[10px] text-gray-400">4h</span></div>
+            <div class="relative">
+              <span class="badge badge-dispatch" onclick="togglePop(this)">Dispatch</span>
+              <div class="badge-pop">
+                <div class="badge-pop-item"><span class="dot bg-gray-300"></span> Unset</div>
+                <div class="badge-pop-item"><span class="dot bg-emerald-500"></span> Dispatch</div>
+                <div class="badge-pop-item"><span class="dot bg-amber-500"></span> Hold</div>
+              </div>
+            </div>
+            <div><span class="text-[10px] text-gray-400">FIFO</span></div>
+            <div><span class="text-[10px] text-gray-400">Night</span></div>
+          </div>
+
+          <div class="text-[10px] text-gray-300 px-4 py-1.5">+ 40 more…</div>
+
+          <!-- DISPATCHED (faded) -->
+          <div class="order-row table-grid py-1.5 px-1 border-b border-gray-50/50 opacity-35">
+            <div></div>
+            <div>
+              <div class="text-xs text-gray-400 tabular-nums">9106044935</div>
+              <div class="text-[10px] text-gray-300">31 Mar · 11:38</div>
+            </div>
+            <div>
+              <div class="text-xs text-gray-400">Mohan Colour Co</div>
+              <div class="text-[10px] text-gray-300">SH-182425</div>
+            </div>
+            <div><div class="text-xs text-gray-400">Adajan · Local</div></div>
+            <div class="text-xs text-gray-400 text-right tabular-nums">0.4</div>
+            <div><span class="text-[10px] text-gray-300">6h</span></div>
+            <div><span class="badge badge-dispatched" style="cursor:default;">Dispatched</span></div>
+            <div></div>
+            <div></div>
+          </div>
+
+          <div class="text-[10px] text-gray-300 px-4 py-1.5">+ 4 more dispatched…</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════ HOLD TAB ══════ -->
+    <div id="hold-content" class="hidden">
+      <div class="px-5 py-4">
+        <div class="text-xs text-gray-500 mb-3">3 orders on hold — follow up to release</div>
+        <div class="grid items-center py-1.5 px-1 text-[10px] font-medium text-gray-400 uppercase tracking-wider border-b border-gray-100"
+             style="grid-template-columns: 1fr 1.4fr 0.8fr 50px 70px 1.5fr 120px;">
+          <div>OBD / Date</div>
+          <div>Customer</div>
+          <div>Route / Type</div>
+          <div class="text-right">Vol</div>
+          <div>Hold Since</div>
+          <div>Hold Reason</div>
+          <div></div>
+        </div>
+        <div class="order-row grid items-center py-2.5 px-1 border-b border-gray-50/80"
+             style="grid-template-columns: 1fr 1.4fr 0.8fr 50px 70px 1.5fr 120px;">
+          <div>
+            <div class="text-xs font-medium text-gray-800 tabular-nums">9106034112</div>
+            <div class="text-[10px] text-gray-400">28 Mar · 09:45</div>
+          </div>
+          <div>
+            <div class="text-xs font-medium text-gray-700">Gupta Paints & Hardware</div>
+            <div class="text-[10px] text-gray-400">SH-221455</div>
+          </div>
+          <div>
+            <div class="text-xs text-gray-600">Bharuch</div>
+            <span class="text-[10px] text-gray-400">Upcountry</span>
+          </div>
+          <div class="text-xs text-gray-700 text-right tabular-nums">3.0</div>
+          <div><span class="text-[10px] text-red-600 bg-red-50 px-1.5 py-0.5 rounded font-medium">3d</span></div>
+          <div class="text-xs text-gray-500">Credit limit exceeded — pending approval</div>
+          <div class="flex items-center justify-end gap-2">
+            <button class="text-[11px] text-indigo-600 hover:text-indigo-700 font-medium">Release</button>
+            <button class="text-[11px] text-gray-400 hover:text-gray-600">Cancel</button>
+          </div>
+        </div>
+        <div class="order-row grid items-center py-2.5 px-1 border-b border-gray-50/80"
+             style="grid-template-columns: 1fr 1.4fr 0.8fr 50px 70px 1.5fr 120px;">
+          <div>
+            <div class="text-xs font-medium text-gray-800 tabular-nums">9106035890</div>
+            <div class="text-[10px] text-gray-400">30 Mar · 14:20</div>
+          </div>
+          <div>
+            <div class="text-xs font-medium text-gray-700">Ravi Color House</div>
+            <div class="text-[10px] text-gray-400">SH-887234</div>
+          </div>
+          <div>
+            <div class="text-xs text-gray-600">Adajan</div>
+            <span class="text-[10px] text-gray-400">Local</span>
+          </div>
+          <div class="text-xs text-gray-700 text-right tabular-nums">9.5</div>
+          <div><span class="text-[10px] text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded font-medium">1d</span></div>
+          <div class="text-xs text-gray-500">Customer requested delay — waiting callback</div>
+          <div class="flex items-center justify-end gap-2">
+            <button class="text-[11px] text-indigo-600 hover:text-indigo-700 font-medium">Release</button>
+            <button class="text-[11px] text-gray-400 hover:text-gray-600">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sticky bar -->
+    <div class="sticky-bar visible">
+      <div class="bg-white border-t border-gray-200 shadow-[0_-4px_12px_rgba(0,0,0,0.06)]">
+        <div class="flex items-center justify-between px-5 py-2">
+          <div class="flex items-center gap-3">
+            <span class="text-xs font-medium text-gray-700">2 selected</span>
+            <span class="text-[10px] text-gray-400">19 qty · 2 customers</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <button class="text-xs text-gray-400 hover:text-gray-600 px-3 py-1">Clear</button>
+            <button class="px-4 py-1.5 bg-indigo-600 text-white text-xs font-medium rounded-md hover:bg-indigo-700 transition-colors">
+              Submit 2 Orders
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  function togglePop(el) {
+    document.querySelectorAll('.badge-pop.show').forEach(p => {
+      if (p !== el.nextElementSibling) p.classList.remove('show');
+    });
+    const pop = el.nextElementSibling;
+    if (pop && pop.classList.contains('badge-pop')) pop.classList.toggle('show');
+  }
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.badge') && !e.target.closest('.badge-pop'))
+      document.querySelectorAll('.badge-pop.show').forEach(p => p.classList.remove('show'));
+  });
+  function filterTab(el) {
+    document.querySelectorAll('.filter-pill').forEach(p => p.classList.remove('active'));
+    el.classList.add('active');
+  }
+  function showMainTab(tab) {
+    document.querySelectorAll('.top-tab').forEach(t => t.classList.remove('active'));
+    event.target.closest('.top-tab').classList.add('active');
+    document.getElementById('all-content').classList.toggle('hidden', tab === 'hold');
+    document.getElementById('hold-content').classList.toggle('hidden', tab !== 'hold');
+  }
+</script>
+
+</body>
+</html>

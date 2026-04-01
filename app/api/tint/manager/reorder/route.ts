@@ -14,7 +14,7 @@ const reorderSchema = z.object({
 
 export async function PATCH(req: Request): Promise<NextResponse> {
   const session = await auth();
-  requireRole(session, [ROLES.TINT_MANAGER, ROLES.ADMIN]);
+  requireRole(session, [ROLES.TINT_MANAGER, ROLES.ADMIN, ROLES.OPERATIONS]);
 
   const parsed = reorderSchema.safeParse(await req.json());
   if (!parsed.success) {

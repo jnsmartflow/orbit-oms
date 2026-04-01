@@ -10,7 +10,7 @@ export async function POST(
   { params }: { params: { id: string } },
 ): Promise<NextResponse> {
   const session = await auth();
-  requireRole(session, [ROLES.SUPPORT, ROLES.DISPATCHER, ROLES.ADMIN]);
+  requireRole(session, [ROLES.SUPPORT, ROLES.DISPATCHER, ROLES.ADMIN, ROLES.OPERATIONS]);
   const userId = parseInt(session!.user.id, 10);
 
   const orderId = parseInt(params.id, 10);
@@ -29,13 +29,18 @@ export async function POST(
     return NextResponse.json({ error: "Slot not found" }, { status: 404 });
   }
 
-  const order = await prisma.orders.findUnique({ where: { id: orderId } });
+  const order = await prisma.orders.findUnique({
+    where: { id: orderId },
+    include: { slot: { select: { name: true } } },
+  });
   if (!order) {
     return NextResponse.json({ error: "Order not found" }, { status: 404 });
   }
   if (order.workflowStage === "cancelled") {
     return NextResponse.json({ error: "Order is cancelled" }, { status: 400 });
   }
+
+  const previousSlotName = order.slot?.name ?? "Unassigned";
 
   await prisma.orders.update({
     where: { id: orderId },
@@ -48,10 +53,10 @@ export async function POST(
   await prisma.order_status_logs.create({
     data: {
       orderId,
-      fromStage: order.workflowStage,
-      toStage: order.workflowStage,
+      fromStage: previousSlotName,
+      toStage: slot.name,
       changedById: userId,
-      note: `Slot assigned: ${slot.name}`,
+      note: "Slot manually assigned by support",
     },
   });
 

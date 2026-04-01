@@ -2,6 +2,7 @@
 
 import { cn } from "@/lib/utils";
 import { CarriedOverBadge } from "@/components/shared/carried-over-badge";
+import { CascadeBadge, shouldShowCascadeBadge } from "@/components/shared/cascade-badge";
 import type { BoardOrder } from "./planning-page";
 
 interface CustomerCardProps {
@@ -72,6 +73,9 @@ export function CustomerCard({ order, selected, onToggle, onClick, isHistoryView
         <span className="text-[9px] text-gray-400 flex items-center gap-1.5">
           {area ? `${area} · ` : ""}1 OBD
           <CarriedOverBadge daysOverdue={order.daysOverdue} />
+          {shouldShowCascadeBadge(order.slotId, order.originalSlotId) && order.originalSlot && (
+            <CascadeBadge originalSlotName={order.originalSlot.name} />
+          )}
         </span>
         <span className="text-[11px] font-medium text-gray-600">
           {weight.toFixed(0)} kg

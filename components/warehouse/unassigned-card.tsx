@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CarriedOverBadge } from "@/components/shared/carried-over-badge";
+import { CascadeBadge } from "@/components/shared/cascade-badge";
 import type { CustomerGroup } from "./warehouse-page";
 
 interface UnassignedCardProps {
@@ -28,6 +29,9 @@ export function UnassignedCard({ group, selected, onToggle, slotUrgent, isHistor
 
   const whyHint = buildWhyHint(group, slotUrgent);
   const maxDaysOverdue = Math.max(...group.orders.map((o) => o.daysOverdue), 0);
+  const summaryCascadeSlotName = group.slotId !== 0
+    ? (group.orders.find((o) => o.originalSlotId !== null && group.slotId !== o.originalSlotId && o.originalSlotName)?.originalSlotName ?? null)
+    : null;
 
   return (
     <div
@@ -102,10 +106,11 @@ export function UnassignedCard({ group, selected, onToggle, slotUrgent, isHistor
 
         {/* Row 2: area · OBD count + carried over + weight */}
         <div className="flex items-center justify-between mt-1">
-          <span className="text-[9px] text-gray-400 flex items-center gap-1.5">
+          <span className="text-[9px] text-gray-400 flex items-center gap-1.5 flex-wrap">
             {group.area ? `${group.area} · ` : ""}
             {group.orders.length} OBD{group.orders.length !== 1 ? "s" : ""}
             <CarriedOverBadge daysOverdue={maxDaysOverdue} />
+            {summaryCascadeSlotName && <CascadeBadge originalSlotName={summaryCascadeSlotName} />}
           </span>
           <span className="text-[11px] font-medium text-gray-600">
             {group.totalKg.toFixed(0)} kg
@@ -161,6 +166,9 @@ export function UnassignedCard({ group, selected, onToggle, slotUrgent, isHistor
                 <span className="text-[8px] text-purple-600 bg-purple-50 px-1 py-0.5 rounded">
                   🎨 Tint
                 </span>
+              )}
+              {group.slotId !== 0 && order.originalSlotId !== null && group.slotId !== order.originalSlotId && order.originalSlotName && (
+                <CascadeBadge originalSlotName={order.originalSlotName} />
               )}
               <div className="flex-1" />
               <span className="text-gray-500">{order.weightKg.toFixed(0)} kg</span>

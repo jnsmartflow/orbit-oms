@@ -8,6 +8,7 @@ export const ROLES = {
   SUPPORT: "support",
   TINT_MANAGER: "tint_manager",
   TINT_OPERATOR: "tint_operator",
+  OPERATIONS: "operations",
   FLOOR_SUPERVISOR: "floor_supervisor",
   PICKER: "picker",
 } as const;

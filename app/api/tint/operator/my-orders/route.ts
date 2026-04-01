@@ -8,13 +8,14 @@ export const dynamic = "force-dynamic";
 
 export async function GET(): Promise<NextResponse> {
   const session = await auth();
-  requireRole(session, [ROLES.TINT_OPERATOR]);
-  if (session!.user.role !== "admin") {
+  requireRole(session, [ROLES.TINT_OPERATOR, ROLES.OPERATIONS]);
+  if (session!.user.role !== "admin" && session!.user.role !== ROLES.OPERATIONS) {
     const allowed = await checkPermission(session!.user.role, "tint_operator", "canView");
     if (!allowed) return NextResponse.json({ error: "Permission denied" }, { status: 403 });
   }
 
   const userId = parseInt(session!.user.id, 10);
+  const isOpsOrAdmin = ["operations", "admin"].includes(session!.user.role ?? "");
 
   const startOfToday = new Date();
   startOfToday.setUTCHours(0, 0, 0, 0);
@@ -26,7 +27,7 @@ export async function GET(): Promise<NextResponse> {
         workflowStage: { in: ["tint_assigned", "tinting_in_progress"] },
         tintAssignments: {
           some: {
-            assignedToId: userId,
+            ...(isOpsOrAdmin ? {} : { assignedToId: userId }),
             status: { not: "done" },
           },
         },
@@ -38,7 +39,7 @@ export async function GET(): Promise<NextResponse> {
           },
         },
         tintAssignments: {
-          where:   { assignedToId: userId },
+          where:   isOpsOrAdmin ? { status: { not: "done" } } : { assignedToId: userId },
           select:  { id: true, status: true, startedAt: true, tiSubmitted: true, operatorSequence: true },
           orderBy: { createdAt: "desc" },
           take:    1,
@@ -58,7 +59,7 @@ export async function GET(): Promise<NextResponse> {
     // Query 2: Splits assigned to this operator
     prisma.order_splits.findMany({
       where: {
-        assignedToId: userId,
+        ...(isOpsOrAdmin ? {} : { assignedToId: userId }),
         status: { in: ["tint_assigned", "tinting_in_progress"] },
       },
       include: {
@@ -91,7 +92,7 @@ export async function GET(): Promise<NextResponse> {
     // Query 4a: tint_assignments completed today (whole-OBD flow)
     prisma.tint_assignments.findMany({
       where: {
-        assignedToId: userId,
+        ...(isOpsOrAdmin ? {} : { assignedToId: userId }),
         status:       "tinting_done",
         completedAt:  { gte: startOfToday },
       },
@@ -108,7 +109,7 @@ export async function GET(): Promise<NextResponse> {
     // Query 4b: order_splits completed today
     prisma.order_splits.findMany({
       where: {
-        assignedToId: userId,
+        ...(isOpsOrAdmin ? {} : { assignedToId: userId }),
         status:       { in: ["tinting_done", "pending_support", "dispatch_confirmation", "dispatched"] },
         completedAt:  { gte: startOfToday },
       },

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Check, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CarriedOverBadge } from "@/components/shared/carried-over-badge";
+import { CascadeBadge } from "@/components/shared/cascade-badge";
 import type { CustomerGroup } from "./warehouse-page";
 
 interface PickCardProps {
@@ -110,6 +111,9 @@ export function PickCard({ group, sequence, onMarkPicked, isHistoryView = false 
               </span>
               {order.hasTinting && order.tintingStatus === "pending" && (
                 <span className="text-[8px] text-purple-600 bg-purple-50 px-1 py-0.5 rounded">🎨</span>
+              )}
+              {group.slotId !== 0 && order.originalSlotId !== null && group.slotId !== order.originalSlotId && order.originalSlotName && (
+                <CascadeBadge originalSlotName={order.originalSlotName} />
               )}
               <div className="flex-1" />
               <span className="text-gray-500">{order.weightKg.toFixed(0)} kg</span>

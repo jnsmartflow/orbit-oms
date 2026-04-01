@@ -6,12 +6,13 @@ export const dynamic = 'force-dynamic';
 
 const ROLE_REDIRECTS: Record<string, string> = {
   admin: "/admin",
-  dispatcher: "/dispatcher",
+  dispatcher: "/planning",
   support: "/support",
   tint_manager: "/tint/manager",
   tint_operator: "/tint/operator",
-  floor_supervisor: "/warehouse/supervisor",
-  picker: "/warehouse/picker",
+  operations: "/operations/support",
+  floor_supervisor: "/warehouse",
+  picker: "/warehouse",
 };
 
 export default async function LoginPage() {

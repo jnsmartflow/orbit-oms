@@ -10,7 +10,7 @@ export async function POST(
   { params }: { params: { id: string } },
 ): Promise<NextResponse> {
   const session = await auth();
-  requireRole(session, [ROLES.FLOOR_SUPERVISOR, ROLES.ADMIN]);
+  requireRole(session, [ROLES.FLOOR_SUPERVISOR, ROLES.ADMIN, ROLES.OPERATIONS]);
   const userId = parseInt(session!.user.id, 10);
 
   const planId = parseInt(params.id, 10);

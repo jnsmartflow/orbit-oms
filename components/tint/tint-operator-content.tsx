@@ -600,17 +600,17 @@ export function TintOperatorContent() {
         completedOrders: CompletedAssignment[];
         completedSplits: CompletedSplit[];
       };
-      setAssignedOrders(data.assignedOrders);
-      setAssignedSplits(data.assignedSplits);
+      setAssignedOrders(data.assignedOrders ?? []);
+      setAssignedSplits(data.assignedSplits ?? []);
       setHasActiveJob(data.hasActiveJob);
       setCompletedOrders(data.completedOrders ?? []);
       setCompletedSplits(data.completedSplits ?? []);
 
       const allJobs = [
-        ...data.assignedSplits
+        ...(data.assignedSplits ?? [])
           .filter(s => ["tint_assigned", "tinting_in_progress"].includes(s.status))
           .map(s => ({ id: s.id, type: "split" as const, seq: s.operatorSequence, status: s.status })),
-        ...data.assignedOrders
+        ...(data.assignedOrders ?? [])
           .filter(o => ["tint_assigned", "assigned", "tinting_in_progress"].includes(o.tintAssignments[0]?.status ?? ""))
           .map(o => ({ id: o.id, type: "order" as const, seq: o.tintAssignments[0]?.operatorSequence ?? 0, status: o.tintAssignments[0]?.status ?? "" })),
       ].sort((a, b) => a.seq - b.seq);
@@ -1316,51 +1316,32 @@ export function TintOperatorContent() {
       <style>{pulseKeyframes}</style>
 
       {/* ── TOPBAR ── */}
-      <header style={{
-        background: "#fff", borderBottom: "1px solid #e2e5f1",
-        height: 52, display: "flex", alignItems: "center",
-        justifyContent: "space-between", padding: "0 16px",
-        flexShrink: 0, gap: 10,
-      }}>
-        <span style={{ fontSize: 17, fontWeight: 800, color: "#111827" }}>
+      <header className="h-[52px] bg-white border-b border-[#e2e5f1] px-4 flex items-center justify-between sticky top-0 z-40 flex-shrink-0 gap-2.5">
+        <span className="text-[17px] font-extrabold text-gray-900">
           My Tint Jobs
         </span>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div className="flex items-center gap-2">
           {/* Layout toggle */}
-          <div style={{
-            display: "flex", alignItems: "center",
-            background: "#f7f8fc", border: "1px solid #e2e5f1",
-            borderRadius: 8, overflow: "hidden",
-          }}>
+          <div className="flex items-center bg-[#f7f8fc] border border-[#e2e5f1] rounded-lg overflow-hidden">
             {/* Split view button */}
             <button
               type="button"
               onClick={() => setFocusMode(false)}
               title="Split view"
-              style={{
-                width: 32, height: 30, border: "none", cursor: "pointer",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                background: !focusMode ? "#e8eaf6" : "transparent",
-                color: !focusMode ? "#1a237e" : "#9ca3af",
-              }}
+              className={cn("w-8 h-[30px] flex items-center justify-center border-none cursor-pointer transition-colors", !focusMode ? "bg-[#e8eaf6] text-[#1a237e]" : "bg-transparent text-gray-400")}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <rect x="3" y="3" width="8" height="18" rx="1"/>
                 <rect x="13" y="3" width="8" height="18" rx="1"/>
               </svg>
             </button>
-            <div style={{ width: 1, height: 18, background: "#e2e5f1" }} />
+            <div className="w-px h-[18px] bg-[#e2e5f1]" />
             {/* Focus view button */}
             <button
               type="button"
               onClick={() => setFocusMode(true)}
               title="Focus view"
-              style={{
-                width: 32, height: 30, border: "none", cursor: "pointer",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                background: focusMode ? "#e8eaf6" : "transparent",
-                color: focusMode ? "#1a237e" : "#9ca3af",
-              }}
+              className={cn("w-8 h-[30px] flex items-center justify-center border-none cursor-pointer transition-colors", focusMode ? "bg-[#e8eaf6] text-[#1a237e]" : "bg-transparent text-gray-400")}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <rect x="3" y="3" width="18" height="18" rx="1"/>
@@ -1368,104 +1349,77 @@ export function TintOperatorContent() {
             </button>
           </div>
           {/* Clock */}
-          <div style={{
-            fontFamily: "monospace", fontSize: 12, fontWeight: 600,
-            color: "#9ca3af", background: "#f7f8fc",
-            border: "1px solid #e2e5f1", padding: "4px 10px", borderRadius: 8,
-          }}>
+          <div className="font-mono text-[12px] font-semibold text-gray-400 bg-[#f7f8fc] border border-[#e2e5f1] px-2.5 py-1 rounded-lg">
             {clock || "--:--:--"}
           </div>
         </div>
       </header>
 
       {/* ── STAT BAR ── */}
-      <div style={{
-        background: "#fff", borderBottom: "1px solid #e2e5f1",
-        display: "grid", gridTemplateColumns: "repeat(4, 1fr)",
-        flexShrink: 0,
-      }}>
+      <div className="px-3 py-2.5 grid grid-cols-4 gap-3 bg-[#f8f9fa] border-b border-[#e2e5f1]">
         {[
-          { label: "Pending",         value: pendingCount,    color: "#d97706", iconBg: "#fffbeb",
+          { label: "Pending",         value: pendingCount,    iconBg: "bg-orange-50",  iconColor: "text-orange-500",  sub: "unassigned",
             icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{width:14,height:14}}><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> },
-          { label: "In Progress",     value: inProgressCount, color: "#2563eb", iconBg: "#eff6ff",
+          { label: "In Progress",     value: inProgressCount, iconBg: "bg-blue-50",    iconColor: "text-blue-600",    sub: "being tinted",
             icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{width:14,height:14}}><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg> },
-          { label: "Completed Today", value: completedCount,  color: "#16a34a", iconBg: "#f0fdf4",
+          { label: "Completed Today", value: completedCount,  iconBg: "bg-green-50",   iconColor: "text-green-600",   sub: "tinting done",
             icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{width:14,height:14}}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> },
           { label: "Volume Done",
             value: volumeDone >= 1000 ? `${(volumeDone / 1000).toFixed(1)}k L` : `${volumeDone} L`,
-            color: "#4f46e5", iconBg: "#eef2ff",
+            iconBg: "bg-purple-50", iconColor: "text-purple-500", sub: "today",
             icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{width:14,height:14}}><path d="M3 3h18v4H3z"/><path d="M3 10h12v4H3z"/><path d="M3 17h8v4H3z"/></svg> },
         ].map((cell) => (
-          <div key={cell.label} style={{
-            padding: "9px 16px", borderRight: "1px solid #e2e5f1",
-            display: "flex", alignItems: "center", gap: 10,
-          }}>
-            <div style={{
-              width: 30, height: 30, borderRadius: "50%",
-              background: cell.iconBg, color: cell.color,
-              display: "flex", alignItems: "center", justifyContent: "center",
-              flexShrink: 0,
-            }}>
+          <div key={cell.label} className="bg-white border border-[#e2e5f1] rounded-xl flex items-center gap-[10px] px-[14px] py-[10px]">
+            <div className={cn("w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0", cell.iconBg, cell.iconColor)}>
               {cell.icon}
             </div>
             <div>
-              <div style={{ fontSize: 18, fontWeight: 800, color: cell.color, lineHeight: 1 }}>
-                {cell.value}
+              <div className="flex items-baseline gap-2">
+                <span className="text-[20px] font-extrabold text-gray-900 leading-none">{cell.value}</span>
+                <span className="text-[10px] font-bold uppercase tracking-[.4px] text-gray-500">{cell.label}</span>
               </div>
-              <div style={{ fontSize: 9.5, fontWeight: 700, textTransform: "uppercase",
-                letterSpacing: ".4px", color: "#9ca3af", marginTop: 1 }}>
-                {cell.label}
-              </div>
+              <div className="text-[11px] text-gray-400 mt-1">{cell.sub}</div>
             </div>
           </div>
         ))}
       </div>
 
       {/* ── MAIN (placeholder — filled in next steps) ── */}
-      <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
-        <div style={{
-          width: focusMode ? 0 : "35%",
-          minWidth: focusMode ? 0 : undefined,
-          display: focusMode ? "none" : "flex",
-          flexDirection: "column",
-          overflow: "hidden",
-          background: "#fff",
-          borderRight: "1px solid #e2e5f1",
-          flexShrink: 0,
-        }}>
-          <div style={{ flex: 1, overflowY: "auto" }}>
+      <div className="flex flex-1 overflow-hidden">
+        <div className={cn("flex flex-col overflow-hidden bg-white border-r border-[#e2e5f1] flex-shrink-0 transition-all", focusMode ? "w-0 hidden" : "w-[35%]")}>
+          <div className="flex-1 overflow-y-auto">
 
             {/* Queue section */}
-            <div style={{ padding: "12px 14px 6px" }}>
+            <div className="px-3.5 pt-3 pb-1.5">
 
               {/* Section header */}
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                <span style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".6px", color: "#9ca3af" }}>
+              <div className="flex items-center justify-between mb-2.5">
+                <span className="text-[10px] font-extrabold uppercase tracking-[.6px] text-gray-400">
                   Queue
                 </span>
-                <span style={{ fontSize: 10, fontWeight: 700, background: "#f7f8fc", border: "1px solid #e2e5f1", color: "#6b7280", padding: "1px 7px", borderRadius: 999 }}>
+                <span className="text-[10px] font-bold bg-[#f7f8fc] border border-[#e2e5f1] text-gray-500 px-1.5 py-px rounded-full">
                   {jobs.length}
                 </span>
               </div>
 
               {/* Remaining volume hint */}
-              <div style={{ background: "#f7f8fc", border: "1px solid #e2e5f1", borderRadius: 8, padding: "7px 11px", marginBottom: 10, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <span style={{ fontSize: 10.5, fontWeight: 600, color: "#6b7280" }}>Remaining volume today</span>
-                <span style={{ fontSize: 12, fontWeight: 800, color: "#111827" }}>
+              <div className="bg-[#f7f8fc] border border-[#e2e5f1] rounded-lg px-2.5 py-1.5 mb-2.5 flex items-center justify-between">
+                <span className="text-[10.5px] font-semibold text-gray-500">Remaining volume today</span>
+                <span className="text-[12px] font-extrabold text-gray-900">
                   {remainingVolume > 0 ? `${remainingVolume} L` : "— L"}
                 </span>
               </div>
 
               {/* Queue cards */}
               {jobs.length === 0 && (
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "32px 16px", textAlign: "center" }}>
-                  <div style={{ width: 44, height: 44, borderRadius: "50%", background: "#f7f8fc", border: "1px solid #e2e5f1", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 10 }}>
+                <div className="flex flex-col items-center py-8 px-4 text-center">
+                  <div className="w-11 h-11 rounded-full bg-[#f7f8fc] border border-[#e2e5f1] flex items-center justify-center mb-2.5">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2">
                       <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
                     </svg>
                   </div>
-                  <p style={{ fontSize: 14, fontWeight: 700, color: "#6b7280" }}>Queue is clear!</p>
-                  <p style={{ fontSize: 12, color: "#9ca3af", marginTop: 4 }}>All jobs done for today.</p>
+                  <p className="text-[14px] font-bold text-gray-500">Queue is clear!</p>
+                  <p className="text-[12px] text-gray-400 mt-1">All jobs done for today.</p>
                 </div>
               )}
 
@@ -1476,57 +1430,47 @@ export function TintOperatorContent() {
                 const isQueued   = !isActive && !isNext;
                 const isSelected = job.id === selectedJobId && job.type === selectedJobType;
 
-                const hdrBg = isActive ? "#eff6ff"
-                  : isNext   ? "#e8eaf6"
-                  : "#f7f8fc";
-                const hdrBorder = isActive ? "#bfdbfe"
-                  : isNext       ? "#c5cae9"
-                  : "#e2e5f1";
-
                 const seqLabel = isActive ? "Active"
                   : isNext      ? "Next up"
                   : `#${idx + 1}`;
-                const seqStyle: React.CSSProperties = isActive
-                  ? { background: "#dbeafe", color: "#1e40af" }
-                  : isNext
-                  ? { background: "#1a237e", color: "#fff" }
-                  : { background: "#f7f8fc", border: "1px solid #e2e5f1", color: "#9ca3af" };
 
                 return (
                   <div
                     key={`${job.type}-${job.id}`}
                     onClick={() => { setSelectedJobId(job.id); setSelectedJobType(job.type); }}
-                    style={{
-                      border: `1px solid ${isSelected ? "#1a237e" : isActive ? "#bfdbfe" : isNext ? "#c5cae9" : "#e2e5f1"}`,
-                      borderRadius: 12, overflow: "hidden", marginBottom: 8,
-                      cursor: "pointer", opacity: isQueued ? 0.55 : 1,
-                      outline: isSelected ? "2px solid #1a237e" : "none",
-                      outlineOffset: 1,
-                      transition: "opacity .15s, border-color .12s",
-                    }}
+                    className={cn(
+                      "border rounded-xl overflow-hidden mb-2 cursor-pointer transition-all duration-150",
+                      isSelected ? "border-[#1a237e] outline outline-2 outline-[#1a237e] outline-offset-1" : "",
+                      isActive ? "border-[#bfdbfe]" : isNext ? "border-[#c5cae9]" : "border-[#e2e5f1]",
+                      isQueued ? "opacity-55" : ""
+                    )}
                   >
                     {/* Card header */}
-                    <div style={{ padding: "8px 11px 7px", borderBottom: `1px solid ${hdrBorder}`, background: hdrBg, display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 6 }}>
-                      <div style={{ minWidth: 0, flex: 1 }}>
-                        <div style={{ fontSize: 12, fontWeight: 700, color: "#111827", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    <div className={cn("px-2.5 py-2 border-b flex items-start justify-between gap-1.5",
+                      isActive ? "bg-[#eff6ff] border-[#bfdbfe]" : isNext ? "bg-[#e8eaf6] border-[#c5cae9]" : "bg-[#f7f8fc] border-[#e2e5f1]"
+                    )}>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[12px] font-bold text-gray-900 truncate">
                           {job.customerName}
                         </div>
-                        <div style={{ fontFamily: "monospace", fontSize: 9, fontWeight: 600, color: "#7c3aed", marginTop: 2 }}>
+                        <div className="font-mono text-[9px] font-semibold text-[#7c3aed] mt-0.5">
                           {job.obdNumber}{job.splitNumber != null ? ` · Split #${job.splitNumber}` : ""}
                         </div>
                       </div>
-                      <span style={{ fontSize: 10, fontWeight: 800, padding: "2px 7px", borderRadius: 99, whiteSpace: "nowrap", flexShrink: 0, ...seqStyle }}>
+                      <span className={cn("text-[10px] font-extrabold px-1.5 py-px rounded-full whitespace-nowrap flex-shrink-0",
+                        isActive ? "bg-[#dbeafe] text-[#1e40af]" : isNext ? "bg-[#1a237e] text-white" : "bg-[#f7f8fc] border border-[#e2e5f1] text-gray-400"
+                      )}>
                         {seqLabel}
                       </span>
                     </div>
 
                     {/* Card body */}
-                    <div style={{ padding: "7px 11px 9px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
+                    <div className="px-2.5 py-2 flex items-center justify-between gap-1.5">
                       <div>
-                        <div style={{ fontSize: 11.5, fontWeight: 700, color: "#111827" }}>
+                        <div className="text-[11.5px] font-bold text-gray-900">
                           {job.totalVolume != null ? `${job.totalVolume} L` : "—"}{job.articleTag ? ` · ${job.articleTag}` : ""}
                         </div>
-                        <div style={{ fontSize: 10.5, color: "#9ca3af", marginTop: 1 }}>
+                        <div className="text-[10.5px] text-gray-400 mt-px">
                           {job.dispatchSlot ?? "—"}
                         </div>
                       </div>
@@ -1538,12 +1482,12 @@ export function TintOperatorContent() {
                         const allDone = total > 0 && covered >= total;
                         if (total === 0) return null;
                         return allDone ? (
-                          <span style={{ fontSize: 9.5, fontWeight: 700, padding: "3px 7px", borderRadius: 5, background: "#f0fdf4", border: "1px solid #bbf7d0", color: "#16a34a", display: "flex", alignItems: "center", gap: 3, whiteSpace: "nowrap", flexShrink: 0 }}>
+                          <span className="text-[9.5px] font-bold px-1.5 py-px rounded-[5px] bg-[#f0fdf4] border border-[#bbf7d0] text-[#16a34a] flex items-center gap-0.5 whitespace-nowrap flex-shrink-0">
                             <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
                             TI {covered}/{total}
                           </span>
                         ) : (
-                          <span style={{ fontSize: 9.5, fontWeight: 700, padding: "3px 7px", borderRadius: 5, background: "#fef2f2", border: "1px solid #fca5a5", color: "#dc2626", whiteSpace: "nowrap", flexShrink: 0 }}>
+                          <span className="text-[9.5px] font-bold px-1.5 py-px rounded-[5px] bg-[#fef2f2] border border-[#fca5a5] text-[#dc2626] whitespace-nowrap flex-shrink-0">
                             TI {covered}/{total}
                           </span>
                         );
@@ -1552,15 +1496,15 @@ export function TintOperatorContent() {
 
                     {/* Fill TI nudge — Next Up card only, TI not done */}
                     {isNext && !job.tiSubmitted && (
-                      <div style={{ margin: "0 10px 9px", padding: "7px 10px", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 7, fontSize: 11, fontWeight: 600, color: "#92400e", display: "flex", alignItems: "center", gap: 6 }}>
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ flexShrink: 0 }}>
+                      <div className="mx-2.5 mb-2 px-2.5 py-1.5 bg-[#fffbeb] border border-[#fde68a] rounded-lg text-[11px] font-semibold text-[#92400e] flex items-center gap-1.5">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="flex-shrink-0">
                           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
                         </svg>
                         Fill TI now while you&apos;re free
                         <button
                           type="button"
                           onClick={(e) => { e.stopPropagation(); setSelectedJobId(job.id); setSelectedJobType(job.type); }}
-                          style={{ marginLeft: "auto", background: "#f59e0b", color: "#fff", border: "none", borderRadius: 5, padding: "3px 9px", fontSize: 10.5, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}
+                          className="ml-auto bg-amber-400 text-white border-none rounded-[5px] px-2 py-px text-[10.5px] font-bold cursor-pointer whitespace-nowrap"
                         >
                           Fill →
                         </button>
@@ -1572,21 +1516,21 @@ export function TintOperatorContent() {
             </div>
 
             {/* Divider */}
-            <div style={{ height: 1, background: "#e2e5f1", margin: "4px 14px 12px" }} />
+            <div className="h-px bg-[#e2e5f1] mx-3.5 my-3" />
 
             {/* Completed Today section */}
-            <div style={{ padding: "0 14px 16px" }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                <span style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".6px", color: "#9ca3af" }}>
+            <div className="px-3.5 pb-4">
+              <div className="flex items-center justify-between mb-2.5">
+                <span className="text-[10px] font-extrabold uppercase tracking-[.6px] text-gray-400">
                   Completed Today
                 </span>
-                <span style={{ fontSize: 10, fontWeight: 700, background: "#f7f8fc", border: "1px solid #e2e5f1", color: "#6b7280", padding: "1px 7px", borderRadius: 999 }}>
+                <span className="text-[10px] font-bold bg-[#f7f8fc] border border-[#e2e5f1] text-gray-500 px-1.5 py-px rounded-full">
                   {completedCount}
                 </span>
               </div>
 
               {completedOrders.length === 0 && completedSplits.length === 0 && (
-                <p style={{ fontSize: 11, color: "#9ca3af", textAlign: "center", padding: "12px 0" }}>
+                <p className="text-[11px] text-gray-400 text-center py-3">
                   No completed jobs yet today.
                 </p>
               )}
@@ -1597,18 +1541,18 @@ export function TintOperatorContent() {
                   ? new Date(co.completedAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false })
                   : "—";
                 return (
-                  <div key={`co-${co.id}`} style={{ border: "1px solid #e2e5f1", borderRadius: 12, overflow: "hidden", marginBottom: 7, opacity: 0.65 }}>
-                    <div style={{ padding: "8px 11px", background: "#f0fdf4", borderBottom: "1px solid #bbf7d0" }}>
-                      <div style={{ fontSize: 12, fontWeight: 700, color: "#111827" }}>{customerName}</div>
-                      <div style={{ fontFamily: "monospace", fontSize: 9, fontWeight: 600, color: "#7c3aed", marginTop: 2 }}>
+                  <div key={`co-${co.id}`} className="border border-[#e2e5f1] rounded-xl overflow-hidden mb-1.5 opacity-65">
+                    <div className="px-2.5 py-2 bg-[#f0fdf4] border-b border-[#bbf7d0]">
+                      <div className="text-[12px] font-bold text-gray-900">{customerName}</div>
+                      <div className="font-mono text-[9px] font-semibold text-[#7c3aed] mt-0.5">
                         {co.order.obdNumber}
                       </div>
                     </div>
-                    <div style={{ padding: "7px 11px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                      <span style={{ fontSize: 10, fontWeight: 600, color: "#27500a", background: "#eaf3de", border: "1px solid #97c459", padding: "2px 7px", borderRadius: 5 }}>
+                    <div className="px-2.5 py-1.5 flex items-center justify-between">
+                      <span className="text-[10px] font-semibold text-[#27500a] bg-[#eaf3de] border border-[#97c459] px-1.5 py-px rounded-[5px]">
                         ✓ Tinting Done
                       </span>
-                      <span style={{ fontFamily: "monospace", fontSize: 11, fontWeight: 600, color: "#16a34a", background: "#f0fdf4", border: "1px solid #bbf7d0", padding: "2px 8px", borderRadius: 6 }}>
+                      <span className="font-mono text-[11px] font-semibold text-[#16a34a] bg-[#f0fdf4] border border-[#bbf7d0] px-2 py-px rounded-[6px]">
                         {doneTime}
                       </span>
                     </div>
@@ -1622,18 +1566,18 @@ export function TintOperatorContent() {
                   ? new Date(sp.completedAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false })
                   : "—";
                 return (
-                  <div key={`cs-${sp.id}`} style={{ border: "1px solid #e2e5f1", borderRadius: 12, overflow: "hidden", marginBottom: 7, opacity: 0.65 }}>
-                    <div style={{ padding: "8px 11px", background: "#f0fdf4", borderBottom: "1px solid #bbf7d0" }}>
-                      <div style={{ fontSize: 12, fontWeight: 700, color: "#111827" }}>{customerName}</div>
-                      <div style={{ fontFamily: "monospace", fontSize: 9, fontWeight: 600, color: "#7c3aed", marginTop: 2 }}>
+                  <div key={`cs-${sp.id}`} className="border border-[#e2e5f1] rounded-xl overflow-hidden mb-1.5 opacity-65">
+                    <div className="px-2.5 py-2 bg-[#f0fdf4] border-b border-[#bbf7d0]">
+                      <div className="text-[12px] font-bold text-gray-900">{customerName}</div>
+                      <div className="font-mono text-[9px] font-semibold text-[#7c3aed] mt-0.5">
                         {sp.order.obdNumber}{sp.splitNumber != null ? ` · Split #${sp.splitNumber}` : ""}
                       </div>
                     </div>
-                    <div style={{ padding: "7px 11px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                      <span style={{ fontSize: 10, fontWeight: 600, color: "#27500a", background: "#eaf3de", border: "1px solid #97c459", padding: "2px 7px", borderRadius: 5 }}>
+                    <div className="px-2.5 py-1.5 flex items-center justify-between">
+                      <span className="text-[10px] font-semibold text-[#27500a] bg-[#eaf3de] border border-[#97c459] px-1.5 py-px rounded-[5px]">
                         ✓ Tinting Done
                       </span>
-                      <span style={{ fontFamily: "monospace", fontSize: 11, fontWeight: 600, color: "#16a34a", background: "#f0fdf4", border: "1px solid #bbf7d0", padding: "2px 8px", borderRadius: 6 }}>
+                      <span className="font-mono text-[11px] font-semibold text-[#16a34a] bg-[#f0fdf4] border border-[#bbf7d0] px-2 py-px rounded-[6px]">
                         {doneTime}
                       </span>
                     </div>
@@ -1649,37 +1593,37 @@ export function TintOperatorContent() {
           display: "flex",
           flexDirection: "column",
           overflow: "hidden",
-          background: "#f0f2f8",
+          background: "#f8f9fa",
         }}>
 
           {/* Update toast */}
           {tiUpdateToast && (
-            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 16px", background: "#f0fdf4", borderBottom: "1px solid #bbf7d0", flexShrink: 0 }}>
+            <div className="flex items-center gap-2 px-4 py-2.5 bg-[#f0fdf4] border-b border-[#bbf7d0] flex-shrink-0">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.5" style={{ flexShrink: 0 }}>
                 <polyline points="20 6 9 17 4 12"/>
               </svg>
-              <span style={{ fontSize: 12.5, fontWeight: 600, color: "#15803d" }}>TI entry updated</span>
+              <span className="text-[12.5px] font-semibold text-[#15803d]">TI entry updated</span>
             </div>
           )}
 
           {/* Success toast */}
           {tiSuccessToast && (
-            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 16px", background: "#f0fdf4", borderBottom: "1px solid #bbf7d0", flexShrink: 0 }}>
+            <div className="flex items-center gap-2 px-4 py-2.5 bg-[#f0fdf4] border-b border-[#bbf7d0] flex-shrink-0">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.5" style={{ flexShrink: 0 }}>
                 <polyline points="20 6 9 17 4 12"/>
               </svg>
-              <span style={{ fontSize: 12.5, fontWeight: 600, color: "#15803d" }}>TI entries saved</span>
+              <span className="text-[12.5px] font-semibold text-[#15803d]">TI entries saved</span>
             </div>
           )}
 
           {/* Error banner */}
           {error && (
-            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 16px", background: "#fef2f2", borderBottom: "1px solid #fca5a5" }}>
+            <div className="flex items-center gap-2 px-4 py-2.5 bg-[#fef2f2] border-b border-[#fca5a5]">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2" style={{ flexShrink: 0 }}>
                 <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
               </svg>
-              <span style={{ fontSize: 12.5, fontWeight: 500, color: "#b91c1c", flex: 1 }}>{error}</span>
-              <button type="button" onClick={() => setError(null)} style={{ fontSize: 12, color: "#dc2626", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}>
+              <span className="text-[12.5px] font-medium text-[#b91c1c] flex-1">{error}</span>
+              <button type="button" onClick={() => setError(null)} className="text-[12px] text-[#dc2626] bg-transparent border-none cursor-pointer underline">
                 Dismiss
               </button>
             </div>
@@ -1687,14 +1631,14 @@ export function TintOperatorContent() {
 
           {/* No job selected */}
           {!selectedJob && (
-            <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, textAlign: "center", padding: 40 }}>
-              <div style={{ width: 44, height: 44, borderRadius: "50%", background: "#fff", border: "1px solid #e2e5f1", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <div className="flex-1 flex flex-col items-center justify-center gap-2.5 text-center p-10">
+              <div className="w-11 h-11 rounded-full bg-white border border-[#e2e5f1] flex items-center justify-center">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2">
                   <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/>
                 </svg>
               </div>
-              <p style={{ fontSize: 14, fontWeight: 700, color: "#6b7280" }}>No job selected</p>
-              <p style={{ fontSize: 12, color: "#9ca3af" }}>Tap a job in the queue to view details</p>
+              <p className="text-[14px] font-bold text-gray-500">No job selected</p>
+              <p className="text-[12px] text-gray-400">Tap a job in the queue to view details</p>
             </div>
           )}
 
@@ -1702,47 +1646,32 @@ export function TintOperatorContent() {
           {selectedJob && (
             <>
               {/* Job identity topbar */}
-              <div style={{
-                background: "#fff", borderBottom: "1px solid #e2e5f1",
-                padding: "11px 16px", flexShrink: 0,
-                display: "flex", alignItems: "flex-start",
-                justifyContent: "space-between", gap: 10,
-              }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 15, fontWeight: 800, color: "#111827", lineHeight: 1.2, marginBottom: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              <div className="bg-white border-b border-[#e2e5f1] px-4 py-[11px] flex-shrink-0 flex items-start justify-between gap-2.5">
+                <div className="flex-1 min-w-0">
+                  <div className="text-[15px] font-extrabold text-gray-900 leading-snug mb-1 truncate">
                     {selectedJob.customerName}
                   </div>
-                  <div style={{ fontFamily: "monospace", fontSize: 10.5, fontWeight: 600, display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
-                    <span style={{ color: "#7c3aed" }}>{selectedJob.obdNumber}</span>
-                    <span style={{ color: "#9ca3af" }}>
+                  <div className="font-mono text-[10.5px] font-semibold flex items-center gap-1.5 flex-wrap">
+                    <span className="text-[#7c3aed]">{selectedJob.obdNumber}</span>
+                    <span className="text-gray-400">
                       {selectedJob.splitNumber != null ? `· Split #${selectedJob.splitNumber}` : ""}
                       {selectedJob.dispatchSlot ? ` · ${selectedJob.dispatchSlot}` : ""}
                     </span>
                   </div>
                 </div>
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 5, flexShrink: 0 }}>
+                <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
                   {/* Status badge */}
-                  <span style={{
-                    fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 6,
-                    border: "1px solid transparent",
-                    ...(selectedJob.status === "tinting_in_progress"
-                      ? { background: "#eff6ff", borderColor: "#bfdbfe", color: "#1d4ed8" }
-                      : { background: "#fffbeb", borderColor: "#fde68a", color: "#92400e" }),
-                  }}>
+                  <span className={cn("text-[10px] font-bold px-2 py-px rounded-[6px]",
+                    selectedJob.status === "tinting_in_progress"
+                      ? "bg-[#eff6ff] border border-[#bfdbfe] text-[#1d4ed8]"
+                      : "bg-[#fffbeb] border border-[#fde68a] text-[#92400e]"
+                  )}>
                     {selectedJob.status === "tinting_in_progress" ? "In Progress" : "Assigned"}
                   </span>
                   {/* Elapsed timer — only when in progress */}
                   {selectedJob.status === "tinting_in_progress" && (
-                    <div style={{
-                      fontFamily: "monospace", fontSize: 11, fontWeight: 600,
-                      background: "#eff6ff", border: "1px solid #bfdbfe", color: "#1d4ed8",
-                      padding: "3px 9px", borderRadius: 6,
-                      display: "flex", alignItems: "center", gap: 5, whiteSpace: "nowrap",
-                    }}>
-                      <div style={{
-                        width: 6, height: 6, borderRadius: "50%", background: "#2563eb", flexShrink: 0,
-                        animation: "pulse 1.4s ease-in-out infinite",
-                      }} />
+                    <div className="font-mono text-[11px] font-semibold bg-[#eff6ff] border border-[#bfdbfe] text-[#1d4ed8] px-2.5 py-px rounded-[6px] flex items-center gap-1.5 whitespace-nowrap">
+                      <div className="w-1.5 h-1.5 rounded-full bg-[#2563eb] flex-shrink-0" style={{ animation: "pulse 1.4s ease-in-out infinite" }} />
                       {elapsed}
                     </div>
                   )}
@@ -1758,43 +1687,40 @@ export function TintOperatorContent() {
               }} />
 
               {/* Scrollable content */}
-              <div style={{ flex: 1, overflowY: "auto" }}>
+              <div className="flex-1 overflow-y-auto">
 
                 {/* Meta strip */}
-                <div style={{
-                  background: "#fff", borderBottom: "1px solid #e2e5f1",
-                  display: "grid", gridTemplateColumns: "repeat(4,1fr)", flexShrink: 0,
-                }}>
+                <div className="bg-white border-b border-[#e2e5f1] grid grid-cols-4 flex-shrink-0">
                   {[
                     { label: "Articles", value: selectedJob.articleTag ?? "—" },
                     { label: "Volume",   value: selectedJob.totalVolume != null ? `${selectedJob.totalVolume} L` : "—" },
                     { label: "Slot",     value: selectedJob.dispatchSlot ?? "—" },
                     { label: "Sales Officer", value: "—" },
                   ].map(cell => (
-                    <div key={cell.label} style={{ padding: "9px 14px", borderRight: "1px solid #e2e5f1" }}>
-                      <div style={{ fontSize: 9.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".4px", color: "#9ca3af", marginBottom: 2 }}>
+                    <div key={cell.label} className="px-3.5 py-[9px] border-r border-[#e2e5f1]">
+                      <div className="text-[9.5px] font-bold uppercase tracking-[.4px] text-gray-400 mb-0.5">
                         {cell.label}
                       </div>
-                      <div style={{ fontSize: 12.5, fontWeight: 700, color: "#111827" }}>{cell.value}</div>
+                      <div className="text-[12.5px] font-bold text-gray-900">{cell.value}</div>
                     </div>
                   ))}
                 </div>
 
                 {/* SKU Lines */}
-                <div style={{ padding: "14px 16px" }}>
-                  <div style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".6px", color: "#9ca3af", marginBottom: 10, display: "flex", alignItems: "center", gap: 8 }}>
+                <div className="px-4 py-3.5">
+                  <div className="text-[10px] font-extrabold uppercase tracking-[.6px] text-gray-400 mb-2.5 flex items-center gap-2">
                     SKU Lines
-                    <div style={{ flex: 1, height: 1, background: "#e2e5f1" }} />
+                    <div className="flex-1 h-px bg-[#e2e5f1]" />
                   </div>
 
                   {selectedJob.lineItems.length === 0 ? (
-                    <p style={{ fontSize: 12, color: "#9ca3af" }}>No SKU lines found.</p>
+                    <p className="text-[12px] text-gray-400">No SKU lines found.</p>
                   ) : (
-                    <table style={{ width: "100%", borderCollapse: "collapse", background: "#fff", border: "1px solid #e2e5f1", borderRadius: 12, overflow: "hidden" }}>
+                    <table className="w-full border-collapse bg-white border border-[#e2e5f1] rounded-xl overflow-hidden">
                       <thead>
-                        <tr>
+                        <tr className="bg-[#f7f8fc] border-b border-[#e2e5f1]">
                           {["Code", "Description", "Qty", "Volume"].map((h, i) => (
-                            <th key={h} style={{ fontSize: 9.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".4px", color: "#9ca3af", padding: "8px 12px", textAlign: i >= 2 ? "right" : "left", background: "#f7f8fc", borderBottom: "1px solid #e2e5f1" }}>
+                            <th key={h} className={cn("px-3 py-2 text-[9.5px] font-bold uppercase tracking-[.4px] text-gray-400", i >= 2 ? "text-right" : "text-left")}>
                               {h}
                             </th>
                           ))}
@@ -1802,22 +1728,22 @@ export function TintOperatorContent() {
                       </thead>
                       <tbody>
                         {selectedJob.lineItems.map((item, i) => (
-                          <tr key={i} style={{ borderBottom: "1px solid #e2e5f1" }}>
-                            <td style={{ padding: "9px 12px", fontFamily: "monospace", color: "#7c3aed", fontSize: 10.5, fontWeight: 600 }}>
+                          <tr key={i} className="border-b border-[#e2e5f1] last:border-b-0">
+                            <td className="px-3 py-[9px] font-mono text-[#7c3aed] text-[10.5px] font-semibold">
                               {item.rawLineItem.skuCodeRaw}
                             </td>
-                            <td style={{ padding: "9px 12px", fontSize: 12, fontWeight: 600, color: "#111827" }}>
+                            <td className="px-3 py-[9px] text-[12px] font-semibold text-gray-900">
                               {item.rawLineItem.skuDescriptionRaw ?? "—"}
                               {item.rawLineItem.isTinting && (
-                                <span style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", background: "#ede9fe", border: "1px solid #c4b5fd", color: "#5b21b6", padding: "1px 5px", borderRadius: 4, marginLeft: 4 }}>
+                                <span className="text-[9px] font-bold uppercase bg-[#ede9fe] border border-[#c4b5fd] text-[#5b21b6] px-1.5 py-px rounded-[4px] ml-1">
                                   TINT
                                 </span>
                               )}
                             </td>
-                            <td style={{ padding: "9px 12px", fontSize: 12, fontWeight: 600, color: "#111827", textAlign: "right" }}>
+                            <td className="px-3 py-[9px] text-[12px] font-semibold text-gray-900 text-right">
                               {item.rawLineItem.unitQty}
                             </td>
-                            <td style={{ padding: "9px 12px", fontSize: 12, fontWeight: 600, color: "#6b7280", textAlign: "right" }}>
+                            <td className="px-3 py-[9px] text-[12px] font-semibold text-gray-500 text-right">
                               {item.rawLineItem.volumeLine != null ? `${item.rawLineItem.volumeLine} L` : "—"}
                             </td>
                           </tr>
@@ -1829,13 +1755,13 @@ export function TintOperatorContent() {
 
                 {/* TI Status Strip */}
                 {tintingLines.length > 0 && (
-                  <div ref={coverageStripRef} style={{ padding: "0 16px 8px" }}>
-                    <div style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".6px", color: "#9ca3af", marginBottom: 8, display: "flex", alignItems: "center", gap: 8 }}>
+                  <div ref={coverageStripRef} className="px-4 pb-2">
+                    <div className="text-[10px] font-extrabold uppercase tracking-[.6px] text-gray-400 mb-2 flex items-center gap-2">
                       TI Coverage
-                      <div style={{ flex: 1, height: 1, background: "#e2e5f1" }} />
-                      {tiEntriesLoading && <span style={{ fontSize: 9, fontWeight: 600, color: "#9ca3af" }}>loading…</span>}
+                      <div className="flex-1 h-px bg-[#e2e5f1]" />
+                      {tiEntriesLoading && <span className="text-[9px] font-semibold text-gray-400">loading…</span>}
                     </div>
-                    <div style={{ background: "#f7f8fc", border: "1px solid #e2e5f1", borderRadius: 10, overflow: "hidden" }}>
+                    <div className="bg-[#f7f8fc] border border-[#e2e5f1] rounded-[10px] overflow-hidden">
                       {tintingLines.map((line, i) => {
                         const done    = existingTIEntries.has(line.rawLineItemId);
                         const tiEntry = done ? existingTIEntries.get(line.rawLineItemId)! : null;
@@ -1849,42 +1775,27 @@ export function TintOperatorContent() {
                           <div
                             key={line.rawLineItemId}
                             onClick={() => handleStripRowClick(line.rawLineItemId)}
-                            style={{
-                              display: "flex", alignItems: done ? "flex-start" : "center", gap: 8,
-                              padding: "8px 12px",
-                              borderBottom: i < tintingLines.length - 1 ? "1px solid #e2e5f1" : undefined,
-                              cursor: "pointer",
-                              background: done ? "#f0fdf4" : "#fffbeb",
-                            }}
+                            className={cn("flex gap-2 px-3 py-2 cursor-pointer", done ? "items-start bg-[#f0fdf4]" : "items-center bg-[#fffbeb]", i < tintingLines.length - 1 ? "border-b border-[#e2e5f1]" : "")}
                           >
-                            <span style={{ fontSize: 14, flexShrink: 0, marginTop: done ? 1 : 0 }}>{done ? "✅" : "⏳"}</span>
-                            <div style={{ flex: 1, minWidth: 0 }}>
+                            <span className={cn("text-[14px] flex-shrink-0", done ? "mt-px" : "")}>{done ? "✅" : "⏳"}</span>
+                            <div className="flex-1 min-w-0">
                               <div>
-                                <span style={{ fontSize: 11.5, fontWeight: 700, color: "#111827", fontFamily: "monospace" }}>{line.skuCodeRaw}</span>
-                                {line.skuDescriptionRaw && <span style={{ fontSize: 11, color: "#6b7280" }}> · {line.skuDescriptionRaw}</span>}
-                                <span style={{ fontSize: 10.5, color: "#9ca3af" }}> · {line.unitQty} qty · {PACK_CODES.find(p => p.value === line.packCode)?.label ?? line.packCode}</span>
+                                <span className="text-[11.5px] font-bold text-gray-900 font-mono">{line.skuCodeRaw}</span>
+                                {line.skuDescriptionRaw && <span className="text-[11px] text-gray-500"> · {line.skuDescriptionRaw}</span>}
+                                <span className="text-[10.5px] text-gray-400"> · {line.unitQty} qty · {PACK_CODES.find(p => p.value === line.packCode)?.label ?? line.packCode}</span>
                               </div>
                               {tiEntry && shadeStr && (
-                                <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 3, flexWrap: "wrap" }}>
-                                  <span style={{
-                                    fontSize: 9, fontWeight: 700, padding: "1px 5px", borderRadius: 3, flexShrink: 0,
-                                    background: tiEntry.table === "TINTER" ? "#e0e7ff" : "#fef9c3",
-                                    color:      tiEntry.table === "TINTER" ? "#3730a3" : "#713f12",
-                                    border:     `1px solid ${tiEntry.table === "TINTER" ? "#a5b4fc" : "#fde047"}`,
-                                  }}>
+                                <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                                  <span className={cn("text-[9px] font-bold px-1.5 py-px rounded-[3px] flex-shrink-0",
+                                    tiEntry.table === "TINTER" ? "bg-[#e0e7ff] border border-[#a5b4fc] text-[#3730a3]" : "bg-[#fef9c3] border border-[#fde047] text-[#713f12]"
+                                  )}>
                                     {tiEntry.table === "TINTER" ? "Tinter" : "Acotone"}
                                   </span>
-                                  <span style={{ fontSize: 10.5, color: "#6b7280", fontFamily: "monospace" }}>{shadeStr}</span>
+                                  <span className="text-[10.5px] text-gray-500 font-mono">{shadeStr}</span>
                                 </div>
                               )}
                             </div>
-                            <span style={{
-                              fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 5, flexShrink: 0,
-                              marginTop: done ? 1 : 0,
-                              ...(done
-                                ? { background: "#dcfce7", border: "1px solid #86efac", color: "#15803d" }
-                                : { background: "#fef9c3", border: "1px solid #fde047", color: "#854d0e" }),
-                            }}>
+                            <span className={cn("text-[10px] font-bold px-1.5 py-px rounded-[5px] flex-shrink-0", done ? "mt-px" : "", done ? "bg-[#dcfce7] border border-[#86efac] text-[#15803d]" : "bg-[#fef9c3] border border-[#fde047] text-[#854d0e]")}>
                               {done ? "TI Done" : "Pending"}
                             </span>
                           </div>
@@ -1896,7 +1807,7 @@ export function TintOperatorContent() {
                       const total   = tintingLines.length;
                       const allDone = covered === total;
                       return (
-                        <p style={{ fontSize: 11, fontWeight: 600, marginTop: 6, color: allDone ? "#15803d" : "#92400e" }}>
+                        <p className={cn("text-[11px] font-semibold mt-1.5", allDone ? "text-[#15803d]" : "text-[#92400e]")}>
                           {covered} of {total} lines covered
                         </p>
                       );
@@ -1905,44 +1816,43 @@ export function TintOperatorContent() {
                 )}
 
                 {/* TI Form */}
-                <div id="ti-form-section" style={{ padding: "0 16px 8px" }}>
+                <div id="ti-form-section" className="px-4 pb-2">
 
                   {/* Section title */}
-                  <div style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".6px", color: "#9ca3af", marginBottom: 10, display: "flex", alignItems: "center", gap: 8 }}>
+                  <div className="text-[10px] font-extrabold uppercase tracking-[.6px] text-gray-400 mb-2.5 flex items-center gap-2">
                     Tinter Issue Form
-                    <div style={{ flex: 1, height: 1, background: "#e2e5f1" }} />
+                    <div className="flex-1 h-px bg-[#e2e5f1]" />
                   </div>
 
                   {/* No tinting lines */}
                   {tintingLines.length === 0 && (
-                    <div style={{ background: "#fff", border: "1px solid #e2e5f1", borderRadius: 12, padding: "16px", textAlign: "center" }}>
-                      <p style={{ fontSize: 12, color: "#9ca3af" }}>No tinting lines in this job — start directly.</p>
+                    <div className="bg-white border border-[#e2e5f1] rounded-xl p-4 text-center">
+                      <p className="text-[12px] text-gray-400">No tinting lines in this job — start directly.</p>
                     </div>
                   )}
 
                   {/* Single-form */}
                   {tintingLines.length > 0 && (
-                    <div style={{ background: "#fff", border: "1px solid #e2e5f1", borderRadius: 12, overflow: "hidden" }}>
+                    <div className="bg-white border border-[#e2e5f1] rounded-xl overflow-hidden">
 
                       {/* Tinter type selector */}
-                      <div style={{ padding: "10px 14px", borderBottom: "1px solid #f0f2f8", display: "flex", gap: 6 }}>
+                      <div className="px-3.5 py-2.5 border-b border-[#f0f2f8] flex gap-1.5">
                         {(["TINTER", "ACOTONE"] as const).map(t => (
                           <button key={t} type="button"
                             onClick={() => handleTinterTypeChange(t)}
-                            style={{ padding: "5px 16px", borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: "pointer", border: "1px solid",
-                              background: tinterType === t ? "#1a237e" : "#fff",
-                              color: tinterType === t ? "#fff" : "#6b7280",
-                              borderColor: tinterType === t ? "#1a237e" : "#d1d5db" }}>
+                            className={cn("px-4 py-[5px] rounded-[6px] text-[12px] font-bold cursor-pointer border",
+                              tinterType === t ? "bg-[#1a237e] text-white border-[#1a237e]" : "bg-white text-gray-500 border-[#d1d5db]"
+                            )}>
                             {t === "TINTER" ? "Tinter" : "Acotone"}
                           </button>
                         ))}
                       </div>
 
                       {/* All saved shades combobox (shared, shown once above entries) */}
-                      <div style={{ padding: "10px 14px", borderBottom: "1px solid #f0f2f8" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 5 }}>
-                          <span style={{ fontSize: 9.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".4px", color: "#9ca3af" }}>All Saved Shades</span>
-                          <span style={{ fontSize: 9.5, color: "#d1d5db" }}>(optional — applies to focused entry)</span>
+                      <div className="px-3.5 py-2.5 border-b border-[#f0f2f8]">
+                        <div className="flex items-center gap-1 mb-1.5">
+                          <span className="text-[9.5px] font-bold uppercase tracking-[.4px] text-gray-400">All Saved Shades</span>
+                          <span className="text-[9.5px] text-gray-300">(optional — applies to focused entry)</span>
                         </div>
                         <Popover open={allShadesComboOpen !== null} onOpenChange={(open) => {
                           if (!open) { setAllShadesComboOpen(null); setAllShadesSearch(""); }
@@ -1975,9 +1885,9 @@ export function TintOperatorContent() {
                                       setAllShadesComboOpen(null);
                                       setAllShadesSearch("");
                                     }}
-                                    style={{ padding: "7px 12px", cursor: "pointer", fontSize: 12, fontWeight: 500, color: "#111827", borderTop: "1px solid #f3f4f6" }}>
-                                    <span style={{ fontWeight: 600 }}>{shade.shadeName}</span>
-                                    <span style={{ color: "#9ca3af", fontSize: 11 }}> · {PACK_CODES.find(p => p.value === shade.packCode)?.label ?? shade.packCode ?? "—"}</span>
+                                    className="px-3 py-[7px] cursor-pointer text-[12px] font-medium text-gray-900 border-t border-[#f3f4f6] hover:bg-[#f7f8fc]">
+                                    <span className="font-semibold">{shade.shadeName}</span>
+                                    <span className="text-gray-400 text-[11px]"> · {PACK_CODES.find(p => p.value === shade.packCode)?.label ?? shade.packCode ?? "—"}</span>
                                   </div>
                                 ))}
                             </div>
@@ -1992,19 +1902,19 @@ export function TintOperatorContent() {
                         const visibleSugs = entry.suggestionsExpanded ? entry.suggestions : entry.suggestions.slice(0, 3);
 
                         return (
-                          <div key={entry.id} style={{ borderBottom: "1px solid #e2e5f1" }}>
+                          <div key={entry.id} className="border-b border-[#e2e5f1]">
                             {/* Entry header */}
-                            <div style={{ padding: "8px 14px", background: "#f7f8fc", borderBottom: "1px solid #f0f2f8", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                                <span style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".5px", color: "#9ca3af" }}>Entry {idx + 1}</span>
+                            <div className="px-3.5 py-2 bg-[#f7f8fc] border-b border-[#f0f2f8] flex items-center justify-between">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[10px] font-extrabold uppercase tracking-[.5px] text-gray-400">Entry {idx + 1}</span>
                                 {idx === 0 && editingEntryId && (
                                   <>
-                                    <span style={{ fontSize: 9.5, fontWeight: 700, padding: "2px 6px", borderRadius: 4, background: "#e0e7ff", border: "1px solid #a5b4fc", color: "#3730a3" }}>
+                                    <span className="text-[9.5px] font-bold px-1.5 py-px rounded-[4px] bg-[#e0e7ff] border border-[#a5b4fc] text-[#3730a3]">
                                       Editing existing entry
                                     </span>
                                     <button type="button"
                                       onClick={() => { setEditingEntryId(null); setTiEntries(prev => [defaultTIFormEntry(), ...prev.slice(1)]); }}
-                                      style={{ fontSize: 10.5, fontWeight: 600, color: "#6b7280", background: "none", border: "none", cursor: "pointer", textDecoration: "underline", padding: 0 }}>
+                                      className="text-[10.5px] font-semibold text-gray-500 bg-transparent border-none cursor-pointer underline p-0">
                                       Cancel edit
                                     </button>
                                   </>
@@ -2013,16 +1923,16 @@ export function TintOperatorContent() {
                               {tiEntries.length > 1 && (
                                 <button type="button"
                                   onClick={() => setTiEntries(prev => prev.filter(e => e.id !== entry.id))}
-                                  style={{ width: 22, height: 22, borderRadius: 5, border: "1px solid #fca5a5", background: "#fef2f2", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#dc2626" }}>
+                                  className="w-[22px] h-[22px] rounded-[5px] border border-[#fca5a5] bg-[#fef2f2] flex items-center justify-center cursor-pointer text-[#dc2626]">
                                   <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                                 </button>
                               )}
                             </div>
 
-                            <div style={{ padding: "12px 14px" }}>
+                            <div className="px-3.5 py-3">
                               {/* 1. Base SKU Dropdown */}
-                              <div style={{ marginBottom: 10 }}>
-                                <span style={{ fontSize: 9.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".4px", color: "#9ca3af", display: "block", marginBottom: 4 }}>Base SKU</span>
+                              <div className="mb-2.5">
+                                <span className="text-[9.5px] font-bold uppercase tracking-[.4px] text-gray-400 block mb-1">Base SKU</span>
                                 <select
                                   value={entry.rawLineItemId ?? ""}
                                   onChange={e => {
@@ -2041,23 +1951,23 @@ export function TintOperatorContent() {
 
                               {/* 2. Suggestions panel — only when SKU selected and suggestions exist */}
                               {entry.skuCodeRaw && (entry.suggestionsLoading || entry.suggestions.length > 0) && (
-                                <div style={{ marginBottom: 10, padding: "8px 10px", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 8 }}>
-                                  <div style={{ fontSize: 9.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".4px", color: "#92400e", marginBottom: 5, display: "flex", alignItems: "center", gap: 5 }}>
+                                <div className="mb-2.5 px-2.5 py-2 bg-[#fffbeb] border border-[#fde68a] rounded-[8px]">
+                                  <div className="text-[9.5px] font-bold uppercase tracking-[.4px] text-[#92400e] mb-1.5 flex items-center gap-1.5">
                                     Suggestions
-                                    {entry.suggestionsLoading && <span style={{ fontSize: 9, fontWeight: 500, color: "#d97706" }}>loading…</span>}
+                                    {entry.suggestionsLoading && <span className="text-[9px] font-medium text-[#d97706]">loading…</span>}
                                   </div>
                                   {visibleSugs.map(sug => (
-                                    <div key={sug.id} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                                      <div style={{ flex: 1, minWidth: 0 }}>
-                                        <span style={{ fontSize: 11.5, fontWeight: 700, color: "#111827" }}>🎨 {sug.shadeName}</span>
-                                        <span style={{ fontSize: 10.5, color: "#6b7280", marginLeft: 4 }}>· {PACK_CODES.find(p => p.value === sug.packCode)?.label ?? sug.packCode ?? "—"}</span>
-                                        <div style={{ fontSize: 9.5, color: "#9ca3af" }}>
+                                    <div key={sug.id} className="flex items-center gap-2 mb-1">
+                                      <div className="flex-1 min-w-0">
+                                        <span className="text-[11.5px] font-bold text-gray-900">🎨 {sug.shadeName}</span>
+                                        <span className="text-[10.5px] text-gray-500 ml-1">· {PACK_CODES.find(p => p.value === sug.packCode)?.label ?? sug.packCode ?? "—"}</span>
+                                        <div className="text-[9.5px] text-gray-400">
                                           {sug.lastUsedAt ? `Last used: ${new Date(sug.lastUsedAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}` : "First time"}
                                         </div>
                                       </div>
                                       <button type="button"
                                         onClick={() => applyShadeToEntry(entry.id, sug)}
-                                        style={{ fontSize: 10.5, fontWeight: 700, padding: "3px 10px", borderRadius: 5, background: "#f59e0b", color: "#fff", border: "none", cursor: "pointer", flexShrink: 0 }}>
+                                        className="text-[10.5px] font-bold px-2.5 py-px rounded-[5px] bg-amber-400 text-white border-none cursor-pointer flex-shrink-0">
                                         Use this
                                       </button>
                                     </div>
@@ -2065,7 +1975,7 @@ export function TintOperatorContent() {
                                   {entry.suggestions.length > 3 && (
                                     <button type="button"
                                       onClick={() => setTiEntries(prev => prev.map(e => e.id === entry.id ? { ...e, suggestionsExpanded: !e.suggestionsExpanded } : e))}
-                                      style={{ fontSize: 10.5, fontWeight: 600, color: "#92400e", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+                                      className="text-[10.5px] font-semibold text-[#92400e] bg-transparent border-none cursor-pointer p-0">
                                       {entry.suggestionsExpanded ? "Show less" : `+${entry.suggestions.length - 3} more`}
                                     </button>
                                   )}
@@ -2073,16 +1983,16 @@ export function TintOperatorContent() {
                               )}
 
                               {/* 4+5. Tin Qty + Pack Size display */}
-                              <div style={{ display: "grid", gridTemplateColumns: "1fr 100px", gap: 8, marginBottom: 12 }}>
-                                <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                                  <span style={{ fontSize: 9.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".4px", color: "#9ca3af" }}>Tin Qty</span>
+                              <div className="grid gap-2 mb-3" style={{ gridTemplateColumns: "1fr 100px" }}>
+                                <div className="flex flex-col gap-0.5">
+                                  <span className="text-[9.5px] font-bold uppercase tracking-[.4px] text-gray-400">Tin Qty</span>
                                   <input type="number" min={0} step={0.1} placeholder="0" value={entry.tinQty || ""}
                                     onChange={e => setTiEntries(prev => prev.map(en => en.id === entry.id ? { ...en, tinQty: Number(e.target.value) } : en))}
                                     style={{ height: 34, background: flash ? "#fffbeb" : "#f7f8fc", border: `1px solid ${flash ? "#fcd34d" : "#e2e5f1"}`, borderRadius: 8, padding: "0 10px", fontSize: 12, fontWeight: 500, color: "#111827", outline: "none", transition: "background .3s,border-color .3s" }} />
                                 </div>
-                                <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                                  <span style={{ fontSize: 9.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".4px", color: "#9ca3af" }}>Pack Size</span>
-                                  <div style={{ height: 34, background: "#f0f2f8", border: "1px solid #e2e5f1", borderRadius: 8, padding: "0 10px", fontSize: 12, fontWeight: 600, color: entry.packCode ? "#111827" : "#9ca3af", display: "flex", alignItems: "center" }}>
+                                <div className="flex flex-col gap-0.5">
+                                  <span className="text-[9.5px] font-bold uppercase tracking-[.4px] text-gray-400">Pack Size</span>
+                                  <div className={cn("h-[34px] bg-[#f0f2f8] border border-[#e2e5f1] rounded-[8px] px-2.5 text-[12px] font-semibold flex items-center", entry.packCode ? "text-gray-900" : "text-gray-400")}>
                                     {entry.packCode ? (PACK_CODES.find(p => p.value === entry.packCode)?.label ?? entry.packCode) : "—"}
                                   </div>
                                 </div>
@@ -2090,12 +2000,8 @@ export function TintOperatorContent() {
 
                               {/* Selected shade indicator */}
                               {entry.selectedShadeName !== null && (
-                                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-                                  <span style={{
-                                    display: "inline-flex", alignItems: "center", gap: 5,
-                                    background: "#e8eaf6", border: "1px solid #1a237e", borderRadius: 999,
-                                    padding: "3px 10px", fontSize: 11, color: "#1a237e", fontWeight: 600,
-                                  }}>
+                                <div className="flex items-center justify-between mb-2">
+                                  <span className="inline-flex items-center gap-1.5 bg-[#e8eaf6] border border-[#1a237e] rounded-full px-2.5 py-px text-[11px] text-[#1a237e] font-semibold">
                                     <Palette size={11} />
                                     {entry.selectedShadeName}
                                   </span>
@@ -2105,7 +2011,7 @@ export function TintOperatorContent() {
                                       selectedShadeName: null, selectedShadeId: null,
                                       shadeValues: {}, showAllColumns: true,
                                     } : en))}
-                                    style={{ fontSize: 10.5, fontWeight: 700, color: "#dc2626", background: "none", border: "none", cursor: "pointer", padding: "0 2px" }}>
+                                    className="text-[10.5px] font-bold text-[#dc2626] bg-transparent border-none cursor-pointer px-0.5">
                                     Clear ×
                                   </button>
                                 </div>
@@ -2120,10 +2026,10 @@ export function TintOperatorContent() {
                                 const showToggle = entry.selectedShadeName !== null && activeCols.length > 0;
                                 return (
                                   <>
-                                    <div style={{ fontSize: 9.5, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".5px", color: "#9ca3af", marginBottom: 7 }}>Shade Quantities</div>
-                                    <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 5, marginBottom: 5 }}>
+                                    <div className="text-[9.5px] font-extrabold uppercase tracking-[.5px] text-gray-400 mb-1.5">Shade Quantities</div>
+                                    <div className="grid grid-cols-7 gap-1 mb-1">
                                       {displayCols.slice(0, 7).map(shade => (
-                                        <div key={shade.code} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+                                        <div key={shade.code} className="flex flex-col items-center gap-0.5">
                                           <div style={{ fontSize: 9, fontWeight: 800, padding: "3px 0", borderRadius: 5, width: "100%", textAlign: "center", background: shade.bg, border: `1.5px solid ${shade.border}`, color: shade.text }}>{shade.code}</div>
                                           <input type="number" min={0} step={0.01} placeholder="—"
                                             value={entry.shadeValues[shade.code] || ""}
@@ -2133,9 +2039,9 @@ export function TintOperatorContent() {
                                       ))}
                                     </div>
                                     {displayCols.length > 7 && (
-                                      <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 5, marginBottom: 5 }}>
+                                      <div className="grid grid-cols-7 gap-1 mb-1">
                                         {displayCols.slice(7).map(shade => (
-                                          <div key={shade.code} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+                                          <div key={shade.code} className="flex flex-col items-center gap-0.5">
                                             <div style={{ fontSize: 9, fontWeight: 800, padding: "3px 0", borderRadius: 5, width: "100%", textAlign: "center", background: shade.bg, border: `1.5px solid ${shade.border}`, color: shade.text }}>{shade.code}</div>
                                             <input type="number" min={0} step={0.01} placeholder="—"
                                               value={entry.shadeValues[shade.code] || ""}
@@ -2148,38 +2054,38 @@ export function TintOperatorContent() {
                                     {showToggle && (
                                       <button type="button"
                                         onClick={() => setTiEntries(prev => prev.map(en => en.id === entry.id ? { ...en, showAllColumns: !en.showAllColumns } : en))}
-                                        style={{ fontSize: 10.5, fontWeight: 600, color: "#1a237e", background: "none", border: "none", cursor: "pointer", padding: "3px 0 8px", display: "block" }}>
+                                        className="text-[10.5px] font-semibold text-[#1a237e] bg-transparent border-none cursor-pointer py-0.5 pb-2 block">
                                         {!entry.showAllColumns
                                           ? `+ Show all columns (${hiddenCount} hidden)`
                                           : `− Show active columns only`}
                                       </button>
                                     )}
-                                    {!showToggle && <div style={{ marginBottom: 10 }} />}
+                                    {!showToggle && <div className="mb-2.5" />}
                                   </>
                                 );
                               })()}
 
                               {/* 7. Save as Shade Toggle — only when SKU selected */}
                               {entry.skuCodeRaw && (
-                                <div style={{ borderTop: "1px solid #f0f2f8", paddingTop: 10 }}>
-                                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                <div className="border-t border-[#f0f2f8] pt-2.5">
+                                  <div className="flex items-center gap-2">
                                     <Switch
                                       checked={entry.saveAsShade}
                                       onCheckedChange={(v: boolean) => setTiEntries(prev => prev.map(en => en.id === entry.id ? { ...en, saveAsShade: v, shadeNameError: "" } : en))}
                                       className="data-[checked]:bg-[#1a237e] data-[unchecked]:bg-[#d1d5db]"
                                     />
-                                    <span style={{ fontSize: 12, fontWeight: 600, color: "#374151" }}>Save as shade formula</span>
+                                    <span className="text-[12px] font-semibold text-gray-700">Save as shade formula</span>
                                   </div>
                                   <div style={{ overflow: "hidden", maxHeight: entry.saveAsShade ? "80px" : "0px", transition: "max-height 200ms ease", marginTop: entry.saveAsShade ? 8 : 0 }}>
-                                    <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                                      <span style={{ fontSize: 9.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".4px", color: "#9ca3af" }}>
-                                        Shade name <span style={{ color: "#ef4444" }}>*</span>
+                                    <div className="flex flex-col gap-0.5">
+                                      <span className="text-[9.5px] font-bold uppercase tracking-[.4px] text-gray-400">
+                                        Shade name <span className="text-[#ef4444]">*</span>
                                       </span>
                                       <input type="text" placeholder="e.g. Ivory White"
                                         value={entry.shadeName}
                                         onChange={e => setTiEntries(prev => prev.map(en => en.id === entry.id ? { ...en, shadeName: e.target.value, shadeNameError: "" } : en))}
                                         style={{ height: 34, background: "#f7f8fc", border: `1px solid ${entry.shadeNameError ? "#ef4444" : "#e2e5f1"}`, borderRadius: 8, padding: "0 10px", fontSize: 12, fontWeight: 500, color: "#111827", outline: "none" }} />
-                                      {entry.shadeNameError && <span style={{ fontSize: 10.5, color: "#ef4444" }}>{entry.shadeNameError}</span>}
+                                      {entry.shadeNameError && <span className="text-[10.5px] text-[#ef4444]">{entry.shadeNameError}</span>}
                                     </div>
                                   </div>
                                 </div>
@@ -2192,7 +2098,7 @@ export function TintOperatorContent() {
                       {/* Add Another Entry */}
                       <div
                         onClick={() => setTiEntries(prev => [...prev, defaultTIFormEntry()])}
-                        style={{ padding: "10px 14px", display: "flex", alignItems: "center", justifyContent: "center", gap: 5, fontSize: 11.5, fontWeight: 700, color: "#1a237e", cursor: "pointer", background: "#e8eaf6" }}>
+                        className="px-3.5 py-2.5 flex items-center justify-center gap-1.5 text-[11.5px] font-bold text-[#1a237e] cursor-pointer bg-[#e8eaf6]">
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                           <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
                         </svg>
@@ -2207,15 +2113,7 @@ export function TintOperatorContent() {
               </div>
 
               {/* Footer */}
-              <div style={{
-                background: "#fff",
-                borderTop: "1px solid #e2e5f1",
-                padding: "11px 16px",
-                flexShrink: 0,
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-              }}>
+              <div className="bg-white border-t border-[#e2e5f1] px-4 py-[11px] flex-shrink-0 flex items-center gap-2.5">
                 {(() => {
                   const isLoading = (selectedJob.type === "split"
                     ? splitActionLoading === selectedJob.id
@@ -2229,31 +2127,31 @@ export function TintOperatorContent() {
                       : orderActionLoading === selectedJob.id;
                     const anyLoading = isTILoading || isDoneLoading;
                     return (
-                      <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8 }}>
+                      <div className="flex-1 flex flex-col gap-2">
                         {/* TI incomplete warning */}
                         {tiIncompleteWarning && tiIncompleteWarning.length > 0 && (
-                          <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 8, padding: "10px 12px" }}>
-                            <p style={{ fontSize: 12, fontWeight: 700, color: "#92400e", margin: "0 0 5px 0" }}>
+                          <div className="bg-[#fffbeb] border border-[#fde68a] rounded-[8px] px-3 py-2.5">
+                            <p className="text-[12px] font-bold text-[#92400e] mb-1">
                               Some tinting lines are missing TI entries:
                             </p>
-                            <ul style={{ fontSize: 11.5, color: "#b45309", margin: "0 0 6px 14px", padding: 0 }}>
+                            <ul className="text-[11.5px] text-[#b45309] mb-1.5 ml-3.5" style={{ padding: 0 }}>
                               {tiIncompleteWarning.map(line => (
                                 <li key={line.rawLineItemId}>
                                   {line.skuCodeRaw}{line.skuDescriptionRaw ? ` · ${line.skuDescriptionRaw}` : ""}
                                 </li>
                               ))}
                             </ul>
-                            <p style={{ fontSize: 11, color: "#92400e", margin: 0 }}>
+                            <p className="text-[11px] text-[#92400e]">
                               Please fill TI entries for these lines before marking Done.
                             </p>
                           </div>
                         )}
-                        <div style={{ display: "flex", gap: 8 }}>
+                        <div className="flex gap-2">
                           <button
                             type="button"
                             onClick={() => editingEntryId ? handleUpdateEntry(selectedJob) : handleSubmitTIAndStart(selectedJob)}
                             disabled={anyLoading}
-                            style={{ flex: 1, background: "#1a237e", color: "#fff", border: "none", borderRadius: 10, padding: "11px 0", fontSize: 13, fontWeight: 700, cursor: anyLoading ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 7, opacity: anyLoading ? 0.6 : 1 }}
+                            className={cn("flex-1 bg-[#1a237e] text-white border-none rounded-[10px] py-[11px] text-[13px] font-bold flex items-center justify-center gap-1.5 transition-opacity", anyLoading ? "opacity-60 cursor-not-allowed" : "cursor-pointer")}
                           >
                             {isTILoading
                               ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" style={{ animation: "spin .7s linear infinite" }}><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
@@ -2265,7 +2163,7 @@ export function TintOperatorContent() {
                             type="button"
                             onClick={() => markDone(selectedJob)}
                             disabled={anyLoading}
-                            style={{ flex: 1, background: "#16a34a", color: "#fff", border: "none", borderRadius: 10, padding: "11px 0", fontSize: 13, fontWeight: 700, cursor: anyLoading ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 7, opacity: anyLoading ? 0.6 : 1 }}
+                            className={cn("flex-1 bg-[#16a34a] text-white border-none rounded-[10px] py-[11px] text-[13px] font-bold flex items-center justify-center gap-1.5 transition-opacity", anyLoading ? "opacity-60 cursor-not-allowed" : "cursor-pointer")}
                           >
                             {isDoneLoading
                               ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" style={{ animation: "spin .7s linear infinite" }}><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
@@ -2287,7 +2185,7 @@ export function TintOperatorContent() {
                           type="button"
                           onClick={() => startJob(selectedJob)}
                           disabled={isLoading}
-                          style={{ flex: 1, background: "#1a237e", color: "#fff", border: "none", borderRadius: 10, padding: "11px 0", fontSize: 13, fontWeight: 700, cursor: isLoading ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 7, opacity: isLoading ? 0.6 : 1 }}
+                          className={cn("flex-1 bg-[#1a237e] text-white border-none rounded-[10px] py-[11px] text-[13px] font-bold flex items-center justify-center gap-1.5 transition-opacity", isLoading ? "opacity-60 cursor-not-allowed" : "cursor-pointer")}
                         >
                           {isLoading
                             ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" style={{ animation: "spin .7s linear infinite" }}><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
@@ -2303,7 +2201,7 @@ export function TintOperatorContent() {
                         type="button"
                         onClick={() => editingEntryId ? handleUpdateEntry(selectedJob) : handleSubmitTIAndStart(selectedJob)}
                         disabled={isLoading}
-                        style={{ flex: 1, background: "#1a237e", color: "#fff", border: "none", borderRadius: 10, padding: "11px 0", fontSize: 13, fontWeight: 700, cursor: isLoading ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 7, opacity: isLoading ? 0.6 : 1 }}
+                        className={cn("flex-1 bg-[#1a237e] text-white border-none rounded-[10px] py-[11px] text-[13px] font-bold flex items-center justify-center gap-1.5 transition-opacity", isLoading ? "opacity-60 cursor-not-allowed" : "cursor-pointer")}
                       >
                         {isLoading
                           ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" style={{ animation: "spin .7s linear infinite" }}><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
@@ -2317,8 +2215,8 @@ export function TintOperatorContent() {
                   // Case 3 — TI submitted, another job in progress → blocked
                   if (hasActiveJob) {
                     return (
-                      <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11.5, fontWeight: 600, color: "#9ca3af" }}>
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ flexShrink: 0 }}>
+                      <div className="flex items-center gap-1.5 text-[11.5px] font-semibold text-gray-400">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="flex-shrink-0">
                           <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
                         </svg>
                         Another job is in progress — TI submitted ✓
@@ -2328,13 +2226,13 @@ export function TintOperatorContent() {
 
                   // Case 4 — TI submitted, no active job → Start Job (or Update TI Entry if in edit mode)
                   return (
-                    <div style={{ flex: 1, display: "flex", gap: 8 }}>
+                    <div className="flex-1 flex gap-2">
                       {editingEntryId && (
                         <button
                           type="button"
                           onClick={() => handleUpdateEntry(selectedJob)}
                           disabled={isLoading}
-                          style={{ flex: 1, background: "#1a237e", color: "#fff", border: "none", borderRadius: 10, padding: "11px 0", fontSize: 13, fontWeight: 700, cursor: isLoading ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 7, opacity: isLoading ? 0.6 : 1 }}
+                          className={cn("flex-1 bg-[#1a237e] text-white border-none rounded-[10px] py-[11px] text-[13px] font-bold flex items-center justify-center gap-1.5 transition-opacity", isLoading ? "opacity-60 cursor-not-allowed" : "cursor-pointer")}
                         >
                           {isLoading
                             ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" style={{ animation: "spin .7s linear infinite" }}><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
@@ -2347,7 +2245,7 @@ export function TintOperatorContent() {
                         type="button"
                         onClick={() => startJob(selectedJob)}
                         disabled={isLoading}
-                        style={{ flex: 1, background: "#1a237e", color: "#fff", border: "none", borderRadius: 10, padding: "11px 0", fontSize: 13, fontWeight: 700, cursor: isLoading ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 7, opacity: isLoading ? 0.6 : 1 }}
+                        className={cn("flex-1 bg-[#1a237e] text-white border-none rounded-[10px] py-[11px] text-[13px] font-bold flex items-center justify-center gap-1.5 transition-opacity", isLoading ? "opacity-60 cursor-not-allowed" : "cursor-pointer")}
                       >
                         {isLoading
                           ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" style={{ animation: "spin .7s linear infinite" }}><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
@@ -2371,13 +2269,8 @@ export function TintOperatorContent() {
         <button
           type="button"
           onClick={() => setQueueSheetOpen(true)}
-          style={{
-            position: "fixed", bottom: 80, left: 16, zIndex: 60,
-            width: 48, height: 48, borderRadius: "50%",
-            background: "#1a237e", color: "#fff", border: "none",
-            cursor: "pointer", boxShadow: "0 4px 16px rgba(26,35,126,.35)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-          }}
+          style={{ position: "fixed", bottom: 80, left: 16, zIndex: 60 }}
+          className="w-12 h-12 rounded-full bg-[#1a237e] text-white border-none cursor-pointer flex items-center justify-center shadow-lg"
         >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
             <line x1="8" y1="6" x2="21" y2="6"/>
@@ -2388,13 +2281,8 @@ export function TintOperatorContent() {
             <line x1="3" y1="18" x2="3.01" y2="18"/>
           </svg>
           {jobs.length > 0 && (
-            <span style={{
-              position: "absolute", top: -2, right: -2,
-              width: 18, height: 18, borderRadius: "50%",
-              background: "#ef4444", fontSize: 9.5, fontWeight: 800,
-              color: "#fff", display: "flex", alignItems: "center",
-              justifyContent: "center", border: "2px solid #fff",
-            }}>
+            <span style={{ position: "absolute", top: -2, right: -2 }}
+              className="w-[18px] h-[18px] rounded-full bg-[#ef4444] text-[9.5px] font-extrabold text-white flex items-center justify-center border-2 border-white">
               {jobs.length}
             </span>
           )}
@@ -2405,33 +2293,30 @@ export function TintOperatorContent() {
       {queueSheetOpen && (
         <div
           onClick={() => setQueueSheetOpen(false)}
-          style={{
-            position: "fixed", inset: 0, zIndex: 70,
-            background: "rgba(0,0,0,.4)",
-          }}
+          className="fixed inset-0 z-[70] bg-black/40"
         />
       )}
 
       {/* Queue sheet */}
-      <div style={{
-        position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 71,
-        background: "#fff", borderRadius: "18px 18px 0 0",
-        maxHeight: "72vh", display: "flex", flexDirection: "column",
-        boxShadow: "0 -8px 32px rgba(0,0,0,.12)",
-        transform: queueSheetOpen ? "translateY(0)" : "translateY(100%)",
-        transition: "transform .26s cubic-bezier(.32,.72,0,1)",
-        pointerEvents: queueSheetOpen ? "all" : "none",
-      }}>
+      <div
+        className="bg-white flex flex-col shadow-2xl"
+        style={{
+          position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 71,
+          borderRadius: "18px 18px 0 0", maxHeight: "72vh",
+          transform: queueSheetOpen ? "translateY(0)" : "translateY(100%)",
+          transition: "transform .26s cubic-bezier(.32,.72,0,1)",
+          pointerEvents: queueSheetOpen ? "all" : "none",
+        }}>
         {/* Handle */}
-        <div style={{ width: 36, height: 4, background: "#e2e5f1", borderRadius: 2, margin: "10px auto 0", flexShrink: 0 }} />
+        <div className="w-9 h-1 bg-[#e2e5f1] rounded-sm mx-auto mt-2.5 flex-shrink-0" />
 
         {/* Sheet header */}
-        <div style={{ padding: "12px 16px 10px", borderBottom: "1px solid #e2e5f1", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <span style={{ fontSize: 14, fontWeight: 800, color: "#111827" }}>Queue &amp; Completed</span>
+        <div className="px-4 py-3 border-b border-[#e2e5f1] flex-shrink-0 flex items-center justify-between">
+          <span className="text-[14px] font-extrabold text-gray-900">Queue &amp; Completed</span>
           <button
             type="button"
             onClick={() => setQueueSheetOpen(false)}
-            style={{ width: 28, height: 28, borderRadius: 8, border: "1px solid #e2e5f1", background: "#f7f8fc", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#6b7280" }}
+            className="w-7 h-7 rounded-[8px] border border-[#e2e5f1] bg-[#f7f8fc] flex items-center justify-center cursor-pointer text-gray-500"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
@@ -2440,10 +2325,10 @@ export function TintOperatorContent() {
         </div>
 
         {/* Sheet body */}
-        <div style={{ overflowY: "auto", padding: "12px 16px 24px" }}>
+        <div className="overflow-y-auto px-4 py-3 pb-6">
 
           {/* Queue label */}
-          <div style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".6px", color: "#9ca3af", marginBottom: 10 }}>
+          <div className="text-[10px] font-extrabold uppercase tracking-[.6px] text-gray-400 mb-2.5">
             Queue
           </div>
 
@@ -2452,51 +2337,48 @@ export function TintOperatorContent() {
             const isActive   = job.status === "tinting_in_progress";
             const hasActive  = jobs.some(j => j.status === "tinting_in_progress");
             const isNext     = !isActive && !hasActive && idx === 0;
+            const isQueued   = !isActive && !isNext;
             const isSelected = job.id === selectedJobId && job.type === selectedJobType;
-            const hdrBg      = isActive ? "#eff6ff" : isNext ? "#e8eaf6" : "#f7f8fc";
-            const hdrBorder  = isActive ? "#bfdbfe" : isNext ? "#c5cae9" : "#e2e5f1";
             const seqLabel   = isActive ? "Active" : isNext ? "Next up" : `#${idx + 1}`;
-            const seqStyle: React.CSSProperties = isActive
-              ? { background: "#dbeafe", color: "#1e40af" }
-              : isNext
-              ? { background: "#1a237e", color: "#fff" }
-              : { background: "#f7f8fc", border: "1px solid #e2e5f1", color: "#9ca3af" };
 
             return (
               <div
                 key={`sheet-${job.type}-${job.id}`}
                 onClick={() => { setSelectedJobId(job.id); setSelectedJobType(job.type); setQueueSheetOpen(false); }}
-                style={{
-                  border: `1px solid ${isSelected ? "#1a237e" : isActive ? "#bfdbfe" : isNext ? "#c5cae9" : "#e2e5f1"}`,
-                  borderRadius: 12, overflow: "hidden", marginBottom: 8,
-                  cursor: "pointer", opacity: (!isActive && !isNext) ? 0.55 : 1,
-                  outline: isSelected ? "2px solid #1a237e" : "none",
-                  outlineOffset: 1,
-                }}
+                className={cn(
+                  "border rounded-xl overflow-hidden mb-2 cursor-pointer transition-all duration-150",
+                  isSelected ? "border-[#1a237e] outline outline-2 outline-[#1a237e] outline-offset-1" : "",
+                  isActive ? "border-[#bfdbfe]" : isNext ? "border-[#c5cae9]" : "border-[#e2e5f1]",
+                  isQueued ? "opacity-55" : ""
+                )}
               >
-                <div style={{ padding: "8px 11px 7px", borderBottom: `1px solid ${hdrBorder}`, background: hdrBg, display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 6 }}>
-                  <div style={{ minWidth: 0, flex: 1 }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: "#111827", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                <div className={cn("px-2.5 py-2 border-b flex items-start justify-between gap-1.5",
+                  isActive ? "bg-[#eff6ff] border-[#bfdbfe]" : isNext ? "bg-[#e8eaf6] border-[#c5cae9]" : "bg-[#f7f8fc] border-[#e2e5f1]"
+                )}>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[12px] font-bold text-gray-900 truncate">
                       {job.customerName}
                     </div>
-                    <div style={{ fontFamily: "monospace", fontSize: 9, fontWeight: 600, color: "#7c3aed", marginTop: 2 }}>
+                    <div className="font-mono text-[9px] font-semibold text-[#7c3aed] mt-0.5">
                       {job.obdNumber}{job.splitNumber != null ? ` · Split #${job.splitNumber}` : ""}
                     </div>
                   </div>
-                  <span style={{ fontSize: 10, fontWeight: 800, padding: "2px 7px", borderRadius: 99, whiteSpace: "nowrap", flexShrink: 0, ...seqStyle }}>
+                  <span className={cn("text-[10px] font-extrabold px-1.5 py-px rounded-full whitespace-nowrap flex-shrink-0",
+                    isActive ? "bg-[#dbeafe] text-[#1e40af]" : isNext ? "bg-[#1a237e] text-white" : "bg-[#f7f8fc] border border-[#e2e5f1] text-gray-400"
+                  )}>
                     {seqLabel}
                   </span>
                 </div>
-                <div style={{ padding: "7px 11px 9px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
+                <div className="px-2.5 py-2 flex items-center justify-between gap-1.5">
                   <div>
-                    <div style={{ fontSize: 11.5, fontWeight: 700, color: "#111827" }}>
+                    <div className="text-[11.5px] font-bold text-gray-900">
                       {job.totalVolume != null ? `${job.totalVolume} L` : "—"}{job.articleTag ? ` · ${job.articleTag}` : ""}
                     </div>
-                    <div style={{ fontSize: 10.5, color: "#9ca3af", marginTop: 1 }}>{job.dispatchSlot ?? "—"}</div>
+                    <div className="text-[10.5px] text-gray-400 mt-px">{job.dispatchSlot ?? "—"}</div>
                   </div>
                   {job.tiSubmitted
-                    ? <span style={{ fontSize: 9.5, fontWeight: 700, padding: "3px 7px", borderRadius: 5, background: "#f0fdf4", border: "1px solid #bbf7d0", color: "#16a34a", whiteSpace: "nowrap", flexShrink: 0 }}>✓ TI Done</span>
-                    : <span style={{ fontSize: 9.5, fontWeight: 700, padding: "3px 7px", borderRadius: 5, background: "#fef2f2", border: "1px solid #fca5a5", color: "#dc2626", whiteSpace: "nowrap", flexShrink: 0 }}>TI Needed</span>
+                    ? <span className="text-[9.5px] font-bold px-1.5 py-px rounded-[5px] bg-[#f0fdf4] border border-[#bbf7d0] text-[#16a34a] whitespace-nowrap flex-shrink-0">✓ TI Done</span>
+                    : <span className="text-[9.5px] font-bold px-1.5 py-px rounded-[5px] bg-[#fef2f2] border border-[#fca5a5] text-[#dc2626] whitespace-nowrap flex-shrink-0">TI Needed</span>
                   }
                 </div>
               </div>
@@ -2504,15 +2386,15 @@ export function TintOperatorContent() {
           })}
 
           {/* Divider */}
-          <div style={{ height: 1, background: "#e2e5f1", margin: "8px 0 12px" }} />
+          <div className="h-px bg-[#e2e5f1] my-2 mb-3" />
 
           {/* Completed label */}
-          <div style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".6px", color: "#9ca3af", marginBottom: 10 }}>
+          <div className="text-[10px] font-extrabold uppercase tracking-[.6px] text-gray-400 mb-2.5">
             Completed Today
           </div>
 
           {completedOrders.length === 0 && completedSplits.length === 0 && (
-            <p style={{ fontSize: 11, color: "#9ca3af", textAlign: "center", padding: "8px 0" }}>
+            <p className="text-[11px] text-gray-400 text-center py-2">
               No completed jobs yet today.
             </p>
           )}
@@ -2523,18 +2405,18 @@ export function TintOperatorContent() {
               ? new Date(co.completedAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false })
               : "—";
             return (
-              <div key={`sheet-co-${co.id}`} style={{ border: "1px solid #e2e5f1", borderRadius: 12, overflow: "hidden", marginBottom: 7, opacity: 0.65 }}>
-                <div style={{ padding: "8px 11px", background: "#f0fdf4", borderBottom: "1px solid #bbf7d0" }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: "#111827" }}>{customerName}</div>
-                  <div style={{ fontFamily: "monospace", fontSize: 9, fontWeight: 600, color: "#7c3aed", marginTop: 2 }}>
+              <div key={`sheet-co-${co.id}`} className="border border-[#e2e5f1] rounded-xl overflow-hidden mb-1.5 opacity-65">
+                <div className="px-2.5 py-2 bg-[#f0fdf4] border-b border-[#bbf7d0]">
+                  <div className="text-[12px] font-bold text-gray-900">{customerName}</div>
+                  <div className="font-mono text-[9px] font-semibold text-[#7c3aed] mt-0.5">
                     {co.order.obdNumber}
                   </div>
                 </div>
-                <div style={{ padding: "7px 11px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                  <span style={{ fontSize: 10, fontWeight: 600, color: "#27500a", background: "#eaf3de", border: "1px solid #97c459", padding: "2px 7px", borderRadius: 5 }}>
+                <div className="px-2.5 py-1.5 flex items-center justify-between">
+                  <span className="text-[10px] font-semibold text-[#27500a] bg-[#eaf3de] border border-[#97c459] px-1.5 py-px rounded-[5px]">
                     ✓ Tinting Done
                   </span>
-                  <span style={{ fontFamily: "monospace", fontSize: 11, fontWeight: 600, color: "#16a34a", background: "#f0fdf4", border: "1px solid #bbf7d0", padding: "2px 8px", borderRadius: 6 }}>
+                  <span className="font-mono text-[11px] font-semibold text-[#16a34a] bg-[#f0fdf4] border border-[#bbf7d0] px-2 py-px rounded-[6px]">
                     {doneTime}
                   </span>
                 </div>
@@ -2548,18 +2430,18 @@ export function TintOperatorContent() {
               ? new Date(sp.completedAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false })
               : "—";
             return (
-              <div key={`sheet-cs-${sp.id}`} style={{ border: "1px solid #e2e5f1", borderRadius: 12, overflow: "hidden", marginBottom: 7, opacity: 0.65 }}>
-                <div style={{ padding: "8px 11px", background: "#f0fdf4", borderBottom: "1px solid #bbf7d0" }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: "#111827" }}>{customerName}</div>
-                  <div style={{ fontFamily: "monospace", fontSize: 9, fontWeight: 600, color: "#7c3aed", marginTop: 2 }}>
+              <div key={`sheet-cs-${sp.id}`} className="border border-[#e2e5f1] rounded-xl overflow-hidden mb-1.5 opacity-65">
+                <div className="px-2.5 py-2 bg-[#f0fdf4] border-b border-[#bbf7d0]">
+                  <div className="text-[12px] font-bold text-gray-900">{customerName}</div>
+                  <div className="font-mono text-[9px] font-semibold text-[#7c3aed] mt-0.5">
                     {sp.order.obdNumber}{sp.splitNumber != null ? ` · Split #${sp.splitNumber}` : ""}
                   </div>
                 </div>
-                <div style={{ padding: "7px 11px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                  <span style={{ fontSize: 10, fontWeight: 600, color: "#27500a", background: "#eaf3de", border: "1px solid #97c459", padding: "2px 7px", borderRadius: 5 }}>
+                <div className="px-2.5 py-1.5 flex items-center justify-between">
+                  <span className="text-[10px] font-semibold text-[#27500a] bg-[#eaf3de] border border-[#97c459] px-1.5 py-px rounded-[5px]">
                     ✓ Tinting Done
                   </span>
-                  <span style={{ fontFamily: "monospace", fontSize: 11, fontWeight: 600, color: "#16a34a", background: "#f0fdf4", border: "1px solid #bbf7d0", padding: "2px 8px", borderRadius: 6 }}>
+                  <span className="font-mono text-[11px] font-semibold text-[#16a34a] bg-[#f0fdf4] border border-[#bbf7d0] px-2 py-px rounded-[6px]">
                     {doneTime}
                   </span>
                 </div>

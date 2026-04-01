@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(req: Request): Promise<NextResponse> {
   const session = await auth();
-  requireRole(session, [ROLES.DISPATCHER, ROLES.FLOOR_SUPERVISOR, ROLES.ADMIN]);
+  requireRole(session, [ROLES.DISPATCHER, ROLES.FLOOR_SUPERVISOR, ROLES.ADMIN, ROLES.OPERATIONS]);
 
   const { searchParams } = new URL(req.url);
   const deliveryType = searchParams.get("deliveryType");

@@ -10,7 +10,7 @@ export async function PATCH(
   { params }: { params: { id: string } },
 ): Promise<NextResponse> {
   const session = await auth();
-  requireRole(session, [ROLES.TINT_MANAGER, ROLES.ADMIN]);
+  requireRole(session, [ROLES.TINT_MANAGER, ROLES.ADMIN, ROLES.OPERATIONS]);
 
   const orderId = parseInt(params.id, 10);
   if (isNaN(orderId)) {

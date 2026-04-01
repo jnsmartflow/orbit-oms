@@ -3,6 +3,7 @@
 import { Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CarriedOverBadge } from "@/components/shared/carried-over-badge";
+import { CascadeBadge, shouldShowCascadeBadge } from "@/components/shared/cascade-badge";
 import type { BoardOrder } from "./planning-page";
 
 interface CustomerPillProps {
@@ -91,6 +92,9 @@ export function CustomerPill({ order, onClick }: CustomerPillProps) {
       <div className="flex items-center gap-2 text-[9px]">
         <span className="text-gray-400">{area || "—"}</span>
         <CarriedOverBadge daysOverdue={order.daysOverdue} />
+        {shouldShowCascadeBadge(order.slotId, order.originalSlotId) && order.originalSlot && (
+          <CascadeBadge originalSlotName={order.originalSlot.name} />
+        )}
         {hasTinting && (
           <span className="text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded flex items-center gap-0.5">
             🎨 Tinting

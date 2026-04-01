@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(): Promise<NextResponse> {
   const session = await auth();
-  requireRole(session, [ROLES.FLOOR_SUPERVISOR, ROLES.ADMIN]);
+  requireRole(session, [ROLES.FLOOR_SUPERVISOR, ROLES.ADMIN, ROLES.OPERATIONS]);
 
   const todayStart = new Date(new Date().toISOString().slice(0, 10) + "T00:00:00");
   const todayEnd = new Date(new Date().toISOString().slice(0, 10) + "T23:59:59");

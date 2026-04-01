@@ -20,7 +20,8 @@ export type RoleSidebarRole =
   | "import"
   | "support_import"
   | "planning"
-  | "warehouse";
+  | "warehouse"
+  | "operations";
 
 export interface RoleSidebarProps {
   role:         RoleSidebarRole;
@@ -32,6 +33,11 @@ export interface RoleSidebarProps {
 // ── Icon map ──────────────────────────────────────────────────────────────────
 
 const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
+  operations_support:   ClipboardList,
+  operations_tinting:       Layers,
+  operations_tint_operator: Zap,
+  operations_dispatch:      LayoutDashboard,
+  operations_warehouse: Warehouse,
   import_obd:          Upload,
   support_queue:       ClipboardList,
   planning_board:      LayoutDashboard,
@@ -58,6 +64,7 @@ const ROLE_LABELS: Record<RoleSidebarRole, string> = {
   support_import: "Support Team",
   planning:       "Planning Board",
   warehouse:      "Warehouse",
+  operations:     "Operations",
 };
 
 // ── Component ─────────────────────────────────────────────────────────────────

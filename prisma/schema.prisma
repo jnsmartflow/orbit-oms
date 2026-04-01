@@ -439,6 +439,7 @@ model import_raw_summary {
   shipToCustomerId    String?
   shipToCustomerName  String?
   invoiceNo           String?
+  soNumber            String?
   invoiceDate         DateTime?
   smuNumber           String?
   rowStatus           String                 @default("valid")

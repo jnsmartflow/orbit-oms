@@ -10,7 +10,7 @@ export async function POST(
   { params }: { params: { id: string } },
 ): Promise<NextResponse> {
   const session = await auth();
-  requireRole(session, [ROLES.DISPATCHER, ROLES.ADMIN]);
+  requireRole(session, [ROLES.DISPATCHER, ROLES.ADMIN, ROLES.OPERATIONS]);
 
   const planId = parseInt(params.id, 10);
   if (isNaN(planId)) {

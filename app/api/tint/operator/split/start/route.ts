@@ -20,8 +20,8 @@ class WrongStageError extends Error {
 
 export async function POST(req: Request): Promise<NextResponse> {
   const session = await auth();
-  requireRole(session, [ROLES.TINT_OPERATOR]);
-  if (session!.user.role !== "admin") {
+  requireRole(session, [ROLES.TINT_OPERATOR, ROLES.OPERATIONS]);
+  if (session!.user.role !== "admin" && session!.user.role !== ROLES.OPERATIONS) {
     const allowed = await checkPermission(session!.user.role, "tint_operator", "canEdit");
     if (!allowed) return NextResponse.json({ error: "Permission denied" }, { status: 403 });
   }
@@ -33,12 +33,13 @@ export async function POST(req: Request): Promise<NextResponse> {
 
   const { splitId } = parsed.data;
   const userId = parseInt(session!.user.id, 10);
+  const isOpsOrAdmin = ["operations", "admin"].includes(session!.user.role ?? "");
 
   // Guard 1 — TI gate: operator must have submitted the Tinter Issue form first
   const split = await prisma.order_splits.findFirst({
     where: {
       id: Number(splitId),
-      assignedToId: Number(session!.user.id),
+      ...(isOpsOrAdmin ? {} : { assignedToId: Number(session!.user.id) }),
       status: { not: "cancelled" },
     },
     select: { tiSubmitted: true },
@@ -59,17 +60,19 @@ export async function POST(req: Request): Promise<NextResponse> {
   }
 
   // Guard 2 — One-job rule: operator may not have two jobs in progress simultaneously
-  const activeJob = await prisma.$queryRaw`
-    SELECT "operatorId" FROM operator_active_job
-    WHERE "operatorId" = ${Number(session!.user.id)}
-    LIMIT 1
-  `;
+  if (!isOpsOrAdmin) {
+    const activeJob = await prisma.$queryRaw`
+      SELECT "operatorId" FROM operator_active_job
+      WHERE "operatorId" = ${Number(session!.user.id)}
+      LIMIT 1
+    `;
 
-  if ((activeJob as unknown[]).length > 0) {
-    return NextResponse.json(
-      { error: "You already have a job in progress. Complete it first." },
-      { status: 400 },
-    );
+    if ((activeJob as unknown[]).length > 0) {
+      return NextResponse.json(
+        { error: "You already have a job in progress. Complete it first." },
+        { status: 400 },
+      );
+    }
   }
 
   try {
@@ -80,7 +83,7 @@ export async function POST(req: Request): Promise<NextResponse> {
     if (!splitRow) {
       return NextResponse.json({ error: "Split not found" }, { status: 404 });
     }
-    if (splitRow.assignedToId !== userId) {
+    if (!isOpsOrAdmin && splitRow.assignedToId !== userId) {
       return NextResponse.json({ error: "Not assigned to you" }, { status: 403 });
     }
     if (splitRow.status !== "tint_assigned") {

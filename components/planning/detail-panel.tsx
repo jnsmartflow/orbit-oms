@@ -3,6 +3,7 @@
 import { X, Check, Loader2 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
+import { CascadeBadge, shouldShowCascadeBadge } from "@/components/shared/cascade-badge";
 import type { BoardOrder } from "./planning-page";
 
 interface DetailPanelProps {
@@ -167,6 +168,11 @@ export function DetailPanel({
                     <span>{order.querySnapshot.articleTag}</span>
                   )}
                 </div>
+                {shouldShowCascadeBadge(order.slotId, order.originalSlotId) && order.originalSlot && (
+                  <div className="mt-1.5">
+                    <CascadeBadge originalSlotName={order.originalSlot.name} />
+                  </div>
+                )}
                 {canPick && !isPicked && (
                   <button
                     type="button"

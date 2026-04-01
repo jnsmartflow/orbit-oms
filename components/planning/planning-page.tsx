@@ -35,6 +35,8 @@ export interface BoardOrder {
     } | null;
   } | null;
   slot: { id: number; name: string; sortOrder: number; slotTime: string; isNextDay: boolean } | null;
+  originalSlotId: number | null;
+  originalSlot: { name: string } | null;
   querySnapshot: {
     totalUnitQty: number;
     totalWeight: number;
