@@ -1,572 +1,386 @@
-# CLAUDE_UI.md — Orbit OMS UI Patterns
+# CLAUDE_UI.md — Orbit OMS UI Design System
 # Load alongside CLAUDE_CONTEXT.md for all UI implementation sessions.
-# Version: Phase 3 · March 2026
+# This is the SINGLE SOURCE OF TRUTH for visual styling across all screens.
+# Version: v2 · Neutral Theme · April 2026
 
 ---
 
-## 1. Color palette
+## 1. Design Philosophy
 
-| Token | Hex | Usage |
+- **Neutral first.** White backgrounds, gray borders, minimal color. Color is reserved for semantic meaning only.
+- **Match the Support board and TM v39 aesthetic.** All new screens and redesigns follow this palette.
+- **The old indigo theme (#1a237e) is DEPRECATED.** Do not use indigo fills, indigo borders, or indigo text for buttons, cards, or filter controls. Only exception: semantic status colors that predate this guide (status popover priority/dispatch options).
+- **Minimal chrome.** Maximize content area. Header + controls in 2 rows max. No stat cards unless explicitly requested.
+- **Text hierarchy drives scannability.** Darkest = primary identifier, medium = data, lightest = context.
+
+---
+
+## 2. Color Palette — Neutral Theme
+
+### Core colors (use everywhere)
+| Token | Tailwind | Usage |
 |---|---|---|
-| Navy primary | `#1a237e` | Buttons, active states, links |
-| Navy hover | `#283593` | Button hover |
-| Navy light | `#e8eaf6` | Active pill bg, selected row bg |
-| Navy border active | `#c5cae9` | Active pill border |
-| Border default | `#e2e5f1` | Cards, dividers, inputs |
-| Border hover | `#cdd1e8` | Card hover |
-| Surface default | `#f7f8fc` | Input bg, info grid bg |
-| Page bg | `#f0f2f8` | Body background |
-| Text primary | `#111827` (gray-900) | Headings, card titles |
-| Text secondary | `#6b7280` (gray-500) | Labels, subtitles |
-| Text muted | `#9ca3af` (gray-400) | Timestamps, captions |
+| Page background | `bg-white` | Body, page wrapper |
+| Surface | `bg-gray-50` | Info grids, column backgrounds, input backgrounds |
+| Border default | `border-gray-200` | Cards, dividers, inputs, table rows |
+| Border hover | `border-gray-300` | Card hover, input focus |
+| Border active | `border-gray-900` | Active filter pill, active slot, active toggle |
+| Text primary | `text-gray-900` | Customer names, headings, active states |
+| Text secondary | `text-gray-600` | SMU, articles, volume, operator names, data values |
+| Text muted | `text-gray-400` | Timestamps, slots, dates, labels, placeholders |
+| Text hint | `text-gray-300` | Placeholder text, disabled states |
 
----
-
-## 2. Typography
-
-| Element | Class |
-|---|---|
-| Page title | `text-[17px] font-extrabold text-gray-900` |
-| Card title | `text-[13.5px] font-bold text-gray-900 leading-snug` |
-| Label (uppercase) | `text-[9.5px] font-bold uppercase tracking-[.4px] text-gray-400` |
-| Meta value | `text-[12px] font-semibold text-gray-900` |
-| Badge text | `text-[11px] font-semibold` |
-| Timestamp | `text-[11px] text-gray-400` |
-| Button text | `text-[12px] font-semibold` |
-| Section header | `text-[10px] font-extrabold uppercase tracking-[.6px] text-gray-400` |
-
----
-
-## 3. Border & spacing rules
-
-- Card border radius: `rounded-xl` (12px)
-- Column container border radius: `rounded-[14px]`
-- Modal border radius: `rounded-[14px]`
-- Card padding: `px-3.5 pt-3 pb-3`
-- Info grid: `bg-[#f7f8fc] border border-[#e2e5f1] rounded-lg p-2.5 grid grid-cols-2 gap-x-4 gap-y-2`
-- Top accent bar on cards: `h-[3px] w-full` with stage-color gradient
-
----
-
-## 4. Card top accent bar colors
-
-| Stage | Class |
-|---|---|
-| pending_tint_assignment | `bg-gradient-to-r from-indigo-500 to-indigo-300` |
-| tint_assigned | `bg-gradient-to-r from-amber-400 to-amber-300` |
-| tinting_in_progress | `bg-gradient-to-r from-blue-500 to-blue-300` |
-| completed / pending_support | `bg-gradient-to-r from-green-600 to-green-400` |
-
-### Page layout
-```
-bg-[#f0f2f8] min-h-screen
-  ↓
-  Topbar (52px, bg-white, border-b border-[#e2e5f1]) ← sticky top-0 z-40
-    Left: Title (font-extrabold) + count badge
-    Right: search input (220px, expands to 260px on focus) + clock
-  ↓
-  Filter bar (44px, bg-white, border-b) ← sticky top-[52px] z-40
-    Groups: SLOT | PRIORITY | DISPATCH | TYPE | active pill + Operator dropdown
-  ↓
-  Operator workload bar (bg-white, border-b, collapsible, collapsed by default)
-  ↓
-  Stat bar (px-3 py-2.5, grid grid-cols-4 gap-3)
-  ↓
-  Board (px-3 pb-6)
-```
-
-### Kanban layout
-```
-px-3 pb-6
-  grid grid-cols-4 gap-2
-    Column (bg-[#f7f8fc] border border-[#e2e5f1] rounded-[12px] overflow-hidden)
-      Column header (bg-white border-b px-4 py-3)
-      Card list (p-2 flex flex-col gap-2)
-```
-
----
-
-## 5. StatCard Component — compact v2
-
-Padding: `10px 14px`. Icon: 32px circle. Layout: icon + right column.
-
-```tsx
-<div className="bg-white border border-[#e2e5f1] rounded-xl flex items-center gap-3"
-  style={{ padding: '10px 14px' }}>
-  <div className={cn("w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0",
-    iconBg, iconColor)}>
-    {icon}
-  </div>
-  <div>
-    <div className="flex items-baseline gap-2 mb-1">
-      <span className="text-[20px] font-extrabold text-gray-900 leading-none">{value}</span>
-      <span className="text-[10px] font-bold uppercase tracking-[.4px] text-gray-500">{label}</span>
-    </div>
-    <div className="text-[11px] text-gray-400">
-      {volume} · {subLabel}
-    </div>
-  </div>
-</div>
-```
-
-Volume format: `>= 1000` → `"1,234 L"` via `toLocaleString()`. `0 or null` → `"— L"`.
-Two rows: count+label row (mb-1) then volume+sublabel row. Never single row.
-
----
-
-## 6. Status badges
-
-### StatusBadge (priority)
-```tsx
-<StatusBadge variant="urgent" size="sm" />  // red pill
-<StatusBadge variant="normal" size="sm" />  // indigo pill
-```
-Used on ALL order and split cards in top-left badge group.
-
-### DispatchStatusBadge
-Inline component with Truck icon. Color map:
-- `dispatch` → green-50 / green-700 / green-200
-- `hold` → red-50 / red-700 / red-200
-- `waiting_for_confirmation` → amber-50 / amber-700 / amber-200
-
-### Card sections (top to bottom)
-1. **Icon row** — `h-[24px]`, `justify-end`, `gap-1`, `mb-1.5`
-   Order cards: 👁 Eye + + Plus + ··· MoreHorizontal
-   Split cards: 👁 Eye (SKU sheet, split lines only)
-               🗂 Layers (SplitDetailSheet + OBD history)
-               + Plus (status popover)
-               ··· MoreHorizontal
-2. **Badge row** — `min-h-[22px]`, `flex-wrap`, `gap-1.5`, `mb-2`
-   Priority badge (Normal/Urgent) + dispatch status badge (if set)
-   Split cards also show Split #N badge
-3. **Customer name** — `text-[13.5px] font-bold`, `mb-1`
-4. **OBD row** — `OBDNo · Route · Date Time`, `mb-2.5`
-5. **Meta grid** — 2×2 in `bg-[#f7f8fc] border border-[#e2e5f1] rounded-lg p-2`, `mb-2`
-6. **Split indicator** (Pending, when `hasSplits = true`) — amber pill, `mt-2 mb-0`
-7. **Bottom section** — `mt-2.5 pt-2.5 border-t border-[#e2e5f1]`:
-   - Pending (`hasSplits = false`): navy Assign button `py-3`
-   - Pending (`hasSplits = true`): outlined Create Split button `py-3`
-   - Assigned / In Progress / Completed: operator row `px-3 py-2`
-   - Completed only: + status trail `mt-2 pt-2 border-t border-[#e2e5f1]`
-
-**Icon row rule:** Icons are ALWAYS on their own row ABOVE badges.
-Never combine icons and badges on the same flex row — 3+ badges push icons off screen.
-
-### Split/Order card ··· menu
-```
-tint_assigned:
-  ↑ Move Up   (ChevronUp icon)
-  ↓ Move Down (ChevronDown icon)
-  ─── divider ───
-  Re-assign   (RefreshCw icon)
-  Cancel      (X icon, destructive red)
-tinting_in_progress / tinting_done: No actions available
-```
-
-### Two-badge status trail (Completed column)
-Right badge color logic:
-  dispatch                   → bg-[#eaf3de] border-[#97c459] text-[#27500a]
-  hold                       → bg-[#fcebeb] border-[#f09595] text-[#791f1f]
-  waiting_for_confirmation   → bg-[#faeeda] border-[#fac775] text-[#633806]
-  null (no dispatch status)  → bg-[#eff6ff] border-[#bfdbfe] text-[#1e40af] label: "Pending Support"
-
-Applies to BOTH KanbanCard (whole orders) and SplitKanbanCard in Completed column.
-Previously this trail was SplitKanbanCard only — now on both card types.
-
----
-
-## 7. Action button cluster (card top-right)
-
-3 buttons in a row: `flex items-center gap-1`
-Each button: `w-[26px] h-[26px] rounded-lg flex items-center justify-center transition-colors`
-
-| Button | Icon | Default | Active |
+### Semantic colors (use only for meaning)
+| Purpose | Background | Border | Text |
 |---|---|---|---|
-| Eye (SKU sheet) | `Eye size={14}` | `text-gray-400 hover:text-violet-600 hover:bg-violet-50` | — |
-| + (status popover) | `Plus size={14}` | `text-gray-400 hover:bg-gray-100` | `bg-[#1a237e] text-white` |
-| ... (menu) | `MoreHorizontal size={14}` | `text-gray-400 hover:bg-gray-100` | — |
+| Urgent priority | `bg-red-50` | `border-red-200` | `text-red-600` |
+| Normal priority | `bg-gray-50` | `border-gray-200` | `text-gray-500` |
+| Done / Dispatch | `bg-green-50` | `border-green-200` | `text-green-700` |
+| Hold | `bg-red-50` | `border-red-200` | `text-red-700` |
+| Waiting | `bg-amber-50` | `border-amber-200` | `text-amber-700` |
+| Customer Missing | — | — | `text-amber-500` (icon only) |
+| Split indicator | — | — | `text-amber-600` (text only) |
+| Split badge | `bg-purple-50` | `border-purple-200` | `text-purple-700` |
+| SMU badge (table) | plain text | — | `text-gray-600 font-medium` |
+
+### Delivery type dot colors
+| Type | Tailwind | Hex |
+|---|---|---|
+| Local | `bg-blue-600` | #2563eb |
+| Upcountry (UPC) | `bg-orange-600` | #ea580c |
+| IGT | `bg-teal-600` | #0d9488 |
+| Cross Depot | `bg-rose-600` | #e11d48 |
+| Unknown/null | no dot shown | — |
+
+Dot size: 5px (`w-[5px] h-[5px] rounded-full`). Placed before OBD number in both card and table views.
+
+### Operator avatar colors
+| Stage | Color |
+|---|---|
+| Assigned | `bg-gray-700` |
+| In Progress | `bg-gray-700` |
+| Completed | `bg-green-600` |
+
+### Column header dots (kanban)
+| Column | Color |
+|---|---|
+| Pending | `bg-amber-500` (or stage-specific) |
+| Assigned | `bg-blue-500` |
+| In Progress | `bg-purple-500` |
+| Completed | `bg-green-500` |
+
+These are the ONLY non-semantic colors allowed. 6px dots in column headers for visual identification only.
 
 ---
 
-## 8. Status popover
+## 3. Typography
 
-Fixed-position portal (avoids overflow clipping). Width: 210px.
-Anchor: bottom of + button + 4px gap. Right-aligned.
-`zIndex: 9999`
+| Element | Classes |
+|---|---|
+| Page title | `text-[14px] font-semibold text-gray-900` |
+| Inline stats (header) | `text-[11px] text-gray-400` with `text-gray-900 font-semibold` for numbers |
+| Card customer name | `text-[13.5px] font-bold text-gray-900` |
+| Card info grid label | `text-[9.5px] font-bold uppercase tracking-[.4px] text-gray-400` |
+| Card info grid value | `text-[12px] font-semibold text-gray-600` |
+| OBD code (card) | monospace, `text-[10.5px] text-gray-800` (or purple mono if existing convention) |
+| OBD code (table) | `font-mono text-[11px] text-gray-800` |
+| Table header | `text-[10px] font-medium text-gray-400 uppercase tracking-wider` |
+| Table data (primary) | `text-[11px] text-gray-900 font-medium` (customer name) |
+| Table data (secondary) | `text-[11px] text-gray-600` (SMU, articles, volume, operator) |
+| Table data (muted) | `text-[11px] text-gray-400` (slot, time, date) |
+| Badge text | `text-[10.5px] font-semibold` |
+| Button text | `text-[11px] font-medium` (table) or `text-[12px] font-semibold` (card) |
+| Section header | `text-[13px] font-semibold text-gray-900` |
+| Section volume | `text-[13px] font-semibold text-gray-700` (right-aligned) |
+| Timestamp / clock | `text-[11px] text-gray-400` |
 
-Sections:
-1. "SET STATUS" header — `text-[10px] font-extrabold uppercase tracking-[.6px] text-gray-400`
-2. Priority toggle — 2 buttons: Normal | 🚨 Urgent
-3. Divider
-4. Dispatch toggle — compact 3-button strip: Dispatch | Hold | Waiting
-5. Save button — disabled (gray) until change detected
-
-Priority active states:
-- urgent: `bg-red-50 border-red-300 text-red-700`
-- normal: `bg-[#EEEDFE] border-[#AFA9EC] text-[#3C3489]`
-
-Dispatch active states (inside strip):
-- dispatch: `bg-green-50 border border-green-200 text-green-700`
-- hold: `bg-red-50 border border-red-200 text-red-700`
-- waiting_for_confirmation: `bg-amber-50 border border-amber-200 text-amber-700`
-
----
-
-## 9. Operator row (bottom of assigned/in-progress/done cards)
-
-```tsx
-<div className="flex items-center gap-2.5 bg-[#f7f8fc] border border-[#e2e5f1] rounded-lg px-3 py-2">
-  <div className="w-7 h-7 rounded-full bg-[#1a237e] flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0">
-    {initials}
-  </div>
-  <span className="text-[12px] font-semibold text-gray-900 flex-1 truncate">{name}</span>
-  <span className="text-[11px] text-gray-400 flex-shrink-0">{time}</span>
-</div>
-```
-
-Avatar color by stage: assigned = navy `#1a237e` · in-progress = blue `#378ADD` · done = green `#639922`
+### Text color hierarchy (table view)
+| Priority | Color | Examples |
+|---|---|---|
+| Darkest | `text-gray-900 font-medium` | Customer name |
+| Dark | `text-gray-800 font-mono` | OBD number |
+| Medium | `text-gray-600` | SMU, Articles, Volume, Operator name |
+| Light | `text-gray-400` | Slot, Time, Date, Priority "Normal" |
+| Semantic | red/amber/green/purple | Urgent, Missing, Done, Split |
 
 ---
 
-## 10. Dropdown menu (... button)
+## 4. Borders & Spacing
 
-```tsx
-<div className="absolute right-0 top-8 z-50 bg-white border border-[#e2e5f1] rounded-xl shadow-lg py-1 min-w-[130px] max-w-[150px]">
-  <button className="w-full flex items-center gap-2.5 px-3.5 py-2 text-[12px] text-gray-700 hover:bg-[#f7f8fc] transition-colors whitespace-nowrap">
-    <Icon size={12} className="text-gray-400 flex-shrink-0" />
-    Label
-  </button>
-  <div className="mx-3 border-t border-[#f0f1f8]" />
-  <button className="... text-red-600 hover:bg-red-50 ...">
-    Cancel / destructive
-  </button>
-</div>
-```
+| Element | Classes |
+|---|---|
+| Card border | `border border-gray-200 rounded-lg` |
+| Card hover | `hover:border-gray-300` |
+| Card padding | `p-[10px_12px]` or `px-3.5 pt-3 pb-3` |
+| Column container | `bg-gray-50 border border-gray-200 rounded-lg` |
+| Column header | `bg-white border-b border-gray-200 px-[14px] py-[10px]` |
+| Info grid | `bg-gray-50 border border-gray-200 rounded-md p-[7px_10px]` |
+| Modal border | `border border-gray-200 rounded-lg` |
+| Table row | `border-b border-gray-50 hover:bg-gray-50/50` |
+| Table header row | `border-b border-gray-100` |
+| Section divider | `border-b border-gray-200` |
+| Dropdown panel | `border border-gray-200 rounded-lg shadow-lg` |
 
----
-
-## 11. Modal pattern
-
-```tsx
-<div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-  <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-  <div className="relative bg-white rounded-[14px] shadow-xl w-[400px] overflow-hidden border border-[#e2e5f1]">
-    {/* Header */}
-    <div className="px-5 pt-5 pb-4 border-b border-[#e2e5f1]">
-      <p className="text-[15px] font-bold text-gray-900">{title}</p>
-      <p className="text-[12px] text-gray-400 mt-1">{subtitle}</p>
-    </div>
-    {/* Body */}
-    <div className="px-5 pt-4 pb-2 max-h-[260px] overflow-y-auto">...</div>
-    {/* Footer */}
-    <div className="px-5 pb-5 pt-3 border-t border-[#e2e5f1] flex justify-end gap-2">
-      <button className="... text-gray-600 border border-[#e2e5f1] ...">Cancel</button>
-      <button className="... text-white bg-[#1a237e] hover:bg-[#283593] ...">Confirm</button>
-    </div>
-  </div>
-</div>
-```
-
-### Full-width card CTA — Assign button (when hasSplits = false)
-```
-w-full flex items-center justify-center gap-2 bg-[#1a237e] text-white
-rounded-lg py-3 text-[12px] font-semibold
-hover:bg-[#283593] transition-colors
-```
-
-### Full-width card CTA — Create Split button (when hasSplits = true)
-```
-w-full flex items-center justify-center gap-2 bg-white border border-[#1a237e]
-text-[#1a237e] rounded-lg py-3 text-[12px] font-semibold
-hover:bg-[#e8eaf6] transition-colors
-```
-Same `py-3` height as Assign button. Used when `hasSplits = true` on Pending cards.
+### NO accent bars
+Cards do NOT have colored top accent bars. No `h-[3px]` gradient divs.
 
 ---
 
-## 12. Operator selector (inside modals)
+## 5. Page Layout — 2 Row Header
 
-Each operator row in assignment/reassignment modals:
-```tsx
-<div className={cn(
-  "flex items-center gap-3 p-3.5 border-[1.5px] rounded-xl mb-2 cursor-pointer transition-all",
-  isSelected ? "border-[#1a237e] bg-[#e8eaf6]" : "border-[#e2e5f1] hover:border-[#c5cae9] hover:bg-[#f7f8fc]",
-)}>
-  <div className="w-9 h-9 rounded-full bg-[#1a237e] text-white flex items-center justify-center text-[12px] font-bold">
-    {initials}
-  </div>
-  <div className="flex-1 min-w-0">
-    <p className="text-[13px] font-semibold text-gray-900">{name}</p>
-  </div>
-  <div className={cn("w-5 h-5 rounded-full bg-[#1a237e] text-white flex items-center justify-center text-[10px]", isSelected ? "opacity-100" : "opacity-0")}>✓</div>
-</div>
+All board screens should follow this layout:
+
 ```
+Row 1 (42px, sticky top-0):
+  Left:  Title · Count stats with volume · OBD count
+  Right: Search · View toggle (Cards/Table) · Clock
+
+Row 2 (36px, sticky top-[42px]):
+  Left:  Slot pills (from slot_master, with counts, closed/open state)
+  Right: [Filter ▾] [Workload ▾] (dropdowns)
+
+Content starts immediately after Row 2.
+```
+
+No stat cards. No separate filter bar row. No collapsible workload bar row.
+
+### Slot pills (Row 2)
+```
+Style: px-2.5 py-0.5 border rounded-md text-xs h-7
+Active: border-gray-900 text-gray-900 font-medium
+Inactive: border-gray-200 text-gray-500 hover:border-gray-300
+Closed: bg-gray-50 border-gray-100 text-gray-400
+Done (0 pending): checkmark icon + slot name
+```
+
+### Filter dropdown
+- Button: `border border-gray-200 rounded-md text-[11px] font-medium h-7`
+- Active: `border-gray-900 text-gray-900` with count badge
+- Panel: `w-[260px] bg-white border-gray-200 rounded-lg shadow-lg`
+- Groups: Delivery Type (multi-select), Priority (single-toggle), Type (single-toggle), Operator (dropdown)
+- Filter chips inside panel: `px-2.5 py-1 text-[11px] border rounded-md`
+- Active chip: `bg-gray-900 text-white border-gray-900`
+- Inactive chip: `bg-white text-gray-500 border-gray-200`
+
+### Workload dropdown
+- Same button style as Filter
+- Panel: `w-[300px]` with operator chips
 
 ---
 
-## 13. Error banner (inside modals)
+## 6. Card Components
 
-```tsx
-<div className="flex items-center gap-2.5 mx-5 mb-3 p-3.5 bg-red-50 border border-red-200 rounded-xl text-[12.5px]">
-  <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
-  <span className="text-red-700 font-medium">{message}</span>
-  <button className="ml-auto text-[12px] text-red-600 underline" onClick={retry}>Retry</button>
-</div>
+### Card structure (top to bottom)
+```
+1. Icon row — h-[24px], justify-between
+   Left: split indicator (if applicable): "✂ 1 · 6 left" in text-amber-600
+   Right: action icons [Eye] [+] [⋯]
+
+2. Badge row — flex-wrap gap-1.5 mb-[6px]
+   Priority badge (Normal=gray / Urgent=red)
+   + any semantic badges (Split #N, Done, Dispatch)
+
+3. Customer name — text-[13.5px] font-bold text-gray-900
+   + inline ⚠ icon (AlertCircle 14px, text-amber-500) if customerMissing
+
+4. OBD row — text-[11px] text-gray-400
+   [delivery type dot 5px] OBD · Area · Date
+
+5. Info grid — 2×2, bg-gray-50 border-gray-200
+   SMU | Sales Officer | Articles | Volume
+
+6. Footer — border-t border-gray-200
+   Pending: [Create Split] or [Assign] button (uniform height)
+   Assigned/InProgress: operator row (avatar + name + time)
+   Completed: operator row + status trail
 ```
 
----
+### Button styles
+```
+CTA (Assign/Create Split):
+  bg-white border border-gray-200 text-gray-700 rounded-lg py-2.5
+  text-[12px] font-semibold hover:bg-gray-50 hover:border-gray-300
 
-## 14. Topbar pattern
-
-Height: `h-[52px]`. Background: `bg-white border-b border-[#e2e5f1] px-6 flex items-center`
-
-Left side: `flex items-center flex-1`
-- Title: `text-[17px] font-extrabold text-gray-900`
-- Count pill: `bg-[#f7f8fc] border border-[#e2e5f1] text-[12px] text-gray-400 font-semibold px-2.5 py-0.5 rounded-full ml-2`
-
-Right side: `flex items-center gap-3`
-- Search bar (220px → 260px on focus)
-- Clock: `font-mono text-[12px] text-gray-400`
-
----
-
-## 15. Filter Bar (v2 — 4 groups)
-
-Height: 44px. Bar: `bg-white border-b border-[#e2e5f1] px-4 h-[44px] flex items-center`.
-Groups separated by: `<div style="width:0.5px;height:20px;background:#e2e5f1;flex-shrink:0" />`
-Group container: `flex items-center gap-1 px-3 h-full`
-Group label: `text-[9.5px] font-bold uppercase tracking-[.6px] text-[#ccc] mr-1`
-
-Slot chip with count badge:
-```tsx
-<button className={cn(
-  "flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-md border transition-colors",
-  active ? "bg-[#1a237e] text-white border-[#1a237e]"
-         : "bg-white text-gray-500 border-[#e2e5f1] hover:border-[#1a237e] hover:text-[#1a237e]"
-)}>
-  {label}
-  <span className={cn(
-    "text-[9.5px] font-bold px-1 rounded-[3px]",
-    active ? "bg-white/20 text-white" : "bg-[#f0f2f8] text-gray-400"
-  )}>{count}</span>
-</button>
+Action icons:
+  w-[22px] h-[22px] rounded text-gray-400
+  hover:text-gray-600 hover:bg-gray-100
 ```
 
-Generic filter chip (Priority / Dispatch / Type):
-```tsx
-<button className={cn(
-  "text-[11px] font-semibold px-2.5 py-1 rounded-md border transition-colors",
-  active ? activeClass : "bg-white text-gray-500 border-[#e2e5f1] hover:border-[#cdd1e8]"
-)}>
-  {label}
-</button>
+### Badge styles
 ```
-
-Active states per group:
-  Priority — All: navy | Urgent: `bg-[#fcebeb] text-[#791f1f] border-[#f09595]` | Normal: `bg-[#eeedfe] text-[#3c3489] border-[#afa9ec]`
-  Dispatch — All: navy | Dispatch: `bg-[#eaf3de] text-[#27500a] border-[#97c459]` | Hold: `bg-[#fcebeb] text-[#791f1f] border-[#f09595]` | Waiting: `bg-[#faeeda] text-[#633806] border-[#fac775]`
-  Type — All: navy | Split/Whole: navy
-
-Active filter summary pill (right side, only when filters non-default):
-```tsx
-<div className="flex items-center gap-1.5 bg-[#e8eaf6] border border-[#c5cae9] rounded-md px-2 py-1">
-  <div className="w-1.5 h-1.5 rounded-full bg-[#1a237e] flex-shrink-0" />
-  <span className="text-[10px] font-semibold text-[#1a237e]">{filterSummary}</span>
-  <button onClick={clearAll}
-    className="text-[#7986cb] hover:text-[#1a237e] text-[13px] leading-none ml-0.5">
-    ×
-  </button>
-</div>
+Normal:  bg-gray-50 border-gray-200 text-gray-500
+Urgent:  bg-red-50 border-red-200 text-red-600
+Done:    bg-green-50 border-green-200 text-green-700
+Split:   bg-purple-50 border-purple-200 text-purple-700
 ```
 
 ---
 
-## 16. Filter group pattern
+## 7. Table Components
 
-Bar height: 44px. Groups separated by: `width 0.5px height 20px bg-[#e2e5f1]`
-Group label: `text-[9px] font-bold uppercase tracking-[.6px] text-[#ccc] mr-1`
-
-Slot chip with count:
-```tsx
-<button className={cn(
-  "flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-md border transition-colors",
-  active ? "bg-[#1a237e] text-white border-[#1a237e]"
-         : "bg-white text-gray-500 border-[#e2e5f1] hover:border-[#1a237e] hover:text-[#1a237e]"
-)}>
-  {label}
-  <span className={cn("text-[9.5px] font-bold px-1 rounded-[3px]",
-    active ? "bg-white/20 text-white" : "bg-[#f0f2f8] text-gray-400"
-  )}>{count}</span>
-</button>
+### Grid template (10 columns, all fr, fills 100%)
+```typescript
+const TABLE_GRID = "1fr 1.2fr 1.8fr 0.7fr 0.7fr 1.1fr 0.6fr 1.6fr 0.8fr 0.5fr";
+//                  OBD  SMU    CUST   SLOT  PRIO  ART    VOL   STAGE  TIME   ACTIONS
 ```
 
-Active filter summary pill:
-```tsx
-<div className="flex items-center gap-1.5 bg-[#e8eaf6] border border-[#c5cae9] rounded-md px-2 py-1">
-  <div className="w-1.5 h-1.5 rounded-full bg-[#1a237e]" />
-  <span className="text-[10px] font-semibold text-[#1a237e]">{text}</span>
-  <button onClick={clearAll} className="text-[#7986cb] hover:text-[#1a237e] text-[13px] leading-none ml-0.5">×</button>
-</div>
+All sections use the SAME grid. 10 columns. Fills full width.
+
+### Column sequence
+OBD NO. → SMU → CUSTOMER → SLOT → PRIORITY → ARTICLES → VOLUME → STAGE → TIME → ACTIONS
+
+### Stage column (col8) per section
+- Pending: CTA button (Assign or Create Split + "N left" amber text)
+- Assigned/InProgress/Completed: Operator avatar + name
+
+### Time column (col9) per section
+- Pending: empty
+- Assigned: Assigned At
+- In Progress: Elapsed time
+- Completed: Completed At
+
+### Section headers
+```
+● Section Name  count                                volume L
+```
+Left: colored dot + name + count badge. Right: total volume in `text-[13px] font-semibold text-gray-700`.
+
+### CTA buttons (Pending section)
+Both Assign and Create Split: `min-w-[120px] justify-center` for uniform size.
+"N left" shown as separate `text-amber-600` text beside Create Split button.
+
+---
+
+## 8. Customer Missing Indicator
+
+**Card view:** Inline ⚠ icon (AlertCircle 14px) next to customer name. `text-amber-500 hover:bg-amber-50 rounded p-0.5`. Clickable → opens CustomerMissingSheet.
+
+**Table view:** Same inline icon next to customer name in the Customer cell.
+
+NOT a full pill/badge. NOT a separate row.
+
+---
+
+## 9. Delivery Type Dots
+
+5px colored dot (`w-[5px] h-[5px] rounded-full`) placed BEFORE the OBD number.
+
+| Type | Class | When to show |
+|---|---|---|
+| Local | `bg-blue-600` | deliveryTypeName === "Local" |
+| Upcountry | `bg-orange-600` | deliveryTypeName === "Upcountry" |
+| IGT | `bg-teal-600` | deliveryTypeName === "IGT" |
+| Cross Depot | `bg-rose-600` | deliveryTypeName === "Cross Depot" |
+| null | no dot | deliveryTypeName is null/undefined |
+
+Add `title={deliveryTypeName}` for tooltip on hover.
+
+Color choices avoid clash with: amber (Missing/Split), purple (Split badge), red (Urgent), green (Done).
+
+---
+
+## 10. Order Detail Panel
+
+Shared component: `components/shared/order-detail-panel.tsx`
+API: `GET /api/orders/[id]/detail`
+
+Props: `{ orderId: number | null, onClose: () => void }`
+
+Triggered by: Eye icon on cards, order click in table.
+
+Replaces SkuDetailsSheet in TM (v39). SkuDetailsSheet file kept for other screens.
+
+---
+
+## 11. Status Popover (+ button)
+
+Fixed-position portal. Width 210px. zIndex 9999.
+Anchor: bottom of + button + 4px gap.
+
+Contains:
+1. Priority toggle: Normal (gray) | 🚨 Urgent (red) — keep semantic colors
+2. Dispatch toggle: Dispatch (green) | Hold (red) | Waiting (amber) — keep semantic colors
+3. Save button: `bg-gray-900 text-white` when changes detected, `bg-gray-100 text-gray-400` when disabled
+
+---
+
+## 12. Modal Pattern
+
+```
+Container: fixed inset-0 z-50, centered
+Backdrop: bg-black/40, click to close
+Panel: bg-white border border-gray-200 rounded-lg shadow-xl w-[400px]
+Header: px-5 pt-5 pb-4 border-b border-gray-200
+Footer: px-5 pb-5 pt-3 border-t border-gray-200 flex justify-end gap-2
+Cancel button: border border-gray-200 text-gray-600 hover:bg-gray-50
+Confirm button: bg-gray-900 text-white hover:bg-gray-800
 ```
 
 ---
 
-## 18. Interaction patterns
+## 13. Interaction Patterns
 
 | Interaction | Behaviour |
 |---|---|
-| Assign button (`hasSplits=false`) | Opens operator picker modal — title/button text determined by isReassign logic |
-| Create Split button (`hasSplits=true`) | Opens Split Builder modal |
-| `+` button click | Opens status popover (fixed position via getBoundingClientRect, stopPropagation) |
-| Status popover save | PATCH `/api/tint/manager/orders/[id]/status` or `splits/[id]/status` then `fetchOrders()` |
-| Move Up (··· menu, Assigned only) | PATCH `/api/tint/manager/reorder` direction=up then `fetchOrders()` |
-| Move Down (··· menu, Assigned only) | PATCH `/api/tint/manager/reorder` direction=down then `fetchOrders()` |
-| Slot chip click | Filters cards by dispatchSlot, count shown inside chip |
-| Active pill × | Clears ALL filters simultaneously |
-| Operator workload card click | Sets operatorFilter, click again deselects |
-| 🗂 Layers icon (split cards) | Opens SplitDetailSheet — fetches /api/tint/manager/orders/[id]/splits |
-| Re-assign (inside SplitDetailSheet) | Calls onReassign() + closes sheet → opens split reassign modal |
+| Eye icon click | Opens OrderDetailPanel (not SkuDetailsSheet) |
+| Assign button | Opens operator picker modal |
+| Create Split button | Opens Split Builder modal |
+| + button | Opens status popover (fixed position) |
+| ⋯ button | Opens dropdown menu |
+| Slot pill click | Filters board by slotId. Click again deselects. |
+| Filter dropdown | Opens panel with Del Type / Priority / Type / Operator |
+| Workload dropdown | Opens panel with operator chips |
+| Customer ⚠ icon click | Opens CustomerMissingSheet |
+| Delivery type dot | Tooltip on hover (title attribute) |
 
 ---
 
-## 21. Status Popover (+ button)
+## 14. Screen-Specific Notes
 
-Triggered by: + icon button on any card in any column.
-Positioning: `position: fixed`, top/left computed from `getBoundingClientRect()` of trigger button.
-Width: 200px. Opens on click, closes on outside click (50ms delay prevents immediate close on open).
-z-index: 50 (above cards and modals).
+### Tint Manager (REDESIGNED v39)
+- Full neutral theme applied
+- 2-row header layout
+- OrderDetailPanel instead of SkuDetailsSheet
+- Delivery type dots on all cards and table rows
+- Split indicator in icon row (not separate amber bar)
 
-```tsx
-<div
-  className="fixed z-50 bg-white border border-[#e2e5f1] rounded-xl shadow-lg p-3"
-  style={{
-    top: rect.bottom + 6,
-    left: Math.min(rect.right - 200, window.innerWidth - 212)
-  }}
->
-  <p className="text-[9px] font-bold uppercase tracking-[.6px] text-gray-400 mb-2">
-    Set Status
-  </p>
+### Support Board
+- Already uses neutral slot pills and filter pills
+- Needs neutral card/row styling pass (queued)
 
-  {/* Priority */}
-  <p className="text-[9px] font-bold uppercase tracking-[.4px] text-gray-400 mb-1.5">Priority</p>
-  <div className="flex gap-1 mb-3">
-    <button className={cn("flex-1 py-1.5 rounded-lg border text-[10px] font-semibold",
-      p === 'normal' ? "bg-[#eeedfe] text-[#3c3489] border-[#afa9ec]"
-                     : "bg-white border-[#cdd1e8] text-gray-400")}>
-      Normal
-    </button>
-    <button className={cn("flex-1 py-1.5 rounded-lg border text-[10px] font-semibold",
-      p === 'urgent' ? "bg-[#fcebeb] text-[#791f1f] border-[#f09595]"
-                     : "bg-white border-[#cdd1e8] text-gray-400")}>
-      🚨 Urgent
-    </button>
-  </div>
+### Planning Board
+- Needs neutral palette pass (queued)
+- OrderDetailPanel integration (queued)
 
-  <hr className="border-t border-[#f0f1f8] mb-3" />
+### Warehouse Board
+- Already partially neutral
+- Needs full pass (queued)
 
-  {/* Dispatch Status */}
-  <p className="text-[9px] font-bold uppercase tracking-[.4px] text-gray-400 mb-1.5">
-    Dispatch Status
-  </p>
-  <div className="flex flex-col gap-1.5 mb-3">
-    {[
-      { val: 'dispatch',               label: '🚚 Dispatch', cls: 'bg-[#eaf3de] text-[#27500a] border-[#97c459]' },
-      { val: 'hold',                   label: 'Hold',        cls: 'bg-[#fcebeb] text-[#791f1f] border-[#f09595]' },
-      { val: 'waiting_for_confirmation', label: 'Waiting',   cls: 'bg-[#faeeda] text-[#633806] border-[#fac775]' },
-    ].map(opt => (
-      <button key={opt.val} className={cn(
-        "w-full py-1.5 px-2.5 rounded-lg border text-[11px] font-semibold text-left",
-        dispatch === opt.val ? opt.cls : "bg-white border-[#cdd1e8] text-gray-400"
-      )}>
-        {opt.label}
-      </button>
-    ))}
-  </div>
-
-  <button
-    disabled={!hasChanges || isSaving}
-    className={cn(
-      "w-full py-1.5 rounded-lg text-[11.5px] font-semibold flex items-center justify-center gap-1.5",
-      hasChanges && !isSaving
-        ? "bg-[#1a237e] text-white hover:bg-[#1a237e]/90"
-        : "bg-gray-100 text-gray-400 cursor-not-allowed"
-    )}
-  >
-    {isSaving ? <Loader2 size={12} className="animate-spin" /> : null}
-    {isSaving ? 'Saving…' : 'Save'}
-  </button>
-</div>
-```
-
-+ button active state when popover is open:
-```
-className="... bg-[#1a237e] text-white"  (pop-active state)
-```
+### Tint Operator
+- Needs neutral palette pass (queued)
+- May need delivery type dots
 
 ---
 
----
+## 15. DEPRECATED — Do Not Use
 
-## 22. SplitDetailSheet
+These patterns are from the old indigo theme and should NOT be used in new code:
 
-Fixed overlay portal (not shadcn Sheet). Width 420px, right-anchored, full height.
-z-index: 50. Backdrop: bg-black/40, click to close.
-```tsx
-{splitSheetOpen && (
-  <div className="fixed inset-0 z-50 flex items-end justify-end">
-    <div className="absolute inset-0 bg-black/40"
-      onClick={() => setSplitSheetOpen(false)} />
-    <div className="relative bg-white h-full w-[420px] flex flex-col
-      border-l border-[#e2e5f1] shadow-xl overflow-hidden">
-
-      {/* Header */}
-      <div className="px-6 py-5 border-b border-[#e2e5f1] flex-shrink-0">
-        <p className="text-[11px] font-bold uppercase tracking-[.6px] text-gray-400 mb-1">
-          Split #{splitNumber} · {obdNumber}
-        </p>
-        <h2 className="text-[15px] font-bold text-gray-900">{customerName}</h2>
-      </div>
-
-      {/* Body */}
-      <div className="flex-1 overflow-y-auto px-6 py-4 flex flex-col gap-5">
-        {/* sections */}
-      </div>
-
-      {/* Footer — Close only */}
-      <div className="px-6 py-4 border-t border-[#e2e5f1] flex justify-end bg-white flex-shrink-0">
-        <button onClick={() => setSplitSheetOpen(false)}
-          className="text-[12.5px] font-semibold text-gray-600 border border-[#e2e5f1]
-            bg-white hover:bg-gray-50 px-4 py-2 rounded-lg transition-colors">
-          Close
-        </button>
-      </div>
-    </div>
-  </div>
-)}
-```
-
-Re-assign button style (inside body, tint_assigned only):
-```
-w-full flex items-center justify-center gap-2 bg-white border border-[#1a237e]
-text-[#1a237e] rounded-lg py-2 text-[12px] font-semibold
-hover:bg-[#e8eaf6] transition-colors mt-2
-```
-
-History split card style — current split highlighted:
-```
-border rounded-xl px-4 py-3
-isCurrent:    border-[#1a237e] bg-[#e8eaf6]
-not current:  bg-[#f7f8fc] border-[#e2e5f1]
-```
-
-Loading state while fetching:
-```tsx
-<div className="bg-gray-100 rounded-xl h-20 animate-pulse" />
-<div className="bg-gray-100 rounded-xl h-20 animate-pulse" />
-```
-2 skeleton cards shown while API fetch is in progress.
+| Deprecated | Replacement |
+|---|---|
+| `bg-[#1a237e]` (buttons) | `bg-gray-900` or `bg-white border-gray-200` |
+| `bg-[#e8eaf6]` (active bg) | `bg-gray-50` |
+| `border-[#e2e5f1]` | `border-gray-200` |
+| `bg-[#f7f8fc]` | `bg-gray-50` |
+| `bg-[#f0f2f8]` (page bg) | `bg-white` |
+| `text-[#1a237e]` | `text-gray-700` or `text-gray-900` |
+| `text-[#3C3489]` | `text-gray-700` |
+| `border-[#AFA9EC]` | `border-gray-300` |
+| `bg-[#EEEDFE]` (normal badge) | `bg-gray-50 border-gray-200 text-gray-500` |
+| Card accent bars (`h-[3px]` gradients) | Removed — no accent bars |
+| Filled indigo buttons | Outlined neutral buttons |
+| StatusBadge variant="normal" (indigo) | Custom gray badge span |
 
 ---
 
-*Version: Phase 3 · Kanban v4.3 · March 2026*
+*Version: v2 · Neutral Theme · Context v39 · April 2026*
