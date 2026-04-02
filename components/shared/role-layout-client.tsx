@@ -23,7 +23,7 @@ export function RoleLayoutClient({
   const { isCollapsed } = useRoleSidebar();
 
   return (
-    <div className="min-h-screen bg-[#f0f2f8] overflow-hidden">
+    <div className="min-h-screen bg-white overflow-hidden">
       <RoleSidebar
         role={role}
         userName={userName}

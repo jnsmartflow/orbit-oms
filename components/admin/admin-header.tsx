@@ -63,7 +63,7 @@ export function AdminHeader({ userName: _userName, userRole: _userRole }: AdminH
   const pageName = getPageName(pathname);
 
   return (
-    <header className="shrink-0 flex items-center justify-between px-5 bg-white border-b border-[#e2e5f1] shadow-sm"
+    <header className="shrink-0 flex items-center justify-between px-5 bg-white border-b border-gray-200 shadow-sm"
       style={{ height: "52px" }}
     >
       {/* Left: breadcrumb — hidden on tint manager page (has its own topbar) */}

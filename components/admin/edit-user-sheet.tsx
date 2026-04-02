@@ -136,7 +136,7 @@ export function EditUserSheet({ open, onOpenChange, user, roles, onUpdated }: Ed
             {fieldErrors.roleId && <p className="text-xs text-destructive">{fieldErrors.roleId}</p>}
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="eu-password">New Password <span className="text-slate-400 text-xs font-normal">(leave blank to keep current)</span></Label>
+            <Label htmlFor="eu-password">New Password <span className="text-gray-400 text-xs font-normal">(leave blank to keep current)</span></Label>
             <Input id="eu-password" type="password" value={form.password} onChange={(e) => set("password", e.target.value)} />
             {fieldErrors.password && <p className="text-xs text-destructive">{fieldErrors.password}</p>}
           </div>
@@ -150,8 +150,8 @@ export function EditUserSheet({ open, onOpenChange, user, roles, onUpdated }: Ed
             </div>
           )}
           <div className="sticky bottom-0 bg-white border-t border-[#e5e7eb] -mx-6 px-6 py-4 flex gap-3 mt-6">
-            <Button type="button" variant="outline" className="flex-1 h-10 text-sm border-[#e5e7eb] text-[#374151] hover:bg-[#f7f8fa] rounded-lg oa-btn-ghost" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
-            <Button type="submit" className="flex-1 h-10 text-sm bg-[#1a237e] hover:bg-[#283593] text-white rounded-lg font-semibold oa-btn-primary" disabled={saving}>{saving ? "Saving…" : "Save Changes"}</Button>
+            <Button type="button" variant="outline" className="flex-1 h-10 text-sm border-[#e5e7eb] text-gray-700 hover:bg-gray-50 rounded-lg oa-btn-ghost" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
+            <Button type="submit" className="flex-1 h-10 text-sm bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-semibold oa-btn-primary" disabled={saving}>{saving ? "Saving…" : "Save Changes"}</Button>
           </div>
         </form>
       </SheetContent>

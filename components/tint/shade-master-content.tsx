@@ -103,7 +103,7 @@ function IosToggle({
       disabled={disabled}
       onClick={() => onChange(!checked)}
       className={`relative inline-flex h-[20px] w-[36px] flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed ${
-        checked ? "bg-green-500" : "bg-gray-300"
+        checked ? "bg-teal-600" : "bg-gray-300"
       }`}
     >
       <span

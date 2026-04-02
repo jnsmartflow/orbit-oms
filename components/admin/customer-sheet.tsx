@@ -390,7 +390,7 @@ export function CustomerSheet({
                     ))}
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-slate-400">Overrides the area&apos;s default route for this customer only</p>
+                <p className="text-xs text-gray-400">Overrides the area&apos;s default route for this customer only</p>
               </div>
               <div className="space-y-1.5">
                 <Label>Delivery Type Override</Label>
@@ -406,7 +406,7 @@ export function CustomerSheet({
                     ))}
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-slate-400">Overrides the area&apos;s delivery type for this customer only</p>
+                <p className="text-xs text-gray-400">Overrides the area&apos;s delivery type for this customer only</p>
               </div>
             </div>
 
@@ -471,11 +471,11 @@ export function CustomerSheet({
                 </SelectContent>
               </Select>
               {selectedSOGroup ? (
-                <p className="text-xs text-slate-500">
-                  Sales Officer: <span className="font-medium text-slate-700">{selectedSOGroup.salesOfficer.name}</span>
+                <p className="text-xs text-gray-500">
+                  Sales Officer: <span className="font-medium text-gray-700">{selectedSOGroup.salesOfficer.name}</span>
                 </p>
               ) : (
-                <p className="text-xs text-slate-400">Customer&apos;s portfolio group. SO is derived from the group.</p>
+                <p className="text-xs text-gray-400">Customer&apos;s portfolio group. SO is derived from the group.</p>
               )}
             </div>
 
@@ -490,7 +490,7 @@ export function CustomerSheet({
                     className={`px-4 py-1.5 text-sm font-medium rounded-md border transition-colors ${
                       form.customerRating === r
                         ? RATING_STYLES[r]
-                        : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                        : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"
                     }`}
                   >
                     {r}
@@ -500,13 +500,13 @@ export function CustomerSheet({
                   <button
                     type="button"
                     onClick={() => setField("customerRating", "")}
-                    className="text-xs text-slate-400 underline ml-1"
+                    className="text-xs text-gray-400 underline ml-1"
                   >
                     clear
                   </button>
                 )}
               </div>
-              <p className="text-xs text-slate-400">
+              <p className="text-xs text-gray-400">
                 A = High-value · B = Regular · C = Low-frequency. Set by Admin only.
               </p>
             </div>
@@ -526,15 +526,15 @@ export function CustomerSheet({
                   { key: "isActive",              label: "Active",           desc: "This record is active and visible" },
                 ] as const
               ).map(({ key, label, desc }) => (
-                <label key={key} className="flex items-center justify-between p-3 rounded-lg border border-[#e5e7eb] bg-[#f7f8fa] cursor-pointer hover:bg-[#eef2ff] hover:border-[#c7d2fe] transition-all">
+                <label key={key} className="flex items-center justify-between p-3 rounded-lg border border-[#e5e7eb] bg-gray-50 cursor-pointer hover:bg-teal-50 hover:border-teal-200 transition-all">
                   <div>
-                    <div className="text-sm font-medium text-[#111827]">{label}</div>
-                    <div className="text-xs text-[#6b7280] mt-0.5">{desc}</div>
+                    <div className="text-sm font-medium text-gray-900">{label}</div>
+                    <div className="text-xs text-gray-500 mt-0.5">{desc}</div>
                   </div>
                   <Switch
                     checked={form[key]}
                     onCheckedChange={(v) => setField(key, v)}
-                    className="data-[state=checked]:bg-[#1a237e]"
+                    className="data-[state=checked]:bg-teal-600"
                   />
                 </label>
               ))}
@@ -565,9 +565,9 @@ export function CustomerSheet({
                       type="checkbox"
                       checked={form.noDeliveryDays.includes(day)}
                       onChange={() => toggleDay(day)}
-                      className="w-3.5 h-3.5 accent-[#1a237e]"
+                      className="w-3.5 h-3.5 accent-teal-600"
                     />
-                    <span className="text-xs font-medium text-[#374151]">{day}</span>
+                    <span className="text-xs font-medium text-gray-700">{day}</span>
                   </label>
                 ))}
               </div>
@@ -583,10 +583,10 @@ export function CustomerSheet({
               <Button type="button" size="sm" variant="outline" className="oa-btn-ghost" onClick={addContact}>+ Add Contact</Button>
             </div>
             {fieldErrors.contacts && <p className="text-xs text-destructive mb-2">{fieldErrors.contacts}</p>}
-            {form.contacts.length === 0 && <p className="text-sm text-slate-400">No contacts added.</p>}
+            {form.contacts.length === 0 && <p className="text-sm text-gray-400">No contacts added.</p>}
             <div className="flex flex-col gap-3">
               {form.contacts.map((contact) => (
-                <div key={contact._key} className="rounded-md border p-3 bg-slate-50 space-y-2">
+                <div key={contact._key} className="rounded-md border p-3 bg-gray-50 space-y-2">
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <Select
@@ -648,8 +648,8 @@ export function CustomerSheet({
           </div>
 
           <div className="sticky bottom-0 bg-white border-t border-[#e5e7eb] -mx-6 px-6 py-4 flex gap-3 mt-6">
-            <Button type="button" variant="outline" className="flex-1 h-10 text-sm border-[#e5e7eb] text-[#374151] hover:bg-[#f7f8fa] rounded-lg oa-btn-ghost" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
-            <Button type="submit" className="flex-1 h-10 text-sm bg-[#1a237e] hover:bg-[#283593] text-white rounded-lg font-semibold oa-btn-primary" disabled={saving}>{saving ? "Saving…" : editing ? "Save Changes" : "Create Customer"}</Button>
+            <Button type="button" variant="outline" className="flex-1 h-10 text-sm border-[#e5e7eb] text-gray-700 hover:bg-gray-50 rounded-lg oa-btn-ghost" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
+            <Button type="submit" className="flex-1 h-10 text-sm bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-semibold oa-btn-primary" disabled={saving}>{saving ? "Saving…" : editing ? "Save Changes" : "Create Customer"}</Button>
           </div>
         </form>
       </SheetContent>

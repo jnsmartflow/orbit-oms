@@ -144,7 +144,7 @@ function ByRoleTab({
   return (
     <div className="flex gap-4" style={{ minHeight: "520px" }}>
       {/* Role list */}
-      <div className="w-52 shrink-0 border border-slate-200 rounded-lg overflow-hidden self-start">
+      <div className="w-52 shrink-0 border border-gray-200 rounded-lg overflow-hidden self-start">
         {ROLES_CONFIG.map((role) => {
           const count      = getViewCount(role.slug);
           const isSelected = role.slug === selectedRole;
@@ -154,10 +154,10 @@ function ByRoleTab({
               type="button"
               onClick={() => setSelectedRole(role.slug)}
               className={cn(
-                "w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-colors border-b border-slate-100 last:border-b-0",
+                "w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-colors border-b border-gray-100 last:border-b-0",
                 isSelected
-                  ? "bg-[#e8eaf6] text-[#1a237e] font-semibold"
-                  : "hover:bg-slate-50 text-slate-600"
+                  ? "bg-teal-50 text-teal-700 font-semibold"
+                  : "hover:bg-gray-50 text-gray-600"
               )}
             >
               <span
@@ -174,10 +174,10 @@ function ByRoleTab({
       </div>
 
       {/* Permission grid for selected role */}
-      <div className="flex-1 border border-slate-200 rounded-lg overflow-hidden">
+      <div className="flex-1 border border-gray-200 rounded-lg overflow-hidden">
         {/* Role header */}
         <div
-          className="flex items-center gap-2 px-4 py-3 border-b border-slate-200"
+          className="flex items-center gap-2 px-4 py-3 border-b border-gray-200"
           style={{ background: `${roleConfig.color}15` }}
         >
           <span
@@ -190,18 +190,18 @@ function ByRoleTab({
           >
             {roleConfig.label}
           </span>
-          <span className="text-xs text-slate-500 ml-1">permissions</span>
+          <span className="text-xs text-gray-500 ml-1">permissions</span>
         </div>
 
         {/* Column labels */}
-        <div className="flex items-center gap-2 px-4 py-2 bg-slate-50 border-b border-slate-200">
-          <span className="w-52 shrink-0 text-[11px] font-medium text-slate-500">
+        <div className="flex items-center gap-2 px-4 py-2 bg-gray-50 border-b border-gray-200">
+          <span className="w-52 shrink-0 text-[11px] font-medium text-gray-500">
             Page
           </span>
           {ACTIONS.map((a) => (
             <span
               key={a.key}
-              className="w-14 text-center text-[11px] font-medium text-slate-500"
+              className="w-14 text-center text-[11px] font-medium text-gray-500"
             >
               {a.label}
             </span>
@@ -214,19 +214,19 @@ function ByRoleTab({
           const isAdmin = selectedRole === "admin";
           return (
             <div key={section}>
-              <div className="px-4 py-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-400 bg-slate-50/70 border-b border-slate-100">
+              <div className="px-4 py-1.5 text-[10px] font-bold uppercase tracking-widest text-gray-400 bg-gray-50/70 border-b border-gray-100">
                 {section}
               </div>
               {pages.map((page) => (
                 <div
                   key={page.key}
-                  className="flex items-center gap-2 px-4 py-2.5 border-b border-slate-100 last:border-b-0 hover:bg-slate-50/50"
+                  className="flex items-center gap-2 px-4 py-2.5 border-b border-gray-100 last:border-b-0 hover:bg-gray-50/50"
                 >
                   <div className="w-52 shrink-0">
-                    <div className="text-[13px] font-medium text-slate-700">
+                    <div className="text-[13px] font-medium text-gray-700">
                       {page.label}
                     </div>
-                    <div className="text-[10px] text-slate-400 font-mono">
+                    <div className="text-[10px] text-gray-400 font-mono">
                       {page.path}
                     </div>
                   </div>
@@ -236,7 +236,7 @@ function ByRoleTab({
                     return (
                       <div key={action.key} className="w-14 flex justify-center">
                         {na ? (
-                          <span className="text-slate-300 text-xs">—</span>
+                          <span className="text-gray-300 text-xs">—</span>
                         ) : (
                           <Button
                             size="sm"
@@ -248,9 +248,9 @@ function ByRoleTab({
                             className={cn(
                               "h-6 px-2 text-xs w-12 transition-colors",
                               value && !isAdmin
-                                ? "bg-[#1a237e] text-white border-[#1a237e] hover:bg-[#283593]"
+                                ? "bg-teal-600 text-white border-teal-600 hover:bg-teal-700"
                                 : isAdmin && value
-                                ? "bg-slate-100 text-slate-500 border-slate-200"
+                                ? "bg-gray-100 text-gray-500 border-gray-200"
                                 : ""
                             )}
                           >
@@ -278,15 +278,15 @@ function ByPageTab({ getPerms, toggle }: MatrixProps) {
       {PAGES_CONFIG.map((page) => (
         <div
           key={page.key}
-          className="border border-slate-200 rounded-lg overflow-hidden"
+          className="border border-gray-200 rounded-lg overflow-hidden"
         >
           {/* Card header */}
-          <div className="flex items-center gap-2 px-4 py-3 bg-slate-50 border-b border-slate-200">
+          <div className="flex items-center gap-2 px-4 py-3 bg-gray-50 border-b border-gray-200">
             <div className="min-w-0 flex-1">
-              <div className="font-semibold text-sm text-slate-700">
+              <div className="font-semibold text-sm text-gray-700">
                 {page.label}
               </div>
-              <div className="text-[10px] font-mono text-slate-400 mt-0.5">
+              <div className="text-[10px] font-mono text-gray-400 mt-0.5">
                 {page.path}
               </div>
             </div>
@@ -301,13 +301,13 @@ function ByPageTab({ getPerms, toggle }: MatrixProps) {
             return (
               <div
                 key={role.slug}
-                className="flex items-center gap-2 px-3 py-2 border-b border-slate-100 last:border-b-0 hover:bg-slate-50/50"
+                className="flex items-center gap-2 px-3 py-2 border-b border-gray-100 last:border-b-0 hover:bg-gray-50/50"
               >
                 <span
                   className="w-2 h-2 rounded-full shrink-0"
                   style={{ background: role.color }}
                 />
-                <span className="text-[12px] font-medium text-slate-600 w-20 shrink-0">
+                <span className="text-[12px] font-medium text-gray-600 w-20 shrink-0">
                   {role.label}
                 </span>
                 <div className="flex gap-1 flex-wrap">
@@ -318,7 +318,7 @@ function ByPageTab({ getPerms, toggle }: MatrixProps) {
                       return (
                         <span
                           key={action.key}
-                          className="inline-flex items-center justify-center text-slate-300 text-[10px] w-9"
+                          className="inline-flex items-center justify-center text-gray-300 text-[10px] w-9"
                         >
                           —
                         </span>
@@ -334,9 +334,9 @@ function ByPageTab({ getPerms, toggle }: MatrixProps) {
                         className={cn(
                           "h-5 px-1.5 text-[10px] w-9 transition-colors",
                           value && !isAdmin
-                            ? "bg-[#1a237e] text-white border-[#1a237e] hover:bg-[#283593]"
+                            ? "bg-teal-600 text-white border-teal-600 hover:bg-teal-700"
                             : isAdmin && value
-                            ? "bg-slate-100 text-slate-500 border-slate-200"
+                            ? "bg-gray-100 text-gray-500 border-gray-200"
                             : ""
                         )}
                       >
@@ -418,7 +418,7 @@ export function PermissionsManager({ initialPerms }: Props) {
     <div>
       {/* Page header */}
       <div className="flex items-center justify-between mb-5">
-        <h1 className="text-lg font-bold text-[#1a237e]">Permissions</h1>
+        <h1 className="text-lg font-bold text-teal-700">Permissions</h1>
         <Button
           size="sm"
           className="oa-btn-primary"
@@ -431,7 +431,7 @@ export function PermissionsManager({ initialPerms }: Props) {
 
       {/* Tabs */}
       <Tabs.Root defaultValue="by-role">
-        <Tabs.List className="flex border-b border-slate-200 mb-5">
+        <Tabs.List className="flex border-b border-gray-200 mb-5">
           {(
             [
               { value: "by-role", label: "By Role" },
@@ -441,7 +441,7 @@ export function PermissionsManager({ initialPerms }: Props) {
             <Tabs.Tab
               key={tab.value}
               value={tab.value}
-              className="px-4 py-2.5 text-[13px] font-medium text-slate-500 border-b-2 border-transparent -mb-px transition-colors hover:text-slate-800 outline-none data-[active]:border-[#1a237e] data-[active]:text-[#1a237e] data-[active]:font-semibold"
+              className="px-4 py-2.5 text-[13px] font-medium text-gray-500 border-b-2 border-transparent -mb-px transition-colors hover:text-gray-800 outline-none data-[active]:border-teal-600 data-[active]:text-teal-700 data-[active]:font-semibold"
             >
               {tab.label}
             </Tabs.Tab>

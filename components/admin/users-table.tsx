@@ -76,7 +76,7 @@ export function UsersTable({ initialUsers, roles, currentUserId }: UsersTablePro
   return (
     <>
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-lg font-bold text-[#1a237e]">Users</h1>
+        <h1 className="text-lg font-bold text-teal-700">Users</h1>
         <Button size="sm" onClick={() => setAddSheetOpen(true)} className="oa-btn-primary">
           + Add User
         </Button>
@@ -97,7 +97,7 @@ export function UsersTable({ initialUsers, roles, currentUserId }: UsersTablePro
           <TableBody>
             {users.length === 0 && (
               <TableRow>
-                <TableCell colSpan={6} className="text-center text-slate-500 py-8">
+                <TableCell colSpan={6} className="text-center text-gray-500 py-8">
                   No users found.
                 </TableCell>
               </TableRow>
@@ -105,7 +105,7 @@ export function UsersTable({ initialUsers, roles, currentUserId }: UsersTablePro
             {users.map((user) => (
               <TableRow key={user.id}>
                 <TableCell className="font-medium">{user.name}</TableCell>
-                <TableCell className="text-slate-600">{user.email}</TableCell>
+                <TableCell className="text-gray-600">{user.email}</TableCell>
                 <TableCell>
                   <span className="capitalize text-sm">{user.role.name}</span>
                 </TableCell>
@@ -114,7 +114,7 @@ export function UsersTable({ initialUsers, roles, currentUserId }: UsersTablePro
                     {user.isActive ? "Active" : "Inactive"}
                   </Badge>
                 </TableCell>
-                <TableCell className="text-slate-500 text-sm">
+                <TableCell className="text-gray-500 text-sm">
                   {new Date(user.createdAt).toLocaleDateString("en-IN", {
                     day: "2-digit", month: "short", year: "numeric",
                   })}

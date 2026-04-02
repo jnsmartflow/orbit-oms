@@ -82,10 +82,10 @@ function FileZone({ label, file, inputRef, onFile, onClear }: FileZoneProps) {
     <div
       className={`flex-1 rounded-xl border-2 border-dashed p-8 flex flex-col items-center justify-center gap-3 cursor-pointer min-h-[200px] transition-colors ${
         isDragOver
-          ? "border-[#1a237e] bg-blue-50"
+          ? "border-teal-600 bg-teal-50"
           : file
           ? "border-green-400 bg-green-50/30"
-          : "border-slate-300 bg-white hover:border-[#1a237e] hover:bg-blue-50"
+          : "border-gray-300 bg-white hover:border-teal-500 hover:bg-teal-50"
       }`}
       onClick={() => inputRef.current?.click()}
       onDragOver={(e) => {
@@ -110,13 +110,13 @@ function FileZone({ label, file, inputRef, onFile, onClear }: FileZoneProps) {
         <>
           <FileSpreadsheet size={32} className="text-green-500 shrink-0" />
           <div className="text-center w-full">
-            <p className="font-medium text-sm text-slate-800 truncate max-w-full px-2">
+            <p className="font-medium text-sm text-gray-800 truncate max-w-full px-2">
               {file.name}
             </p>
-            <p className="text-sm text-slate-400 mt-1">{formatBytes(file.size)}</p>
+            <p className="text-sm text-gray-400 mt-1">{formatBytes(file.size)}</p>
           </div>
           <button
-            className="text-slate-400 hover:text-red-500 text-xs flex items-center gap-1 transition-colors"
+            className="text-gray-400 hover:text-red-500 text-xs flex items-center gap-1 transition-colors"
             onClick={handleClear}
           >
             <X size={14} />
@@ -125,11 +125,11 @@ function FileZone({ label, file, inputRef, onFile, onClear }: FileZoneProps) {
         </>
       ) : (
         <>
-          <UploadCloud size={40} className="text-slate-300 shrink-0" />
+          <UploadCloud size={40} className="text-gray-300 shrink-0" />
           <div className="text-center">
-            <p className="font-medium text-sm text-slate-700">{label}</p>
-            <p className="text-sm text-slate-400">Drag &amp; drop or click to browse</p>
-            <p className="text-xs text-slate-400 mt-1">.xlsx, .xls only</p>
+            <p className="font-medium text-sm text-gray-700">{label}</p>
+            <p className="text-sm text-gray-400">Drag &amp; drop or click to browse</p>
+            <p className="text-xs text-gray-400 mt-1">.xlsx, .xls only</p>
           </div>
         </>
       )}
@@ -370,7 +370,7 @@ export function ImportPageContent({ viewOrdersHref = "/support" }: ImportPageCon
         <div className="mb-6">
           <div className="flex items-end gap-4">
             <div className="flex-1">
-              <label className="block text-sm font-medium text-slate-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
                 Import Template
               </label>
               <select
@@ -384,7 +384,7 @@ export function ImportPageContent({ viewOrdersHref = "/support" }: ImportPageCon
                   if (lineInputRef.current) lineInputRef.current.value = "";
                   if (combinedInputRef.current) combinedInputRef.current.value = "";
                 }}
-                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-[#1a237e]/30 focus:border-[#1a237e]"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/10 focus:border-teal-500"
               >
                 {Object.values(IMPORT_TEMPLATES).map((t) => (
                   <option key={t.id} value={t.id}>{t.label}</option>
@@ -392,13 +392,13 @@ export function ImportPageContent({ viewOrdersHref = "/support" }: ImportPageCon
               </select>
             </div>
             <div className="flex flex-col items-end gap-1 shrink-0 pb-0.5">
-              <span className="text-sm font-medium text-slate-700">Preview</span>
+              <span className="text-sm font-medium text-gray-700">Preview</span>
               <button
                 onClick={() => setPreviewEnabled((v) => !v)}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
                   previewEnabled
-                    ? "bg-[#1a237e] text-white"
-                    : "bg-slate-200 text-slate-600 hover:bg-slate-300"
+                    ? "bg-teal-600 text-white"
+                    : "bg-gray-200 text-gray-600 hover:bg-gray-300"
                 }`}
               >
                 {previewEnabled ? <Eye size={13} /> : <EyeOff size={13} />}
@@ -406,7 +406,7 @@ export function ImportPageContent({ viewOrdersHref = "/support" }: ImportPageCon
               </button>
             </div>
           </div>
-          <p className="mt-1 text-xs text-slate-400">{tmpl.description}</p>
+          <p className="mt-1 text-xs text-gray-400">{tmpl.description}</p>
           {previewEnabled && (
             <p className="mt-1.5 text-xs text-amber-600">
               Preview enabled — you will review OBDs before confirming import
@@ -448,7 +448,7 @@ export function ImportPageContent({ viewOrdersHref = "/support" }: ImportPageCon
         <button
           onClick={previewEnabled ? handlePreviewSubmit : handleImportNow}
           disabled={isDisabled}
-          className="w-full bg-[#1a237e] text-white rounded-lg py-3 font-medium flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[#1a237e]/90 transition-colors"
+          className="w-full bg-teal-600 text-white rounded-lg py-3 font-medium flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-teal-600/90 transition-colors"
         >
           {isLoading && <Loader2 className="animate-spin" size={18} />}
           {isLoading ? "Importing…" : previewEnabled ? "Preview Import" : "Import Now"}
@@ -471,19 +471,19 @@ export function ImportPageContent({ viewOrdersHref = "/support" }: ImportPageCon
       <div>
         {/* Summary pills */}
         <div className="flex flex-row gap-3 mb-6 flex-wrap">
-          <Pill label="Total OBDs" count={summary.totalObds} className="bg-slate-100 text-slate-700" />
+          <Pill label="Total OBDs" count={summary.totalObds} className="bg-gray-100 text-gray-700" />
           <Pill label="Valid" count={summary.validObds} className="bg-green-100 text-green-700" />
           {summary.warningObds > 0 && (
             <Pill label="Warnings" count={summary.warningObds} className="bg-amber-100 text-amber-700" />
           )}
           <Pill label="Duplicates" count={summary.duplicateObds} className="bg-yellow-100 text-yellow-700" />
           <Pill label="Errors" count={summary.errorObds} className="bg-red-100 text-red-700" />
-          <Pill label="Total Lines" count={summary.totalLines} className="bg-slate-100 text-slate-700" />
+          <Pill label="Total Lines" count={summary.totalLines} className="bg-gray-100 text-gray-700" />
         </div>
 
         {/* Selection controls */}
         <div className="flex justify-between items-center mb-3">
-          <span className="text-sm text-slate-600">
+          <span className="text-sm text-gray-600">
             {selectedIds.size} of {obds.length} OBDs selected
           </span>
           <div className="flex gap-2">
@@ -497,13 +497,13 @@ export function ImportPageContent({ viewOrdersHref = "/support" }: ImportPageCon
                   ),
                 )
               }
-              className="text-sm text-slate-700 border border-slate-300 rounded px-3 py-1 hover:bg-slate-50 transition-colors"
+              className="text-sm text-gray-700 border border-gray-300 rounded px-3 py-1 hover:bg-gray-50 transition-colors"
             >
               Select All Valid
             </button>
             <button
               onClick={() => setSelectedIds(new Set())}
-              className="text-sm text-slate-700 border border-slate-300 rounded px-3 py-1 hover:bg-slate-50 transition-colors"
+              className="text-sm text-gray-700 border border-gray-300 rounded px-3 py-1 hover:bg-gray-50 transition-colors"
             >
               Deselect All
             </button>
@@ -511,10 +511,10 @@ export function ImportPageContent({ viewOrdersHref = "/support" }: ImportPageCon
         </div>
 
         {/* Preview table */}
-        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden mb-6">
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mb-6">
           <Table>
             <TableHeader>
-              <TableRow className="bg-slate-50">
+              <TableRow className="bg-gray-50">
                 <TableHead className="w-10" />
                 <TableHead>OBD Number</TableHead>
                 <TableHead>Customer ID</TableHead>
@@ -546,7 +546,7 @@ export function ImportPageContent({ viewOrdersHref = "/support" }: ImportPageCon
                     <TableCell onClick={(e) => e.stopPropagation()}>
                       <input
                         type="checkbox"
-                        className="w-4 h-4 accent-[#1a237e]"
+                        className="w-4 h-4 accent-teal-600"
                         checked={selectedIds.has(obd.rawSummaryId)}
                         disabled={obd.rowStatus === "duplicate"}
                         onChange={() => toggleObd(obd.rawSummaryId)}
@@ -555,56 +555,56 @@ export function ImportPageContent({ viewOrdersHref = "/support" }: ImportPageCon
 
                     {/* OBD Number — clicking expands row */}
                     <TableCell
-                      className="cursor-pointer font-mono text-xs font-medium text-slate-800"
+                      className="cursor-pointer font-mono text-xs font-medium text-gray-800"
                       onClick={() => toggleExpand(obd.rawSummaryId)}
                     >
                       <div className="flex items-center gap-1">
                         {expandedObds.has(obd.rawSummaryId) ? (
-                          <ChevronDown size={14} className="text-slate-400 shrink-0" />
+                          <ChevronDown size={14} className="text-gray-400 shrink-0" />
                         ) : (
-                          <ChevronRight size={14} className="text-slate-400 shrink-0" />
+                          <ChevronRight size={14} className="text-gray-400 shrink-0" />
                         )}
                         {obd.obdNumber}
                       </div>
                     </TableCell>
 
                     <TableCell
-                      className="text-sm text-slate-600 cursor-pointer"
+                      className="text-sm text-gray-600 cursor-pointer"
                       onClick={() => toggleExpand(obd.rawSummaryId)}
                     >
                       {obd.shipToCustomerId ?? "—"}
                     </TableCell>
 
                     <TableCell
-                      className="text-sm text-slate-600 max-w-[180px] truncate cursor-pointer"
+                      className="text-sm text-gray-600 max-w-[180px] truncate cursor-pointer"
                       onClick={() => toggleExpand(obd.rawSummaryId)}
                     >
                       {obd.shipToCustomerName ?? "—"}
                     </TableCell>
 
                     <TableCell
-                      className="text-sm text-slate-600 cursor-pointer"
+                      className="text-sm text-gray-600 cursor-pointer"
                       onClick={() => toggleExpand(obd.rawSummaryId)}
                     >
                       {formatDate(obd.obdEmailDate)}
                     </TableCell>
 
                     <TableCell
-                      className="text-sm text-slate-600 cursor-pointer"
+                      className="text-sm text-gray-600 cursor-pointer"
                       onClick={() => toggleExpand(obd.rawSummaryId)}
                     >
                       {obd.totalUnitQty ?? "—"}
                     </TableCell>
 
                     <TableCell
-                      className="text-sm text-slate-600 cursor-pointer"
+                      className="text-sm text-gray-600 cursor-pointer"
                       onClick={() => toggleExpand(obd.rawSummaryId)}
                     >
                       {obd.grossWeight != null ? obd.grossWeight.toFixed(1) : "—"}
                     </TableCell>
 
                     <TableCell
-                      className="text-sm text-slate-600 cursor-pointer"
+                      className="text-sm text-gray-600 cursor-pointer"
                       onClick={() => toggleExpand(obd.rawSummaryId)}
                     >
                       {obd.lineCount} lines
@@ -620,7 +620,7 @@ export function ImportPageContent({ viewOrdersHref = "/support" }: ImportPageCon
                           TINT
                         </span>
                       ) : (
-                        <span className="bg-slate-100 text-slate-600 text-xs font-medium px-2 py-0.5 rounded">
+                        <span className="bg-gray-100 text-gray-600 text-xs font-medium px-2 py-0.5 rounded">
                           NON-TINT
                         </span>
                       )}
@@ -644,10 +644,10 @@ export function ImportPageContent({ viewOrdersHref = "/support" }: ImportPageCon
                   {/* Expanded line items */}
                   {expandedObds.has(obd.rawSummaryId) && (
                     <tr>
-                      <td colSpan={10} className="bg-slate-50 px-6 py-4">
+                      <td colSpan={10} className="bg-gray-50 px-6 py-4">
                         <table className="w-full text-sm border-collapse">
                           <thead>
-                            <tr className="text-left text-xs font-medium text-slate-500 border-b border-slate-200">
+                            <tr className="text-left text-xs font-medium text-gray-500 border-b border-gray-200">
                               <th className="pb-2 pr-4">Line ID</th>
                               <th className="pb-2 pr-4">SKU Code</th>
                               <th className="pb-2 pr-4">SKU Description</th>
@@ -660,23 +660,23 @@ export function ImportPageContent({ viewOrdersHref = "/support" }: ImportPageCon
                             {obd.lines.map((line) => (
                               <tr
                                 key={line.rawLineItemId}
-                                className="border-b border-slate-100 last:border-0"
+                                className="border-b border-gray-100 last:border-0"
                               >
-                                <td className="py-1.5 pr-4 text-slate-600">{line.lineId}</td>
-                                <td className="py-1.5 pr-4 font-mono text-xs text-slate-800">
+                                <td className="py-1.5 pr-4 text-gray-600">{line.lineId}</td>
+                                <td className="py-1.5 pr-4 font-mono text-xs text-gray-800">
                                   {line.skuCodeRaw}
                                 </td>
-                                <td className="py-1.5 pr-4 text-slate-600 max-w-[220px] truncate">
+                                <td className="py-1.5 pr-4 text-gray-600 max-w-[220px] truncate">
                                   {line.skuDescriptionRaw ?? "—"}
                                 </td>
-                                <td className="py-1.5 pr-4 text-slate-600">{line.unitQty}</td>
+                                <td className="py-1.5 pr-4 text-gray-600">{line.unitQty}</td>
                                 <td className="py-1.5 pr-4">
                                   {line.isTinting ? (
                                     <span className="bg-blue-100 text-blue-700 text-xs font-medium px-2 py-0.5 rounded">
                                       TINT
                                     </span>
                                   ) : (
-                                    <span className="text-slate-400">—</span>
+                                    <span className="text-gray-400">—</span>
                                   )}
                                 </td>
                                 <td className="py-1.5">
@@ -706,7 +706,7 @@ export function ImportPageContent({ viewOrdersHref = "/support" }: ImportPageCon
         <div className="flex justify-between items-center">
           <button
             onClick={resetAll}
-            className="border border-slate-300 text-slate-700 rounded-lg px-6 py-2.5 font-medium hover:bg-slate-50 transition-colors"
+            className="border border-gray-300 text-gray-700 rounded-lg px-6 py-2.5 font-medium hover:bg-gray-50 transition-colors"
           >
             ← Back
           </button>
@@ -731,7 +731,7 @@ export function ImportPageContent({ viewOrdersHref = "/support" }: ImportPageCon
                   <button
                     onClick={handleConfirm}
                     disabled={selectedIds.size === 0 || isLoading}
-                    className="bg-[#1a237e] text-white rounded-lg px-6 py-2.5 font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[#1a237e]/90 transition-colors"
+                    className="bg-teal-600 text-white rounded-lg px-6 py-2.5 font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-teal-600/90 transition-colors"
                   >
                     {isLoading && <Loader2 className="animate-spin" size={18} />}
                     Confirm Import ({selectedIds.size} OBDs)
@@ -750,40 +750,40 @@ export function ImportPageContent({ viewOrdersHref = "/support" }: ImportPageCon
     return (
       <div className="max-w-md mx-auto mt-16 bg-white rounded-2xl p-10 shadow-sm text-center">
         <CheckCircle2 size={64} className="text-green-500 mx-auto mb-4" />
-        <h1 className="text-2xl font-semibold text-slate-800 mb-2">Import Complete</h1>
-        <p className="font-mono text-sm text-slate-500 mb-8">{confirmResult.batchRef}</p>
+        <h1 className="text-2xl font-semibold text-gray-800 mb-2">Import Complete</h1>
+        <p className="font-mono text-sm text-gray-500 mb-8">{confirmResult.batchRef}</p>
 
         <div className="grid grid-cols-2 gap-4 mb-8">
-          <div className="bg-slate-50 rounded-xl p-4">
-            <div className="text-2xl font-bold text-[#1a237e]">
+          <div className="bg-gray-50 rounded-xl p-4">
+            <div className="text-2xl font-bold text-teal-700">
               {confirmResult.ordersCreated}
             </div>
-            <div className="text-sm text-slate-500 mt-1">Orders Created</div>
+            <div className="text-sm text-gray-500 mt-1">Orders Created</div>
           </div>
-          <div className="bg-slate-50 rounded-xl p-4">
-            <div className="text-2xl font-bold text-slate-700">
+          <div className="bg-gray-50 rounded-xl p-4">
+            <div className="text-2xl font-bold text-gray-700">
               {confirmResult.linesEnriched}
             </div>
-            <div className="text-sm text-slate-500 mt-1">Lines Enriched</div>
+            <div className="text-sm text-gray-500 mt-1">Lines Enriched</div>
           </div>
-          <div className="bg-slate-50 rounded-xl p-4">
-            <div className="text-2xl font-bold text-slate-700">
+          <div className="bg-gray-50 rounded-xl p-4">
+            <div className="text-2xl font-bold text-gray-700">
               {previewData?.summary.duplicateObds ?? 0}
             </div>
-            <div className="text-sm text-slate-500 mt-1">Skipped (duplicates)</div>
+            <div className="text-sm text-gray-500 mt-1">Skipped (duplicates)</div>
           </div>
-          <div className="bg-slate-50 rounded-xl p-4">
-            <div className="text-2xl font-bold text-slate-700">
+          <div className="bg-gray-50 rounded-xl p-4">
+            <div className="text-2xl font-bold text-gray-700">
               {previewData?.summary.errorObds ?? 0}
             </div>
-            <div className="text-sm text-slate-500 mt-1">Errors</div>
+            <div className="text-sm text-gray-500 mt-1">Errors</div>
           </div>
         </div>
 
         <div className="flex flex-col gap-3">
           <button
             onClick={resetAll}
-            className="w-full border border-slate-300 text-slate-700 rounded-lg py-2.5 font-medium hover:bg-slate-50 transition-colors"
+            className="w-full border border-gray-300 text-gray-700 rounded-lg py-2.5 font-medium hover:bg-gray-50 transition-colors"
           >
             Import Another Batch
           </button>
@@ -791,7 +791,7 @@ export function ImportPageContent({ viewOrdersHref = "/support" }: ImportPageCon
             onClick={() => {
               window.location.href = viewOrdersHref;
             }}
-            className="w-full bg-[#1a237e] text-white rounded-lg py-2.5 font-medium hover:bg-[#1a237e]/90 transition-colors"
+            className="w-full bg-teal-600 text-white rounded-lg py-2.5 font-medium hover:bg-teal-600/90 transition-colors"
           >
             View Orders
           </button>

@@ -12,8 +12,8 @@ export default async function TransportersPage() {
   return (
     <div>
       <div className="mb-6">
-        <h1 className="text-xl font-semibold text-slate-900">Transporter Master</h1>
-        <p className="text-sm text-slate-500 mt-1">
+        <h1 className="text-xl font-semibold text-gray-900">Transporter Master</h1>
+        <p className="text-sm text-gray-500 mt-1">
           Manage transporter companies. A transporter with active vehicles cannot be deactivated.
         </p>
       </div>

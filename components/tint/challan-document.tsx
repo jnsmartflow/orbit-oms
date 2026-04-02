@@ -321,7 +321,7 @@ export function ChallanDocument({
                 justifyContent: "space-between",
               }}
             >
-              <span className="ch-party-hdr-lbl" style={{ fontSize: 8, fontWeight: 800, color: "#1a237e", letterSpacing: "0.14em", ...UP }}>
+              <span className="ch-party-hdr-lbl" style={{ fontSize: 8, fontWeight: 800, color: "#0d9488", letterSpacing: "0.14em", ...UP }}>
                 Bill To
               </span>
             </div>
@@ -333,7 +333,7 @@ export function ChallanDocument({
                 <div className="ch-code-lbl" style={{ fontSize: 7, fontWeight: 700, color: "#94a3b8", ...UP, letterSpacing: "0.08em" }}>
                   Customer Code
                 </div>
-                <div className="ch-code-val" style={{ fontSize: 11, fontWeight: 600, color: "#1a237e", fontFamily: "'Courier New', monospace" }}>
+                <div className="ch-code-val" style={{ fontSize: 11, fontWeight: 600, color: "#0d9488", fontFamily: "'Courier New', monospace" }}>
                   {billTo.customerCode ?? ""}
                 </div>
               </div>
@@ -403,7 +403,7 @@ export function ChallanDocument({
                 justifyContent: "space-between",
               }}
             >
-              <span className="ch-party-hdr-lbl" style={{ fontSize: 8, fontWeight: 800, color: "#1a237e", letterSpacing: "0.14em", ...UP }}>
+              <span className="ch-party-hdr-lbl" style={{ fontSize: 8, fontWeight: 800, color: "#0d9488", letterSpacing: "0.14em", ...UP }}>
                 Ship To
               </span>
               {(shipTo.area || shipTo.route) && (
@@ -420,7 +420,7 @@ export function ChallanDocument({
                 <div className="ch-code-lbl" style={{ fontSize: 7, fontWeight: 700, color: "#94a3b8", ...UP, letterSpacing: "0.08em" }}>
                   Ship-to Code
                 </div>
-                <div className="ch-code-val" style={{ fontSize: 11, fontWeight: 600, color: "#1a237e", fontFamily: "'Courier New', monospace" }}>
+                <div className="ch-code-val" style={{ fontSize: 11, fontWeight: 600, color: "#0d9488", fontFamily: "'Courier New', monospace" }}>
                   {shipTo.shipToCode ?? ""}
                 </div>
               </div>
@@ -551,7 +551,7 @@ export function ChallanDocument({
 
                     {/* Formula cell */}
                     {li.isTinting ? (
-                      <td className="formula" style={{ padding: "4px 10px", borderBottom: "1px solid #bdbdbd", fontSize: 10.5, color: "#1a237e", fontWeight: 500, verticalAlign: "middle", width: 110 }}>
+                      <td className="formula" style={{ padding: "4px 10px", borderBottom: "1px solid #bdbdbd", fontSize: 10.5, color: "#0d9488", fontWeight: 500, verticalAlign: "middle", width: 110 }}>
                         {isEditing ? (
                           <>
                             <input
@@ -562,18 +562,18 @@ export function ChallanDocument({
                               style={{
                                 border: "none", background: "transparent",
                                 fontSize: 10.5, fontFamily: "inherit",
-                                color: "#1a237e", padding: "2px 0",
+                                color: "#0d9488", padding: "2px 0",
                                 outline: "none", width: "100%",
                                 borderBottom: "1px dashed #94a3b8",
                               }}
                             />
-                            <span className="cp-formula-print" style={{ fontSize: 10.5, color: "#1a237e", fontWeight: 500 }}>
+                            <span className="cp-formula-print" style={{ fontSize: 10.5, color: "#0d9488", fontWeight: 500 }}>
                               {currentFormula}
                             </span>
                           </>
                         ) : (
                           <span style={{
-                            fontSize: 10.5, color: currentFormula ? "#1a237e" : "#cbd5e1",
+                            fontSize: 10.5, color: currentFormula ? "#0f766e" : "#cbd5e1",
                             fontWeight: currentFormula ? 500 : 400,
                             borderBottom: "1px solid #e2e8f0",
                             display: "inline-block", minWidth: 60, paddingBottom: 1,
@@ -628,25 +628,25 @@ export function ChallanDocument({
                     printColorAdjust:       "exact",
                   } as React.CSSProperties}
                 >
-                  <td style={{ padding: "9px 10px 9px 16px", borderTop: "2px solid #1a237e" }} />
+                  <td style={{ padding: "9px 10px 9px 16px", borderTop: "2px solid #0d9488" }} />
                   <td
                     colSpan={3}
                     className="totals-lbl"
                     style={{
-                      padding: "9px 10px", borderTop: "2px solid #1a237e",
+                      padding: "9px 10px", borderTop: "2px solid #0d9488",
                       fontSize: 8.5, fontWeight: 700, ...UP,
                       letterSpacing: "0.1em", color: "#64748b", textAlign: "right",
                     }}
                   >
                     Totals
                   </td>
-                  <td style={{ padding: "9px 10px", borderTop: "2px solid #1a237e", textAlign: "right", fontSize: 12, fontWeight: 700, color: "#1e293b" }}>
+                  <td style={{ padding: "9px 10px", borderTop: "2px solid #0d9488", textAlign: "right", fontSize: 12, fontWeight: 700, color: "#1e293b" }}>
                     {totals.totalUnitQty}
                   </td>
-                  <td style={{ padding: "9px 10px", borderTop: "2px solid #1a237e", textAlign: "right", fontSize: 12, fontWeight: 800, color: "#1e293b" }}>
+                  <td style={{ padding: "9px 10px", borderTop: "2px solid #0d9488", textAlign: "right", fontSize: 12, fontWeight: 800, color: "#1e293b" }}>
                     {totals.totalVolume.toFixed(2)} L
                   </td>
-                  <td style={{ padding: "9px 10px", borderTop: "2px solid #1a237e" }} />
+                  <td style={{ padding: "9px 10px", borderTop: "2px solid #0d9488" }} />
                 </tr>
               </tfoot>
             )}
@@ -760,7 +760,7 @@ export function ChallanDocument({
         <div
           className="ch-btm"
           style={{
-            background:     "#1a237e",
+            background:     "#0d9488",
             padding:        "5px 24px",
             display:        "flex",
             justifyContent: "space-between",

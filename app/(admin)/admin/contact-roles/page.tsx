@@ -9,8 +9,8 @@ export default async function ContactRolesPage() {
   return (
     <div>
       <div className="mb-6">
-        <h1 className="text-xl font-semibold text-slate-900">Contact Roles</h1>
-        <p className="text-sm text-slate-500 mt-1">
+        <h1 className="text-xl font-semibold text-gray-900">Contact Roles</h1>
+        <p className="text-sm text-gray-500 mt-1">
           Roles assigned to delivery point contacts (Owner, Contractor, Manager, Site Engineer…).
         </p>
       </div>

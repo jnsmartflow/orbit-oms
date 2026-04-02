@@ -22,8 +22,8 @@ export default async function SOGroupsPage() {
   return (
     <div>
       <div className="mb-6">
-        <h1 className="text-xl font-semibold text-slate-900">Sales Officer Groups</h1>
-        <p className="text-sm text-slate-500 mt-1">
+        <h1 className="text-xl font-semibold text-gray-900">Sales Officer Groups</h1>
+        <p className="text-sm text-gray-500 mt-1">
           Customer portfolios assigned to sales officers. Use &quot;Reassign SO&quot; to bulk-move all customers in a group to a new officer.
         </p>
       </div>

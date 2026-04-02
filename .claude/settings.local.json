@@ -65,7 +65,18 @@
       "Bash(echo \"VALIDATE_EXIT:$?\")",
       "Bash(echo \"TSC_EXIT:$?\")",
       "Bash(echo \"EXIT:$?\")",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(find components/admin components/tint components/support components/planning components/warehouse components/shared components/import components/ui app -name '*.tsx' -exec sed -i -e s/text-slate-200/text-gray-200/g -e s/text-slate-300/text-gray-300/g -e s/text-slate-400/text-gray-400/g -e s/text-slate-500/text-gray-500/g -e s/text-slate-600/text-gray-600/g -e s/text-slate-700/text-gray-700/g -e s/text-slate-800/text-gray-800/g -e s/text-slate-900/text-gray-900/g -e s/border-slate-200/border-gray-200/g -e s/border-slate-300/border-gray-300/g -e s/border-slate-500/border-gray-500/g -e s/bg-slate-50/bg-gray-50/g -e s/bg-slate-100/bg-gray-100/g -e s/hover:text-slate-800/hover:text-gray-800/g -e s/hover:text-slate-900/hover:text-gray-900/g -e s/bg-indigo-50/bg-teal-50/g -e s/bg-indigo-100/bg-teal-50/g -e s/text-indigo-500/text-teal-600/g -e s/text-indigo-600/text-teal-600/g -e s/text-indigo-700/text-teal-700/g -e s/border-indigo-200/border-teal-200/g -e s/hover:text-indigo-700/hover:text-teal-700/g -e s/bg-indigo-500/bg-teal-600/g -e s/bg-indigo-400/bg-teal-500/g -e s/hover:bg-blue-50/hover:bg-teal-50/g '{}' +)",
+      "Bash(find components/admin components/tint components/support components/planning components/warehouse components/shared components/import components/ui app -name '*.tsx' -exec sed -i -e 's/hover:bg-\\\\[#eef0fb\\\\]/hover:bg-gray-50/g' -e 's/bg-\\\\[#f0f2f8\\\\]/bg-white/g' -e 's/bg-\\\\[#f7f8fc\\\\]/bg-gray-50/g' -e 's/bg-\\\\[#f8f9ff\\\\]/bg-white/g' -e 's/border-\\\\[#AFA9EC\\\\]/border-gray-300/g' -e 's/bg-\\\\[#EEEDFE\\\\]/bg-teal-50/g' -e 's/text-\\\\[#374151\\\\]/text-gray-700/g' -e 's/text-\\\\[#6b7280\\\\]/text-gray-500/g' -e 's/text-\\\\[#111827\\\\]/text-gray-900/g' -e 's/bg-\\\\[#d1d5db\\\\]/bg-gray-300/g' -e 's/border-\\\\[#d1d5db\\\\]/border-gray-300/g' -e 's/bg-\\\\[#9ca3af\\\\]/bg-gray-400/g' -e 's/hover:border-\\\\[#d1d5db\\\\]/hover:border-gray-300/g' -e 's/hover:text-\\\\[#374151\\\\]/hover:text-gray-700/g' -e 's/colorScheme=\"indigo\"/colorScheme=\"teal\"/g' '{}' +)",
+      "Bash(find components/tint -name 'challan-*.tsx' -exec sed -i -e 's/color: \"#1a237e\"/color: \"#0d9488\"/g' -e 's/background: \"#1a237e\"/background: \"#0d9488\"/g' -e 's/background:     \"#1a237e\"/background:     \"#0d9488\"/g' -e 's/background:   \"#1a237e\"/background:   \"#0d9488\"/g' -e 's/border: \"2px solid #1a237e\"/border: \"2px solid #0d9488\"/g' -e 's/borderTop: \"2px solid #1a237e\"/borderTop: \"2px solid #0d9488\"/g' -e 's/1px solid #e2e5f1/1px solid #e5e7eb/g' -e 's/1px solid #c5cae9/1px solid #99f6e4/g' -e 's/background: \"#e8eaf6\"/background: \"#f0fdfa\"/g' -e 's/background: \"#f7f8fc\"/background: \"#f9fafb\"/g' '{}' +)",
+      "Bash(sed -i -e 's/hover:text-\\\\[#283593\\\\]/hover:text-teal-700/g' components/tint/split-builder-modal.tsx)",
+      "Bash(sed -i -e 's/hover:bg-\\\\[#c5cae9\\\\]/hover:bg-teal-100/g' components/admin/customers-split-view.tsx)",
+      "Bash(sed -i -e 's/color=\"#1a237e\"/color=\"#0d9488\"/g' components/tint/challan-content.tsx)",
+      "Bash(sed -i 's/bg-gray-700 text-white/bg-teal-600 text-white/g' components/tint/ti-report-content.tsx)",
+      "Bash(sed -i -e 's/bg-gray-700 text-white hover:bg-gray-600/bg-teal-600 text-white hover:bg-teal-700/g' -e 's/bg-gray-700 text-white flex/bg-teal-600 text-white flex/g' components/tint/tint-manager-content.tsx)",
+      "Bash(sed -i 's/checked ? \"bg-green-500\" : \"bg-gray-300\"/checked ? \"bg-teal-600\" : \"bg-gray-300\"/' components/tint/shade-master-content.tsx)",
+      "Bash(sed -i 's/entry.saveAsShade ? \"bg-green-500\" : \"bg-gray-300\"/entry.saveAsShade ? \"bg-teal-600\" : \"bg-gray-300\"/' components/tint/tint-operator-content.tsx)",
+      "Bash(grep -v \":0$\")"
     ]
   }
 }

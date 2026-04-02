@@ -1,15 +1,12 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { Loader2, Eye, ChevronDown, Palette } from "lucide-react";
+import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from "react";
+import { Loader2, ChevronDown, Palette } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Switch } from "@/components/ui/switch";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { StatusBadge } from "@/components/shared/status-badge";
 import { ObdCode } from "@/components/shared/obd-code";
-import { SkuDetailsSheet } from "@/components/tint/sku-details-sheet";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -277,273 +274,15 @@ function derivePackCode(volumeLine: number | null, unitQty: number): string {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function timeAgo(iso: string): string {
-  const diff  = Date.now() - new Date(iso).getTime();
-  const mins  = Math.floor(diff / 60000);
-  if (mins < 1)  return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
-}
-
-function getProgressPct(status: string): number {
-  if (status === "tinting_done")        return 100;
-  if (status === "tinting_in_progress") return 50;
-  return 0;
-}
-
-function getProgressBarColor(pct: number): string {
-  if (pct === 0)  return "bg-gray-200";
-  if (pct < 25)   return "bg-red-400";
-  if (pct < 75)   return "bg-amber-400";
-  if (pct < 100)  return "bg-green-400";
-  return "bg-green-500";
-}
-
-function getProgressTextColor(pct: number): string {
-  if (pct === 0)  return "text-gray-400";
-  if (pct < 25)   return "text-red-500";
-  if (pct < 75)   return "text-amber-500";
-  return "text-green-500";
-}
-
-type StageBadgeVariant = "pending" | "in-progress" | "done";
-
-function stageBadgeVariant(status: string): StageBadgeVariant {
-  if (status === "tinting_in_progress") return "in-progress";
-  if (status === "tinting_done")        return "done";
-  return "pending";
-}
-
-// ── Split card ─────────────────────────────────────────────────────────────────
-
-interface SplitCardProps {
-  split:           OperatorSplit;
-  isActionLoading: boolean;
-  onStart:         () => void;
-  onDone:          () => void;
-}
-
-function SplitCard({ split, isActionLoading, onStart, onDone }: SplitCardProps) {
-  const [skuSheetOpen, setSkuSheetOpen] = useState(false);
-  const isPending    = split.status === "tint_assigned";
-  const isInProgress = split.status === "tinting_in_progress";
-  const isDone       = split.status === "tinting_done";
-  const customerName = split.order.customer?.customerName ?? split.order.shipToCustomerName ?? "—";
-  const area         = split.order.customer?.area.name ?? "—";
-  const pct          = getProgressPct(split.status);
-
-  return (
-    <>
-    <div className="bg-white border border-[#e2e5f1] rounded-xl p-4 shadow-sm mb-3 cursor-pointer hover:shadow-md hover:border-[#cdd1e8] transition-all">
-
-      {/* Top row: OBD + split number + status badge + slot/date */}
-      <div className="flex items-center gap-2">
-        <ObdCode code={split.order.obdNumber} />
-        <span className="text-[11px] text-gray-400">Split #{split.splitNumber}</span>
-        <StatusBadge variant={stageBadgeVariant(split.status)} size="sm" />
-        <span className="ml-auto text-[11px] text-gray-400 font-mono shrink-0">
-          {split.order.dispatchSlot ?? timeAgo(split.createdAt)}
-        </span>
-        <button
-          type="button"
-          onClick={(e) => { e.stopPropagation(); setSkuSheetOpen(true); }}
-          className="p-1 rounded-md text-gray-400 hover:text-violet-600 hover:bg-violet-50 transition-colors"
-          title="View SKU lines"
-        >
-          <Eye size={13} />
-        </button>
-      </div>
-
-      {/* Customer name */}
-      <p className="text-[14px] font-bold text-gray-900 mt-1 truncate">{customerName}</p>
-
-      {/* Area */}
-      <p className="text-[12px] text-gray-400">{area}</p>
-
-      {/* Meta grid */}
-      <div className="mt-2.5 bg-[#f7f8fc] border border-[#e2e5f1] rounded-lg p-2.5 grid grid-cols-2 gap-2">
-        {[
-          { label: "Articles", value: split.articleTag ?? "—" },
-          { label: "Volume",   value: split.totalVolume != null ? `${split.totalVolume} L` : "—" },
-          { label: "Slot",     value: split.order.dispatchSlot ?? "—" },
-          { label: "Status",   value: split.status },
-        ].map((cell) => (
-          <div key={cell.label}>
-            <div className="text-[9.5px] font-bold uppercase tracking-[.4px] text-gray-400 mb-0.5">
-              {cell.label}
-            </div>
-            <div className="text-[12px] font-semibold text-gray-900">{cell.value}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* Progress bar */}
-      <div className="mt-2.5">
-        <div className="flex justify-between mb-1">
-          <span className="text-[10.5px] font-semibold text-gray-400">Tinting Progress</span>
-          <span className={cn("text-[11px] font-bold", getProgressTextColor(pct))}>{pct}%</span>
-        </div>
-        <div className="h-[5px] bg-gray-100 rounded-full overflow-hidden">
-          <div
-            className={cn("h-full rounded-full transition-[width] duration-500", getProgressBarColor(pct))}
-            style={{ width: `${pct}%` }}
-          />
-        </div>
-      </div>
-
-      {/* Action button */}
-      <div className="pt-3 border-t border-[#e2e5f1] mt-3">
-        {isPending && (
-          <button
-            type="button"
-            onClick={onStart}
-            disabled={isActionLoading}
-            className="w-full bg-[#1a237e] text-white py-2.5 rounded-lg font-semibold text-[13px] flex items-center justify-center gap-2 hover:bg-[#283593] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isActionLoading && <Loader2 className="animate-spin" size={15} />}
-            Start Job
-          </button>
-        )}
-        {isInProgress && (
-          <button
-            type="button"
-            onClick={onDone}
-            disabled={isActionLoading}
-            className="w-full bg-green-600 text-white py-2.5 rounded-lg font-semibold text-[13px] flex items-center justify-center gap-2 hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isActionLoading && <Loader2 className="animate-spin" size={15} />}
-            Mark as Done ✓
-          </button>
-        )}
-        {isDone && (
-          <span className="flex items-center justify-center w-full bg-green-50 text-green-600 border border-green-200 py-2.5 rounded-lg font-semibold text-[13px] pointer-events-none">
-            Completed
-          </span>
-        )}
-      </div>
-
-    </div>
-
-    <SkuDetailsSheet
-      open={skuSheetOpen}
-      onClose={() => setSkuSheetOpen(false)}
-      obdNumber={split.order.obdNumber}
-      customerName={customerName}
-      lineItems={split.lineItems.map((item) => item.rawLineItem)}
-    />
-    </>
-  );
-}
-
-// ── Regular order card ─────────────────────────────────────────────────────────
-
-interface RegularOrderCardProps {
-  order:           OperatorOrder;
-  isActionLoading: boolean;
-  onStart:         () => void;
-  onDone:          () => void;
-}
-
-function RegularOrderCard({ order, isActionLoading, onStart, onDone }: RegularOrderCardProps) {
-  const isPending    = order.workflowStage === "tint_assigned";
-  const isInProgress = order.workflowStage === "tinting_in_progress";
-  const customerName = order.customer?.customerName ?? order.shipToCustomerName ?? "—";
-  const area         = order.customer?.area.name ?? "—";
-  const pct          = getProgressPct(isInProgress ? "tinting_in_progress" : "tint_assigned");
-
-  return (
-    <div className="bg-white border border-[#e2e5f1] rounded-xl p-4 shadow-sm mb-3 cursor-pointer hover:shadow-md hover:border-[#cdd1e8] transition-all">
-
-      {/* Top row: OBD + status badge + slot/date */}
-      <div className="flex items-center gap-2">
-        <ObdCode code={order.obdNumber} />
-        <StatusBadge variant={stageBadgeVariant(order.workflowStage)} size="sm" />
-        <span className="ml-auto text-[11px] text-gray-400 font-mono shrink-0">
-          {order.dispatchSlot ?? timeAgo(order.createdAt)}
-        </span>
-      </div>
-
-      {/* Customer name */}
-      <p className="text-[14px] font-bold text-gray-900 mt-1 truncate">{customerName}</p>
-
-      {/* Area */}
-      <p className="text-[12px] text-gray-400">{area}</p>
-
-      {/* Meta grid */}
-      <div className="mt-2.5 bg-[#f7f8fc] border border-[#e2e5f1] rounded-lg p-2.5 grid grid-cols-2 gap-2">
-        {[
-          { label: "Articles", value: order.querySnapshot?.articleTag ?? "—" },
-          { label: "Volume",   value: order.querySnapshot?.totalVolume != null ? `${order.querySnapshot.totalVolume} L` : "—" },
-          { label: "Slot",     value: order.dispatchSlot ?? "—" },
-          { label: "Status",   value: order.workflowStage },
-        ].map((cell) => (
-          <div key={cell.label}>
-            <div className="text-[9.5px] font-bold uppercase tracking-[.4px] text-gray-400 mb-0.5">
-              {cell.label}
-            </div>
-            <div className="text-[12px] font-semibold text-gray-900">{cell.value}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* Progress bar */}
-      <div className="mt-2.5">
-        <div className="flex justify-between mb-1">
-          <span className="text-[10.5px] font-semibold text-gray-400">Tinting Progress</span>
-          <span className={cn("text-[11px] font-bold", getProgressTextColor(pct))}>{pct}%</span>
-        </div>
-        <div className="h-[5px] bg-gray-100 rounded-full overflow-hidden">
-          <div
-            className={cn("h-full rounded-full transition-[width] duration-500", getProgressBarColor(pct))}
-            style={{ width: `${pct}%` }}
-          />
-        </div>
-      </div>
-
-      {/* Action button */}
-      <div className="pt-3 border-t border-[#e2e5f1] mt-3">
-        {isPending && (
-          <button
-            type="button"
-            onClick={onStart}
-            disabled={isActionLoading}
-            className="w-full bg-[#1a237e] text-white py-2.5 rounded-lg font-semibold text-[13px] flex items-center justify-center gap-2 hover:bg-[#283593] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isActionLoading && <Loader2 className="animate-spin" size={15} />}
-            Start Job
-          </button>
-        )}
-        {isInProgress && (
-          <button
-            type="button"
-            onClick={onDone}
-            disabled={isActionLoading}
-            className="w-full bg-green-600 text-white py-2.5 rounded-lg font-semibold text-[13px] flex items-center justify-center gap-2 hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isActionLoading && <Loader2 className="animate-spin" size={15} />}
-            Mark as Done ✓
-          </button>
-        )}
-      </div>
-
-    </div>
-  );
+function deliveryDotClass(type: string | null | undefined): string {
+  if (type === "Local") return "bg-blue-600";
+  if (type === "Upcountry") return "bg-orange-600";
+  if (type === "IGT") return "bg-teal-600";
+  if (type === "Cross Depot") return "bg-rose-600";
+  return "bg-gray-400";
 }
 
 // ── Page Content ──────────────────────────────────────────────────────────────
-
-const pulseKeyframes = `
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.3; }
-  }
-  @keyframes spin {
-    to { transform: rotate(360deg); }
-  }
-`;
 
 export function TintOperatorContent() {
   const [assignedSplits,   setAssignedSplits]   = useState<OperatorSplit[]>([]);
@@ -557,8 +296,8 @@ export function TintOperatorContent() {
   const [hasActiveJob,    setHasActiveJob]    = useState(false);
   const [selectedJobId,   setSelectedJobId]   = useState<number | null>(null);
   const [selectedJobType, setSelectedJobType] = useState<"split" | "order" | null>(null);
-  const [focusMode,       setFocusMode]       = useState(false);
   const [queueSheetOpen,  setQueueSheetOpen]  = useState(false);
+  const [leftView,        setLeftView]        = useState<"queue" | "completed">("queue");
   const [clock,           setClock]           = useState("");
   const [elapsed,         setElapsed]         = useState("00:00:00");
   // ── TI form state ────────────────────────────────────────────────────────
@@ -586,6 +325,7 @@ export function TintOperatorContent() {
   const [existingTIEntries,  setExistingTIEntries]  = useState<Map<number, TIEntryRecord>>(new Map());
   const [tiEntriesLoading,   setTiEntriesLoading]   = useState(false);
   const [editingEntryId,     setEditingEntryId]     = useState<{ id: number; table: "TINTER" | "ACOTONE" } | null>(null);
+  const [expandedLineId,     setExpandedLineId]     = useState<number | null>(null);
 
   const coverageStripRef  = useRef<HTMLDivElement>(null);
   const autoSelectDoneRef = useRef(false);
@@ -853,6 +593,7 @@ export function TintOperatorContent() {
     setTiIncompleteWarning(null);
     setExistingTIEntries(new Map());
     setEditingEntryId(null);
+    setExpandedLineId(null);
     autoSelectDoneRef.current = false;
   }, [selectedJobId, selectedJobType]);
 
@@ -885,32 +626,9 @@ export function TintOperatorContent() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tiEntriesLoading, tintingLines.length, existingTIEntries.size]);
 
-  const pendingCount    = jobs.filter(j => j.status === "tint_assigned").length;
   const inProgressCount = jobs.filter(j => j.status === "tinting_in_progress").length;
   const completedCount  = completedOrders.length + completedSplits.length;
-  const volumeDone      =
-    completedSplits.reduce((s, sp) => s + (sp.totalVolume ?? 0), 0) +
-    completedOrders.reduce((s, co) => s + (co.order.querySnapshot?.totalVolume ?? 0), 0);
-  const remainingVolume = jobs
-    .filter(j => j.status !== "tinting_in_progress")
-    .reduce((s, j) => s + (j.totalVolume ?? 0), 0);
-
-  // ── Derived stats ─────────────────────────────────────────────────────────
-
-  const inProgressSplits = assignedSplits.filter((s) => s.status === "tinting_in_progress");
-  const todoSplits       = assignedSplits.filter((s) => s.status === "tint_assigned");
-
-  const inProgressOrders = assignedOrders.filter((o) => o.workflowStage === "tinting_in_progress");
-  const todoOrders       = assignedOrders.filter((o) => o.workflowStage === "tint_assigned");
-
-  const myQueueCount = todoSplits.length + todoOrders.length;
-
-  const bothEmpty = myQueueCount === 0 && inProgressCount === 0;
-
-  // Sort splits: in-progress first, then pending
-  const sortedSplits = [...inProgressSplits, ...todoSplits];
-  // Sort orders: in-progress first, then pending
-  const sortedOrders = [...inProgressOrders, ...todoOrders];
+  // (volumeDone, remainingVolume, sortedSplits, sortedOrders removed — no longer displayed)
 
   // ── TI form functions ─────────────────────────────────────────────────────
 
@@ -1313,278 +1031,228 @@ export function TintOperatorContent() {
   return (
     <>
     <div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden" }}>
-      <style>{pulseKeyframes}</style>
 
-      {/* ── TOPBAR ── */}
-      <header className="h-[52px] bg-white border-b border-[#e2e5f1] px-4 flex items-center justify-between sticky top-0 z-40 flex-shrink-0 gap-2.5">
-        <span className="text-[17px] font-extrabold text-gray-900">
-          My Tint Jobs
-        </span>
-        <div className="flex items-center gap-2">
-          {/* Layout toggle */}
-          <div className="flex items-center bg-[#f7f8fc] border border-[#e2e5f1] rounded-lg overflow-hidden">
-            {/* Split view button */}
-            <button
-              type="button"
-              onClick={() => setFocusMode(false)}
-              title="Split view"
-              className={cn("w-8 h-[30px] flex items-center justify-center border-none cursor-pointer transition-colors", !focusMode ? "bg-[#e8eaf6] text-[#1a237e]" : "bg-transparent text-gray-400")}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <rect x="3" y="3" width="8" height="18" rx="1"/>
-                <rect x="13" y="3" width="8" height="18" rx="1"/>
-              </svg>
-            </button>
-            <div className="w-px h-[18px] bg-[#e2e5f1]" />
-            {/* Focus view button */}
-            <button
-              type="button"
-              onClick={() => setFocusMode(true)}
-              title="Focus view"
-              className={cn("w-8 h-[30px] flex items-center justify-center border-none cursor-pointer transition-colors", focusMode ? "bg-[#e8eaf6] text-[#1a237e]" : "bg-transparent text-gray-400")}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <rect x="3" y="3" width="18" height="18" rx="1"/>
-              </svg>
-            </button>
-          </div>
-          {/* Clock */}
-          <div className="font-mono text-[12px] font-semibold text-gray-400 bg-[#f7f8fc] border border-[#e2e5f1] px-2.5 py-1 rounded-lg">
-            {clock || "--:--:--"}
-          </div>
+      {/* ── ROW 1 — Title + inline stats + clock ── */}
+      <header className="h-[42px] bg-white border-b border-gray-200 px-4 flex items-center justify-between sticky top-0 z-20 flex-shrink-0">
+        <div className="flex items-center gap-1.5">
+          <span className="text-[14px] font-semibold text-gray-900">My Jobs</span>
+          <span className="text-gray-300">·</span>
+          <span className="text-gray-900 font-semibold text-[11px]">{jobs.length}</span>
+          <span className="text-[11px] text-gray-400">in queue</span>
+          <span className="text-gray-300">·</span>
+          <span className="text-gray-900 font-semibold text-[11px]">{inProgressCount}</span>
+          <span className="text-[11px] text-gray-400">active</span>
+          <span className="text-gray-300">·</span>
+          <span className="text-gray-900 font-semibold text-[11px]">{completedCount}</span>
+          <span className="text-[11px] text-gray-400">done today</span>
         </div>
+        <span className="text-[11px] font-mono text-gray-400">{clock || "--:--:--"}</span>
       </header>
 
-      {/* ── STAT BAR ── */}
-      <div className="px-3 py-2.5 grid grid-cols-4 gap-3 bg-[#f8f9fa] border-b border-[#e2e5f1]">
-        {[
-          { label: "Pending",         value: pendingCount,    iconBg: "bg-orange-50",  iconColor: "text-orange-500",  sub: "unassigned",
-            icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{width:14,height:14}}><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> },
-          { label: "In Progress",     value: inProgressCount, iconBg: "bg-blue-50",    iconColor: "text-blue-600",    sub: "being tinted",
-            icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{width:14,height:14}}><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg> },
-          { label: "Completed Today", value: completedCount,  iconBg: "bg-green-50",   iconColor: "text-green-600",   sub: "tinting done",
-            icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{width:14,height:14}}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> },
-          { label: "Volume Done",
-            value: volumeDone >= 1000 ? `${(volumeDone / 1000).toFixed(1)}k L` : `${volumeDone} L`,
-            iconBg: "bg-purple-50", iconColor: "text-purple-500", sub: "today",
-            icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{width:14,height:14}}><path d="M3 3h18v4H3z"/><path d="M3 10h12v4H3z"/><path d="M3 17h8v4H3z"/></svg> },
-        ].map((cell) => (
-          <div key={cell.label} className="bg-white border border-[#e2e5f1] rounded-xl flex items-center gap-[10px] px-[14px] py-[10px]">
-            <div className={cn("w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0", cell.iconBg, cell.iconColor)}>
-              {cell.icon}
-            </div>
-            <div>
-              <div className="flex items-baseline gap-2">
-                <span className="text-[20px] font-extrabold text-gray-900 leading-none">{cell.value}</span>
-                <span className="text-[10px] font-bold uppercase tracking-[.4px] text-gray-500">{cell.label}</span>
-              </div>
-              <div className="text-[11px] text-gray-400 mt-1">{cell.sub}</div>
-            </div>
-          </div>
-        ))}
+      {/* ── ROW 2 — Queue / Completed toggle pills ── */}
+      <div className="h-[36px] bg-white border-b border-gray-200 px-4 flex items-center gap-2 sticky top-[42px] z-20 flex-shrink-0">
+        <button
+          type="button"
+          onClick={() => setLeftView("queue")}
+          className={`inline-flex items-center gap-1.5 h-7 px-2.5 text-xs font-medium border rounded-md transition-colors ${
+            leftView === "queue"
+              ? "border-gray-900 text-gray-900 font-medium"
+              : "border-gray-200 text-gray-500"
+          }`}
+        >
+          Queue
+          <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+            leftView === "queue"
+              ? "bg-gray-900 text-white"
+              : "bg-gray-50 border border-gray-200 text-gray-500"
+          }`}>
+            {jobs.length}
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setLeftView("completed")}
+          className={`inline-flex items-center gap-1.5 h-7 px-2.5 text-xs font-medium border rounded-md transition-colors ${
+            leftView === "completed"
+              ? "border-gray-900 text-gray-900 font-medium"
+              : "border-gray-200 text-gray-500"
+          }`}
+        >
+          Completed
+          <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+            leftView === "completed"
+              ? "bg-gray-900 text-white"
+              : "bg-gray-50 border border-gray-200 text-gray-500"
+          }`}>
+            {completedCount}
+          </span>
+        </button>
       </div>
 
       {/* ── MAIN (placeholder — filled in next steps) ── */}
       <div className="flex flex-1 overflow-hidden">
-        <div className={cn("flex flex-col overflow-hidden bg-white border-r border-[#e2e5f1] flex-shrink-0 transition-all", focusMode ? "w-0 hidden" : "w-[35%]")}>
-          <div className="flex-1 overflow-y-auto">
+        <div className="flex flex-col overflow-hidden bg-white border-r border-gray-200 flex-shrink-0 w-[240px]">
+          <div className="flex-1 overflow-y-auto px-3 pt-2 pb-4">
 
-            {/* Queue section */}
-            <div className="px-3.5 pt-3 pb-1.5">
-
-              {/* Section header */}
-              <div className="flex items-center justify-between mb-2.5">
-                <span className="text-[10px] font-extrabold uppercase tracking-[.6px] text-gray-400">
-                  Queue
-                </span>
-                <span className="text-[10px] font-bold bg-[#f7f8fc] border border-[#e2e5f1] text-gray-500 px-1.5 py-px rounded-full">
-                  {jobs.length}
-                </span>
-              </div>
-
-              {/* Remaining volume hint */}
-              <div className="bg-[#f7f8fc] border border-[#e2e5f1] rounded-lg px-2.5 py-1.5 mb-2.5 flex items-center justify-between">
-                <span className="text-[10.5px] font-semibold text-gray-500">Remaining volume today</span>
-                <span className="text-[12px] font-extrabold text-gray-900">
-                  {remainingVolume > 0 ? `${remainingVolume} L` : "— L"}
-                </span>
-              </div>
-
-              {/* Queue cards */}
-              {jobs.length === 0 && (
-                <div className="flex flex-col items-center py-8 px-4 text-center">
-                  <div className="w-11 h-11 rounded-full bg-[#f7f8fc] border border-[#e2e5f1] flex items-center justify-center mb-2.5">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2">
-                      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
-                    </svg>
-                  </div>
-                  <p className="text-[14px] font-bold text-gray-500">Queue is clear!</p>
-                  <p className="text-[12px] text-gray-400 mt-1">All jobs done for today.</p>
-                </div>
-              )}
-
-              {jobs.map((job, idx) => {
-                const isActive   = job.status === "tinting_in_progress";
-                const hasActive  = jobs.some(j => j.status === "tinting_in_progress");
-                const isNext     = !isActive && !hasActive && idx === 0;
-                const isQueued   = !isActive && !isNext;
-                const isSelected = job.id === selectedJobId && job.type === selectedJobType;
-
-                const seqLabel = isActive ? "Active"
-                  : isNext      ? "Next up"
-                  : `#${idx + 1}`;
-
-                return (
-                  <div
-                    key={`${job.type}-${job.id}`}
-                    onClick={() => { setSelectedJobId(job.id); setSelectedJobType(job.type); }}
-                    className={cn(
-                      "border rounded-xl overflow-hidden mb-2 cursor-pointer transition-all duration-150",
-                      isSelected ? "border-[#1a237e] outline outline-2 outline-[#1a237e] outline-offset-1" : "",
-                      isActive ? "border-[#bfdbfe]" : isNext ? "border-[#c5cae9]" : "border-[#e2e5f1]",
-                      isQueued ? "opacity-55" : ""
-                    )}
-                  >
-                    {/* Card header */}
-                    <div className={cn("px-2.5 py-2 border-b flex items-start justify-between gap-1.5",
-                      isActive ? "bg-[#eff6ff] border-[#bfdbfe]" : isNext ? "bg-[#e8eaf6] border-[#c5cae9]" : "bg-[#f7f8fc] border-[#e2e5f1]"
-                    )}>
-                      <div className="min-w-0 flex-1">
-                        <div className="text-[12px] font-bold text-gray-900 truncate">
-                          {job.customerName}
-                        </div>
-                        <div className="font-mono text-[9px] font-semibold text-[#7c3aed] mt-0.5">
-                          {job.obdNumber}{job.splitNumber != null ? ` · Split #${job.splitNumber}` : ""}
-                        </div>
-                      </div>
-                      <span className={cn("text-[10px] font-extrabold px-1.5 py-px rounded-full whitespace-nowrap flex-shrink-0",
-                        isActive ? "bg-[#dbeafe] text-[#1e40af]" : isNext ? "bg-[#1a237e] text-white" : "bg-[#f7f8fc] border border-[#e2e5f1] text-gray-400"
-                      )}>
-                        {seqLabel}
-                      </span>
+            {/* ── Queue view ── */}
+            {leftView === "queue" && (
+              <>
+                {jobs.length === 0 && (
+                  <div className="flex flex-col items-center py-8 px-4 text-center">
+                    <div className="w-11 h-11 rounded-full bg-gray-50 border border-gray-200 flex items-center justify-center mb-2.5">
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" className="text-gray-400" strokeWidth="2">
+                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+                      </svg>
                     </div>
+                    <p className="text-[14px] font-bold text-gray-500">Queue is clear!</p>
+                    <p className="text-[12px] text-gray-400 mt-1">All jobs done for today.</p>
+                  </div>
+                )}
 
-                    {/* Card body */}
-                    <div className="px-2.5 py-2 flex items-center justify-between gap-1.5">
-                      <div>
-                        <div className="text-[11.5px] font-bold text-gray-900">
-                          {job.totalVolume != null ? `${job.totalVolume} L` : "—"}{job.articleTag ? ` · ${job.articleTag}` : ""}
-                        </div>
-                        <div className="text-[10.5px] text-gray-400 mt-px">
-                          {job.dispatchSlot ?? "—"}
-                        </div>
+                {jobs.map((job, idx) => {
+                  const isActive   = job.status === "tinting_in_progress";
+                  const hasActive  = jobs.some(j => j.status === "tinting_in_progress");
+                  const isNext     = !isActive && !hasActive && idx === 0;
+                  const isSplit    = job.splitNumber != null;
+                  const totalTiItems = job.totalTintingLines;
+                  const tiDoneCount  = job.tiCoveredLines;
+
+                  return (
+                    <div
+                      key={`${job.type}-${job.id}`}
+                      onClick={() => { setSelectedJobId(job.id); setSelectedJobType(job.type); }}
+                      className={`border rounded-lg px-3 py-2.5 mb-1.5 cursor-pointer transition-colors ${
+                        selectedJobId === job.id && selectedJobType === job.type
+                          ? "border-gray-900"
+                          : "hover:border-gray-300 border-gray-200"
+                      } ${isActive || isNext ? "" : "opacity-[0.45]"}`}
+                    >
+                      {/* Line 1: sequence + status badge */}
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[11px] font-medium text-gray-400">#{job.operatorSequence ?? idx + 1}</span>
+                        {isActive && (
+                          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded border bg-green-50 border-green-200 text-green-700">Active</span>
+                        )}
+                        {isNext && !isActive && (
+                          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-gray-900 text-white">Next</span>
+                        )}
                       </div>
-
-                      {/* TI coverage badge */}
-                      {(() => {
-                        const covered = job.tiCoveredLines;
-                        const total   = job.totalTintingLines;
-                        const allDone = total > 0 && covered >= total;
-                        if (total === 0) return null;
-                        return allDone ? (
-                          <span className="text-[9.5px] font-bold px-1.5 py-px rounded-[5px] bg-[#f0fdf4] border border-[#bbf7d0] text-[#16a34a] flex items-center gap-0.5 whitespace-nowrap flex-shrink-0">
-                            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
-                            TI {covered}/{total}
+                      {/* Line 2: customer name */}
+                      <div className="text-[13px] font-bold text-gray-900 truncate mb-1">{job.customerName}</div>
+                      {/* Line 3: dot + OBD + TI badge */}
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          {job.dispatchSlot && (
+                            <span className={`w-[5px] h-[5px] rounded-full flex-shrink-0 ${deliveryDotClass(job.dispatchSlot)}`} />
+                          )}
+                          <span className="font-mono text-[11px] text-gray-800 truncate">{job.obdNumber}</span>
+                          {isSplit && <span className="text-[11px] text-gray-400 flex-shrink-0">· Split #{job.splitNumber}</span>}
+                        </div>
+                        {totalTiItems > 0 && (
+                          <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border flex-shrink-0 ml-1 ${
+                            tiDoneCount >= totalTiItems
+                              ? "bg-green-50 border-green-200 text-green-700"
+                              : "bg-red-50 border-red-200 text-red-600"
+                          }`}>
+                            {tiDoneCount >= totalTiItems ? "\u2713 " : ""}TI {tiDoneCount}/{totalTiItems}
                           </span>
-                        ) : (
-                          <span className="text-[9.5px] font-bold px-1.5 py-px rounded-[5px] bg-[#fef2f2] border border-[#fca5a5] text-[#dc2626] whitespace-nowrap flex-shrink-0">
-                            TI {covered}/{total}
-                          </span>
-                        );
-                      })()}
-                    </div>
-
-                    {/* Fill TI nudge — Next Up card only, TI not done */}
-                    {isNext && !job.tiSubmitted && (
-                      <div className="mx-2.5 mb-2 px-2.5 py-1.5 bg-[#fffbeb] border border-[#fde68a] rounded-lg text-[11px] font-semibold text-[#92400e] flex items-center gap-1.5">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="flex-shrink-0">
-                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
-                        </svg>
-                        Fill TI now while you&apos;re free
-                        <button
-                          type="button"
-                          onClick={(e) => { e.stopPropagation(); setSelectedJobId(job.id); setSelectedJobType(job.type); }}
-                          className="ml-auto bg-amber-400 text-white border-none rounded-[5px] px-2 py-px text-[10.5px] font-bold cursor-pointer whitespace-nowrap"
-                        >
-                          Fill →
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Divider */}
-            <div className="h-px bg-[#e2e5f1] mx-3.5 my-3" />
-
-            {/* Completed Today section */}
-            <div className="px-3.5 pb-4">
-              <div className="flex items-center justify-between mb-2.5">
-                <span className="text-[10px] font-extrabold uppercase tracking-[.6px] text-gray-400">
-                  Completed Today
-                </span>
-                <span className="text-[10px] font-bold bg-[#f7f8fc] border border-[#e2e5f1] text-gray-500 px-1.5 py-px rounded-full">
-                  {completedCount}
-                </span>
-              </div>
-
-              {completedOrders.length === 0 && completedSplits.length === 0 && (
-                <p className="text-[11px] text-gray-400 text-center py-3">
-                  No completed jobs yet today.
-                </p>
-              )}
-
-              {completedOrders.map(co => {
-                const customerName = co.order.customer?.customerName ?? co.order.shipToCustomerName ?? "—";
-                const doneTime = co.completedAt
-                  ? new Date(co.completedAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false })
-                  : "—";
-                return (
-                  <div key={`co-${co.id}`} className="border border-[#e2e5f1] rounded-xl overflow-hidden mb-1.5 opacity-65">
-                    <div className="px-2.5 py-2 bg-[#f0fdf4] border-b border-[#bbf7d0]">
-                      <div className="text-[12px] font-bold text-gray-900">{customerName}</div>
-                      <div className="font-mono text-[9px] font-semibold text-[#7c3aed] mt-0.5">
-                        {co.order.obdNumber}
+                        )}
                       </div>
                     </div>
-                    <div className="px-2.5 py-1.5 flex items-center justify-between">
-                      <span className="text-[10px] font-semibold text-[#27500a] bg-[#eaf3de] border border-[#97c459] px-1.5 py-px rounded-[5px]">
-                        ✓ Tinting Done
-                      </span>
-                      <span className="font-mono text-[11px] font-semibold text-[#16a34a] bg-[#f0fdf4] border border-[#bbf7d0] px-2 py-px rounded-[6px]">
-                        {doneTime}
-                      </span>
-                    </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
 
-              {completedSplits.map(sp => {
-                const customerName = sp.order.customer?.customerName ?? sp.order.shipToCustomerName ?? "—";
-                const doneTime = sp.completedAt
-                  ? new Date(sp.completedAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false })
-                  : "—";
-                return (
-                  <div key={`cs-${sp.id}`} className="border border-[#e2e5f1] rounded-xl overflow-hidden mb-1.5 opacity-65">
-                    <div className="px-2.5 py-2 bg-[#f0fdf4] border-b border-[#bbf7d0]">
-                      <div className="text-[12px] font-bold text-gray-900">{customerName}</div>
-                      <div className="font-mono text-[9px] font-semibold text-[#7c3aed] mt-0.5">
-                        {sp.order.obdNumber}{sp.splitNumber != null ? ` · Split #${sp.splitNumber}` : ""}
+                {/* Recently Done preview */}
+                {completedCount > 0 && (
+                  <>
+                    <div className="h-px bg-gray-200 my-2" />
+                    <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1.5">Recently Done</p>
+                    {[
+                      ...completedOrders.map(co => ({
+                        key: `co-${co.id}`,
+                        customerName: co.order.customer?.customerName ?? co.order.shipToCustomerName ?? "\u2014",
+                        obdNumber: co.order.obdNumber,
+                        splitNumber: undefined as number | undefined,
+                        doneTime: co.completedAt
+                          ? new Date(co.completedAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false })
+                          : "\u2014",
+                      })),
+                      ...completedSplits.map(sp => ({
+                        key: `cs-${sp.id}`,
+                        customerName: sp.order.customer?.customerName ?? sp.order.shipToCustomerName ?? "\u2014",
+                        obdNumber: sp.order.obdNumber,
+                        splitNumber: sp.splitNumber,
+                        doneTime: sp.completedAt
+                          ? new Date(sp.completedAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false })
+                          : "\u2014",
+                      })),
+                    ].slice(0, 3).map(item => (
+                      <div key={item.key} className="border rounded-lg px-3 py-2.5 mb-1.5 border-gray-200 opacity-[0.55]">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded border bg-green-50 border-green-200 text-green-700">Done</span>
+                          <span className="font-mono text-[11px] text-gray-400">{item.doneTime}</span>
+                        </div>
+                        <div className="text-[13px] font-bold text-gray-900 truncate mb-1">{item.customerName}</div>
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="font-mono text-[11px] text-gray-800 truncate">{item.obdNumber}</span>
+                          {item.splitNumber != null && <span className="text-[11px] text-gray-400 flex-shrink-0">· Split #{item.splitNumber}</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </>
+                )}
+              </>
+            )}
+
+            {/* ── Completed view ── */}
+            {leftView === "completed" && (
+              <>
+                {completedOrders.length === 0 && completedSplits.length === 0 && (
+                  <p className="text-[11px] text-gray-400 text-center py-3">
+                    No completed jobs yet today.
+                  </p>
+                )}
+
+                {completedOrders.map(co => {
+                  const cName = co.order.customer?.customerName ?? co.order.shipToCustomerName ?? "\u2014";
+                  const doneTime = co.completedAt
+                    ? new Date(co.completedAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false })
+                    : "\u2014";
+                  return (
+                    <div key={`co-${co.id}`} className="border rounded-lg px-3 py-2.5 mb-1.5 border-gray-200 opacity-[0.55]">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded border bg-green-50 border-green-200 text-green-700">Done</span>
+                        <span className="font-mono text-[11px] text-gray-400">{doneTime}</span>
+                      </div>
+                      <div className="text-[13px] font-bold text-gray-900 truncate mb-1">{cName}</div>
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="font-mono text-[11px] text-gray-800 truncate">{co.order.obdNumber}</span>
                       </div>
                     </div>
-                    <div className="px-2.5 py-1.5 flex items-center justify-between">
-                      <span className="text-[10px] font-semibold text-[#27500a] bg-[#eaf3de] border border-[#97c459] px-1.5 py-px rounded-[5px]">
-                        ✓ Tinting Done
-                      </span>
-                      <span className="font-mono text-[11px] font-semibold text-[#16a34a] bg-[#f0fdf4] border border-[#bbf7d0] px-2 py-px rounded-[6px]">
-                        {doneTime}
-                      </span>
+                  );
+                })}
+
+                {completedSplits.map(sp => {
+                  const cName = sp.order.customer?.customerName ?? sp.order.shipToCustomerName ?? "\u2014";
+                  const doneTime = sp.completedAt
+                    ? new Date(sp.completedAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false })
+                    : "\u2014";
+                  return (
+                    <div key={`cs-${sp.id}`} className="border rounded-lg px-3 py-2.5 mb-1.5 border-gray-200 opacity-[0.55]">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded border bg-green-50 border-green-200 text-green-700">Done</span>
+                        <span className="font-mono text-[11px] text-gray-400">{doneTime}</span>
+                      </div>
+                      <div className="text-[13px] font-bold text-gray-900 truncate mb-1">{cName}</div>
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="font-mono text-[11px] text-gray-800 truncate">{sp.order.obdNumber}</span>
+                        {sp.splitNumber != null && <span className="text-[11px] text-gray-400 flex-shrink-0">· Split #{sp.splitNumber}</span>}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </>
+            )}
 
           </div>
         </div>
@@ -1593,37 +1261,36 @@ export function TintOperatorContent() {
           display: "flex",
           flexDirection: "column",
           overflow: "hidden",
-          background: "#f8f9fa",
-        }}>
+        }} className="bg-gray-50">
 
           {/* Update toast */}
           {tiUpdateToast && (
-            <div className="flex items-center gap-2 px-4 py-2.5 bg-[#f0fdf4] border-b border-[#bbf7d0] flex-shrink-0">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.5" style={{ flexShrink: 0 }}>
+            <div className="flex items-center gap-2 px-4 py-2.5 bg-green-50 border-b border-green-200 flex-shrink-0">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-green-600 flex-shrink-0">
                 <polyline points="20 6 9 17 4 12"/>
               </svg>
-              <span className="text-[12.5px] font-semibold text-[#15803d]">TI entry updated</span>
+              <span className="text-[12.5px] font-semibold text-green-700">TI entry updated</span>
             </div>
           )}
 
           {/* Success toast */}
           {tiSuccessToast && (
-            <div className="flex items-center gap-2 px-4 py-2.5 bg-[#f0fdf4] border-b border-[#bbf7d0] flex-shrink-0">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.5" style={{ flexShrink: 0 }}>
+            <div className="flex items-center gap-2 px-4 py-2.5 bg-green-50 border-b border-green-200 flex-shrink-0">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-green-600 flex-shrink-0">
                 <polyline points="20 6 9 17 4 12"/>
               </svg>
-              <span className="text-[12.5px] font-semibold text-[#15803d]">TI entries saved</span>
+              <span className="text-[12.5px] font-semibold text-green-700">TI entries saved</span>
             </div>
           )}
 
           {/* Error banner */}
           {error && (
-            <div className="flex items-center gap-2 px-4 py-2.5 bg-[#fef2f2] border-b border-[#fca5a5]">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2" style={{ flexShrink: 0 }}>
+            <div className="flex items-center gap-2 px-4 py-2.5 bg-red-50 border-b border-red-200">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-red-600 flex-shrink-0">
                 <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
               </svg>
-              <span className="text-[12.5px] font-medium text-[#b91c1c] flex-1">{error}</span>
-              <button type="button" onClick={() => setError(null)} className="text-[12px] text-[#dc2626] bg-transparent border-none cursor-pointer underline">
+              <span className="text-[12.5px] font-medium text-red-700 flex-1">{error}</span>
+              <button type="button" onClick={() => setError(null)} className="text-[12px] text-red-600 bg-transparent border-none cursor-pointer underline">
                 Dismiss
               </button>
             </div>
@@ -1632,8 +1299,8 @@ export function TintOperatorContent() {
           {/* No job selected */}
           {!selectedJob && (
             <div className="flex-1 flex flex-col items-center justify-center gap-2.5 text-center p-10">
-              <div className="w-11 h-11 rounded-full bg-white border border-[#e2e5f1] flex items-center justify-center">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2">
+              <div className="w-11 h-11 rounded-full bg-white border border-gray-200 flex items-center justify-center">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" className="text-gray-400" strokeWidth="2">
                   <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/>
                 </svg>
               </div>
@@ -1646,62 +1313,52 @@ export function TintOperatorContent() {
           {selectedJob && (
             <>
               {/* Job identity topbar */}
-              <div className="bg-white border-b border-[#e2e5f1] px-4 py-[11px] flex-shrink-0 flex items-start justify-between gap-2.5">
-                <div className="flex-1 min-w-0">
-                  <div className="text-[15px] font-extrabold text-gray-900 leading-snug mb-1 truncate">
-                    {selectedJob.customerName}
-                  </div>
-                  <div className="font-mono text-[10.5px] font-semibold flex items-center gap-1.5 flex-wrap">
-                    <span className="text-[#7c3aed]">{selectedJob.obdNumber}</span>
-                    <span className="text-gray-400">
-                      {selectedJob.splitNumber != null ? `· Split #${selectedJob.splitNumber}` : ""}
-                      {selectedJob.dispatchSlot ? ` · ${selectedJob.dispatchSlot}` : ""}
-                    </span>
+              <div className="flex items-start justify-between gap-3 px-5 pt-4 pb-3 bg-white border-b border-gray-200 flex-shrink-0">
+                {/* Left: customer + OBD */}
+                <div className="min-w-0 flex-1">
+                  <h2 className="text-[16px] font-bold text-gray-900 truncate mb-0.5">{selectedJob.customerName}</h2>
+                  <div className="flex items-center gap-1.5 text-[11px]">
+                    <span className="font-mono text-gray-800">{selectedJob.obdNumber}</span>
+                    {selectedJob.splitNumber != null && <><span className="text-gray-300">·</span><span className="text-gray-400">Split #{selectedJob.splitNumber}</span></>}
+                    {selectedJob.dispatchSlot && <><span className="text-gray-300">·</span><span className="text-gray-400">{selectedJob.dispatchSlot}</span></>}
                   </div>
                 </div>
+                {/* Right: status badge + elapsed */}
                 <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
-                  {/* Status badge */}
-                  <span className={cn("text-[10px] font-bold px-2 py-px rounded-[6px]",
-                    selectedJob.status === "tinting_in_progress"
-                      ? "bg-[#eff6ff] border border-[#bfdbfe] text-[#1d4ed8]"
-                      : "bg-[#fffbeb] border border-[#fde68a] text-[#92400e]"
-                  )}>
-                    {selectedJob.status === "tinting_in_progress" ? "In Progress" : "Assigned"}
-                  </span>
-                  {/* Elapsed timer — only when in progress */}
-                  {selectedJob.status === "tinting_in_progress" && (
-                    <div className="font-mono text-[11px] font-semibold bg-[#eff6ff] border border-[#bfdbfe] text-[#1d4ed8] px-2.5 py-px rounded-[6px] flex items-center gap-1.5 whitespace-nowrap">
-                      <div className="w-1.5 h-1.5 rounded-full bg-[#2563eb] flex-shrink-0" style={{ animation: "pulse 1.4s ease-in-out infinite" }} />
-                      {elapsed}
+                  {selectedJob.status === "tinting_in_progress" ? (
+                    <span className="inline-flex items-center gap-1.5 text-[10.5px] font-semibold px-2 py-0.5 rounded-[5px] border bg-green-50 border-green-200 text-green-700">
+                      In Progress
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 text-[10.5px] font-semibold px-2 py-0.5 rounded-[5px] border bg-amber-50 border-amber-200 text-amber-700">
+                      Assigned
+                    </span>
+                  )}
+                  {selectedJob.status === "tinting_in_progress" && elapsed && (
+                    <div className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 px-2.5 py-0.5 rounded-md">
+                      <span className="w-1.5 h-1.5 rounded-full bg-green-600 animate-pulse flex-shrink-0" />
+                      <span className="font-mono text-[11px] font-semibold text-gray-600">{elapsed}</span>
                     </div>
                   )}
                 </div>
               </div>
 
-              {/* Stage colour strip */}
-              <div style={{
-                height: 3, flexShrink: 0,
-                background: selectedJob.status === "tinting_in_progress"
-                  ? "linear-gradient(90deg,#3b82f6,#93c5fd)"
-                  : "linear-gradient(90deg,#fbbf24,#fcd34d)",
-              }} />
-
               {/* Scrollable content */}
               <div className="flex-1 overflow-y-auto">
 
                 {/* Meta strip */}
-                <div className="bg-white border-b border-[#e2e5f1] grid grid-cols-4 flex-shrink-0">
+                <div className="bg-white border-b border-gray-200 grid grid-cols-4 flex-shrink-0">
                   {[
                     { label: "Articles", value: selectedJob.articleTag ?? "—" },
                     { label: "Volume",   value: selectedJob.totalVolume != null ? `${selectedJob.totalVolume} L` : "—" },
                     { label: "Slot",     value: selectedJob.dispatchSlot ?? "—" },
                     { label: "Sales Officer", value: "—" },
-                  ].map(cell => (
-                    <div key={cell.label} className="px-3.5 py-[9px] border-r border-[#e2e5f1]">
+                  ].map((cell, idx) => (
+                    <div key={cell.label} className={`px-3.5 py-[9px] ${idx < 3 ? "border-r border-gray-200" : ""}`}>
                       <div className="text-[9.5px] font-bold uppercase tracking-[.4px] text-gray-400 mb-0.5">
                         {cell.label}
                       </div>
-                      <div className="text-[12.5px] font-bold text-gray-900">{cell.value}</div>
+                      <div className="text-[12px] font-semibold text-gray-600">{cell.value}</div>
                     </div>
                   ))}
                 </div>
@@ -1710,110 +1367,113 @@ export function TintOperatorContent() {
                 <div className="px-4 py-3.5">
                   <div className="text-[10px] font-extrabold uppercase tracking-[.6px] text-gray-400 mb-2.5 flex items-center gap-2">
                     SKU Lines
-                    <div className="flex-1 h-px bg-[#e2e5f1]" />
+                    <div className="flex-1 h-px bg-gray-200" />
+                    {tiEntriesLoading && <span className="text-[9px] font-semibold text-gray-400">loading…</span>}
                   </div>
 
                   {selectedJob.lineItems.length === 0 ? (
                     <p className="text-[12px] text-gray-400">No SKU lines found.</p>
                   ) : (
-                    <table className="w-full border-collapse bg-white border border-[#e2e5f1] rounded-xl overflow-hidden">
-                      <thead>
-                        <tr className="bg-[#f7f8fc] border-b border-[#e2e5f1]">
-                          {["Code", "Description", "Qty", "Volume"].map((h, i) => (
-                            <th key={h} className={cn("px-3 py-2 text-[9.5px] font-bold uppercase tracking-[.4px] text-gray-400", i >= 2 ? "text-right" : "text-left")}>
-                              {h}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {selectedJob.lineItems.map((item, i) => (
-                          <tr key={i} className="border-b border-[#e2e5f1] last:border-b-0">
-                            <td className="px-3 py-[9px] font-mono text-[#7c3aed] text-[10.5px] font-semibold">
-                              {item.rawLineItem.skuCodeRaw}
-                            </td>
-                            <td className="px-3 py-[9px] text-[12px] font-semibold text-gray-900">
-                              {item.rawLineItem.skuDescriptionRaw ?? "—"}
-                              {item.rawLineItem.isTinting && (
-                                <span className="text-[9px] font-bold uppercase bg-[#ede9fe] border border-[#c4b5fd] text-[#5b21b6] px-1.5 py-px rounded-[4px] ml-1">
-                                  TINT
-                                </span>
-                              )}
-                            </td>
-                            <td className="px-3 py-[9px] text-[12px] font-semibold text-gray-900 text-right">
-                              {item.rawLineItem.unitQty}
-                            </td>
-                            <td className="px-3 py-[9px] text-[12px] font-semibold text-gray-500 text-right">
-                              {item.rawLineItem.volumeLine != null ? `${item.rawLineItem.volumeLine} L` : "—"}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                    <>
+                      <div ref={coverageStripRef} className="border border-gray-200 rounded-lg overflow-hidden">
+                        <table className="w-full border-collapse bg-white">
+                          <thead>
+                            <tr className="bg-gray-50 border-b border-gray-100">
+                              {["Code", "Description", "Qty", "Volume", "Type", "Shade", "TI"].map((h, i) => (
+                                <th key={h} className={cn("px-3 py-2 text-[9.5px] font-bold uppercase tracking-[.4px] text-gray-400", i >= 2 && i <= 3 ? "text-right" : i === 6 ? "text-right" : "text-left")}>
+                                  {h}
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {selectedJob.lineItems.map((item, i) => {
+                              const rawId   = item.rawLineItemId ?? 0;
+                              const isTint  = item.rawLineItem.isTinting;
+                              const tiEntry = isTint ? (existingTIEntries.get(rawId) ?? null) : null;
+                              const isExp   = isTint && tiEntry != null && expandedLineId === rawId;
+                              const shadeStr = tiEntry
+                                ? Object.entries(tiEntry.shadeValues).filter(([, v]) => v > 0).map(([k, v]) => `${k}: ${v}`).join("  ")
+                                : "";
+                              return (
+                                <Fragment key={i}>
+                                  <tr
+                                    onClick={() => {
+                                      if (!isTint) return;
+                                      if (tiEntry) setExpandedLineId(expandedLineId === rawId ? null : rawId);
+                                      handleStripRowClick(rawId);
+                                    }}
+                                    className={cn(
+                                      "border-b border-gray-200 last:border-b-0",
+                                      isTint && "cursor-pointer hover:bg-gray-50",
+                                      isTint && !tiEntry && "border-l-[3px] border-l-amber-400 bg-amber-50/40",
+                                    )}
+                                  >
+                                    <td className="px-3 py-[9px] font-mono text-[11px] text-gray-800">
+                                      {item.rawLineItem.skuCodeRaw}
+                                    </td>
+                                    <td className="px-3 py-[9px] text-[12px] font-semibold text-gray-900">
+                                      {item.rawLineItem.skuDescriptionRaw ?? "—"}
+                                      {item.rawLineItem.isTinting && (
+                                        <span className="bg-purple-50 border border-purple-200 text-purple-700 text-[9px] font-bold uppercase px-1.5 py-px rounded-[4px] ml-1.5">
+                                          TINT
+                                        </span>
+                                      )}
+                                    </td>
+                                    <td className="px-3 py-[9px] text-[12px] font-semibold text-gray-900 text-right">
+                                      {item.rawLineItem.unitQty}
+                                    </td>
+                                    <td className="px-3 py-[9px] text-[12px] font-semibold text-gray-500 text-right">
+                                      {item.rawLineItem.volumeLine != null ? `${item.rawLineItem.volumeLine} L` : "—"}
+                                    </td>
+                                    <td className="px-3 py-[9px] text-[11px] text-gray-300">—</td>
+                                    <td className="px-3 py-[9px] text-[11px] text-gray-300">—</td>
+                                    <td className="px-3 py-[9px] text-right">
+                                      {!isTint ? null : tiEntry ? (
+                                        <span className="inline-block bg-green-50 border border-green-200 text-green-700 text-[9.5px] font-bold px-1.5 py-px rounded-[4px]">
+                                          ✓ Done
+                                        </span>
+                                      ) : (
+                                        <span className="inline-block bg-amber-50 border border-amber-200 text-amber-700 text-[9.5px] font-bold px-1.5 py-px rounded-[4px]">
+                                          Pending
+                                        </span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                  {isExp && tiEntry && (
+                                    <tr className="bg-gray-50 border-b border-gray-100">
+                                      <td colSpan={7} className="px-3 py-2">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                          <span className={cn("text-[9px] font-bold uppercase",
+                                            tiEntry.table === "TINTER" ? "text-blue-600" : "text-orange-500"
+                                          )}>
+                                            {tiEntry.table}
+                                          </span>
+                                          <span className="font-mono text-[10.5px] text-gray-500">{shadeStr || "—"}</span>
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  )}
+                                </Fragment>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {tintingLines.length > 0 && (() => {
+                        const covered = tintingLines.filter(l => existingTIEntries.has(l.rawLineItemId)).length;
+                        const total   = tintingLines.length;
+                        const allDone = covered === total;
+                        return (
+                          <p className={cn("text-[11px] font-semibold mt-2", allDone ? "text-green-700" : "text-amber-600")}>
+                            {covered} of {total} lines covered
+                          </p>
+                        );
+                      })()}
+                    </>
                   )}
                 </div>
-
-                {/* TI Status Strip */}
-                {tintingLines.length > 0 && (
-                  <div ref={coverageStripRef} className="px-4 pb-2">
-                    <div className="text-[10px] font-extrabold uppercase tracking-[.6px] text-gray-400 mb-2 flex items-center gap-2">
-                      TI Coverage
-                      <div className="flex-1 h-px bg-[#e2e5f1]" />
-                      {tiEntriesLoading && <span className="text-[9px] font-semibold text-gray-400">loading…</span>}
-                    </div>
-                    <div className="bg-[#f7f8fc] border border-[#e2e5f1] rounded-[10px] overflow-hidden">
-                      {tintingLines.map((line, i) => {
-                        const done    = existingTIEntries.has(line.rawLineItemId);
-                        const tiEntry = done ? existingTIEntries.get(line.rawLineItemId)! : null;
-                        const shadeStr = tiEntry
-                          ? Object.entries(tiEntry.shadeValues)
-                              .filter(([, v]) => v > 0)
-                              .map(([k, v]) => `${k}: ${v}`)
-                              .join("  ")
-                          : "";
-                        return (
-                          <div
-                            key={line.rawLineItemId}
-                            onClick={() => handleStripRowClick(line.rawLineItemId)}
-                            className={cn("flex gap-2 px-3 py-2 cursor-pointer", done ? "items-start bg-[#f0fdf4]" : "items-center bg-[#fffbeb]", i < tintingLines.length - 1 ? "border-b border-[#e2e5f1]" : "")}
-                          >
-                            <span className={cn("text-[14px] flex-shrink-0", done ? "mt-px" : "")}>{done ? "✅" : "⏳"}</span>
-                            <div className="flex-1 min-w-0">
-                              <div>
-                                <span className="text-[11.5px] font-bold text-gray-900 font-mono">{line.skuCodeRaw}</span>
-                                {line.skuDescriptionRaw && <span className="text-[11px] text-gray-500"> · {line.skuDescriptionRaw}</span>}
-                                <span className="text-[10.5px] text-gray-400"> · {line.unitQty} qty · {PACK_CODES.find(p => p.value === line.packCode)?.label ?? line.packCode}</span>
-                              </div>
-                              {tiEntry && shadeStr && (
-                                <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                                  <span className={cn("text-[9px] font-bold px-1.5 py-px rounded-[3px] flex-shrink-0",
-                                    tiEntry.table === "TINTER" ? "bg-[#e0e7ff] border border-[#a5b4fc] text-[#3730a3]" : "bg-[#fef9c3] border border-[#fde047] text-[#713f12]"
-                                  )}>
-                                    {tiEntry.table === "TINTER" ? "Tinter" : "Acotone"}
-                                  </span>
-                                  <span className="text-[10.5px] text-gray-500 font-mono">{shadeStr}</span>
-                                </div>
-                              )}
-                            </div>
-                            <span className={cn("text-[10px] font-bold px-1.5 py-px rounded-[5px] flex-shrink-0", done ? "mt-px" : "", done ? "bg-[#dcfce7] border border-[#86efac] text-[#15803d]" : "bg-[#fef9c3] border border-[#fde047] text-[#854d0e]")}>
-                              {done ? "TI Done" : "Pending"}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    {(() => {
-                      const covered = tintingLines.filter(l => existingTIEntries.has(l.rawLineItemId)).length;
-                      const total   = tintingLines.length;
-                      const allDone = covered === total;
-                      return (
-                        <p className={cn("text-[11px] font-semibold mt-1.5", allDone ? "text-[#15803d]" : "text-[#92400e]")}>
-                          {covered} of {total} lines covered
-                        </p>
-                      );
-                    })()}
-                  </div>
-                )}
 
                 {/* TI Form */}
                 <div id="ti-form-section" className="px-4 pb-2">
@@ -1821,35 +1481,46 @@ export function TintOperatorContent() {
                   {/* Section title */}
                   <div className="text-[10px] font-extrabold uppercase tracking-[.6px] text-gray-400 mb-2.5 flex items-center gap-2">
                     Tinter Issue Form
-                    <div className="flex-1 h-px bg-[#e2e5f1]" />
+                    <div className="flex-1 h-px bg-gray-200" />
                   </div>
 
                   {/* No tinting lines */}
                   {tintingLines.length === 0 && (
-                    <div className="bg-white border border-[#e2e5f1] rounded-xl p-4 text-center">
+                    <div className="bg-white border border-gray-200 rounded-lg p-4 text-center">
                       <p className="text-[12px] text-gray-400">No tinting lines in this job — start directly.</p>
                     </div>
                   )}
 
                   {/* Single-form */}
                   {tintingLines.length > 0 && (
-                    <div className="bg-white border border-[#e2e5f1] rounded-xl overflow-hidden">
+                    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
 
                       {/* Tinter type selector */}
-                      <div className="px-3.5 py-2.5 border-b border-[#f0f2f8] flex gap-1.5">
-                        {(["TINTER", "ACOTONE"] as const).map(t => (
-                          <button key={t} type="button"
-                            onClick={() => handleTinterTypeChange(t)}
-                            className={cn("px-4 py-[5px] rounded-[6px] text-[12px] font-bold cursor-pointer border",
-                              tinterType === t ? "bg-[#1a237e] text-white border-[#1a237e]" : "bg-white text-gray-500 border-[#d1d5db]"
-                            )}>
-                            {t === "TINTER" ? "Tinter" : "Acotone"}
+                      <div className="px-3.5 py-2.5 border-b border-gray-200 flex gap-1.5">
+                        <div className="flex border border-gray-200 rounded-md overflow-hidden">
+                          <button
+                            type="button"
+                            onClick={() => handleTinterTypeChange("TINTER")}
+                            className={`px-3.5 py-1 text-[11px] font-semibold transition-colors ${
+                              tinterType === "TINTER" ? "bg-gray-900 text-white" : "bg-white text-gray-500 hover:bg-gray-50"
+                            }`}
+                          >
+                            TINTER
                           </button>
-                        ))}
+                          <button
+                            type="button"
+                            onClick={() => handleTinterTypeChange("ACOTONE")}
+                            className={`px-3.5 py-1 text-[11px] font-semibold transition-colors border-l border-gray-200 ${
+                              tinterType === "ACOTONE" ? "bg-gray-900 text-white" : "bg-white text-gray-500 hover:bg-gray-50"
+                            }`}
+                          >
+                            ACOTONE
+                          </button>
+                        </div>
                       </div>
 
                       {/* All saved shades combobox (shared, shown once above entries) */}
-                      <div className="px-3.5 py-2.5 border-b border-[#f0f2f8]">
+                      <div className="px-3.5 py-2.5 border-b border-gray-200">
                         <div className="flex items-center gap-1 mb-1.5">
                           <span className="text-[9.5px] font-bold uppercase tracking-[.4px] text-gray-400">All Saved Shades</span>
                           <span className="text-[9.5px] text-gray-300">(optional — applies to focused entry)</span>
@@ -1862,17 +1533,17 @@ export function TintOperatorContent() {
                               const firstEntryId = tiEntries[0]?.id ?? null;
                               setAllShadesComboOpen(firstEntryId);
                             }}
-                            style={{ width: "100%", height: 34, background: "#f7f8fc", border: "1px solid #e2e5f1", borderRadius: 8, padding: "0 10px", fontSize: 12, fontWeight: 500, color: "#111827", outline: "none", display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer" }}>
-                            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12, color: "#9ca3af" }}>
-                              {allShadesLoading ? "Loading…" : "Browse all shades…"}
+                            className="w-full h-[34px] bg-gray-50 border border-gray-200 rounded-md px-2.5 text-[12px] font-medium text-gray-900 flex items-center justify-between cursor-pointer focus:outline-none">
+                            <span className="overflow-hidden text-ellipsis whitespace-nowrap text-[12px] text-gray-400">
+                              {allShadesLoading ? "Loading..." : "Browse all shades..."}
                             </span>
-                            <ChevronDown size={13} style={{ flexShrink: 0, color: "#9ca3af", marginLeft: 4 }} />
+                            <ChevronDown size={13} className="flex-shrink-0 text-gray-400 ml-1" />
                           </PopoverTrigger>
                           <PopoverContent align="start" className="w-72 p-0">
                             <div style={{ padding: 8 }}>
                               <input type="text" placeholder="Search shades…" value={allShadesSearch}
                                 onChange={e => setAllShadesSearch(e.target.value)}
-                                style={{ width: "100%", height: 30, border: "1px solid #e2e5f1", borderRadius: 6, padding: "0 8px", fontSize: 11.5, outline: "none" }} />
+                                className="w-full h-[30px] border border-gray-200 rounded-md px-2 text-[11.5px] focus:border-gray-900 focus:outline-none" />
                             </div>
                             <div style={{ maxHeight: 200, overflowY: "auto" }}>
                               {allSavedShades
@@ -1885,7 +1556,7 @@ export function TintOperatorContent() {
                                       setAllShadesComboOpen(null);
                                       setAllShadesSearch("");
                                     }}
-                                    className="px-3 py-[7px] cursor-pointer text-[12px] font-medium text-gray-900 border-t border-[#f3f4f6] hover:bg-[#f7f8fc]">
+                                    className="px-3 py-[7px] cursor-pointer text-[12px] font-medium text-gray-900 border-t border-gray-100 hover:bg-gray-50">
                                     <span className="font-semibold">{shade.shadeName}</span>
                                     <span className="text-gray-400 text-[11px]"> · {PACK_CODES.find(p => p.value === shade.packCode)?.label ?? shade.packCode ?? "—"}</span>
                                   </div>
@@ -1902,14 +1573,14 @@ export function TintOperatorContent() {
                         const visibleSugs = entry.suggestionsExpanded ? entry.suggestions : entry.suggestions.slice(0, 3);
 
                         return (
-                          <div key={entry.id} className="border-b border-[#e2e5f1]">
+                          <div key={entry.id} className="border-b border-gray-200">
                             {/* Entry header */}
-                            <div className="px-3.5 py-2 bg-[#f7f8fc] border-b border-[#f0f2f8] flex items-center justify-between">
+                            <div className="px-3.5 py-2 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
                               <div className="flex items-center gap-1.5">
                                 <span className="text-[10px] font-extrabold uppercase tracking-[.5px] text-gray-400">Entry {idx + 1}</span>
                                 {idx === 0 && editingEntryId && (
                                   <>
-                                    <span className="text-[9.5px] font-bold px-1.5 py-px rounded-[4px] bg-[#e0e7ff] border border-[#a5b4fc] text-[#3730a3]">
+                                    <span className="text-[9.5px] font-bold px-1.5 py-px rounded-[4px] bg-gray-100 border border-gray-300 text-gray-700">
                                       Editing existing entry
                                     </span>
                                     <button type="button"
@@ -1923,7 +1594,7 @@ export function TintOperatorContent() {
                               {tiEntries.length > 1 && (
                                 <button type="button"
                                   onClick={() => setTiEntries(prev => prev.filter(e => e.id !== entry.id))}
-                                  className="w-[22px] h-[22px] rounded-[5px] border border-[#fca5a5] bg-[#fef2f2] flex items-center justify-center cursor-pointer text-[#dc2626]">
+                                  className="w-[22px] h-[22px] rounded-[5px] border border-red-200 bg-red-50 flex items-center justify-center cursor-pointer text-red-600">
                                   <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                                 </button>
                               )}
@@ -1939,7 +1610,7 @@ export function TintOperatorContent() {
                                     const val = Number(e.target.value);
                                     if (val) handleSkuSelect(entry.id, val);
                                   }}
-                                  style={{ width: "100%", height: 34, background: "#f7f8fc", border: "1px solid #e2e5f1", borderRadius: 8, padding: "0 8px", fontSize: 12, fontWeight: 500, color: entry.rawLineItemId ? "#111827" : "#9ca3af", outline: "none" }}>
+                                  className={`w-full border border-gray-200 rounded-md h-[34px] text-[12px] px-2 font-medium focus:border-gray-900 focus:outline-none ${entry.rawLineItemId ? "text-gray-900" : "text-gray-400"}`}>
                                   <option value="">Select SKU line…</option>
                                   {tintingLines.map(line => (
                                     <option key={line.rawLineItemId} value={line.rawLineItemId}>
@@ -1951,31 +1622,34 @@ export function TintOperatorContent() {
 
                               {/* 2. Suggestions panel — only when SKU selected and suggestions exist */}
                               {entry.skuCodeRaw && (entry.suggestionsLoading || entry.suggestions.length > 0) && (
-                                <div className="mb-2.5 px-2.5 py-2 bg-[#fffbeb] border border-[#fde68a] rounded-[8px]">
-                                  <div className="text-[9.5px] font-bold uppercase tracking-[.4px] text-[#92400e] mb-1.5 flex items-center gap-1.5">
+                                <div className="mb-2.5 bg-gray-50 border-b border-gray-200 px-3.5 py-2.5">
+                                  <div className="text-[9.5px] font-bold uppercase tracking-[.4px] text-gray-400 mb-1.5 flex items-center gap-1.5">
                                     Suggestions
-                                    {entry.suggestionsLoading && <span className="text-[9px] font-medium text-[#d97706]">loading…</span>}
+                                    {entry.suggestionsLoading && <span className="text-[9px] font-medium text-gray-400">loading...</span>}
                                   </div>
                                   {visibleSugs.map(sug => (
                                     <div key={sug.id} className="flex items-center gap-2 mb-1">
+                                      <div className="w-7 h-7 rounded-md bg-white border border-gray-200 flex items-center justify-center flex-shrink-0">
+                                        <Palette size={13} className="text-gray-400" />
+                                      </div>
                                       <div className="flex-1 min-w-0">
-                                        <span className="text-[11.5px] font-bold text-gray-900">🎨 {sug.shadeName}</span>
-                                        <span className="text-[10.5px] text-gray-500 ml-1">· {PACK_CODES.find(p => p.value === sug.packCode)?.label ?? sug.packCode ?? "—"}</span>
-                                        <div className="text-[9.5px] text-gray-400">
+                                        <span className="text-[12px] font-bold text-gray-900">{sug.shadeName}</span>
+                                        <span className="text-[10px] text-gray-400 ml-1">· {PACK_CODES.find(p => p.value === sug.packCode)?.label ?? sug.packCode ?? "—"}</span>
+                                        <div className="text-[10px] text-gray-400">
                                           {sug.lastUsedAt ? `Last used: ${new Date(sug.lastUsedAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}` : "First time"}
                                         </div>
                                       </div>
                                       <button type="button"
                                         onClick={() => applyShadeToEntry(entry.id, sug)}
-                                        className="text-[10.5px] font-bold px-2.5 py-px rounded-[5px] bg-amber-400 text-white border-none cursor-pointer flex-shrink-0">
-                                        Use this
+                                        className="bg-white border border-gray-200 text-gray-600 text-[10.5px] font-semibold rounded-[5px] px-2.5 py-1 hover:border-gray-300 hover:bg-gray-50 cursor-pointer flex-shrink-0">
+                                        Apply
                                       </button>
                                     </div>
                                   ))}
                                   {entry.suggestions.length > 3 && (
                                     <button type="button"
                                       onClick={() => setTiEntries(prev => prev.map(e => e.id === entry.id ? { ...e, suggestionsExpanded: !e.suggestionsExpanded } : e))}
-                                      className="text-[10.5px] font-semibold text-[#92400e] bg-transparent border-none cursor-pointer p-0">
+                                      className="text-[10.5px] font-semibold text-gray-500 bg-transparent border-none cursor-pointer p-0">
                                       {entry.suggestionsExpanded ? "Show less" : `+${entry.suggestions.length - 3} more`}
                                     </button>
                                   )}
@@ -1988,11 +1662,11 @@ export function TintOperatorContent() {
                                   <span className="text-[9.5px] font-bold uppercase tracking-[.4px] text-gray-400">Tin Qty</span>
                                   <input type="number" min={0} step={0.1} placeholder="0" value={entry.tinQty || ""}
                                     onChange={e => setTiEntries(prev => prev.map(en => en.id === entry.id ? { ...en, tinQty: Number(e.target.value) } : en))}
-                                    style={{ height: 34, background: flash ? "#fffbeb" : "#f7f8fc", border: `1px solid ${flash ? "#fcd34d" : "#e2e5f1"}`, borderRadius: 8, padding: "0 10px", fontSize: 12, fontWeight: 500, color: "#111827", outline: "none", transition: "background .3s,border-color .3s" }} />
+                                    className={`border rounded-[5px] h-[32px] w-full text-center text-[13px] font-bold text-gray-900 focus:border-gray-900 focus:outline-none transition-colors ${flash ? "border-amber-300 bg-amber-50" : "border-gray-200"}`} />
                                 </div>
                                 <div className="flex flex-col gap-0.5">
                                   <span className="text-[9.5px] font-bold uppercase tracking-[.4px] text-gray-400">Pack Size</span>
-                                  <div className={cn("h-[34px] bg-[#f0f2f8] border border-[#e2e5f1] rounded-[8px] px-2.5 text-[12px] font-semibold flex items-center", entry.packCode ? "text-gray-900" : "text-gray-400")}>
+                                  <div className={cn("h-[32px] border border-gray-200 rounded-[5px] px-2.5 text-[12px] font-semibold flex items-center", entry.packCode ? "text-gray-900" : "text-gray-400")}>
                                     {entry.packCode ? (PACK_CODES.find(p => p.value === entry.packCode)?.label ?? entry.packCode) : "—"}
                                   </div>
                                 </div>
@@ -2001,7 +1675,7 @@ export function TintOperatorContent() {
                               {/* Selected shade indicator */}
                               {entry.selectedShadeName !== null && (
                                 <div className="flex items-center justify-between mb-2">
-                                  <span className="inline-flex items-center gap-1.5 bg-[#e8eaf6] border border-[#1a237e] rounded-full px-2.5 py-px text-[11px] text-[#1a237e] font-semibold">
+                                  <span className="inline-flex items-center gap-1.5 bg-gray-100 border border-gray-300 rounded-full px-2.5 py-px text-[11px] text-gray-900 font-semibold">
                                     <Palette size={11} />
                                     {entry.selectedShadeName}
                                   </span>
@@ -2011,7 +1685,7 @@ export function TintOperatorContent() {
                                       selectedShadeName: null, selectedShadeId: null,
                                       shadeValues: {}, showAllColumns: true,
                                     } : en))}
-                                    className="text-[10.5px] font-bold text-[#dc2626] bg-transparent border-none cursor-pointer px-0.5">
+                                    className="text-[10.5px] font-bold text-red-600 bg-transparent border-none cursor-pointer px-0.5">
                                     Clear ×
                                   </button>
                                 </div>
@@ -2027,34 +1701,26 @@ export function TintOperatorContent() {
                                 return (
                                   <>
                                     <div className="text-[9.5px] font-extrabold uppercase tracking-[.5px] text-gray-400 mb-1.5">Shade Quantities</div>
-                                    <div className="grid grid-cols-7 gap-1 mb-1">
-                                      {displayCols.slice(0, 7).map(shade => (
-                                        <div key={shade.code} className="flex flex-col items-center gap-0.5">
-                                          <div style={{ fontSize: 9, fontWeight: 800, padding: "3px 0", borderRadius: 5, width: "100%", textAlign: "center", background: shade.bg, border: `1.5px solid ${shade.border}`, color: shade.text }}>{shade.code}</div>
-                                          <input type="number" min={0} step={0.01} placeholder="—"
-                                            value={entry.shadeValues[shade.code] || ""}
-                                            onChange={e => setTiEntries(prev => prev.map(en => en.id === entry.id ? { ...en, shadeValues: { ...en.shadeValues, [shade.code]: Number(e.target.value) } } : en))}
-                                            style={{ width: "100%", padding: "5px 2px", borderRadius: 5, fontSize: 11, fontWeight: 700, textAlign: "center", background: flash ? "#fffbeb" : shade.bg, border: `1.5px solid ${flash ? "#fcd34d" : shade.border}`, color: shade.text, outline: "none", fontFamily: "monospace", transition: "background .3s,border-color .3s" }} />
-                                        </div>
-                                      ))}
-                                    </div>
-                                    {displayCols.length > 7 && (
-                                      <div className="grid grid-cols-7 gap-1 mb-1">
-                                        {displayCols.slice(7).map(shade => (
-                                          <div key={shade.code} className="flex flex-col items-center gap-0.5">
-                                            <div style={{ fontSize: 9, fontWeight: 800, padding: "3px 0", borderRadius: 5, width: "100%", textAlign: "center", background: shade.bg, border: `1.5px solid ${shade.border}`, color: shade.text }}>{shade.code}</div>
+                                    <div className="grid grid-cols-7 gap-x-[10px] gap-y-[8px] px-3.5 py-3.5">
+                                      {displayCols.map(shade => {
+                                        const hasVal = (entry.shadeValues[shade.code] ?? 0) > 0;
+                                        return (
+                                          <div key={shade.code} className="w-[60px] flex flex-col items-center gap-0.5">
+                                            <div className="text-[9.5px] font-bold uppercase tracking-[.4px] text-gray-400">{shade.code}</div>
                                             <input type="number" min={0} step={0.01} placeholder="—"
                                               value={entry.shadeValues[shade.code] || ""}
                                               onChange={e => setTiEntries(prev => prev.map(en => en.id === entry.id ? { ...en, shadeValues: { ...en.shadeValues, [shade.code]: Number(e.target.value) } } : en))}
-                                              style={{ width: "100%", padding: "5px 2px", borderRadius: 5, fontSize: 11, fontWeight: 700, textAlign: "center", background: flash ? "#fffbeb" : shade.bg, border: `1.5px solid ${flash ? "#fcd34d" : shade.border}`, color: shade.text, outline: "none", fontFamily: "monospace", transition: "background .3s,border-color .3s" }} />
+                                              className={`w-[54px] h-[32px] border rounded-[5px] text-center text-[13px] font-semibold focus:border-gray-900 focus:outline-none transition-colors ${
+                                                flash ? "border-amber-300 bg-amber-50 text-gray-900" : hasVal ? "bg-green-50 border-green-200 text-green-700" : "border-gray-200 text-gray-900"
+                                              }`} />
                                           </div>
-                                        ))}
-                                      </div>
-                                    )}
+                                        );
+                                      })}
+                                    </div>
                                     {showToggle && (
                                       <button type="button"
                                         onClick={() => setTiEntries(prev => prev.map(en => en.id === entry.id ? { ...en, showAllColumns: !en.showAllColumns } : en))}
-                                        className="text-[10.5px] font-semibold text-[#1a237e] bg-transparent border-none cursor-pointer py-0.5 pb-2 block">
+                                        className="text-[10.5px] font-semibold text-gray-600 bg-transparent border-none cursor-pointer py-0.5 pb-2 block">
                                         {!entry.showAllColumns
                                           ? `+ Show all columns (${hiddenCount} hidden)`
                                           : `− Show active columns only`}
@@ -2067,25 +1733,35 @@ export function TintOperatorContent() {
 
                               {/* 7. Save as Shade Toggle — only when SKU selected */}
                               {entry.skuCodeRaw && (
-                                <div className="border-t border-[#f0f2f8] pt-2.5">
+                                <div className="border-t border-gray-200 pt-2.5">
                                   <div className="flex items-center gap-2">
-                                    <Switch
-                                      checked={entry.saveAsShade}
-                                      onCheckedChange={(v: boolean) => setTiEntries(prev => prev.map(en => en.id === entry.id ? { ...en, saveAsShade: v, shadeNameError: "" } : en))}
-                                      className="data-[checked]:bg-[#1a237e] data-[unchecked]:bg-[#d1d5db]"
-                                    />
+                                    <button
+                                      type="button"
+                                      role="switch"
+                                      aria-checked={entry.saveAsShade}
+                                      onClick={() => setTiEntries(prev => prev.map(en => en.id === entry.id ? { ...en, saveAsShade: !en.saveAsShade, shadeNameError: "" } : en))}
+                                      className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                                        entry.saveAsShade ? "bg-teal-600" : "bg-gray-300"
+                                      }`}
+                                    >
+                                      <span
+                                        className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                                          entry.saveAsShade ? "translate-x-4" : "translate-x-0"
+                                        }`}
+                                      />
+                                    </button>
                                     <span className="text-[12px] font-semibold text-gray-700">Save as shade formula</span>
                                   </div>
                                   <div style={{ overflow: "hidden", maxHeight: entry.saveAsShade ? "80px" : "0px", transition: "max-height 200ms ease", marginTop: entry.saveAsShade ? 8 : 0 }}>
                                     <div className="flex flex-col gap-0.5">
                                       <span className="text-[9.5px] font-bold uppercase tracking-[.4px] text-gray-400">
-                                        Shade name <span className="text-[#ef4444]">*</span>
+                                        Shade name <span className="text-red-500">*</span>
                                       </span>
                                       <input type="text" placeholder="e.g. Ivory White"
                                         value={entry.shadeName}
                                         onChange={e => setTiEntries(prev => prev.map(en => en.id === entry.id ? { ...en, shadeName: e.target.value, shadeNameError: "" } : en))}
-                                        style={{ height: 34, background: "#f7f8fc", border: `1px solid ${entry.shadeNameError ? "#ef4444" : "#e2e5f1"}`, borderRadius: 8, padding: "0 10px", fontSize: 12, fontWeight: 500, color: "#111827", outline: "none" }} />
-                                      {entry.shadeNameError && <span className="text-[10.5px] text-[#ef4444]">{entry.shadeNameError}</span>}
+                                        className={`border rounded-md h-[34px] text-[12px] px-2.5 font-medium text-gray-900 focus:border-gray-900 focus:outline-none ${entry.shadeNameError ? "border-red-300" : "border-gray-200"}`} />
+                                      {entry.shadeNameError && <span className="text-[11px] text-red-600 mt-1">{entry.shadeNameError}</span>}
                                     </div>
                                   </div>
                                 </div>
@@ -2098,7 +1774,7 @@ export function TintOperatorContent() {
                       {/* Add Another Entry */}
                       <div
                         onClick={() => setTiEntries(prev => [...prev, defaultTIFormEntry()])}
-                        className="px-3.5 py-2.5 flex items-center justify-center gap-1.5 text-[11.5px] font-bold text-[#1a237e] cursor-pointer bg-[#e8eaf6]">
+                        className="px-3.5 py-2.5 flex items-center justify-center gap-1.5 text-[11.5px] font-bold text-gray-700 cursor-pointer bg-gray-50 hover:bg-gray-100 transition-colors">
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                           <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
                         </svg>
@@ -2113,7 +1789,7 @@ export function TintOperatorContent() {
               </div>
 
               {/* Footer */}
-              <div className="bg-white border-t border-[#e2e5f1] px-4 py-[11px] flex-shrink-0 flex items-center gap-2.5">
+              <div className="sticky bottom-0 border-t border-gray-200 bg-white px-5 py-2.5 flex-shrink-0 flex items-center gap-2.5">
                 {(() => {
                   const isLoading = (selectedJob.type === "split"
                     ? splitActionLoading === selectedJob.id
@@ -2130,18 +1806,18 @@ export function TintOperatorContent() {
                       <div className="flex-1 flex flex-col gap-2">
                         {/* TI incomplete warning */}
                         {tiIncompleteWarning && tiIncompleteWarning.length > 0 && (
-                          <div className="bg-[#fffbeb] border border-[#fde68a] rounded-[8px] px-3 py-2.5">
-                            <p className="text-[12px] font-bold text-[#92400e] mb-1">
+                          <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5">
+                            <p className="text-[12px] font-bold text-amber-700 mb-1">
                               Some tinting lines are missing TI entries:
                             </p>
-                            <ul className="text-[11.5px] text-[#b45309] mb-1.5 ml-3.5" style={{ padding: 0 }}>
+                            <ul className="text-[11.5px] text-amber-600 mb-1.5 ml-3.5" style={{ padding: 0 }}>
                               {tiIncompleteWarning.map(line => (
                                 <li key={line.rawLineItemId}>
                                   {line.skuCodeRaw}{line.skuDescriptionRaw ? ` · ${line.skuDescriptionRaw}` : ""}
                                 </li>
                               ))}
                             </ul>
-                            <p className="text-[11px] text-[#92400e]">
+                            <p className="text-[11px] text-amber-700">
                               Please fill TI entries for these lines before marking Done.
                             </p>
                           </div>
@@ -2151,7 +1827,7 @@ export function TintOperatorContent() {
                             type="button"
                             onClick={() => editingEntryId ? handleUpdateEntry(selectedJob) : handleSubmitTIAndStart(selectedJob)}
                             disabled={anyLoading}
-                            className={cn("flex-1 bg-[#1a237e] text-white border-none rounded-[10px] py-[11px] text-[13px] font-bold flex items-center justify-center gap-1.5 transition-opacity", anyLoading ? "opacity-60 cursor-not-allowed" : "cursor-pointer")}
+                            className={cn("flex-1 bg-gray-900 text-white border-none rounded-[10px] py-[11px] text-[13px] font-bold flex items-center justify-center gap-1.5 transition-opacity", anyLoading ? "opacity-60 cursor-not-allowed" : "cursor-pointer")}
                           >
                             {isTILoading
                               ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" style={{ animation: "spin .7s linear infinite" }}><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
@@ -2163,7 +1839,7 @@ export function TintOperatorContent() {
                             type="button"
                             onClick={() => markDone(selectedJob)}
                             disabled={anyLoading}
-                            className={cn("flex-1 bg-[#16a34a] text-white border-none rounded-[10px] py-[11px] text-[13px] font-bold flex items-center justify-center gap-1.5 transition-opacity", anyLoading ? "opacity-60 cursor-not-allowed" : "cursor-pointer")}
+                            className={cn("flex-1 bg-green-600 text-white border-none rounded-[10px] py-[11px] text-[13px] font-bold flex items-center justify-center gap-1.5 transition-opacity", anyLoading ? "opacity-60 cursor-not-allowed" : "cursor-pointer")}
                           >
                             {isDoneLoading
                               ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" style={{ animation: "spin .7s linear infinite" }}><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
@@ -2185,7 +1861,7 @@ export function TintOperatorContent() {
                           type="button"
                           onClick={() => startJob(selectedJob)}
                           disabled={isLoading}
-                          className={cn("flex-1 bg-[#1a237e] text-white border-none rounded-[10px] py-[11px] text-[13px] font-bold flex items-center justify-center gap-1.5 transition-opacity", isLoading ? "opacity-60 cursor-not-allowed" : "cursor-pointer")}
+                          className={cn("flex-1 bg-gray-900 text-white border-none rounded-[10px] py-[11px] text-[13px] font-bold flex items-center justify-center gap-1.5 transition-opacity", isLoading ? "opacity-60 cursor-not-allowed" : "cursor-pointer")}
                         >
                           {isLoading
                             ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" style={{ animation: "spin .7s linear infinite" }}><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
@@ -2201,7 +1877,7 @@ export function TintOperatorContent() {
                         type="button"
                         onClick={() => editingEntryId ? handleUpdateEntry(selectedJob) : handleSubmitTIAndStart(selectedJob)}
                         disabled={isLoading}
-                        className={cn("flex-1 bg-[#1a237e] text-white border-none rounded-[10px] py-[11px] text-[13px] font-bold flex items-center justify-center gap-1.5 transition-opacity", isLoading ? "opacity-60 cursor-not-allowed" : "cursor-pointer")}
+                        className={cn("flex-1 bg-gray-900 text-white border-none rounded-[10px] py-[11px] text-[13px] font-bold flex items-center justify-center gap-1.5 transition-opacity", isLoading ? "opacity-60 cursor-not-allowed" : "cursor-pointer")}
                       >
                         {isLoading
                           ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" style={{ animation: "spin .7s linear infinite" }}><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
@@ -2232,7 +1908,7 @@ export function TintOperatorContent() {
                           type="button"
                           onClick={() => handleUpdateEntry(selectedJob)}
                           disabled={isLoading}
-                          className={cn("flex-1 bg-[#1a237e] text-white border-none rounded-[10px] py-[11px] text-[13px] font-bold flex items-center justify-center gap-1.5 transition-opacity", isLoading ? "opacity-60 cursor-not-allowed" : "cursor-pointer")}
+                          className={cn("flex-1 bg-gray-900 text-white border-none rounded-[10px] py-[11px] text-[13px] font-bold flex items-center justify-center gap-1.5 transition-opacity", isLoading ? "opacity-60 cursor-not-allowed" : "cursor-pointer")}
                         >
                           {isLoading
                             ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" style={{ animation: "spin .7s linear infinite" }}><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
@@ -2245,7 +1921,7 @@ export function TintOperatorContent() {
                         type="button"
                         onClick={() => startJob(selectedJob)}
                         disabled={isLoading}
-                        className={cn("flex-1 bg-[#1a237e] text-white border-none rounded-[10px] py-[11px] text-[13px] font-bold flex items-center justify-center gap-1.5 transition-opacity", isLoading ? "opacity-60 cursor-not-allowed" : "cursor-pointer")}
+                        className={cn("flex-1 bg-gray-900 text-white border-none rounded-[10px] py-[11px] text-[13px] font-bold flex items-center justify-center gap-1.5 transition-opacity", isLoading ? "opacity-60 cursor-not-allowed" : "cursor-pointer")}
                       >
                         {isLoading
                           ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" style={{ animation: "spin .7s linear infinite" }}><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
@@ -2263,31 +1939,6 @@ export function TintOperatorContent() {
 
         </div>
       </div>
-
-      {/* Focus mode FAB */}
-      {focusMode && (
-        <button
-          type="button"
-          onClick={() => setQueueSheetOpen(true)}
-          style={{ position: "fixed", bottom: 80, left: 16, zIndex: 60 }}
-          className="w-12 h-12 rounded-full bg-[#1a237e] text-white border-none cursor-pointer flex items-center justify-center shadow-lg"
-        >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
-            <line x1="8" y1="6" x2="21" y2="6"/>
-            <line x1="8" y1="12" x2="21" y2="12"/>
-            <line x1="8" y1="18" x2="21" y2="18"/>
-            <line x1="3" y1="6" x2="3.01" y2="6"/>
-            <line x1="3" y1="12" x2="3.01" y2="12"/>
-            <line x1="3" y1="18" x2="3.01" y2="18"/>
-          </svg>
-          {jobs.length > 0 && (
-            <span style={{ position: "absolute", top: -2, right: -2 }}
-              className="w-[18px] h-[18px] rounded-full bg-[#ef4444] text-[9.5px] font-extrabold text-white flex items-center justify-center border-2 border-white">
-              {jobs.length}
-            </span>
-          )}
-        </button>
-      )}
 
       {/* Queue sheet overlay */}
       {queueSheetOpen && (
@@ -2308,15 +1959,15 @@ export function TintOperatorContent() {
           pointerEvents: queueSheetOpen ? "all" : "none",
         }}>
         {/* Handle */}
-        <div className="w-9 h-1 bg-[#e2e5f1] rounded-sm mx-auto mt-2.5 flex-shrink-0" />
+        <div className="w-9 h-1 bg-gray-200 rounded-sm mx-auto mt-2.5 flex-shrink-0" />
 
         {/* Sheet header */}
-        <div className="px-4 py-3 border-b border-[#e2e5f1] flex-shrink-0 flex items-center justify-between">
+        <div className="px-4 py-3 border-b border-gray-200 flex-shrink-0 flex items-center justify-between">
           <span className="text-[14px] font-extrabold text-gray-900">Queue &amp; Completed</span>
           <button
             type="button"
             onClick={() => setQueueSheetOpen(false)}
-            className="w-7 h-7 rounded-[8px] border border-[#e2e5f1] bg-[#f7f8fc] flex items-center justify-center cursor-pointer text-gray-500"
+            className="w-7 h-7 rounded-[8px] border border-gray-200 bg-gray-50 flex items-center justify-center cursor-pointer text-gray-500"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
@@ -2337,56 +1988,51 @@ export function TintOperatorContent() {
             const isActive   = job.status === "tinting_in_progress";
             const hasActive  = jobs.some(j => j.status === "tinting_in_progress");
             const isNext     = !isActive && !hasActive && idx === 0;
-            const isQueued   = !isActive && !isNext;
-            const isSelected = job.id === selectedJobId && job.type === selectedJobType;
-            const seqLabel   = isActive ? "Active" : isNext ? "Next up" : `#${idx + 1}`;
+            const isSplit    = job.splitNumber != null;
+            const totalTiItems = job.totalTintingLines;
+            const tiDoneCount  = job.tiCoveredLines;
 
             return (
               <div
                 key={`sheet-${job.type}-${job.id}`}
                 onClick={() => { setSelectedJobId(job.id); setSelectedJobType(job.type); setQueueSheetOpen(false); }}
-                className={cn(
-                  "border rounded-xl overflow-hidden mb-2 cursor-pointer transition-all duration-150",
-                  isSelected ? "border-[#1a237e] outline outline-2 outline-[#1a237e] outline-offset-1" : "",
-                  isActive ? "border-[#bfdbfe]" : isNext ? "border-[#c5cae9]" : "border-[#e2e5f1]",
-                  isQueued ? "opacity-55" : ""
-                )}
+                className={`border rounded-lg px-3 py-2.5 mb-1.5 cursor-pointer transition-colors ${
+                  selectedJobId === job.id && selectedJobType === job.type
+                    ? "border-gray-900"
+                    : "hover:border-gray-300 border-gray-200"
+                } ${isActive || isNext ? "" : "opacity-[0.45]"}`}
               >
-                <div className={cn("px-2.5 py-2 border-b flex items-start justify-between gap-1.5",
-                  isActive ? "bg-[#eff6ff] border-[#bfdbfe]" : isNext ? "bg-[#e8eaf6] border-[#c5cae9]" : "bg-[#f7f8fc] border-[#e2e5f1]"
-                )}>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-[12px] font-bold text-gray-900 truncate">
-                      {job.customerName}
-                    </div>
-                    <div className="font-mono text-[9px] font-semibold text-[#7c3aed] mt-0.5">
-                      {job.obdNumber}{job.splitNumber != null ? ` · Split #${job.splitNumber}` : ""}
-                    </div>
-                  </div>
-                  <span className={cn("text-[10px] font-extrabold px-1.5 py-px rounded-full whitespace-nowrap flex-shrink-0",
-                    isActive ? "bg-[#dbeafe] text-[#1e40af]" : isNext ? "bg-[#1a237e] text-white" : "bg-[#f7f8fc] border border-[#e2e5f1] text-gray-400"
-                  )}>
-                    {seqLabel}
-                  </span>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[11px] font-medium text-gray-400">#{job.operatorSequence ?? idx + 1}</span>
+                  {isActive && (
+                    <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded border bg-green-50 border-green-200 text-green-700">Active</span>
+                  )}
+                  {isNext && !isActive && (
+                    <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-gray-900 text-white">Next</span>
+                  )}
                 </div>
-                <div className="px-2.5 py-2 flex items-center justify-between gap-1.5">
-                  <div>
-                    <div className="text-[11.5px] font-bold text-gray-900">
-                      {job.totalVolume != null ? `${job.totalVolume} L` : "—"}{job.articleTag ? ` · ${job.articleTag}` : ""}
-                    </div>
-                    <div className="text-[10.5px] text-gray-400 mt-px">{job.dispatchSlot ?? "—"}</div>
+                <div className="text-[13px] font-bold text-gray-900 truncate mb-1">{job.customerName}</div>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className="font-mono text-[11px] text-gray-800 truncate">{job.obdNumber}</span>
+                    {isSplit && <span className="text-[11px] text-gray-400 flex-shrink-0">· Split #{job.splitNumber}</span>}
                   </div>
-                  {job.tiSubmitted
-                    ? <span className="text-[9.5px] font-bold px-1.5 py-px rounded-[5px] bg-[#f0fdf4] border border-[#bbf7d0] text-[#16a34a] whitespace-nowrap flex-shrink-0">✓ TI Done</span>
-                    : <span className="text-[9.5px] font-bold px-1.5 py-px rounded-[5px] bg-[#fef2f2] border border-[#fca5a5] text-[#dc2626] whitespace-nowrap flex-shrink-0">TI Needed</span>
-                  }
+                  {totalTiItems > 0 && (
+                    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border flex-shrink-0 ml-1 ${
+                      tiDoneCount >= totalTiItems
+                        ? "bg-green-50 border-green-200 text-green-700"
+                        : "bg-red-50 border-red-200 text-red-600"
+                    }`}>
+                      {tiDoneCount >= totalTiItems ? "\u2713 " : ""}TI {tiDoneCount}/{totalTiItems}
+                    </span>
+                  )}
                 </div>
               </div>
             );
           })}
 
           {/* Divider */}
-          <div className="h-px bg-[#e2e5f1] my-2 mb-3" />
+          <div className="h-px bg-gray-200 my-2 mb-3" />
 
           {/* Completed label */}
           <div className="text-[10px] font-extrabold uppercase tracking-[.6px] text-gray-400 mb-2.5">
@@ -2400,50 +2046,39 @@ export function TintOperatorContent() {
           )}
 
           {completedOrders.map(co => {
-            const customerName = co.order.customer?.customerName ?? co.order.shipToCustomerName ?? "—";
+            const customerName = co.order.customer?.customerName ?? co.order.shipToCustomerName ?? "\u2014";
             const doneTime = co.completedAt
               ? new Date(co.completedAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false })
-              : "—";
+              : "\u2014";
             return (
-              <div key={`sheet-co-${co.id}`} className="border border-[#e2e5f1] rounded-xl overflow-hidden mb-1.5 opacity-65">
-                <div className="px-2.5 py-2 bg-[#f0fdf4] border-b border-[#bbf7d0]">
-                  <div className="text-[12px] font-bold text-gray-900">{customerName}</div>
-                  <div className="font-mono text-[9px] font-semibold text-[#7c3aed] mt-0.5">
-                    {co.order.obdNumber}
-                  </div>
+              <div key={`sheet-co-${co.id}`} className="border rounded-lg px-3 py-2.5 mb-1.5 border-gray-200 opacity-[0.55]">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded border bg-green-50 border-green-200 text-green-700">Done</span>
+                  <span className="font-mono text-[11px] text-gray-400">{doneTime}</span>
                 </div>
-                <div className="px-2.5 py-1.5 flex items-center justify-between">
-                  <span className="text-[10px] font-semibold text-[#27500a] bg-[#eaf3de] border border-[#97c459] px-1.5 py-px rounded-[5px]">
-                    ✓ Tinting Done
-                  </span>
-                  <span className="font-mono text-[11px] font-semibold text-[#16a34a] bg-[#f0fdf4] border border-[#bbf7d0] px-2 py-px rounded-[6px]">
-                    {doneTime}
-                  </span>
+                <div className="text-[13px] font-bold text-gray-900 truncate mb-1">{customerName}</div>
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="font-mono text-[11px] text-gray-800 truncate">{co.order.obdNumber}</span>
                 </div>
               </div>
             );
           })}
 
           {completedSplits.map(sp => {
-            const customerName = sp.order.customer?.customerName ?? sp.order.shipToCustomerName ?? "—";
+            const customerName = sp.order.customer?.customerName ?? sp.order.shipToCustomerName ?? "\u2014";
             const doneTime = sp.completedAt
               ? new Date(sp.completedAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false })
-              : "—";
+              : "\u2014";
             return (
-              <div key={`sheet-cs-${sp.id}`} className="border border-[#e2e5f1] rounded-xl overflow-hidden mb-1.5 opacity-65">
-                <div className="px-2.5 py-2 bg-[#f0fdf4] border-b border-[#bbf7d0]">
-                  <div className="text-[12px] font-bold text-gray-900">{customerName}</div>
-                  <div className="font-mono text-[9px] font-semibold text-[#7c3aed] mt-0.5">
-                    {sp.order.obdNumber}{sp.splitNumber != null ? ` · Split #${sp.splitNumber}` : ""}
-                  </div>
+              <div key={`sheet-cs-${sp.id}`} className="border rounded-lg px-3 py-2.5 mb-1.5 border-gray-200 opacity-[0.55]">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded border bg-green-50 border-green-200 text-green-700">Done</span>
+                  <span className="font-mono text-[11px] text-gray-400">{doneTime}</span>
                 </div>
-                <div className="px-2.5 py-1.5 flex items-center justify-between">
-                  <span className="text-[10px] font-semibold text-[#27500a] bg-[#eaf3de] border border-[#97c459] px-1.5 py-px rounded-[5px]">
-                    ✓ Tinting Done
-                  </span>
-                  <span className="font-mono text-[11px] font-semibold text-[#16a34a] bg-[#f0fdf4] border border-[#bbf7d0] px-2 py-px rounded-[6px]">
-                    {doneTime}
-                  </span>
+                <div className="text-[13px] font-bold text-gray-900 truncate mb-1">{customerName}</div>
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="font-mono text-[11px] text-gray-800 truncate">{sp.order.obdNumber}</span>
+                  {sp.splitNumber != null && <span className="text-[11px] text-gray-400 flex-shrink-0">· Split #{sp.splitNumber}</span>}
                 </div>
               </div>
             );
@@ -2464,8 +2099,8 @@ export function TintOperatorContent() {
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setConflictDialog(null)}>Cancel</Button>
-            <Button onClick={handleConflictOverwrite} disabled={tiActionLoading}>
+            <Button variant="outline" onClick={() => setConflictDialog(null)} className="border border-gray-200 text-gray-600 hover:bg-gray-50">Cancel</Button>
+            <Button onClick={handleConflictOverwrite} disabled={tiActionLoading} className="bg-gray-900 text-white hover:bg-gray-800">
               {tiActionLoading && <Loader2 className={cn("animate-spin mr-1")} size={13} />}
               Overwrite
             </Button>

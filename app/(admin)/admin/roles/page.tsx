@@ -26,7 +26,7 @@ export default async function RolesPage() {
             {roles.map((r) => (
               <TableRow key={r.id}>
                 <TableCell className="font-medium">{r.name}</TableCell>
-                <TableCell className="text-slate-400 text-sm">{r.description ?? "—"}</TableCell>
+                <TableCell className="text-gray-400 text-sm">{r.description ?? "—"}</TableCell>
               </TableRow>
             ))}
           </TableBody>

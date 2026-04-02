@@ -184,11 +184,11 @@ export function SalesOfficersTable({ initialOfficers }: SalesOfficersTableProps)
   return (
     <>
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-lg font-bold text-[#1a237e]">Sales Officers</h1>
+        <h1 className="text-lg font-bold text-teal-700">Sales Officers</h1>
         <div className="flex gap-2">
           <button
             type="button"
-            className="flex items-center gap-1.5 text-xs font-medium text-[#1a237e] border border-[#c7d2fe] bg-[#eef2ff] hover:bg-[#e0e7ff] px-3 py-2 rounded-md"
+            className="flex items-center gap-1.5 text-xs font-medium text-teal-700 border border-teal-200 bg-teal-50 hover:bg-teal-100 px-3 py-2 rounded-md"
             onClick={handleTemplateDownload}
           >
             <Download className="h-3.5 w-3.5" />
@@ -196,7 +196,7 @@ export function SalesOfficersTable({ initialOfficers }: SalesOfficersTableProps)
           </button>
           <button
             type="button"
-            className="flex items-center gap-1.5 text-xs font-medium bg-white hover:bg-[#f7f8fa] text-[#374151] border border-[#e5e7eb] px-3 py-2 rounded-md"
+            className="flex items-center gap-1.5 text-xs font-medium bg-white hover:bg-gray-50 text-gray-700 border border-[#e5e7eb] px-3 py-2 rounded-md"
             onClick={() => importFileRef.current?.click()}
           >
             <Upload className="h-3.5 w-3.5" />
@@ -221,7 +221,7 @@ export function SalesOfficersTable({ initialOfficers }: SalesOfficersTableProps)
           <TableBody>
             {officers.length === 0 && (
               <TableRow>
-                <TableCell colSpan={5} className="text-center text-slate-500 py-8">
+                <TableCell colSpan={5} className="text-center text-gray-500 py-8">
                   No sales officers yet.
                 </TableCell>
               </TableRow>
@@ -229,11 +229,11 @@ export function SalesOfficersTable({ initialOfficers }: SalesOfficersTableProps)
             {officers.map((officer) => (
               <TableRow key={officer.id}>
                 <TableCell className="font-medium">{officer.name}</TableCell>
-                <TableCell className="text-slate-600">
-                  {officer.email ?? <span className="text-slate-300">—</span>}
+                <TableCell className="text-gray-600">
+                  {officer.email ?? <span className="text-gray-300">—</span>}
                 </TableCell>
-                <TableCell className="text-slate-500">
-                  {officer.phone ?? <span className="text-slate-300">—</span>}
+                <TableCell className="text-gray-500">
+                  {officer.phone ?? <span className="text-gray-300">—</span>}
                 </TableCell>
                 <TableCell>
                   <Badge variant={officer.isActive ? "default" : "secondary"}>
@@ -298,8 +298,8 @@ export function SalesOfficersTable({ initialOfficers }: SalesOfficersTableProps)
               />
             </div>
             <div className="sticky bottom-0 bg-white border-t border-[#e5e7eb] -mx-6 px-6 py-4 flex gap-3 mt-6">
-              <Button type="button" variant="outline" className="flex-1 h-10 text-sm border-[#e5e7eb] text-[#374151] hover:bg-[#f7f8fa] rounded-lg oa-btn-ghost" onClick={() => setSheetOpen(false)} disabled={saving}>Cancel</Button>
-              <Button type="submit" className="flex-1 h-10 text-sm bg-[#1a237e] hover:bg-[#283593] text-white rounded-lg font-semibold oa-btn-primary" disabled={saving}>{saving ? "Saving…" : editing ? "Save Changes" : "Create"}</Button>
+              <Button type="button" variant="outline" className="flex-1 h-10 text-sm border-[#e5e7eb] text-gray-700 hover:bg-gray-50 rounded-lg oa-btn-ghost" onClick={() => setSheetOpen(false)} disabled={saving}>Cancel</Button>
+              <Button type="submit" className="flex-1 h-10 text-sm bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-semibold oa-btn-primary" disabled={saving}>{saving ? "Saving…" : editing ? "Save Changes" : "Create"}</Button>
             </div>
           </form>
         </SheetContent>

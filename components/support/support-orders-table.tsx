@@ -158,7 +158,7 @@ function getPriLabel(val: string): string {
 
 // ── Pill slot select styling ─────────────────────────────────────────────────
 
-const PILL_SLOT_CLS = "text-[11px] h-6 pl-2 pr-5 max-w-[150px] whitespace-nowrap truncate border border-gray-200 rounded-xl bg-white text-gray-500 font-medium appearance-none cursor-pointer focus:outline-none focus:border-indigo-200 bg-[url('data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2020%2020%22%3E%3Cpath%20stroke%3D%22%239ca3af%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%221.5%22%20d%3D%22M6%208l4%204%204-4%22%2F%3E%3C%2Fsvg%3E')] bg-[length:12px] bg-[right_4px_center] bg-no-repeat";
+const PILL_SLOT_CLS = "text-[11px] h-6 pl-2 pr-5 max-w-[150px] whitespace-nowrap truncate border border-gray-200 rounded-xl bg-white text-gray-500 font-medium appearance-none cursor-pointer focus:outline-none focus:border-teal-200 bg-[url('data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2020%2020%22%3E%3Cpath%20stroke%3D%22%239ca3af%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%221.5%22%20d%3D%22M6%208l4%204%204-4%22%2F%3E%3C%2Fsvg%3E')] bg-[length:12px] bg-[right_4px_center] bg-no-repeat";
 
 // ── Popover type ─────────────────────────────────────────────────────────────
 
@@ -503,7 +503,7 @@ export function SupportOrdersTable({
                 type="button"
                 onClick={() => void handleSubmitSelected()}
                 disabled={bulkLoading}
-                className="px-4 py-1.5 bg-indigo-600 text-white text-xs font-medium rounded-md hover:bg-indigo-700 flex items-center gap-1.5 disabled:opacity-50 transition-colors"
+                className="px-4 py-1.5 bg-teal-600 text-white text-xs font-medium rounded-md hover:bg-teal-700 flex items-center gap-1.5 disabled:opacity-50 transition-colors"
               >
                 {bulkLoading && <Loader2 size={12} className="animate-spin" />}
                 Submit {selected.size} Orders
@@ -686,8 +686,8 @@ function OrderRow({
       className={cn(
         "px-1 border-b border-gray-50/80 transition-colors cursor-pointer",
         isPhysicallyDispatched ? "opacity-[0.35] py-1.5" : isResolved ? "py-1.5" : "py-2",
-        isChanged && !isNonInteractive && "bg-indigo-50/20",
-        isDetailActive && "bg-indigo-50 border-l-[3px] border-l-indigo-500",
+        isChanged && !isNonInteractive && "bg-teal-50/20",
+        isDetailActive && "bg-teal-50 border-l-[3px] border-l-teal-600",
         !isNonInteractive && !isChanged && !isDetailActive && "hover:bg-gray-50/50",
       )}
       onClick={handleRowClick}

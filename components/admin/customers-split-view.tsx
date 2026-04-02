@@ -156,10 +156,10 @@ function getInitials(name: string): string {
 function SectionHead({ icon, title }: { icon: React.ReactNode; title: string }) {
   return (
     <div className="flex items-center gap-2.5 mb-4">
-      <div className="w-[26px] h-[26px] rounded-[7px] bg-[#e8eaf6] flex items-center justify-center flex-shrink-0 text-[#1a237e]">
+      <div className="w-[26px] h-[26px] rounded-[7px] bg-teal-50 flex items-center justify-center flex-shrink-0 text-teal-700">
         {icon}
       </div>
-      <span className="text-[11px] font-semibold text-[#374151] uppercase tracking-wider">{title}</span>
+      <span className="text-[11px] font-semibold text-gray-700 uppercase tracking-wider">{title}</span>
       <div className="flex-1 h-px bg-[#e5e7eb]" />
     </div>
   );
@@ -167,13 +167,13 @@ function SectionHead({ icon, title }: { icon: React.ReactNode; title: string }) 
 
 function FieldLabel({ children, required }: { children: React.ReactNode; required?: boolean }) {
   return (
-    <label className="block text-[11.5px] font-medium text-[#374151] mb-1">
+    <label className="block text-[11.5px] font-medium text-gray-700 mb-1">
       {children}{required && <span className="text-red-600 ml-0.5">*</span>}
     </label>
   );
 }
 
-const inputCls = "w-full text-[12.5px] text-[#111827] bg-white border border-[#e5e7eb] rounded-lg px-[9px] py-[6px] outline-none focus:border-[#1a237e] focus:ring-2 focus:ring-[#1a237e]/8 transition-all";
+const inputCls = "w-full text-[12.5px] text-gray-900 bg-white border border-[#e5e7eb] rounded-lg px-[9px] py-[6px] outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10 transition-all";
 const hintCls  = "text-[11px] text-[#9ca3af] mt-0.5";
 
 // ── Group type ─────────────────────────────────────────────────────────────────
@@ -636,25 +636,25 @@ export function CustomersSplitView({
 
       {/* ── Component header ──────────────────────────────────────────────── */}
       <div className="h-[52px] bg-white border-b border-[#e5e7eb] flex items-center px-5 gap-3 flex-shrink-0">
-        <span className="text-[15px] font-semibold text-[#111827]">Customers</span>
-        <span className="text-[12px] text-[#9ca3af] bg-[#f7f8fa] border border-[#e5e7eb] px-2 py-0.5 rounded-full">{total} customers</span>
+        <span className="text-[15px] font-semibold text-gray-900">Customers</span>
+        <span className="text-[12px] text-[#9ca3af] bg-gray-50 border border-[#e5e7eb] px-2 py-0.5 rounded-full">{total} customers</span>
         <div className="flex-1" />
         {canImport && (
           <>
-            <button onClick={downloadTemplate} className="flex items-center gap-1.5 text-[12.5px] font-medium text-[#374151] border border-[#e5e7eb] bg-white hover:bg-[#f7f8fa] px-3.5 py-[7px] rounded-lg transition-colors">
+            <button onClick={downloadTemplate} className="flex items-center gap-1.5 text-[12.5px] font-medium text-gray-700 border border-[#e5e7eb] bg-white hover:bg-gray-50 px-3.5 py-[7px] rounded-lg transition-colors">
               <Download className="w-3.5 h-3.5" />CSV template
             </button>
             <button
               onClick={() => fileInputRef.current?.click()}
               disabled={importing}
-              className="flex items-center gap-1.5 text-[12.5px] font-medium text-[#374151] border border-[#e5e7eb] bg-white hover:bg-[#f7f8fa] px-3.5 py-[7px] rounded-lg transition-colors"
+              className="flex items-center gap-1.5 text-[12.5px] font-medium text-gray-700 border border-[#e5e7eb] bg-white hover:bg-gray-50 px-3.5 py-[7px] rounded-lg transition-colors"
             >
               <Upload className="w-3.5 h-3.5" />{importing ? "Importing…" : "Import CSV"}
             </button>
           </>
         )}
         {canEdit && (
-          <button onClick={requestNew} className="flex items-center gap-1.5 text-[12.5px] font-medium text-white bg-[#1a237e] hover:bg-[#283593] px-3.5 py-[7px] rounded-lg transition-colors">
+          <button onClick={requestNew} className="flex items-center gap-1.5 text-[12.5px] font-medium text-white bg-teal-600 hover:bg-teal-700 px-3.5 py-[7px] rounded-lg transition-colors">
             <Plus className="w-3.5 h-3.5" />Add customer
           </button>
         )}
@@ -686,12 +686,12 @@ export function CustomersSplitView({
                 placeholder="Search name or code…"
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
-                className="w-full text-[13px] text-[#111827] bg-[#f7f8fa] border border-[#e5e7eb] rounded-lg pl-8 pr-3 py-[7px] outline-none focus:border-[#1a237e] focus:bg-white focus:ring-2 focus:ring-[#1a237e]/7 transition-all"
+                className="w-full text-[13px] text-gray-900 bg-gray-50 border border-[#e5e7eb] rounded-lg pl-8 pr-3 py-[7px] outline-none focus:border-teal-500 focus:bg-white focus:ring-2 focus:ring-teal-500/10 transition-all"
               />
             </div>
             <div className="flex gap-1.5 items-center">
               <Select value={filterArea || "all"} onValueChange={(v) => setFilterArea(!v || v === "all" ? "" : v)}>
-                <SelectTrigger className="flex-1 h-8 text-[12px] border-[#e5e7eb] bg-[#f7f8fa]">
+                <SelectTrigger className="flex-1 h-8 text-[12px] border-[#e5e7eb] bg-gray-50">
                   <SelectValue>{(v: any) => !v || v === "all" ? "All areas" : (areas.find((a) => a.id.toString() === v)?.name ?? v)}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
@@ -700,7 +700,7 @@ export function CustomersSplitView({
                 </SelectContent>
               </Select>
               <Select value={filterDeliveryType || "all"} onValueChange={(v) => setFilterDeliveryType(!v || v === "all" ? "" : v)}>
-                <SelectTrigger className="flex-1 h-8 text-[12px] border-[#e5e7eb] bg-[#f7f8fa]">
+                <SelectTrigger className="flex-1 h-8 text-[12px] border-[#e5e7eb] bg-gray-50">
                   <SelectValue>{(v: any) => !v || v === "all" ? "All types" : (deliveryTypes.find((dt) => dt.id.toString() === v)?.name ?? v)}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
@@ -709,7 +709,7 @@ export function CustomersSplitView({
                 </SelectContent>
               </Select>
               <Select value={filterPremisesType || "all"} onValueChange={(v) => setFilterPremisesType(!v || v === "all" ? "" : v)}>
-                <SelectTrigger className="flex-1 h-8 text-[12px] border-[#e5e7eb] bg-[#f7f8fa]">
+                <SelectTrigger className="flex-1 h-8 text-[12px] border-[#e5e7eb] bg-gray-50">
                   <SelectValue>{(v: any) => !v || v === "all" ? "All premises" : (premisesTypes.find((p) => p.id.toString() === v)?.name ?? v)}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
@@ -721,19 +721,19 @@ export function CustomersSplitView({
             <div className="flex gap-1.5 items-center">
               <button
                 onClick={() => setFilterKey((v) => !v)}
-                className={`flex items-center gap-1 text-[11px] font-medium px-2.5 py-[5px] rounded-full border transition-all flex-shrink-0 ${filterKey ? "bg-[#e8eaf6] text-[#1a237e] border-[#c5cae9]" : "bg-[#f7f8fa] text-[#6b7280] border-[#e5e7eb] hover:border-[#d1d5db]"}`}
+                className={`flex items-center gap-1 text-[11px] font-medium px-2.5 py-[5px] rounded-full border transition-all flex-shrink-0 ${filterKey ? "bg-teal-50 text-teal-700 border-teal-200" : "bg-gray-50 text-gray-500 border-[#e5e7eb] hover:border-gray-300"}`}
               >
-                <span className={`w-1.5 h-1.5 rounded-full ${filterKey ? "bg-[#1a237e]" : "bg-[#9ca3af]"}`} />Key
+                <span className={`w-1.5 h-1.5 rounded-full ${filterKey ? "bg-teal-600" : "bg-gray-400"}`} />Key
               </button>
               <button
                 onClick={() => setFilterActive((v) => !v)}
-                className={`flex items-center gap-1 text-[11px] font-medium px-2.5 py-[5px] rounded-full border transition-all flex-shrink-0 ${filterActive ? "bg-[#e8eaf6] text-[#1a237e] border-[#c5cae9]" : "bg-[#f7f8fa] text-[#6b7280] border-[#e5e7eb] hover:border-[#d1d5db]"}`}
+                className={`flex items-center gap-1 text-[11px] font-medium px-2.5 py-[5px] rounded-full border transition-all flex-shrink-0 ${filterActive ? "bg-teal-50 text-teal-700 border-teal-200" : "bg-gray-50 text-gray-500 border-[#e5e7eb] hover:border-gray-300"}`}
               >
-                <span className={`w-1.5 h-1.5 rounded-full ${filterActive ? "bg-[#1a237e]" : "bg-[#9ca3af]"}`} />Active
+                <span className={`w-1.5 h-1.5 rounded-full ${filterActive ? "bg-teal-600" : "bg-gray-400"}`} />Active
               </button>
               <button
                 onClick={() => { setGroupByName((v) => !v); setPage(1); }}
-                className={`flex items-center gap-1 text-[11px] font-medium px-2.5 py-[5px] rounded-full border transition-all flex-shrink-0 ${groupByName ? "bg-[#e8eaf6] text-[#1a237e] border-[#c5cae9]" : "bg-[#f7f8fa] text-[#6b7280] border-[#e5e7eb] hover:border-[#d1d5db]"}`}
+                className={`flex items-center gap-1 text-[11px] font-medium px-2.5 py-[5px] rounded-full border transition-all flex-shrink-0 ${groupByName ? "bg-teal-50 text-teal-700 border-teal-200" : "bg-gray-50 text-gray-500 border-[#e5e7eb] hover:border-gray-300"}`}
               >
                 <Layers className="w-3 h-3" />Group
               </button>
@@ -750,25 +750,25 @@ export function CustomersSplitView({
               <div
                 key={c.id}
                 onClick={() => requestSelectId(c.id)}
-                className={`flex items-stretch border-b border-[#e5e7eb] cursor-pointer transition-colors ${c.id === selectedId ? "bg-[#eef0fb]" : "hover:bg-[#f7f8fa]"}`}
+                className={`flex items-stretch border-b border-[#e5e7eb] cursor-pointer transition-colors ${c.id === selectedId ? "bg-[#eef0fb]" : "hover:bg-gray-50"}`}
               >
-                <div className={`w-[3px] flex-shrink-0 rounded-r-[2px] transition-colors ${c.id === selectedId ? "bg-[#1a237e]" : "bg-transparent"}`} />
+                <div className={`w-[3px] flex-shrink-0 rounded-r-[2px] transition-colors ${c.id === selectedId ? "bg-teal-600" : "bg-transparent"}`} />
                 <div className="flex-1 px-3.5 py-[11px] min-w-0">
                   <div className="flex items-center justify-between gap-2 mb-0.5">
-                    <span className="text-[13px] font-medium text-[#111827] truncate">{c.customerName}</span>
+                    <span className="text-[13px] font-medium text-gray-900 truncate">{c.customerName}</span>
                     {c.customerRating && (
                       <span className={`text-[10px] font-bold px-1.5 py-px rounded flex-shrink-0 ${ratingStyles[c.customerRating] ?? ""}`}>{c.customerRating}</span>
                     )}
                   </div>
                   <div className="flex items-center gap-1.5 mb-1">
                     <span className="font-mono text-[10.5px] text-[#9ca3af]">{c.customerCode}</span>
-                    {c.area && <><span className="w-[3px] h-[3px] rounded-full bg-[#d1d5db] flex-shrink-0" /><span className="text-[11.5px] text-[#6b7280] truncate">{c.area.name}{c.subArea ? ` · ${c.subArea.name}` : ""}</span></>}
+                    {c.area && <><span className="w-[3px] h-[3px] rounded-full bg-gray-300 flex-shrink-0" /><span className="text-[11.5px] text-gray-500 truncate">{c.area.name}{c.subArea ? ` · ${c.subArea.name}` : ""}</span></>}
                   </div>
                   <div className="flex flex-wrap gap-1">
                     <span className={`text-[10px] font-medium px-1.5 py-px rounded-full border ${c.isActive ? "bg-[#e8f5e9] text-[#2e7d32] border-[#a5d6a7]" : "bg-[#f0f1f5] text-[#9ca3af] border-[#e5e7eb]"}`}>{c.isActive ? "Active" : "Inactive"}</span>
                     {c.isKeyCustomer && <span className="text-[10px] font-medium px-1.5 py-px rounded-full border bg-[#fef3c7] text-[#b45309] border-[#fcd34d]">Key</span>}
                     {c.premisesType && <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-[#f3e8ff] text-[#7c3aed] border border-[#e9d5ff]">{c.premisesType.name}</span>}
-                    {c.salesOfficerGroup && <span className="text-[10px] font-medium px-1.5 py-px rounded-full border bg-[#e8eaf6] text-[#3949ab] border-[#c5cae9] truncate max-w-[100px]">{c.salesOfficerGroup.name}</span>}
+                    {c.salesOfficerGroup && <span className="text-[10px] font-medium px-1.5 py-px rounded-full border bg-teal-50 text-teal-700 border-teal-200 truncate max-w-[100px]">{c.salesOfficerGroup.name}</span>}
                   </div>
                 </div>
               </div>
@@ -779,15 +779,15 @@ export function CustomersSplitView({
                   {/* Group header */}
                   <div
                     onClick={() => toggleGroup(group.name)}
-                    className="flex items-center gap-2 px-3.5 py-[8px] border-b border-[#e5e7eb] cursor-pointer bg-[#f7f8fc] hover:bg-[#f0f2f8] transition-colors sticky top-0 z-[5]"
+                    className="flex items-center gap-2 px-3.5 py-[8px] border-b border-[#e5e7eb] cursor-pointer bg-gray-50 hover:bg-white transition-colors sticky top-0 z-[5]"
                   >
                     <ChevronRight
                       className={`w-3.5 h-3.5 text-[#9ca3af] flex-shrink-0 transition-transform duration-150 ${isExpanded ? "rotate-90" : ""}`}
                     />
-                    <span className="text-[12.5px] font-semibold text-[#111827] flex-1 truncate">
+                    <span className="text-[12.5px] font-semibold text-gray-900 flex-1 truncate">
                       {group.name}
                     </span>
-                    <span className="text-[10px] font-bold px-[7px] py-[1px] rounded-full bg-[#e8eaf6] text-[#3949ab] border border-[#c5cae9] flex-shrink-0">
+                    <span className="text-[10px] font-bold px-[7px] py-[1px] rounded-full bg-teal-50 text-teal-700 border border-teal-200 flex-shrink-0">
                       {group.items.length}
                     </span>
                   </div>
@@ -796,20 +796,20 @@ export function CustomersSplitView({
                     <div
                       key={c.id}
                       onClick={() => requestSelectId(c.id)}
-                      className={`flex items-stretch border-b border-[#e5e7eb] cursor-pointer transition-colors ${c.id === selectedId ? "bg-[#eef0fb]" : "hover:bg-[#f7f8fa]"}`}
+                      className={`flex items-stretch border-b border-[#e5e7eb] cursor-pointer transition-colors ${c.id === selectedId ? "bg-[#eef0fb]" : "hover:bg-gray-50"}`}
                     >
                       <div className="w-[23px] flex-shrink-0" />
-                      <div className={`w-[3px] flex-shrink-0 rounded-r-[2px] transition-colors ${c.id === selectedId ? "bg-[#1a237e]" : "bg-transparent"}`} />
+                      <div className={`w-[3px] flex-shrink-0 rounded-r-[2px] transition-colors ${c.id === selectedId ? "bg-teal-600" : "bg-transparent"}`} />
                       <div className="flex-1 px-3 py-[9px] min-w-0">
                         {/* Row 1: code · area */}
                         <div className="flex items-center gap-1.5 mb-1">
-                          <span className="font-mono text-[11px] text-[#374151] font-medium">
+                          <span className="font-mono text-[11px] text-gray-700 font-medium">
                             {c.customerCode}
                           </span>
                           {c.area && (
                             <>
-                              <span className="w-[3px] h-[3px] rounded-full bg-[#d1d5db] flex-shrink-0" />
-                              <span className="text-[11.5px] text-[#6b7280] truncate">
+                              <span className="w-[3px] h-[3px] rounded-full bg-gray-300 flex-shrink-0" />
+                              <span className="text-[11.5px] text-gray-500 truncate">
                                 {c.area.name}{c.subArea ? ` · ${c.subArea.name}` : ""}
                               </span>
                             </>
@@ -829,7 +829,7 @@ export function CustomersSplitView({
                             <span className="text-[10px] font-medium px-1.5 py-px rounded-full border bg-[#fef3c7] text-[#b45309] border-[#fcd34d]">Key</span>
                           )}
                           {c.salesOfficerGroup && (
-                            <span className="text-[10px] font-medium px-1.5 py-px rounded-full border bg-[#e8eaf6] text-[#3949ab] border-[#c5cae9] truncate max-w-[100px]">
+                            <span className="text-[10px] font-medium px-1.5 py-px rounded-full border bg-teal-50 text-teal-700 border-teal-200 truncate max-w-[100px]">
                               {c.salesOfficerGroup.name}
                             </span>
                           )}
@@ -854,12 +854,12 @@ export function CustomersSplitView({
                 <button
                   disabled={page <= 1}
                   onClick={() => setPage((p) => p - 1)}
-                  className="text-[11px] px-2.5 py-1 rounded-md border border-[#e5e7eb] bg-[#f7f8fa] text-[#6b7280] disabled:opacity-40 disabled:cursor-not-allowed hover:enabled:border-[#d1d5db] transition-colors"
+                  className="text-[11px] px-2.5 py-1 rounded-md border border-[#e5e7eb] bg-gray-50 text-gray-500 disabled:opacity-40 disabled:cursor-not-allowed hover:enabled:border-gray-300 transition-colors"
                 >← Prev</button>
                 <button
                   disabled={page >= totalPages}
                   onClick={() => setPage((p) => p + 1)}
-                  className="text-[11px] px-2.5 py-1 rounded-md border border-[#e5e7eb] bg-[#f7f8fa] text-[#6b7280] disabled:opacity-40 disabled:cursor-not-allowed hover:enabled:border-[#d1d5db] transition-colors"
+                  className="text-[11px] px-2.5 py-1 rounded-md border border-[#e5e7eb] bg-gray-50 text-gray-500 disabled:opacity-40 disabled:cursor-not-allowed hover:enabled:border-gray-300 transition-colors"
                 >Next →</button>
               </div>
             </div>
@@ -869,9 +869,9 @@ export function CustomersSplitView({
         {/* ── Resize handle ──────────────────────────────────────────────────── */}
         <div
           onMouseDown={onResizeMouseDown}
-          className="w-1 bg-transparent hover:bg-[#c5cae9] cursor-col-resize flex-shrink-0 relative z-10 transition-colors group"
+          className="w-1 bg-transparent hover:bg-teal-100 cursor-col-resize flex-shrink-0 relative z-10 transition-colors group"
         >
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-0.5 h-8 rounded-sm bg-[#d1d5db] group-hover:bg-[#9ca3af]" />
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-0.5 h-8 rounded-sm bg-gray-300 group-hover:bg-gray-400" />
         </div>
 
         {/* ── Form panel ─────────────────────────────────────────────────────── */}
@@ -883,7 +883,7 @@ export function CustomersSplitView({
               <div className="w-[52px] h-[52px] rounded-xl bg-white border border-[#e5e7eb] flex items-center justify-center">
                 <Users className="w-[22px] h-[22px] text-[#9ca3af]" />
               </div>
-              <div className="text-[14px] font-medium text-[#6b7280]">No customer selected</div>
+              <div className="text-[14px] font-medium text-gray-500">No customer selected</div>
               <div className="text-[12px] text-[#9ca3af]">Click a row on the left to edit, or add a new customer</div>
             </div>
           )}
@@ -899,17 +899,17 @@ export function CustomersSplitView({
 
               {/* Form header */}
               <div className="h-[52px] bg-white border-b border-[#e5e7eb] flex items-center px-5 gap-2.5 flex-shrink-0">
-                <span className="text-[14px] font-semibold text-[#111827] truncate">
+                <span className="text-[14px] font-semibold text-gray-900 truncate">
                   {isNew ? "New customer" : (editingFull?.customerName ?? "")}
                 </span>
                 {!isNew && editingFull && (
-                  <span className="font-mono text-[11px] text-[#9ca3af] bg-[#f7f8fa] border border-[#e5e7eb] px-1.5 py-0.5 rounded flex-shrink-0">
+                  <span className="font-mono text-[11px] text-[#9ca3af] bg-gray-50 border border-[#e5e7eb] px-1.5 py-0.5 rounded flex-shrink-0">
                     {editingFull.customerCode}
                   </span>
                 )}
                 <div className="flex-1" />
                 {!isNew && editingFull && (
-                  <span className={`text-[11px] font-medium px-2.5 py-1 rounded-full ${editingFull.isActive ? "bg-[#e8f5e9] text-[#2e7d32]" : "bg-[#f0f1f5] text-[#6b7280]"}`}>
+                  <span className={`text-[11px] font-medium px-2.5 py-1 rounded-full ${editingFull.isActive ? "bg-[#e8f5e9] text-[#2e7d32]" : "bg-[#f0f1f5] text-gray-500"}`}>
                     {editingFull.isActive ? "Active" : "Inactive"}
                   </span>
                 )}
@@ -922,11 +922,11 @@ export function CustomersSplitView({
                     key={tab.id}
                     type="button"
                     onClick={() => scrollToSection(tab.id)}
-                    className={`flex items-center gap-1.5 px-3 text-[11.5px] font-medium border-b-2 h-[38px] whitespace-nowrap transition-colors ${activeTab === tab.id ? "text-[#1a237e] border-[#1a237e]" : "text-[#6b7280] border-transparent hover:text-[#374151]"}`}
+                    className={`flex items-center gap-1.5 px-3 text-[11.5px] font-medium border-b-2 h-[38px] whitespace-nowrap transition-colors ${activeTab === tab.id ? "text-teal-700 border-teal-600" : "text-gray-500 border-transparent hover:text-gray-700"}`}
                   >
                     {tab.label}
                     {tab.id === "sec-contacts" && form.contacts.length > 0 && (
-                      <span className="text-[10px] font-semibold px-1.5 py-px rounded-lg bg-[#e8eaf6] text-[#3949ab]">{form.contacts.length}</span>
+                      <span className="text-[10px] font-semibold px-1.5 py-px rounded-lg bg-teal-50 text-teal-700">{form.contacts.length}</span>
                     )}
                   </button>
                 ))}
@@ -955,7 +955,7 @@ export function CustomersSplitView({
 
               {/* ── Save bar ──────────────────────────────────────────────── */}
               <div className="h-[54px] bg-white border-b border-[#e5e7eb] flex items-center justify-between px-5 flex-shrink-0">
-                <div className="flex items-center gap-2 text-[12px] text-[#6b7280]">
+                <div className="flex items-center gap-2 text-[12px] text-gray-500">
                   {dirty && <><span className="w-1.5 h-1.5 rounded-full bg-amber-500 flex-shrink-0" /><span>Unsaved changes</span></>}
                 </div>
                 <div className="flex gap-2">
@@ -963,12 +963,12 @@ export function CustomersSplitView({
                     <Button
                       type="button" variant="outline" size="sm"
                       onClick={() => { setForm(savedForm ?? EMPTY_FORM); setFieldErrors({}); }}
-                      className="text-[12.5px] border-[#e5e7eb] text-[#374151] hover:bg-[#f7f8fa]"
+                      className="text-[12.5px] border-[#e5e7eb] text-gray-700 hover:bg-gray-50"
                     >Discard</Button>
                   )}
                   <Button
                     type="submit" size="sm" disabled={saving || !canEdit}
-                    className="text-[12.5px] bg-[#1a237e] hover:bg-[#283593] text-white"
+                    className="text-[12.5px] bg-teal-600 hover:bg-teal-700 text-white"
                   >{saving ? "Saving…" : (editingFull ? "Save changes" : "Create customer")}</Button>
                 </div>
               </div>
@@ -1143,7 +1143,7 @@ export function CustomersSplitView({
                         <button
                           key={r} type="button"
                           onClick={() => setField("customerRating", form.customerRating === r ? "" : r)}
-                          className={`w-[38px] h-[30px] rounded-md text-[12px] font-semibold border transition-all ${form.customerRating === r ? ratingStyles[r] : "bg-[#f7f8fa] text-[#6b7280] border-[#e5e7eb] hover:border-[#d1d5db]"}`}
+                          className={`w-[38px] h-[30px] rounded-md text-[12px] font-semibold border transition-all ${form.customerRating === r ? ratingStyles[r] : "bg-gray-50 text-gray-500 border-[#e5e7eb] hover:border-gray-300"}`}
                         >{r}</button>
                       ))}
                       {form.customerRating && (
@@ -1169,13 +1169,13 @@ export function CustomersSplitView({
                         <div
                           key={key}
                           onClick={() => setField(key, !on)}
-                          className={`flex items-center justify-between p-[10px_12px] rounded-lg border cursor-pointer transition-all ${on ? "bg-[#eef0fb] border-[#c5cae9]" : "bg-[#f7f8fa] border-[#e5e7eb] hover:border-[#d1d5db]"}`}
+                          className={`flex items-center justify-between p-[10px_12px] rounded-lg border cursor-pointer transition-all ${on ? "bg-[#eef0fb] border-teal-200" : "bg-gray-50 border-[#e5e7eb] hover:border-gray-300"}`}
                         >
                           <div>
-                            <div className="text-[12.5px] font-medium text-[#111827]">{label}</div>
+                            <div className="text-[12.5px] font-medium text-gray-900">{label}</div>
                             <div className="text-[10.5px] text-[#9ca3af] mt-0.5">{desc}</div>
                           </div>
-                          <div className={`w-[30px] h-[17px] rounded-full relative flex-shrink-0 transition-colors ${on ? "bg-[#1a237e]" : "bg-[#d1d5db]"}`}>
+                          <div className={`w-[30px] h-[17px] rounded-full relative flex-shrink-0 transition-colors ${on ? "bg-teal-600" : "bg-gray-300"}`}>
                             <div className={`absolute w-[13px] h-[13px] rounded-full bg-white top-[2px] transition-transform shadow-sm ${on ? "translate-x-[15px]" : "translate-x-[2px]"}`} />
                           </div>
                         </div>
@@ -1206,7 +1206,7 @@ export function CustomersSplitView({
                           <button
                             key={day} type="button"
                             onClick={() => toggleDay(day)}
-                            className={`text-[11px] font-medium px-2.5 py-1 rounded-full border transition-all ${blocked ? "bg-[#fee2e2] text-[#b91c1c] border-[#fca5a5] font-semibold" : "bg-[#f7f8fa] text-[#6b7280] border-[#e5e7eb] hover:border-[#d1d5db]"}`}
+                            className={`text-[11px] font-medium px-2.5 py-1 rounded-full border transition-all ${blocked ? "bg-[#fee2e2] text-[#b91c1c] border-[#fca5a5] font-semibold" : "bg-gray-50 text-gray-500 border-[#e5e7eb] hover:border-gray-300"}`}
                           >{day}</button>
                         );
                       })}
@@ -1220,9 +1220,9 @@ export function CustomersSplitView({
                   {fieldErrors.contacts && <p className="text-[11px] text-red-600 mb-2">{fieldErrors.contacts}</p>}
                   <div className="flex flex-col gap-2 mb-2">
                     {form.contacts.map((contact) => (
-                      <div key={contact._key} className="bg-[#f7f8fa] border border-[#e5e7eb] rounded-lg p-[11px_13px] relative">
+                      <div key={contact._key} className="bg-gray-50 border border-[#e5e7eb] rounded-lg p-[11px_13px] relative">
                         <div className="flex gap-2.5 items-start">
-                          <div className="w-[30px] h-[30px] rounded-full bg-[#e8eaf6] flex items-center justify-center text-[10px] font-semibold text-[#1a237e] flex-shrink-0 mt-0.5 font-mono">
+                          <div className="w-[30px] h-[30px] rounded-full bg-teal-50 flex items-center justify-center text-[10px] font-semibold text-teal-700 flex-shrink-0 mt-0.5 font-mono">
                             {getInitials(contact.name) || "?"}
                           </div>
                           <div className="flex-1 min-w-0 flex flex-col gap-1.5">
@@ -1246,14 +1246,14 @@ export function CustomersSplitView({
                         <div className="flex items-center gap-2 mt-2 pl-[38px]">
                           <div
                             onClick={() => setPrimary(contact._key)}
-                            className={`w-[13px] h-[13px] rounded-[3px] border flex items-center justify-center cursor-pointer flex-shrink-0 transition-all ${contact.isPrimary ? "bg-[#1a237e] border-[#1a237e]" : "bg-white border-[#d1d5db]"}`}
+                            className={`w-[13px] h-[13px] rounded-[3px] border flex items-center justify-center cursor-pointer flex-shrink-0 transition-all ${contact.isPrimary ? "bg-teal-600 border-teal-600" : "bg-white border-gray-300"}`}
                           >
                             {contact.isPrimary && <div className="w-[7px] h-[4px] border-l-[1.5px] border-b-[1.5px] border-white -rotate-45 -translate-y-[1px]" />}
                           </div>
-                          <span className="text-[11.5px] text-[#6b7280] cursor-pointer" onClick={() => setPrimary(contact._key)}>Primary contact</span>
+                          <span className="text-[11.5px] text-gray-500 cursor-pointer" onClick={() => setPrimary(contact._key)}>Primary contact</span>
                           {contact.isPrimary && <span className="text-[10px] font-semibold px-1.5 py-px rounded-full bg-[#e8f5e9] text-[#2e7d32] border border-[#a5d6a7]">Primary</span>}
                           {contact.contactRoleId && (
-                            <span className="text-[10px] font-semibold px-1.5 py-px rounded-full bg-[#e8eaf6] text-[#3949ab] border border-[#c5cae9]">
+                            <span className="text-[10px] font-semibold px-1.5 py-px rounded-full bg-teal-50 text-teal-700 border border-teal-200">
                               {contactRoles.find((r) => r.id.toString() === contact.contactRoleId)?.name}
                             </span>
                           )}
@@ -1263,7 +1263,7 @@ export function CustomersSplitView({
                   </div>
                   <button
                     type="button" onClick={addContact}
-                    className="flex items-center justify-center gap-1.5 w-full py-[9px] rounded-lg border-[1.5px] border-dashed border-[#c5cae9] text-[#1a237e] text-[12px] font-medium hover:bg-[#e8eaf6] transition-colors"
+                    className="flex items-center justify-center gap-1.5 w-full py-[9px] rounded-lg border-[1.5px] border-dashed border-teal-200 text-teal-700 text-[12px] font-medium hover:bg-teal-50 transition-colors"
                   >
                     <Plus className="w-3 h-3" />Add contact
                   </button>
@@ -1287,23 +1287,23 @@ export function CustomersSplitView({
               <div className="flex gap-6">
                 <span className="text-green-700 font-medium">{importResult.created} created</span>
                 {importResult.skipped > 0 && (
-                  <span className="text-slate-500 font-medium">{importResult.skipped} skipped (already exist)</span>
+                  <span className="text-gray-500 font-medium">{importResult.skipped} skipped (already exist)</span>
                 )}
                 {importResult.failed.length > 0 && (
                   <span className="text-destructive font-medium">{importResult.failed.length} failed</span>
                 )}
               </div>
               {importResult.failed.length > 0 && (
-                <div className="max-h-60 overflow-y-auto rounded-md border bg-slate-50 p-3 space-y-1">
+                <div className="max-h-60 overflow-y-auto rounded-md border bg-gray-50 p-3 space-y-1">
                   {importResult.failed.map((f) => (
-                    <p key={f.row} className="text-slate-700">
+                    <p key={f.row} className="text-gray-700">
                       <span className="font-medium">Row {f.row}:</span> {f.reason}
                     </p>
                   ))}
                 </div>
               )}
               <div className="flex justify-end">
-                <Button size="sm" className="bg-[#1a237e] hover:bg-[#283593] text-white" onClick={() => setImportResult(null)}>Close</Button>
+                <Button size="sm" className="bg-teal-600 hover:bg-teal-700 text-white" onClick={() => setImportResult(null)}>Close</Button>
               </div>
             </div>
           )}
@@ -1315,7 +1315,7 @@ export function CustomersSplitView({
           <DialogHeader>
             <DialogTitle>Unsaved changes</DialogTitle>
           </DialogHeader>
-          <p className="text-[13px] text-[#374151]">You have unsaved changes. If you leave now, your changes will be lost.</p>
+          <p className="text-[13px] text-gray-700">You have unsaved changes. If you leave now, your changes will be lost.</p>
           <DialogFooter className="gap-2">
             <Button variant="outline" size="sm" onClick={handleCancelDiscard}>Keep editing</Button>
             <Button variant="destructive" size="sm" onClick={handleConfirmDiscard}>Discard changes</Button>

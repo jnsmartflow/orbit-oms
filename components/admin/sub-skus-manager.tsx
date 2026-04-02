@@ -74,8 +74,8 @@ export function SubSkusManager({ skuId, skuCode, skuName, initialSubSkus }: SubS
   return (
     <div>
       <div className="mb-5">
-        <h1 className="text-lg font-bold text-[#1a237e]">Sub-SKUs</h1>
-        <p className="text-sm text-slate-500 mt-1">
+        <h1 className="text-lg font-bold text-teal-700">Sub-SKUs</h1>
+        <p className="text-sm text-gray-500 mt-1">
           {skuCode} — {skuName}
         </p>
       </div>
@@ -124,16 +124,16 @@ export function SubSkusManager({ skuId, skuCode, skuName, initialSubSkus }: SubS
           <TableBody>
             {subSkus.length === 0 && (
               <TableRow>
-                <TableCell colSpan={3} className="text-center text-slate-500 py-8">
+                <TableCell colSpan={3} className="text-center text-gray-500 py-8">
                   No sub-SKUs yet.
                 </TableCell>
               </TableRow>
             )}
             {subSkus.map((s) => (
               <TableRow key={s.id}>
-                <TableCell className="font-mono text-sm text-slate-700">{s.subCode}</TableCell>
-                <TableCell className="text-slate-600">{s.description ?? "—"}</TableCell>
-                <TableCell className="text-slate-400 text-sm">
+                <TableCell className="font-mono text-sm text-gray-700">{s.subCode}</TableCell>
+                <TableCell className="text-gray-600">{s.description ?? "—"}</TableCell>
+                <TableCell className="text-gray-400 text-sm">
                   {new Date(s.createdAt).toLocaleDateString("en-IN", {
                     day: "2-digit", month: "short", year: "numeric",
                   })}

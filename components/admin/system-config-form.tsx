@@ -173,8 +173,8 @@ export function SystemConfigForm({ initialRows }: SystemConfigFormProps) {
       return (
         <div key={key} className="flex items-start justify-between gap-4 py-3 border-b last:border-0">
           <div className="flex-1">
-            <Label className="text-sm font-medium text-slate-900">{meta.label}</Label>
-            <p className="text-xs text-slate-500 mt-0.5">{meta.description}</p>
+            <Label className="text-sm font-medium text-gray-900">{meta.label}</Label>
+            <p className="text-xs text-gray-500 mt-0.5">{meta.description}</p>
           </div>
           <Switch
             checked={value === "true"}
@@ -187,10 +187,10 @@ export function SystemConfigForm({ initialRows }: SystemConfigFormProps) {
     return (
       <div key={key} className="grid grid-cols-1 sm:grid-cols-3 gap-2 items-start py-3 border-b last:border-0">
         <div className="sm:col-span-2">
-          <Label htmlFor={key} className="text-sm font-medium text-slate-900">
+          <Label htmlFor={key} className="text-sm font-medium text-gray-900">
             {meta.label}
           </Label>
-          <p className="text-xs text-slate-500 mt-0.5">{meta.description}</p>
+          <p className="text-xs text-gray-500 mt-0.5">{meta.description}</p>
         </div>
         <Input
           id={key}

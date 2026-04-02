@@ -208,15 +208,15 @@ export function CustomersTable({ initialCustomers, initialTotal, areas, subAreas
     <>
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-lg font-bold text-[#1a237e]">
+        <h1 className="text-lg font-bold text-teal-700">
           Customers
-          {total > 0 && <span className="ml-2 text-sm font-normal text-slate-400">{total} total</span>}
+          {total > 0 && <span className="ml-2 text-sm font-normal text-gray-400">{total} total</span>}
         </h1>
         <div className="flex gap-2">
           {canImport && (
             <button
               type="button"
-              className="flex items-center gap-1.5 text-xs font-medium text-[#1a237e] border border-[#c7d2fe] bg-[#eef2ff] hover:bg-[#e0e7ff] px-3 py-2 rounded-md"
+              className="flex items-center gap-1.5 text-xs font-medium text-teal-700 border border-teal-200 bg-teal-50 hover:bg-teal-100 px-3 py-2 rounded-md"
               onClick={handleTemplateDownload}
             >
               <Download className="h-3.5 w-3.5" />
@@ -293,26 +293,26 @@ export function CustomersTable({ initialCustomers, initialTotal, areas, subAreas
           <TableBody>
             {customers.length === 0 && (
               <TableRow>
-                <TableCell colSpan={11} className="text-center text-slate-500 py-8">
+                <TableCell colSpan={11} className="text-center text-gray-500 py-8">
                   {loading ? "Loading…" : "No customers found."}
                 </TableCell>
               </TableRow>
             )}
             {customers.map((c) => (
               <TableRow key={c.id}>
-                <TableCell className="font-mono text-sm text-slate-600">{c.customerCode}</TableCell>
+                <TableCell className="font-mono text-sm text-gray-600">{c.customerCode}</TableCell>
                 <TableCell className="font-medium">{c.customerName}</TableCell>
-                <TableCell className="text-slate-500 text-sm max-w-[180px]">
+                <TableCell className="text-gray-500 text-sm max-w-[180px]">
                   {c.address
                     ? c.address.length > 40
                       ? <span title={c.address}>{c.address.slice(0, 40)}…</span>
                       : c.address
-                    : <span className="text-slate-300">—</span>}
+                    : <span className="text-gray-300">—</span>}
                 </TableCell>
-                <TableCell className="text-slate-600">{c.area?.name ?? "—"}</TableCell>
-                <TableCell className="text-slate-500">{c.subArea?.name ?? "—"}</TableCell>
-                <TableCell className="text-slate-600 text-sm">
-                  {c.salesOfficerGroup?.name ?? <span className="text-slate-300">—</span>}
+                <TableCell className="text-gray-600">{c.area?.name ?? "—"}</TableCell>
+                <TableCell className="text-gray-500">{c.subArea?.name ?? "—"}</TableCell>
+                <TableCell className="text-gray-600 text-sm">
+                  {c.salesOfficerGroup?.name ?? <span className="text-gray-300">—</span>}
                 </TableCell>
                 <TableCell>
                   {c.customerRating ? (
@@ -320,21 +320,21 @@ export function CustomersTable({ initialCustomers, initialTotal, areas, subAreas
                       {c.customerRating}
                     </span>
                   ) : (
-                    <span className="text-slate-300">—</span>
+                    <span className="text-gray-300">—</span>
                   )}
                 </TableCell>
                 <TableCell>
                   {c.isKeyCustomer ? (
                     <Badge variant="default" className="bg-amber-500 hover:bg-amber-500">Key</Badge>
                   ) : (
-                    <span className="text-slate-300">—</span>
+                    <span className="text-gray-300">—</span>
                   )}
                 </TableCell>
                 <TableCell>
                   {c.isKeySite ? (
-                    <Badge variant="default" className="bg-blue-500 hover:bg-blue-500">Key</Badge>
+                    <Badge variant="default" className="bg-blue-500 hover:bg-teal-500">Key</Badge>
                   ) : (
-                    <span className="text-slate-300">—</span>
+                    <span className="text-gray-300">—</span>
                   )}
                 </TableCell>
                 <TableCell>
@@ -364,7 +364,7 @@ export function CustomersTable({ initialCustomers, initialTotal, areas, subAreas
       {/* Pagination */}
       {totalPages > 1 && (
         <div className="flex items-center justify-between mt-4">
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-gray-500">
             Page {page} of {totalPages} · {total} customers
           </p>
           <div className="flex gap-2">
@@ -434,9 +434,9 @@ export function CustomersTable({ initialCustomers, initialTotal, areas, subAreas
                 )}
               </div>
               {importResult.failed.length > 0 && (
-                <div className="max-h-60 overflow-y-auto rounded-md border bg-slate-50 p-3 space-y-1">
+                <div className="max-h-60 overflow-y-auto rounded-md border bg-gray-50 p-3 space-y-1">
                   {importResult.failed.map((f) => (
-                    <p key={f.row} className="text-slate-700">
+                    <p key={f.row} className="text-gray-700">
                       <span className="font-medium">Row {f.row}:</span> {f.reason}
                     </p>
                   ))}

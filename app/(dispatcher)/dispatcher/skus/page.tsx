@@ -30,8 +30,8 @@ export default async function DispatcherSkusPage() {
   return (
     <div>
       <div className="mb-6">
-        <h1 className="text-xl font-semibold text-slate-900">SKU Master</h1>
-        <p className="text-sm text-slate-500 mt-1">
+        <h1 className="text-xl font-semibold text-gray-900">SKU Master</h1>
+        <p className="text-sm text-gray-500 mt-1">
           Manage all SKUs. Weight is captured from the OBD import file — it is not stored here.
         </p>
       </div>

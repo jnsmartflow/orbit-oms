@@ -228,7 +228,7 @@ export function SkuSheet({ open, onOpenChange, editing, onSaved }: SkuSheetProps
             <div className="space-y-1.5">
               <Label>
                 SKU Name <span className="text-destructive">*</span>
-                <span className="ml-1.5 text-xs font-normal text-slate-400">(auto-fills from selections below)</span>
+                <span className="ml-1.5 text-xs font-normal text-gray-400">(auto-fills from selections below)</span>
               </Label>
               <Input
                 value={form.skuName}
@@ -337,7 +337,7 @@ export function SkuSheet({ open, onOpenChange, editing, onSaved }: SkuSheetProps
             <div className="space-y-1.5">
               <Label>
                 Units / Carton
-                <span className="ml-1 text-xs font-normal text-slate-400">(optional)</span>
+                <span className="ml-1 text-xs font-normal text-gray-400">(optional)</span>
               </Label>
               <Input
                 type="number" min="1" step="1"
@@ -347,34 +347,34 @@ export function SkuSheet({ open, onOpenChange, editing, onSaved }: SkuSheetProps
                 disabled={!isNotDrumOrBag}
               />
               {!isNotDrumOrBag && (
-                <p className="text-xs text-slate-400">Not applicable for drums / bags</p>
+                <p className="text-xs text-gray-400">Not applicable for drums / bags</p>
               )}
               {fieldErrors.unitsPerCarton && (
                 <p className="text-xs text-destructive">{fieldErrors.unitsPerCarton}</p>
               )}
             </div>
 
-            <p className="text-xs text-slate-400 rounded-md bg-slate-50 border px-3 py-2">
+            <p className="text-xs text-gray-400 rounded-md bg-gray-50 border px-3 py-2">
               Weight is captured from the OBD import file at order time.
             </p>
 
             {/* Is Active */}
-            <label className="flex items-center justify-between p-3 rounded-lg border border-[#e5e7eb] bg-[#f7f8fa] cursor-pointer hover:bg-[#eef2ff] hover:border-[#c7d2fe] transition-all">
+            <label className="flex items-center justify-between p-3 rounded-lg border border-[#e5e7eb] bg-gray-50 cursor-pointer hover:bg-teal-50 hover:border-teal-200 transition-all">
               <div>
-                <div className="text-sm font-medium text-[#111827]">Active</div>
-                <div className="text-xs text-[#6b7280] mt-0.5">Inactive SKUs cannot be added to new orders</div>
+                <div className="text-sm font-medium text-gray-900">Active</div>
+                <div className="text-xs text-gray-500 mt-0.5">Inactive SKUs cannot be added to new orders</div>
               </div>
               <Switch
                 checked={form.isActive}
                 onCheckedChange={(v) => setField("isActive", v)}
-                className="data-[state=checked]:bg-[#1a237e]"
+                className="data-[state=checked]:bg-teal-600"
               />
             </label>
           </div>
 
           <div className="sticky bottom-0 bg-white border-t border-[#e5e7eb] -mx-6 px-6 py-4 flex gap-3 mt-6">
-            <Button type="button" variant="outline" className="flex-1 h-10 text-sm border-[#e5e7eb] text-[#374151] hover:bg-[#f7f8fa] rounded-lg oa-btn-ghost" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
-            <Button type="submit" className="flex-1 h-10 text-sm bg-[#1a237e] hover:bg-[#283593] text-white rounded-lg font-semibold oa-btn-primary" disabled={saving}>{saving ? "Saving…" : editing ? "Save Changes" : "Create SKU"}</Button>
+            <Button type="button" variant="outline" className="flex-1 h-10 text-sm border-[#e5e7eb] text-gray-700 hover:bg-gray-50 rounded-lg oa-btn-ghost" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
+            <Button type="submit" className="flex-1 h-10 text-sm bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-semibold oa-btn-primary" disabled={saving}>{saving ? "Saving…" : editing ? "Save Changes" : "Create SKU"}</Button>
           </div>
         </form>
       </SheetContent>

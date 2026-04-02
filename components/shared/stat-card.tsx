@@ -20,7 +20,7 @@ export function StatCard({
   valueColor = "text-gray-900",
 }: StatCardProps) {
   return (
-    <div className="bg-white rounded-xl border border-[#e2e5f1] shadow-sm p-4 flex items-center gap-3">
+    <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 flex items-center gap-3">
       <div
         className={cn(
           "w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0",

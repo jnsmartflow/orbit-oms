@@ -67,9 +67,9 @@ export default async function AdminDashboard() {
           label="Active Users"
           value={activeUsers}
           icon={<Users size={18} />}
-          iconBg="bg-indigo-50"
-          iconColor="text-indigo-600"
-          valueColor="text-indigo-600"
+          iconBg="bg-teal-50"
+          iconColor="text-teal-600"
+          valueColor="text-teal-600"
         />
         <StatCard
           label="Active Routes"
@@ -98,13 +98,13 @@ export default async function AdminDashboard() {
       </div>
 
       {/* Recent users table */}
-      <div className="bg-white rounded-xl border border-[#e2e5f1] shadow-sm overflow-hidden">
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
         {/* Card header */}
-        <div className="flex items-center justify-between px-5 py-3.5 border-b border-[#e2e5f1]">
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-200">
           <span className="text-[13px] font-bold text-gray-900">Recent Users</span>
           <Link
             href="/admin/users"
-            className="text-[12px] text-[#1a237e] font-medium hover:underline"
+            className="text-[12px] text-teal-700 font-medium hover:underline"
           >
             View all →
           </Link>
@@ -112,12 +112,12 @@ export default async function AdminDashboard() {
 
         {/* Table */}
         <table className="w-full border-collapse">
-          <thead className="bg-[#f7f8fc]">
+          <thead className="bg-gray-50">
             <tr>
               {["Name", "Role", "Created"].map((col) => (
                 <th
                   key={col}
-                  className="py-2.5 px-5 text-left text-[10.5px] font-bold uppercase tracking-wide text-gray-400 border-b border-[#e2e5f1]"
+                  className="py-2.5 px-5 text-left text-[10.5px] font-bold uppercase tracking-wide text-gray-400 border-b border-gray-200"
                 >
                   {col}
                 </th>
@@ -135,7 +135,7 @@ export default async function AdminDashboard() {
             {recentUsers.map((u) => (
               <tr
                 key={u.id}
-                className="border-b border-[#e2e5f1] last:border-0 hover:bg-[#f7f8fc] transition-colors"
+                className="border-b border-gray-200 last:border-0 hover:bg-gray-50 transition-colors"
               >
                 <td className="py-3 px-5 font-semibold text-[13px] text-gray-900">
                   {u.name}

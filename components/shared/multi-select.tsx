@@ -39,12 +39,12 @@ export function MultiSelect({ options, selected, onChange, placeholder = "Select
       </PopoverTrigger>
       <PopoverContent className="w-64 p-2 max-h-60 overflow-y-auto">
         {options.length === 0 && (
-          <p className="text-sm text-slate-500 px-2 py-1">No options available.</p>
+          <p className="text-sm text-gray-500 px-2 py-1">No options available.</p>
         )}
         {options.map((opt) => (
           <div
             key={opt.id}
-            className="flex items-center gap-2 rounded px-2 py-1.5 hover:bg-slate-50 cursor-pointer"
+            className="flex items-center gap-2 rounded px-2 py-1.5 hover:bg-gray-50 cursor-pointer"
             onClick={() => toggle(opt.id)}
           >
             <Checkbox

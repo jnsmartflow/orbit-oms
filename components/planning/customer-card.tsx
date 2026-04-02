@@ -57,7 +57,7 @@ export function CustomerCard({ order, selected, onToggle, onClick, isHistoryView
             className={cn(
               "w-4 h-4 rounded flex items-center justify-center flex-shrink-0 transition-colors",
               selected
-                ? "bg-gray-700"
+                ? "bg-teal-600"
                 : "border border-gray-300 hover:border-gray-400",
             )}
           >

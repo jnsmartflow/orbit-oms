@@ -140,11 +140,11 @@ function PlusBtn({ id, type, onStatusPopover }: {
 }
 
 const SCHEME_MAP = {
-  indigo: {
+  teal: {
     bg:        "bg-white",
     border:    "border-b border-gray-200",
     labelColor: "text-gray-900",
-    dot:       "bg-indigo-500",
+    dot:       "bg-teal-500",
     pill:      "bg-gray-100 text-gray-700 border border-gray-200",
   },
   amber: {
@@ -175,7 +175,7 @@ function SectionHeader({ dotClass, label, count, volume, colorScheme }: {
   label:       string;
   count:       number;
   volume:      number;
-  colorScheme: "indigo" | "amber" | "blue" | "green";
+  colorScheme: "teal" | "amber" | "blue" | "green";
 }) {
   const s = SCHEME_MAP[colorScheme];
   const volStr = volume > 0 ? `${Math.round(volume).toLocaleString()} L` : "— L";
@@ -516,7 +516,7 @@ export function TintTableView({
 
       {/* ── Section 1: Pending Assignment ──────────────────────────────────── */}
       <div className="mb-5">
-        <SectionHeader dotClass="bg-indigo-500" label="Pending Assignment" count={pendingRows.length} volume={pendingSectionVolume} colorScheme="indigo" />
+        <SectionHeader dotClass="bg-teal-500" label="Pending Assignment" count={pendingRows.length} volume={pendingSectionVolume} colorScheme="teal" />
         <div className="bg-white border border-gray-200 border-t-0 rounded-b-lg overflow-hidden w-full">
             {/* Header */}
             <div style={{ display: "grid", gridTemplateColumns: TABLE_GRID, columnGap: 10, alignItems: "center", width: "100%" }} className={hdrCls}>
@@ -595,7 +595,7 @@ export function TintTableView({
                     {/* col8: Operator */}
                     <div className={cellCls}>
                       <div className="flex items-center gap-1.5 min-w-0">
-                        <div className="w-5 h-5 rounded-full bg-gray-700 text-white text-[9px] font-bold flex items-center justify-center flex-shrink-0">{initials(order.tintAssignments[0]?.assignedTo.name)}</div>
+                        <div className="w-5 h-5 rounded-full bg-teal-600 text-white text-[9px] font-bold flex items-center justify-center flex-shrink-0">{initials(order.tintAssignments[0]?.assignedTo.name)}</div>
                         <span className="text-[11px] text-gray-600 truncate">{order.tintAssignments[0]?.assignedTo.name ?? "—"}</span>
                       </div>
                     </div>
@@ -623,7 +623,7 @@ export function TintTableView({
                     {/* col8: Operator */}
                     <div className={cellCls}>
                       <div className="flex items-center gap-1.5 min-w-0">
-                        <div className="w-5 h-5 rounded-full bg-gray-700 text-white text-[9px] font-bold flex items-center justify-center flex-shrink-0">{initials(split.assignedTo.name)}</div>
+                        <div className="w-5 h-5 rounded-full bg-teal-600 text-white text-[9px] font-bold flex items-center justify-center flex-shrink-0">{initials(split.assignedTo.name)}</div>
                         <span className="text-[11px] text-gray-600 truncate">{split.assignedTo.name ?? "—"}</span>
                       </div>
                     </div>
@@ -671,7 +671,7 @@ export function TintTableView({
                       {/* col8: Operator */}
                       <div className={cellCls}>
                         <div className="flex items-center gap-1.5 min-w-0">
-                          <div className="w-5 h-5 rounded-full bg-gray-700 text-white text-[9px] font-bold flex items-center justify-center flex-shrink-0">{initials(order.tintAssignments[0]?.assignedTo.name)}</div>
+                          <div className="w-5 h-5 rounded-full bg-teal-600 text-white text-[9px] font-bold flex items-center justify-center flex-shrink-0">{initials(order.tintAssignments[0]?.assignedTo.name)}</div>
                           <span className="text-[11px] text-gray-600 truncate">{order.tintAssignments[0]?.assignedTo.name ?? "—"}</span>
                         </div>
                       </div>
@@ -691,7 +691,7 @@ export function TintTableView({
                     {/* col8: Operator */}
                     <div className={cellCls}>
                       <div className="flex items-center gap-1.5 min-w-0">
-                        <div className="w-5 h-5 rounded-full bg-gray-700 text-white text-[9px] font-bold flex items-center justify-center flex-shrink-0">{initials(split.assignedTo.name)}</div>
+                        <div className="w-5 h-5 rounded-full bg-teal-600 text-white text-[9px] font-bold flex items-center justify-center flex-shrink-0">{initials(split.assignedTo.name)}</div>
                         <span className="text-[11px] text-gray-600 truncate">{split.assignedTo.name ?? "—"}</span>
                       </div>
                     </div>

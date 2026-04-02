@@ -616,7 +616,7 @@ export function SupportPageContent() {
                       style={HOLD_GRID}
                       className={cn(
                         "py-2.5 px-1 border-b border-gray-50/80 hover:bg-gray-50 transition-colors",
-                        isSelected && "bg-indigo-50/20",
+                        isSelected && "bg-teal-50/20",
                       )}
                     >
                       {/* Checkbox */}
@@ -673,7 +673,7 @@ export function SupportPageContent() {
                         <button
                           type="button"
                           onClick={() => void handleRelease(order.id)}
-                          className="text-[11px] text-indigo-600 hover:text-indigo-700 font-medium"
+                          className="text-[11px] text-teal-600 hover:text-teal-700 font-medium"
                         >
                           Release
                         </button>
@@ -725,7 +725,7 @@ export function SupportPageContent() {
                         setHoldBulkLoading(false);
                       }
                     }}
-                    className="px-4 py-1.5 bg-indigo-600 text-white text-xs font-medium rounded-md hover:bg-indigo-700 flex items-center gap-1.5 disabled:opacity-50 transition-colors"
+                    className="px-4 py-1.5 bg-teal-600 text-white text-xs font-medium rounded-md hover:bg-teal-700 flex items-center gap-1.5 disabled:opacity-50 transition-colors"
                   >
                     {holdBulkLoading && <Loader2 size={12} className="animate-spin" />}
                     Release {selectedHold.size} Order{selectedHold.size !== 1 ? "s" : ""}

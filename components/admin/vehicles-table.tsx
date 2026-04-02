@@ -220,12 +220,12 @@ export function VehiclesTable({ initialVehicles, transporters, canEdit = true, c
   return (
     <>
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-lg font-bold text-[#1a237e]">Vehicles</h1>
+        <h1 className="text-lg font-bold text-teal-700">Vehicles</h1>
         <div className="flex gap-2">
           {canImport && (
             <button
               type="button"
-              className="flex items-center gap-1.5 text-xs font-medium text-[#1a237e] border border-[#c7d2fe] bg-[#eef2ff] hover:bg-[#e0e7ff] px-3 py-2 rounded-md"
+              className="flex items-center gap-1.5 text-xs font-medium text-teal-700 border border-teal-200 bg-teal-50 hover:bg-teal-100 px-3 py-2 rounded-md"
               onClick={handleTemplateDownload}
             >
               <Download className="h-3.5 w-3.5" />
@@ -235,7 +235,7 @@ export function VehiclesTable({ initialVehicles, transporters, canEdit = true, c
           {canImport && (
             <button
               type="button"
-              className="flex items-center gap-1.5 text-xs font-medium bg-white hover:bg-[#f7f8fa] text-[#374151] border border-[#e5e7eb] px-3 py-2 rounded-md"
+              className="flex items-center gap-1.5 text-xs font-medium bg-white hover:bg-gray-50 text-gray-700 border border-[#e5e7eb] px-3 py-2 rounded-md"
               onClick={() => importFileRef.current?.click()}
             >
               <Upload className="h-3.5 w-3.5" />
@@ -266,7 +266,7 @@ export function VehiclesTable({ initialVehicles, transporters, canEdit = true, c
           <TableBody>
             {vehicles.length === 0 && (
               <TableRow>
-                <TableCell colSpan={8} className="text-center text-slate-500 py-8">
+                <TableCell colSpan={8} className="text-center text-gray-500 py-8">
                   No vehicles yet.
                 </TableCell>
               </TableRow>
@@ -276,10 +276,10 @@ export function VehiclesTable({ initialVehicles, transporters, canEdit = true, c
                 <TableCell className="font-mono font-medium">{v.vehicleNo}</TableCell>
                 <TableCell>{v.category}</TableCell>
                 <TableCell>{v.capacityKg.toLocaleString()}</TableCell>
-                <TableCell className="text-slate-600">{v.deliveryTypeAllowed}</TableCell>
-                <TableCell className="text-slate-600">{v.transporter.name}</TableCell>
-                <TableCell className="text-slate-500 text-sm">
-                  {v.driverName ?? <span className="text-slate-300">—</span>}
+                <TableCell className="text-gray-600">{v.deliveryTypeAllowed}</TableCell>
+                <TableCell className="text-gray-600">{v.transporter.name}</TableCell>
+                <TableCell className="text-gray-500 text-sm">
+                  {v.driverName ?? <span className="text-gray-300">—</span>}
                 </TableCell>
                 <TableCell>
                   <Badge variant={v.isActive ? "default" : "secondary"}>
@@ -404,8 +404,8 @@ export function VehiclesTable({ initialVehicles, transporters, canEdit = true, c
             </div>
 
             <div className="sticky bottom-0 bg-white border-t border-[#e5e7eb] -mx-6 px-6 py-4 flex gap-3 mt-6">
-              <Button type="button" variant="outline" className="flex-1 h-10 text-sm border-[#e5e7eb] text-[#374151] hover:bg-[#f7f8fa] rounded-lg oa-btn-ghost" onClick={() => setSheetOpen(false)} disabled={saving}>Cancel</Button>
-              <Button type="submit" className="flex-1 h-10 text-sm bg-[#1a237e] hover:bg-[#283593] text-white rounded-lg font-semibold oa-btn-primary" disabled={saving}>{saving ? "Saving…" : editTarget ? "Save Changes" : "Create Vehicle"}</Button>
+              <Button type="button" variant="outline" className="flex-1 h-10 text-sm border-[#e5e7eb] text-gray-700 hover:bg-gray-50 rounded-lg oa-btn-ghost" onClick={() => setSheetOpen(false)} disabled={saving}>Cancel</Button>
+              <Button type="submit" className="flex-1 h-10 text-sm bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-semibold oa-btn-primary" disabled={saving}>{saving ? "Saving…" : editTarget ? "Save Changes" : "Create Vehicle"}</Button>
             </div>
           </form>
         </SheetContent>

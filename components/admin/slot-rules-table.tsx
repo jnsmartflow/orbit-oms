@@ -285,7 +285,7 @@ export function SlotRulesTable({ initialRules, deliveryTypes, slots }: SlotRules
   return (
     <>
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-lg font-bold text-[#1a237e]">Slot Rules</h1>
+        <h1 className="text-lg font-bold text-teal-700">Slot Rules</h1>
         <Button size="sm" onClick={openAdd} className="oa-btn-primary">+ Add Rule</Button>
       </div>
 
@@ -307,7 +307,7 @@ export function SlotRulesTable({ initialRules, deliveryTypes, slots }: SlotRules
           <TableBody>
             {tableGroups.length === 0 && (
               <TableRow>
-                <TableCell colSpan={9} className="text-center text-slate-500 py-8">
+                <TableCell colSpan={9} className="text-center text-gray-500 py-8">
                   No slot rules configured yet.
                 </TableCell>
               </TableRow>
@@ -315,10 +315,10 @@ export function SlotRulesTable({ initialRules, deliveryTypes, slots }: SlotRules
             {tableGroups.map(({ deliveryType, rows }) => (
               <>
                 {/* Delivery type group header */}
-                <TableRow key={`hdr-${deliveryType.id}`} className="bg-slate-50 hover:bg-slate-50">
+                <TableRow key={`hdr-${deliveryType.id}`} className="bg-gray-50 hover:bg-gray-50">
                   <TableCell
                     colSpan={9}
-                    className="py-1.5 px-4 text-xs font-semibold uppercase tracking-wide text-slate-500"
+                    className="py-1.5 px-4 text-xs font-semibold uppercase tracking-wide text-gray-500"
                   >
                     {deliveryType.name}
                   </TableCell>
@@ -327,11 +327,11 @@ export function SlotRulesTable({ initialRules, deliveryTypes, slots }: SlotRules
                 {/* Rule rows */}
                 {rows.map((rule) => (
                   <TableRow key={rule.id}>
-                    <TableCell className="text-slate-400 text-xs pl-6">—</TableCell>
+                    <TableCell className="text-gray-400 text-xs pl-6">—</TableCell>
                     <TableCell>
                       <div>
-                        <span className="text-sm font-medium text-slate-800">{rule.slot.name}</span>
-                        <span className="ml-1.5 font-mono text-xs text-slate-400">{rule.slot.slotTime}</span>
+                        <span className="text-sm font-medium text-gray-800">{rule.slot.name}</span>
+                        <span className="ml-1.5 font-mono text-xs text-gray-400">{rule.slot.slotTime}</span>
                         {rule.slot.isNextDay && (
                           <Badge variant="outline" className="ml-1.5 text-[10px] bg-amber-50 text-amber-700 border-amber-200 py-0">
                             +1
@@ -345,17 +345,17 @@ export function SlotRulesTable({ initialRules, deliveryTypes, slots }: SlotRules
                         className={
                           rule.slotRuleType === "time_based"
                             ? "text-xs bg-blue-50 text-blue-700 border-blue-200"
-                            : "text-xs bg-slate-50 text-slate-600 border-slate-200"
+                            : "text-xs bg-gray-50 text-gray-600 border-gray-200"
                         }
                       >
                         {rule.slotRuleType === "time_based" ? "Time Based" : "Default"}
                       </Badge>
                     </TableCell>
-                    <TableCell className="font-mono text-sm text-slate-600">
-                      {rule.windowStart ?? <span className="text-slate-300">—</span>}
+                    <TableCell className="font-mono text-sm text-gray-600">
+                      {rule.windowStart ?? <span className="text-gray-300">—</span>}
                     </TableCell>
-                    <TableCell className="font-mono text-sm text-slate-600">
-                      {rule.windowEnd ?? <span className="text-slate-300">—</span>}
+                    <TableCell className="font-mono text-sm text-gray-600">
+                      {rule.windowEnd ?? <span className="text-gray-300">—</span>}
                     </TableCell>
                     <TableCell className="text-center">
                       {rule.isDefault ? (
@@ -363,10 +363,10 @@ export function SlotRulesTable({ initialRules, deliveryTypes, slots }: SlotRules
                           ★ Default
                         </Badge>
                       ) : (
-                        <span className="text-slate-300 text-xs">—</span>
+                        <span className="text-gray-300 text-xs">—</span>
                       )}
                     </TableCell>
-                    <TableCell className="text-center font-mono text-sm text-slate-500">
+                    <TableCell className="text-center font-mono text-sm text-gray-500">
                       {rule.sortOrder}
                     </TableCell>
                     <TableCell className="text-center">
@@ -402,7 +402,7 @@ export function SlotRulesTable({ initialRules, deliveryTypes, slots }: SlotRules
             <div className="space-y-1.5">
               <Label>Delivery Type <span className="text-destructive">*</span></Label>
               {editTarget ? (
-                <p className="text-sm font-medium text-slate-700 px-3 py-2 rounded-md bg-slate-50 border">
+                <p className="text-sm font-medium text-gray-700 px-3 py-2 rounded-md bg-gray-50 border">
                   {editTarget.deliveryType.name}
                 </p>
               ) : (
@@ -431,8 +431,8 @@ export function SlotRulesTable({ initialRules, deliveryTypes, slots }: SlotRules
             <div className="space-y-1.5">
               <Label>Slot <span className="text-destructive">*</span></Label>
               {editTarget ? (
-                <p className="text-sm font-medium text-slate-700 px-3 py-2 rounded-md bg-slate-50 border">
-                  {editTarget.slot.name} <span className="font-mono text-slate-400">{editTarget.slot.slotTime}</span>
+                <p className="text-sm font-medium text-gray-700 px-3 py-2 rounded-md bg-gray-50 border">
+                  {editTarget.slot.name} <span className="font-mono text-gray-400">{editTarget.slot.slotTime}</span>
                 </p>
               ) : (
                 <>
@@ -467,8 +467,8 @@ export function SlotRulesTable({ initialRules, deliveryTypes, slots }: SlotRules
                     key={type}
                     className={`flex-1 flex items-center justify-center gap-2 rounded-md border px-3 py-2.5 text-sm cursor-pointer transition-colors ${
                       form.slotRuleType === type
-                        ? "border-slate-900 bg-slate-900 text-white"
-                        : "border-slate-200 text-slate-600 hover:border-slate-400"
+                        ? "border-gray-900 bg-gray-900 text-white"
+                        : "border-gray-200 text-gray-600 hover:border-gray-400"
                     }`}
                   >
                     <input
@@ -536,8 +536,8 @@ export function SlotRulesTable({ initialRules, deliveryTypes, slots }: SlotRules
             {/* Is Default */}
             <div className="flex items-center justify-between rounded-md border px-4 py-3">
               <div>
-                <p className="text-sm font-medium text-slate-900">Fallback Default</p>
-                <p className="text-xs text-slate-500 mt-0.5">
+                <p className="text-sm font-medium text-gray-900">Fallback Default</p>
+                <p className="text-xs text-gray-500 mt-0.5">
                   Fallback slot when no time window matches
                 </p>
               </div>
@@ -548,21 +548,21 @@ export function SlotRulesTable({ initialRules, deliveryTypes, slots }: SlotRules
             </div>
 
             {/* Is Active */}
-            <div className="flex items-center justify-between py-3 px-4 rounded-lg border border-[#e5e7eb] bg-[#f7f8fa]">
+            <div className="flex items-center justify-between py-3 px-4 rounded-lg border border-[#e5e7eb] bg-gray-50">
               <div>
-                <div className="text-sm font-medium text-[#111827]">Active</div>
-                <div className="text-xs text-[#6b7280] mt-0.5">Inactive rules are excluded from slot matching</div>
+                <div className="text-sm font-medium text-gray-900">Active</div>
+                <div className="text-xs text-gray-500 mt-0.5">Inactive rules are excluded from slot matching</div>
               </div>
               <Switch
                 checked={form.isActive}
                 onCheckedChange={(v) => setField("isActive", v)}
-                className="data-[state=checked]:bg-[#1a237e] data-[state=unchecked]:bg-[#d1d5db]"
+                className="data-[state=checked]:bg-teal-600 data-[state=unchecked]:bg-gray-300"
               />
             </div>
 
             <div className="sticky bottom-0 bg-white border-t border-[#e5e7eb] -mx-6 px-6 py-4 flex gap-3 mt-6">
-              <Button type="button" variant="outline" className="flex-1 h-10 text-sm border-[#e5e7eb] text-[#374151] hover:bg-[#f7f8fa] rounded-lg oa-btn-ghost" onClick={() => setSheetOpen(false)} disabled={saving}>Cancel</Button>
-              <Button type="submit" className="flex-1 h-10 text-sm bg-[#1a237e] hover:bg-[#283593] text-white rounded-lg font-semibold oa-btn-primary" disabled={saving}>{saving ? "Saving…" : editTarget ? "Save Changes" : "Create Rule"}</Button>
+              <Button type="button" variant="outline" className="flex-1 h-10 text-sm border-[#e5e7eb] text-gray-700 hover:bg-gray-50 rounded-lg oa-btn-ghost" onClick={() => setSheetOpen(false)} disabled={saving}>Cancel</Button>
+              <Button type="submit" className="flex-1 h-10 text-sm bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-semibold oa-btn-primary" disabled={saving}>{saving ? "Saving…" : editTarget ? "Save Changes" : "Create Rule"}</Button>
             </div>
           </form>
         </SheetContent>
@@ -574,8 +574,8 @@ export function SlotRulesTable({ initialRules, deliveryTypes, slots }: SlotRules
           <DialogHeader>
             <DialogTitle>Replace Existing Default?</DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-slate-600">{warnDialog?.message}</p>
-          <p className="text-sm text-slate-500 mt-1">
+          <p className="text-sm text-gray-600">{warnDialog?.message}</p>
+          <p className="text-sm text-gray-500 mt-1">
             Only one default is allowed per delivery type. The existing default will be cleared.
           </p>
           <DialogFooter className="mt-4">

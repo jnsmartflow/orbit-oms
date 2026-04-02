@@ -94,16 +94,16 @@ export function DispatchCutoffsForm({ initialConfigs, deliveryTypes }: DispatchC
   }
 
   function windowLabel(config: SlotConfig) {
-    if (config.slotRuleType === "default") return <span className="text-slate-400">Any time</span>;
+    if (config.slotRuleType === "default") return <span className="text-gray-400">Any time</span>;
     if (config.windowStart && config.windowEnd)
       return <span className="font-mono text-xs">{config.windowStart} – {config.windowEnd}</span>;
-    return <span className="text-slate-300">—</span>;
+    return <span className="text-gray-300">—</span>;
   }
 
   return (
     <div className="space-y-6">
       {/* Column headers */}
-      <div className="flex items-center gap-3 px-1 text-xs font-medium text-slate-400 uppercase tracking-wide">
+      <div className="flex items-center gap-3 px-1 text-xs font-medium text-gray-400 uppercase tracking-wide">
         <span className="w-36">Slot</span>
         <span className="w-16">Time</span>
         <span className="w-14 text-center">Rule</span>
@@ -117,25 +117,25 @@ export function DispatchCutoffsForm({ initialConfigs, deliveryTypes }: DispatchC
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center justify-between">
               <span>{deliveryType.name} Delivery</span>
-              <span className="text-xs font-normal text-slate-400">
+              <span className="text-xs font-normal text-gray-400">
                 {dtConfigs.filter((c) => c.isActive).length} of {dtConfigs.length} slots active
               </span>
             </CardTitle>
           </CardHeader>
           <CardContent>
             {dtConfigs.length === 0 ? (
-              <p className="text-sm text-slate-400 py-3">No slots configured.</p>
+              <p className="text-sm text-gray-400 py-3">No slots configured.</p>
             ) : (
               dtConfigs.map((config) => (
                 <div key={config.id} className="flex items-center gap-3 py-2.5 border-b last:border-0">
                   <div className="w-36">
-                    <p className="text-sm font-medium text-slate-800">{config.slot.name}</p>
+                    <p className="text-sm font-medium text-gray-800">{config.slot.name}</p>
                     {config.slot.isNextDay && (
                       <span className="text-xs text-amber-600">Next day</span>
                     )}
                   </div>
 
-                  <div className="w-16 font-mono text-sm text-slate-600">{config.slot.slotTime}</div>
+                  <div className="w-16 font-mono text-sm text-gray-600">{config.slot.slotTime}</div>
 
                   <div className="w-14 text-center">
                     <Badge
@@ -143,14 +143,14 @@ export function DispatchCutoffsForm({ initialConfigs, deliveryTypes }: DispatchC
                       className={`text-xs ${
                         config.slotRuleType === "time_based"
                           ? "bg-blue-50 text-blue-700 border-blue-200"
-                          : "bg-slate-50 text-slate-600 border-slate-200"
+                          : "bg-gray-50 text-gray-600 border-gray-200"
                       }`}
                     >
                       {config.slotRuleType === "time_based" ? "Time" : "Def"}
                     </Badge>
                   </div>
 
-                  <div className="flex-1 text-sm text-slate-600">{windowLabel(config)}</div>
+                  <div className="flex-1 text-sm text-gray-600">{windowLabel(config)}</div>
 
                   <div className="w-24 flex justify-center">
                     {config.isDefault ? (
@@ -161,7 +161,7 @@ export function DispatchCutoffsForm({ initialConfigs, deliveryTypes }: DispatchC
                       <button
                         onClick={() => handleSetDefault(config)}
                         disabled={togglingId === config.id}
-                        className="text-xs text-slate-400 hover:text-blue-600 underline underline-offset-2 disabled:opacity-40"
+                        className="text-xs text-gray-400 hover:text-blue-600 underline underline-offset-2 disabled:opacity-40"
                       >
                         Set default
                       </button>

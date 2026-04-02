@@ -34,7 +34,7 @@ const colorMap: Record<StatusBadgeVariant, string> = {
   "key-site":   "bg-blue-50   text-blue-700   border border-blue-200",
   active:       "bg-green-50  text-green-700  border border-green-200",
   inactive:     "bg-gray-100  text-gray-500   border border-gray-200",
-  pending:      "bg-indigo-50 text-indigo-700 border border-indigo-200",
+  pending:      "bg-gray-100 text-gray-600 border border-gray-200",
   "in-progress":"bg-amber-50  text-amber-700  border border-amber-200",
   done:         "bg-green-50  text-green-700  border border-green-200",
 };
@@ -73,7 +73,7 @@ const dotColorMap: Record<StatusBadgeVariant, string> = {
   "key-site":   "bg-blue-500",
   active:       "bg-green-500",
   inactive:     "bg-gray-400",
-  pending:      "bg-indigo-500",
+  pending:      "bg-gray-400",
   "in-progress":"bg-amber-500",
   done:         "bg-green-500",
 };

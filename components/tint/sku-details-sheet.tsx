@@ -54,7 +54,7 @@ export function SkuDetailsSheet({
       <SheetContent side="right" className="w-[420px] p-0 flex flex-col" showCloseButton>
 
         {/* Header */}
-        <div className="px-6 py-5 border-b border-[#e2e5f1]">
+        <div className="px-6 py-5 border-b border-gray-200">
           <p className="text-[11px] font-bold uppercase tracking-[.6px] text-gray-400 mb-1">
             SKU Line Items
           </p>
@@ -87,7 +87,7 @@ export function SkuDetailsSheet({
                   "rounded-xl border p-3.5",
                   line.isTinting
                     ? "bg-violet-50/60 border-violet-200"
-                    : "bg-[#f7f8fc] border-[#e2e5f1]",
+                    : "bg-gray-50 border-gray-200",
                 )}
               >
                 {/* SKU code + tinting badge */}

@@ -175,7 +175,7 @@ export function AreasTable({ initialAreas, deliveryTypes, routes }: AreasTablePr
         <div className="flex gap-2">
           <button
             type="button"
-            className="flex items-center gap-1.5 bg-white border border-[#cdd1e8] text-gray-600 text-[12.5px] font-medium px-3 py-2 rounded-lg hover:bg-gray-50"
+            className="flex items-center gap-1.5 bg-white border border-gray-200 text-gray-600 text-[12.5px] font-medium px-3 py-2 rounded-lg hover:bg-gray-50"
             onClick={handleTemplateDownload}
           >
             <Download className="h-3.5 w-3.5" />
@@ -183,7 +183,7 @@ export function AreasTable({ initialAreas, deliveryTypes, routes }: AreasTablePr
           </button>
           <button
             type="button"
-            className="flex items-center gap-1.5 bg-white border border-[#cdd1e8] text-gray-600 text-[12.5px] font-medium px-3 py-2 rounded-lg hover:bg-gray-50"
+            className="flex items-center gap-1.5 bg-white border border-gray-200 text-gray-600 text-[12.5px] font-medium px-3 py-2 rounded-lg hover:bg-gray-50"
             onClick={() => importFileRef.current?.click()}
           >
             <Upload className="h-3.5 w-3.5" />
@@ -191,7 +191,7 @@ export function AreasTable({ initialAreas, deliveryTypes, routes }: AreasTablePr
           </button>
           <button
             type="button"
-            className="bg-[#1a237e] hover:bg-[#283593] text-white text-[12.5px] font-semibold px-4 py-2 rounded-lg flex items-center gap-1.5"
+            className="bg-teal-600 hover:bg-teal-700 text-white text-[12.5px] font-semibold px-4 py-2 rounded-lg flex items-center gap-1.5"
             onClick={openAdd}
           >
             + Add Area
@@ -200,16 +200,16 @@ export function AreasTable({ initialAreas, deliveryTypes, routes }: AreasTablePr
         <input ref={importFileRef} type="file" accept=".csv,.xls,.xlsx" className="hidden" onChange={handleImportFileSelect} />
       </div>
 
-      <div className="bg-white border border-[#e2e5f1] rounded-xl overflow-hidden shadow-sm">
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
         <table className="w-full border-collapse">
-          <thead className="bg-[#f7f8fc]">
+          <thead className="bg-gray-50">
             <tr>
-              <th className="text-[10.5px] font-bold uppercase tracking-[.5px] text-gray-400 py-2.5 px-4 text-left border-b border-[#e2e5f1]">Area Name</th>
-              <th className="text-[10.5px] font-bold uppercase tracking-[.5px] text-gray-400 py-2.5 px-4 text-left border-b border-[#e2e5f1]">Delivery Type</th>
-              <th className="text-[10.5px] font-bold uppercase tracking-[.5px] text-gray-400 py-2.5 px-4 text-left border-b border-[#e2e5f1]">Primary Route</th>
-              <th className="text-[10.5px] font-bold uppercase tracking-[.5px] text-gray-400 py-2.5 px-4 text-left border-b border-[#e2e5f1]">Routes</th>
-              <th className="text-[10.5px] font-bold uppercase tracking-[.5px] text-gray-400 py-2.5 px-4 text-left border-b border-[#e2e5f1]">Status</th>
-              <th className="text-[10.5px] font-bold uppercase tracking-[.5px] text-gray-400 py-2.5 px-4 text-right border-b border-[#e2e5f1]">Actions</th>
+              <th className="text-[10.5px] font-bold uppercase tracking-[.5px] text-gray-400 py-2.5 px-4 text-left border-b border-gray-200">Area Name</th>
+              <th className="text-[10.5px] font-bold uppercase tracking-[.5px] text-gray-400 py-2.5 px-4 text-left border-b border-gray-200">Delivery Type</th>
+              <th className="text-[10.5px] font-bold uppercase tracking-[.5px] text-gray-400 py-2.5 px-4 text-left border-b border-gray-200">Primary Route</th>
+              <th className="text-[10.5px] font-bold uppercase tracking-[.5px] text-gray-400 py-2.5 px-4 text-left border-b border-gray-200">Routes</th>
+              <th className="text-[10.5px] font-bold uppercase tracking-[.5px] text-gray-400 py-2.5 px-4 text-left border-b border-gray-200">Status</th>
+              <th className="text-[10.5px] font-bold uppercase tracking-[.5px] text-gray-400 py-2.5 px-4 text-right border-b border-gray-200">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -219,10 +219,10 @@ export function AreasTable({ initialAreas, deliveryTypes, routes }: AreasTablePr
               </tr>
             )}
             {areas.map((area) => (
-              <tr key={area.id} className="border-b border-[#e2e5f1] hover:bg-[#f5f7ff] transition-colors last:border-0">
+              <tr key={area.id} className="border-b border-gray-200 hover:bg-gray-50 transition-colors last:border-0">
                 <td className="py-3 px-4 text-[12.5px] text-gray-900 font-semibold">{area.name}</td>
                 <td className="py-3 px-4 text-[12.5px] text-gray-700">
-                  <span className="text-[11px] bg-[#f7f8fc] border border-[#e2e5f1] text-gray-600 px-2 py-0.5 rounded font-medium">{area.deliveryType.name}</span>
+                  <span className="text-[11px] bg-gray-50 border border-gray-200 text-gray-600 px-2 py-0.5 rounded font-medium">{area.deliveryType.name}</span>
                 </td>
                 <td className="py-3 px-4 text-[12.5px] text-gray-700">
                   {area.primaryRoute ? area.primaryRoute.name : <span className="text-gray-300">—</span>}
@@ -239,14 +239,14 @@ export function AreasTable({ initialAreas, deliveryTypes, routes }: AreasTablePr
                   <div className="flex items-center justify-end gap-2">
                     <button
                       type="button"
-                      className="text-[11.5px] font-medium text-gray-500 border border-[#e2e5f1] bg-white hover:bg-[#f5f7ff] hover:text-[#1a237e] hover:border-[#c5cae9] px-3 py-1.5 rounded-lg transition-colors"
+                      className="text-[11.5px] font-medium text-gray-500 border border-gray-200 bg-white hover:bg-gray-50 hover:text-teal-700 hover:border-teal-200 px-3 py-1.5 rounded-lg transition-colors"
                       onClick={() => openEdit(area)}
                     >
                       Edit →
                     </button>
                     <button
                       type="button"
-                      className="text-[11.5px] font-medium text-gray-500 border border-[#e2e5f1] bg-white hover:bg-[#f5f7ff] px-3 py-1.5 rounded-lg transition-colors disabled:opacity-40"
+                      className="text-[11.5px] font-medium text-gray-500 border border-gray-200 bg-white hover:bg-gray-50 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-40"
                       disabled={togglingId === area.id}
                       onClick={() => handleToggle(area)}
                     >
@@ -297,7 +297,7 @@ export function AreasTable({ initialAreas, deliveryTypes, routes }: AreasTablePr
                   ))}
                 </SelectContent>
               </Select>
-              <p className="text-xs text-slate-400">
+              <p className="text-xs text-gray-400">
                 The default route for this area. Used for dispatch planning and customer inheritance.
               </p>
             </div>
@@ -316,8 +316,8 @@ export function AreasTable({ initialAreas, deliveryTypes, routes }: AreasTablePr
               </Select>
             </div>
             <div className="sticky bottom-0 bg-white border-t border-[#e5e7eb] -mx-6 px-6 py-4 flex gap-3 mt-6">
-              <Button type="button" variant="outline" className="flex-1 h-10 text-sm border-[#e5e7eb] text-[#374151] hover:bg-[#f7f8fa] rounded-lg oa-btn-ghost" onClick={() => setSheetOpen(false)} disabled={saving}>Cancel</Button>
-              <Button type="submit" className="flex-1 h-10 text-sm bg-[#1a237e] hover:bg-[#283593] text-white rounded-lg font-semibold oa-btn-primary" disabled={saving}>{saving ? "Saving…" : editTarget ? "Save Changes" : "Create Area"}</Button>
+              <Button type="button" variant="outline" className="flex-1 h-10 text-sm border-[#e5e7eb] text-gray-700 hover:bg-gray-50 rounded-lg oa-btn-ghost" onClick={() => setSheetOpen(false)} disabled={saving}>Cancel</Button>
+              <Button type="submit" className="flex-1 h-10 text-sm bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-semibold oa-btn-primary" disabled={saving}>{saving ? "Saving…" : editTarget ? "Save Changes" : "Create Area"}</Button>
             </div>
           </form>
         </SheetContent>

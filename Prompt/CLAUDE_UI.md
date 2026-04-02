@@ -1,7 +1,7 @@
 # CLAUDE_UI.md — Orbit OMS UI Design System
 # Load alongside CLAUDE_CONTEXT.md for all UI implementation sessions.
 # This is the SINGLE SOURCE OF TRUTH for visual styling across all screens.
-# Version: v2 · Neutral Theme · April 2026
+# Version: v3 · Neutral Theme · April 2026
 
 ---
 
@@ -42,6 +42,8 @@
 | Split indicator | — | — | `text-amber-600` (text only) |
 | Split badge | `bg-purple-50` | `border-purple-200` | `text-purple-700` |
 | SMU badge (table) | plain text | — | `text-gray-600 font-medium` |
+| Active status | `bg-green-50` | `border-green-200` | `text-green-700` |
+| Inactive status | `bg-gray-50` | `border-gray-200` | `text-gray-500` |
 
 ### Delivery type dot colors
 | Type | Tailwind | Hex |
@@ -53,6 +55,14 @@
 | Unknown/null | no dot shown | — |
 
 Dot size: 5px (`w-[5px] h-[5px] rounded-full`). Placed before OBD number in both card and table views.
+
+### Tinter type dot colors (TI Report)
+| Type | Tailwind |
+|---|---|
+| TINTER | `bg-blue-600` |
+| ACOTONE | `bg-orange-500` |
+
+Same 5px dot pattern. Placed before OBD number in TI Report table.
 
 ### Operator avatar colors
 | Stage | Color |
@@ -118,11 +128,15 @@ These are the ONLY non-semantic colors allowed. 6px dots in column headers for v
 | Modal border | `border border-gray-200 rounded-lg` |
 | Table row | `border-b border-gray-50 hover:bg-gray-50/50` |
 | Table header row | `border-b border-gray-100` |
+| Table wrapper | `rounded-lg border border-gray-200 overflow-hidden` with `px-4 py-3` outer spacing |
 | Section divider | `border-b border-gray-200` |
 | Dropdown panel | `border border-gray-200 rounded-lg shadow-lg` |
 
 ### NO accent bars
 Cards do NOT have colored top accent bars. No `h-[3px]` gradient divs.
+
+### NO zebra striping
+Table rows are white (`bg-white`). No alternating row colors. Hover only: `hover:bg-gray-50/50`.
 
 ---
 
@@ -132,17 +146,20 @@ All board screens should follow this layout:
 
 ```
 Row 1 (42px, sticky top-0):
-  Left:  Title · Count stats with volume · OBD count
-  Right: Search · View toggle (Cards/Table) · Clock
+  Left:  Title · Count stats
+  Right: Clock OR Download button OR Search (screen-specific)
 
-Row 2 (36px, sticky top-[42px]):
-  Left:  Slot pills (from slot_master, with counts, closed/open state)
-  Right: [Filter ▾] [Workload ▾] (dropdowns)
+Row 2 (36–40px, sticky top-[42px]):
+  Left:  Primary filter (slot pills OR date range picker OR search)
+  Right: [Filter ▾] dropdown
 
 Content starts immediately after Row 2.
 ```
 
 No stat cards. No separate filter bar row. No collapsible workload bar row.
+
+### Row 1 height: 42px
+### Row 2 height: 36px (slot pills) or 40px (filter controls)
 
 ### Slot pills (Row 2)
 ```
@@ -155,12 +172,13 @@ Done (0 pending): checkmark icon + slot name
 
 ### Filter dropdown
 - Button: `border border-gray-200 rounded-md text-[11px] font-medium h-7`
-- Active: `border-gray-900 text-gray-900` with count badge
-- Panel: `w-[260px] bg-white border-gray-200 rounded-lg shadow-lg`
-- Groups: Delivery Type (multi-select), Priority (single-toggle), Type (single-toggle), Operator (dropdown)
-- Filter chips inside panel: `px-2.5 py-1 text-[11px] border rounded-md`
+- Active: `border-gray-900 text-gray-900` with count badge (`bg-gray-900 text-white rounded-full w-4 h-4`)
+- Panel: `bg-white border-gray-200 rounded-lg shadow-lg z-50 p-3`
+- Groups: labeled sections with `text-[10px] font-bold uppercase tracking-wider text-gray-400`
 - Active chip: `bg-gray-900 text-white border-gray-900`
-- Inactive chip: `bg-white text-gray-500 border-gray-200`
+- Inactive chip: `bg-white text-gray-500 border-gray-200 hover:border-gray-300`
+- Clear all: `text-[11px] text-gray-400 hover:text-gray-600 border-t border-gray-100 pt-1`
+- Close on outside click via `useRef` + `mousedown` listener
 
 ### Workload dropdown
 - Same button style as Filter
@@ -208,10 +226,12 @@ Action icons:
 
 ### Badge styles
 ```
-Normal:  bg-gray-50 border-gray-200 text-gray-500
-Urgent:  bg-red-50 border-red-200 text-red-600
-Done:    bg-green-50 border-green-200 text-green-700
-Split:   bg-purple-50 border-purple-200 text-purple-700
+Normal:   bg-gray-50 border-gray-200 text-gray-500
+Urgent:   bg-red-50 border-red-200 text-red-600
+Done:     bg-green-50 border-green-200 text-green-700
+Split:    bg-purple-50 border-purple-200 text-purple-700
+Active:   bg-green-50 border-green-200 text-green-700
+Inactive: bg-gray-50 border-gray-200 text-gray-500
 ```
 
 ---
@@ -248,6 +268,15 @@ Left: colored dot + name + count badge. Right: total volume in `text-[13px] font
 ### CTA buttons (Pending section)
 Both Assign and Create Split: `min-w-[120px] justify-center` for uniform size.
 "N left" shown as separate `text-amber-600` text beside Create Split button.
+
+### Expandable rows (inline shade detail)
+- Click row → expand row appears immediately below
+- Expand row: `bg-gray-50 border-b border-gray-100`
+- Use `<React.Fragment key={key}>` wrapper (not `<>`) to ensure correct DOM position
+- Shade label: `text-[9.5px] font-bold uppercase tracking-[.4px] text-gray-400`
+- Non-zero value: `text-[12px] font-semibold text-gray-900`
+- Zero value: `text-[12px] font-semibold text-gray-200`
+- Type label (TINTER/ACOTONE): `text-[10px] font-bold uppercase text-blue-600` / `text-orange-500`
 
 ---
 
@@ -328,14 +357,102 @@ Confirm button: bg-gray-900 text-white hover:bg-gray-800
 | + button | Opens status popover (fixed position) |
 | ⋯ button | Opens dropdown menu |
 | Slot pill click | Filters board by slotId. Click again deselects. |
-| Filter dropdown | Opens panel with Del Type / Priority / Type / Operator |
+| Filter dropdown | Opens panel with filter groups |
 | Workload dropdown | Opens panel with operator chips |
 | Customer ⚠ icon click | Opens CustomerMissingSheet |
 | Delivery type dot | Tooltip on hover (title attribute) |
+| Table row click (TI Report) | Toggles inline shade expand row |
+| Date range button click | Opens DateRangePicker dropdown |
 
 ---
 
-## 14. Screen-Specific Notes
+## 14. iPhone-style Toggle
+
+Replace shadcn `Switch` with custom `IosToggle` component for clear visual affordance.
+
+```tsx
+function IosToggle({ checked, onChange, disabled }: {
+  checked:  boolean;
+  onChange: (v: boolean) => void;
+  disabled: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+      className={`relative inline-flex h-[20px] w-[36px] flex-shrink-0 cursor-pointer
+        rounded-full border-2 border-transparent transition-colors duration-200
+        focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed
+        ${checked ? "bg-green-500" : "bg-gray-300"}`}
+    >
+      <span className={`pointer-events-none inline-block h-[16px] w-[16px] transform
+        rounded-full bg-white shadow-md transition-transform duration-200
+        ${checked ? "translate-x-[16px]" : "translate-x-0"}`}
+      />
+    </button>
+  );
+}
+```
+
+- On: `bg-green-500`, thumb at right
+- Off: `bg-gray-300`, thumb at left
+- Size: 36×20px (compact). Use 46×26px for larger contexts.
+- Used in: Shade Master active toggle
+
+---
+
+## 15. Date Range Picker
+
+Standalone dropdown component for date range selection. Used in TI Report.
+
+### Trigger button
+```
+h-7 px-3 border border-gray-200 rounded-md text-[11px] font-medium
+Shows: "02 Apr" (single day) or "25 Mar – 02 Apr" (range)
+Active: border-gray-900 text-gray-900
+```
+
+### Dropdown panel (240px wide)
+```
+Section 1 — Presets (border-b border-gray-100):
+  Today / Yesterday / This Week / This Month
+  Active preset: bg-gray-900 text-white rounded-md
+  Inactive: text-gray-600 hover:bg-gray-50
+
+Section 2 — Calendar:
+  Month nav: ChevronLeft / Month Year / ChevronRight
+  Day headers: Su Mo Tu We Th Fr Sa — text-[9.5px] font-bold text-gray-400
+  Day cells: h-7, rounded-md
+    Selected (from/to): bg-gray-900 text-white font-semibold
+    In range: bg-gray-100 text-gray-700
+    Today: font-semibold text-gray-900
+    Future: text-gray-200 cursor-not-allowed disabled
+    Normal: text-gray-700 hover:bg-gray-50
+  Hint when selecting end date: "Now pick end date" text-[10px] text-gray-400
+```
+
+### Interaction
+1. Click trigger → dropdown opens
+2. Click preset → applies immediately, closes
+3. Click first calendar date → "selecting to" state, hint shows
+4. Click second calendar date → applies range, closes
+5. Click outside → closes, resets selection state
+
+### Download button with range label
+When paired with a download action, show active range inline:
+```
+[↓ Download Excel  |  02 Apr]        ← single day
+[↓ Download Excel  |  25 Mar – 02 Apr]   ← range
+```
+Separator: `w-px h-3 bg-white/30 mx-0.5` divider inside button.
+Range text: `text-white/70 text-[10px]`
+
+---
+
+## 16. Screen-Specific Notes
 
 ### Tint Manager (REDESIGNED v39)
 - Full neutral theme applied
@@ -343,6 +460,27 @@ Confirm button: bg-gray-900 text-white hover:bg-gray-800
 - OrderDetailPanel instead of SkuDetailsSheet
 - Delivery type dots on all cards and table rows
 - Split indicator in icon row (not separate amber bar)
+
+### Shade Master (REDESIGNED v40)
+- Full neutral theme applied
+- 2-row header: Row 1 title + stats, Row 2 search + Filter ▾
+- Filter dropdown: Type (All/TINTER/ACOTONE) + Pack + Status
+- iPhone-style toggle for active/inactive
+- Column sequence: `# · Shade Name · Customer ID · Type · SKU Code · Pack · Status · Active · Added By · Added At`
+- Type column: 5px dot (blue=TINTER, orange=ACOTONE) + muted label
+- Added At: date primary (`text-gray-900 font-medium`), time secondary (`text-gray-400`) stacked
+- Table wrapped in `rounded-lg border border-gray-200` with `px-4 py-3` outer spacing
+- page.tsx: bare `<ShadeMasterContent />` — no wrapper div, no title
+
+### TI Report (REDESIGNED v40)
+- Full neutral theme applied
+- 2-row header: Row 1 title + stats + Download Excel button with active range label
+- Row 2: DateRangePicker + Search OBD + Filter ▾ (Operator + Type)
+- Summary tab removed — single transaction view only
+- 9 columns: chevron · Date · OBD No. · Dealer · Site · Base · Pack · Tins · Operator·Time
+- Click row → inline shade expand (TINTER or ACOTONE shades, non-zero highlighted)
+- Tins: no `.toFixed(2)` — show clean number (`2` not `2.00`)
+- page.tsx: bare `<TIReportContent />` for both routes
 
 ### Support Board
 - Already uses neutral slot pills and filter pills
@@ -362,7 +500,7 @@ Confirm button: bg-gray-900 text-white hover:bg-gray-800
 
 ---
 
-## 15. DEPRECATED — Do Not Use
+## 17. DEPRECATED — Do Not Use
 
 These patterns are from the old indigo theme and should NOT be used in new code:
 
@@ -380,7 +518,15 @@ These patterns are from the old indigo theme and should NOT be used in new code:
 | Card accent bars (`h-[3px]` gradients) | Removed — no accent bars |
 | Filled indigo buttons | Outlined neutral buttons |
 | StatusBadge variant="normal" (indigo) | Custom gray badge span |
+| shadcn `Switch` | Custom `IosToggle` component |
+| Zebra striping (`bg-[#f8f9ff]`) | White rows, hover only |
+| `bg-[#f8f9ff]` odd rows | `bg-white` — no zebra |
+| `hover:bg-[#eef0fb]` | `hover:bg-gray-50/50` |
+| shadcn `Badge` variant="default/secondary" | Custom inline `span` with semantic classes |
+| `text-slate-*` | `text-gray-*` equivalent |
+| `border-slate-*` | `border-gray-*` equivalent |
+| `bg-slate-*` | `bg-gray-*` equivalent |
 
 ---
 
-*Version: v2 · Neutral Theme · Context v39 · April 2026*
+*Version: v3 · Neutral Theme · Context v40 · April 2026*

@@ -18,8 +18,8 @@ export default async function DispatchCutoffsPage() {
   return (
     <div>
       <div className="mb-6">
-        <h1 className="text-xl font-semibold text-slate-900">Dispatch Slot Config</h1>
-        <p className="text-sm text-slate-500 mt-1">
+        <h1 className="text-xl font-semibold text-gray-900">Dispatch Slot Config</h1>
+        <p className="text-sm text-gray-500 mt-1">
           Per-delivery-type slot rules. Toggle active/default status. Slot windows are set at seed time.
         </p>
       </div>

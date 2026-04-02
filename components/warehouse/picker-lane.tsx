@@ -16,7 +16,7 @@ const AVATAR_COLORS = [
   { bg: "bg-purple-100", text: "text-purple-700" },
   { bg: "bg-amber-100", text: "text-amber-700" },
   { bg: "bg-teal-100", text: "text-teal-700" },
-  { bg: "bg-indigo-100", text: "text-indigo-700" },
+  { bg: "bg-cyan-100", text: "text-cyan-700" },
   { bg: "bg-pink-100", text: "text-pink-700" },
 ];
 
@@ -80,7 +80,7 @@ export function PickerLanePicking({ lane, index, onMarkPicked, isHistoryView = f
         </span>
         <div className="flex-1 max-w-[140px] h-1.5 bg-gray-100 rounded-full overflow-hidden">
           <div
-            className="h-full bg-green-500 rounded-full transition-all"
+            className="h-full bg-teal-600 rounded-full transition-all"
             style={{ width: `${pct}%` }}
           />
         </div>

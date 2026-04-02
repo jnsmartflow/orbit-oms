@@ -225,7 +225,7 @@ export function SlotsTable({ initialSlots }: SlotsTableProps) {
   return (
     <>
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-lg font-bold text-[#1a237e]">Slot Master</h1>
+        <h1 className="text-lg font-bold text-teal-700">Slot Master</h1>
         <Button size="sm" className="oa-btn-primary" onClick={openAdd}>+ Add Slot</Button>
       </div>
 
@@ -244,25 +244,25 @@ export function SlotsTable({ initialSlots }: SlotsTableProps) {
           <TableBody>
             {slots.length === 0 && (
               <TableRow>
-                <TableCell colSpan={6} className="text-center text-slate-500 py-8">
+                <TableCell colSpan={6} className="text-center text-gray-500 py-8">
                   No slots configured yet.
                 </TableCell>
               </TableRow>
             )}
             {slots.map((slot) => (
               <TableRow key={slot.id}>
-                <TableCell className="text-center font-mono text-sm text-slate-500">
+                <TableCell className="text-center font-mono text-sm text-gray-500">
                   {slot.sortOrder}
                 </TableCell>
-                <TableCell className="font-medium text-slate-800">{slot.name}</TableCell>
-                <TableCell className="font-mono text-sm text-slate-600">{slot.slotTime}</TableCell>
+                <TableCell className="font-medium text-gray-800">{slot.name}</TableCell>
+                <TableCell className="font-mono text-sm text-gray-600">{slot.slotTime}</TableCell>
                 <TableCell className="text-center">
                   {slot.isNextDay ? (
                     <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-200">
                       Next Day
                     </Badge>
                   ) : (
-                    <span className="text-slate-300 text-xs">—</span>
+                    <span className="text-gray-300 text-xs">—</span>
                   )}
                 </TableCell>
                 <TableCell className="text-center">
@@ -322,7 +322,7 @@ export function SlotsTable({ initialSlots }: SlotsTableProps) {
               {fieldErrors.slotTime ? (
                 <p className="text-xs text-destructive">{fieldErrors.slotTime}</p>
               ) : (
-                <p className="text-xs text-slate-400">
+                <p className="text-xs text-gray-400">
                   This is a display reference only. Actual cutoff windows are configured in Slot Rules.
                 </p>
               )}
@@ -343,34 +343,34 @@ export function SlotsTable({ initialSlots }: SlotsTableProps) {
             </div>
 
             {/* Is Next Day */}
-            <label className="flex items-center justify-between p-3 rounded-lg border border-[#e5e7eb] bg-[#f7f8fa] cursor-pointer hover:bg-[#eef2ff] hover:border-[#c7d2fe] transition-all">
+            <label className="flex items-center justify-between p-3 rounded-lg border border-[#e5e7eb] bg-gray-50 cursor-pointer hover:bg-teal-50 hover:border-teal-200 transition-all">
               <div>
-                <div className="text-sm font-medium text-[#111827]">Next Day Slot</div>
-                <div className="text-xs text-[#6b7280] mt-0.5">Belongs to the following calendar day</div>
+                <div className="text-sm font-medium text-gray-900">Next Day Slot</div>
+                <div className="text-xs text-gray-500 mt-0.5">Belongs to the following calendar day</div>
               </div>
               <Switch
                 checked={form.isNextDay}
                 onCheckedChange={(v) => setField("isNextDay", v)}
-                className="data-[state=checked]:bg-[#1a237e]"
+                className="data-[state=checked]:bg-teal-600"
               />
             </label>
 
             {/* Is Active */}
-            <label className="flex items-center justify-between p-3 rounded-lg border border-[#e5e7eb] bg-[#f7f8fa] cursor-pointer hover:bg-[#eef2ff] hover:border-[#c7d2fe] transition-all">
+            <label className="flex items-center justify-between p-3 rounded-lg border border-[#e5e7eb] bg-gray-50 cursor-pointer hover:bg-teal-50 hover:border-teal-200 transition-all">
               <div>
-                <div className="text-sm font-medium text-[#111827]">Active</div>
-                <div className="text-xs text-[#6b7280] mt-0.5">Inactive slots cannot be assigned to new orders</div>
+                <div className="text-sm font-medium text-gray-900">Active</div>
+                <div className="text-xs text-gray-500 mt-0.5">Inactive slots cannot be assigned to new orders</div>
               </div>
               <Switch
                 checked={form.isActive}
                 onCheckedChange={(v) => setField("isActive", v)}
-                className="data-[state=checked]:bg-[#1a237e]"
+                className="data-[state=checked]:bg-teal-600"
               />
             </label>
 
             <div className="sticky bottom-0 bg-white border-t border-[#e5e7eb] -mx-6 px-6 py-4 flex gap-3 mt-6">
-              <Button type="button" variant="outline" className="flex-1 h-10 text-sm border-[#e5e7eb] text-[#374151] hover:bg-[#f7f8fa] rounded-lg oa-btn-ghost" onClick={() => setSheetOpen(false)} disabled={saving}>Cancel</Button>
-              <Button type="submit" className="flex-1 h-10 text-sm bg-[#1a237e] hover:bg-[#283593] text-white rounded-lg font-semibold oa-btn-primary" disabled={saving}>{saving ? "Saving…" : editTarget ? "Save Changes" : "Create Slot"}</Button>
+              <Button type="button" variant="outline" className="flex-1 h-10 text-sm border-[#e5e7eb] text-gray-700 hover:bg-gray-50 rounded-lg oa-btn-ghost" onClick={() => setSheetOpen(false)} disabled={saving}>Cancel</Button>
+              <Button type="submit" className="flex-1 h-10 text-sm bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-semibold oa-btn-primary" disabled={saving}>{saving ? "Saving…" : editTarget ? "Save Changes" : "Create Slot"}</Button>
             </div>
           </form>
         </SheetContent>
@@ -382,8 +382,8 @@ export function SlotsTable({ initialSlots }: SlotsTableProps) {
           <DialogHeader>
             <DialogTitle>Deactivate Slot?</DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-slate-600">{warnDialog?.message}</p>
-          <p className="text-sm text-slate-600 mt-1">
+          <p className="text-sm text-gray-600">{warnDialog?.message}</p>
+          <p className="text-sm text-gray-600 mt-1">
             You can deactivate it anyway, but those slot rules will still reference this slot.
             Consider updating the slot rules first.
           </p>

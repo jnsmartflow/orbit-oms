@@ -98,15 +98,15 @@ export function CsvImportModal({
     <Dialog open={isOpen} onOpenChange={(o) => { if (!o) onClose(); }}>
       <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col p-0 gap-0">
         <DialogHeader className="px-6 pt-5 pb-4 border-b border-[#e5e7eb] shrink-0">
-          <DialogTitle className="text-[15px] font-bold text-[#1a237e]">
+          <DialogTitle className="text-[15px] font-bold text-teal-700">
             {title} — Import Preview
           </DialogTitle>
-          <p className="text-xs text-[#6b7280] mt-0.5">{fileName}</p>
+          <p className="text-xs text-gray-500 mt-0.5">{fileName}</p>
         </DialogHeader>
 
         {/* Summary bar */}
         <div className="px-6 py-3 bg-[#f9fafb] border-b border-[#e5e7eb] shrink-0 flex items-center gap-4 text-sm">
-          <span className="text-[#374151]">
+          <span className="text-gray-700">
             <span className="font-semibold">{rows.length}</span> rows found
           </span>
           <span className="text-[#15803d] font-semibold">{validCount} valid</span>
@@ -123,13 +123,13 @@ export function CsvImportModal({
           <table className="w-full border-collapse text-xs">
             <thead className="sticky top-0 bg-[#f9fafb] border-b border-[#e5e7eb]">
               <tr>
-                <th className="px-3 py-2 text-left font-semibold text-[#6b7280] uppercase tracking-wide w-10">#</th>
+                <th className="px-3 py-2 text-left font-semibold text-gray-500 uppercase tracking-wide w-10">#</th>
                 {columns.map((col) => (
-                  <th key={col.key} className="px-3 py-2 text-left font-semibold text-[#6b7280] uppercase tracking-wide">
+                  <th key={col.key} className="px-3 py-2 text-left font-semibold text-gray-500 uppercase tracking-wide">
                     {col.label}
                   </th>
                 ))}
-                <th className="px-3 py-2 text-left font-semibold text-[#6b7280] uppercase tracking-wide">Status</th>
+                <th className="px-3 py-2 text-left font-semibold text-gray-500 uppercase tracking-wide">Status</th>
               </tr>
             </thead>
             <tbody>
@@ -145,7 +145,7 @@ export function CsvImportModal({
                 >
                   <td className="px-3 py-2 text-[#9ca3af] font-mono">{idx + 2}</td>
                   {columns.map((col) => (
-                    <td key={col.key} className="px-3 py-2 text-[#374151]">
+                    <td key={col.key} className="px-3 py-2 text-gray-700">
                       {vrow.raw[col.key] || <span className="text-[#d1d5db]">—</span>}
                     </td>
                   ))}

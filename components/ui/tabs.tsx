@@ -16,7 +16,7 @@ function TabsList({
 }: React.ComponentProps<typeof TabsPrimitive.List>) {
   return (
     <TabsPrimitive.List
-      className={cn("flex border-b border-slate-200", className)}
+      className={cn("flex border-b border-gray-200", className)}
       {...props}
     />
   )
@@ -29,8 +29,8 @@ function TabsTrigger({
   return (
     <TabsPrimitive.Tab
       className={cn(
-        "px-4 py-2.5 text-[13px] font-medium text-slate-500 border-b-2 border-transparent -mb-px transition-colors hover:text-slate-800 outline-none",
-        "data-[active]:border-[#1a237e] data-[active]:text-[#1a237e] data-[active]:font-semibold",
+        "px-4 py-2.5 text-[13px] font-medium text-gray-500 border-b-2 border-transparent -mb-px transition-colors hover:text-gray-800 outline-none",
+        "data-[active]:border-teal-600 data-[active]:text-teal-700 data-[active]:font-semibold",
         className
       )}
       {...props}

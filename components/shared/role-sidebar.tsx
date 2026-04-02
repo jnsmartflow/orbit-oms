@@ -97,7 +97,7 @@ export function RoleSidebar({ role, userName, userInitials, navItems }: RoleSide
               className={cn(
                 "flex items-center gap-2.5 mx-2 my-[1px] py-2 rounded-lg text-[12.5px] transition-colors",
                 active
-                  ? "bg-[#e8eaf6] text-[#1a237e] font-semibold pl-[10px] border-l-2 border-[#1a237e]"
+                  ? "bg-teal-50 text-teal-700 font-semibold pl-[10px] border-l-2 border-teal-600"
                   : "font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-900 pl-3"
               )}
             >
@@ -124,7 +124,7 @@ export function RoleSidebar({ role, userName, userInitials, navItems }: RoleSide
               className={cn(
                 "flex items-center justify-center h-9 w-9 rounded-lg transition-colors",
                 active
-                  ? "bg-[#e8eaf6] text-[#1a237e]"
+                  ? "bg-teal-50 text-teal-600"
                   : "text-gray-400 hover:bg-gray-50 hover:text-gray-700"
               )}
               title={item.label}
@@ -133,7 +133,7 @@ export function RoleSidebar({ role, userName, userInitials, navItems }: RoleSide
             </Link>
             {/* Tooltip */}
             <div className="pointer-events-none absolute left-full ml-2 top-1/2 -translate-y-1/2 z-[200] hidden group-hover:block">
-              <div className="bg-[#1a237e] text-white text-[11px] px-2.5 py-1 rounded-md whitespace-nowrap shadow-lg">
+              <div className="bg-gray-900 text-white text-[11px] px-2.5 py-1 rounded-md whitespace-nowrap shadow-lg">
                 {item.label}
               </div>
             </div>
@@ -148,22 +148,27 @@ export function RoleSidebar({ role, userName, userInitials, navItems }: RoleSide
       className="hidden md:flex md:fixed md:inset-y-0 md:left-0 md:z-50 flex-col bg-white shadow-sm transition-all duration-200"
       style={{
         width:       isCollapsed ? "72px" : "220px",
-        borderRight: "1px solid #e2e5f1",
+        borderLeft:  "3px solid #0d9488",
+        borderRight: "1px solid #e5e7eb",
       }}
     >
       {/* Brand block */}
       <div
         className={cn(
-          "flex items-center shrink-0 border-b border-[#e2e5f1]",
+          "flex items-center shrink-0 border-b border-gray-200",
           isCollapsed ? "justify-center px-0 h-[52px]" : "gap-2.5 px-4 h-[52px]",
         )}
       >
         <button
           onClick={toggle}
-          className="w-9 h-9 bg-[#1a237e] rounded-xl flex items-center justify-center text-white font-extrabold text-[14px] cursor-pointer hover:bg-[#283593] transition-colors flex-shrink-0"
+          className="w-9 h-9 bg-teal-600 rounded-xl flex items-center justify-center text-white font-extrabold text-[14px] cursor-pointer hover:bg-teal-700 transition-colors flex-shrink-0"
           title={isCollapsed ? "Expand menu" : "Collapse menu"}
         >
-          O
+          <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+            <circle cx="11" cy="11" r="7" stroke="white" strokeWidth="1.6"/>
+            <circle cx="11" cy="11" r="2.2" fill="white"/>
+            <circle cx="18" cy="11" r="2" fill="white"/>
+          </svg>
         </button>
         {!isCollapsed && (
           <div className="min-w-0">
@@ -178,7 +183,7 @@ export function RoleSidebar({ role, userName, userInitials, navItems }: RoleSide
       {/* User block */}
       <div
         className={cn(
-          "shrink-0 border-t border-[#e2e5f1]",
+          "shrink-0 border-t border-gray-200",
           isCollapsed
             ? "flex justify-center py-3"
             : "flex items-center gap-2.5 px-4 py-3",
@@ -186,7 +191,7 @@ export function RoleSidebar({ role, userName, userInitials, navItems }: RoleSide
       >
         <button
           onClick={() => signOut({ callbackUrl: "/login" })}
-          className="w-8 h-8 rounded-full bg-[#1a237e] text-white flex items-center justify-center text-[11px] font-bold flex-shrink-0 hover:bg-[#283593] transition-colors"
+          className="w-8 h-8 rounded-full bg-teal-600 text-white flex items-center justify-center text-[11px] font-bold flex-shrink-0 hover:bg-teal-700 transition-colors"
           title="Sign out"
         >
           {userInitials}

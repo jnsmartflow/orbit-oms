@@ -389,7 +389,7 @@ function StatusPopover({
         className={cn(
           "w-full py-1.5 rounded-lg text-[11.5px] font-semibold transition-colors flex items-center justify-center gap-1.5",
           hasChanges && !isSaving
-            ? "bg-gray-700 text-white hover:bg-gray-600"
+            ? "bg-teal-600 text-white hover:bg-teal-700"
             : "bg-gray-100 text-gray-400 cursor-not-allowed",
         )}
       >
@@ -408,7 +408,7 @@ const COLUMNS = [
   {
     stage:     "pending_tint_assignment",
     label:     "Pending Assignment",
-    dot:       "bg-indigo-400",
+    dot:       "bg-teal-500",
     pillClass: "bg-red-50 text-red-600 border border-red-200",
   },
   {
@@ -585,7 +585,7 @@ function KanbanCard({ order, stage, onAssign, onCreateSplit, onRefresh, onMoveUp
                 className={cn(
                   "w-[26px] h-[26px] rounded-lg flex items-center justify-center transition-colors",
                   popoverOpen
-                    ? "bg-gray-700 text-white"
+                    ? "bg-teal-600 text-white"
                     : "text-gray-400 hover:bg-gray-100",
                 )}
                 title="Set priority / dispatch status"
@@ -802,7 +802,7 @@ function KanbanCard({ order, stage, onAssign, onCreateSplit, onRefresh, onMoveUp
         {isAssigned && (
           <div className="mt-2.5 pt-2.5 border-t border-gray-200">
             <div className="flex items-center gap-2.5 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
-              <div className="w-7 h-7 rounded-full bg-gray-700 flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0">
+              <div className="w-7 h-7 rounded-full bg-teal-600 flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0">
                 {operatorInitials}
               </div>
               <span className="text-[12px] font-semibold text-gray-900 flex-1 truncate">
@@ -818,7 +818,7 @@ function KanbanCard({ order, stage, onAssign, onCreateSplit, onRefresh, onMoveUp
         {isInProgress && (
           <div className="mt-2.5 pt-2.5 border-t border-gray-200">
             <div className="flex items-center gap-2.5 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
-              <div className="w-7 h-7 rounded-full bg-gray-700 flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0">
+              <div className="w-7 h-7 rounded-full bg-teal-600 flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0">
                 {operatorInitials}
               </div>
               <span className="text-[12px] font-semibold text-gray-900 flex-1 truncate">
@@ -865,7 +865,7 @@ function KanbanCard({ order, stage, onAssign, onCreateSplit, onRefresh, onMoveUp
                 </span>
               )}
               {!order.dispatchStatus && (
-                <span className="bg-[#eff6ff] border border-[#bfdbfe] text-[#1e40af] text-[10.5px] font-semibold px-2.5 py-1 rounded-full">
+                <span className="bg-amber-50 border border-amber-200 text-amber-700 text-[10.5px] font-semibold px-2.5 py-1 rounded-full">
                   Pending Support
                 </span>
               )}
@@ -987,7 +987,7 @@ function SplitDetailSheet({
                 <div className="flex items-center gap-2.5 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
                   <div className={cn(
                     "w-7 h-7 rounded-full flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0",
-                    isDone ? "bg-green-600" : colStage === "tinting_in_progress" ? "bg-gray-700" : "bg-gray-700",
+                    isDone ? "bg-green-600" : colStage === "tinting_in_progress" ? "bg-teal-600" : "bg-teal-600",
                   )}>
                     {operatorInitials}
                   </div>
@@ -1071,7 +1071,7 @@ function SplitDetailSheet({
                         <span className="bg-[#faeeda] border border-[#fac775] text-[#633806] text-[11px] font-semibold px-2.5 py-1 rounded-full">Waiting</span>
                       )}
                       {!currentSplit.dispatchStatus && (
-                        <span className="bg-[#eff6ff] border border-[#bfdbfe] text-[#1e40af] text-[11px] font-semibold px-2.5 py-1 rounded-full">Pending Support</span>
+                        <span className="bg-amber-50 border border-amber-200 text-amber-700 text-[11px] font-semibold px-2.5 py-1 rounded-full">Pending Support</span>
                       )}
                     </>
                   )}
@@ -1103,7 +1103,7 @@ function SplitDetailSheet({
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <span className="text-[12px] font-bold text-gray-800">Split #{s.splitNumber}</span>
                             {isCurrent && (
-                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-gray-700 text-white">current</span>
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-teal-600 text-white">current</span>
                             )}
                             <span className={cn(
                               "text-[10px] font-bold px-2 py-0.5 rounded-full border",
@@ -1114,7 +1114,7 @@ function SplitDetailSheet({
                                 : s.status === "cancelled"
                                 ? "bg-gray-100 text-gray-500 border-gray-200"
                                 : s.status === "dispatch_confirmation" || s.status === "dispatched"
-                                ? "bg-indigo-50 text-indigo-700 border-indigo-200"
+                                ? "bg-teal-50 text-teal-700 border-teal-200"
                                 : "bg-amber-50 text-amber-700 border-amber-200",
                             )}>
                               {s.status.replace(/_/g, " ")}
@@ -1139,7 +1139,7 @@ function SplitDetailSheet({
                         {/* Operator row */}
                         <div className="flex items-center justify-between mb-2">
                           <div className="flex items-center gap-2">
-                            <div className="w-5 h-5 rounded-full bg-gray-700 flex items-center justify-center text-white text-[9px] font-bold flex-shrink-0">
+                            <div className="w-5 h-5 rounded-full bg-teal-600 flex items-center justify-center text-white text-[9px] font-bold flex-shrink-0">
                               {opInitials}
                             </div>
                             <span className="text-[11.5px] font-medium text-gray-700">{opName}</span>
@@ -1289,7 +1289,7 @@ function SplitKanbanCard({
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); console.log('Layers clicked, splitId:', split.id, 'orderId:', split.order.id); setSplitSheetOpen(true); }}
-              className="w-[26px] h-[26px] rounded-lg flex items-center justify-center text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
+              className="w-[26px] h-[26px] rounded-lg flex items-center justify-center text-gray-400 hover:text-teal-600 hover:bg-teal-50 transition-colors"
               title="View split details"
             >
               <Layers size={14} />
@@ -1322,7 +1322,7 @@ function SplitKanbanCard({
                 className={cn(
                   "w-[26px] h-[26px] rounded-lg flex items-center justify-center transition-colors",
                   popoverOpen
-                    ? "bg-gray-700 text-white"
+                    ? "bg-teal-600 text-white"
                     : "text-gray-400 hover:bg-gray-100",
                 )}
                 title="Set priority / dispatch status"
@@ -1483,8 +1483,8 @@ function SplitKanbanCard({
             <div className={cn(
               "w-7 h-7 rounded-full flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0",
               isDone       ? "bg-green-600"
-              : isInProgress ? "bg-gray-700"
-              : "bg-gray-700",
+              : isInProgress ? "bg-teal-600"
+              : "bg-teal-600",
             )}>
               {operatorInitials}
             </div>
@@ -1528,7 +1528,7 @@ function SplitKanbanCard({
               </span>
             )}
             {!split.dispatchStatus && (
-              <span className="bg-[#eff6ff] border border-[#bfdbfe] text-[#1e40af] text-[10.5px] font-semibold px-2.5 py-1 rounded-full">
+              <span className="bg-amber-50 border border-amber-200 text-amber-700 text-[10.5px] font-semibold px-2.5 py-1 rounded-full">
                 Pending Support
               </span>
             )}
@@ -2420,7 +2420,7 @@ export function TintManagerContent() {
                           key={op.name}
                           className="flex items-center gap-2 p-2 rounded-lg border border-gray-100 hover:border-gray-200 transition-colors"
                         >
-                          <div className="w-6 h-6 rounded-full bg-gray-700 text-white text-[9px] font-bold flex items-center justify-center flex-shrink-0">
+                          <div className="w-6 h-6 rounded-full bg-teal-600 text-white text-[9px] font-bold flex items-center justify-center flex-shrink-0">
                             {op.name.split(" ").map((w: string) => w[0]).join("").toUpperCase().slice(0, 2)}
                           </div>
                           <span className="text-[11px] font-medium text-gray-700 flex-1">{op.name}</span>
@@ -2764,7 +2764,7 @@ export function TintManagerContent() {
                           : "border-gray-200 hover:border-gray-300 hover:bg-gray-50",
                       )}
                     >
-                      <div className="w-9 h-9 rounded-full bg-gray-700 text-white flex items-center justify-center text-[12px] font-bold flex-shrink-0">
+                      <div className="w-9 h-9 rounded-full bg-teal-600 text-white flex items-center justify-center text-[12px] font-bold flex-shrink-0">
                         {initials(op.name)}
                       </div>
                       <div className="flex-1 min-w-0">
@@ -2775,7 +2775,7 @@ export function TintManagerContent() {
                       </div>
                       <div
                         className={cn(
-                          "w-5 h-5 rounded-full bg-gray-700 text-white flex items-center justify-center text-[10px] transition-opacity flex-shrink-0",
+                          "w-5 h-5 rounded-full bg-teal-600 text-white flex items-center justify-center text-[10px] transition-opacity flex-shrink-0",
                           isSelected ? "opacity-100" : "opacity-0",
                         )}
                       >
@@ -2855,7 +2855,7 @@ export function TintManagerContent() {
                               : "border-gray-200 hover:border-gray-300 hover:bg-gray-50",
                           )}
                         >
-                          <div className="w-9 h-9 rounded-full bg-gray-700 text-white flex items-center justify-center text-[12px] font-bold flex-shrink-0">
+                          <div className="w-9 h-9 rounded-full bg-teal-600 text-white flex items-center justify-center text-[12px] font-bold flex-shrink-0">
                             {initials(op.name)}
                           </div>
                           <div className="flex-1 min-w-0">
@@ -2866,7 +2866,7 @@ export function TintManagerContent() {
                           </div>
                           <div
                             className={cn(
-                              "w-5 h-5 rounded-full bg-gray-700 text-white flex items-center justify-center text-[10px] transition-opacity flex-shrink-0",
+                              "w-5 h-5 rounded-full bg-teal-600 text-white flex items-center justify-center text-[10px] transition-opacity flex-shrink-0",
                               isSelected ? "opacity-100" : "opacity-0",
                             )}
                           >

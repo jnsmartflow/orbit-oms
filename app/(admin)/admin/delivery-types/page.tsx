@@ -25,7 +25,7 @@ export default async function DeliveryTypesPage() {
           <TableBody>
             {types.map((t) => (
               <TableRow key={t.id}>
-                <TableCell className="text-slate-400">{t.id}</TableCell>
+                <TableCell className="text-gray-400">{t.id}</TableCell>
                 <TableCell className="font-medium">{t.name}</TableCell>
               </TableRow>
             ))}

@@ -186,11 +186,11 @@ export function BaseColoursTable({ initialRows }: Props) {
   return (
     <>
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-lg font-bold text-[#1a237e]">Base Colours</h1>
+        <h1 className="text-lg font-bold text-teal-700">Base Colours</h1>
         <div className="flex gap-2">
           <button
             type="button"
-            className="flex items-center gap-1.5 text-[#1a237e] border border-[#c7d2fe] bg-[#eef2ff] hover:bg-[#e0e7ff] text-xs font-medium px-3 py-2 rounded-md"
+            className="flex items-center gap-1.5 text-teal-700 border border-teal-200 bg-teal-50 hover:bg-teal-100 text-xs font-medium px-3 py-2 rounded-md"
             onClick={handleTemplateDownload}
           >
             <Download className="h-3.5 w-3.5" />
@@ -198,7 +198,7 @@ export function BaseColoursTable({ initialRows }: Props) {
           </button>
           <button
             type="button"
-            className="flex items-center gap-1.5 bg-white hover:bg-[#f7f8fa] text-[#374151] border border-[#e5e7eb] text-xs font-medium px-3 py-2 rounded-md"
+            className="flex items-center gap-1.5 bg-white hover:bg-gray-50 text-gray-700 border border-[#e5e7eb] text-xs font-medium px-3 py-2 rounded-md"
             onClick={() => importFileRef.current?.click()}
           >
             <Upload className="h-3.5 w-3.5" />
@@ -222,20 +222,20 @@ export function BaseColoursTable({ initialRows }: Props) {
           <TableBody>
             {rows.length === 0 && (
               <TableRow>
-                <TableCell colSpan={4} className="text-center text-slate-500 py-8">
+                <TableCell colSpan={4} className="text-center text-gray-500 py-8">
                   No base colours configured yet.
                 </TableCell>
               </TableRow>
             )}
             {rows.map((row) => (
               <TableRow key={row.id}>
-                <TableCell className="font-medium text-slate-800">
+                <TableCell className="font-medium text-gray-800">
                   {row.name}
                   {row.name === "N/A" && (
-                    <span className="ml-2 text-xs text-slate-400">(fallback, cannot deactivate)</span>
+                    <span className="ml-2 text-xs text-gray-400">(fallback, cannot deactivate)</span>
                   )}
                 </TableCell>
-                <TableCell className="text-center text-slate-600 font-mono text-sm">
+                <TableCell className="text-center text-gray-600 font-mono text-sm">
                   {row._count.skus}
                 </TableCell>
                 <TableCell className="text-center">
@@ -286,10 +286,10 @@ export function BaseColoursTable({ initialRows }: Props) {
             </div>
 
             {/* Is Active */}
-            <div className="flex items-center justify-between py-3 px-4 rounded-lg border border-[#e5e7eb] bg-[#f7f8fa]">
+            <div className="flex items-center justify-between py-3 px-4 rounded-lg border border-[#e5e7eb] bg-gray-50">
               <div>
-                <div className="text-sm font-medium text-[#111827]">Active</div>
-                <div className="text-xs text-[#6b7280] mt-0.5">
+                <div className="text-sm font-medium text-gray-900">Active</div>
+                <div className="text-xs text-gray-500 mt-0.5">
                   {editTarget?.name === "N/A"
                     ? "N/A is the fallback for non-tint SKUs and cannot be deactivated"
                     : "Inactive colours are hidden from SKU forms"}
@@ -299,13 +299,13 @@ export function BaseColoursTable({ initialRows }: Props) {
                 checked={form.isActive}
                 onCheckedChange={(v) => setField("isActive", v)}
                 disabled={editTarget?.name === "N/A"}
-                className="data-[state=checked]:bg-[#1a237e] data-[state=unchecked]:bg-[#d1d5db]"
+                className="data-[state=checked]:bg-teal-600 data-[state=unchecked]:bg-gray-300"
               />
             </div>
 
             <div className="sticky bottom-0 bg-white border-t border-[#e5e7eb] -mx-6 px-6 py-4 flex gap-3 mt-6">
-              <Button type="button" variant="outline" className="flex-1 h-10 text-sm border-[#e5e7eb] text-[#374151] hover:bg-[#f7f8fa] rounded-lg oa-btn-ghost" onClick={() => setSheetOpen(false)} disabled={saving}>Cancel</Button>
-              <Button type="submit" className="flex-1 h-10 text-sm bg-[#1a237e] hover:bg-[#283593] text-white rounded-lg font-semibold oa-btn-primary" disabled={saving}>{saving ? "Saving…" : editTarget ? "Save Changes" : "Create Base Colour"}</Button>
+              <Button type="button" variant="outline" className="flex-1 h-10 text-sm border-[#e5e7eb] text-gray-700 hover:bg-gray-50 rounded-lg oa-btn-ghost" onClick={() => setSheetOpen(false)} disabled={saving}>Cancel</Button>
+              <Button type="submit" className="flex-1 h-10 text-sm bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-semibold oa-btn-primary" disabled={saving}>{saving ? "Saving…" : editTarget ? "Save Changes" : "Create Base Colour"}</Button>
             </div>
           </form>
         </SheetContent>

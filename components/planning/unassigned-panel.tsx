@@ -125,12 +125,12 @@ export function UnassignedPanel({
 
       {/* Auto Draft */}
       {canManagePlan && !isHistoryView && (
-        <div className="px-3 py-3 border-b border-gray-100 bg-gradient-to-r from-indigo-50 to-white">
+        <div className="px-3 py-3 border-b border-gray-100 bg-gradient-to-r from-teal-50 to-white">
           <button
             type="button"
             onClick={handleAutoDraft}
             disabled={autoDrafting || orders.length === 0}
-            className="w-full h-10 bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-medium rounded-lg flex items-center justify-center gap-2 shadow-sm transition-colors disabled:opacity-50"
+            className="w-full h-10 bg-teal-600 hover:bg-teal-700 text-white text-[11px] font-medium rounded-lg flex items-center justify-center gap-2 shadow-sm transition-colors disabled:opacity-50"
           >
             {autoDrafting ? (
               <Loader2 size={14} className="animate-spin" />

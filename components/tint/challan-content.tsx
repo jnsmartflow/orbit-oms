@@ -237,7 +237,7 @@ export function ChallanContent() {
             bottom:       24,
             right:        24,
             zIndex:       9999,
-            background:   "#1a237e",
+            background:   "#0d9488",
             color:        "#fff",
             padding:      "12px 18px",
             borderRadius: 8,
@@ -255,7 +255,7 @@ export function ChallanContent() {
       {/* ── TOPBAR ──────────────────────────────────────────────────────────── */}
       <header style={{
         background: "#fff",
-        borderBottom: "1px solid #e2e5f1",
+        borderBottom: "1px solid #e5e7eb",
         height: 52,
         display: "flex",
         alignItems: "center",
@@ -263,7 +263,7 @@ export function ChallanContent() {
         flexShrink: 0,
         gap: 10,
       }}>
-        <FileText size={18} color="#1a237e" />
+        <FileText size={18} color="#0d9488" />
         <span style={{ fontSize: 17, fontWeight: 800, color: "#111827" }}>Delivery Challans</span>
       </header>
 
@@ -275,8 +275,8 @@ export function ChallanContent() {
           width: "35%",
           display: "flex",
           flexDirection: "column",
-          borderRight: "1px solid #e2e5f1",
-          background: "#f7f8fc",
+          borderRight: "1px solid #e5e7eb",
+          background: "#f9fafb",
           flexShrink: 0,
           overflow: "hidden",
         }}>
@@ -284,7 +284,7 @@ export function ChallanContent() {
           {/* Search + filter bar */}
           <div style={{
             background: "#fff",
-            borderBottom: "1px solid #e2e5f1",
+            borderBottom: "1px solid #e5e7eb",
             padding: "10px 16px",
             display: "flex",
             flexDirection: "column",
@@ -308,8 +308,8 @@ export function ChallanContent() {
                 onChange={(e) => setSearchValue(e.target.value)}
                 style={{
                   width: "100%", paddingLeft: 32, paddingRight: 10, height: 34,
-                  border: "1px solid #e2e5f1", borderRadius: 7, fontSize: 13,
-                  background: "#f7f8fc", outline: "none", color: "#1e293b",
+                  border: "1px solid #e5e7eb", borderRadius: 7, fontSize: 13,
+                  background: "#f9fafb", outline: "none", color: "#1e293b",
                 }}
               />
             </div>
@@ -320,7 +320,7 @@ export function ChallanContent() {
                 value={dateFilter}
                 onChange={(e) => setDateFilter(e.target.value)}
                 style={{
-                  height: 30, border: "1px solid #e2e5f1", borderRadius: 6,
+                  height: 30, border: "1px solid #e5e7eb", borderRadius: 6,
                   fontSize: 12, padding: "0 8px", color: "#374151",
                   background: "#fff", outline: "none",
                 }}
@@ -329,7 +329,7 @@ export function ChallanContent() {
                 value={routeFilter}
                 onChange={(e) => setRouteFilter(e.target.value)}
                 style={{
-                  height: 30, border: "1px solid #e2e5f1", borderRadius: 6,
+                  height: 30, border: "1px solid #e5e7eb", borderRadius: 6,
                   fontSize: 12, padding: "0 8px", color: "#374151",
                   background: "#fff", outline: "none", flex: 1,
                 }}
@@ -341,7 +341,7 @@ export function ChallanContent() {
                 value={smuFilter}
                 onChange={(e) => setSmuFilter(e.target.value)}
                 style={{
-                  height: 30, border: "1px solid #e2e5f1", borderRadius: 6,
+                  height: 30, border: "1px solid #e5e7eb", borderRadius: 6,
                   fontSize: 12, padding: "0 8px", color: "#374151",
                   background: "#fff", outline: "none", flex: 1,
                 }}
@@ -355,9 +355,9 @@ export function ChallanContent() {
                   type="button"
                   onClick={() => { setDateFilter(""); setRouteFilter(""); setSmuFilter(""); }}
                   style={{
-                    height: 30, border: "1px solid #e2e5f1", borderRadius: 6,
+                    height: 30, border: "1px solid #e5e7eb", borderRadius: 6,
                     fontSize: 11, padding: "0 10px", color: "#6b7280",
-                    background: "#f7f8fc", cursor: "pointer", whiteSpace: "nowrap",
+                    background: "#f9fafb", cursor: "pointer", whiteSpace: "nowrap",
                   }}
                 >
                   Clear
@@ -379,14 +379,14 @@ export function ChallanContent() {
                 <button
                   type="button"
                   onClick={fetchList}
-                  style={{ fontSize: 12, color: "#1a237e", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}
+                  style={{ fontSize: 12, color: "#0d9488", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}
                 >
                   Retry
                 </button>
               </div>
             ) : items.length === 0 ? (
               <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "40px 16px", textAlign: "center" }}>
-                <div style={{ width: 44, height: 44, borderRadius: "50%", background: "#f7f8fc", border: "1px solid #e2e5f1", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 10 }}>
+                <div style={{ width: 44, height: 44, borderRadius: "50%", background: "#f9fafb", border: "1px solid #e5e7eb", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 10 }}>
                   <FileText size={20} color="#9ca3af" />
                 </div>
                 <p style={{ fontSize: 14, fontWeight: 700, color: "#6b7280" }}>No orders found</p>
@@ -403,11 +403,11 @@ export function ChallanContent() {
                     onClick={() => handleSelectOrder(item.orderId)}
                     style={{
                       background:  isSelected ? "#eff6ff" : "#fff",
-                      border:      `1px solid ${isSelected ? "#93c5fd" : "#e2e5f1"}`,
+                      border:      `1px solid ${isSelected ? "#93c5fd" : "#e5e7eb"}`,
                       borderLeft:  `3px solid ${
-                        isSelected          ? "#1a237e"
+                        isSelected          ? "#0d9488"
                         : hasExistingChallan ? "#16a34a"
-                        : "#e2e5f1"
+                        : "#e5e7eb"
                       }`,
                       borderRadius: 8,
                       marginBottom: 6,
@@ -418,7 +418,7 @@ export function ChallanContent() {
                   >
                     {/* Row 1: OBD code + challan badge */}
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 3 }}>
-                      <span style={{ fontFamily: "'Courier New', monospace", fontSize: 12, fontWeight: 700, color: "#1a237e" }}>
+                      <span style={{ fontFamily: "'Courier New', monospace", fontSize: 12, fontWeight: 700, color: "#0d9488" }}>
                         {item.obdNumber}
                       </span>
                       {item.challanNumber && (
@@ -442,22 +442,22 @@ export function ChallanContent() {
                     {/* Row 3: Meta chips */}
                     <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
                       {item.obdEmailDate && (
-                        <span style={{ fontSize: 10, color: "#6b7280", background: "#f7f8fc", border: "1px solid #e2e5f1", padding: "1px 6px", borderRadius: 4 }}>
+                        <span style={{ fontSize: 10, color: "#6b7280", background: "#f9fafb", border: "1px solid #e5e7eb", padding: "1px 6px", borderRadius: 4 }}>
                           {fmtDate(item.obdEmailDate)}
                         </span>
                       )}
                       {item.smu && (
-                        <span style={{ fontSize: 10, fontWeight: 600, color: "#1a237e", background: "#e8eaf6", border: "1px solid #c5cae9", padding: "1px 6px", borderRadius: 4 }}>
+                        <span style={{ fontSize: 10, fontWeight: 600, color: "#0d9488", background: "#f0fdfa", border: "1px solid #99f6e4", padding: "1px 6px", borderRadius: 4 }}>
                           {item.smu}
                         </span>
                       )}
                       {item.route && (
-                        <span style={{ fontSize: 10, color: "#374151", background: "#f7f8fc", border: "1px solid #e2e5f1", padding: "1px 6px", borderRadius: 4 }}>
+                        <span style={{ fontSize: 10, color: "#374151", background: "#f9fafb", border: "1px solid #e5e7eb", padding: "1px 6px", borderRadius: 4 }}>
                           {item.route}
                         </span>
                       )}
                       {item.slot && (
-                        <span style={{ fontSize: 10, color: "#374151", background: "#f7f8fc", border: "1px solid #e2e5f1", padding: "1px 6px", borderRadius: 4 }}>
+                        <span style={{ fontSize: 10, color: "#374151", background: "#f9fafb", border: "1px solid #e5e7eb", padding: "1px 6px", borderRadius: 4 }}>
                           {item.slot}
                         </span>
                       )}
@@ -475,7 +475,7 @@ export function ChallanContent() {
           {!selectedOrderId ? (
             /* Empty state */
             <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12 }}>
-              <div style={{ width: 56, height: 56, borderRadius: "50%", background: "#f7f8fc", border: "1px solid #e2e5f1", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <div style={{ width: 56, height: 56, borderRadius: "50%", background: "#f9fafb", border: "1px solid #e5e7eb", display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <FileText size={24} color="#9ca3af" />
               </div>
               <p style={{ fontSize: 14, fontWeight: 600, color: "#6b7280" }}>Select an order to preview challan</p>
@@ -495,7 +495,7 @@ export function ChallanContent() {
               <button
                 type="button"
                 onClick={() => { if (selectedOrderId) void fetchDetail(selectedOrderId); }}
-                style={{ fontSize: 12, color: "#1a237e", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}
+                style={{ fontSize: 12, color: "#0d9488", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}
               >
                 Retry
               </button>
@@ -506,7 +506,7 @@ export function ChallanContent() {
               {/* Action bar */}
               <div style={{
                 background: "#fff",
-                borderBottom: "1px solid #e2e5f1",
+                borderBottom: "1px solid #e5e7eb",
                 padding: "8px 16px",
                 display: "flex",
                 alignItems: "center",
@@ -516,7 +516,7 @@ export function ChallanContent() {
                 {/* Challan number badge */}
                 <span style={{
                   fontSize: 12, fontWeight: 700,
-                  color: "#1a237e", background: "#e8eaf6", border: "1px solid #c5cae9",
+                  color: "#0d9488", background: "#f0fdfa", border: "1px solid #99f6e4",
                   padding: "3px 10px", borderRadius: 6,
                 }}>
                   {challanData.challan.challanNumber}
@@ -533,7 +533,7 @@ export function ChallanContent() {
                       disabled={isSaving}
                       style={{
                         height: 32, padding: "0 12px",
-                        border: "1px solid #e2e5f1", borderRadius: 6,
+                        border: "1px solid #e5e7eb", borderRadius: 6,
                         fontSize: 12, fontWeight: 600, color: "#6b7280",
                         background: "#fff", cursor: "pointer",
                         display: "flex", alignItems: "center", gap: 5,
@@ -551,7 +551,7 @@ export function ChallanContent() {
                         height: 32, padding: "0 14px",
                         border: "none", borderRadius: 6,
                         fontSize: 12, fontWeight: 700, color: "#fff",
-                        background: "#1a237e",
+                        background: "#0d9488",
                         cursor: isSaving || !isDirty ? "not-allowed" : "pointer",
                         display: "flex", alignItems: "center", gap: 5,
                         opacity: (!isDirty && !isSaving) ? 0.45 : 1,
@@ -570,9 +570,9 @@ export function ChallanContent() {
                     onClick={() => setIsEditing(true)}
                     style={{
                       height: 32, padding: "0 12px",
-                      border: "1px solid #c5cae9", borderRadius: 6,
-                      fontSize: 12, fontWeight: 600, color: "#1a237e",
-                      background: "#e8eaf6", cursor: "pointer",
+                      border: "1px solid #99f6e4", borderRadius: 6,
+                      fontSize: 12, fontWeight: 600, color: "#0d9488",
+                      background: "#f0fdfa", cursor: "pointer",
                       display: "flex", alignItems: "center", gap: 5,
                     }}
                   >
@@ -587,9 +587,9 @@ export function ChallanContent() {
                   disabled={isPrinting || detailLoading}
                   style={{
                     height: 32, padding: "0 12px",
-                    border: "1px solid #e2e5f1", borderRadius: 6,
+                    border: "1px solid #e5e7eb", borderRadius: 6,
                     fontSize: 12, fontWeight: 600, color: "#374151",
-                    background: "#f7f8fc", cursor: "pointer",
+                    background: "#f9fafb", cursor: "pointer",
                     display: "flex", alignItems: "center", gap: 5,
                     opacity: isPrinting ? 0.6 : 1,
                   }}

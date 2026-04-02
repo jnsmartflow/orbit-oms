@@ -22,17 +22,34 @@ export default async function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
+    <main className="flex min-h-screen flex-col items-center justify-center bg-[#f9fafb] px-4">
       <div className="w-full max-w-sm">
+        {/* Brand */}
         <div className="mb-8 text-center">
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-            Orbit OMS
-          </h1>
-          <p className="mt-1 text-sm text-slate-500">
-            Depot Order Management System
-          </p>
+          <div className="inline-flex items-center gap-2.5 mb-1.5">
+            <div className="w-9 h-9 bg-teal-600 rounded-[9px] flex items-center justify-center flex-shrink-0">
+              <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+                <circle cx="11" cy="11" r="7" stroke="white" strokeWidth="1.6"/>
+                <circle cx="11" cy="11" r="2.2" fill="white"/>
+                <circle cx="18" cy="11" r="2" fill="white"/>
+              </svg>
+            </div>
+            <span className="text-[22px] font-semibold text-gray-900 tracking-[-0.5px]">
+              OrbitOMS
+            </span>
+          </div>
+          <p className="text-[12.5px] text-gray-400 mt-1">One system. Zero chaos.</p>
         </div>
-        <LoginForm />
+
+        {/* Form card */}
+        <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+          <LoginForm />
+        </div>
+
+        {/* Footer */}
+        <p className="mt-6 text-center text-[11px] text-gray-400">
+          OrbitOMS · Internal Use Only
+        </p>
       </div>
     </main>
   );

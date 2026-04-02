@@ -12,8 +12,8 @@ export default async function BaseColoursPage() {
   return (
     <div>
       <div className="mb-6">
-        <h1 className="text-xl font-semibold text-slate-900">Base Colours</h1>
-        <p className="text-sm text-slate-500 mt-1">
+        <h1 className="text-xl font-semibold text-gray-900">Base Colours</h1>
+        <p className="text-sm text-gray-500 mt-1">
           Tint base variants (White Base, Deep Base, Clear…). &quot;N/A&quot; is the protected fallback for non-tint SKUs.
         </p>
       </div>

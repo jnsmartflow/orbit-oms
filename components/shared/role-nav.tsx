@@ -12,7 +12,7 @@ export function RoleNav({ links }: { links: NavLink[] }) {
   const pathname = usePathname();
 
   return (
-    <div className="bg-white border-b border-slate-200 px-6 flex items-center gap-1">
+    <div className="bg-white border-b border-gray-200 px-6 flex items-center gap-1">
       {links.map((link) => {
         const isActive =
           pathname === link.href || pathname.startsWith(link.href + "/");
@@ -22,8 +22,8 @@ export function RoleNav({ links }: { links: NavLink[] }) {
             href={link.href}
             className={`px-4 py-2 text-sm font-medium transition-colors ${
               isActive
-                ? "text-[#1a237e] border-b-2 border-[#1a237e]"
-                : "text-slate-600 hover:text-slate-900"
+                ? "text-teal-600 border-b-2 border-teal-600"
+                : "text-gray-500 hover:text-gray-900"
             }`}
           >
             {link.label}

@@ -23,8 +23,8 @@ export default async function SlotRulesPage() {
   return (
     <div>
       <div className="mb-6">
-        <h1 className="text-xl font-semibold text-slate-900">Slot Rules</h1>
-        <p className="text-sm text-slate-500 mt-1">
+        <h1 className="text-xl font-semibold text-gray-900">Slot Rules</h1>
+        <p className="text-sm text-gray-500 mt-1">
           Define which slots are available per delivery type and the order cutoff windows that trigger them.
         </p>
       </div>
