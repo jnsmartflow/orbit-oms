@@ -11,7 +11,7 @@ export async function GET(
 ): Promise<NextResponse> {
   try {
     const session = await auth();
-    requireRole(session, [ROLES.SUPPORT, ROLES.DISPATCHER, ROLES.ADMIN, ROLES.OPERATIONS]);
+    requireRole(session, [ROLES.SUPPORT, ROLES.DISPATCHER, ROLES.ADMIN, ROLES.OPERATIONS, ROLES.TINT_MANAGER]);
 
     const orderId = parseInt(params.id, 10);
     if (isNaN(orderId)) {

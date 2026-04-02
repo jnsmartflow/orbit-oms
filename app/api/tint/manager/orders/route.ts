@@ -18,8 +18,8 @@ export async function GET(): Promise<NextResponse> {
     const now          = new Date();
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
 
-    // ── All five queries in parallel ──────────────────────────────────────────
-    const [activeOrders, completedTodayOrders, activeSplits, completedSplits, completedAssignments] = await Promise.all([
+    // ── All six queries in parallel ──────────────────────────────────────────
+    const [activeOrders, completedTodayOrders, activeSplits, completedSplits, completedAssignments, allSlots] = await Promise.all([
 
       // Set A — pending orders (Pending Assignment column)
       prisma.orders.findMany({
@@ -29,9 +29,10 @@ export async function GET(): Promise<NextResponse> {
         },
         orderBy: [{ sequenceOrder: "asc" }],
         include: {
+          slot: { select: { id: true, name: true, slotTime: true, isNextDay: true, sortOrder: true } },
           customer: {
             include: {
-              area: { select: { name: true } },
+              area: { select: { name: true, deliveryType: { select: { name: true } } } },
               salesOfficerGroup: {
                 include: {
                   salesOfficer: { select: { name: true } },
@@ -89,9 +90,10 @@ export async function GET(): Promise<NextResponse> {
           },
         },
         include: {
+          slot: { select: { id: true, name: true, slotTime: true, isNextDay: true, sortOrder: true } },
           customer: {
             include: {
-              area: { select: { name: true } },
+              area: { select: { name: true, deliveryType: { select: { name: true } } } },
               salesOfficerGroup: {
                 include: {
                   salesOfficer: { select: { name: true } },
@@ -122,8 +124,10 @@ export async function GET(): Promise<NextResponse> {
         include: {
           order: {
             include: {
+              slot: { select: { id: true, name: true, slotTime: true, isNextDay: true, sortOrder: true } },
               customer: {
                 include: {
+                  area: { select: { name: true, deliveryType: { select: { name: true } } } },
                   salesOfficerGroup: {
                     include: {
                       salesOfficer: { select: { name: true } },
@@ -159,8 +163,10 @@ export async function GET(): Promise<NextResponse> {
         include: {
           order: {
             include: {
+              slot: { select: { id: true, name: true, slotTime: true, isNextDay: true, sortOrder: true } },
               customer: {
                 include: {
+                  area: { select: { name: true, deliveryType: { select: { name: true } } } },
                   salesOfficerGroup: {
                     include: {
                       salesOfficer: { select: { name: true } },
@@ -197,9 +203,10 @@ export async function GET(): Promise<NextResponse> {
         include: {
           order: {
             include: {
+              slot: { select: { id: true, name: true, slotTime: true, isNextDay: true, sortOrder: true } },
               customer: {
                 include: {
-                  area:              { select: { name: true } },
+                  area:              { select: { name: true, deliveryType: { select: { name: true } } } },
                   salesOfficerGroup: {
                     include: { salesOfficer: { select: { name: true } } },
                   },
@@ -214,9 +221,33 @@ export async function GET(): Promise<NextResponse> {
         },
         orderBy: { completedAt: "desc" },
       }),
+
+      // Set F — all active slots for slot summary strip
+      prisma.slot_master.findMany({
+        where: { isActive: true },
+        orderBy: { sortOrder: "asc" },
+        select: { id: true, name: true, slotTime: true, isNextDay: true, sortOrder: true },
+      }),
     ]);
 
     const orders = [...activeOrders, ...completedTodayOrders];
+
+    // ── Slot summary & lookup ────────────────────────────────────────────────
+    const slotNameMap = new Map(allSlots.map((s) => [s.id, s.name]));
+    const slotOrderCounts = new Map<number, number>();
+    for (const o of activeOrders) {
+      if (o.slotId) {
+        slotOrderCounts.set(o.slotId, (slotOrderCounts.get(o.slotId) ?? 0) + 1);
+      }
+    }
+    const slotSummary = allSlots.map((s) => ({
+      id:               s.id,
+      name:             s.name,
+      slotTime:         s.slotTime,
+      isNextDay:        s.isNextDay,
+      sortOrder:        s.sortOrder,
+      tintPendingCount: slotOrderCounts.get(s.id) ?? 0,
+    }));
 
     // ── Unified SMU map (orders + splits share import_raw_summary) ────────────
     const allObdNumbers = Array.from(new Set([
@@ -295,33 +326,61 @@ export async function GET(): Promise<NextResponse> {
 
       return {
         ...o,
-        smu:            smuMap.get(o.obdNumber) ?? null,
-        obdEmailDate:   obdDateMap.get(o.obdNumber)?.date ?? null,
-        obdEmailTime:   obdDateMap.get(o.obdNumber)?.time ?? null,
-        lineItems:      linesByObd.get(o.obdNumber) ?? [],
-        existingSplits: splitsData.flatMap((s) => s.lineItems),
-        remainingQty:   effectiveRemainingQty,
+        smu:              smuMap.get(o.obdNumber) ?? null,
+        obdEmailDate:     obdDateMap.get(o.obdNumber)?.date ?? null,
+        obdEmailTime:     obdDateMap.get(o.obdNumber)?.time ?? null,
+        lineItems:        linesByObd.get(o.obdNumber) ?? [],
+        existingSplits:   splitsData.flatMap((s) => s.lineItems),
+        remainingQty:     effectiveRemainingQty,
+        slotId:           o.slotId ?? null,
+        slotName:         (o as any).slot?.name ?? null,
+        slotTime:         (o as any).slot?.slotTime ?? null,
+        slotIsNextDay:    (o as any).slot?.isNextDay ?? false,
+        originalSlotId:   o.originalSlotId ?? null,
+        originalSlotName: o.originalSlotId ? (slotNameMap.get(o.originalSlotId) ?? null) : null,
+        deliveryTypeName: (o as any).customer?.area?.deliveryType?.name ?? null,
       };
     });
 
     const activeSplitsWithSmu    = activeSplits.map((s) => ({
       ...s,
-      smu:          smuMap.get(s.order.obdNumber) ?? null,
-      obdEmailDate: obdDateMap.get(s.order.obdNumber)?.date ?? null,
-      obdEmailTime: obdDateMap.get(s.order.obdNumber)?.time ?? null,
+      smu:              smuMap.get(s.order.obdNumber) ?? null,
+      obdEmailDate:     obdDateMap.get(s.order.obdNumber)?.date ?? null,
+      obdEmailTime:     obdDateMap.get(s.order.obdNumber)?.time ?? null,
+      slotId:           s.order.slotId ?? null,
+      slotName:         (s.order as any).slot?.name ?? null,
+      slotTime:         (s.order as any).slot?.slotTime ?? null,
+      slotIsNextDay:    (s.order as any).slot?.isNextDay ?? false,
+      originalSlotId:   s.order.originalSlotId ?? null,
+      originalSlotName: s.order.originalSlotId ? (slotNameMap.get(s.order.originalSlotId) ?? null) : null,
+      deliveryTypeName: (s.order as any).customer?.area?.deliveryType?.name ?? null,
     }));
     const completedSplitsWithSmu = completedSplits.map((s) => ({
       ...s,
-      smu:          smuMap.get(s.order.obdNumber) ?? null,
-      obdEmailDate: obdDateMap.get(s.order.obdNumber)?.date ?? null,
-      obdEmailTime: obdDateMap.get(s.order.obdNumber)?.time ?? null,
+      smu:              smuMap.get(s.order.obdNumber) ?? null,
+      obdEmailDate:     obdDateMap.get(s.order.obdNumber)?.date ?? null,
+      obdEmailTime:     obdDateMap.get(s.order.obdNumber)?.time ?? null,
+      slotId:           s.order.slotId ?? null,
+      slotName:         (s.order as any).slot?.name ?? null,
+      slotTime:         (s.order as any).slot?.slotTime ?? null,
+      slotIsNextDay:    (s.order as any).slot?.isNextDay ?? false,
+      originalSlotId:   s.order.originalSlotId ?? null,
+      originalSlotName: s.order.originalSlotId ? (slotNameMap.get(s.order.originalSlotId) ?? null) : null,
+      deliveryTypeName: (s.order as any).customer?.area?.deliveryType?.name ?? null,
     }));
 
     const completedAssignmentsWithSmu = completedAssignments.map((a) => ({
       ...a,
-      smu:          smuMap.get(a.order.obdNumber) ?? null,
-      obdEmailDate: obdDateMap.get(a.order.obdNumber)?.date ?? null,
-      obdEmailTime: obdDateMap.get(a.order.obdNumber)?.time ?? null,
+      smu:              smuMap.get(a.order.obdNumber) ?? null,
+      obdEmailDate:     obdDateMap.get(a.order.obdNumber)?.date ?? null,
+      obdEmailTime:     obdDateMap.get(a.order.obdNumber)?.time ?? null,
+      slotId:           a.order.slotId ?? null,
+      slotName:         (a.order as any).slot?.name ?? null,
+      slotTime:         (a.order as any).slot?.slotTime ?? null,
+      slotIsNextDay:    (a.order as any).slot?.isNextDay ?? false,
+      originalSlotId:   a.order.originalSlotId ?? null,
+      originalSlotName: a.order.originalSlotId ? (slotNameMap.get(a.order.originalSlotId) ?? null) : null,
+      deliveryTypeName: (a.order as any).customer?.area?.deliveryType?.name ?? null,
     }));
 
     return NextResponse.json({
@@ -329,6 +388,7 @@ export async function GET(): Promise<NextResponse> {
       activeSplits:         activeSplitsWithSmu,
       completedSplits:      completedSplitsWithSmu,
       completedAssignments: completedAssignmentsWithSmu,
+      slotSummary,
     });
 
   } catch (err) {

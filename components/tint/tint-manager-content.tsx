@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import {
-  Loader2, Clock, CheckCircle2, Zap, Gift,
+  Loader2,
   AlertCircle, Layers,
   Eye, Plus, MoreHorizontal, UserPlus, RefreshCw, X, Scissors,
   Truck, Search, ChevronDown, ChevronUp, LayoutGrid, Table as TableIcon,
@@ -11,11 +11,11 @@ import {
 import { cn } from "@/lib/utils";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { ObdCode } from "@/components/shared/obd-code";
-import { SkuDetailsSheet } from "@/components/tint/sku-details-sheet";
 import { SplitBuilderModal } from "@/components/tint/split-builder-modal";
 import type { SplitBuilderModalProps } from "@/components/tint/split-builder-modal";
 import { TintTableView } from "@/components/tint/tint-table-view";
 import { CustomerMissingSheet } from "@/components/shared/customer-missing-sheet";
+import { OrderDetailPanel } from "@/components/shared/order-detail-panel";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -43,6 +43,13 @@ export interface TintOrder {
   smu:                string | null;
   obdEmailDate:       string | null;
   obdEmailTime:       string | null;
+  slotId:             number | null;
+  slotName:           string | null;
+  slotTime:           string | null;
+  slotIsNextDay:      boolean;
+  originalSlotId:     number | null;
+  originalSlotName:   string | null;
+  deliveryTypeName:   string | null;
   customer: {
     customerName:       string;
     area:               { name: string };
@@ -105,9 +112,16 @@ export interface SplitCard {
   createdAt:      string;
   startedAt:      string | null;
   completedAt:    string | null;
-  smu:            string | null;
-  obdEmailDate:   string | null;
-  obdEmailTime:   string | null;
+  smu:              string | null;
+  obdEmailDate:     string | null;
+  obdEmailTime:     string | null;
+  slotId:           number | null;
+  slotName:         string | null;
+  slotTime:         string | null;
+  slotIsNextDay:    boolean;
+  originalSlotId:   number | null;
+  originalSlotName: string | null;
+  deliveryTypeName: string | null;
   assignedTo:     { id: number; name: string | null };
   lineItems: {
     rawLineItemId: number;
@@ -132,11 +146,18 @@ export interface SplitCard {
 }
 
 export interface CompletedAssignment {
-  id:          number;
-  completedAt: string | null;
-  smu:         string | null;
-  obdEmailDate: string | null;
-  obdEmailTime: string | null;
+  id:               number;
+  completedAt:      string | null;
+  smu:              string | null;
+  obdEmailDate:     string | null;
+  obdEmailTime:     string | null;
+  slotId:           number | null;
+  slotName:         string | null;
+  slotTime:         string | null;
+  slotIsNextDay:    boolean;
+  originalSlotId:   number | null;
+  originalSlotName: string | null;
+  deliveryTypeName: string | null;
   assignedTo:  { id: number; name: string | null };
   order: {
     id:                 number;
@@ -158,6 +179,15 @@ export interface CompletedAssignment {
 interface Operator {
   id:   number;
   name: string | null;
+}
+
+interface SlotSummaryItem {
+  id:               number;
+  name:             string;
+  slotTime:         string;
+  isNextDay:        boolean;
+  sortOrder:        number;
+  tintPendingCount: number;
 }
 
 type ColItem =
@@ -190,6 +220,17 @@ function formatNow(d: Date): string {
   const ampm = h >= 12 ? "PM" : "AM";
   h = h % 12 || 12;
   return `${DAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]} · ${h}:${String(m).padStart(2, "0")} ${ampm}`;
+}
+
+function isSlotClosed(slotTime: string, isNextDay: boolean): boolean {
+  if (isNextDay) return false;
+  const now = new Date();
+  const istOffset = 5.5 * 60 * 60 * 1000;
+  const istNow = new Date(now.getTime() + istOffset);
+  const [h, m] = slotTime.split(":").map(Number);
+  const slotMinutes = (h ?? 0) * 60 + (m ?? 0) + 15; // 15-min grace
+  const nowMinutes = istNow.getUTCHours() * 60 + istNow.getUTCMinutes();
+  return nowMinutes > slotMinutes;
 }
 
 function formatObdDateTime(date: string | null, time: string | null): string {
@@ -279,7 +320,7 @@ function StatusPopover({
     <div
       ref={popoverRef}
       style={{ position: "fixed", top: position.top, right: position.right, zIndex: 9999 }}
-      className="bg-white border border-[#e2e5f1] rounded-xl shadow-lg p-3.5 w-[210px]"
+      className="bg-white border border-gray-200 rounded-xl shadow-lg p-3.5 w-[210px]"
       onClick={(e) => e.stopPropagation()}
     >
       {/* Header */}
@@ -302,8 +343,8 @@ function StatusPopover({
               priority === p
                 ? p === "urgent"
                   ? "bg-red-50 border-red-300 text-red-700"
-                  : "bg-[#EEEDFE] border-[#AFA9EC] text-[#3C3489]"
-                : "bg-white border-[#cdd1e8] text-gray-400 hover:bg-[#f7f8fc]",
+                  : "bg-gray-50 border-gray-300 text-gray-700"
+                : "bg-white border-gray-300 text-gray-400 hover:bg-gray-50",
             )}
           >
             {p === "urgent" ? "🚨 Urgent" : "Normal"}
@@ -312,13 +353,13 @@ function StatusPopover({
       </div>
 
       {/* Divider */}
-      <div className="border-t border-[#f0f1f8] mb-3" />
+      <div className="border-t border-gray-100 mb-3" />
 
       {/* Dispatch status — compact horizontal toggle */}
       <p className="text-[10px] font-bold uppercase tracking-[.4px] text-gray-400 mb-1.5">
         Dispatch Status
       </p>
-      <div className="flex gap-1 p-0.5 bg-[#f7f8fc] border border-[#e2e5f1] rounded-lg mb-3">
+      <div className="flex gap-1 p-0.5 bg-gray-50 border border-gray-200 rounded-lg mb-3">
         {([
           { value: "dispatch",                 label: "Dispatch", activeClass: "bg-green-50 border border-green-200 text-green-700" },
           { value: "hold",                     label: "Hold",     activeClass: "bg-red-50 border border-red-200 text-red-700" },
@@ -348,7 +389,7 @@ function StatusPopover({
         className={cn(
           "w-full py-1.5 rounded-lg text-[11.5px] font-semibold transition-colors flex items-center justify-center gap-1.5",
           hasChanges && !isSaving
-            ? "bg-[#1a237e] text-white hover:bg-[#1a237e]/90"
+            ? "bg-gray-700 text-white hover:bg-gray-600"
             : "bg-gray-100 text-gray-400 cursor-not-allowed",
         )}
       >
@@ -404,11 +445,11 @@ interface KanbanCardProps {
   onRefresh:          () => void;
   onMoveUp:           () => void;
   onMoveDown:         () => void;
+  onViewDetail:       () => void;
   onCustomerMissing?: () => void;
 }
 
-function KanbanCard({ order, stage, onAssign, onCreateSplit, onRefresh, onMoveUp, onMoveDown, onCustomerMissing }: KanbanCardProps) {
-  const [skuSheetOpen, setSkuSheetOpen] = useState(false);
+function KanbanCard({ order, stage, onAssign, onCreateSplit, onRefresh, onMoveUp, onMoveDown, onViewDetail, onCustomerMissing }: KanbanCardProps) {
   const [menuOpen,     setMenuOpen]     = useState(false);
   const [popoverOpen,  setPopoverOpen]  = useState(false);
   const [popoverPos,   setPopoverPos]   = useState<{ top: number; right: number } | null>(null);
@@ -498,30 +539,31 @@ function KanbanCard({ order, stage, onAssign, onCreateSplit, onRefresh, onMoveUp
     <>
     <div
       className={cn(
-        "bg-white border border-[#e2e5f1] rounded-xl overflow-hidden shadow-sm cursor-pointer",
-        "hover:shadow-md hover:border-[#cdd1e8] transition-all duration-150",
+        "bg-white border border-gray-200 rounded-lg overflow-hidden cursor-pointer",
+        "hover:border-gray-300 transition-all duration-150",
       )}
     >
-      {/* Top accent bar */}
-      <div className={cn(
-        "h-[3px] w-full",
-        isPending    ? "bg-gradient-to-r from-indigo-500 to-indigo-300"
-        : isAssigned   ? "bg-gradient-to-r from-amber-400 to-amber-300"
-        : isInProgress ? "bg-gradient-to-r from-blue-500 to-blue-300"
-        : "bg-gradient-to-r from-green-600 to-green-400",
-      )} />
-
       <div className="px-3.5 pt-3 pb-3">
         {/* 1. Icons + badges */}
         <div className="mb-2">
           {/* Icon row */}
-          <div className="flex items-center justify-end gap-1 h-[24px]">
+          <div className="flex items-center justify-between h-[24px]">
+            {/* Left: split indicator */}
+            <div className="flex items-center">
+              {activeSplits.length > 0 && (
+                <span className="text-[10px] font-semibold text-amber-600">
+                  ✂ {activeSplits.length} · {remainingQty > 0 ? `${remainingQty} left` : "fully assigned"}
+                </span>
+              )}
+            </div>
+            {/* Right: action icons */}
+            <div className="flex items-center gap-1">
             {/* Eye icon */}
             <button
               type="button"
-              onClick={(e) => { e.stopPropagation(); setSkuSheetOpen(true); }}
+              onClick={(e) => { e.stopPropagation(); onViewDetail(); }}
               className="w-[26px] h-[26px] rounded-lg flex items-center justify-center text-gray-400 hover:text-violet-600 hover:bg-violet-50 transition-colors"
-              title="View SKU lines"
+              title="View order details"
             >
               <Eye size={14} />
             </button>
@@ -543,7 +585,7 @@ function KanbanCard({ order, stage, onAssign, onCreateSplit, onRefresh, onMoveUp
                 className={cn(
                   "w-[26px] h-[26px] rounded-lg flex items-center justify-center transition-colors",
                   popoverOpen
-                    ? "bg-[#1a237e] text-white"
+                    ? "bg-gray-700 text-white"
                     : "text-gray-400 hover:bg-gray-100",
                 )}
                 title="Set priority / dispatch status"
@@ -576,7 +618,7 @@ function KanbanCard({ order, stage, onAssign, onCreateSplit, onRefresh, onMoveUp
 
               {menuOpen && (
                 <div
-                  className="absolute right-0 top-8 z-50 bg-white border border-[#e2e5f1] rounded-xl shadow-lg py-1 min-w-[130px] max-w-[150px]"
+                  className="absolute right-0 top-8 z-50 bg-white border border-gray-200 rounded-xl shadow-lg py-1 min-w-[130px] max-w-[150px]"
                   onClick={(e) => e.stopPropagation()}
                 >
                   {order.workflowStage === "pending_tint_assignment" && (
@@ -586,18 +628,18 @@ function KanbanCard({ order, stage, onAssign, onCreateSplit, onRefresh, onMoveUp
                           <button
                             type="button"
                             onClick={() => { setMenuOpen(false); onAssign(); }}
-                            className="w-full flex items-center gap-2.5 px-3.5 py-2 text-[12px] text-gray-700 hover:bg-[#f7f8fc] transition-colors whitespace-nowrap"
+                            className="w-full flex items-center gap-2.5 px-3.5 py-2 text-[12px] text-gray-700 hover:bg-gray-50 transition-colors whitespace-nowrap"
                           >
                             <UserPlus size={12} className="text-gray-400 flex-shrink-0" />
                             Assign
                           </button>
-                          <div className="mx-3 border-t border-[#f0f1f8]" />
+                          <div className="mx-3 border-t border-gray-100" />
                         </>
                       )}
                       <button
                         type="button"
                         onClick={() => { setMenuOpen(false); onCreateSplit(); }}
-                        className="w-full flex items-center gap-2.5 px-3.5 py-2 text-[12px] text-gray-700 hover:bg-[#f7f8fc] transition-colors whitespace-nowrap"
+                        className="w-full flex items-center gap-2.5 px-3.5 py-2 text-[12px] text-gray-700 hover:bg-gray-50 transition-colors whitespace-nowrap"
                       >
                         <Scissors size={12} className="text-gray-400 flex-shrink-0" />
                         Create Split
@@ -610,7 +652,7 @@ function KanbanCard({ order, stage, onAssign, onCreateSplit, onRefresh, onMoveUp
                       <button
                         type="button"
                         onClick={() => { setMenuOpen(false); onMoveUp(); }}
-                        className="w-full flex items-center gap-2.5 px-3.5 py-2 text-[12px] text-gray-700 hover:bg-[#f7f8fc] transition-colors whitespace-nowrap"
+                        className="w-full flex items-center gap-2.5 px-3.5 py-2 text-[12px] text-gray-700 hover:bg-gray-50 transition-colors whitespace-nowrap"
                       >
                         <ChevronUp size={12} className="text-gray-400 flex-shrink-0" />
                         Move Up
@@ -618,21 +660,21 @@ function KanbanCard({ order, stage, onAssign, onCreateSplit, onRefresh, onMoveUp
                       <button
                         type="button"
                         onClick={() => { setMenuOpen(false); onMoveDown(); }}
-                        className="w-full flex items-center gap-2.5 px-3.5 py-2 text-[12px] text-gray-700 hover:bg-[#f7f8fc] transition-colors whitespace-nowrap"
+                        className="w-full flex items-center gap-2.5 px-3.5 py-2 text-[12px] text-gray-700 hover:bg-gray-50 transition-colors whitespace-nowrap"
                       >
                         <ChevronDown size={12} className="text-gray-400 flex-shrink-0" />
                         Move Down
                       </button>
-                      <div className="mx-3 border-t border-[#f0f1f8]" />
+                      <div className="mx-3 border-t border-gray-100" />
                       <button
                         type="button"
                         onClick={() => { setMenuOpen(false); onAssign(); }}
-                        className="w-full flex items-center gap-2.5 px-3.5 py-2 text-[12px] text-gray-700 hover:bg-[#f7f8fc] transition-colors whitespace-nowrap"
+                        className="w-full flex items-center gap-2.5 px-3.5 py-2 text-[12px] text-gray-700 hover:bg-gray-50 transition-colors whitespace-nowrap"
                       >
                         <RefreshCw size={12} className="text-gray-400 flex-shrink-0" />
                         Re-assign
                       </button>
-                      <div className="mx-3 border-t border-[#f0f1f8]" />
+                      <div className="mx-3 border-t border-gray-100" />
                       <button
                         type="button"
                         onClick={() => { setMenuOpen(false); void handleCancelAssignment(); }}
@@ -653,6 +695,7 @@ function KanbanCard({ order, stage, onAssign, onCreateSplit, onRefresh, onMoveUp
                 </div>
               )}
             </div>
+            </div>{/* end right icons */}
           </div>
           {/* Badge row */}
           <div className="flex items-center gap-1.5 flex-wrap min-h-[22px]">
@@ -660,27 +703,49 @@ function KanbanCard({ order, stage, onAssign, onCreateSplit, onRefresh, onMoveUp
               <span className="inline-flex items-center gap-1 bg-green-50 text-green-700 border border-green-200 text-[11px] font-semibold px-2 py-0.5 rounded-full">
                 ✓ Done
               </span>
+            ) : isUrgent ? (
+              <span className="inline-flex items-center gap-1 text-[10.5px] font-semibold px-2 py-0.5 rounded-full border bg-red-50 border-red-200 text-red-600">
+                🚨 Urgent
+              </span>
             ) : (
-              <StatusBadge variant={isUrgent ? "urgent" : "normal"} size="sm" />
+              <span className="inline-flex items-center gap-1 text-[10.5px] font-semibold px-2 py-0.5 rounded-full border bg-gray-50 border-gray-200 text-gray-500">
+                ● Normal
+              </span>
             )}
             <DispatchStatusBadge status={order.dispatchStatus ?? null} />
           </div>
         </div>
 
         {/* 2. Customer name */}
-        <p className="text-[13.5px] font-bold text-gray-900 leading-snug mb-1">{customerName}</p>
-        {order.customerMissing && (
-          <button
-            type="button"
-            onClick={onCustomerMissing}
-            className="mb-1 inline-flex items-center gap-1 text-[10.5px] font-semibold text-amber-700 bg-amber-100 hover:bg-amber-200 px-1.5 py-0.5 rounded transition-colors"
-          >
-            ⚠ Customer Missing
-          </button>
-        )}
+        <div className="flex items-center gap-1.5 mb-1">
+          <p className="text-[13.5px] font-bold text-gray-900 leading-snug truncate">{customerName}</p>
+          {order.customerMissing && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); if (onCustomerMissing) onCustomerMissing(); }}
+              className="text-amber-500 hover:bg-amber-50 rounded p-0.5 flex-shrink-0 transition-colors"
+              title="Customer Missing — click to resolve"
+            >
+              <AlertCircle size={14} />
+            </button>
+          )}
+        </div>
 
         {/* 3. OBD + area */}
         <div className="flex items-center gap-1 text-[11px] text-gray-400 mb-2.5">
+          {order.deliveryTypeName && (
+            <span
+              className={cn(
+                "w-[5px] h-[5px] rounded-full flex-shrink-0",
+                order.deliveryTypeName === "Local"       ? "bg-blue-600"
+                : order.deliveryTypeName === "Upcountry" ? "bg-orange-600"
+                : order.deliveryTypeName === "IGT"       ? "bg-teal-600"
+                : order.deliveryTypeName === "Cross Depot" ? "bg-rose-600"
+                : "bg-gray-300",
+              )}
+              title={order.deliveryTypeName}
+            />
+          )}
           <ObdCode code={order.obdNumber} />
           <span>·</span>
           <span>{areaName}</span>
@@ -693,7 +758,7 @@ function KanbanCard({ order, stage, onAssign, onCreateSplit, onRefresh, onMoveUp
         </div>
 
         {/* 4. Info grid */}
-        <div className="bg-[#f7f8fc] border border-[#e2e5f1] rounded-lg p-2.5 grid grid-cols-2 gap-x-4 gap-y-2">
+        <div className="bg-gray-50 border border-gray-200 rounded-lg p-2.5 grid grid-cols-2 gap-x-4 gap-y-2">
           {([
             { label: "SMU",           value: smu },
             { label: "SALES OFFICER", value: salesOfficerName },
@@ -704,34 +769,19 @@ function KanbanCard({ order, stage, onAssign, onCreateSplit, onRefresh, onMoveUp
               <div className="text-[9.5px] font-bold uppercase tracking-[.4px] text-gray-400 mb-0.5">
                 {cell.label}
               </div>
-              <div className="text-[12px] font-semibold text-gray-900">{cell.value}</div>
+              <div className="text-[12px] font-semibold text-gray-600">{cell.value}</div>
             </div>
           ))}
         </div>
 
-        {/* Split status indicator */}
-        {activeSplits.length > 0 && (
-          <div className="mt-2 mb-0 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 flex items-center justify-between">
-            <div className="flex items-center gap-1.5">
-              <div className="w-1.5 h-1.5 rounded-full bg-amber-500 flex-shrink-0" />
-              <span className="text-[11px] font-semibold text-amber-700">
-                {activeSplits.length} Split{activeSplits.length > 1 ? "s" : ""} Active
-              </span>
-            </div>
-            <span className="text-[11px] text-amber-600 font-medium">
-              {remainingQty > 0 ? `${remainingQty} remaining` : "Fully assigned"}
-            </span>
-          </div>
-        )}
-
         {/* 5. Bottom section — per stage */}
         {isPending && (
-          <div className="mt-2.5 pt-2.5 border-t border-[#e2e5f1]">
+          <div className="mt-2.5 pt-2.5 border-t border-gray-200">
             {hasSplits ? (
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); onCreateSplit(); }}
-                className="w-full flex items-center justify-center gap-2 bg-white border border-[#1a237e] text-[#1a237e] rounded-lg py-3 text-[12px] font-semibold hover:bg-[#e8eaf6] transition-colors"
+                className="w-full flex items-center justify-center gap-2 bg-white border border-gray-200 text-gray-700 rounded-lg py-3 text-[12px] font-semibold hover:bg-gray-50 hover:border-gray-300 transition-colors"
               >
                 <Scissors size={13} />
                 Create Split
@@ -740,7 +790,7 @@ function KanbanCard({ order, stage, onAssign, onCreateSplit, onRefresh, onMoveUp
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); onAssign(); }}
-                className="w-full flex items-center justify-center gap-2 bg-[#1a237e] text-white rounded-lg py-3 text-[12px] font-semibold hover:bg-[#1a237e]/90 transition-colors"
+                className="w-full flex items-center justify-center gap-2 bg-white border border-gray-200 text-gray-700 rounded-lg py-3 text-[12px] font-semibold hover:bg-gray-50 hover:border-gray-300 transition-colors"
               >
                 <UserPlus size={13} />
                 Assign
@@ -750,9 +800,9 @@ function KanbanCard({ order, stage, onAssign, onCreateSplit, onRefresh, onMoveUp
         )}
 
         {isAssigned && (
-          <div className="mt-2.5 pt-2.5 border-t border-[#e2e5f1]">
-            <div className="flex items-center gap-2.5 bg-[#f7f8fc] border border-[#e2e5f1] rounded-lg px-3 py-2">
-              <div className="w-7 h-7 rounded-full bg-[#1a237e] flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0">
+          <div className="mt-2.5 pt-2.5 border-t border-gray-200">
+            <div className="flex items-center gap-2.5 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+              <div className="w-7 h-7 rounded-full bg-gray-700 flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0">
                 {operatorInitials}
               </div>
               <span className="text-[12px] font-semibold text-gray-900 flex-1 truncate">
@@ -766,9 +816,9 @@ function KanbanCard({ order, stage, onAssign, onCreateSplit, onRefresh, onMoveUp
         )}
 
         {isInProgress && (
-          <div className="mt-2.5 pt-2.5 border-t border-[#e2e5f1]">
-            <div className="flex items-center gap-2.5 bg-[#f7f8fc] border border-[#e2e5f1] rounded-lg px-3 py-2">
-              <div className="w-7 h-7 rounded-full bg-[#378ADD] flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0">
+          <div className="mt-2.5 pt-2.5 border-t border-gray-200">
+            <div className="flex items-center gap-2.5 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+              <div className="w-7 h-7 rounded-full bg-gray-700 flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0">
                 {operatorInitials}
               </div>
               <span className="text-[12px] font-semibold text-gray-900 flex-1 truncate">
@@ -782,9 +832,9 @@ function KanbanCard({ order, stage, onAssign, onCreateSplit, onRefresh, onMoveUp
         )}
 
         {isDone && (
-          <div className="mt-2.5 pt-2.5 border-t border-[#e2e5f1]">
-            <div className="flex items-center gap-2.5 bg-[#f7f8fc] border border-[#e2e5f1] rounded-lg px-3 py-2">
-              <div className="w-7 h-7 rounded-full bg-[#639922] flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0">
+          <div className="mt-2.5 pt-2.5 border-t border-gray-200">
+            <div className="flex items-center gap-2.5 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+              <div className="w-7 h-7 rounded-full bg-green-600 flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0">
                 {operatorInitials}
               </div>
               <span className="text-[12px] font-semibold text-gray-900 flex-1 truncate">
@@ -794,7 +844,7 @@ function KanbanCard({ order, stage, onAssign, onCreateSplit, onRefresh, onMoveUp
                 {formatTime(assignment?.completedAt)}
               </span>
             </div>
-            <div className="mt-2 pt-2 border-t border-[#e2e5f1] flex items-center gap-2">
+            <div className="mt-2 pt-2 border-t border-gray-200 flex items-center gap-2">
               <span className="flex items-center gap-1 bg-green-50 border border-green-200 text-green-700 text-[10.5px] font-semibold px-2.5 py-1 rounded-full">
                 ✓ Tinting Done
               </span>
@@ -825,14 +875,6 @@ function KanbanCard({ order, stage, onAssign, onCreateSplit, onRefresh, onMoveUp
       </div>
     </div>
 
-    <SkuDetailsSheet
-      open={skuSheetOpen}
-      onClose={() => { setSkuSheetOpen(false); setMenuOpen(false); }}
-      obdNumber={order.obdNumber}
-      customerName={customerName}
-      lineItems={order.lineItems ?? []}
-      splits={order.splits ?? []}
-    />
     </>
   );
 }
@@ -918,10 +960,10 @@ function SplitDetailSheet({
         className="absolute inset-0 bg-black/40"
         onClick={onClose}
       />
-      <div className="relative bg-white h-full w-[420px] flex flex-col border-l border-[#e2e5f1] shadow-xl overflow-hidden">
+      <div className="relative bg-white h-full w-[420px] flex flex-col border-l border-gray-200 shadow-xl overflow-hidden">
 
         {/* Header */}
-        <div className="px-6 py-5 border-b border-[#e2e5f1] flex-shrink-0">
+        <div className="px-6 py-5 border-b border-gray-200 flex-shrink-0">
           <p className="text-[10px] font-bold uppercase tracking-[.6px] text-gray-400 mb-1">
             {currentSplit ? `SPLIT #${currentSplit.splitNumber} · ` : ""}{orderData?.obdNumber ?? "—"}
           </p>
@@ -942,10 +984,10 @@ function SplitDetailSheet({
                 <p className="text-[9.5px] font-bold uppercase tracking-[.6px] text-gray-400 mb-2">
                   ASSIGNED OPERATOR
                 </p>
-                <div className="flex items-center gap-2.5 bg-[#f7f8fc] border border-[#e2e5f1] rounded-lg px-3 py-2">
+                <div className="flex items-center gap-2.5 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
                   <div className={cn(
                     "w-7 h-7 rounded-full flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0",
-                    isDone ? "bg-[#639922]" : colStage === "tinting_in_progress" ? "bg-[#378ADD]" : "bg-[#1a237e]",
+                    isDone ? "bg-green-600" : colStage === "tinting_in_progress" ? "bg-gray-700" : "bg-gray-700",
                   )}>
                     {operatorInitials}
                   </div>
@@ -956,7 +998,7 @@ function SplitDetailSheet({
                   <button
                     type="button"
                     onClick={() => onReassign()}
-                    className="mt-2 w-full flex items-center justify-center gap-2 bg-white border border-[#1a237e] text-[#1a237e] rounded-lg py-2 text-[12px] font-semibold hover:bg-[#e8eaf6] transition-colors"
+                    className="mt-2 w-full flex items-center justify-center gap-2 bg-white border border-gray-200 text-gray-700 rounded-lg py-2 text-[12px] font-semibold hover:bg-gray-50 hover:border-gray-300 transition-colors"
                   >
                     <RefreshCw size={12} />
                     Re-assign
@@ -973,7 +1015,7 @@ function SplitDetailSheet({
                   {currentSplit.lineItems.map((li) => (
                     <div
                       key={li.rawLineItemId}
-                      className="bg-[#f7f8fc] border border-[#e2e5f1] rounded-lg px-3 py-2 text-[11px]"
+                      className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-[11px]"
                     >
                       <div className="flex items-center justify-between">
                         <span className="font-mono text-violet-600 flex-shrink-0">{li.rawLineItem.skuCodeRaw}</span>
@@ -1036,7 +1078,7 @@ function SplitDetailSheet({
                 </div>
               </div>
 
-              <div className="border-t border-[#e2e5f1]" />
+              <div className="border-t border-gray-200" />
 
               {/* — ALL SPLITS FOR THIS OBD — */}
               <div>
@@ -1053,7 +1095,7 @@ function SplitDetailSheet({
                         key={s.id}
                         className={cn(
                           "rounded-xl px-4 py-3 border",
-                          isCurrent ? "border-[#1a237e] bg-[#e8eaf6]" : "bg-[#f7f8fc] border-[#e2e5f1]",
+                          isCurrent ? "border-gray-900 bg-gray-50" : "bg-gray-50 border-gray-200",
                         )}
                       >
                         {/* Header row */}
@@ -1061,7 +1103,7 @@ function SplitDetailSheet({
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <span className="text-[12px] font-bold text-gray-800">Split #{s.splitNumber}</span>
                             {isCurrent && (
-                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-[#1a237e] text-white">current</span>
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-gray-700 text-white">current</span>
                             )}
                             <span className={cn(
                               "text-[10px] font-bold px-2 py-0.5 rounded-full border",
@@ -1097,7 +1139,7 @@ function SplitDetailSheet({
                         {/* Operator row */}
                         <div className="flex items-center justify-between mb-2">
                           <div className="flex items-center gap-2">
-                            <div className="w-5 h-5 rounded-full bg-[#1a237e] flex items-center justify-center text-white text-[9px] font-bold flex-shrink-0">
+                            <div className="w-5 h-5 rounded-full bg-gray-700 flex items-center justify-center text-white text-[9px] font-bold flex-shrink-0">
                               {opInitials}
                             </div>
                             <span className="text-[11.5px] font-medium text-gray-700">{opName}</span>
@@ -1126,7 +1168,7 @@ function SplitDetailSheet({
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-4 border-t border-[#e2e5f1] flex items-center justify-end gap-2 bg-white flex-shrink-0">
+        <div className="px-5 py-4 border-t border-gray-200 flex items-center justify-end gap-2 bg-white flex-shrink-0">
           {isAssigned && (
             <button
               type="button"
@@ -1139,7 +1181,7 @@ function SplitDetailSheet({
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 text-[12px] font-semibold text-gray-600 border border-[#e2e5f1] rounded-lg hover:bg-[#f7f8fc] transition-colors"
+            className="px-4 py-2 text-[12px] font-semibold text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
           >
             Close
           </button>
@@ -1154,21 +1196,21 @@ function SplitDetailSheet({
 // ── Split Kanban card ─────────────────────────────────────────────────────────
 
 function SplitKanbanCard({
-  split, colStage, onReassign, onCancel, onRefresh, onMoveUp, onMoveDown,
+  split, colStage, onReassign, onCancel, onRefresh, onMoveUp, onMoveDown, onViewDetail,
 }: {
-  split:      SplitCard;
-  colStage:   ColStage;
-  onReassign: () => void;
-  onCancel:   () => void;
-  onRefresh:  () => void;
-  onMoveUp:   () => void;
-  onMoveDown: () => void;
+  split:        SplitCard;
+  colStage:     ColStage;
+  onReassign:   () => void;
+  onCancel:     () => void;
+  onRefresh:    () => void;
+  onMoveUp:     () => void;
+  onMoveDown:   () => void;
+  onViewDetail: () => void;
 }) {
   const [menuOpen,       setMenuOpen]       = useState(false);
   const [popoverOpen,    setPopoverOpen]    = useState(false);
   const [popoverPos,     setPopoverPos]     = useState<{ top: number; right: number } | null>(null);
   const [isSaving,       setIsSaving]       = useState(false);
-  const [skuSheetOpen,   setSkuSheetOpen]   = useState(false);
   const [splitSheetOpen, setSplitSheetOpen] = useState(false);
   const menuRef       = useRef<HTMLDivElement>(null);
   const plusButtonRef = useRef<HTMLButtonElement>(null);
@@ -1234,18 +1276,10 @@ function SplitKanbanCard({
     <>
     <div
       className={cn(
-        "bg-white border border-[#e2e5f1] rounded-xl overflow-hidden shadow-sm",
-        "hover:shadow-md hover:border-[#cdd1e8] transition-all duration-150",
+        "bg-white border border-gray-200 rounded-lg overflow-hidden",
+        "hover:border-gray-300 transition-all duration-150",
       )}
     >
-      {/* Top accent bar */}
-      <div className={cn(
-        "h-[3px] w-full",
-        isDone       ? "bg-gradient-to-r from-green-600 to-green-400"
-        : isInProgress ? "bg-gradient-to-r from-blue-500 to-blue-300"
-        : "bg-gradient-to-r from-amber-400 to-amber-300",
-      )} />
-
       <div className="px-3.5 pt-3 pb-3">
         {/* Icons + badges */}
         <div className="mb-2">
@@ -1261,12 +1295,12 @@ function SplitKanbanCard({
               <Layers size={14} />
             </button>
 
-            {/* 👁 button — opens SKU sheet */}
+            {/* 👁 button — opens order detail panel */}
             <button
               type="button"
-              onClick={(e) => { e.stopPropagation(); setSkuSheetOpen(true); }}
+              onClick={(e) => { e.stopPropagation(); onViewDetail(); }}
               className="w-[26px] h-[26px] rounded-lg flex items-center justify-center text-gray-400 hover:text-violet-600 hover:bg-violet-50 transition-colors"
-              title="View SKU lines"
+              title="View order details"
             >
               <Eye size={14} />
             </button>
@@ -1288,7 +1322,7 @@ function SplitKanbanCard({
                 className={cn(
                   "w-[26px] h-[26px] rounded-lg flex items-center justify-center transition-colors",
                   popoverOpen
-                    ? "bg-[#1a237e] text-white"
+                    ? "bg-gray-700 text-white"
                     : "text-gray-400 hover:bg-gray-100",
                 )}
                 title="Set priority / dispatch status"
@@ -1321,7 +1355,7 @@ function SplitKanbanCard({
 
               {menuOpen && (
                 <div
-                  className="absolute right-0 top-8 z-50 bg-white border border-[#e2e5f1] rounded-xl shadow-lg py-1 min-w-[130px] max-w-[150px]"
+                  className="absolute right-0 top-8 z-50 bg-white border border-gray-200 rounded-xl shadow-lg py-1 min-w-[130px] max-w-[150px]"
                   onClick={(e) => e.stopPropagation()}
                 >
                   {split.status === "tint_assigned" ? (
@@ -1329,7 +1363,7 @@ function SplitKanbanCard({
                       <button
                         type="button"
                         onClick={() => { setMenuOpen(false); onMoveUp(); }}
-                        className="w-full flex items-center gap-2.5 px-3.5 py-2 text-[12px] text-gray-700 hover:bg-[#f7f8fc] transition-colors whitespace-nowrap"
+                        className="w-full flex items-center gap-2.5 px-3.5 py-2 text-[12px] text-gray-700 hover:bg-gray-50 transition-colors whitespace-nowrap"
                       >
                         <ChevronUp size={12} className="text-gray-400 flex-shrink-0" />
                         Move Up
@@ -1337,21 +1371,21 @@ function SplitKanbanCard({
                       <button
                         type="button"
                         onClick={() => { setMenuOpen(false); onMoveDown(); }}
-                        className="w-full flex items-center gap-2.5 px-3.5 py-2 text-[12px] text-gray-700 hover:bg-[#f7f8fc] transition-colors whitespace-nowrap"
+                        className="w-full flex items-center gap-2.5 px-3.5 py-2 text-[12px] text-gray-700 hover:bg-gray-50 transition-colors whitespace-nowrap"
                       >
                         <ChevronDown size={12} className="text-gray-400 flex-shrink-0" />
                         Move Down
                       </button>
-                      <div className="mx-3 border-t border-[#f0f1f8]" />
+                      <div className="mx-3 border-t border-gray-100" />
                       <button
                         type="button"
                         onClick={() => { setMenuOpen(false); onReassign(); }}
-                        className="w-full flex items-center gap-2.5 px-3.5 py-2 text-[12px] text-gray-700 hover:bg-[#f7f8fc] transition-colors whitespace-nowrap"
+                        className="w-full flex items-center gap-2.5 px-3.5 py-2 text-[12px] text-gray-700 hover:bg-gray-50 transition-colors whitespace-nowrap"
                       >
                         <RefreshCw size={12} className="text-gray-400 flex-shrink-0" />
                         Re-assign
                       </button>
-                      <div className="mx-3 border-t border-[#f0f1f8]" />
+                      <div className="mx-3 border-t border-gray-100" />
                       <button
                         type="button"
                         onClick={() => { setMenuOpen(false); onCancel(); }}
@@ -1381,7 +1415,15 @@ function SplitKanbanCard({
               <Scissors size={10} />
               Split #{split.splitNumber}
             </span>
-            <StatusBadge variant={isUrgent ? "urgent" : "normal"} size="sm" />
+            {isUrgent ? (
+              <span className="inline-flex items-center gap-1 text-[10.5px] font-semibold px-2 py-0.5 rounded-full border bg-red-50 border-red-200 text-red-600">
+                🚨 Urgent
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 text-[10.5px] font-semibold px-2 py-0.5 rounded-full border bg-gray-50 border-gray-200 text-gray-500">
+                ● Normal
+              </span>
+            )}
             <DispatchStatusBadge status={split.dispatchStatus} />
             {isDone && (
               <span className="inline-flex items-center gap-1 bg-green-50 text-green-700 border border-green-200 text-[11px] font-semibold px-2 py-0.5 rounded-full">
@@ -1396,6 +1438,19 @@ function SplitKanbanCard({
 
         {/* OBD row */}
         <div className="flex items-center gap-1 text-[11px] text-gray-400 mb-2.5">
+          {split.deliveryTypeName && (
+            <span
+              className={cn(
+                "w-[5px] h-[5px] rounded-full flex-shrink-0",
+                split.deliveryTypeName === "Local"         ? "bg-blue-600"
+                : split.deliveryTypeName === "Upcountry"   ? "bg-orange-600"
+                : split.deliveryTypeName === "IGT"         ? "bg-teal-600"
+                : split.deliveryTypeName === "Cross Depot" ? "bg-rose-600"
+                : "bg-gray-300",
+              )}
+              title={split.deliveryTypeName}
+            />
+          )}
           <ObdCode code={split.order.obdNumber} />
           {formatObdDateTime(split.obdEmailDate, split.obdEmailTime) && (
             <>
@@ -1406,7 +1461,7 @@ function SplitKanbanCard({
         </div>
 
         {/* Info grid */}
-        <div className="bg-[#f7f8fc] border border-[#e2e5f1] rounded-lg p-2.5 grid grid-cols-2 gap-x-4 gap-y-2">
+        <div className="bg-gray-50 border border-gray-200 rounded-lg p-2.5 grid grid-cols-2 gap-x-4 gap-y-2">
           {([
             { label: "SMU",           value: smu },
             { label: "SALES OFFICER", value: salesOfficerName },
@@ -1417,19 +1472,19 @@ function SplitKanbanCard({
               <div className="text-[9.5px] font-bold uppercase tracking-[.4px] text-gray-400 mb-0.5">
                 {cell.label}
               </div>
-              <div className="text-[12px] font-semibold text-gray-900">{cell.value}</div>
+              <div className="text-[12px] font-semibold text-gray-600">{cell.value}</div>
             </div>
           ))}
         </div>
 
         {/* Operator row */}
-        <div className="mt-3 pt-3 border-t border-[#e2e5f1]">
-          <div className="flex items-center gap-2.5 bg-[#f7f8fc] border border-[#e2e5f1] rounded-lg px-3 py-2">
+        <div className="mt-3 pt-3 border-t border-gray-200">
+          <div className="flex items-center gap-2.5 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
             <div className={cn(
               "w-7 h-7 rounded-full flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0",
-              isDone       ? "bg-[#639922]"
-              : isInProgress ? "bg-[#378ADD]"
-              : "bg-[#1a237e]",
+              isDone       ? "bg-green-600"
+              : isInProgress ? "bg-gray-700"
+              : "bg-gray-700",
             )}>
               {operatorInitials}
             </div>
@@ -1444,7 +1499,7 @@ function SplitKanbanCard({
 
         {/* Two-badge status trail — Completed column only */}
         {isDone && (
-          <div className="mt-2 pt-2 border-t border-[#e2e5f1] flex items-center gap-2">
+          <div className="mt-2 pt-2 border-t border-gray-200 flex items-center gap-2">
             <span className="flex items-center gap-1 bg-green-50 border border-green-200 text-green-700 text-[10.5px] font-semibold px-2.5 py-1 rounded-full">
               <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
                 <path d="M2 5l2 2 4-4" stroke="currentColor" strokeWidth="1.5"
@@ -1482,22 +1537,6 @@ function SplitKanbanCard({
       </div>
     </div>
 
-    <SkuDetailsSheet
-      open={skuSheetOpen}
-      onClose={() => setSkuSheetOpen(false)}
-      obdNumber={split.order.obdNumber}
-      customerName={customerName}
-      lineItems={split.lineItems.map((li) => ({
-        id:                li.rawLineItemId,
-        skuCodeRaw:        li.rawLineItem.skuCodeRaw,
-        skuDescriptionRaw: li.rawLineItem.skuDescriptionRaw ?? null,
-        unitQty:           li.assignedQty,
-        volumeLine:        li.rawLineItem.volumeLine ?? null,
-        isTinting:         li.rawLineItem.isTinting ?? true,
-      }))}
-      splits={[]}
-    />
-
     <SplitDetailSheet
       open={splitSheetOpen}
       onClose={() => setSplitSheetOpen(false)}
@@ -1522,14 +1561,16 @@ export function TintManagerContent() {
   const [isLoading, setIsLoading] = useState(true);
   const [now,       setNow]       = useState<Date>(() => new Date());
 
-  const [slotFilter,         setSlotFilter]         = useState<"all" | "10:30" | "12:30" | "15:30">("all");
+  const [slotFilter,         setSlotFilter]         = useState<"all" | number>("all");
   const [priorityFilter,     setPriorityFilter]     = useState<"all" | "urgent" | "normal">("all");
-  const [dispatchFilter,     setDispatchFilter]     = useState<"all" | "dispatch" | "hold" | "waiting_for_confirmation">("all");
+  const [delTypeFilter,      setDelTypeFilter]      = useState<Set<string>>(new Set());
+  const [slotSummary,        setSlotSummary]        = useState<SlotSummaryItem[]>([]);
   const [typeFilter,         setTypeFilter]         = useState<"all" | "split" | "whole">("all");
   const [searchQuery,        setSearchQuery]        = useState("");
   const [searchDropdownOpen, setSearchDropdownOpen] = useState(false);
   const [workloadBarOpen,    setWorkloadBarOpen]    = useState(false);
   const [operatorFilter,     setOperatorFilter]     = useState("");
+  const [filterDropdownOpen, setFilterDropdownOpen] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
 
   const [selectedOrder,   setSelectedOrder]   = useState<TintOrder | null>(null);
@@ -1550,8 +1591,6 @@ export function TintManagerContent() {
   const [isSplitReassigning,       setIsSplitReassigning]       = useState(false);
   const [splitReassignError,       setSplitReassignError]       = useState<string | null>(null);
 
-  const [showColStrip, setShowColStrip] = useState(false);
-
   const [viewMode, setViewMode] = useState<"card" | "table">(() => {
     if (typeof window !== "undefined") {
       return (sessionStorage.getItem("tm_view_mode") as "card" | "table") ?? "card";
@@ -1570,8 +1609,7 @@ export function TintManagerContent() {
   } | null>(null);
   const [tablePopoverSaving, setTablePopoverSaving] = useState(false);
 
-  const [tableSkuOrder, setTableSkuOrder] = useState<TintOrder | null>(null);
-  const [tableSkuOpen,  setTableSkuOpen]  = useState(false);
+  const [detailOrderId, setDetailOrderId] = useState<number | null>(null);
 
   const [missingSheetOpen,  setMissingSheetOpen]  = useState(false);
   const [missingSheetOrder, setMissingSheetOrder] = useState<TintOrder | null>(null);
@@ -1588,14 +1626,6 @@ export function TintManagerContent() {
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 60_000);
     return () => clearInterval(id);
-  }, []);
-
-  useEffect(() => {
-    function handleScroll() {
-      setShowColStrip(window.scrollY > 180);
-    }
-    window.addEventListener("scroll", handleScroll, { passive: true });
-    return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
   useEffect(() => {
@@ -1618,11 +1648,13 @@ export function TintManagerContent() {
         activeSplits:         SplitCard[];
         completedSplits:      SplitCard[];
         completedAssignments: CompletedAssignment[];
+        slotSummary:          SlotSummaryItem[];
       };
       setOrders(data.orders ?? []);
       setActiveSplits(data.activeSplits ?? []);
       setCompletedSplits(data.completedSplits ?? []);
       setCompletedAssignments(data.completedAssignments ?? []);
+      setSlotSummary(data.slotSummary ?? []);
     } catch {
       // leave stale
     }
@@ -1641,12 +1673,14 @@ export function TintManagerContent() {
           activeSplits:         SplitCard[];
           completedSplits:      SplitCard[];
           completedAssignments: CompletedAssignment[];
+          slotSummary:          SlotSummaryItem[];
         };
         const opsData    = (await opsRes.json())    as { operators: Operator[] };
         setOrders(ordersData.orders ?? []);
         setActiveSplits(ordersData.activeSplits ?? []);
         setCompletedSplits(ordersData.completedSplits ?? []);
         setCompletedAssignments(ordersData.completedAssignments ?? []);
+        setSlotSummary(ordersData.slotSummary ?? []);
         setOperators(opsData.operators ?? []);
       } finally {
         setIsLoading(false);
@@ -1658,10 +1692,10 @@ export function TintManagerContent() {
   // ── Client-side filtering ─────────────────────────────────────────────────
 
   const filteredOrders = (orders ?? []).filter((o) => {
-    if (slotFilter !== "all" && !(o.dispatchSlot ?? "").includes(slotFilter)) return false;
+    if (slotFilter !== "all" && o.slotId !== slotFilter) return false;
+    if (delTypeFilter.size > 0 && !delTypeFilter.has(o.deliveryTypeName ?? "")) return false;
     if (priorityFilter === "urgent" && !(o.priorityLevel <= 2)) return false;
     if (priorityFilter === "normal" && !(o.priorityLevel > 2)) return false;
-    if (dispatchFilter !== "all" && o.dispatchStatus !== dispatchFilter) return false;
     if (typeFilter === "whole") {
       const hasSplits = (o.splits ?? []).some((s) =>
         ["tint_assigned", "tinting_in_progress"].includes(s.status)
@@ -1675,8 +1709,15 @@ export function TintManagerContent() {
       if (!hasSplits) return false;
     }
     if (operatorFilter) {
-      const opName = o.tintAssignments[0]?.assignedTo.name ?? "";
-      if (opName !== operatorFilter) return false;
+      if (o.workflowStage === "pending_tint_assignment") {
+        const hasSplitByOp = (o.splits ?? []).some(
+          (s) => s.assignedTo?.name === operatorFilter && ["tint_assigned", "tinting_in_progress"].includes(s.status)
+        );
+        if (!hasSplitByOp) return false;
+      } else {
+        const opName = o.tintAssignments[0]?.assignedTo.name ?? "";
+        if (opName !== operatorFilter) return false;
+      }
     }
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
@@ -1690,10 +1731,11 @@ export function TintManagerContent() {
   });
 
   const filteredActiveSplits = activeSplits.filter((s) => {
+    if (slotFilter !== "all" && s.slotId !== slotFilter) return false;
+    if (delTypeFilter.size > 0 && !delTypeFilter.has(s.deliveryTypeName ?? "")) return false;
     const pl = s.priorityLevel ?? 5;
     if (priorityFilter === "urgent" && !(pl <= 2)) return false;
     if (priorityFilter === "normal" && !(pl > 2)) return false;
-    if (dispatchFilter !== "all" && s.dispatchStatus !== dispatchFilter) return false;
     if (typeFilter === "whole") return false;
     if (operatorFilter && (s.assignedTo.name ?? "") !== operatorFilter) return false;
     if (searchQuery) {
@@ -1707,10 +1749,11 @@ export function TintManagerContent() {
   });
 
   const filteredCompletedSplits = completedSplits.filter((s) => {
+    if (slotFilter !== "all" && s.slotId !== slotFilter) return false;
+    if (delTypeFilter.size > 0 && !delTypeFilter.has(s.deliveryTypeName ?? "")) return false;
     const pl = s.priorityLevel ?? 5;
     if (priorityFilter === "urgent" && !(pl <= 2)) return false;
     if (priorityFilter === "normal" && !(pl > 2)) return false;
-    if (dispatchFilter !== "all" && s.dispatchStatus !== dispatchFilter) return false;
     if (typeFilter === "whole") return false;
     if (operatorFilter && (s.assignedTo.name ?? "") !== operatorFilter) return false;
     if (searchQuery) {
@@ -1817,7 +1860,7 @@ export function TintManagerContent() {
   function clearAllFilters() {
     setSlotFilter("all");
     setPriorityFilter("all");
-    setDispatchFilter("all");
+    setDelTypeFilter(new Set());
     setTypeFilter("all");
     setSearchQuery("");
     setOperatorFilter("");
@@ -1960,13 +2003,6 @@ export function TintManagerContent() {
 
   // ── Pre-render computations ────────────────────────────────────────────────
 
-  const slotCounts: Record<"all" | "10:30" | "12:30" | "15:30", number> = {
-    "all":   orders.length,
-    "10:30": orders.filter((o) => (o.dispatchSlot ?? "").includes("10:30")).length,
-    "12:30": orders.filter((o) => (o.dispatchSlot ?? "").includes("12:30")).length,
-    "15:30": orders.filter((o) => (o.dispatchSlot ?? "").includes("15:30")).length,
-  };
-
   const operatorWorkload = (() => {
     const map = new Map<string, { assigned: number; inProgress: number; done: number }>();
     for (const s of activeSplits) {
@@ -2024,12 +2060,12 @@ export function TintManagerContent() {
   })();
 
   const hasActiveFilters =
-    slotFilter !== "all" || priorityFilter !== "all" || dispatchFilter !== "all" ||
+    slotFilter !== "all" || priorityFilter !== "all" || delTypeFilter.size > 0 ||
     typeFilter !== "all" || operatorFilter !== "" || searchQuery !== "";
   const activeParts: string[] = [];
-  if (slotFilter !== "all")     activeParts.push(slotFilter);
+  if (slotFilter !== "all")     activeParts.push(String(slotFilter));
   if (priorityFilter !== "all") activeParts.push(priorityFilter);
-  if (dispatchFilter !== "all") activeParts.push(dispatchFilter.replace(/_/g, " "));
+  if (delTypeFilter.size > 0)   activeParts.push(Array.from(delTypeFilter).join(", "));
   if (typeFilter !== "all")     activeParts.push(typeFilter);
   if (operatorFilter)           activeParts.push(operatorFilter);
   if (searchQuery)              activeParts.push(`"${searchQuery}"`);
@@ -2038,13 +2074,13 @@ export function TintManagerContent() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-[#f8f9fa]">
-        <div className="h-[52px] bg-white border-b border-[#e2e5f1]" />
+      <div className="min-h-screen bg-white">
+        <div className="h-[52px] bg-white border-b border-gray-200" />
         <div className="px-6 pb-6 mt-4">
           <div className="grid grid-cols-4 gap-4">
             {[0, 1, 2, 3].map((i) => (
-              <div key={i} className="bg-[#f7f8fc] border border-[#e2e5f1] rounded-[14px] overflow-hidden">
-                <div className="bg-white border-b border-[#e2e5f1] px-4 py-3">
+              <div key={i} className="bg-gray-50 border border-gray-200 rounded-[14px] overflow-hidden">
+                <div className="bg-white border-b border-gray-200 px-4 py-3">
                   <div className="h-4 bg-gray-100 rounded animate-pulse w-24" />
                 </div>
                 <div className="p-3 flex flex-col gap-2">
@@ -2075,50 +2111,31 @@ export function TintManagerContent() {
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-[#f8f9fa]">
+    <div className="min-h-screen bg-white">
 
       {/* ── Topbar ───────────────────────────────────────────────────────── */}
-      <div className="h-[52px] bg-white border-b border-[#e2e5f1] px-6 flex items-center sticky top-0 z-40">
-        <div className="flex items-center flex-1">
-          <h1 className="text-[17px] font-extrabold text-gray-900">Tint Manager</h1>
-          <span className="bg-[#f7f8fc] border border-[#e2e5f1] text-[12px] text-gray-400 font-semibold px-2.5 py-0.5 rounded-full ml-2">
-            {orders.length} tint orders
-          </span>
-        </div>
-        <div className="flex items-center gap-3">
-          {/* View toggle */}
-          <div className="flex items-center bg-[#f7f8fc] border border-[#e2e5f1] rounded-lg p-0.5">
-            <button
-              type="button"
-              onClick={() => { setViewMode("card"); sessionStorage.setItem("tm_view_mode", "card"); }}
-              className={cn(
-                "flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors",
-                viewMode === "card"
-                  ? "bg-white text-[#1a237e] shadow-sm border border-[#e2e5f1]"
-                  : "text-gray-400 hover:text-gray-600",
-              )}
-            >
-              <LayoutGrid size={12} />
-              Cards
-            </button>
-            <button
-              type="button"
-              onClick={() => { setViewMode("table"); sessionStorage.setItem("tm_view_mode", "table"); }}
-              className={cn(
-                "flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors",
-                viewMode === "table"
-                  ? "bg-white text-[#1a237e] shadow-sm border border-[#e2e5f1]"
-                  : "text-gray-400 hover:text-gray-600",
-              )}
-            >
-              <TableIcon size={12} />
-              Table
-            </button>
+      <div className="h-[42px] bg-white border-b border-gray-200 px-5 flex items-center sticky top-0 z-40">
+        {/* Left: title + stats */}
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          <h1 className="text-[14px] font-semibold text-gray-900 flex-shrink-0">Tint Manager</h1>
+          <div className="flex items-center gap-2.5 text-[11px] text-gray-400 flex-shrink-0">
+            <span><span className="text-gray-900 font-semibold">{pendingCount}</span> Pending</span>
+            <span><span className="text-gray-900 font-semibold">{assignedCount}</span> Assigned</span>
+            <span><span className="text-gray-900 font-semibold">{inProgressCount}</span> In Progress</span>
+            <span><span className="text-gray-900 font-semibold">{doneCount}</span> Done</span>
+            <span className="text-gray-200">|</span>
+            <span><span className="text-gray-600 font-medium">{formatVolume(pendingVolume + assignedVolume + inProgressVolume + doneVolume)}</span></span>
+            <span className="text-gray-200">&middot;</span>
+            <span><span className="text-gray-600 font-medium">{orders.length}</span> OBDs</span>
           </div>
-          {/* Search bar */}
+        </div>
+
+        {/* Right: search + view toggle + clock */}
+        <div className="flex items-center gap-3 flex-shrink-0">
+          {/* Search */}
           <div ref={searchRef} className="relative">
             <div className="relative flex items-center">
-              <Search size={13} className="absolute left-2.5 text-gray-400 pointer-events-none" />
+              <Search size={12} className="absolute left-2 text-gray-300 pointer-events-none" />
               <input
                 type="text"
                 value={searchQuery}
@@ -2127,347 +2144,320 @@ export function TintManagerContent() {
                   setSearchDropdownOpen(e.target.value.length > 0);
                 }}
                 onFocus={() => { if (searchQuery) setSearchDropdownOpen(true); }}
-                placeholder="Search OBD, customer, SKU…"
-                className="w-[220px] focus:w-[260px] transition-all duration-200 pl-8 pr-7 py-1.5 text-[12px] bg-[#f7f8fc] border border-[#e2e5f1] rounded-lg focus:outline-none focus:border-[#1a237e] focus:bg-white placeholder:text-gray-400 text-gray-800"
+                placeholder="Search..."
+                className="w-[140px] focus:w-[200px] transition-all duration-200 pl-7 pr-7 py-1 text-[11px] border border-gray-200 rounded-md focus:outline-none focus:border-gray-400 placeholder:text-gray-300 text-gray-700"
               />
               {searchQuery && (
                 <button
                   type="button"
                   onClick={() => { setSearchQuery(""); setSearchDropdownOpen(false); }}
-                  className="absolute right-2 text-gray-400 hover:text-gray-600 transition-colors"
+                  className="absolute right-2 text-gray-300 hover:text-gray-500 transition-colors"
                 >
-                  <X size={12} />
+                  <X size={10} />
                 </button>
               )}
             </div>
             {searchDropdownOpen && suggestions.length > 0 && (
-              <div className="absolute top-full mt-1 right-0 w-[280px] bg-white border border-[#e2e5f1] rounded-xl shadow-lg py-1 z-50">
+              <div className="absolute top-full mt-1 right-0 w-[240px] bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-50">
                 {suggestions.map((s, i) => (
                   <button
                     key={i}
                     type="button"
                     onClick={() => { setSearchQuery(s.value); setSearchDropdownOpen(false); }}
-                    className="w-full flex items-center gap-2.5 px-3.5 py-2 text-left hover:bg-[#f7f8fc] transition-colors"
+                    className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-gray-50 transition-colors"
                   >
                     <span className={cn(
-                      "text-[9.5px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wide flex-shrink-0",
-                      s.tag === "OBD"      ? "bg-indigo-50 text-indigo-600"
+                      "text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wide flex-shrink-0",
+                      s.tag === "OBD" ? "bg-gray-100 text-gray-600"
                       : s.tag === "Customer" ? "bg-amber-50 text-amber-600"
                       : "bg-green-50 text-green-600",
                     )}>
                       {s.tag}
                     </span>
-                    <span className="text-[12px] text-gray-800 truncate">{s.value}</span>
+                    <span className="text-[11px] text-gray-700 truncate">{s.value}</span>
                   </button>
                 ))}
               </div>
             )}
           </div>
-          <span className="font-mono text-[12px] text-gray-400" suppressHydrationWarning>
+
+          {/* View toggle */}
+          <div className="flex items-center border border-gray-200 rounded-md overflow-hidden">
+            <button
+              type="button"
+              onClick={() => { setViewMode("card"); sessionStorage.setItem("tm_view_mode", "card"); }}
+              className={cn(
+                "flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium transition-colors",
+                viewMode === "card" ? "bg-gray-50 text-gray-900" : "text-gray-400 hover:text-gray-600",
+              )}
+            >
+              <LayoutGrid size={11} />
+              Cards
+            </button>
+            <button
+              type="button"
+              onClick={() => { setViewMode("table"); sessionStorage.setItem("tm_view_mode", "table"); }}
+              className={cn(
+                "flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium border-l border-gray-200 transition-colors",
+                viewMode === "table" ? "bg-gray-50 text-gray-900" : "text-gray-400 hover:text-gray-600",
+              )}
+            >
+              <TableIcon size={11} />
+              Table
+            </button>
+          </div>
+
+          <span className="text-[11px] text-gray-400" suppressHydrationWarning>
             {formatNow(now)}
           </span>
         </div>
       </div>
 
-      {/* ── Filter row ───────────────────────────────────────────────────── */}
-      <div className="bg-white border-b border-[#e2e5f1] px-6 py-2.5 flex items-center gap-3 flex-wrap sticky top-[52px] z-40">
-        {/* SLOT group */}
-        <div className="flex items-center gap-1">
-          <span className="text-[10px] font-bold uppercase tracking-[.5px] text-gray-400 mr-1">Slot</span>
-          {(["all", "10:30", "12:30", "15:30"] as const).map((s) => (
-            <button
-              key={s}
-              type="button"
-              onClick={() => setSlotFilter(s)}
-              className={cn(
-                "text-[11px] font-medium px-2 py-0.5 rounded-md border transition-colors",
-                slotFilter === s
-                  ? "bg-[#1a237e] text-white border-[#1a237e]"
-                  : "bg-white text-gray-500 border-[#e2e5f1] hover:border-[#c5cae9] hover:text-gray-800",
-              )}
-            >
-              {s === "all" ? `All (${slotCounts.all})` : `${s} (${slotCounts[s]})`}
-            </button>
-          ))}
-        </div>
-
-        <div className="w-px h-4 bg-[#e2e5f1] flex-shrink-0" />
-
-        {/* PRIORITY group */}
-        <div className="flex items-center gap-1">
-          <span className="text-[10px] font-bold uppercase tracking-[.5px] text-gray-400 mr-1">Priority</span>
-          {(["all", "urgent", "normal"] as const).map((p) => (
-            <button
-              key={p}
-              type="button"
-              onClick={() => setPriorityFilter(p)}
-              className={cn(
-                "text-[11px] font-medium px-2 py-0.5 rounded-md border transition-colors",
-                priorityFilter === p
-                  ? p === "urgent"
-                    ? "bg-red-500 text-white border-red-500"
-                    : "bg-[#1a237e] text-white border-[#1a237e]"
-                  : "bg-white text-gray-500 border-[#e2e5f1] hover:border-[#c5cae9] hover:text-gray-800",
-              )}
-            >
-              {p === "all" ? "All" : p.charAt(0).toUpperCase() + p.slice(1)}
-            </button>
-          ))}
-        </div>
-
-        <div className="w-px h-4 bg-[#e2e5f1] flex-shrink-0" />
-
-        {/* DISPATCH group */}
-        <div className="flex items-center gap-1">
-          <span className="text-[10px] font-bold uppercase tracking-[.5px] text-gray-400 mr-1">Dispatch</span>
-          {(["all", "dispatch", "hold", "waiting_for_confirmation"] as const).map((d) => (
-            <button
-              key={d}
-              type="button"
-              onClick={() => setDispatchFilter(d)}
-              className={cn(
-                "text-[11px] font-medium px-2 py-0.5 rounded-md border transition-colors",
-                dispatchFilter === d
-                  ? "bg-[#1a237e] text-white border-[#1a237e]"
-                  : "bg-white text-gray-500 border-[#e2e5f1] hover:border-[#c5cae9] hover:text-gray-800",
-              )}
-            >
-              {d === "all" ? "All" : d === "waiting_for_confirmation" ? "Waiting" : d.charAt(0).toUpperCase() + d.slice(1)}
-            </button>
-          ))}
-        </div>
-
-        <div className="w-px h-4 bg-[#e2e5f1] flex-shrink-0" />
-
-        {/* TYPE group */}
-        <div className="flex items-center gap-1">
-          <span className="text-[10px] font-bold uppercase tracking-[.5px] text-gray-400 mr-1">Type</span>
-          {(["all", "split", "whole"] as const).map((t) => (
-            <button
-              key={t}
-              type="button"
-              onClick={() => setTypeFilter(t)}
-              className={cn(
-                "text-[11px] font-medium px-2 py-0.5 rounded-md border transition-colors",
-                typeFilter === t
-                  ? "bg-[#1a237e] text-white border-[#1a237e]"
-                  : "bg-white text-gray-500 border-[#e2e5f1] hover:border-[#c5cae9] hover:text-gray-800",
-              )}
-            >
-              {t === "all" ? "All" : t.charAt(0).toUpperCase() + t.slice(1)}
-            </button>
-          ))}
-        </div>
-
-        {/* Active filter summary pill */}
-        {hasActiveFilters && (
-          <button
-            type="button"
-            onClick={clearAllFilters}
-            className="flex items-center gap-1 bg-[#e8eaf6] border border-[#c5cae9] text-[#3C3489] text-[11px] font-semibold px-2.5 py-0.5 rounded-full hover:bg-[#d0d4f0] transition-colors"
-          >
-            {activeParts.join(" · ")}
-            <X size={10} className="ml-0.5" />
-          </button>
-        )}
-
-        {/* Operator dropdown */}
-        <select
-          value={operatorFilter}
-          onChange={(e) => setOperatorFilter(e.target.value)}
-          className="ml-auto bg-white border border-[#cdd1e8] rounded-lg px-3 py-1.5 text-[12px] text-gray-500 focus:outline-none focus:border-[#1a237e]"
-        >
-          <option value="">Operator: All</option>
-          {operators.map((op) => (
-            <option key={op.id} value={op.name ?? ""}>
-              {op.name ?? `Operator ${op.id}`}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {/* ── Operator workload bar ─────────────────────────────────────────── */}
-      <div className="bg-white border-b border-[#e2e5f1]">
-        <button
-          type="button"
-          onClick={() => setWorkloadBarOpen((v) => !v)}
-          className="w-full flex items-center gap-2 px-6 py-2 hover:bg-[#f7f8fc] transition-colors text-left"
-        >
-          <span className="text-[11px] font-bold uppercase tracking-[.5px] text-gray-500">
-            Operator Workload
-          </span>
-          {workloadBarOpen
-            ? <ChevronUp size={13} className="text-gray-400 ml-1" />
-            : <ChevronDown size={13} className="text-gray-400 ml-1" />
-          }
-        </button>
-        {workloadBarOpen && operatorWorkload.length > 0 && (
-          <div className="px-6 pb-3 flex items-center gap-2 flex-wrap">
-            {operatorWorkload.map((op) => (
+      {/* ── Row 2: Slots + Filter + Workload ─────────────────────────── */}
+      <div className="bg-white border-b border-gray-200 px-5 py-1.5 flex items-center gap-2 sticky top-[42px] z-[39]">
+        {/* Slot pills */}
+        <div className="flex items-center gap-2 flex-1 overflow-x-auto">
+          {slotSummary.map((slot) => {
+            const closed = isSlotClosed(slot.slotTime, slot.isNextDay);
+            const isActive = slotFilter === slot.id;
+            const isDone = slot.tintPendingCount === 0;
+            return (
               <button
-                key={op.name}
+                key={slot.id}
                 type="button"
-                onClick={() => setOperatorFilter(operatorFilter === op.name ? "" : op.name)}
+                onClick={() => setSlotFilter(isActive ? "all" : slot.id)}
                 className={cn(
-                  "flex items-center gap-2 px-3 py-1.5 rounded-xl border transition-all",
-                  operatorFilter === op.name
-                    ? "bg-[#e8eaf6] border-[#1a237e]"
-                    : "bg-[#f7f8fc] border-[#e2e5f1] hover:border-[#c5cae9]",
+                  "inline-flex items-center gap-1 px-2.5 py-0.5 border rounded-md text-xs whitespace-nowrap h-7 flex-shrink-0 transition-colors",
+                  closed && !isActive && "bg-gray-50 border-gray-100 text-gray-400",
+                  isActive && "border-gray-900 text-gray-900 font-medium",
+                  !closed && !isActive && "bg-white border-gray-200 text-gray-500 hover:border-gray-300",
                 )}
               >
-                <div className="w-6 h-6 rounded-full bg-[#1a237e] text-white text-[10px] font-bold flex items-center justify-center flex-shrink-0">
-                  {initials(op.name)}
-                </div>
-                <span className="text-[12px] font-semibold text-gray-800">{op.name}</span>
-                <div className="flex items-center gap-1">
-                  {op.assigned > 0 && (
-                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
-                      {op.assigned} assigned
-                    </span>
-                  )}
-                  {op.inProgress > 0 && (
-                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
-                      {op.inProgress} in progress
-                    </span>
-                  )}
-                  {op.done > 0 && (
-                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-green-50 text-green-700 border border-green-200">
-                      {op.done} done
-                    </span>
-                  )}
-                </div>
+                {isDone && !isActive && (
+                  <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                  </svg>
+                )}
+                {slot.name}
+                {isActive && slot.tintPendingCount > 0 && (
+                  <span className="text-[10px] text-gray-400 ml-0.5">{slot.tintPendingCount} pending</span>
+                )}
+                {!isActive && !isDone && slot.tintPendingCount > 0 && (
+                  <span className="text-[10px] text-gray-400 ml-0.5">{slot.tintPendingCount}</span>
+                )}
               </button>
-            ))}
-          </div>
-        )}
-        {workloadBarOpen && operatorWorkload.length === 0 && (
-          <div className="px-6 pb-3 text-[12px] text-gray-400 italic">No operators with active work.</div>
-        )}
-      </div>
-
-      {/* ── Stat bar ─────────────────────────────────────────────────────── */}
-      <div className="px-3 py-2.5 grid grid-cols-4 gap-3">
-        {([
-          {
-            count:     pendingCount,
-            label:     "PENDING",
-            sub:       "unassigned",
-            volume:    formatVolume(pendingVolume),
-            iconBg:    "bg-orange-50",
-            iconColor: "text-orange-500",
-            icon: <Clock size={16} />,
-          },
-          {
-            count:     assignedCount,
-            label:     "ASSIGNED",
-            sub:       "awaiting start",
-            volume:    formatVolume(assignedVolume),
-            iconBg:    "bg-green-50",
-            iconColor: "text-green-500",
-            icon: <CheckCircle2 size={16} />,
-          },
-          {
-            count:     inProgressCount,
-            label:     "IN PROGRESS",
-            sub:       "being tinted",
-            volume:    formatVolume(inProgressVolume),
-            iconBg:    "bg-amber-50",
-            iconColor: "text-amber-500",
-            icon: <Zap size={16} />,
-          },
-          {
-            count:     doneCount,
-            label:     "COMPLETED",
-            sub:       "tinting done",
-            volume:    formatVolume(doneVolume),
-            iconBg:    "bg-purple-50",
-            iconColor: "text-purple-500",
-            icon: <Gift size={16} />,
-          },
-        ] as const).map((card) => (
-          <div
-            key={card.label}
-            className="bg-white border border-[#e2e5f1] rounded-xl flex items-center gap-[10px] px-[14px] py-[10px]"
-          >
-            <div
-              className={cn(
-                "w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0",
-                card.iconBg,
-                card.iconColor,
-              )}
-            >
-              {card.icon}
-            </div>
-            <div>
-              <div className="flex items-baseline gap-2">
-                <span className="text-[20px] font-extrabold text-gray-900 leading-none">
-                  {card.count}
-                </span>
-                <span className="text-[10px] font-bold uppercase tracking-[.4px] text-gray-500">
-                  {card.label}
-                </span>
-              </div>
-              <div className="text-[11px] text-gray-400 mt-1">
-                {card.volume}&nbsp; ·&nbsp; {card.sub}
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* ── Column reference strip ────────────────────────────────────────── */}
-      <div
-        className={cn(
-          "sticky top-[96px] z-30 bg-[#f0f2f8]",
-          "transition-opacity duration-300 ease-in-out",
-          showColStrip
-            ? "opacity-100 pointer-events-auto"
-            : "opacity-0 pointer-events-none h-0 overflow-hidden",
-        )}
-      >
-        <div className="grid grid-cols-4 px-3 gap-2">
-          {COLUMNS.map((col) => {
-            const count =
-              col.stage === "pending_tint_assignment"
-                ? filteredOrders.filter(o =>
-                    o.workflowStage === "pending_tint_assignment" ||
-                    ((o.workflowStage === "tint_assigned" || o.workflowStage === "tinting_in_progress") &&
-                     (o.remainingQty ?? 0) > 0)
-                  ).length
-                : col.stage === "tint_assigned"
-                ? filteredOrders.filter(o => o.workflowStage === "tint_assigned" && (o.remainingQty ?? 0) === 0).length
-                  + activeSplits.filter(s => s.status === "tint_assigned").length
-                : col.stage === "tinting_in_progress"
-                ? filteredOrders.filter(o => o.workflowStage === "tinting_in_progress" && (o.remainingQty ?? 0) === 0).length
-                  + activeSplits.filter(s => s.status === "tinting_in_progress").length
-                : completedSplits.length
-                  + filteredOrders.filter(o => o.workflowStage === "pending_support").length;
-            return (
-              <div
-                key={col.stage}
-                className="bg-white flex items-center gap-2 px-4 py-3 border-b border-[#e2e5f1]"
-              >
-                <div className={cn("w-2 h-2 rounded-full flex-shrink-0", col.dot)} />
-                <span className="text-[13px] font-bold text-gray-900 flex-1">
-                  {col.label}
-                </span>
-                <span className={cn(
-                  "text-[11px] font-bold px-2 py-0.5 rounded-full",
-                  col.pillClass,
-                )}>
-                  {count}
-                </span>
-              </div>
             );
           })}
+        </div>
+
+        {/* Right side: Filter dropdown + Workload dropdown */}
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {/* Filter dropdown */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setFilterDropdownOpen((v) => !v)}
+              className={cn(
+                "inline-flex items-center gap-1.5 px-3 py-1 border rounded-md text-[11px] font-medium transition-colors h-7",
+                hasActiveFilters
+                  ? "border-gray-900 text-gray-900"
+                  : "border-gray-200 text-gray-500 hover:border-gray-300",
+              )}
+            >
+              <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+                <path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z" />
+              </svg>
+              Filter
+              {hasActiveFilters && (
+                <span className="text-[9px] font-bold bg-gray-900 text-white px-1.5 py-0.5 rounded-full">
+                  {(delTypeFilter.size > 0 ? 1 : 0) + (priorityFilter !== "all" ? 1 : 0) + (typeFilter !== "all" ? 1 : 0) + (operatorFilter ? 1 : 0)}
+                </span>
+              )}
+            </button>
+
+            {filterDropdownOpen && (
+              <>
+                {/* Backdrop */}
+                <div className="fixed inset-0 z-40" onClick={() => setFilterDropdownOpen(false)} />
+                {/* Panel */}
+                <div className="absolute right-0 top-full mt-1 w-[260px] bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-3 px-4">
+                  {/* Del Type */}
+                  <div className="mb-3">
+                    <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1.5">Delivery Type</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {(["Local", "Upcountry", "IGT", "Cross Depot"] as const).map((dt) => {
+                        const isActive = delTypeFilter.has(dt);
+                        const label = dt === "Upcountry" ? "UPC" : dt === "Cross Depot" ? "Cross" : dt;
+                        return (
+                          <button
+                            key={dt}
+                            type="button"
+                            onClick={() => {
+                              setDelTypeFilter((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(dt)) next.delete(dt); else next.add(dt);
+                                return next;
+                              });
+                            }}
+                            className={cn(
+                              "px-2.5 py-1 text-[11px] font-medium border rounded-md transition-colors",
+                              isActive ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-500 border-gray-200 hover:border-gray-300",
+                            )}
+                          >
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Priority */}
+                  <div className="mb-3">
+                    <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1.5">Priority</p>
+                    <div className="flex gap-1.5">
+                      {(["urgent", "normal"] as const).map((p) => {
+                        const isActive = priorityFilter === p;
+                        return (
+                          <button
+                            key={p}
+                            type="button"
+                            onClick={() => setPriorityFilter(isActive ? "all" : p)}
+                            className={cn(
+                              "px-2.5 py-1 text-[11px] font-medium border rounded-md transition-colors",
+                              isActive ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-500 border-gray-200 hover:border-gray-300",
+                            )}
+                          >
+                            {p === "urgent" ? "Urgent" : "Normal"}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Type */}
+                  <div className="mb-3">
+                    <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1.5">Type</p>
+                    <div className="flex gap-1.5">
+                      {(["split", "whole"] as const).map((t) => {
+                        const isActive = typeFilter === t;
+                        return (
+                          <button
+                            key={t}
+                            type="button"
+                            onClick={() => setTypeFilter(isActive ? "all" : t)}
+                            className={cn(
+                              "px-2.5 py-1 text-[11px] font-medium border rounded-md transition-colors",
+                              isActive ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-500 border-gray-200 hover:border-gray-300",
+                            )}
+                          >
+                            {t === "split" ? "Split" : "Whole"}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Operator */}
+                  <div className="mb-3">
+                    <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1.5">Operator</p>
+                    <select
+                      value={operatorFilter}
+                      onChange={(e) => setOperatorFilter(e.target.value)}
+                      className="w-full px-2.5 py-1.5 text-[11px] border border-gray-200 rounded-md text-gray-600 focus:outline-none focus:border-gray-400 bg-white"
+                    >
+                      <option value="">All Operators</option>
+                      {operators.map((op) => (
+                        <option key={op.id} value={op.name ?? ""}>
+                          {op.name ?? `Operator ${op.id}`}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Clear */}
+                  {hasActiveFilters && (
+                    <button
+                      type="button"
+                      onClick={() => { clearAllFilters(); setFilterDropdownOpen(false); }}
+                      className="w-full text-center text-[11px] font-medium text-gray-400 hover:text-gray-600 py-1 transition-colors"
+                    >
+                      Clear all filters
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Workload dropdown */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setWorkloadBarOpen((v) => !v)}
+              className={cn(
+                "inline-flex items-center gap-1.5 px-3 py-1 border rounded-md text-[11px] font-medium transition-colors h-7",
+                workloadBarOpen
+                  ? "border-gray-900 text-gray-900"
+                  : "border-gray-200 text-gray-500 hover:border-gray-300",
+              )}
+            >
+              <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+                <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4-4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 00-3-3.87" /><path d="M16 3.13a4 4 0 010 7.75" />
+              </svg>
+              Workload
+            </button>
+
+            {workloadBarOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setWorkloadBarOpen(false)} />
+                <div className="absolute right-0 top-full mt-1 w-[300px] bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-3 px-4">
+                  {operatorWorkload.length === 0 ? (
+                    <p className="text-[11px] text-gray-400 italic py-2">No operators with active work.</p>
+                  ) : (
+                    <div className="flex flex-col gap-2">
+                      {operatorWorkload.map((op) => (
+                        <div
+                          key={op.name}
+                          className="flex items-center gap-2 p-2 rounded-lg border border-gray-100 hover:border-gray-200 transition-colors"
+                        >
+                          <div className="w-6 h-6 rounded-full bg-gray-700 text-white text-[9px] font-bold flex items-center justify-center flex-shrink-0">
+                            {op.name.split(" ").map((w: string) => w[0]).join("").toUpperCase().slice(0, 2)}
+                          </div>
+                          <span className="text-[11px] font-medium text-gray-700 flex-1">{op.name}</span>
+                          <div className="flex items-center gap-1">
+                            {op.assigned > 0 && (
+                              <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700">{op.assigned}</span>
+                            )}
+                            {op.inProgress > 0 && (
+                              <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700">{op.inProgress}</span>
+                            )}
+                            {op.done > 0 && (
+                              <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-green-50 text-green-700">{op.done}</span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
       {/* ── Kanban board ─────────────────────────────────────────────────── */}
       {viewMode === "card" && (
       <div className="px-3 pb-6">
-        <div className="grid grid-cols-4 gap-2">
+        <div className="grid grid-cols-4 gap-2 mt-2">
           {COLUMNS.map((col) => {
+            const volumeByStage: Record<string, number> = {
+              pending_tint_assignment: pendingVolume,
+              tint_assigned:           assignedVolume,
+              tinting_in_progress:     inProgressVolume,
+              completed:               doneVolume,
+            };
+            const colVolume = volumeByStage[col.stage] ?? 0;
             const isPendingCol = col.stage === "pending_tint_assignment";
 
             const colOrderItems: TintOrder[] = col.stage === "pending_tint_assignment"
@@ -2567,6 +2557,13 @@ export function TintManagerContent() {
                       smu:                a.smu,
                       obdEmailDate:       a.obdEmailDate,
                       obdEmailTime:       a.obdEmailTime,
+                      slotId:             a.slotId,
+                      slotName:           a.slotName,
+                      slotTime:           a.slotTime,
+                      slotIsNextDay:      a.slotIsNextDay,
+                      originalSlotId:     a.originalSlotId,
+                      originalSlotName:   a.originalSlotName,
+                      deliveryTypeName:   a.deliveryTypeName,
                       customer:           a.order.customer ?? null,
                       querySnapshot:      a.order.querySnapshot ?? null,
                       tintAssignments: [{
@@ -2599,14 +2596,17 @@ export function TintManagerContent() {
             return (
               <div
                 key={col.stage}
-                className="bg-[#f7f8fc] border border-[#e2e5f1] rounded-[12px] overflow-hidden"
+                className="bg-gray-50 border border-gray-200 rounded-lg overflow-hidden"
               >
                 {/* Column header */}
-                <div className="bg-white border-b border-[#e2e5f1] px-4 py-3 flex items-center gap-2">
+                <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-2">
                   <div className={cn("w-2 h-2 rounded-full flex-shrink-0", col.dot)} />
                   <span className="text-[13px] font-bold text-gray-900 flex-1">{col.label}</span>
                   <span className={cn("text-[11px] font-bold px-2 py-0.5 rounded-full", col.pillClass)}>
                     {itemCount}
+                  </span>
+                  <span className="text-[11px] text-gray-400 font-medium">
+                    {colVolume > 0 ? `${Math.round(colVolume).toLocaleString()} L` : "— L"}
                   </span>
                 </div>
 
@@ -2632,6 +2632,7 @@ export function TintManagerContent() {
                           onRefresh={() => { void fetchOrders(); }}
                           onMoveUp={() => handleReorder("order", item.data.id, "up")}
                           onMoveDown={() => handleReorder("order", item.data.id, "down")}
+                          onViewDetail={() => setDetailOrderId(item.data.id)}
                           onCustomerMissing={() => { setMissingSheetOrder(item.data); setMissingSheetOpen(true); }}
                         />
                       ) : (
@@ -2644,6 +2645,7 @@ export function TintManagerContent() {
                           onRefresh={() => { void fetchOrders(); }}
                           onMoveUp={() => handleReorder("split", item.data.id, "up")}
                           onMoveDown={() => handleReorder("split", item.data.id, "down")}
+                          onViewDetail={() => setDetailOrderId(item.data.order.id)}
                         />
                       )
                     )
@@ -2695,7 +2697,7 @@ export function TintManagerContent() {
           filteredActiveSplits={filteredActiveSplits}
           filteredCompletedSplits={filteredCompletedSplits}
           completedAssignments={completedAssignments}
-          onOrderClick={(order) => { setTableSkuOrder(order); setTableSkuOpen(true); }}
+          onOrderClick={(order) => setDetailOrderId(order.id)}
           onSplitClick={(split) => {
             const colStage: ColStage = split.status === "tint_assigned"
               ? "tint_assigned"
@@ -2735,8 +2737,8 @@ export function TintManagerContent() {
             className="absolute inset-0 bg-black/40"
             onClick={() => setSplitReassignOpen(false)}
           />
-          <div className="relative bg-white rounded-[14px] shadow-xl w-[400px] overflow-hidden border border-[#e2e5f1]">
-            <div className="px-5 pt-5 pb-4 border-b border-[#e2e5f1]">
+          <div className="relative bg-white rounded-[14px] shadow-xl w-[400px] overflow-hidden border border-gray-200">
+            <div className="px-5 pt-5 pb-4 border-b border-gray-200">
               <p className="text-[15px] font-bold text-gray-900">Re-assign Split</p>
               <p className="text-[12px] text-gray-400 mt-1">
                 <ObdCode code={selectedSplitForReassign.order.obdNumber} />
@@ -2758,11 +2760,11 @@ export function TintManagerContent() {
                       className={cn(
                         "flex items-center gap-3 p-3.5 border-[1.5px] rounded-xl mb-2 cursor-pointer transition-all",
                         isSelected
-                          ? "border-[#1a237e] bg-[#e8eaf6]"
-                          : "border-[#e2e5f1] hover:border-[#c5cae9] hover:bg-[#f7f8fc]",
+                          ? "border-gray-900 bg-gray-50"
+                          : "border-gray-200 hover:border-gray-300 hover:bg-gray-50",
                       )}
                     >
-                      <div className="w-9 h-9 rounded-full bg-[#1a237e] text-white flex items-center justify-center text-[12px] font-bold flex-shrink-0">
+                      <div className="w-9 h-9 rounded-full bg-gray-700 text-white flex items-center justify-center text-[12px] font-bold flex-shrink-0">
                         {initials(op.name)}
                       </div>
                       <div className="flex-1 min-w-0">
@@ -2773,7 +2775,7 @@ export function TintManagerContent() {
                       </div>
                       <div
                         className={cn(
-                          "w-5 h-5 rounded-full bg-[#1a237e] text-white flex items-center justify-center text-[10px] transition-opacity flex-shrink-0",
+                          "w-5 h-5 rounded-full bg-gray-700 text-white flex items-center justify-center text-[10px] transition-opacity flex-shrink-0",
                           isSelected ? "opacity-100" : "opacity-0",
                         )}
                       >
@@ -2795,11 +2797,11 @@ export function TintManagerContent() {
               </div>
             )}
 
-            <div className="px-5 pb-5 pt-3 border-t border-[#e2e5f1] flex justify-end gap-2">
+            <div className="px-5 pb-5 pt-3 border-t border-gray-200 flex justify-end gap-2">
               <button
                 type="button"
                 onClick={() => setSplitReassignOpen(false)}
-                className="text-[12.5px] font-semibold text-gray-600 border border-[#e2e5f1] bg-white hover:bg-gray-50 px-4 py-2 rounded-lg transition-colors"
+                className="text-[12.5px] font-semibold text-gray-600 border border-gray-200 bg-white hover:bg-gray-50 px-4 py-2 rounded-lg transition-colors"
               >
                 Cancel
               </button>
@@ -2807,7 +2809,7 @@ export function TintManagerContent() {
                 type="button"
                 onClick={handleSplitReassign}
                 disabled={!splitReassignedToId || isSplitReassigning}
-                className="text-[12.5px] font-semibold text-white bg-[#1a237e] hover:bg-[#283593] px-4 py-2 rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="text-[12.5px] font-semibold text-white bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isSplitReassigning && <Loader2 className="animate-spin" size={14} />}
                 Confirm Re-assign
@@ -2821,8 +2823,8 @@ export function TintManagerContent() {
       {assignModalOpen && selectedOrder && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/40" onClick={closeAssignModal} />
-          <div className="relative bg-white rounded-[14px] shadow-xl w-[400px] overflow-hidden border border-[#e2e5f1]">
-            <div className="px-5 pt-5 pb-4 border-b border-[#e2e5f1]">
+          <div className="relative bg-white rounded-[14px] shadow-xl w-[400px] overflow-hidden border border-gray-200">
+            <div className="px-5 pt-5 pb-4 border-b border-gray-200">
               <p className="text-[15px] font-bold text-gray-900">
                 {isReassign ? "Re-assign Operator" : "Assign Operator"}
               </p>
@@ -2849,11 +2851,11 @@ export function TintManagerContent() {
                           className={cn(
                             "flex items-center gap-3 p-3.5 border-[1.5px] rounded-xl mb-2 cursor-pointer transition-all",
                             isSelected
-                              ? "border-[#1a237e] bg-[#e8eaf6]"
-                              : "border-[#e2e5f1] hover:border-[#c5cae9] hover:bg-[#f7f8fc]",
+                              ? "border-gray-900 bg-gray-50"
+                              : "border-gray-200 hover:border-gray-300 hover:bg-gray-50",
                           )}
                         >
-                          <div className="w-9 h-9 rounded-full bg-[#1a237e] text-white flex items-center justify-center text-[12px] font-bold flex-shrink-0">
+                          <div className="w-9 h-9 rounded-full bg-gray-700 text-white flex items-center justify-center text-[12px] font-bold flex-shrink-0">
                             {initials(op.name)}
                           </div>
                           <div className="flex-1 min-w-0">
@@ -2864,7 +2866,7 @@ export function TintManagerContent() {
                           </div>
                           <div
                             className={cn(
-                              "w-5 h-5 rounded-full bg-[#1a237e] text-white flex items-center justify-center text-[10px] transition-opacity flex-shrink-0",
+                              "w-5 h-5 rounded-full bg-gray-700 text-white flex items-center justify-center text-[10px] transition-opacity flex-shrink-0",
                               isSelected ? "opacity-100" : "opacity-0",
                             )}
                           >
@@ -2885,7 +2887,7 @@ export function TintManagerContent() {
                     onChange={(e) => setNote(e.target.value)}
                     placeholder="Any tinting instructions…"
                     rows={2}
-                    className="w-full rounded-lg border border-[#cdd1e8] bg-white px-3 py-2 text-[12.5px] text-gray-800 placeholder:text-gray-400 focus:border-[#1a237e] focus:outline-none resize-none"
+                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-[12.5px] text-gray-800 placeholder:text-gray-400 focus:border-gray-700 focus:outline-none resize-none"
                   />
                 </div>
 
@@ -2899,11 +2901,11 @@ export function TintManagerContent() {
                   </div>
                 )}
 
-                <div className="px-5 pb-5 pt-3 border-t border-[#e2e5f1] flex justify-end gap-2">
+                <div className="px-5 pb-5 pt-3 border-t border-gray-200 flex justify-end gap-2">
                   <button
                     type="button"
                     onClick={closeAssignModal}
-                    className="text-[12.5px] font-semibold text-gray-600 border border-[#e2e5f1] bg-white hover:bg-gray-50 px-4 py-2 rounded-lg transition-colors"
+                    className="text-[12.5px] font-semibold text-gray-600 border border-gray-200 bg-white hover:bg-gray-50 px-4 py-2 rounded-lg transition-colors"
                   >
                     Cancel
                   </button>
@@ -2911,7 +2913,7 @@ export function TintManagerContent() {
                     type="button"
                     onClick={handleAssign}
                     disabled={!assignedToId || isAssigning}
-                    className="text-[12.5px] font-semibold text-white bg-[#1a237e] hover:bg-[#283593] px-4 py-2 rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="text-[12.5px] font-semibold text-white bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {isAssigning && <Loader2 className="animate-spin" size={14} />}
                     {isReassign ? "Confirm Re-assign" : "Assign Operator"}
@@ -2932,7 +2934,7 @@ export function TintManagerContent() {
                   <button
                     type="button"
                     onClick={closeAssignModal}
-                    className="text-[12.5px] font-semibold text-gray-600 border border-[#e2e5f1] bg-white hover:bg-gray-50 px-4 py-2 rounded-lg transition-colors"
+                    className="text-[12.5px] font-semibold text-gray-600 border border-gray-200 bg-white hover:bg-gray-50 px-4 py-2 rounded-lg transition-colors"
                   >
                     Close
                   </button>
@@ -2941,21 +2943,6 @@ export function TintManagerContent() {
             )}
           </div>
         </div>
-      )}
-
-      {/* ── Table view: SKU details sheet ─────────────────────────────────── */}
-      {tableSkuOrder && (
-        <SkuDetailsSheet
-          open={tableSkuOpen}
-          onClose={() => setTableSkuOpen(false)}
-          obdNumber={tableSkuOrder.obdNumber}
-          customerName={
-            tableSkuOrder.customer?.customerName ??
-            tableSkuOrder.shipToCustomerName ?? "—"
-          }
-          lineItems={tableSkuOrder.lineItems ?? []}
-          splits={tableSkuOrder.splits ?? []}
-        />
       )}
 
       {/* ── Table view: Split detail sheet ────────────────────────────────── */}
@@ -2991,6 +2978,12 @@ export function TintManagerContent() {
         shipToCustomerId={missingSheetOrder?.shipToCustomerId}
         shipToCustomerName={missingSheetOrder?.shipToCustomerName}
         onResolved={() => { setMissingSheetOpen(false); void fetchOrders(); }}
+      />
+
+      {/* ── Order Detail Panel ────────────────────────────────────────────── */}
+      <OrderDetailPanel
+        orderId={detailOrderId}
+        onClose={() => setDetailOrderId(null)}
       />
 
     </div>

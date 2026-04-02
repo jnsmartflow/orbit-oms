@@ -1,7 +1,7 @@
 # CLAUDE_CONTEXT.md — Orbit OMS
 # Load this file at the start of every Claude Code session.
-# Command: claude "Read CLAUDE_CONTEXT_v36.md fully before doing anything else."
-# Version: Phase 4 Support UI · Schema v21 · Context v36 · April 2026
+# Command: claude "Read CLAUDE_CONTEXT_v38.md fully before doing anything else."
+# Version: Phase 1 Go-Live · Schema v21 · Context v38 · April 2026
 
 ---
 
@@ -219,7 +219,7 @@ Planning is at ORDER level — all splits of one OBD go to same vehicle.
 
 ---
 
-## 36. Session Start Checklist (UPDATED v36)
+## 36. Session Start Checklist (UPDATED v37)
 
 Before generating any code, confirm:
 1. You have read this file fully
@@ -289,6 +289,8 @@ Before generating any code, confirm:
 65. **Operations sidebar (v36):** 5 links — Support, Tinting, Tint Operator, Dispatch, Warehouse
 66. **Operations API access (v36):** ROLES.OPERATIONS added to 38 API route files across all boards
 67. **Tint component ?? [] fixes (v36):** tint-manager-content.tsx + tint-operator-content.tsx all array assignments have ?? [] fallbacks
+68. **Go-Live (v37):** App live at orbitoms.in — Phase 1 users active (Tint Manager + Operators)
+69. **Go-Live (v37):** Route guard active — PHASE1_BLOCKED in middleware.ts blocks non-admin from support/planning/warehouse/operations
 
 ---
 
@@ -577,4 +579,89 @@ NOT included: app/api/admin/* routes (admin-only)
 
 ---
 
-*Version: Phase 4 Support UI · Schema v21 · Context v36 · April 2026*
+## 50. Production Go-Live (NEW v37)
+
+### Live URL
+https://orbitoms.in (SSL active, www redirect enabled)
+
+### Infrastructure
+- Domain: orbitoms.in (Namecheap)
+- Hosting: Vercel (Hobby plan, production branch = main)
+- DB: Supabase Pro (transaction pooler port 6543, ap-south-1)
+- Auth: NextAuth v5, NEXTAUTH_URL = https://www.orbitoms.in
+
+### Phase 1 Go-Live — Active Users
+| Name | Email | Role |
+|---|---|---|
+| Chandresh Kolgha | chandresh@orbitoms.in | Tint Manager |
+| Deepak Vasava | deepak@orbitoms.in | Tint Operator |
+| Chandrasing Valvi | chandrasing@orbitoms.in | Tint Operator |
+
+### Route Guard (middleware.ts)
+- PHASE1_BLOCKED: /support, /planning, /warehouse, /operations, /dispatcher
+- Non-admin users hitting these routes → /not-ready (auto sign-out)
+- To unlock a route for next phase: remove it from PHASE1_BLOCKED array
+
+### Code changes deployed in go-live
+- middleware.ts: Phase 1 route guard using auth() wrapper
+- app/not-ready/page.tsx: Static blocked page with auto sign-out on mount
+- app/api/health/route.ts: GET /api/health → {ok:true, timestamp}
+- next.config.mjs: Security headers (X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy)
+
+### Monitoring
+- Sentry: deferred (install blocked by OneDrive/Windows npm issue)
+- UptimeRobot: skipped for now
+- Manual monitoring: Vercel → Logs tab
+
+### Dev workflow going forward
+- Production branch: main (auto-deploys to orbitoms.in)
+- Development branch: dev
+- All work on dev → merge to main when ready to deploy
+
+---
+
+## 51. Infrastructure Setup Session (NEW v38 — April 2, 2026)
+
+This section documents the infrastructure work completed in the go-live setup session.
+
+### Domain
+- Registrar: Namecheap
+- Domain: orbitoms.in purchased April 2, 2026 (valid until April 1, 2027, auto-renew ON)
+- DNS records added in Namecheap Advanced DNS:
+  - A Record: `@` → `216.198.79.1` (Vercel IP)
+  - CNAME Record: `www` → `e6afa86d844b5dea.vercel-dns-017.com`
+- Both `orbitoms.in` and `www.orbitoms.in` verified in Vercel (Valid Configuration ✅)
+- SSL auto-provisioned by Vercel via Let's Encrypt
+- `orbitoms.in` redirects (307) to `www.orbitoms.in`
+
+### Supabase
+- Plan upgraded from Free to **Pro** ($25/month) — project will never pause
+- DB password reset — new password has NO special characters (avoids URL parsing issues)
+- Connection pooler confirmed: **Shared pooler, Transaction mode, port 6543**
+- Connection pool size: 15 (default for Nano compute)
+- Max client connections: 200
+
+### Vercel Environment Variables (as of this session)
+| Variable | Status | Notes |
+|---|---|---|
+| DATABASE_URL | Updated | Shared pooler URL, port 6543, new password |
+| DIRECT_URL | Added fresh | Port 5432, same password, for Prisma generate only |
+| NEXTAUTH_SECRET | Existing | Unchanged |
+| NEXTAUTH_URL | Updated | `https://www.orbitoms.in` |
+| IMPORT_HMAC_SECRET | Existing | Unchanged |
+
+**IMPORTANT — DB password rule:** Never use special characters (@, #, $, %) in the Supabase DB password. These break the PostgreSQL connection URL format. Use only letters and numbers.
+
+### Admin Account
+- Email: `admin@orbitoms.com`
+- Password changed to: `Admin@2026`
+- Hash regenerated via bcryptjs on local machine and updated directly in DB via Supabase SQL Editor
+- Hash prefix: `$2a$10$` (bcryptjs 10 rounds)
+
+### Pending Monitoring (deferred)
+- **Sentry:** Not yet installed. Blocked by OneDrive/Windows npm conflict on dev machine. Install when resolved: `npx @sentry/wizard@latest -i nextjs`
+- **UptimeRobot:** Not yet set up. Monitor `https://orbitoms.in/api/health` when ready. Free tier sufficient.
+
+---
+
+*Version: Phase 1 Go-Live · Schema v21 · Context v38 · April 2026*
