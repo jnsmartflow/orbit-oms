@@ -24,6 +24,11 @@ export default auth(function middleware(req) {
     return NextResponse.next();
   }
 
+  // Allow HMAC mail-order ingest
+  if (pathname === "/api/mail-orders/ingest" && req.headers.get("x-hmac-signature")) {
+    return NextResponse.next();
+  }
+
   // Phase 1 route guard
   if (PHASE1_BLOCKED.some((p) => pathname.startsWith(p))) {
     const role = req.auth?.user?.role;
