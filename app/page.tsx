@@ -11,6 +11,7 @@ const ROLE_REDIRECTS: Record<string, string> = {
   tint_operator: "/tint/operator",
   floor_supervisor: "/warehouse/supervisor",
   picker: "/warehouse/picker",
+  billing_operator: "/mail-orders",
 };
 
 export default async function Home() {

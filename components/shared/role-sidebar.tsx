@@ -6,7 +6,7 @@ import { signOut } from "next-auth/react";
 import { cn } from "@/lib/utils";
 import {
   ClipboardList, Layers, User, Zap, Upload,
-  Truck, Warehouse, Users, Package, MapPin, FileText, Palette, BarChart2, LayoutDashboard,
+  Truck, Warehouse, Users, Package, MapPin, FileText, Palette, BarChart2, LayoutDashboard, Mail,
 } from "lucide-react";
 import { useRoleSidebar } from "./role-sidebar-provider";
 import type { NavItemConfig } from "@/lib/permissions";
@@ -21,7 +21,8 @@ export type RoleSidebarRole =
   | "support_import"
   | "planning"
   | "warehouse"
-  | "operations";
+  | "operations"
+  | "billing_operator";
 
 export interface RoleSidebarProps {
   role:         RoleSidebarRole;
@@ -52,6 +53,7 @@ const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   delivery_challans:   FileText,
   shade_master:        Palette,
   ti_report:           BarChart2,
+  mail_orders:         Mail,
 };
 
 const DEFAULT_ICON = User;
@@ -65,6 +67,7 @@ const ROLE_LABELS: Record<RoleSidebarRole, string> = {
   planning:       "Planning Board",
   warehouse:      "Warehouse",
   operations:     "Operations",
+  billing_operator: "Billing Operator",
 };
 
 // ── Component ─────────────────────────────────────────────────────────────────

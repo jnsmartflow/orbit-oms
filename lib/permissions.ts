@@ -25,6 +25,7 @@ const PAGE_NAV_MAP: NavItemConfig[] = [
   { pageKey: "skus",          label: "SKUs",           href: "/admin/skus" },
   { pageKey: "routes_areas",  label: "Routes",         href: "/admin/routes" },
   { pageKey: "vehicles",      label: "Vehicles",        href: "/admin/vehicles" },
+  { pageKey: "mail_orders",  label: "Mail Orders",     href: "/mail-orders" },
 ];
 
 // Per-role href overrides: non-admin roles access shared pages via their own route group
@@ -85,7 +86,8 @@ export type PageKey =
   | "tint_operator"
   | "planning_board"
   | "dispatcher"
-  | "warehouse";
+  | "warehouse"
+  | "mail_orders";
 
 export type ActionKey =
   | "canView"
@@ -123,7 +125,7 @@ const ALL_PAGE_KEYS: PageKey[] = [
   "dashboard", "users", "system_config", "permissions",
   "customers", "skus", "routes_areas", "vehicles",
   "import_obd", "support_queue", "planning_board", "tint_manager", "tint_operator",
-  "dispatcher", "warehouse",
+  "dispatcher", "warehouse", "mail_orders",
 ];
 
 // ── Functions ─────────────────────────────────────────────────────────────────

@@ -10,7 +10,7 @@ function getInitials(name: string): string {
   return name.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2);
 }
 
-export default async function TintManagerLayout({
+export default async function MailOrdersLayout({
   children,
 }: {
   children: React.ReactNode;
@@ -18,29 +18,19 @@ export default async function TintManagerLayout({
   const session = await auth();
   if (!session?.user) redirect("/login");
   if (session.user.role !== "admin") {
-    const allowed = await checkPermission(session.user.role, "tint_manager", "canView");
+    const allowed = await checkPermission(session.user.role, "mail_orders", "canView");
     if (!allowed) redirect("/unauthorized");
   }
 
-  const allPerms = await getAllPermissionsForRole(session.user.role);
-  const navItems = [
-    ...buildNavItems(allPerms, session.user.role),
-    // Delivery Challans — always visible for TM; page has its own auth guard
-    { pageKey: "delivery_challans", label: "Delivery Challans", href: "/tint/manager/challan" },
-    // Shade Master — always visible for TM; page has its own auth guard
-    { pageKey: "shade_master", label: "Shade Master", href: "/tint/manager/shades" },
-    // TI Report — always visible for TM; page has its own auth guard
-    { pageKey: "ti_report", label: "TI Report", href: "/tint/manager/ti-report" },
-    // Mail Orders — visible for TM
-    { pageKey: "mail_orders", label: "Mail Orders", href: "/mail-orders" },
-  ];
+  const allPerms     = await getAllPermissionsForRole(session.user.role);
+  const navItems     = buildNavItems(allPerms, session.user.role);
   const userName     = session.user.name ?? "User";
   const userInitials = getInitials(userName);
 
   return (
     <RoleSidebarProvider>
       <RoleLayoutClient
-        role="tint_manager"
+        role="billing_operator"
         userName={userName}
         userInitials={userInitials}
         navItems={navItems}

@@ -11,6 +11,7 @@ export const ROLES = {
   OPERATIONS: "operations",
   FLOOR_SUPERVISOR: "floor_supervisor",
   PICKER: "picker",
+  BILLING_OPERATOR: "billing_operator",
 } as const;
 
 // ── Guards ─────────────────────────────────────────────────────────────────────
