@@ -38,10 +38,17 @@ export async function PATCH(
     return NextResponse.json({ error: "Order not found" }, { status: 404 });
   }
 
+  const userId = parseInt(session.user.id, 10);
+
   await prisma.mo_orders.update({
     where: { id },
-    data: { soNumber },
+    data: {
+      soNumber,
+      status: "punched",
+      punchedAt: new Date(),
+      punchedById: userId,
+    },
   });
 
-  return NextResponse.json({ success: true, soNumber });
+  return NextResponse.json({ success: true, soNumber, status: "punched" });
 }

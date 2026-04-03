@@ -404,15 +404,17 @@ function OrderRow({
 
         {/* Dispatch */}
         <td className={`px-2 align-middle text-center ${baseTdClass}`}>
-          <div className="flex items-center justify-center gap-1">
-            {order.dispatchStatus && order.dispatchStatus !== "Dispatch" && (
-              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-red-50 text-red-700 border border-red-200">
-                {order.dispatchStatus}
-              </span>
-            )}
-            {order.dispatchPriority && order.dispatchPriority !== "Normal" && (
-              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-red-50 text-red-700 border border-red-200">
-                {order.dispatchPriority}
+          <div className="flex flex-wrap justify-center gap-1">
+            <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border ${
+              order.dispatchStatus === "Hold"
+                ? "bg-red-50 text-red-700 border-red-200"
+                : "bg-green-50 text-green-700 border-green-200"
+            }`}>
+              {order.dispatchStatus || "Dispatch"}
+            </span>
+            {order.dispatchPriority === "Urgent" && (
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border bg-red-50 text-red-700 border-red-200">
+                Urgent
               </span>
             )}
           </div>
@@ -509,23 +511,8 @@ function OrderRow({
             <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-green-700 bg-green-50 border border-green-200 rounded-md px-2.5 h-[26px]">
               <Check size={9} /> Done
             </span>
-          ) : isFlagged ? (
-            <button
-              disabled
-              className="inline-flex items-center gap-1 border border-gray-100 rounded-md text-[11px] font-medium px-2.5 h-[28px] text-gray-300 cursor-not-allowed"
-            >
-              <Check size={10} /> Punched
-            </button>
           ) : (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onPunch(order.id);
-              }}
-              className="inline-flex items-center gap-1 border border-gray-200 rounded-md text-[11px] font-medium px-2.5 h-[28px] text-gray-600 hover:bg-gray-50 transition-colors"
-            >
-              <Check size={10} /> Punched
-            </button>
+            <span className="text-gray-300 text-[11px]">—</span>
           )}
         </td>
 

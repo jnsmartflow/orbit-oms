@@ -227,9 +227,14 @@ export default function MailOrdersPage() {
 
   const handleSaveSoNumber = useCallback(async (orderId: number, value: string) => {
     if (!/^\d{10}$/.test(value)) return false;
-    // Optimistic update
+    // Optimistic update — set soNumber + auto-punch
     setOrders((prev) =>
-      prev.map((o) => (o.id === orderId ? { ...o, soNumber: value } : o)),
+      prev.map((o) => (o.id === orderId ? {
+        ...o,
+        soNumber: value,
+        status: "punched" as const,
+        punchedAt: new Date().toISOString(),
+      } : o)),
     );
     try {
       await saveSoNumber(orderId, value);
