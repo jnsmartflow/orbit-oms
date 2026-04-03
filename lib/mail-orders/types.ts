@@ -28,6 +28,11 @@ export interface MoOrder {
   deliveryRemarks: string | null;
   remarks: string | null;
   billRemarks: string | null;
+  soNumber?: string | null;
+  dispatchStatus?: string | null;
+  dispatchPriority?: string | null;
+  shipToOverride?: boolean;
+  slotToOverride?: boolean;
   status: OrderStatus;
   punchedById: number | null;
   punchedAt: string | null;

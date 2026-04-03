@@ -527,6 +527,7 @@ model orders {
   priorityLevel       Int                       @default(3)
   dispatchStatus      String?
   invoiceNo           String?
+  soNumber            String?
   invoiceDate         DateTime?
   obdEmailDate        DateTime?
   smu                 String?
@@ -537,6 +538,9 @@ model orders {
   totalUnitQty        Int?
   grossWeight         Float?
   volume              Float?
+  remarks             String?
+  shipToOverride      Boolean                   @default(false)
+  slotToOverride      Boolean                   @default(false)
   customerMissing     Boolean                   @default(false)
   isActive            Boolean                   @default(true)
   sequenceOrder       Int                       @default(0)
@@ -980,6 +984,11 @@ model mo_orders {
   deliveryRemarks  String?
   remarks          String?
   billRemarks      String?
+  soNumber         String?
+  dispatchStatus   String?   @default("Dispatch")
+  dispatchPriority String?   @default("Normal")
+  shipToOverride   Boolean?  @default(false)
+  slotToOverride   Boolean?  @default(false)
   status           String    @default("pending")
   punchedById      Int?
   punchedBy        users?    @relation("MoOrderPunchedBy", fields: [punchedById], references: [id])

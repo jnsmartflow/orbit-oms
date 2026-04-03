@@ -37,6 +37,10 @@ interface IngestRequest {
   deliveryRemarks?: string;
   remarks?: string;
   billRemarks?: string;
+  dispatchStatus?: string;
+  dispatchPriority?: string;
+  shipToOverride?: boolean;
+  slotToOverride?: boolean;
   lines: Array<{
     rawText: string;
     packCode: string;
@@ -64,7 +68,9 @@ export async function POST(req: NextRequest) {
     }
 
     const { emailEntryId, soName, soEmail, receivedAt, subject,
-            deliveryRemarks, remarks, billRemarks, lines } = body;
+            deliveryRemarks, remarks, billRemarks,
+            dispatchStatus, dispatchPriority, shipToOverride, slotToOverride,
+            lines } = body;
 
     if (!emailEntryId || !soName || !receivedAt || !subject || !Array.isArray(lines)) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
@@ -116,6 +122,10 @@ export async function POST(req: NextRequest) {
         deliveryRemarks: deliveryRemarks ?? null,
         remarks: remarks ?? null,
         billRemarks: billRemarks ?? null,
+        dispatchStatus: dispatchStatus || "Dispatch",
+        dispatchPriority: dispatchPriority || "Normal",
+        shipToOverride: shipToOverride || false,
+        slotToOverride: slotToOverride || false,
         emailEntryId,
         status: "pending",
         totalLines: lines.length,

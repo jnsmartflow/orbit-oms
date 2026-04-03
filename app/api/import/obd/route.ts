@@ -40,6 +40,7 @@ interface RawHeaderRow {
   "Ship To Customer Name"?: unknown;
   "InvoiceNo"?:             unknown;
   "InvoiceDate"?:           unknown;
+  "SONum"?:                 unknown;
   [key: string]:            unknown;
 }
 
@@ -203,6 +204,56 @@ async function generateBatchRef(): Promise<string> {
   });
 
   return `BATCH-${dateStr}-${String(todayCount + 1).padStart(3, "0")}`;
+}
+
+// ── Mail-order enrichment hook ────────────────────────────────────────────────
+
+async function applyMailOrderEnrichment(soNumbers: (string | null)[]): Promise<void> {
+  const unique = Array.from(new Set(soNumbers.filter(Boolean))) as string[];
+  if (unique.length === 0) return;
+
+  for (const soNum of unique) {
+    const mailOrder = await prisma.mo_orders.findFirst({
+      where: { soNumber: soNum },
+      orderBy: { createdAt: "desc" },
+    });
+    if (!mailOrder) continue;
+
+    const updateData: Record<string, unknown> = {};
+
+    if (mailOrder.dispatchStatus) {
+      updateData.dispatchStatus = mailOrder.dispatchStatus;
+    }
+
+    if (mailOrder.dispatchPriority) {
+      updateData.priorityLevel = mailOrder.dispatchPriority === "Urgent" ? 1 : 3;
+    }
+
+    const remarkParts = [
+      mailOrder.deliveryRemarks,
+      mailOrder.remarks,
+      mailOrder.billRemarks,
+    ].filter(Boolean);
+    if (remarkParts.length > 0) {
+      updateData.remarks = remarkParts.join(" | ");
+    }
+
+    if (mailOrder.shipToOverride) {
+      updateData.shipToOverride = true;
+    }
+    if (mailOrder.slotToOverride) {
+      updateData.slotToOverride = true;
+    }
+
+    if (Object.keys(updateData).length === 0) continue;
+
+    await prisma.orders.updateMany({
+      where: { soNumber: soNum },
+      data: updateData,
+    });
+
+    console.log(`[mail-order-enrichment] Applied to soNumber=${soNum}`);
+  }
 }
 
 // ── PREVIEW handler ───────────────────────────────────────────────────────────
@@ -460,6 +511,7 @@ async function handlePreview(req: Request, session: Session): Promise<NextRespon
       shipToCustomerId:    shipToId,
       shipToCustomerName,
       invoiceNo:           toStr(hr["InvoiceNo"]) || null,
+      soNumber:            toStr(hr["SONum"]) || null,
       invoiceDate,
       rowStatus,
       rowError,
@@ -779,6 +831,7 @@ async function handleConfirm(req: Request, session: Session): Promise<NextRespon
         originalSlotId:      slotId,
         priorityLevel,
         invoiceNo:           summary.invoiceNo,
+        soNumber:            summary.soNumber,
         invoiceDate:         summary.invoiceDate,
         obdEmailDate:        emailDateTime,
         smu:                 summary.smu,
@@ -813,6 +866,9 @@ async function handleConfirm(req: Request, session: Session): Promise<NextRespon
       { status: 500 },
     );
   }
+
+  // ── STEP D1b — Mail-order enrichment hook ─────────────────────────────────
+  await applyMailOrderEnrichment(orderInterims.map((o) => o.orderData.soNumber ?? null));
 
   // ── STEP D2 — Fetch inserted order IDs ───────────────────────────────────
   const insertedOrders = await prisma.orders.findMany({
@@ -1206,6 +1262,7 @@ async function handleAutoImport(req: Request): Promise<NextResponse> {
       shipToCustomerId:    shipToId,
       shipToCustomerName,
       invoiceNo:           toStr(hr["InvoiceNo"]) || null,
+      soNumber:            toStr(hr["SONum"]) || null,
       invoiceDate,
       rowStatus,
       rowError,
@@ -1443,6 +1500,7 @@ async function handleAutoImport(req: Request): Promise<NextResponse> {
         originalSlotId:      slotId,
         priorityLevel,
         invoiceNo:           summary.invoiceNo,
+        soNumber:            summary.soNumber,
         invoiceDate:         summary.invoiceDate,
         obdEmailDate:        emailDateTime,
         smu:                 summary.smu,
@@ -1475,6 +1533,9 @@ async function handleAutoImport(req: Request): Promise<NextResponse> {
       { status: 500 },
     );
   }
+
+  // ── CONFIRM D1b — Mail-order enrichment hook ──────────────────────────────
+  await applyMailOrderEnrichment(autoOrderInterims.map((o) => o.orderData.soNumber ?? null));
 
   // ── CONFIRM D2 — Fetch inserted order IDs ─────────────────────────────────
   const insertedOrders = await prisma.orders.findMany({
