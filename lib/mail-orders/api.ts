@@ -1,4 +1,4 @@
-import type { MoOrdersResponse } from "./types";
+import type { MoOrdersResponse, CustomerSearchResult } from "./types";
 
 export function getTodayIST(): string {
   return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
@@ -49,6 +49,38 @@ export async function saveSoNumber(
     body: JSON.stringify({ soNumber }),
   });
   if (!res.ok) throw new Error("Failed to save SO number");
+  return res.json();
+}
+
+export async function searchCustomers(
+  query: string,
+): Promise<CustomerSearchResult[]> {
+  const res = await fetch(
+    `/api/mail-orders/customers/search?q=${encodeURIComponent(query)}`,
+  );
+  if (!res.ok) throw new Error(`Failed to search customers: ${res.status}`);
+  const data = await res.json();
+  return data.customers;
+}
+
+export async function saveCustomer(
+  orderId: number,
+  data: {
+    customerCode: string;
+    customerName: string;
+    saveKeyword?: boolean;
+    keyword?: string;
+    area?: string;
+    deliveryType?: string;
+    route?: string;
+  },
+): Promise<{ customerCode: string; customerName: string; customerMatchStatus: string }> {
+  const res = await fetch(`/api/mail-orders/${orderId}/customer`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error("Failed to save customer");
   return res.json();
 }
 

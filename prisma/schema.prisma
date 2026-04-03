@@ -988,8 +988,10 @@ model mo_orders {
   dispatchStatus   String?   @default("Dispatch")
   dispatchPriority String?   @default("Normal")
   shipToOverride   Boolean?  @default(false)
-  slotToOverride   Boolean?  @default(false)
-  status           String    @default("pending")
+  slotToOverride       Boolean?  @default(false)
+  customerMatchStatus  String?   @default("unmatched")
+  customerCandidates   String?
+  status               String    @default("pending")
   punchedById      Int?
   punchedBy        users?    @relation("MoOrderPunchedBy", fields: [punchedById], references: [id])
   punchedAt        DateTime?

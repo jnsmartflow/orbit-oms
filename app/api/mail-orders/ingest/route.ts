@@ -8,6 +8,7 @@ import {
   type BaseKeyword,
   type SkuEntry,
 } from "@/lib/mail-orders/enrich";
+import { extractCustomerFromSubject, matchCustomer } from "@/lib/mail-orders/customer-match";
 
 export const dynamic = "force-dynamic";
 
@@ -112,6 +113,14 @@ export async function POST(req: NextRequest) {
 
     const { byCombo: skuByCombo, byMaterial: skuByMaterial } = buildSkuMaps(skuEntries);
 
+    // 4b. Customer matching
+    const extractedCustomer = extractCustomerFromSubject(subject);
+    const customerMatch = await matchCustomer(extractedCustomer);
+    console.log(
+      `[Customer Match] "${extractedCustomer}" → ${customerMatch.customerMatchStatus}` +
+        (customerMatch.customerCode ? ` (${customerMatch.customerCode})` : ""),
+    );
+
     // 5. Create order
     const order = await prisma.mo_orders.create({
       data: {
@@ -119,6 +128,10 @@ export async function POST(req: NextRequest) {
         soEmail: soEmail ?? null,
         receivedAt: new Date(receivedAt),
         subject,
+        customerCode: customerMatch.customerCode,
+        customerName: customerMatch.customerName,
+        customerMatchStatus: customerMatch.customerMatchStatus,
+        customerCandidates: customerMatch.customerCandidates,
         deliveryRemarks: deliveryRemarks ?? null,
         remarks: remarks ?? null,
         billRemarks: billRemarks ?? null,

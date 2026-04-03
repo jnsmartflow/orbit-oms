@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Search, SlidersHorizontal, Keyboard } from "lucide-react";
-import { fetchMailOrders, punchOrder, saveSoNumber, getTodayIST } from "@/lib/mail-orders/api";
+import { fetchMailOrders, punchOrder, saveSoNumber, saveCustomer, getTodayIST } from "@/lib/mail-orders/api";
 import { getSlotFromTime, groupOrdersBySlot, buildClipboardText } from "@/lib/mail-orders/utils";
 import type { MoOrder, MoOrderLine } from "@/lib/mail-orders/types";
 import { MailOrdersTable } from "./mail-orders-table";
@@ -243,6 +243,25 @@ export default function MailOrdersPage() {
       const data = await fetchMailOrders(selectedDate);
       setOrders(data.orders);
       return false;
+    }
+  }, [selectedDate]);
+
+  const handleSaveCustomer = useCallback(async (
+    orderId: number,
+    data: { customerCode: string; customerName: string; saveKeyword?: boolean; keyword?: string; area?: string; deliveryType?: string; route?: string },
+  ) => {
+    setOrders((prev) =>
+      prev.map((o) =>
+        o.id === orderId
+          ? { ...o, customerCode: data.customerCode, customerName: data.customerName, customerMatchStatus: "exact" as const, customerCandidates: null }
+          : o,
+      ),
+    );
+    try {
+      await saveCustomer(orderId, data);
+    } catch {
+      const d = await fetchMailOrders(selectedDate);
+      setOrders(d.orders);
     }
   }, [selectedDate]);
 
@@ -548,6 +567,7 @@ export default function MailOrdersPage() {
             onPunch={handlePunch}
             onCopy={handleCopy}
             onSaveSoNumber={handleSaveSoNumber}
+            onSaveCustomer={handleSaveCustomer}
           />
         )}
       </div>

@@ -33,6 +33,8 @@ export interface MoOrder {
   dispatchPriority?: string | null;
   shipToOverride?: boolean;
   slotToOverride?: boolean;
+  customerMatchStatus?: "exact" | "multiple" | "unmatched" | null;
+  customerCandidates?: string | null;
   status: OrderStatus;
   punchedById: number | null;
   punchedAt: string | null;
@@ -42,6 +44,14 @@ export interface MoOrder {
   matchedLines: number;
   createdAt: string;
   lines: MoOrderLine[];
+}
+
+export interface CustomerSearchResult {
+  customerCode: string;
+  customerName: string;
+  area: string | null;
+  deliveryType: string | null;
+  route: string | null;
 }
 
 export interface MoOrdersResponse {

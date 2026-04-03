@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useRef } from "react";
-import { Check, Copy, ChevronDown, Pencil } from "lucide-react";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { Check, Copy, ChevronDown, Pencil, Search } from "lucide-react";
 import { formatTime } from "@/lib/mail-orders/utils";
-import type { MoOrder, MoOrderLine } from "@/lib/mail-orders/types";
+import { searchCustomers } from "@/lib/mail-orders/api";
+import type { MoOrder, MoOrderLine, CustomerSearchResult } from "@/lib/mail-orders/types";
 import { ResolveLinePanel } from "./resolve-line-panel";
 
 // ── Props ────────────────────────────────────────────────────────────────────
@@ -19,9 +20,10 @@ interface MailOrdersTableProps {
   onPunch: (id: number) => Promise<void>;
   onCopy: (id: number, lines: MoOrderLine[]) => void;
   onSaveSoNumber: (orderId: number, value: string) => Promise<boolean>;
+  onSaveCustomer: (orderId: number, data: { customerCode: string; customerName: string; saveKeyword?: boolean; keyword?: string; area?: string; deliveryType?: string; route?: string }) => Promise<void>;
 }
 
-// ─�� Slot dot colors ──────────────────────────────────────────────────────────
+// ── Slot dot colors ──────────────────────────────────────────────────────────
 
 const SLOT_DOTS: Record<string, string> = {
   Morning: "bg-amber-400",
@@ -30,7 +32,7 @@ const SLOT_DOTS: Record<string, string> = {
   Night: "bg-gray-400",
 };
 
-// ── Helpers ─────���──────────────────────────���─────────────────────────────────
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatReceivedDate(receivedAt: string): string {
   const d = new Date(receivedAt);
@@ -45,7 +47,7 @@ function formatReceivedDate(receivedAt: string): string {
   return `${day} ${mon} \u00b7 ${time}`;
 }
 
-// ── Component ────���──────────────────────────────────────��────────────────────
+// ── Component ────────────────────────────────────────────────────────────────
 
 export function MailOrdersTable({
   groupedOrders,
@@ -58,8 +60,10 @@ export function MailOrdersTable({
   onPunch,
   onCopy,
   onSaveSoNumber,
+  onSaveCustomer,
 }: MailOrdersTableProps) {
   const slotOrder = ["Morning", "Afternoon", "Evening", "Night"] as const;
+  const [openCodePopoverId, setOpenCodePopoverId] = useState<number | null>(null);
 
   return (
     <div className="border border-gray-200 rounded-lg overflow-hidden bg-white">
@@ -71,6 +75,7 @@ export function MailOrdersTable({
           <col style={{ width: 54 }} />
           <col style={{ width: 80 }} />
           <col style={{ width: 140 }} />
+          <col style={{ width: 90 }} />
           <col style={{ width: 60 }} />
           <col style={{ width: 110 }} />
           <col style={{ width: 70 }} />
@@ -98,8 +103,11 @@ export function MailOrdersTable({
             <th className="text-[10px] font-medium uppercase tracking-wider text-gray-400 text-left px-3.5">
               Remarks
             </th>
+            <th className="text-[10px] font-medium uppercase tracking-wider text-gray-400 text-left px-3.5">
+              Code
+            </th>
             <th className="text-[10px] font-medium uppercase tracking-wider text-gray-400 text-right px-3.5">
-              Copy
+              SKU
             </th>
             <th className="text-[10px] font-medium uppercase tracking-wider text-gray-400 text-left px-3.5">
               SO No.
@@ -140,6 +148,9 @@ export function MailOrdersTable({
                 onPunch={onPunch}
                 onCopy={onCopy}
                 onSaveSoNumber={onSaveSoNumber}
+                onSaveCustomer={onSaveCustomer}
+                openCodePopoverId={openCodePopoverId}
+                setOpenCodePopoverId={setOpenCodePopoverId}
               />
             );
           })}
@@ -149,7 +160,7 @@ export function MailOrdersTable({
   );
 }
 
-// ── Slot group ──────────────────────────────────────────────���────────────────
+// ── Slot group ───────────────────────────────────────────────────────────────
 
 function SlotGroup({
   slot,
@@ -165,6 +176,9 @@ function SlotGroup({
   onPunch,
   onCopy,
   onSaveSoNumber,
+  onSaveCustomer,
+  openCodePopoverId,
+  setOpenCodePopoverId,
 }: {
   slot: string;
   orders: MoOrder[];
@@ -179,6 +193,9 @@ function SlotGroup({
   onPunch: (id: number) => Promise<void>;
   onCopy: (id: number, lines: MoOrderLine[]) => void;
   onSaveSoNumber: (orderId: number, value: string) => Promise<boolean>;
+  onSaveCustomer: MailOrdersTableProps["onSaveCustomer"];
+  openCodePopoverId: number | null;
+  setOpenCodePopoverId: (id: number | null) => void;
 }) {
   const dotColor = SLOT_DOTS[slot] ?? "bg-gray-400";
 
@@ -187,7 +204,7 @@ function SlotGroup({
       {/* Section header */}
       <tr>
         <td
-          colSpan={11}
+          colSpan={12}
           className="h-[36px] bg-gray-50 border-t border-b border-gray-200 px-[18px]"
         >
           <div className="flex items-center justify-between h-full">
@@ -227,6 +244,9 @@ function SlotGroup({
             onPunch={onPunch}
             onCopy={onCopy}
             onSaveSoNumber={onSaveSoNumber}
+            onSaveCustomer={onSaveCustomer}
+            openCodePopoverId={openCodePopoverId}
+            setOpenCodePopoverId={setOpenCodePopoverId}
           />
         );
       })}
@@ -234,7 +254,192 @@ function SlotGroup({
   );
 }
 
-// ── Order row ────────────���───────────────────────────────────────────────────
+// ── Code Cell ────────────────────────────────────────────────────────────────
+
+function CodeCell({
+  order,
+  baseTdClass,
+  onSaveCustomer,
+  isOpen,
+  onToggle,
+}: {
+  order: MoOrder;
+  baseTdClass: string;
+  onSaveCustomer: MailOrdersTableProps["onSaveCustomer"];
+  isOpen: boolean;
+  onToggle: () => void;
+}) {
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const [codeCopied, setCodeCopied] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<CustomerSearchResult[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [searched, setSearched] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Close on outside click
+  useEffect(() => {
+    if (!isOpen) return;
+    function handleClick(e: MouseEvent) {
+      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
+        onToggle();
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [isOpen, onToggle]);
+
+  // Focus search input on open
+  useEffect(() => {
+    if (isOpen && order.customerMatchStatus !== "multiple") {
+      setTimeout(() => searchInputRef.current?.focus(), 50);
+    }
+  }, [isOpen, order.customerMatchStatus]);
+
+  // Debounced search
+  useEffect(() => {
+    if (!isOpen || order.customerMatchStatus === "exact") return;
+    if (searchQuery.length < 2) { setSearchResults([]); setSearched(false); return; }
+    const timer = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const results = await searchCustomers(searchQuery);
+        setSearchResults(results);
+        setSearched(true);
+      } catch { setSearchResults([]); }
+      setSearching(false);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery, isOpen, order.customerMatchStatus]);
+
+  function handleCopyCode() {
+    if (!order.customerCode) return;
+    navigator.clipboard.writeText(order.customerCode);
+    setCodeCopied(true);
+    setTimeout(() => setCodeCopied(false), 1500);
+  }
+
+  async function handlePickCandidate(c: { customerCode: string; customerName: string; area?: string | null; deliveryType?: string | null; route?: string | null }, fromSearch: boolean) {
+    const shouldSaveKeyword = fromSearch && searchQuery.length >= 3 && !/^\d+$/.test(searchQuery);
+    await onSaveCustomer(order.id, {
+      customerCode: c.customerCode,
+      customerName: c.customerName,
+      saveKeyword: shouldSaveKeyword,
+      keyword: shouldSaveKeyword ? searchQuery : undefined,
+      area: c.area ?? undefined,
+      deliveryType: c.deliveryType ?? undefined,
+      route: c.route ?? undefined,
+    });
+    onToggle();
+  }
+
+  const status = order.customerMatchStatus ?? "unmatched";
+
+  // STATE 1: Exact match
+  if (status === "exact" && order.customerCode) {
+    return (
+      <td className={`px-2 align-middle ${baseTdClass}`} onClick={(e) => e.stopPropagation()}>
+        <span
+          onClick={handleCopyCode}
+          className={`font-mono text-[11px] cursor-pointer rounded px-1.5 py-0.5 border transition-colors ${
+            codeCopied
+              ? "bg-teal-50 border-teal-200 text-teal-700"
+              : "text-gray-800 bg-gray-50 border-gray-200 hover:bg-gray-100 hover:border-gray-300"
+          }`}
+        >
+          {order.customerCode}
+        </span>
+      </td>
+    );
+  }
+
+  // STATE 2: Multiple matches
+  if (status === "multiple" && order.customerCandidates) {
+    let candidates: { code: string; name: string; area?: string | null; route?: string | null }[] = [];
+    try { candidates = JSON.parse(order.customerCandidates); } catch { /* empty */ }
+
+    return (
+      <td className={`px-2 align-middle relative ${baseTdClass}`} onClick={(e) => e.stopPropagation()}>
+        <span
+          onClick={onToggle}
+          className="text-[10px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 cursor-pointer hover:bg-amber-100"
+        >
+          {candidates.length} found
+        </span>
+        {isOpen && (
+          <div ref={popoverRef} className="absolute left-0 top-full mt-1 z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-2 w-[280px] max-h-[240px] overflow-y-auto">
+            {candidates.map((c) => (
+              <div
+                key={c.code}
+                onClick={() => handlePickCandidate({ customerCode: c.code, customerName: c.name, area: c.area, route: c.route }, false)}
+                className="flex items-start gap-2 px-2 py-1.5 rounded hover:bg-gray-50 cursor-pointer"
+              >
+                <span className="font-mono text-[11px] text-gray-800 flex-shrink-0">{c.code}</span>
+                <div className="min-w-0">
+                  <div className="text-[11px] text-gray-600 truncate">{c.name}</div>
+                  {(c.area || c.route) && (
+                    <div className="text-[10px] text-gray-400 truncate">
+                      {[c.area, c.route].filter(Boolean).join(" · ")}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </td>
+    );
+  }
+
+  // STATE 3: Unmatched
+  return (
+    <td className={`px-2 align-middle relative ${baseTdClass}`} onClick={(e) => e.stopPropagation()}>
+      <span
+        onClick={onToggle}
+        className="text-[10px] text-gray-400 cursor-pointer hover:text-gray-600 inline-flex items-center gap-0.5"
+      >
+        <Search size={9} /> Search
+      </span>
+      {isOpen && (
+        <div ref={popoverRef} className="absolute left-0 top-full mt-1 z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-3 w-[320px]">
+          <input
+            ref={searchInputRef}
+            type="text"
+            placeholder="Type customer name or code..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="text-[12px] h-[32px] px-2 border border-gray-200 rounded-md w-full focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10 focus:outline-none"
+          />
+          <div className="max-h-[180px] overflow-y-auto mt-2">
+            {searching && <p className="text-[11px] text-gray-400 px-1 py-2">Searching...</p>}
+            {!searching && searched && searchResults.length === 0 && (
+              <p className="text-[11px] text-gray-400 px-1 py-2">No customers found</p>
+            )}
+            {!searching && searchResults.map((c) => (
+              <div
+                key={c.customerCode}
+                onClick={() => handlePickCandidate(c, true)}
+                className="flex items-start gap-2 px-2 py-1.5 rounded hover:bg-gray-50 cursor-pointer"
+              >
+                <span className="font-mono text-[11px] text-gray-800 flex-shrink-0">{c.customerCode}</span>
+                <div className="min-w-0">
+                  <div className="text-[11px] text-gray-600 truncate">{c.customerName}</div>
+                  {(c.area || c.route) && (
+                    <div className="text-[10px] text-gray-400 truncate">
+                      {[c.area, c.route].filter(Boolean).join(" · ")}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </td>
+  );
+}
+
+// ── Order row ────────────────────────────────────────────────────────────────
 
 function OrderRow({
   order,
@@ -248,6 +453,9 @@ function OrderRow({
   onPunch,
   onCopy,
   onSaveSoNumber,
+  onSaveCustomer,
+  openCodePopoverId,
+  setOpenCodePopoverId,
 }: {
   order: MoOrder;
   isFlagged: boolean;
@@ -260,6 +468,9 @@ function OrderRow({
   onPunch: (id: number) => Promise<void>;
   onCopy: (id: number, lines: MoOrderLine[]) => void;
   onSaveSoNumber: (orderId: number, value: string) => Promise<boolean>;
+  onSaveCustomer: MailOrdersTableProps["onSaveCustomer"];
+  openCodePopoverId: number | null;
+  setOpenCodePopoverId: (id: number | null) => void;
 }) {
   const hasUnmatched = order.matchedLines < order.totalLines;
   const matchedCount = order.lines.filter((l) => l.matchStatus === "matched").length;
@@ -314,6 +525,10 @@ function OrderRow({
   } else {
     remarksContent = <span className="text-gray-300">—</span>;
   }
+
+  const handleCodeToggle = useCallback(() => {
+    setOpenCodePopoverId(openCodePopoverId === order.id ? null : order.id);
+  }, [openCodePopoverId, order.id, setOpenCodePopoverId]);
 
   return (
     <>
@@ -425,7 +640,16 @@ function OrderRow({
         {/* Remarks */}
         <td className={`px-3.5 align-middle ${baseTdClass}`}>{remarksContent}</td>
 
-        {/* Copy */}
+        {/* Code */}
+        <CodeCell
+          order={order}
+          baseTdClass={baseTdClass}
+          onSaveCustomer={onSaveCustomer}
+          isOpen={openCodePopoverId === order.id}
+          onToggle={handleCodeToggle}
+        />
+
+        {/* SKU */}
         <td className={`px-3.5 align-middle text-right ${baseTdClass}`}>
           <button
             disabled={isDisabled}
@@ -558,7 +782,7 @@ function ExpandRow({ order }: { order: MoOrder }) {
   return (
     <tr>
       <td
-        colSpan={11}
+        colSpan={12}
         style={{ padding: 0, background: "#fafafa", borderBottom: "1px solid #e5e7eb" }}
       >
         {/* Line items table */}
