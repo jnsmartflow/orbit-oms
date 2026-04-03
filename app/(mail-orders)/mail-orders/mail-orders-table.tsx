@@ -69,11 +69,11 @@ export function MailOrdersTable({
           <col style={{ width: 120 }} />
           <col style={{ width: 220 }} />
           <col style={{ width: 54 }} />
-          <col style={{ width: 140 }} />
           <col style={{ width: 80 }} />
-          <col style={{ width: 70 }} />
-          <col style={{ width: 110 }} />
+          <col style={{ width: 140 }} />
           <col style={{ width: 60 }} />
+          <col style={{ width: 110 }} />
+          <col style={{ width: 70 }} />
           <col style={{ width: 100 }} />
           <col style={{ width: 120 }} />
         </colgroup>
@@ -92,20 +92,20 @@ export function MailOrdersTable({
             <th className="text-[10px] font-medium uppercase tracking-wider text-gray-400 text-center px-3.5">
               Lines
             </th>
-            <th className="text-[10px] font-medium uppercase tracking-wider text-gray-400 text-left px-3.5">
-              Remarks
-            </th>
             <th className="text-[10px] font-medium uppercase tracking-wider text-gray-400 text-center px-3.5">
               Dispatch
             </th>
-            <th className="text-[10px] font-medium uppercase tracking-wider text-gray-400 text-center px-3.5">
-              OD/CI
+            <th className="text-[10px] font-medium uppercase tracking-wider text-gray-400 text-left px-3.5">
+              Remarks
+            </th>
+            <th className="text-[10px] font-medium uppercase tracking-wider text-gray-400 text-right px-3.5">
+              Copy
             </th>
             <th className="text-[10px] font-medium uppercase tracking-wider text-gray-400 text-left px-3.5">
               SO No.
             </th>
-            <th className="text-[10px] font-medium uppercase tracking-wider text-gray-400 text-right px-3.5">
-              Copy
+            <th className="text-[10px] font-medium uppercase tracking-wider text-gray-400 text-center px-3.5">
+              OD/CI
             </th>
             <th className="text-[10px] font-medium uppercase tracking-wider text-gray-400 text-right px-3.5">
               Status
@@ -399,9 +399,6 @@ function OrderRow({
           )}
         </td>
 
-        {/* Remarks */}
-        <td className={`px-3.5 align-middle ${baseTdClass}`}>{remarksContent}</td>
-
         {/* Dispatch */}
         <td className={`px-2 align-middle text-center ${baseTdClass}`}>
           <div className="flex flex-wrap justify-center gap-1">
@@ -420,25 +417,37 @@ function OrderRow({
           </div>
         </td>
 
-        {/* OD/CI */}
-        <td className={`px-3.5 align-middle text-center ${baseTdClass}`}>
-          {isPunched ? (
-            <span className="text-gray-300 text-[11px]">—</span>
-          ) : isFlagged ? (
-            <button
-              onClick={(e) => { e.stopPropagation(); onFlag(order.id) }}
-              className="inline-flex items-center gap-1 border border-red-300 rounded-md text-[10.5px] font-medium text-red-600 px-2 h-[24px] bg-red-50 whitespace-nowrap"
-            >
-              ⚑ Flagged
-            </button>
-          ) : (
-            <button
-              onClick={(e) => { e.stopPropagation(); onFlag(order.id) }}
-              className="inline-flex items-center gap-1 border border-gray-200 rounded-md text-[10.5px] font-medium text-gray-400 px-2 h-[24px] bg-white hover:border-red-300 hover:text-red-500 transition-colors whitespace-nowrap"
-            >
-              ⚑ Flag
-            </button>
-          )}
+        {/* Remarks */}
+        <td className={`px-3.5 align-middle ${baseTdClass}`}>{remarksContent}</td>
+
+        {/* Copy */}
+        <td className={`px-3.5 align-middle text-right ${baseTdClass}`}>
+          <button
+            disabled={isDisabled}
+            onClick={(e) => {
+              e.stopPropagation();
+              onCopy(order.id, order.lines);
+            }}
+            className={`inline-flex items-center gap-1 border rounded-md text-[11px] font-medium px-2 h-[28px] transition-colors ${
+              isCopied
+                ? "bg-green-50 border-green-200 text-green-700"
+                : isDisabled
+                  ? "border-gray-100 text-gray-300 cursor-not-allowed"
+                  : "border-gray-200 text-gray-600 hover:bg-gray-50"
+            }`}
+          >
+            {isCopied ? (
+              <>
+                <Check size={11} /> ✓
+              </>
+            ) : isDisabled ? (
+              <Copy size={11} />
+            ) : (
+              <>
+                <Copy size={11} /> {matchedCount}
+              </>
+            )}
+          </button>
         </td>
 
         {/* SO No. */}
@@ -475,34 +484,25 @@ function OrderRow({
           )}
         </td>
 
-        {/* Copy */}
-        <td className={`px-3.5 align-middle text-right ${baseTdClass}`}>
-          <button
-            disabled={isDisabled}
-            onClick={(e) => {
-              e.stopPropagation();
-              onCopy(order.id, order.lines);
-            }}
-            className={`inline-flex items-center gap-1 border rounded-md text-[11px] font-medium px-2 h-[28px] transition-colors ${
-              isCopied
-                ? "bg-green-50 border-green-200 text-green-700"
-                : isDisabled
-                  ? "border-gray-100 text-gray-300 cursor-not-allowed"
-                  : "border-gray-200 text-gray-600 hover:bg-gray-50"
-            }`}
-          >
-            {isCopied ? (
-              <>
-                <Check size={11} /> ✓
-              </>
-            ) : isDisabled ? (
-              <Copy size={11} />
-            ) : (
-              <>
-                <Copy size={11} /> {matchedCount}
-              </>
-            )}
-          </button>
+        {/* OD/CI */}
+        <td className={`px-3.5 align-middle text-center ${baseTdClass}`}>
+          {isPunched ? (
+            <span className="text-gray-300 text-[11px]">—</span>
+          ) : isFlagged ? (
+            <button
+              onClick={(e) => { e.stopPropagation(); onFlag(order.id) }}
+              className="inline-flex items-center gap-1 border border-red-300 rounded-md text-[10.5px] font-medium text-red-600 px-2 h-[24px] bg-red-50 whitespace-nowrap"
+            >
+              ⚑ Flagged
+            </button>
+          ) : (
+            <button
+              onClick={(e) => { e.stopPropagation(); onFlag(order.id) }}
+              className="inline-flex items-center gap-1 border border-gray-200 rounded-md text-[10.5px] font-medium text-gray-400 px-2 h-[24px] bg-white hover:border-red-300 hover:text-red-500 transition-colors whitespace-nowrap"
+            >
+              ⚑ Flag
+            </button>
+          )}
         </td>
 
         {/* Status */}
