@@ -21,6 +21,8 @@ interface MailOrdersTableProps {
   onCopy: (id: number, lines: MoOrderLine[]) => void;
   onSaveSoNumber: (orderId: number, value: string) => Promise<boolean>;
   onSaveCustomer: (orderId: number, data: { customerCode: string; customerName: string; saveKeyword?: boolean; keyword?: string; area?: string; deliveryType?: string; route?: string }) => Promise<void>;
+  openCodePopoverId: number | null;
+  setOpenCodePopoverId: (id: number | null) => void;
 }
 
 // ── Slot dot colors ──────────────────────────────────────────────────────────
@@ -47,6 +49,31 @@ function formatReceivedDate(receivedAt: string): string {
   return `${day} ${mon} \u00b7 ${time}`;
 }
 
+function cleanSubject(subject: string): string {
+  let s = subject;
+  s = s.replace(/^(?:(?:fw|fwd|re)\s*:\s*)+/i, "");
+  s = s.replace(/^Order\s*:\s*/i, "");
+  s = s.replace(/^Order\s+for\s+/i, "");
+  s = s.replace(/^Order-\d+\s*/i, "");
+  s = s.replace(/^Order\s+/i, "");
+  s = s.replace(/^\d{4,}\s*/, ""); // strip leading code
+  s = s.replace(/\s*-\s*order$/i, "");
+  s = s.replace(/\.+$/, "");
+  return s.trim() || subject.trim();
+}
+
+function extractSubjectCode(subject: string): string | null {
+  const m = subject.match(/Order[\s:\-]*(\d{4,})/i);
+  return m ? m[1] : null;
+}
+
+const DELIVERY_DOT: Record<string, string> = {
+  Local: "bg-blue-600",
+  UPC: "bg-orange-600",
+  IGT: "bg-teal-600",
+  Cross: "bg-rose-600",
+};
+
 // ── Component ────────────────────────────────────────────────────────────────
 
 export function MailOrdersTable({
@@ -61,9 +88,10 @@ export function MailOrdersTable({
   onCopy,
   onSaveSoNumber,
   onSaveCustomer,
+  openCodePopoverId,
+  setOpenCodePopoverId,
 }: MailOrdersTableProps) {
   const slotOrder = ["Morning", "Afternoon", "Evening", "Night"] as const;
-  const [openCodePopoverId, setOpenCodePopoverId] = useState<number | null>(null);
 
   return (
     <div className="border border-gray-200 rounded-lg overflow-hidden bg-white">
@@ -279,7 +307,7 @@ function CodeCell({
 
   // Close on outside click
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) { setShowSearch(false); return; }
     function handleClick(e: MouseEvent) {
       if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
         onToggle();
@@ -289,16 +317,18 @@ function CodeCell({
     return () => document.removeEventListener("mousedown", handleClick);
   }, [isOpen, onToggle]);
 
+  const [showSearch, setShowSearch] = useState(false);
+
   // Focus search input on open
   useEffect(() => {
-    if (isOpen && order.customerMatchStatus !== "multiple") {
+    if (isOpen && (order.customerMatchStatus !== "multiple" || showSearch)) {
       setTimeout(() => searchInputRef.current?.focus(), 50);
     }
-  }, [isOpen, order.customerMatchStatus]);
+  }, [isOpen, order.customerMatchStatus, showSearch]);
 
   // Debounced search
   useEffect(() => {
-    if (!isOpen || order.customerMatchStatus === "exact") return;
+    if (!isOpen) return;
     if (searchQuery.length < 2) { setSearchResults([]); setSearched(false); return; }
     const timer = setTimeout(async () => {
       setSearching(true);
@@ -335,27 +365,72 @@ function CodeCell({
 
   const status = order.customerMatchStatus ?? "unmatched";
 
+  const searchPopover = (
+    <div ref={popoverRef} className="absolute left-0 top-full mt-1 z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-3 w-[320px]">
+      <input
+        ref={searchInputRef}
+        type="text"
+        placeholder="Type customer name or code..."
+        value={searchQuery}
+        onChange={(e) => setSearchQuery(e.target.value)}
+        className="text-[12px] h-[32px] px-2 border border-gray-200 rounded-md w-full focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10 focus:outline-none"
+      />
+      <div className="max-h-[180px] overflow-y-auto mt-2">
+        {searching && <p className="text-[11px] text-gray-400 px-1 py-2">Searching...</p>}
+        {!searching && searched && searchResults.length === 0 && (
+          <p className="text-[11px] text-gray-400 px-1 py-2">No customers found</p>
+        )}
+        {!searching && searchResults.map((c) => (
+          <div
+            key={c.customerCode}
+            onClick={() => handlePickCandidate(c, true)}
+            className="flex items-start gap-2 px-2 py-1.5 rounded hover:bg-gray-50 cursor-pointer"
+          >
+            <span className="font-mono text-[11px] text-gray-800 flex-shrink-0">{c.customerCode}</span>
+            <div className="min-w-0">
+              <div className="text-[11px] text-gray-600 truncate">{c.customerName}</div>
+              {(c.area || c.route) && (
+                <div className="text-[10px] text-gray-400 truncate">
+                  {[c.area, c.route].filter(Boolean).join(" \u00b7 ")}
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
   // STATE 1: Exact match
   if (status === "exact" && order.customerCode) {
     return (
-      <td className={`px-2 align-middle ${baseTdClass}`} onClick={(e) => e.stopPropagation()}>
-        <span
-          onClick={handleCopyCode}
-          className={`font-mono text-[11px] cursor-pointer rounded px-1.5 py-0.5 border transition-colors ${
-            codeCopied
-              ? "bg-teal-50 border-teal-200 text-teal-700"
-              : "text-gray-800 bg-gray-50 border-gray-200 hover:bg-gray-100 hover:border-gray-300"
-          }`}
-        >
-          {order.customerCode}
-        </span>
+      <td className={`px-2 align-middle relative group ${baseTdClass}`} onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <span
+            onClick={handleCopyCode}
+            className={`font-mono text-[11px] cursor-pointer rounded px-1.5 py-0.5 border transition-colors ${
+              codeCopied
+                ? "bg-teal-50 border-teal-200 text-teal-700"
+                : "text-gray-800 bg-gray-50 border-gray-200 hover:bg-gray-100 hover:border-gray-300"
+            }`}
+          >
+            {order.customerCode}
+          </span>
+          <button
+            onClick={() => { setShowSearch(true); onToggle(); }}
+            className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-gray-600 transition-opacity"
+          >
+            <Pencil size={10} />
+          </button>
+        </div>
+        {isOpen && showSearch && searchPopover}
       </td>
     );
   }
 
   // STATE 2: Multiple matches
   if (status === "multiple" && order.customerCandidates) {
-    let candidates: { code: string; name: string; area?: string | null; route?: string | null }[] = [];
+    let candidates: { code: string; name: string; area?: string | null; deliveryType?: string | null; route?: string | null }[] = [];
     try { candidates = JSON.parse(order.customerCandidates); } catch { /* empty */ }
 
     return (
@@ -371,7 +446,7 @@ function CodeCell({
             {candidates.map((c) => (
               <div
                 key={c.code}
-                onClick={() => handlePickCandidate({ customerCode: c.code, customerName: c.name, area: c.area, route: c.route }, false)}
+                onClick={() => handlePickCandidate({ customerCode: c.code, customerName: c.name, area: c.area, deliveryType: c.deliveryType, route: c.route }, false)}
                 className="flex items-start gap-2 px-2 py-1.5 rounded hover:bg-gray-50 cursor-pointer"
               >
                 <span className="font-mono text-[11px] text-gray-800 flex-shrink-0">{c.code}</span>
@@ -379,7 +454,7 @@ function CodeCell({
                   <div className="text-[11px] text-gray-600 truncate">{c.name}</div>
                   {(c.area || c.route) && (
                     <div className="text-[10px] text-gray-400 truncate">
-                      {[c.area, c.route].filter(Boolean).join(" · ")}
+                      {[c.area, c.route].filter(Boolean).join(" \u00b7 ")}
                     </div>
                   )}
                 </div>
@@ -400,41 +475,7 @@ function CodeCell({
       >
         <Search size={9} /> Search
       </span>
-      {isOpen && (
-        <div ref={popoverRef} className="absolute left-0 top-full mt-1 z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-3 w-[320px]">
-          <input
-            ref={searchInputRef}
-            type="text"
-            placeholder="Type customer name or code..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="text-[12px] h-[32px] px-2 border border-gray-200 rounded-md w-full focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10 focus:outline-none"
-          />
-          <div className="max-h-[180px] overflow-y-auto mt-2">
-            {searching && <p className="text-[11px] text-gray-400 px-1 py-2">Searching...</p>}
-            {!searching && searched && searchResults.length === 0 && (
-              <p className="text-[11px] text-gray-400 px-1 py-2">No customers found</p>
-            )}
-            {!searching && searchResults.map((c) => (
-              <div
-                key={c.customerCode}
-                onClick={() => handlePickCandidate(c, true)}
-                className="flex items-start gap-2 px-2 py-1.5 rounded hover:bg-gray-50 cursor-pointer"
-              >
-                <span className="font-mono text-[11px] text-gray-800 flex-shrink-0">{c.customerCode}</span>
-                <div className="min-w-0">
-                  <div className="text-[11px] text-gray-600 truncate">{c.customerName}</div>
-                  {(c.area || c.route) && (
-                    <div className="text-[10px] text-gray-400 truncate">
-                      {[c.area, c.route].filter(Boolean).join(" · ")}
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      {isOpen && searchPopover}
     </td>
   );
 }
@@ -562,16 +603,26 @@ function OrderRow({
         {/* Customer */}
         <td className={`px-3.5 align-middle ${baseTdClass}`}>
           {(() => {
-            const customerDisplay = order.customerName ?? order.subject;
-            const subjectSnippet = order.subject !== customerDisplay ? order.subject : null;
+            const isExact = order.customerMatchStatus === "exact";
+            const displayName = isExact && order.customerName
+              ? order.customerName
+              : cleanSubject(order.subject);
+            const subjectCode = extractSubjectCode(order.subject);
+            const delType = order.customerDeliveryType;
+            const dotColor = delType ? DELIVERY_DOT[delType] : null;
+            const area = isExact ? order.customerArea : null;
+            const subtextParts = [area, subjectCode].filter(Boolean);
             return (
               <div className="overflow-hidden min-w-0">
                 <div className="flex items-center gap-1.5 min-w-0">
+                  {dotColor && (
+                    <span className={`w-[5px] h-[5px] rounded-full ${dotColor} flex-shrink-0`} title={delType!} />
+                  )}
                   <span
-                    title={customerDisplay}
+                    title={displayName}
                     className="text-[12.5px] font-semibold text-gray-900 truncate"
                   >
-                    {customerDisplay}
+                    {displayName}
                   </span>
                   {isFlagged && (
                     <span className="text-[10px] font-semibold text-red-600 bg-red-50 border border-red-200 rounded px-1.5 py-0.5 flex-shrink-0">
@@ -579,12 +630,9 @@ function OrderRow({
                     </span>
                   )}
                 </div>
-                {subjectSnippet && (
-                  <span
-                    title={subjectSnippet}
-                    className="text-[11px] text-gray-400 truncate block"
-                  >
-                    — {subjectSnippet}
+                {subtextParts.length > 0 && (
+                  <span className="text-[10px] text-gray-400 truncate block">
+                    {subtextParts.join(" \u00b7 ")}
                   </span>
                 )}
               </div>

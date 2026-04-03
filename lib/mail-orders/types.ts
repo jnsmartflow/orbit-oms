@@ -35,6 +35,9 @@ export interface MoOrder {
   slotToOverride?: boolean;
   customerMatchStatus?: "exact" | "multiple" | "unmatched" | null;
   customerCandidates?: string | null;
+  customerArea?: string | null;
+  customerDeliveryType?: string | null;
+  customerRoute?: string | null;
   status: OrderStatus;
   punchedById: number | null;
   punchedAt: string | null;

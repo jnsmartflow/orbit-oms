@@ -58,5 +58,38 @@ export async function GET(req: Request): Promise<NextResponse> {
     orderBy: { receivedAt: "desc" },
   });
 
-  return NextResponse.json({ orders });
+  // Batch lookup: area + deliveryType + route for exact-matched customers
+  const customerCodes = orders
+    .filter((o) => o.customerMatchStatus === "exact" && o.customerCode)
+    .map((o) => o.customerCode!);
+  const uniqueCodes = Array.from(new Set(customerCodes));
+
+  const customerLookupMap = new Map<string, { area: string | null; deliveryType: string | null; route: string | null }>();
+  if (uniqueCodes.length > 0) {
+    const kwRows = await prisma.mo_customer_keywords.findMany({
+      where: { customerCode: { in: uniqueCodes } },
+      select: { customerCode: true, area: true, deliveryType: true, route: true },
+    });
+    for (const row of kwRows) {
+      if (!customerLookupMap.has(row.customerCode)) {
+        customerLookupMap.set(row.customerCode, {
+          area: row.area,
+          deliveryType: row.deliveryType,
+          route: row.route,
+        });
+      }
+    }
+  }
+
+  const enrichedOrders = orders.map((o) => {
+    const lookup = o.customerCode ? customerLookupMap.get(o.customerCode) : undefined;
+    return {
+      ...o,
+      customerArea: lookup?.area ?? null,
+      customerDeliveryType: lookup?.deliveryType ?? null,
+      customerRoute: lookup?.route ?? null,
+    };
+  });
+
+  return NextResponse.json({ orders: enrichedOrders });
 }

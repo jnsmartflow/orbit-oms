@@ -186,6 +186,7 @@ async function matchByKeywords(name: string): Promise<CustomerMatchResult> {
     code: e.row.customerCode,
     name: e.row.customerName,
     area: e.row.area,
+    deliveryType: e.row.deliveryType,
     route: e.row.route,
   }));
 

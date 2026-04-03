@@ -28,6 +28,7 @@ export default function MailOrdersPage() {
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [selectedDate, setSelectedDate] = useState(() => getTodayIST());
   const [showDateDropdown, setShowDateDropdown] = useState(false);
+  const [openCodePopoverId, setOpenCodePopoverId] = useState<number | null>(null);
 
   const shortcutsRef = useRef<HTMLDivElement>(null);
   const datePickerRef = useRef<HTMLDivElement>(null);
@@ -253,7 +254,7 @@ export default function MailOrdersPage() {
     setOrders((prev) =>
       prev.map((o) =>
         o.id === orderId
-          ? { ...o, customerCode: data.customerCode, customerName: data.customerName, customerMatchStatus: "exact" as const, customerCandidates: null }
+          ? { ...o, customerCode: data.customerCode, customerName: data.customerName, customerMatchStatus: "exact" as const, customerCandidates: null, customerArea: data.area ?? null, customerDeliveryType: data.deliveryType ?? null, customerRoute: data.route ?? null }
           : o,
       ),
     );
@@ -278,6 +279,14 @@ export default function MailOrdersPage() {
   // ── Keyboard navigation ─────────────────────────────────────────────────────
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
+      // Esc closes any open popover regardless of focus
+      if (e.key === "Escape") {
+        if (openCodePopoverId !== null) {
+          setOpenCodePopoverId(null);
+          return;
+        }
+      }
+
       const tag = (document.activeElement?.tagName ?? "").toUpperCase();
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
 
@@ -311,17 +320,24 @@ export default function MailOrdersPage() {
       if (key === "c" || key === "C") {
         if (focusedId !== null) {
           const order = flatOrders.find((o) => o.id === focusedId);
+          if (order?.customerMatchStatus === "exact" && order.customerCode) {
+            navigator.clipboard.writeText(order.customerCode);
+          }
+        }
+        return;
+      }
+
+      if (key === "s" || key === "S") {
+        if (focusedId !== null) {
+          const order = flatOrders.find((o) => o.id === focusedId);
           if (order) handleCopy(focusedId, order.lines);
         }
         return;
       }
 
-      if (key === "d" || key === "D") {
+      if (key === "p" || key === "P") {
         if (focusedId !== null) {
-          const order = flatOrders.find((o) => o.id === focusedId);
-          if (order && !flaggedIds.has(focusedId) && order.status !== "punched") {
-            handlePunch(focusedId);
-          }
+          setOpenCodePopoverId(openCodePopoverId === focusedId ? null : focusedId);
         }
         return;
       }
@@ -329,7 +345,7 @@ export default function MailOrdersPage() {
 
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [flatOrders, focusedId, flaggedIds, handleExpand, handleCopy, handlePunch]);
+  }, [flatOrders, focusedId, handleExpand, handleCopy, openCodePopoverId]);
 
   // ── Auto-scroll focused row into view ───────────────────────────────────────
   useEffect(() => {
@@ -393,11 +409,13 @@ export default function MailOrdersPage() {
                   Keyboard shortcuts
                 </p>
                 {[
-                  ["C", "Copy to clipboard"],
-                  ["D", "Mark punched"],
+                  ["C", "Copy customer code"],
+                  ["S", "Copy SKU lines"],
+                  ["P", "Pick customer"],
                   ["\u2193", "Next order"],
                   ["\u2191", "Previous order"],
                   ["\u21B5", "Expand / collapse"],
+                  ["Esc", "Close popover"],
                 ].map(([key, label]) => (
                   <div key={key} className="flex items-center justify-between py-1">
                     <span className="text-[11px] text-gray-500">{label}</span>
@@ -568,6 +586,8 @@ export default function MailOrdersPage() {
             onCopy={handleCopy}
             onSaveSoNumber={handleSaveSoNumber}
             onSaveCustomer={handleSaveCustomer}
+            openCodePopoverId={openCodePopoverId}
+            setOpenCodePopoverId={setOpenCodePopoverId}
           />
         )}
       </div>
