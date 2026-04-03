@@ -111,6 +111,8 @@ model users {
   ordersPickedBy            orders[]                 @relation("OrderPickedBy")
   pickAssignmentsAsPicker   pick_assignments[]       @relation("PickAssignmentPicker")
   pickAssignmentsAssigned   pick_assignments[]       @relation("PickAssignmentAssignedBy")
+  // Mail Order back-relations
+  mailOrdersPunched         mo_orders[]              @relation("MoOrderPunchedBy")
 }
 
 model status_master {
@@ -961,4 +963,87 @@ model shade_master {
 
   @@unique([shipToCustomerId, shadeName, skuCode, packCode, tinterType], name: "shade_master_unique")
   @@map("shade_master")
+}
+
+// ─────────────────────────────────────────────
+// MAIL ORDER SYSTEM (mo_* tables)
+// ─────────────────────────────────────────────
+
+model mo_orders {
+  id               Int       @id @default(autoincrement())
+  soName           String
+  soEmail          String?
+  receivedAt       DateTime
+  subject          String
+  customerName     String?
+  customerCode     String?
+  deliveryRemarks  String?
+  remarks          String?
+  billRemarks      String?
+  status           String    @default("pending")
+  punchedById      Int?
+  punchedBy        users?    @relation("MoOrderPunchedBy", fields: [punchedById], references: [id])
+  punchedAt        DateTime?
+  emailEntryId     String    @unique
+  totalLines       Int       @default(0)
+  matchedLines     Int       @default(0)
+  createdAt        DateTime  @default(now())
+  lines            mo_order_lines[]
+}
+
+model mo_order_lines {
+  id              Int       @id @default(autoincrement())
+  moOrderId       Int
+  moOrder         mo_orders @relation(fields: [moOrderId], references: [id], onDelete: Cascade)
+  lineNumber      Int
+  rawText         String
+  packCode        String?
+  quantity        Int       @default(0)
+  productName     String?
+  baseColour      String?
+  skuCode         String?
+  skuDescription  String?
+  refSkuCode      String?
+  matchStatus     String    @default("unmatched")
+  createdAt       DateTime  @default(now())
+}
+
+model mo_product_keywords {
+  id        Int      @id @default(autoincrement())
+  keyword   String
+  category  String
+  product   String
+  createdAt DateTime @default(now())
+}
+
+model mo_base_keywords {
+  id         Int      @id @default(autoincrement())
+  keyword    String
+  category   String
+  baseColour String
+  createdAt  DateTime @default(now())
+}
+
+model mo_sku_lookup {
+  id          Int      @id @default(autoincrement())
+  material    String   @unique
+  description String
+  category    String
+  product     String
+  baseColour  String
+  packCode    String
+  unit        String?
+  refMaterial String?
+  createdAt   DateTime @default(now())
+}
+
+model mo_customer_keywords {
+  id           Int      @id @default(autoincrement())
+  customerCode String
+  customerName String
+  area         String?
+  deliveryType String?
+  route        String?
+  keyword      String
+  createdAt    DateTime @default(now())
 }

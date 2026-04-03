@@ -76,7 +76,9 @@
       "Bash(sed -i -e 's/bg-gray-700 text-white hover:bg-gray-600/bg-teal-600 text-white hover:bg-teal-700/g' -e 's/bg-gray-700 text-white flex/bg-teal-600 text-white flex/g' components/tint/tint-manager-content.tsx)",
       "Bash(sed -i 's/checked ? \"bg-green-500\" : \"bg-gray-300\"/checked ? \"bg-teal-600\" : \"bg-gray-300\"/' components/tint/shade-master-content.tsx)",
       "Bash(sed -i 's/entry.saveAsShade ? \"bg-green-500\" : \"bg-gray-300\"/entry.saveAsShade ? \"bg-teal-600\" : \"bg-gray-300\"/' components/tint/tint-operator-content.tsx)",
-      "Bash(grep -v \":0$\")"
+      "Bash(grep -v \":0$\")",
+      "Bash(mkdir -p \"C:/Users/HP/OneDrive/VS Code/orbit-oms/app/api/mail-orders/[id]/punch\")",
+      "Bash(mkdir -p \"C:/Users/HP/OneDrive/VS Code/orbit-oms/app/api/mail-orders/lines/[lineId]/resolve\")"
     ]
   }
 }
