@@ -39,6 +39,19 @@ export async function resolveLine(
   if (!res.ok) throw new Error(`Failed to resolve line: ${res.status}`);
 }
 
+export async function saveSoNumber(
+  orderId: number,
+  soNumber: string,
+): Promise<{ success: boolean }> {
+  const res = await fetch(`/api/mail-orders/${orderId}/so-number`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ soNumber }),
+  });
+  if (!res.ok) throw new Error("Failed to save SO number");
+  return res.json();
+}
+
 export async function searchSkus(
   q: string,
 ): Promise<{ material: string; description: string; packCode: string }[]> {

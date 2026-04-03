@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Search, SlidersHorizontal, Keyboard } from "lucide-react";
-import { fetchMailOrders, punchOrder, getTodayIST } from "@/lib/mail-orders/api";
+import { fetchMailOrders, punchOrder, saveSoNumber, getTodayIST } from "@/lib/mail-orders/api";
 import { getSlotFromTime, groupOrdersBySlot, buildClipboardText } from "@/lib/mail-orders/utils";
 import type { MoOrder, MoOrderLine } from "@/lib/mail-orders/types";
 import { MailOrdersTable } from "./mail-orders-table";
@@ -224,6 +224,22 @@ export default function MailOrdersPage() {
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);
   }, []);
+
+  const handleSaveSoNumber = useCallback(async (orderId: number, value: string) => {
+    if (!/^\d{10}$/.test(value)) return false;
+    // Optimistic update
+    setOrders((prev) =>
+      prev.map((o) => (o.id === orderId ? { ...o, soNumber: value } : o)),
+    );
+    try {
+      await saveSoNumber(orderId, value);
+      return true;
+    } catch {
+      const data = await fetchMailOrders(selectedDate);
+      setOrders(data.orders);
+      return false;
+    }
+  }, [selectedDate]);
 
   // ── Flat order list for keyboard navigation ──────────────────────────────────
   const flatOrders = useMemo(() => {
@@ -491,6 +507,7 @@ export default function MailOrdersPage() {
             onExpand={handleExpand}
             onPunch={handlePunch}
             onCopy={handleCopy}
+            onSaveSoNumber={handleSaveSoNumber}
           />
         )}
       </div>

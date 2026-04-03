@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { Check, Copy, ChevronDown } from "lucide-react";
+import { useState, useRef } from "react";
+import { Check, Copy, ChevronDown, Pencil } from "lucide-react";
 import { formatTime } from "@/lib/mail-orders/utils";
 import type { MoOrder, MoOrderLine } from "@/lib/mail-orders/types";
 import { ResolveLinePanel } from "./resolve-line-panel";
@@ -18,6 +18,7 @@ interface MailOrdersTableProps {
   onExpand: (id: number | null) => void;
   onPunch: (id: number) => Promise<void>;
   onCopy: (id: number, lines: MoOrderLine[]) => void;
+  onSaveSoNumber: (orderId: number, value: string) => Promise<boolean>;
 }
 
 // ─�� Slot dot colors ──────────────────────────────────────────────────────────
@@ -56,6 +57,7 @@ export function MailOrdersTable({
   onExpand,
   onPunch,
   onCopy,
+  onSaveSoNumber,
 }: MailOrdersTableProps) {
   const slotOrder = ["Morning", "Afternoon", "Evening", "Night"] as const;
 
@@ -66,12 +68,14 @@ export function MailOrdersTable({
           <col style={{ width: 68 }} />
           <col style={{ width: 120 }} />
           <col style={{ width: 220 }} />
-          <col style={{ width: 64 }} />
-          <col style={{ width: 180 }} />
-          <col style={{ width: 76 }} />
-          <col style={{ width: 56 }} />
-          <col style={{ width: 96 }} />
-          <col style={{ width: 130 }} />
+          <col style={{ width: 54 }} />
+          <col style={{ width: 140 }} />
+          <col style={{ width: 80 }} />
+          <col style={{ width: 70 }} />
+          <col style={{ width: 110 }} />
+          <col style={{ width: 60 }} />
+          <col style={{ width: 100 }} />
+          <col style={{ width: 120 }} />
         </colgroup>
 
         <thead>
@@ -92,7 +96,13 @@ export function MailOrdersTable({
               Remarks
             </th>
             <th className="text-[10px] font-medium uppercase tracking-wider text-gray-400 text-center px-3.5">
+              Dispatch
+            </th>
+            <th className="text-[10px] font-medium uppercase tracking-wider text-gray-400 text-center px-3.5">
               OD/CI
+            </th>
+            <th className="text-[10px] font-medium uppercase tracking-wider text-gray-400 text-left px-3.5">
+              SO No.
             </th>
             <th className="text-[10px] font-medium uppercase tracking-wider text-gray-400 text-right px-3.5">
               Copy
@@ -129,6 +139,7 @@ export function MailOrdersTable({
                 onExpand={onExpand}
                 onPunch={onPunch}
                 onCopy={onCopy}
+                onSaveSoNumber={onSaveSoNumber}
               />
             );
           })}
@@ -153,6 +164,7 @@ function SlotGroup({
   onExpand,
   onPunch,
   onCopy,
+  onSaveSoNumber,
 }: {
   slot: string;
   orders: MoOrder[];
@@ -166,6 +178,7 @@ function SlotGroup({
   onExpand: (id: number | null) => void;
   onPunch: (id: number) => Promise<void>;
   onCopy: (id: number, lines: MoOrderLine[]) => void;
+  onSaveSoNumber: (orderId: number, value: string) => Promise<boolean>;
 }) {
   const dotColor = SLOT_DOTS[slot] ?? "bg-gray-400";
 
@@ -174,7 +187,7 @@ function SlotGroup({
       {/* Section header */}
       <tr>
         <td
-          colSpan={9}
+          colSpan={11}
           className="h-[36px] bg-gray-50 border-t border-b border-gray-200 px-[18px]"
         >
           <div className="flex items-center justify-between h-full">
@@ -213,6 +226,7 @@ function SlotGroup({
             onExpand={onExpand}
             onPunch={onPunch}
             onCopy={onCopy}
+            onSaveSoNumber={onSaveSoNumber}
           />
         );
       })}
@@ -233,6 +247,7 @@ function OrderRow({
   onExpand,
   onPunch,
   onCopy,
+  onSaveSoNumber,
 }: {
   order: MoOrder;
   isFlagged: boolean;
@@ -244,11 +259,29 @@ function OrderRow({
   onExpand: (id: number | null) => void;
   onPunch: (id: number) => Promise<void>;
   onCopy: (id: number, lines: MoOrderLine[]) => void;
+  onSaveSoNumber: (orderId: number, value: string) => Promise<boolean>;
 }) {
   const hasUnmatched = order.matchedLines < order.totalLines;
   const matchedCount = order.lines.filter((l) => l.matchStatus === "matched").length;
   const isDisabled = isFlagged || isPunched || matchedCount === 0;
   const isCopied = copiedId === order.id;
+
+  const [editingSo, setEditingSo] = useState(false);
+  const [soInput, setSoInput] = useState(order.soNumber ?? "");
+  const [soError, setSoError] = useState(false);
+  const soInputRef = useRef<HTMLInputElement>(null);
+
+  async function handleSoSave() {
+    const val = soInput.trim();
+    if (!val) { setEditingSo(false); setSoInput(order.soNumber ?? ""); return; }
+    if (!/^\d{10}$/.test(val)) {
+      setSoError(true);
+      setTimeout(() => setSoError(false), 1500);
+      return;
+    }
+    const ok = await onSaveSoNumber(order.id, val);
+    if (ok) setEditingSo(false);
+  }
 
   const baseTdClass = [
     isFocused && 'bg-amber-50/40',
@@ -369,6 +402,22 @@ function OrderRow({
         {/* Remarks */}
         <td className={`px-3.5 align-middle ${baseTdClass}`}>{remarksContent}</td>
 
+        {/* Dispatch */}
+        <td className={`px-2 align-middle text-center ${baseTdClass}`}>
+          <div className="flex items-center justify-center gap-1">
+            {order.dispatchStatus && order.dispatchStatus !== "Dispatch" && (
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-red-50 text-red-700 border border-red-200">
+                {order.dispatchStatus}
+              </span>
+            )}
+            {order.dispatchPriority && order.dispatchPriority !== "Normal" && (
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-red-50 text-red-700 border border-red-200">
+                {order.dispatchPriority}
+              </span>
+            )}
+          </div>
+        </td>
+
         {/* OD/CI */}
         <td className={`px-3.5 align-middle text-center ${baseTdClass}`}>
           {isPunched ? (
@@ -387,6 +436,40 @@ function OrderRow({
             >
               ⚑ Flag
             </button>
+          )}
+        </td>
+
+        {/* SO No. */}
+        <td
+          className={`px-2 align-middle ${baseTdClass}`}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {order.soNumber && !editingSo ? (
+            <div className="flex items-center gap-1 group">
+              <span className="font-mono text-[11px] text-gray-800">
+                {order.soNumber}
+              </span>
+              <button
+                onClick={() => { setEditingSo(true); setSoInput(order.soNumber ?? ""); }}
+                className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-gray-600 transition-opacity"
+              >
+                <Pencil size={10} />
+              </button>
+            </div>
+          ) : (
+            <input
+              ref={soInputRef}
+              type="text"
+              placeholder="SO Number"
+              maxLength={10}
+              value={soInput}
+              onChange={(e) => { setSoInput(e.target.value); setSoError(false); }}
+              onKeyDown={(e) => { if (e.key === "Enter") handleSoSave(); if (e.key === "Escape") { setEditingSo(false); setSoInput(order.soNumber ?? ""); } }}
+              onBlur={() => handleSoSave()}
+              className={`w-full border rounded px-2 h-[26px] text-[11px] font-mono text-gray-800 focus:border-teal-500 focus:outline-none placeholder:text-gray-300 ${
+                soError ? "border-red-300" : "border-gray-200"
+              }`}
+            />
           )}
         </td>
 
@@ -483,7 +566,7 @@ function ExpandRow({ order }: { order: MoOrder }) {
   return (
     <tr>
       <td
-        colSpan={9}
+        colSpan={11}
         style={{ padding: 0, background: "#fafafa", borderBottom: "1px solid #e5e7eb" }}
       >
         {/* Line items table */}
