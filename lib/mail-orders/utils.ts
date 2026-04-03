@@ -32,6 +32,15 @@ export function buildClipboardText(lines: MoOrderLine[]): string {
     .join("\n");
 }
 
+function getDispatchSortWeight(order: MoOrder): number {
+  const isHold = order.dispatchStatus === "Hold";
+  const isUrgent = order.dispatchPriority === "Urgent";
+  if (isHold && isUrgent) return 0;
+  if (isUrgent) return 1;
+  if (isHold) return 2;
+  return 3;
+}
+
 export function groupOrdersBySlot(
   orders: MoOrder[],
 ): Record<string, MoOrder[]> {
@@ -45,6 +54,11 @@ export function groupOrdersBySlot(
     const slot = getSlotFromTime(order.receivedAt);
     if (!groups[slot]) groups[slot] = [];
     groups[slot].push(order);
+  }
+
+  // Sort within each slot: urgent/hold first, then by time (stable)
+  for (const key of Object.keys(groups)) {
+    groups[key].sort((a, b) => getDispatchSortWeight(a) - getDispatchSortWeight(b));
   }
 
   // Return keys in fixed order, only if they have orders

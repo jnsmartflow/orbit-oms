@@ -319,6 +319,7 @@ function OrderRow({
     <>
       <tr
         data-order-id={order.id}
+        data-urgent={(!isPunched && (order.dispatchStatus === "Hold" || order.dispatchPriority === "Urgent")) ? "true" : undefined}
         className="h-[52px] border-b border-gray-100 hover:bg-gray-50/50 cursor-pointer"
         style={{ borderLeft, opacity: isPunched ? 0.75 : undefined }}
         onClick={() => onExpand(order.id)}
@@ -401,20 +402,24 @@ function OrderRow({
 
         {/* Dispatch */}
         <td className={`px-2 align-middle text-center ${baseTdClass}`}>
-          <div className="flex flex-wrap justify-center gap-1">
-            <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border ${
-              order.dispatchStatus === "Hold"
-                ? "bg-red-50 text-red-700 border-red-200"
-                : "bg-green-50 text-green-700 border-green-200"
-            }`}>
-              {order.dispatchStatus || "Dispatch"}
-            </span>
-            {order.dispatchPriority === "Urgent" && (
-              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border bg-red-50 text-red-700 border-red-200">
-                Urgent
+          {(() => {
+            const isHold = order.dispatchStatus === "Hold";
+            const isUrgent = order.dispatchPriority === "Urgent";
+            const label = isHold && isUrgent ? "Hold \u00b7 Urgent"
+              : isHold ? "Hold"
+              : isUrgent ? "Urgent"
+              : "Dispatch";
+            const style = isHold
+              ? "bg-red-50 text-red-700 border-red-200"
+              : isUrgent
+                ? "bg-amber-50 text-amber-700 border-amber-200"
+                : "bg-green-50 text-green-700 border-green-200";
+            return (
+              <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border ${style}`}>
+                {label}
               </span>
-            )}
-          </div>
+            );
+          })()}
         </td>
 
         {/* Remarks */}

@@ -324,6 +324,17 @@ export default function MailOrdersPage() {
   // ── Match rate warning threshold ─────────────────────────────────────────────
   const matchRateWarn = totalLines > 0 && matchedLines < totalLines * 0.95;
 
+  // ── Urgent/Hold counts (from filtered orders, unpunched only) ───────────────
+  const urgentCount = useMemo(() =>
+    filteredOrders.filter((o) => o.status !== "punched" && o.dispatchPriority === "Urgent").length,
+    [filteredOrders],
+  );
+  const holdCount = useMemo(() =>
+    filteredOrders.filter((o) => o.status !== "punched" && o.dispatchStatus === "Hold").length,
+    [filteredOrders],
+  );
+  const hasUrgentOrHold = urgentCount > 0 || holdCount > 0;
+
   // ── Render ───────────────────────────────────────────────────────────────────
   return (
     <div className="flex flex-col h-screen overflow-hidden">
@@ -481,6 +492,30 @@ export default function MailOrdersPage() {
 
       {/* ── Content area ───────────────────────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto px-4 py-3">
+        {!loading && hasUrgentOrHold && (
+          <div className="sticky top-0 z-20 mb-2 -mx-0">
+            <div className="flex items-center justify-between px-3 py-2 rounded-lg border bg-red-50 border-red-200">
+              <div className="flex items-center gap-2">
+                <span className="text-red-600 text-[12px]">⚠</span>
+                <span className="text-[11px] font-medium text-red-700">
+                  {urgentCount > 0 && `${urgentCount} Urgent`}
+                  {urgentCount > 0 && holdCount > 0 && " \u00b7 "}
+                  {holdCount > 0 && `${holdCount} Hold`}
+                </span>
+              </div>
+              <button
+                onClick={() => {
+                  const el = document.querySelector('tr[data-urgent="true"]');
+                  if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+                }}
+                className="text-[10px] font-medium text-red-600 hover:text-red-800 underline"
+              >
+                Jump to first ↓
+              </button>
+            </div>
+          </div>
+        )}
+
         {loading && (
           <div className="flex flex-col gap-2">
             {[1, 2, 3].map((i) => (
