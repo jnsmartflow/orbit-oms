@@ -604,43 +604,53 @@ function OrderRow({
           : undefined;
   const needsBorderCompensation = isFlagged || isFocused || isPunched || isSplit;
 
-  // Remarks display
-  const remarksContent = (() => {
-    const hasRemarks = order.remarks && order.remarks.trim();
-    const hasBillRemarks = order.billRemarks && order.billRemarks.trim();
-    const hasChallan = order.remarks?.includes('Challan attachment');
+  // Remarks — signal badges
+  const signalStyles: Record<string, string> = {
+    blocker: 'bg-red-50 text-red-700 border-red-200',
+    timing:  'bg-amber-50 text-amber-700 border-amber-200',
+    bill:    'bg-gray-50 text-gray-600 border-gray-200',
+    context: 'bg-gray-50 text-gray-500 border-gray-200',
+    cross:   'bg-purple-50 text-purple-600 border-purple-200',
+    shipto:  'bg-orange-50 text-orange-600 border-orange-200',
+  };
 
-    if (!hasRemarks && !hasBillRemarks) {
-      return <span className="text-gray-300">—</span>;
+  const signals = (() => {
+    const result: { label: string; type: string }[] = [];
+    const combined = [order.remarks, order.billRemarks, order.deliveryRemarks]
+      .filter(Boolean).join(' ').toLowerCase();
+    if (!combined.trim()) return result;
+
+    // Blockers (red)
+    if (/\b(od|overdue)\b/.test(combined)) result.push({ label: 'OD', type: 'blocker' });
+    if (/\b(ci|credit\s*(hold|block|issue))\b/.test(combined)) result.push({ label: 'CI', type: 'blocker' });
+    if (/\bbounce\b/.test(combined)) result.push({ label: 'Bounce', type: 'blocker' });
+    if (/\bextension\b/.test(combined)) result.push({ label: 'Extension', type: 'blocker' });
+
+    // Timing (amber)
+    if (/bill\s*tomorrow/.test(combined)) result.push({ label: 'Tomorrow', type: 'timing' });
+    if (/7\s*days/.test(combined)) result.push({ label: '7 Days', type: 'timing' });
+
+    // Bill number (gray)
+    const billMatch = combined.match(/\bbill\s+(\d+)\b/);
+    if (billMatch) result.push({ label: `Bill ${billMatch[1]}`, type: 'bill' });
+
+    // Context (gray/purple/orange)
+    if (/dpl/.test(combined)) result.push({ label: 'DPL', type: 'context' });
+    if (/cross\s*billing/.test(combined)) {
+      const code = combined.match(/cross\s*billing\s*(\w+)/);
+      result.push({ label: code ? `Cross ${code[1].toUpperCase()}` : 'Cross', type: 'cross' });
     }
+    if (/challan\s*attachment/.test(combined)) result.push({ label: '📎 Challan', type: 'context' });
+    if (order.shipToOverride) result.push({ label: '→ Ship-to', type: 'shipto' });
 
-    return (
-      <div className="flex flex-col gap-0.5 overflow-hidden">
-        {hasRemarks && (
-          <span className={`text-[11px] truncate block ${isFlagged ? "text-red-400" : "text-gray-600"}`}>
-            {hasChallan && <span className="text-[10px] mr-0.5" title="Check email for challan attachment">📎</span>}
-            {smartTitleCase(order.remarks)}
-          </span>
-        )}
-        {hasBillRemarks && (
-          <div className="flex flex-wrap gap-0.5">
-            {order.billRemarks!.split('; ').map((tag, i) => {
-              const isCross = tag.toLowerCase().includes('cross billing');
-              return (
-                <span key={i} className={`text-[9px] font-medium px-1.5 py-0.5 rounded border ${
-                  isCross
-                    ? "bg-purple-50 text-purple-700 border-purple-200"
-                    : "bg-amber-50 text-amber-700 border-amber-200"
-                }`}>
-                  {tag}
-                </span>
-              );
-            })}
-          </div>
-        )}
-      </div>
-    );
+    return result;
   })();
+
+  const remarksTooltip = [order.remarks, order.billRemarks, order.deliveryRemarks]
+    .filter(Boolean)
+    .map(s => s!.replace(/;?\s*Code:\s*\d+/gi, '').trim())
+    .filter(Boolean)
+    .join(' | ');
 
   const handleCodeToggle = useCallback(() => {
     setOpenCodePopoverId(openCodePopoverId === order.id ? null : order.id);
@@ -716,16 +726,6 @@ function OrderRow({
                     ))}
                   </span>
                 )}
-                {order.shipToOverride && (
-                  <span
-                    className="text-[9px] font-medium text-orange-600 truncate block mt-0.5"
-                    title={order.deliveryRemarks ?? 'Ship-to override'}
-                  >
-                    → {order.deliveryRemarks
-                        ? order.deliveryRemarks.replace(/\s*\[→.*?\]\s*$/, '').trim()
-                        : 'Ship-to override'}
-                  </span>
-                )}
               </div>
             );
           })()}
@@ -796,7 +796,19 @@ function OrderRow({
         </td>
 
         {/* Remarks */}
-        <td className={`px-3.5 align-middle ${baseTdClass}`}>{remarksContent}</td>
+        <td className={`px-2 align-middle ${baseTdClass}`} title={remarksTooltip || undefined}>
+          {signals.length > 0 ? (
+            <div className="flex flex-wrap gap-0.5">
+              {signals.map((s, i) => (
+                <span key={i} className={`text-[9px] font-medium px-1.5 py-0.5 rounded border ${signalStyles[s.type] ?? signalStyles.context}`}>
+                  {s.label}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <span className="text-gray-300">—</span>
+          )}
+        </td>
 
         {/* Code */}
         <CodeCell
