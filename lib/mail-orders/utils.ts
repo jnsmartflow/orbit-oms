@@ -98,6 +98,24 @@ export function formatTime(receivedAt: string): string {
 
 export const BATCH_COPY_LIMIT = 20;
 export const SPLIT_VOLUME_THRESHOLD = 1500; // liters
+export const SORT_DISPLAY_THRESHOLD = 5;
+
+export function sortLinesForPicker(lines: MoOrderLine[]): MoOrderLine[] {
+  return [...lines].sort((a, b) => {
+    // Primary: productName alphabetical
+    const prodA = (a.productName || '').toUpperCase();
+    const prodB = (b.productName || '').toUpperCase();
+    if (prodA !== prodB) return prodA.localeCompare(prodB);
+
+    // Secondary: pack volume DESC
+    const volA = getPackVolumeLiters(a.packCode);
+    const volB = getPackVolumeLiters(b.packCode);
+    if (volA === 0 && volB === 0) return 0;
+    if (volA === 0) return 1;
+    if (volB === 0) return -1;
+    return volB - volA;
+  });
+}
 export const SPLIT_LINE_THRESHOLD = 20;
 
 const MIN_GROUP_LINES = 8;

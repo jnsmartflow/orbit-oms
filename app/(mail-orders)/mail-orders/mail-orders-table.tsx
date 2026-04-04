@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Check, Copy, ChevronDown, Pencil, Search, Lock, LockOpen } from "lucide-react";
-import { formatTime, smartTitleCase, getLineVolume, getOrderVolume, formatVolume, BATCH_COPY_LIMIT, SPLIT_VOLUME_THRESHOLD, SPLIT_LINE_THRESHOLD, splitLinesByCategory } from "@/lib/mail-orders/utils";
+import { formatTime, smartTitleCase, getLineVolume, getOrderVolume, formatVolume, BATCH_COPY_LIMIT, SPLIT_VOLUME_THRESHOLD, SPLIT_LINE_THRESHOLD, SORT_DISPLAY_THRESHOLD, splitLinesByCategory, sortLinesForPicker } from "@/lib/mail-orders/utils";
 import { searchCustomers } from "@/lib/mail-orders/api";
 import type { MoOrder, MoOrderLine, CustomerSearchResult } from "@/lib/mail-orders/types";
 import { ResolveLinePanel } from "./resolve-line-panel";
@@ -565,6 +565,9 @@ function OrderRow({
   const currentBatch = batchStates[order.id] ?? 0;
   const needsBatching = matchedCount > BATCH_COPY_LIMIT;
   const totalBatches = needsBatching ? Math.ceil(matchedCount / BATCH_COPY_LIMIT) : 1;
+  const sortedLines = order.lines.length > SORT_DISPLAY_THRESHOLD
+    ? sortLinesForPicker(order.lines)
+    : order.lines;
 
   const [editingSo, setEditingSo] = useState(false);
   const [soInput, setSoInput] = useState(order.soNumber ?? "");
@@ -782,10 +785,10 @@ function OrderRow({
             onClick={(e) => {
               e.stopPropagation();
               if (needsBatching) {
-                onCopy(order.id, order.lines, currentBatch);
+                onCopy(order.id, sortedLines, currentBatch);
                 onAdvanceBatch(order.id);
               } else {
-                onCopy(order.id, order.lines);
+                onCopy(order.id, sortedLines);
               }
             }}
             className={`inline-flex items-center gap-1 border rounded-md text-[11px] font-medium px-2 h-[28px] transition-colors ${
@@ -1019,23 +1022,33 @@ function ExpandRow({ order, onSplitComplete }: { order: MoOrder; onSplitComplete
   >(null);
   const [loadingOriginal, setLoadingOriginal] = useState(false);
 
+  const shouldSort = order.lines.length > SORT_DISPLAY_THRESHOLD;
+  const displayLines = shouldSort ? sortLinesForPicker(order.lines) : order.lines;
+  const linesToRender = showOriginal && !order.splitLabel ? order.lines : displayLines;
+
   async function fetchOriginalLines() {
-    if (originalLines) {
-      setShowOriginal(true);
-      return;
-    }
-    setLoadingOriginal(true);
-    try {
-      const res = await fetch(`/api/mail-orders/${order.id}/original-lines`);
-      if (res.ok) {
-        const data = await res.json();
-        setOriginalLines(data.lines);
+    if (order.splitLabel) {
+      // Split order: fetch from API (both halves)
+      if (originalLines) {
         setShowOriginal(true);
+        return;
       }
-    } catch (err) {
-      console.error("Failed to fetch original lines:", err);
+      setLoadingOriginal(true);
+      try {
+        const res = await fetch(`/api/mail-orders/${order.id}/original-lines`);
+        if (res.ok) {
+          const data = await res.json();
+          setOriginalLines(data.lines);
+          setShowOriginal(true);
+        }
+      } catch (err) {
+        console.error("Failed to fetch original lines:", err);
+      }
+      setLoadingOriginal(false);
+    } else {
+      // Non-split order: just show unsorted lines (email sequence)
+      setShowOriginal(true);
     }
-    setLoadingOriginal(false);
   }
 
   function handleResolved(lineId: number, skuCode: string, skuDescription: string) {
@@ -1140,8 +1153,8 @@ function ExpandRow({ order, onSplitComplete }: { order: MoOrder; onSplitComplete
             </div>
           </div>
         )}
-        {/* Toolbar row — only for split orders */}
-        {order.splitLabel && (
+        {/* Toolbar row — for sorted or split orders */}
+        {shouldSort && (
           <div className="flex items-center justify-between px-4 pt-3 pb-1">
             <div className="flex items-center gap-2">
               <button
@@ -1158,18 +1171,26 @@ function ExpandRow({ order, onSplitComplete }: { order: MoOrder; onSplitComplete
                     : "bg-white border-gray-200 text-gray-500 hover:bg-gray-50"
                 }`}
               >
-                {loadingOriginal ? "Loading..." : showOriginal ? "✂ Split View" : "📧 Original Order"}
+                {loadingOriginal
+                  ? "Loading..."
+                  : showOriginal
+                    ? (order.splitLabel ? "✂ Split View" : "📦 Sorted View")
+                    : (order.splitLabel ? "📧 Original Order" : "📧 Email Order")
+                }
               </button>
-              {showOriginal && originalLines && (
+              {showOriginal && (
                 <span className="text-[10px] text-gray-400">
-                  {originalLines.length} lines · original email sequence
+                  {order.splitLabel && originalLines
+                    ? `${originalLines.length} lines · original email sequence`
+                    : `${order.lines.length} lines · email sequence`
+                  }
                 </span>
               )}
             </div>
           </div>
         )}
         {/* Line items table */}
-        {showOriginal && originalLines ? (
+        {showOriginal && order.splitLabel && originalLines ? (
           <OriginalLinesTable lines={originalLines} currentOrderId={order.id} />
         ) : (
         <table className="w-full border-collapse">
@@ -1212,10 +1233,10 @@ function ExpandRow({ order, onSplitComplete }: { order: MoOrder; onSplitComplete
             </tr>
           </thead>
           <tbody>
-            {order.lines.map((line, idx) => {
+            {linesToRender.map((line, idx) => {
               const resolved = resolvedLines[line.id];
               const isMatched = line.matchStatus === "matched" || !!resolved;
-              const isLast = idx === order.lines.length - 1;
+              const isLast = idx === linesToRender.length - 1;
               const unmatchedBg = !isMatched ? "bg-amber-50/40" : undefined;
 
               // Show resolve panel instead of normal row
@@ -1237,7 +1258,10 @@ function ExpandRow({ order, onSplitComplete }: { order: MoOrder; onSplitComplete
                   style={{ borderBottom: isLast ? undefined : "1px solid #f0f0f0" }}
                 >
                   <td className={`px-3.5 align-middle text-[11px] text-gray-400 ${unmatchedBg ?? ""}`}>
-                    {line.lineNumber}
+                    {showOriginal
+                      ? (line.originalLineNumber ?? line.lineNumber)
+                      : idx + 1
+                    }
                   </td>
                   <td className={`px-3.5 align-middle text-[11px] text-gray-700 ${unmatchedBg ?? ""}`}>
                     {line.rawText}
