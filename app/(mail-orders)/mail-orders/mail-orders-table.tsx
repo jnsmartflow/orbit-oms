@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Check, Copy, ChevronDown, Pencil, Search, Lock, LockOpen } from "lucide-react";
-import { formatTime, smartTitleCase, getLineVolume, getOrderVolume, formatVolume, BATCH_COPY_LIMIT, SPLIT_VOLUME_THRESHOLD, SPLIT_LINE_THRESHOLD, SORT_DISPLAY_THRESHOLD, splitLinesByCategory, sortLinesForPicker } from "@/lib/mail-orders/utils";
+import { formatTime, smartTitleCase, getLineVolume, getOrderVolume, formatVolume, BATCH_COPY_LIMIT, SPLIT_VOLUME_THRESHOLD, SPLIT_LINE_THRESHOLD, SORT_DISPLAY_THRESHOLD, splitLinesByCategory, sortLinesForPicker, isOdCiFlagged } from "@/lib/mail-orders/utils";
 import { searchCustomers } from "@/lib/mail-orders/api";
 import type { MoOrder, MoOrderLine, CustomerSearchResult } from "@/lib/mail-orders/types";
 import { ResolveLinePanel } from "./resolve-line-panel";
@@ -558,9 +558,11 @@ function OrderRow({
   onAdvanceBatch: (orderId: number) => void;
   onSplitComplete: () => void;
 }) {
+  const autoFlagged = isOdCiFlagged(order);
+  const effectiveFlagged = isFlagged || autoFlagged;
   const hasUnmatched = order.matchedLines < order.totalLines;
   const matchedCount = order.lines.filter((l) => l.matchStatus === "matched").length;
-  const isDisabled = isFlagged || isPunched || matchedCount === 0;
+  const isDisabled = effectiveFlagged || isPunched || matchedCount === 0;
   const isCopied = copiedId === order.id;
   const currentBatch = batchStates[order.id] ?? 0;
   const needsBatching = matchedCount > BATCH_COPY_LIMIT;
@@ -593,7 +595,7 @@ function OrderRow({
 
   const isSplit = !!order.splitLabel;
 
-  const borderLeft = isFlagged
+  const borderLeft = effectiveFlagged
     ? "3px solid #f87171"
     : isFocused
       ? "3px solid #f59e0b"
@@ -602,7 +604,7 @@ function OrderRow({
         : isSplit
           ? "3px solid #a78bfa"
           : undefined;
-  const needsBorderCompensation = isFlagged || isFocused || isPunched || isSplit;
+  const needsBorderCompensation = effectiveFlagged || isFocused || isPunched || isSplit;
 
   // Remarks — signal badges
   const signalStyles: Record<string, string> = {
@@ -624,7 +626,7 @@ function OrderRow({
     if (/\b(od|overdue)\b/.test(combined)) result.push({ label: 'OD', type: 'blocker' });
     if (/\b(ci|credit\s*(hold|block|issue))\b/.test(combined)) result.push({ label: 'CI', type: 'blocker' });
     if (/\bbounce\b/.test(combined)) result.push({ label: 'Bounce', type: 'blocker' });
-    if (/\bextension\b/.test(combined)) result.push({ label: 'Extension', type: 'blocker' });
+    if (/\bextension\b/.test(combined) && !/bill\s*tomorrow/.test(combined)) result.push({ label: 'Extension', type: 'blocker' });
 
     // Timing (amber)
     if (/bill\s*tomorrow/.test(combined)) result.push({ label: 'Bill Tomorrow', type: 'timing' });
@@ -715,7 +717,7 @@ function OrderRow({
                   >
                     {displayNameFull}
                   </span>
-                  {isFlagged && (
+                  {effectiveFlagged && (
                     <Lock size={12} className="text-red-500 flex-shrink-0" />
                   )}
                 </div>
@@ -904,7 +906,7 @@ function OrderRow({
         <td className={`px-3.5 align-middle text-center ${baseTdClass}`}>
           {isPunched ? (
             <span className="text-gray-300 text-[11px]">—</span>
-          ) : isFlagged ? (
+          ) : effectiveFlagged ? (
             <button
               onClick={(e) => { e.stopPropagation(); onFlag(order.id) }}
               className="bg-red-50 rounded p-1 text-red-500 cursor-pointer"
