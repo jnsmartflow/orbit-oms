@@ -70,11 +70,9 @@ export async function POST(
     return NextResponse.json({ error: "Not all lines accounted for" }, { status: 400 });
   }
 
-  // Calculate stats for each group
-  const groupAIdSet = new Set(groupAIds);
-  const groupBIdSet = new Set(groupBIds);
-  const groupALines = order.lines.filter((l) => groupAIdSet.has(l.id));
-  const groupBLines = order.lines.filter((l) => groupBIdSet.has(l.id));
+  // Calculate stats for each group — preserve frontend's sorted order
+  const groupALines = groupAIds.map((id) => order.lines.find((l) => l.id === id)!);
+  const groupBLines = groupBIds.map((id) => order.lines.find((l) => l.id === id)!);
   const groupAMatched = groupALines.filter((l) => l.matchStatus === "matched").length;
   const groupBMatched = groupBLines.filter((l) => l.matchStatus === "matched").length;
 

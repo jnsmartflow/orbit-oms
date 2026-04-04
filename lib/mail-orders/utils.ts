@@ -130,13 +130,27 @@ export function splitLinesByCategory(
 ): [number[], number[]] {
   const totalLines = lines.length;
 
+  // Sort indices within a group by pack size DESC for picker efficiency
+  const sortByPackSize = (indices: number[]) => {
+    indices.sort((a, b) => {
+      const volA = getPackVolumeLiters(lines[a].packCode);
+      const volB = getPackVolumeLiters(lines[b].packCode);
+      if (volA === 0 && volB === 0) return 0;
+      if (volA === 0) return 1;
+      if (volB === 0) return -1;
+      if (volB !== volA) return volB - volA;
+      return 0;
+    });
+  };
+
   // If too few lines to split meaningfully, just do simple halving
   if (totalLines < MIN_GROUP_LINES * 2) {
     const mid = Math.ceil(totalLines / 2);
-    return [
-      lines.slice(0, mid).map(l => l.index),
-      lines.slice(mid).map(l => l.index),
-    ];
+    const halfA = lines.slice(0, mid).map(l => l.index);
+    const halfB = lines.slice(mid).map(l => l.index);
+    sortByPackSize(halfA);
+    sortByPackSize(halfB);
+    return [halfA, halfB];
   }
 
   // ── Step 1: Group by productName ──────────────────────────
@@ -191,8 +205,17 @@ export function splitLinesByCategory(
   let countA = 0;
   let countB = 0;
 
+  const totalLineCount = lines.length;
+
   for (const block of blocks) {
-    if (volA <= volB) {
+    const scoreA = totalVolume > 0
+      ? 0.5 * (volA / totalVolume) + 0.5 * (countA / totalLineCount)
+      : countA / totalLineCount;
+    const scoreB = totalVolume > 0
+      ? 0.5 * (volB / totalVolume) + 0.5 * (countB / totalLineCount)
+      : countB / totalLineCount;
+
+    if (scoreA <= scoreB) {
       groupA.push(...block.indices);
       volA += block.volume;
       countA += block.lineCount;
@@ -216,7 +239,14 @@ export function splitLinesByCategory(
     volB = 0;
 
     for (const block of blocks) {
-      if (countA <= countB) {
+      const scoreA = totalVolume > 0
+        ? 0.5 * (volA / totalVolume) + 0.5 * (countA / totalLineCount)
+        : countA / totalLineCount;
+      const scoreB = totalVolume > 0
+        ? 0.5 * (volB / totalVolume) + 0.5 * (countB / totalLineCount)
+        : countB / totalLineCount;
+
+      if (scoreA <= scoreB) {
         groupA.push(...block.indices);
         countA += block.lineCount;
         volA += block.volume;
@@ -231,9 +261,16 @@ export function splitLinesByCategory(
     if (countA < MIN_GROUP_LINES || countB < MIN_GROUP_LINES) {
       const allIndices = lines.map(l => l.index);
       const mid = Math.ceil(allIndices.length / 2);
-      return [allIndices.slice(0, mid), allIndices.slice(mid)];
+      const fallbackA = allIndices.slice(0, mid);
+      const fallbackB = allIndices.slice(mid);
+      sortByPackSize(fallbackA);
+      sortByPackSize(fallbackB);
+      return [fallbackA, fallbackB];
     }
   }
+
+  sortByPackSize(groupA);
+  sortByPackSize(groupB);
 
   return [groupA, groupB];
 }
