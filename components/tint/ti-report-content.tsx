@@ -12,8 +12,9 @@ import {
 } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import {
-  Download, Inbox, ChevronDown, ChevronRight, ChevronLeft, SlidersHorizontal,
+  Inbox, ChevronDown, ChevronRight, ChevronLeft,
 } from "lucide-react";
+import { UniversalHeader } from "@/components/universal-header";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -348,23 +349,20 @@ export function TIReportContent() {
   const [tinterType,  setTinterType]  = useState("");
   const [searchInput, setSearchInput] = useState("");
   const [obdSearch,   setObdSearch]   = useState("");
-  const [filterOpen,  setFilterOpen]  = useState(false);
+  const [headerFilters, setHeaderFilters] = useState<Record<string, string[]>>({ tinterType: [], operator: [] });
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [rows,        setRows]        = useState<TIRow[]>([]);
   const [summary,     setSummary]     = useState<Summary | null>(null);
   const [loading,     setLoading]     = useState(true);
   const [operators,   setOperators]   = useState<Operator[]>([]);
 
-  const filterRef = useRef<HTMLDivElement>(null);
-
-  // Close filter on outside click
+  // Sync header filters → existing filter state
   useEffect(() => {
-    function handle(e: MouseEvent) {
-      if (filterRef.current && !filterRef.current.contains(e.target as Node)) setFilterOpen(false);
-    }
-    if (filterOpen) document.addEventListener("mousedown", handle);
-    return () => document.removeEventListener("mousedown", handle);
-  }, [filterOpen]);
+    const tt = headerFilters.tinterType ?? [];
+    setTinterType(tt.length === 1 ? tt[0] : "");
+    const op = headerFilters.operator ?? [];
+    setOperatorId(op.length === 1 ? op[0] : "");
+  }, [headerFilters]);
 
   // Debounce OBD search
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -420,6 +418,24 @@ export function TIReportContent() {
   const isSameDay     = dateFrom === dateTo;
   const downloadLabel = isSameDay ? fmtDisplay(dateFrom) : `${fmtDisplay(dateFrom)} – ${fmtDisplay(dateTo)}`;
 
+  // Derive active date segment
+  const dateSegment: string | null = (() => {
+    const t = todayISO();
+    if (dateFrom === t && dateTo === t) return "today";
+    const d3 = dateToISO(new Date(new Date().setDate(new Date().getDate() - 2)));
+    if (dateFrom === d3 && dateTo === t) return "3days";
+    const d7 = dateToISO(new Date(new Date().setDate(new Date().getDate() - 6)));
+    if (dateFrom === d7 && dateTo === t) return "7days";
+    return null;
+  })();
+
+  function handleSegmentChange(id: string | number | null) {
+    const t = todayISO();
+    if (id === "today") { setDateFrom(t); setDateTo(t); }
+    else if (id === "3days") { setDateFrom(dateToISO(new Date(new Date().setDate(new Date().getDate() - 2)))); setDateTo(t); }
+    else if (id === "7days") { setDateFrom(dateToISO(new Date(new Date().setDate(new Date().getDate() - 6)))); setDateTo(t); }
+  }
+
   function fmtDisplay(iso: string): string {
     const d = isoToDate(iso);
     return `${String(d.getDate()).padStart(2, "0")} ${MONTH_NAMES[d.getMonth()]}`;
@@ -428,147 +444,43 @@ export function TIReportContent() {
   return (
     <div className="flex flex-col h-full bg-white">
 
-      {/* ── Row 1 ────────────────────────────────────────────────────────────── */}
-      <div className="h-[42px] flex items-center justify-between px-4 border-b border-gray-100 flex-shrink-0 sticky top-0 z-20 bg-white">
-        <div className="flex items-center gap-3">
-          <span className="text-[14px] font-semibold text-gray-900">TI Report</span>
-          <span className="text-[11px] text-gray-400">
-            <span className="text-gray-900 font-semibold">{summary?.totalEntries ?? 0}</span> entries
-          </span>
-          <span className="text-[11px] text-gray-400">
-            <span className="text-gray-900 font-semibold">{(summary?.totalTinQty ?? 0).toFixed(1)}</span> tins
-          </span>
-          <span className="w-px h-3 bg-gray-200" />
-          <span className="text-[11px] text-gray-400">
-            TINTER <span className="text-gray-900 font-semibold">{summary?.byType.TINTER ?? 0}</span>
-          </span>
-          <span className="text-[11px] text-gray-400">
-            ACOTONE <span className="text-gray-900 font-semibold">{summary?.byType.ACOTONE ?? 0}</span>
-          </span>
-        </div>
-
-        <button
-          type="button"
-          onClick={() => exportXLSX(rows, tinterType, dateFrom, dateTo)}
-          disabled={rows.length === 0 || loading}
-          className="h-7 px-3 gap-1.5 text-[11px] font-medium rounded-md bg-teal-600 hover:bg-teal-700 text-white flex items-center transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          <Download className="h-3 w-3" />
-          Download Excel
-          <span className="w-px h-3 bg-white/30 mx-0.5" />
-          <span className="text-white/70 text-[10px]">{downloadLabel}</span>
-        </button>
-      </div>
-
-      {/* ── Row 2 ────────────────────────────────────────────────────────────── */}
-      <div className="h-[40px] flex items-center gap-2 px-4 border-b border-gray-100 flex-shrink-0 sticky top-[42px] z-10 bg-white">
-
-        {/* Date range picker */}
-        <DateRangePicker
-          dateFrom={dateFrom}
-          dateTo={dateTo}
-          onChange={(from, to) => { setDateFrom(from); setDateTo(to); }}
-        />
-
-        {/* OBD Search */}
-        <div className="relative flex-1 max-w-[280px]">
-          <Input
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            placeholder="Search OBD…"
-            className="h-7 w-full text-[11px] rounded-md border-gray-200 focus-visible:ring-gray-900/20"
+      <UniversalHeader
+        title="TI Report"
+        stats={[
+          { label: "entries", value: summary?.totalEntries ?? 0 },
+          { label: "tins", value: Math.round(summary?.totalTinQty ?? 0) },
+        ]}
+        showDownload
+        onDownload={() => exportXLSX(rows, tinterType, dateFrom, dateTo)}
+        segments={[
+          { id: "today", label: "Today" },
+          { id: "3days", label: "3 Days" },
+          { id: "7days", label: "7 Days" },
+        ]}
+        activeSegment={dateSegment}
+        onSegmentChange={handleSegmentChange}
+        leftExtra={
+          <DateRangePicker
+            dateFrom={dateFrom}
+            dateTo={dateTo}
+            onChange={(from, to) => { setDateFrom(from); setDateTo(to); }}
           />
-        </div>
+        }
+        filterGroups={[
+          { label: "Tinter Type", key: "tinterType", options: [{ value: "TINTER", label: "Tinter" }, { value: "ACOTONE", label: "Acotone" }] },
+          ...(operators.length <= 10 ? [{
+            label: "Operator", key: "operator",
+            options: operators.map((op) => ({ value: String(op.id), label: op.name })),
+          }] : []),
+        ]}
+        activeFilters={headerFilters}
+        onFilterChange={setHeaderFilters}
+        showDatePicker={false}
+        searchPlaceholder="Search OBD..."
+        searchValue={searchInput}
+        onSearchChange={setSearchInput}
+      />
 
-        {/* Spacer */}
-        <div className="flex-1" />
-
-        {/* Filter dropdown */}
-        <div className="relative flex-shrink-0" ref={filterRef}>
-          <button
-            type="button"
-            onClick={() => setFilterOpen((v) => !v)}
-            className={`h-7 px-3 flex items-center gap-1.5 rounded-md border text-[11px] font-medium transition-colors ${
-              activeFilterCount > 0
-                ? "border-gray-900 text-gray-900"
-                : "border-gray-200 text-gray-500 hover:border-gray-300"
-            }`}
-          >
-            <SlidersHorizontal className="h-3 w-3" />
-            Filter
-            {activeFilterCount > 0 && (
-              <span className="ml-0.5 bg-gray-900 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
-                {activeFilterCount}
-              </span>
-            )}
-          </button>
-
-          {filterOpen && (
-            <div className="absolute right-0 top-[calc(100%+6px)] w-[220px] bg-white border border-gray-200 rounded-lg shadow-lg z-50 p-3 flex flex-col gap-3">
-
-              {/* Operator */}
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1.5">Operator</p>
-                <div className="flex flex-col gap-0.5">
-                  <button
-                    type="button"
-                    onClick={() => setOperatorId("")}
-                    className={`text-left px-2.5 py-1.5 rounded-md text-[11px] font-medium transition-colors ${
-                      operatorId === "" ? "bg-gray-900 text-white" : "text-gray-600 hover:bg-gray-50"
-                    }`}
-                  >
-                    All Operators
-                  </button>
-                  {operators.map((op) => (
-                    <button
-                      key={op.id}
-                      type="button"
-                      onClick={() => setOperatorId(String(op.id))}
-                      className={`text-left px-2.5 py-1.5 rounded-md text-[11px] font-medium transition-colors ${
-                        operatorId === String(op.id) ? "bg-gray-900 text-white" : "text-gray-600 hover:bg-gray-50"
-                      }`}
-                    >
-                      {op.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Type */}
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1.5">Type</p>
-                <div className="flex gap-1">
-                  {(["", "TINTER", "ACOTONE"] as const).map((t) => (
-                    <button
-                      key={t}
-                      type="button"
-                      onClick={() => setTinterType(t)}
-                      className={`px-2.5 py-1 rounded-md border text-[11px] font-medium transition-colors ${
-                        tinterType === t
-                          ? "bg-gray-900 text-white border-gray-900"
-                          : "bg-white text-gray-500 border-gray-200 hover:border-gray-300"
-                      }`}
-                    >
-                      {t === "" ? "All" : t}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Clear */}
-              {activeFilterCount > 0 && (
-                <button
-                  type="button"
-                  onClick={() => { clearFilters(); setFilterOpen(false); }}
-                  className="text-[11px] text-gray-400 hover:text-gray-600 text-left pt-1 border-t border-gray-100"
-                >
-                  Clear all filters
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
 
       {/* ── Table ────────────────────────────────────────────────────────────── */}
       <div className="flex-1 overflow-auto px-4 py-3">

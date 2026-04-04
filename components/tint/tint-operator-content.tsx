@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from "react";
 import { Loader2, ChevronDown, Palette } from "lucide-react";
+import { UniversalHeader } from "@/components/universal-header";
 import { cn } from "@/lib/utils";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -298,7 +299,6 @@ export function TintOperatorContent() {
   const [selectedJobType, setSelectedJobType] = useState<"split" | "order" | null>(null);
   const [queueSheetOpen,  setQueueSheetOpen]  = useState(false);
   const [leftView,        setLeftView]        = useState<"queue" | "completed">("queue");
-  const [clock,           setClock]           = useState("");
   const [elapsed,         setElapsed]         = useState("00:00:00");
   // ── TI form state ────────────────────────────────────────────────────────
   const [tinterType,         setTinterType]         = useState<"TINTER" | "ACOTONE">("TINTER");
@@ -417,16 +417,6 @@ export function TintOperatorContent() {
     fetchOrders().finally(() => setIsLoading(false));
   }, [fetchOrders]);
 
-  useEffect(() => {
-    const tick = () => setClock(
-      new Date().toLocaleTimeString("en-IN", {
-        hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
-      }),
-    );
-    tick();
-    const id = setInterval(tick, 1000);
-    return () => clearInterval(id);
-  }, []);
 
   async function postSplitAction(endpoint: string, splitId: number) {
     setSplitActionLoading(splitId);
@@ -1032,62 +1022,25 @@ export function TintOperatorContent() {
     <>
     <div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden" }}>
 
-      {/* ── ROW 1 — Title + inline stats + clock ── */}
-      <header className="h-[42px] bg-white border-b border-gray-200 px-4 flex items-center justify-between sticky top-0 z-20 flex-shrink-0">
-        <div className="flex items-center gap-1.5">
-          <span className="text-[14px] font-semibold text-gray-900">My Jobs</span>
-          <span className="text-gray-300">·</span>
-          <span className="text-gray-900 font-semibold text-[11px]">{jobs.length}</span>
-          <span className="text-[11px] text-gray-400">in queue</span>
-          <span className="text-gray-300">·</span>
-          <span className="text-gray-900 font-semibold text-[11px]">{inProgressCount}</span>
-          <span className="text-[11px] text-gray-400">active</span>
-          <span className="text-gray-300">·</span>
-          <span className="text-gray-900 font-semibold text-[11px]">{completedCount}</span>
-          <span className="text-[11px] text-gray-400">done today</span>
-        </div>
-        <span className="text-[11px] font-mono text-gray-400">{clock || "--:--:--"}</span>
-      </header>
-
-      {/* ── ROW 2 — Queue / Completed toggle pills ── */}
-      <div className="h-[36px] bg-white border-b border-gray-200 px-4 flex items-center gap-2 sticky top-[42px] z-20 flex-shrink-0">
-        <button
-          type="button"
-          onClick={() => setLeftView("queue")}
-          className={`inline-flex items-center gap-1.5 h-7 px-2.5 text-xs font-medium border rounded-md transition-colors ${
-            leftView === "queue"
-              ? "border-gray-900 text-gray-900 font-medium"
-              : "border-gray-200 text-gray-500"
-          }`}
-        >
-          Queue
-          <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
-            leftView === "queue"
-              ? "bg-gray-900 text-white"
-              : "bg-gray-50 border border-gray-200 text-gray-500"
-          }`}>
-            {jobs.length}
-          </span>
-        </button>
-        <button
-          type="button"
-          onClick={() => setLeftView("completed")}
-          className={`inline-flex items-center gap-1.5 h-7 px-2.5 text-xs font-medium border rounded-md transition-colors ${
-            leftView === "completed"
-              ? "border-gray-900 text-gray-900 font-medium"
-              : "border-gray-200 text-gray-500"
-          }`}
-        >
-          Completed
-          <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
-            leftView === "completed"
-              ? "bg-gray-900 text-white"
-              : "bg-gray-50 border border-gray-200 text-gray-500"
-          }`}>
-            {completedCount}
-          </span>
-        </button>
-      </div>
+      <UniversalHeader
+        title="My Jobs"
+        stats={[
+          { label: "in queue", value: jobs.length },
+          { label: "active", value: inProgressCount },
+          { label: "done today", value: completedCount },
+        ]}
+        segments={[
+          { id: "queue", label: "Queue", count: jobs.length },
+          { id: "completed", label: "Completed", count: completedCount },
+        ]}
+        activeSegment={leftView}
+        onSegmentChange={(id) => setLeftView((id as "queue" | "completed") ?? "queue")}
+        showDatePicker={false}
+        shortcuts={[
+          { key: "\u2191\u2193", label: "Navigate orders" },
+          { key: "\u21B5", label: "Open order" },
+        ]}
+      />
 
       {/* ── MAIN (placeholder — filled in next steps) ── */}
       <div className="flex flex-1 overflow-hidden">

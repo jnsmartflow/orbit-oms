@@ -16,6 +16,7 @@ import type { SplitBuilderModalProps } from "@/components/tint/split-builder-mod
 import { TintTableView } from "@/components/tint/tint-table-view";
 import { CustomerMissingSheet } from "@/components/shared/customer-missing-sheet";
 import { OrderDetailPanel } from "@/components/shared/order-detail-panel";
+import { UniversalHeader } from "@/components/universal-header";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -1571,6 +1572,7 @@ export function TintManagerContent() {
   const [workloadBarOpen,    setWorkloadBarOpen]    = useState(false);
   const [operatorFilter,     setOperatorFilter]     = useState("");
   const [filterDropdownOpen, setFilterDropdownOpen] = useState(false);
+  const [headerFilters,      setHeaderFilters]      = useState<Record<string, string[]>>({ deliveryType: [], priority: [], type: [], operator: [] });
   const searchRef = useRef<HTMLDivElement>(null);
 
   const [selectedOrder,   setSelectedOrder]   = useState<TintOrder | null>(null);
@@ -1627,6 +1629,18 @@ export function TintManagerContent() {
     const id = setInterval(() => setNow(new Date()), 60_000);
     return () => clearInterval(id);
   }, []);
+
+  // Sync headerFilters → existing filter states
+  useEffect(() => {
+    const dt = headerFilters.deliveryType ?? [];
+    setDelTypeFilter(new Set(dt));
+    const pr = headerFilters.priority ?? [];
+    setPriorityFilter(pr.length === 1 ? (pr[0] as "urgent" | "normal") : "all");
+    const tp = headerFilters.type ?? [];
+    setTypeFilter(tp.length === 1 ? (tp[0] as "split" | "whole") : "all");
+    const op = headerFilters.operator ?? [];
+    setOperatorFilter(op.length === 1 ? op[0] : "");
+  }, [headerFilters]);
 
   useEffect(() => {
     function handleOutside(e: MouseEvent) {
@@ -2113,6 +2127,56 @@ export function TintManagerContent() {
   return (
     <div className="min-h-screen bg-white">
 
+      <UniversalHeader
+        title="Tint Manager"
+        stats={[
+          { label: "pending", value: pendingCount },
+          { label: "assigned", value: assignedCount },
+          { label: "in progress", value: inProgressCount },
+          { label: "done", value: doneCount },
+        ]}
+        segments={slotSummary.filter((s) => !s.isNextDay).map((s) => ({ id: s.id, label: s.name, count: s.tintPendingCount }))}
+        activeSegment={slotFilter === "all" ? null : slotFilter}
+        onSegmentChange={(id) => setSlotFilter(id === null ? "all" : (id as number))}
+        filterGroups={[
+          { label: "Delivery Type", key: "deliveryType", options: [{ value: "LOCAL", label: "Local" }, { value: "UPC", label: "UPC" }, { value: "IGT", label: "IGT" }, { value: "CROSS", label: "Cross" }] },
+          { label: "Priority", key: "priority", options: [{ value: "urgent", label: "Urgent" }, { value: "normal", label: "Normal" }] },
+          { label: "Type", key: "type", options: [{ value: "split", label: "Split" }, { value: "whole", label: "Whole" }] },
+          { label: "Operator", key: "operator", options: operators.filter((op) => op.name).map((op) => ({ value: String(op.id), label: op.name! })) },
+        ]}
+        activeFilters={headerFilters}
+        onFilterChange={setHeaderFilters}
+        currentDate={now}
+        onDateChange={() => {/* TODO: Wire viewDate to API fetch */}}
+        searchPlaceholder="Search OBD, customer..."
+        searchValue={searchQuery}
+        onSearchChange={setSearchQuery}
+        rightExtra={
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => { setViewMode("card"); if (typeof window !== "undefined") sessionStorage.setItem("tm_view_mode", "card"); }}
+              className={`p-1 rounded ${viewMode === "card" ? "bg-gray-100 text-gray-900" : "text-gray-400 hover:text-gray-600"}`}
+              title="Card view"
+            >
+              <LayoutGrid size={14} />
+            </button>
+            <button
+              onClick={() => { setViewMode("table"); if (typeof window !== "undefined") sessionStorage.setItem("tm_view_mode", "table"); }}
+              className={`p-1 rounded ${viewMode === "table" ? "bg-gray-100 text-gray-900" : "text-gray-400 hover:text-gray-600"}`}
+              title="Table view"
+            >
+              <TableIcon size={14} />
+            </button>
+          </div>
+        }
+        shortcuts={[
+          { key: "\u2191\u2193", label: "Navigate rows" },
+          { key: "\u21B5", label: "Order details" },
+        ]}
+      />
+
+      {/* ── OLD HEADER START (hidden) ── */}
+      <div style={{ display: "none" }}>
       {/* ── Topbar ───────────────────────────────────────────────────────── */}
       <div className="h-[42px] bg-white border-b border-gray-200 px-5 flex items-center sticky top-0 z-40">
         {/* Left: title + stats */}
@@ -2445,6 +2509,8 @@ export function TintManagerContent() {
           </div>
         </div>
       </div>
+
+      </div>{/* ── END OLD HEADER (hidden) ── */}
 
       {/* ── Kanban board ─────────────────────────────────────────────────── */}
       {viewMode === "card" && (

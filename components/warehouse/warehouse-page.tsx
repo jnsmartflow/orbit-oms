@@ -4,11 +4,9 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useSession } from "next-auth/react";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { WarehouseHeader } from "./warehouse-header";
-import { WarehouseDeliveryTabs } from "./warehouse-delivery-tabs";
-import { WarehouseSlotTabs } from "./warehouse-slot-tabs";
 import { UnassignedPanel } from "./unassigned-panel";
 import { PickersPanel } from "./pickers-panel";
+import { UniversalHeader } from "@/components/universal-header";
 
 // ── Shared Types ─────────────────────────────────────────────────────────────
 
@@ -86,6 +84,7 @@ export function WarehousePage() {
     new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }),
   );
   const [deliveryType, setDeliveryType] = useState("Local");
+  const [headerFilters, setHeaderFilters] = useState<Record<string, string[]>>({ deliveryType: [], pickStatus: [] });
   const [activeSlotId, setActiveSlotId] = useState<number | null>(null);
   const [selectedOrderIds, setSelectedOrderIds] = useState<Set<number>>(new Set());
 
@@ -146,6 +145,23 @@ export function WarehousePage() {
       if (refreshTimerRef.current) clearInterval(refreshTimerRef.current);
     };
   }, [date, deliveryType, fetchBoard, fetchPickers]);
+
+  // Sync headerFilters → deliveryType
+  useEffect(() => {
+    const dt = headerFilters.deliveryType ?? [];
+    if (dt.length === 1) {
+      const map: Record<string, string> = { LOCAL: "Local", UPC: "Upcountry", IGT: "IGT", CROSS: "Cross" };
+      setDeliveryType(map[dt[0]] ?? "Local");
+    } else {
+      setDeliveryType("Local");
+    }
+  }, [headerFilters]);
+
+  // Header date conversion
+  const headerDate = useMemo(() => new Date(date + "T00:00:00+05:30"), [date]);
+  const handleHeaderDateChange = useCallback((d: Date) => {
+    setDate(d.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }));
+  }, []);
 
   // ── Actions ────────────────────────────────────────────────────────────────
   const handleAssign = useCallback(
@@ -336,32 +352,37 @@ export function WarehousePage() {
 
   return (
     <div className="min-h-screen bg-[#f8f9fa] text-[13px] text-gray-600">
-      <WarehouseHeader
-        date={date}
-        onDateChange={setDate}
-        onRefresh={() => void refresh()}
-        stats={stats}
+      <UniversalHeader
+        title="Warehouse"
+        stats={[
+          { label: "unassigned", value: stats.unassigned },
+          { label: "picking", value: stats.picking },
+          { label: "picked", value: stats.picked },
+          { label: "OBDs", value: stats.totalOBDs },
+        ]}
+        segments={slotTabs.filter((s) => !s.isNextDay).map((s) => ({ id: s.id, label: s.name, count: s.totalCount }))}
+        activeSegment={activeSlotId}
+        onSegmentChange={(id) => setActiveSlotId(id as number | null)}
+        filterGroups={[
+          { label: "Delivery Type", key: "deliveryType", options: [{ value: "LOCAL", label: "Local" }, { value: "UPC", label: "Upcountry" }, { value: "IGT", label: "IGT" }, { value: "CROSS", label: "Cross Depot" }] },
+          { label: "Pick Status", key: "pickStatus", options: [{ value: "unassigned", label: "Unassigned" }, { value: "assigned", label: "Assigned" }, { value: "picked", label: "Picked" }] },
+        ]}
+        activeFilters={headerFilters}
+        onFilterChange={setHeaderFilters}
+        currentDate={headerDate}
+        onDateChange={handleHeaderDateChange}
+        searchPlaceholder="Search OBD, customer..."
+        shortcuts={[
+          { key: "\u2191\u2193", label: "Navigate" },
+          { key: "\u21B5", label: "Order details" },
+        ]}
       />
 
       {isHistoryView && (
         <div className="bg-gray-100 border-b border-gray-200 px-5 py-2 text-[11px] text-gray-500">
-          📋 Viewing {formattedDate} — Read Only
+          Viewing {formattedDate} — Read Only
         </div>
       )}
-
-      <div className="bg-white border-b border-gray-200 px-5 py-3">
-        <WarehouseDeliveryTabs
-          active={deliveryType}
-          onChange={setDeliveryType}
-          counts={dtCounts}
-        />
-        <WarehouseSlotTabs
-          slots={slotTabs}
-          active={activeSlotId}
-          onChange={setActiveSlotId}
-          isHistoryView={isHistoryView}
-        />
-      </div>
 
       <div className="flex h-[calc(100vh-155px)]">
         <UnassignedPanel

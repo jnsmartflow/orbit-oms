@@ -1,13 +1,14 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo } from "react";
-import { Loader2, CalendarDays } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Checkbox } from "@/components/ui/checkbox";
 import { SupportOrdersTable } from "@/components/support/support-orders-table";
 import { CancelOrderDialog } from "@/components/support/cancel-order-dialog";
 import type { SupportOrder } from "@/components/support/support-orders-table";
+import { UniversalHeader } from "@/components/universal-header";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -104,6 +105,21 @@ export function SupportPageContent() {
   });
   const [selectedHold, setSelectedHold] = useState<Set<number>>(new Set());
   const [holdBulkLoading, setHoldBulkLoading] = useState(false);
+  const [headerFilters, setHeaderFilters] = useState<Record<string, string[]>>({ view: [], status: [], deliveryType: [], priority: [] });
+  const [searchQuery, setSearchQuery] = useState("");
+
+  // Sync header filters → existing state
+  useEffect(() => {
+    const v = headerFilters.view ?? [];
+    if (v.includes("hold")) { if (mainTab !== "hold") handleMainTabChange("hold"); }
+    else { if (mainTab !== "all") handleMainTabChange("all"); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [headerFilters.view]);
+
+  useEffect(() => {
+    const s = headerFilters.status ?? [];
+    setStatusFilter(s.length === 1 ? (s[0] as StatusFilter) : "all");
+  }, [headerFilters.status]);
 
   // Re-fetch slots + orders when date changes; reset hold tab when switching to history
   useEffect(() => {
@@ -346,9 +362,33 @@ export function SupportPageContent() {
     return orders;
   }, [orders, statusFilter]);
 
+  // Apply search filter on top of status filter
+  const displayOrders = useMemo(() => {
+    if (!searchQuery.trim()) return filteredOrders;
+    const q = searchQuery.trim().toLowerCase();
+    return filteredOrders.filter((o) =>
+      o.obdNumber.toLowerCase().includes(q) ||
+      o.shipToCustomerName?.toLowerCase().includes(q) ||
+      o.customer?.customerName?.toLowerCase().includes(q),
+    );
+  }, [filteredOrders, searchQuery]);
+
   const todayIST = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
-  const minDateIST = new Date(Date.now() - 30 * 86400000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
   const isHistoryView = date < todayIST;
+
+  // Header props
+  const headerDate = useMemo(() => new Date(date + "T00:00:00+05:30"), [date]);
+  const handleHeaderDateChange = useCallback((d: Date) => {
+    setDate(d.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }));
+  }, []);
+
+  const headerSegments = useMemo(() =>
+    slots.filter((s) => !s.isNextDay).map((s) => ({
+      id: s.id,
+      label: s.name,
+      count: s.pendingCount + s.tintingCount,
+    })),
+  [slots]);
 
   // ── Loading ───────────────────────────────────────────────────────────────
   if (slotsLoading) {
@@ -363,179 +403,55 @@ export function SupportPageContent() {
   return (
     <div className="h-screen flex flex-col bg-white overflow-hidden">
 
-      {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100 flex-shrink-0">
-        <div className="flex items-center gap-3">
-          <h1 className="text-sm font-semibold text-gray-900">Support Queue</h1>
-          <div className="flex items-center gap-1.5 text-xs text-gray-400">
-            <CalendarDays size={13} />
-            <input
-              type="date"
-              value={date}
-              max={todayIST}
-              min={minDateIST}
-              onChange={(e) => { if (e.target.value) setDate(e.target.value); }}
-              className="bg-transparent text-[11px] text-gray-500 border-none outline-none cursor-pointer"
-            />
-            <button
-              type="button"
-              onClick={() => void refresh()}
-              className="p-0.5 hover:bg-gray-100 rounded ml-0.5 transition-colors"
-            >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-            </button>
-          </div>
-        </div>
-        <div className="flex items-center gap-3 text-xs text-gray-400">
-          <span><span className="text-gray-600 font-medium">{headerPending}</span> Pending</span>
-          <span><span className="text-gray-600 font-medium">{headerDispatched}</span> Dispatched</span>
-          <span><span className="text-gray-600 font-medium">{headerTinting}</span> Tinting</span>
-          <span className="text-gray-200 mx-1">|</span>
-          <span><span className="text-gray-600 font-medium">{headerTotal}</span> OBDs</span>
-        </div>
-      </div>
+      <UniversalHeader
+        title="Support Queue"
+        stats={[
+          { label: "pending", value: headerPending },
+          { label: "dispatched", value: headerDispatched },
+          { label: "tinting", value: headerTinting },
+          { label: "OBDs", value: headerTotal },
+        ]}
+        segments={headerSegments}
+        activeSegment={activeSlotId}
+        onSegmentChange={(id) => {
+          if (id === null) {
+            if (slots.length > 0) handleSelectSection(`slot-${slots[0].id}`, slots[0].id);
+          } else {
+            handleSelectSection(`slot-${id}`, id as number);
+          }
+        }}
+        filterGroups={[
+          { label: "View", key: "view", options: [{ value: "hold", label: "Hold Only" }] },
+          { label: "Status", key: "status", options: [{ value: "pending", label: "Pending" }, { value: "dispatch", label: "Dispatch" }, { value: "dispatched", label: "Dispatched" }] },
+          { label: "Delivery Type", key: "deliveryType", options: [{ value: "LOCAL", label: "Local" }, { value: "UPC", label: "UPC" }, { value: "IGT", label: "IGT" }] },
+        ]}
+        activeFilters={headerFilters}
+        onFilterChange={setHeaderFilters}
+        currentDate={headerDate}
+        onDateChange={handleHeaderDateChange}
+        searchPlaceholder="Search OBD, customer..."
+        searchValue={searchQuery}
+        onSearchChange={setSearchQuery}
+        shortcuts={[
+          { key: "\u2191\u2193", label: "Navigate rows" },
+          { key: "\u21B5", label: "Expand order" },
+        ]}
+      />
 
       {/* ── Read-only history banner ─────────────────────────────────────── */}
       {isHistoryView && (
         <div className="px-5 py-2 bg-gray-50 text-xs text-gray-500 border-b border-gray-100 flex items-center gap-2 flex-shrink-0">
-          📋 Viewing {formatDateDDMMYYYY(date)} — Read Only
+          Viewing {formatDateDDMMYYYY(date)} — Read Only
         </div>
       )}
-
-      {/* ── Top Tabs: All | Hold ──────────────────────────────────────────── */}
-      <div className="flex items-center gap-5 px-5 border-b border-gray-100 flex-shrink-0">
-        {/* All tab */}
-        <button
-          type="button"
-          onClick={() => handleMainTabChange("all")}
-          className={cn(
-            "relative py-2.5 text-xs font-medium transition-colors",
-            mainTab === "all" ? "text-gray-900" : "text-gray-400 hover:text-gray-600",
-          )}
-        >
-          All
-          {allTabOrderCount > 0 && (
-            <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full ml-1.5">
-              {allTabOrderCount}
-            </span>
-          )}
-          {mainTab === "all" && (
-            <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-gray-900 rounded-t-sm" />
-          )}
-        </button>
-
-        {/* Hold tab — hidden in history view */}
-        {!isHistoryView && <button
-          type="button"
-          onClick={() => handleMainTabChange("hold")}
-          className={cn(
-            "relative py-2.5 text-xs font-medium transition-colors",
-            mainTab === "hold" ? "text-gray-900" : "text-gray-400 hover:text-gray-600",
-          )}
-        >
-          Hold
-          {holdCount > 0 && (
-            <span className="text-[10px] bg-amber-50 text-amber-500 px-1.5 py-0.5 rounded-full ml-1.5">
-              {holdCount}
-            </span>
-          )}
-          {mainTab === "hold" && (
-            <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-gray-900 rounded-t-sm" />
-          )}
-        </button>}
-      </div>
 
       {/* ── All Tab Content ───────────────────────────────────────────────── */}
       {mainTab === "all" && (
         <>
-          {/* Status filter pills */}
-          <div className="px-5 py-2 border-b border-gray-50 flex items-center gap-2 flex-shrink-0">
-            {(["all", "pending", "dispatch", "dispatched"] as const).map((f) => {
-              const isActive = statusFilter === f;
-              const labels: Record<typeof f, string> = {
-                all: "All", pending: "Pending", dispatch: "Dispatch", dispatched: "Dispatched",
-              };
-              const count = statusCounts[f];
-              return (
-                <button
-                  key={f}
-                  type="button"
-                  onClick={() => setStatusFilter(f)}
-                  className={cn(
-                    "inline-flex items-center gap-1.5 px-3 py-1 border rounded-full text-xs font-medium cursor-pointer transition-colors",
-                    isActive
-                      ? "border-gray-900 text-gray-900 bg-white"
-                      : "border-gray-200 text-gray-500 bg-white hover:bg-gray-50",
-                  )}
-                >
-                  {f === "pending" && (
-                    <span className="w-1.5 h-1.5 rounded-full bg-gray-300 inline-block flex-shrink-0" />
-                  )}
-                  {f === "dispatch" && (
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block flex-shrink-0" />
-                  )}
-                  {f === "dispatched" && (
-                    <svg className="w-3 h-3 text-emerald-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                    </svg>
-                  )}
-                  {labels[f]}
-                  <span className={cn(
-                    "text-[10px] font-semibold px-1.5 rounded-full",
-                    isActive ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-500",
-                  )}>
-                    {count}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Slot bar — compact pills */}
-          <div className="px-5 py-1.5 border-b border-gray-50 flex items-center gap-2 flex-shrink-0 overflow-x-auto">
-            {slots.map((slot) => {
-              const isDone = slot.pendingCount === 0 && slot.tintingCount === 0;
-              const isActive = activeSlotId === slot.id;
-              return (
-                <button
-                  key={slot.id}
-                  type="button"
-                  onClick={() => handleSelectSection(`slot-${slot.id}`, slot.id)}
-                  className={cn(
-                    "inline-flex items-center gap-1 px-2.5 py-0.5 border rounded-md text-xs whitespace-nowrap h-7 flex-shrink-0 transition-colors",
-                    isDone && !isActive && "bg-gray-50 border-gray-100 text-gray-400",
-                    isActive && "border-gray-900 text-gray-900 font-medium",
-                    !isDone && !isActive && "bg-white border-gray-200 text-gray-500 hover:border-gray-300",
-                  )}
-                >
-                  {isDone && !isActive && (
-                    <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                    </svg>
-                  )}
-                  <span>{slot.name}</span>
-                  {isActive && (
-                    <>
-                      <span className="text-[10px] text-gray-400 ml-0.5">{slot.pendingCount} pending</span>
-                      <span className="text-[10px] text-gray-300">·</span>
-                      <span className="text-[10px] text-gray-400">{slot.dispatchedCount} done</span>
-                    </>
-                  )}
-                  {!isActive && !isDone && slot.pendingCount > 0 && (
-                    <span className="text-[10px] text-gray-400 ml-0.5">{slot.pendingCount}</span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-
           {/* Orders table */}
           <div className="flex-1 overflow-hidden">
             <SupportOrdersTable
-              orders={filteredOrders}
+              orders={displayOrders}
               section={activeSection}
               onDispatch={handleDispatch}
               onHold={handleHold}

@@ -4,12 +4,10 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { PlanningHeader } from "./planning-header";
-import { DeliveryTabs } from "./delivery-tabs";
-import { SlotBar } from "./slot-bar";
 import { UnassignedPanel } from "./unassigned-panel";
 import { TripsPanel } from "./trips-panel";
 import { DetailPanel } from "./detail-panel";
+import { UniversalHeader } from "@/components/universal-header";
 
 // ── Shared Types ─────────────────────────────────────────────────────────────
 
@@ -122,6 +120,7 @@ export function PlanningPage() {
     new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }),
   );
   const [deliveryType, setDeliveryType] = useState("Local");
+  const [headerFilters, setHeaderFilters] = useState<Record<string, string[]>>({ deliveryType: [], dispatchStatus: [] });
   const [selectedSlot, setSelectedSlot] = useState<number | null>(null);
   const [selectedOrders, setSelectedOrders] = useState<Set<number>>(new Set());
   const [detailOrder, setDetailOrder] = useState<BoardOrder | null>(null);
@@ -170,6 +169,23 @@ export function PlanningPage() {
       setLoading(false);
     })();
   }, [date, fetchBoard, fetchVehicles]);
+
+  // Sync headerFilters → deliveryType
+  useEffect(() => {
+    const dt = headerFilters.deliveryType ?? [];
+    if (dt.length === 1) {
+      const map: Record<string, string> = { LOCAL: "Local", UPC: "Upcountry", IGT: "IGT", CROSS: "Cross" };
+      setDeliveryType(map[dt[0]] ?? "Local");
+    } else {
+      setDeliveryType("Local");
+    }
+  }, [headerFilters]);
+
+  // Header date conversion
+  const headerDate = useMemo(() => new Date(date + "T00:00:00+05:30"), [date]);
+  const handleHeaderDateChange = useCallback((d: Date) => {
+    setDate(d.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }));
+  }, []);
 
   // ── Filtered data ──────────────────────────────────────────────────────────
   const filteredOrders = useMemo(() => {
@@ -511,32 +527,36 @@ export function PlanningPage() {
 
   return (
     <div className="min-h-screen bg-[#f8f9fa] text-[13px] text-gray-600">
-      <PlanningHeader
-        date={date}
-        onDateChange={setDate}
-        onRefresh={() => void refresh()}
-        stats={stats}
+      <UniversalHeader
+        title="Planning Board"
+        stats={[
+          { label: "customers", value: stats.customers },
+          { label: "OBDs", value: stats.obds },
+          { label: "trips", value: stats.trips },
+        ]}
+        segments={slotData.filter((s) => !s.isNextDay).map((s) => ({ id: s.id, label: s.name, count: s.totalCount }))}
+        activeSegment={selectedSlot}
+        onSegmentChange={(id) => setSelectedSlot(id as number | null)}
+        filterGroups={[
+          { label: "Delivery Type", key: "deliveryType", options: [{ value: "LOCAL", label: "Local" }, { value: "UPC", label: "Upcountry" }, { value: "IGT", label: "IGT" }, { value: "CROSS", label: "Cross Depot" }] },
+          { label: "Dispatch Status", key: "dispatchStatus", options: [{ value: "dispatch", label: "Dispatch" }, { value: "hold", label: "Hold" }] },
+        ]}
+        activeFilters={headerFilters}
+        onFilterChange={setHeaderFilters}
+        currentDate={headerDate}
+        onDateChange={handleHeaderDateChange}
+        searchPlaceholder="Search OBD, customer..."
+        shortcuts={[
+          { key: "\u2191\u2193", label: "Navigate" },
+          { key: "\u21B5", label: "Order details" },
+        ]}
       />
 
       {isHistoryView && (
         <div className="bg-gray-100 border-b border-gray-200 px-5 py-2 text-[11px] text-gray-500">
-          📋 Viewing {formattedDate} — Read Only
+          Viewing {formattedDate} — Read Only
         </div>
       )}
-
-      <div className="bg-white border-b border-gray-200 px-5 py-3">
-        <DeliveryTabs
-          active={deliveryType}
-          onChange={setDeliveryType}
-          counts={dtCounts}
-        />
-        <SlotBar
-          slots={slotData}
-          selected={selectedSlot}
-          onSelect={setSelectedSlot}
-          isHistoryView={isHistoryView}
-        />
-      </div>
 
       <div className="flex h-[calc(100vh-140px)]">
         <UnassignedPanel

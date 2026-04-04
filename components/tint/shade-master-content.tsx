@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -11,7 +10,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Search, ChevronLeft, ChevronRight, SlidersHorizontal } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
+import { UniversalHeader } from "@/components/universal-header";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -123,31 +123,20 @@ export function ShadeMasterContent() {
   const [tinterFilter,   setTinterFilter]   = useState<TinterFilter>("");
   const [packCode,       setPackCode]       = useState<string>("");
   const [statusFilter,   setStatusFilter]   = useState<StatusFilter>("all");
-  const [filterOpen,     setFilterOpen]     = useState(false);
+  const [headerFilters, setHeaderFilters] = useState<Record<string, string[]>>({ tinterType: [], status: [] });
   const [data,           setData]           = useState<ShadeRow[]>([]);
   const [total,          setTotal]          = useState(0);
   const [loading,        setLoading]        = useState(false);
   const [togglingId,     setTogglingId]     = useState<number | null>(null);
-  const [clock,          setClock]          = useState({ time: nowIST(), date: nowDateIST() });
 
-  const filterRef = useRef<HTMLDivElement>(null);
-
-  // Clock tick
+  // Sync header filters → existing filter state
   useEffect(() => {
-    const t = setInterval(() => setClock({ time: nowIST(), date: nowDateIST() }), 1000);
-    return () => clearInterval(t);
-  }, []);
-
-  // Close filter on outside click
-  useEffect(() => {
-    function handle(e: MouseEvent) {
-      if (filterRef.current && !filterRef.current.contains(e.target as Node)) {
-        setFilterOpen(false);
-      }
-    }
-    if (filterOpen) document.addEventListener("mousedown", handle);
-    return () => document.removeEventListener("mousedown", handle);
-  }, [filterOpen]);
+    const tt = headerFilters.tinterType ?? [];
+    setTinterFilter(tt.length === 1 ? tt[0] as TinterFilter : "");
+    const st = headerFilters.status ?? [];
+    setStatusFilter(st.length === 1 ? st[0] as StatusFilter : "all");
+    setPage(1);
+  }, [headerFilters]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -211,153 +200,24 @@ export function ShadeMasterContent() {
   return (
     <div className="flex flex-col h-full bg-white">
 
-      {/* ── Row 1 — Title + stats + clock ────────────────────────────────────── */}
-      <div className="h-[42px] flex items-center justify-between px-4 border-b border-gray-100 flex-shrink-0 sticky top-0 z-20 bg-white">
-
-        {/* Left: title + inline stats */}
-        <div className="flex items-center gap-3">
-          <span className="text-[14px] font-semibold text-gray-900">Shade Master</span>
-          <span className="text-[11px] text-gray-400">
-            <span className="text-gray-900 font-semibold">{total}</span> shades
-          </span>
-          {!loading && (
-            <>
-              <span className="w-px h-3 bg-gray-200" />
-              <span className="text-[11px] text-gray-400">
-                <span className="text-green-600 font-semibold">{activeCount}</span> active
-              </span>
-              <span className="text-[11px] text-gray-400">
-                <span className={`font-semibold ${inactiveCount > 0 ? "text-gray-500" : "text-gray-300"}`}>
-                  {inactiveCount}
-                </span> inactive
-              </span>
-            </>
-          )}
-        </div>
-
-        {/* Right: clock */}
-        <div className="flex items-center gap-1.5 text-[11px] text-gray-400">
-          <span>{clock.date}</span>
-          <span className="text-gray-300">·</span>
-          <span className="font-mono text-gray-600 font-medium">{clock.time}</span>
-        </div>
-      </div>
-
-      {/* ── Row 2 — Search + Filter dropdown ─────────────────────────────────── */}
-      <div className="h-[40px] flex items-center gap-3 px-4 border-b border-gray-100 flex-shrink-0 sticky top-[42px] z-10 bg-white">
-
-        {/* Big search bar — dominates left */}
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
-          <Input
-            className="pl-9 h-7 w-full text-[11px] border-gray-200 focus-visible:ring-gray-900/20"
-            placeholder="Search shade name or customer ID…"
-            value={search}
-            onChange={(e) => handleSearchChange(e.target.value)}
-          />
-        </div>
-
-        {/* Filter dropdown — right side */}
-        <div className="relative flex-shrink-0" ref={filterRef}>
-          <button
-            type="button"
-            onClick={() => setFilterOpen((v) => !v)}
-            className={`h-7 px-3 flex items-center gap-1.5 rounded-md border text-[11px] font-medium transition-colors ${
-              activeFilterCount > 0
-                ? "border-gray-900 text-gray-900 bg-white"
-                : "border-gray-200 text-gray-500 hover:border-gray-300"
-            }`}
-          >
-            <SlidersHorizontal className="h-3 w-3" />
-            Filter
-            {activeFilterCount > 0 && (
-              <span className="ml-0.5 bg-gray-900 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
-                {activeFilterCount}
-              </span>
-            )}
-          </button>
-
-          {/* Filter panel */}
-          {filterOpen && (
-            <div className="absolute right-0 top-[calc(100%+6px)] w-[240px] bg-white border border-gray-200 rounded-lg shadow-lg z-50 p-3 flex flex-col gap-3">
-
-              {/* Type */}
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1.5">Type</p>
-                <div className="flex gap-1">
-                  {(["", "TINTER", "ACOTONE"] as const).map((t) => (
-                    <button
-                      key={t}
-                      type="button"
-                      onClick={() => { setTinterFilter(t); setPage(1); }}
-                      className={`px-2.5 py-1 rounded-md border text-[11px] font-medium transition-colors ${
-                        tinterFilter === t
-                          ? "bg-gray-900 text-white border-gray-900"
-                          : "bg-white text-gray-500 border-gray-200 hover:border-gray-300"
-                      }`}
-                    >
-                      {t === "" ? "All" : t}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Pack */}
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1.5">Pack Size</p>
-                <div className="flex flex-wrap gap-1">
-                  {[["", "All"], ...Object.entries(PACK_CODE_LABELS)].map(([k, v]) => (
-                    <button
-                      key={k}
-                      type="button"
-                      onClick={() => { setPackCode(k); setPage(1); }}
-                      className={`px-2.5 py-1 rounded-md border text-[11px] font-medium transition-colors ${
-                        packCode === k
-                          ? "bg-gray-900 text-white border-gray-900"
-                          : "bg-white text-gray-500 border-gray-200 hover:border-gray-300"
-                      }`}
-                    >
-                      {v}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Status */}
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1.5">Status</p>
-                <div className="flex gap-1">
-                  {(["all", "active", "inactive"] as const).map((s) => (
-                    <button
-                      key={s}
-                      type="button"
-                      onClick={() => { setStatusFilter(s); setPage(1); }}
-                      className={`px-2.5 py-1 rounded-md border text-[11px] font-medium capitalize transition-colors ${
-                        statusFilter === s
-                          ? "bg-gray-900 text-white border-gray-900"
-                          : "bg-white text-gray-500 border-gray-200 hover:border-gray-300"
-                      }`}
-                    >
-                      {s === "all" ? "All" : s}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Clear */}
-              {activeFilterCount > 0 && (
-                <button
-                  type="button"
-                  onClick={() => { clearFilters(); setFilterOpen(false); }}
-                  className="text-[11px] text-gray-400 hover:text-gray-600 text-left pt-1 border-t border-gray-100"
-                >
-                  Clear all filters
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
+      <UniversalHeader
+        title="Shade Master"
+        stats={[
+          { label: "shades", value: total },
+          { label: "active", value: activeCount },
+          { label: "inactive", value: inactiveCount },
+        ]}
+        showDatePicker={false}
+        filterGroups={[
+          { label: "Tinter Type", key: "tinterType", options: [{ value: "TINTER", label: "Tinter" }, { value: "ACOTONE", label: "Acotone" }] },
+          { label: "Status", key: "status", options: [{ value: "active", label: "Active" }, { value: "inactive", label: "Inactive" }] },
+        ]}
+        activeFilters={headerFilters}
+        onFilterChange={setHeaderFilters}
+        searchPlaceholder="Search shade name or customer ID..."
+        searchValue={search}
+        onSearchChange={(v) => handleSearchChange(v)}
+      />
 
       {/* ── Table ────────────────────────────────────────────────────────────── */}
       <div className="flex-1 overflow-auto px-4 py-3">
