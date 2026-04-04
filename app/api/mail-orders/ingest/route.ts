@@ -9,6 +9,7 @@ import {
   type SkuEntry,
 } from "@/lib/mail-orders/enrich";
 import { extractCustomerFromSubject, matchCustomer } from "@/lib/mail-orders/customer-match";
+import { matchDeliveryCustomer } from "@/lib/mail-orders/delivery-match";
 import { getLineVolume, SPLIT_VOLUME_THRESHOLD, SPLIT_LINE_THRESHOLD, splitLinesByCategory } from "@/lib/mail-orders/utils";
 
 export const dynamic = "force-dynamic";
@@ -124,6 +125,24 @@ export async function POST(req: NextRequest) {
         (customerMatch.customerCode ? ` (${customerMatch.customerCode})` : ""),
     );
 
+    // 4c. Ship-to override detection from deliveryRemarks
+    let finalDeliveryRemarks = deliveryRemarks ?? null;
+    let finalShipToOverride = shipToOverride || false;
+
+    if (deliveryRemarks && deliveryRemarks.trim()) {
+      const deliveryMatch = await matchDeliveryCustomer(
+        deliveryRemarks,
+        customerMatch.customerCode,
+      );
+      if (deliveryMatch && deliveryMatch.isOverride) {
+        finalShipToOverride = true;
+        finalDeliveryRemarks = `${deliveryRemarks} [→ ${deliveryMatch.customerName} (${deliveryMatch.customerCode})]`;
+        console.log(
+          `[Ship-To Override] "${deliveryRemarks}" → ${deliveryMatch.customerName} (${deliveryMatch.customerCode})`,
+        );
+      }
+    }
+
     // 5. Create order
     const order = await prisma.mo_orders.create({
       data: {
@@ -135,12 +154,12 @@ export async function POST(req: NextRequest) {
         customerName: customerMatch.customerName,
         customerMatchStatus: customerMatch.customerMatchStatus,
         customerCandidates: customerMatch.customerCandidates,
-        deliveryRemarks: deliveryRemarks ?? null,
+        deliveryRemarks: finalDeliveryRemarks,
         remarks: remarks ?? null,
         billRemarks: billRemarks ?? null,
         dispatchStatus: dispatchStatus || "Dispatch",
         dispatchPriority: dispatchPriority || "Normal",
-        shipToOverride: shipToOverride || false,
+        shipToOverride: finalShipToOverride,
         slotToOverride: slotToOverride || false,
         emailEntryId,
         status: "pending",
@@ -224,12 +243,12 @@ export async function POST(req: NextRequest) {
           customerCode: order.customerCode,
           customerMatchStatus: order.customerMatchStatus,
           customerCandidates: order.customerCandidates,
-          deliveryRemarks: body.deliveryRemarks ?? null,
+          deliveryRemarks: finalDeliveryRemarks,
           remarks: body.remarks ?? null,
           billRemarks: body.billRemarks ?? null,
           dispatchStatus: body.dispatchStatus || "Dispatch",
           dispatchPriority: body.dispatchPriority || "Normal",
-          shipToOverride: body.shipToOverride || false,
+          shipToOverride: finalShipToOverride,
           slotToOverride: body.slotToOverride || false,
           emailEntryId: `${emailEntryId}__B`,
           status: "pending",

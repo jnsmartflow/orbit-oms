@@ -605,22 +605,42 @@ function OrderRow({
   const needsBorderCompensation = isFlagged || isFocused || isPunched || isSplit;
 
   // Remarks display
-  let remarksContent: React.ReactNode;
-  if (isFlagged && order.remarks) {
-    remarksContent = (
-      <span className="text-[11px] text-red-400 truncate block">
-        {smartTitleCase(order.remarks)}
-      </span>
+  const remarksContent = (() => {
+    const hasRemarks = order.remarks && order.remarks.trim();
+    const hasBillRemarks = order.billRemarks && order.billRemarks.trim();
+    const hasChallan = order.remarks?.includes('Challan attachment');
+
+    if (!hasRemarks && !hasBillRemarks) {
+      return <span className="text-gray-300">—</span>;
+    }
+
+    return (
+      <div className="flex flex-col gap-0.5 overflow-hidden">
+        {hasRemarks && (
+          <span className={`text-[11px] truncate block ${isFlagged ? "text-red-400" : "text-gray-600"}`}>
+            {hasChallan && <span className="text-[10px] mr-0.5" title="Check email for challan attachment">📎</span>}
+            {smartTitleCase(order.remarks)}
+          </span>
+        )}
+        {hasBillRemarks && (
+          <div className="flex flex-wrap gap-0.5">
+            {order.billRemarks!.split('; ').map((tag, i) => {
+              const isCross = tag.toLowerCase().includes('cross billing');
+              return (
+                <span key={i} className={`text-[9px] font-medium px-1.5 py-0.5 rounded border ${
+                  isCross
+                    ? "bg-purple-50 text-purple-700 border-purple-200"
+                    : "bg-amber-50 text-amber-700 border-amber-200"
+                }`}>
+                  {tag}
+                </span>
+              );
+            })}
+          </div>
+        )}
+      </div>
     );
-  } else if (order.deliveryRemarks) {
-    remarksContent = (
-      <span className="text-[11px] text-gray-400 truncate block">
-        {smartTitleCase(order.deliveryRemarks)}
-      </span>
-    );
-  } else {
-    remarksContent = <span className="text-gray-300">—</span>;
-  }
+  })();
 
   const handleCodeToggle = useCallback(() => {
     setOpenCodePopoverId(openCodePopoverId === order.id ? null : order.id);
@@ -694,6 +714,16 @@ function OrderRow({
                     {subtextParts.map((part, i) => (
                       <span key={i}>{i > 0 && <span className="text-gray-300"> · </span>}{part}</span>
                     ))}
+                  </span>
+                )}
+                {order.shipToOverride && (
+                  <span
+                    className="text-[9px] font-medium text-orange-600 truncate block mt-0.5"
+                    title={order.deliveryRemarks ?? 'Ship-to override'}
+                  >
+                    → {order.deliveryRemarks
+                        ? order.deliveryRemarks.replace(/\s*\[→.*?\]\s*$/, '').trim()
+                        : 'Ship-to override'}
                   </span>
                 )}
               </div>

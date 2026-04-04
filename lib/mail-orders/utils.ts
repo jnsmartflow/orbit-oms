@@ -587,7 +587,11 @@ export function smartTitleCase(text: string | null | undefined): string {
 const OD_CI_KEYWORDS = ["od", "ci", "credit hold", "block", "overdue"];
 
 export function isOdCiFlagged(order: MoOrder): boolean {
-  const fields = [order.remarks?.toLowerCase(), order.subject?.toLowerCase()];
+  const fields = [
+    order.remarks?.toLowerCase(),
+    order.subject?.toLowerCase(),
+    order.billRemarks?.toLowerCase(),
+  ];
   return fields.some(
     (f) => f != null && OD_CI_KEYWORDS.some((kw) => f.includes(kw)),
   );
