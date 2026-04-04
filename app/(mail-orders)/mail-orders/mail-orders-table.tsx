@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Check, Copy, ChevronDown, Pencil, Search } from "lucide-react";
+import { Check, Copy, ChevronDown, Pencil, Search, Lock, LockOpen } from "lucide-react";
 import { formatTime, smartTitleCase } from "@/lib/mail-orders/utils";
 import { searchCustomers } from "@/lib/mail-orders/api";
 import type { MoOrder, MoOrderLine, CustomerSearchResult } from "@/lib/mail-orders/types";
@@ -625,7 +625,12 @@ function OrderRow({
             const displayName = smartTitleCase(rawName);
             const subjectCode = extractSubjectCode(order.subject);
             const dot = getDeliveryDotColor(order.customerDeliveryType);
-            const area = isExact ? order.customerArea : null;
+            const area = isExact ? smartTitleCase(order.customerArea) : null;
+            const route = isExact ? smartTitleCase(order.customerRoute) : null;
+            const subtextParts: React.ReactNode[] = [];
+            if (subjectCode) subtextParts.push(<span key="code" className="font-mono">{subjectCode}</span>);
+            if (area) subtextParts.push(<span key="area">{area}</span>);
+            if (route) subtextParts.push(<span key="route">{route}</span>);
             return (
               <div className="overflow-hidden min-w-0">
                 <div className="flex items-center gap-1.5 min-w-0">
@@ -639,16 +644,14 @@ function OrderRow({
                     {displayName}
                   </span>
                   {isFlagged && (
-                    <span className="text-[10px] font-semibold text-red-600 bg-red-50 border border-red-200 rounded px-1.5 py-0.5 flex-shrink-0">
-                      Lock
-                    </span>
+                    <Lock size={12} className="text-red-500 flex-shrink-0" />
                   )}
                 </div>
-                {(subjectCode || area) && (
+                {subtextParts.length > 0 && (
                   <span className="text-[10px] text-gray-400 truncate block">
-                    {subjectCode && <span className="font-mono">{subjectCode}</span>}
-                    {subjectCode && area && <span className="text-gray-300"> · </span>}
-                    {area}
+                    {subtextParts.map((part, i) => (
+                      <span key={i}>{i > 0 && <span className="text-gray-300"> · </span>}{part}</span>
+                    ))}
                   </span>
                 )}
               </div>
@@ -785,16 +788,16 @@ function OrderRow({
           ) : isFlagged ? (
             <button
               onClick={(e) => { e.stopPropagation(); onFlag(order.id) }}
-              className="inline-flex items-center gap-1 border border-red-300 rounded-md text-[10.5px] font-medium text-red-600 px-2 h-[24px] bg-red-50 whitespace-nowrap"
+              className="bg-red-50 rounded p-1 text-red-500 cursor-pointer"
             >
-              ⚑ Locked
+              <Lock size={14} />
             </button>
           ) : (
             <button
               onClick={(e) => { e.stopPropagation(); onFlag(order.id) }}
-              className="inline-flex items-center gap-1 border border-gray-200 rounded-md text-[10.5px] font-medium text-gray-400 px-2 h-[24px] bg-white hover:border-red-300 hover:text-red-500 transition-colors whitespace-nowrap"
+              className="text-gray-300 hover:text-gray-400 cursor-pointer"
             >
-              ⚑ Lock
+              <LockOpen size={14} />
             </button>
           )}
         </td>
