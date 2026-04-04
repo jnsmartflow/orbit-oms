@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Check, Copy, ChevronDown, Pencil, Search, Lock, LockOpen } from "lucide-react";
-import { formatTime, smartTitleCase } from "@/lib/mail-orders/utils";
+import { formatTime, smartTitleCase, getLineVolume, getOrderVolume, formatVolume, BATCH_COPY_LIMIT, SPLIT_VOLUME_THRESHOLD, splitLinesByVolume } from "@/lib/mail-orders/utils";
 import { searchCustomers } from "@/lib/mail-orders/api";
 import type { MoOrder, MoOrderLine, CustomerSearchResult } from "@/lib/mail-orders/types";
 import { ResolveLinePanel } from "./resolve-line-panel";
@@ -19,11 +19,14 @@ interface MailOrdersTableProps {
   onFlag: (id: number) => void;
   onExpand: (id: number | null) => void;
   onPunch: (id: number) => Promise<void>;
-  onCopy: (id: number, lines: MoOrderLine[]) => void;
+  onCopy: (id: number, lines: MoOrderLine[], batchIndex?: number) => void;
   onSaveSoNumber: (orderId: number, value: string) => Promise<boolean>;
   onSaveCustomer: (orderId: number, data: { customerCode: string; customerName: string; saveKeyword?: boolean; keyword?: string; area?: string; deliveryType?: string; route?: string }) => Promise<void>;
   openCodePopoverId: number | null;
   setOpenCodePopoverId: (id: number | null) => void;
+  batchStates: Record<number, number>;
+  onAdvanceBatch: (orderId: number) => void;
+  onSplitComplete: () => void;
 }
 
 // ── Slot dot colors ──────────────────────────────────────────────────────────
@@ -97,6 +100,9 @@ export function MailOrdersTable({
   onSaveCustomer,
   openCodePopoverId,
   setOpenCodePopoverId,
+  batchStates,
+  onAdvanceBatch,
+  onSplitComplete,
 }: MailOrdersTableProps) {
   const slotOrder = ["Morning", "Afternoon", "Evening", "Night"] as const;
 
@@ -104,18 +110,18 @@ export function MailOrdersTable({
     <div className="border border-gray-200 rounded-lg overflow-hidden bg-white">
       <table className="w-full border-collapse" style={{ tableLayout: "fixed" }}>
         <colgroup>
-          <col style={{ width: 68 }} />
-          <col style={{ width: 120 }} />
-          <col style={{ width: 220 }} />
-          <col style={{ width: 54 }} />
-          <col style={{ width: 80 }} />
-          <col style={{ width: 140 }} />
-          <col style={{ width: 90 }} />
-          <col style={{ width: 60 }} />
-          <col style={{ width: 110 }} />
-          <col style={{ width: 70 }} />
-          <col style={{ width: 100 }} />
-          <col style={{ width: 120 }} />
+          <col style={{ width: 68 }} />    {/* Time */}
+          <col style={{ width: 120 }} />   {/* SO Name */}
+          <col style={{ width: 220 }} />   {/* Customer */}
+          <col style={{ width: 56 }} />    {/* Lines */}
+          <col style={{ width: 80 }} />    {/* Dispatch */}
+          <col style={{ width: 120 }} />   {/* Remarks */}
+          <col style={{ width: 90 }} />    {/* Code */}
+          <col style={{ width: 82 }} />    {/* SKU */}
+          <col style={{ width: 110 }} />   {/* SO No. */}
+          <col style={{ width: 46 }} />    {/* Lock */}
+          <col style={{ width: 80 }} />    {/* Status */}
+          <col style={{ width: 100 }} />   {/* Punched By */}
         </colgroup>
 
         <thead>
@@ -187,6 +193,9 @@ export function MailOrdersTable({
                 onSaveCustomer={onSaveCustomer}
                 openCodePopoverId={openCodePopoverId}
                 setOpenCodePopoverId={setOpenCodePopoverId}
+                batchStates={batchStates}
+                onAdvanceBatch={onAdvanceBatch}
+                onSplitComplete={onSplitComplete}
               />
             );
           })}
@@ -216,6 +225,9 @@ function SlotGroup({
   onSaveCustomer,
   openCodePopoverId,
   setOpenCodePopoverId,
+  batchStates,
+  onAdvanceBatch,
+  onSplitComplete,
 }: {
   slot: string;
   orders: MoOrder[];
@@ -229,11 +241,14 @@ function SlotGroup({
   onFlag: (id: number) => void;
   onExpand: (id: number | null) => void;
   onPunch: (id: number) => Promise<void>;
-  onCopy: (id: number, lines: MoOrderLine[]) => void;
+  onCopy: (id: number, lines: MoOrderLine[], batchIndex?: number) => void;
   onSaveSoNumber: (orderId: number, value: string) => Promise<boolean>;
   onSaveCustomer: MailOrdersTableProps["onSaveCustomer"];
   openCodePopoverId: number | null;
   setOpenCodePopoverId: (id: number | null) => void;
+  batchStates: Record<number, number>;
+  onAdvanceBatch: (orderId: number) => void;
+  onSplitComplete: () => void;
 }) {
   const dotColor = SLOT_DOTS[slot] ?? "bg-gray-400";
 
@@ -253,10 +268,16 @@ function SlotGroup({
                 {orders.length} order{orders.length !== 1 ? "s" : ""}
               </span>
             </div>
-            <div className="text-[11px] text-gray-400">
-              <span className="font-semibold text-gray-700">{slotMatched}</span>
-              /{slotTotal} lines
-            </div>
+            {(() => {
+              const slotVol = orders.reduce((sum, o) => sum + getOrderVolume(o.lines), 0);
+              const volStr = slotVol > 0 ? `· ${slotVol.toLocaleString()}L` : '';
+              return (
+                <div className="text-[11px] text-gray-400">
+                  <span className="font-semibold text-gray-700">{slotMatched}</span>
+                  /{slotTotal} lines {volStr}
+                </div>
+              );
+            })()}
           </div>
         </td>
       </tr>
@@ -286,6 +307,9 @@ function SlotGroup({
             onSaveCustomer={onSaveCustomer}
             openCodePopoverId={openCodePopoverId}
             setOpenCodePopoverId={setOpenCodePopoverId}
+            batchStates={batchStates}
+            onAdvanceBatch={onAdvanceBatch}
+            onSplitComplete={onSplitComplete}
           />
         );
       })}
@@ -511,6 +535,9 @@ function OrderRow({
   onSaveCustomer,
   openCodePopoverId,
   setOpenCodePopoverId,
+  batchStates,
+  onAdvanceBatch,
+  onSplitComplete,
 }: {
   order: MoOrder;
   isFlagged: boolean;
@@ -522,16 +549,22 @@ function OrderRow({
   onFlag: (id: number) => void;
   onExpand: (id: number | null) => void;
   onPunch: (id: number) => Promise<void>;
-  onCopy: (id: number, lines: MoOrderLine[]) => void;
+  onCopy: (id: number, lines: MoOrderLine[], batchIndex?: number) => void;
   onSaveSoNumber: (orderId: number, value: string) => Promise<boolean>;
   onSaveCustomer: MailOrdersTableProps["onSaveCustomer"];
   openCodePopoverId: number | null;
   setOpenCodePopoverId: (id: number | null) => void;
+  batchStates: Record<number, number>;
+  onAdvanceBatch: (orderId: number) => void;
+  onSplitComplete: () => void;
 }) {
   const hasUnmatched = order.matchedLines < order.totalLines;
   const matchedCount = order.lines.filter((l) => l.matchStatus === "matched").length;
   const isDisabled = isFlagged || isPunched || matchedCount === 0;
   const isCopied = copiedId === order.id;
+  const currentBatch = batchStates[order.id] ?? 0;
+  const needsBatching = matchedCount > BATCH_COPY_LIMIT;
+  const totalBatches = needsBatching ? Math.ceil(matchedCount / BATCH_COPY_LIMIT) : 1;
 
   const [editingSo, setEditingSo] = useState(false);
   const [soInput, setSoInput] = useState(order.soNumber ?? "");
@@ -555,14 +588,18 @@ function OrderRow({
     isPunched && 'bg-teal-50/40',
   ].filter(Boolean).join(' ');
 
+  const isSplit = !!order.splitLabel;
+
   const borderLeft = isFlagged
     ? "3px solid #f87171"
     : isFocused
       ? "3px solid #f59e0b"
       : isPunched
         ? "3px solid #0d9488"
-        : undefined;
-  const needsBorderCompensation = isFlagged || isFocused || isPunched;
+        : isSplit
+          ? "3px solid #a78bfa"
+          : undefined;
+  const needsBorderCompensation = isFlagged || isFocused || isPunched || isSplit;
 
   // Remarks display
   let remarksContent: React.ReactNode;
@@ -623,6 +660,8 @@ function OrderRow({
               ? order.customerName
               : cleanSubject(order.subject);
             const displayName = smartTitleCase(rawName);
+            const splitSuffix = order.splitLabel ? ` (${order.splitLabel})` : '';
+            const displayNameFull = displayName + splitSuffix;
             const subjectCode = extractSubjectCode(order.subject);
             const dot = getDeliveryDotColor(order.customerDeliveryType);
             const area = isExact ? smartTitleCase(order.customerArea) : null;
@@ -638,10 +677,10 @@ function OrderRow({
                     <span className={`w-[5px] h-[5px] rounded-full ${dot.color} flex-shrink-0`} title={dot.title} />
                   )}
                   <span
-                    title={displayName}
+                    title={displayNameFull}
                     className="text-[12.5px] font-semibold text-gray-900 truncate"
                   >
-                    {displayName}
+                    {displayNameFull}
                   </span>
                   {isFlagged && (
                     <Lock size={12} className="text-red-500 flex-shrink-0" />
@@ -661,25 +700,42 @@ function OrderRow({
 
         {/* Lines */}
         <td className={`px-3.5 align-middle text-center ${baseTdClass}`}>
-          {hasUnmatched ? (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onExpand(order.id);
-              }}
-              className="text-[12px] font-semibold text-amber-600 inline-flex items-center gap-0.5"
-            >
-              <ChevronDown
-                size={10}
-                className={isExpanded ? "rotate-180 transition-transform" : "transition-transform"}
-              />
-              {order.matchedLines}/{order.totalLines}
-            </button>
-          ) : (
-            <span className="text-[12px] font-semibold text-green-600">
-              {order.matchedLines}/{order.totalLines}
-            </span>
-          )}
+          {(() => {
+            const totalVol = getOrderVolume(order.lines);
+            const volStr = formatVolume(totalVol);
+
+            return (
+              <div className="flex flex-col items-center leading-tight">
+                {hasUnmatched ? (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onExpand(order.id); }}
+                    className="text-[12px] font-semibold text-amber-600 inline-flex items-center gap-0.5"
+                  >
+                    <ChevronDown
+                      size={10}
+                      className={isExpanded ? "rotate-180 transition-transform" : "transition-transform"}
+                    />
+                    {order.matchedLines}/{order.totalLines}
+                  </button>
+                ) : (
+                  <span className="text-[12px] font-semibold text-green-600">
+                    {order.matchedLines}/{order.totalLines}
+                  </span>
+                )}
+                {volStr && (
+                  <span className={`text-[10px] ${hasUnmatched ? "text-amber-400" : "text-green-500"}`}>
+                    {volStr}
+                  </span>
+                )}
+                {order.splitLabel && (
+                  <span className="text-[9px] text-purple-500 font-medium">✂ {order.splitLabel}</span>
+                )}
+                {!order.splitLabel && !isPunched && totalVol > SPLIT_VOLUME_THRESHOLD && (
+                  <span className="text-[9px] text-amber-600 font-medium">⚠ {formatVolume(totalVol)}</span>
+                )}
+              </div>
+            );
+          })()}
         </td>
 
         {/* Dispatch */}
@@ -723,7 +779,12 @@ function OrderRow({
             disabled={isDisabled}
             onClick={(e) => {
               e.stopPropagation();
-              onCopy(order.id, order.lines);
+              if (needsBatching) {
+                onCopy(order.id, order.lines, currentBatch);
+                onAdvanceBatch(order.id);
+              } else {
+                onCopy(order.id, order.lines);
+              }
             }}
             className={`inline-flex items-center gap-1 border rounded-md text-[11px] font-medium px-2 h-[28px] transition-colors ${
               isCopied
@@ -739,6 +800,17 @@ function OrderRow({
               </>
             ) : isDisabled ? (
               <Copy size={11} />
+            ) : needsBatching ? (
+              <>
+                <Copy size={10} />
+                <span className="text-[10px]">
+                  {currentBatch * BATCH_COPY_LIMIT + 1}-
+                  {Math.min((currentBatch + 1) * BATCH_COPY_LIMIT, matchedCount)}
+                </span>
+                <span className="text-[8px] text-gray-400">
+                  ({currentBatch + 1}/{totalBatches})
+                </span>
+              </>
             ) : (
               <>
                 <Copy size={11} /> {matchedCount}
@@ -829,22 +901,87 @@ function OrderRow({
       </tr>
 
       {/* Expand sub-row */}
-      {isExpanded && <ExpandRow order={order} />}
+      {isExpanded && <ExpandRow order={order} onSplitComplete={onSplitComplete} />}
     </>
   );
 }
 
 // ── Expand sub-row ───────────────────────────────────────────────────────────
 
-function ExpandRow({ order }: { order: MoOrder }) {
+function ExpandRow({ order, onSplitComplete }: { order: MoOrder; onSplitComplete: () => void }) {
   const [resolveLineId, setResolveLineId] = useState<number | null>(null);
   const [resolvedLines, setResolvedLines] = useState<
     Record<number, { skuCode: string; skuDescription: string }>
   >({});
+  const [showSplitSuggestion, setShowSplitSuggestion] = useState(false);
+  const [splitPreview, setSplitPreview] = useState<{
+    groupA: { lineIds: number[]; count: number; volume: number };
+    groupB: { lineIds: number[]; count: number; volume: number };
+  } | null>(null);
+  const [splitDismissed, setSplitDismissed] = useState(false);
 
   function handleResolved(lineId: number, skuCode: string, skuDescription: string) {
     setResolvedLines((prev) => ({ ...prev, [lineId]: { skuCode, skuDescription } }));
     setResolveLineId(null);
+  }
+
+  // Check volume after resolves
+  useEffect(() => {
+    if (order.splitLabel || splitDismissed) return;
+
+    const totalVol = order.lines.reduce((sum, l) => {
+      const isEffectivelyMatched = l.matchStatus === "matched" || !!resolvedLines[l.id];
+      return sum + (isEffectivelyMatched ? getLineVolume(l.quantity, l.packCode) : 0);
+    }, 0);
+
+    if (totalVol > SPLIT_VOLUME_THRESHOLD) {
+      const effectiveLines = order.lines.filter(
+        (l) => l.matchStatus === "matched" || !!resolvedLines[l.id],
+      );
+
+      const lineItems = effectiveLines.map((l, idx) => ({
+        index: idx,
+        quantity: l.quantity,
+        packCode: l.packCode,
+      }));
+
+      const [groupAIdx, groupBIdx] = splitLinesByVolume(lineItems);
+
+      const toIds = (indices: number[]) => indices.map((i) => effectiveLines[i].id);
+      const toVol = (indices: number[]) =>
+        indices.reduce((s, i) => s + getLineVolume(effectiveLines[i].quantity, effectiveLines[i].packCode), 0);
+
+      setSplitPreview({
+        groupA: { lineIds: toIds(groupAIdx), count: groupAIdx.length, volume: toVol(groupAIdx) },
+        groupB: { lineIds: toIds(groupBIdx), count: groupBIdx.length, volume: toVol(groupBIdx) },
+      });
+      setShowSplitSuggestion(true);
+    } else {
+      setShowSplitSuggestion(false);
+      setSplitPreview(null);
+    }
+  }, [resolvedLines, order.lines, order.splitLabel, splitDismissed]);
+
+  async function handleSplit(preview: NonNullable<typeof splitPreview>) {
+    try {
+      const res = await fetch(`/api/mail-orders/${order.id}/split`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          groups: [preview.groupA.lineIds, preview.groupB.lineIds],
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        console.error("Split failed:", err);
+        return;
+      }
+
+      onSplitComplete();
+    } catch (err) {
+      console.error("Split error:", err);
+    }
   }
 
   return (
@@ -853,15 +990,48 @@ function ExpandRow({ order }: { order: MoOrder }) {
         colSpan={12}
         style={{ padding: 0, background: "#fafafa", borderBottom: "1px solid #e5e7eb" }}
       >
+        {/* Split suggestion banner */}
+        {showSplitSuggestion && splitPreview && (
+          <div className="mx-4 mt-3 mb-2 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[12px] font-semibold text-amber-800">
+                  ⚠ Large order — split recommended
+                </p>
+                <p className="text-[11px] text-amber-600 mt-1">
+                  Group A: {splitPreview.groupA.count} lines · {formatVolume(splitPreview.groupA.volume)}
+                  <span className="mx-2 text-amber-300">|</span>
+                  Group B: {splitPreview.groupB.count} lines · {formatVolume(splitPreview.groupB.volume)}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => { setSplitDismissed(true); setShowSplitSuggestion(false); }}
+                  className="text-[10px] text-gray-500 hover:text-gray-700 px-2 py-1"
+                >
+                  Dismiss
+                </button>
+                <button
+                  onClick={() => handleSplit(splitPreview)}
+                  className="text-[10px] font-semibold text-white bg-amber-600 hover:bg-amber-700 rounded px-3 py-1.5 transition-colors"
+                >
+                  ✂ Split Order
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
         {/* Line items table */}
         <table className="w-full border-collapse">
           <colgroup>
             <col style={{ width: 38 }} />
-            <col />
-            <col style={{ width: 150 }} />
-            <col style={{ width: 48 }} />
-            <col style={{ width: 52 }} />
-            <col style={{ width: 76 }} />
+            <col style={{ width: '30%' }} />    {/* Raw Text */}
+            <col style={{ width: 130 }} />      {/* SKU Code */}
+            <col style={{ width: '30%' }} />    {/* Description */}
+            <col style={{ width: 48 }} />       {/* Pk */}
+            <col style={{ width: 52 }} />       {/* Qty */}
+            <col style={{ width: 56 }} />       {/* Vol */}
+            <col style={{ width: 76 }} />       {/* Status */}
           </colgroup>
           <thead>
             <tr className="h-[32px] bg-gray-50" style={{ borderBottom: "1px solid #ebebeb" }}>
@@ -874,11 +1044,17 @@ function ExpandRow({ order }: { order: MoOrder }) {
               <th className="text-[10px] font-medium uppercase tracking-wider text-gray-400 text-left px-3.5">
                 SKU Code
               </th>
+              <th className="text-[10px] font-medium uppercase tracking-wider text-gray-400 text-left px-3.5">
+                Description
+              </th>
               <th className="text-[10px] font-medium uppercase tracking-wider text-gray-400 text-center px-3.5">
                 Pk
               </th>
               <th className="text-[10px] font-medium uppercase tracking-wider text-gray-400 text-right px-3.5">
                 Qty
+              </th>
+              <th className="text-[10px] font-medium uppercase tracking-wider text-gray-400 text-right px-3.5">
+                Vol
               </th>
               <th className="text-[10px] font-medium uppercase tracking-wider text-gray-400 text-center px-3.5">
                 Status
@@ -925,11 +1101,27 @@ function ExpandRow({ order }: { order: MoOrder }) {
                       <span className="text-gray-300">—</span>
                     )}
                   </td>
+                  <td className={`px-3.5 align-middle text-[11px] text-gray-500 truncate ${unmatchedBg ?? ""}`}
+                      title={isMatched ? (resolved?.skuDescription ?? line.skuDescription ?? '') : ''}>
+                    {isMatched ? (
+                      <span className="truncate block">
+                        {resolved?.skuDescription ?? line.skuDescription ?? '—'}
+                      </span>
+                    ) : (
+                      <span className="text-gray-300">—</span>
+                    )}
+                  </td>
                   <td className={`px-3.5 align-middle text-center text-[11px] text-gray-500 ${unmatchedBg ?? ""}`}>
                     {line.packCode ?? "—"}
                   </td>
                   <td className={`px-3.5 align-middle text-right text-[11px] text-gray-700 font-medium ${unmatchedBg ?? ""}`}>
                     {line.quantity}
+                  </td>
+                  <td className={`px-3.5 align-middle text-right text-[11px] text-gray-400 ${unmatchedBg ?? ""}`}>
+                    {(() => {
+                      const vol = getLineVolume(line.quantity, line.packCode);
+                      return vol > 0 ? formatVolume(vol) : '—';
+                    })()}
                   </td>
                   <td className={`px-3.5 align-middle text-center ${unmatchedBg ?? ""}`}>
                     {isMatched ? (

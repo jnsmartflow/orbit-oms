@@ -998,6 +998,8 @@ model mo_orders {
   emailEntryId     String    @unique
   totalLines       Int       @default(0)
   matchedLines     Int       @default(0)
+  splitFromId      Int?
+  splitLabel       String?
   createdAt        DateTime  @default(now())
   lines            mo_order_lines[]
 }

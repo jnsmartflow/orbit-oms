@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { fetchMailOrders, punchOrder, saveSoNumber, saveCustomer, getTodayIST } from "@/lib/mail-orders/api";
-import { getSlotFromTime, groupOrdersBySlot, buildClipboardText } from "@/lib/mail-orders/utils";
+import { getSlotFromTime, groupOrdersBySlot, buildClipboardText, buildBatchClipboardText, BATCH_COPY_LIMIT } from "@/lib/mail-orders/utils";
 import type { MoOrder, MoOrderLine } from "@/lib/mail-orders/types";
 import { MailOrdersTable } from "./mail-orders-table";
 import { UniversalHeader } from "@/components/universal-header";
@@ -22,6 +22,7 @@ export default function MailOrdersPage() {
   const [focusedId, setFocusedId] = useState<number | null>(null);
   const [selectedDate, setSelectedDate] = useState(() => getTodayIST());
   const [openCodePopoverId, setOpenCodePopoverId] = useState<number | null>(null);
+  const [batchStates, setBatchStates] = useState<Record<number, number>>({});
 
   // ── Data fetch ───────────────────────────────────────────────────────────────
   const loadOrders = useCallback(async () => {
@@ -145,13 +146,26 @@ export default function MailOrdersPage() {
     [selectedDate],
   );
 
-  const handleCopy = useCallback((id: number, lines: MoOrderLine[]) => {
-    const text = buildClipboardText(lines);
+  const handleCopy = useCallback((id: number, lines: MoOrderLine[], batchIndex?: number) => {
+    const { text } = batchIndex !== undefined
+      ? buildBatchClipboardText(lines, batchIndex)
+      : { text: buildClipboardText(lines) };
     if (!text) return;
     navigator.clipboard.writeText(text);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);
   }, []);
+
+  const handleAdvanceBatch = useCallback((orderId: number) => {
+    setBatchStates(prev => {
+      const current = prev[orderId] ?? 0;
+      const order = orders.find(o => o.id === orderId);
+      if (!order) return prev;
+      const matched = order.lines.filter(l => l.matchStatus === "matched" && l.skuCode != null);
+      const totalBatches = Math.ceil(matched.length / BATCH_COPY_LIMIT);
+      return { ...prev, [orderId]: (current + 1) % totalBatches };
+    });
+  }, [orders]);
 
   const handleSaveSoNumber = useCallback(async (orderId: number, value: string) => {
     if (!/^\d{10}$/.test(value)) return false;
@@ -259,7 +273,17 @@ export default function MailOrdersPage() {
       if (key === "s" || key === "S") {
         if (focusedId !== null) {
           const order = flatOrders.find((o) => o.id === focusedId);
-          if (order) handleCopy(focusedId, order.lines);
+          if (order) {
+            const matched = order.lines.filter(l => l.matchStatus === "matched" && l.skuCode != null);
+            const needsBatching = matched.length > BATCH_COPY_LIMIT;
+            if (needsBatching) {
+              const currentBatch = batchStates[order.id] ?? 0;
+              handleCopy(order.id, order.lines, currentBatch);
+              handleAdvanceBatch(order.id);
+            } else {
+              handleCopy(order.id, order.lines);
+            }
+          }
         }
         return;
       }
@@ -274,7 +298,7 @@ export default function MailOrdersPage() {
 
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [flatOrders, focusedId, handleExpand, handleCopy, openCodePopoverId]);
+  }, [flatOrders, focusedId, handleExpand, handleCopy, handleAdvanceBatch, batchStates, openCodePopoverId]);
 
   // ── Auto-scroll focused row into view ───────────────────────────────────────
   useEffect(() => {
@@ -403,6 +427,9 @@ export default function MailOrdersPage() {
             onSaveCustomer={handleSaveCustomer}
             openCodePopoverId={openCodePopoverId}
             setOpenCodePopoverId={setOpenCodePopoverId}
+            batchStates={batchStates}
+            onAdvanceBatch={handleAdvanceBatch}
+            onSplitComplete={loadOrders}
           />
         )}
       </div>

@@ -9,6 +9,7 @@ import {
   type SkuEntry,
 } from "@/lib/mail-orders/enrich";
 import { extractCustomerFromSubject, matchCustomer } from "@/lib/mail-orders/customer-match";
+import { getLineVolume, SPLIT_VOLUME_THRESHOLD, splitLinesByVolume } from "@/lib/mail-orders/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -177,7 +178,103 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // 7. Update matched count
+    // 6b. Check volume for auto-split
+    const insertedLines = await prisma.mo_order_lines.findMany({
+      where: { moOrderId: order.id },
+      orderBy: { lineNumber: "asc" },
+      select: { id: true, lineNumber: true, quantity: true, packCode: true, matchStatus: true },
+    });
+
+    const totalVolume = insertedLines.reduce(
+      (sum, l) => sum + getLineVolume(l.quantity, l.packCode), 0,
+    );
+
+    if (totalVolume > SPLIT_VOLUME_THRESHOLD) {
+      // 6c. Auto-split
+      const lineItems = insertedLines.map((l, idx) => ({
+        index: idx,
+        quantity: l.quantity,
+        packCode: l.packCode,
+      }));
+
+      const [groupAIndices, groupBIndices] = splitLinesByVolume(lineItems);
+
+      const groupALines = groupAIndices.map((i) => insertedLines[i]);
+      const groupBLines = groupBIndices.map((i) => insertedLines[i]);
+
+      const groupAMatched = groupALines.filter((l) => l.matchStatus === "matched").length;
+      const groupBMatched = groupBLines.filter((l) => l.matchStatus === "matched").length;
+
+      // Create Group B order (copy all fields from original)
+      const orderB = await prisma.mo_orders.create({
+        data: {
+          soName: body.soName,
+          soEmail: body.soEmail ?? null,
+          receivedAt: new Date(body.receivedAt),
+          subject: body.subject,
+          customerName: order.customerName,
+          customerCode: order.customerCode,
+          customerMatchStatus: order.customerMatchStatus,
+          customerCandidates: order.customerCandidates,
+          deliveryRemarks: body.deliveryRemarks ?? null,
+          remarks: body.remarks ?? null,
+          billRemarks: body.billRemarks ?? null,
+          dispatchStatus: body.dispatchStatus || "Dispatch",
+          dispatchPriority: body.dispatchPriority || "Normal",
+          shipToOverride: body.shipToOverride || false,
+          slotToOverride: body.slotToOverride || false,
+          emailEntryId: `${emailEntryId}__B`,
+          status: "pending",
+          totalLines: groupBLines.length,
+          matchedLines: groupBMatched,
+          splitFromId: order.id,
+          splitLabel: "B",
+        },
+      });
+
+      // Update original order to be Group A
+      await prisma.mo_orders.update({
+        where: { id: order.id },
+        data: {
+          splitLabel: "A",
+          totalLines: groupALines.length,
+          matchedLines: groupAMatched,
+        },
+      });
+
+      // Reassign Group B lines to orderB
+      const groupBLineIds = groupBLines.map((l) => l.id);
+      await prisma.mo_order_lines.updateMany({
+        where: { id: { in: groupBLineIds } },
+        data: { moOrderId: orderB.id },
+      });
+
+      // Re-number lineNumber sequentially for Group A
+      for (let i = 0; i < groupALines.length; i++) {
+        await prisma.mo_order_lines.update({
+          where: { id: groupALines[i].id },
+          data: { lineNumber: i + 1 },
+        });
+      }
+
+      // Re-number lineNumber sequentially for Group B
+      for (let i = 0; i < groupBLines.length; i++) {
+        await prisma.mo_order_lines.update({
+          where: { id: groupBLines[i].id },
+          data: { lineNumber: i + 1 },
+        });
+      }
+
+      return NextResponse.json({
+        status: "created",
+        split: true,
+        orderA: { id: order.id, totalLines: groupALines.length, matchedLines: groupAMatched },
+        orderB: { id: orderB.id, totalLines: groupBLines.length, matchedLines: groupBMatched },
+        totalVolume: Math.round(totalVolume),
+      });
+    }
+
+    // 7. Update matched count (no split needed)
     await prisma.mo_orders.update({
       where: { id: order.id },
       data: { matchedLines: matchedCount },

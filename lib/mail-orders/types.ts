@@ -38,6 +38,8 @@ export interface MoOrder {
   customerArea?: string | null;
   customerDeliveryType?: string | null;
   customerRoute?: string | null;
+  splitFromId?: number | null;
+  splitLabel?: string | null;
   status: OrderStatus;
   punchedById: number | null;
   punchedAt: string | null;
