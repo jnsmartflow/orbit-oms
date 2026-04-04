@@ -110,6 +110,30 @@ const MATERIAL_ORDER: Record<string, number> = {
   wood: 5, putty: 6, stainer: 7,
 };
 
+function getBaseOrder(baseColour: string | null): number {
+  if (!baseColour) return 50;
+  const upper = baseColour.toUpperCase().trim();
+
+  if (
+    upper === 'BRILLIANT WHITE' ||
+    upper === 'WHITE' ||
+    upper === '90 BASE' ||
+    upper === '00 BASE' ||
+    upper.startsWith('90') ||
+    upper.startsWith('00')
+  ) return 1;
+
+  if (upper === '92 BASE' || upper.startsWith('92')) return 2;
+  if (upper === '93 BASE' || upper.startsWith('93')) return 3;
+  if (upper === '94 BASE' || upper.startsWith('94')) return 4;
+  if (upper === '95 BASE' || upper.startsWith('95')) return 5;
+  if (upper === '96 BASE' || upper.startsWith('96')) return 6;
+  if (upper === '97 BASE' || upper.startsWith('97')) return 7;
+  if (upper === '98 BASE' || upper.startsWith('98')) return 8;
+
+  return 20;
+}
+
 export function sortLinesForPicker(lines: MoOrderLine[]): MoOrderLine[] {
   return [...lines].sort((a, b) => {
     // Level 1: paintType — warehouse zone walk order
@@ -134,7 +158,12 @@ export function sortLinesForPicker(lines: MoOrderLine[]): MoOrderLine[] {
     const prodB = (b.productName || '').toUpperCase();
     if (prodA !== prodB) return prodA.localeCompare(prodB);
 
-    // Level 5: baseColour ASC — visual scan aid
+    // Level 5a: base code order (white → 92 → 93 → ... → 98)
+    const baseOrderA = getBaseOrder(a.baseColour);
+    const baseOrderB = getBaseOrder(b.baseColour);
+    if (baseOrderA !== baseOrderB) return baseOrderA - baseOrderB;
+
+    // Level 5b: alphabetical fallback for same base order group
     const colA = (a.baseColour || '').toUpperCase();
     const colB = (b.baseColour || '').toUpperCase();
     return colA.localeCompare(colB);
