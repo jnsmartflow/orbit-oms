@@ -165,6 +165,7 @@ export async function POST(req: NextRequest) {
         data: {
           moOrderId: order.id,
           lineNumber: i + 1,
+          originalLineNumber: i + 1,
           rawText: line.rawText,
           packCode: line.packCode || null,
           quantity: line.quantity,

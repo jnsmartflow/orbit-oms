@@ -5,6 +5,7 @@ export interface MoOrderLine {
   id: number;
   moOrderId: number;
   lineNumber: number;
+  originalLineNumber?: number | null;
   rawText: string;
   packCode: string | null;
   quantity: number;

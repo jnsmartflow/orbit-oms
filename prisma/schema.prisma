@@ -1005,11 +1005,12 @@ model mo_orders {
 }
 
 model mo_order_lines {
-  id              Int       @id @default(autoincrement())
-  moOrderId       Int
-  moOrder         mo_orders @relation(fields: [moOrderId], references: [id], onDelete: Cascade)
-  lineNumber      Int
-  rawText         String
+  id                 Int       @id @default(autoincrement())
+  moOrderId          Int
+  moOrder            mo_orders @relation(fields: [moOrderId], references: [id], onDelete: Cascade)
+  lineNumber         Int
+  originalLineNumber Int?
+  rawText            String
   packCode        String?
   quantity        Int       @default(0)
   productName     String?

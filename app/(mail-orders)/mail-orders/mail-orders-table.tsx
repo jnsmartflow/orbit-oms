@@ -908,6 +908,98 @@ function OrderRow({
   );
 }
 
+// ── Original lines table (read-only, for split orders) ──────────────────────
+
+function OriginalLinesTable({
+  lines,
+  currentOrderId,
+}: {
+  lines: Array<MoOrderLine & { groupLabel: string; moOrderId: number }>;
+  currentOrderId: number;
+}) {
+  return (
+    <table className="w-full border-collapse">
+      <colgroup>
+        <col style={{ width: 38 }} />
+        <col style={{ width: '30%' }} />
+        <col style={{ width: 130 }} />
+        <col style={{ width: '25%' }} />
+        <col style={{ width: 48 }} />
+        <col style={{ width: 52 }} />
+        <col style={{ width: 56 }} />
+        <col style={{ width: 52 }} />
+      </colgroup>
+      <thead>
+        <tr className="h-[32px] bg-gray-50" style={{ borderBottom: "1px solid #ebebeb" }}>
+          <th className="text-[10px] font-medium uppercase tracking-wider text-gray-400 text-left px-3.5">#</th>
+          <th className="text-[10px] font-medium uppercase tracking-wider text-gray-400 text-left px-3.5">Raw Text</th>
+          <th className="text-[10px] font-medium uppercase tracking-wider text-gray-400 text-left px-3.5">SKU Code</th>
+          <th className="text-[10px] font-medium uppercase tracking-wider text-gray-400 text-left px-3.5">Description</th>
+          <th className="text-[10px] font-medium uppercase tracking-wider text-gray-400 text-center px-3.5">Pk</th>
+          <th className="text-[10px] font-medium uppercase tracking-wider text-gray-400 text-right px-3.5">Qty</th>
+          <th className="text-[10px] font-medium uppercase tracking-wider text-gray-400 text-right px-3.5">Vol</th>
+          <th className="text-[10px] font-medium uppercase tracking-wider text-gray-400 text-center px-3.5">Group</th>
+        </tr>
+      </thead>
+      <tbody>
+        {lines.map((line, idx) => {
+          const isMatched = line.matchStatus === "matched";
+          const isLast = idx === lines.length - 1;
+          const isCurrentGroup = line.moOrderId === currentOrderId;
+          const vol = getLineVolume(line.quantity, line.packCode);
+
+          return (
+            <tr
+              key={line.id}
+              className="h-[36px] hover:bg-gray-50"
+              style={{
+                borderBottom: isLast ? undefined : "1px solid #f0f0f0",
+                opacity: isCurrentGroup ? 1 : 0.5,
+              }}
+            >
+              <td className="px-3.5 align-middle text-[11px] text-gray-400">
+                {line.originalLineNumber ?? line.lineNumber}
+              </td>
+              <td className="px-3.5 align-middle text-[11px] text-gray-700">
+                {line.rawText}
+              </td>
+              <td className="px-3.5 align-middle">
+                {isMatched ? (
+                  <span className="font-mono text-[11px] text-gray-500">{line.skuCode}</span>
+                ) : (
+                  <span className="text-gray-300">—</span>
+                )}
+              </td>
+              <td className="px-3.5 align-middle text-[11px] text-gray-500 truncate"
+                  title={line.skuDescription ?? ''}>
+                {isMatched ? (line.skuDescription ?? '—') : '—'}
+              </td>
+              <td className="px-3.5 align-middle text-center text-[11px] text-gray-500">
+                {line.packCode ?? '—'}
+              </td>
+              <td className="px-3.5 align-middle text-right text-[11px] text-gray-700 font-medium">
+                {line.quantity}
+              </td>
+              <td className="px-3.5 align-middle text-right text-[11px] text-gray-400">
+                {vol > 0 ? formatVolume(vol) : '—'}
+              </td>
+              <td className="px-3.5 align-middle text-center">
+                <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded ${
+                  line.groupLabel === 'A'
+                    ? 'bg-purple-50 text-purple-600 border border-purple-200'
+                    : 'bg-blue-50 text-blue-600 border border-blue-200'
+                }`}>
+                  {line.groupLabel}
+                </span>
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
 // ── Expand sub-row ───────────────────────────────────────────────────────────
 
 function ExpandRow({ order, onSplitComplete }: { order: MoOrder; onSplitComplete: () => void }) {
@@ -921,6 +1013,30 @@ function ExpandRow({ order, onSplitComplete }: { order: MoOrder; onSplitComplete
     groupB: { lineIds: number[]; count: number; volume: number };
   } | null>(null);
   const [splitDismissed, setSplitDismissed] = useState(false);
+  const [showOriginal, setShowOriginal] = useState(false);
+  const [originalLines, setOriginalLines] = useState<
+    Array<MoOrderLine & { groupLabel: string; moOrderId: number }> | null
+  >(null);
+  const [loadingOriginal, setLoadingOriginal] = useState(false);
+
+  async function fetchOriginalLines() {
+    if (originalLines) {
+      setShowOriginal(true);
+      return;
+    }
+    setLoadingOriginal(true);
+    try {
+      const res = await fetch(`/api/mail-orders/${order.id}/original-lines`);
+      if (res.ok) {
+        const data = await res.json();
+        setOriginalLines(data.lines);
+        setShowOriginal(true);
+      }
+    } catch (err) {
+      console.error("Failed to fetch original lines:", err);
+    }
+    setLoadingOriginal(false);
+  }
 
   function handleResolved(lineId: number, skuCode: string, skuDescription: string) {
     setResolvedLines((prev) => ({ ...prev, [lineId]: { skuCode, skuDescription } }));
@@ -1024,7 +1140,38 @@ function ExpandRow({ order, onSplitComplete }: { order: MoOrder; onSplitComplete
             </div>
           </div>
         )}
+        {/* Toolbar row — only for split orders */}
+        {order.splitLabel && (
+          <div className="flex items-center justify-between px-4 pt-3 pb-1">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  if (showOriginal) {
+                    setShowOriginal(false);
+                  } else {
+                    fetchOriginalLines();
+                  }
+                }}
+                className={`text-[10px] font-medium px-2.5 py-1 rounded border transition-colors ${
+                  showOriginal
+                    ? "bg-purple-50 border-purple-200 text-purple-700"
+                    : "bg-white border-gray-200 text-gray-500 hover:bg-gray-50"
+                }`}
+              >
+                {loadingOriginal ? "Loading..." : showOriginal ? "✂ Split View" : "📧 Original Order"}
+              </button>
+              {showOriginal && originalLines && (
+                <span className="text-[10px] text-gray-400">
+                  {originalLines.length} lines · original email sequence
+                </span>
+              )}
+            </div>
+          </div>
+        )}
         {/* Line items table */}
+        {showOriginal && originalLines ? (
+          <OriginalLinesTable lines={originalLines} currentOrderId={order.id} />
+        ) : (
         <table className="w-full border-collapse">
           <colgroup>
             <col style={{ width: 38 }} />
@@ -1146,6 +1293,7 @@ function ExpandRow({ order, onSplitComplete }: { order: MoOrder; onSplitComplete
             })}
           </tbody>
         </table>
+        )}
 
         {/* Remarks footer */}
         <div
