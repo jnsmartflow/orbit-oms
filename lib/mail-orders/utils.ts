@@ -69,6 +69,33 @@ export function groupOrdersBySlot(
   return result;
 }
 
+const KEEP_UPPER = new Set([
+  "CO", "CO.", "LLP", "PVT", "LTD", "PVT.", "LTD.",
+  "II", "III", "IV",
+  "HW", "H/W",
+  "JSW", "SAP", "OBD", "IGT", "UPC",
+]);
+
+const KEEP_LOWER = new Set([
+  "and", "of", "the", "for", "in", "at", "to", "by",
+  "an", "or", "on", "with",
+]);
+
+export function smartTitleCase(text: string | null | undefined): string {
+  if (!text) return "";
+  return text
+    .split(/\s+/)
+    .map((word, index) => {
+      const upper = word.toUpperCase();
+      const lower = word.toLowerCase();
+      if (KEEP_UPPER.has(upper)) return upper;
+      if (/[\/&]/.test(word) && word.length <= 5) return upper;
+      if (index > 0 && KEEP_LOWER.has(lower)) return lower;
+      return lower.charAt(0).toUpperCase() + lower.slice(1);
+    })
+    .join(" ");
+}
+
 const OD_CI_KEYWORDS = ["od", "ci", "credit hold", "block", "overdue"];
 
 export function isOdCiFlagged(order: MoOrder): boolean {

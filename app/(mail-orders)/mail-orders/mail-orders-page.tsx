@@ -24,6 +24,7 @@ export default function MailOrdersPage() {
   const [flaggedIds, setFlaggedIds] = useState<Set<number>>(new Set());
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [copiedId, setCopiedId] = useState<number | null>(null);
+  const [copiedCodeId, setCopiedCodeId] = useState<number | null>(null);
   const [focusedId, setFocusedId] = useState<number | null>(null);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [selectedDate, setSelectedDate] = useState(() => getTodayIST());
@@ -322,6 +323,8 @@ export default function MailOrdersPage() {
           const order = flatOrders.find((o) => o.id === focusedId);
           if (order?.customerMatchStatus === "exact" && order.customerCode) {
             navigator.clipboard.writeText(order.customerCode);
+            setCopiedCodeId(focusedId);
+            setTimeout(() => setCopiedCodeId(null), 1500);
           }
         }
         return;
@@ -580,6 +583,7 @@ export default function MailOrdersPage() {
             expandedId={expandedId}
             focusedId={focusedId}
             copiedId={copiedId}
+            copiedCodeId={copiedCodeId}
             onFlag={handleFlag}
             onExpand={handleExpand}
             onPunch={handlePunch}

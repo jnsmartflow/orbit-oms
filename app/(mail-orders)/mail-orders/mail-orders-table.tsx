@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Check, Copy, ChevronDown, Pencil, Search } from "lucide-react";
-import { formatTime } from "@/lib/mail-orders/utils";
+import { formatTime, smartTitleCase } from "@/lib/mail-orders/utils";
 import { searchCustomers } from "@/lib/mail-orders/api";
 import type { MoOrder, MoOrderLine, CustomerSearchResult } from "@/lib/mail-orders/types";
 import { ResolveLinePanel } from "./resolve-line-panel";
@@ -15,6 +15,7 @@ interface MailOrdersTableProps {
   expandedId: number | null;
   focusedId: number | null;
   copiedId: number | null;
+  copiedCodeId: number | null;
   onFlag: (id: number) => void;
   onExpand: (id: number | null) => void;
   onPunch: (id: number) => Promise<void>;
@@ -67,12 +68,17 @@ function extractSubjectCode(subject: string): string | null {
   return m ? m[1] : null;
 }
 
-const DELIVERY_DOT: Record<string, string> = {
-  Local: "bg-blue-600",
-  UPC: "bg-orange-600",
-  IGT: "bg-teal-600",
-  Cross: "bg-rose-600",
-};
+function getDeliveryDotColor(deliveryType: string | null | undefined): { color: string; title: string } | null {
+  if (!deliveryType) return null;
+  switch (deliveryType.toUpperCase()) {
+    case "LOCAL": return { color: "bg-blue-600", title: "Local" };
+    case "UPC": return { color: "bg-orange-600", title: "Upcountry" };
+    case "IGT": return { color: "bg-teal-600", title: "IGT" };
+    case "CROSS":
+    case "CROSS DEPOT": return { color: "bg-rose-600", title: "Cross Depot" };
+    default: return null;
+  }
+}
 
 // ── Component ────────────────────────────────────────────────────────────────
 
@@ -82,6 +88,7 @@ export function MailOrdersTable({
   expandedId,
   focusedId,
   copiedId,
+  copiedCodeId,
   onFlag,
   onExpand,
   onPunch,
@@ -141,7 +148,7 @@ export function MailOrdersTable({
               SO No.
             </th>
             <th className="text-[10px] font-medium uppercase tracking-wider text-gray-400 text-center px-3.5">
-              OD/CI
+              Lock
             </th>
             <th className="text-[10px] font-medium uppercase tracking-wider text-gray-400 text-right px-3.5">
               Status
@@ -171,6 +178,7 @@ export function MailOrdersTable({
                 expandedId={expandedId}
                 focusedId={focusedId}
                 copiedId={copiedId}
+                copiedCodeId={copiedCodeId}
                 onFlag={onFlag}
                 onExpand={onExpand}
                 onPunch={onPunch}
@@ -199,6 +207,7 @@ function SlotGroup({
   expandedId,
   focusedId,
   copiedId,
+  copiedCodeId,
   onFlag,
   onExpand,
   onPunch,
@@ -216,6 +225,7 @@ function SlotGroup({
   expandedId: number | null;
   focusedId: number | null;
   copiedId: number | null;
+  copiedCodeId: number | null;
   onFlag: (id: number) => void;
   onExpand: (id: number | null) => void;
   onPunch: (id: number) => Promise<void>;
@@ -267,6 +277,7 @@ function SlotGroup({
             isFocused={isFocused}
             isExpanded={isExpanded}
             copiedId={copiedId}
+            copiedCodeId={copiedCodeId}
             onFlag={onFlag}
             onExpand={onExpand}
             onPunch={onPunch}
@@ -290,12 +301,14 @@ function CodeCell({
   onSaveCustomer,
   isOpen,
   onToggle,
+  copiedCodeId,
 }: {
   order: MoOrder;
   baseTdClass: string;
   onSaveCustomer: MailOrdersTableProps["onSaveCustomer"];
   isOpen: boolean;
   onToggle: () => void;
+  copiedCodeId: number | null;
 }) {
   const popoverRef = useRef<HTMLDivElement>(null);
   const [codeCopied, setCodeCopied] = useState(false);
@@ -388,7 +401,7 @@ function CodeCell({
           >
             <span className="font-mono text-[11px] text-gray-800 flex-shrink-0">{c.customerCode}</span>
             <div className="min-w-0">
-              <div className="text-[11px] text-gray-600 truncate">{c.customerName}</div>
+              <div className="text-[11px] text-gray-600 truncate">{smartTitleCase(c.customerName)}</div>
               {(c.area || c.route) && (
                 <div className="text-[10px] text-gray-400 truncate">
                   {[c.area, c.route].filter(Boolean).join(" \u00b7 ")}
@@ -409,7 +422,7 @@ function CodeCell({
           <span
             onClick={handleCopyCode}
             className={`font-mono text-[11px] cursor-pointer rounded px-1.5 py-0.5 border transition-colors ${
-              codeCopied
+              codeCopied || copiedCodeId === order.id
                 ? "bg-teal-50 border-teal-200 text-teal-700"
                 : "text-gray-800 bg-gray-50 border-gray-200 hover:bg-gray-100 hover:border-gray-300"
             }`}
@@ -451,7 +464,7 @@ function CodeCell({
               >
                 <span className="font-mono text-[11px] text-gray-800 flex-shrink-0">{c.code}</span>
                 <div className="min-w-0">
-                  <div className="text-[11px] text-gray-600 truncate">{c.name}</div>
+                  <div className="text-[11px] text-gray-600 truncate">{smartTitleCase(c.name)}</div>
                   {(c.area || c.route) && (
                     <div className="text-[10px] text-gray-400 truncate">
                       {[c.area, c.route].filter(Boolean).join(" \u00b7 ")}
@@ -489,6 +502,7 @@ function OrderRow({
   isFocused,
   isExpanded,
   copiedId,
+  copiedCodeId,
   onFlag,
   onExpand,
   onPunch,
@@ -504,6 +518,7 @@ function OrderRow({
   isFocused: boolean;
   isExpanded: boolean;
   copiedId: number | null;
+  copiedCodeId: number | null;
   onFlag: (id: number) => void;
   onExpand: (id: number | null) => void;
   onPunch: (id: number) => Promise<void>;
@@ -554,13 +569,13 @@ function OrderRow({
   if (isFlagged && order.remarks) {
     remarksContent = (
       <span className="text-[11px] text-red-400 truncate block">
-        {order.remarks}
+        {smartTitleCase(order.remarks)}
       </span>
     );
   } else if (order.deliveryRemarks) {
     remarksContent = (
       <span className="text-[11px] text-gray-400 truncate block">
-        {order.deliveryRemarks}
+        {smartTitleCase(order.deliveryRemarks)}
       </span>
     );
   } else {
@@ -593,10 +608,10 @@ function OrderRow({
         {/* SO Name */}
         <td className={`px-3.5 align-middle ${baseTdClass}`}>
           <span
-            title={order.soName}
+            title={smartTitleCase(order.soName?.replace(/^\(JSW\)\s*/i, "").trim())}
             className="text-[11px] text-gray-500 truncate block max-w-[120px]"
           >
-            {order.soName}
+            {smartTitleCase(order.soName?.replace(/^\(JSW\)\s*/i, "").trim())}
           </span>
         </td>
 
@@ -604,19 +619,18 @@ function OrderRow({
         <td className={`px-3.5 align-middle ${baseTdClass}`}>
           {(() => {
             const isExact = order.customerMatchStatus === "exact";
-            const displayName = isExact && order.customerName
+            const rawName = isExact && order.customerName
               ? order.customerName
               : cleanSubject(order.subject);
+            const displayName = smartTitleCase(rawName);
             const subjectCode = extractSubjectCode(order.subject);
-            const delType = order.customerDeliveryType;
-            const dotColor = delType ? DELIVERY_DOT[delType] : null;
+            const dot = getDeliveryDotColor(order.customerDeliveryType);
             const area = isExact ? order.customerArea : null;
-            const subtextParts = [area, subjectCode].filter(Boolean);
             return (
               <div className="overflow-hidden min-w-0">
                 <div className="flex items-center gap-1.5 min-w-0">
-                  {dotColor && (
-                    <span className={`w-[5px] h-[5px] rounded-full ${dotColor} flex-shrink-0`} title={delType!} />
+                  {dot && (
+                    <span className={`w-[5px] h-[5px] rounded-full ${dot.color} flex-shrink-0`} title={dot.title} />
                   )}
                   <span
                     title={displayName}
@@ -626,13 +640,15 @@ function OrderRow({
                   </span>
                   {isFlagged && (
                     <span className="text-[10px] font-semibold text-red-600 bg-red-50 border border-red-200 rounded px-1.5 py-0.5 flex-shrink-0">
-                      OD/CI
+                      Lock
                     </span>
                   )}
                 </div>
-                {subtextParts.length > 0 && (
+                {(subjectCode || area) && (
                   <span className="text-[10px] text-gray-400 truncate block">
-                    {subtextParts.join(" \u00b7 ")}
+                    {subjectCode && <span className="font-mono">{subjectCode}</span>}
+                    {subjectCode && area && <span className="text-gray-300"> · </span>}
+                    {area}
                   </span>
                 )}
               </div>
@@ -695,6 +711,7 @@ function OrderRow({
           onSaveCustomer={onSaveCustomer}
           isOpen={openCodePopoverId === order.id}
           onToggle={handleCodeToggle}
+          copiedCodeId={copiedCodeId}
         />
 
         {/* SKU */}
@@ -761,7 +778,7 @@ function OrderRow({
           )}
         </td>
 
-        {/* OD/CI */}
+        {/* Lock */}
         <td className={`px-3.5 align-middle text-center ${baseTdClass}`}>
           {isPunched ? (
             <span className="text-gray-300 text-[11px]">—</span>
@@ -770,14 +787,14 @@ function OrderRow({
               onClick={(e) => { e.stopPropagation(); onFlag(order.id) }}
               className="inline-flex items-center gap-1 border border-red-300 rounded-md text-[10.5px] font-medium text-red-600 px-2 h-[24px] bg-red-50 whitespace-nowrap"
             >
-              ⚑ Flagged
+              ⚑ Locked
             </button>
           ) : (
             <button
               onClick={(e) => { e.stopPropagation(); onFlag(order.id) }}
               className="inline-flex items-center gap-1 border border-gray-200 rounded-md text-[10.5px] font-medium text-gray-400 px-2 h-[24px] bg-white hover:border-red-300 hover:text-red-500 transition-colors whitespace-nowrap"
             >
-              ⚑ Flag
+              ⚑ Lock
             </button>
           )}
         </td>
