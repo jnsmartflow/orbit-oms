@@ -100,20 +100,44 @@ export const BATCH_COPY_LIMIT = 20;
 export const SPLIT_VOLUME_THRESHOLD = 1500; // liters
 export const SORT_DISPLAY_THRESHOLD = 5;
 
+// Warehouse zone walk order: deep → dispatch
+const ZONE_ORDER: Record<string, number> = {
+  putty: 1, oil: 2, wood: 3, water: 4, stainer: 5,
+};
+
+const MATERIAL_ORDER: Record<string, number> = {
+  enamel: 1, emulsion: 2, waterproofing: 3, primer: 4,
+  wood: 5, putty: 6, stainer: 7,
+};
+
 export function sortLinesForPicker(lines: MoOrderLine[]): MoOrderLine[] {
   return [...lines].sort((a, b) => {
-    // Primary: productName alphabetical
+    // Level 1: paintType — warehouse zone walk order
+    const zoneA = ZONE_ORDER[(a.paintType || '').toLowerCase()] ?? 6;
+    const zoneB = ZONE_ORDER[(b.paintType || '').toLowerCase()] ?? 6;
+    if (zoneA !== zoneB) return zoneA - zoneB;
+
+    // Level 2: packVolume ASC — small packs first, heavy last
+    const volA = getPackVolumeLiters(a.packCode);
+    const volB = getPackVolumeLiters(b.packCode);
+    if (volA === 0 && volB !== 0) return 1;
+    if (volA !== 0 && volB === 0) return -1;
+    if (volA !== volB) return volA - volB;
+
+    // Level 3: materialType — groups same material on same shelf
+    const matA = MATERIAL_ORDER[(a.materialType || '').toLowerCase()] ?? 8;
+    const matB = MATERIAL_ORDER[(b.materialType || '').toLowerCase()] ?? 8;
+    if (matA !== matB) return matA - matB;
+
+    // Level 4: productName ASC — alphabetical within material type
     const prodA = (a.productName || '').toUpperCase();
     const prodB = (b.productName || '').toUpperCase();
     if (prodA !== prodB) return prodA.localeCompare(prodB);
 
-    // Secondary: pack volume DESC
-    const volA = getPackVolumeLiters(a.packCode);
-    const volB = getPackVolumeLiters(b.packCode);
-    if (volA === 0 && volB === 0) return 0;
-    if (volA === 0) return 1;
-    if (volB === 0) return -1;
-    return volB - volA;
+    // Level 5: baseColour ASC — visual scan aid
+    const colA = (a.baseColour || '').toUpperCase();
+    const colB = (b.baseColour || '').toUpperCase();
+    return colA.localeCompare(colB);
   });
 }
 export const SPLIT_LINE_THRESHOLD = 20;
@@ -126,6 +150,8 @@ interface SplitLine {
   quantity: number;
   packCode: string | null;
   productName: string | null;
+  paintType?: string | null;
+  materialType?: string | null;
 }
 
 interface Block {
@@ -133,20 +159,22 @@ interface Block {
   indices: number[];
   volume: number;
   lineCount: number;
+  zoneOrder?: number;
 }
 
 /**
- * Category-first split algorithm.
+ * Zone-aware split algorithm.
  *
- * Priority order:
- * 1. Balance (no group below MIN_GROUP_LINES) — hard constraint
- * 2. Category grouping (keep same-product lines together) — soft preference
- * 3. Volume balance — nice to have
+ * Priority:
+ * 1. Zone integrity (two pickers should not visit the same zone)
+ * 2. Balance (no group below MIN_GROUP_LINES) — hard constraint
+ * 3. Line count / volume balance — nice to have (accept up to 70/30)
  */
 export function splitLinesByCategory(
   lines: SplitLine[],
 ): [number[], number[]] {
-  const totalLines = lines.length;
+  const totalLineCount = lines.length;
+  const totalVolume = lines.reduce((s, l) => s + getLineVolume(l.quantity, l.packCode), 0);
 
   // Sort indices within a group by pack size DESC for picker efficiency
   const sortByPackSize = (indices: number[]) => {
@@ -162,8 +190,8 @@ export function splitLinesByCategory(
   };
 
   // If too few lines to split meaningfully, just do simple halving
-  if (totalLines < MIN_GROUP_LINES * 2) {
-    const mid = Math.ceil(totalLines / 2);
+  if (totalLineCount < MIN_GROUP_LINES * 2) {
+    const mid = Math.ceil(totalLineCount / 2);
     const halfA = lines.slice(0, mid).map(l => l.index);
     const halfB = lines.slice(mid).map(l => l.index);
     sortByPackSize(halfA);
@@ -171,51 +199,176 @@ export function splitLinesByCategory(
     return [halfA, halfB];
   }
 
-  // ── Step 1: Group by productName ──────────────────────────
-  const categoryMap = new Map<string, SplitLine[]>();
+  // ── Step 1: Build zone blocks ─────────────────────────────
+  const zoneMap = new Map<string, SplitLine[]>();
   for (const line of lines) {
-    const cat = line.productName || '__unknown__';
-    if (!categoryMap.has(cat)) categoryMap.set(cat, []);
-    categoryMap.get(cat)!.push(line);
+    const zone = (line.paintType || '__unknown__').toLowerCase();
+    if (!zoneMap.has(zone)) zoneMap.set(zone, []);
+    zoneMap.get(zone)!.push(line);
   }
 
-  // ── Step 2: Build blocks ──────────────────────────────────
-  const totalVolume = lines.reduce((s, l) => s + getLineVolume(l.quantity, l.packCode), 0);
-  const blocks: Block[] = [];
-
-  Array.from(categoryMap.entries()).forEach(([cat, catLines]) => {
-    const catVolume = catLines.reduce((s: number, l: SplitLine) => s + getLineVolume(l.quantity, l.packCode), 0);
-
-    // If this category dominates (>60% of total volume), sub-split by packCode
-    if (catVolume > totalVolume * DOMINANT_CATEGORY_THRESHOLD && catLines.length > MIN_GROUP_LINES) {
-      const packMap = new Map<string, SplitLine[]>();
-      for (const line of catLines) {
-        const pk = line.packCode || '__nopack__';
-        if (!packMap.has(pk)) packMap.set(pk, []);
-        packMap.get(pk)!.push(line);
-      }
-      Array.from(packMap.entries()).forEach(([pk, pkLines]) => {
-        blocks.push({
-          key: `${cat}|${pk}`,
-          indices: pkLines.map((l: SplitLine) => l.index),
-          volume: pkLines.reduce((s: number, l: SplitLine) => s + getLineVolume(l.quantity, l.packCode), 0),
-          lineCount: pkLines.length,
-        });
-      });
-    } else {
-      blocks.push({
-        key: cat,
-        indices: catLines.map((l: SplitLine) => l.index),
-        volume: catVolume,
-        lineCount: catLines.length,
-      });
-    }
+  const zoneBlocks: Block[] = [];
+  Array.from(zoneMap.entries()).forEach(([zone, zoneLines]) => {
+    zoneBlocks.push({
+      key: zone,
+      indices: zoneLines.map((l: SplitLine) => l.index),
+      volume: zoneLines.reduce((s: number, l: SplitLine) => s + getLineVolume(l.quantity, l.packCode), 0),
+      lineCount: zoneLines.length,
+      zoneOrder: ZONE_ORDER[zone] ?? 6,
+    });
   });
 
-  // ── Step 3: Sort blocks by volume DESC ────────────────────
-  blocks.sort((a, b) => b.volume - a.volume);
+  // Sort by ZONE_ORDER for boundary split
+  zoneBlocks.sort((a, b) => (a.zoneOrder ?? 6) - (b.zoneOrder ?? 6));
 
-  // ── Step 4: Greedy bin-pack at block level ────────────────
+  // ── Step 2: Try zone-boundary split ───────────────────────
+  // Try splitting between each adjacent zone pair, pick closest to 50/50
+  if (zoneBlocks.length >= 2) {
+    let bestSplitIdx = -1;
+    let bestImbalance = Infinity;
+
+    for (let i = 1; i < zoneBlocks.length; i++) {
+      let leftCount = 0;
+      for (let j = 0; j < i; j++) leftCount += zoneBlocks[j].lineCount;
+      const ratio = Math.max(leftCount, totalLineCount - leftCount) / totalLineCount;
+      // Accept up to 70/30 imbalance
+      if (ratio <= 0.70) {
+        const imbalance = Math.abs(leftCount - (totalLineCount - leftCount));
+        if (imbalance < bestImbalance) {
+          bestImbalance = imbalance;
+          bestSplitIdx = i;
+        }
+      }
+    }
+
+    if (bestSplitIdx > 0) {
+      const groupA: number[] = [];
+      const groupB: number[] = [];
+      for (let i = 0; i < zoneBlocks.length; i++) {
+        if (i < bestSplitIdx) {
+          groupA.push(...zoneBlocks[i].indices);
+        } else {
+          groupB.push(...zoneBlocks[i].indices);
+        }
+      }
+
+      // Guard rail: min lines per group
+      const cA = groupA.length;
+      const cB = groupB.length;
+      if (cA >= MIN_GROUP_LINES && cB >= MIN_GROUP_LINES) {
+        sortByPackSize(groupA);
+        sortByPackSize(groupB);
+        return [groupA, groupB];
+      }
+      // Fall through to Step 3 if guard rail fails
+    }
+  }
+
+  // ── Step 3: Dominant zone — split within it ───────────────
+  // Find the largest zone
+  const dominantZone = zoneBlocks.reduce((max, z) => z.lineCount > max.lineCount ? z : max, zoneBlocks[0]);
+  const dominantRatio = dominantZone.lineCount / totalLineCount;
+
+  if (dominantRatio > 0.75) {
+    // Split within the dominant zone by materialType
+    const domLines = lines.filter(l => (l.paintType || '__unknown__').toLowerCase() === dominantZone.key);
+    const nonDomIndices: number[] = [];
+    for (const zb of zoneBlocks) {
+      if (zb.key !== dominantZone.key) nonDomIndices.push(...zb.indices);
+    }
+
+    // Build sub-blocks by materialType within dominant zone
+    const matMap = new Map<string, SplitLine[]>();
+    for (const line of domLines) {
+      const mt = (line.materialType || '__unknown__').toLowerCase();
+      if (!matMap.has(mt)) matMap.set(mt, []);
+      matMap.get(mt)!.push(line);
+    }
+
+    const domVolume = domLines.reduce((s, l) => s + getLineVolume(l.quantity, l.packCode), 0);
+    const subBlocks: Block[] = [];
+
+    Array.from(matMap.entries()).forEach(([mt, mtLines]) => {
+      const mtVolume = mtLines.reduce((s: number, l: SplitLine) => s + getLineVolume(l.quantity, l.packCode), 0);
+
+      // Sub-split dominant materialType by packCode
+      if (mtVolume > domVolume * DOMINANT_CATEGORY_THRESHOLD && mtLines.length > MIN_GROUP_LINES) {
+        const packMap = new Map<string, SplitLine[]>();
+        for (const line of mtLines) {
+          const pk = line.packCode || '__nopack__';
+          if (!packMap.has(pk)) packMap.set(pk, []);
+          packMap.get(pk)!.push(line);
+        }
+        Array.from(packMap.entries()).forEach(([pk, pkLines]) => {
+          subBlocks.push({
+            key: `${mt}|${pk}`,
+            indices: pkLines.map((l: SplitLine) => l.index),
+            volume: pkLines.reduce((s: number, l: SplitLine) => s + getLineVolume(l.quantity, l.packCode), 0),
+            lineCount: pkLines.length,
+          });
+        });
+      } else {
+        subBlocks.push({
+          key: mt,
+          indices: mtLines.map((l: SplitLine) => l.index),
+          volume: mtVolume,
+          lineCount: mtLines.length,
+        });
+      }
+    });
+
+    // Weighted bin-pack the sub-blocks
+    subBlocks.sort((a, b) => b.volume - a.volume);
+    let groupA: number[] = [];
+    let groupB: number[] = [];
+    let volA = 0;
+    let volB = 0;
+    let countA = 0;
+    let countB = 0;
+
+    for (const block of subBlocks) {
+      const scoreA = totalVolume > 0
+        ? 0.5 * (volA / totalVolume) + 0.5 * (countA / totalLineCount)
+        : countA / totalLineCount;
+      const scoreB = totalVolume > 0
+        ? 0.5 * (volB / totalVolume) + 0.5 * (countB / totalLineCount)
+        : countB / totalLineCount;
+
+      if (scoreA <= scoreB) {
+        groupA.push(...block.indices);
+        volA += block.volume;
+        countA += block.lineCount;
+      } else {
+        groupB.push(...block.indices);
+        volB += block.volume;
+        countB += block.lineCount;
+      }
+    }
+
+    // Assign non-dominant zone lines to the group with fewer lines
+    if (nonDomIndices.length > 0) {
+      if (countA <= countB) {
+        groupA.push(...nonDomIndices);
+        countA += nonDomIndices.length;
+      } else {
+        groupB.push(...nonDomIndices);
+        countB += nonDomIndices.length;
+      }
+    }
+
+    // Guard rail
+    if (countA >= MIN_GROUP_LINES && countB >= MIN_GROUP_LINES) {
+      sortByPackSize(groupA);
+      sortByPackSize(groupB);
+      return [groupA, groupB];
+    }
+    // Fall through to Step 4 if guard rail fails
+  }
+
+  // ── Step 4: General weighted bin-pack on zone blocks ──────
+  // (multi-zone, no clean boundary found, or dominant zone guard rail failed)
+  zoneBlocks.sort((a, b) => b.volume - a.volume);
+
   let groupA: number[] = [];
   let groupB: number[] = [];
   let volA = 0;
@@ -223,9 +376,7 @@ export function splitLinesByCategory(
   let countA = 0;
   let countB = 0;
 
-  const totalLineCount = lines.length;
-
-  for (const block of blocks) {
+  for (const block of zoneBlocks) {
     const scoreA = totalVolume > 0
       ? 0.5 * (volA / totalVolume) + 0.5 * (countA / totalLineCount)
       : countA / totalLineCount;
@@ -246,8 +397,7 @@ export function splitLinesByCategory(
 
   // ── Step 5: Guard rail — rebalance if either group < 8 lines ─
   if (countA < MIN_GROUP_LINES || countB < MIN_GROUP_LINES) {
-    // Re-sort blocks by line count DESC for better distribution
-    blocks.sort((a, b) => b.lineCount - a.lineCount);
+    zoneBlocks.sort((a, b) => b.lineCount - a.lineCount);
 
     groupA = [];
     groupB = [];
@@ -256,7 +406,7 @@ export function splitLinesByCategory(
     volA = 0;
     volB = 0;
 
-    for (const block of blocks) {
+    for (const block of zoneBlocks) {
       const scoreA = totalVolume > 0
         ? 0.5 * (volA / totalVolume) + 0.5 * (countA / totalLineCount)
         : countA / totalLineCount;
@@ -275,7 +425,7 @@ export function splitLinesByCategory(
       }
     }
 
-    // If STILL unbalanced, nuclear fallback: interleave
+    // Nuclear fallback: simple halving
     if (countA < MIN_GROUP_LINES || countB < MIN_GROUP_LINES) {
       const allIndices = lines.map(l => l.index);
       const mid = Math.ceil(allIndices.length / 2);

@@ -23,6 +23,8 @@ export interface SkuEntry {
   packCode: string;
   unit: string | null;
   refMaterial: string | null;
+  paintType: string | null;
+  materialType: string | null;
 }
 
 export interface EnrichResult {
@@ -31,6 +33,8 @@ export interface EnrichResult {
   skuCode: string;
   skuDescription: string;
   refSkuCode: string;
+  paintType: string;
+  materialType: string;
   matchStatus: "matched" | "partial" | "unmatched";
 }
 
@@ -92,6 +96,8 @@ export function enrichLine(
     skuCode: "",
     skuDescription: "",
     refSkuCode: "",
+    paintType: "",
+    materialType: "",
     matchStatus: "unmatched",
   };
 
@@ -110,6 +116,8 @@ export function enrichLine(
         skuCode: sku.material,
         skuDescription: sku.description,
         refSkuCode: sku.refMaterial ?? "",
+        paintType: sku.paintType ?? "",
+        materialType: sku.materialType ?? "",
         matchStatus: "matched",
       };
     }
@@ -186,6 +194,8 @@ export function enrichLine(
             skuCode: sku.material,
             skuDescription: sku.description,
             refSkuCode: sku.refMaterial ?? "",
+            paintType: sku.paintType ?? "",
+            materialType: sku.materialType ?? "",
             matchStatus: "matched",
           };
         }
@@ -206,6 +216,8 @@ export function enrichLine(
       skuCode: "",
       skuDescription: "",
       refSkuCode: "",
+      paintType: "",
+      materialType: "",
       matchStatus: "partial",
     };
   }

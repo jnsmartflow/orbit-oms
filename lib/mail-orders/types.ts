@@ -14,6 +14,8 @@ export interface MoOrderLine {
   skuCode: string | null;
   skuDescription: string | null;
   refSkuCode: string | null;
+  paintType: string | null;
+  materialType: string | null;
   matchStatus: MatchStatus;
   createdAt: string;
 }

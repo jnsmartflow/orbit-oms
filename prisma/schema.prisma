@@ -1018,6 +1018,8 @@ model mo_order_lines {
   skuCode         String?
   skuDescription  String?
   refSkuCode      String?
+  paintType       String?
+  materialType    String?
   matchStatus     String    @default("unmatched")
   createdAt       DateTime  @default(now())
 }
@@ -1046,9 +1048,11 @@ model mo_sku_lookup {
   product     String
   baseColour  String
   packCode    String
-  unit        String?
-  refMaterial String?
-  createdAt   DateTime @default(now())
+  unit         String?
+  refMaterial  String?
+  paintType    String?
+  materialType String?
+  createdAt    DateTime @default(now())
 }
 
 model mo_customer_keywords {

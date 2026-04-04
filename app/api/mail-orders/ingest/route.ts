@@ -110,6 +110,8 @@ export async function POST(req: NextRequest) {
       packCode: r.packCode,
       unit: r.unit,
       refMaterial: r.refMaterial,
+      paintType: r.paintType,
+      materialType: r.materialType,
     }));
 
     const { byCombo: skuByCombo, byMaterial: skuByMaterial } = buildSkuMaps(skuEntries);
@@ -174,6 +176,8 @@ export async function POST(req: NextRequest) {
           skuCode: result.skuCode || null,
           skuDescription: result.skuDescription || null,
           refSkuCode: result.refSkuCode || null,
+          paintType: result.paintType || null,
+          materialType: result.materialType || null,
           matchStatus: result.matchStatus,
         },
       });
@@ -183,7 +187,7 @@ export async function POST(req: NextRequest) {
     const insertedLines = await prisma.mo_order_lines.findMany({
       where: { moOrderId: order.id },
       orderBy: { lineNumber: "asc" },
-      select: { id: true, lineNumber: true, quantity: true, packCode: true, matchStatus: true, productName: true },
+      select: { id: true, lineNumber: true, quantity: true, packCode: true, matchStatus: true, productName: true, paintType: true, materialType: true },
     });
 
     const totalVolume = insertedLines.reduce(
@@ -197,6 +201,8 @@ export async function POST(req: NextRequest) {
         quantity: l.quantity,
         packCode: l.packCode,
         productName: l.productName,
+        paintType: l.paintType,
+        materialType: l.materialType,
       }));
 
       const [groupAIndices, groupBIndices] = splitLinesByCategory(lineItems);

@@ -1075,6 +1075,8 @@ function ExpandRow({ order, onSplitComplete }: { order: MoOrder; onSplitComplete
         quantity: l.quantity,
         packCode: l.packCode,
         productName: l.productName,
+        paintType: l.paintType,
+        materialType: l.materialType,
       }));
 
       const [groupAIdx, groupBIdx] = splitLinesByCategory(lineItems);
