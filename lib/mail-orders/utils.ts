@@ -531,7 +531,12 @@ export function groupOrdersBySlot(
     groups[slot].push(order);
   }
 
-  // Sort within each slot: dispatch weight → time → split label (A before B)
+  // Sort within each slot: dispatch weight → time → bill number → split label
+  const getBillNumber = (order: MoOrder): number => {
+    const match = order.remarks?.match(/^Bill\s+(\d+)$/);
+    return match ? parseInt(match[1], 10) : 0;
+  };
+
   for (const key of Object.keys(groups)) {
     groups[key].sort((a, b) => {
       const weightA = getDispatchSortWeight(a);
@@ -542,7 +547,12 @@ export function groupOrdersBySlot(
       const timeB = new Date(b.receivedAt).getTime();
       if (timeA !== timeB) return timeA - timeB;
 
-      // Within same time: split pairs — A before B
+      // Within same time: sort by bill number
+      const billA = getBillNumber(a);
+      const billB = getBillNumber(b);
+      if (billA !== billB) return billA - billB;
+
+      // Within same bill: split pairs — A before B
       const labelA = a.splitLabel || '';
       const labelB = b.splitLabel || '';
       return labelA.localeCompare(labelB);
@@ -584,7 +594,7 @@ export function smartTitleCase(text: string | null | undefined): string {
     .join(" ");
 }
 
-const OD_CI_KEYWORDS = ["od", "ci", "credit hold", "block", "overdue"];
+const OD_CI_KEYWORDS = ["od", "ci", "credit hold", "block", "overdue", "bill tomorrow"];
 
 export function isOdCiFlagged(order: MoOrder): boolean {
   const fields = [

@@ -627,7 +627,7 @@ function OrderRow({
     if (/\bextension\b/.test(combined)) result.push({ label: 'Extension', type: 'blocker' });
 
     // Timing (amber)
-    if (/bill\s*tomorrow/.test(combined)) result.push({ label: 'Tomorrow', type: 'timing' });
+    if (/bill\s*tomorrow/.test(combined)) result.push({ label: 'Bill Tomorrow', type: 'timing' });
     if (/7\s*days/.test(combined)) result.push({ label: '7 Days', type: 'timing' });
 
     // Bill number (gray)
@@ -1368,21 +1368,13 @@ function ExpandRow({ order, onSplitComplete }: { order: MoOrder; onSplitComplete
           className="bg-gray-50/80"
           style={{ borderTop: "1px solid #ebebeb", padding: "12px 16px 14px" }}
         >
-          <div className="grid grid-cols-[1fr_1fr_1fr_160px] gap-5">
+          <div className="grid grid-cols-[1fr_1fr_160px] gap-5">
             <div>
               <p className="text-[9.5px] font-bold uppercase tracking-[0.4px] text-gray-400 mb-1">
                 Delivery Remarks
               </p>
               <p className="text-[11.5px] text-gray-600">
                 {order.deliveryRemarks ?? "—"}
-              </p>
-            </div>
-            <div>
-              <p className="text-[9.5px] font-bold uppercase tracking-[0.4px] text-gray-400 mb-1">
-                Body Remarks
-              </p>
-              <p className="text-[11.5px] text-gray-600">
-                {order.remarks ?? "—"}
               </p>
             </div>
             <div>
