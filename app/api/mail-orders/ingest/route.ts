@@ -9,7 +9,7 @@ import {
   type SkuEntry,
 } from "@/lib/mail-orders/enrich";
 import { extractCustomerFromSubject, matchCustomer } from "@/lib/mail-orders/customer-match";
-import { getLineVolume, SPLIT_VOLUME_THRESHOLD, splitLinesByVolume } from "@/lib/mail-orders/utils";
+import { getLineVolume, SPLIT_VOLUME_THRESHOLD, SPLIT_LINE_THRESHOLD, splitLinesByCategory } from "@/lib/mail-orders/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -182,22 +182,23 @@ export async function POST(req: NextRequest) {
     const insertedLines = await prisma.mo_order_lines.findMany({
       where: { moOrderId: order.id },
       orderBy: { lineNumber: "asc" },
-      select: { id: true, lineNumber: true, quantity: true, packCode: true, matchStatus: true },
+      select: { id: true, lineNumber: true, quantity: true, packCode: true, matchStatus: true, productName: true },
     });
 
     const totalVolume = insertedLines.reduce(
       (sum, l) => sum + getLineVolume(l.quantity, l.packCode), 0,
     );
 
-    if (totalVolume > SPLIT_VOLUME_THRESHOLD) {
+    if (totalVolume > SPLIT_VOLUME_THRESHOLD || insertedLines.length > SPLIT_LINE_THRESHOLD) {
       // 6c. Auto-split
       const lineItems = insertedLines.map((l, idx) => ({
         index: idx,
         quantity: l.quantity,
         packCode: l.packCode,
+        productName: l.productName,
       }));
 
-      const [groupAIndices, groupBIndices] = splitLinesByVolume(lineItems);
+      const [groupAIndices, groupBIndices] = splitLinesByCategory(lineItems);
 
       const groupALines = groupAIndices.map((i) => insertedLines[i]);
       const groupBLines = groupBIndices.map((i) => insertedLines[i]);

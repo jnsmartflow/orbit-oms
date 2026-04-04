@@ -98,35 +98,140 @@ export function formatTime(receivedAt: string): string {
 
 export const BATCH_COPY_LIMIT = 20;
 export const SPLIT_VOLUME_THRESHOLD = 1500; // liters
+export const SPLIT_LINE_THRESHOLD = 20;
+
+const MIN_GROUP_LINES = 8;
+const DOMINANT_CATEGORY_THRESHOLD = 0.6; // 60% of total volume
+
+interface SplitLine {
+  index: number;
+  quantity: number;
+  packCode: string | null;
+  productName: string | null;
+}
+
+interface Block {
+  key: string;
+  indices: number[];
+  volume: number;
+  lineCount: number;
+}
 
 /**
- * Greedy bin-packing: split lines into two groups by volume.
- * Lines are ATOMIC — never split at unit level.
- * Returns [groupA_indices, groupB_indices] referencing the input array positions.
+ * Category-first split algorithm.
+ *
+ * Priority order:
+ * 1. Balance (no group below MIN_GROUP_LINES) — hard constraint
+ * 2. Category grouping (keep same-product lines together) — soft preference
+ * 3. Volume balance — nice to have
  */
-export function splitLinesByVolume(
-  lines: Array<{ index: number; quantity: number; packCode: string | null }>,
+export function splitLinesByCategory(
+  lines: SplitLine[],
 ): [number[], number[]] {
-  const withVolume = lines.map((l) => ({
-    index: l.index,
-    volume: getLineVolume(l.quantity, l.packCode),
-  }));
+  const totalLines = lines.length;
 
-  // Sort by volume DESC (greedy bin-packing — largest first)
-  withVolume.sort((a, b) => b.volume - a.volume);
+  // If too few lines to split meaningfully, just do simple halving
+  if (totalLines < MIN_GROUP_LINES * 2) {
+    const mid = Math.ceil(totalLines / 2);
+    return [
+      lines.slice(0, mid).map(l => l.index),
+      lines.slice(mid).map(l => l.index),
+    ];
+  }
 
-  const groupA: number[] = [];
-  const groupB: number[] = [];
+  // ── Step 1: Group by productName ──────────────────────────
+  const categoryMap = new Map<string, SplitLine[]>();
+  for (const line of lines) {
+    const cat = line.productName || '__unknown__';
+    if (!categoryMap.has(cat)) categoryMap.set(cat, []);
+    categoryMap.get(cat)!.push(line);
+  }
+
+  // ── Step 2: Build blocks ──────────────────────────────────
+  const totalVolume = lines.reduce((s, l) => s + getLineVolume(l.quantity, l.packCode), 0);
+  const blocks: Block[] = [];
+
+  Array.from(categoryMap.entries()).forEach(([cat, catLines]) => {
+    const catVolume = catLines.reduce((s: number, l: SplitLine) => s + getLineVolume(l.quantity, l.packCode), 0);
+
+    // If this category dominates (>60% of total volume), sub-split by packCode
+    if (catVolume > totalVolume * DOMINANT_CATEGORY_THRESHOLD && catLines.length > MIN_GROUP_LINES) {
+      const packMap = new Map<string, SplitLine[]>();
+      for (const line of catLines) {
+        const pk = line.packCode || '__nopack__';
+        if (!packMap.has(pk)) packMap.set(pk, []);
+        packMap.get(pk)!.push(line);
+      }
+      Array.from(packMap.entries()).forEach(([pk, pkLines]) => {
+        blocks.push({
+          key: `${cat}|${pk}`,
+          indices: pkLines.map((l: SplitLine) => l.index),
+          volume: pkLines.reduce((s: number, l: SplitLine) => s + getLineVolume(l.quantity, l.packCode), 0),
+          lineCount: pkLines.length,
+        });
+      });
+    } else {
+      blocks.push({
+        key: cat,
+        indices: catLines.map((l: SplitLine) => l.index),
+        volume: catVolume,
+        lineCount: catLines.length,
+      });
+    }
+  });
+
+  // ── Step 3: Sort blocks by volume DESC ────────────────────
+  blocks.sort((a, b) => b.volume - a.volume);
+
+  // ── Step 4: Greedy bin-pack at block level ────────────────
+  let groupA: number[] = [];
+  let groupB: number[] = [];
   let volA = 0;
   let volB = 0;
+  let countA = 0;
+  let countB = 0;
 
-  for (const item of withVolume) {
+  for (const block of blocks) {
     if (volA <= volB) {
-      groupA.push(item.index);
-      volA += item.volume;
+      groupA.push(...block.indices);
+      volA += block.volume;
+      countA += block.lineCount;
     } else {
-      groupB.push(item.index);
-      volB += item.volume;
+      groupB.push(...block.indices);
+      volB += block.volume;
+      countB += block.lineCount;
+    }
+  }
+
+  // ── Step 5: Guard rail — rebalance if either group < 8 lines ─
+  if (countA < MIN_GROUP_LINES || countB < MIN_GROUP_LINES) {
+    // Re-sort blocks by line count DESC for better distribution
+    blocks.sort((a, b) => b.lineCount - a.lineCount);
+
+    groupA = [];
+    groupB = [];
+    countA = 0;
+    countB = 0;
+    volA = 0;
+    volB = 0;
+
+    for (const block of blocks) {
+      if (countA <= countB) {
+        groupA.push(...block.indices);
+        countA += block.lineCount;
+        volA += block.volume;
+      } else {
+        groupB.push(...block.indices);
+        countB += block.lineCount;
+        volB += block.volume;
+      }
+    }
+
+    // If STILL unbalanced, nuclear fallback: interleave
+    if (countA < MIN_GROUP_LINES || countB < MIN_GROUP_LINES) {
+      const allIndices = lines.map(l => l.index);
+      const mid = Math.ceil(allIndices.length / 2);
+      return [allIndices.slice(0, mid), allIndices.slice(mid)];
     }
   }
 
@@ -192,24 +297,21 @@ export function groupOrdersBySlot(
     groups[slot].push(order);
   }
 
-  // Sort within each slot: urgent/hold first, then by time (stable), split pairs adjacent
+  // Sort within each slot: dispatch weight → time → split label (A before B)
   for (const key of Object.keys(groups)) {
     groups[key].sort((a, b) => {
       const weightA = getDispatchSortWeight(a);
       const weightB = getDispatchSortWeight(b);
       if (weightA !== weightB) return weightA - weightB;
 
-      // Within same dispatch weight, group split pairs
-      const splitGroupA = a.splitFromId ?? (a.splitLabel ? a.id : Infinity);
-      const splitGroupB = b.splitFromId ?? (b.splitLabel ? b.id : Infinity);
-      if (splitGroupA !== splitGroupB) return splitGroupA - splitGroupB;
+      const timeA = new Date(a.receivedAt).getTime();
+      const timeB = new Date(b.receivedAt).getTime();
+      if (timeA !== timeB) return timeA - timeB;
 
-      // Within same split group, A before B
-      if (a.splitLabel && b.splitLabel) {
-        return a.splitLabel.localeCompare(b.splitLabel);
-      }
-
-      return 0;
+      // Within same time: split pairs — A before B
+      const labelA = a.splitLabel || '';
+      const labelB = b.splitLabel || '';
+      return labelA.localeCompare(labelB);
     });
   }
 

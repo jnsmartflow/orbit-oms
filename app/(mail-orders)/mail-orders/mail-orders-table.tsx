@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Check, Copy, ChevronDown, Pencil, Search, Lock, LockOpen } from "lucide-react";
-import { formatTime, smartTitleCase, getLineVolume, getOrderVolume, formatVolume, BATCH_COPY_LIMIT, SPLIT_VOLUME_THRESHOLD, splitLinesByVolume } from "@/lib/mail-orders/utils";
+import { formatTime, smartTitleCase, getLineVolume, getOrderVolume, formatVolume, BATCH_COPY_LIMIT, SPLIT_VOLUME_THRESHOLD, SPLIT_LINE_THRESHOLD, splitLinesByCategory } from "@/lib/mail-orders/utils";
 import { searchCustomers } from "@/lib/mail-orders/api";
 import type { MoOrder, MoOrderLine, CustomerSearchResult } from "@/lib/mail-orders/types";
 import { ResolveLinePanel } from "./resolve-line-panel";
@@ -730,8 +730,10 @@ function OrderRow({
                 {order.splitLabel && (
                   <span className="text-[9px] text-purple-500 font-medium">✂ {order.splitLabel}</span>
                 )}
-                {!order.splitLabel && !isPunched && totalVol > SPLIT_VOLUME_THRESHOLD && (
-                  <span className="text-[9px] text-amber-600 font-medium">⚠ {formatVolume(totalVol)}</span>
+                {!order.splitLabel && !isPunched && (totalVol > SPLIT_VOLUME_THRESHOLD || order.totalLines > SPLIT_LINE_THRESHOLD) && (
+                  <span className="text-[9px] text-amber-600 font-medium">
+                    ⚠ {totalVol > SPLIT_VOLUME_THRESHOLD ? formatVolume(totalVol) : `${order.totalLines} lines`}
+                  </span>
                 )}
               </div>
             );
@@ -934,7 +936,7 @@ function ExpandRow({ order, onSplitComplete }: { order: MoOrder; onSplitComplete
       return sum + (isEffectivelyMatched ? getLineVolume(l.quantity, l.packCode) : 0);
     }, 0);
 
-    if (totalVol > SPLIT_VOLUME_THRESHOLD) {
+    if (totalVol > SPLIT_VOLUME_THRESHOLD || order.lines.length > SPLIT_LINE_THRESHOLD) {
       const effectiveLines = order.lines.filter(
         (l) => l.matchStatus === "matched" || !!resolvedLines[l.id],
       );
@@ -943,9 +945,10 @@ function ExpandRow({ order, onSplitComplete }: { order: MoOrder; onSplitComplete
         index: idx,
         quantity: l.quantity,
         packCode: l.packCode,
+        productName: l.productName,
       }));
 
-      const [groupAIdx, groupBIdx] = splitLinesByVolume(lineItems);
+      const [groupAIdx, groupBIdx] = splitLinesByCategory(lineItems);
 
       const toIds = (indices: number[]) => indices.map((i) => effectiveLines[i].id);
       const toVol = (indices: number[]) =>
