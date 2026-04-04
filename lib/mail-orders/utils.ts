@@ -594,15 +594,21 @@ export function smartTitleCase(text: string | null | undefined): string {
     .join(" ");
 }
 
-const OD_CI_KEYWORDS = ["od", "ci", "credit hold", "block", "overdue", "bill tomorrow"];
+const OD_CI_PATTERNS = [
+  /\bOD\b/i,
+  /\bCI\b/i,
+  /\bcredit\s*hold\b/i,
+  /\bblock\b/i,
+  /\boverdue\b/i,
+  /\bbill\s*tomorrow\b/i,
+];
 
 export function isOdCiFlagged(order: MoOrder): boolean {
   const fields = [
-    order.remarks?.toLowerCase(),
-    order.subject?.toLowerCase(),
-    order.billRemarks?.toLowerCase(),
-  ];
-  return fields.some(
-    (f) => f != null && OD_CI_KEYWORDS.some((kw) => f.includes(kw)),
-  );
+    order.remarks,
+    order.subject,
+    order.billRemarks,
+  ].filter(Boolean).join(' ');
+
+  return OD_CI_PATTERNS.some(pattern => pattern.test(fields));
 }
