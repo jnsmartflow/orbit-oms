@@ -56,13 +56,19 @@ function formatReceivedDate(receivedAt: string): string {
 function cleanSubject(subject: string): string {
   let s = subject;
   s = s.replace(/^(?:(?:fw|fwd|re)\s*:\s*)+/i, "");
+  s = s.replace(/^urgent\s+/i, "");
   s = s.replace(/^Order\s*:\s*/i, "");
   s = s.replace(/^Order\s+for\s+/i, "");
   s = s.replace(/^Order-\d+\s*/i, "");
+  s = s.replace(/^Order\s+-\s*/i, "");
   s = s.replace(/^Order\s+/i, "");
+  s = s.replace(/^-\s*/, ""); // strip orphaned leading dash (from "Order -Name")
   s = s.replace(/^\d{4,}\s*/, ""); // strip leading code
   s = s.replace(/\s*-\s*order$/i, "");
   s = s.replace(/\.+$/, "");
+  s = s.replace(/\s*\(truck\s*order\)\s*/gi, "").trim();
+  s = s.replace(/\s*\(\d{4,}\)\s*/g, "").trim();
+  s = s.replace(/\s+\d{4,}$/, "").trim();
   return s.trim() || subject.trim();
 }
 
@@ -697,7 +703,9 @@ function OrderRow({
             const displayName = smartTitleCase(rawName);
             const splitSuffix = order.splitLabel ? ` (${order.splitLabel})` : '';
             const displayNameFull = displayName + splitSuffix;
-            const subjectCode = extractSubjectCode(order.subject);
+            const subjectCode = order.customerMatchStatus !== "exact"
+              ? extractSubjectCode(order.subject)
+              : null;
             const dot = getDeliveryDotColor(order.customerDeliveryType);
             const area = isExact ? smartTitleCase(order.customerArea) : null;
             const route = isExact ? smartTitleCase(order.customerRoute) : null;

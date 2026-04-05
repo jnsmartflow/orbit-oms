@@ -24,6 +24,9 @@ export function extractCustomerFromSubject(subject: string): string {
   // 1. Strip forwarding prefixes (FW:, Fwd:, RE:, Re:) — repeated
   s = s.replace(/^(?:(?:fw|fwd|re)\s*:\s*)+/i, "").trim();
 
+  // 1b. Strip leading "Urgent"
+  s = s.replace(/^urgent\s+/i, "").trim();
+
   // 2. Strip "Order" prefix patterns
   if (/^order\s*:/i.test(s)) {
     s = s.replace(/^order\s*:\s*/i, "").trim();
@@ -35,6 +38,8 @@ export function extractCustomerFromSubject(subject: string): string {
     s = s.replace(/^order-\d+\s*/i, "").trim();
     // Prepend the code so matchCustomer() Step 0 can do exact code lookup
     if (codeNum) s = s ? `${codeNum} ${s}` : codeNum;
+  } else if (/^order\s+-\s*/i.test(s)) {
+    s = s.replace(/^order\s+-\s*/i, "").trim();
   } else if (/^order\s+/i.test(s)) {
     s = s.replace(/^order\s+/i, "").trim();
   }
@@ -44,7 +49,15 @@ export function extractCustomerFromSubject(subject: string): string {
   s = s.replace(/-order$/i, "").trim();
   s = s.replace(/\.+$/, "").trim();
 
-  // 4. Fallback
+  // 4a. Trailing code → prepend for matchCustomer Step 0
+  const trailingCode = s.match(/\s+(\d{4,})$/);
+  if (trailingCode) {
+    const code = trailingCode[1];
+    const nameOnly = s.replace(/\s+\d{4,}$/, "").trim();
+    s = nameOnly ? `${code} ${nameOnly}` : code;
+  }
+
+  // 5. Fallback
   return s || original;
 }
 
