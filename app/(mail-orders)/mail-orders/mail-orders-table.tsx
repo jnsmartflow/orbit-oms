@@ -1395,9 +1395,9 @@ function ExpandRow({ order, onSplitComplete }: { order: MoOrder; onSplitComplete
               <p className="text-[9.5px] font-bold uppercase tracking-[0.4px] text-gray-400 mb-1">
                 Order Notes
               </p>
-              {order.remarks_list && order.remarks_list.length > 0 ? (
+              {(order.remarks_list ?? []).length > 0 ? (
                 <div>
-                  {order.remarks_list.map((r) => {
+                  {(order.remarks_list ?? []).map((r) => {
                     const typeClasses: Record<string, string> = {
                       billing: 'bg-amber-50 text-amber-700 border-amber-200',
                       delivery: 'bg-blue-50 text-blue-600 border-blue-200',
