@@ -1374,7 +1374,7 @@ function ExpandRow({ order, onSplitComplete }: { order: MoOrder; onSplitComplete
           className="bg-gray-50/80"
           style={{ borderTop: "1px solid #ebebeb", padding: "12px 16px 14px" }}
         >
-          <div className="grid grid-cols-[1fr_1fr_160px] gap-5">
+          <div className="grid grid-cols-[1fr_1fr_1.2fr_140px] gap-5">
             <div>
               <p className="text-[9.5px] font-bold uppercase tracking-[0.4px] text-gray-400 mb-1">
                 Delivery Remarks
@@ -1390,6 +1390,36 @@ function ExpandRow({ order, onSplitComplete }: { order: MoOrder; onSplitComplete
               <p className="text-[11.5px] text-gray-600">
                 {order.billRemarks ?? "—"}
               </p>
+            </div>
+            <div>
+              <p className="text-[9.5px] font-bold uppercase tracking-[0.4px] text-gray-400 mb-1">
+                Order Notes
+              </p>
+              {order.remarks_list && order.remarks_list.length > 0 ? (
+                <div>
+                  {order.remarks_list.map((r) => {
+                    const typeClasses: Record<string, string> = {
+                      billing: 'bg-amber-50 text-amber-700 border-amber-200',
+                      delivery: 'bg-blue-50 text-blue-600 border-blue-200',
+                      contact: 'bg-gray-50 text-gray-600 border-gray-200',
+                      instruction: 'bg-gray-50 text-gray-500 border-gray-200',
+                      cross: 'bg-purple-50 text-purple-600 border-purple-200',
+                      customer: 'bg-teal-50 text-teal-600 border-teal-200',
+                      unknown: 'bg-amber-50 text-amber-700 border-amber-200',
+                    };
+                    return (
+                      <div key={r.id} className="flex items-start gap-1 mb-0.5">
+                        <span className={`text-[9px] font-medium px-1 py-0 rounded border capitalize shrink-0 ${typeClasses[r.remarkType] ?? typeClasses.unknown}`}>
+                          {r.remarkType}
+                        </span>
+                        <span className="text-[11px] text-gray-600">{r.rawText}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-[11.5px] text-gray-600">—</p>
+              )}
             </div>
             <div className="text-right">
               <p className="text-[9.5px] font-bold uppercase tracking-[0.4px] text-gray-400 mb-1">

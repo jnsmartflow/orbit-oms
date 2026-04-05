@@ -20,6 +20,13 @@ export interface MoOrderLine {
   createdAt: string;
 }
 
+export interface MoOrderRemark {
+  id: number;
+  rawText: string;
+  remarkType: string;
+  detectedBy: string;
+}
+
 export interface MoOrder {
   id: number;
   soName: string;
@@ -52,6 +59,7 @@ export interface MoOrder {
   matchedLines: number;
   createdAt: string;
   lines: MoOrderLine[];
+  remarks_list?: MoOrderRemark[];
 }
 
 export interface CustomerSearchResult {
