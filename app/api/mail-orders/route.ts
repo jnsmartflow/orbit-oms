@@ -89,12 +89,6 @@ export async function GET(req: Request): Promise<NextResponse> {
       customerArea: lookup?.area ?? null,
       customerDeliveryType: lookup?.deliveryType ?? null,
       customerRoute: lookup?.route ?? null,
-      remarks: o.remarks_list.map((r) => ({
-        id: r.id,
-        rawText: r.rawText,
-        remarkType: r.remarkType,
-        detectedBy: r.detectedBy,
-      })),
     };
   });
 
