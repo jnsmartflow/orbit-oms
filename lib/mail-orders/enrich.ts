@@ -182,6 +182,9 @@ export function enrichLine(
       bases = findAllBases(c.remaining, baseKeywords);
     } else {
       bases = findAllBases(c.product.toUpperCase(), baseKeywords);
+      if (bases.length === 0) {
+        bases = findAllBases(c.keyword, baseKeywords);
+      }
     }
 
     // c: always append empty base as last option
@@ -219,10 +222,12 @@ export function enrichLine(
       }
     }
 
-    // f: fallback — try BRILLIANT WHITE if not already tried
-    if (!baseSeen.has("BRILLIANT WHITE")) {
+    // f: fallback — try common default bases if not already tried
+    const FALLBACK_BASES = ["BRILLIANT WHITE", "ADVANCE"];
+    for (const fb of FALLBACK_BASES) {
+      if (baseSeen.has(fb)) continue;
       for (const pack of packsToTry) {
-        const key = `${c.product}|BRILLIANT WHITE|${pack}`;
+        const key = `${c.product}|${fb}|${pack}`;
         const sku = skuByCombo.get(key);
         if (sku) {
           return {
