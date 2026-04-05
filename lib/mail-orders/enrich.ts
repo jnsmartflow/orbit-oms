@@ -167,6 +167,9 @@ export function enrichLine(
     });
   }
 
+  // Sort candidates: longest keyword first → most specific match wins
+  candidates.sort((a, b) => b.keyword.length - a.keyword.length);
+
   // ── Step 4: Try each candidate × base × pack ────────────
   for (const c of candidates) {
     // a/b: find bases from remaining text, or from product name if remaining is empty
@@ -195,6 +198,27 @@ export function enrichLine(
     for (const base of basesToTry) {
       for (const pack of packsToTry) {
         const key = `${c.product}|${base}|${pack}`;
+        const sku = skuByCombo.get(key);
+        if (sku) {
+          return {
+            productName: sku.product,
+            baseColour: sku.baseColour,
+            skuCode: sku.material,
+            skuDescription: sku.description,
+            refSkuCode: sku.refMaterial ?? "",
+            paintType: sku.paintType ?? "",
+            materialType: sku.materialType ?? "",
+            packCode: resolvedPackCode(sku),
+            matchStatus: "matched",
+          };
+        }
+      }
+    }
+
+    // f: fallback — try BRILLIANT WHITE if not already tried
+    if (!baseSeen.has("BRILLIANT WHITE")) {
+      for (const pack of packsToTry) {
+        const key = `${c.product}|BRILLIANT WHITE|${pack}`;
         const sku = skuByCombo.get(key);
         if (sku) {
           return {
