@@ -156,17 +156,3 @@ export async function POST(req: NextRequest) {
     );
   }
 }
-
-// TEMPORARY — delete after backfill
-export async function GET() {
-  try {
-    const result = await runBackfill();
-    return NextResponse.json(result);
-  } catch (err) {
-    console.error("[Backfill] Error:", err);
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Unknown error" },
-      { status: 500 },
-    );
-  }
-}
