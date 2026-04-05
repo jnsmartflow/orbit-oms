@@ -55,26 +55,29 @@ function formatReceivedDate(receivedAt: string): string {
 
 function cleanSubject(subject: string): string {
   let s = subject;
+  // Strip forwarding prefixes
   s = s.replace(/^(?:(?:fw|fwd|re)\s*:\s*)+/i, "");
+  // Strip leading "Urgent"
   s = s.replace(/^urgent\s+/i, "");
+  // Strip Order prefix patterns
   s = s.replace(/^Order\s*:\s*/i, "");
   s = s.replace(/^Order\s+for\s+/i, "");
   s = s.replace(/^Order-\d+\s*/i, "");
-  s = s.replace(/^Order\s+-\s*/i, "");
+  s = s.replace(/^Order\s+-\s*/i, "");   // "Order -Name" space-dash
+  s = s.replace(/^Order-[a-z]+\s+/i, ""); // "Order-aai", "Order-i" letter prefix
   s = s.replace(/^Order\s+/i, "");
-  s = s.replace(/^-\s*/, ""); // strip orphaned leading dash (from "Order -Name")
-  s = s.replace(/^\d{4,}\s*/, ""); // strip leading code
+  // Strip leading code digits
+  s = s.replace(/^\d{4,}\s*/, "");
+  // Strip trailing noise
+  s = s.replace(/\s*[-–]\s*(truck\s*order|truck)\s*$/i, ""); // "- Truck Order", "- Truck"
+  s = s.replace(/\s*\(truck\s*order\)\s*/gi, "");            // "(truck order)"
+  s = s.replace(/\s*\(\d{4,}\)\s*/g, "");                   // "(106058)"
+  s = s.replace(/\s+\d{4,}$/, "");                          // trailing code
   s = s.replace(/\s*-\s*order$/i, "");
   s = s.replace(/\.+$/, "");
-  s = s.replace(/\s*\(truck\s*order\)\s*/gi, "").trim();
-  s = s.replace(/\s*\(\d{4,}\)\s*/g, "").trim();
-  s = s.replace(/\s+\d{4,}$/, "").trim();
+  // Strip trailing customer code with dash e.g. "Shree Khodiyar-549434"
+  s = s.replace(/-\d{4,}$/, "");
   return s.trim() || subject.trim();
-}
-
-function extractSubjectCode(subject: string): string | null {
-  const m = subject.match(/Order[\s:\-]*(\d{4,})/i);
-  return m ? m[1] : null;
 }
 
 function getDeliveryDotColor(deliveryType: string | null | undefined): { color: string; title: string } | null {
@@ -620,6 +623,8 @@ function OrderRow({
     context: 'bg-gray-50 text-gray-500 border-gray-200',
     cross:   'bg-purple-50 text-purple-600 border-purple-200',
     shipto:  'bg-orange-50 text-orange-600 border-orange-200',
+    split:   'bg-purple-50 text-purple-600 border-purple-200',
+    warning: 'bg-amber-50 text-amber-700 border-amber-200',
   };
 
   const signals = (() => {
@@ -649,7 +654,17 @@ function OrderRow({
       result.push({ label: code ? `Cross ${code[1].toUpperCase()}` : 'Cross', type: 'cross' });
     }
     if (/challan\s*attachment/.test(combined)) result.push({ label: '📎 Challan', type: 'context' });
+    if (/\btruck\b/i.test([order.subject, order.billRemarks, order.remarks].filter(Boolean).join(' '))) {
+      result.push({ label: '🚛 Truck', type: 'context' });
+    }
     if (order.shipToOverride) result.push({ label: '→ Ship-to', type: 'shipto' });
+
+    if (order.splitLabel) {
+      result.push({ label: `✂ ${order.splitLabel}`, type: 'split' });
+    }
+    if (!order.splitLabel && !isPunched && (getOrderVolume(order.lines) > SPLIT_VOLUME_THRESHOLD || order.totalLines > SPLIT_LINE_THRESHOLD)) {
+      result.push({ label: '⚠ Split', type: 'warning' });
+    }
 
     return result;
   })();
@@ -703,14 +718,17 @@ function OrderRow({
             const displayName = smartTitleCase(rawName);
             const splitSuffix = order.splitLabel ? ` (${order.splitLabel})` : '';
             const displayNameFull = displayName + splitSuffix;
-            const subjectCode = order.customerMatchStatus !== "exact"
-              ? extractSubjectCode(order.subject)
-              : null;
+            const totalVol = getOrderVolume(order.lines);
+            const volStr = formatVolume(totalVol);
             const dot = getDeliveryDotColor(order.customerDeliveryType);
             const area = isExact ? smartTitleCase(order.customerArea) : null;
             const route = isExact ? smartTitleCase(order.customerRoute) : null;
             const subtextParts: React.ReactNode[] = [];
-            if (subjectCode) subtextParts.push(<span key="code" className="font-mono">{subjectCode}</span>);
+            if (volStr) subtextParts.push(
+              <span key="vol" className={`font-mono ${hasUnmatched ? "text-amber-400" : "text-green-500"}`}>
+                {volStr}
+              </span>
+            );
             if (area) subtextParts.push(<span key="area">{area}</span>);
             if (route) subtextParts.push(<span key="route">{route}</span>);
             return (
@@ -743,44 +761,22 @@ function OrderRow({
 
         {/* Lines */}
         <td className={`px-3.5 align-middle text-center ${baseTdClass}`}>
-          {(() => {
-            const totalVol = getOrderVolume(order.lines);
-            const volStr = formatVolume(totalVol);
-
-            return (
-              <div className="flex flex-col items-center leading-tight">
-                {hasUnmatched ? (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); onExpand(order.id); }}
-                    className="text-[12px] font-semibold text-amber-600 inline-flex items-center gap-0.5"
-                  >
-                    <ChevronDown
-                      size={10}
-                      className={isExpanded ? "rotate-180 transition-transform" : "transition-transform"}
-                    />
-                    {order.matchedLines}/{order.totalLines}
-                  </button>
-                ) : (
-                  <span className="text-[12px] font-semibold text-green-600">
-                    {order.matchedLines}/{order.totalLines}
-                  </span>
-                )}
-                {volStr && (
-                  <span className={`text-[10px] ${hasUnmatched ? "text-amber-400" : "text-green-500"}`}>
-                    {volStr}
-                  </span>
-                )}
-                {order.splitLabel && (
-                  <span className="text-[9px] text-purple-500 font-medium">✂ {order.splitLabel}</span>
-                )}
-                {!order.splitLabel && !isPunched && (totalVol > SPLIT_VOLUME_THRESHOLD || order.totalLines > SPLIT_LINE_THRESHOLD) && (
-                  <span className="text-[9px] text-amber-600 font-medium">
-                    ⚠ {totalVol > SPLIT_VOLUME_THRESHOLD ? formatVolume(totalVol) : `${order.totalLines} lines`}
-                  </span>
-                )}
-              </div>
-            );
-          })()}
+          {hasUnmatched ? (
+            <button
+              onClick={(e) => { e.stopPropagation(); onExpand(order.id); }}
+              className="text-[12px] font-semibold text-amber-600 inline-flex items-center gap-0.5"
+            >
+              <ChevronDown
+                size={10}
+                className={isExpanded ? "rotate-180 transition-transform" : "transition-transform"}
+              />
+              {order.matchedLines}/{order.totalLines}
+            </button>
+          ) : (
+            <span className="text-[12px] font-semibold text-green-600">
+              {order.matchedLines}/{order.totalLines}
+            </span>
+          )}
         </td>
 
         {/* Dispatch */}
