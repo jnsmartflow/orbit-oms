@@ -35,7 +35,14 @@ export interface EnrichResult {
   refSkuCode: string;
   paintType: string;
   materialType: string;
+  packCode: string;
   matchStatus: "matched" | "partial" | "unmatched";
+}
+
+function resolvedPackCode(sku: SkuEntry): string {
+  const unit = (sku.unit ?? "").toUpperCase().trim();
+  if (unit === "ML") return `${sku.packCode}ML`;
+  return sku.packCode;
 }
 
 /* ── SKU index maps ────────────────────────────────────────── */
@@ -98,6 +105,7 @@ export function enrichLine(
     refSkuCode: "",
     paintType: "",
     materialType: "",
+    packCode: "",
     matchStatus: "unmatched",
   };
 
@@ -118,6 +126,7 @@ export function enrichLine(
         refSkuCode: sku.refMaterial ?? "",
         paintType: sku.paintType ?? "",
         materialType: sku.materialType ?? "",
+        packCode: resolvedPackCode(sku),
         matchStatus: "matched",
       };
     }
@@ -196,6 +205,7 @@ export function enrichLine(
             refSkuCode: sku.refMaterial ?? "",
             paintType: sku.paintType ?? "",
             materialType: sku.materialType ?? "",
+            packCode: resolvedPackCode(sku),
             matchStatus: "matched",
           };
         }
@@ -218,6 +228,7 @@ export function enrichLine(
       refSkuCode: "",
       paintType: "",
       materialType: "",
+      packCode: "",
       matchStatus: "partial",
     };
   }

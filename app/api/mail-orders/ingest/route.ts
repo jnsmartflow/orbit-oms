@@ -188,7 +188,7 @@ export async function POST(req: NextRequest) {
           lineNumber: i + 1,
           originalLineNumber: i + 1,
           rawText: line.rawText,
-          packCode: line.packCode || null,
+          packCode: result.packCode || line.packCode || null,
           quantity: line.quantity,
           productName: result.productName || null,
           baseColour: result.baseColour || null,
