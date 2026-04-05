@@ -140,6 +140,10 @@ export function enrichLine(
   let cleanPack = (packCode ?? "").toUpperCase().replace(/\s+/g, "");
   cleanPack = cleanPack.replace(/(ML|LTR|LT|KG|LITT|G|L)$/i, "");
   const packsToTry = cleanPack ? [cleanPack] : ["1"];
+  // Fallback: if pack is "1", also try "2" (Sadolin 2L = smallest pack)
+  if (cleanPack === "1" && !packsToTry.includes("2")) {
+    packsToTry.push("2");
+  }
 
   // ── Step 3: Find ALL matching product keywords ───────────
   interface Candidate {
