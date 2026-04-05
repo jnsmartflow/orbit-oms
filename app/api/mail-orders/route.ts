@@ -53,6 +53,7 @@ export async function GET(req: Request): Promise<NextResponse> {
     where,
     include: {
       lines: { orderBy: { lineNumber: "asc" } },
+      remarks_list: { orderBy: { lineNumber: "asc" } },
       punchedBy: { select: { id: true, name: true } },
     },
     orderBy: { receivedAt: "desc" },
@@ -88,6 +89,12 @@ export async function GET(req: Request): Promise<NextResponse> {
       customerArea: lookup?.area ?? null,
       customerDeliveryType: lookup?.deliveryType ?? null,
       customerRoute: lookup?.route ?? null,
+      remarks: o.remarks_list.map((r) => ({
+        id: r.id,
+        rawText: r.rawText,
+        remarkType: r.remarkType,
+        detectedBy: r.detectedBy,
+      })),
     };
   });
 

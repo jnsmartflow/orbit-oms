@@ -1002,6 +1002,7 @@ model mo_orders {
   splitLabel       String?
   createdAt        DateTime  @default(now())
   lines            mo_order_lines[]
+  remarks_list     mo_order_remarks[]
 }
 
 model mo_order_lines {
@@ -1064,4 +1065,18 @@ model mo_customer_keywords {
   route        String?
   keyword      String
   createdAt    DateTime @default(now())
+}
+
+model mo_order_remarks {
+  id         Int      @id @default(autoincrement())
+  moOrderId  Int
+  lineNumber Int
+  rawText    String
+  remarkType String   @default("unknown")
+  detectedBy String   @default("unknown")
+  createdAt  DateTime @default(now())
+
+  order mo_orders @relation(fields: [moOrderId], references: [id], onDelete: Cascade)
+
+  @@index([moOrderId])
 }

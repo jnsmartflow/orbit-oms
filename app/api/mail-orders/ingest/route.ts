@@ -49,6 +49,11 @@ interface IngestRequest {
     packCode: string;
     quantity: number;
   }>;
+  remarkLines?: Array<{
+    rawText: string;
+    remarkType: string;
+    detectedBy: string;
+  }>;
 }
 
 /* ── POST handler ──────────────────────────────────────────── */
@@ -73,7 +78,7 @@ export async function POST(req: NextRequest) {
     const { emailEntryId, soName, soEmail, receivedAt, subject,
             deliveryRemarks, remarks, billRemarks,
             dispatchStatus, dispatchPriority, shipToOverride, slotToOverride,
-            lines } = body;
+            lines, remarkLines } = body;
 
     if (!emailEntryId || !soName || !receivedAt || !subject || !Array.isArray(lines)) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
@@ -212,6 +217,24 @@ export async function POST(req: NextRequest) {
     const totalVolume = insertedLines.reduce(
       (sum, l) => sum + getLineVolume(l.quantity, l.packCode), 0,
     );
+
+    // 6b. Store remark lines (if any)
+    if (remarkLines && remarkLines.length > 0) {
+      let remarkNum = 0;
+      for (const rl of remarkLines) {
+        if (rl.remarkType === "noise") continue;
+        remarkNum++;
+        await prisma.mo_order_remarks.create({
+          data: {
+            moOrderId: order.id,
+            lineNumber: remarkNum,
+            rawText: rl.rawText,
+            remarkType: rl.remarkType,
+            detectedBy: rl.detectedBy,
+          },
+        });
+      }
+    }
 
     if (insertedLines.length > 1 && (totalVolume > SPLIT_VOLUME_THRESHOLD || insertedLines.length > SPLIT_LINE_THRESHOLD)) {
       // 6c. Auto-split
