@@ -213,7 +213,7 @@ export async function POST(req: NextRequest) {
       (sum, l) => sum + getLineVolume(l.quantity, l.packCode), 0,
     );
 
-    if (totalVolume > SPLIT_VOLUME_THRESHOLD || insertedLines.length > SPLIT_LINE_THRESHOLD) {
+    if (insertedLines.length > 1 && (totalVolume > SPLIT_VOLUME_THRESHOLD || insertedLines.length > SPLIT_LINE_THRESHOLD)) {
       // 6c. Auto-split
       const lineItems = insertedLines.map((l, idx) => ({
         index: idx,

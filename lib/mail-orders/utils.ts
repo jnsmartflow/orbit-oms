@@ -507,15 +507,6 @@ export function buildBatchClipboardText(
   };
 }
 
-function getDispatchSortWeight(order: MoOrder): number {
-  const isHold = order.dispatchStatus === "Hold";
-  const isUrgent = order.dispatchPriority === "Urgent";
-  if (isHold && isUrgent) return 0;
-  if (isUrgent) return 1;
-  if (isHold) return 2;
-  return 3;
-}
-
 export function groupOrdersBySlot(
   orders: MoOrder[],
 ): Record<string, MoOrder[]> {
@@ -531,7 +522,7 @@ export function groupOrdersBySlot(
     groups[slot].push(order);
   }
 
-  // Sort within each slot: dispatch weight → time → bill number → split label
+  // Sort within each slot: time → bill number → split label
   const getBillNumber = (order: MoOrder): number => {
     const match = order.remarks?.match(/^Bill\s+(\d+)$/);
     return match ? parseInt(match[1], 10) : 0;
@@ -539,10 +530,6 @@ export function groupOrdersBySlot(
 
   for (const key of Object.keys(groups)) {
     groups[key].sort((a, b) => {
-      const weightA = getDispatchSortWeight(a);
-      const weightB = getDispatchSortWeight(b);
-      if (weightA !== weightB) return weightA - weightB;
-
       const timeA = new Date(a.receivedAt).getTime();
       const timeB = new Date(b.receivedAt).getTime();
       if (timeA !== timeB) return timeA - timeB;

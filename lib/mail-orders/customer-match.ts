@@ -29,8 +29,12 @@ export function extractCustomerFromSubject(subject: string): string {
     s = s.replace(/^order\s*:\s*/i, "").trim();
   } else if (/^order\s+for\s+/i.test(s)) {
     s = s.replace(/^order\s+for\s+/i, "").trim();
-  } else if (/^order-\d+\s*/i.test(s)) {
+  } else if (/^order-(\d+)\s*/i.test(s)) {
+    const codeNumMatch = s.match(/^order-(\d+)\s*/i);
+    const codeNum = codeNumMatch ? codeNumMatch[1] : '';
     s = s.replace(/^order-\d+\s*/i, "").trim();
+    // Prepend the code so matchCustomer() Step 0 can do exact code lookup
+    if (codeNum) s = s ? `${codeNum} ${s}` : codeNum;
   } else if (/^order\s+/i.test(s)) {
     s = s.replace(/^order\s+/i, "").trim();
   }
