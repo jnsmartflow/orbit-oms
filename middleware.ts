@@ -29,6 +29,11 @@ export default auth(function middleware(req) {
     return NextResponse.next();
   }
 
+  // Allow public keyword lookup (parser startup cache)
+  if (pathname === "/api/mail-orders/keywords") {
+    return NextResponse.next();
+  }
+
   // Phase 1 route guard
   if (PHASE1_BLOCKED.some((p) => pathname.startsWith(p))) {
     const role = req.auth?.user?.role;
