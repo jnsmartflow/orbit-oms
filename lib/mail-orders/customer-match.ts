@@ -1,5 +1,158 @@
 import { prisma } from "@/lib/prisma";
 
+// ── Subject signal patterns ────────────────────────────────────────────────
+
+interface SubjectSignal {
+  pattern: RegExp;
+  remarkType: string;
+  label: string;
+}
+
+// Order matters: longer/more specific patterns first to avoid partial matches
+const SUBJECT_SIGNALS: SubjectSignal[] = [
+  // Cross billing (with optional code)
+  { pattern: /\bcross\s+billing\s+\w*/i, remarkType: "cross", label: "Cross billing" },
+  { pattern: /\bcross\s+bill\b/i, remarkType: "cross", label: "Cross bill" },
+  { pattern: /\bdo\s+cross\b/i, remarkType: "cross", label: "Do cross" },
+
+  // Timing
+  { pattern: /\bbill\s+tomorrow\b/i, remarkType: "timing", label: "Bill Tomorrow" },
+  { pattern: /\b7\s*days?\b/i, remarkType: "timing", label: "7 Days" },
+  { pattern: /\bextension\b/i, remarkType: "timing", label: "Extension" },
+
+  // Blockers
+  { pattern: /\bbounce\b/i, remarkType: "blocker", label: "Bounce" },
+  { pattern: /\boverdue\b/i, remarkType: "blocker", label: "Overdue" },
+  { pattern: /\bCIC\b/, remarkType: "blocker", label: "CIC" },
+  { pattern: /\bCI\b/, remarkType: "blocker", label: "CI" },
+  { pattern: /\bOD\b/, remarkType: "blocker", label: "OD" },
+
+  // Instructions
+  { pattern: /\bsave\s+and\s+share\s+(?:dpl|value)\b/i, remarkType: "instruction", label: "Share DPL" },
+  { pattern: /\bshare\s+dpl\s*(?:value)?\b/i, remarkType: "instruction", label: "Share DPL" },
+  { pattern: /\bshare\s+value\b/i, remarkType: "instruction", label: "Share Value" },
+  { pattern: /\bcall\s+(?:to\s+)?so\b/i, remarkType: "instruction", label: "Call SO" },
+  { pattern: /\bcall\s+(?:to\s+)?dealer\b/i, remarkType: "instruction", label: "Call Dealer" },
+
+  // Context
+  { pattern: /\btruck\s+order\b/i, remarkType: "context", label: "Truck" },
+  { pattern: /\btruck\b/i, remarkType: "context", label: "Truck" },
+  { pattern: /\bchallan\b/i, remarkType: "context", label: "Challan" },
+];
+
+interface SubjectParseResult {
+  customerCode: string | null;
+  customerName: string;
+  remarks: Array<{
+    text: string;
+    remarkType: string;
+  }>;
+}
+
+export function parseSubject(subject: string): SubjectParseResult {
+  let s = subject.trim();
+
+  // Step 1: Strip forwarding prefixes (FW:, Fwd:, RE:, Re:) -- repeated
+  s = s.replace(/^(?:(?:fw|fwd|re)\s*:\s*)+/i, "").trim();
+
+  // Step 1b: Strip leading "Urgent" (noise -- not a remark worth storing)
+  s = s.replace(/^urgent\s+/i, "").trim();
+
+  // Step 2: Strip "Order" prefix and extract code if present
+  let customerCode: string | null = null;
+
+  if (/^order\s*:/i.test(s)) {
+    s = s.replace(/^order\s*:\s*/i, "").trim();
+  } else if (/^order\s+for\s+/i.test(s)) {
+    s = s.replace(/^order\s+for\s+/i, "").trim();
+  } else if (/^order-(\d+)\s*/i.test(s)) {
+    const m = s.match(/^order-(\d+)\s*/i);
+    if (m) customerCode = m[1];
+    s = s.replace(/^order-\d+\s*/i, "").trim();
+  } else if (/^order\s+-\s*/i.test(s)) {
+    s = s.replace(/^order\s+-\s*/i, "").trim();
+  } else if (/^order\s+/i.test(s)) {
+    s = s.replace(/^order\s+/i, "").trim();
+  }
+
+  // Step 2b: Strip trailing noise
+  s = s.replace(/\s*-\s*order$/i, "").trim();
+  s = s.replace(/-order$/i, "").trim();
+  s = s.replace(/\.+$/, "").trim();
+
+  // Step 2c: Leading code (e.g. "3128017 Polishwala Trading Co")
+  if (!customerCode) {
+    const leadCode = s.match(/^(\d{4,})\s+/);
+    if (leadCode) {
+      customerCode = leadCode[1];
+      s = s.replace(/^\d{4,}\s+/, "").trim();
+    }
+    // Also check bare code (e.g. "3128017" with nothing else)
+    if (!customerCode && /^\d{4,}$/.test(s)) {
+      customerCode = s;
+      s = "";
+    }
+  }
+
+  // Step 2d: Trailing code (e.g. "Shivam Paints 549434")
+  if (!customerCode) {
+    const trailCode = s.match(/\s+(\d{4,})$/);
+    if (trailCode) {
+      customerCode = trailCode[1];
+      s = s.replace(/\s+\d{4,}$/, "").trim();
+    }
+  }
+
+  // Step 2e: Parenthesized code (e.g. "Shivam Paints (549434)")
+  if (!customerCode) {
+    const parenCode = s.match(/\s*\((\d{4,})\)\s*/);
+    if (parenCode) {
+      customerCode = parenCode[1];
+      s = s.replace(/\s*\(\d{4,}\)\s*/, " ").trim();
+    }
+  }
+
+  // Step 2f: Trailing dash-code (e.g. "aai Shree Khodiyar-549434")
+  if (!customerCode) {
+    const dashCode = s.match(/-(\d{4,})$/);
+    if (dashCode) {
+      customerCode = dashCode[1];
+      s = s.replace(/-\d{4,}$/, "").trim();
+    }
+  }
+
+  // Step 3: Scan for remark signals and strip them from string
+  const remarks: Array<{ text: string; remarkType: string }> = [];
+  const seenLabels = new Set<string>();
+
+  for (const signal of SUBJECT_SIGNALS) {
+    const match = s.match(signal.pattern);
+    if (match && !seenLabels.has(signal.label)) {
+      seenLabels.add(signal.label);
+      remarks.push({
+        text: match[0].trim(),
+        remarkType: signal.remarkType,
+      });
+      // Strip the matched signal from the string
+      s = s.replace(signal.pattern, " ").trim();
+    }
+  }
+
+  // Step 4: Clean remaining string = customer name
+  // Strip leftover noise: "Save and", "value", dangling punctuation
+  s = s.replace(/\bsave\s+and\b/i, "").trim();
+  s = s.replace(/\bvalue\b/i, "").trim();
+  s = s.replace(/^[\s\-:.,]+|[\s\-:.,]+$/g, "").trim();
+  // Collapse multiple spaces
+  s = s.replace(/\s{2,}/g, " ").trim();
+
+  return {
+    customerCode,
+    customerName: s,
+    remarks,
+  };
+}
+
 // ── extractCustomerFromSubject ──────────────────────────────────────────────
 //
 // Test cases:

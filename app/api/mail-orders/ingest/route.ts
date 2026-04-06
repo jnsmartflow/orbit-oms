@@ -8,7 +8,7 @@ import {
   type BaseKeyword,
   type SkuEntry,
 } from "@/lib/mail-orders/enrich";
-import { extractCustomerFromSubject, matchCustomer } from "@/lib/mail-orders/customer-match";
+import { extractCustomerFromSubject, matchCustomer, parseSubject } from "@/lib/mail-orders/customer-match";
 import { matchDeliveryCustomer } from "@/lib/mail-orders/delivery-match";
 import { getLineVolume, SPLIT_VOLUME_THRESHOLD, SPLIT_LINE_THRESHOLD, splitLinesByCategory } from "@/lib/mail-orders/utils";
 
@@ -122,12 +122,20 @@ export async function POST(req: NextRequest) {
 
     const { byCombo: skuByCombo, byMaterial: skuByMaterial } = buildSkuMaps(skuEntries);
 
-    // 4b. Customer matching
-    const extractedCustomer = extractCustomerFromSubject(subject);
-    const customerMatch = await matchCustomer(extractedCustomer);
+    // 4b. Customer matching (via parseSubject)
+    const subjectParsed = parseSubject(subject);
+    const customerInput = subjectParsed.customerCode
+      ? subjectParsed.customerName
+        ? `${subjectParsed.customerCode} ${subjectParsed.customerName}`
+        : subjectParsed.customerCode
+      : subjectParsed.customerName;
+    const customerMatch = await matchCustomer(customerInput);
     console.log(
-      `[Customer Match] "${extractedCustomer}" → ${customerMatch.customerMatchStatus}` +
-        (customerMatch.customerCode ? ` (${customerMatch.customerCode})` : ""),
+      `[Customer Match] "${customerInput}" → ${customerMatch.customerMatchStatus}` +
+        (customerMatch.customerCode ? ` (${customerMatch.customerCode})` : "") +
+        (subjectParsed.remarks.length > 0
+          ? ` | Subject remarks: ${subjectParsed.remarks.map(r => r.text).join(", ")}`
+          : ""),
     );
 
     // 4c. Ship-to override detection from deliveryRemarks
@@ -236,6 +244,23 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // 6c. Store subject-extracted remarks
+    if (subjectParsed.remarks.length > 0) {
+      let subjectRemarkNum = 0;
+      for (const sr of subjectParsed.remarks) {
+        subjectRemarkNum++;
+        await prisma.mo_order_remarks.create({
+          data: {
+            moOrderId: order.id,
+            lineNumber: 900 + subjectRemarkNum,
+            rawText: sr.text,
+            remarkType: sr.remarkType,
+            detectedBy: "subject",
+          },
+        });
+      }
+    }
+
     if (insertedLines.length > 1 && (totalVolume > SPLIT_VOLUME_THRESHOLD || insertedLines.length > SPLIT_LINE_THRESHOLD)) {
       // 6c. Auto-split
       const lineItems = insertedLines.map((l, idx) => ({
@@ -305,6 +330,23 @@ export async function POST(req: NextRequest) {
           where: { id: groupALines[i].id },
           data: { lineNumber: i + 1 },
         });
+      }
+
+      // Store subject remarks for split order B
+      if (subjectParsed.remarks.length > 0) {
+        let subjectRemarkNumB = 0;
+        for (const sr of subjectParsed.remarks) {
+          subjectRemarkNumB++;
+          await prisma.mo_order_remarks.create({
+            data: {
+              moOrderId: orderB.id,
+              lineNumber: 900 + subjectRemarkNumB,
+              rawText: sr.text,
+              remarkType: sr.remarkType,
+              detectedBy: "subject",
+            },
+          });
+        }
       }
 
       // Re-number lineNumber sequentially for Group B
