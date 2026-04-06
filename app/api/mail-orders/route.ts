@@ -52,7 +52,20 @@ export async function GET(req: Request): Promise<NextResponse> {
   const orders = await prisma.mo_orders.findMany({
     where,
     include: {
-      lines: { orderBy: { lineNumber: "asc" } },
+      lines: {
+        include: {
+          lineStatus: {
+            select: {
+              found: true,
+              reason: true,
+              altSkuCode: true,
+              altSkuDescription: true,
+              note: true,
+            },
+          },
+        },
+        orderBy: { lineNumber: "asc" },
+      },
       remarks_list: { orderBy: { lineNumber: "asc" } },
       punchedBy: { select: { id: true, name: true } },
     },

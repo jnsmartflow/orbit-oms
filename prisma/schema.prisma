@@ -113,6 +113,7 @@ model users {
   pickAssignmentsAssigned   pick_assignments[]       @relation("PickAssignmentAssignedBy")
   // Mail Order back-relations
   mailOrdersPunched         mo_orders[]              @relation("MoOrderPunchedBy")
+  lineStatuses              mo_line_status[]
 }
 
 model status_master {
@@ -1024,6 +1025,8 @@ model mo_order_lines {
   materialType    String?
   matchStatus     String    @default("unmatched")
   createdAt       DateTime  @default(now())
+
+  lineStatus  mo_line_status?
 }
 
 model mo_product_keywords {
@@ -1080,4 +1083,19 @@ model mo_order_remarks {
   order mo_orders @relation(fields: [moOrderId], references: [id], onDelete: Cascade)
 
   @@index([moOrderId])
+}
+
+model mo_line_status {
+  id                Int       @id @default(autoincrement())
+  lineId            Int       @unique
+  found             Boolean   @default(true)
+  reason            String?
+  altSkuCode        String?
+  altSkuDescription String?
+  note              String?
+  updatedBy         Int?
+  updatedAt         DateTime  @default(now())
+
+  line              mo_order_lines @relation(fields: [lineId], references: [id], onDelete: Cascade)
+  user              users?         @relation(fields: [updatedBy], references: [id])
 }

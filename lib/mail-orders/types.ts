@@ -1,6 +1,24 @@
 export type MatchStatus = "matched" | "partial" | "unmatched";
 export type OrderStatus = "pending" | "punched";
 
+export interface LineStatus {
+  found: boolean;
+  reason: string | null;
+  altSkuCode: string | null;
+  altSkuDescription: string | null;
+  note: string | null;
+}
+
+export const LINE_STATUS_REASONS = [
+  { value: "out_of_stock", label: "Out of stock" },
+  { value: "wrong_pack", label: "Wrong pack" },
+  { value: "discontinued", label: "Discontinued" },
+  { value: "other_depot", label: "Other depot" },
+  { value: "other", label: "Other" },
+] as const;
+
+export type LineStatusReason = typeof LINE_STATUS_REASONS[number]["value"];
+
 export interface MoOrderLine {
   id: number;
   moOrderId: number;
@@ -18,6 +36,7 @@ export interface MoOrderLine {
   materialType: string | null;
   matchStatus: MatchStatus;
   createdAt: string;
+  lineStatus?: LineStatus | null;
 }
 
 export interface MoOrderRemark {

@@ -115,3 +115,25 @@ export async function toggleLock(
   });
   if (!res.ok) throw new Error("Failed to toggle lock");
 }
+
+export async function saveLineStatus(
+  lineId: number,
+  data: {
+    found: boolean;
+    reason?: string;
+    altSkuCode?: string;
+    altSkuDescription?: string;
+    note?: string;
+  },
+): Promise<{ success: boolean }> {
+  const res = await fetch(
+    `/api/mail-orders/lines/${lineId}/status`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    },
+  );
+  if (!res.ok) throw new Error("Failed to save line status");
+  return res.json();
+}

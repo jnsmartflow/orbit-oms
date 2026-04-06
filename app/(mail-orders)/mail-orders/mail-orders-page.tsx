@@ -549,6 +549,8 @@ export default function MailOrdersPage() {
   // ── Keyboard navigation ─────────────────────────────────────────────────────
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
+      if (viewMode !== "table") return;
+
       // Esc — cascading close (works even when input focused)
       if (e.key === "Escape") {
         if (completedSlot) {
@@ -746,7 +748,7 @@ export default function MailOrdersPage() {
 
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [flatOrders, focusedId, expandedId, handleExpand, handleCopy, handleAdvanceBatch, handleFlag, batchStates, openCodePopoverId, soSummaryOpen, copiedReplyId, completedSlot, handleDismissCompletion]);
+  }, [flatOrders, focusedId, expandedId, handleExpand, handleCopy, handleAdvanceBatch, handleFlag, batchStates, openCodePopoverId, soSummaryOpen, copiedReplyId, completedSlot, handleDismissCompletion, viewMode]);
 
   // ── Auto-scroll focused row into view ───────────────────────────────────────
   useEffect(() => {
