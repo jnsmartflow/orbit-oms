@@ -2,10 +2,35 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Check, Copy, ChevronDown, Pencil, Search, Lock, LockOpen } from "lucide-react";
-import { formatTime, smartTitleCase, getLineVolume, getOrderVolume, formatVolume, BATCH_COPY_LIMIT, SPLIT_VOLUME_THRESHOLD, SPLIT_LINE_THRESHOLD, SORT_DISPLAY_THRESHOLD, splitLinesByCategory, sortLinesForPicker, isOdCiFlagged } from "@/lib/mail-orders/utils";
+import { formatTime, smartTitleCase, getLineVolume, getOrderVolume, formatVolume, BATCH_COPY_LIMIT, SPLIT_VOLUME_THRESHOLD, SPLIT_LINE_THRESHOLD, SORT_DISPLAY_THRESHOLD, splitLinesByCategory, sortLinesForPicker, isOdCiFlagged, cleanSubject } from "@/lib/mail-orders/utils";
 import { searchCustomers } from "@/lib/mail-orders/api";
 import type { MoOrder, MoOrderLine, CustomerSearchResult } from "@/lib/mail-orders/types";
 import { ResolveLinePanel } from "./resolve-line-panel";
+
+// ── Column configuration ────────────────────────────────────────────────────
+
+export interface ColumnConfig {
+  key: string;
+  label: string;
+  width: number;
+  alwaysVisible: boolean;
+  defaultVisible: boolean;
+}
+
+export const ALL_COLUMNS: ColumnConfig[] = [
+  { key: "time",      label: "Time",       width: 68,  alwaysVisible: true,  defaultVisible: true },
+  { key: "soName",    label: "SO Name",    width: 120, alwaysVisible: false, defaultVisible: true },
+  { key: "customer",  label: "Customer",   width: 208, alwaysVisible: true,  defaultVisible: true },
+  { key: "lines",     label: "Lines",      width: 68,  alwaysVisible: false, defaultVisible: true },
+  { key: "dispatch",  label: "Dispatch",   width: 80,  alwaysVisible: false, defaultVisible: false },
+  { key: "remarks",   label: "Remarks",    width: 120, alwaysVisible: false, defaultVisible: true },
+  { key: "code",      label: "Code",       width: 90,  alwaysVisible: false, defaultVisible: true },
+  { key: "sku",       label: "SKU",        width: 82,  alwaysVisible: true,  defaultVisible: true },
+  { key: "soNumber",  label: "SO No.",     width: 110, alwaysVisible: true,  defaultVisible: true },
+  { key: "lock",      label: "Lock",       width: 46,  alwaysVisible: false, defaultVisible: true },
+  { key: "status",    label: "Status",     width: 80,  alwaysVisible: false, defaultVisible: true },
+  { key: "punchedBy", label: "Punched By", width: 100, alwaysVisible: false, defaultVisible: true },
+];
 
 // ── Props ────────────────────────────────────────────────────────────────────
 
@@ -27,6 +52,7 @@ interface MailOrdersTableProps {
   batchStates: Record<number, number>;
   onAdvanceBatch: (orderId: number) => void;
   onSplitComplete: () => void;
+  visibleColumns: Set<string>;
 }
 
 // ── Slot dot colors ──────────────────────────────────────────────────────────
@@ -53,32 +79,6 @@ function formatReceivedDate(receivedAt: string): string {
   return `${day} ${mon} \u00b7 ${time}`;
 }
 
-function cleanSubject(subject: string): string {
-  let s = subject;
-  // Strip forwarding prefixes
-  s = s.replace(/^(?:(?:fw|fwd|re)\s*:\s*)+/i, "");
-  // Strip leading "Urgent"
-  s = s.replace(/^urgent\s+/i, "");
-  // Strip Order prefix patterns
-  s = s.replace(/^Order\s*:\s*/i, "");
-  s = s.replace(/^Order\s+for\s+/i, "");
-  s = s.replace(/^Order-\d+\s*/i, "");
-  s = s.replace(/^Order\s+-\s*/i, "");   // "Order -Name" space-dash
-  s = s.replace(/^Order-[a-z]+\s+/i, ""); // "Order-aai", "Order-i" letter prefix
-  s = s.replace(/^Order\s+/i, "");
-  // Strip leading code digits
-  s = s.replace(/^\d{4,}\s*/, "");
-  // Strip trailing noise
-  s = s.replace(/\s*[-–]\s*(truck\s*order|truck)\s*$/i, ""); // "- Truck Order", "- Truck"
-  s = s.replace(/\s*\(truck\s*order\)\s*/gi, "");            // "(truck order)"
-  s = s.replace(/\s*\(\d{4,}\)\s*/g, "");                   // "(106058)"
-  s = s.replace(/\s+\d{4,}$/, "");                          // trailing code
-  s = s.replace(/\s*-\s*order$/i, "");
-  s = s.replace(/\.+$/, "");
-  // Strip trailing customer code with dash e.g. "Shree Khodiyar-549434"
-  s = s.replace(/-\d{4,}$/, "");
-  return s.trim() || subject.trim();
-}
 
 function getDeliveryDotColor(deliveryType: string | null | undefined): { color: string; title: string } | null {
   if (!deliveryType) return null;
@@ -112,65 +112,71 @@ export function MailOrdersTable({
   batchStates,
   onAdvanceBatch,
   onSplitComplete,
+  visibleColumns,
 }: MailOrdersTableProps) {
   const slotOrder = ["Morning", "Afternoon", "Evening", "Night"] as const;
+  const isVis = (key: string) => visibleColumns.has(key);
+  const extraWidth = ALL_COLUMNS
+    .filter(c => !visibleColumns.has(c.key))
+    .reduce((sum, c) => sum + c.width, 0);
+  const colCount = visibleColumns.size;
 
   return (
     <div className="border border-gray-200 rounded-lg overflow-hidden bg-white">
       <table className="w-full border-collapse" style={{ tableLayout: "fixed" }}>
         <colgroup>
-          <col style={{ width: 68 }} />    {/* Time */}
-          <col style={{ width: 120 }} />   {/* SO Name */}
-          <col style={{ width: 220 }} />   {/* Customer */}
-          <col style={{ width: 56 }} />    {/* Lines */}
-          <col style={{ width: 80 }} />    {/* Dispatch */}
-          <col style={{ width: 120 }} />   {/* Remarks */}
-          <col style={{ width: 90 }} />    {/* Code */}
-          <col style={{ width: 82 }} />    {/* SKU */}
-          <col style={{ width: 110 }} />   {/* SO No. */}
-          <col style={{ width: 46 }} />    {/* Lock */}
-          <col style={{ width: 80 }} />    {/* Status */}
-          <col style={{ width: 100 }} />   {/* Punched By */}
+          {isVis("time") && <col style={{ width: 68 }} />}
+          {isVis("soName") && <col style={{ width: 120 }} />}
+          <col style={{ width: 208 + extraWidth }} />
+          {isVis("lines") && <col style={{ width: 68 }} />}
+          {isVis("dispatch") && <col style={{ width: 80 }} />}
+          {isVis("remarks") && <col style={{ width: 120 }} />}
+          {isVis("code") && <col style={{ width: 90 }} />}
+          {isVis("sku") && <col style={{ width: 82 }} />}
+          {isVis("soNumber") && <col style={{ width: 110 }} />}
+          {isVis("lock") && <col style={{ width: 46 }} />}
+          {isVis("status") && <col style={{ width: 80 }} />}
+          {isVis("punchedBy") && <col style={{ width: 100 }} />}
         </colgroup>
 
         <thead>
           <tr className="h-[34px] bg-white border-b border-gray-200">
-            <th className="text-[10px] font-medium uppercase tracking-wider text-gray-400 text-left px-3.5">
+            {isVis("time") && <th className="text-[10px] font-medium uppercase tracking-wider text-gray-400 text-left px-3.5">
               Time
-            </th>
-            <th className="text-[10px] font-medium uppercase tracking-wider text-gray-400 text-left px-3.5">
+            </th>}
+            {isVis("soName") && <th className="text-[10px] font-medium uppercase tracking-wider text-gray-400 text-left px-3.5">
               SO Name
-            </th>
+            </th>}
             <th className="text-[10px] font-medium uppercase tracking-wider text-gray-400 text-left px-3.5">
               Customer
             </th>
-            <th className="text-[10px] font-medium uppercase tracking-wider text-gray-400 text-center px-3.5">
+            {isVis("lines") && <th className="text-[10px] font-medium uppercase tracking-wider text-gray-400 text-center px-3.5">
               Lines
-            </th>
-            <th className="text-[10px] font-medium uppercase tracking-wider text-gray-400 text-center px-3.5">
+            </th>}
+            {isVis("dispatch") && <th className="text-[10px] font-medium uppercase tracking-wider text-gray-400 text-center px-3.5">
               Dispatch
-            </th>
-            <th className="text-[10px] font-medium uppercase tracking-wider text-gray-400 text-left px-3.5">
+            </th>}
+            {isVis("remarks") && <th className="text-[10px] font-medium uppercase tracking-wider text-gray-400 text-left px-3.5">
               Remarks
-            </th>
-            <th className="text-[10px] font-medium uppercase tracking-wider text-gray-400 text-left px-3.5">
+            </th>}
+            {isVis("code") && <th className="text-[10px] font-medium uppercase tracking-wider text-gray-400 text-left px-3.5">
               Code
-            </th>
-            <th className="text-[10px] font-medium uppercase tracking-wider text-gray-400 text-right px-3.5">
+            </th>}
+            {isVis("sku") && <th className="text-[10px] font-medium uppercase tracking-wider text-gray-400 text-right px-3.5">
               SKU
-            </th>
-            <th className="text-[10px] font-medium uppercase tracking-wider text-gray-400 text-left px-3.5">
+            </th>}
+            {isVis("soNumber") && <th className="text-[10px] font-medium uppercase tracking-wider text-gray-400 text-left px-3.5">
               SO No.
-            </th>
-            <th className="text-[10px] font-medium uppercase tracking-wider text-gray-400 text-center px-3.5">
+            </th>}
+            {isVis("lock") && <th className="text-[10px] font-medium uppercase tracking-wider text-gray-400 text-center px-3.5">
               Lock
-            </th>
-            <th className="text-[10px] font-medium uppercase tracking-wider text-gray-400 text-right px-3.5">
+            </th>}
+            {isVis("status") && <th className="text-[10px] font-medium uppercase tracking-wider text-gray-400 text-right px-3.5">
               Status
-            </th>
-            <th className="text-[10px] font-medium uppercase tracking-wider text-gray-400 text-right px-3.5">
+            </th>}
+            {isVis("punchedBy") && <th className="text-[10px] font-medium uppercase tracking-wider text-gray-400 text-right px-3.5">
               Punched By
-            </th>
+            </th>}
           </tr>
         </thead>
 
@@ -205,6 +211,8 @@ export function MailOrdersTable({
                 batchStates={batchStates}
                 onAdvanceBatch={onAdvanceBatch}
                 onSplitComplete={onSplitComplete}
+                visibleColumns={visibleColumns}
+                colCount={colCount}
               />
             );
           })}
@@ -237,6 +245,8 @@ function SlotGroup({
   batchStates,
   onAdvanceBatch,
   onSplitComplete,
+  visibleColumns,
+  colCount,
 }: {
   slot: string;
   orders: MoOrder[];
@@ -258,6 +268,8 @@ function SlotGroup({
   batchStates: Record<number, number>;
   onAdvanceBatch: (orderId: number) => void;
   onSplitComplete: () => void;
+  visibleColumns: Set<string>;
+  colCount: number;
 }) {
   const dotColor = SLOT_DOTS[slot] ?? "bg-gray-400";
 
@@ -266,7 +278,7 @@ function SlotGroup({
       {/* Section header */}
       <tr>
         <td
-          colSpan={12}
+          colSpan={colCount}
           className="h-[36px] bg-gray-50 border-t border-b border-gray-200 px-[18px]"
         >
           <div className="flex items-center justify-between h-full">
@@ -319,6 +331,8 @@ function SlotGroup({
             batchStates={batchStates}
             onAdvanceBatch={onAdvanceBatch}
             onSplitComplete={onSplitComplete}
+            visibleColumns={visibleColumns}
+            colCount={colCount}
           />
         );
       })}
@@ -547,6 +561,8 @@ function OrderRow({
   batchStates,
   onAdvanceBatch,
   onSplitComplete,
+  visibleColumns,
+  colCount,
 }: {
   order: MoOrder;
   isFlagged: boolean;
@@ -566,7 +582,10 @@ function OrderRow({
   batchStates: Record<number, number>;
   onAdvanceBatch: (orderId: number) => void;
   onSplitComplete: () => void;
+  visibleColumns: Set<string>;
+  colCount: number;
 }) {
+  const isVis = (key: string) => visibleColumns.has(key);
   const autoFlagged = isOdCiFlagged(order);
   const effectiveFlagged = isFlagged || autoFlagged;
   const hasUnmatched = order.matchedLines < order.totalLines;
@@ -598,7 +617,7 @@ function OrderRow({
   }
 
   const baseTdClass = [
-    isFocused && 'bg-amber-50/40',
+    isFocused && 'bg-amber-50/70',
     isPunched && 'bg-teal-50/40',
   ].filter(Boolean).join(' ');
 
@@ -615,56 +634,69 @@ function OrderRow({
           : undefined;
   const needsBorderCompensation = effectiveFlagged || isFocused || isPunched || isSplit;
 
-  // Remarks — signal badges
+  // Remarks — signal badges (3-tier: blocker / attention / info)
   const signalStyles: Record<string, string> = {
-    blocker: 'bg-red-50 text-red-700 border-red-200',
-    timing:  'bg-amber-50 text-amber-700 border-amber-200',
-    bill:    'bg-gray-50 text-gray-600 border-gray-200',
-    context: 'bg-gray-50 text-gray-500 border-gray-200',
-    cross:   'bg-purple-50 text-purple-600 border-purple-200',
-    shipto:  'bg-orange-50 text-orange-600 border-orange-200',
-    split:   'bg-purple-50 text-purple-600 border-purple-200',
-    warning: 'bg-amber-50 text-amber-700 border-amber-200',
+    blocker:   'bg-red-50 text-red-700 border-red-200',
+    attention: 'bg-amber-50 text-amber-700 border-amber-200',
+    info:      'bg-gray-50 text-gray-500 border-gray-200',
   };
 
+  const totalVol = getOrderVolume(order.lines);
+  const volStr = formatVolume(totalVol);
+
   const signals = (() => {
-    const result: { label: string; type: string }[] = [];
+    const result: { label: string; type: string; dot?: string }[] = [];
     const combined = [order.remarks, order.billRemarks, order.deliveryRemarks]
       .filter(Boolean).join(' ').toLowerCase();
-    if (!combined.trim()) return result;
 
-    // Blockers (red)
-    if (/\b(od|overdue)\b/.test(combined)) result.push({ label: 'OD', type: 'blocker' });
-    if (/\b(ci|credit\s*(hold|block|issue))\b/.test(combined)) result.push({ label: 'CI', type: 'blocker' });
-    if (/\bbounce\b/.test(combined)) result.push({ label: 'Bounce', type: 'blocker' });
-    if (/\bextension\b/.test(combined) && !/bill\s*tomorrow/.test(combined)) result.push({ label: 'Extension', type: 'blocker' });
+    // ── BLOCKER (red) — cannot punch ──
+    if (/\b(od|overdue)\b/.test(combined))
+      result.push({ label: 'OD', type: 'blocker' });
+    if (/\b(ci|credit\s*(hold|block|issue))\b/.test(combined))
+      result.push({ label: 'CI', type: 'blocker' });
+    if (/\bbounce\b/.test(combined))
+      result.push({ label: 'Bounce', type: 'blocker' });
 
-    // Timing (amber)
-    if (/bill\s*tomorrow/.test(combined)) result.push({ label: 'Bill Tomorrow', type: 'timing' });
-    if (/7\s*days/.test(combined)) result.push({ label: '7 Days', type: 'timing' });
-
-    // Bill number (gray)
-    const billMatch = combined.match(/\bbill\s+(\d+)\b/);
-    if (billMatch) result.push({ label: `Bill ${billMatch[1]}`, type: 'bill' });
-
-    // Context (gray/purple/orange)
-    if (/dpl/.test(combined)) result.push({ label: 'DPL', type: 'context' });
+    // ── ATTENTION (amber) — can punch, handle carefully ──
+    if (/bill\s*tomorrow/.test(combined))
+      result.push({ label: 'Bill Tomorrow', type: 'attention' });
     if (/cross\s*billing/.test(combined)) {
       const code = combined.match(/cross\s*billing\s*(\w+)/);
-      result.push({ label: code ? `Cross ${code[1].toUpperCase()}` : 'Cross', type: 'cross' });
+      result.push({
+        label: code ? `Cross ${code[1].toUpperCase()}` : 'Cross',
+        type: 'attention',
+      });
     }
-    if (/challan\s*attachment/.test(combined)) result.push({ label: '📎 Challan', type: 'context' });
-    if (/\btruck\b/i.test([order.subject, order.billRemarks, order.remarks].filter(Boolean).join(' '))) {
-      result.push({ label: '🚛 Truck', type: 'context' });
-    }
-    if (order.shipToOverride) result.push({ label: '→ Ship-to', type: 'shipto' });
+    if (order.shipToOverride)
+      result.push({ label: '\u2192 Ship-to', type: 'attention' });
+    if (order.dispatchPriority === "Urgent")
+      result.push({ label: 'Urgent', type: 'attention' });
 
-    if (order.splitLabel) {
-      result.push({ label: `✂ ${order.splitLabel}`, type: 'split' });
-    }
-    if (!order.splitLabel && !isPunched && (getOrderVolume(order.lines) > SPLIT_VOLUME_THRESHOLD || order.totalLines > SPLIT_LINE_THRESHOLD)) {
-      result.push({ label: '⚠ Split', type: 'warning' });
-    }
+    // ── INFO (gray) — context only ──
+    if (order.dispatchStatus === "Hold")
+      result.push({ label: 'Hold', type: 'info', dot: 'bg-red-400' });
+
+    if (/7\s*days/.test(combined))
+      result.push({ label: '7 Days', type: 'info' });
+    if (/\bextension\b/.test(combined) && !/bill\s*tomorrow/.test(combined))
+      result.push({ label: 'Extension', type: 'info' });
+
+    const billMatch = combined.match(/\bbill\s+(\d+)\b/);
+    if (billMatch)
+      result.push({ label: `Bill ${billMatch[1]}`, type: 'info' });
+
+    if (/dpl/.test(combined))
+      result.push({ label: 'DPL', type: 'info' });
+    if (/challan\s*attachment/.test(combined))
+      result.push({ label: 'Challan', type: 'info' });
+    if (/\btruck\b/i.test([order.subject, order.billRemarks, order.remarks].filter(Boolean).join(' ')))
+      result.push({ label: 'Truck', type: 'info' });
+
+    if (order.splitLabel)
+      result.push({ label: `\u2702 ${order.splitLabel}`, type: 'info' });
+    if (!order.splitLabel && !isPunched &&
+        (totalVol > SPLIT_VOLUME_THRESHOLD || order.totalLines > SPLIT_LINE_THRESHOLD))
+      result.push({ label: '\u26A0 Split', type: 'info', dot: 'bg-amber-400' });
 
     return result;
   })();
@@ -689,24 +721,24 @@ function OrderRow({
         onClick={() => onExpand(order.id)}
       >
         {/* Time */}
-        <td
+        {isVis("time") && <td
           className={`px-3.5 align-middle ${baseTdClass}`}
           style={{ paddingLeft: needsBorderCompensation ? 11 : undefined }}
         >
           <span className="font-mono text-[12px] font-semibold text-gray-900">
             {formatTime(order.receivedAt)}
           </span>
-        </td>
+        </td>}
 
         {/* SO Name */}
-        <td className={`px-3.5 align-middle ${baseTdClass}`}>
+        {isVis("soName") && <td className={`px-3.5 align-middle ${baseTdClass}`}>
           <span
             title={smartTitleCase(order.soName?.replace(/^\(JSW\)\s*/i, "").trim())}
             className="text-[11px] text-gray-500 truncate block max-w-[120px]"
           >
             {smartTitleCase(order.soName?.replace(/^\(JSW\)\s*/i, "").trim())}
           </span>
-        </td>
+        </td>}
 
         {/* Customer */}
         <td className={`px-3.5 align-middle ${baseTdClass}`}>
@@ -718,17 +750,10 @@ function OrderRow({
             const displayName = smartTitleCase(rawName);
             const splitSuffix = order.splitLabel ? ` (${order.splitLabel})` : '';
             const displayNameFull = displayName + splitSuffix;
-            const totalVol = getOrderVolume(order.lines);
-            const volStr = formatVolume(totalVol);
             const dot = getDeliveryDotColor(order.customerDeliveryType);
             const area = isExact ? smartTitleCase(order.customerArea) : null;
             const route = isExact ? smartTitleCase(order.customerRoute) : null;
             const subtextParts: React.ReactNode[] = [];
-            if (volStr) subtextParts.push(
-              <span key="vol" className={`font-mono ${hasUnmatched ? "text-amber-400" : "text-green-500"}`}>
-                {volStr}
-              </span>
-            );
             if (area) subtextParts.push(<span key="area">{area}</span>);
             if (route) subtextParts.push(<span key="route">{route}</span>);
             return (
@@ -750,7 +775,7 @@ function OrderRow({
                 {subtextParts.length > 0 && (
                   <span className="text-[10px] text-gray-400 truncate block">
                     {subtextParts.map((part, i) => (
-                      <span key={i}>{i > 0 && <span className="text-gray-300"> · </span>}{part}</span>
+                      <span key={i}>{i > 0 && <span className="text-gray-300"> \u00b7 </span>}{part}</span>
                     ))}
                   </span>
                 )}
@@ -760,53 +785,53 @@ function OrderRow({
         </td>
 
         {/* Lines */}
-        <td className={`px-3.5 align-middle text-center ${baseTdClass}`}>
-          {hasUnmatched ? (
-            <button
-              onClick={(e) => { e.stopPropagation(); onExpand(order.id); }}
-              className="text-[12px] font-semibold text-amber-600 inline-flex items-center gap-0.5"
-            >
-              <ChevronDown
-                size={10}
-                className={isExpanded ? "rotate-180 transition-transform" : "transition-transform"}
-              />
-              {order.matchedLines}/{order.totalLines}
-            </button>
-          ) : (
-            <span className="text-[12px] font-semibold text-green-600">
-              {order.matchedLines}/{order.totalLines}
-            </span>
-          )}
-        </td>
+        {isVis("lines") && <td className={`px-2 align-middle text-center ${baseTdClass}`}>
+          <div>
+            {hasUnmatched ? (
+              <button
+                onClick={(e) => { e.stopPropagation(); onExpand(order.id); }}
+                className="text-[12px] font-semibold text-amber-600 inline-flex items-center gap-0.5"
+              >
+                <ChevronDown
+                  size={10}
+                  className={isExpanded ? "rotate-180 transition-transform" : "transition-transform"}
+                />
+                {order.matchedLines}/{order.totalLines}
+              </button>
+            ) : (
+              <span className="text-[12px] font-semibold text-green-600">
+                {order.matchedLines}/{order.totalLines}
+              </span>
+            )}
+            {volStr && (
+              <div className={`text-[9px] font-mono ${hasUnmatched ? "text-amber-400" : "text-gray-400"}`}>
+                {volStr}
+              </div>
+            )}
+          </div>
+        </td>}
 
         {/* Dispatch */}
-        <td className={`px-2 align-middle text-center ${baseTdClass}`}>
-          {(() => {
-            const isHold = order.dispatchStatus === "Hold";
-            const isUrgent = order.dispatchPriority === "Urgent";
-            const label = isHold && isUrgent ? "Hold \u00b7 Urgent"
-              : isHold ? "Hold"
-              : isUrgent ? "Urgent"
-              : "Dispatch";
-            const style = isHold
-              ? "bg-red-50 text-red-700 border-red-200"
-              : isUrgent
-                ? "bg-amber-50 text-amber-700 border-amber-200"
-                : "bg-green-50 text-green-700 border-green-200";
-            return (
-              <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border ${style}`}>
-                {label}
-              </span>
-            );
-          })()}
-        </td>
+        {isVis("dispatch") && <td className={`px-2 align-middle text-center ${baseTdClass}`}>
+          {order.dispatchStatus === "Hold" ? (
+            <span className="text-[11px] text-gray-500">Hold</span>
+          ) : (
+            <span className="text-[11px] text-gray-300">&mdash;</span>
+          )}
+        </td>}
 
         {/* Remarks */}
-        <td className={`px-2 align-middle ${baseTdClass}`} title={remarksTooltip || undefined}>
+        {isVis("remarks") && <td className={`px-2 align-middle ${baseTdClass}`} title={remarksTooltip || undefined}>
           {signals.length > 0 ? (
             <div className="flex flex-wrap gap-0.5">
               {signals.map((s, i) => (
-                <span key={i} className={`text-[9px] font-medium px-1.5 py-0.5 rounded border ${signalStyles[s.type] ?? signalStyles.context}`}>
+                <span
+                  key={i}
+                  className={`relative text-[9px] font-medium px-1.5 py-0.5 rounded border ${signalStyles[s.type] ?? signalStyles.info}`}
+                >
+                  {s.dot && (
+                    <span className={`absolute -top-[3px] -right-[3px] w-[5px] h-[5px] rounded-full ${s.dot}`} />
+                  )}
                   {s.label}
                 </span>
               ))}
@@ -814,20 +839,20 @@ function OrderRow({
           ) : (
             <span className="text-gray-300">—</span>
           )}
-        </td>
+        </td>}
 
         {/* Code */}
-        <CodeCell
+        {isVis("code") && <CodeCell
           order={order}
           baseTdClass={baseTdClass}
           onSaveCustomer={onSaveCustomer}
           isOpen={openCodePopoverId === order.id}
           onToggle={handleCodeToggle}
           copiedCodeId={copiedCodeId}
-        />
+        />}
 
         {/* SKU */}
-        <td className={`px-3.5 align-middle text-right ${baseTdClass}`}>
+        {isVis("sku") && <td className={`px-3.5 align-middle text-right ${baseTdClass}`}>
           <button
             disabled={isDisabled}
             onClick={(e) => {
@@ -870,10 +895,10 @@ function OrderRow({
               </>
             )}
           </button>
-        </td>
+        </td>}
 
         {/* SO No. */}
-        <td
+        {isVis("soNumber") && <td
           className={`px-2 align-middle ${baseTdClass}`}
           onClick={(e) => e.stopPropagation()}
         >
@@ -904,10 +929,10 @@ function OrderRow({
               }`}
             />
           )}
-        </td>
+        </td>}
 
         {/* Lock */}
-        <td className={`px-3.5 align-middle text-center ${baseTdClass}`}>
+        {isVis("lock") && <td className={`px-3.5 align-middle text-center ${baseTdClass}`}>
           {isPunched ? (
             <span className="text-gray-300 text-[11px]">—</span>
           ) : effectiveFlagged ? (
@@ -925,10 +950,10 @@ function OrderRow({
               <LockOpen size={14} />
             </button>
           )}
-        </td>
+        </td>}
 
         {/* Status */}
-        <td className={`px-3.5 align-middle text-right ${baseTdClass}`}>
+        {isVis("status") && <td className={`px-3.5 align-middle text-right ${baseTdClass}`}>
           {isPunched ? (
             <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-green-700 bg-green-50 border border-green-200 rounded-md px-2.5 h-[26px]">
               <Check size={9} /> Done
@@ -936,10 +961,10 @@ function OrderRow({
           ) : (
             <span className="text-gray-300 text-[11px]">—</span>
           )}
-        </td>
+        </td>}
 
         {/* Punched By */}
-        {isPunched ? (
+        {isVis("punchedBy") && (isPunched ? (
           <td className={`text-right ${baseTdClass}`} style={{ paddingRight: 14 }}>
             <div className="text-[11px] font-medium text-gray-600 truncate">
               {order.punchedBy?.name ?? 'operator'}
@@ -950,11 +975,11 @@ function OrderRow({
           </td>
         ) : (
           <td className={baseTdClass} />
-        )}
+        ))}
       </tr>
 
       {/* Expand sub-row */}
-      {isExpanded && <ExpandRow order={order} onSplitComplete={onSplitComplete} />}
+      {isExpanded && <ExpandRow order={order} onSplitComplete={onSplitComplete} colCount={colCount} />}
     </>
   );
 }
@@ -1053,7 +1078,7 @@ function OriginalLinesTable({
 
 // ── Expand sub-row ───────────────────────────────────────────────────────────
 
-function ExpandRow({ order, onSplitComplete }: { order: MoOrder; onSplitComplete: () => void }) {
+function ExpandRow({ order, onSplitComplete, colCount }: { order: MoOrder; onSplitComplete: () => void; colCount: number }) {
   const [resolveLineId, setResolveLineId] = useState<number | null>(null);
   const [resolvedLines, setResolvedLines] = useState<
     Record<number, { skuCode: string; skuDescription: string }>
@@ -1100,7 +1125,26 @@ function ExpandRow({ order, onSplitComplete }: { order: MoOrder; onSplitComplete
   }
 
   function handleResolved(lineId: number, skuCode: string, skuDescription: string) {
-    setResolvedLines((prev) => ({ ...prev, [lineId]: { skuCode, skuDescription } }));
+    // Update the resolved line
+    const update: Record<number, { skuCode: string; skuDescription: string }> = {
+      [lineId]: { skuCode, skuDescription },
+    };
+
+    // Propagate to siblings with same rawText + packCode
+    const resolvedLine = order.lines.find(l => l.id === lineId);
+    if (resolvedLine) {
+      const siblings = order.lines.filter(l =>
+        l.id !== lineId &&
+        l.matchStatus === "unmatched" &&
+        l.rawText.toLowerCase() === resolvedLine.rawText.toLowerCase() &&
+        l.packCode === resolvedLine.packCode,
+      );
+      for (const sib of siblings) {
+        update[sib.id] = { skuCode, skuDescription };
+      }
+    }
+
+    setResolvedLines(prev => ({ ...prev, ...update }));
     setResolveLineId(null);
   }
 
@@ -1169,7 +1213,7 @@ function ExpandRow({ order, onSplitComplete }: { order: MoOrder; onSplitComplete
   return (
     <tr>
       <td
-        colSpan={12}
+        colSpan={colCount}
         style={{ padding: 0, background: "#fafafa", borderBottom: "1px solid #e5e7eb" }}
       >
         {/* Split suggestion banner */}
@@ -1395,31 +1439,33 @@ function ExpandRow({ order, onSplitComplete }: { order: MoOrder; onSplitComplete
               <p className="text-[9.5px] font-bold uppercase tracking-[0.4px] text-gray-400 mb-1">
                 Order Notes
               </p>
-              {(order.remarks_list ?? []).length > 0 ? (
-                <div>
-                  {(order.remarks_list ?? []).map((r) => {
-                    const typeClasses: Record<string, string> = {
-                      billing: 'bg-amber-50 text-amber-700 border-amber-200',
-                      delivery: 'bg-blue-50 text-blue-600 border-blue-200',
-                      contact: 'bg-gray-50 text-gray-600 border-gray-200',
-                      instruction: 'bg-gray-50 text-gray-500 border-gray-200',
-                      cross: 'bg-purple-50 text-purple-600 border-purple-200',
-                      customer: 'bg-teal-50 text-teal-600 border-teal-200',
-                      unknown: 'bg-amber-50 text-amber-700 border-amber-200',
-                    };
-                    return (
+              {(() => {
+                const filteredRemarks = (order.remarks_list ?? []).filter(
+                  r => r.remarkType !== "delivery" && r.remarkType !== "billing"
+                );
+                if (filteredRemarks.length === 0) {
+                  return <p className="text-[11.5px] text-gray-600">—</p>;
+                }
+                const typeClasses: Record<string, string> = {
+                  contact: 'bg-gray-50 text-gray-600 border-gray-200',
+                  instruction: 'bg-gray-50 text-gray-500 border-gray-200',
+                  cross: 'bg-purple-50 text-purple-600 border-purple-200',
+                  customer: 'bg-teal-50 text-teal-600 border-teal-200',
+                  unknown: 'bg-amber-50 text-amber-700 border-amber-200',
+                };
+                return (
+                  <div>
+                    {filteredRemarks.map((r) => (
                       <div key={r.id} className="flex items-start gap-1 mb-0.5">
                         <span className={`text-[9px] font-medium px-1 py-0 rounded border capitalize shrink-0 ${typeClasses[r.remarkType] ?? typeClasses.unknown}`}>
                           {r.remarkType}
                         </span>
                         <span className="text-[11px] text-gray-600">{r.rawText}</span>
                       </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <p className="text-[11.5px] text-gray-600">—</p>
-              )}
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
             <div className="text-right">
               <p className="text-[9.5px] font-bold uppercase tracking-[0.4px] text-gray-400 mb-1">

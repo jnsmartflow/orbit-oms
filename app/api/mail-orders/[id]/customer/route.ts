@@ -73,5 +73,43 @@ export async function PATCH(
     }
   }
 
-  return NextResponse.json({ customerCode, customerName, customerMatchStatus: "exact" });
+  // Propagate to split siblings
+  const targetOrder = await prisma.mo_orders.findUnique({
+    where: { id },
+    select: { emailEntryId: true, splitFromId: true, splitLabel: true },
+  });
+
+  const propagatedOrderIds: number[] = [];
+  if (targetOrder && (targetOrder.splitFromId || targetOrder.splitLabel)) {
+    const siblings = await prisma.mo_orders.findMany({
+      where: {
+        emailEntryId: targetOrder.emailEntryId,
+        id: { not: id },
+      },
+      select: { id: true },
+    });
+
+    if (siblings.length > 0) {
+      await prisma.mo_orders.updateMany({
+        where: {
+          emailEntryId: targetOrder.emailEntryId,
+          id: { not: id },
+        },
+        data: {
+          customerCode,
+          customerName,
+          customerMatchStatus: "exact",
+          customerCandidates: null,
+        },
+      });
+      for (const s of siblings) propagatedOrderIds.push(s.id);
+    }
+  }
+
+  return NextResponse.json({
+    customerCode,
+    customerName,
+    customerMatchStatus: "exact",
+    propagatedOrderIds,
+  });
 }

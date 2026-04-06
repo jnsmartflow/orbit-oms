@@ -599,3 +599,129 @@ export function isOdCiFlagged(order: MoOrder): boolean {
 
   return OD_CI_PATTERNS.some(pattern => pattern.test(fields));
 }
+
+// ── Clean subject for display ──────────────────────────────────────────────
+
+export function cleanSubject(subject: string): string {
+  let s = subject;
+  // Strip forwarding prefixes
+  s = s.replace(/^(?:(?:fw|fwd|re)\s*:\s*)+/i, "");
+  // Strip leading "Urgent"
+  s = s.replace(/^urgent\s+/i, "");
+  // Strip Order prefix patterns
+  s = s.replace(/^Order\s*:\s*/i, "");
+  s = s.replace(/^Order\s+for\s+/i, "");
+  s = s.replace(/^Order-\d+\s*/i, "");
+  s = s.replace(/^Order\s+-\s*/i, "");   // "Order -Name" space-dash
+  s = s.replace(/^Order-[a-z]+\s+/i, ""); // "Order-aai", "Order-i" letter prefix
+  s = s.replace(/^Order\s+/i, "");
+  // Strip leading code digits
+  s = s.replace(/^\d{4,}\s*/, "");
+  // Strip trailing noise
+  s = s.replace(/\s*[-\u2013]\s*(truck\s*order|truck)\s*$/i, ""); // "- Truck Order", "- Truck"
+  s = s.replace(/\s*\(truck\s*order\)\s*/gi, "");            // "(truck order)"
+  s = s.replace(/\s*\(\d{4,}\)\s*/g, "");                   // "(106058)"
+  s = s.replace(/\s+\d{4,}$/, "");                          // trailing code
+  s = s.replace(/\s*-\s*order$/i, "");
+  s = s.replace(/\.+$/, "");
+  // Strip trailing customer code with dash e.g. "Shree Khodiyar-549434"
+  s = s.replace(/-\d{4,}$/, "");
+  return s.trim() || subject.trim();
+}
+
+// ── Order flag extraction ──────────────────────────────────────────────────
+
+export function getOrderFlags(order: MoOrder): string[] {
+  const combined = [
+    order.remarks,
+    order.billRemarks,
+    order.deliveryRemarks,
+  ].filter(Boolean).join(' ');
+
+  const flags: string[] = [];
+  if (/\b(od|overdue)\b/i.test(combined)) flags.push("OD");
+  if (/\b(ci|credit\s*(hold|block|issue))\b/i.test(combined)) flags.push("CI");
+  if (/\bbounce\b/i.test(combined)) flags.push("Bounce");
+  if (flags.length === 0 && order.dispatchStatus === "Hold") flags.push("Hold");
+  return flags;
+}
+
+// ── Reply template builder ─────────────────────────────────────────────────
+
+export function buildReplyTemplate(
+  soName: string,
+  orders: {
+    customerName: string;
+    customerCode: string | null;
+    area: string | null;
+    soNumber: string;
+    flags: string[];
+  }[],
+  senderName: string = "Deepanshu",
+): string {
+  // Extract SO first name
+  let cleanName = soName.replace(/^\([^)]*\)\s*/, "");
+  const firstName = smartTitleCase(cleanName.split(/\s+/)[0] || cleanName);
+
+  // Format a single order line
+  const formatLine = (o: typeof orders[number]): string => {
+    let line = o.customerName;
+    if (o.customerCode) line += ` (${o.customerCode})`;
+    if (o.area) line += ` — ${smartTitleCase(o.area)}`;
+    line += ` — SO ${o.soNumber}`;
+    if (o.flags.length > 0) line += ` — ${o.flags.join(", ")} (Hold)`;
+    return line;
+  };
+
+  const clean = orders.filter(o => o.flags.length === 0);
+  const flagged = orders.filter(o => o.flags.length > 0);
+
+  const lines: string[] = [];
+  lines.push(`Dear ${firstName},`);
+  lines.push("");
+
+  if (orders.length === 1) {
+    // Single order
+    lines.push("Order processed:");
+    lines.push("");
+    lines.push(formatLine(orders[0]));
+    lines.push("");
+    if (flagged.length > 0) {
+      lines.push("Please arrange clearance at earliest.");
+      lines.push("");
+    }
+  } else {
+    // Multi order
+    lines.push("Orders processed:");
+    lines.push("");
+
+    let num = 0;
+    for (const o of clean) {
+      num++;
+      lines.push(`${num}. ${formatLine(o)}`);
+    }
+
+    if (flagged.length > 0) {
+      lines.push("");
+      lines.push("\u26A0 Action required:");
+      lines.push("");
+      for (const o of flagged) {
+        num++;
+        lines.push(`${num}. ${formatLine(o)}`);
+      }
+    }
+
+    lines.push("");
+    if (flagged.length > 0) {
+      lines.push(`Total: ${orders.length} orders (${flagged.length} on hold)`);
+    } else {
+      lines.push(`Total: ${orders.length} orders`);
+    }
+    lines.push("");
+  }
+
+  lines.push("Regards,");
+  lines.push(senderName);
+
+  return lines.join("\n");
+}

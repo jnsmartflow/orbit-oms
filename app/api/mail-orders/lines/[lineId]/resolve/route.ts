@@ -57,7 +57,7 @@ export async function POST(
   }
 
   // Update the line
-  const updatedLine = await prisma.mo_order_lines.update({
+  await prisma.mo_order_lines.update({
     where: { id: lineId },
     data: {
       productName: sku.product,
@@ -65,9 +65,41 @@ export async function POST(
       skuCode: sku.material,
       skuDescription: sku.description,
       refSkuCode: sku.refMaterial || null,
+      paintType: sku.paintType || null,
+      materialType: sku.materialType || null,
       matchStatus: "matched",
     },
   });
+
+  // Propagate to sibling lines with same rawText + packCode
+  const siblings = await prisma.mo_order_lines.findMany({
+    where: {
+      moOrderId: line.moOrderId,
+      id: { not: lineId },
+      matchStatus: "unmatched",
+      rawText: { equals: line.rawText, mode: "insensitive" },
+      packCode: line.packCode,
+    },
+  });
+
+  let propagated = 0;
+  if (siblings.length > 0) {
+    const siblingIds = siblings.map(s => s.id);
+    await prisma.mo_order_lines.updateMany({
+      where: { id: { in: siblingIds } },
+      data: {
+        skuCode: sku.material,
+        skuDescription: sku.description,
+        productName: sku.product,
+        baseColour: sku.baseColour,
+        refSkuCode: sku.refMaterial ?? null,
+        paintType: sku.paintType ?? null,
+        materialType: sku.materialType ?? null,
+        matchStatus: "matched",
+      },
+    });
+    propagated = siblings.length;
+  }
 
   // Save keyword if provided
   if (body.keyword) {
@@ -94,10 +126,18 @@ export async function POST(
   const matchedCount = await prisma.mo_order_lines.count({
     where: { moOrderId: line.moOrderId, matchStatus: "matched" },
   });
+  const totalCount = await prisma.mo_order_lines.count({
+    where: { moOrderId: line.moOrderId },
+  });
   await prisma.mo_orders.update({
     where: { id: line.moOrderId },
     data: { matchedLines: matchedCount },
   });
 
-  return NextResponse.json({ success: true, line: updatedLine });
+  return NextResponse.json({
+    success: true,
+    propagated,
+    matchedLines: matchedCount,
+    totalLines: totalCount,
+  });
 }

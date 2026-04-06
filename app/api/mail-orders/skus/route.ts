@@ -46,5 +46,25 @@ export async function GET(req: Request): Promise<NextResponse> {
     },
   });
 
-  return NextResponse.json({ skus });
+  const pack = searchParams.get("pack") ?? "";
+
+  const results = skus.map((s) => ({
+    material: s.material,
+    description: s.description,
+    category: s.category ?? "",
+    product: s.product,
+    baseColour: s.baseColour,
+    packCode: s.packCode,
+    unit: s.unit ?? "",
+    refMaterial: s.refMaterial ?? "",
+    packMatch: pack ? s.packCode === pack : true,
+  }));
+
+  // Sort: pack matches first, then alphabetical within each group
+  results.sort((a, b) => {
+    if (a.packMatch !== b.packMatch) return a.packMatch ? -1 : 1;
+    return a.description.localeCompare(b.description);
+  });
+
+  return NextResponse.json({ skus: results });
 }

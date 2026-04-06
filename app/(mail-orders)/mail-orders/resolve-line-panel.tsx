@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { Loader2, X } from "lucide-react";
 import { searchSkus, resolveLine } from "@/lib/mail-orders/api";
 import type { MoOrderLine } from "@/lib/mail-orders/types";
@@ -9,6 +9,7 @@ interface SkuResult {
   material: string;
   description: string;
   packCode: string;
+  packMatch: boolean;
 }
 
 interface ResolveLinePanelProps {
@@ -17,14 +18,28 @@ interface ResolveLinePanelProps {
   onCancel: () => void;
 }
 
+function extractSearchWords(rawText: string): string {
+  return rawText
+    .replace(/[*\u00d7x@/\-:.,;()]/gi, " ")  // strip separators
+    .replace(/\b\d+\b/g, " ")                  // strip standalone numbers
+    .replace(/\s+/g, " ")                       // collapse whitespace
+    .trim()
+    .split(" ")
+    .filter(w => w.length > 1)                  // drop single chars
+    .join(" ");
+}
+
 export function ResolveLinePanel({ line, onResolved, onCancel }: ResolveLinePanelProps) {
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchQuery, setSearchQuery] = useState(
+    () => extractSearchWords(line.rawText),
+  );
   const [results, setResults] = useState<SkuResult[]>([]);
   const [selectedSku, setSelectedSku] = useState<SkuResult | null>(null);
   const [saveKeyword, setSaveKeyword] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
   const [searching, setSearching] = useState(false);
+  const [packFilter, setPackFilter] = useState(!!line.packCode);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -34,7 +49,7 @@ export function ResolveLinePanel({ line, onResolved, onCancel }: ResolveLinePane
     };
   }, []);
 
-  function handleSearchChange(q: string) {
+  const handleSearchChange = useCallback((q: string) => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     setSearchQuery(q);
     setSelectedSku(null);
@@ -49,7 +64,10 @@ export function ResolveLinePanel({ line, onResolved, onCancel }: ResolveLinePane
     setSearching(true);
     debounceRef.current = setTimeout(async () => {
       try {
-        const data = await searchSkus(q.trim());
+        const data = await searchSkus(
+          q.trim(),
+          packFilter && line.packCode ? line.packCode : undefined,
+        );
         setResults(data);
       } catch {
         setResults([]);
@@ -57,7 +75,25 @@ export function ResolveLinePanel({ line, onResolved, onCancel }: ResolveLinePane
         setSearching(false);
       }
     }, 300);
-  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [packFilter, line.packCode]);
+
+  // Fire initial search on mount
+  useEffect(() => {
+    const initial = extractSearchWords(line.rawText);
+    if (initial.length >= 2) {
+      handleSearchChange(initial);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Re-search when pack filter toggles
+  useEffect(() => {
+    if (searchQuery.trim().length >= 2 && !selectedSku) {
+      handleSearchChange(searchQuery);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [packFilter]);
 
   async function handleSave() {
     if (!selectedSku) return;
@@ -71,6 +107,8 @@ export function ResolveLinePanel({ line, onResolved, onCancel }: ResolveLinePane
       setLoading(false);
     }
   }
+
+  const hasDetected = line.productName || line.baseColour;
 
   return (
     <tr>
@@ -86,10 +124,36 @@ export function ResolveLinePanel({ line, onResolved, onCancel }: ResolveLinePane
               Raw Text
             </p>
             <p className="text-[12px] text-gray-700 font-medium">{line.rawText}</p>
-            <p className="text-[9.5px] font-bold uppercase tracking-wider text-gray-400 mb-1 mt-2">
-              Pack Code
-            </p>
-            <p className="text-[12px] text-gray-600">{line.packCode ?? "—"}</p>
+
+            {hasDetected ? (
+              <>
+                <p className="text-[9.5px] font-bold uppercase tracking-wider text-gray-400 mb-1 mt-2">
+                  Detected
+                </p>
+                <div className="text-[12px] text-gray-600 space-y-0.5">
+                  {line.productName && (
+                    <p><span className="text-gray-400 text-[10px]">Product</span>{" "}<span className="font-medium">{line.productName}</span></p>
+                  )}
+                  {line.baseColour && (
+                    <p><span className="text-gray-400 text-[10px]">Base</span>{" "}<span className="font-medium">{line.baseColour}</span></p>
+                  )}
+                  <p>
+                    <span className="text-gray-400 text-[10px]">Pack</span>{" "}{line.packCode ?? "\u2014"}
+                    <span className="text-gray-400 text-[10px] ml-3">Qty</span>{" "}{line.quantity}
+                  </p>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="text-[9.5px] font-bold uppercase tracking-wider text-gray-400 mb-1 mt-2">
+                  Pack Code
+                </p>
+                <p className="text-[12px] text-gray-600">
+                  {line.packCode ?? "\u2014"}
+                  <span className="text-gray-400 text-[10px] ml-3">Qty</span>{" "}{line.quantity}
+                </p>
+              </>
+            )}
           </div>
 
           {/* Right — search + select */}
@@ -115,6 +179,27 @@ export function ResolveLinePanel({ line, onResolved, onCancel }: ResolveLinePane
               </div>
             )}
 
+            {/* Pack filter chip */}
+            {line.packCode && !selectedSku && (
+              <div className="flex items-center gap-2 mt-1.5 mb-1">
+                <button
+                  type="button"
+                  onClick={() => setPackFilter(prev => !prev)}
+                  className={`text-[10px] font-medium px-2 py-0.5 rounded-full border transition-colors ${
+                    packFilter
+                      ? "bg-teal-50 border-teal-300 text-teal-700"
+                      : "bg-gray-50 border-gray-200 text-gray-500"
+                  }`}
+                >
+                  Pack: {line.packCode}
+                  {packFilter ? " \u2715" : ""}
+                </button>
+                <span className="text-[10px] text-gray-400">
+                  {packFilter ? "Showing matching pack first" : "Showing all packs"}
+                </span>
+              </div>
+            )}
+
             {/* Results dropdown */}
             {results.length > 0 && !selectedSku && (
               <div className="bg-white border border-gray-200 rounded-md shadow-md mt-1 max-h-[200px] overflow-y-auto">
@@ -126,11 +211,15 @@ export function ResolveLinePanel({ line, onResolved, onCancel }: ResolveLinePane
                       setSelectedSku(sku);
                       setResults([]);
                     }}
-                    className="w-full text-left px-3 py-2 hover:bg-gray-50 cursor-pointer border-b border-gray-50 last:border-b-0"
+                    className={`w-full text-left px-3 py-2 hover:bg-gray-50 cursor-pointer border-b border-gray-50 last:border-b-0 ${!sku.packMatch ? "opacity-60" : ""}`}
                   >
                     <div className="flex items-center gap-2">
                       <span className="font-mono text-[11px] text-gray-800">{sku.material}</span>
-                      <span className="text-[10px] bg-gray-100 rounded px-1.5 text-gray-500">
+                      <span className={`text-[10px] rounded px-1.5 ${
+                        sku.packMatch
+                          ? "bg-teal-50 text-teal-700 border border-teal-200"
+                          : "bg-gray-100 text-gray-500"
+                      }`}>
                         {sku.packCode}
                       </span>
                     </div>

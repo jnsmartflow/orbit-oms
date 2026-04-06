@@ -30,13 +30,19 @@ export async function resolveLine(
   lineId: number,
   skuCode: string,
   saveKeyword: boolean,
-): Promise<void> {
+): Promise<{
+  success: boolean;
+  propagated: number;
+  matchedLines: number;
+  totalLines: number;
+}> {
   const res = await fetch(`/api/mail-orders/lines/${lineId}/resolve`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ skuCode, saveKeyword }),
   });
   if (!res.ok) throw new Error(`Failed to resolve line: ${res.status}`);
+  return res.json();
 }
 
 export async function saveSoNumber(
@@ -86,9 +92,12 @@ export async function saveCustomer(
 
 export async function searchSkus(
   q: string,
-): Promise<{ material: string; description: string; packCode: string }[]> {
+  pack?: string,
+): Promise<{ material: string; description: string; packCode: string; packMatch: boolean }[]> {
+  const params = new URLSearchParams({ q });
+  if (pack) params.set("pack", pack);
   const res = await fetch(
-    `/api/mail-orders/skus?q=${encodeURIComponent(q)}`,
+    `/api/mail-orders/skus?${params.toString()}`,
   );
   if (!res.ok) throw new Error(`Failed to search SKUs: ${res.status}`);
   const data = await res.json();
