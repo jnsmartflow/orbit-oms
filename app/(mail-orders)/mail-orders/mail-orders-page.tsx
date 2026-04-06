@@ -823,6 +823,7 @@ export default function MailOrdersPage() {
             onSplitComplete={loadOrders}
             visibleColumns={visibleColumns}
             recentlyPunchedIds={recentlyPunchedIds}
+            separatePunched={activeSlot !== null}
           />
         )}
       </div>

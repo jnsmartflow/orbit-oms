@@ -54,6 +54,7 @@ interface MailOrdersTableProps {
   onSplitComplete: () => void;
   visibleColumns: Set<string>;
   recentlyPunchedIds: Set<number>;
+  separatePunched: boolean;
 }
 
 // ── Slot dot colors ──────────────────────────────────────────────────────────
@@ -115,6 +116,7 @@ export function MailOrdersTable({
   onSplitComplete,
   visibleColumns,
   recentlyPunchedIds,
+  separatePunched,
 }: MailOrdersTableProps) {
   const slotOrder = ["Morning", "Afternoon", "Evening", "Night"] as const;
   const isVis = (key: string) => visibleColumns.has(key);
@@ -216,6 +218,7 @@ export function MailOrdersTable({
                 visibleColumns={visibleColumns}
                 colCount={colCount}
                 recentlyPunchedIds={recentlyPunchedIds}
+                separatePunched={separatePunched}
               />
             );
           })}
@@ -251,6 +254,7 @@ function SlotGroup({
   visibleColumns,
   colCount,
   recentlyPunchedIds,
+  separatePunched,
 }: {
   slot: string;
   orders: MoOrder[];
@@ -275,13 +279,51 @@ function SlotGroup({
   visibleColumns: Set<string>;
   colCount: number;
   recentlyPunchedIds: Set<number>;
+  separatePunched: boolean;
 }) {
   const dotColor = SLOT_DOTS[slot] ?? "bg-gray-400";
   const [punchedVisible, setPunchedVisible] = useState(true);
 
-  const pendingOrders = orders.filter(o => o.status !== "punched" || recentlyPunchedIds.has(o.id));
-  const punchedOrders = orders.filter(o => o.status === "punched" && !recentlyPunchedIds.has(o.id));
+  const pendingOrders = separatePunched
+    ? orders.filter(o => o.status !== "punched" || recentlyPunchedIds.has(o.id))
+    : orders;
+  const punchedOrders = separatePunched
+    ? orders
+        .filter(o => o.status === "punched" && !recentlyPunchedIds.has(o.id))
+        .sort((a, b) => {
+          const aTime = a.punchedAt ? new Date(a.punchedAt).getTime() : 0;
+          const bTime = b.punchedAt ? new Date(b.punchedAt).getTime() : 0;
+          return bTime - aTime;
+        })
+    : [];
   const punchedCount = punchedOrders.length;
+
+  const renderOrderRow = (order: MoOrder, inPunchedSection?: boolean) => (
+    <OrderRow
+      key={order.id}
+      order={order}
+      isFlagged={flaggedIds.has(order.id)}
+      isPunched={order.status === "punched"}
+      isFocused={focusedId === order.id}
+      isExpanded={expandedId === order.id}
+      copiedId={copiedId}
+      copiedCodeId={copiedCodeId}
+      onFlag={onFlag}
+      onExpand={onExpand}
+      onPunch={onPunch}
+      onCopy={onCopy}
+      onSaveSoNumber={onSaveSoNumber}
+      onSaveCustomer={onSaveCustomer}
+      openCodePopoverId={openCodePopoverId}
+      setOpenCodePopoverId={setOpenCodePopoverId}
+      batchStates={batchStates}
+      onAdvanceBatch={onAdvanceBatch}
+      onSplitComplete={onSplitComplete}
+      visibleColumns={visibleColumns}
+      colCount={colCount}
+      punchedSection={inPunchedSection}
+    />
+  );
 
   return (
     <>
@@ -316,53 +358,26 @@ function SlotGroup({
         </td>
       </tr>
 
-      {/* Pending orders — full rows */}
-      {pendingOrders.map((order) => {
-        const isFlagged = flaggedIds.has(order.id);
-        const isFocused = focusedId === order.id;
-        const isExpanded = expandedId === order.id;
+      {/* Pending orders (or all orders when not separating) */}
+      {pendingOrders.map((order) => renderOrderRow(order))}
 
-        return (
-          <OrderRow
-            key={order.id}
-            order={order}
-            isFlagged={isFlagged}
-            isPunched={false}
-            isFocused={isFocused}
-            isExpanded={isExpanded}
-            copiedId={copiedId}
-            copiedCodeId={copiedCodeId}
-            onFlag={onFlag}
-            onExpand={onExpand}
-            onPunch={onPunch}
-            onCopy={onCopy}
-            onSaveSoNumber={onSaveSoNumber}
-            onSaveCustomer={onSaveCustomer}
-            openCodePopoverId={openCodePopoverId}
-            setOpenCodePopoverId={setOpenCodePopoverId}
-            batchStates={batchStates}
-            onAdvanceBatch={onAdvanceBatch}
-            onSplitComplete={onSplitComplete}
-            visibleColumns={visibleColumns}
-            colCount={colCount}
-          />
-        );
-      })}
-
-      {/* Punched divider */}
+      {/* Punched divider — only when separating */}
       {punchedOrders.length > 0 && (
         <tr>
-          <td colSpan={colCount} className="h-[28px] px-4">
-            <div className="flex items-center gap-2">
+          <td colSpan={colCount} className="h-[34px] px-4 bg-gray-50/50">
+            <div className="flex items-center gap-3">
               <div className="flex-1 h-px bg-gray-200" />
               <button
                 onClick={() => setPunchedVisible(prev => !prev)}
-                className="text-[10px] text-gray-400 hover:text-gray-500 flex items-center gap-1 shrink-0"
+                className="text-[11px] font-medium text-gray-500 hover:text-gray-700 flex items-center gap-1.5 shrink-0 transition-colors"
               >
-                {punchedVisible
-                  ? `${punchedOrders.length} punched \u25BE`
-                  : `${punchedOrders.length} punched \u25B8`
-                }
+                <span className="inline-flex items-center justify-center w-[20px] h-[20px] rounded-full bg-teal-50 text-teal-700 text-[10px] font-semibold">
+                  {punchedOrders.length}
+                </span>
+                punched
+                <span className="text-gray-400 text-[10px]">
+                  {punchedVisible ? "\u25BE" : "\u25B8"}
+                </span>
               </button>
               <div className="flex-1 h-px bg-gray-200" />
             </div>
@@ -370,140 +385,12 @@ function SlotGroup({
         </tr>
       )}
 
-      {/* Punched orders — collapsed */}
-      {punchedVisible && punchedOrders.map((order) => {
-        const isExpanded = expandedId === order.id;
-
-        // When expanded, show full OrderRow
-        if (isExpanded) {
-          return (
-            <OrderRow
-              key={order.id}
-              order={order}
-              isFlagged={flaggedIds.has(order.id)}
-              isPunched={true}
-              isFocused={focusedId === order.id}
-              isExpanded={true}
-              copiedId={copiedId}
-              copiedCodeId={copiedCodeId}
-              onFlag={onFlag}
-              onExpand={onExpand}
-              onPunch={onPunch}
-              onCopy={onCopy}
-              onSaveSoNumber={onSaveSoNumber}
-              onSaveCustomer={onSaveCustomer}
-              openCodePopoverId={openCodePopoverId}
-              setOpenCodePopoverId={setOpenCodePopoverId}
-              batchStates={batchStates}
-              onAdvanceBatch={onAdvanceBatch}
-              onSplitComplete={onSplitComplete}
-              visibleColumns={visibleColumns}
-              colCount={colCount}
-            />
-          );
-        }
-
-        // Collapsed view
-        return (
-          <CollapsedPunchedRow
-            key={order.id}
-            order={order}
-            colCount={colCount}
-            onExpand={onExpand}
-            focusedId={focusedId}
-          />
-        );
-      })}
+      {/* Punched orders — same OrderRow, dimmed */}
+      {punchedVisible && punchedOrders.map((order) => renderOrderRow(order, true))}
     </>
   );
 }
 
-// ── Collapsed Punched Row ───────────────────────────────────────────────────
-
-function CollapsedPunchedRow({
-  order,
-  colCount,
-  onExpand,
-  focusedId,
-}: {
-  order: MoOrder;
-  colCount: number;
-  onExpand: (id: number | null) => void;
-  focusedId: number | null;
-}) {
-  const displayName = order.customerMatchStatus === "exact" && order.customerName
-    ? smartTitleCase(order.customerName)
-    : smartTitleCase(cleanSubject(order.subject));
-  const splitSuffix = order.splitLabel ? ` (${order.splitLabel})` : "";
-  const nameWithSplit = displayName + splitSuffix;
-
-  const operatorName = order.punchedBy?.name ?? "\u2014";
-  const initials = operatorName
-    .split(" ")
-    .map(w => w[0]?.toUpperCase() ?? "")
-    .join("")
-    .slice(0, 2);
-
-  const punchTime = order.punchedAt ? formatTime(order.punchedAt) : "";
-  const isFocused = focusedId === order.id;
-
-  return (
-    <tr
-      data-order-id={order.id}
-      className="h-[28px] border-b border-gray-50 hover:bg-gray-50/50 cursor-pointer"
-      style={{
-        opacity: isFocused ? 0.7 : 0.45,
-        borderLeft: isFocused ? "3px solid #f59e0b" : undefined,
-      }}
-      onClick={() => onExpand(order.id)}
-    >
-      <td colSpan={colCount} className="px-4 align-middle">
-        <div className="flex items-center justify-between">
-          {/* Left: order summary */}
-          <div className="flex items-center gap-2 min-w-0 text-[11px] text-gray-500">
-            <span className="font-mono font-semibold text-gray-600 shrink-0">
-              {formatTime(order.receivedAt)}
-            </span>
-            <span className="text-gray-300">{"\u00b7"}</span>
-            <span className="truncate font-medium text-gray-600 max-w-[200px]">
-              {nameWithSplit}
-            </span>
-            <span className="text-gray-300">{"\u00b7"}</span>
-            <span className="shrink-0">
-              {order.matchedLines}/{order.totalLines}
-            </span>
-            {order.customerCode && (
-              <>
-                <span className="text-gray-300">{"\u00b7"}</span>
-                <span className="font-mono shrink-0">{order.customerCode}</span>
-              </>
-            )}
-            {order.soNumber && (
-              <>
-                <span className="text-gray-300">{"\u00b7"}</span>
-                <span className="font-mono shrink-0">SO {order.soNumber}</span>
-              </>
-            )}
-          </div>
-
-          {/* Right: done indicator + avatar + time */}
-          <div className="flex items-center gap-1.5 shrink-0">
-            <span className="text-gray-400 text-[11px]">{"\u2713"}</span>
-            <span
-              className="w-[16px] h-[16px] rounded-full bg-teal-600 flex items-center justify-center text-[8px] font-bold text-white shrink-0"
-              title={operatorName}
-            >
-              {initials}
-            </span>
-            <span className="font-mono text-[10px] text-gray-400">
-              {punchTime}
-            </span>
-          </div>
-        </div>
-      </td>
-    </tr>
-  );
-}
 
 // ── Code Cell ────────────────────────────────────────────────────────────────
 
@@ -728,6 +615,7 @@ function OrderRow({
   onSplitComplete,
   visibleColumns,
   colCount,
+  punchedSection,
 }: {
   order: MoOrder;
   isFlagged: boolean;
@@ -749,6 +637,7 @@ function OrderRow({
   onSplitComplete: () => void;
   visibleColumns: Set<string>;
   colCount: number;
+  punchedSection?: boolean;
 }) {
   const isVis = (key: string) => visibleColumns.has(key);
   const autoFlagged = isOdCiFlagged(order);
@@ -882,7 +771,7 @@ function OrderRow({
         data-order-id={order.id}
         data-urgent={(!isPunched && (order.dispatchStatus === "Hold" || order.dispatchPriority === "Urgent")) ? "true" : undefined}
         className="h-[52px] border-b border-gray-100 hover:bg-gray-50/50 cursor-pointer"
-        style={{ borderLeft, opacity: isPunched ? 0.75 : undefined }}
+        style={{ borderLeft, opacity: punchedSection ? 0.5 : (isPunched ? 0.75 : undefined) }}
         onClick={() => onExpand(order.id)}
       >
         {/* Time */}
