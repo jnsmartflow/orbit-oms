@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { X, Search, Check, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { searchSkus } from "@/lib/mail-orders/api";
 import type { MoOrderLine } from "@/lib/mail-orders/types";
 import { LINE_STATUS_REASONS } from "@/lib/mail-orders/types";
@@ -26,20 +26,18 @@ interface SkuResult {
 }
 
 export function LineStatusPanel({ line, onSave, onCancel }: LineStatusPanelProps) {
-  // Initialize from existing lineStatus
   const ls = line.lineStatus;
-  const [found, setFound] = useState(ls?.found ?? true);
+  const initialFound = ls?.found ?? true;
+  const [found, setFound] = useState(initialFound);
   const [reason, setReason] = useState<string | null>(ls?.reason ?? null);
   const [altSkuCode, setAltSkuCode] = useState<string | null>(ls?.altSkuCode ?? null);
   const [altSkuDescription, setAltSkuDescription] = useState<string | null>(ls?.altSkuDescription ?? null);
   const [note, setNote] = useState(ls?.note ?? "");
 
-  // Search state
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SkuResult[]>([]);
   const [searching, setSearching] = useState(false);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const searchInputRef = useRef<HTMLInputElement>(null);
 
   // Esc to close
   useEffect(() => {
@@ -58,6 +56,7 @@ export function LineStatusPanel({ line, onSave, onCancel }: LineStatusPanelProps
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
     if (!searchQuery.trim() || searchQuery.trim().length < 2) {
       setSearchResults([]);
+      setSearching(false);
       return;
     }
     setSearching(true);
@@ -75,6 +74,11 @@ export function LineStatusPanel({ line, onSave, onCancel }: LineStatusPanelProps
       if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
     };
   }, [searchQuery, line.packCode]);
+
+  const hasChanges = found !== initialFound
+    || reason !== (ls?.reason ?? null)
+    || altSkuCode !== (ls?.altSkuCode ?? null)
+    || note !== (ls?.note ?? "");
 
   function handleSave() {
     onSave(line.id, {
@@ -100,68 +104,95 @@ export function LineStatusPanel({ line, onSave, onCancel }: LineStatusPanelProps
     setAltSkuDescription(null);
   }
 
+  const showSaveCancelButtons = !found || hasChanges;
+
   return (
-    <div className="absolute inset-x-0 bottom-0 bg-white border-t-2 border-teal-500 rounded-b-lg z-10">
-      <div className="px-4 py-3 space-y-3">
-
-        {/* 1. Header */}
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <p className="text-[13px] font-semibold text-gray-800 truncate">
-              {line.rawText} {"\u00d7"} {line.quantity}
-            </p>
-            <div className="flex items-center gap-1.5 mt-0.5">
-              {line.skuCode && (
-                <span className="font-mono text-[11px] text-gray-500">{line.skuCode}</span>
-              )}
-              {line.skuDescription && (
-                <span className="text-[10px] text-gray-400 truncate">{line.skuDescription}</span>
-              )}
+    <div
+      className="fixed inset-0 bg-black/25 z-50 flex items-center justify-center p-4"
+      onClick={onCancel}
+    >
+      <div
+        className="bg-white rounded-xl border border-gray-200 w-full max-w-[380px] overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* 1. TOP SECTION */}
+        <div className="pt-3.5 px-4">
+          {/* 1a. Header */}
+          <div className="flex items-start justify-between gap-2 mb-2.5">
+            <div className="min-w-0">
+              <p className={`text-[15px] font-semibold truncate ${!found ? "line-through text-gray-400" : "text-gray-900"}`}>
+                {line.rawText}
+              </p>
+              <div className="flex items-center gap-1 mt-0.5 text-gray-400">
+                {line.skuCode && (
+                  <span className={`font-mono text-[11px] ${!found ? "line-through" : ""}`}>{line.skuCode}</span>
+                )}
+                {line.skuCode && line.packCode && <span className="text-gray-300">{"\u00b7"}</span>}
+                {line.packCode && <span className="text-[11px]">{line.packCode}</span>}
+                {(line.skuCode || line.packCode) && <span className="text-gray-300">{"\u00b7"}</span>}
+                <span className="text-[11px]">{"\u00d7"} {line.quantity}</span>
+              </div>
             </div>
+            <button
+              onClick={onCancel}
+              className="w-6 h-6 rounded-md bg-gray-100 flex items-center justify-center text-gray-500 hover:bg-gray-200 transition-colors shrink-0 text-[14px]"
+            >
+              {"\u00d7"}
+            </button>
           </div>
-          <button
-            onClick={onCancel}
-            className="w-[24px] h-[24px] rounded bg-gray-100 flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-200 transition-colors shrink-0"
-          >
-            <X size={14} />
-          </button>
-        </div>
 
-        {/* 2. Found/Not Found Toggle */}
-        <div className="flex items-center justify-between bg-gray-50 rounded-md px-3 py-2.5">
-          <span className={`text-[12px] font-semibold ${found ? "text-green-600" : "text-red-600"}`}>
-            {found ? "Found in SAP" : "Not found in SAP"}
-          </span>
+          {/* 1b. Status Toggle */}
           <button
+            type="button"
             onClick={() => setFound(prev => !prev)}
-            className={`relative w-[44px] h-[24px] rounded-full transition-colors ${
-              found ? "bg-green-500" : "bg-red-500"
+            className={`w-full flex items-center gap-3 rounded-lg px-3 py-2.5 mb-3 border cursor-pointer transition-colors ${
+              found
+                ? "bg-green-50 border-green-200"
+                : "bg-red-50 border-red-200"
             }`}
           >
-            <span
-              className={`absolute top-[2px] w-[20px] h-[20px] rounded-full bg-white shadow transition-transform ${
-                found ? "left-[22px]" : "left-[2px]"
-              }`}
-            />
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
+              found ? "bg-green-100" : "bg-red-100"
+            }`}>
+              {found ? (
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#16a34a" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="3 8 6.5 11.5 13 5" />
+                </svg>
+              ) : (
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#dc2626" strokeWidth="2" strokeLinecap="round">
+                  <line x1="4" y1="4" x2="12" y2="12" />
+                  <line x1="12" y1="4" x2="4" y2="12" />
+                </svg>
+              )}
+            </div>
+            <div className="text-left">
+              <p className={`text-[13px] font-semibold ${found ? "text-green-800" : "text-red-700"}`}>
+                {found ? "Found in SAP" : "Not found in SAP"}
+              </p>
+              <p className="text-[9px] text-gray-400">
+                {found ? "Tap to mark as not found" : "Tap to mark as found"}
+              </p>
+            </div>
           </button>
         </div>
 
-        {/* 3-5. Not-found sections */}
+        {/* 2. SECTIONS (only when not found) */}
         {!found && (
-          <div className="space-y-3">
-
-            {/* 3. Reason Chips */}
-            <div>
-              <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wider mb-1.5">Reason</p>
-              <div className="flex flex-wrap gap-1.5">
+          <div className="px-4">
+            {/* 2a. Reason */}
+            <div className="mb-3">
+              <p className="text-[9px] font-semibold text-gray-400 uppercase tracking-wide mb-1.5">Reason</p>
+              <div className="grid grid-cols-2 gap-[5px]">
                 {LINE_STATUS_REASONS.map(r => (
                   <button
                     key={r.value}
                     onClick={() => setReason(reason === r.value ? null : r.value)}
-                    className={`text-[11px] font-medium px-2.5 py-1 rounded-md border transition-colors ${
+                    className={`py-[7px] rounded-md border text-[10.5px] text-center transition-colors ${
+                      r.value === "other" ? "col-span-2" : ""
+                    } ${
                       reason === r.value
-                        ? "border-red-500 bg-red-50 text-red-700"
-                        : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+                        ? "border-red-400 bg-red-50 text-red-700 font-medium"
+                        : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50 hover:border-gray-300"
                     }`}
                   >
                     {r.label}
@@ -170,53 +201,44 @@ export function LineStatusPanel({ line, onSave, onCancel }: LineStatusPanelProps
               </div>
             </div>
 
-            {/* 4. Alternate SKU Search */}
-            <div>
-              <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wider mb-1.5">
-                Alternate material (optional)
-              </p>
-
+            {/* 2b. Alternate Material */}
+            <div className="mb-3">
+              <p className="text-[9px] font-semibold text-gray-400 uppercase tracking-wide mb-1.5">Alternate material</p>
               {altSkuCode ? (
-                /* Selected alt SKU */
-                <div className="flex items-center gap-2 px-3 py-2 rounded-md border border-teal-500 bg-teal-50">
-                  <span className="text-[9px] font-semibold text-teal-700 bg-teal-100 rounded px-1 py-0.5 shrink-0">ALT</span>
-                  <span className="font-mono text-[11px] text-gray-700 shrink-0">{altSkuCode}</span>
-                  <span className="text-[10px] text-gray-500 truncate flex-1">{altSkuDescription}</span>
+                <div className="flex items-center gap-[5px] px-2.5 py-2 border-[1.5px] border-teal-500 rounded-md bg-teal-50">
+                  <span className="text-[7px] font-bold text-teal-700 bg-teal-100 px-1 py-px rounded shrink-0">ALT</span>
+                  <span className="font-mono text-[10px] font-medium text-teal-700 shrink-0">{altSkuCode}</span>
+                  <span className="text-[10px] text-teal-600 truncate flex-1">{altSkuDescription}</span>
                   <button
                     onClick={clearAlt}
-                    className="text-[10px] text-teal-600 hover:text-teal-800 font-medium shrink-0"
+                    className="text-[10px] text-teal-600 font-medium shrink-0 cursor-pointer"
                   >
                     Change
                   </button>
                 </div>
               ) : (
-                /* Search input + results */
-                <div className="relative">
+                <div>
                   <div className="relative">
-                    <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
                     <input
-                      ref={searchInputRef}
                       type="text"
                       value={searchQuery}
                       onChange={e => setSearchQuery(e.target.value)}
                       placeholder="Search SKU or product name..."
-                      className="w-full h-[36px] pl-8 pr-3 text-[11px] border border-gray-200 rounded-md focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500/20"
-                      onClick={e => e.stopPropagation()}
+                      className="w-full h-[34px] border-[1.5px] border-gray-200 rounded-md px-2.5 text-[11px] focus:outline-none focus:border-teal-500"
                     />
                     {searching && (
-                      <Loader2 size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 animate-spin" />
+                      <Loader2 size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 animate-spin" />
                     )}
                   </div>
-
                   {searchResults.length > 0 && (
-                    <div className="mt-1 border border-gray-200 rounded-md overflow-hidden">
+                    <div className="space-y-1 mt-1.5">
                       {searchResults.map(sku => (
                         <button
                           key={sku.material}
                           onClick={() => selectAlt(sku)}
-                          className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-teal-50 hover:border-l-2 hover:border-l-teal-500 border-b border-gray-100 last:border-b-0 transition-colors"
+                          className="w-full flex items-center gap-1.5 px-2 py-1.5 border border-gray-200 rounded-md text-left hover:bg-teal-50 hover:border-teal-500 transition-colors"
                         >
-                          <span className="font-mono text-[11px] text-gray-700 shrink-0">{sku.material}</span>
+                          <span className="font-mono text-[10px] font-medium text-gray-600 shrink-0">{sku.material}</span>
                           <span className="text-[10px] text-gray-500 truncate flex-1">{sku.description}</span>
                           <span className="text-[10px] text-gray-400 shrink-0">{sku.packCode}</span>
                         </button>
@@ -227,34 +249,45 @@ export function LineStatusPanel({ line, onSave, onCancel }: LineStatusPanelProps
               )}
             </div>
 
-            {/* 5. Note Input */}
-            <div>
+            {/* 2c. Note */}
+            <div className="mb-3">
+              <p className="text-[9px] font-semibold text-gray-400 uppercase tracking-wide mb-1.5">Note</p>
               <input
                 type="text"
                 value={note}
                 onChange={e => setNote(e.target.value)}
-                placeholder="Add a note (optional)..."
-                className="w-full h-[32px] px-3 text-[11px] border border-gray-200 rounded-md focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500/20"
-                onClick={e => e.stopPropagation()}
+                placeholder="Optional note..."
+                className="w-full h-[30px] border border-gray-200 rounded-md px-2.5 text-[10px] focus:outline-none focus:border-teal-500"
               />
             </div>
           </div>
         )}
 
-        {/* 6. Action Buttons */}
-        <div className="flex gap-2">
-          <button
-            onClick={onCancel}
-            className="flex-1 py-2 rounded-md text-[12px] font-semibold bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSave}
-            className="flex-1 py-2 rounded-md text-[12px] font-semibold bg-teal-600 text-white hover:bg-teal-700 transition-colors"
-          >
-            Save
-          </button>
+        {/* 3. FOOTER */}
+        <div className="border-t border-gray-100 flex gap-2 p-4">
+          {showSaveCancelButtons ? (
+            <>
+              <button
+                onClick={onCancel}
+                className="flex-1 py-2.5 rounded-lg bg-gray-100 text-gray-600 text-[12px] font-semibold hover:bg-gray-200 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSave}
+                className="flex-1 py-2.5 rounded-lg bg-teal-600 text-white text-[12px] font-semibold hover:bg-teal-700 transition-colors"
+              >
+                Save
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={onCancel}
+              className="w-full py-2.5 rounded-lg bg-gray-100 text-gray-600 text-[12px] font-semibold hover:bg-gray-200 transition-colors"
+            >
+              Close
+            </button>
+          )}
         </div>
       </div>
     </div>

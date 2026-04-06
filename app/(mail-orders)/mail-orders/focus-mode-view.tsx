@@ -339,6 +339,39 @@ export function FocusModeView({
     }
   }, []);
 
+  const handleQuickToggle = useCallback(async (lineId: number) => {
+    const current = lineStatuses[lineId];
+    const newFound = current ? !current.found : false;
+
+    setLineStatuses(prev => ({
+      ...prev,
+      [lineId]: {
+        found: newFound,
+        reason: newFound ? null : (current?.reason ?? "out_of_stock"),
+        altSkuCode: newFound ? null : (current?.altSkuCode ?? null),
+        altSkuDescription: newFound ? null : (current?.altSkuDescription ?? null),
+        note: newFound ? null : (current?.note ?? null),
+      },
+    }));
+
+    try {
+      await saveLineStatus(lineId, {
+        found: newFound,
+        reason: newFound ? undefined : (current?.reason ?? "out_of_stock"),
+        altSkuCode: newFound ? undefined : (current?.altSkuCode ?? undefined),
+        altSkuDescription: newFound ? undefined : (current?.altSkuDescription ?? undefined),
+        note: newFound ? undefined : (current?.note ?? undefined),
+      });
+    } catch {
+      setLineStatuses(prev => {
+        if (current) return { ...prev, [lineId]: current };
+        const next = { ...prev };
+        delete next[lineId];
+        return next;
+      });
+    }
+  }, [lineStatuses]);
+
   const handleCopyCode = useCallback(() => {
     if (!currentOrder?.customerCode) return;
     navigator.clipboard.writeText(currentOrder.customerCode);
@@ -615,6 +648,10 @@ export function FocusModeView({
   const badges = getSignalBadges(order);
   const hasCode = order.customerMatchStatus === "exact" && order.customerCode;
   const matchedCount = order.lines.filter((l) => l.matchStatus === "matched" && l.skuCode).length;
+  const notFoundCount = order.lines.filter(l => {
+    const s = lineStatuses[l.id];
+    return s && !s.found;
+  }).length;
 
   let cardBorderClass = "border-gray-200";
   let accentBar = null;
@@ -898,113 +935,120 @@ export function FocusModeView({
               )}
 
               {/* ── Expandable lines ───────────────────────────────────── */}
-              {(() => {
-                const notFoundCount = order.lines.filter(l => {
-                  const s = lineStatuses[l.id];
-                  return s && !s.found;
-                }).length;
-                return (
-                  <button
-                    onClick={() => setExpandLines((p) => !p)}
-                    className="w-full flex items-center justify-between pt-2.5 mt-2.5 border-t border-gray-100 text-[11px] text-gray-400 hover:text-gray-600 transition-colors"
-                  >
-                    <span>
-                      {matchedCount}/{order.totalLines} SKU lines
-                      {matchedCount < order.totalLines && (
-                        <span className="text-amber-500 ml-1">({order.totalLines - matchedCount} unmatched)</span>
-                      )}
-                      {notFoundCount > 0 && (
-                        <span className="text-red-500 ml-1">{"\u00b7"} {notFoundCount} not found</span>
-                      )}
-                    </span>
-                    {expandLines ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                  </button>
-                );
-              })()}
+              <button
+                onClick={() => setExpandLines((p) => !p)}
+                className="w-full flex items-center justify-between pt-2.5 mt-2.5 border-t border-gray-100 text-[11px] text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <span className="flex items-center gap-1.5">
+                  {notFoundCount === 0 ? (
+                    <>
+                      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#22c55e" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="3 8 6.5 11.5 13 5" />
+                      </svg>
+                      <span className="text-gray-500">{matchedCount}/{order.totalLines} lines matched</span>
+                    </>
+                  ) : (
+                    <>
+                      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M8 1.5 L14.5 13 H1.5Z" />
+                      </svg>
+                      <span className="text-gray-500">{matchedCount}/{order.totalLines} SKU lines</span>
+                      <span className="text-gray-300">{"\u00b7"}</span>
+                      <span className="text-red-500 font-medium">{notFoundCount} not found</span>
+                    </>
+                  )}
+                </span>
+                {expandLines ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+              </button>
 
               {expandLines && (
-                <div className="mt-2 relative">
-                  <div className="max-h-64 overflow-y-auto">
-                    {order.lines.map((line) => {
-                      const status = lineStatuses[line.id];
-                      const isFound = status ? status.found : true;
-                      const isNotFound = status && !status.found;
-                      const reasonLabel = isNotFound && status.reason
-                        ? LINE_STATUS_REASONS.find(r => r.value === status.reason)?.label ?? status.reason
-                        : null;
+                <div className="mt-2">
+                  {order.lines.map((line) => {
+                    const status = lineStatuses[line.id];
+                    const isNF = status && !status.found;
+                    const reasonObj = isNF && status.reason
+                      ? LINE_STATUS_REASONS.find(r => r.value === status.reason)
+                      : null;
 
-                      return (
-                        <div
-                          key={line.id}
-                          onClick={() => setActiveLineId(line.id)}
-                          className={`flex items-center gap-2 py-2 px-1 border-b border-gray-50 cursor-pointer transition-colors ${
-                            isNotFound ? "bg-red-50 hover:bg-red-50/80" : "hover:bg-gray-50"
+                    return (
+                      <div
+                        key={line.id}
+                        className={`flex items-center gap-2 py-2 border-b border-gray-100 last:border-b-0 ${
+                          isNF ? "bg-red-50 -mx-4 px-4 border-l-2 border-l-red-300" : ""
+                        }`}
+                      >
+                        {/* Toggle */}
+                        <button
+                          type="button"
+                          onClick={() => handleQuickToggle(line.id)}
+                          className={`w-7 h-4 rounded-full relative flex-shrink-0 transition-colors ${
+                            isNF ? "bg-red-500" : "bg-green-500"
                           }`}
                         >
-                          {/* Toggle dot */}
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleSaveLineStatus(line.id, { found: !isFound });
-                            }}
-                            className={`relative w-[28px] h-[16px] rounded-full shrink-0 transition-colors ${
-                              isFound ? "bg-green-500" : "bg-red-500"
-                            }`}
-                          >
-                            <span className={`absolute top-[2px] w-[12px] h-[12px] rounded-full bg-white shadow transition-transform ${
-                              isFound ? "left-[14px]" : "left-[2px]"
-                            }`} />
-                          </button>
+                          <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all ${
+                            isNF ? "left-0.5" : "left-[14px]"
+                          }`} />
+                        </button>
 
-                          {/* Middle content */}
-                          <div className="flex-1 min-w-0">
-                            <p className={`text-[11px] truncate ${isNotFound ? "line-through text-gray-400" : "text-gray-700"}`} title={line.rawText}>
-                              {line.rawText}
-                            </p>
-                            <div className="flex items-center gap-1.5 mt-0.5">
-                              {line.skuCode ? (
-                                <span className="font-mono text-[10px] text-gray-400">{line.skuCode}</span>
-                              ) : (
-                                <span className="text-[10px] text-amber-500">unmatched</span>
-                              )}
-                              {reasonLabel && (
-                                <span className="text-[9px] font-medium px-1 py-0.5 rounded bg-red-100 text-red-600">{reasonLabel}</span>
-                              )}
-                              {isNotFound && status.altSkuCode && (
-                                <span className="text-[9px] font-medium px-1 py-0.5 rounded bg-teal-50 text-teal-700">ALT {status.altSkuCode}</span>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Right: pack + qty + chevron */}
-                          <div className="flex items-center gap-2 shrink-0">
-                            <div className="text-right">
-                              <div className="text-[10px] text-gray-400">{line.packCode || "\u2014"}</div>
-                              <div className="text-[12px] font-semibold text-gray-700">{line.quantity}</div>
-                            </div>
-                            <ChevronDown size={14} className="text-gray-300 -rotate-90" />
+                        {/* Line info */}
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-[11.5px] font-medium truncate ${
+                            isNF ? "line-through text-gray-400" : "text-gray-800"
+                          }`}>
+                            {line.rawText}
+                          </p>
+                          <div className="flex items-center gap-1 mt-0.5 text-[10px] text-gray-400 flex-wrap">
+                            <span className={`font-mono ${isNF ? "line-through" : ""}`}>
+                              {line.skuCode || "\u2014"}
+                            </span>
+                            <span className="text-gray-300">{"\u00b7"}</span>
+                            <span>{line.packCode || "\u2014"} {"\u00d7"} {line.quantity}</span>
+                            {reasonObj && (
+                              <>
+                                <span className="text-gray-300">{"\u00b7"}</span>
+                                <span className="text-[8px] font-semibold px-1 py-px rounded bg-red-50 text-red-700 border border-red-200">
+                                  {reasonObj.label}
+                                </span>
+                              </>
+                            )}
+                            {isNF && status.altSkuCode && (
+                              <span className="text-[8px] font-semibold px-1 py-px rounded bg-teal-50 text-teal-700 border border-teal-200">
+                                ALT
+                              </span>
+                            )}
                           </div>
                         </div>
-                      );
-                    })}
-                  </div>
 
-                  {/* Line Status Panel */}
-                  {activeLineId !== null && (() => {
-                    const activeLine = order.lines.find(l => l.id === activeLineId);
-                    if (!activeLine) return null;
-                    const lineWithStatus = {
-                      ...activeLine,
-                      lineStatus: lineStatuses[activeLineId] ?? activeLine.lineStatus ?? null,
-                    };
-                    return (
-                      <LineStatusPanel
-                        line={lineWithStatus}
-                        onSave={handleSaveLineStatus}
-                        onCancel={() => setActiveLineId(null)}
-                      />
+                        {/* More button */}
+                        <button
+                          type="button"
+                          onClick={() => setActiveLineId(line.id)}
+                          className="w-[22px] h-[22px] rounded flex items-center justify-center text-gray-300 hover:text-gray-500 hover:bg-gray-100 flex-shrink-0 transition-colors"
+                        >
+                          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                            <circle cx="8" cy="4" r="1.2" />
+                            <circle cx="8" cy="8" r="1.2" />
+                            <circle cx="8" cy="12" r="1.2" />
+                          </svg>
+                        </button>
+                      </div>
                     );
-                  })()}
+                  })}
+
+                  {/* Summary */}
+                  <div className="flex items-center justify-between py-2 text-[11px] border-t border-gray-100 mt-1">
+                    <span className="text-gray-500">Lines</span>
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-green-600">
+                        {order.lines.length - notFoundCount} found
+                      </span>
+                      {notFoundCount > 0 && (
+                        <span className="font-semibold text-red-600">
+                          {notFoundCount} not found
+                        </span>
+                      )}
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
@@ -1041,6 +1085,23 @@ export function FocusModeView({
         </div>
 
       </div>
+
+      {/* Line Status Modal */}
+      {activeLineId !== null && (() => {
+        const activeLine = order.lines.find(l => l.id === activeLineId);
+        if (!activeLine) return null;
+        const lineWithStatus = {
+          ...activeLine,
+          lineStatus: lineStatuses[activeLineId] ?? activeLine.lineStatus ?? null,
+        };
+        return (
+          <LineStatusPanel
+            line={lineWithStatus}
+            onSave={handleSaveLineStatus}
+            onCancel={() => setActiveLineId(null)}
+          />
+        );
+      })()}
     </div>
   );
 }
