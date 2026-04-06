@@ -9,6 +9,7 @@ import type { ColumnConfig } from "./mail-orders-table";
 import { UniversalHeader } from "@/components/universal-header";
 import { SoSummaryPanel } from "./so-summary-panel";
 import { SlotCompletionModal } from "./slot-completion-modal";
+import { FocusModeView } from "./focus-mode-view";
 import { Check, Users } from "lucide-react";
 
 // ── Column Picker ──────────────────────────────────────────────────────────
@@ -141,6 +142,7 @@ export default function MailOrdersPage() {
   const [autoComplete, setAutoComplete] = useState(true);
   const [dismissedSlots, setDismissedSlots] = useState<Set<string>>(new Set());
   const [completedSlot, setCompletedSlot] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<"table" | "focus">("table");
   const [visibleColumns, setVisibleColumns] = useState<Set<string>>(() => {
     if (typeof window === "undefined") {
       return new Set(ALL_COLUMNS.map(c => c.key));
@@ -251,6 +253,19 @@ export default function MailOrdersPage() {
       setCompletedSlot(null);
     }
   }, [completedSlot]);
+
+  // ── Focus mode: auto-select first slot with orders ──────────────────────────
+  useEffect(() => {
+    if (viewMode === "focus" && activeSlot === null && orders.length > 0) {
+      const slots = ["Morning", "Afternoon", "Evening", "Night"] as const;
+      for (const slot of slots) {
+        if (orders.some(o => getSlotFromTime(o.receivedAt) === slot)) {
+          setActiveSlot(slot);
+          break;
+        }
+      }
+    }
+  }, [viewMode, activeSlot, orders]);
 
   // ── Derived stats ────────────────────────────────────────────────────────────
   const totalOrders = orders.length;
@@ -795,6 +810,28 @@ export default function MailOrdersPage() {
         onSearchChange={setSearchQuery}
         rightExtra={
           <div className="flex items-center gap-1.5">
+            <div className="flex border border-gray-200 rounded-md overflow-hidden">
+              <button
+                onClick={() => setViewMode("table")}
+                className={`text-[10px] font-medium px-2 h-[28px] transition-colors ${
+                  viewMode === "table"
+                    ? "bg-teal-600 text-white"
+                    : "bg-white text-gray-500 hover:bg-gray-50"
+                }`}
+              >
+                Table
+              </button>
+              <button
+                onClick={() => setViewMode("focus")}
+                className={`text-[10px] font-medium px-2 h-[28px] transition-colors ${
+                  viewMode === "focus"
+                    ? "bg-teal-600 text-white"
+                    : "bg-white text-gray-500 hover:bg-gray-50"
+                }`}
+              >
+                Focus
+              </button>
+            </div>
             <button
               onClick={() => setAutoComplete(prev => !prev)}
               className={`text-[10px] font-medium border rounded-md px-2 h-[28px] transition-colors ${
@@ -883,7 +920,7 @@ export default function MailOrdersPage() {
           </p>
         )}
 
-        {!loading && !error && orders.length > 0 && (
+        {!loading && !error && orders.length > 0 && viewMode === "table" && (
           <MailOrdersTable
             groupedOrders={groupedOrders}
             flaggedIds={flaggedIds}
@@ -907,6 +944,19 @@ export default function MailOrdersPage() {
             separatePunched={activeSlot !== null}
             punchedVisible={punchedVisible}
             onTogglePunched={() => setPunchedVisible(prev => !prev)}
+          />
+        )}
+
+        {!loading && !error && orders.length > 0 && viewMode === "focus" && (
+          <FocusModeView
+            orders={orders}
+            activeSlot={activeSlot}
+            flaggedIds={flaggedIds}
+            onFlag={handleFlag}
+            onSaveSoNumber={handleSaveSoNumber}
+            onCopy={handleCopy}
+            batchStates={batchStates}
+            onAdvanceBatch={handleAdvanceBatch}
           />
         )}
       </div>
