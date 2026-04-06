@@ -53,6 +53,7 @@ interface MailOrdersTableProps {
   onAdvanceBatch: (orderId: number) => void;
   onSplitComplete: () => void;
   visibleColumns: Set<string>;
+  recentlyPunchedIds: Set<number>;
 }
 
 // ── Slot dot colors ──────────────────────────────────────────────────────────
@@ -113,6 +114,7 @@ export function MailOrdersTable({
   onAdvanceBatch,
   onSplitComplete,
   visibleColumns,
+  recentlyPunchedIds,
 }: MailOrdersTableProps) {
   const slotOrder = ["Morning", "Afternoon", "Evening", "Night"] as const;
   const isVis = (key: string) => visibleColumns.has(key);
@@ -213,6 +215,7 @@ export function MailOrdersTable({
                 onSplitComplete={onSplitComplete}
                 visibleColumns={visibleColumns}
                 colCount={colCount}
+                recentlyPunchedIds={recentlyPunchedIds}
               />
             );
           })}
@@ -247,6 +250,7 @@ function SlotGroup({
   onSplitComplete,
   visibleColumns,
   colCount,
+  recentlyPunchedIds,
 }: {
   slot: string;
   orders: MoOrder[];
@@ -270,12 +274,13 @@ function SlotGroup({
   onSplitComplete: () => void;
   visibleColumns: Set<string>;
   colCount: number;
+  recentlyPunchedIds: Set<number>;
 }) {
   const dotColor = SLOT_DOTS[slot] ?? "bg-gray-400";
   const [punchedVisible, setPunchedVisible] = useState(true);
 
-  const pendingOrders = orders.filter(o => o.status !== "punched");
-  const punchedOrders = orders.filter(o => o.status === "punched");
+  const pendingOrders = orders.filter(o => o.status !== "punched" || recentlyPunchedIds.has(o.id));
+  const punchedOrders = orders.filter(o => o.status === "punched" && !recentlyPunchedIds.has(o.id));
   const punchedCount = punchedOrders.length;
 
   return (

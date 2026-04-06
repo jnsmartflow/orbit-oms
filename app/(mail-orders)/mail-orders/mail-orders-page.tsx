@@ -131,6 +131,7 @@ export default function MailOrdersPage() {
   const [copiedCodeId, setCopiedCodeId] = useState<number | null>(null);
   const [copiedReplyId, setCopiedReplyId] = useState<number | null>(null);
   const [focusedId, setFocusedId] = useState<number | null>(null);
+  const [recentlyPunchedIds, setRecentlyPunchedIds] = useState<Set<number>>(new Set());
   const [selectedDate, setSelectedDate] = useState(() => getTodayIST());
   const [openCodePopoverId, setOpenCodePopoverId] = useState<number | null>(null);
   const [batchStates, setBatchStates] = useState<Record<number, number>>({});
@@ -362,10 +363,16 @@ export default function MailOrdersPage() {
             : o,
         ),
       );
+
+      // Grace period — keep in pending section for 8s
+      setRecentlyPunchedIds(prev => { const next = new Set(prev); next.add(id); return next; });
+      setTimeout(() => {
+        setRecentlyPunchedIds(prev => { const next = new Set(prev); next.delete(id); return next; });
+      }, 8000);
+
       try {
         await punchOrder(id);
       } catch {
-        // Revert on error
         const data = await fetchMailOrders(selectedDate);
         setOrders(data.orders);
       }
@@ -405,6 +412,13 @@ export default function MailOrdersPage() {
         punchedAt: new Date().toISOString(),
       } : o)),
     );
+
+    // Grace period — keep in pending section for 8s
+    setRecentlyPunchedIds(prev => { const next = new Set(prev); next.add(orderId); return next; });
+    setTimeout(() => {
+      setRecentlyPunchedIds(prev => { const next = new Set(prev); next.delete(orderId); return next; });
+    }, 8000);
+
     try {
       await saveSoNumber(orderId, value);
       return true;
@@ -808,6 +822,7 @@ export default function MailOrdersPage() {
             onAdvanceBatch={handleAdvanceBatch}
             onSplitComplete={loadOrders}
             visibleColumns={visibleColumns}
+            recentlyPunchedIds={recentlyPunchedIds}
           />
         )}
       </div>
