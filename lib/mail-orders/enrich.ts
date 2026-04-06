@@ -175,6 +175,9 @@ export function enrichLine(
   candidates.sort((a, b) => b.keyword.length - a.keyword.length);
 
   // ── Step 4: Try each candidate × base × pack ────────────
+  // First pass: try all candidates with their real detected bases.
+  // Do NOT try BW/ADVANCE fallback here — it may return a wrong
+  // match before the correct candidate (with shorter keyword) is tried.
   for (const c of candidates) {
     // a/b: find bases from remaining text, or from product name if remaining is empty
     let bases: string[];
@@ -201,7 +204,7 @@ export function enrichLine(
       basesToTry.push("");
     }
 
-    // e: try every base × pack combo
+    // e: try every base × pack combo (real bases only, no fallback)
     for (const base of basesToTry) {
       for (const pack of packsToTry) {
         const key = `${c.product}|${base}|${pack}`;
@@ -221,11 +224,16 @@ export function enrichLine(
         }
       }
     }
+  }
 
-    // f: fallback — try common default bases if not already tried
-    const FALLBACK_BASES = ["BRILLIANT WHITE", "ADVANCE"];
+  // ── Step 4f: BW/ADVANCE fallback (AFTER all candidates tried) ──
+  // Only try on candidates where remaining is empty (user typed just
+  // the product name with no colour). If user typed a colour that
+  // didn't match any SKU, do NOT substitute BW — fall to partial.
+  const FALLBACK_BASES = ["BRILLIANT WHITE", "ADVANCE"];
+  for (const c of candidates) {
+    if (c.remaining) continue;
     for (const fb of FALLBACK_BASES) {
-      if (baseSeen.has(fb)) continue;
       for (const pack of packsToTry) {
         const key = `${c.product}|${fb}|${pack}`;
         const sku = skuByCombo.get(key);
