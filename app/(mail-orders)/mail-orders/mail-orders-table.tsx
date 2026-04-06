@@ -3,9 +3,11 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Check, Copy, ChevronDown, Pencil, Search, Lock, LockOpen } from "lucide-react";
 import { formatTime, smartTitleCase, getLineVolume, getOrderVolume, formatVolume, BATCH_COPY_LIMIT, SPLIT_VOLUME_THRESHOLD, SPLIT_LINE_THRESHOLD, SORT_DISPLAY_THRESHOLD, splitLinesByCategory, sortLinesForPicker, isOdCiFlagged, cleanSubject } from "@/lib/mail-orders/utils";
-import { searchCustomers } from "@/lib/mail-orders/api";
-import type { MoOrder, MoOrderLine, CustomerSearchResult } from "@/lib/mail-orders/types";
+import { searchCustomers, saveLineStatus } from "@/lib/mail-orders/api";
+import type { MoOrder, MoOrderLine, CustomerSearchResult, LineStatus } from "@/lib/mail-orders/types";
+import { LINE_STATUS_REASONS } from "@/lib/mail-orders/types";
 import { ResolveLinePanel } from "./resolve-line-panel";
+import { LineStatusPanel } from "./line-status-panel";
 
 // ── Column configuration ────────────────────────────────────────────────────
 
@@ -1174,6 +1176,24 @@ function ExpandRow({ order, onSplitComplete, colCount }: { order: MoOrder; onSpl
     Array<MoOrderLine & { groupLabel: string; moOrderId: number }> | null
   >(null);
   const [loadingOriginal, setLoadingOriginal] = useState(false);
+  const [activeLineId, setActiveLineId] = useState<number | null>(null);
+  const [panelHighlight, setPanelHighlight] = useState(0);
+  const [lineStatuses, setLineStatuses] = useState<Record<number, LineStatus>>({});
+  const panelActionRef = useRef<{
+    toggleFound: (found: boolean) => void;
+    selectReason: (index: number) => void;
+    save: () => void;
+  } | null>(null);
+
+  useEffect(() => {
+    const initial: Record<number, LineStatus> = {};
+    for (const line of order.lines) {
+      if (line.lineStatus) {
+        initial[line.id] = line.lineStatus;
+      }
+    }
+    setLineStatuses(initial);
+  }, [order.lines]);
 
   const shouldSort = order.lines.length > SORT_DISPLAY_THRESHOLD;
   const displayLines = shouldSort ? sortLinesForPicker(order.lines) : order.lines;
@@ -1289,6 +1309,130 @@ function ExpandRow({ order, onSplitComplete, colCount }: { order: MoOrder; onSpl
       console.error("Split error:", err);
     }
   }
+
+  const handleSaveLineStatus = useCallback(async (
+    lineId: number,
+    status: { found: boolean; reason?: string; altSkuCode?: string; altSkuDescription?: string; note?: string },
+  ) => {
+    setLineStatuses(prev => ({
+      ...prev,
+      [lineId]: {
+        found: status.found,
+        reason: status.reason ?? null,
+        altSkuCode: status.altSkuCode ?? null,
+        altSkuDescription: status.altSkuDescription ?? null,
+        note: status.note ?? null,
+      },
+    }));
+    setActiveLineId(null);
+    try {
+      await saveLineStatus(lineId, status);
+    } catch {
+      setLineStatuses(prev => {
+        const next = { ...prev };
+        const original = order.lines.find(l => l.id === lineId)?.lineStatus;
+        if (original) next[lineId] = original;
+        else delete next[lineId];
+        return next;
+      });
+    }
+  }, [order.lines]);
+
+  const handleQuickToggle = useCallback(async (lineId: number) => {
+    const current = lineStatuses[lineId];
+    const newFound = current ? !current.found : false;
+    setLineStatuses(prev => ({
+      ...prev,
+      [lineId]: {
+        found: newFound,
+        reason: newFound ? null : (current?.reason ?? "out_of_stock"),
+        altSkuCode: newFound ? null : (current?.altSkuCode ?? null),
+        altSkuDescription: newFound ? null : (current?.altSkuDescription ?? null),
+        note: newFound ? null : (current?.note ?? null),
+      },
+    }));
+    try {
+      await saveLineStatus(lineId, {
+        found: newFound,
+        reason: newFound ? undefined : (current?.reason ?? "out_of_stock"),
+        altSkuCode: newFound ? undefined : (current?.altSkuCode ?? undefined),
+        altSkuDescription: newFound ? undefined : (current?.altSkuDescription ?? undefined),
+        note: newFound ? undefined : (current?.note ?? undefined),
+      });
+    } catch {
+      setLineStatuses(prev => {
+        if (current) return { ...prev, [lineId]: current };
+        const next = { ...prev };
+        delete next[lineId];
+        return next;
+      });
+    }
+  }, [lineStatuses]);
+
+  // ── Panel keyboard handler (capture phase) ──────────────────────────────────
+  useEffect(() => {
+    if (activeLineId === null) return;
+
+    const capturedLineId = activeLineId;
+    function onKeyDown(e: KeyboardEvent) {
+      const tag = (document.activeElement?.tagName ?? "").toUpperCase();
+      const isInInput = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        if (capturedLineId !== null && capturedLineId > 0) {
+          const idx = order.lines.findIndex(l => l.id === capturedLineId);
+          if (idx >= 0) setPanelHighlight(idx);
+          setActiveLineId(-1);
+        } else {
+          setActiveLineId(null);
+        }
+        return;
+      }
+
+      if (isInInput) return;
+      e.stopPropagation();
+
+      if (capturedLineId === -1) {
+        const lines = order.lines;
+        if (e.key === "ArrowUp") { e.preventDefault(); setPanelHighlight(p => Math.max(0, p - 1)); }
+        else if (e.key === "ArrowDown") { e.preventDefault(); setPanelHighlight(p => Math.min(lines.length - 1, p + 1)); }
+        else if (e.key === "-" || e.key === "0") {
+          e.preventDefault();
+          const line = lines[panelHighlight];
+          if (line) { const s = lineStatuses[line.id]; if (!s || s.found) handleQuickToggle(line.id); }
+        }
+        else if (e.key === "+" || e.key === "=") {
+          e.preventDefault();
+          const line = lines[panelHighlight];
+          if (line) { const s = lineStatuses[line.id]; if (s && !s.found) handleQuickToggle(line.id); }
+        }
+        else if (e.key === "Enter") {
+          e.preventDefault();
+          const line = lines[panelHighlight];
+          if (line) setActiveLineId(line.id);
+        }
+      } else {
+        const ref = panelActionRef.current;
+        if (!ref) return;
+        if (e.key === "-" || e.key === "0") { e.preventDefault(); ref.toggleFound(false); }
+        else if (e.key === "+" || e.key === "=") { e.preventDefault(); ref.toggleFound(true); }
+        else if (e.key >= "1" && e.key <= "5") { e.preventDefault(); ref.selectReason(parseInt(e.key) - 1); }
+        else if (e.key === "Enter") { e.preventDefault(); ref.save(); }
+      }
+    }
+
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => document.removeEventListener("keydown", onKeyDown, true);
+  }, [activeLineId, panelHighlight, order.lines, lineStatuses, handleQuickToggle]);
+
+  // ── Scroll panel highlight into view ────────────────────────────────────────
+  useEffect(() => {
+    if (activeLineId !== -1) return;
+    const el = document.querySelector(`[data-sku-panel-idx="table-${panelHighlight}"]`);
+    el?.scrollIntoView({ block: "nearest" });
+  }, [activeLineId, panelHighlight]);
 
   return (
     <tr>
@@ -1473,7 +1617,29 @@ function ExpandRow({ order, onSplitComplete, colCount }: { order: MoOrder; onSpl
                   </td>
                   <td className={`px-3.5 align-middle text-center ${unmatchedBg ?? ""}`}>
                     {isMatched ? (
-                      <span className="text-green-600 font-semibold text-[13px]">✓</span>
+                      <div className="flex items-center justify-center gap-1">
+                        <span className="text-green-600 font-semibold text-[13px]">{"\u2713"}</span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const lineIdx = order.lines.findIndex(l => l.id === line.id);
+                            if (lineIdx >= 0) setPanelHighlight(lineIdx);
+                            setActiveLineId(-1);
+                          }}
+                          className={`w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold transition-colors ${
+                            lineStatuses[line.id]?.found === false
+                              ? "bg-red-100 text-red-600 hover:bg-red-200"
+                              : "bg-gray-100 text-gray-400 hover:bg-gray-200"
+                          }`}
+                          title={
+                            lineStatuses[line.id]?.found === false
+                              ? `Not found: ${lineStatuses[line.id]?.reason ?? "unknown"}`
+                              : "Mark line status"
+                          }
+                        >
+                          {lineStatuses[line.id]?.found === false ? "\u2715" : "\u00b7"}
+                        </button>
+                      </div>
                     ) : (
                       <button
                         onClick={(e) => {
@@ -1482,7 +1648,7 @@ function ExpandRow({ order, onSplitComplete, colCount }: { order: MoOrder; onSpl
                         }}
                         className="text-[10px] font-semibold text-amber-600 border border-amber-300 rounded px-1.5 py-0.5 bg-white hover:bg-amber-50 transition-colors"
                       >
-                        ⚠ Fix
+                        {"\u26A0"} Fix
                       </button>
                     )}
                   </td>
@@ -1557,6 +1723,179 @@ function ExpandRow({ order, onSplitComplete, colCount }: { order: MoOrder; onSpl
             </div>
           </div>
         </div>
+
+        {/* SKU status summary row */}
+        <div
+          className="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors"
+          style={{ borderTop: "1px solid #ebebeb" }}
+          onClick={() => { setPanelHighlight(0); setActiveLineId(-1); }}
+        >
+          <div className="flex items-center gap-2">
+            {(() => {
+              const nfCount = order.lines.filter(l => {
+                const s = lineStatuses[l.id];
+                return s && !s.found;
+              }).length;
+              return (
+                <>
+                  {nfCount > 0 ? (
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#f59e0b" strokeWidth="2"><path d="M8 2 L14 13 H2Z"/></svg>
+                  ) : (
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#22c55e" strokeWidth="2.5"><polyline points="3 8 6.5 11.5 13 5"/></svg>
+                  )}
+                  <span className="text-[11px] text-gray-600 font-medium">
+                    {order.totalLines} SKU lines
+                  </span>
+                  {nfCount > 0 && (
+                    <>
+                      <span className="text-gray-300">{"\u00b7"}</span>
+                      <span className="text-[11px] text-red-500 font-medium">{nfCount} not found</span>
+                    </>
+                  )}
+                </>
+              );
+            })()}
+          </div>
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#d1d5db" strokeWidth="2">
+            <polyline points="6 4 10 8 6 12"/>
+          </svg>
+        </div>
+
+        {/* ── SKU list panel ────────────────────────────────────── */}
+        {activeLineId === -1 && (
+          <div className="fixed inset-0 z-50 flex">
+            <div className="flex-1 bg-black/10" onClick={() => setActiveLineId(null)} />
+            <div className="w-[360px] bg-white border-l border-gray-200 h-full overflow-y-auto">
+              <div className="p-4">
+                <div className="flex items-center justify-between mb-4">
+                  <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wide">
+                    SKU lines ({order.lines.length})
+                  </p>
+                  <button
+                    onClick={() => setActiveLineId(null)}
+                    className="w-6 h-6 rounded-md bg-gray-100 text-gray-500 hover:bg-gray-200 flex items-center justify-center text-sm"
+                  >
+                    {"\u00d7"}
+                  </button>
+                </div>
+
+                {order.lines.map((line, idx) => {
+                  const status = lineStatuses[line.id];
+                  const isNF = status && !status.found;
+                  const reasonObj = isNF && status.reason
+                    ? LINE_STATUS_REASONS.find(r => r.value === status.reason)
+                    : null;
+
+                  return (
+                    <div
+                      key={line.id}
+                      data-sku-panel-idx={`table-${idx}`}
+                      className={`flex items-center gap-2 py-2.5 px-2 rounded-lg mb-1 cursor-pointer transition-colors ${
+                        idx === panelHighlight
+                          ? "bg-teal-50 ring-1 ring-teal-200"
+                          : isNF ? "bg-red-50 hover:bg-red-100" : "hover:bg-gray-50"
+                      }`}
+                    >
+                      {/* Toggle */}
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); handleQuickToggle(line.id); }}
+                        className={`w-7 h-4 rounded-full relative flex-shrink-0 transition-colors ${
+                          isNF ? "bg-red-500" : "bg-green-500"
+                        }`}
+                      >
+                        <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all ${
+                          isNF ? "left-0.5" : "left-[14px]"
+                        }`} />
+                      </button>
+
+                      {/* Info */}
+                      <div
+                        className="flex-1 min-w-0"
+                        onClick={() => setActiveLineId(line.id)}
+                      >
+                        <p className={`text-xs font-medium truncate ${
+                          isNF ? "line-through text-gray-400" : "text-gray-800"
+                        }`}>
+                          {line.rawText}
+                        </p>
+                        <div className="flex items-center gap-1 mt-0.5 text-[10px] text-gray-400 flex-wrap">
+                          {line.skuCode ? (
+                            <span className={`font-mono ${isNF ? "line-through" : ""}`}>{line.skuCode}</span>
+                          ) : (
+                            <span className="text-amber-500 text-[9px] font-medium">unmatched</span>
+                          )}
+                          {line.packCode && (
+                            <><span className="text-gray-300">{"\u00b7"}</span><span>{line.packCode}</span></>
+                          )}
+                          <span className="text-gray-300">{"\u00b7"}</span>
+                          <span>{"\u00d7"}{line.quantity}</span>
+                          {reasonObj && (
+                            <><span className="text-gray-300">{"\u00b7"}</span>
+                            <span className="text-[8px] font-semibold px-1 py-px rounded bg-red-50 text-red-700 border border-red-200">{reasonObj.label}</span></>
+                          )}
+                          {isNF && status?.altSkuCode && (
+                            <span className="text-[8px] font-semibold px-1 py-px rounded bg-teal-50 text-teal-700 border border-teal-200">ALT</span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Arrow to detail */}
+                      <svg
+                        onClick={() => setActiveLineId(line.id)}
+                        className="text-gray-300 flex-shrink-0 cursor-pointer hover:text-gray-500"
+                        width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"
+                      >
+                        <polyline points="6 4 10 8 6 12"/>
+                      </svg>
+                    </div>
+                  );
+                })}
+
+                {/* Summary */}
+                {(() => {
+                  const nfCount = order.lines.filter(l => {
+                    const s = lineStatuses[l.id];
+                    return s && !s.found;
+                  }).length;
+                  return (
+                    <div className="flex items-center justify-between py-2 mt-2 border-t border-gray-100 text-[11px]">
+                      <span className="text-gray-500">Lines</span>
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-green-600">
+                          {order.lines.length - nfCount} found
+                        </span>
+                        {nfCount > 0 && (
+                          <span className="font-semibold text-red-600">
+                            {nfCount} not found
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Line detail panel ─────────────────────────────────── */}
+        {activeLineId !== null && activeLineId > 0 && (() => {
+          const activeLine = order.lines.find(l => l.id === activeLineId);
+          if (!activeLine) return null;
+          const lineWithStatus = {
+            ...activeLine,
+            lineStatus: lineStatuses[activeLineId] ?? activeLine.lineStatus ?? null,
+          };
+          return (
+            <LineStatusPanel
+              line={lineWithStatus}
+              onSave={handleSaveLineStatus}
+              onCancel={() => setActiveLineId(-1)}
+              actionRef={panelActionRef}
+            />
+          );
+        })()}
       </td>
     </tr>
   );

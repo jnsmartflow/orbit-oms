@@ -166,6 +166,7 @@ export function FocusModeView({
   const [graceCountdown, setGraceCountdown] = useState(0);
   const [activeLineId, setActiveLineId] = useState<number | null>(null);
   const [lineStatuses, setLineStatuses] = useState<Record<number, LineStatus>>({});
+  const [panelHighlight, setPanelHighlight] = useState(0);
 
   // Slide animation state
   const [slideDirection, setSlideDirection] = useState<"left" | "right" | null>(null);
@@ -175,6 +176,11 @@ export function FocusModeView({
   const orderListRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   const justDoneIdRef = useRef<number | null>(null);
+  const panelActionRef = useRef<{
+    toggleFound: (found: boolean) => void;
+    selectReason: (index: number) => void;
+    save: () => void;
+  } | null>(null);
 
   const currentOrder = queue[currentIndex] ?? null;
   const pendingCount = queue.filter((o) => o.status === "pending").length;
@@ -188,6 +194,7 @@ export function FocusModeView({
     setSkuCopied(false);
     setReplyCopied(false);
     setActiveLineId(null);
+    setPanelHighlight(0);
     // Build initial line statuses from order data
     const initialStatuses: Record<number, LineStatus> = {};
     if (currentOrder) {
@@ -467,14 +474,84 @@ export function FocusModeView({
       const tag = (document.activeElement?.tagName ?? "").toUpperCase();
       const isInInput = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
 
-      // ── Line status panel open: Escape goes back ─────────────────
+      // ── SKU panel open: panel-specific shortcuts only ─────────────
       if (activeLineId !== null) {
         if (e.key === "Escape") {
           e.preventDefault();
-          setActiveLineId(activeLineId > 0 ? -1 : null);
+          if (activeLineId > 0) {
+            const idx = currentOrder?.lines.findIndex(l => l.id === activeLineId) ?? -1;
+            if (idx >= 0) setPanelHighlight(idx);
+            setActiveLineId(-1);
+          } else {
+            setActiveLineId(null);
+          }
           return;
         }
-        return; // block all other shortcuts while panel is open
+
+        if (isInInput) return;
+
+        if (activeLineId === -1) {
+          const lines = currentOrder?.lines ?? [];
+          if (e.key === "ArrowUp") {
+            e.preventDefault();
+            setPanelHighlight(p => Math.max(0, p - 1));
+            return;
+          }
+          if (e.key === "ArrowDown") {
+            e.preventDefault();
+            setPanelHighlight(p => Math.min(lines.length - 1, p + 1));
+            return;
+          }
+          if (e.key === "-" || e.key === "0") {
+            e.preventDefault();
+            const line = lines[panelHighlight];
+            if (line) {
+              const s = lineStatuses[line.id];
+              if (!s || s.found) handleQuickToggle(line.id);
+            }
+            return;
+          }
+          if (e.key === "+" || e.key === "=") {
+            e.preventDefault();
+            const line = lines[panelHighlight];
+            if (line) {
+              const s = lineStatuses[line.id];
+              if (s && !s.found) handleQuickToggle(line.id);
+            }
+            return;
+          }
+          if (e.key === "Enter") {
+            e.preventDefault();
+            const line = lines[panelHighlight];
+            if (line) setActiveLineId(line.id);
+            return;
+          }
+        } else {
+          const ref = panelActionRef.current;
+          if (!ref) { return; }
+
+          if (e.key === "-" || e.key === "0") {
+            e.preventDefault();
+            ref.toggleFound(false);
+            return;
+          }
+          if (e.key === "+" || e.key === "=") {
+            e.preventDefault();
+            ref.toggleFound(true);
+            return;
+          }
+          if (e.key >= "1" && e.key <= "5") {
+            e.preventDefault();
+            ref.selectReason(parseInt(e.key) - 1);
+            return;
+          }
+          if (e.key === "Enter") {
+            e.preventDefault();
+            ref.save();
+            return;
+          }
+        }
+        return;
       }
 
       // ── Order list open: own keyboard mode ────────────────────────
@@ -513,9 +590,9 @@ export function FocusModeView({
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [
-    showOrderList, orderListHighlight, soInput, currentOrder, currentIndex, isAnimating, activeLineId,
+    showOrderList, orderListHighlight, soInput, currentOrder, currentIndex, isAnimating, activeLineId, panelHighlight,
     goPrev, goNext, handleCopyCode, handleCopySkus, handleSoSubmit,
-    handleReplyAndNext, onFlag, jumpToNextUnmatched, goTo, queue.length, lineStatuses,
+    handleReplyAndNext, onFlag, jumpToNextUnmatched, goTo, queue.length, lineStatuses, handleQuickToggle,
   ]);
 
   // ── Scroll order list highlight into view ────────────────────────────────────
@@ -524,6 +601,13 @@ export function FocusModeView({
     const el = orderListRef.current?.querySelector(`[data-ol-idx="${orderListHighlight}"]`);
     el?.scrollIntoView({ block: "nearest" });
   }, [showOrderList, orderListHighlight]);
+
+  // ── Scroll panel highlight into view ────────────────────────────────────────
+  useEffect(() => {
+    if (activeLineId !== -1) return;
+    const el = document.querySelector(`[data-panel-idx="${panelHighlight}"]`);
+    el?.scrollIntoView({ block: "nearest" });
+  }, [activeLineId, panelHighlight]);
 
   // ── Derived state ────────────────────────────────────────────────────────────
   const isSlotComplete = totalCount > 0 && pendingCount === 0 && justDoneId === null;
@@ -986,7 +1070,7 @@ export function FocusModeView({
                 </button>
               </div>
 
-              {order.lines.map((line) => {
+              {order.lines.map((line, idx) => {
                 const status = lineStatuses[line.id];
                 const isNF = status && !status.found;
                 const reasonObj = isNF && status.reason
@@ -996,8 +1080,11 @@ export function FocusModeView({
                 return (
                   <div
                     key={line.id}
+                    data-panel-idx={idx}
                     className={`flex items-center gap-2 py-2.5 px-2 rounded-lg mb-1 cursor-pointer transition-colors ${
-                      isNF ? "bg-red-50 hover:bg-red-100" : "hover:bg-gray-50"
+                      idx === panelHighlight
+                        ? "bg-teal-50 ring-1 ring-teal-200"
+                        : isNF ? "bg-red-50 hover:bg-red-100" : "hover:bg-gray-50"
                     }`}
                   >
                     {/* Toggle */}
@@ -1088,6 +1175,7 @@ export function FocusModeView({
             line={lineWithStatus}
             onSave={handleSaveLineStatus}
             onCancel={() => setActiveLineId(-1)}
+            actionRef={panelActionRef}
           />
         );
       })()}

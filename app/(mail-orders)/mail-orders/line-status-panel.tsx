@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { Loader2 } from "lucide-react";
 import { searchSkus } from "@/lib/mail-orders/api";
 import type { MoOrderLine } from "@/lib/mail-orders/types";
@@ -16,6 +16,11 @@ interface LineStatusPanelProps {
     note?: string;
   }) => void;
   onCancel: () => void;
+  actionRef?: React.MutableRefObject<{
+    toggleFound: (found: boolean) => void;
+    selectReason: (index: number) => void;
+    save: () => void;
+  } | null>;
 }
 
 interface SkuResult {
@@ -25,7 +30,7 @@ interface SkuResult {
   packMatch: boolean;
 }
 
-export function LineStatusPanel({ line, onSave, onCancel }: LineStatusPanelProps) {
+export function LineStatusPanel({ line, onSave, onCancel, actionRef }: LineStatusPanelProps) {
   const ls = line.lineStatus;
   const initialFound = ls?.found ?? true;
   const [found, setFound] = useState(initialFound);
@@ -39,17 +44,34 @@ export function LineStatusPanel({ line, onSave, onCancel }: LineStatusPanelProps
   const [searching, setSearching] = useState(false);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Esc to close
+  // Expose internal actions via ref for parent keyboard control
   useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") {
-        e.stopPropagation();
-        onCancel();
-      }
-    }
-    document.addEventListener("keydown", onKey, true);
-    return () => document.removeEventListener("keydown", onKey, true);
-  }, [onCancel]);
+    if (!actionRef) return;
+    actionRef.current = {
+      toggleFound: (f: boolean) => setFound(f),
+      selectReason: (idx: number) => {
+        if (found) return;
+        if (idx >= 0 && idx < LINE_STATUS_REASONS.length) {
+          const val = LINE_STATUS_REASONS[idx].value;
+          setReason(prev => prev === val ? null : val);
+        }
+      },
+      save: () => {
+        onSave(line.id, {
+          found,
+          ...(found ? {} : {
+            reason: reason ?? undefined,
+            altSkuCode: altSkuCode ?? undefined,
+            altSkuDescription: altSkuDescription ?? undefined,
+            note: note.trim() || undefined,
+          }),
+        });
+      },
+    };
+    return () => {
+      if (actionRef) actionRef.current = null;
+    };
+  });
 
   // Debounced SKU search
   useEffect(() => {
