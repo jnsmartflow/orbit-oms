@@ -103,3 +103,15 @@ export async function searchSkus(
   const data = await res.json();
   return data.skus;
 }
+
+export async function toggleLock(
+  orderId: number,
+  isLocked: boolean,
+): Promise<void> {
+  const res = await fetch(`/api/mail-orders/${orderId}/lock`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ isLocked }),
+  });
+  if (!res.ok) throw new Error("Failed to toggle lock");
+}

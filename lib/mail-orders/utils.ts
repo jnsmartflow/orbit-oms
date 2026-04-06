@@ -658,60 +658,69 @@ export function buildReplyTemplate(
     flags: string[];
   }[],
   senderName: string = "Deepanshu",
+  companyLine: string = "JSW Dulux Ltd \u2014 Surat Depot",
 ): string {
-  // Extract SO first name
-  let cleanName = soName.replace(/^\([^)]*\)\s*/, "");
-  const firstName = smartTitleCase(cleanName.split(/\s+/)[0] || cleanName);
-
-  // Format a single order line
-  const formatLine = (o: typeof orders[number]): string => {
-    let line = o.customerName;
-    if (o.customerCode) line += ` (${o.customerCode})`;
-    if (o.area) line += ` — ${smartTitleCase(o.area)}`;
-    line += ` — SO ${o.soNumber}`;
-    if (o.flags.length > 0) line += ` — ${o.flags.join(", ")} (Hold)`;
-    return line;
-  };
+  // Full SO name (strip JSW prefix)
+  const fullName = smartTitleCase(soName.replace(/^\([^)]*\)\s*/, "").trim());
 
   const clean = orders.filter(o => o.flags.length === 0);
   const flagged = orders.filter(o => o.flags.length > 0);
 
   const lines: string[] = [];
-  lines.push(`Dear ${firstName},`);
+  lines.push(`Dear ${fullName},`);
   lines.push("");
 
   if (orders.length === 1) {
-    // Single order
-    lines.push("Order processed:");
+    // Single order — detail card format
+    const o = orders[0];
+    lines.push("Following order has been processed:");
     lines.push("");
-    lines.push(formatLine(orders[0]));
+    lines.push(`  Customer  :  ${o.customerName}`);
+    if (o.customerCode) lines.push(`  Code      :  ${o.customerCode}`);
+    if (o.area) lines.push(`  Area      :  ${smartTitleCase(o.area)}`);
+    lines.push(`  SO No.    :  ${o.soNumber}`);
+    if (o.flags.length > 0) {
+      lines.push(`  Status    :  ${o.flags.join(", ")} (Hold)`);
+    }
     lines.push("");
     if (flagged.length > 0) {
       lines.push("Please arrange clearance at earliest.");
       lines.push("");
     }
   } else {
-    // Multi order
-    lines.push("Orders processed:");
+    // Multi order — numbered list
+    lines.push("Following orders have been processed:");
     lines.push("");
 
     let num = 0;
     for (const o of clean) {
       num++;
-      lines.push(`${num}. ${formatLine(o)}`);
+      let first = `  ${num}. ${o.customerName}`;
+      if (o.customerCode) first += ` (${o.customerCode})`;
+      lines.push(first);
+      const secondParts: string[] = [];
+      if (o.area) secondParts.push(smartTitleCase(o.area));
+      secondParts.push(`SO ${o.soNumber}`);
+      lines.push(`     ${secondParts.join(" \u00b7 ")}`);
+      lines.push("");
     }
 
     if (flagged.length > 0) {
-      lines.push("");
-      lines.push("\u26A0 Action required:");
+      lines.push("Action required:");
       lines.push("");
       for (const o of flagged) {
         num++;
-        lines.push(`${num}. ${formatLine(o)}`);
+        let first = `  ${num}. ${o.customerName}`;
+        if (o.customerCode) first += ` (${o.customerCode})`;
+        lines.push(first);
+        const secondParts: string[] = [];
+        if (o.area) secondParts.push(smartTitleCase(o.area));
+        secondParts.push(`SO ${o.soNumber} \u2014 ${o.flags.join(", ")} (Hold)`);
+        lines.push(`     ${secondParts.join(" \u00b7 ")}`);
+        lines.push("");
       }
     }
 
-    lines.push("");
     if (flagged.length > 0) {
       lines.push(`Total: ${orders.length} orders (${flagged.length} on hold)`);
     } else {
@@ -722,6 +731,7 @@ export function buildReplyTemplate(
 
   lines.push("Regards,");
   lines.push(senderName);
+  lines.push(companyLine);
 
   return lines.join("\n");
 }

@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
-import { Users, X, Copy, Check } from "lucide-react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { Users, X, Check } from "lucide-react";
 import type { MoOrder } from "@/lib/mail-orders/types";
 import {
   smartTitleCase,
@@ -41,7 +41,13 @@ export function SoSummaryPanel({ orders, open, onClose }: SoSummaryPanelProps) {
   const [soFilter, setSoFilter] = useState("");
   const [checked, setChecked] = useState<Map<number, boolean>>(new Map());
   const [preview, setPreview] = useState<PreviewState | null>(null);
-  const [copyState, setCopyState] = useState<"idle" | "copied">("idle");
+  const [copiedGroup, setCopiedGroup] = useState<{
+    soName: string;
+    type: "reply" | "so-nos";
+  } | null>(null);
+  const [focusedGroupIndex, setFocusedGroupIndex] = useState<number>(-1);
+
+  const filterInputRef = useRef<HTMLInputElement>(null);
 
   // ── Group orders by SO name ──────────────────────────────────────────────
 
@@ -55,7 +61,6 @@ export function SoSummaryPanel({ orders, open, onClose }: SoSummaryPanelProps) {
 
     const groups: SoGroup[] = [];
     for (const [, groupOrders] of Array.from(map.entries())) {
-      // Sort: punched first, then by receivedAt asc
       const sorted = [...groupOrders].sort((a, b) => {
         if (a.status !== b.status) return a.status === "punched" ? -1 : 1;
         return new Date(a.receivedAt).getTime() - new Date(b.receivedAt).getTime();
@@ -98,19 +103,28 @@ export function SoSummaryPanel({ orders, open, onClose }: SoSummaryPanelProps) {
     setChecked(init);
     setSoFilter("");
     setPreview(null);
-    setCopyState("idle");
+    setCopiedGroup(null);
   }, [open, orders]);
 
-  // ── Escape key ───────────────────────────────────────────────────────────
+  // ── Auto-focus filter on open ───────────────────────────────────────────
 
   useEffect(() => {
-    if (!open) return;
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
+    if (open) {
+      setFocusedGroupIndex(-1);
+      setTimeout(() => filterInputRef.current?.focus(), 100);
     }
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  }, [open]);
+
+  // ── Scroll focused group into view ──────────────────────────────────────
+
+  useEffect(() => {
+    if (focusedGroupIndex >= 0) {
+      const el = document.querySelector(
+        `[data-so-group-index="${focusedGroupIndex}"]`,
+      );
+      el?.scrollIntoView({ block: "nearest" });
+    }
+  }, [focusedGroupIndex]);
 
   // ── Checkbox helpers ─────────────────────────────────────────────────────
 
@@ -145,23 +159,33 @@ export function SoSummaryPanel({ orders, open, onClose }: SoSummaryPanelProps) {
     return name + (order.splitLabel ? ` (${order.splitLabel})` : "");
   }, []);
 
-  // ── Copy handlers ───────────────────────────────────────────────────────
+  // ── Get checked orders for a group ──────────────────────────────────────
+
+  const getCheckedOrders = useCallback((group: SoGroup) => {
+    return group.orders.filter(o => checked.get(o.id) && o.soNumber);
+  }, [checked]);
+
+  // ── Copy handlers (one-click: copy immediately + show preview) ──────────
 
   const handleCopySoNos = useCallback((group: SoGroup) => {
-    const soNos = group.orders
-      .filter(o => checked.get(o.id) && o.soNumber)
-      .map(o => o.soNumber!);
+    const selectedOrders = getCheckedOrders(group);
+    if (selectedOrders.length === 0) return;
+    const soNos = selectedOrders.map(o => o.soNumber!);
     const text = soNos.join("\n");
+
+    navigator.clipboard.writeText(text);
     setPreview({
-      title: `SO Numbers \u2014 ${group.displayName}`,
+      title: `SO Numbers Copied \u2014 ${group.displayName}`,
       subtitle: `${soNos.length} selected`,
       content: text,
     });
-    setCopyState("idle");
-  }, [checked]);
+    setCopiedGroup({ soName: group.soName, type: "so-nos" });
+    setTimeout(() => setCopiedGroup(null), 1500);
+  }, [getCheckedOrders]);
 
   const handleCopyReply = useCallback((group: SoGroup) => {
-    const selectedOrders = group.orders.filter(o => checked.get(o.id) && o.soNumber);
+    const selectedOrders = getCheckedOrders(group);
+    if (selectedOrders.length === 0) return;
     const orderData = selectedOrders.map(o => ({
       customerName: orderDisplayName(o),
       customerCode: o.customerCode ?? null,
@@ -170,20 +194,96 @@ export function SoSummaryPanel({ orders, open, onClose }: SoSummaryPanelProps) {
       flags: getOrderFlags(o),
     }));
     const template = buildReplyTemplate(group.soName, orderData);
+
+    navigator.clipboard.writeText(template);
     setPreview({
-      title: `Reply Preview \u2014 ${group.displayName}`,
+      title: `Reply Copied \u2014 ${group.displayName}`,
       subtitle: `${selectedOrders.length} selected`,
       content: template,
     });
-    setCopyState("idle");
-  }, [checked, orderDisplayName]);
+    setCopiedGroup({ soName: group.soName, type: "reply" });
+    setTimeout(() => setCopiedGroup(null), 1500);
+  }, [getCheckedOrders, orderDisplayName]);
 
-  const handleCopyPreview = useCallback(() => {
-    if (!preview) return;
-    navigator.clipboard.writeText(preview.content);
-    setCopyState("copied");
-    setTimeout(() => setCopyState("idle"), 1500);
-  }, [preview]);
+  // ── Keyboard navigation ─────────────────────────────────────────────────
+
+  useEffect(() => {
+    if (!open) return;
+
+    function handleKeyDown(e: KeyboardEvent) {
+      const tag = (document.activeElement?.tagName ?? "").toUpperCase();
+      const inInput = tag === "INPUT";
+
+      // Esc
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        if (inInput) {
+          (document.activeElement as HTMLElement)?.blur();
+          return;
+        }
+        onClose();
+        return;
+      }
+
+      // When in filter input
+      if (inInput) {
+        if (e.key === "ArrowDown" || e.key === "Enter") {
+          e.preventDefault();
+          e.stopPropagation();
+          (document.activeElement as HTMLElement)?.blur();
+          setFocusedGroupIndex(0);
+        }
+        return;
+      }
+
+      // Arrow Down — next group
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        e.stopPropagation();
+        setFocusedGroupIndex(prev =>
+          Math.min(prev + 1, filteredGroups.length - 1),
+        );
+        return;
+      }
+
+      // Arrow Up — previous group or back to filter
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        e.stopPropagation();
+        setFocusedGroupIndex(prev => {
+          if (prev <= 0) {
+            setTimeout(() => filterInputRef.current?.focus(), 0);
+            return -1;
+          }
+          return prev - 1;
+        });
+        return;
+      }
+
+      // W — copy SO numbers for focused group
+      if (e.key === "w" || e.key === "W") {
+        e.preventDefault();
+        e.stopPropagation();
+        if (focusedGroupIndex >= 0 && focusedGroupIndex < filteredGroups.length) {
+          handleCopySoNos(filteredGroups[focusedGroupIndex]);
+        }
+        return;
+      }
+
+      // R — copy reply for focused group
+      if (e.key === "r" || e.key === "R") {
+        e.preventDefault();
+        e.stopPropagation();
+        if (focusedGroupIndex >= 0 && focusedGroupIndex < filteredGroups.length) {
+          handleCopyReply(filteredGroups[focusedGroupIndex]);
+        }
+        return;
+      }
+    }
+
+    document.addEventListener("keydown", handleKeyDown, true);
+    return () => document.removeEventListener("keydown", handleKeyDown, true);
+  }, [open, focusedGroupIndex, filteredGroups, onClose, handleCopySoNos, handleCopyReply]);
 
   // ── Render ──────────────────────────────────────────────────────────────
 
@@ -226,6 +326,7 @@ export function SoSummaryPanel({ orders, open, onClose }: SoSummaryPanelProps) {
         {/* SO filter */}
         <div className="px-4 py-2 border-b border-gray-200 shrink-0">
           <input
+            ref={filterInputRef}
             type="text"
             value={soFilter}
             onChange={e => setSoFilter(e.target.value)}
@@ -240,15 +341,25 @@ export function SoSummaryPanel({ orders, open, onClose }: SoSummaryPanelProps) {
             <p className="text-center text-gray-400 mt-8 text-[12px]">No matching SOs</p>
           )}
 
-          {filteredGroups.map(group => {
+          {filteredGroups.map((group, groupIndex) => {
+            const checkedCount = group.orders.filter(o => checked.get(o.id)).length;
             const punchedWithSo = group.orders.filter(o => o.status === "punched" && !!o.soNumber);
             const allGroupChecked = punchedWithSo.length > 0 && punchedWithSo.every(o => checked.get(o.id));
-            const checkedCount = group.orders.filter(o => checked.get(o.id)).length;
+            const isFocused = focusedGroupIndex === groupIndex;
+            const isSoNosCopied = copiedGroup?.soName === group.soName && copiedGroup?.type === "so-nos";
+            const isReplyCopied = copiedGroup?.soName === group.soName && copiedGroup?.type === "reply";
 
             return (
               <div key={group.soName} className="border-b border-gray-100">
                 {/* Group header */}
-                <div className="sticky top-0 z-10 bg-white flex items-center justify-between px-4 py-2.5 border-b border-gray-100">
+                <div
+                  data-so-group-index={groupIndex}
+                  className={`sticky top-0 z-10 flex items-center justify-between px-4 py-2.5 border-b border-gray-100 ${
+                    isFocused
+                      ? "ring-2 ring-teal-500/30 bg-teal-50/20"
+                      : "bg-white"
+                  }`}
+                >
                   <div className="flex items-center gap-2.5 min-w-0">
                     <input
                       type="checkbox"
@@ -267,16 +378,24 @@ export function SoSummaryPanel({ orders, open, onClose }: SoSummaryPanelProps) {
                     <button
                       onClick={() => handleCopySoNos(group)}
                       disabled={checkedCount === 0}
-                      className="text-[10px] font-medium px-2 py-1 rounded border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                      className={`text-[10px] font-medium px-2 py-1 rounded border transition-colors ${
+                        isSoNosCopied
+                          ? "bg-green-600 border-green-600 text-white"
+                          : "border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                      }`}
                     >
-                      SO Nos.
+                      {isSoNosCopied ? "Copied \u2713" : "SO Nos."}
                     </button>
                     <button
                       onClick={() => handleCopyReply(group)}
                       disabled={checkedCount === 0}
-                      className="text-[10px] font-medium px-2 py-1 rounded bg-teal-600 text-white hover:bg-teal-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                      className={`text-[10px] font-medium px-2 py-1 rounded transition-colors ${
+                        isReplyCopied
+                          ? "bg-green-600 text-white"
+                          : "bg-teal-600 text-white hover:bg-teal-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                      }`}
                     >
-                      Reply
+                      {isReplyCopied ? "Copied \u2713" : "Reply"}
                     </button>
                   </div>
                 </div>
@@ -354,7 +473,7 @@ export function SoSummaryPanel({ orders, open, onClose }: SoSummaryPanelProps) {
           })}
         </div>
 
-        {/* Template preview */}
+        {/* Template preview (read-only confirmation) */}
         {preview && (
           <div className="border-t border-gray-200 shrink-0">
             <div className="flex items-center justify-between px-4 py-2 bg-gray-50">
@@ -362,22 +481,7 @@ export function SoSummaryPanel({ orders, open, onClose }: SoSummaryPanelProps) {
                 <span className="text-[11px] font-medium text-gray-700">{preview.title}</span>
                 <span className="text-[10px] text-gray-400 ml-2">{preview.subtitle}</span>
               </div>
-              <button
-                onClick={handleCopyPreview}
-                className="inline-flex items-center gap-1 text-[10px] font-medium px-2.5 py-1 rounded bg-teal-600 text-white hover:bg-teal-700 transition-colors"
-              >
-                {copyState === "copied" ? (
-                  <>
-                    <Check size={10} />
-                    Copied
-                  </>
-                ) : (
-                  <>
-                    <Copy size={10} />
-                    Copy
-                  </>
-                )}
-              </button>
+              <Check size={13} className="text-green-500" />
             </div>
             <div className="px-4 py-3">
               <pre className="font-mono text-[11px] text-gray-600 bg-gray-50 border border-gray-200 rounded p-3 max-h-[200px] overflow-y-auto whitespace-pre-wrap">

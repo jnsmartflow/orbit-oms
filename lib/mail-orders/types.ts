@@ -50,6 +50,7 @@ export interface MoOrder {
   customerRoute?: string | null;
   splitFromId?: number | null;
   splitLabel?: string | null;
+  isLocked?: boolean;
   status: OrderStatus;
   punchedById: number | null;
   punchedAt: string | null;

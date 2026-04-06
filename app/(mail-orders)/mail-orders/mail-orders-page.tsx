@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
-import { fetchMailOrders, punchOrder, saveSoNumber, saveCustomer, getTodayIST } from "@/lib/mail-orders/api";
+import { fetchMailOrders, punchOrder, saveSoNumber, saveCustomer, getTodayIST, toggleLock } from "@/lib/mail-orders/api";
 import { getSlotFromTime, groupOrdersBySlot, buildClipboardText, buildBatchClipboardText, BATCH_COPY_LIMIT, buildReplyTemplate, getOrderFlags, smartTitleCase, cleanSubject, isOdCiFlagged, getOrderVolume } from "@/lib/mail-orders/utils";
 import type { MoOrder, MoOrderLine } from "@/lib/mail-orders/types";
 import { MailOrdersTable, ALL_COLUMNS } from "./mail-orders-table";
@@ -122,7 +122,10 @@ export default function MailOrdersPage() {
   const [activeSlot, setActiveSlot] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [headerFilters, setHeaderFilters] = useState<Record<string, string[]>>({ status: [], matchStatus: [], dispatch: [], priority: [], lock: [] });
-  const [flaggedIds, setFlaggedIds] = useState<Set<number>>(new Set());
+  const flaggedIds = useMemo(
+    () => new Set(orders.filter(o => o.isLocked).map(o => o.id)),
+    [orders],
+  );
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const [copiedCodeId, setCopiedCodeId] = useState<number | null>(null);
@@ -174,9 +177,20 @@ export default function MailOrdersPage() {
     setLoading(true);
     setOrders([]);
     loadOrders();
-    const interval = setInterval(loadOrders, error ? 30_000 : 60_000);
-    return () => clearInterval(interval);
-  }, [loadOrders, error]);
+    const interval = setInterval(loadOrders, 30_000);
+
+    function handleVisibility() {
+      if (document.visibilityState === "visible") {
+        loadOrders();
+      }
+    }
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [loadOrders]);
 
   // ── Derived stats ────────────────────────────────────────────────────────────
   const totalOrders = orders.length;
@@ -241,8 +255,8 @@ export default function MailOrdersPage() {
     const lockArr = headerFilters.lock ?? [];
     if (lockArr.length > 0) {
       result = result.filter((o) => {
-        const isLocked = isOdCiFlagged(o) || flaggedIds.has(o.id);
-        const val = isLocked ? "locked" : "unlocked";
+        const locked = isOdCiFlagged(o) || !!o.isLocked;
+        const val = locked ? "locked" : "unlocked";
         return lockArr.includes(val);
       });
     }
@@ -288,7 +302,7 @@ export default function MailOrdersPage() {
     }
 
     return result;
-  }, [orders, headerFilters, searchQuery, activeSlot, flaggedIds]);
+  }, [orders, headerFilters, searchQuery, activeSlot]);
 
   const groupedOrders = useMemo(() => groupOrdersBySlot(filteredOrders), [filteredOrders]);
 
@@ -312,16 +326,26 @@ export default function MailOrdersPage() {
 
   // ── Handlers ─────────────────────────────────────────────────────────────────
   const handleFlag = useCallback(
-    (id: number) => {
-      setFlaggedIds((prev) => {
-        const next = new Set(prev);
-        if (next.has(id)) next.delete(id);
-        else next.add(id);
-        return next;
-      });
+    async (id: number) => {
+      const order = orders.find(o => o.id === id);
+      if (!order) return;
+      const newLocked = !order.isLocked;
+
+      // Optimistic update
+      setOrders(prev =>
+        prev.map(o => o.id === id ? { ...o, isLocked: newLocked } : o),
+      );
+
       if (expandedId === id) setExpandedId(null);
+
+      try {
+        await toggleLock(id, newLocked);
+      } catch {
+        const data = await fetchMailOrders(selectedDate);
+        setOrders(data.orders);
+      }
     },
-    [expandedId],
+    [orders, expandedId, selectedDate],
   );
 
   const handleExpand = useCallback((id: number | null) => {
@@ -665,7 +689,7 @@ export default function MailOrdersPage() {
         title="Mail Orders"
         stats={[
           { label: "orders", value: totalOrders },
-          { label: "L", value: totalVolume },
+          { label: "L vol", value: totalVolume },
           { label: "punched", value: punchedOrders },
           { label: "pending", value: totalOrders - punchedOrders },
           ...(statsUrgentCount > 0 ? [{ label: "urgent", value: statsUrgentCount }] : []),

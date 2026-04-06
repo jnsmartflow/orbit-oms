@@ -1000,6 +1000,7 @@ model mo_orders {
   matchedLines     Int       @default(0)
   splitFromId      Int?
   splitLabel       String?
+  isLocked         Boolean   @default(false)
   createdAt        DateTime  @default(now())
   lines            mo_order_lines[]
   remarks_list     mo_order_remarks[]
