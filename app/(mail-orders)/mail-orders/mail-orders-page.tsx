@@ -8,6 +8,7 @@ import { MailOrdersTable, ALL_COLUMNS } from "./mail-orders-table";
 import type { ColumnConfig } from "./mail-orders-table";
 import { UniversalHeader } from "@/components/universal-header";
 import { SoSummaryPanel } from "./so-summary-panel";
+import { SlotCompletionModal } from "./slot-completion-modal";
 import { Check, Users } from "lucide-react";
 
 // ── Column Picker ──────────────────────────────────────────────────────────
@@ -136,6 +137,10 @@ export default function MailOrdersPage() {
   const [openCodePopoverId, setOpenCodePopoverId] = useState<number | null>(null);
   const [batchStates, setBatchStates] = useState<Record<number, number>>({});
   const [soSummaryOpen, setSoSummaryOpen] = useState(false);
+  const [punchedVisible, setPunchedVisible] = useState(false);
+  const [autoComplete, setAutoComplete] = useState(true);
+  const [dismissedSlots, setDismissedSlots] = useState<Set<string>>(new Set());
+  const [completedSlot, setCompletedSlot] = useState<string | null>(null);
   const [visibleColumns, setVisibleColumns] = useState<Set<string>>(() => {
     if (typeof window === "undefined") {
       return new Set(ALL_COLUMNS.map(c => c.key));
@@ -167,6 +172,21 @@ export default function MailOrdersPage() {
       const data = await fetchMailOrders(selectedDate);
       setOrders(data.orders);
       setError(false);
+      // Re-enable dismissed slots if new unpunched orders arrived
+      setDismissedSlots(prev => {
+        const next = new Set(prev);
+        let changed = false;
+        for (const slot of Array.from(prev)) {
+          const slotOrders = data.orders.filter(
+            (o: MoOrder) => getSlotFromTime(o.receivedAt) === slot
+          );
+          if (slotOrders.some((o: MoOrder) => o.status !== "punched")) {
+            next.delete(slot);
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
     } catch {
       setError(true);
     } finally {
@@ -192,6 +212,45 @@ export default function MailOrdersPage() {
       document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, [loadOrders]);
+
+  // ── Slot completion detection ───────────────────────────────────────────────
+  useEffect(() => {
+    if (!autoComplete) return;
+    if (orders.length === 0) return;
+
+    const slots = ["Morning", "Afternoon", "Evening", "Night"];
+    for (const slot of slots) {
+      if (dismissedSlots.has(slot)) continue;
+      if (completedSlot) continue;
+
+      const slotOrders = orders.filter(
+        o => getSlotFromTime(o.receivedAt) === slot
+      );
+      if (slotOrders.length === 0) continue;
+
+      if (slotOrders.every(o => o.status === "punched")) {
+        setCompletedSlot(slot);
+        break;
+      }
+    }
+  }, [orders, autoComplete, dismissedSlots, completedSlot]);
+
+  // Reset dismissed slots on date change
+  useEffect(() => {
+    setDismissedSlots(new Set());
+    setCompletedSlot(null);
+  }, [selectedDate]);
+
+  const handleDismissCompletion = useCallback(() => {
+    if (completedSlot) {
+      setDismissedSlots(prev => {
+        const next = new Set(prev);
+        next.add(completedSlot);
+        return next;
+      });
+      setCompletedSlot(null);
+    }
+  }, [completedSlot]);
 
   // ── Derived stats ────────────────────────────────────────────────────────────
   const totalOrders = orders.length;
@@ -477,6 +536,10 @@ export default function MailOrdersPage() {
     function onKeyDown(e: KeyboardEvent) {
       // Esc — cascading close (works even when input focused)
       if (e.key === "Escape") {
+        if (completedSlot) {
+          handleDismissCompletion();
+          return;
+        }
         if (soSummaryOpen) {
           setSoSummaryOpen(false);
           return;
@@ -657,11 +720,18 @@ export default function MailOrdersPage() {
         }
         return;
       }
+
+      // T — Toggle punched visibility
+      if (key === "t" || key === "T") {
+        e.preventDefault();
+        setPunchedVisible(prev => !prev);
+        return;
+      }
     }
 
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [flatOrders, focusedId, expandedId, handleExpand, handleCopy, handleAdvanceBatch, handleFlag, batchStates, openCodePopoverId, soSummaryOpen, copiedReplyId]);
+  }, [flatOrders, focusedId, expandedId, handleExpand, handleCopy, handleAdvanceBatch, handleFlag, batchStates, openCodePopoverId, soSummaryOpen, copiedReplyId, completedSlot, handleDismissCompletion]);
 
   // ── Auto-scroll focused row into view ───────────────────────────────────────
   useEffect(() => {
@@ -703,12 +773,8 @@ export default function MailOrdersPage() {
         title="Mail Orders"
         stats={[
           { label: "orders", value: totalOrders },
-          { label: "L vol", value: totalVolume },
           { label: "punched", value: punchedOrders },
           { label: "pending", value: totalOrders - punchedOrders },
-          ...(statsUrgentCount > 0 ? [{ label: "urgent", value: statsUrgentCount }] : []),
-          ...(statsHoldCount > 0 ? [{ label: "hold", value: statsHoldCount }] : []),
-          ...(blockedCount > 0 ? [{ label: "blocked", value: blockedCount }] : []),
         ]}
         segments={headerSegments}
         activeSegment={activeSlot}
@@ -729,6 +795,20 @@ export default function MailOrdersPage() {
         onSearchChange={setSearchQuery}
         rightExtra={
           <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => setAutoComplete(prev => !prev)}
+              className={`text-[10px] font-medium border rounded-md px-2 h-[28px] transition-colors ${
+                autoComplete
+                  ? "text-teal-700 border-teal-300 bg-teal-50"
+                  : "text-gray-500 border-gray-200 hover:bg-gray-50"
+              }`}
+              title={autoComplete
+                ? "Auto-popup on slot completion (click to disable)"
+                : "Manual mode (click to enable auto-popup)"
+              }
+            >
+              {autoComplete ? "Auto \u2713" : "Auto"}
+            </button>
             <ColumnPicker
               columns={ALL_COLUMNS}
               visible={visibleColumns}
@@ -751,6 +831,7 @@ export default function MailOrdersPage() {
           { key: "F", label: "Flag/lock" },
           { key: "N", label: "Next unmatched" },
           { key: "P", label: "Pick customer" },
+          { key: "T", label: "Toggle punched" },
           { key: "/", label: "Search" },
           { key: "A", label: "SO Summary" },
         ]}
@@ -824,6 +905,8 @@ export default function MailOrdersPage() {
             visibleColumns={visibleColumns}
             recentlyPunchedIds={recentlyPunchedIds}
             separatePunched={activeSlot !== null}
+            punchedVisible={punchedVisible}
+            onTogglePunched={() => setPunchedVisible(prev => !prev)}
           />
         )}
       </div>
@@ -833,6 +916,16 @@ export default function MailOrdersPage() {
         open={soSummaryOpen}
         onClose={() => setSoSummaryOpen(false)}
       />
+
+      {completedSlot && (
+        <SlotCompletionModal
+          slot={completedSlot}
+          orders={orders.filter(
+            o => getSlotFromTime(o.receivedAt) === completedSlot
+          )}
+          onDismiss={handleDismissCompletion}
+        />
+      )}
 
       {copiedReplyId !== null && (() => {
         const order = orders.find(o => o.id === copiedReplyId);

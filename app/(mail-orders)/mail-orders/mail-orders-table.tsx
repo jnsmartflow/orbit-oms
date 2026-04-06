@@ -55,6 +55,8 @@ interface MailOrdersTableProps {
   visibleColumns: Set<string>;
   recentlyPunchedIds: Set<number>;
   separatePunched: boolean;
+  punchedVisible: boolean;
+  onTogglePunched: () => void;
 }
 
 // ── Slot dot colors ──────────────────────────────────────────────────────────
@@ -117,6 +119,8 @@ export function MailOrdersTable({
   visibleColumns,
   recentlyPunchedIds,
   separatePunched,
+  punchedVisible,
+  onTogglePunched,
 }: MailOrdersTableProps) {
   const slotOrder = ["Morning", "Afternoon", "Evening", "Night"] as const;
   const isVis = (key: string) => visibleColumns.has(key);
@@ -189,16 +193,11 @@ export function MailOrdersTable({
             const orders = groupedOrders[slot];
             if (!orders || orders.length === 0) return null;
 
-            const slotMatched = orders.reduce((s, o) => s + o.matchedLines, 0);
-            const slotTotal = orders.reduce((s, o) => s + o.totalLines, 0);
-
             return (
               <SlotGroup
                 key={slot}
                 slot={slot}
                 orders={orders}
-                slotMatched={slotMatched}
-                slotTotal={slotTotal}
                 flaggedIds={flaggedIds}
                 expandedId={expandedId}
                 focusedId={focusedId}
@@ -219,6 +218,8 @@ export function MailOrdersTable({
                 colCount={colCount}
                 recentlyPunchedIds={recentlyPunchedIds}
                 separatePunched={separatePunched}
+                punchedVisible={punchedVisible}
+                onTogglePunched={onTogglePunched}
               />
             );
           })}
@@ -233,8 +234,6 @@ export function MailOrdersTable({
 function SlotGroup({
   slot,
   orders,
-  slotMatched,
-  slotTotal,
   flaggedIds,
   expandedId,
   focusedId,
@@ -255,11 +254,11 @@ function SlotGroup({
   colCount,
   recentlyPunchedIds,
   separatePunched,
+  punchedVisible,
+  onTogglePunched,
 }: {
   slot: string;
   orders: MoOrder[];
-  slotMatched: number;
-  slotTotal: number;
   flaggedIds: Set<number>;
   expandedId: number | null;
   focusedId: number | null;
@@ -280,9 +279,10 @@ function SlotGroup({
   colCount: number;
   recentlyPunchedIds: Set<number>;
   separatePunched: boolean;
+  punchedVisible: boolean;
+  onTogglePunched: () => void;
 }) {
   const dotColor = SLOT_DOTS[slot] ?? "bg-gray-400";
-  const [punchedVisible, setPunchedVisible] = useState(true);
 
   const pendingOrders = separatePunched
     ? orders.filter(o => o.status !== "punched" || recentlyPunchedIds.has(o.id))
@@ -296,8 +296,6 @@ function SlotGroup({
           return bTime - aTime;
         })
     : [];
-  const punchedCount = punchedOrders.length;
-
   const renderOrderRow = (order: MoOrder, inPunchedSection?: boolean) => (
     <OrderRow
       key={order.id}
@@ -341,19 +339,20 @@ function SlotGroup({
                 {orders.length} order{orders.length !== 1 ? "s" : ""}
               </span>
             </div>
-            {(() => {
-              const slotVol = orders.reduce((sum, o) => sum + getOrderVolume(o.lines), 0);
-              const volStr = slotVol > 0 ? `\u00b7 ${slotVol.toLocaleString()}L` : '';
-              return (
-                <div className="text-[11px] text-gray-400">
-                  <span className="font-semibold text-gray-700">{slotMatched}</span>
-                  /{slotTotal} lines {volStr}
-                  {punchedCount > 0 && (
-                    <span> {"\u00b7"} <span className="text-green-600">{punchedCount}</span>/{orders.length} punched</span>
-                  )}
-                </div>
-              );
-            })()}
+            <div className="text-[11px] text-gray-400">
+              {(() => {
+                const slotVol = orders.reduce((sum, o) => sum + getOrderVolume(o.lines), 0);
+                const volStr = slotVol > 0 ? `${slotVol.toLocaleString()}L` : '';
+                const slotPunched = orders.filter(o => o.status === "punched").length;
+                return (
+                  <>
+                    {volStr && <span>{volStr} {"\u00b7"} </span>}
+                    <span className="text-green-600">{slotPunched}</span>
+                    <span>/{orders.length} punched</span>
+                  </>
+                );
+              })()}
+            </div>
           </div>
         </td>
       </tr>
@@ -368,7 +367,7 @@ function SlotGroup({
             <div className="flex items-center gap-3">
               <div className="flex-1 h-px bg-gray-200" />
               <button
-                onClick={() => setPunchedVisible(prev => !prev)}
+                onClick={onTogglePunched}
                 className="text-[11px] font-medium text-gray-500 hover:text-gray-700 flex items-center gap-1.5 shrink-0 transition-colors"
               >
                 <span className="inline-flex items-center justify-center w-[20px] h-[20px] rounded-full bg-teal-50 text-teal-700 text-[10px] font-semibold">
@@ -693,6 +692,7 @@ function OrderRow({
     blocker:   'bg-red-50 text-red-700 border-red-200',
     attention: 'bg-amber-50 text-amber-700 border-amber-200',
     info:      'bg-gray-50 text-gray-500 border-gray-200',
+    split:     'bg-purple-50 text-purple-600 border-purple-200',
   };
 
   const totalVol = getOrderVolume(order.lines);
@@ -727,9 +727,6 @@ function OrderRow({
       result.push({ label: 'Urgent', type: 'attention' });
 
     // ── INFO (gray) — context only ──
-    if (order.dispatchStatus === "Hold")
-      result.push({ label: 'Hold', type: 'info', dot: 'bg-red-400' });
-
     if (/7\s*days/.test(combined))
       result.push({ label: '7 Days', type: 'info' });
     if (/\bextension\b/.test(combined) && !/bill\s*tomorrow/.test(combined))
@@ -747,10 +744,10 @@ function OrderRow({
       result.push({ label: 'Truck', type: 'info' });
 
     if (order.splitLabel)
-      result.push({ label: `\u2702 ${order.splitLabel}`, type: 'info' });
+      result.push({ label: `\u2702 ${order.splitLabel}`, type: 'split' });
     if (!order.splitLabel && !isPunched &&
         (totalVol > SPLIT_VOLUME_THRESHOLD || order.totalLines > SPLIT_LINE_THRESHOLD))
-      result.push({ label: '\u26A0 Split', type: 'info', dot: 'bg-amber-400' });
+      result.push({ label: '\u26A0 Split', type: 'split', dot: 'bg-amber-400' });
 
     return result;
   })();
@@ -1033,11 +1030,27 @@ function OrderRow({
         {/* Punched By */}
         {isVis("punchedBy") && (isPunched ? (
           <td className={`text-right ${baseTdClass}`} style={{ paddingRight: 14 }}>
-            <div className="text-[11px] font-medium text-gray-600 truncate">
-              {order.punchedBy?.name ?? 'operator'}
-            </div>
-            <div className="text-[10px] text-gray-400 font-mono">
-              {formatTime(order.punchedAt!)}
+            <div className="flex items-center justify-end gap-1.5">
+              {order.punchedBy?.name && (
+                <span
+                  className="w-[18px] h-[18px] rounded-full bg-teal-600 flex items-center justify-center text-[8px] font-bold text-white shrink-0"
+                  title={order.punchedBy.name}
+                >
+                  {order.punchedBy.name
+                    .split(" ")
+                    .map(w => w[0]?.toUpperCase() ?? "")
+                    .join("")
+                    .slice(0, 2)}
+                </span>
+              )}
+              <div>
+                <div className="text-[11px] font-medium text-gray-600 truncate">
+                  {order.punchedBy?.name ?? 'operator'}
+                </div>
+                <div className="text-[10px] text-gray-400 font-mono">
+                  {formatTime(order.punchedAt!)}
+                </div>
+              </div>
             </div>
           </td>
         ) : (
