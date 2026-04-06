@@ -667,7 +667,7 @@ export function FocusModeView({
   }
 
   return (
-    <div className="flex-1 overflow-y-auto px-4 py-3 pb-20">
+    <div className="flex-1 overflow-y-auto px-4 py-3">
       <div className="max-w-2xl mx-auto">
 
         {/* ── Progress strip ────────────────────────────────────────────── */}
@@ -939,35 +939,29 @@ export function FocusModeView({
 
       </div>
 
-      {/* ── Floating nav bar ────────────────────────────────────────── */}
-      <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-30 bg-white border border-gray-200 rounded-xl px-5 py-2.5 flex items-center gap-5 shadow-sm">
+      {/* ── Nav bar ──────────────────────────────────────────────────── */}
+      <div className="flex items-center justify-center gap-4 py-4 max-w-2xl mx-auto">
         <button
           onClick={goPrev}
           disabled={currentIndex === 0}
-          className={`text-xs font-medium px-2 py-1 rounded-md transition-colors ${
+          className={`text-xs font-medium px-3.5 py-2 rounded-lg border transition-colors ${
             currentIndex === 0
-              ? "text-gray-300 cursor-default"
-              : "text-gray-600 hover:bg-gray-100"
+              ? "text-gray-300 border-gray-100 cursor-default"
+              : "text-gray-600 border-gray-200 bg-white hover:bg-gray-50"
           }`}
         >
           {"\u2190"} Prev
         </button>
-        <span className="text-gray-200">|</span>
-        <div className="flex items-center gap-2.5">
-          <span className="inline-flex items-center justify-center min-w-[20px] h-5 rounded bg-gray-100 text-[10px] font-bold text-gray-600 px-1">F</span>
-          <span className="text-[10px] text-gray-400">Flag</span>
-          <span className="text-gray-200">{"\u00b7"}</span>
-          <span className="inline-flex items-center justify-center min-w-[20px] h-5 rounded bg-gray-100 text-[10px] font-bold text-gray-600 px-1">N</span>
-          <span className="text-[10px] text-gray-400">Next unmatched</span>
-        </div>
-        <span className="text-gray-200">|</span>
+        <span className="text-xs text-gray-400 font-medium">
+          {currentIndex + 1} of {totalCount}
+        </span>
         <button
           onClick={goNext}
           disabled={currentIndex >= totalCount - 1}
-          className={`text-xs font-medium px-2 py-1 rounded-md transition-colors ${
+          className={`text-xs font-medium px-3.5 py-2 rounded-lg border transition-colors ${
             currentIndex >= totalCount - 1
-              ? "text-gray-300 cursor-default"
-              : "text-gray-600 hover:bg-gray-100"
+              ? "text-gray-300 border-gray-100 cursor-default"
+              : "text-gray-600 border-gray-200 bg-white hover:bg-gray-50"
           }`}
         >
           Next {"\u2192"}
