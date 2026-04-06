@@ -107,38 +107,39 @@ export function LineStatusPanel({ line, onSave, onCancel }: LineStatusPanelProps
   const showSaveCancelButtons = !found || hasChanges;
 
   return (
-    <div
-      className="fixed inset-0 bg-black/25 z-50 flex items-center justify-center p-4"
-      onClick={onCancel}
-    >
-      <div
-        className="bg-white rounded-xl border border-gray-200 w-full max-w-[380px] overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* 1. TOP SECTION */}
-        <div className="pt-3.5 px-4">
-          {/* 1a. Header */}
-          <div className="flex items-start justify-between gap-2 mb-2.5">
-            <div className="min-w-0">
-              <p className={`text-[15px] font-semibold truncate ${!found ? "line-through text-gray-400" : "text-gray-900"}`}>
-                {line.rawText}
-              </p>
-              <div className="flex items-center gap-1 mt-0.5 text-gray-400">
-                {line.skuCode && (
-                  <span className={`font-mono text-[11px] ${!found ? "line-through" : ""}`}>{line.skuCode}</span>
-                )}
-                {line.skuCode && line.packCode && <span className="text-gray-300">{"\u00b7"}</span>}
-                {line.packCode && <span className="text-[11px]">{line.packCode}</span>}
-                {(line.skuCode || line.packCode) && <span className="text-gray-300">{"\u00b7"}</span>}
-                <span className="text-[11px]">{"\u00d7"} {line.quantity}</span>
-              </div>
-            </div>
+    <div className="fixed inset-0 z-50 flex">
+      {/* Backdrop */}
+      <div className="flex-1 bg-black/10" onClick={onCancel} />
+      {/* Panel */}
+      <div className="w-[360px] bg-white border-l border-gray-200 h-full overflow-y-auto shadow-lg">
+        <div className="p-4">
+          {/* Close button row */}
+          <div className="flex items-center justify-between mb-4">
+            <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wide">
+              Line details
+            </p>
             <button
               onClick={onCancel}
               className="w-6 h-6 rounded-md bg-gray-100 flex items-center justify-center text-gray-500 hover:bg-gray-200 transition-colors shrink-0 text-[14px]"
             >
               {"\u00d7"}
             </button>
+          </div>
+
+          {/* Line name + meta */}
+          <div className="mb-2.5">
+            <p className={`text-[15px] font-semibold truncate ${!found ? "line-through text-gray-400" : "text-gray-900"}`}>
+              {line.rawText}
+            </p>
+            <div className="flex items-center gap-1 mt-0.5 text-gray-400">
+              {line.skuCode && (
+                <span className={`font-mono text-[11px] ${!found ? "line-through" : ""}`}>{line.skuCode}</span>
+              )}
+              {line.skuCode && line.packCode && <span className="text-gray-300">{"\u00b7"}</span>}
+              {line.packCode && <span className="text-[11px]">{line.packCode}</span>}
+              {(line.skuCode || line.packCode) && <span className="text-gray-300">{"\u00b7"}</span>}
+              <span className="text-[11px]">{"\u00d7"} {line.quantity}</span>
+            </div>
           </div>
 
           {/* 1b. Status Toggle */}
@@ -174,11 +175,10 @@ export function LineStatusPanel({ line, onSave, onCancel }: LineStatusPanelProps
               </p>
             </div>
           </button>
-        </div>
 
         {/* 2. SECTIONS (only when not found) */}
         {!found && (
-          <div className="px-4">
+          <div>
             {/* 2a. Reason */}
             <div className="mb-3">
               <p className="text-[9px] font-semibold text-gray-400 uppercase tracking-wide mb-1.5">Reason</p>
@@ -264,7 +264,7 @@ export function LineStatusPanel({ line, onSave, onCancel }: LineStatusPanelProps
         )}
 
         {/* 3. FOOTER */}
-        <div className="border-t border-gray-100 flex gap-2 p-4">
+        <div className="border-t border-gray-100 flex gap-2 pt-4">
           {showSaveCancelButtons ? (
             <>
               <button
@@ -288,6 +288,7 @@ export function LineStatusPanel({ line, onSave, onCancel }: LineStatusPanelProps
               Close
             </button>
           )}
+        </div>
         </div>
       </div>
     </div>

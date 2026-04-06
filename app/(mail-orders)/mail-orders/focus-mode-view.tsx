@@ -667,15 +667,26 @@ export function FocusModeView({
     <div className="flex-1 overflow-y-auto px-4 py-3">
       <div className="max-w-lg mx-auto">
 
-        {/* ── Progress strip + dot strip ──────────────────────────────────── */}
+        {/* ── Progress strip ────────────────────────────────────────────── */}
         <div className="mb-3">
           <div className="flex items-center gap-2.5 text-[11px] text-gray-500 mb-2">
             <span className="font-medium whitespace-nowrap">{currentIndex + 1}/{totalCount}</span>
-            <div className="flex-1 h-1 bg-gray-200 rounded-full overflow-hidden">
+            <div className="flex-1 h-1.5 bg-gray-200 rounded-full relative">
+              {/* Green fill = punched progress */}
               <div
-                className="h-full bg-teal-500 rounded-full transition-all duration-300"
-                style={{ width: `${(punchedCount / totalCount) * 100}%` }}
+                className="absolute inset-y-0 left-0 bg-green-400 rounded-full transition-all duration-300"
+                style={{ width: `${totalCount > 0 ? (punchedCount / totalCount) * 100 : 0}%` }}
               />
+              {/* Teal dot = current position */}
+              {totalCount > 0 && (
+                <div
+                  className="absolute top-1/2 w-2.5 h-2.5 rounded-full bg-teal-500 ring-2 ring-white transition-all duration-300"
+                  style={{
+                    left: `${totalCount > 1 ? (currentIndex / (totalCount - 1)) * 100 : 0}%`,
+                    transform: 'translate(-50%, -50%)',
+                  }}
+                />
+              )}
             </div>
             <span className="text-[10px] text-gray-400 whitespace-nowrap">{punchedCount} done</span>
             <div className="relative" ref={orderListRef}>
@@ -720,55 +731,6 @@ export function FocusModeView({
               )}
             </div>
           </div>
-
-          {/* Dot strip / segment bar */}
-          {queue.length <= 20 ? (
-            <div className="flex items-center gap-[3px] px-0.5">
-              {queue.map((o, idx) => {
-                const isDone = o.status === "punched";
-                const isItemFlagged = flaggedIds.has(o.id);
-                const isCurrent = idx === currentIndex;
-                return (
-                  <button
-                    key={o.id}
-                    onClick={() => goTo(idx)}
-                    title={getOrderDisplayName(o)}
-                    className={`rounded-full transition-all duration-150 ${
-                      isCurrent
-                        ? "w-2.5 h-2.5 ring-2 ring-teal-400 ring-offset-1"
-                        : "w-[6px] h-[6px] hover:scale-125"
-                    } ${
-                      isDone ? "bg-green-400" : isItemFlagged ? "bg-amber-400" : isCurrent ? "bg-teal-500" : "bg-gray-300"
-                    }`}
-                  />
-                );
-              })}
-            </div>
-          ) : (
-            <div className="flex items-center gap-1 px-0.5">
-              <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden flex">
-                <div
-                  className="h-full bg-green-400 transition-all duration-300"
-                  style={{ width: `${(punchedCount / totalCount) * 100}%` }}
-                />
-                {(() => {
-                  const flaggedUnpunched = queue.filter(
-                    (o) => o.status === "pending" && flaggedIds.has(o.id)
-                  ).length;
-                  if (flaggedUnpunched === 0) return null;
-                  return (
-                    <div
-                      className="h-full bg-amber-400 transition-all duration-300"
-                      style={{ width: `${(flaggedUnpunched / totalCount) * 100}%` }}
-                    />
-                  );
-                })()}
-              </div>
-              <span className="text-[10px] text-gray-400 whitespace-nowrap tabular-nums">
-                {currentIndex + 1}/{totalCount}
-              </span>
-            </div>
-          )}
         </div>
 
         {/* ── Card with slide animation ──────────────────────────────────── */}

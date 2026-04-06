@@ -10,7 +10,7 @@ import { UniversalHeader } from "@/components/universal-header";
 import { SoSummaryPanel } from "./so-summary-panel";
 import { SlotCompletionModal } from "./slot-completion-modal";
 import { FocusModeView } from "./focus-mode-view";
-import { Check, Users } from "lucide-react";
+import { Check } from "lucide-react";
 
 // ── Column Picker ──────────────────────────────────────────────────────────
 
@@ -790,12 +790,36 @@ export default function MailOrdersPage() {
         title="Mail Orders"
         stats={[
           { label: "orders", value: totalOrders },
-          { label: "punched", value: punchedOrders },
           { label: "pending", value: totalOrders - punchedOrders },
+          { label: `punched (${totalOrders > 0 ? Math.round((punchedOrders / totalOrders) * 100) : 0}%)`, value: punchedOrders },
         ]}
         segments={headerSegments}
         activeSegment={activeSlot}
         onSegmentChange={(id) => setActiveSlot(id as string | null)}
+        leftExtra={
+          <div className="flex border border-gray-200 rounded-md overflow-hidden">
+            <button
+              onClick={() => setViewMode("table")}
+              className={`text-[10px] px-2.5 py-1 font-medium transition-colors ${
+                viewMode === "table"
+                  ? "bg-teal-600 text-white"
+                  : "bg-white text-gray-500 hover:bg-gray-50"
+              }`}
+            >
+              Table
+            </button>
+            <button
+              onClick={() => setViewMode("focus")}
+              className={`text-[10px] px-2.5 py-1 font-medium transition-colors ${
+                viewMode === "focus"
+                  ? "bg-teal-600 text-white"
+                  : "bg-white text-gray-500 hover:bg-gray-50"
+              }`}
+            >
+              Focus
+            </button>
+          </div>
+        }
         filterGroups={[
           { label: "Status", key: "status", options: [{ value: "pending", label: "Pending" }, { value: "punched", label: "Punched" }] },
           { label: "Match", key: "matchStatus", options: [{ value: "exact", label: "Matched" }, { value: "multiple", label: "Multiple" }, { value: "unmatched", label: "Unmatched" }] },
@@ -811,68 +835,19 @@ export default function MailOrdersPage() {
         searchValue={searchQuery}
         onSearchChange={setSearchQuery}
         rightExtra={
-          <div className="flex items-center gap-1.5">
-            <div className="flex border border-gray-200 rounded-md overflow-hidden">
-              <button
-                onClick={() => setViewMode("table")}
-                className={`text-[10px] font-medium px-2 h-[28px] transition-colors ${
-                  viewMode === "table"
-                    ? "bg-teal-600 text-white"
-                    : "bg-white text-gray-500 hover:bg-gray-50"
-                }`}
-              >
-                Table
-              </button>
-              <button
-                onClick={() => setViewMode("focus")}
-                className={`text-[10px] font-medium px-2 h-[28px] transition-colors ${
-                  viewMode === "focus"
-                    ? "bg-teal-600 text-white"
-                    : "bg-white text-gray-500 hover:bg-gray-50"
-                }`}
-              >
-                Focus
-              </button>
-            </div>
-            <button
-              onClick={() => setAutoComplete(prev => !prev)}
-              className={`text-[10px] font-medium border rounded-md px-2 h-[28px] transition-colors ${
-                autoComplete
-                  ? "text-teal-700 border-teal-300 bg-teal-50"
-                  : "text-gray-500 border-gray-200 hover:bg-gray-50"
-              }`}
-              title={autoComplete
-                ? "Auto-popup on slot completion (click to disable)"
-                : "Manual mode (click to enable auto-popup)"
-              }
-            >
-              {autoComplete ? "Auto \u2713" : "Auto"}
-            </button>
-            <ColumnPicker
-              columns={ALL_COLUMNS}
-              visible={visibleColumns}
-              onChange={setVisibleColumns}
-            />
-            <button
-              onClick={() => setSoSummaryOpen(true)}
-              className="inline-flex items-center gap-1.5 text-[11px] font-medium text-gray-600 border border-gray-200 rounded-md px-2.5 h-[28px] hover:bg-gray-50 transition-colors"
-            >
-              <Users size={12} />
-              SO Summary
-            </button>
-          </div>
+          <ColumnPicker
+            columns={ALL_COLUMNS}
+            visible={visibleColumns}
+            onChange={setVisibleColumns}
+          />
         }
         shortcuts={[
           { key: "Q", label: "Copy code" },
           { key: "W", label: "Copy SKUs" },
-          { key: "E", label: "Enter SO no." },
-          { key: "R", label: "Copy reply" },
-          { key: "F", label: "Flag/lock" },
+          { key: "E", label: "SO input" },
+          { key: "R", label: "Reply" },
+          { key: "F", label: "Flag" },
           { key: "N", label: "Next unmatched" },
-          { key: "P", label: "Pick customer" },
-          { key: "T", label: "Toggle punched" },
-          { key: "/", label: "Search" },
-          { key: "A", label: "SO Summary" },
         ]}
       />
 
