@@ -175,6 +175,7 @@ export function FocusModeView({
   const soInputRef = useRef<HTMLInputElement>(null);
   const orderListRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
+  const justDoneIdRef = useRef<number | null>(null);
 
   const currentOrder = queue[currentIndex] ?? null;
   const pendingCount = queue.filter((o) => o.status === "pending").length;
@@ -216,8 +217,9 @@ export function FocusModeView({
       setGraceCountdown((prev) => {
         if (prev <= 1) {
           clearInterval(interval);
-          advanceToNextPending();
+          justDoneIdRef.current = null;
           setJustDoneId(null);
+          advanceToNextPending();
           return 0;
         }
         return prev - 1;
@@ -226,6 +228,16 @@ export function FocusModeView({
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [justDoneId]);
+
+  // ── Re-pin currentIndex when queue re-sorts during grace period ──────────
+  useEffect(() => {
+    if (justDoneIdRef.current === null) return;
+    const doneId = justDoneIdRef.current;
+    const newIdx = queue.findIndex((o) => o.id === doneId);
+    if (newIdx !== -1 && newIdx !== currentIndex) {
+      setCurrentIndex(newIdx);
+    }
+  }, [queue, currentIndex]);
 
   // ── Close order list on outside click ────────────────────────────────────────
   useEffect(() => {
@@ -249,6 +261,7 @@ export function FocusModeView({
     setTimeout(() => {
       setCurrentIndex(newIndex);
       setShowOrderList(false);
+      justDoneIdRef.current = null;
       setJustDoneId(null);
 
       requestAnimationFrame(() => {
@@ -275,12 +288,21 @@ export function FocusModeView({
   }, [currentIndex, queue.length, animateToIndex]);
 
   const advanceToNextPending = useCallback(() => {
-    const nextIdx = queue.findIndex((o, i) => i > currentIndex && o.status === "pending");
+    // First try: next pending after current position
+    const nextIdx = queue.findIndex(
+      (o, i) => i > currentIndex && o.status === "pending"
+    );
     if (nextIdx !== -1) {
       animateToIndex(nextIdx, "left");
-    } else if (currentIndex < queue.length - 1) {
-      animateToIndex(currentIndex + 1, "left");
+      return;
     }
+    // Second try: first pending in entire queue
+    const firstPending = queue.findIndex((o) => o.status === "pending");
+    if (firstPending !== -1) {
+      animateToIndex(firstPending, firstPending > currentIndex ? "left" : "right");
+      return;
+    }
+    // No pending left — stay (slot complete will handle)
   }, [queue, currentIndex, animateToIndex]);
 
   const jumpToNextUnmatched = useCallback(() => {
@@ -350,6 +372,7 @@ export function FocusModeView({
     soInputRef.current?.blur();
     const success = await onSaveSoNumber(currentOrder.id, soInput.trim());
     if (success) {
+      justDoneIdRef.current = currentOrder.id;
       setJustDoneId(currentOrder.id);
     }
   }, [currentOrder, soInput, onSaveSoNumber]);
@@ -401,6 +424,7 @@ export function FocusModeView({
     setTimeout(() => setReplyCopied(false), 1500);
 
     if (justDoneId !== null) {
+      justDoneIdRef.current = null;
       setJustDoneId(null);
       advanceToNextPending();
     }
@@ -660,28 +684,54 @@ export function FocusModeView({
             </div>
           </div>
 
-          {/* Dot strip */}
-          <div className="flex items-center gap-[3px] px-0.5">
-            {queue.map((o, idx) => {
-              const isDone = o.status === "punched";
-              const isItemFlagged = flaggedIds.has(o.id);
-              const isCurrent = idx === currentIndex;
-              return (
-                <button
-                  key={o.id}
-                  onClick={() => goTo(idx)}
-                  title={getOrderDisplayName(o)}
-                  className={`rounded-full transition-all duration-150 ${
-                    isCurrent
-                      ? "w-2.5 h-2.5 ring-2 ring-teal-400 ring-offset-1"
-                      : "w-[6px] h-[6px] hover:scale-125"
-                  } ${
-                    isDone ? "bg-green-400" : isItemFlagged ? "bg-amber-400" : isCurrent ? "bg-teal-500" : "bg-gray-300"
-                  }`}
+          {/* Dot strip / segment bar */}
+          {queue.length <= 20 ? (
+            <div className="flex items-center gap-[3px] px-0.5">
+              {queue.map((o, idx) => {
+                const isDone = o.status === "punched";
+                const isItemFlagged = flaggedIds.has(o.id);
+                const isCurrent = idx === currentIndex;
+                return (
+                  <button
+                    key={o.id}
+                    onClick={() => goTo(idx)}
+                    title={getOrderDisplayName(o)}
+                    className={`rounded-full transition-all duration-150 ${
+                      isCurrent
+                        ? "w-2.5 h-2.5 ring-2 ring-teal-400 ring-offset-1"
+                        : "w-[6px] h-[6px] hover:scale-125"
+                    } ${
+                      isDone ? "bg-green-400" : isItemFlagged ? "bg-amber-400" : isCurrent ? "bg-teal-500" : "bg-gray-300"
+                    }`}
+                  />
+                );
+              })}
+            </div>
+          ) : (
+            <div className="flex items-center gap-1 px-0.5">
+              <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden flex">
+                <div
+                  className="h-full bg-green-400 transition-all duration-300"
+                  style={{ width: `${(punchedCount / totalCount) * 100}%` }}
                 />
-              );
-            })}
-          </div>
+                {(() => {
+                  const flaggedUnpunched = queue.filter(
+                    (o) => o.status === "pending" && flaggedIds.has(o.id)
+                  ).length;
+                  if (flaggedUnpunched === 0) return null;
+                  return (
+                    <div
+                      className="h-full bg-amber-400 transition-all duration-300"
+                      style={{ width: `${(flaggedUnpunched / totalCount) * 100}%` }}
+                    />
+                  );
+                })()}
+              </div>
+              <span className="text-[10px] text-gray-400 whitespace-nowrap tabular-nums">
+                {currentIndex + 1}/{totalCount}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* ── Card with slide animation ──────────────────────────────────── */}
@@ -760,7 +810,7 @@ export function FocusModeView({
                   <div className="text-center mt-2 text-xs text-teal-700 font-medium flex items-center justify-center gap-2">
                     Next order in {graceCountdown}s
                     <button
-                      onClick={() => { setJustDoneId(null); advanceToNextPending(); }}
+                      onClick={() => { justDoneIdRef.current = null; setJustDoneId(null); advanceToNextPending(); }}
                       className="text-teal-600 font-semibold underline hover:text-teal-800"
                     >
                       Go now →
