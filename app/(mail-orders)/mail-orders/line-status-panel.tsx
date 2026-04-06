@@ -126,6 +126,18 @@ export function LineStatusPanel({ line, onSave, onCancel }: LineStatusPanelProps
             </button>
           </div>
 
+          {/* Back button */}
+          <button
+            type="button"
+            onClick={onCancel}
+            className="flex items-center gap-1 text-[11px] text-teal-600 font-medium mb-3 hover:text-teal-800"
+          >
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+              <polyline points="10 4 6 8 10 12"/>
+            </svg>
+            All lines
+          </button>
+
           {/* Line name + meta */}
           <div className="mb-2.5">
             <p className={`text-[15px] font-semibold leading-tight ${!found ? "line-through text-gray-400" : "text-gray-900"}`}>

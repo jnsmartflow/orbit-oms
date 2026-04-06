@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { Check, ChevronDown, ChevronUp, Flag, List } from "lucide-react";
+import { Check, Flag, List } from "lucide-react";
 import {
   smartTitleCase,
   getOrderVolume,
@@ -158,7 +158,6 @@ export function FocusModeView({
   const [currentIndex, setCurrentIndex] = useState(0);
   const [showOrderList, setShowOrderList] = useState(false);
   const [orderListHighlight, setOrderListHighlight] = useState(-1);
-  const [expandLines, setExpandLines] = useState(false);
   const [soInput, setSoInput] = useState("");
   const [codeCopied, setCodeCopied] = useState(false);
   const [skuCopied, setSkuCopied] = useState(false);
@@ -185,7 +184,6 @@ export function FocusModeView({
   // ── Reset state when order changes ───────────────────────────────────────────
   useEffect(() => {
     setSoInput(currentOrder?.soNumber || "");
-    setExpandLines(false);
     setCodeCopied(false);
     setSkuCopied(false);
     setReplyCopied(false);
@@ -469,9 +467,13 @@ export function FocusModeView({
       const tag = (document.activeElement?.tagName ?? "").toUpperCase();
       const isInInput = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
 
-      // ── Line status panel open: close first ──────────────────────
+      // ── Line status panel open: Escape goes back ─────────────────
       if (activeLineId !== null) {
-        if (e.key === "Escape") { e.preventDefault(); setActiveLineId(null); return; }
+        if (e.key === "Escape") {
+          e.preventDefault();
+          setActiveLineId(activeLineId > 0 ? -1 : null);
+          return;
+        }
         return; // block all other shortcuts while panel is open
       }
 
@@ -504,6 +506,7 @@ export function FocusModeView({
       if (key === "r" || key === "R") { handleReplyAndNext(); return; }
       if ((key === "f" || key === "F") && currentOrder) { onFlag(currentOrder.id); return; }
       if (key === "n" || key === "N") { jumpToNextUnmatched(); return; }
+      if (key === "s" || key === "S") { setActiveLineId(-1); return; }
       if (key === "l" || key === "L") { e.preventDefault(); setShowOrderList(true); setOrderListHighlight(currentIndex); return; }
     }
 
@@ -664,8 +667,8 @@ export function FocusModeView({
   }
 
   return (
-    <div className="flex-1 overflow-y-auto px-4 py-3">
-      <div className="max-w-lg mx-auto">
+    <div className="flex-1 overflow-y-auto px-4 py-3 pb-20">
+      <div className="max-w-2xl mx-auto">
 
         {/* ── Progress strip ────────────────────────────────────────────── */}
         <div className="mb-3">
@@ -754,7 +757,7 @@ export function FocusModeView({
 
               {/* Customer name */}
               <div className="flex items-center gap-1.5 mb-2">
-                <h2 className="text-lg font-bold text-gray-900 leading-tight truncate" title={displayName}>
+                <h2 className="text-xl font-bold text-gray-900 leading-tight truncate" title={displayName}>
                   {displayName}
                 </h2>
                 {dotColor && (
@@ -897,161 +900,38 @@ export function FocusModeView({
                 </>
               )}
 
-              {/* ── Expandable lines ───────────────────────────────────── */}
+              {/* ── SKU summary row ───────────────────────────────────── */}
               <button
-                onClick={() => setExpandLines((p) => !p)}
-                className="w-full flex items-center justify-between pt-2.5 mt-2.5 border-t border-gray-100 text-[11px] text-gray-400 hover:text-gray-600 transition-colors"
+                type="button"
+                onClick={() => setActiveLineId(-1)}
+                className="w-full flex items-center justify-between py-3 mt-3 border-t border-gray-100"
               >
-                <span className="flex items-center gap-1.5">
-                  {notFoundCount === 0 ? (
-                    <>
-                      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#22c55e" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                        <polyline points="3 8 6.5 11.5 13 5" />
-                      </svg>
-                      <span className="text-gray-500">{matchedCount}/{order.totalLines} lines matched</span>
-                    </>
+                <div className="flex items-center gap-2">
+                  {notFoundCount > 0 ? (
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#f59e0b" strokeWidth="2"><path d="M8 2 L14 13 H2Z"/></svg>
                   ) : (
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#22c55e" strokeWidth="2.5"><polyline points="3 8 6.5 11.5 13 5"/></svg>
+                  )}
+                  <span className="text-xs text-gray-600 font-medium">
+                    {order.totalLines} SKU lines
+                  </span>
+                  {notFoundCount > 0 && (
                     <>
-                      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M8 1.5 L14.5 13 H1.5Z" />
-                      </svg>
-                      <span className="text-gray-500">{matchedCount}/{order.totalLines} SKU lines</span>
                       <span className="text-gray-300">{"\u00b7"}</span>
-                      <span className="text-red-500 font-medium">{notFoundCount} not found</span>
+                      <span className="text-xs text-red-500 font-medium">
+                        {notFoundCount} not found
+                      </span>
                     </>
                   )}
-                </span>
-                {expandLines ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-              </button>
-
-              {expandLines && (
-                <div className="mt-2">
-                  {order.lines.map((line) => {
-                    const status = lineStatuses[line.id];
-                    const isNF = status && !status.found;
-                    const reasonObj = isNF && status.reason
-                      ? LINE_STATUS_REASONS.find(r => r.value === status.reason)
-                      : null;
-
-                    return (
-                      <div
-                        key={line.id}
-                        className={`flex items-center gap-2 py-2 border-b border-gray-100 last:border-b-0 ${
-                          isNF ? "bg-red-50 -mx-4 px-4 border-l-2 border-l-red-300" : ""
-                        }`}
-                      >
-                        {/* Toggle */}
-                        <button
-                          type="button"
-                          onClick={() => handleQuickToggle(line.id)}
-                          className={`w-7 h-4 rounded-full relative flex-shrink-0 transition-colors ${
-                            isNF ? "bg-red-500" : "bg-green-500"
-                          }`}
-                        >
-                          <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all ${
-                            isNF ? "left-0.5" : "left-[14px]"
-                          }`} />
-                        </button>
-
-                        {/* Line info */}
-                        <div className="flex-1 min-w-0">
-                          <p className={`text-[11.5px] font-medium truncate ${
-                            isNF ? "line-through text-gray-400" : "text-gray-800"
-                          }`}>
-                            {line.rawText}
-                          </p>
-                          <div className="flex items-center gap-1 mt-0.5 text-[10px] text-gray-400 flex-wrap">
-                            {line.skuCode ? (
-                              <span className={`font-mono ${isNF ? "line-through" : ""}`}>
-                                {line.skuCode}
-                              </span>
-                            ) : (
-                              <span className="text-amber-500 text-[9px] font-medium">unmatched</span>
-                            )}
-                            {line.packCode && (
-                              <>
-                                <span className="text-gray-300">{"\u00b7"}</span>
-                                <span>{line.packCode}</span>
-                              </>
-                            )}
-                            <span className="text-gray-300">{"\u00b7"}</span>
-                            <span>{"\u00d7"}{line.quantity}</span>
-                            {reasonObj && (
-                              <>
-                                <span className="text-gray-300">{"\u00b7"}</span>
-                                <span className="text-[8px] font-semibold px-1 py-px rounded bg-red-50 text-red-700 border border-red-200">
-                                  {reasonObj.label}
-                                </span>
-                              </>
-                            )}
-                            {isNF && status?.altSkuCode && (
-                              <span className="text-[8px] font-semibold px-1 py-px rounded bg-teal-50 text-teal-700 border border-teal-200">
-                                ALT
-                              </span>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* More button */}
-                        <button
-                          type="button"
-                          onClick={() => setActiveLineId(line.id)}
-                          className="w-[22px] h-[22px] rounded flex items-center justify-center text-gray-300 hover:text-gray-500 hover:bg-gray-100 flex-shrink-0 transition-colors"
-                        >
-                          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-                            <circle cx="8" cy="4" r="1.2" />
-                            <circle cx="8" cy="8" r="1.2" />
-                            <circle cx="8" cy="12" r="1.2" />
-                          </svg>
-                        </button>
-                      </div>
-                    );
-                  })}
-
-                  {/* Summary */}
-                  <div className="flex items-center justify-between py-2 text-[11px] border-t border-gray-100 mt-1">
-                    <span className="text-gray-500">Lines</span>
-                    <div className="flex items-center gap-2">
-                      <span className="font-semibold text-green-600">
-                        {order.lines.length - notFoundCount} found
-                      </span>
-                      {notFoundCount > 0 && (
-                        <span className="font-semibold text-red-600">
-                          {notFoundCount} not found
-                        </span>
-                      )}
-                    </div>
-                  </div>
                 </div>
-              )}
-            </div>
-
-            {/* ── Navigation footer ────────────────────────────────────── */}
-            <div className="flex items-center justify-between px-4 py-2 border-t border-gray-100 bg-gray-50">
-              <button
-                onClick={goPrev}
-                disabled={currentIndex === 0}
-                className={`text-[11px] px-2 py-1 rounded transition-colors ${
-                  currentIndex === 0 ? "text-gray-300 cursor-default" : "text-gray-500 hover:bg-gray-100 hover:text-gray-700"
-                }`}
-              >
-                ← Prev
-              </button>
-              <div className="flex items-center gap-2">
-                <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] rounded bg-gray-100 text-[9px] font-bold text-gray-500 px-1">F</span>
-                <span className="text-[10px] text-gray-400">{isFlagged ? "Unflag" : "Flag"}</span>
-                <span className="text-gray-200">·</span>
-                <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] rounded bg-gray-100 text-[9px] font-bold text-gray-500 px-1">N</span>
-                <span className="text-[10px] text-gray-400">Next unmatched</span>
-              </div>
-              <button
-                onClick={goNext}
-                disabled={currentIndex >= totalCount - 1}
-                className={`text-[11px] px-2 py-1 rounded transition-colors ${
-                  currentIndex >= totalCount - 1 ? "text-gray-300 cursor-default" : "text-gray-500 hover:bg-gray-100 hover:text-gray-700"
-                }`}
-              >
-                Next →
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[9px] px-1.5 py-0.5 border border-gray-200 rounded text-gray-500 font-semibold">
+                    S
+                  </span>
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#d1d5db" strokeWidth="2">
+                    <polyline points="6 4 10 8 6 12"/>
+                  </svg>
+                </div>
               </button>
             </div>
           </div>
@@ -1059,8 +939,150 @@ export function FocusModeView({
 
       </div>
 
-      {/* Line Status Modal */}
-      {activeLineId !== null && (() => {
+      {/* ── Floating nav bar ────────────────────────────────────────── */}
+      <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-30 bg-white border border-gray-200 rounded-xl px-5 py-2.5 flex items-center gap-5 shadow-sm">
+        <button
+          onClick={goPrev}
+          disabled={currentIndex === 0}
+          className={`text-xs font-medium px-2 py-1 rounded-md transition-colors ${
+            currentIndex === 0
+              ? "text-gray-300 cursor-default"
+              : "text-gray-600 hover:bg-gray-100"
+          }`}
+        >
+          {"\u2190"} Prev
+        </button>
+        <span className="text-gray-200">|</span>
+        <div className="flex items-center gap-2.5">
+          <span className="inline-flex items-center justify-center min-w-[20px] h-5 rounded bg-gray-100 text-[10px] font-bold text-gray-600 px-1">F</span>
+          <span className="text-[10px] text-gray-400">Flag</span>
+          <span className="text-gray-200">{"\u00b7"}</span>
+          <span className="inline-flex items-center justify-center min-w-[20px] h-5 rounded bg-gray-100 text-[10px] font-bold text-gray-600 px-1">N</span>
+          <span className="text-[10px] text-gray-400">Next unmatched</span>
+        </div>
+        <span className="text-gray-200">|</span>
+        <button
+          onClick={goNext}
+          disabled={currentIndex >= totalCount - 1}
+          className={`text-xs font-medium px-2 py-1 rounded-md transition-colors ${
+            currentIndex >= totalCount - 1
+              ? "text-gray-300 cursor-default"
+              : "text-gray-600 hover:bg-gray-100"
+          }`}
+        >
+          Next {"\u2192"}
+        </button>
+      </div>
+
+      {/* ── SKU Lines list panel (activeLineId === -1) ──────────────── */}
+      {activeLineId === -1 && (
+        <div className="fixed inset-0 z-50 flex">
+          <div className="flex-1 bg-black/10" onClick={() => setActiveLineId(null)} />
+          <div className="w-[360px] bg-white border-l border-gray-200 h-full overflow-y-auto">
+            <div className="p-4">
+              <div className="flex items-center justify-between mb-4">
+                <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wide">
+                  SKU lines ({order.lines.length})
+                </p>
+                <button
+                  onClick={() => setActiveLineId(null)}
+                  className="w-6 h-6 rounded-md bg-gray-100 text-gray-500 hover:bg-gray-200 flex items-center justify-center text-sm"
+                >
+                  {"\u00d7"}
+                </button>
+              </div>
+
+              {order.lines.map((line) => {
+                const status = lineStatuses[line.id];
+                const isNF = status && !status.found;
+                const reasonObj = isNF && status.reason
+                  ? LINE_STATUS_REASONS.find(r => r.value === status.reason)
+                  : null;
+
+                return (
+                  <div
+                    key={line.id}
+                    className={`flex items-center gap-2 py-2.5 px-2 rounded-lg mb-1 cursor-pointer transition-colors ${
+                      isNF ? "bg-red-50 hover:bg-red-100" : "hover:bg-gray-50"
+                    }`}
+                  >
+                    {/* Toggle */}
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); handleQuickToggle(line.id); }}
+                      className={`w-7 h-4 rounded-full relative flex-shrink-0 transition-colors ${
+                        isNF ? "bg-red-500" : "bg-green-500"
+                      }`}
+                    >
+                      <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all ${
+                        isNF ? "left-0.5" : "left-[14px]"
+                      }`} />
+                    </button>
+
+                    {/* Info */}
+                    <div
+                      className="flex-1 min-w-0"
+                      onClick={() => setActiveLineId(line.id)}
+                    >
+                      <p className={`text-xs font-medium truncate ${
+                        isNF ? "line-through text-gray-400" : "text-gray-800"
+                      }`}>
+                        {line.rawText}
+                      </p>
+                      <div className="flex items-center gap-1 mt-0.5 text-[10px] text-gray-400 flex-wrap">
+                        {line.skuCode ? (
+                          <span className={`font-mono ${isNF ? "line-through" : ""}`}>{line.skuCode}</span>
+                        ) : (
+                          <span className="text-amber-500 text-[9px] font-medium">unmatched</span>
+                        )}
+                        {line.packCode && (
+                          <><span className="text-gray-300">{"\u00b7"}</span><span>{line.packCode}</span></>
+                        )}
+                        <span className="text-gray-300">{"\u00b7"}</span>
+                        <span>{"\u00d7"}{line.quantity}</span>
+                        {reasonObj && (
+                          <><span className="text-gray-300">{"\u00b7"}</span>
+                          <span className="text-[8px] font-semibold px-1 py-px rounded bg-red-50 text-red-700 border border-red-200">{reasonObj.label}</span></>
+                        )}
+                        {isNF && status?.altSkuCode && (
+                          <span className="text-[8px] font-semibold px-1 py-px rounded bg-teal-50 text-teal-700 border border-teal-200">ALT</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Arrow to detail */}
+                    <svg
+                      onClick={() => setActiveLineId(line.id)}
+                      className="text-gray-300 flex-shrink-0 cursor-pointer hover:text-gray-500"
+                      width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"
+                    >
+                      <polyline points="6 4 10 8 6 12"/>
+                    </svg>
+                  </div>
+                );
+              })}
+
+              {/* Summary */}
+              <div className="flex items-center justify-between py-2 mt-2 border-t border-gray-100 text-[11px]">
+                <span className="text-gray-500">Lines</span>
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold text-green-600">
+                    {order.lines.length - notFoundCount} found
+                  </span>
+                  {notFoundCount > 0 && (
+                    <span className="font-semibold text-red-600">
+                      {notFoundCount} not found
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Line detail panel (activeLineId > 0) ───────────────────── */}
+      {activeLineId !== null && activeLineId > 0 && (() => {
         const activeLine = order.lines.find(l => l.id === activeLineId);
         if (!activeLine) return null;
         const lineWithStatus = {
@@ -1071,7 +1093,7 @@ export function FocusModeView({
           <LineStatusPanel
             line={lineWithStatus}
             onSave={handleSaveLineStatus}
-            onCancel={() => setActiveLineId(null)}
+            onCancel={() => setActiveLineId(-1)}
           />
         );
       })()}
