@@ -128,17 +128,23 @@ export function LineStatusPanel({ line, onSave, onCancel }: LineStatusPanelProps
 
           {/* Line name + meta */}
           <div className="mb-2.5">
-            <p className={`text-[15px] font-semibold truncate ${!found ? "line-through text-gray-400" : "text-gray-900"}`}>
+            <p className={`text-[15px] font-semibold leading-tight ${!found ? "line-through text-gray-400" : "text-gray-900"}`}>
               {line.rawText}
             </p>
-            <div className="flex items-center gap-1 mt-0.5 text-gray-400">
-              {line.skuCode && (
-                <span className={`font-mono text-[11px] ${!found ? "line-through" : ""}`}>{line.skuCode}</span>
+            <div className="flex items-center gap-1.5 mt-1 text-[11px] text-gray-400">
+              {line.skuCode ? (
+                <span className={`font-mono ${!found ? "line-through" : ""}`}>{line.skuCode}</span>
+              ) : (
+                <span className="text-amber-500 text-[10px] font-medium">unmatched</span>
               )}
-              {line.skuCode && line.packCode && <span className="text-gray-300">{"\u00b7"}</span>}
-              {line.packCode && <span className="text-[11px]">{line.packCode}</span>}
-              {(line.skuCode || line.packCode) && <span className="text-gray-300">{"\u00b7"}</span>}
-              <span className="text-[11px]">{"\u00d7"} {line.quantity}</span>
+              {line.packCode && (
+                <>
+                  <span className="text-gray-300">{"\u00b7"}</span>
+                  <span>{line.packCode}</span>
+                </>
+              )}
+              <span className="text-gray-300">{"\u00b7"}</span>
+              <span>{"\u00d7"}{line.quantity}</span>
             </div>
           </div>
 

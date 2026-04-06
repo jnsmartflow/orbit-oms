@@ -682,7 +682,8 @@ export function FocusModeView({
                 <div
                   className="absolute top-1/2 w-2.5 h-2.5 rounded-full bg-teal-500 ring-2 ring-white transition-all duration-300"
                   style={{
-                    left: `${totalCount > 1 ? (currentIndex / (totalCount - 1)) * 100 : 0}%`,
+                    left: `clamp(5px, ${totalCount > 1 ? (currentIndex / (totalCount - 1)) * 100 : 0}%, calc(100% - 5px))`,
+                    top: '50%',
                     transform: 'translate(-50%, -50%)',
                   }}
                 />
@@ -960,11 +961,21 @@ export function FocusModeView({
                             {line.rawText}
                           </p>
                           <div className="flex items-center gap-1 mt-0.5 text-[10px] text-gray-400 flex-wrap">
-                            <span className={`font-mono ${isNF ? "line-through" : ""}`}>
-                              {line.skuCode || "\u2014"}
-                            </span>
+                            {line.skuCode ? (
+                              <span className={`font-mono ${isNF ? "line-through" : ""}`}>
+                                {line.skuCode}
+                              </span>
+                            ) : (
+                              <span className="text-amber-500 text-[9px] font-medium">unmatched</span>
+                            )}
+                            {line.packCode && (
+                              <>
+                                <span className="text-gray-300">{"\u00b7"}</span>
+                                <span>{line.packCode}</span>
+                              </>
+                            )}
                             <span className="text-gray-300">{"\u00b7"}</span>
-                            <span>{line.packCode || "\u2014"} {"\u00d7"} {line.quantity}</span>
+                            <span>{"\u00d7"}{line.quantity}</span>
                             {reasonObj && (
                               <>
                                 <span className="text-gray-300">{"\u00b7"}</span>
@@ -973,7 +984,7 @@ export function FocusModeView({
                                 </span>
                               </>
                             )}
-                            {isNF && status.altSkuCode && (
+                            {isNF && status?.altSkuCode && (
                               <span className="text-[8px] font-semibold px-1 py-px rounded bg-teal-50 text-teal-700 border border-teal-200">
                                 ALT
                               </span>

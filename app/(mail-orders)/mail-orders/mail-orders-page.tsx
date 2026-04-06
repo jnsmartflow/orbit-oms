@@ -760,12 +760,24 @@ export default function MailOrdersPage() {
   }, [focusedId]);
 
   // ── Header props ─────────────────────────────────────────────────────────────
+  const slotPunchStatus = useMemo(() => {
+    const result: Record<string, boolean> = {};
+    for (const slot of ["Morning", "Afternoon", "Evening", "Night"]) {
+      const slotOrders = orders.filter(
+        (o) => getSlotFromTime(o.receivedAt) === slot
+      );
+      result[slot] = slotOrders.length > 0 &&
+        slotOrders.every((o) => o.status === "punched");
+    }
+    return result;
+  }, [orders]);
+
   const headerSegments = useMemo(() => [
-    { id: "Morning", label: "Morning", count: slotCounts.Morning },
-    { id: "Afternoon", label: "Afternoon", count: slotCounts.Afternoon },
-    { id: "Evening", label: "Evening", count: slotCounts.Evening },
-    { id: "Night", label: "Night", count: slotCounts.Night },
-  ], [slotCounts]);
+    { id: "Morning", label: slotPunchStatus.Morning ? "\u2713 Morn" : "Morn", count: slotCounts.Morning },
+    { id: "Afternoon", label: slotPunchStatus.Afternoon ? "\u2713 Aft" : "Aft", count: slotCounts.Afternoon },
+    { id: "Evening", label: slotPunchStatus.Evening ? "\u2713 Eve" : "Eve", count: slotCounts.Evening },
+    { id: "Night", label: slotPunchStatus.Night ? "\u2713 Night" : "Night", count: slotCounts.Night },
+  ], [slotCounts, slotPunchStatus]);
 
   const headerDate = useMemo(() => new Date(selectedDate + "T00:00:00+05:30"), [selectedDate]);
   const handleHeaderDateChange = useCallback((d: Date) => {
@@ -790,19 +802,18 @@ export default function MailOrdersPage() {
         title="Mail Orders"
         stats={[
           { label: "orders", value: totalOrders },
-          { label: "pending", value: totalOrders - punchedOrders },
           { label: `punched (${totalOrders > 0 ? Math.round((punchedOrders / totalOrders) * 100) : 0}%)`, value: punchedOrders },
         ]}
         segments={headerSegments}
         activeSegment={activeSlot}
         onSegmentChange={(id) => setActiveSlot(id as string | null)}
         leftExtra={
-          <div className="flex border border-gray-200 rounded-md overflow-hidden">
+          <div className="flex border border-gray-300 rounded-[5px] overflow-hidden">
             <button
               onClick={() => setViewMode("table")}
-              className={`text-[10px] px-2.5 py-1 font-medium transition-colors ${
+              className={`text-[10px] px-2.5 py-[3px] font-medium transition-colors ${
                 viewMode === "table"
-                  ? "bg-teal-600 text-white"
+                  ? "bg-gray-800 text-white"
                   : "bg-white text-gray-500 hover:bg-gray-50"
               }`}
             >
@@ -810,9 +821,9 @@ export default function MailOrdersPage() {
             </button>
             <button
               onClick={() => setViewMode("focus")}
-              className={`text-[10px] px-2.5 py-1 font-medium transition-colors ${
+              className={`text-[10px] px-2.5 py-[3px] font-medium transition-colors ${
                 viewMode === "focus"
-                  ? "bg-teal-600 text-white"
+                  ? "bg-gray-800 text-white"
                   : "bg-white text-gray-500 hover:bg-gray-50"
               }`}
             >
