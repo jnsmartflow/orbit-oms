@@ -41,7 +41,7 @@ export interface ShortcutItem {
 
 export interface UniversalHeaderProps {
   // Row 1
-  title: string;
+  title: React.ReactNode;
   stats?: HeaderStat[];
   showDownload?: boolean;
   onDownload?: () => void;

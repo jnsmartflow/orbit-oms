@@ -773,9 +773,9 @@ export default function MailOrdersPage() {
   }, [orders]);
 
   const headerSegments = useMemo(() => [
-    { id: "Morning", label: slotPunchStatus.Morning ? "\u2713 Morn" : "Morn", count: slotCounts.Morning },
-    { id: "Afternoon", label: slotPunchStatus.Afternoon ? "\u2713 Aft" : "Aft", count: slotCounts.Afternoon },
-    { id: "Evening", label: slotPunchStatus.Evening ? "\u2713 Eve" : "Eve", count: slotCounts.Evening },
+    { id: "Morning", label: slotPunchStatus.Morning ? "\u2713 Morning" : "Morning", count: slotCounts.Morning },
+    { id: "Afternoon", label: slotPunchStatus.Afternoon ? "\u2713 Afternoon" : "Afternoon", count: slotCounts.Afternoon },
+    { id: "Evening", label: slotPunchStatus.Evening ? "\u2713 Evening" : "Evening", count: slotCounts.Evening },
     { id: "Night", label: slotPunchStatus.Night ? "\u2713 Night" : "Night", count: slotCounts.Night },
   ], [slotCounts, slotPunchStatus]);
 
@@ -783,6 +783,9 @@ export default function MailOrdersPage() {
   const handleHeaderDateChange = useCallback((d: Date) => {
     setSelectedDate(d.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }));
   }, []);
+
+  const punchPct = totalOrders > 0
+    ? Math.round((punchedOrders / totalOrders) * 100) : 0;
 
   // ── Urgent/Hold counts (from filtered orders, unpunched only) ───────────────
   const urgentCount = useMemo(() =>
@@ -799,38 +802,47 @@ export default function MailOrdersPage() {
   return (
     <div className="flex flex-col h-screen overflow-hidden">
       <UniversalHeader
-        title="Mail Orders"
+        title={
+          <div className="flex items-center gap-2.5">
+            <span>Mail Orders</span>
+            <div className="flex border border-gray-300 rounded-[5px] overflow-hidden">
+              <button
+                onClick={() => setViewMode("table")}
+                className={`text-[10px] px-2.5 py-[3px] font-medium transition-colors ${
+                  viewMode === "table"
+                    ? "bg-gray-800 text-white"
+                    : "bg-white text-gray-500 hover:bg-gray-50"
+                }`}
+              >
+                Table
+              </button>
+              <button
+                onClick={() => setViewMode("focus")}
+                className={`text-[10px] px-2.5 py-[3px] font-medium transition-colors ${
+                  viewMode === "focus"
+                    ? "bg-gray-800 text-white"
+                    : "bg-white text-gray-500 hover:bg-gray-50"
+                }`}
+              >
+                Focus
+              </button>
+            </div>
+            <span className="w-px h-[18px] bg-gray-200" />
+            <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
+              punchPct >= 50
+                ? "bg-green-50 text-green-600"
+                : "bg-amber-50 text-amber-600"
+            }`}>
+              {punchPct}% punched
+            </span>
+          </div>
+        }
         stats={[
           { label: "orders", value: totalOrders },
-          { label: `punched (${totalOrders > 0 ? Math.round((punchedOrders / totalOrders) * 100) : 0}%)`, value: punchedOrders },
         ]}
         segments={headerSegments}
         activeSegment={activeSlot}
         onSegmentChange={(id) => setActiveSlot(id as string | null)}
-        leftExtra={
-          <div className="flex border border-gray-300 rounded-[5px] overflow-hidden">
-            <button
-              onClick={() => setViewMode("table")}
-              className={`text-[10px] px-2.5 py-[3px] font-medium transition-colors ${
-                viewMode === "table"
-                  ? "bg-gray-800 text-white"
-                  : "bg-white text-gray-500 hover:bg-gray-50"
-              }`}
-            >
-              Table
-            </button>
-            <button
-              onClick={() => setViewMode("focus")}
-              className={`text-[10px] px-2.5 py-[3px] font-medium transition-colors ${
-                viewMode === "focus"
-                  ? "bg-gray-800 text-white"
-                  : "bg-white text-gray-500 hover:bg-gray-50"
-              }`}
-            >
-              Focus
-            </button>
-          </div>
-        }
         filterGroups={[
           { label: "Status", key: "status", options: [{ value: "pending", label: "Pending" }, { value: "punched", label: "Punched" }] },
           { label: "Match", key: "matchStatus", options: [{ value: "exact", label: "Matched" }, { value: "multiple", label: "Multiple" }, { value: "unmatched", label: "Unmatched" }] },
