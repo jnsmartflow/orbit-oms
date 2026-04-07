@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import {
   enrichLine,
@@ -10,8 +11,14 @@ import {
 } from "@/lib/mail-orders/enrich";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 300;
 
 export async function POST(): Promise<NextResponse> {
+  const session = await auth();
+  if (!session?.user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   // 1. Load keyword + SKU data
   const [productKeywordsRaw, baseKeywordsRaw, skuEntriesRaw] = await Promise.all([
     prisma.mo_product_keywords.findMany(),
