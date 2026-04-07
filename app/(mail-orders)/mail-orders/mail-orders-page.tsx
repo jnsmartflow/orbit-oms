@@ -140,6 +140,7 @@ export default function MailOrdersPage() {
   const [soSummaryOpen, setSoSummaryOpen] = useState(false);
   const [punchedVisible, setPunchedVisible] = useState(false);
   const [autoComplete, setAutoComplete] = useState(true);
+  const [skuPanelOrderId, setSkuPanelOrderId] = useState<number | null>(null);
   const [dismissedSlots, setDismissedSlots] = useState<Set<string>>(new Set());
   const [completedSlot, setCompletedSlot] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"table" | "focus">("table");
@@ -744,6 +745,14 @@ export default function MailOrdersPage() {
         setPunchedVisible(prev => !prev);
         return;
       }
+
+      // S — Open SKU panel for focused order
+      if (key === "s" || key === "S") {
+        if (focusedId !== null) {
+          setSkuPanelOrderId(focusedId);
+        }
+        return;
+      }
     }
 
     document.addEventListener("keydown", onKeyDown);
@@ -870,6 +879,7 @@ export default function MailOrdersPage() {
           { key: "E", label: "SO input" },
           { key: "R", label: "Reply" },
           { key: "F", label: "Flag" },
+          { key: "S", label: "SKU panel" },
           { key: "N", label: "Next unmatched" },
         ]}
       />
@@ -944,6 +954,8 @@ export default function MailOrdersPage() {
             separatePunched={activeSlot !== null}
             punchedVisible={punchedVisible}
             onTogglePunched={() => setPunchedVisible(prev => !prev)}
+            skuPanelOrderId={skuPanelOrderId}
+            onCloseSkuPanel={() => setSkuPanelOrderId(null)}
           />
         )}
 
