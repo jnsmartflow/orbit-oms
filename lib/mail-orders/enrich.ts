@@ -490,11 +490,12 @@ export function enrichLine(
 
   const top = candidates[0];
 
-  // Check for tie: second candidate has same score but different SKU
-  // Not a tie if primary pack vs expansion pack
+  // Check for tie: second candidate has same score, same product, but different SKU
+  // Not a tie if: different products (sort already picked best), or different pack priority
   if (
     candidates.length > 1 &&
     candidates[1].score === top.score &&
+    candidates[1].product === top.product &&
     candidates[1].isPrimaryPack === top.isPrimaryPack &&
     candidates[1].sku.material !== top.sku.material
   ) {
