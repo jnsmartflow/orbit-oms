@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import {
   enrichLine,
   buildSkuMaps,
+  buildProductProfiles,
   type ProductKeyword,
   type BaseKeyword,
   type SkuEntry,
@@ -120,7 +121,8 @@ export async function POST(req: NextRequest) {
       materialType: r.materialType,
     }));
 
-    const { byCombo: skuByCombo, byMaterial: skuByMaterial } = buildSkuMaps(skuEntries);
+    const { byCombo: skuByCombo, byComboAlt: skuByComboAlt, byMaterial: skuByMaterial } = buildSkuMaps(skuEntries);
+    const productProfiles = buildProductProfiles(skuEntries, productKeywords, baseKeywords);
 
     // 4b. Customer matching (via parseSubject)
     const subjectParsed = parseSubject(subject);
@@ -192,6 +194,8 @@ export async function POST(req: NextRequest) {
         baseKeywords,
         skuByCombo,
         skuByMaterial,
+        skuByComboAlt,
+        productProfiles,
       );
       if (result.matchStatus === "matched") matchedCount++;
 
