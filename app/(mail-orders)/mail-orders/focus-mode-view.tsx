@@ -831,13 +831,6 @@ export function FocusModeView({
                     <span className="text-[11px] text-amber-700">{"\u26A0"} {order.totalLines - matchedCount} lines unmatched {"\u2014"} fix before copying</span>
                   </div>
                 );
-              if (notFoundCount > 0)
-                return (
-                  <div className="flex items-center justify-between px-7 py-2 bg-red-50" style={{ borderBottom: "1px solid #fecaca" }}>
-                    <span className="text-[11px] text-red-700">{"\u2715"} {notFoundCount} lines not available {"\u2014"} reply will note these</span>
-                    <button onClick={() => setActiveLineId(-1)} className="text-[10px] font-medium text-red-600 hover:text-red-800">Review {"\u2192"}</button>
-                  </div>
-                );
               return null;
             })()}
 
