@@ -480,24 +480,30 @@ export function enrichLine(
     };
   }
 
-  // Sort: score DESC → primary pack first → prefer non-fallback → prefer longer product keyword
+  // Sort: score DESC → primary pack → non-fallback → non-empty base → longer keyword
   candidates.sort((a, b) => {
     if (b.score !== a.score) return b.score - a.score;
     if (a.isPrimaryPack !== b.isPrimaryPack) return a.isPrimaryPack ? -1 : 1;
     if (a.isFallback !== b.isFallback) return a.isFallback ? 1 : -1;
+    // Prefer non-empty base (BW) over empty base ("")
+    const aHasBase = a.base ? 1 : 0;
+    const bHasBase = b.base ? 1 : 0;
+    if (aHasBase !== bHasBase) return bHasBase - aHasBase;
     return b.prodKwLen - a.prodKwLen;
   });
 
   const top = candidates[0];
 
-  // Check for tie: second candidate has same score, same product, but different SKU
-  // Not a tie if: different products (sort already picked best), or different pack priority
+  // Check for tie: second candidate has same score, same product, same base-presence, but different SKU
+  // Not a tie if: different products, different pack priority, or one has base and other doesn't
+  const second = candidates.length > 1 ? candidates[1] : null;
   if (
-    candidates.length > 1 &&
-    candidates[1].score === top.score &&
-    candidates[1].product === top.product &&
-    candidates[1].isPrimaryPack === top.isPrimaryPack &&
-    candidates[1].sku.material !== top.sku.material
+    second &&
+    second.score === top.score &&
+    second.product === top.product &&
+    second.isPrimaryPack === top.isPrimaryPack &&
+    (!!second.base) === (!!top.base) &&
+    second.sku.material !== top.sku.material
   ) {
     // Tie → partial, let Deepanshu resolve
     return {
