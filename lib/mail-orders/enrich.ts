@@ -389,10 +389,17 @@ export function enrichLine(
       }
     }
 
+    if (pm.product === "PROTECT") {
+      console.log(`[DEBUG] product=${pm.product} strategy=${strategy} basesToTry=${JSON.stringify(basesToTry)} packsToTry=${JSON.stringify(packsToTry)}`);
+    }
+
     // Try each base × pack against SKU table
     for (const base of basesToTry) {
       for (const pack of packsToTry) {
         const key = `${pm.product}|${base}|${pack}`;
+        if (pm.product === "PROTECT" && base.includes("94")) {
+          console.log(`[DEBUG] key=${key} found=${skuByCombo.has(key)} comboSize=${skuByCombo.size}`);
+        }
         const sku = skuByCombo.get(key);
         if (!sku) continue;
 
