@@ -186,22 +186,24 @@ export function buildProductProfiles(
     else if (bases.size === 1) {
       profile.strategy = "FIXED";
     } else {
-      // Check if any base is a named colour (not numbered, not BW/ADVANCE/BASECOAT)
+      // Check for numbered bases and named colour bases
+      let hasNumberedBase = false;
       let hasNamedBase = false;
       for (const b of Array.from(bases)) {
-        if (
+        if (b && /^9[0-8]/.test(b)) {
+          hasNumberedBase = true;
+        } else if (
           b &&
-          !/^9[0-8]/.test(b) &&
           b !== "BRILLIANT WHITE" &&
           b !== "ADVANCE" &&
           b !== "BASECOAT" &&
           b !== "NEO"
         ) {
           hasNamedBase = true;
-          break;
         }
       }
-      profile.strategy = hasNamedBase ? "COLOUR" : "NUMBERED";
+      // NUMBERED if any numbered base exists (handles mixed products like PROTECT, MAX)
+      profile.strategy = hasNumberedBase ? "NUMBERED" : hasNamedBase ? "COLOUR" : "NUMBERED";
     }
 
     // Check if this product's name IS a base colour
