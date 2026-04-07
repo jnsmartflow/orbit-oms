@@ -77,6 +77,7 @@ interface ScoredCandidate {
   score: number;
   prodKwLen: number;
   isFallback: boolean;
+  isPrimaryPack: boolean;
 }
 
 /* ── Pack rounding: fractional → standard ──────────────────── */
@@ -389,17 +390,10 @@ export function enrichLine(
       }
     }
 
-    if (pm.product === "PROTECT") {
-      console.log(`[DEBUG] product=${pm.product} strategy=${strategy} basesToTry=${JSON.stringify(basesToTry)} packsToTry=${JSON.stringify(packsToTry)}`);
-    }
-
     // Try each base × pack against SKU table
     for (const base of basesToTry) {
       for (const pack of packsToTry) {
         const key = `${pm.product}|${base}|${pack}`;
-        if (pm.product === "PROTECT" && base.includes("94")) {
-          console.log(`[DEBUG] key=${key} found=${skuByCombo.has(key)} comboSize=${skuByCombo.size}`);
-        }
         const sku = skuByCombo.get(key);
         if (!sku) continue;
 
@@ -455,6 +449,7 @@ export function enrichLine(
           score,
           prodKwLen: pm.len,
           isFallback,
+          isPrimaryPack: pack === cleanPack,
         });
       }
     }
@@ -485,9 +480,10 @@ export function enrichLine(
     };
   }
 
-  // Sort: score DESC → prefer non-fallback → prefer longer product keyword
+  // Sort: score DESC → primary pack first → prefer non-fallback → prefer longer product keyword
   candidates.sort((a, b) => {
     if (b.score !== a.score) return b.score - a.score;
+    if (a.isPrimaryPack !== b.isPrimaryPack) return a.isPrimaryPack ? -1 : 1;
     if (a.isFallback !== b.isFallback) return a.isFallback ? 1 : -1;
     return b.prodKwLen - a.prodKwLen;
   });
@@ -495,9 +491,11 @@ export function enrichLine(
   const top = candidates[0];
 
   // Check for tie: second candidate has same score but different SKU
+  // Not a tie if primary pack vs expansion pack
   if (
     candidates.length > 1 &&
     candidates[1].score === top.score &&
+    candidates[1].isPrimaryPack === top.isPrimaryPack &&
     candidates[1].sku.material !== top.sku.material
   ) {
     // Tie → partial, let Deepanshu resolve
