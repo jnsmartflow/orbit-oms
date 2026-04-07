@@ -31,27 +31,15 @@ interface FocusModeViewProps {
 
 const SLOT_ORDER = ["Morning", "Afternoon", "Evening", "Night"] as const;
 
-function getDeliveryDotColor(deliveryType: string | null | undefined): string | null {
+function getDeliveryTag(deliveryType: string | null | undefined): { className: string; label: string } | null {
   if (!deliveryType) return null;
   switch (deliveryType.toUpperCase()) {
-    case "LOCAL": return "bg-blue-600";
-    case "UPC": return "bg-orange-600";
-    case "IGT": return "bg-teal-600";
+    case "LOCAL": return { className: "bg-blue-50 text-blue-600 border border-blue-200", label: "Local" };
+    case "UPC": return { className: "bg-orange-50 text-orange-600 border border-orange-200", label: "UPC" };
+    case "IGT": return { className: "bg-teal-50 text-teal-600 border border-teal-200", label: "IGT" };
     case "CROSS":
-    case "CROSS DEPOT": return "bg-rose-600";
+    case "CROSS DEPOT": return { className: "bg-rose-50 text-rose-600 border border-rose-200", label: "Cross" };
     default: return null;
-  }
-}
-
-function getDeliveryDotTitle(deliveryType: string | null | undefined): string {
-  if (!deliveryType) return "";
-  switch (deliveryType.toUpperCase()) {
-    case "LOCAL": return "Local";
-    case "UPC": return "Upcountry";
-    case "IGT": return "IGT";
-    case "CROSS":
-    case "CROSS DEPOT": return "Cross Depot";
-    default: return deliveryType;
   }
 }
 
@@ -113,10 +101,10 @@ function getSignalBadges(order: MoOrder): Array<{ label: string; type: "blocker"
 }
 
 const BADGE_STYLES: Record<string, string> = {
-  blocker: "bg-red-50 text-red-700 border-red-200",
-  attention: "bg-amber-50 text-amber-700 border-amber-200",
-  info: "bg-gray-50 text-gray-500 border-gray-200",
-  split: "bg-purple-50 text-purple-600 border-purple-200",
+  blocker: "bg-red-600 text-white text-[10px] font-bold px-2.5 py-0.5 rounded-[5px]",
+  attention: "border-[1.5px] border-amber-500 text-amber-700 bg-white text-[10px] font-semibold px-2.5 py-0.5 rounded-[5px]",
+  info: "bg-gray-100 text-gray-500 text-[9px] font-medium px-1.5 py-0.5 rounded",
+  split: "bg-purple-50 text-purple-600 border border-purple-200 text-[9px] font-medium px-1.5 py-0.5 rounded",
 };
 
 function getOrderDisplayName(order: MoOrder): string {
@@ -728,13 +716,16 @@ export function FocusModeView({
   // ── Order card ───────────────────────────────────────────────────────────────
   const order = currentOrder!;
   const displayName = getOrderDisplayName(order);
-  const dotColor = getDeliveryDotColor(order.customerDeliveryType);
-  const dotTitle = getDeliveryDotTitle(order.customerDeliveryType);
+  const deliveryTag = getDeliveryTag(order.customerDeliveryType);
   const totalVol = getOrderVolume(order.lines);
   const volStr = formatVolume(totalVol);
   const badges = getSignalBadges(order);
   const hasCode = order.customerMatchStatus === "exact" && order.customerCode;
   const matchedCount = order.lines.filter((l) => l.matchStatus === "matched" && l.skuCode).length;
+  const hasUnmatched = matchedCount < order.totalLines;
+  const customerUnmatched = order.customerMatchStatus !== "exact";
+  const area = order.customerArea ? smartTitleCase(order.customerArea) : null;
+  const route = order.customerRoute ? smartTitleCase(order.customerRoute) : null;
   const notFoundCount = order.lines.filter(l => {
     const s = lineStatuses[l.id];
     return s && !s.found;
@@ -762,7 +753,7 @@ export function FocusModeView({
               {/* Green fill = punched progress */}
               <div
                 className="absolute inset-y-0 left-0 bg-green-400 rounded-full transition-all duration-300"
-                style={{ width: `${totalCount > 0 ? (punchedCount / totalCount) * 100 : 0}%` }}
+                style={{ width: `${totalCount > 0 ? (punchedCount / totalCount) * 100 : 0}%`, minWidth: punchedCount > 0 ? '4px' : '0' }}
               />
               {/* Teal dot = current position */}
               {totalCount > 0 && (
@@ -825,74 +816,97 @@ export function FocusModeView({
         <div ref={cardRef} style={slideStyle}>
           <div className={`bg-white border rounded-lg overflow-hidden ${cardBorderClass}`}>
             {accentBar}
-            <div className="px-4 pt-3.5 pb-3">
-              {/* Identity row */}
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-[11px] text-gray-500">{order.soName}</span>
-                <div className="flex items-center gap-2">
-                  {isJustDone && (
-                    <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-teal-700 bg-teal-50 px-2 py-0.5 rounded-full">
-                      <Check size={10} /> Done
-                    </span>
-                  )}
-                  <span className="text-[10px] text-gray-400">{formatTimeAMPM(order.receivedAt)}</span>
-                </div>
-              </div>
 
-              {/* Customer name */}
-              <div className="flex items-center gap-1.5 mb-2">
-                <h2 className="text-xl font-bold text-gray-900 leading-tight truncate" title={displayName}>
+            {/* ── Data quality strip ──────────────────────────────── */}
+            {!isJustDone && !isPunched && (() => {
+              if (customerUnmatched)
+                return (
+                  <div className="flex items-center justify-between px-7 py-2 bg-red-50" style={{ borderBottom: "1px solid #fecaca" }}>
+                    <span className="text-[11px] text-red-700">{"\u2715"} Customer not matched {"\u2014"} pick manually</span>
+                  </div>
+                );
+              if (hasUnmatched)
+                return (
+                  <div className="flex items-center justify-between px-7 py-2 bg-amber-50" style={{ borderBottom: "1px solid #fde68a" }}>
+                    <span className="text-[11px] text-amber-700">{"\u26A0"} {order.totalLines - matchedCount} lines unmatched {"\u2014"} fix before copying</span>
+                  </div>
+                );
+              if (notFoundCount > 0)
+                return (
+                  <div className="flex items-center justify-between px-7 py-2 bg-red-50" style={{ borderBottom: "1px solid #fecaca" }}>
+                    <span className="text-[11px] text-red-700">{"\u2715"} {notFoundCount} lines not available {"\u2014"} reply will note these</span>
+                    <button onClick={() => setActiveLineId(-1)} className="text-[10px] font-medium text-red-600 hover:text-red-800">Review {"\u2192"}</button>
+                  </div>
+                );
+              return null;
+            })()}
+
+            <div className="px-7 pt-5 pb-5">
+              {/* ── Identity block ─────────────────────────────────── */}
+
+              {/* Customer name + delivery tag */}
+              <div className="flex items-center gap-2 mb-1.5">
+                <h2 className="text-2xl font-bold text-gray-900 leading-tight truncate" title={displayName}>
                   {displayName}
                 </h2>
-                {dotColor && (
-                  <span className={`w-[6px] h-[6px] rounded-full ${dotColor} flex-shrink-0`} title={dotTitle} />
+                {deliveryTag && (
+                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded flex-shrink-0 ${deliveryTag.className}`}>
+                    {deliveryTag.label}
+                  </span>
                 )}
                 {isFlagged && (
                   <Flag size={14} className="text-amber-500 flex-shrink-0 fill-amber-500" />
                 )}
+                {isJustDone && (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-teal-700 bg-teal-50 px-2 py-0.5 rounded-full flex-shrink-0">
+                    <Check size={10} /> Done
+                  </span>
+                )}
               </div>
 
-              {/* Meta row */}
-              <div className="flex items-center gap-1.5 flex-wrap mb-2 text-[11px]">
-                {hasCode && (
-                  <span className="px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 text-[10px] font-mono">{order.customerCode}</span>
-                )}
-                {order.customerArea && (
-                  <><span className="text-gray-300">·</span><span className="text-gray-500">{smartTitleCase(order.customerArea)}</span></>
-                )}
-                {order.customerDeliveryType && (
-                  <><span className="text-gray-300">·</span><span className="text-gray-500">{getDeliveryDotTitle(order.customerDeliveryType)}</span></>
-                )}
-                {volStr && (
-                  <><span className="text-gray-300">·</span><span className="text-gray-500">{volStr}</span></>
-                )}
-                <span className="text-gray-300">·</span>
-                <span className="text-gray-500">{order.totalLines} lines</span>
+              {/* Customer code */}
+              <div className={`font-mono text-[15px] font-semibold tracking-wide mb-1 ${hasCode ? "text-gray-700" : "text-gray-400"}`}>
+                {hasCode ? order.customerCode : "\u2014"}
+              </div>
+
+              {/* Area · Route */}
+              {(area || route) && (
+                <div className="text-[11px] text-gray-400 mb-0.5">
+                  {area}{route ? ` \u00b7 ${route}` : ""}
+                </div>
+              )}
+
+              {/* SO name · time (demoted) */}
+              <div className="text-[10px] text-gray-400">
+                {order.soName} {"\u00b7"} {formatTimeAMPM(order.receivedAt)}
                 {isPunched && order.soNumber && (
-                  <><span className="text-gray-300">·</span><span className="font-mono text-teal-700 font-semibold">SO {order.soNumber}</span></>
+                  <span className="font-mono text-teal-700 font-semibold ml-2">SO {order.soNumber}</span>
                 )}
               </div>
 
               {/* Signal badges */}
               {badges.length > 0 && (
-                <div className="flex flex-wrap gap-1 mb-3">
+                <div className="flex flex-wrap items-center gap-1.5 mt-2">
                   {badges.map((b, i) => (
-                    <span key={i} className={`text-[9px] font-medium px-1.5 py-0.5 rounded border ${BADGE_STYLES[b.type]}`}>
+                    <span key={i} className={BADGE_STYLES[b.type]}>
                       {b.label}
                     </span>
                   ))}
                 </div>
               )}
 
-              {/* ── Just done state ────────────────────────────────────── */}
+              {/* ── Divider ────────────────────────────────────────── */}
+              <div className="border-t border-gray-100 my-5 -mx-7" />
+
+              {/* ── Action block ───────────────────────────────────── */}
               {isJustDone ? (
                 <div>
                   <button
                     onClick={handleReplyAndNext}
-                    className="w-full py-2.5 rounded-md bg-teal-600 text-white text-sm font-semibold hover:bg-teal-700 transition-colors flex items-center justify-center gap-2"
+                    className="w-full py-3.5 rounded-[10px] bg-teal-600 text-white text-[14px] font-semibold hover:bg-teal-700 transition-colors flex items-center justify-center gap-2"
                   >
-                    <span className="inline-flex items-center justify-center w-5 h-5 rounded bg-white/20 text-[10px] font-bold">R</span>
-                    {replyCopied ? "Copied! Going next…" : "Copy reply & go next"}
+                    <span className="inline-flex items-center justify-center w-[22px] h-[22px] rounded-[5px] bg-white/20 text-[10px] font-bold">R</span>
+                    {replyCopied ? "Copied! Going next\u2026" : "Copy reply & go next"}
                   </button>
                   <div className="text-center mt-2 text-xs text-teal-700 font-medium flex items-center justify-center gap-2">
                     Next order in {graceCountdown}s
@@ -900,18 +914,18 @@ export function FocusModeView({
                       onClick={() => { justDoneIdRef.current = null; setJustDoneId(null); advanceToNextPending(); }}
                       className="text-teal-600 font-semibold underline hover:text-teal-800"
                     >
-                      Go now →
+                      Go now {"\u2192"}
                     </button>
                   </div>
                 </div>
               ) : (
                 <>
-                  {/* ── Copy buttons ────────────────────────────────────── */}
-                  <div className="grid grid-cols-2 gap-2 mb-2.5">
+                  {/* Copy buttons */}
+                  <div className="grid grid-cols-2 gap-2 mb-3">
                     <button
                       onClick={handleCopyCode}
                       disabled={!hasCode}
-                      className={`flex items-center justify-center gap-1.5 py-2.5 border rounded-md text-xs font-semibold transition-colors ${
+                      className={`flex items-center justify-center gap-1.5 py-3.5 border rounded-[10px] text-xs font-semibold transition-colors ${
                         codeCopied
                           ? "border-teal-500 text-teal-600 bg-teal-50"
                           : hasCode
@@ -919,7 +933,7 @@ export function FocusModeView({
                           : "border-gray-100 text-gray-300 bg-gray-50 cursor-not-allowed"
                       }`}
                     >
-                      <span className={`inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-bold ${
+                      <span className={`inline-flex items-center justify-center w-[22px] h-[22px] rounded-[5px] text-[10px] font-bold ${
                         codeCopied ? "bg-teal-500 text-white" : "bg-gray-100 text-gray-600"
                       }`}>Q</span>
                       {codeCopied ? "Copied!" : "Copy code"}
@@ -927,30 +941,32 @@ export function FocusModeView({
                     <button
                       onClick={handleCopySkus}
                       disabled={matchedCount === 0}
-                      className={`flex items-center justify-center gap-1.5 py-2.5 border rounded-md text-xs font-semibold transition-colors ${
+                      className={`flex items-center justify-center gap-1.5 py-3.5 border rounded-[10px] text-xs font-semibold transition-colors ${
                         skuCopied
                           ? "border-teal-500 text-teal-600 bg-teal-50"
+                          : hasUnmatched
+                          ? "border-amber-200 text-amber-700 bg-white hover:bg-amber-50"
                           : matchedCount > 0
                           ? "border-gray-200 text-gray-700 bg-white hover:bg-gray-50"
                           : "border-gray-100 text-gray-300 bg-gray-50 cursor-not-allowed"
                       }`}
                     >
-                      <span className={`inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-bold ${
-                        skuCopied ? "bg-teal-500 text-white" : "bg-gray-100 text-gray-600"
+                      <span className={`inline-flex items-center justify-center w-[22px] h-[22px] rounded-[5px] text-[10px] font-bold ${
+                        skuCopied ? "bg-teal-500 text-white" : hasUnmatched ? "bg-amber-50 text-amber-700" : "bg-gray-100 text-gray-600"
                       }`}>W</span>
-                      {skuCopied ? "Copied!" : "Copy SKUs"}
+                      {skuCopied ? "Copied!" : hasUnmatched ? `Copy ${matchedCount} of ${order.totalLines}` : "Copy SKUs"}
                     </button>
                   </div>
 
-                  {/* ── SO Number input ─────────────────────────────────── */}
-                  <div className="mb-2.5">
+                  {/* SO Number input */}
+                  <div className="mb-3">
                     <input
                       ref={soInputRef}
                       type="text"
                       value={soInput}
                       onChange={(e) => setSoInput(e.target.value)}
                       placeholder="SO number (E to focus)"
-                      className={`w-full h-11 border-[1.5px] rounded-md px-3 text-lg font-mono text-gray-900 outline-none transition-colors placeholder:text-gray-300 placeholder:font-sans placeholder:text-sm ${
+                      className={`w-full h-[52px] border-[1.5px] rounded-[10px] px-4 text-[20px] font-mono text-gray-900 outline-none transition-colors placeholder:text-gray-300 placeholder:font-sans placeholder:text-sm ${
                         soInput.trim()
                           ? "border-teal-500 bg-teal-50/50"
                           : "border-gray-200 focus:border-teal-500"
@@ -959,11 +975,11 @@ export function FocusModeView({
                     />
                   </div>
 
-                  {/* ── Action button ───────────────────────────────────── */}
+                  {/* Action button */}
                   <button
                     onClick={isPunched ? handleReplyAndNext : soInput.trim() ? handleSoSubmit : undefined}
                     disabled={!isPunched && !soInput.trim()}
-                    className={`w-full py-2.5 rounded-md text-sm font-semibold flex items-center justify-center gap-2 transition-colors ${
+                    className={`w-full py-3.5 rounded-[10px] text-[14px] font-semibold flex items-center justify-center gap-2 transition-colors mb-6 ${
                       isPunched
                         ? "bg-teal-600 text-white hover:bg-teal-700"
                         : soInput.trim()
@@ -971,10 +987,10 @@ export function FocusModeView({
                         : "bg-gray-100 text-gray-400 cursor-default"
                     }`}
                   >
-                    <span className={`inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-bold ${
+                    <span className={`inline-flex items-center justify-center w-[22px] h-[22px] rounded-[5px] text-[10px] font-bold ${
                       isPunched || soInput.trim() ? "bg-white/20 text-white" : "bg-gray-200 text-gray-400"
                     }`}>
-                      {isPunched ? "R" : "↵"}
+                      {isPunched ? "R" : "\u21b5"}
                     </span>
                     {isPunched
                       ? replyCopied ? "Copied!" : "Copy reply"
@@ -984,37 +1000,31 @@ export function FocusModeView({
                 </>
               )}
 
-              {/* ── SKU summary row ───────────────────────────────────── */}
+              {/* ── SKU footer ─────────────────────────────────────── */}
               <button
                 type="button"
                 onClick={() => setActiveLineId(-1)}
-                className="w-full flex items-center justify-between py-3 mt-3 border-t border-gray-100"
+                className="w-full flex items-center justify-between border-t border-gray-100 pt-4"
               >
                 <div className="flex items-center gap-2">
-                  {notFoundCount > 0 ? (
+                  {(hasUnmatched || notFoundCount > 0) ? (
                     <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#f59e0b" strokeWidth="2"><path d="M8 2 L14 13 H2Z"/></svg>
                   ) : (
                     <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#22c55e" strokeWidth="2.5"><polyline points="3 8 6.5 11.5 13 5"/></svg>
                   )}
                   <span className="text-xs text-gray-600 font-medium">
-                    {order.totalLines} SKU lines
+                    {hasUnmatched ? `${matchedCount}/${order.totalLines} matched` : `${order.totalLines} lines`}
                   </span>
+                  {volStr && (
+                    <><span className="text-gray-300">{"\u00b7"}</span><span className="text-xs text-gray-500">{volStr}</span></>
+                  )}
                   {notFoundCount > 0 && (
-                    <>
-                      <span className="text-gray-300">{"\u00b7"}</span>
-                      <span className="text-xs text-red-500 font-medium">
-                        {notFoundCount} not found
-                      </span>
-                    </>
+                    <><span className="text-gray-300">{"\u00b7"}</span><span className="text-xs text-red-500 font-medium">{notFoundCount} not found</span></>
                   )}
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <span className="text-[9px] px-1.5 py-0.5 border border-gray-200 rounded text-gray-500 font-semibold">
-                    S
-                  </span>
-                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#d1d5db" strokeWidth="2">
-                    <polyline points="6 4 10 8 6 12"/>
-                  </svg>
+                  <span className="text-[9px] px-1.5 py-0.5 border border-gray-200 rounded text-gray-500 font-semibold">S</span>
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#d1d5db" strokeWidth="2"><polyline points="6 4 10 8 6 12"/></svg>
                 </div>
               </button>
             </div>
@@ -1024,31 +1034,31 @@ export function FocusModeView({
       </div>
 
       {/* ── Nav bar ──────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-center gap-4 py-4 max-w-2xl mx-auto">
+      <div className="flex items-center justify-center gap-4 py-3.5 max-w-2xl mx-auto">
         <button
           onClick={goPrev}
           disabled={currentIndex === 0}
-          className={`text-xs font-medium px-3.5 py-2 rounded-lg border transition-colors ${
+          className={`w-[30px] h-[30px] rounded-lg border flex items-center justify-center transition-colors ${
             currentIndex === 0
               ? "text-gray-300 border-gray-100 cursor-default"
               : "text-gray-600 border-gray-200 bg-white hover:bg-gray-50"
           }`}
         >
-          {"\u2190"} Prev
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="10 4 6 8 10 12"/></svg>
         </button>
-        <span className="text-xs text-gray-400 font-medium">
+        <span className="text-[11px] text-gray-400 font-medium">
           {currentIndex + 1} of {totalCount}
         </span>
         <button
           onClick={goNext}
           disabled={currentIndex >= totalCount - 1}
-          className={`text-xs font-medium px-3.5 py-2 rounded-lg border transition-colors ${
+          className={`w-[30px] h-[30px] rounded-lg border flex items-center justify-center transition-colors ${
             currentIndex >= totalCount - 1
               ? "text-gray-300 border-gray-100 cursor-default"
               : "text-gray-600 border-gray-200 bg-white hover:bg-gray-50"
           }`}
         >
-          Next {"\u2192"}
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 4 10 8 6 12"/></svg>
         </button>
       </div>
 
@@ -1056,7 +1066,7 @@ export function FocusModeView({
       {activeLineId === -1 && (
         <div className="fixed inset-0 z-50 flex">
           <div className="flex-1 bg-black/10" onClick={() => setActiveLineId(null)} />
-          <div className="w-[360px] bg-white border-l border-gray-200 h-full overflow-y-auto">
+          <div className="w-[360px] bg-white border-l border-gray-200 h-full overflow-y-auto" style={{ boxShadow: '-4px 0 20px rgba(0,0,0,0.05)' }}>
             <div className="p-4">
               <div className="flex items-center justify-between mb-4">
                 <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wide">
@@ -1081,22 +1091,25 @@ export function FocusModeView({
                   <div
                     key={line.id}
                     data-panel-idx={idx}
-                    className={`flex items-center gap-2 py-2.5 px-2 rounded-lg mb-1 cursor-pointer transition-colors ${
+                    className={`flex items-center gap-2 py-[9px] px-2.5 rounded-lg mb-1 cursor-pointer transition-colors ${
                       idx === panelHighlight
                         ? "bg-teal-50 ring-1 ring-teal-200"
                         : isNF ? "bg-red-50 hover:bg-red-100" : "hover:bg-gray-50"
                     }`}
                   >
+                    {/* Line number */}
+                    <span className="text-[10px] text-gray-400 font-medium w-4 text-right flex-shrink-0">{idx + 1}</span>
+
                     {/* Toggle */}
                     <button
                       type="button"
                       onClick={(e) => { e.stopPropagation(); handleQuickToggle(line.id); }}
-                      className={`w-7 h-4 rounded-full relative flex-shrink-0 transition-colors ${
+                      className={`w-6 h-[14px] rounded-full relative flex-shrink-0 transition-colors ${
                         isNF ? "bg-red-500" : "bg-green-500"
                       }`}
                     >
-                      <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all ${
-                        isNF ? "left-0.5" : "left-[14px]"
+                      <span className={`absolute top-[2px] w-2.5 h-2.5 rounded-full bg-white transition-all ${
+                        isNF ? "left-0.5" : "left-[12px]"
                       }`} />
                     </button>
 
@@ -1157,6 +1170,30 @@ export function FocusModeView({
                   )}
                 </div>
               </div>
+            </div>
+
+            {/* Keyboard hints */}
+            <div className="flex items-center gap-3 px-4 py-2 border-t border-gray-100 text-[9px] text-gray-400">
+              <span className="flex items-center gap-1">
+                <span className="inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded bg-gray-100 text-[8px] font-bold text-gray-500">{"\u2191\u2193"}</span>
+                navigate
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded bg-gray-100 text-[8px] font-bold text-gray-500">{"\u2212"}</span>
+                not found
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded bg-gray-100 text-[8px] font-bold text-gray-500">+</span>
+                found
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded bg-gray-100 text-[8px] font-bold text-gray-500">{"\u21b5"}</span>
+                detail
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded bg-gray-100 text-[8px] font-bold text-gray-500">esc</span>
+                close
+              </span>
             </div>
           </div>
         </div>
