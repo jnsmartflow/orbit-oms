@@ -675,7 +675,7 @@ export default function MailOrdersPage() {
           return;
         }
 
-        // State 2: copy SKU codes one by one
+        // State 2: copy all SKU codes (batch of 20)
         const matchedLines = order.lines.filter(
           l => l.matchStatus === "matched" && l.skuCode != null
         );
@@ -683,12 +683,31 @@ export default function MailOrdersPage() {
           showCopyToast("No SKU — resolve first", "error");
           return;
         }
-        const idx = smartCopyLineIdx % matchedLines.length;
-        const line = matchedLines[idx];
-        navigator.clipboard.writeText(line.skuCode!);
-        setSmartCopyLineIdx(idx + 1);
-        showCopyToast(`SKU ${idx + 1}/${matchedLines.length}: ${line.skuCode}`, "sku");
-        flashCell(focusedId, "sku");
+        const needsBatching = matchedLines.length > BATCH_COPY_LIMIT;
+        if (needsBatching) {
+          const batchIdx = smartCopyLineIdx;
+          const totalBatches = Math.ceil(matchedLines.length / BATCH_COPY_LIMIT);
+          handleCopy(order.id, order.lines, batchIdx);
+          flashCell(focusedId, "sku");
+          const nextBatch = batchIdx + 1;
+          if (nextBatch >= totalBatches) {
+            // All batches done — reset
+            showCopyToast(`SKUs batch ${batchIdx + 1}/${totalBatches} copied — done`, "sku");
+            setSmartCopyOrderId(null);
+            setSmartCopyLineIdx(0);
+          } else {
+            showCopyToast(`SKUs batch ${batchIdx + 1}/${totalBatches} copied`, "sku");
+            setSmartCopyLineIdx(nextBatch);
+          }
+          handleAdvanceBatch(order.id);
+        } else {
+          handleCopy(order.id, order.lines);
+          flashCell(focusedId, "sku");
+          showCopyToast(`${matchedLines.length} SKUs copied`, "sku");
+          // No more batches — reset
+          setSmartCopyOrderId(null);
+          setSmartCopyLineIdx(0);
+        }
         return;
       }
 

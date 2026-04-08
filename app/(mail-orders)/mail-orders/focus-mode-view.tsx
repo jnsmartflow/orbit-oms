@@ -7,6 +7,7 @@ import {
   getOrderVolume,
   formatVolume,
   getSlotFromTime,
+  BATCH_COPY_LIMIT,
 } from "@/lib/mail-orders/utils";
 import type { MoOrder, MoOrderLine, LineStatus } from "@/lib/mail-orders/types";
 import { LINE_STATUS_REASONS } from "@/lib/mail-orders/types";
@@ -391,7 +392,7 @@ export function FocusModeView({
       return;
     }
 
-    // State 2: copy SKU codes one by one
+    // State 2: copy all SKU codes (batch of 20)
     const matchedLines = currentOrder.lines.filter(
       l => l.matchStatus === "matched" && l.skuCode != null
     );
@@ -399,12 +400,28 @@ export function FocusModeView({
       showCopyToast("No SKU — resolve first", "error");
       return;
     }
-    const idx = smartCopyLineIdx % matchedLines.length;
-    const line = matchedLines[idx];
-    navigator.clipboard.writeText(line.skuCode!);
-    setSmartCopyLineIdx(idx + 1);
-    showCopyToast(`SKU ${idx + 1}/${matchedLines.length}: ${line.skuCode}`, "sku");
-  }, [currentOrder, smartCopyOrderId, smartCopyLineIdx, showCopyToast]);
+    const needsBatching = matchedLines.length > BATCH_COPY_LIMIT;
+    if (needsBatching) {
+      const batchIdx = smartCopyLineIdx;
+      const totalBatches = Math.ceil(matchedLines.length / BATCH_COPY_LIMIT);
+      onCopy(currentOrder.id, currentOrder.lines, batchIdx);
+      const nextBatch = batchIdx + 1;
+      if (nextBatch >= totalBatches) {
+        showCopyToast(`SKUs batch ${batchIdx + 1}/${totalBatches} copied — done`, "sku");
+        setSmartCopyOrderId(null);
+        setSmartCopyLineIdx(0);
+      } else {
+        showCopyToast(`SKUs batch ${batchIdx + 1}/${totalBatches} copied`, "sku");
+        setSmartCopyLineIdx(nextBatch);
+      }
+      onAdvanceBatch(currentOrder.id);
+    } else {
+      onCopy(currentOrder.id, currentOrder.lines);
+      showCopyToast(`${matchedLines.length} SKUs copied`, "sku");
+      setSmartCopyOrderId(null);
+      setSmartCopyLineIdx(0);
+    }
+  }, [currentOrder, smartCopyOrderId, smartCopyLineIdx, showCopyToast, onCopy, onAdvanceBatch, batchStates]);
 
   const handleSoSubmit = useCallback(async () => {
     if (!currentOrder || !soInput.trim()) return;
@@ -978,7 +995,9 @@ export function FocusModeView({
                       {copyToast
                         ? copyToast.text
                         : smartCopyOrderId === order.id
-                        ? `Next: SKU ${(smartCopyLineIdx % matchedCount) + 1}/${matchedCount}`
+                        ? matchedCount > BATCH_COPY_LIMIT
+                          ? `Next: Copy SKUs batch ${smartCopyLineIdx + 1}/${Math.ceil(matchedCount / BATCH_COPY_LIMIT)}`
+                          : `Next: Copy ${matchedCount} SKUs`
                         : hasCode
                         ? "Copy code → then SKUs"
                         : "No customer code"
