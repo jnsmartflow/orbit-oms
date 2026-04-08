@@ -19,6 +19,7 @@ export function buildSlotSummaryHTML(
   const flaggedLines: {
     customerName: string;
     productName: string;
+    baseColour: string | null;
     packCode: string | null;
     reason: string;
   }[] = [];
@@ -30,6 +31,7 @@ export function buildSlotSummaryHTML(
         flaggedLines.push({
           customerName: custName,
           productName: smartTitleCase(line.productName) || "Unknown",
+          baseColour: line.baseColour,
           packCode: line.packCode,
           reason: line.lineStatus.reason,
         });
@@ -38,16 +40,6 @@ export function buildSlotSummaryHTML(
   }
 
   // ── Helpers ──
-
-  function fmtTime(iso: string | null): string {
-    if (!iso) return "\u2014";
-    return new Date(iso).toLocaleString("en-GB", {
-      timeZone: "Asia/Kolkata",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    });
-  }
 
   function fmtDate(d: string): string {
     const parts = d.match(/(\d+)\s+(\w+)\s+(\d+)/);
@@ -168,19 +160,11 @@ export function buildSlotSummaryHTML(
       h += `<p style="margin:0 0 3px;font-size:13px;font-weight:600;color:${custColor}">${cust}${custSuffix}`;
       if (splitSuffix) h += `<span style="color:#9ca3af">${splitSuffix}</span>`;
       h += '</p>';
-      h += '<p style="margin:0;font-size:11px;color:#9ca3af">';
-      h += `Code <span style="color:#0d9488;font-weight:700;font-family:\'Courier New\',Courier,monospace;font-size:11px">${o.customerCode ?? "\u2014"}</span>`;
-      h += ` \u00b7 ${fmtTime(o.receivedAt)}`;
-      h += ` \u2192 `;
-      const pTime = fmtTime(o.punchedAt);
-      const pColor = o.punchedAt ? "#0d9488" : "#9ca3af";
-      h += `<span style="color:${pColor}">${pTime}</span>`;
-      h += '</p>';
+      h += `<p style="margin:0;font-size:11px;color:#9ca3af">Code <span style="color:#0d9488;font-weight:700;font-family:\'Courier New\',Courier,monospace;font-size:11px">${o.customerCode ?? "\u2014"}</span></p>`;
       h += '</td>';
       // Right col
       h += `<td style="padding:11px 0;vertical-align:top;text-align:right;white-space:nowrap;padding-left:20px;${bb}">`;
       h += `<p style="margin:0;font-size:15px;font-weight:700;color:#111827;font-family:\'Courier New\',Courier,monospace">${o.soNumber}</p>`;
-      h += '<p style="margin:3px 0 0;font-size:9px;color:#d1d5db;text-transform:uppercase;letter-spacing:0.06em">SO No.</p>';
       h += '</td>';
       h += '</tr>';
     });
@@ -200,9 +184,12 @@ export function buildSlotSummaryHTML(
     flaggedLines.forEach((fl, i) => {
       const isLast = i === flaggedLines.length - 1;
       const bb = isLast ? "" : "border-bottom:1px solid #f3f4f6;";
-      const product = fl.packCode
-        ? `${fl.productName} \u00b7 ${fl.packCode}`
+      const prodBase = fl.baseColour
+        ? `${fl.productName} ${smartTitleCase(fl.baseColour)}`
         : fl.productName;
+      const product = fl.packCode
+        ? `${prodBase} \u00b7 ${fl.packCode}`
+        : prodBase;
       const rs = getReasonStyle(fl.reason);
 
       h += '<tr>';
