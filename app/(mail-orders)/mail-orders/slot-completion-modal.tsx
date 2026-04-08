@@ -83,12 +83,18 @@ export function SlotCompletionModal({
       year: "numeric",
     });
 
+    // Pass ALL orders for this SO (template filters processed vs pending internally)
+    const soOrders = orders.filter(
+      (o) => (o.soName?.toLowerCase() ?? "") === (group.soName?.toLowerCase() ?? ""),
+    );
+
     const htmlContent = buildSlotSummaryHTML(
       group.soName,
-      group.orders,
+      soOrders,
       slot,
       date,
       senderName,
+      "+91 98250 XXXXX",
     );
 
     // Copy HTML to clipboard
