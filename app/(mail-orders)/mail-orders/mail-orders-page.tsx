@@ -10,7 +10,7 @@ import { UniversalHeader } from "@/components/universal-header";
 import { SoSummaryPanel } from "./so-summary-panel";
 import { SlotCompletionModal } from "./slot-completion-modal";
 import { FocusModeView } from "./focus-mode-view";
-import { Check } from "lucide-react";
+import { Check, Copy } from "lucide-react";
 
 // ── Column Picker ──────────────────────────────────────────────────────────
 
@@ -144,6 +144,11 @@ export default function MailOrdersPage() {
   const [dismissedSlots, setDismissedSlots] = useState<Set<string>>(new Set());
   const [completedSlot, setCompletedSlot] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"table" | "focus">("table");
+  // ── Smart copy state (Ctrl+C workflow for SAP) ──────────────────────────────
+  const [smartCopyOrderId, setSmartCopyOrderId] = useState<number | null>(null);
+  const [smartCopyLineIdx, setSmartCopyLineIdx] = useState(0);
+  const [copyToast, setCopyToast] = useState<{ text: string; type: "customer" | "sku" | "error" } | null>(null);
+  const copyToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [visibleColumns, setVisibleColumns] = useState<Set<string>>(() => {
     if (typeof window === "undefined") {
       return new Set(ALL_COLUMNS.map(c => c.key));
@@ -400,6 +405,35 @@ export default function MailOrdersPage() {
     }
   }, [orders, focusedId]);
 
+  // ── Smart copy: reset when focus moves to a different order ──────────────────
+  useEffect(() => {
+    if (focusedId !== null && smartCopyOrderId !== null && focusedId !== smartCopyOrderId) {
+      setSmartCopyOrderId(null);
+      setSmartCopyLineIdx(0);
+    }
+  }, [focusedId, smartCopyOrderId]);
+
+  const showCopyToast = useCallback((text: string, type: "customer" | "sku" | "error") => {
+    if (copyToastTimer.current) clearTimeout(copyToastTimer.current);
+    setCopyToast({ text, type });
+    copyToastTimer.current = setTimeout(() => setCopyToast(null), 1500);
+  }, []);
+
+  // ── Smart copy: flash cell helper ───────────────────────────────────────────
+  const flashCell = useCallback((orderId: number, cellType: "code" | "sku") => {
+    const row = document.querySelector(`tr[data-order-id="${orderId}"]`);
+    if (!row) return;
+    // Code cell is the td containing font-mono code span, SKU cell contains the copy button
+    const selector = cellType === "code"
+      ? 'td[data-cell="code"]'
+      : 'td[data-cell="sku"]';
+    const td = row.querySelector(selector);
+    if (!td) return;
+    const cls = cellType === "code" ? "smart-copy-flash-green" : "smart-copy-flash-blue";
+    td.classList.add(cls);
+    setTimeout(() => td.classList.remove(cls), 400);
+  }, []);
+
   // ── Handlers ─────────────────────────────────────────────────────────────────
   const handleFlag = useCallback(
     async (id: number) => {
@@ -538,14 +572,24 @@ export default function MailOrdersPage() {
   }, [selectedDate, orders]);
 
   // ── Flat order list for keyboard navigation ──────────────────────────────────
+  // Only includes VISIBLE rows — excludes punched orders hidden behind collapsed divider
+  const separatePunched = activeSlot !== null;
   const flatOrders = useMemo(() => {
     const result: MoOrder[] = [];
     for (const slot of ["Morning", "Afternoon", "Evening", "Night"] as const) {
       const group = groupedOrders[slot];
-      if (group) result.push(...group);
+      if (!group) continue;
+      for (const o of group) {
+        // Skip punched orders hidden behind collapsed divider
+        if (separatePunched && !punchedVisible &&
+            o.status === "punched" && !recentlyPunchedIds.has(o.id)) {
+          continue;
+        }
+        result.push(o);
+      }
     }
     return result;
-  }, [groupedOrders]);
+  }, [groupedOrders, separatePunched, punchedVisible, recentlyPunchedIds]);
 
   // ── Keyboard navigation ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -566,6 +610,12 @@ export default function MailOrdersPage() {
           setOpenCodePopoverId(null);
           return;
         }
+        // Reset smart copy state
+        if (smartCopyOrderId !== null) {
+          setSmartCopyOrderId(null);
+          setSmartCopyLineIdx(0);
+          return;
+        }
         const active = document.activeElement as HTMLElement | null;
         if (active?.tagName === "INPUT") {
           active.blur();
@@ -579,7 +629,68 @@ export default function MailOrdersPage() {
       }
 
       const tag = (document.activeElement?.tagName ?? "").toUpperCase();
+
+      // ── Ctrl+V — Auto-paste into SO Number input ──────────────────────────────
+      if ((e.ctrlKey || e.metaKey) && e.key === "v") {
+        // Don't intercept if already in an input
+        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+        if (focusedId === null) return;
+        const row = document.querySelector(`tr[data-order-id="${focusedId}"]`);
+        if (!row) return;
+        const input = row.querySelector('input[placeholder="SO Number"]') as HTMLInputElement | null;
+        if (input) {
+          // Focus the input — browser will complete the native paste
+          input.focus();
+          input.select();
+          // Don't preventDefault — let the native paste go through
+        }
+        return;
+      }
+
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+
+      // ── Ctrl+C — Smart copy for SAP workflow ──────────────────────────────────
+      if ((e.ctrlKey || e.metaKey) && e.key === "c") {
+        // Don't intercept if user has text selected (normal copy)
+        const selection = window.getSelection();
+        if (selection && selection.toString().trim().length > 0) return;
+
+        if (focusedId === null) return;
+        const order = flatOrders.find(o => o.id === focusedId);
+        if (!order) return;
+
+        e.preventDefault();
+
+        // State 1: copy customer code first
+        if (smartCopyOrderId !== focusedId) {
+          if (!order.customerCode || order.customerMatchStatus !== "exact") {
+            showCopyToast("No customer — resolve first", "error");
+            return;
+          }
+          navigator.clipboard.writeText(order.customerCode);
+          setSmartCopyOrderId(focusedId);
+          setSmartCopyLineIdx(0);
+          showCopyToast(`Customer: ${order.customerCode} copied`, "customer");
+          flashCell(focusedId, "code");
+          return;
+        }
+
+        // State 2: copy SKU codes one by one
+        const matchedLines = order.lines.filter(
+          l => l.matchStatus === "matched" && l.skuCode != null
+        );
+        if (matchedLines.length === 0) {
+          showCopyToast("No SKU — resolve first", "error");
+          return;
+        }
+        const idx = smartCopyLineIdx % matchedLines.length;
+        const line = matchedLines[idx];
+        navigator.clipboard.writeText(line.skuCode!);
+        setSmartCopyLineIdx(idx + 1);
+        showCopyToast(`SKU ${idx + 1}/${matchedLines.length}: ${line.skuCode}`, "sku");
+        flashCell(focusedId, "sku");
+        return;
+      }
 
       const key = e.key;
 
@@ -634,22 +745,6 @@ export default function MailOrdersPage() {
               handleAdvanceBatch(order.id);
             } else {
               handleCopy(order.id, order.lines);
-            }
-          }
-        }
-        return;
-      }
-
-      // E — Focus SO number input
-      if (key === "e" || key === "E") {
-        if (focusedId !== null) {
-          const row = document.querySelector(`tr[data-order-id="${focusedId}"]`);
-          if (row) {
-            const input = row.querySelector('input[placeholder="SO Number"]') as HTMLInputElement | null;
-            if (input) {
-              e.preventDefault();
-              input.focus();
-              input.select();
             }
           }
         }
@@ -757,14 +852,17 @@ export default function MailOrdersPage() {
 
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [flatOrders, focusedId, expandedId, handleExpand, handleCopy, handleAdvanceBatch, handleFlag, batchStates, openCodePopoverId, soSummaryOpen, copiedReplyId, completedSlot, handleDismissCompletion, viewMode]);
+  }, [flatOrders, focusedId, expandedId, handleExpand, handleCopy, handleAdvanceBatch, handleFlag, batchStates, openCodePopoverId, soSummaryOpen, copiedReplyId, completedSlot, handleDismissCompletion, viewMode, smartCopyOrderId, smartCopyLineIdx, showCopyToast, flashCell]);
 
   // ── Auto-scroll focused row into view ───────────────────────────────────────
   useEffect(() => {
     if (focusedId !== null) {
-      document
-        .querySelector(`tr[data-order-id="${focusedId}"]`)
-        ?.scrollIntoView({ block: "nearest" });
+      // Use rAF to ensure DOM has settled after expand/collapse changes
+      requestAnimationFrame(() => {
+        document
+          .querySelector(`tr[data-order-id="${focusedId}"]`)
+          ?.scrollIntoView({ block: "nearest" });
+      });
     }
   }, [focusedId]);
 
@@ -810,6 +908,13 @@ export default function MailOrdersPage() {
   // ── Render ───────────────────────────────────────────────────────────────────
   return (
     <div className="flex flex-col h-screen overflow-hidden">
+      {/* Smart copy flash animations */}
+      <style>{`
+        @keyframes flash-green { 0% { background-color: #dcfce7; } 100% { background-color: transparent; } }
+        @keyframes flash-blue { 0% { background-color: #dbeafe; } 100% { background-color: transparent; } }
+        .smart-copy-flash-green { animation: flash-green 0.4s ease-out; }
+        .smart-copy-flash-blue { animation: flash-blue 0.4s ease-out; }
+      `}</style>
       <UniversalHeader
         title={
           <div className="flex items-center gap-2.5">
@@ -874,9 +979,8 @@ export default function MailOrdersPage() {
           />
         }
         shortcuts={[
-          { key: "Q", label: "Copy code" },
-          { key: "W", label: "Copy SKUs" },
-          { key: "E", label: "SO input" },
+          { key: "Ctrl+C", label: "Smart copy" },
+          { key: "Ctrl+V", label: "Paste SO" },
           { key: "R", label: "Reply" },
           { key: "F", label: "Flag" },
           { key: "S", label: "SKU panel" },
@@ -1004,6 +1108,18 @@ export default function MailOrdersPage() {
           </div>
         );
       })()}
+
+      {/* Smart copy toast */}
+      {copyToast && (
+        <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 text-white text-[12px] px-4 py-2 rounded-lg shadow-lg transition-opacity ${
+          copyToast.type === "customer" ? "bg-green-700"
+            : copyToast.type === "sku" ? "bg-blue-700"
+            : "bg-amber-700"
+        }`}>
+          <Copy size={13} />
+          <span>{copyToast.text}</span>
+        </div>
+      )}
     </div>
   );
 }

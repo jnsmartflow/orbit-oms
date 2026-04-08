@@ -529,7 +529,7 @@ function CodeCell({
   // STATE 1: Exact match
   if (status === "exact" && order.customerCode) {
     return (
-      <td className={`px-2 align-middle relative group ${baseTdClass}`} onClick={(e) => e.stopPropagation()}>
+      <td data-cell="code" className={`px-2 align-middle relative group ${baseTdClass}`} onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between">
           <span
             onClick={handleCopyCode}
@@ -559,7 +559,7 @@ function CodeCell({
     try { candidates = JSON.parse(order.customerCandidates); } catch { /* empty */ }
 
     return (
-      <td className={`px-2 align-middle relative ${baseTdClass}`} onClick={(e) => e.stopPropagation()}>
+      <td data-cell="code" className={`px-2 align-middle relative ${baseTdClass}`} onClick={(e) => e.stopPropagation()}>
         <span
           onClick={onToggle}
           className="text-[10px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 cursor-pointer hover:bg-amber-100"
@@ -593,7 +593,7 @@ function CodeCell({
 
   // STATE 3: Unmatched
   return (
-    <td className={`px-2 align-middle relative ${baseTdClass}`} onClick={(e) => e.stopPropagation()}>
+    <td data-cell="code" className={`px-2 align-middle relative ${baseTdClass}`} onClick={(e) => e.stopPropagation()}>
       <span
         onClick={onToggle}
         className="text-[10px] text-gray-400 cursor-pointer hover:text-gray-600 inline-flex items-center gap-0.5"
@@ -1090,7 +1090,7 @@ function OrderRow({
         />}
 
         {/* SKU */}
-        {isVis("sku") && <td className={`px-3.5 align-middle text-right ${baseTdClass}`}>
+        {isVis("sku") && <td data-cell="sku" className={`px-3.5 align-middle text-right ${baseTdClass}`}>
           <button
             disabled={isDisabled}
             onClick={(e) => {

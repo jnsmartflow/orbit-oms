@@ -7,7 +7,6 @@ import {
   getOrderVolume,
   formatVolume,
   getSlotFromTime,
-  BATCH_COPY_LIMIT,
 } from "@/lib/mail-orders/utils";
 import type { MoOrder, MoOrderLine, LineStatus } from "@/lib/mail-orders/types";
 import { LINE_STATUS_REASONS } from "@/lib/mail-orders/types";
@@ -147,8 +146,11 @@ export function FocusModeView({
   const [showOrderList, setShowOrderList] = useState(false);
   const [orderListHighlight, setOrderListHighlight] = useState(-1);
   const [soInput, setSoInput] = useState("");
-  const [codeCopied, setCodeCopied] = useState(false);
-  const [skuCopied, setSkuCopied] = useState(false);
+  // ── Smart copy state (Ctrl+C workflow for SAP) ──────────────────────────────
+  const [smartCopyOrderId, setSmartCopyOrderId] = useState<number | null>(null);
+  const [smartCopyLineIdx, setSmartCopyLineIdx] = useState(0);
+  const [copyToast, setCopyToast] = useState<{ text: string; type: "customer" | "sku" | "error" } | null>(null);
+  const copyToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [replyCopied, setReplyCopied] = useState(false);
   const [justDoneId, setJustDoneId] = useState<number | null>(null);
   const [graceCountdown, setGraceCountdown] = useState(0);
@@ -178,8 +180,9 @@ export function FocusModeView({
   // ── Reset state when order changes ───────────────────────────────────────────
   useEffect(() => {
     setSoInput(currentOrder?.soNumber || "");
-    setCodeCopied(false);
-    setSkuCopied(false);
+    setSmartCopyOrderId(null);
+    setSmartCopyLineIdx(0);
+    setCopyToast(null);
     setReplyCopied(false);
     setActiveLineId(null);
     setPanelHighlight(0);
@@ -365,33 +368,43 @@ export function FocusModeView({
     }
   }, [lineStatuses]);
 
-  const handleCopyCode = useCallback(() => {
-    if (!currentOrder?.customerCode) return;
-    navigator.clipboard.writeText(currentOrder.customerCode);
-    setCodeCopied(true);
-    setTimeout(() => setCodeCopied(false), 1500);
-  }, [currentOrder]);
+  // ── Smart copy helpers ──────────────────────────────────────────────────────
+  const showCopyToast = useCallback((text: string, type: "customer" | "sku" | "error") => {
+    if (copyToastTimer.current) clearTimeout(copyToastTimer.current);
+    setCopyToast({ text, type });
+    copyToastTimer.current = setTimeout(() => setCopyToast(null), 1500);
+  }, []);
 
-  const handleCopySkus = useCallback(() => {
+  const handleSmartCopy = useCallback(() => {
     if (!currentOrder) return;
-    const matched = currentOrder.lines.filter((l) => {
-      if (l.matchStatus !== "matched" || !l.skuCode) return false;
-      const s = lineStatuses[l.id];
-      if (s && !s.found) return false;
-      return true;
-    });
-    if (matched.length === 0) return;
-    const needsBatching = matched.length > BATCH_COPY_LIMIT;
-    if (needsBatching) {
-      const currentBatch = batchStates[currentOrder.id] ?? 0;
-      onCopy(currentOrder.id, currentOrder.lines, currentBatch);
-      onAdvanceBatch(currentOrder.id);
-    } else {
-      onCopy(currentOrder.id, currentOrder.lines);
+
+    // State 1: copy customer code first
+    if (smartCopyOrderId !== currentOrder.id) {
+      if (!currentOrder.customerCode || currentOrder.customerMatchStatus !== "exact") {
+        showCopyToast("No customer — resolve first", "error");
+        return;
+      }
+      navigator.clipboard.writeText(currentOrder.customerCode);
+      setSmartCopyOrderId(currentOrder.id);
+      setSmartCopyLineIdx(0);
+      showCopyToast(`Customer: ${currentOrder.customerCode} copied`, "customer");
+      return;
     }
-    setSkuCopied(true);
-    setTimeout(() => setSkuCopied(false), 1500);
-  }, [currentOrder, batchStates, onCopy, onAdvanceBatch, lineStatuses]);
+
+    // State 2: copy SKU codes one by one
+    const matchedLines = currentOrder.lines.filter(
+      l => l.matchStatus === "matched" && l.skuCode != null
+    );
+    if (matchedLines.length === 0) {
+      showCopyToast("No SKU — resolve first", "error");
+      return;
+    }
+    const idx = smartCopyLineIdx % matchedLines.length;
+    const line = matchedLines[idx];
+    navigator.clipboard.writeText(line.skuCode!);
+    setSmartCopyLineIdx(idx + 1);
+    showCopyToast(`SKU ${idx + 1}/${matchedLines.length}: ${line.skuCode}`, "sku");
+  }, [currentOrder, smartCopyOrderId, smartCopyLineIdx, showCopyToast]);
 
   const handleSoSubmit = useCallback(async () => {
     if (!currentOrder || !soInput.trim()) return;
@@ -553,6 +566,16 @@ export function FocusModeView({
       }
 
       // ── SO input active ───────────────────────────────────────────
+      // Ctrl+V — Auto-paste into SO Number input (works even when not focused)
+      if ((e.ctrlKey || e.metaKey) && e.key === "v") {
+        if (!isInInput && soInputRef.current) {
+          soInputRef.current.focus();
+          soInputRef.current.select();
+          // Don't preventDefault — let the native paste go through
+        }
+        return;
+      }
+
       if (isInInput) {
         if (e.key === "Enter" && soInput.trim()) { e.preventDefault(); handleSoSubmit(); return; }
         if (e.key === "Escape") { e.preventDefault(); (document.activeElement as HTMLElement)?.blur(); return; }
@@ -562,12 +585,28 @@ export function FocusModeView({
       // ── Card-level shortcuts (nothing focused) ────────────────────
       if (isAnimating) return;
 
+      // Escape — reset smart copy state
+      if (e.key === "Escape") {
+        if (smartCopyOrderId !== null) {
+          setSmartCopyOrderId(null);
+          setSmartCopyLineIdx(0);
+          return;
+        }
+        return;
+      }
+
+      // Ctrl+C — Smart copy for SAP workflow
+      if ((e.ctrlKey || e.metaKey) && e.key === "c") {
+        const selection = window.getSelection();
+        if (selection && selection.toString().trim().length > 0) return;
+        e.preventDefault();
+        handleSmartCopy();
+        return;
+      }
+
       const key = e.key;
       if (key === "ArrowLeft" || key === "ArrowUp") { e.preventDefault(); goPrev(); return; }
       if (key === "ArrowRight" || key === "ArrowDown") { e.preventDefault(); goNext(); return; }
-      if (key === "q" || key === "Q") { handleCopyCode(); return; }
-      if (key === "w" || key === "W") { handleCopySkus(); return; }
-      if (key === "e" || key === "E") { e.preventDefault(); soInputRef.current?.focus(); return; }
       if (key === "r" || key === "R") { handleReplyAndNext(); return; }
       if ((key === "f" || key === "F") && currentOrder) { onFlag(currentOrder.id); return; }
       if (key === "n" || key === "N") { jumpToNextUnmatched(); return; }
@@ -579,8 +618,9 @@ export function FocusModeView({
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [
     showOrderList, orderListHighlight, soInput, currentOrder, currentIndex, isAnimating, activeLineId, panelHighlight,
-    goPrev, goNext, handleCopyCode, handleCopySkus, handleSoSubmit,
+    goPrev, goNext, handleSmartCopy, handleSoSubmit,
     handleReplyAndNext, onFlag, jumpToNextUnmatched, goTo, queue.length, lineStatuses, handleQuickToggle,
+    smartCopyOrderId,
   ]);
 
   // ── Scroll order list highlight into view ────────────────────────────────────
@@ -913,41 +953,36 @@ export function FocusModeView({
                 </div>
               ) : (
                 <>
-                  {/* Copy buttons */}
-                  <div className="grid grid-cols-2 gap-2 mb-3">
+                  {/* Smart copy button (Ctrl+C) */}
+                  <div className="mb-3">
                     <button
-                      onClick={handleCopyCode}
-                      disabled={!hasCode}
-                      className={`flex items-center justify-center gap-1.5 py-3.5 border rounded-[10px] text-xs font-semibold transition-colors ${
-                        codeCopied
-                          ? "border-teal-500 text-teal-600 bg-teal-50"
+                      onClick={handleSmartCopy}
+                      disabled={!hasCode && matchedCount === 0}
+                      className={`w-full flex items-center justify-center gap-2 py-3.5 border rounded-[10px] text-xs font-semibold transition-colors ${
+                        copyToast?.type === "customer"
+                          ? "border-green-500 text-green-700 bg-green-50"
+                          : copyToast?.type === "sku"
+                          ? "border-blue-500 text-blue-700 bg-blue-50"
+                          : copyToast?.type === "error"
+                          ? "border-amber-400 text-amber-700 bg-amber-50"
+                          : smartCopyOrderId === order.id
+                          ? "border-blue-200 text-blue-700 bg-white hover:bg-blue-50"
                           : hasCode
                           ? "border-gray-200 text-gray-700 bg-white hover:bg-gray-50"
                           : "border-gray-100 text-gray-300 bg-gray-50 cursor-not-allowed"
                       }`}
                     >
-                      <span className={`inline-flex items-center justify-center w-[22px] h-[22px] rounded-[5px] text-[10px] font-bold ${
-                        codeCopied ? "bg-teal-500 text-white" : "bg-gray-100 text-gray-600"
-                      }`}>Q</span>
-                      {codeCopied ? "Copied!" : "Copy code"}
-                    </button>
-                    <button
-                      onClick={handleCopySkus}
-                      disabled={matchedCount === 0}
-                      className={`flex items-center justify-center gap-1.5 py-3.5 border rounded-[10px] text-xs font-semibold transition-colors ${
-                        skuCopied
-                          ? "border-teal-500 text-teal-600 bg-teal-50"
-                          : hasUnmatched
-                          ? "border-amber-200 text-amber-700 bg-white hover:bg-amber-50"
-                          : matchedCount > 0
-                          ? "border-gray-200 text-gray-700 bg-white hover:bg-gray-50"
-                          : "border-gray-100 text-gray-300 bg-gray-50 cursor-not-allowed"
-                      }`}
-                    >
-                      <span className={`inline-flex items-center justify-center w-[22px] h-[22px] rounded-[5px] text-[10px] font-bold ${
-                        skuCopied ? "bg-teal-500 text-white" : hasUnmatched ? "bg-amber-50 text-amber-700" : "bg-gray-100 text-gray-600"
-                      }`}>W</span>
-                      {skuCopied ? "Copied!" : hasUnmatched ? `Copy ${matchedCount} of ${order.totalLines}` : "Copy SKUs"}
+                      <span className={`inline-flex items-center justify-center h-[22px] px-1.5 rounded-[5px] text-[9px] font-bold ${
+                        copyToast ? "bg-teal-500 text-white" : "bg-gray-100 text-gray-500"
+                      }`}>Ctrl+C</span>
+                      {copyToast
+                        ? copyToast.text
+                        : smartCopyOrderId === order.id
+                        ? `Next: SKU ${(smartCopyLineIdx % matchedCount) + 1}/${matchedCount}`
+                        : hasCode
+                        ? "Copy code → then SKUs"
+                        : "No customer code"
+                      }
                     </button>
                   </div>
 
@@ -958,7 +993,7 @@ export function FocusModeView({
                       type="text"
                       value={soInput}
                       onChange={(e) => setSoInput(e.target.value)}
-                      placeholder="SO number (E to focus)"
+                      placeholder="SO number (Ctrl+V to paste)"
                       className={`w-full h-[52px] border-[1.5px] rounded-[10px] px-4 text-[20px] font-mono text-gray-900 outline-none transition-colors placeholder:text-gray-300 placeholder:font-sans placeholder:text-sm ${
                         soInput.trim()
                           ? "border-teal-500 bg-teal-50/50"
