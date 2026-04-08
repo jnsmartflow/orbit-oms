@@ -12,11 +12,10 @@ export function buildSlotSummaryHTML(
   senderName: string,
   senderPhone?: string,
 ): string {
-  // Processed = has SO number; Pending = no SO number
+  // ── Data partitions ──
   const processed = orders.filter((o) => o.soNumber);
   const pending = orders.filter((o) => !o.soNumber);
 
-  // Flagged lines: lines marked as not found with a reason
   const flaggedLines: {
     customerName: string;
     productName: string;
@@ -38,42 +37,9 @@ export function buildSlotSummaryHTML(
     }
   }
 
-  // Extract first name for salutation
-  const cleanName = smartTitleCase(
-    soName.replace(/^\([^)]*\)\s*/, "").trim(),
-  );
-  const firstName = cleanName.split(/\s+/)[0] || cleanName;
+  // ── Helpers ──
 
-  // Reason helpers
-  function reasonLabel(reason: string): string {
-    switch (reason) {
-      case "out_of_stock": return "Out of Stock";
-      case "wrong_pack": return "Wrong Pack";
-      case "discontinued": return "Discontinued";
-      case "other_depot": return "Other Depot";
-      case "other": return "Other";
-      default: return reason;
-    }
-  }
-
-  function reasonBadge(reason: string): string {
-    const base = "display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;border:1px solid ";
-    switch (reason) {
-      case "out_of_stock":
-        return `style="${base}#fecaca;background:#fee2e2;color:#991b1b"`;
-      case "wrong_pack":
-        return `style="${base}#fde68a;background:#fef3c7;color:#92400e"`;
-      case "other_depot":
-        return `style="${base}#bfdbfe;background:#dbeafe;color:#1e40af"`;
-      case "discontinued":
-      case "other":
-      default:
-        return `style="${base}#e2e8f0;background:#f1f5f9;color:#475569"`;
-    }
-  }
-
-  // Time formatter (IST)
-  const fmtTime = (iso: string | null) => {
+  function fmtTime(iso: string | null): string {
     if (!iso) return "\u2014";
     return new Date(iso).toLocaleString("en-GB", {
       timeZone: "Asia/Kolkata",
@@ -81,131 +47,275 @@ export function buildSlotSummaryHTML(
       minute: "2-digit",
       hour12: false,
     });
-  };
+  }
 
-  // Pending reason helper
-  function getPendingNote(order: MoOrder): string {
+  function fmtDate(d: string): string {
+    // d comes in as "9 Apr 2026" or similar from toLocaleDateString
+    // We want "Wednesday, 9 April 2026"
+    const parts = d.match(/(\d+)\s+(\w+)\s+(\d+)/);
+    if (!parts) return d;
+    const months: Record<string, number> = {
+      Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5,
+      Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11,
+    };
+    const mo = months[parts[2]];
+    if (mo === undefined) return d;
+    const dt = new Date(Number(parts[3]), mo, Number(parts[1]));
+    return dt.toLocaleDateString("en-GB", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+  }
+
+  function getFirstName(name: string): string {
+    const clean = smartTitleCase(name.replace(/^\([^)]*\)\s*/, "").trim());
+    return clean.split(/\s+/)[0] || clean;
+  }
+
+  function getPendingNote(order: MoOrder): { text: string; color: string } {
     const combined = [
       order.remarks,
       order.billRemarks,
       order.deliveryRemarks,
     ].filter(Boolean).join(" ").toLowerCase();
     if (/truck|transport|lorry|vehicle/.test(combined)) {
-      return "Awaiting Transport";
+      return { text: "Awaiting transport", color: "#b45309" };
     }
-    return "Will Process Tomorrow";
+    return { text: "Will process tomorrow", color: "#64748b" };
   }
+
+  function getReasonBadge(reason: string): { label: string; bg: string; color: string; border?: string } {
+    switch (reason) {
+      case "out_of_stock":
+        return { label: "Out of Stock", bg: "#fef2f2", color: "#b91c1c" };
+      case "wrong_pack":
+        return { label: "Wrong Pack", bg: "#fffbeb", color: "#b45309", border: "#fde68a" };
+      case "discontinued":
+        return { label: "Discontinued", bg: "#f1f5f9", color: "#475569" };
+      case "other_depot":
+        return { label: "Other Depot", bg: "#eff6ff", color: "#1d4ed8" };
+      case "other":
+        return { label: "Other", bg: "#f1f5f9", color: "#475569" };
+      default:
+        return { label: reason, bg: "#f1f5f9", color: "#475569" };
+    }
+  }
+
+  function splitPartLabel(label: string | null | undefined): string {
+    if (!label) return "";
+    if (label === "A") return " (Part 1 of 2)";
+    if (label === "B") return " (Part 2 of 2)";
+    return ` (${label})`;
+  }
+
+  const firstName = getFirstName(soName);
+  const longDate = fmtDate(date);
+  const totalCount = orders.length;
 
   // ── Build HTML ──
 
-  let html = `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="margin:0;padding:0;background:#f8fafc;font-family:Arial,Helvetica,sans-serif">`;
-  html += `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc"><tr><td align="center" style="padding:24px 16px">`;
-  html += `<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:8px;overflow:hidden;border:1px solid #e2e8f0">`;
+  let h = '<!DOCTYPE html><html><head><meta charset="utf-8"></head>';
+  h += '<body style="margin:0;padding:0;background:#f8fafc;font-family:Arial,Helvetica,sans-serif">';
+  h += '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc"><tr><td align="center" style="padding:16px 8px">';
+  h += '<table role="presentation" width="520" cellpadding="0" cellspacing="0" style="max-width:520px;width:100%">';
 
-  // ── Teal header ──
-  html += `<tr><td style="background:#0d9488;padding:24px 32px">`;
-  html += `<p style="margin:0;font-size:18px;font-weight:700;color:#ffffff">JSW Dulux \u2014 Surat Depot</p>`;
-  html += `<p style="margin:4px 0 0;font-size:13px;color:#ccfbf1">${slotName} Slot \u00b7 ${date}</p>`;
-  html += `</td></tr>`;
+  // ═══ HEADER ═══
+  h += '<tr><td>';
+  h += '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-radius:10px 10px 0 0;overflow:hidden">';
+  // Top accent bar
+  h += '<tr><td style="background:#0f766e;height:4px;font-size:0;line-height:0">&nbsp;</td></tr>';
+  // Main header
+  h += '<tr><td style="background:#0d9488;padding:20px 24px 18px">';
+  h += '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>';
+  // Left side
+  h += '<td style="vertical-align:top">';
+  h += `<p style="margin:0;font-size:9px;font-weight:700;color:#99f6e4;text-transform:uppercase;letter-spacing:0.12em">JSW Dulux \u2014 Surat Depot</p>`;
+  h += `<p style="margin:6px 0 0;font-size:19px;font-weight:700;color:#ffffff">${slotName} Slot Summary</p>`;
+  h += `<p style="margin:4px 0 0;font-size:11px;color:#ccfbf1">${longDate}</p>`;
+  h += '</td>';
+  // Right side — order count pill
+  h += '<td style="vertical-align:top;text-align:right;width:80px">';
+  h += `<div style="display:inline-block;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.2);border-radius:6px;padding:8px 14px;text-align:center">`;
+  h += `<p style="margin:0;font-size:20px;font-weight:700;color:#ffffff">${totalCount}</p>`;
+  h += '<p style="margin:2px 0 0;font-size:8px;color:#99f6e4;text-transform:uppercase;letter-spacing:0.06em">Orders</p>';
+  h += '</div>';
+  h += '</td>';
+  h += '</tr></table>';
+  h += '</td></tr>';
+  h += '</table>';
+  h += '</td></tr>';
 
-  // ── Salutation ──
-  html += `<tr><td style="padding:24px 32px 16px">`;
-  html += `<p style="margin:0;font-size:14px;color:#1f2937">Dear ${firstName} Sir,</p>`;
-  html += `<p style="margin:8px 0 0;font-size:13px;color:#6b7280">Please find below the ${slotName} slot summary for today.</p>`;
-  html += `</td></tr>`;
+  // ═══ BODY WRAPPER ═══
+  h += '<tr><td>';
+  h += '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #ccfbf1;border-top:none;border-radius:0 0 10px 10px;overflow:hidden">';
 
-  // ── Section 1: Processed Orders table ──
-  html += `<tr><td style="padding:0 32px 16px">`;
-  html += `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-radius:6px;overflow:hidden;border:1px solid #e5e7eb">`;
-  const hdr = "padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #f3f4f6";
-  html += `<tr><td colspan="6" style="background:#0d9488;padding:8px 12px;border-radius:4px 4px 0 0"><span style="font-size:11px;font-weight:700;color:#ffffff;letter-spacing:0.06em;text-transform:uppercase">Processed Orders</span></td></tr>`;
-  html += `<tr style="background:#f9fafb"><td style="${hdr}">#</td><td style="${hdr}">Customer</td><td style="${hdr}">Code</td><td style="${hdr}">SO No.</td><td style="${hdr}">Received</td><td style="${hdr}">Punched</td></tr>`;
+  // ═══ SALUTATION ═══
+  h += '<tr><td style="padding:20px 24px 16px;border-bottom:1px solid #f0fdfa">';
+  h += `<p style="margin:0;font-size:14px;color:#134e4a">Dear <strong style="color:#0f172a">${firstName}</strong> Sir,</p>`;
+  h += `<p style="margin:5px 0 0;font-size:12px;color:#64748b;line-height:1.6">Please find below the ${slotName} slot summary for today.</p>`;
+  h += '</td></tr>';
+
+  // ═══ SECTION 1 — BILLED ORDERS ═══
+  h += '<tr><td>';
+  h += `<p style="margin:0;padding:14px 24px 4px;font-size:9px;font-weight:700;color:#0d9488;text-transform:uppercase;letter-spacing:0.1em">\u2713 Billed \u2014 ${processed.length} order${processed.length !== 1 ? "s" : ""}</p>`;
 
   if (processed.length === 0) {
-    html += `<tr><td colspan="6" style="padding:16px 12px;font-size:12px;color:#9ca3af;text-align:center">No processed orders</td></tr>`;
+    h += '<p style="margin:0;padding:8px 24px 16px;font-size:12px;color:#94a3b8">No billed orders in this slot.</p>';
   } else {
     processed.forEach((o, i) => {
-      const bg = i % 2 === 0 ? "#ffffff" : "#f9fafb";
+      const cust = smartTitleCase(o.customerName ?? o.subject);
       const isHold = o.dispatchStatus === "Hold";
-      const custColor = isHold ? "#94a3b8" : "#1e293b";
-      const cust = smartTitleCase(o.customerName ?? o.subject) + (isHold ? " *" : "");
-      const bd = "border-bottom:1px solid #f3f4f6";
-      html += `<tr style="background:${bg}"><td style="padding:8px 12px;font-size:12px;color:#6b7280;${bd}">${i + 1}</td><td style="padding:8px 12px;font-size:12px;color:${custColor};font-weight:500;${bd}">${cust}</td><td style="padding:8px 12px;font-size:12px;color:#6b7280;font-family:monospace;${bd}">${o.customerCode ?? "\u2014"}</td><td style="padding:9px 10px;font-size:13px;font-weight:700;color:#1e293b;font-family:'Courier New',Courier,monospace;${bd}">${o.soNumber}</td><td style="padding:8px 12px;font-size:11px;color:#6b7280;font-family:monospace;${bd}">${fmtTime(o.receivedAt)}</td><td style="padding:8px 12px;font-size:11px;color:#6b7280;font-family:monospace;${bd}">${fmtTime(o.punchedAt)}</td></tr>`;
+      const custColor = isHold ? "#94a3b8" : "#0f172a";
+      const custSuffix = isHold ? " *" : "";
+      const splitSuffix = splitPartLabel(o.splitLabel);
+      const mb = i === processed.length - 1 ? "16px" : "0";
+
+      h += `<div style="margin:8px 16px ${mb};border-radius:8px;border:1px solid #e2e8f0;overflow:hidden">`;
+      // Card top row
+      h += '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>';
+      // Left: customer + code
+      h += '<td style="padding:12px 16px;vertical-align:top">';
+      h += `<p style="margin:0;font-size:13px;font-weight:700;color:${custColor}">${cust}${custSuffix}`;
+      if (splitSuffix) {
+        h += `<span style="font-weight:700;color:#64748b">${splitSuffix}</span>`;
+      }
+      h += '</p>';
+      h += `<p style="margin:3px 0 0;font-size:10px;color:#64748b">Code <span style="color:#0d9488;font-weight:700;font-family:'Courier New',Courier,monospace;font-size:11px">${o.customerCode ?? "\u2014"}</span></p>`;
+      h += '</td>';
+      // Right: SO number
+      h += '<td style="padding:12px 16px;vertical-align:top;text-align:right">';
+      h += `<p style="margin:0;font-size:14px;font-weight:700;color:#0f172a;font-family:'Courier New',Courier,monospace">${o.soNumber}</p>`;
+      h += '<p style="margin:2px 0 0;font-size:8px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.06em">SO Number</p>';
+      h += '</td>';
+      h += '</tr></table>';
+      // Card bottom strip — times
+      h += '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td style="background:#f0fdfa;border-top:1px solid #ccfbf1;padding:6px 16px">';
+      h += '<table role="presentation" cellpadding="0" cellspacing="0"><tr>';
+      h += `<td style="font-size:10px;color:#64748b;padding-right:4px">Recd.</td>`;
+      h += `<td style="font-size:10px;font-weight:700;color:#334155;padding-right:8px">${fmtTime(o.receivedAt)}</td>`;
+      h += `<td style="font-size:10px;color:#a7f3d0;padding-right:8px">\u2192</td>`;
+      h += `<td style="font-size:10px;color:#64748b;padding-right:4px">Punched</td>`;
+      const pTime = fmtTime(o.punchedAt);
+      const pColor = o.punchedAt ? "#0d9488" : "#94a3b8";
+      h += `<td style="font-size:10px;font-weight:700;color:${pColor}">${pTime}</td>`;
+      h += '</tr></table>';
+      h += '</td></tr></table>';
+      h += '</div>';
     });
   }
-  html += `</table></td></tr>`;
+  h += '</td></tr>';
 
-  // ── Section 2: Items to Note table (conditional) ──
+  // ═══ SECTION 2 — COULD NOT SUPPLY ═══
   if (flaggedLines.length > 0) {
-    html += `<tr><td style="padding:0 32px 16px">`;
-    html += `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-radius:6px;overflow:hidden;border:1px solid #e5e7eb">`;
-    html += `<tr><td colspan="3" style="background:#f1f5f9;padding:10px 16px;font-size:13px;font-weight:700;color:#475569;border-bottom:1px solid #e2e8f0">\u26a0 Items to Note (${flaggedLines.length})</td></tr>`;
-    html += `<tr style="background:#f9fafb"><td style="padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #f3f4f6">Customer</td><td style="padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #f3f4f6">Product</td><td style="padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #f3f4f6">Status</td></tr>`;
+    h += '<tr><td style="background:#fffbeb;border-top:1px solid #fde68a;border-bottom:1px solid #fde68a">';
+    h += `<p style="margin:0;padding:14px 24px 4px;font-size:9px;font-weight:700;color:#b45309;text-transform:uppercase;letter-spacing:0.1em">\u26a0 Could Not Supply \u2014 ${flaggedLines.length} item${flaggedLines.length !== 1 ? "s" : ""}</p>`;
 
+    // Single card for all flagged lines
+    h += '<div style="margin:8px 16px 16px;border-radius:8px;border:1px solid #fde68a;overflow:hidden">';
     flaggedLines.forEach((fl, i) => {
-      const bg = i % 2 === 0 ? "#ffffff" : "#f9fafb";
+      const isLast = i === flaggedLines.length - 1;
+      const bg = i % 2 === 0 ? "#fffbeb" : "#ffffff";
+      const bb = isLast ? "" : "border-bottom:1px solid #fef3c7;";
       const product = fl.packCode
         ? `${fl.productName} \u00b7 ${fl.packCode}`
         : fl.productName;
-      html += `<tr style="background:${bg}"><td style="padding:8px 12px;font-size:12px;color:#1f2937;border-bottom:1px solid #f3f4f6">${fl.customerName}</td><td style="padding:8px 12px;font-size:12px;color:#374151;border-bottom:1px solid #f3f4f6">${product}</td><td style="padding:8px 12px;border-bottom:1px solid #f3f4f6"><span ${reasonBadge(fl.reason)}>${reasonLabel(fl.reason)}</span></td></tr>`;
+      const badge = getReasonBadge(fl.reason);
+      const borderStyle = badge.border ? `border:1px solid ${badge.border};` : "";
+
+      h += `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>`;
+      // Left: customer + product
+      h += `<td style="padding:10px 16px;vertical-align:top;background:${bg};${bb}">`;
+      h += `<p style="margin:0;font-size:12px;font-weight:700;color:#0f172a">${fl.customerName}</p>`;
+      h += `<p style="margin:1px 0 0;font-size:11px;color:#92400e">${product}</p>`;
+      h += '</td>';
+      // Right: badge
+      h += `<td style="padding:10px 16px;vertical-align:top;text-align:right;background:${bg};${bb}white-space:nowrap">`;
+      h += `<span style="display:inline-block;font-size:9px;font-weight:700;padding:3px 8px;border-radius:4px;white-space:nowrap;background:${badge.bg};color:${badge.color};${borderStyle}margin-left:10px">${badge.label}</span>`;
+      h += '</td>';
+      h += '</tr></table>';
     });
-    html += `</table></td></tr>`;
+    h += '</div>';
+    h += '</td></tr>';
   }
 
-  // ── Section 3: Pending Orders table (conditional) ──
+  // ═══ SECTION 3 — TOMORROW ═══
   if (pending.length > 0) {
-    html += `<tr><td style="padding:0 32px 16px">`;
-    html += `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-radius:6px;overflow:hidden;border:1px solid #e5e7eb">`;
-    html += `<tr><td colspan="4" style="background:#f1f5f9;padding:10px 16px;font-size:13px;font-weight:700;color:#64748b;border-bottom:1px solid #e2e8f0">\u23f3 Pending \u2014 Will Be Processed Tomorrow (${pending.length})</td></tr>`;
-    html += `<tr style="background:#f9fafb"><td style="${hdr}">#</td><td style="${hdr}">Customer</td><td style="${hdr}">Code</td><td style="${hdr}">Note</td></tr>`;
+    h += '<tr><td style="background:#f8fafc;border-top:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0">';
+    h += `<p style="margin:0;padding:14px 24px 4px;font-size:9px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.1em">\u23f3 Tomorrow \u2014 ${pending.length} order${pending.length !== 1 ? "s" : ""}</p>`;
 
+    // Single card for all pending
+    h += '<div style="margin:8px 16px 0;border-radius:8px;border:1px solid #e2e8f0;overflow:hidden">';
     pending.forEach((o, i) => {
-      const bg = i % 2 === 0 ? "#ffffff" : "#f9fafb";
+      const isLast = i === pending.length - 1;
+      const bg = i % 2 === 0 ? "#f8fafc" : "#ffffff";
+      const bb = isLast ? "" : "border-bottom:1px solid #e2e8f0;";
       const cust = smartTitleCase(o.customerName ?? o.subject);
       const note = getPendingNote(o);
-      const noteColor = note === "Awaiting Transport" ? "#92400e" : "#64748b";
-      const bd = "border-bottom:1px solid #f3f4f6";
-      html += `<tr style="background:${bg}"><td style="padding:8px 12px;font-size:12px;color:#6b7280;${bd}">${i + 1}</td><td style="padding:8px 12px;font-size:12px;color:#1f2937;font-weight:500;${bd}">${cust}</td><td style="padding:8px 12px;font-size:12px;color:#6b7280;font-family:monospace;${bd}">${o.customerCode ?? "\u2014"}</td><td style="padding:8px 12px;font-size:11px;color:${noteColor};${bd}">${note}</td></tr>`;
+
+      h += `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>`;
+      // Left: customer + code
+      h += `<td style="padding:10px 16px;vertical-align:top;background:${bg};${bb}">`;
+      h += `<p style="margin:0;font-size:12px;font-weight:700;color:#0f172a">${cust}</p>`;
+      h += `<p style="margin:1px 0 0;font-size:10px;color:#0d9488;font-weight:700;font-family:'Courier New',Courier,monospace">${o.customerCode ?? "\u2014"}</p>`;
+      h += '</td>';
+      // Right: note
+      h += `<td style="padding:10px 16px;vertical-align:top;text-align:right;background:${bg};${bb}white-space:nowrap">`;
+      h += `<span style="font-size:10px;color:${note.color};margin-left:12px">${note.text}</span>`;
+      h += '</td>';
+      h += '</tr></table>';
     });
+    h += '</div>';
 
-    html += `<tr><td colspan="4" style="padding:12px 12px;font-size:11px;color:#64748b;background:#f8fafc;border-top:1px solid #e5e7eb">These orders could not be processed today and will be taken up in tomorrow\u2019s first slot. Please plan accordingly.</td></tr>`;
-    html += `</table></td></tr>`;
+    // Note below card
+    h += `<p style="margin:0;padding:10px 24px 16px;font-size:10px;color:#94a3b8;line-height:1.6;background:#f8fafc">We will process these orders in tomorrow\u2019s first slot. Kindly inform your dealers.</p>`;
+    h += '</td></tr>';
   }
 
-  // ── Total row ──
-  const totalCount = processed.length + pending.length;
-  const totalParts = [
-    `${totalCount} order${totalCount !== 1 ? "s" : ""}`,
-    `${processed.length} processed`,
-  ];
+  // ═══ TOTAL ROW ═══
+  h += '<tr><td style="border-top:1px solid #e2e8f0;padding:12px 24px">';
+  const parts: string[] = [];
+  parts.push(`<span style="font-size:12px;font-weight:700;color:#0f172a">${totalCount} order${totalCount !== 1 ? "s" : ""}</span>`);
+  parts.push(`<span style="color:#cbd5e1">\u00b7</span>`);
+  parts.push(`<span style="font-size:12px;font-weight:700;color:#0d9488">${processed.length} billed</span>`);
   if (pending.length > 0) {
-    totalParts.push(`${pending.length} pending`);
+    parts.push(`<span style="color:#cbd5e1">\u00b7</span>`);
+    parts.push(`<span style="font-size:12px;font-weight:700;color:#64748b">${pending.length} pending</span>`);
   }
-  html += `<tr><td style="padding:0 32px 16px">`;
-  html += `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td style="background:#f8fafc;padding:12px 16px;border-radius:6px;border:1px solid #e5e7eb;font-size:12px;color:#475569;font-weight:600">Total: ${totalParts.join(" \u00b7 ")}</td></tr></table>`;
-  html += `</td></tr>`;
+  if (flaggedLines.length > 0) {
+    parts.push(`<span style="color:#cbd5e1">\u00b7</span>`);
+    parts.push(`<span style="font-size:12px;font-weight:700;color:#b91c1c">${flaggedLines.length} to note</span>`);
+  }
+  h += `<p style="margin:0">${parts.join(" ")}</p>`;
+  h += '</td></tr>';
 
-  // ── Closing line ──
-  html += `<tr><td style="padding:0 32px 16px">`;
-  html += `<p style="margin:0;font-size:13px;color:#374151">Kindly share the SO numbers with your respective dealers.</p>`;
-  html += `<p style="margin:4px 0 0;font-size:13px;color:#374151">For any queries, feel free to call.</p>`;
-  html += `</td></tr>`;
-
-  // ── Regards ──
-  html += `<tr><td style="padding:8px 32px 24px">`;
-  html += `<p style="margin:0;font-size:13px;color:#1f2937">Regards,</p>`;
-  html += `<p style="margin:4px 0 0;font-size:13px;font-weight:600;color:#1f2937">${senderName}</p>`;
-  html += `<p style="margin:2px 0 0;font-size:11px;color:#9ca3af">Billing Operator \u00b7 JSW Dulux Ltd \u2014 Surat Depot</p>`;
+  // ═══ CLOSING + REGARDS ═══
+  h += '<tr><td style="padding:16px 24px 20px;border-top:1px solid #f0fdfa">';
+  h += '<p style="margin:0;font-size:12px;color:#475569;line-height:2.1">Please share the SO numbers with your dealers at the earliest.</p>';
+  h += '<p style="margin:0;font-size:12px;color:#475569">For any queries, call us directly.</p>';
+  h += '<p style="margin:14px 0 0;font-size:12px;color:#475569">Regards,</p>';
+  h += `<p style="margin:4px 0 0;font-size:13px;font-weight:700;color:#0f172a">${senderName}</p>`;
+  h += '<p style="margin:2px 0 0;font-size:11px;color:#64748b">JSW Dulux \u2014 Surat Depot</p>';
   if (senderPhone) {
-    html += `<p style="margin:2px 0 0;font-size:11px;color:#9ca3af">${senderPhone}</p>`;
+    h += `<p style="margin:2px 0 0;font-size:11px;font-weight:700;color:#0d9488">${senderPhone}</p>`;
   }
-  html += `</td></tr>`;
+  h += '</td></tr>';
 
-  // ── Footer ──
-  html += `<tr><td style="background:#f8fafc;padding:16px 32px;border-top:1px solid #e5e7eb">`;
-  html += `<p style="margin:0;font-size:10px;color:#9ca3af;text-align:center">Auto-generated by OrbitOMS \u00b7 Surat Depot Operations \u00b7 Do not reply</p>`;
-  html += `</td></tr>`;
+  // ═══ FOOTER ═══
+  h += '</table>'; // close body wrapper
+  h += '</td></tr>';
 
-  html += `</table></td></tr></table></body></html>`;
-  return html;
+  h += '<tr><td>';
+  h += '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f0fdfa;border-top:1px solid #ccfbf1;border-radius:0 0 10px 10px;overflow:hidden">';
+  h += '<tr><td style="padding:10px 24px">';
+  h += '<p style="margin:0;font-size:9px;color:#94a3b8;letter-spacing:0.02em">JSW Dulux Ltd \u2014 Surat Depot \u00b7 Do not reply to this email</p>';
+  h += '</td></tr>';
+  h += '</table>';
+  h += '</td></tr>';
+
+  h += '</table>'; // close outer 520px table
+  h += '</td></tr></table>'; // close centering wrapper
+  h += '</body></html>';
+  return h;
 }
