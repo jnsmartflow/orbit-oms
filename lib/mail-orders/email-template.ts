@@ -72,6 +72,30 @@ export function buildSlotSummaryHTML(
     }
   }
 
+  // Time formatter (IST)
+  const fmtTime = (iso: string | null) => {
+    if (!iso) return "\u2014";
+    return new Date(iso).toLocaleString("en-GB", {
+      timeZone: "Asia/Kolkata",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+  };
+
+  // Pending reason helper
+  function getPendingNote(order: MoOrder): string {
+    const combined = [
+      order.remarks,
+      order.billRemarks,
+      order.deliveryRemarks,
+    ].filter(Boolean).join(" ").toLowerCase();
+    if (/truck|transport|lorry|vehicle/.test(combined)) {
+      return "Awaiting Transport";
+    }
+    return "Will Process Tomorrow";
+  }
+
   // ── Build HTML ──
 
   let html = `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="margin:0;padding:0;background:#f8fafc;font-family:Arial,Helvetica,sans-serif">`;
@@ -93,16 +117,20 @@ export function buildSlotSummaryHTML(
   // ── Section 1: Processed Orders table ──
   html += `<tr><td style="padding:0 32px 16px">`;
   html += `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-radius:6px;overflow:hidden;border:1px solid #e5e7eb">`;
-  html += `<tr><td colspan="4" style="background:#0d9488;padding:8px 12px;border-radius:4px 4px 0 0"><span style="font-size:11px;font-weight:700;color:#ffffff;letter-spacing:0.06em;text-transform:uppercase">Processed Orders</span></td></tr>`;
-  html += `<tr style="background:#f9fafb"><td style="padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #f3f4f6">#</td><td style="padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #f3f4f6">Customer</td><td style="padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #f3f4f6">Code</td><td style="padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #f3f4f6">SO No.</td></tr>`;
+  const hdr = "padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #f3f4f6";
+  html += `<tr><td colspan="6" style="background:#0d9488;padding:8px 12px;border-radius:4px 4px 0 0"><span style="font-size:11px;font-weight:700;color:#ffffff;letter-spacing:0.06em;text-transform:uppercase">Processed Orders</span></td></tr>`;
+  html += `<tr style="background:#f9fafb"><td style="${hdr}">#</td><td style="${hdr}">Customer</td><td style="${hdr}">Code</td><td style="${hdr}">SO No.</td><td style="${hdr}">Received</td><td style="${hdr}">Punched</td></tr>`;
 
   if (processed.length === 0) {
-    html += `<tr><td colspan="4" style="padding:16px 12px;font-size:12px;color:#9ca3af;text-align:center">No processed orders</td></tr>`;
+    html += `<tr><td colspan="6" style="padding:16px 12px;font-size:12px;color:#9ca3af;text-align:center">No processed orders</td></tr>`;
   } else {
     processed.forEach((o, i) => {
       const bg = i % 2 === 0 ? "#ffffff" : "#f9fafb";
-      const cust = smartTitleCase(o.customerName ?? o.subject);
-      html += `<tr style="background:${bg}"><td style="padding:8px 12px;font-size:12px;color:#6b7280;border-bottom:1px solid #f3f4f6">${i + 1}</td><td style="padding:8px 12px;font-size:12px;color:#1f2937;font-weight:500;border-bottom:1px solid #f3f4f6">${cust}</td><td style="padding:8px 12px;font-size:12px;color:#6b7280;font-family:monospace;border-bottom:1px solid #f3f4f6">${o.customerCode ?? "\u2014"}</td><td style="padding:9px 10px;font-size:13px;font-weight:700;color:#1e293b;font-family:'Courier New',Courier,monospace;border-bottom:1px solid #f3f4f6">${o.soNumber}</td></tr>`;
+      const isHold = o.dispatchStatus === "Hold";
+      const custColor = isHold ? "#94a3b8" : "#1e293b";
+      const cust = smartTitleCase(o.customerName ?? o.subject) + (isHold ? " *" : "");
+      const bd = "border-bottom:1px solid #f3f4f6";
+      html += `<tr style="background:${bg}"><td style="padding:8px 12px;font-size:12px;color:#6b7280;${bd}">${i + 1}</td><td style="padding:8px 12px;font-size:12px;color:${custColor};font-weight:500;${bd}">${cust}</td><td style="padding:8px 12px;font-size:12px;color:#6b7280;font-family:monospace;${bd}">${o.customerCode ?? "\u2014"}</td><td style="padding:9px 10px;font-size:13px;font-weight:700;color:#1e293b;font-family:'Courier New',Courier,monospace;${bd}">${o.soNumber}</td><td style="padding:8px 12px;font-size:11px;color:#6b7280;font-family:monospace;${bd}">${fmtTime(o.receivedAt)}</td><td style="padding:8px 12px;font-size:11px;color:#6b7280;font-family:monospace;${bd}">${fmtTime(o.punchedAt)}</td></tr>`;
     });
   }
   html += `</table></td></tr>`;
@@ -128,16 +156,19 @@ export function buildSlotSummaryHTML(
   if (pending.length > 0) {
     html += `<tr><td style="padding:0 32px 16px">`;
     html += `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-radius:6px;overflow:hidden;border:1px solid #e5e7eb">`;
-    html += `<tr><td colspan="3" style="background:#f1f5f9;padding:10px 16px;font-size:13px;font-weight:700;color:#64748b;border-bottom:1px solid #e2e8f0">\u23f3 Pending \u2014 Will Be Processed Tomorrow (${pending.length})</td></tr>`;
-    html += `<tr style="background:#f9fafb"><td style="padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #f3f4f6">#</td><td style="padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #f3f4f6">Customer</td><td style="padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #f3f4f6">Code</td></tr>`;
+    html += `<tr><td colspan="4" style="background:#f1f5f9;padding:10px 16px;font-size:13px;font-weight:700;color:#64748b;border-bottom:1px solid #e2e8f0">\u23f3 Pending \u2014 Will Be Processed Tomorrow (${pending.length})</td></tr>`;
+    html += `<tr style="background:#f9fafb"><td style="${hdr}">#</td><td style="${hdr}">Customer</td><td style="${hdr}">Code</td><td style="${hdr}">Note</td></tr>`;
 
     pending.forEach((o, i) => {
       const bg = i % 2 === 0 ? "#ffffff" : "#f9fafb";
       const cust = smartTitleCase(o.customerName ?? o.subject);
-      html += `<tr style="background:${bg}"><td style="padding:8px 12px;font-size:12px;color:#6b7280;border-bottom:1px solid #f3f4f6">${i + 1}</td><td style="padding:8px 12px;font-size:12px;color:#1f2937;font-weight:500;border-bottom:1px solid #f3f4f6">${cust}</td><td style="padding:8px 12px;font-size:12px;color:#6b7280;font-family:monospace;border-bottom:1px solid #f3f4f6">${o.customerCode ?? "\u2014"}</td></tr>`;
+      const note = getPendingNote(o);
+      const noteColor = note === "Awaiting Transport" ? "#92400e" : "#64748b";
+      const bd = "border-bottom:1px solid #f3f4f6";
+      html += `<tr style="background:${bg}"><td style="padding:8px 12px;font-size:12px;color:#6b7280;${bd}">${i + 1}</td><td style="padding:8px 12px;font-size:12px;color:#1f2937;font-weight:500;${bd}">${cust}</td><td style="padding:8px 12px;font-size:12px;color:#6b7280;font-family:monospace;${bd}">${o.customerCode ?? "\u2014"}</td><td style="padding:8px 12px;font-size:11px;color:${noteColor};${bd}">${note}</td></tr>`;
     });
 
-    html += `<tr><td colspan="3" style="padding:12px 12px;font-size:11px;color:#64748b;background:#f8fafc;border-top:1px solid #e5e7eb">These orders could not be processed today and will be taken up in tomorrow\u2019s first slot. Please plan accordingly.</td></tr>`;
+    html += `<tr><td colspan="4" style="padding:12px 12px;font-size:11px;color:#64748b;background:#f8fafc;border-top:1px solid #e5e7eb">These orders could not be processed today and will be taken up in tomorrow\u2019s first slot. Please plan accordingly.</td></tr>`;
     html += `</table></td></tr>`;
   }
 
