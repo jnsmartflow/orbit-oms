@@ -85,7 +85,6 @@ export function buildSlotSummaryHTML(
   html += `<tr><td style="background:#0d9488;padding:24px 32px">`;
   html += `<p style="margin:0;font-size:18px;font-weight:700;color:#ffffff">JSW Dulux \u2014 Surat Depot</p>`;
   html += `<p style="margin:4px 0 0;font-size:13px;color:#ccfbf1">${slotName} Slot \u00b7 ${date}</p>`;
-  html += `<p style="margin:5px 0 0;font-size:12px;color:#99f6e4">Processed by ${senderName}</p>`;
   html += `</td></tr>`;
 
   // ── Salutation ──

@@ -40,11 +40,10 @@ export function SlotCompletionModal({
     return () => document.removeEventListener("keydown", onKey, true);
   }, [onDismiss]);
 
-  // Group punched orders by soName
+  // Group ALL orders by soName (punched + unpunched)
   const soGroups: SoGroup[] = (() => {
     const map = new Map<string, MoOrder[]>();
     for (const o of orders) {
-      if (o.status !== "punched" || !o.soNumber) continue;
       const key = o.soName?.toLowerCase() ?? "";
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(o);
@@ -71,7 +70,11 @@ export function SlotCompletionModal({
   }
 
   function handleCopySap(group: SoGroup) {
-    const soNos = group.orders.map(o => o.soNumber).filter(Boolean).join("\n");
+    const soNos = group.orders
+      .filter(o => o.status === "punched" && o.soNumber)
+      .map(o => o.soNumber)
+      .join("\n");
+    if (!soNos) return;
     navigator.clipboard.writeText(soNos);
     flash(`${group.soName}-sap`);
   }
