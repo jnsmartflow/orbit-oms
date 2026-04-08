@@ -18,6 +18,7 @@ export function buildSlotSummaryHTML(
 
   const flaggedLines: {
     customerName: string;
+    soNumber: string | null;
     productName: string;
     baseColour: string | null;
     packCode: string | null;
@@ -30,6 +31,7 @@ export function buildSlotSummaryHTML(
       if (line.lineStatus?.reason && line.lineStatus.found === false) {
         flaggedLines.push({
           customerName: custName,
+          soNumber: o.soNumber ?? null,
           productName: smartTitleCase(line.productName) || "Unknown",
           baseColour: line.baseColour,
           packCode: line.packCode,
@@ -195,7 +197,10 @@ export function buildSlotSummaryHTML(
       h += '<tr>';
       // Left
       h += `<td style="padding:11px 0;vertical-align:middle;${bb}">`;
-      h += `<p style="margin:0 0 2px;font-size:12px;font-weight:600;color:#111827">${fl.customerName}</p>`;
+      const custLine = fl.soNumber
+        ? `${fl.customerName} <span style="font-weight:400;font-size:11px;color:#9ca3af">\u00b7 ${fl.soNumber}</span>`
+        : fl.customerName;
+      h += `<p style="margin:0 0 2px;font-size:12px;font-weight:600;color:#111827">${custLine}</p>`;
       h += `<p style="margin:0;font-size:11px;color:#9ca3af">${product}</p>`;
       h += '</td>';
       // Right
