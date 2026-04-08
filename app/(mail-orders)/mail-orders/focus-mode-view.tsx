@@ -9,6 +9,7 @@ import {
   getSlotFromTime,
   BATCH_COPY_LIMIT,
 } from "@/lib/mail-orders/utils";
+import type { SlotCutoffs } from "@/lib/mail-orders/utils";
 import type { MoOrder, MoOrderLine, LineStatus } from "@/lib/mail-orders/types";
 import { LINE_STATUS_REASONS } from "@/lib/mail-orders/types";
 import { saveLineStatus } from "@/lib/mail-orders/api";
@@ -25,6 +26,7 @@ interface FocusModeViewProps {
   onCopy: (id: number, lines: MoOrderLine[], batchIndex?: number) => void;
   batchStates: Record<number, number>;
   onAdvanceBatch: (orderId: number) => void;
+  slotCutoffs?: SlotCutoffs;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -125,13 +127,14 @@ export function FocusModeView({
   onCopy,
   batchStates,
   onAdvanceBatch,
+  slotCutoffs,
 }: FocusModeViewProps) {
 
   // ── Build queue for the active slot ──────────────────────────────────────────
   const queue = useMemo(() => {
     let slotOrders = orders;
     if (activeSlot) {
-      slotOrders = orders.filter((o) => getSlotFromTime(o.receivedAt) === activeSlot);
+      slotOrders = orders.filter((o) => getSlotFromTime(o.receivedAt, slotCutoffs) === activeSlot);
     }
     const pending = slotOrders
       .filter((o) => o.status === "pending")
@@ -140,7 +143,7 @@ export function FocusModeView({
       .filter((o) => o.status === "punched")
       .sort((a, b) => new Date(b.punchedAt || b.receivedAt).getTime() - new Date(a.punchedAt || a.receivedAt).getTime());
     return [...pending, ...punched];
-  }, [orders, activeSlot]);
+  }, [orders, activeSlot, slotCutoffs]);
 
   // ── State ────────────────────────────────────────────────────────────────────
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -695,7 +698,7 @@ export function FocusModeView({
     let nextSlot: string | null = null;
     if (currentSlotIdx !== -1) {
       for (let i = currentSlotIdx + 1; i < SLOT_ORDER.length; i++) {
-        if (orders.some((o) => getSlotFromTime(o.receivedAt) === SLOT_ORDER[i])) {
+        if (orders.some((o) => getSlotFromTime(o.receivedAt, slotCutoffs) === SLOT_ORDER[i])) {
           nextSlot = SLOT_ORDER[i];
           break;
         }

@@ -1,4 +1,5 @@
 import type { MoOrdersResponse, CustomerSearchResult } from "./types";
+import type { SlotCutoffs } from "./utils";
 
 export function getTodayIST(): string {
   return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
@@ -114,6 +115,12 @@ export async function toggleLock(
     body: JSON.stringify({ isLocked }),
   });
   if (!res.ok) throw new Error("Failed to toggle lock");
+}
+
+export async function fetchSlotCutoffs(): Promise<SlotCutoffs> {
+  const res = await fetch("/api/system-config/slot-cutoffs");
+  if (!res.ok) throw new Error(`Failed to fetch slot cutoffs: ${res.status}`);
+  return res.json();
 }
 
 export async function saveLineStatus(

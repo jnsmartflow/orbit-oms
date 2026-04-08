@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
-import { fetchMailOrders, punchOrder, saveSoNumber, saveCustomer, getTodayIST, toggleLock } from "@/lib/mail-orders/api";
+import { fetchMailOrders, fetchSlotCutoffs, punchOrder, saveSoNumber, saveCustomer, getTodayIST, toggleLock } from "@/lib/mail-orders/api";
 import { getSlotFromTime, groupOrdersBySlot, buildClipboardText, buildBatchClipboardText, BATCH_COPY_LIMIT, buildReplyTemplate, getOrderFlags, smartTitleCase, cleanSubject, isOdCiFlagged, getOrderVolume } from "@/lib/mail-orders/utils";
+import type { SlotCutoffs } from "@/lib/mail-orders/utils";
 import type { MoOrder, MoOrderLine } from "@/lib/mail-orders/types";
 import { MailOrdersTable, ALL_COLUMNS } from "./mail-orders-table";
 import type { ColumnConfig } from "./mail-orders-table";
@@ -144,6 +145,7 @@ export default function MailOrdersPage() {
   const [dismissedSlots, setDismissedSlots] = useState<Set<string>>(new Set());
   const [completedSlot, setCompletedSlot] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"table" | "focus">("table");
+  const [slotCutoffs, setSlotCutoffs] = useState<SlotCutoffs | undefined>(undefined);
   // ── Smart copy state (Ctrl+C workflow for SAP) ──────────────────────────────
   const [smartCopyOrderId, setSmartCopyOrderId] = useState<number | null>(null);
   const [smartCopyLineIdx, setSmartCopyLineIdx] = useState(0);
@@ -177,8 +179,12 @@ export default function MailOrdersPage() {
   // ── Data fetch ───────────────────────────────────────────────────────────────
   const loadOrders = useCallback(async () => {
     try {
-      const data = await fetchMailOrders(selectedDate);
+      const [data, freshCutoffs] = await Promise.all([
+        fetchMailOrders(selectedDate),
+        fetchSlotCutoffs(),
+      ]);
       setOrders(data.orders);
+      setSlotCutoffs(freshCutoffs);
       setError(false);
       // Re-enable dismissed slots if new unpunched orders arrived
       setDismissedSlots(prev => {
@@ -186,7 +192,7 @@ export default function MailOrdersPage() {
         let changed = false;
         for (const slot of Array.from(prev)) {
           const slotOrders = data.orders.filter(
-            (o: MoOrder) => getSlotFromTime(o.receivedAt) === slot
+            (o: MoOrder) => getSlotFromTime(o.receivedAt, freshCutoffs) === slot
           );
           if (slotOrders.some((o: MoOrder) => o.status !== "punched")) {
             next.delete(slot);
@@ -232,7 +238,7 @@ export default function MailOrdersPage() {
       if (completedSlot) continue;
 
       const slotOrders = orders.filter(
-        o => getSlotFromTime(o.receivedAt) === slot
+        o => getSlotFromTime(o.receivedAt, slotCutoffs) === slot
       );
       if (slotOrders.length === 0) continue;
 
@@ -241,7 +247,7 @@ export default function MailOrdersPage() {
         break;
       }
     }
-  }, [orders, autoComplete, dismissedSlots, completedSlot]);
+  }, [orders, autoComplete, dismissedSlots, completedSlot, slotCutoffs]);
 
   // Reset dismissed slots on date change
   useEffect(() => {
@@ -265,13 +271,13 @@ export default function MailOrdersPage() {
     if (viewMode === "focus" && activeSlot === null && orders.length > 0) {
       const slots = ["Morning", "Afternoon", "Evening", "Night"] as const;
       for (const slot of slots) {
-        if (orders.some(o => getSlotFromTime(o.receivedAt) === slot)) {
+        if (orders.some(o => getSlotFromTime(o.receivedAt, slotCutoffs) === slot)) {
           setActiveSlot(slot);
           break;
         }
       }
     }
-  }, [viewMode, activeSlot, orders]);
+  }, [viewMode, activeSlot, orders, slotCutoffs]);
 
   // ── Derived stats ────────────────────────────────────────────────────────────
   const totalOrders = orders.length;
@@ -379,23 +385,23 @@ export default function MailOrdersPage() {
     }
 
     if (activeSlot) {
-      result = result.filter((o) => getSlotFromTime(o.receivedAt) === activeSlot);
+      result = result.filter((o) => getSlotFromTime(o.receivedAt, slotCutoffs) === activeSlot);
     }
 
     return result;
-  }, [orders, headerFilters, searchQuery, activeSlot]);
+  }, [orders, headerFilters, searchQuery, activeSlot, slotCutoffs]);
 
-  const groupedOrders = useMemo(() => groupOrdersBySlot(filteredOrders), [filteredOrders]);
+  const groupedOrders = useMemo(() => groupOrdersBySlot(filteredOrders, slotCutoffs), [filteredOrders, slotCutoffs]);
 
   // ── Slot counts (from all orders, before slot filter) ───────────────────────
   const slotCounts = useMemo(() => {
     const counts: Record<string, number> = { Morning: 0, Afternoon: 0, Evening: 0, Night: 0 };
     for (const o of orders) {
-      const slot = getSlotFromTime(o.receivedAt);
+      const slot = getSlotFromTime(o.receivedAt, slotCutoffs);
       counts[slot]++;
     }
     return counts;
-  }, [orders]);
+  }, [orders, slotCutoffs]);
 
   // ── Focus first pending order after fetch ─────────────────────────────────────
   useEffect(() => {
@@ -890,13 +896,13 @@ export default function MailOrdersPage() {
     const result: Record<string, boolean> = {};
     for (const slot of ["Morning", "Afternoon", "Evening", "Night"]) {
       const slotOrders = orders.filter(
-        (o) => getSlotFromTime(o.receivedAt) === slot
+        (o) => getSlotFromTime(o.receivedAt, slotCutoffs) === slot
       );
       result[slot] = slotOrders.length > 0 &&
         slotOrders.every((o) => o.status === "punched");
     }
     return result;
-  }, [orders]);
+  }, [orders, slotCutoffs]);
 
   const headerSegments = useMemo(() => [
     { id: "Morning", label: slotPunchStatus.Morning ? "\u2713 Morning" : "Morning", count: slotCounts.Morning },
@@ -1092,6 +1098,7 @@ export default function MailOrdersPage() {
             onCopy={handleCopy}
             batchStates={batchStates}
             onAdvanceBatch={handleAdvanceBatch}
+            slotCutoffs={slotCutoffs}
           />
         )}
       </div>
@@ -1106,7 +1113,7 @@ export default function MailOrdersPage() {
         <SlotCompletionModal
           slot={completedSlot}
           orders={orders.filter(
-            o => getSlotFromTime(o.receivedAt) === completedSlot
+            o => getSlotFromTime(o.receivedAt, slotCutoffs) === completedSlot
           )}
           onDismiss={handleDismissCompletion}
         />

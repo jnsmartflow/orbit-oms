@@ -71,8 +71,20 @@ export function formatVolume(liters: number): string {
   return `${Math.round(liters)}L`;
 }
 
+export interface SlotCutoffs {
+  morning: string;
+  afternoon: string;
+  evening: string;
+}
+
+function parseHHMM(time: string): number {
+  const [h, m] = time.split(":").map(Number);
+  return h * 60 + m;
+}
+
 export function getSlotFromTime(
   receivedAt: string,
+  cutoffs?: SlotCutoffs,
 ): "Morning" | "Afternoon" | "Evening" | "Night" {
   const d = new Date(receivedAt);
   const [h, m] = d
@@ -80,10 +92,15 @@ export function getSlotFromTime(
     .split(":")
     .map(Number);
   const mins = h * 60 + m;
-  if (mins < 630) return "Morning";       // before 10:30
-  if (mins < 810) return "Afternoon";     // 10:30–13:30
-  if (mins < 990) return "Evening";       // 13:30–16:30
-  return "Night";                          // after 16:30
+
+  const morningCutoff = cutoffs ? parseHHMM(cutoffs.morning) : 630;
+  const afternoonCutoff = cutoffs ? parseHHMM(cutoffs.afternoon) : 750;
+  const eveningCutoff = cutoffs ? parseHHMM(cutoffs.evening) : 930;
+
+  if (mins < morningCutoff) return "Morning";
+  if (mins < afternoonCutoff) return "Afternoon";
+  if (mins < eveningCutoff) return "Evening";
+  return "Night";
 }
 
 export function formatTime(receivedAt: string): string {
@@ -509,6 +526,7 @@ export function buildBatchClipboardText(
 
 export function groupOrdersBySlot(
   orders: MoOrder[],
+  cutoffs?: SlotCutoffs,
 ): Record<string, MoOrder[]> {
   const groups: Record<string, MoOrder[]> = {};
 
@@ -517,7 +535,7 @@ export function groupOrdersBySlot(
   );
 
   for (const order of sorted) {
-    const slot = getSlotFromTime(order.receivedAt);
+    const slot = getSlotFromTime(order.receivedAt, cutoffs);
     if (!groups[slot]) groups[slot] = [];
     groups[slot].push(order);
   }

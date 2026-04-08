@@ -38,6 +38,24 @@ const CONFIG_META: Record<string, ConfigMeta> = {
     type: "integer",
     section: "timing",
   },
+  slot_morning_cutoff: {
+    label: "Morning Slot Cutoff",
+    description: "Orders received before this time are assigned to Morning slot.",
+    type: "time",
+    section: "timing",
+  },
+  slot_afternoon_cutoff: {
+    label: "Afternoon Slot Cutoff",
+    description: "Orders received before this time are assigned to Afternoon slot.",
+    type: "time",
+    section: "timing",
+  },
+  slot_evening_cutoff: {
+    label: "Evening Slot Cutoff",
+    description: "Orders received before this time are assigned to Evening slot.",
+    type: "time",
+    section: "timing",
+  },
   upgrade_small_overflow_pct: {
     label: "Overflow Upgrade Threshold (%)",
     description: "Max overflow before upgrade suggested over bump.",
