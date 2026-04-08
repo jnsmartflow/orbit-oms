@@ -85,6 +85,7 @@ export function buildSlotSummaryHTML(
   html += `<tr><td style="background:#0d9488;padding:24px 32px">`;
   html += `<p style="margin:0;font-size:18px;font-weight:700;color:#ffffff">JSW Dulux \u2014 Surat Depot</p>`;
   html += `<p style="margin:4px 0 0;font-size:13px;color:#ccfbf1">${slotName} Slot \u00b7 ${date}</p>`;
+  html += `<p style="margin:5px 0 0;font-size:12px;color:#99f6e4">Processed by ${senderName}</p>`;
   html += `</td></tr>`;
 
   // ── Salutation ──
@@ -96,7 +97,7 @@ export function buildSlotSummaryHTML(
   // ── Section 1: Processed Orders table ──
   html += `<tr><td style="padding:0 32px 16px">`;
   html += `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-radius:6px;overflow:hidden;border:1px solid #e5e7eb">`;
-  html += `<tr><td colspan="4" style="background:#f0fdfa;padding:10px 16px;font-size:13px;font-weight:700;color:#0d9488;border-bottom:1px solid #ccfbf1">\u2713 Processed Orders (${processed.length})</td></tr>`;
+  html += `<tr><td colspan="4" style="background:#0d9488;padding:8px 12px;border-radius:4px 4px 0 0"><span style="font-size:11px;font-weight:700;color:#ffffff;letter-spacing:0.06em;text-transform:uppercase">Processed Orders</span></td></tr>`;
   html += `<tr style="background:#f9fafb"><td style="padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #f3f4f6">#</td><td style="padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #f3f4f6">Customer</td><td style="padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #f3f4f6">Code</td><td style="padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #f3f4f6">SO No.</td></tr>`;
 
   if (processed.length === 0) {
@@ -105,7 +106,7 @@ export function buildSlotSummaryHTML(
     processed.forEach((o, i) => {
       const bg = i % 2 === 0 ? "#ffffff" : "#f9fafb";
       const cust = smartTitleCase(o.customerName ?? o.subject);
-      html += `<tr style="background:${bg}"><td style="padding:8px 12px;font-size:12px;color:#6b7280;border-bottom:1px solid #f3f4f6">${i + 1}</td><td style="padding:8px 12px;font-size:12px;color:#1f2937;font-weight:500;border-bottom:1px solid #f3f4f6">${cust}</td><td style="padding:8px 12px;font-size:12px;color:#6b7280;font-family:monospace;border-bottom:1px solid #f3f4f6">${o.customerCode ?? "\u2014"}</td><td style="padding:8px 12px;font-size:12px;color:#1f2937;font-weight:600;font-family:monospace;border-bottom:1px solid #f3f4f6">${o.soNumber}</td></tr>`;
+      html += `<tr style="background:${bg}"><td style="padding:8px 12px;font-size:12px;color:#6b7280;border-bottom:1px solid #f3f4f6">${i + 1}</td><td style="padding:8px 12px;font-size:12px;color:#1f2937;font-weight:500;border-bottom:1px solid #f3f4f6">${cust}</td><td style="padding:8px 12px;font-size:12px;color:#6b7280;font-family:monospace;border-bottom:1px solid #f3f4f6">${o.customerCode ?? "\u2014"}</td><td style="padding:9px 10px;font-size:13px;font-weight:700;color:#1e293b;font-family:'Courier New',Courier,monospace;border-bottom:1px solid #f3f4f6">${o.soNumber}</td></tr>`;
     });
   }
   html += `</table></td></tr>`;
@@ -149,8 +150,10 @@ export function buildSlotSummaryHTML(
   const totalParts = [
     `${totalCount} order${totalCount !== 1 ? "s" : ""}`,
     `${processed.length} processed`,
-    `${pending.length} pending`,
   ];
+  if (pending.length > 0) {
+    totalParts.push(`${pending.length} pending`);
+  }
   html += `<tr><td style="padding:0 32px 16px">`;
   html += `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td style="background:#f8fafc;padding:12px 16px;border-radius:6px;border:1px solid #e5e7eb;font-size:12px;color:#475569;font-weight:600">Total: ${totalParts.join(" \u00b7 ")}</td></tr></table>`;
   html += `</td></tr>`;
