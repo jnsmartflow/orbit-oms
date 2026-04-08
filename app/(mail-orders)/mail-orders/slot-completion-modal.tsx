@@ -1,11 +1,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { X, Check } from "lucide-react";
+import { X, Check, Send } from "lucide-react";
 import { useSession } from "next-auth/react";
 import type { MoOrder } from "@/lib/mail-orders/types";
-import { smartTitleCase, buildReplyTemplate, getOrderFlags, getOrderVolume } from "@/lib/mail-orders/utils";
-import { SoEmailPanel } from "@/components/mail-orders/so-email-panel";
+import { smartTitleCase, getOrderFlags, getOrderVolume } from "@/lib/mail-orders/utils";
+import { buildSlotSummaryHTML } from "@/lib/mail-orders/email-template";
 
 interface SoGroup {
   soName: string;
@@ -26,7 +26,6 @@ export function SlotCompletionModal({
 }: SlotCompletionModalProps) {
   const { data: session } = useSession();
   const [copiedAction, setCopiedAction] = useState<string | null>(null);
-  const [isSoEmailPanelOpen, setIsSoEmailPanelOpen] = useState(false);
 
   // Esc to close
   useEffect(() => {
@@ -76,17 +75,37 @@ export function SlotCompletionModal({
     flash(`${group.soName}-sap`);
   }
 
-  function handleCopyReply(group: SoGroup) {
-    const orderData = group.orders.map(o => ({
-      customerName: smartTitleCase(o.customerName ?? o.subject),
-      customerCode: o.customerCode,
-      area: o.customerArea ?? null,
-      soNumber: o.soNumber ?? "",
-      flags: getOrderFlags(o),
-    }));
-    const template = buildReplyTemplate(group.soName, orderData);
-    navigator.clipboard.writeText(template);
-    flash(`${group.soName}-reply`);
+  async function handleSendEmail(group: SoGroup) {
+    const senderName = session?.user?.name ?? "Billing Operator";
+    const date = new Date().toLocaleDateString("en-GB", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    });
+
+    const htmlContent = buildSlotSummaryHTML(
+      group.soName,
+      group.orders,
+      slot,
+      date,
+      senderName,
+    );
+
+    // Copy HTML to clipboard
+    try {
+      const blob = new Blob([htmlContent], { type: "text/html" });
+      await navigator.clipboard.write([
+        new ClipboardItem({ "text/html": blob }),
+      ]);
+    } catch {
+      await navigator.clipboard.writeText(htmlContent);
+    }
+
+    // Open mailto with no To address, just subject
+    const subject = `[JSW Dulux Surat] ${slot} Slot Summary — ${date}`;
+    window.open(`mailto:?subject=${encodeURIComponent(subject)}`, "_blank");
+
+    flash(`${group.soName}-send`);
   }
 
   function handleCopyAllSap() {
@@ -164,14 +183,18 @@ export function SlotCompletionModal({
                   {copiedAction === `${group.soName}-sap` ? "Copied \u2713" : "SAP"}
                 </button>
                 <button
-                  onClick={() => handleCopyReply(group)}
-                  className={`text-[11px] font-medium border rounded-md px-3 h-[28px] transition-colors ${
-                    copiedAction === `${group.soName}-reply`
+                  onClick={() => handleSendEmail(group)}
+                  className={`text-[11px] font-medium border rounded-md px-3 h-[28px] transition-colors inline-flex items-center gap-1 ${
+                    copiedAction === `${group.soName}-send`
                       ? "bg-green-50 text-green-700 border-green-200"
                       : "bg-teal-600 text-white border-teal-600 hover:bg-teal-700"
                   }`}
                 >
-                  {copiedAction === `${group.soName}-reply` ? "Copied \u2713" : "Reply"}
+                  {copiedAction === `${group.soName}-send` ? (
+                    <>Sent <Check size={10} /></>
+                  ) : (
+                    <>Send <Send size={10} /></>
+                  )}
                 </button>
               </div>
             </div>
@@ -191,12 +214,6 @@ export function SlotCompletionModal({
             {copiedAction === "all-sap" ? "Copied \u2713" : "Copy All SAP"}
           </button>
           <button
-            onClick={() => setIsSoEmailPanelOpen(true)}
-            className="text-[12px] font-medium border border-gray-200 text-gray-600 rounded-md px-4 h-[32px] hover:bg-gray-50 transition-colors"
-          >
-            Send SO Emails
-          </button>
-          <button
             onClick={onDismiss}
             className="text-[12px] font-medium bg-teal-600 text-white border border-teal-600 rounded-md px-4 h-[32px] hover:bg-teal-700 transition-colors"
           >
@@ -204,14 +221,6 @@ export function SlotCompletionModal({
           </button>
         </div>
       </div>
-
-      <SoEmailPanel
-        isOpen={isSoEmailPanelOpen}
-        onClose={() => setIsSoEmailPanelOpen(false)}
-        slotName={slot}
-        orders={orders}
-        senderName={session?.user?.name ?? "Billing Operator"}
-      />
     </div>
   );
 }
