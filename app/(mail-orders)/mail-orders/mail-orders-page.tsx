@@ -8,7 +8,6 @@ import type { MoOrder, MoOrderLine } from "@/lib/mail-orders/types";
 import { MailOrdersTable, ALL_COLUMNS } from "./mail-orders-table";
 import type { ColumnConfig } from "./mail-orders-table";
 import { UniversalHeader } from "@/components/universal-header";
-import { SoSummaryPanel } from "./so-summary-panel";
 import { SlotCompletionModal } from "./slot-completion-modal";
 import { FocusModeView } from "./focus-mode-view";
 import { Check, Copy } from "lucide-react";
@@ -138,7 +137,6 @@ export default function MailOrdersPage() {
   const [selectedDate, setSelectedDate] = useState(() => getTodayIST());
   const [openCodePopoverId, setOpenCodePopoverId] = useState<number | null>(null);
   const [batchStates, setBatchStates] = useState<Record<number, number>>({});
-  const [soSummaryOpen, setSoSummaryOpen] = useState(false);
   const [punchedVisible, setPunchedVisible] = useState(false);
   const [autoComplete, setAutoComplete] = useState(true);
   const [skuPanelOrderId, setSkuPanelOrderId] = useState<number | null>(null);
@@ -227,27 +225,51 @@ export default function MailOrdersPage() {
     };
   }, [loadOrders]);
 
-  // ── Slot completion detection ───────────────────────────────────────────────
+  // ── Time-based slot email auto-trigger ──────────────────────────────────────
   useEffect(() => {
     if (!autoComplete) return;
-    if (orders.length === 0) return;
+    if (!slotCutoffs) return;
+    if (selectedDate !== getTodayIST()) return;
 
-    const slots = ["Morning", "Afternoon", "Evening", "Night"];
-    for (const slot of slots) {
-      if (dismissedSlots.has(slot)) continue;
-      if (completedSlot) continue;
+    function checkSlotTrigger() {
+      if (orders.length === 0) return;
+      if (completedSlot) return;
 
-      const slotOrders = orders.filter(
-        o => getSlotFromTime(o.receivedAt, slotCutoffs) === slot
-      );
-      if (slotOrders.length === 0) continue;
+      const now = new Date();
+      const istNow = new Date(now.getTime() + (5.5 * 60 * 60 * 1000));
+      const nowMinutes = istNow.getUTCHours() * 60 + istNow.getUTCMinutes();
 
-      if (slotOrders.every(o => o.status === "punched")) {
-        setCompletedSlot(slot);
+      const slotDefs: { name: string; cutoff: string }[] = [
+        { name: "Morning", cutoff: slotCutoffs!.morning },
+        { name: "Afternoon", cutoff: slotCutoffs!.afternoon },
+        { name: "Evening", cutoff: slotCutoffs!.evening },
+      ];
+
+      for (const { name, cutoff } of slotDefs) {
+        const [h, m] = cutoff.split(":").map(Number);
+        const cutoffMinutes = h * 60 + m + 15; // cutoff + 15 min grace
+
+        if (nowMinutes < cutoffMinutes) continue;
+
+        const dateKey = `mo-slot-email-sent-${selectedDate}-${name}`;
+        if (localStorage.getItem(dateKey) === "true") continue;
+        if (dismissedSlots.has(name)) continue;
+
+        const slotOrders = orders.filter(
+          o => getSlotFromTime(o.receivedAt, slotCutoffs) === name
+        );
+        if (slotOrders.length === 0) continue;
+
+        localStorage.setItem(dateKey, "true");
+        setCompletedSlot(name);
         break;
       }
     }
-  }, [orders, autoComplete, dismissedSlots, completedSlot, slotCutoffs]);
+
+    checkSlotTrigger();
+    const interval = setInterval(checkSlotTrigger, 60_000);
+    return () => clearInterval(interval);
+  }, [orders, autoComplete, dismissedSlots, completedSlot, slotCutoffs, selectedDate]);
 
   // Reset dismissed slots on date change
   useEffect(() => {
@@ -608,10 +630,6 @@ export default function MailOrdersPage() {
           handleDismissCompletion();
           return;
         }
-        if (soSummaryOpen) {
-          setSoSummaryOpen(false);
-          return;
-        }
         if (openCodePopoverId !== null) {
           setOpenCodePopoverId(null);
           return;
@@ -650,6 +668,23 @@ export default function MailOrdersPage() {
           input.select();
           // Don't preventDefault — let the native paste go through
         }
+        return;
+      }
+
+      // ── Ctrl+Q — Open slot completion modal ──────────────────────────────────
+      if ((e.ctrlKey || e.metaKey) && e.key === "q") {
+        e.preventDefault();
+        const targetSlot = activeSlot ?? (() => {
+          const slots = ["Morning", "Afternoon", "Evening", "Night"];
+          for (const s of slots) {
+            const slotOrders = orders.filter(
+              o => getSlotFromTime(o.receivedAt, slotCutoffs) === s
+            );
+            if (slotOrders.length > 0) return s;
+          }
+          return null;
+        })();
+        if (targetSlot) setCompletedSlot(targetSlot);
         return;
       }
 
@@ -744,38 +779,6 @@ export default function MailOrdersPage() {
         return;
       }
 
-      // Q — Copy customer code
-      if (key === "q" || key === "Q") {
-        if (focusedId !== null) {
-          const order = flatOrders.find((o) => o.id === focusedId);
-          if (order?.customerMatchStatus === "exact" && order.customerCode) {
-            navigator.clipboard.writeText(order.customerCode);
-            setCopiedCodeId(focusedId);
-            setTimeout(() => setCopiedCodeId(null), 1500);
-          }
-        }
-        return;
-      }
-
-      // W — Copy SKU lines
-      if (key === "w" || key === "W") {
-        if (focusedId !== null) {
-          const order = flatOrders.find((o) => o.id === focusedId);
-          if (order) {
-            const matched = order.lines.filter(l => l.matchStatus === "matched" && l.skuCode != null);
-            const needsBatching = matched.length > BATCH_COPY_LIMIT;
-            if (needsBatching) {
-              const currentBatch = batchStates[order.id] ?? 0;
-              handleCopy(order.id, order.lines, currentBatch);
-              handleAdvanceBatch(order.id);
-            } else {
-              handleCopy(order.id, order.lines);
-            }
-          }
-        }
-        return;
-      }
-
       // R — Copy reply template
       if (key === "r" || key === "R") {
         if (focusedId !== null) {
@@ -811,13 +814,6 @@ export default function MailOrdersPage() {
         if (focusedId !== null) {
           handleFlag(focusedId);
         }
-        return;
-      }
-
-      // A — Open SO Summary panel
-      if (key === "a" || key === "A") {
-        e.preventDefault();
-        setSoSummaryOpen(true);
         return;
       }
 
@@ -877,7 +873,7 @@ export default function MailOrdersPage() {
 
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [flatOrders, focusedId, expandedId, handleExpand, handleCopy, handleAdvanceBatch, handleFlag, batchStates, openCodePopoverId, soSummaryOpen, copiedReplyId, completedSlot, handleDismissCompletion, viewMode, smartCopyOrderId, smartCopyLineIdx, showCopyToast, flashCell]);
+  }, [flatOrders, focusedId, expandedId, handleExpand, handleCopy, handleAdvanceBatch, handleFlag, batchStates, openCodePopoverId, copiedReplyId, completedSlot, handleDismissCompletion, viewMode, smartCopyOrderId, smartCopyLineIdx, showCopyToast, flashCell, activeSlot, orders, slotCutoffs]);
 
   // ── Auto-scroll focused row into view ───────────────────────────────────────
   useEffect(() => {
@@ -1006,6 +1002,7 @@ export default function MailOrdersPage() {
         shortcuts={[
           { key: "Ctrl+C", label: "Smart copy" },
           { key: "Ctrl+V", label: "Paste SO" },
+          { key: "Ctrl+Q", label: "Slot email" },
           { key: "R", label: "Reply" },
           { key: "F", label: "Flag" },
           { key: "S", label: "SKU panel" },
@@ -1102,12 +1099,6 @@ export default function MailOrdersPage() {
           />
         )}
       </div>
-
-      <SoSummaryPanel
-        orders={filteredOrders}
-        open={soSummaryOpen}
-        onClose={() => setSoSummaryOpen(false)}
-      />
 
       {completedSlot && (
         <SlotCompletionModal
