@@ -1,14 +1,22 @@
 // ─────────────────────────────────────────────────────────
-// Mail Order Enrichment Engine v2 — full-text scoring
+// Mail Order Enrichment Engine v3.1 — full-text scoring + fuzzy
 // ─────────────────────────────────────────────────────────
 // Architecture: generate → verify → rank
 // 1. Find all product keywords in FULL text (no stripping)
+// 1b. If 0 matches: fuzzy spell-correction → re-match
 // 2. Find all base keywords in FULL text (parallel, not sequential)
 // 3. Classify each product (DIRECT/FIXED/NUMBERED/COLOUR)
 // 4. Generate all valid (product × base × pack) candidates
 // 5. Verify each against SKU table
 // 6. Score by keyword coverage + strategy confidence
 // 7. Highest score wins; ties → partial for manual resolution
+// ─────────────────────────────────────────────────────────
+// v3.1: Fuzzy spell-correction for product keywords (session v59)
+//   - Only triggers when exact matching returns 0 results
+//   - Only corrects words with 6+ characters
+//   - Edit distance ≤1 for 6-9 chars, ≤2 for 10+ chars
+//   - Ambiguous fuzzy (2+ different products) → skip correction
+//   - CATEGORY_KEYWORDS dead code removed
 // ─────────────────────────────────────────────────────────
 
 export interface ProductKeyword {
@@ -104,20 +112,11 @@ const PACK_EXPAND: Record<string, string[]> = {
   "20": ["18", "18.5"],
 };
 
-/* ── Category keywords: generic terms that don't identify
-     a specific product (STAINER, TINTER, FAST, etc.) ────── */
-
-const CATEGORY_KEYWORDS = new Set([
-  "STAINER",
-  "UNIVERSAL STAINER",
-  "UNIVERSAL STAINER FAST",
-  "MACHINE STAINER",
-  "MACHINE TINTER",
-  "MACHINE TINTERS",
-  "MACHINE",
-  "TINTER",
-  "FAST",
-]);
+/* ── Category keywords: DEAD CODE — these keywords were deleted
+     from mo_product_keywords in v56. Kept as comment for reference.
+     STAINER, UNIVERSAL STAINER, MACHINE STAINER, MACHINE TINTER,
+     MACHINE, TINTER, FAST — all replaced with specific compound keywords.
+   ────────────────────────────────────────────────────────── */
 
 const FALLBACK_BASES = ["BRILLIANT WHITE", "ADVANCE"];
 
@@ -127,6 +126,124 @@ const NUMBERED_BASE_RE = /\b(9[0-8])\b/;
 
 function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** Levenshtein edit distance between two strings */
+function editDistance(a: string, b: string): number {
+  const m = a.length;
+  const n = b.length;
+  // Quick exits
+  if (m === 0) return n;
+  if (n === 0) return m;
+  if (Math.abs(m - n) > 2) return 3; // early bail — we only care about dist ≤ 2
+
+  // Single-row DP
+  let prev = new Array(n + 1);
+  let curr = new Array(n + 1);
+  for (let j = 0; j <= n; j++) prev[j] = j;
+
+  for (let i = 1; i <= m; i++) {
+    curr[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      curr[j] = Math.min(
+        prev[j] + 1,      // deletion
+        curr[j - 1] + 1,  // insertion
+        prev[j - 1] + cost // substitution
+      );
+    }
+    [prev, curr] = [curr, prev];
+  }
+  return prev[n];
+}
+
+/** Fuzzy spell-correction for product keywords.
+ *  Only runs when exact matching found 0 results.
+ *  Returns corrected text, or null if no correction found.
+ *
+ *  Rules:
+ *  - Only corrects words with 6+ characters
+ *  - Edit distance ≤ 1 for words 6-9 chars, ≤ 2 for 10+ chars
+ *  - If a word fuzzy-matches keywords from 2+ different products, skip it (ambiguous)
+ *  - Returns corrected text for re-matching through normal pipeline
+ */
+function fuzzyCorrectText(
+  text: string,
+  productKeywords: ProductKeyword[],
+): string | null {
+  // Build unique single-word keywords with len >= 6
+  // Also include multi-word keywords — we'll match against individual words
+  const kwSet = new Map<string, Set<string>>(); // keyword -> Set<product>
+  for (const pk of productKeywords) {
+    // For fuzzy, we work with individual words from keywords
+    const words = pk.keyword.split(/\s+/);
+    for (const w of words) {
+      if (w.length < 6) continue;
+      if (!kwSet.has(w)) kwSet.set(w, new Set());
+      kwSet.get(w)!.add(pk.product);
+    }
+  }
+
+  const inputWords = text.split(/\s+/);
+  let corrected = false;
+  const outputWords: string[] = [];
+
+  for (const word of inputWords) {
+    // Only fuzzy-correct words with 6+ chars
+    if (word.length < 6) {
+      outputWords.push(word);
+      continue;
+    }
+
+    // Check if word already exact-matches a keyword word — no correction needed
+    if (kwSet.has(word)) {
+      outputWords.push(word);
+      continue;
+    }
+
+    // Find fuzzy matches
+    const maxDist = word.length >= 10 ? 2 : 1;
+    let bestKw: string | null = null;
+    let bestDist = maxDist + 1;
+    let bestProducts = new Set<string>();
+    let ambiguous = false;
+
+    for (const [kw, products] of Array.from(kwSet.entries())) {
+      // Quick length filter — edit distance can't be less than length difference
+      if (Math.abs(word.length - kw.length) > maxDist) continue;
+
+      const dist = editDistance(word, kw);
+      if (dist > maxDist) continue;
+
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestKw = kw;
+        bestProducts = new Set(products);
+        ambiguous = false;
+      } else if (dist === bestDist && bestKw !== null && kw !== bestKw) {
+        // Same distance, different keyword — check if products overlap
+        for (const p of Array.from(products)) bestProducts.add(p);
+        // If the keywords map to different products at same distance, flag ambiguous
+        if (kw !== bestKw) {
+          const prevProducts = kwSet.get(bestKw)!;
+          let allSame = true;
+          for (const p of Array.from(products)) {
+            if (!prevProducts.has(p)) { allSame = false; break; }
+          }
+          if (!allSame) ambiguous = true;
+        }
+      }
+    }
+
+    if (bestKw && !ambiguous) {
+      outputWords.push(bestKw);
+      corrected = true;
+    } else {
+      outputWords.push(word);
+    }
+  }
+
+  return corrected ? outputWords.join(" ") : null;
 }
 
 export function buildKeywordRegexes(
@@ -363,7 +480,29 @@ export function enrichLine(
     });
   }
 
-  if (prodMatches.length === 0) return EMPTY;
+  if (prodMatches.length === 0) {
+    // ── Step 3b: Fuzzy spell-correction pass ──────────────
+    // Only triggers when exact matching found 0 product keywords.
+    // Corrects misspelled words (len≥6) and re-runs exact matching.
+    const correctedText = fuzzyCorrectText(text, productKeywords);
+    if (correctedText) {
+      // Re-run exact keyword matching on corrected text
+      for (const pk of productKeywords) {
+        const re = prodRegexMap.get(pk.keyword);
+        if (!re || !re.test(correctedText)) continue;
+        const dedup = `${pk.product}|${pk.keyword}`;
+        if (seenProdKw.has(dedup)) continue;
+        seenProdKw.add(dedup);
+        prodMatches.push({
+          keyword: pk.keyword,
+          product: pk.product,
+          len: pk.keyword.length,
+        });
+      }
+    }
+    // Still no matches after fuzzy → unmatched
+    if (prodMatches.length === 0) return EMPTY;
+  }
 
   // ── Step 4: Find ALL base keywords in FULL text ──────────
   const detectedBases: { keyword: string; baseColour: string; len: number }[] =
@@ -395,7 +534,6 @@ export function enrichLine(
 
     const strategy = profile.strategy;
     const validBases = profile.bases;
-    const isCategoryKw = CATEGORY_KEYWORDS.has(pm.keyword);
 
     // Determine which bases to try based on product strategy
     const basesToTry: string[] = [];
@@ -482,9 +620,6 @@ export function enrichLine(
         } else if (isFallback) {
           score -= 1;
         }
-
-        // Category keyword penalty
-        if (isCategoryKw) score -= 2;
 
         // Alt SKU for same combo (for Deepanshu signal)
         const altSku = skuByComboAlt?.get(key) ?? null;
