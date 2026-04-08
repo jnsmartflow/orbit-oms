@@ -1,10 +1,9 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { X, Send, Check } from "lucide-react";
 import type { MoOrder } from "@/lib/mail-orders/types";
 import { smartTitleCase } from "@/lib/mail-orders/utils";
-import { getOrderFlags } from "@/lib/mail-orders/utils";
 import { buildSlotSummaryHTML } from "@/lib/mail-orders/email-template";
 
 interface SoCard {
@@ -85,29 +84,14 @@ export function SoEmailPanel({
   senderName,
 }: SoEmailPanelProps) {
   const cards = buildCards(orders);
-  const [emails, setEmails] = useState<Record<string, string>>({});
   const [sent, setSent] = useState<Set<string>>(new Set());
-  const firstInputRef = useRef<HTMLInputElement | null>(null);
+  const [sendingFlash, setSendingFlash] = useState<string | null>(null);
 
-  // Reset state when panel opens with new data
+  // Reset state when panel opens
   useEffect(() => {
     if (isOpen) {
-      // Pre-fill emails from soEmail on orders
-      const prefill: Record<string, string> = {};
-      for (const card of cards) {
-        const soEmail = card.orders[0]?.soEmail;
-        if (soEmail) prefill[card.soName] = soEmail;
-      }
-      setEmails(prefill);
       setSent(new Set());
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen]);
-
-  // Auto-focus first input
-  useEffect(() => {
-    if (isOpen) {
-      setTimeout(() => firstInputRef.current?.focus(), 100);
+      setSendingFlash(null);
     }
   }, [isOpen]);
 
@@ -130,9 +114,6 @@ export function SoEmailPanel({
   const totalOrders = cards.reduce((s, c) => s + c.orders.length, 0);
 
   async function handleSend(card: SoCard) {
-    const email = emails[card.soName]?.trim();
-    if (!email) return;
-
     const htmlContent = buildSlotSummaryHTML(
       card.soName,
       card.orders,
@@ -152,11 +133,16 @@ export function SoEmailPanel({
       await navigator.clipboard.writeText(htmlContent);
     }
 
-    // Open mailto
+    // Open mailto with no to address, just subject
     const subject = `[JSW Dulux Surat] ${slotName} Slot Summary — ${date}`;
-    window.open(`mailto:${email}?subject=${encodeURIComponent(subject)}`);
+    window.open(`mailto:?subject=${encodeURIComponent(subject)}`, "_blank");
 
-    setSent((prev) => new Set(prev).add(card.soName));
+    // Flash "Sent ✓" for 1.5s then collapse
+    setSendingFlash(card.soName);
+    setTimeout(() => {
+      setSendingFlash(null);
+      setSent((prev) => new Set(prev).add(card.soName));
+    }, 1500);
   }
 
   return (
@@ -195,9 +181,9 @@ export function SoEmailPanel({
               No orders with SO numbers.
             </p>
           )}
-          {cards.map((card, idx) => {
+          {cards.map((card) => {
             const isSent = sent.has(card.soName);
-            const emailVal = emails[card.soName] ?? "";
+            const isFlashing = sendingFlash === card.soName;
 
             if (isSent) {
               return (
@@ -250,29 +236,22 @@ export function SoEmailPanel({
                   )}
                 </div>
 
-                {/* Email input + send */}
-                <div className="flex items-center gap-2">
-                  <input
-                    ref={idx === 0 ? firstInputRef : undefined}
-                    type="email"
-                    placeholder="Enter SO email address"
-                    value={emailVal}
-                    onChange={(e) =>
-                      setEmails((prev) => ({
-                        ...prev,
-                        [card.soName]: e.target.value,
-                      }))
-                    }
-                    className="flex-1 min-w-0 text-[13px] px-3 py-1.5 border border-gray-200 rounded-md outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500 placeholder:text-gray-300"
-                  />
-                  <button
-                    onClick={() => handleSend(card)}
-                    disabled={!emailVal.trim()}
-                    className="shrink-0 inline-flex items-center gap-1 text-[12px] font-medium px-3 py-1.5 rounded-md transition-colors bg-teal-600 text-white hover:bg-teal-700 disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    Send <Send size={11} />
-                  </button>
-                </div>
+                {/* Send button */}
+                <button
+                  onClick={() => handleSend(card)}
+                  disabled={isFlashing}
+                  className={`inline-flex items-center gap-1 text-[12px] font-medium px-3 py-1.5 rounded-md transition-colors ${
+                    isFlashing
+                      ? "bg-green-50 text-green-700 border border-green-200"
+                      : "bg-teal-600 text-white hover:bg-teal-700"
+                  }`}
+                >
+                  {isFlashing ? (
+                    <>Sent <Check size={11} /></>
+                  ) : (
+                    <>Send <Send size={11} /></>
+                  )}
+                </button>
               </div>
             );
           })}
