@@ -5,6 +5,7 @@ import {
   enrichLine,
   buildSkuMaps,
   buildProductProfiles,
+  buildKeywordRegexes,
   type ProductKeyword,
   type BaseKeyword,
   type SkuEntry,
@@ -45,11 +46,13 @@ export async function POST(): Promise<NextResponse> {
     refMaterial: r.refMaterial,
     paintType: r.paintType,
     materialType: r.materialType,
+    piecesPerCarton: r.piecesPerCarton ?? null,
   }));
 
   // 2. Build maps + profiles
   const { byCombo: skuByCombo, byComboAlt: skuByComboAlt, byMaterial: skuByMaterial } = buildSkuMaps(skuEntries);
   const productProfiles = buildProductProfiles(skuEntries, productKeywords, baseKeywords);
+  const { prodRegexMap, baseRegexMap } = buildKeywordRegexes(productKeywords, baseKeywords);
 
   // 3. Fetch lines from last 2 days with their order receivedAt
   const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
@@ -65,6 +68,7 @@ export async function POST(): Promise<NextResponse> {
       moOrderId: true,
       rawText: true,
       packCode: true,
+      quantity: true,
       productName: true,
       baseColour: true,
       skuCode: true,
@@ -73,6 +77,8 @@ export async function POST(): Promise<NextResponse> {
       paintType: true,
       materialType: true,
       matchStatus: true,
+      isCarton: true,
+      cartonCount: true,
     },
   });
 
@@ -91,7 +97,26 @@ export async function POST(): Promise<NextResponse> {
       skuByMaterial,
       skuByComboAlt,
       productProfiles,
+      prodRegexMap,
+      baseRegexMap,
     );
+
+    // Carton multiplication (re-process if line has isCarton)
+    let finalQty = line.quantity;
+    let cartonCount: number | null = line.cartonCount;
+
+    if (line.isCarton && result.matchStatus === "matched" && result.skuCode) {
+      const matchedKey = `${result.productName}|${result.baseColour}|${result.packCode}`;
+      const matchedSku = skuByCombo.get(matchedKey);
+      const originalCartonQty = line.cartonCount ?? line.quantity;
+      if (matchedSku?.piecesPerCarton) {
+        cartonCount = originalCartonQty;
+        finalQty = originalCartonQty * matchedSku.piecesPerCarton;
+      } else {
+        cartonCount = originalCartonQty;
+        finalQty = line.quantity;
+      }
+    }
 
     // Check if anything changed
     const changed =
@@ -103,7 +128,9 @@ export async function POST(): Promise<NextResponse> {
       result.paintType !== (line.paintType ?? "") ||
       result.materialType !== (line.materialType ?? "") ||
       result.matchStatus !== line.matchStatus ||
-      result.packCode !== (line.packCode ?? "");
+      result.packCode !== (line.packCode ?? "") ||
+      finalQty !== line.quantity ||
+      cartonCount !== line.cartonCount;
 
     if (changed) {
       await prisma.mo_order_lines.update({
@@ -118,6 +145,8 @@ export async function POST(): Promise<NextResponse> {
           materialType: result.materialType || null,
           matchStatus: result.matchStatus,
           packCode: result.packCode || line.packCode || null,
+          quantity: finalQty,
+          cartonCount,
         },
       });
       updated++;

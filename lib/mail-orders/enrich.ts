@@ -34,6 +34,7 @@ export interface SkuEntry {
   refMaterial: string | null;
   paintType: string | null;
   materialType: string | null;
+  piecesPerCarton: number | null;
 }
 
 export interface EnrichResult {
@@ -121,6 +122,31 @@ const CATEGORY_KEYWORDS = new Set([
 const FALLBACK_BASES = ["BRILLIANT WHITE", "ADVANCE"];
 
 const NUMBERED_BASE_RE = /\b(9[0-8])\b/;
+
+/* ── Regex helpers ────────────────────────────────────────── */
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+export function buildKeywordRegexes(
+  productKeywords: ProductKeyword[],
+  baseKeywords: BaseKeyword[],
+): { prodRegexMap: Map<string, RegExp>; baseRegexMap: Map<string, RegExp> } {
+  const prodRegexMap = new Map<string, RegExp>();
+  for (const pk of productKeywords) {
+    if (!prodRegexMap.has(pk.keyword)) {
+      prodRegexMap.set(pk.keyword, new RegExp(`\\b${escapeRegex(pk.keyword)}\\b`));
+    }
+  }
+  const baseRegexMap = new Map<string, RegExp>();
+  for (const bk of baseKeywords) {
+    if (!baseRegexMap.has(bk.keyword)) {
+      baseRegexMap.set(bk.keyword, new RegExp(`\\b${escapeRegex(bk.keyword)}\\b`));
+    }
+  }
+  return { prodRegexMap, baseRegexMap };
+}
 
 /* ── SKU index maps (enhanced for v2) ─────────────────────── */
 
@@ -242,6 +268,9 @@ export function enrichLine(
   // v2 additions — optional for backward compatibility
   skuByComboAlt?: Map<string, SkuEntry>,
   productProfiles?: Map<string, ProductProfile>,
+  // v3 additions — pre-compiled keyword regexes (optional, built internally if not provided)
+  prodRegexMap?: Map<string, RegExp>,
+  baseRegexMap?: Map<string, RegExp>,
 ): EnrichResult {
   const EMPTY: EnrichResult = {
     productName: "",
@@ -299,12 +328,31 @@ export function enrichLine(
     }
   }
 
+  // ── Step 2b: Build regex maps if not provided ────────────
+  if (!prodRegexMap) {
+    prodRegexMap = new Map<string, RegExp>();
+    for (const pk of productKeywords) {
+      if (!prodRegexMap.has(pk.keyword)) {
+        prodRegexMap.set(pk.keyword, new RegExp(`\\b${escapeRegex(pk.keyword)}\\b`));
+      }
+    }
+  }
+  if (!baseRegexMap) {
+    baseRegexMap = new Map<string, RegExp>();
+    for (const bk of baseKeywords) {
+      if (!baseRegexMap.has(bk.keyword)) {
+        baseRegexMap.set(bk.keyword, new RegExp(`\\b${escapeRegex(bk.keyword)}\\b`));
+      }
+    }
+  }
+
   // ── Step 3: Find ALL product keywords in FULL text ───────
   const prodMatches: { keyword: string; product: string; len: number }[] = [];
   const seenProdKw = new Set<string>();
 
   for (const pk of productKeywords) {
-    if (!text.includes(pk.keyword)) continue;
+    const re = prodRegexMap.get(pk.keyword);
+    if (!re || !re.test(text)) continue;
     const dedup = `${pk.product}|${pk.keyword}`;
     if (seenProdKw.has(dedup)) continue;
     seenProdKw.add(dedup);
@@ -323,7 +371,8 @@ export function enrichLine(
   const seenBase = new Set<string>();
 
   for (const bk of baseKeywords) {
-    if (text.includes(bk.keyword) && !seenBase.has(bk.baseColour)) {
+    const re = baseRegexMap.get(bk.keyword);
+    if (re && re.test(text) && !seenBase.has(bk.baseColour)) {
       seenBase.add(bk.baseColour);
       detectedBases.push({
         keyword: bk.keyword,
@@ -519,6 +568,33 @@ export function enrichLine(
     };
   }
 
+  // ── Step 6b: Check for unrecognized base text when using fallback ──
+  if (top.isFallback) {
+    const matchedProdKw = prodMatches.find(pm => pm.product === top.product);
+    if (matchedProdKw) {
+      const kwEnd = text.indexOf(matchedProdKw.keyword) + matchedProdKw.keyword.length;
+      const afterKw = text.substring(kwEnd).trim();
+      let remaining = afterKw.replace(/\d+/g, '').trim();
+      for (const db of detectedBases) {
+        remaining = remaining.replace(new RegExp(`\\b${escapeRegex(db.keyword)}\\b`, 'g'), '').trim();
+      }
+      const unrecognizedWords = remaining.replace(/[^A-Z\s]/g, '').trim();
+      if (unrecognizedWords.length >= 3) {
+        return {
+          productName: top.sku.product,
+          baseColour: top.sku.baseColour,
+          skuCode: "",
+          skuDescription: `Unrecognized base: ${unrecognizedWords}`,
+          refSkuCode: "",
+          paintType: top.sku.paintType ?? "",
+          materialType: top.sku.materialType ?? "",
+          packCode: resolvedPackCode(top.sku),
+          matchStatus: "partial",
+        };
+      }
+    }
+  }
+
   // Clear winner
   return {
     productName: top.sku.product,
@@ -542,7 +618,8 @@ export function findAllBases(
   const seen = new Set<string>();
   const result: string[] = [];
   for (const bk of baseKeywords) {
-    if (text.includes(bk.keyword) && !seen.has(bk.baseColour)) {
+    const re = new RegExp(`\\b${escapeRegex(bk.keyword)}\\b`);
+    if (re.test(text) && !seen.has(bk.baseColour)) {
       seen.add(bk.baseColour);
       result.push(bk.baseColour);
     }

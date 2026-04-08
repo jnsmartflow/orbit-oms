@@ -5,6 +5,7 @@ import {
   enrichLine,
   buildSkuMaps,
   buildProductProfiles,
+  buildKeywordRegexes,
   findAllBases,
   type ProductKeyword,
   type BaseKeyword,
@@ -51,10 +52,12 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     refMaterial: r.refMaterial,
     paintType: r.paintType,
     materialType: r.materialType,
+    piecesPerCarton: r.piecesPerCarton ?? null,
   }));
 
   const { byCombo: skuByCombo, byComboAlt: skuByComboAlt, byMaterial: skuByMaterial } = buildSkuMaps(skuEntries);
   const productProfiles = buildProductProfiles(skuEntries, productKeywords, baseKeywords);
+  const { prodRegexMap, baseRegexMap } = buildKeywordRegexes(productKeywords, baseKeywords);
 
   const result = enrichLine(
     text,
@@ -65,6 +68,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     skuByMaterial,
     skuByComboAlt,
     productProfiles,
+    prodRegexMap,
+    baseRegexMap,
   );
 
   // Debug info
