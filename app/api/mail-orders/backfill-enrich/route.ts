@@ -63,6 +63,7 @@ async function runBackfill() {
     refMaterial: r.refMaterial,
     paintType: r.paintType,
     materialType: r.materialType,
+    piecesPerCarton: r.piecesPerCarton ?? null,
   }));
 
   const { byCombo: skuByCombo, byMaterial: skuByMaterial } = buildSkuMaps(skuEntries);

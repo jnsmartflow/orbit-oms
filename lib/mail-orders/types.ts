@@ -35,6 +35,8 @@ export interface MoOrderLine {
   paintType: string | null;
   materialType: string | null;
   matchStatus: MatchStatus;
+  isCarton?: boolean;
+  cartonCount?: number | null;
   createdAt: string;
   lineStatus?: LineStatus | null;
 }

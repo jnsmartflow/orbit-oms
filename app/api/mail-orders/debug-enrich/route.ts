@@ -5,7 +5,7 @@ import {
   enrichLine,
   buildSkuMaps,
   buildProductProfiles,
-  findAllBases,
+  buildKeywordRegexes,
   type ProductKeyword,
   type BaseKeyword,
   type SkuEntry,
@@ -13,7 +13,7 @@ import {
 
 export const dynamic = "force-dynamic";
 
-export async function GET(req: NextRequest): Promise<NextResponse> {
+export async function GET(req: NextRequest) {
   const session = await auth();
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -23,9 +23,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const pack = req.nextUrl.searchParams.get("pack") ?? "1";
 
   if (!text.trim()) {
-    return NextResponse.json({ error: "Missing ?text= param" }, { status: 400 });
+    return NextResponse.json({ error: "Missing ?text= parameter" }, { status: 400 });
   }
 
+  // Load keyword + SKU data
   const [productKeywordsRaw, baseKeywordsRaw, skuEntriesRaw] = await Promise.all([
     prisma.mo_product_keywords.findMany(),
     prisma.mo_base_keywords.findMany(),
@@ -51,10 +52,12 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     refMaterial: r.refMaterial,
     paintType: r.paintType,
     materialType: r.materialType,
+    piecesPerCarton: r.piecesPerCarton ?? null,
   }));
 
   const { byCombo: skuByCombo, byComboAlt: skuByComboAlt, byMaterial: skuByMaterial } = buildSkuMaps(skuEntries);
   const productProfiles = buildProductProfiles(skuEntries, productKeywords, baseKeywords);
+  const { prodRegexMap, baseRegexMap } = buildKeywordRegexes(productKeywords, baseKeywords);
 
   const result = enrichLine(
     text,
@@ -65,39 +68,12 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     skuByMaterial,
     skuByComboAlt,
     productProfiles,
+    prodRegexMap,
+    baseRegexMap,
   );
-
-  // Debug info
-  const upperText = text.trim().toUpperCase();
-  const matchedProductKws = productKeywords
-    .filter((pk) => upperText.includes(pk.keyword))
-    .map((pk) => ({ keyword: pk.keyword, product: pk.product, len: pk.keyword.length }));
-
-  const detectedBases = findAllBases(upperText, baseKeywords);
-
-  const profileInfo = result.productName
-    ? (() => {
-        const p = productProfiles.get(result.productName);
-        if (!p) return null;
-        return {
-          strategy: p.strategy,
-          bases: Array.from(p.bases),
-          packs: Array.from(p.packs),
-          isBaseProduct: p.isBaseProduct,
-        };
-      })()
-    : null;
 
   return NextResponse.json({
     input: { text, pack },
     result,
-    debug: {
-      matchedProductKeywords: matchedProductKws,
-      detectedBases,
-      productProfile: profileInfo,
-      skuByComboSize: skuByCombo.size,
-      skuByComboAltSize: skuByComboAlt.size,
-      productProfilesCount: productProfiles.size,
-    },
   });
 }
