@@ -16,8 +16,7 @@ export function buildSlotSummaryHTML(
   const processed = orders.filter((o) => o.soNumber);
   const pending = orders.filter((o) => !o.soNumber);
 
-  // Flagged lines from processed orders
-  const NOTABLE_REASONS = ["out_of_stock", "cross_delivery", "cross_material_available"];
+  // Flagged lines: lines marked as not found with a reason
   const flaggedLines: {
     customerName: string;
     productName: string;
@@ -28,10 +27,7 @@ export function buildSlotSummaryHTML(
   for (const o of processed) {
     const custName = smartTitleCase(o.customerName ?? o.subject);
     for (const line of o.lines) {
-      if (
-        line.lineStatus?.reason &&
-        NOTABLE_REASONS.includes(line.lineStatus.reason)
-      ) {
+      if (line.lineStatus?.reason && line.lineStatus.found === false) {
         flaggedLines.push({
           customerName: custName,
           productName: smartTitleCase(line.productName) || "Unknown",
@@ -51,27 +47,28 @@ export function buildSlotSummaryHTML(
   // Reason helpers
   function reasonLabel(reason: string): string {
     switch (reason) {
-      case "out_of_stock":
-        return "Out of Stock";
-      case "cross_delivery":
-        return "Cross Delivery";
-      case "cross_material_available":
-        return "Alt. Available";
-      default:
-        return reason;
+      case "out_of_stock": return "Out of Stock";
+      case "wrong_pack": return "Wrong Pack";
+      case "discontinued": return "Discontinued";
+      case "other_depot": return "Other Depot";
+      case "other": return "Other";
+      default: return reason;
     }
   }
 
   function reasonBadge(reason: string): string {
+    const base = "display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;border:1px solid ";
     switch (reason) {
       case "out_of_stock":
-        return 'style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;background:#fef2f2;color:#b91c1c;border:1px solid #fecaca"';
-      case "cross_delivery":
-        return 'style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe"';
-      case "cross_material_available":
-        return 'style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;background:#f5f3ff;color:#7c3aed;border:1px solid #ddd6fe"';
+        return `style="${base}#fecaca;background:#fee2e2;color:#991b1b"`;
+      case "wrong_pack":
+        return `style="${base}#fde68a;background:#fef3c7;color:#92400e"`;
+      case "other_depot":
+        return `style="${base}#bfdbfe;background:#dbeafe;color:#1e40af"`;
+      case "discontinued":
+      case "other":
       default:
-        return 'style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;background:#f1f5f9;color:#475569;border:1px solid #e2e8f0"';
+        return `style="${base}#e2e8f0;background:#f1f5f9;color:#475569"`;
     }
   }
 
@@ -114,7 +111,7 @@ export function buildSlotSummaryHTML(
   if (flaggedLines.length > 0) {
     html += `<tr><td style="padding:0 32px 16px">`;
     html += `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-radius:6px;overflow:hidden;border:1px solid #e5e7eb">`;
-    html += `<tr><td colspan="3" style="background:#f1f5f9;padding:10px 16px;font-size:13px;font-weight:700;color:#475569;border-bottom:1px solid #e2e8f0">\ud83d\udccb Items to Note (${flaggedLines.length})</td></tr>`;
+    html += `<tr><td colspan="3" style="background:#f1f5f9;padding:10px 16px;font-size:13px;font-weight:700;color:#475569;border-bottom:1px solid #e2e8f0">\u26a0 Items to Note (${flaggedLines.length})</td></tr>`;
     html += `<tr style="background:#f9fafb"><td style="padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #f3f4f6">Customer</td><td style="padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #f3f4f6">Product</td><td style="padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #f3f4f6">Status</td></tr>`;
 
     flaggedLines.forEach((fl, i) => {
