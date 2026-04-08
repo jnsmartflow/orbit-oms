@@ -24,7 +24,7 @@ export function buildSlotSummaryHTML(
     reason: string;
   }[] = [];
 
-  for (const o of processed) {
+  for (const o of orders) {
     const custName = smartTitleCase(o.customerName ?? o.subject);
     for (const line of o.lines) {
       if (line.lineStatus?.reason && line.lineStatus.found === false) {
