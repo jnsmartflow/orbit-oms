@@ -548,6 +548,10 @@ export function enrichLine(
         if (validBases.has(db.baseColour) && !basesToTry.includes(db.baseColour)) {
           basesToTry.push(db.baseColour);
         }
+        // BW → 90 BASE equivalence: if BW detected but product uses "90 BASE" for white
+        if (db.baseColour === "BRILLIANT WHITE" && !validBases.has("BRILLIANT WHITE") && validBases.has("90 BASE") && !basesToTry.includes("90 BASE")) {
+          basesToTry.push("90 BASE");
+        }
       }
       // Regex-detected numbered base (backup for "90 BASE" with space)
       if (numberedBase && validBases.has(numberedBase) && !basesToTry.includes(numberedBase)) {
@@ -565,6 +569,10 @@ export function enrichLine(
       for (const db of detectedBases) {
         if (validBases.has(db.baseColour) && !basesToTry.includes(db.baseColour)) {
           basesToTry.push(db.baseColour);
+        }
+        // BW → 90 BASE equivalence: if BW detected but product uses "90 BASE" for white
+        if (db.baseColour === "BRILLIANT WHITE" && !validBases.has("BRILLIANT WHITE") && validBases.has("90 BASE") && !basesToTry.includes("90 BASE")) {
+          basesToTry.push("90 BASE");
         }
       }
       for (const fb of FALLBACK_BASES) {
@@ -592,6 +600,14 @@ export function enrichLine(
         let baseDetected = false;
         for (const db of detectedBases) {
           if (db.baseColour === base) {
+            baseDetected = true;
+            if (!profile.isBaseProduct) {
+              score += db.len;
+            }
+            break;
+          }
+          // BW → 90 BASE equivalence: treat as detected if BW was detected and base is 90 BASE
+          if (db.baseColour === "BRILLIANT WHITE" && base === "90 BASE") {
             baseDetected = true;
             if (!profile.isBaseProduct) {
               score += db.len;
