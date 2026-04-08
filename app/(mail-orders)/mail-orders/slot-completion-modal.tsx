@@ -2,8 +2,10 @@
 
 import { useState, useEffect } from "react";
 import { X, Check } from "lucide-react";
+import { useSession } from "next-auth/react";
 import type { MoOrder } from "@/lib/mail-orders/types";
 import { smartTitleCase, buildReplyTemplate, getOrderFlags, getOrderVolume } from "@/lib/mail-orders/utils";
+import { SoEmailPanel } from "@/components/mail-orders/so-email-panel";
 
 interface SoGroup {
   soName: string;
@@ -22,7 +24,9 @@ export function SlotCompletionModal({
   orders,
   onDismiss,
 }: SlotCompletionModalProps) {
+  const { data: session } = useSession();
   const [copiedAction, setCopiedAction] = useState<string | null>(null);
+  const [isSoEmailPanelOpen, setIsSoEmailPanelOpen] = useState(false);
 
   // Esc to close
   useEffect(() => {
@@ -187,6 +191,12 @@ export function SlotCompletionModal({
             {copiedAction === "all-sap" ? "Copied \u2713" : "Copy All SAP"}
           </button>
           <button
+            onClick={() => setIsSoEmailPanelOpen(true)}
+            className="text-[12px] font-medium border border-gray-200 text-gray-600 rounded-md px-4 h-[32px] hover:bg-gray-50 transition-colors"
+          >
+            Send SO Emails
+          </button>
+          <button
             onClick={onDismiss}
             className="text-[12px] font-medium bg-teal-600 text-white border border-teal-600 rounded-md px-4 h-[32px] hover:bg-teal-700 transition-colors"
           >
@@ -194,6 +204,14 @@ export function SlotCompletionModal({
           </button>
         </div>
       </div>
+
+      <SoEmailPanel
+        isOpen={isSoEmailPanelOpen}
+        onClose={() => setIsSoEmailPanelOpen(false)}
+        slotName={slot}
+        orders={orders}
+        senderName={session?.user?.name ?? "Billing Operator"}
+      />
     </div>
   );
 }
