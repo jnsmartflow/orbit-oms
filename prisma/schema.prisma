@@ -1024,8 +1024,6 @@ model mo_order_lines {
   paintType       String?
   materialType    String?
   matchStatus     String    @default("unmatched")
-  isCarton        Boolean   @default(false)
-  cartonCount     Int?
   createdAt       DateTime  @default(now())
 
   lineStatus  mo_line_status?
@@ -1057,10 +1055,9 @@ model mo_sku_lookup {
   packCode    String
   unit         String?
   refMaterial  String?
-  paintType        String?
-  materialType     String?
-  piecesPerCarton  Int?
-  createdAt        DateTime @default(now())
+  paintType    String?
+  materialType String?
+  createdAt    DateTime @default(now())
 }
 
 model mo_customer_keywords {

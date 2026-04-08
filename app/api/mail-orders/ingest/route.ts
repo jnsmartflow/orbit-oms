@@ -5,7 +5,6 @@ import {
   enrichLine,
   buildSkuMaps,
   buildProductProfiles,
-  buildKeywordRegexes,
   type ProductKeyword,
   type BaseKeyword,
   type SkuEntry,
@@ -50,7 +49,6 @@ interface IngestRequest {
     rawText: string;
     packCode: string;
     quantity: number;
-    isCarton?: boolean;
   }>;
   remarkLines?: Array<{
     rawText: string;
@@ -121,12 +119,10 @@ export async function POST(req: NextRequest) {
       refMaterial: r.refMaterial,
       paintType: r.paintType,
       materialType: r.materialType,
-      piecesPerCarton: r.piecesPerCarton ?? null,
     }));
 
     const { byCombo: skuByCombo, byComboAlt: skuByComboAlt, byMaterial: skuByMaterial } = buildSkuMaps(skuEntries);
     const productProfiles = buildProductProfiles(skuEntries, productKeywords, baseKeywords);
-    const { prodRegexMap, baseRegexMap } = buildKeywordRegexes(productKeywords, baseKeywords);
 
     // 4b. Customer matching (via parseSubject)
     const subjectParsed = parseSubject(subject);
@@ -191,8 +187,6 @@ export async function POST(req: NextRequest) {
     let matchedCount = 0;
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
-      const isCarton = line.isCarton ?? false;
-
       const result = enrichLine(
         line.rawText,
         line.packCode,
@@ -202,25 +196,7 @@ export async function POST(req: NextRequest) {
         skuByMaterial,
         skuByComboAlt,
         productProfiles,
-        prodRegexMap,
-        baseRegexMap,
       );
-
-      // Carton multiplication
-      let finalQty = line.quantity;
-      let cartonCount: number | null = null;
-
-      if (isCarton && result.matchStatus === "matched" && result.skuCode) {
-        const matchedKey = `${result.productName}|${result.baseColour}|${result.packCode}`;
-        const matchedSku = skuByCombo.get(matchedKey);
-        if (matchedSku?.piecesPerCarton) {
-          cartonCount = line.quantity;
-          finalQty = line.quantity * matchedSku.piecesPerCarton;
-        } else {
-          cartonCount = line.quantity;
-        }
-      }
-
       if (result.matchStatus === "matched") matchedCount++;
 
       await prisma.mo_order_lines.create({
@@ -230,7 +206,7 @@ export async function POST(req: NextRequest) {
           originalLineNumber: i + 1,
           rawText: line.rawText,
           packCode: result.packCode || line.packCode || null,
-          quantity: finalQty,
+          quantity: line.quantity,
           productName: result.productName || null,
           baseColour: result.baseColour || null,
           skuCode: result.skuCode || null,
@@ -239,8 +215,6 @@ export async function POST(req: NextRequest) {
           paintType: result.paintType || null,
           materialType: result.materialType || null,
           matchStatus: result.matchStatus,
-          isCarton,
-          cartonCount,
         },
       });
     }
