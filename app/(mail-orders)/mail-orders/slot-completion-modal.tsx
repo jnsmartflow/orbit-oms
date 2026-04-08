@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { X, Check, Send } from "lucide-react";
 import { useSession } from "next-auth/react";
 import type { MoOrder } from "@/lib/mail-orders/types";
@@ -118,30 +118,6 @@ export function SlotCompletionModal({
     setSentSoNames(prev => new Set(prev).add(group.soName));
     flash(`${group.soName}-send`);
   }
-
-  // Ctrl+S — send next unsent SO
-  const soGroupsRef = useRef(soGroups);
-  soGroupsRef.current = soGroups;
-  const sentSoNamesRef = useRef(sentSoNames);
-  sentSoNamesRef.current = sentSoNames;
-
-  const handleSendNext = useCallback(async () => {
-    const next = soGroupsRef.current.find(g => !sentSoNamesRef.current.has(g.soName));
-    if (next) await handleSendEmail(next);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session, orders, slot]);
-
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if ((e.ctrlKey || e.metaKey) && e.key === "s") {
-        e.preventDefault();
-        e.stopPropagation();
-        handleSendNext();
-      }
-    }
-    document.addEventListener("keydown", onKey, true);
-    return () => document.removeEventListener("keydown", onKey, true);
-  }, [handleSendNext]);
 
   function handleCopyAllSap() {
     const allSoNos = soGroups

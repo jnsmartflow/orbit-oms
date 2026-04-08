@@ -671,8 +671,8 @@ export default function MailOrdersPage() {
         return;
       }
 
-      // ── Ctrl+Q — Open slot completion modal ──────────────────────────────────
-      if ((e.ctrlKey || e.metaKey) && e.key === "q") {
+      // ── Ctrl+S — Open slot completion modal ──────────────────────────────────
+      if ((e.ctrlKey || e.metaKey) && e.key === "s") {
         e.preventDefault();
         const targetSlot = activeSlot ?? (() => {
           const slots = ["Morning", "Afternoon", "Evening", "Night"];
@@ -1002,7 +1002,7 @@ export default function MailOrdersPage() {
         shortcuts={[
           { key: "Ctrl+C", label: "Smart copy" },
           { key: "Ctrl+V", label: "Paste SO" },
-          { key: "Ctrl+Q", label: "Slot email" },
+          { key: "Ctrl+S", label: "Slot email" },
           { key: "R", label: "Reply" },
           { key: "F", label: "Flag" },
           { key: "S", label: "SKU panel" },
