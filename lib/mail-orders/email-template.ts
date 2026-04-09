@@ -3,8 +3,8 @@ import { smartTitleCase } from "./utils";
 
 /**
  * Build an HTML email summarising a slot's orders for a given SO.
- * Outlook-safe: nested tables only, no <div>, no <p>, no margin,
- * all styles on immediate <td> or <span>.
+ * Outlook-safe: nested tables only, zero <div>, zero <p>,
+ * all styles on immediate <td> or <span>, no margin anywhere.
  */
 export function buildSlotSummaryHTML(
   soName: string,
@@ -14,7 +14,7 @@ export function buildSlotSummaryHTML(
   senderName: string,
   senderPhone?: string,
 ): string {
-  // ── Data partitions ──
+  // ── Data ──
   const processed = orders.filter((o) => o.soNumber);
   const pending = orders.filter((o) => !o.soNumber);
 
@@ -43,10 +43,11 @@ export function buildSlotSummaryHTML(
     }
   }
 
-  // ── Helpers ──
-
+  // ── Constants ──
   const F = "font-family:Arial,Helvetica,sans-serif;";
   const CM = "font-family:'Courier New',Courier,monospace;";
+
+  // ── Helpers ──
 
   function fmtDate(d: string): string {
     const parts = d.match(/(\d+)\s+(\w+)\s+(\d+)/);
@@ -77,14 +78,14 @@ export function buildSlotSummaryHTML(
     return { text: "Will process tomorrow", color: "#9ca3af" };
   }
 
-  function getReasonStyle(reason: string): { label: string; color: string } {
+  function getReasonLabel(reason: string): { text: string; color: string } {
     switch (reason) {
-      case "out_of_stock": return { label: "Out of Stock", color: "#dc2626" };
-      case "wrong_pack": return { label: "Wrong Pack", color: "#d97706" };
-      case "discontinued": return { label: "Discontinued", color: "#6b7280" };
-      case "other_depot": return { label: "Other Depot", color: "#6b7280" };
-      case "other": return { label: "Other", color: "#9ca3af" };
-      default: return { label: reason, color: "#9ca3af" };
+      case "out_of_stock": return { text: "Out of stock", color: "#dc2626" };
+      case "wrong_pack": return { text: "Wrong pack", color: "#d97706" };
+      case "discontinued": return { text: "Discontinued", color: "#6b7280" };
+      case "other_depot": return { text: "Other depot", color: "#6b7280" };
+      case "other": return { text: "Other", color: "#9ca3af" };
+      default: return { text: reason, color: "#9ca3af" };
     }
   }
 
@@ -95,60 +96,76 @@ export function buildSlotSummaryHTML(
     return ` (${label})`;
   }
 
+  function sectionLabel(text: string, count: number, color: string, borderColor: string): string {
+    return `<tr><td colspan="2" style="padding:20px 28px 4px;${F}"><table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="border-bottom:2px solid ${borderColor};padding-bottom:8px;"><span style="font-size:11px;font-weight:700;color:${color};text-transform:uppercase;letter-spacing:0.1em;${F}">${text}</span><span style="font-size:11px;color:#9ca3af;font-weight:400;${F}">&nbsp;\u2014 ${count}</span></td></tr></table></td></tr>`;
+  }
+
   const firstName = getFirstName(soName);
   const longDate = fmtDate(date);
   const totalCount = orders.length;
 
-  // Hairline divider — full-width row
-  const divider = `<tr><td style="padding:0 32px;${F}"><table cellpadding="0" cellspacing="0" border="0" width="100%"><tr><td style="border-top:1px solid #f3f4f6;font-size:1px;line-height:1px;height:1px">&nbsp;</td></tr></table></td></tr>`;
+  // Divider
+  const divider = `<tr><td colspan="2" style="padding:0 28px;"><table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="height:1px;background-color:#f3f4f6;font-size:0;line-height:0;">&nbsp;</td></tr></table></td></tr>`;
+
+  // Group flaggedLines by soNumber for Could Not Supply
+  const flaggedGroups: { customerName: string; soNumber: string | null; items: typeof flaggedLines }[] = [];
+  const flaggedMap = new Map<string, typeof flaggedLines>();
+  for (const fl of flaggedLines) {
+    const key = fl.soNumber ?? "__pending__";
+    if (!flaggedMap.has(key)) flaggedMap.set(key, []);
+    flaggedMap.get(key)!.push(fl);
+  }
+  for (const [, items] of Array.from(flaggedMap.entries())) {
+    flaggedGroups.push({
+      customerName: items[0].customerName,
+      soNumber: items[0].soNumber,
+      items,
+    });
+  }
 
   // ── Build HTML ──
 
   let h = '<!DOCTYPE html><html><head><meta charset="utf-8"></head>';
-  h += `<body style="margin:0;padding:0;background-color:#f4f4f4;${F}">`;
-  h += `<table cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color:#f4f4f4"><tr><td align="center" style="padding:24px 12px">`;
-  h += `<table cellpadding="0" cellspacing="0" border="0" width="560" style="max-width:560px;width:100%;background-color:#ffffff;border:1px solid #e8e8e8;border-radius:4px;">`;
+  h += `<body style="padding:0;background-color:#f4f4f4;${F}">`;
 
-  // ═══ 1. ACCENT BAR ═══
-  h += `<tr><td style="background-color:#0d9488;height:3px;font-size:1px;line-height:1px">&nbsp;</td></tr>`;
+  // Outer wrapper
+  h += `<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f4f4f4;padding:32px 16px;"><tr><td align="center">`;
+  h += `<table width="560" cellpadding="0" cellspacing="0" border="0" style="background-color:#ffffff;border:1px solid #e8e8e8;">`;
 
-  // ═══ 2. HEADER ═══
-  h += `<tr><td style="padding:26px 32px 22px;${F}">`;
-  h += `<table cellpadding="0" cellspacing="0" border="0" width="100%"><tr>`;
+  // ═══ TOP TEAL BAR ═══
+  h += `<tr><td colspan="2" style="background-color:#0d9488;height:3px;font-size:0;line-height:0;">&nbsp;</td></tr>`;
+
+  // ═══ HEADER ═══
+  h += `<tr><td colspan="2" style="padding:24px 28px 20px;border-bottom:1px solid #f3f4f6;">`;
+  h += `<table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>`;
   // Left
   h += `<td style="vertical-align:top;${F}">`;
-  h += `<table cellpadding="0" cellspacing="0" border="0" width="100%">`;
-  h += `<tr><td style="font-size:10px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:0.08em;padding:0;${F}">JSW Dulux \u2014 Surat Depot</td></tr>`;
-  h += `<tr><td style="font-size:18px;font-weight:700;color:#111827;letter-spacing:-0.4px;padding:6px 0 0 0;${F}">${slotName} Slot Summary</td></tr>`;
-  h += `<tr><td style="font-size:11px;color:#9ca3af;padding:4px 0 0 0;${F}">${longDate}</td></tr>`;
+  h += `<table cellpadding="0" cellspacing="0" border="0">`;
+  h += `<tr><td style="font-size:10px;font-weight:700;color:#9ca3af;letter-spacing:0.08em;text-transform:uppercase;padding-bottom:6px;${F}">JSW Dulux \u2014 Surat Depot</td></tr>`;
+  h += `<tr><td style="font-size:18px;font-weight:700;color:#111827;letter-spacing:-1px;padding-bottom:4px;${F}">${slotName} Slot Summary</td></tr>`;
+  h += `<tr><td style="font-size:11px;color:#9ca3af;${F}">${longDate}</td></tr>`;
   h += `</table></td>`;
   // Right
-  h += `<td style="vertical-align:top;text-align:right;width:70px;${F}">`;
-  h += `<table cellpadding="0" cellspacing="0" border="0">`;
-  h += `<tr><td style="font-size:26px;font-weight:700;color:#111827;text-align:right;padding:0;${F}">${totalCount}</td></tr>`;
-  h += `<tr><td style="font-size:10px;color:#9ca3af;text-align:right;padding:0;${F}">orders</td></tr>`;
+  h += `<td style="vertical-align:top;text-align:right;padding-left:20px;white-space:nowrap;${F}">`;
+  h += `<table cellpadding="0" cellspacing="0" border="0" align="right">`;
+  h += `<tr><td style="font-size:10px;color:#9ca3af;text-align:right;padding-bottom:4px;${F}">Orders</td></tr>`;
+  h += `<tr><td style="font-size:26px;font-weight:700;color:#111827;text-align:right;line-height:1;${F}">${totalCount}</td></tr>`;
   h += `</table></td>`;
   h += `</tr></table></td></tr>`;
 
-  // ═══ 3. DIVIDER ═══
-  h += divider;
-
-  // ═══ 4. SALUTATION ═══
-  h += `<tr><td style="padding:22px 32px 18px;${F}">`;
-  h += `<table cellpadding="0" cellspacing="0" border="0" width="100%">`;
-  h += `<tr><td style="font-size:13px;color:#111827;padding:0 0 5px 0;${F}">Dear <span style="font-weight:700;color:#111827">${firstName}</span> Sir,</td></tr>`;
-  h += `<tr><td style="font-size:12px;color:#6b7280;line-height:1.7;padding:0;${F}">Please find below the ${slotName} slot summary for today.</td></tr>`;
+  // ═══ SALUTATION ═══
+  h += `<tr><td colspan="2" style="padding:20px 28px 18px;border-bottom:1px solid #f3f4f6;">`;
+  h += `<table cellpadding="0" cellspacing="0" border="0">`;
+  h += `<tr><td style="font-size:13px;color:#374151;padding-bottom:5px;${F}">Dear <strong style="color:#111827;font-weight:700;">${firstName} Sir,</strong></td></tr>`;
+  h += `<tr><td style="font-size:12px;color:#6b7280;line-height:1.7;${F}">Please find below the ${slotName} slot summary for today.</td></tr>`;
   h += `</table></td></tr>`;
 
-  // ═══ 5. BILLED ORDERS ═══
-  // Section label
-  h += `<tr><td style="font-size:9px;font-weight:700;color:#0d9488;text-transform:uppercase;letter-spacing:0.12em;padding:20px 32px 14px 32px;${F}">Billed Orders \u2014 ${processed.length}</td></tr>`;
+  // ═══ BILLED ORDERS ═══
+  h += sectionLabel("Billed Orders", processed.length, "#0d9488", "#0d9488");
 
   if (processed.length === 0) {
-    h += `<tr><td style="font-size:12px;color:#9ca3af;padding:0 32px 20px 32px;${F}">No billed orders in this slot.</td></tr>`;
+    h += `<tr><td colspan="2" style="font-size:12px;color:#9ca3af;padding:0 28px 20px;${F}">No billed orders in this slot.</td></tr>`;
   } else {
-    h += `<tr><td style="padding:0 32px 20px 32px">`;
-    h += `<table cellpadding="0" cellspacing="0" border="0" width="100%">`;
     processed.forEach((o, i) => {
       const isLast = i === processed.length - 1;
       const cust = smartTitleCase(o.customerName ?? o.subject);
@@ -156,79 +173,85 @@ export function buildSlotSummaryHTML(
       const custColor = isHold ? "#9ca3af" : "#111827";
       const custSuffix = isHold ? " *" : "";
       const splitSuffix = splitPartLabel(o.splitLabel);
+      const padBot = isLast ? "padding-bottom:20px;" : "padding-bottom:11px;";
       const bb = isLast ? "" : "border-bottom:1px solid #f3f4f6;";
 
+      h += `<tr><td colspan="2" style="padding:0 28px;">`;
+      h += `<table width="100%" cellpadding="0" cellspacing="0" border="0" style="${bb}${padBot}">`;
       h += `<tr>`;
-      // Left col — nested table for name + code
-      h += `<td style="padding:11px 0 11px 0;vertical-align:top;${bb}">`;
-      h += `<table cellpadding="0" cellspacing="0" border="0" width="100%">`;
-      h += `<tr><td style="font-size:13px;font-weight:600;color:${custColor};padding:0 0 3px 0;${F}">${cust}${custSuffix}`;
-      if (splitSuffix) h += `<span style="color:#9ca3af">${splitSuffix}</span>`;
-      h += `</td></tr>`;
-      h += `<tr><td style="font-size:11px;color:#9ca3af;padding:0;${F}">Code <span style="color:#0d9488;font-weight:700;${CM}font-size:11px">${o.customerCode ?? "\u2014"}</span></td></tr>`;
-      h += `</table></td>`;
-      // Right col — SO number
-      h += `<td style="padding:11px 0 11px 20px;vertical-align:top;text-align:right;white-space:nowrap;${bb}">`;
-      h += `<table cellpadding="0" cellspacing="0" border="0"><tr><td style="font-size:15px;font-weight:700;color:#111827;${CM}text-align:right;padding:0">${o.soNumber}</td></tr></table>`;
+      // Left — customer name with (code)
+      h += `<td style="vertical-align:middle;padding:11px 0 0 0;${F}">`;
+      h += `<span style="font-size:13px;font-weight:600;color:${custColor};${F}">${cust}${custSuffix}</span>`;
+      if (splitSuffix) {
+        h += `<span style="font-size:11px;color:#9ca3af;${F}">${splitSuffix}</span>`;
+      }
+      if (o.customerCode) {
+        h += `<span style="font-size:12px;color:#9ca3af;${F}"> (</span>`;
+        h += `<span style="font-size:11px;font-weight:700;color:#0d9488;${CM}">${o.customerCode}</span>`;
+        h += `<span style="font-size:12px;color:#9ca3af;${F}">)</span>`;
+      }
       h += `</td>`;
-      h += `</tr>`;
+      // Right — SO number
+      h += `<td style="vertical-align:middle;text-align:right;white-space:nowrap;padding:11px 0 0 16px;">`;
+      h += `<span style="font-size:15px;font-weight:700;color:#111827;${CM}">${o.soNumber}</span>`;
+      h += `</td>`;
+      h += `</tr></table></td></tr>`;
     });
-    h += `</table></td></tr>`;
   }
 
-  // ═══ 6. DIVIDER ═══
+  // ═══ DIVIDER ═══
   if (flaggedLines.length > 0) h += divider;
 
-  // ═══ 7. COULD NOT SUPPLY ═══
+  // ═══ COULD NOT SUPPLY — grouped by order ═══
   if (flaggedLines.length > 0) {
-    // Section label
-    h += `<tr><td style="font-size:9px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.12em;padding:20px 32px 14px 32px;${F}">Could Not Supply \u2014 ${flaggedLines.length}</td></tr>`;
+    h += sectionLabel("Could Not Supply", flaggedLines.length, "#6b7280", "#e5e7eb");
 
-    h += `<tr><td style="padding:0 32px 20px 32px">`;
-    h += `<table cellpadding="0" cellspacing="0" border="0" width="100%">`;
-    flaggedLines.forEach((fl, i) => {
-      const isLast = i === flaggedLines.length - 1;
-      const bb = isLast ? "" : "border-bottom:1px solid #f3f4f6;";
-      const prodBase = fl.baseColour
-        ? `${fl.productName} ${smartTitleCase(fl.baseColour)}`
-        : fl.productName;
-      const product = fl.packCode
-        ? `${prodBase} \u00b7 ${fl.packCode}`
-        : prodBase;
-      const rs = getReasonStyle(fl.reason);
+    flaggedGroups.forEach((group, gi) => {
+      const isLastGroup = gi === flaggedGroups.length - 1;
+      const gpb = isLastGroup ? "padding:0 28px 20px;" : "padding:0 28px 16px;";
 
-      h += `<tr>`;
-      // Left — nested table for customer+ref and product
-      h += `<td style="padding:11px 0 11px 0;vertical-align:middle;${bb}">`;
-      h += `<table cellpadding="0" cellspacing="0" border="0" width="100%">`;
-      // Customer + SO ref
-      h += `<tr><td style="font-size:12px;font-weight:600;color:#111827;padding:0 0 2px 0;${F}">${fl.customerName}`;
-      if (fl.soNumber) {
-        h += `<span style="font-weight:400;font-size:11px;color:#9ca3af">&nbsp;\u00b7&nbsp;${fl.soNumber}</span>`;
+      h += `<tr><td colspan="2" style="${gpb}">`;
+      h += `<table width="100%" cellpadding="0" cellspacing="0" border="0">`;
+
+      // Group header — customer + SO
+      h += `<tr><td colspan="2" style="padding-bottom:7px;${F}">`;
+      h += `<span style="font-size:12px;font-weight:700;color:#111827;${F}">${group.customerName}</span>`;
+      if (group.soNumber) {
+        h += `<span style="font-size:11px;color:#9ca3af;${CM}">&nbsp;\u00b7&nbsp;${group.soNumber}</span>`;
       }
       h += `</td></tr>`;
-      // Product
-      h += `<tr><td style="font-size:11px;color:#9ca3af;padding:0;${F}">${product}</td></tr>`;
-      h += `</table></td>`;
-      // Right — status text
-      h += `<td style="padding:11px 0 11px 16px;vertical-align:middle;text-align:right;white-space:nowrap;${bb}">`;
-      h += `<span style="font-size:10px;font-weight:700;color:${rs.color};${F}">${rs.label}</span>`;
-      h += `</td>`;
-      h += `</tr>`;
+
+      // Item rows
+      group.items.forEach((fl, fi) => {
+        const isLastItem = fi === group.items.length - 1;
+        const ibb = isLastItem ? "" : "border-bottom:1px solid #f9fafb;";
+        const prodBase = fl.baseColour
+          ? `${fl.productName} ${smartTitleCase(fl.baseColour)}`
+          : fl.productName;
+        const product = fl.packCode
+          ? `${prodBase} \u00b7 ${fl.packCode}`
+          : prodBase;
+        const rs = getReasonLabel(fl.reason);
+
+        h += `<tr>`;
+        h += `<td style="font-size:11px;color:#6b7280;padding:4px 0;${ibb}${F}">${product}</td>`;
+        h += `<td style="font-size:10px;font-weight:700;color:${rs.color};text-align:right;white-space:nowrap;padding:4px 0 4px 12px;${ibb}${F}">${rs.text}</td>`;
+        h += `</tr>`;
+      });
+
+      h += `</table></td></tr>`;
     });
-    h += `</table></td></tr>`;
   }
 
-  // ═══ 8. DIVIDER ═══
+  // ═══ DIVIDER ═══
   if (pending.length > 0) h += divider;
 
-  // ═══ 9. PROCESSING TOMORROW ═══
+  // ═══ PROCESSING TOMORROW ═══
   if (pending.length > 0) {
-    // Section label
-    h += `<tr><td style="font-size:9px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:0.12em;padding:20px 32px 14px 32px;${F}">Processing Tomorrow \u2014 ${pending.length}</td></tr>`;
+    h += sectionLabel("Processing Tomorrow", pending.length, "#9ca3af", "#e5e7eb");
 
-    h += `<tr><td style="padding:0 32px 0 32px">`;
-    h += `<table cellpadding="0" cellspacing="0" border="0" width="100%">`;
+    h += `<tr><td colspan="2" style="padding:0 28px;">`;
+    h += `<table width="100%" cellpadding="0" cellspacing="0" border="0">`;
     pending.forEach((o, i) => {
       const isLast = i === pending.length - 1;
       const bb = isLast ? "" : "border-bottom:1px solid #f3f4f6;";
@@ -236,11 +259,13 @@ export function buildSlotSummaryHTML(
       const note = getPendingNote(o);
 
       h += `<tr>`;
-      // Left — nested table for customer + code
-      h += `<td style="padding:11px 0 11px 0;vertical-align:middle;${bb}">`;
-      h += `<table cellpadding="0" cellspacing="0" border="0" width="100%">`;
+      // Left — nested table for name + code
+      h += `<td style="padding:11px 0;vertical-align:middle;${bb}">`;
+      h += `<table cellpadding="0" cellspacing="0" border="0">`;
       h += `<tr><td style="font-size:12px;font-weight:600;color:#111827;padding:0;${F}">${cust}</td></tr>`;
-      h += `<tr><td style="font-size:11px;color:#9ca3af;${CM}padding:1px 0 0 0">${o.customerCode ?? "\u2014"}</td></tr>`;
+      if (o.customerCode) {
+        h += `<tr><td style="font-size:11px;color:#9ca3af;${CM}padding:1px 0 0 0;">${o.customerCode}</td></tr>`;
+      }
       h += `</table></td>`;
       // Right — note
       h += `<td style="padding:11px 0 11px 16px;vertical-align:middle;text-align:right;white-space:nowrap;${bb}">`;
@@ -250,50 +275,51 @@ export function buildSlotSummaryHTML(
     });
     h += `</table></td></tr>`;
 
-    // Note text
-    h += `<tr><td style="font-size:11px;color:#9ca3af;line-height:1.7;padding:14px 32px 20px 32px;${F}">We will process these orders in tomorrow\u2019s first slot. Kindly inform your dealers.</td></tr>`;
+    // Note below
+    h += `<tr><td colspan="2" style="padding:12px 28px 20px;">`;
+    h += `<table cellpadding="0" cellspacing="0" border="0"><tr>`;
+    h += `<td style="font-size:11px;color:#9ca3af;line-height:1.7;${F}">We will process these orders in tomorrow\u2019s first slot. Kindly inform your dealers.</td>`;
+    h += `</tr></table></td></tr>`;
   }
 
-  // ═══ 10. DIVIDER ═══
+  // ═══ DIVIDER ═══
   h += divider;
 
-  // ═══ 11. TOTAL ROW ═══
-  h += `<tr><td style="padding:12px 32px;font-size:11px;color:#9ca3af;${F}">`;
-  h += `<span style="font-size:11px;color:#9ca3af;${F}">${totalCount} order${totalCount !== 1 ? "s" : ""}</span>`;
-  h += ` <span style="color:#e5e7eb">\u00b7</span> `;
+  // ═══ TOTAL ROW ═══
+  h += `<tr><td colspan="2" style="padding:14px 28px;border-bottom:1px solid #f3f4f6;${F}">`;
+  h += `<span style="font-size:11px;color:#9ca3af;${F}">${totalCount} orders</span>`;
+  h += `<span style="font-size:11px;color:#e5e7eb;padding:0 6px;${F}">\u00b7</span>`;
   h += `<span style="font-size:11px;font-weight:600;color:#0d9488;${F}">${processed.length} billed</span>`;
   if (pending.length > 0) {
-    h += ` <span style="color:#e5e7eb">\u00b7</span> `;
-    h += `<span style="font-size:11px;color:#9ca3af;${F}">${pending.length} pending</span>`;
+    h += `<span style="font-size:11px;color:#e5e7eb;padding:0 6px;${F}">\u00b7</span>`;
+    h += `<span style="font-size:11px;font-weight:600;color:#9ca3af;${F}">${pending.length} pending</span>`;
   }
   if (flaggedLines.length > 0) {
-    h += ` <span style="color:#e5e7eb">\u00b7</span> `;
+    h += `<span style="font-size:11px;color:#e5e7eb;padding:0 6px;${F}">\u00b7</span>`;
     h += `<span style="font-size:11px;font-weight:600;color:#dc2626;${F}">${flaggedLines.length} to note</span>`;
   }
   h += `</td></tr>`;
 
-  // ═══ 12. DIVIDER ═══
-  h += divider;
-
-  // ═══ 13. CLOSING + REGARDS ═══
-  h += `<tr><td style="padding:16px 32px 20px 32px;${F}">`;
-  h += `<table cellpadding="0" cellspacing="0" border="0" width="100%">`;
-  h += `<tr><td style="font-size:12px;color:#6b7280;line-height:2.1;padding:0;${F}">Please share the SO numbers with your dealers at the earliest.</td></tr>`;
-  h += `<tr><td style="font-size:12px;color:#6b7280;padding:0;${F}">For any queries, call us directly.</td></tr>`;
-  h += `<tr><td style="font-size:1px;line-height:1px;height:12px;padding:0">&nbsp;</td></tr>`;
-  h += `<tr><td style="font-size:12px;color:#6b7280;padding:0;${F}">Regards,</td></tr>`;
-  h += `<tr><td style="font-size:13px;font-weight:700;color:#111827;padding:4px 0 0 0;${F}">${senderName}</td></tr>`;
-  h += `<tr><td style="font-size:11px;color:#9ca3af;padding:2px 0 0 0;${F}">JSW Dulux \u2014 Surat Depot</td></tr>`;
+  // ═══ REGARDS ═══
+  h += `<tr><td colspan="2" style="padding:20px 28px 24px;">`;
+  h += `<table cellpadding="0" cellspacing="0" border="0">`;
+  h += `<tr><td style="font-size:12px;color:#6b7280;padding-bottom:3px;${F}">Please share the SO numbers with your dealers at the earliest.</td></tr>`;
+  h += `<tr><td style="font-size:12px;color:#6b7280;padding-bottom:16px;${F}">For any queries, call us directly.</td></tr>`;
+  h += `<tr><td style="font-size:12px;color:#6b7280;padding-bottom:2px;${F}">Regards,</td></tr>`;
+  h += `<tr><td style="font-size:13px;font-weight:700;color:#111827;padding-bottom:2px;${F}">${senderName}</td></tr>`;
+  h += `<tr><td style="font-size:11px;color:#9ca3af;padding-bottom:2px;${F}">JSW Dulux \u2014 Surat Depot</td></tr>`;
   if (senderPhone) {
-    h += `<tr><td style="font-size:11px;font-weight:600;color:#0d9488;padding:2px 0 0 0;${F}">${senderPhone}</td></tr>`;
+    h += `<tr><td style="font-size:11px;font-weight:600;color:#0d9488;${F}">${senderPhone}</td></tr>`;
   }
   h += `</table></td></tr>`;
 
-  // ═══ 14. FOOTER ═══
-  h += `<tr><td style="background-color:#fafafa;border-top:1px solid #f3f4f6;padding:12px 32px;font-size:10px;color:#d1d5db;letter-spacing:0.02em;${F}">JSW Dulux Ltd \u2014 Surat Depot \u00b7 Do not reply to this email</td></tr>`;
+  // ═══ FOOTER ═══
+  h += `<tr><td colspan="2" style="background-color:#fafafa;border-top:1px solid #f3f4f6;padding:12px 28px;text-align:center;">`;
+  h += `<span style="font-size:10px;color:#d1d5db;letter-spacing:0.02em;${F}">JSW Dulux Ltd \u2014 Surat Depot&nbsp;\u00b7&nbsp;Do not reply to this email</span>`;
+  h += `</td></tr>`;
 
-  h += `</table>`; // close 560px table
-  h += `</td></tr></table>`; // close centering
+  h += `</table>`; // close 560px
+  h += `</td></tr></table>`; // close outer
   h += `</body></html>`;
   return h;
 }
