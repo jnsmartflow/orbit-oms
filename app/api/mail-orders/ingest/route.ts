@@ -46,6 +46,8 @@ interface IngestRequest {
   dispatchPriority?: string;
   shipToOverride?: boolean;
   slotToOverride?: boolean;
+  bodyCustomerName?: string;
+  bodyCustomerCode?: string;
   lines: Array<{
     rawText: string;
     packCode: string;
@@ -128,14 +130,46 @@ export async function POST(req: NextRequest) {
     const productProfiles = buildProductProfiles(skuEntries, productKeywords, baseKeywords);
     const { prodRegexMap, baseRegexMap } = buildKeywordRegexes(productKeywords, baseKeywords);
 
-    // 4b. Customer matching (via parseSubject)
+    // 4b. Customer matching — subject first, body fallback
     const subjectParsed = parseSubject(subject);
     const customerInput = subjectParsed.customerCode
       ? subjectParsed.customerName
         ? `${subjectParsed.customerCode} ${subjectParsed.customerName}`
         : subjectParsed.customerCode
       : subjectParsed.customerName;
-    const customerMatch = await matchCustomer(customerInput);
+
+    let customerMatch = await matchCustomer(customerInput);
+
+    // Body fallback: if subject matching failed or is weak,
+    // try body customer info
+    if (
+      customerMatch.customerMatchStatus !== "exact" &&
+      (body.bodyCustomerCode || body.bodyCustomerName)
+    ) {
+      const bodyInput = body.bodyCustomerCode
+        ? body.bodyCustomerName
+          ? `${body.bodyCustomerCode} ${body.bodyCustomerName}`
+          : body.bodyCustomerCode
+        : body.bodyCustomerName || "";
+
+      if (bodyInput.trim()) {
+        const bodyMatch = await matchCustomer(bodyInput);
+
+        // Use body match if it's better than subject match
+        if (
+          bodyMatch.customerMatchStatus === "exact" ||
+          (bodyMatch.customerMatchStatus === "multiple" &&
+            customerMatch.customerMatchStatus === "unmatched")
+        ) {
+          customerMatch = bodyMatch;
+          console.log(
+            `[Customer Match] Body fallback: "${bodyInput}" → ${bodyMatch.customerMatchStatus}` +
+              (bodyMatch.customerCode ? ` (${bodyMatch.customerCode})` : ""),
+          );
+        }
+      }
+    }
+
     console.log(
       `[Customer Match] "${customerInput}" → ${customerMatch.customerMatchStatus}` +
         (customerMatch.customerCode ? ` (${customerMatch.customerCode})` : "") +
