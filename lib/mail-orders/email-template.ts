@@ -70,23 +70,23 @@ export function buildSlotSummaryHTML(
     return clean.split(/\s+/)[0] || clean;
   }
 
-  function getPendingNote(order: MoOrder): string {
+  function getPendingNote(order: MoOrder): { text: string; bg: string } {
     const combined = [order.remarks, order.billRemarks, order.deliveryRemarks]
       .filter(Boolean).join(" ").toLowerCase();
     if (/truck|transport|lorry|vehicle/.test(combined)) {
-      return "Awaiting transport";
+      return { text: "Awaiting transport", bg: "#fef3c7" };
     }
-    return "Will process tomorrow";
+    return { text: "Will process tomorrow", bg: "#f1f5f9" };
   }
 
-  function getReasonLabel(reason: string): { text: string; color: string } {
+  function getReasonLabel(reason: string): { text: string; bg: string } {
     switch (reason) {
-      case "out_of_stock": return { text: "Out of stock", color: "#92400e" };
-      case "wrong_pack": return { text: "Wrong pack", color: "#92400e" };
-      case "discontinued": return { text: "Discontinued", color: "#64748b" };
-      case "other_depot": return { text: "Other depot", color: "#64748b" };
-      case "other": return { text: "Other", color: "#94a3b8" };
-      default: return { text: reason, color: "#94a3b8" };
+      case "out_of_stock": return { text: "Out of stock", bg: "#fee2e2" };
+      case "wrong_pack": return { text: "Wrong pack", bg: "#fef3c7" };
+      case "discontinued": return { text: "Discontinued", bg: "#f1f5f9" };
+      case "other_depot": return { text: "Other depot", bg: "#f1f5f9" };
+      case "other": return { text: "Other", bg: "#f8fafc" };
+      default: return { text: reason, bg: "#f8fafc" };
     }
   }
 
@@ -156,7 +156,7 @@ export function buildSlotSummaryHTML(
 
   // ═══ PROCESSED ═══
   // Label row
-  h += `<tr><td colspan="2" style="background-color:#f0fdf9;border-bottom:2px solid #0d9488;padding:9px 32px;">`;
+  h += `<tr><td colspan="2" style="background-color:#d1fae5;border-bottom:2px solid #0d9488;padding:9px 32px;">`;
   h += `<table cellpadding="0" cellspacing="0" border="0"><tr>`;
   h += `<td style="font-size:10px;font-weight:700;color:#0f172a;text-transform:uppercase;letter-spacing:0.08em;${F}">Processed</td>`;
   h += `<td style="font-size:10px;color:#64748b;padding-left:4px;${F}">\u2014 ${processed.length}</td>`;
@@ -201,7 +201,7 @@ export function buildSlotSummaryHTML(
     h += `<tr><td colspan="2" style="height:1px;background-color:#e2e8f0;font-size:0;line-height:0;">&nbsp;</td></tr>`;
 
     // Label row
-    h += `<tr><td colspan="2" style="background-color:#fffbeb;border-bottom:2px solid #d97706;padding:9px 32px;">`;
+    h += `<tr><td colspan="2" style="background-color:#fef3c7;border-bottom:2px solid #d97706;padding:9px 32px;">`;
     h += `<table cellpadding="0" cellspacing="0" border="0"><tr>`;
     h += `<td style="font-size:10px;font-weight:700;color:#0f172a;text-transform:uppercase;letter-spacing:0.08em;${F}">Not Available</td>`;
     h += `<td style="font-size:10px;color:#64748b;padding-left:4px;${F}">\u2014 ${flaggedLines.length} items</td>`;
@@ -230,7 +230,7 @@ export function buildSlotSummaryHTML(
 
         h += `<tr>`;
         h += `<td style="font-size:11px;color:#64748b;padding:2px 0 2px 32px;${F}">${product}</td>`;
-        h += `<td style="font-size:11px;color:${rs.color};text-align:right;white-space:nowrap;padding:2px 32px 2px 16px;${F}">${rs.text}</td>`;
+        h += `<td style="font-size:11px;color:#0f172a;background-color:${rs.bg};text-align:right;white-space:nowrap;padding:2px 32px 2px 16px;${F}">${rs.text}</td>`;
         h += `</tr>`;
       });
 
@@ -247,10 +247,10 @@ export function buildSlotSummaryHTML(
   // ═══ PENDING ═══
   if (pending.length > 0) {
     // Label row — dark background
-    h += `<tr><td colspan="2" style="background-color:#0f172a;padding:9px 32px;">`;
+    h += `<tr><td colspan="2" style="background-color:#e2e8f0;border-bottom:2px solid #475569;padding:9px 32px;">`;
     h += `<table cellpadding="0" cellspacing="0" border="0"><tr>`;
-    h += `<td style="font-size:10px;font-weight:700;color:#ffffff;text-transform:uppercase;letter-spacing:0.08em;${F}">Pending</td>`;
-    h += `<td style="font-size:10px;color:#475569;padding-left:4px;${F}">\u2014 ${pending.length}</td>`;
+    h += `<td style="font-size:10px;font-weight:700;color:#0f172a;text-transform:uppercase;letter-spacing:0.08em;${F}">Pending</td>`;
+    h += `<td style="font-size:10px;color:#374151;padding-left:4px;${F}">\u2014 ${pending.length}</td>`;
     h += `</tr></table></td></tr>`;
 
     pending.forEach((o, i) => {
@@ -261,7 +261,7 @@ export function buildSlotSummaryHTML(
       // Row 1 — customer name + note
       h += `<tr>`;
       h += `<td style="font-size:13px;color:#0f172a;padding:11px 0 3px 32px;${F}">${cust}</td>`;
-      h += `<td style="font-size:11px;color:#64748b;text-align:right;vertical-align:top;white-space:nowrap;padding:12px 32px 3px 16px;${F}">${note}</td>`;
+      h += `<td style="font-size:11px;color:#0f172a;background-color:${note.bg};text-align:right;vertical-align:top;white-space:nowrap;padding:12px 32px 3px 16px;${F}">${note.text}</td>`;
       h += `</tr>`;
 
       // Row 2 — customer code
@@ -283,16 +283,16 @@ export function buildSlotSummaryHTML(
   h += `<tr><td colspan="2" style="height:1px;background-color:#e2e8f0;font-size:0;line-height:0;">&nbsp;</td></tr>`;
   h += `<tr><td colspan="2" style="padding:10px 32px;border-bottom:1px solid #e2e8f0;">`;
   h += `<table cellpadding="0" cellspacing="0" border="0"><tr>`;
-  h += `<td style="font-size:11px;color:#94a3b8;${F}">${totalCount} orders</td>`;
-  h += `<td style="font-size:11px;color:#e2e8f0;padding:0 6px;${F}">\u00b7</td>`;
-  h += `<td style="font-size:11px;color:#0d9488;${F}">${processed.length} processed</td>`;
+  h += `<td style="font-size:11px;color:#6b7280;${F}">${totalCount} orders</td>`;
+  h += `<td style="font-size:11px;color:#6b7280;padding:0 6px;${F}">\u00b7</td>`;
+  h += `<td style="font-size:11px;color:#0f172a;${F}">${processed.length} processed</td>`;
   if (pending.length > 0) {
-    h += `<td style="font-size:11px;color:#e2e8f0;padding:0 6px;${F}">\u00b7</td>`;
-    h += `<td style="font-size:11px;color:#94a3b8;${F}">${pending.length} pending</td>`;
+    h += `<td style="font-size:11px;color:#6b7280;padding:0 6px;${F}">\u00b7</td>`;
+    h += `<td style="font-size:11px;color:#0f172a;${F}">${pending.length} pending</td>`;
   }
   if (flaggedLines.length > 0) {
-    h += `<td style="font-size:11px;color:#e2e8f0;padding:0 6px;${F}">\u00b7</td>`;
-    h += `<td style="font-size:11px;color:#d97706;${F}">${flaggedLines.length} not available</td>`;
+    h += `<td style="font-size:11px;color:#6b7280;padding:0 6px;${F}">\u00b7</td>`;
+    h += `<td style="font-size:11px;color:#0f172a;${F}">${flaggedLines.length} not available</td>`;
   }
   h += `</tr></table></td></tr>`;
 
