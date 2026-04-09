@@ -622,6 +622,11 @@ export default function MailOrdersPage() {
   // ── Keyboard navigation ─────────────────────────────────────────────────────
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
+      // Capture Ctrl+S first — prevent browser save dialog
+      if ((e.ctrlKey || e.metaKey) && e.key === "s") {
+        e.preventDefault();
+        e.stopPropagation();
+      }
       if (viewMode !== "table") return;
 
       // Esc — cascading close (works even when input focused)
@@ -872,8 +877,8 @@ export default function MailOrdersPage() {
       }
     }
 
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
+    window.addEventListener("keydown", onKeyDown, { capture: true });
+    return () => window.removeEventListener("keydown", onKeyDown, { capture: true });
   }, [flatOrders, focusedId, expandedId, handleExpand, handleCopy, handleAdvanceBatch, handleFlag, batchStates, openCodePopoverId, copiedReplyId, completedSlot, handleDismissCompletion, viewMode, smartCopyOrderId, smartCopyLineIdx, showCopyToast, flashCell, activeSlot, orders, slotCutoffs]);
 
   // ── Auto-scroll focused row into view ───────────────────────────────────────
