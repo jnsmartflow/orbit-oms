@@ -622,13 +622,6 @@ export default function MailOrdersPage() {
   // ── Keyboard navigation ─────────────────────────────────────────────────────
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      // Capture Ctrl+E first — prevent browser default
-      if ((e.ctrlKey || e.metaKey) && e.key === "e") {
-        e.preventDefault();
-        e.stopPropagation();
-      }
-      if (viewMode !== "table") return;
-
       // Esc — cascading close (works even when input focused)
       if (e.key === "Escape") {
         if (completedSlot) {
@@ -657,6 +650,26 @@ export default function MailOrdersPage() {
         return;
       }
 
+      // ── Ctrl+M — Open slot completion modal (works in all modes) ────────────
+      if ((e.ctrlKey || e.metaKey) && e.key === "m") {
+        e.preventDefault();
+        e.stopPropagation();
+        const targetSlot = activeSlot ?? (() => {
+          const slots = ["Morning", "Afternoon", "Evening", "Night"];
+          for (const s of slots) {
+            const slotOrders = orders.filter(
+              o => getSlotFromTime(o.receivedAt, slotCutoffs) === s
+            );
+            if (slotOrders.length > 0) return s;
+          }
+          return null;
+        })();
+        if (targetSlot) setCompletedSlot(targetSlot);
+        return;
+      }
+
+      if (viewMode !== "table") return;
+
       const tag = (document.activeElement?.tagName ?? "").toUpperCase();
 
       // ── Ctrl+V — Auto-paste into SO Number input ──────────────────────────────
@@ -673,24 +686,6 @@ export default function MailOrdersPage() {
           input.select();
           // Don't preventDefault — let the native paste go through
         }
-        return;
-      }
-
-      // ── Ctrl+E — Open slot completion modal ──────────────────────────────────
-      if ((e.ctrlKey || e.metaKey) && e.key === "e") {
-        e.preventDefault();
-        e.stopPropagation();
-        const targetSlot = activeSlot ?? (() => {
-          const slots = ["Morning", "Afternoon", "Evening", "Night"];
-          for (const s of slots) {
-            const slotOrders = orders.filter(
-              o => getSlotFromTime(o.receivedAt, slotCutoffs) === s
-            );
-            if (slotOrders.length > 0) return s;
-          }
-          return null;
-        })();
-        if (targetSlot) setCompletedSlot(targetSlot);
         return;
       }
 
@@ -1008,7 +1003,7 @@ export default function MailOrdersPage() {
         shortcuts={[
           { key: "Ctrl+C", label: "Smart copy" },
           { key: "Ctrl+V", label: "Paste SO" },
-          { key: "Ctrl+E", label: "Slot email" },
+          { key: "Ctrl+M", label: "Slot email" },
           { key: "R", label: "Reply" },
           { key: "F", label: "Flag" },
           { key: "S", label: "SKU panel" },
