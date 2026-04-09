@@ -4,7 +4,7 @@ import { cleanSubject, smartTitleCase } from "./utils";
 /**
  * Build an HTML email summarising a slot's orders for a given SO.
  * Outlook-safe: nested tables only, zero <div>, zero <p>,
- * all styles on immediate <td> or <span>, no margin anywhere.
+ * all styles on immediate <td>, no margin anywhere.
  */
 export function buildSlotSummaryHTML(
   soName: string,
@@ -75,7 +75,7 @@ export function buildSlotSummaryHTML(
     if (/truck|transport|lorry|vehicle/.test(combined)) {
       return { text: "Awaiting transport", color: "#92400e", bg: "#fef3c7" };
     }
-    return { text: "Will process tomorrow", color: "#6b7280", bg: "#f1f5f9" };
+    return { text: "Will process tomorrow", color: "#475569", bg: "#e2e8f0" };
   }
 
   function getReasonLabel(reason: string): { text: string; color: string; bg: string } {
@@ -100,25 +100,17 @@ export function buildSlotSummaryHTML(
     return `<table cellpadding="0" cellspacing="0" border="0"><tr><td style="background-color:${bg};font-size:10px;color:${color};padding:2px 8px;${F}">${text}</td></tr></table>`;
   }
 
-  const sectionStyles: Record<string, { bg: string; border: string }> = {
-    billed:  { bg: "#f0fdfa", border: "#ccfbf1" },
-    flagged: { bg: "#fff5f5", border: "#fecaca" },
-    pending: { bg: "#f9fafb", border: "#e5e7eb" },
-  };
-
-  function sectionLabel(text: string, count: number, color: string, key: string): string {
-    const s = sectionStyles[key] ?? { bg: "#f9fafb", border: "#e5e7eb" };
-    return `<tr><td colspan="2" style="padding:20px 28px 12px;background-color:${s.bg};border-bottom:1px solid ${s.border};${F}"><span style="font-size:10px;font-weight:700;color:${color};text-transform:uppercase;letter-spacing:0.08em;${F}">${text}</span><span style="font-size:10px;color:#9ca3af;font-weight:400;${F}">&nbsp;\u2014 ${count}</span></td></tr>`;
-  }
-
   const firstName = getFirstName(soName);
   const longDate = fmtDate(date);
   const totalCount = orders.length;
 
-  // Divider
-  const divider = `<tr><td colspan="2" style="padding:0 28px;"><table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="height:1px;background-color:#f3f4f6;font-size:0;line-height:0;">&nbsp;</td></tr></table></td></tr>`;
+  // Spacer row
+  const spacer = `<tr><td colspan="2" style="height:1px;font-size:0;line-height:0;">&nbsp;</td></tr>`;
 
-  // Group flaggedLines by soNumber for Could Not Supply
+  // Divider — full width 1px #e2e8f0
+  const divider = `<tr><td colspan="2" style="font-size:0;line-height:0;height:1px;background-color:#e2e8f0;">&nbsp;</td></tr>`;
+
+  // Group flaggedLines by soNumber for Not Available
   const flaggedGroups: { customerName: string; soNumber: string | null; items: typeof flaggedLines }[] = [];
   const flaggedMap = new Map<string, typeof flaggedLines>();
   for (const fl of flaggedLines) {
@@ -137,105 +129,99 @@ export function buildSlotSummaryHTML(
   // ── Build HTML ──
 
   let h = '<!DOCTYPE html><html><head><meta charset="utf-8"></head>';
-  h += `<body style="padding:0;background-color:#f4f4f4;${F}">`;
+  h += `<body style="padding:0;background-color:#f8fafc;${F}">`;
 
   // Outer wrapper
-  h += `<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f4f4f4;padding:32px 16px;"><tr><td align="center">`;
-  h += `<table width="560" cellpadding="0" cellspacing="0" border="0" style="background-color:#ffffff;border:1px solid #e8e8e8;">`;
+  h += `<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f8fafc;padding:32px 16px;"><tr><td align="center">`;
+  h += `<table width="560" cellpadding="0" cellspacing="0" border="0" style="background-color:#ffffff;border:1px solid #e2e8f0;">`;
 
   // ═══ TOP TEAL BAR ═══
   h += `<tr><td colspan="2" style="background-color:#0d9488;height:3px;font-size:0;line-height:0;">&nbsp;</td></tr>`;
 
   // ═══ HEADER ═══
-  h += `<tr><td colspan="2" style="padding:24px 28px 20px;border-bottom:1px solid #f3f4f6;">`;
+  h += `<tr><td colspan="2" style="padding:24px 32px 20px;border-bottom:1px solid #e2e8f0;">`;
   h += `<table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>`;
   // Left
   h += `<td style="vertical-align:top;${F}">`;
   h += `<table cellpadding="0" cellspacing="0" border="0">`;
-  h += `<tr><td style="font-size:10px;font-weight:400;color:#9ca3af;letter-spacing:0.08em;text-transform:uppercase;padding-bottom:6px;${F}">JSW Dulux \u2014 Surat Depot</td></tr>`;
-  h += `<tr><td style="font-size:18px;font-weight:700;color:#111827;letter-spacing:-1px;padding-bottom:4px;${F}">${slotName} Slot Summary</td></tr>`;
-  h += `<tr><td style="font-size:11px;color:#9ca3af;${F}">${longDate}</td></tr>`;
+  h += `<tr><td style="font-size:10px;font-weight:400;color:#94a3b8;letter-spacing:0.08em;text-transform:uppercase;padding-bottom:6px;${F}">JSW Dulux \u2014 Surat Depot</td></tr>`;
+  h += `<tr><td style="font-size:17px;font-weight:700;color:#0f172a;letter-spacing:-1px;padding-bottom:4px;${F}">${slotName} Slot Summary</td></tr>`;
+  h += `<tr><td style="font-size:11px;color:#94a3b8;${F}">${longDate}</td></tr>`;
   h += `</table></td>`;
   // Right
   h += `<td style="vertical-align:top;text-align:right;padding-left:20px;white-space:nowrap;${F}">`;
   h += `<table cellpadding="0" cellspacing="0" border="0" align="right">`;
-  h += `<tr><td style="font-size:10px;color:#9ca3af;text-align:right;padding-bottom:4px;${F}">Orders</td></tr>`;
-  h += `<tr><td style="font-size:26px;font-weight:700;color:#111827;text-align:right;line-height:1;${F}">${totalCount}</td></tr>`;
+  h += `<tr><td style="font-size:10px;color:#94a3b8;text-align:right;padding-bottom:4px;${F}">Orders</td></tr>`;
+  h += `<tr><td style="font-size:24px;font-weight:700;color:#0f172a;text-align:right;line-height:1;${F}">${totalCount}</td></tr>`;
   h += `</table></td>`;
   h += `</tr></table></td></tr>`;
 
   // ═══ SALUTATION ═══
-  h += `<tr><td colspan="2" style="padding:20px 28px 18px;border-bottom:1px solid #f3f4f6;">`;
+  h += `<tr><td colspan="2" style="padding:18px 32px 16px;border-bottom:1px solid #e2e8f0;">`;
   h += `<table cellpadding="0" cellspacing="0" border="0">`;
-  h += `<tr><td style="padding-bottom:5px;${F}"><span style="font-size:13px;font-weight:400;color:#374151;${F}">Dear </span><span style="font-size:13px;font-weight:400;color:#111827;${F}">${firstName} Sir,</span></td></tr>`;
-  h += `<tr><td style="font-size:12px;color:#6b7280;line-height:1.7;${F}">Please find below the ${slotName} slot summary for today.</td></tr>`;
+  h += `<tr><td style="padding-bottom:5px;${F}"><span style="font-size:13px;font-weight:400;color:#334155;${F}">Dear </span><span style="font-size:13px;font-weight:700;color:#0f172a;${F}">${firstName} Sir,</span></td></tr>`;
+  h += `<tr><td style="font-size:12px;color:#64748b;line-height:1.6;${F}">Please find below the ${slotName} slot summary for today.</td></tr>`;
   h += `</table></td></tr>`;
 
-  // ═══ BILLED ORDERS ═══
-  h += sectionLabel("Billed Orders", processed.length, "#0d9488", "billed");
+  // ═══ PROCESSED ═══
+  h += `<tr><td colspan="2" style="padding:9px 32px;background-color:#e6f7f5;border-bottom:1px solid #b2e8e2;${F}"><span style="font-size:10px;font-weight:700;color:#0f766e;text-transform:uppercase;letter-spacing:0.08em;${F}">Processed</span><span style="font-size:10px;color:#64748b;font-weight:400;${F}">&nbsp;\u2014 ${processed.length}</span></td></tr>`;
 
   if (processed.length === 0) {
-    h += `<tr><td colspan="2" style="font-size:12px;color:#9ca3af;padding:0 28px 20px;${F}">No billed orders in this slot.</td></tr>`;
+    h += `<tr><td colspan="2" style="font-size:11px;color:#94a3b8;padding:12px 32px 16px;${F}">No orders processed in this slot.</td></tr>`;
   } else {
-    h += `<tr><td colspan="2" style="padding:0 28px;">`;
+    h += `<tr><td colspan="2" style="padding:0 32px;">`;
     h += `<table width="100%" cellpadding="0" cellspacing="0" border="0">`;
     processed.forEach((o, i) => {
       const isLast = i === processed.length - 1;
       const cust = smartTitleCase(o.customerName ?? cleanSubject(o.subject));
       const isHold = o.dispatchStatus === "Hold";
-      const custColor = isHold ? "#9ca3af" : "#111827";
+      const custColor = isHold ? "#94a3b8" : "#0f172a";
+      const codeColor = isHold ? "#cbd5e1" : "#94a3b8";
       const custSuffix = isHold ? " *" : "";
       const splitSuffix = splitPartLabel(o.splitLabel);
-      const bb = isLast ? "" : "border-bottom:1px solid #f3f4f6;";
+      const bb = isLast ? "" : "border-bottom:1px solid #e2e8f0;";
 
       h += `<tr>`;
       // Left — nested table: name row + code row
-      h += `<td style="padding:10px 0;vertical-align:top;${bb}">`;
+      h += `<td style="padding:11px 0;vertical-align:top;${bb}">`;
       h += `<table cellpadding="0" cellspacing="0" border="0">`;
       if (splitSuffix) {
-        h += `<tr><td style="padding-bottom:2px;${F}"><span style="font-size:13px;font-weight:400;color:${custColor};${F}">${cust}${custSuffix}</span><span style="font-size:11px;font-weight:400;color:#9ca3af;${F}">${splitSuffix}</span></td></tr>`;
+        h += `<tr><td style="padding-bottom:2px;${F}"><span style="font-size:12px;font-weight:400;color:${custColor};${F}">${cust}${custSuffix}</span><span style="font-size:10px;font-weight:400;color:#94a3b8;${F}">${splitSuffix}</span></td></tr>`;
       } else {
-        h += `<tr><td style="font-size:13px;font-weight:400;color:${custColor};padding-bottom:2px;${F}">${cust}${custSuffix}</td></tr>`;
+        h += `<tr><td style="font-size:12px;font-weight:400;color:${custColor};padding-bottom:2px;${F}">${cust}${custSuffix}</td></tr>`;
       }
       if (o.customerCode) {
-        h += `<tr><td style="font-size:11px;font-weight:400;color:#6b7280;${CM}padding:0 0 10px 0;">${o.customerCode}</td></tr>`;
+        h += `<tr><td style="font-size:10px;font-weight:400;color:${codeColor};${CM}padding:0;">${o.customerCode}</td></tr>`;
       }
       h += `</table></td>`;
       // Right — SO number
-      h += `<td style="font-size:14px;font-weight:400;color:#111827;${CM}padding:10px 0 10px 16px;vertical-align:top;text-align:right;white-space:nowrap;${bb}">${o.soNumber}</td>`;
+      h += `<td style="font-size:13px;font-weight:700;color:#0f172a;${CM}padding:11px 0 11px 16px;vertical-align:top;text-align:right;white-space:nowrap;${bb}">${o.soNumber}</td>`;
       h += `</tr>`;
     });
     h += `</table></td></tr>`;
-    // Bottom spacing
-    h += `<tr><td colspan="2" style="height:10px;font-size:0;line-height:0;">&nbsp;</td></tr>`;
+    h += spacer;
   }
 
-  // ═══ DIVIDER ═══
-  if (flaggedLines.length > 0) h += divider;
-
-  // ═══ COULD NOT SUPPLY — grouped by order ═══
+  // ═══ NOT AVAILABLE — grouped by order ═══
   if (flaggedLines.length > 0) {
-    h += sectionLabel("Could Not Supply", flaggedLines.length, "#6b7280", "flagged");
+    h += `<tr><td colspan="2" style="padding:9px 32px;background-color:#fde8e8;border-top:1px solid #e2e8f0;border-bottom:1px solid #f5b8b8;${F}"><span style="font-size:10px;font-weight:700;color:#b91c1c;text-transform:uppercase;letter-spacing:0.08em;${F}">Not Available</span><span style="font-size:10px;color:#64748b;font-weight:400;${F}">&nbsp;\u2014 ${flaggedLines.length}</span></td></tr>`;
 
     flaggedGroups.forEach((group, gi) => {
       const isLastGroup = gi === flaggedGroups.length - 1;
-      const gpb = isLastGroup ? "padding:0 28px 20px;" : "padding:0 28px 16px;";
-
-      h += `<tr><td colspan="2" style="${gpb}background-color:#ffffff;">`;
-      h += `<table width="100%" cellpadding="0" cellspacing="0" border="0">`;
 
       // Group header — customer + SO
       h += `<tr>`;
-      h += `<td style="font-size:12px;font-weight:400;color:#6b7280;padding-bottom:7px;${F}">${group.customerName}</td>`;
+      h += `<td style="font-size:11px;font-weight:400;color:#475569;padding:10px 32px 3px;${F}">${group.customerName}</td>`;
       if (group.soNumber) {
-        h += `<td style="font-size:11px;font-weight:400;color:#9ca3af;${CM}text-align:right;padding-bottom:7px;">${group.soNumber}</td>`;
+        h += `<td style="font-size:10px;font-weight:400;color:#94a3b8;${CM}text-align:right;padding:10px 32px 3px;">${group.soNumber}</td>`;
       }
       h += `</tr>`;
 
       // Item rows
       group.items.forEach((fl, fi) => {
         const isLastItem = fi === group.items.length - 1;
-        const ibb = isLastItem ? "" : "border-bottom:1px solid #f9fafb;";
+        const ibb = (isLastItem && !isLastGroup) ? "border-bottom:1px solid #e2e8f0;" : "";
+        const itemPad = isLastItem ? "padding:3px 32px 16px;" : "padding:3px 32px;";
         const prodBase = fl.baseColour
           ? `${fl.productName} ${smartTitleCase(fl.baseColour)}`
           : fl.productName;
@@ -245,49 +231,44 @@ export function buildSlotSummaryHTML(
         const rs = getReasonLabel(fl.reason);
 
         h += `<tr>`;
-        h += `<td style="font-size:11px;font-weight:400;color:#9ca3af;padding:4px 0;${ibb}${F}">${product}</td>`;
-        h += `<td style="text-align:right;white-space:nowrap;padding:4px 0 4px 12px;${ibb}">${pill(rs.text, rs.color, rs.bg)}</td>`;
+        h += `<td style="font-size:11px;font-weight:400;color:#94a3b8;${itemPad}${ibb}${F}">${product}</td>`;
+        h += `<td style="text-align:right;white-space:nowrap;${itemPad}${ibb}">${pill(rs.text, rs.color, rs.bg)}</td>`;
         h += `</tr>`;
       });
-
-      h += `</table></td></tr>`;
     });
   }
 
-  // ═══ DIVIDER ═══
-  if (pending.length > 0) h += divider;
-
-  // ═══ PROCESSING TOMORROW ═══
+  // ═══ PENDING ═══
   if (pending.length > 0) {
-    h += sectionLabel("Processing Tomorrow", pending.length, "#9ca3af", "pending");
+    h += `<tr><td colspan="2" style="padding:9px 32px;background-color:#f1f5f9;border-top:1px solid #e2e8f0;border-bottom:1px solid #cbd5e1;${F}"><span style="font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.08em;${F}">Pending</span><span style="font-size:10px;color:#64748b;font-weight:400;${F}">&nbsp;\u2014 ${pending.length}</span></td></tr>`;
 
-    h += `<tr><td colspan="2" style="padding:0 28px;background-color:#ffffff;">`;
+    h += `<tr><td colspan="2" style="padding:0 32px;background-color:#ffffff;">`;
     h += `<table width="100%" cellpadding="0" cellspacing="0" border="0">`;
     pending.forEach((o, i) => {
       const isLast = i === pending.length - 1;
-      const bb = isLast ? "" : "border-bottom:1px solid #f3f4f6;";
+      const bb = isLast ? "" : "border-bottom:1px solid #e2e8f0;";
       const cust = smartTitleCase(o.customerName ?? cleanSubject(o.subject));
       const note = getPendingNote(o);
 
       h += `<tr>`;
       // Left — nested table for name + code
-      h += `<td style="padding:11px 0;vertical-align:middle;${bb}">`;
+      h += `<td style="padding:11px 0 4px;vertical-align:middle;${bb}">`;
       h += `<table cellpadding="0" cellspacing="0" border="0">`;
-      h += `<tr><td style="font-size:13px;font-weight:400;color:#111827;padding:0;${F}">${cust}</td></tr>`;
+      h += `<tr><td style="font-size:12px;font-weight:400;color:#0f172a;padding:0;${F}">${cust}</td></tr>`;
       if (o.customerCode) {
-        h += `<tr><td style="font-size:11px;font-weight:400;color:#6b7280;${CM}padding:1px 0 0 0;">${o.customerCode}</td></tr>`;
+        h += `<tr><td style="font-size:10px;font-weight:400;color:#94a3b8;${CM}padding:1px 0 0 0;">${o.customerCode}</td></tr>`;
       }
       h += `</table></td>`;
-      // Right — note
-      h += `<td style="padding:11px 0 11px 12px;vertical-align:middle;text-align:right;white-space:nowrap;${bb}">${pill(note.text, note.color, note.bg)}</td>`;
+      // Right — note pill
+      h += `<td style="padding:11px 0 4px 12px;vertical-align:middle;text-align:right;white-space:nowrap;${bb}">${pill(note.text, note.color, note.bg)}</td>`;
       h += `</tr>`;
     });
     h += `</table></td></tr>`;
 
     // Note below
-    h += `<tr><td colspan="2" style="padding:12px 28px 20px;">`;
+    h += `<tr><td colspan="2" style="padding:6px 32px 18px;">`;
     h += `<table cellpadding="0" cellspacing="0" border="0"><tr>`;
-    h += `<td style="font-size:11px;color:#9ca3af;line-height:1.7;${F}">We will process these orders in tomorrow\u2019s first slot. Kindly inform your dealers.</td>`;
+    h += `<td style="font-size:11px;color:#94a3b8;line-height:1.6;${F}">We will process these orders in tomorrow\u2019s first slot. Kindly inform your dealers.</td>`;
     h += `</tr></table></td></tr>`;
   }
 
@@ -295,38 +276,38 @@ export function buildSlotSummaryHTML(
   h += divider;
 
   // ═══ TOTAL ROW ═══
-  h += `<tr><td colspan="2" style="padding:14px 28px;border-bottom:1px solid #f3f4f6;">`;
+  h += `<tr><td colspan="2" style="padding:10px 32px;border-bottom:1px solid #e2e8f0;">`;
   h += `<table cellpadding="0" cellspacing="0" border="0"><tr>`;
-  h += `<td style="font-size:11px;color:#9ca3af;${F}">${totalCount} orders</td>`;
-  h += `<td style="font-size:11px;color:#e5e7eb;padding:0 6px;${F}">\u00b7</td>`;
-  h += `<td style="padding:0;">${pill(`${processed.length} billed`, "#0d9488", "#f0fdfa")}</td>`;
+  h += `<td style="font-size:11px;color:#94a3b8;${F}">${totalCount} orders</td>`;
+  h += `<td style="font-size:11px;color:#cbd5e1;padding:0 6px;${F}">\u00b7</td>`;
+  h += `<td style="padding:0;">${pill(`${processed.length} billed`, "#0f766e", "#ccfbf1")}</td>`;
   if (pending.length > 0) {
-    h += `<td style="font-size:11px;color:#e5e7eb;padding:0 6px;${F}">\u00b7</td>`;
-    h += `<td style="font-size:11px;font-weight:400;color:#9ca3af;${F}">${pending.length} pending</td>`;
+    h += `<td style="font-size:11px;color:#cbd5e1;padding:0 6px;${F}">\u00b7</td>`;
+    h += `<td style="font-size:11px;font-weight:400;color:#94a3b8;${F}">${pending.length} pending</td>`;
   }
   if (flaggedLines.length > 0) {
-    h += `<td style="font-size:11px;color:#e5e7eb;padding:0 6px;${F}">\u00b7</td>`;
+    h += `<td style="font-size:11px;color:#cbd5e1;padding:0 6px;${F}">\u00b7</td>`;
     h += `<td style="padding:0;">${pill(`${flaggedLines.length} to note`, "#991b1b", "#fee2e2")}</td>`;
   }
   h += `</tr></table>`;
   h += `</td></tr>`;
 
   // ═══ REGARDS ═══
-  h += `<tr><td colspan="2" style="padding:20px 28px 24px;">`;
+  h += `<tr><td colspan="2" style="padding:18px 32px 22px;">`;
   h += `<table cellpadding="0" cellspacing="0" border="0">`;
-  h += `<tr><td style="font-size:12px;color:#6b7280;padding-bottom:3px;${F}">Please share the SO numbers with your dealers at the earliest.</td></tr>`;
-  h += `<tr><td style="font-size:12px;color:#6b7280;padding-bottom:16px;${F}">For any queries, call us directly.</td></tr>`;
-  h += `<tr><td style="font-size:12px;color:#6b7280;padding-bottom:2px;${F}">Regards,</td></tr>`;
-  h += `<tr><td style="font-size:13px;font-weight:400;color:#111827;padding-bottom:2px;${F}">${senderName}</td></tr>`;
-  h += `<tr><td style="font-size:11px;color:#9ca3af;padding-bottom:2px;${F}">JSW Dulux \u2014 Surat Depot</td></tr>`;
+  h += `<tr><td style="font-size:12px;color:#64748b;padding-bottom:3px;${F}">Please share the SO numbers with your dealers at the earliest.</td></tr>`;
+  h += `<tr><td style="font-size:12px;color:#64748b;padding-bottom:16px;${F}">For any queries, call us directly.</td></tr>`;
+  h += `<tr><td style="font-size:12px;color:#64748b;padding-bottom:2px;${F}">Regards,</td></tr>`;
+  h += `<tr><td style="font-size:12px;font-weight:400;color:#0f172a;padding-bottom:2px;${F}">${senderName}</td></tr>`;
+  h += `<tr><td style="font-size:11px;color:#94a3b8;padding-bottom:2px;${F}">JSW Dulux \u2014 Surat Depot</td></tr>`;
   if (senderPhone) {
     h += `<tr><td style="font-size:11px;font-weight:400;color:#0d9488;${F}">${senderPhone}</td></tr>`;
   }
   h += `</table></td></tr>`;
 
   // ═══ FOOTER ═══
-  h += `<tr><td colspan="2" style="background-color:#fafafa;border-top:1px solid #f3f4f6;padding:12px 28px;text-align:center;">`;
-  h += `<span style="font-size:10px;color:#d1d5db;letter-spacing:0.02em;${F}">JSW Dulux Ltd \u2014 Surat Depot&nbsp;\u00b7&nbsp;Do not reply to this email</span>`;
+  h += `<tr><td colspan="2" style="background-color:#f8fafc;border-top:1px solid #e2e8f0;padding:10px 32px;text-align:center;">`;
+  h += `<table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="font-size:9px;color:#cbd5e1;letter-spacing:0.02em;text-align:center;${F}">JSW Dulux Ltd \u2014 Surat Depot&nbsp;\u00b7&nbsp;Do not reply to this email</td></tr></table>`;
   h += `</td></tr>`;
 
   h += `</table>`; // close 560px
