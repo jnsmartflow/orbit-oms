@@ -50,7 +50,11 @@ export function buildSlotSummaryHTML(
 
   // ── Helpers ──
 
-  // breakNum removed — meta tag handles detection
+  const NL = 'color:#0f172a;text-decoration:none;text-decoration-line:none;pointer-events:none;font-family:inherit;font-size:inherit;';
+  const NLM = 'color:#9ca3af;text-decoration:none;text-decoration-line:none;pointer-events:none;font-family:inherit;font-size:inherit;';
+  function nolink(text: string, muted?: boolean): string {
+    return `<a href="#" style="${muted ? NLM : NL}">${text}</a>`;
+  }
 
   function fmtDate(d: string): string {
     const parts = d.match(/(\d+)\s+(\w+)\s+(\d+)/);
@@ -130,6 +134,7 @@ export function buildSlotSummaryHTML(
 
   let h = '<!DOCTYPE html><html><head><meta charset="utf-8">';
   h += '<meta name="format-detection" content="telephone=no,date=no,address=no,email=no,url=no">';
+  h += '<meta name="x-apple-disable-message-reformatting">';
   h += '</head>';
   h += `<body style="padding:0;background-color:#f1f5f9;${F}">`;
 
@@ -152,10 +157,10 @@ export function buildSlotSummaryHTML(
   // Right column — teal count box
   h += `<td style="vertical-align:middle;text-align:right;padding:20px 32px 20px 16px;white-space:nowrap;">`;
   h += `<table cellpadding="0" cellspacing="0" border="0" align="right"><tr>`;
-  h += `<td style="background-color:#0d9488;padding:14px 24px;text-align:center;${F}">`;
+  h += `<td style="background-color:#0f172a;padding:14px 24px;text-align:center;${F}">`;
   h += `<table cellpadding="0" cellspacing="0" border="0">`;
   h += `<tr><td style="font-size:32px;font-weight:700;color:#ffffff;text-align:center;line-height:1;${F}">${totalCount}</td></tr>`;
-  h += `<tr><td style="font-size:9px;color:#ccfbf1;text-align:center;text-transform:uppercase;letter-spacing:0.08em;padding-top:5px;${F}">ORDERS</td></tr>`;
+  h += `<tr><td style="font-size:9px;color:#94a3b8;text-align:center;text-transform:uppercase;letter-spacing:0.08em;padding-top:5px;${F}">ORDERS</td></tr>`;
   h += `</table></td></tr></table></td>`;
   h += `</tr>`;
   // Header border
@@ -198,30 +203,30 @@ export function buildSlotSummaryHTML(
       const splitSuffix = splitPartLabel(o.splitLabel);
       const bb = isLast ? "" : "border-bottom:1px solid #f1f5f9;";
 
-      // Row 1 — serial + name + SO/time
+      // Row 1 — serial + name + SO number
       h += `<tr>`;
       h += `<td width="24" style="font-size:11px;color:#9ca3af;padding:11px 0 2px 0;vertical-align:top;${F}">${i + 1}.</td>`;
       h += `<td style="font-size:13px;color:${custColor};padding:11px 0 2px 4px;vertical-align:top;${F}">${cust}${custSuffix}${splitSuffix}</td>`;
-      h += `<td width="120" style="vertical-align:top;text-align:right;white-space:nowrap;padding:11px 0 2px 16px;">`;
-      h += `<table cellpadding="0" cellspacing="0" border="0" align="right">`;
-      h += `<tr><td style="font-size:13px;color:#0f172a;text-align:right;${CM}">${o.soNumber}</td></tr>`;
-      if (o.punchedAt) {
-        h += `<tr><td style="font-size:10px;color:#9ca3af;text-align:right;${F}">${fmtTime(o.punchedAt)}</td></tr>`;
-      }
-      h += `</table></td>`;
+      h += `<td width="120" style="font-size:13px;color:#0f172a;text-align:right;vertical-align:top;white-space:nowrap;padding:11px 0 2px 16px;${CM}">${nolink(o.soNumber!)}</td>`;
       h += `</tr>`;
 
-      // Row 2 — customer code (spans all 3 cols, indented under name)
-      if (o.customerCode) {
+      // Row 2 — code + punched time
+      if (o.customerCode || o.punchedAt) {
         h += `<tr>`;
         h += `<td style="font-size:0;line-height:0;">&nbsp;</td>`;
-        h += `<td colspan="2" style="font-size:11px;color:${codeColor};padding:0 0 10px 4px;${bb}${CM}">${o.customerCode}</td>`;
+        if (o.customerCode) {
+          h += `<td style="font-size:11px;color:${codeColor};padding:0 0 10px 4px;${bb}${CM}">${nolink(o.customerCode, true)}</td>`;
+        } else {
+          h += `<td style="padding:0 0 10px 4px;${bb}">&nbsp;</td>`;
+        }
+        if (o.punchedAt) {
+          h += `<td width="120" style="font-size:10px;color:#9ca3af;text-align:right;white-space:nowrap;padding:0 0 10px 16px;${bb}${F}">${nolink(fmtTime(o.punchedAt), true)}</td>`;
+        } else {
+          h += `<td style="padding:0 0 10px 16px;${bb}">&nbsp;</td>`;
+        }
         h += `</tr>`;
       } else if (bb) {
-        // Add bottom border on last content row if no code
-        h += `<tr>`;
-        h += `<td colspan="3" style="height:1px;font-size:0;line-height:0;${bb}">&nbsp;</td>`;
-        h += `</tr>`;
+        h += `<tr><td colspan="3" style="height:1px;font-size:0;line-height:0;${bb}">&nbsp;</td></tr>`;
       }
     });
     h += `</table></td></tr>`;
@@ -258,7 +263,7 @@ export function buildSlotSummaryHTML(
       if (group.soNumber) {
         h += `<tr>`;
         h += `<td style="font-size:0;line-height:0;">&nbsp;</td>`;
-        h += `<td colspan="2" style="font-size:11px;color:#94a3b8;padding:0 0 4px 4px;${CM}">${group.soNumber}</td>`;
+        h += `<td colspan="2" style="font-size:11px;color:#94a3b8;padding:0 0 4px 4px;${CM}">${nolink(group.soNumber, true)}</td>`;
         h += `</tr>`;
       }
 
@@ -319,7 +324,7 @@ export function buildSlotSummaryHTML(
       if (o.customerCode) {
         h += `<tr>`;
         h += `<td style="font-size:0;line-height:0;">&nbsp;</td>`;
-        h += `<td colspan="2" style="font-size:11px;color:#94a3b8;padding:0 0 10px 4px;${bb}${CM}">${o.customerCode}</td>`;
+        h += `<td colspan="2" style="font-size:11px;color:#94a3b8;padding:0 0 10px 4px;${bb}${CM}">${nolink(o.customerCode, true)}</td>`;
         h += `</tr>`;
       } else if (bb) {
         h += `<tr><td colspan="3" style="height:1px;font-size:0;line-height:0;${bb}">&nbsp;</td></tr>`;
