@@ -82,8 +82,8 @@ export function buildSlotSummaryHTML(
     switch (reason) {
       case "out_of_stock": return { text: "Out of stock", color: "#991b1b", bg: "#fee2e2" };
       case "wrong_pack": return { text: "Wrong pack", color: "#92400e", bg: "#fef3c7" };
-      case "discontinued": return { text: "Discontinued", color: "#6b7280", bg: "#f1f5f9" };
-      case "other_depot": return { text: "Other depot", color: "#6b7280", bg: "#f1f5f9" };
+      case "discontinued": return { text: "Discontinued", color: "#475569", bg: "#f1f5f9" };
+      case "other_depot": return { text: "Other depot", color: "#1d4ed8", bg: "#eff6ff" };
       case "other": return { text: "Other", color: "#6b7280", bg: "#f1f5f9" };
       default: return { text: reason, color: "#6b7280", bg: "#f1f5f9" };
     }
@@ -96,8 +96,19 @@ export function buildSlotSummaryHTML(
     return ` (${label})`;
   }
 
-  function sectionLabel(text: string, count: number, color: string): string {
-    return `<tr><td colspan="2" style="padding:20px 28px 12px;${F}"><span style="font-size:10px;font-weight:700;color:${color};text-transform:uppercase;letter-spacing:0.08em;${F}">${text}</span><span style="font-size:10px;color:#9ca3af;font-weight:400;${F}">&nbsp;\u2014 ${count}</span></td></tr>`;
+  function pill(text: string, color: string, bg: string): string {
+    return `<table cellpadding="0" cellspacing="0" border="0"><tr><td style="background-color:${bg};font-size:10px;color:${color};padding:2px 8px;${F}">${text}</td></tr></table>`;
+  }
+
+  const sectionStyles: Record<string, { bg: string; border: string }> = {
+    billed:  { bg: "#f0fdfa", border: "#ccfbf1" },
+    flagged: { bg: "#fff5f5", border: "#fecaca" },
+    pending: { bg: "#f9fafb", border: "#e5e7eb" },
+  };
+
+  function sectionLabel(text: string, count: number, color: string, key: string): string {
+    const s = sectionStyles[key] ?? { bg: "#f9fafb", border: "#e5e7eb" };
+    return `<tr><td colspan="2" style="padding:20px 28px 12px;background-color:${s.bg};border-bottom:1px solid ${s.border};${F}"><span style="font-size:10px;font-weight:700;color:${color};text-transform:uppercase;letter-spacing:0.08em;${F}">${text}</span><span style="font-size:10px;color:#9ca3af;font-weight:400;${F}">&nbsp;\u2014 ${count}</span></td></tr>`;
   }
 
   const firstName = getFirstName(soName);
@@ -161,7 +172,7 @@ export function buildSlotSummaryHTML(
   h += `</table></td></tr>`;
 
   // ═══ BILLED ORDERS ═══
-  h += sectionLabel("Billed Orders", processed.length, "#0d9488");
+  h += sectionLabel("Billed Orders", processed.length, "#0d9488", "billed");
 
   if (processed.length === 0) {
     h += `<tr><td colspan="2" style="font-size:12px;color:#9ca3af;padding:0 28px 20px;${F}">No billed orders in this slot.</td></tr>`;
@@ -204,7 +215,7 @@ export function buildSlotSummaryHTML(
 
   // ═══ COULD NOT SUPPLY — grouped by order ═══
   if (flaggedLines.length > 0) {
-    h += sectionLabel("Could Not Supply", flaggedLines.length, "#6b7280");
+    h += sectionLabel("Could Not Supply", flaggedLines.length, "#6b7280", "flagged");
 
     flaggedGroups.forEach((group, gi) => {
       const isLastGroup = gi === flaggedGroups.length - 1;
@@ -235,7 +246,7 @@ export function buildSlotSummaryHTML(
 
         h += `<tr>`;
         h += `<td style="font-size:11px;font-weight:400;color:#9ca3af;padding:4px 0;${ibb}${F}">${product}</td>`;
-        h += `<td style="text-align:right;white-space:nowrap;padding:4px 0 4px 12px;${ibb}"><span style="font-size:10px;font-weight:400;color:${rs.color};background-color:${rs.bg};padding:2px 7px;border-radius:3px;${F}">${rs.text}</span></td>`;
+        h += `<td style="text-align:right;white-space:nowrap;padding:4px 0 4px 12px;${ibb}">${pill(rs.text, rs.color, rs.bg)}</td>`;
         h += `</tr>`;
       });
 
@@ -248,7 +259,7 @@ export function buildSlotSummaryHTML(
 
   // ═══ PROCESSING TOMORROW ═══
   if (pending.length > 0) {
-    h += sectionLabel("Processing Tomorrow", pending.length, "#9ca3af");
+    h += sectionLabel("Processing Tomorrow", pending.length, "#9ca3af", "pending");
 
     h += `<tr><td colspan="2" style="padding:0 28px;background-color:#ffffff;">`;
     h += `<table width="100%" cellpadding="0" cellspacing="0" border="0">`;
@@ -268,7 +279,7 @@ export function buildSlotSummaryHTML(
       }
       h += `</table></td>`;
       // Right — note
-      h += `<td style="padding:11px 0 11px 12px;vertical-align:middle;text-align:right;white-space:nowrap;${bb}"><span style="font-size:10px;font-weight:400;color:${note.color};background-color:${note.bg};padding:2px 7px;border-radius:3px;${F}">${note.text}</span></td>`;
+      h += `<td style="padding:11px 0 11px 12px;vertical-align:middle;text-align:right;white-space:nowrap;${bb}">${pill(note.text, note.color, note.bg)}</td>`;
       h += `</tr>`;
     });
     h += `</table></td></tr>`;
@@ -284,18 +295,20 @@ export function buildSlotSummaryHTML(
   h += divider;
 
   // ═══ TOTAL ROW ═══
-  h += `<tr><td colspan="2" style="padding:14px 28px;border-bottom:1px solid #f3f4f6;${F}">`;
-  h += `<span style="font-size:11px;color:#9ca3af;${F}">${totalCount} orders</span>`;
-  h += `<span style="font-size:11px;color:#e5e7eb;padding:0 6px;${F}">\u00b7</span>`;
-  h += `<span style="font-size:11px;font-weight:400;color:#0d9488;${F}">${processed.length} billed</span>`;
+  h += `<tr><td colspan="2" style="padding:14px 28px;border-bottom:1px solid #f3f4f6;">`;
+  h += `<table cellpadding="0" cellspacing="0" border="0"><tr>`;
+  h += `<td style="font-size:11px;color:#9ca3af;${F}">${totalCount} orders</td>`;
+  h += `<td style="font-size:11px;color:#e5e7eb;padding:0 6px;${F}">\u00b7</td>`;
+  h += `<td style="padding:0;">${pill(`${processed.length} billed`, "#0d9488", "#f0fdfa")}</td>`;
   if (pending.length > 0) {
-    h += `<span style="font-size:11px;color:#e5e7eb;padding:0 6px;${F}">\u00b7</span>`;
-    h += `<span style="font-size:11px;font-weight:400;color:#9ca3af;${F}">${pending.length} pending</span>`;
+    h += `<td style="font-size:11px;color:#e5e7eb;padding:0 6px;${F}">\u00b7</td>`;
+    h += `<td style="font-size:11px;font-weight:400;color:#9ca3af;${F}">${pending.length} pending</td>`;
   }
   if (flaggedLines.length > 0) {
-    h += `<span style="font-size:11px;color:#e5e7eb;padding:0 6px;${F}">\u00b7</span>`;
-    h += `<span style="font-size:11px;font-weight:400;color:#dc2626;${F}">${flaggedLines.length} to note</span>`;
+    h += `<td style="font-size:11px;color:#e5e7eb;padding:0 6px;${F}">\u00b7</td>`;
+    h += `<td style="padding:0;">${pill(`${flaggedLines.length} to note`, "#991b1b", "#fee2e2")}</td>`;
   }
+  h += `</tr></table>`;
   h += `</td></tr>`;
 
   // ═══ REGARDS ═══
