@@ -622,8 +622,8 @@ export default function MailOrdersPage() {
   // ── Keyboard navigation ─────────────────────────────────────────────────────
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      // Capture Ctrl+S first — prevent browser save dialog
-      if ((e.ctrlKey || e.metaKey) && e.key === "s") {
+      // Capture Ctrl+E first — prevent browser default
+      if ((e.ctrlKey || e.metaKey) && e.key === "e") {
         e.preventDefault();
         e.stopPropagation();
       }
@@ -676,8 +676,8 @@ export default function MailOrdersPage() {
         return;
       }
 
-      // ── Ctrl+S — Open slot completion modal ──────────────────────────────────
-      if ((e.ctrlKey || e.metaKey) && e.key === "s") {
+      // ── Ctrl+E — Open slot completion modal ──────────────────────────────────
+      if ((e.ctrlKey || e.metaKey) && e.key === "e") {
         e.preventDefault();
         e.stopPropagation();
         const targetSlot = activeSlot ?? (() => {
@@ -1008,7 +1008,7 @@ export default function MailOrdersPage() {
         shortcuts={[
           { key: "Ctrl+C", label: "Smart copy" },
           { key: "Ctrl+V", label: "Paste SO" },
-          { key: "Ctrl+S", label: "Slot email" },
+          { key: "Ctrl+E", label: "Slot email" },
           { key: "R", label: "Reply" },
           { key: "F", label: "Flag" },
           { key: "S", label: "SKU panel" },
