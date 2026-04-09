@@ -674,6 +674,7 @@ export default function MailOrdersPage() {
       // ── Ctrl+S — Open slot completion modal ──────────────────────────────────
       if ((e.ctrlKey || e.metaKey) && e.key === "s") {
         e.preventDefault();
+        e.stopPropagation();
         const targetSlot = activeSlot ?? (() => {
           const slots = ["Morning", "Afternoon", "Evening", "Night"];
           for (const s of slots) {
