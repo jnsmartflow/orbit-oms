@@ -145,12 +145,14 @@ export function buildSlotSummaryHTML(
   h += `<tr><td style="font-size:17px;font-weight:700;color:#0f172a;padding:0 0 4px 32px;${F}">${slotName} Slot Summary</td></tr>`;
   h += `<tr><td style="font-size:11px;color:#94a3b8;padding:0 0 20px 32px;${F}">${longDate}</td></tr>`;
   h += `</table></td>`;
-  // Right column
-  h += `<td style="vertical-align:top;">`;
-  h += `<table cellpadding="0" cellspacing="0" border="0" align="right">`;
-  h += `<tr><td style="font-size:10px;color:#94a3b8;text-align:right;padding:24px 32px 3px 16px;${F}">Orders</td></tr>`;
-  h += `<tr><td style="font-size:24px;font-weight:700;color:#0f172a;text-align:right;line-height:1;padding:0 32px 20px 16px;${F}">${totalCount}</td></tr>`;
-  h += `</table></td>`;
+  // Right column — teal count box
+  h += `<td style="vertical-align:middle;text-align:right;padding:24px 32px 20px 16px;white-space:nowrap;">`;
+  h += `<table cellpadding="0" cellspacing="0" border="0" align="right"><tr>`;
+  h += `<td style="background-color:#0d9488;padding:10px 16px;text-align:center;${F}">`;
+  h += `<table cellpadding="0" cellspacing="0" border="0">`;
+  h += `<tr><td style="font-size:22px;font-weight:700;color:#ffffff;text-align:center;line-height:1;${F}">${totalCount}</td></tr>`;
+  h += `<tr><td style="font-size:9px;color:#ccfbf1;text-align:center;text-transform:uppercase;letter-spacing:0.07em;padding-top:3px;${F}">Orders</td></tr>`;
+  h += `</table></td></tr></table></td>`;
   h += `</tr>`;
   // Header border
   h += `<tr><td colspan="2" style="height:1px;background-color:#e2e8f0;font-size:0;line-height:0;">&nbsp;</td></tr>`;
