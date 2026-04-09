@@ -50,10 +50,9 @@ export function buildSlotSummaryHTML(
 
   // ── Helpers ──
 
-  const NL = 'color:#0f172a;text-decoration:none;text-decoration-line:none;-webkit-text-decoration:none;border-bottom:none;border:none;outline:none;pointer-events:none;font-family:inherit;font-size:inherit;';
-  const NLM = 'color:#9ca3af;text-decoration:none;text-decoration-line:none;-webkit-text-decoration:none;border-bottom:none;border:none;outline:none;pointer-events:none;font-family:inherit;font-size:inherit;';
-  function nolink(text: string, muted?: boolean): string {
-    return `<a href="#" style="${muted ? NLM : NL}">${text}</a>`;
+  function zwsp(n: string): string {
+    if (!n) return "";
+    return n.slice(0, 4) + "&#8203;" + n.slice(4);
   }
 
   function fmtDate(d: string): string {
@@ -207,7 +206,7 @@ export function buildSlotSummaryHTML(
       h += `<tr>`;
       h += `<td width="24" style="font-size:11px;color:#9ca3af;padding:11px 0 2px 0;vertical-align:top;${F}">${i + 1}.</td>`;
       h += `<td style="font-size:13px;color:${custColor};padding:11px 0 2px 4px;vertical-align:top;${F}">${cust}${custSuffix}${splitSuffix}</td>`;
-      h += `<td width="120" style="font-size:13px;color:#0f172a;text-align:right;vertical-align:top;white-space:nowrap;padding:11px 0 2px 16px;${CM}">${nolink(o.soNumber!)}</td>`;
+      h += `<td width="120" style="font-size:13px;color:#0f172a;text-align:right;vertical-align:top;white-space:nowrap;padding:11px 0 2px 16px;${CM}">${zwsp(o.soNumber!)}</td>`;
       h += `</tr>`;
 
       // Row 2 — code + punched time
@@ -215,12 +214,12 @@ export function buildSlotSummaryHTML(
         h += `<tr>`;
         h += `<td style="font-size:0;line-height:0;">&nbsp;</td>`;
         if (o.customerCode) {
-          h += `<td style="font-size:11px;color:${codeColor};padding:0 0 10px 4px;${bb}${CM}">${nolink(o.customerCode, true)}</td>`;
+          h += `<td style="font-size:11px;color:${codeColor};padding:0 0 10px 4px;${bb}${CM}">${zwsp(o.customerCode)}</td>`;
         } else {
           h += `<td style="padding:0 0 10px 4px;${bb}">&nbsp;</td>`;
         }
         if (o.punchedAt) {
-          h += `<td width="120" style="font-size:10px;color:#9ca3af;text-align:right;white-space:nowrap;padding:0 0 10px 16px;${bb}${F}">${nolink(fmtTime(o.punchedAt), true)}</td>`;
+          h += `<td width="120" style="font-size:10px;color:#9ca3af;text-align:right;white-space:nowrap;padding:0 0 10px 16px;${bb}${F}">${fmtTime(o.punchedAt)}</td>`;
         } else {
           h += `<td style="padding:0 0 10px 16px;${bb}">&nbsp;</td>`;
         }
@@ -263,7 +262,7 @@ export function buildSlotSummaryHTML(
       if (group.soNumber) {
         h += `<tr>`;
         h += `<td style="font-size:0;line-height:0;">&nbsp;</td>`;
-        h += `<td colspan="2" style="font-size:11px;color:#94a3b8;padding:0 0 4px 4px;${CM}">${nolink(group.soNumber, true)}</td>`;
+        h += `<td colspan="2" style="font-size:11px;color:#94a3b8;padding:0 0 4px 4px;${CM}">${zwsp(group.soNumber!)}</td>`;
         h += `</tr>`;
       }
 
@@ -324,7 +323,7 @@ export function buildSlotSummaryHTML(
       if (o.customerCode) {
         h += `<tr>`;
         h += `<td style="font-size:0;line-height:0;">&nbsp;</td>`;
-        h += `<td colspan="2" style="font-size:11px;color:#94a3b8;padding:0 0 10px 4px;${bb}${CM}">${nolink(o.customerCode, true)}</td>`;
+        h += `<td colspan="2" style="font-size:11px;color:#94a3b8;padding:0 0 10px 4px;${bb}${CM}">${zwsp(o.customerCode)}</td>`;
         h += `</tr>`;
       } else if (bb) {
         h += `<tr><td colspan="3" style="height:1px;font-size:0;line-height:0;${bb}">&nbsp;</td></tr>`;
