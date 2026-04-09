@@ -139,10 +139,7 @@ export function buildSlotSummaryHTML(
 
   // Outer wrapper
   h += `<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f1f5f9;padding:32px 16px;"><tr><td align="center">`;
-  h += `<table width="560" cellpadding="0" cellspacing="0" border="0" style="background-color:#ffffff;border:1px solid #e2e8f0;">`;
-
-  // ═══ TOP TEAL BAR ═══
-  h += `<tr><td colspan="2" style="background-color:#0d9488;height:3px;font-size:0;line-height:0;">&nbsp;</td></tr>`;
+  h += `<table width="560" cellpadding="0" cellspacing="0" border="0" style="background-color:#ffffff;border:1px solid #e2e8f0;border-top:3px solid #0d9488;">`;
 
   // ═══ HEADER — two column ═══
   h += `<tr>`;
@@ -153,10 +150,10 @@ export function buildSlotSummaryHTML(
   h += `<tr><td style="font-size:17px;font-weight:700;color:#0f172a;padding-bottom:4px;${F}">${slotName} Slot Summary</td></tr>`;
   h += `<tr><td style="font-size:11px;color:#94a3b8;${F}">${longDate}</td></tr>`;
   h += `</table></td>`;
-  // Right column — teal count box, flush right
-  h += `<td style="vertical-align:middle;padding:0;width:110px;">`;
-  h += `<table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>`;
-  h += `<td style="background-color:#0d9488;text-align:center;vertical-align:middle;padding:20px 20px;width:110px;">`;
+  // Right column — teal panel, flush right, full height
+  h += `<td style="vertical-align:middle;padding:0;width:110px;background-color:#0d9488;">`;
+  h += `<table width="100%" cellpadding="0" cellspacing="0" border="0">`;
+  h += `<tr><td style="text-align:center;vertical-align:middle;padding:20px;background-color:#0d9488;">`;
   h += `<table cellpadding="0" cellspacing="0" border="0" align="center">`;
   h += `<tr><td style="font-size:32px;font-weight:700;color:#ffffff;text-align:center;line-height:1;${F}">${totalCount}</td></tr>`;
   h += `<tr><td style="font-size:9px;color:#ccfbf1;text-align:center;text-transform:uppercase;letter-spacing:0.08em;padding-top:5px;${F}">ORDERS</td></tr>`;
@@ -216,12 +213,12 @@ export function buildSlotSummaryHTML(
         if (o.customerCode) {
           h += `<td style="font-size:11px;color:${codeColor};padding:0 0 10px 4px;${bb}${CM}">${zwsp(o.customerCode)}</td>`;
         } else {
-          h += `<td style="padding:0 0 10px 4px;${bb}">&nbsp;</td>`;
+          h += `<td style="padding:0 0 10px 4px;font-size:0;line-height:0;${bb}">&nbsp;</td>`;
         }
         if (o.punchedAt) {
           h += `<td width="120" style="font-size:10px;color:#9ca3af;text-align:right;white-space:nowrap;padding:0 0 10px 16px;${bb}${F}">${fmtTime(o.punchedAt)}</td>`;
         } else {
-          h += `<td style="padding:0 0 10px 16px;${bb}">&nbsp;</td>`;
+          h += `<td style="padding:0 0 10px 16px;font-size:0;line-height:0;${bb}">&nbsp;</td>`;
         }
         h += `</tr>`;
       } else if (bb) {
