@@ -50,6 +50,10 @@ export function buildSlotSummaryHTML(
 
   // ── Helpers ──
 
+  function nolink(text: string, color: string): string {
+    return `<a href="#" style="color:${color};text-decoration:none;">${text}</a>`;
+  }
+
   function fmtDate(d: string): string {
     const parts = d.match(/(\d+)\s+(\w+)\s+(\d+)/);
     if (!parts) return d;
@@ -70,23 +74,23 @@ export function buildSlotSummaryHTML(
     return clean.split(/\s+/)[0] || clean;
   }
 
-  function getPendingNote(order: MoOrder): { text: string; bg: string } {
+  function getPendingNote(order: MoOrder): string {
     const combined = [order.remarks, order.billRemarks, order.deliveryRemarks]
       .filter(Boolean).join(" ").toLowerCase();
     if (/truck|transport|lorry|vehicle/.test(combined)) {
-      return { text: "Awaiting transport", bg: "#fef3c7" };
+      return "Awaiting transport";
     }
-    return { text: "Will process tomorrow", bg: "#f1f5f9" };
+    return "Will process tomorrow";
   }
 
-  function getReasonLabel(reason: string): { text: string; bg: string } {
+  function getReasonLabel(reason: string): string {
     switch (reason) {
-      case "out_of_stock": return { text: "Out of stock", bg: "#fee2e2" };
-      case "wrong_pack": return { text: "Wrong pack", bg: "#fef3c7" };
-      case "discontinued": return { text: "Discontinued", bg: "#f1f5f9" };
-      case "other_depot": return { text: "Other depot", bg: "#f1f5f9" };
-      case "other": return { text: "Other", bg: "#f8fafc" };
-      default: return { text: reason, bg: "#f8fafc" };
+      case "out_of_stock": return "Out of stock";
+      case "wrong_pack": return "Wrong pack";
+      case "discontinued": return "Discontinued";
+      case "other_depot": return "Other depot";
+      case "other": return "Other";
+      default: return reason;
     }
   }
 
@@ -126,7 +130,9 @@ export function buildSlotSummaryHTML(
 
   // ── Build HTML ──
 
-  let h = '<!DOCTYPE html><html><head><meta charset="utf-8"></head>';
+  let h = '<!DOCTYPE html><html><head><meta charset="utf-8">';
+  h += '<meta name="format-detection" content="telephone=no,date=no,address=no,email=no,url=no">';
+  h += '</head>';
   h += `<body style="padding:0;background-color:#f1f5f9;${F}">`;
 
   // Outer wrapper
@@ -174,6 +180,9 @@ export function buildSlotSummaryHTML(
   if (processed.length === 0) {
     h += `<tr><td colspan="2" style="font-size:11px;color:#94a3b8;padding:12px 32px 16px;${F}">No orders processed in this slot.</td></tr>`;
   } else {
+    // 3-column table for processed orders
+    h += `<tr><td colspan="2" style="padding:0 32px;">`;
+    h += `<table width="100%" cellpadding="0" cellspacing="0" border="0">`;
     processed.forEach((o, i) => {
       const isLast = i === processed.length - 1;
       const cust = smartTitleCase(o.customerName ?? cleanSubject(o.subject));
@@ -182,29 +191,35 @@ export function buildSlotSummaryHTML(
       const codeColor = isHold ? "#e2e8f0" : "#94a3b8";
       const custSuffix = isHold ? " *" : "";
       const splitSuffix = splitPartLabel(o.splitLabel);
+      const bb = isLast ? "" : "border-bottom:1px solid #f1f5f9;";
 
-      // Row 1 — customer name + SO number
+      // Row 1 — serial + name + SO/time
       h += `<tr>`;
-      h += `<td style="font-size:13px;color:${custColor};padding:11px 0 3px 32px;${F}">${cust}${custSuffix}${splitSuffix}</td>`;
-      h += `<td style="vertical-align:top;text-align:right;white-space:nowrap;padding:11px 32px 3px 16px;">`;
+      h += `<td width="24" style="font-size:11px;color:#9ca3af;padding:11px 0 3px 0;vertical-align:top;${F}">${i + 1}.</td>`;
+      h += `<td style="font-size:13px;color:${custColor};padding:11px 0 3px 4px;vertical-align:top;${F}">${cust}${custSuffix}${splitSuffix}</td>`;
+      h += `<td width="120" style="vertical-align:top;text-align:right;white-space:nowrap;padding:11px 0 3px 16px;">`;
       h += `<table cellpadding="0" cellspacing="0" border="0" align="right">`;
-      h += `<tr><td style="font-size:13px;color:#0f172a;text-align:right;${CM}">${o.soNumber}</td></tr>`;
+      h += `<tr><td style="font-size:13px;color:#0f172a;text-align:right;${CM}">${nolink(o.soNumber!, "#0f172a")}</td></tr>`;
       if (o.punchedAt) {
         h += `<tr><td style="font-size:10px;color:#9ca3af;text-align:right;${F}">${fmtTime(o.punchedAt)}</td></tr>`;
       }
       h += `</table></td>`;
       h += `</tr>`;
 
-      // Row 2 — customer code
+      // Row 2 — customer code (spans all 3 cols, indented under name)
       if (o.customerCode) {
-        h += `<tr><td colspan="2" style="font-size:11px;color:${codeColor};padding:0 32px 11px;${CM}">${o.customerCode}</td></tr>`;
-      }
-
-      // Row 3 — divider between orders
-      if (!isLast) {
-        h += `<tr><td colspan="2" style="height:1px;background-color:#f1f5f9;font-size:0;line-height:0;">&nbsp;</td></tr>`;
+        h += `<tr>`;
+        h += `<td style="font-size:0;line-height:0;">&nbsp;</td>`;
+        h += `<td colspan="2" style="font-size:11px;color:${codeColor};padding:0 0 11px 4px;${bb}${CM}">${nolink(o.customerCode, codeColor)}</td>`;
+        h += `</tr>`;
+      } else if (bb) {
+        // Add bottom border on last content row if no code
+        h += `<tr>`;
+        h += `<td colspan="3" style="height:1px;font-size:0;line-height:0;${bb}">&nbsp;</td>`;
+        h += `</tr>`;
       }
     });
+    h += `</table></td></tr>`;
 
     // Spacing after all billed rows
     h += `<tr><td colspan="2" style="height:5px;font-size:0;line-height:0;">&nbsp;</td></tr>`;
@@ -222,15 +237,24 @@ export function buildSlotSummaryHTML(
     h += `<td style="font-size:10px;color:#64748b;padding-left:4px;${F}">\u2014 ${flaggedLines.length} items</td>`;
     h += `</tr></table></td></tr>`;
 
+    // 3-column table for flagged groups
+    h += `<tr><td colspan="2" style="padding:0 32px;">`;
+    h += `<table width="100%" cellpadding="0" cellspacing="0" border="0">`;
     flaggedGroups.forEach((group, gi) => {
       const isLastGroup = gi === flaggedGroups.length - 1;
 
-      // Row 1 — customer name
-      h += `<tr><td colspan="2" style="font-size:13px;color:#0f172a;padding:10px 32px 2px;${F}">${group.customerName}</td></tr>`;
+      // Group header — serial + customer name (span cols 2+3)
+      h += `<tr>`;
+      h += `<td width="24" style="font-size:11px;color:#9ca3af;padding:10px 0 2px 0;vertical-align:top;${F}">${gi + 1}.</td>`;
+      h += `<td colspan="2" style="font-size:13px;color:#0f172a;padding:10px 0 2px 4px;${F}">${group.customerName}</td>`;
+      h += `</tr>`;
 
-      // Row 2 — SO number reference
+      // SO number reference
       if (group.soNumber) {
-        h += `<tr><td colspan="2" style="font-size:11px;color:#94a3b8;padding:0 32px 4px;${CM}">${group.soNumber}</td></tr>`;
+        h += `<tr>`;
+        h += `<td style="font-size:0;line-height:0;">&nbsp;</td>`;
+        h += `<td colspan="2" style="font-size:11px;color:#94a3b8;padding:0 0 4px 4px;${CM}">${nolink(group.soNumber, "#94a3b8")}</td>`;
+        h += `</tr>`;
       }
 
       // Item rows — product + status
@@ -244,16 +268,18 @@ export function buildSlotSummaryHTML(
         const rs = getReasonLabel(fl.reason);
 
         h += `<tr>`;
-        h += `<td style="font-size:11px;color:#64748b;padding:2px 0 2px 32px;${F}">${product}</td>`;
-        h += `<td style="font-size:11px;color:#0f172a;text-align:right;white-space:nowrap;padding:2px 32px 2px 16px;${F}">${rs.text}</td>`;
+        h += `<td style="font-size:0;line-height:0;">&nbsp;</td>`;
+        h += `<td style="font-size:11px;color:#64748b;padding:2px 0 2px 4px;${F}">${product}</td>`;
+        h += `<td width="120" style="font-size:11px;color:#0f172a;text-align:right;white-space:nowrap;padding:2px 0 2px 16px;${F}">${rs}</td>`;
         h += `</tr>`;
       });
 
       // Divider between groups
       if (!isLastGroup) {
-        h += `<tr><td colspan="2" style="height:1px;background-color:#f1f5f9;font-size:0;line-height:0;">&nbsp;</td></tr>`;
+        h += `<tr><td colspan="3" style="height:1px;background-color:#f1f5f9;font-size:0;line-height:0;">&nbsp;</td></tr>`;
       }
     });
+    h += `</table></td></tr>`;
 
     // Spacing after last group
     h += `<tr><td colspan="2" style="height:10px;font-size:0;line-height:0;">&nbsp;</td></tr>`;
@@ -261,43 +287,40 @@ export function buildSlotSummaryHTML(
 
   // ═══ PENDING ═══
   if (pending.length > 0) {
-    // Label row — dark background with MSO conditional
-    h += `<!--[if mso]>`;
-    h += `<tr><td colspan="2" bgcolor="#0f172a" style="padding:9px 32px;${F}">`;
+    // Label row — slate background, consistent with other sections
+    h += `<tr><td colspan="2" style="background-color:#e2e8f0;border-bottom:2px solid #475569;padding:9px 32px;">`;
     h += `<table cellpadding="0" cellspacing="0" border="0"><tr>`;
-    h += `<td style="font-size:10px;font-weight:700;color:#ffffff;text-transform:uppercase;letter-spacing:0.08em;${F}">Pending</td>`;
-    h += `<td style="font-size:10px;color:#94a3b8;padding-left:4px;${F}">\u2014 ${pending.length}</td>`;
+    h += `<td style="font-size:10px;font-weight:700;color:#0f172a;text-transform:uppercase;letter-spacing:0.08em;${F}">Pending</td>`;
+    h += `<td style="font-size:10px;color:#374151;padding-left:4px;${F}">\u2014 ${pending.length}</td>`;
     h += `</tr></table></td></tr>`;
-    h += `<![endif]-->`;
-    h += `<!--[if !mso]><!-->`;
-    h += `<tr><td colspan="2" style="background-color:#0f172a;padding:9px 32px;border-bottom:2px solid #334155;">`;
-    h += `<table cellpadding="0" cellspacing="0" border="0"><tr>`;
-    h += `<td style="font-size:10px;font-weight:700;color:#ffffff;text-transform:uppercase;letter-spacing:0.08em;${F}">Pending</td>`;
-    h += `<td style="font-size:10px;color:#94a3b8;padding-left:4px;${F}">\u2014 ${pending.length}</td>`;
-    h += `</tr></table></td></tr>`;
-    h += `<!--<![endif]-->`;
 
+    // 3-column table for pending orders
+    h += `<tr><td colspan="2" style="padding:0 32px;">`;
+    h += `<table width="100%" cellpadding="0" cellspacing="0" border="0">`;
     pending.forEach((o, i) => {
       const isLast = i === pending.length - 1;
       const cust = smartTitleCase(o.customerName ?? cleanSubject(o.subject));
       const note = getPendingNote(o);
+      const bb = isLast ? "" : "border-bottom:1px solid #f1f5f9;";
 
-      // Row 1 — customer name + note
+      // Row 1 — serial + name + note
       h += `<tr>`;
-      h += `<td style="font-size:13px;color:#0f172a;padding:11px 0 3px 32px;${F}">${cust}</td>`;
-      h += `<td style="font-size:11px;color:#0f172a;text-align:right;vertical-align:top;white-space:nowrap;padding:12px 32px 3px 16px;${F}">${note.text}</td>`;
+      h += `<td width="24" style="font-size:11px;color:#9ca3af;padding:11px 0 3px 0;vertical-align:top;${F}">${i + 1}.</td>`;
+      h += `<td style="font-size:13px;color:#0f172a;padding:11px 0 3px 4px;vertical-align:top;${F}">${cust}</td>`;
+      h += `<td width="120" style="font-size:11px;color:#0f172a;text-align:right;vertical-align:top;white-space:nowrap;padding:12px 0 3px 16px;${F}">${note}</td>`;
       h += `</tr>`;
 
       // Row 2 — customer code
       if (o.customerCode) {
-        h += `<tr><td colspan="2" style="font-size:11px;color:#94a3b8;padding:0 32px 11px;${CM}">${o.customerCode}</td></tr>`;
-      }
-
-      // Divider between orders
-      if (!isLast) {
-        h += `<tr><td colspan="2" style="height:1px;background-color:#f1f5f9;font-size:0;line-height:0;">&nbsp;</td></tr>`;
+        h += `<tr>`;
+        h += `<td style="font-size:0;line-height:0;">&nbsp;</td>`;
+        h += `<td colspan="2" style="font-size:11px;color:#94a3b8;padding:0 0 11px 4px;${bb}${CM}">${nolink(o.customerCode, "#94a3b8")}</td>`;
+        h += `</tr>`;
+      } else if (bb) {
+        h += `<tr><td colspan="3" style="height:1px;font-size:0;line-height:0;${bb}">&nbsp;</td></tr>`;
       }
     });
+    h += `</table></td></tr>`;
 
     // Pending note
     h += `<tr><td colspan="2" style="font-size:11px;color:#94a3b8;padding:4px 32px 18px;line-height:1.6;${F}">We will process these orders in tomorrow\u2019s first slot. Kindly inform your dealers.</td></tr>`;
