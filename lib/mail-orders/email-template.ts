@@ -50,8 +50,8 @@ export function buildSlotSummaryHTML(
 
   // ── Helpers ──
 
-  function nolink(text: string, color: string): string {
-    return `<a href="#" style="color:${color};text-decoration:none;">${text}</a>`;
+  function breakNum(text: string): string {
+    return text.replace(/(\d{3,4})(?=\d)/g, "$1&thinsp;");
   }
 
   function fmtDate(d: string): string {
@@ -151,14 +151,12 @@ export function buildSlotSummaryHTML(
   h += `<tr><td style="font-size:17px;font-weight:700;color:#0f172a;padding:0 0 4px 32px;${F}">${slotName} Slot Summary</td></tr>`;
   h += `<tr><td style="font-size:11px;color:#94a3b8;padding:0 0 20px 32px;${F}">${longDate}</td></tr>`;
   h += `</table></td>`;
-  // Right column — teal count box
-  h += `<td style="vertical-align:middle;text-align:right;padding:24px 32px 20px 16px;white-space:nowrap;">`;
-  h += `<table cellpadding="0" cellspacing="0" border="0" align="right"><tr>`;
-  h += `<td style="background-color:#0d9488;padding:10px 16px;text-align:center;${F}">`;
-  h += `<table cellpadding="0" cellspacing="0" border="0">`;
-  h += `<tr><td style="font-size:22px;font-weight:700;color:#ffffff;text-align:center;line-height:1;${F}">${totalCount}</td></tr>`;
-  h += `<tr><td style="font-size:9px;color:#ccfbf1;text-align:center;text-transform:uppercase;letter-spacing:0.07em;padding-top:3px;${F}">Orders</td></tr>`;
-  h += `</table></td></tr></table></td>`;
+  // Right column — teal count, minimal
+  h += `<td style="vertical-align:top;text-align:right;padding:24px 32px 20px 16px;white-space:nowrap;">`;
+  h += `<table cellpadding="0" cellspacing="0" border="0" align="right">`;
+  h += `<tr><td style="font-size:28px;font-weight:700;color:#0d9488;text-align:right;line-height:1;${F}">${totalCount}</td></tr>`;
+  h += `<tr><td style="font-size:10px;color:#94a3b8;text-align:right;text-transform:uppercase;letter-spacing:0.06em;${F}">orders</td></tr>`;
+  h += `</table></td>`;
   h += `</tr>`;
   // Header border
   h += `<tr><td colspan="2" style="height:1px;background-color:#e2e8f0;font-size:0;line-height:0;">&nbsp;</td></tr>`;
@@ -180,11 +178,18 @@ export function buildSlotSummaryHTML(
   if (processed.length === 0) {
     h += `<tr><td colspan="2" style="font-size:11px;color:#94a3b8;padding:12px 32px 16px;${F}">No orders processed in this slot.</td></tr>`;
   } else {
+    // Sort by punchedAt descending (most recent first)
+    const sortedProcessed = [...processed].sort((a, b) => {
+      if (!a.punchedAt) return 1;
+      if (!b.punchedAt) return -1;
+      return new Date(b.punchedAt).getTime() - new Date(a.punchedAt).getTime();
+    });
+
     // 3-column table for processed orders
     h += `<tr><td colspan="2" style="padding:0 32px;">`;
     h += `<table width="100%" cellpadding="0" cellspacing="0" border="0">`;
-    processed.forEach((o, i) => {
-      const isLast = i === processed.length - 1;
+    sortedProcessed.forEach((o, i) => {
+      const isLast = i === sortedProcessed.length - 1;
       const cust = smartTitleCase(o.customerName ?? cleanSubject(o.subject));
       const isHold = o.dispatchStatus === "Hold";
       const custColor = isHold ? "#cbd5e1" : "#0f172a";
@@ -199,7 +204,7 @@ export function buildSlotSummaryHTML(
       h += `<td style="font-size:13px;color:${custColor};padding:11px 0 3px 4px;vertical-align:top;${F}">${cust}${custSuffix}${splitSuffix}</td>`;
       h += `<td width="120" style="vertical-align:top;text-align:right;white-space:nowrap;padding:11px 0 3px 16px;">`;
       h += `<table cellpadding="0" cellspacing="0" border="0" align="right">`;
-      h += `<tr><td style="font-size:13px;color:#0f172a;text-align:right;${CM}">${nolink(o.soNumber!, "#0f172a")}</td></tr>`;
+      h += `<tr><td style="font-size:13px;color:#0f172a;text-align:right;${CM}">${breakNum(o.soNumber!)}</td></tr>`;
       if (o.punchedAt) {
         h += `<tr><td style="font-size:10px;color:#9ca3af;text-align:right;${F}">${fmtTime(o.punchedAt)}</td></tr>`;
       }
@@ -210,7 +215,7 @@ export function buildSlotSummaryHTML(
       if (o.customerCode) {
         h += `<tr>`;
         h += `<td style="font-size:0;line-height:0;">&nbsp;</td>`;
-        h += `<td colspan="2" style="font-size:11px;color:${codeColor};padding:0 0 11px 4px;${bb}${CM}">${nolink(o.customerCode, codeColor)}</td>`;
+        h += `<td colspan="2" style="font-size:11px;color:${codeColor};padding:0 0 12px 4px;${bb}${CM}">${breakNum(o.customerCode)}</td>`;
         h += `</tr>`;
       } else if (bb) {
         // Add bottom border on last content row if no code
@@ -253,7 +258,7 @@ export function buildSlotSummaryHTML(
       if (group.soNumber) {
         h += `<tr>`;
         h += `<td style="font-size:0;line-height:0;">&nbsp;</td>`;
-        h += `<td colspan="2" style="font-size:11px;color:#94a3b8;padding:0 0 4px 4px;${CM}">${nolink(group.soNumber, "#94a3b8")}</td>`;
+        h += `<td colspan="2" style="font-size:11px;color:#94a3b8;padding:0 0 4px 4px;${CM}">${breakNum(group.soNumber)}</td>`;
         h += `</tr>`;
       }
 
@@ -314,7 +319,7 @@ export function buildSlotSummaryHTML(
       if (o.customerCode) {
         h += `<tr>`;
         h += `<td style="font-size:0;line-height:0;">&nbsp;</td>`;
-        h += `<td colspan="2" style="font-size:11px;color:#94a3b8;padding:0 0 11px 4px;${bb}${CM}">${nolink(o.customerCode, "#94a3b8")}</td>`;
+        h += `<td colspan="2" style="font-size:11px;color:#94a3b8;padding:0 0 12px 4px;${bb}${CM}">${breakNum(o.customerCode)}</td>`;
         h += `</tr>`;
       } else if (bb) {
         h += `<tr><td colspan="3" style="height:1px;font-size:0;line-height:0;${bb}">&nbsp;</td></tr>`;
