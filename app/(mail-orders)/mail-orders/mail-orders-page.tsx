@@ -654,6 +654,12 @@ export default function MailOrdersPage() {
       if ((e.ctrlKey || e.metaKey) && e.key === "m") {
         e.preventDefault();
         e.stopPropagation();
+        console.log("Ctrl+M fired", {
+          activeSlot,
+          completedSlot,
+          ordersCount: orders.length,
+          viewMode,
+        });
         const targetSlot = activeSlot ?? (() => {
           const slots = ["Morning", "Afternoon", "Evening", "Night"];
           for (const s of slots) {
@@ -664,6 +670,7 @@ export default function MailOrdersPage() {
           }
           return null;
         })();
+        console.log("targetSlot:", targetSlot);
         if (targetSlot) setCompletedSlot(targetSlot);
         return;
       }
@@ -1102,6 +1109,7 @@ export default function MailOrdersPage() {
       </div>
 
       {completedSlot && (
+        (() => { console.log("Modal rendering:", completedSlot); return null; })() ||
         <SlotCompletionModal
           slot={completedSlot}
           orders={orders.filter(
