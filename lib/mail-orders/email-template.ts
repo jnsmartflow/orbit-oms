@@ -28,7 +28,7 @@ export function buildSlotSummaryHTML(
   }[] = [];
 
   for (const o of orders) {
-    const custName = smartTitleCase(o.customerName ? o.customerName : cleanSubject(o.subject));
+    const custName = smartTitleCase(o.customerName ?? cleanSubject(o.subject));
     for (const line of o.lines) {
       if (line.lineStatus?.reason && line.lineStatus.found === false) {
         flaggedLines.push({
@@ -170,7 +170,7 @@ export function buildSlotSummaryHTML(
     h += `<table width="100%" cellpadding="0" cellspacing="0" border="0">`;
     processed.forEach((o, i) => {
       const isLast = i === processed.length - 1;
-      const cust = smartTitleCase(o.customerName ? o.customerName : cleanSubject(o.subject));
+      const cust = smartTitleCase(o.customerName ?? cleanSubject(o.subject));
       const isHold = o.dispatchStatus === "Hold";
       const custColor = isHold ? "#9ca3af" : "#111827";
       const custSuffix = isHold ? " *" : "";
@@ -255,7 +255,7 @@ export function buildSlotSummaryHTML(
     pending.forEach((o, i) => {
       const isLast = i === pending.length - 1;
       const bb = isLast ? "" : "border-bottom:1px solid #f3f4f6;";
-      const cust = smartTitleCase(o.customerName ? o.customerName : cleanSubject(o.subject));
+      const cust = smartTitleCase(o.customerName ?? cleanSubject(o.subject));
       const note = getPendingNote(o);
 
       h += `<tr>`;
