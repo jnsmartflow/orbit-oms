@@ -622,69 +622,26 @@ export default function MailOrdersPage() {
     return result;
   }, [groupedOrders, separatePunched, punchedVisible, recentlyPunchedIds]);
 
-  // ── Keyboard navigation ─────────────────────────────────────────────────────
+  // ── Keyboard: Ctrl+ shortcuts (separate effect — fires first, minimal deps) ──
+  // Registered on document capture phase with stopImmediatePropagation to ensure
+  // no other capture listener (sidebar, header, etc.) can swallow Ctrl+ events.
   useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      // Esc — cascading close (works even when input focused)
-      if (e.key === "Escape") {
-        if (completedSlot) {
-          handleDismissCompletion();
-          return;
-        }
-        if (openCodePopoverId !== null) {
-          setOpenCodePopoverId(null);
-          return;
-        }
-        // Reset smart copy state
-        if (smartCopyOrderId !== null) {
-          setSmartCopyOrderId(null);
-          setSmartCopyLineIdx(0);
-          return;
-        }
-        const active = document.activeElement as HTMLElement | null;
-        if (active?.tagName === "INPUT") {
-          active.blur();
-          return;
-        }
-        if (expandedId !== null) {
-          setExpandedId(null);
-          return;
-        }
-        return;
-      }
-
-      // ── Ctrl+M — Open slot completion modal (works in all modes) ────────────
-      if ((e.ctrlKey || e.metaKey) && e.key === "m") {
-        e.preventDefault();
-        e.stopPropagation();
-        const targetSlot = activeSlot ?? (() => {
-          const slots = ["Morning", "Afternoon", "Evening", "Night"];
-          for (const s of slots) {
-            const slotOrders = orders.filter(
-              o => getSlotFromTime(o.receivedAt, slotCutoffs) === s
-            );
-            if (slotOrders.length > 0) return s;
-          }
-          return null;
-        })();
-        if (targetSlot) setCompletedSlot(targetSlot);
-        return;
-      }
-
+    function onCtrlKey(e: KeyboardEvent) {
+      if (!e.ctrlKey && !e.metaKey) return;
       if (viewMode !== "table") return;
 
+      const key = e.key.toLowerCase();
       const tag = (document.activeElement?.tagName ?? "").toUpperCase();
 
-      // ── Ctrl+V — Auto-paste into SO Number input ──────────────────────────────
-      if ((e.ctrlKey || e.metaKey) && e.key === "v") {
-        // Don't intercept if already in an input
+      // ── Ctrl+V — Auto-paste into SO Number input ─────────────────────────
+      if (key === "v") {
         if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
         if (focusedId === null) return;
+        e.stopImmediatePropagation();
         const row = document.querySelector(`tr[data-order-id="${focusedId}"]`);
         if (!row) return;
         const input = row.querySelector('input[placeholder="SO Number"]') as HTMLInputElement | null;
         if (input) {
-          // Focus the input — browser will complete the native paste
           input.focus();
           input.select();
           // Don't preventDefault — let the native paste go through
@@ -692,10 +649,10 @@ export default function MailOrdersPage() {
         return;
       }
 
-      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      // ── Ctrl+C — Smart copy for SAP workflow ─────────────────────────────
+      if (key === "c") {
+        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
 
-      // ── Ctrl+C — Smart copy for SAP workflow ──────────────────────────────────
-      if ((e.ctrlKey || e.metaKey) && e.key === "c") {
         // Don't intercept if user has text selected (normal copy)
         const selection = window.getSelection();
         if (selection && selection.toString().trim().length > 0) return;
@@ -705,6 +662,7 @@ export default function MailOrdersPage() {
         if (!order) return;
 
         e.preventDefault();
+        e.stopImmediatePropagation();
 
         // State 1: copy customer code first
         if (smartCopyOrderId !== focusedId) {
@@ -736,7 +694,6 @@ export default function MailOrdersPage() {
           flashCell(focusedId, "sku");
           const nextBatch = batchIdx + 1;
           if (nextBatch >= totalBatches) {
-            // All batches done — reset
             showCopyToast(`SKUs batch ${batchIdx + 1}/${totalBatches} copied — done`, "sku");
             setSmartCopyOrderId(null);
             setSmartCopyLineIdx(0);
@@ -749,12 +706,74 @@ export default function MailOrdersPage() {
           handleCopy(order.id, order.lines);
           flashCell(focusedId, "sku");
           showCopyToast(`${matchedLines.length} SKUs copied`, "sku");
-          // No more batches — reset
           setSmartCopyOrderId(null);
           setSmartCopyLineIdx(0);
         }
         return;
       }
+    }
+
+    document.addEventListener("keydown", onCtrlKey, { capture: true });
+    return () => document.removeEventListener("keydown", onCtrlKey, { capture: true });
+  }, [viewMode, focusedId, flatOrders, smartCopyOrderId, smartCopyLineIdx, showCopyToast, flashCell, handleCopy, handleAdvanceBatch]);
+
+  // ── Keyboard: single-key navigation (table mode only) ───────────────────────
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      // Ctrl/Meta combos handled by separate effect above
+      if (e.ctrlKey || e.metaKey) return;
+
+      // Esc — cascading close (works even when input focused)
+      if (e.key === "Escape") {
+        if (completedSlot) {
+          handleDismissCompletion();
+          return;
+        }
+        if (openCodePopoverId !== null) {
+          setOpenCodePopoverId(null);
+          return;
+        }
+        // Reset smart copy state
+        if (smartCopyOrderId !== null) {
+          setSmartCopyOrderId(null);
+          setSmartCopyLineIdx(0);
+          return;
+        }
+        const active = document.activeElement as HTMLElement | null;
+        if (active?.tagName === "INPUT") {
+          active.blur();
+          return;
+        }
+        if (expandedId !== null) {
+          setExpandedId(null);
+          return;
+        }
+        return;
+      }
+
+      // E — Open slot completion / email modal (works in all modes)
+      if (e.key === "e" || e.key === "E") {
+        const tag = (document.activeElement?.tagName ?? "").toUpperCase();
+        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+        e.preventDefault();
+        const targetSlot = activeSlot ?? (() => {
+          const slots = ["Morning", "Afternoon", "Evening", "Night"];
+          for (const s of slots) {
+            const slotOrders = orders.filter(
+              o => getSlotFromTime(o.receivedAt, slotCutoffs) === s
+            );
+            if (slotOrders.length > 0) return s;
+          }
+          return null;
+        })();
+        if (targetSlot) setCompletedSlot(targetSlot);
+        return;
+      }
+
+      if (viewMode !== "table") return;
+
+      const tag = (document.activeElement?.tagName ?? "").toUpperCase();
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
 
       const key = e.key;
 
@@ -877,7 +896,7 @@ export default function MailOrdersPage() {
 
     window.addEventListener("keydown", onKeyDown, { capture: true });
     return () => window.removeEventListener("keydown", onKeyDown, { capture: true });
-  }, [flatOrders, focusedId, expandedId, handleExpand, handleCopy, handleAdvanceBatch, handleFlag, batchStates, openCodePopoverId, copiedReplyId, completedSlot, handleDismissCompletion, viewMode, smartCopyOrderId, smartCopyLineIdx, showCopyToast, flashCell, activeSlot, orders, slotCutoffs]);
+  }, [flatOrders, focusedId, expandedId, handleExpand, handleFlag, openCodePopoverId, completedSlot, handleDismissCompletion, viewMode, smartCopyOrderId, smartCopyLineIdx, activeSlot, orders, slotCutoffs]);
 
   // ── Auto-scroll focused row into view ───────────────────────────────────────
   useEffect(() => {
@@ -1006,7 +1025,7 @@ export default function MailOrdersPage() {
         shortcuts={[
           { key: "Ctrl+C", label: "Smart copy" },
           { key: "Ctrl+V", label: "Paste SO" },
-          { key: "Ctrl+M", label: "Slot email" },
+          { key: "E", label: "Slot email" },
           { key: "R", label: "Reply" },
           { key: "F", label: "Flag" },
           { key: "S", label: "SKU panel" },

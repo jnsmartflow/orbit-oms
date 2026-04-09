@@ -585,16 +585,37 @@ export function FocusModeView({
         return;
       }
 
-      // ── SO input active ───────────────────────────────────────────
-      // Ctrl+V — Auto-paste into SO Number input (works even when not focused)
-      if ((e.ctrlKey || e.metaKey) && e.key === "v") {
-        if (!isInInput && soInputRef.current) {
-          soInputRef.current.focus();
-          soInputRef.current.select();
-          // Don't preventDefault — let the native paste go through
+      // ── Ctrl+ shortcuts (before any isInInput / isAnimating guards) ──
+      if (e.ctrlKey || e.metaKey) {
+        const ck = e.key.toLowerCase();
+
+        // Ctrl+V — Auto-paste into SO Number input
+        if (ck === "v") {
+          if (!isInInput && soInputRef.current) {
+            e.stopImmediatePropagation();
+            soInputRef.current.focus();
+            soInputRef.current.select();
+            // Don't preventDefault — let the native paste go through
+          }
+          return;
         }
+
+        // Ctrl+C — Smart copy for SAP workflow
+        if (ck === "c") {
+          if (isInInput) return;
+          const selection = window.getSelection();
+          if (selection && selection.toString().trim().length > 0) return;
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          handleSmartCopy();
+          return;
+        }
+
+        // Other Ctrl+ combos — pass through to page handler
         return;
       }
+
+      // ── SO input active ───────────────────────────────────────────
 
       if (isInInput) {
         if (e.key === "Enter" && soInput.trim()) { e.preventDefault(); handleSoSubmit(); return; }
@@ -612,15 +633,6 @@ export function FocusModeView({
           setSmartCopyLineIdx(0);
           return;
         }
-        return;
-      }
-
-      // Ctrl+C — Smart copy for SAP workflow
-      if ((e.ctrlKey || e.metaKey) && e.key === "c") {
-        const selection = window.getSelection();
-        if (selection && selection.toString().trim().length > 0) return;
-        e.preventDefault();
-        handleSmartCopy();
         return;
       }
 
