@@ -50,8 +50,8 @@ export function buildSlotSummaryHTML(
 
   // ── Helpers ──
 
-  const NL = 'color:#0f172a;text-decoration:none;text-decoration-line:none;pointer-events:none;font-family:inherit;font-size:inherit;';
-  const NLM = 'color:#9ca3af;text-decoration:none;text-decoration-line:none;pointer-events:none;font-family:inherit;font-size:inherit;';
+  const NL = 'color:#0f172a;text-decoration:none;text-decoration-line:none;-webkit-text-decoration:none;border-bottom:none;border:none;outline:none;pointer-events:none;font-family:inherit;font-size:inherit;';
+  const NLM = 'color:#9ca3af;text-decoration:none;text-decoration-line:none;-webkit-text-decoration:none;border-bottom:none;border:none;outline:none;pointer-events:none;font-family:inherit;font-size:inherit;';
   function nolink(text: string, muted?: boolean): string {
     return `<a href="#" style="${muted ? NLM : NL}">${text}</a>`;
   }
@@ -157,10 +157,10 @@ export function buildSlotSummaryHTML(
   // Right column — teal count box
   h += `<td style="vertical-align:middle;text-align:right;padding:20px 32px 20px 16px;white-space:nowrap;">`;
   h += `<table cellpadding="0" cellspacing="0" border="0" align="right"><tr>`;
-  h += `<td style="background-color:#0f172a;padding:14px 24px;text-align:center;${F}">`;
+  h += `<td style="background-color:#0d9488;padding:14px 24px;text-align:center;${F}">`;
   h += `<table cellpadding="0" cellspacing="0" border="0">`;
   h += `<tr><td style="font-size:32px;font-weight:700;color:#ffffff;text-align:center;line-height:1;${F}">${totalCount}</td></tr>`;
-  h += `<tr><td style="font-size:9px;color:#94a3b8;text-align:center;text-transform:uppercase;letter-spacing:0.08em;padding-top:5px;${F}">ORDERS</td></tr>`;
+  h += `<tr><td style="font-size:9px;color:#ccfbf1;text-align:center;text-transform:uppercase;letter-spacing:0.08em;padding-top:5px;${F}">ORDERS</td></tr>`;
   h += `</table></td></tr></table></td>`;
   h += `</tr>`;
   // Header border
