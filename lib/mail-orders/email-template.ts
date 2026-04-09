@@ -181,11 +181,13 @@ export function buildSlotSummaryHTML(
       // Left — nested table: name row + code row
       h += `<td style="padding:10px 0;vertical-align:top;${bb}">`;
       h += `<table cellpadding="0" cellspacing="0" border="0">`;
-      h += `<tr><td style="padding-bottom:2px;${F}"><span style="font-size:13px;font-weight:400;color:${custColor};${F}">${cust}${custSuffix}</span>`;
-      if (splitSuffix) h += `<span style="font-size:11px;color:#9ca3af;${F}">${splitSuffix}</span>`;
-      h += `</td></tr>`;
+      if (splitSuffix) {
+        h += `<tr><td style="padding-bottom:2px;${F}"><span style="font-size:13px;font-weight:400;color:${custColor};${F}">${cust}${custSuffix}</span><span style="font-size:11px;font-weight:400;color:#9ca3af;${F}">${splitSuffix}</span></td></tr>`;
+      } else {
+        h += `<tr><td style="font-size:13px;font-weight:400;color:${custColor};padding-bottom:2px;${F}">${cust}${custSuffix}</td></tr>`;
+      }
       if (o.customerCode) {
-        h += `<tr><td style="font-size:11px;font-weight:400;color:#6b7280;${CM}padding:0;">${o.customerCode}</td></tr>`;
+        h += `<tr><td style="font-size:11px;font-weight:400;color:#6b7280;${CM}padding:0 0 10px 0;">${o.customerCode}</td></tr>`;
       }
       h += `</table></td>`;
       // Right — SO number
@@ -212,12 +214,12 @@ export function buildSlotSummaryHTML(
       h += `<table width="100%" cellpadding="0" cellspacing="0" border="0">`;
 
       // Group header — customer + SO
-      h += `<tr><td colspan="2" style="padding-bottom:7px;${F}">`;
-      h += `<span style="font-size:12px;font-weight:400;color:#6b7280;${F}">${group.customerName}</span>`;
+      h += `<tr>`;
+      h += `<td style="font-size:12px;font-weight:400;color:#6b7280;padding-bottom:7px;${F}">${group.customerName}</td>`;
       if (group.soNumber) {
-        h += `<span style="font-size:11px;color:#9ca3af;${CM}">&nbsp;\u00b7&nbsp;${group.soNumber}</span>`;
+        h += `<td style="font-size:11px;font-weight:400;color:#9ca3af;${CM}text-align:right;padding-bottom:7px;">${group.soNumber}</td>`;
       }
-      h += `</td></tr>`;
+      h += `</tr>`;
 
       // Item rows
       group.items.forEach((fl, fi) => {
@@ -232,7 +234,7 @@ export function buildSlotSummaryHTML(
         const rs = getReasonLabel(fl.reason);
 
         h += `<tr>`;
-        h += `<td style="font-size:11px;color:#6b7280;padding:4px 0;${ibb}${F}">${product}</td>`;
+        h += `<td style="font-size:11px;font-weight:400;color:#9ca3af;padding:4px 0;${ibb}${F}">${product}</td>`;
         h += `<td style="font-size:10px;font-weight:400;color:${rs.color};text-align:right;white-space:nowrap;padding:4px 0 4px 12px;${ibb}${F}">${rs.text}</td>`;
         h += `</tr>`;
       });
@@ -266,7 +268,7 @@ export function buildSlotSummaryHTML(
       }
       h += `</table></td>`;
       // Right — note
-      h += `<td style="font-size:10px;font-weight:400;color:${note.color};${F}padding:11px 0 11px 16px;vertical-align:middle;text-align:right;white-space:nowrap;${bb}">${note.text}</td>`;
+      h += `<td style="font-size:10px;font-weight:400;color:${note.color};${F}padding:11px 0 11px 12px;vertical-align:middle;text-align:right;white-space:nowrap;${bb}">${note.text}</td>`;
       h += `</tr>`;
     });
     h += `</table></td></tr>`;
