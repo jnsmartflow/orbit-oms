@@ -94,7 +94,7 @@ export function buildSlotSummaryHTML(
     const d = new Date(iso);
     const hh = String(d.getHours()).padStart(2, "0");
     const mm = String(d.getMinutes()).padStart(2, "0");
-    return `${hh}:${mm} IST`;
+    return `${hh}:${mm}`;
   }
 
   function splitPartLabel(label: string | null | undefined): string {
@@ -243,7 +243,7 @@ export function buildSlotSummaryHTML(
 
         h += `<tr>`;
         h += `<td style="font-size:11px;color:#64748b;padding:2px 0 2px 32px;${F}">${product}</td>`;
-        h += `<td style="font-size:11px;color:#0f172a;background-color:${rs.bg};text-align:right;white-space:nowrap;padding:2px 32px 2px 16px;${F}">${rs.text}</td>`;
+        h += `<td style="font-size:11px;color:#0f172a;text-align:right;white-space:nowrap;padding:2px 32px 2px 16px;${F}">${rs.text}</td>`;
         h += `</tr>`;
       });
 
