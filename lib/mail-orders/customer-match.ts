@@ -272,7 +272,55 @@ export async function matchCustomer(
   }
 }
 
-// ── Internal keyword/name matching logic ────────────────────────────────────
+// ── Token-based keyword matching engine (v2) ───────────────────────────────
+//
+// Scoring algorithm:
+//   1. Build token frequency table from all keyword rows (rarity = weight)
+//   2. Tokenize input into uppercase words, strip noise
+//   3. Score each candidate by matched token weights + bonuses/penalties
+//   4. Classify: exact (decisive winner), multiple (ambiguous), unmatched
+//
+// Special cases preserve fast paths for exact string matches and
+// substring containment of long keywords.
+
+const NOISE_WORDS = new Set([
+  "AND", "OF", "THE", "FOR", "ORDER", "MR", "MRS", "SIR",
+  "WITH", "FROM", "TO", "IN", "AT", "BY",
+]);
+
+/** Split a string into uppercase tokens, stripping noise words and punctuation */
+function tokenize(s: string): string[] {
+  return s
+    .toUpperCase()
+    .split(/[\s&.,\-:]+/)
+    .map(t => t.replace(/[^A-Z0-9/]/g, ""))
+    .filter(t => t.length > 0 && !NOISE_WORDS.has(t));
+}
+
+/** Simple Levenshtein distance for short strings (area fuzzy match) */
+function levenshtein(a: string, b: string): number {
+  const m = a.length, n = b.length;
+  if (Math.abs(m - n) > 1) return 2; // early exit — distance > 1
+  const dp: number[][] = Array.from({ length: m + 1 }, (_, i) =>
+    Array.from({ length: n + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0))
+  );
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = a[i - 1] === b[j - 1]
+        ? dp[i - 1][j - 1]
+        : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+    }
+  }
+  return dp[m][n];
+}
+
+/** Check if two tokens match with area-level fuzziness (exact, prefix, or edit distance ≤ 1) */
+function fuzzyAreaMatch(token: string, area: string): boolean {
+  if (token.length < 4 || area.length < 4) return token === area;
+  if (token === area) return true;
+  if (token.startsWith(area) || area.startsWith(token)) return true;
+  return levenshtein(token, area) <= 1;
+}
 
 async function matchByKeywords(name: string): Promise<CustomerMatchResult> {
   const rows = await prisma.mo_customer_keywords.findMany();
@@ -280,59 +328,94 @@ async function matchByKeywords(name: string): Promise<CustomerMatchResult> {
 
   if (!nameUpper) return UNMATCHED;
 
-  // Find candidates and score them
-  const scored: { row: (typeof rows)[number]; score: number }[] = [];
+  // ── Special case: exact string match (fast path, score 200) ──────────
+  for (const row of rows) {
+    if (
+      nameUpper === row.keyword.trim().toUpperCase() ||
+      nameUpper === row.customerName.trim().toUpperCase()
+    ) {
+      return {
+        customerCode: row.customerCode,
+        customerName: row.customerName,
+        customerMatchStatus: "exact",
+        customerCandidates: null,
+      };
+    }
+  }
+
+  // ── Step 1: Build token frequency table (rarity weighting) ───────────
+  // Count how many unique customerCodes each token appears in.
+  const tokenCustomerSets = new Map<string, Set<string>>();
+  for (const row of rows) {
+    const allTokens = [
+      ...tokenize(row.customerName),
+      ...tokenize(row.keyword),
+    ];
+    const unique = new Set(allTokens);
+    for (const t of Array.from(unique)) {
+      let s = tokenCustomerSets.get(t);
+      if (!s) { s = new Set(); tokenCustomerSets.set(t, s); }
+      s.add(row.customerCode);
+    }
+  }
+
+  function tokenWeight(t: string): number {
+    const count = tokenCustomerSets.get(t)?.size ?? 0;
+    if (count <= 2) return 10;  // very rare — area names, unique words
+    if (count <= 5) return 5;   // rare
+    if (count <= 15) return 3;  // moderate
+    return 1;                   // common — HARDWARE, PAINTS, COLOUR
+  }
+
+  // ── Step 2: Tokenize input ───────────────────────────────────────────
+  const inputTokens = tokenize(nameUpper);
+  if (inputTokens.length === 0) return UNMATCHED;
+
+  // ── Step 3: Score each candidate row ─────────────────────────────────
+  // Best score per customerCode (one customer can have multiple keyword rows)
+  const bestPerCode = new Map<string, { row: (typeof rows)[number]; score: number }>();
 
   for (const row of rows) {
+    const kwTokens = tokenize(row.keyword);
+    const cnTokens = tokenize(row.customerName);
+    const areaTokens = row.area ? tokenize(row.area) : [];
+
+    // Score against keyword tokens and customerName tokens, take the better one
+    const kwScore = scoreTokens(inputTokens, kwTokens, areaTokens, tokenWeight);
+    const cnScore = scoreTokens(inputTokens, cnTokens, areaTokens, tokenWeight);
+    let score = Math.max(kwScore, cnScore);
+
+    // ── Substring containment bonuses ──────────────────────────────
     const kwUpper = row.keyword.trim().toUpperCase();
     const cnUpper = row.customerName.trim().toUpperCase();
 
-    let bestScore = -1;
+    // Input contains full keyword (keyword ≥ 10 chars)
+    if (kwUpper.length >= 10 && nameUpper.includes(kwUpper)) score += 15;
+    else if (cnUpper.length >= 10 && nameUpper.includes(cnUpper)) score += 15;
 
-    // keyword matches
-    if (nameUpper === kwUpper) {
-      bestScore = Math.max(bestScore, 100);
-    }
-    if (nameUpper.includes(kwUpper) && kwUpper.length > 0) {
-      bestScore = Math.max(bestScore, kwUpper.length);
-    }
-    if (kwUpper.includes(nameUpper) && nameUpper.length > 0) {
-      bestScore = Math.max(bestScore, nameUpper.length - 10);
-    }
+    // Keyword contains full input (input ≥ 8 chars)
+    if (nameUpper.length >= 8 && kwUpper.includes(nameUpper)) score += 10;
+    else if (nameUpper.length >= 8 && cnUpper.includes(nameUpper)) score += 10;
 
-    // customerName matches
-    if (nameUpper === cnUpper) {
-      bestScore = Math.max(bestScore, 90);
-    }
-    if (nameUpper.includes(cnUpper) && cnUpper.length > 0) {
-      bestScore = Math.max(bestScore, cnUpper.length - 5);
-    }
-    if (cnUpper.includes(nameUpper) && nameUpper.length > 0) {
-      bestScore = Math.max(bestScore, nameUpper.length - 15);
-    }
-
-    if (bestScore > 0) {
-      scored.push({ row, score: bestScore });
+    if (score > 0) {
+      const existing = bestPerCode.get(row.customerCode);
+      if (!existing || score > existing.score) {
+        bestPerCode.set(row.customerCode, { row, score });
+      }
     }
   }
 
-  if (scored.length === 0) return UNMATCHED;
+  // ── Step 4: Rank and classify ────────────────────────────────────────
+  const deduped = Array.from(bestPerCode.values()).sort((a, b) => b.score - a.score);
 
-  // Sort by score DESC
-  scored.sort((a, b) => b.score - a.score);
+  if (deduped.length === 0) return UNMATCHED;
 
-  // Deduplicate by customerCode — keep highest score per code
-  const seen = new Set<string>();
-  const deduped: typeof scored = [];
-  for (const entry of scored) {
-    if (!seen.has(entry.row.customerCode)) {
-      seen.add(entry.row.customerCode);
-      deduped.push(entry);
-    }
-  }
+  const topScore = deduped[0].score;
+  const secondScore = deduped.length > 1 ? deduped[1].score : 0;
+  const topMatchedRatio = getMatchedRatio(inputTokens, deduped[0].row, tokenize);
 
-  // 1 unique code → exact
-  if (deduped.length === 1) {
+  // Exact: score ≥ 15, at least 1.5× second, and ≥ 50% input tokens matched
+  if (topScore >= 15 && topScore >= secondScore * 1.5 && topMatchedRatio >= 0.5) {
     return {
       customerCode: deduped[0].row.customerCode,
       customerName: deduped[0].row.customerName,
@@ -341,29 +424,107 @@ async function matchByKeywords(name: string): Promise<CustomerMatchResult> {
     };
   }
 
-  // 2+ codes — check if top candidate is decisive
-  if (deduped[0].score >= 90 && deduped[1].score < 50) {
+  // Multiple: score ≥ 8 but not decisive
+  if (topScore >= 8) {
+    const candidates = deduped.slice(0, 10).map((e) => ({
+      code: e.row.customerCode,
+      name: e.row.customerName,
+      area: e.row.area,
+      deliveryType: e.row.deliveryType,
+      route: e.row.route,
+    }));
     return {
-      customerCode: deduped[0].row.customerCode,
-      customerName: deduped[0].row.customerName,
-      customerMatchStatus: "exact",
-      customerCandidates: null,
+      customerCode: null,
+      customerName: null,
+      customerMatchStatus: "multiple",
+      customerCandidates: JSON.stringify(candidates),
     };
   }
 
-  // Multiple candidates
-  const candidates = deduped.slice(0, 10).map((e) => ({
-    code: e.row.customerCode,
-    name: e.row.customerName,
-    area: e.row.area,
-    deliveryType: e.row.deliveryType,
-    route: e.row.route,
-  }));
+  // Unmatched: top score < 8
+  return UNMATCHED;
+}
 
-  return {
-    customerCode: null,
-    customerName: null,
-    customerMatchStatus: "multiple",
-    customerCandidates: JSON.stringify(candidates),
-  };
+/** Calculate the ratio of input tokens that match any token in the candidate row */
+function getMatchedRatio(
+  inputTokens: string[],
+  row: { keyword: string; customerName: string },
+  tokenizeFn: (s: string) => string[],
+): number {
+  const candidateTokens = new Set([
+    ...tokenizeFn(row.keyword),
+    ...tokenizeFn(row.customerName),
+  ]);
+  const matched = inputTokens.filter(t => candidateTokens.has(t)).length;
+  return inputTokens.length > 0 ? matched / inputTokens.length : 0;
+}
+
+/**
+ * Score input tokens against candidate tokens.
+ *
+ * Base score = sum of rarity weights for matched tokens.
+ * Bonuses: +5 first-token match, +3 per consecutive pair, +8 area match, +3 length match.
+ * Penalties: -5 if < 50% input matched, -3 if < 50% candidate matched.
+ */
+function scoreTokens(
+  inputTokens: string[],
+  candidateTokens: string[],
+  areaTokens: string[],
+  weightFn: (t: string) => number,
+): number {
+  if (candidateTokens.length === 0) return 0;
+
+  const candidateSet = new Set(candidateTokens);
+  const inputSet = new Set(inputTokens);
+
+  // Base score: sum of weights for each input token that matches a candidate token
+  let score = 0;
+  const matchedInput: boolean[] = inputTokens.map(t => {
+    if (candidateSet.has(t)) { score += weightFn(t); return true; }
+    return false;
+  });
+
+  if (score === 0) return 0;
+
+  // +5 first meaningful token match
+  if (inputTokens.length > 0 && candidateTokens.length > 0 &&
+      inputTokens[0] === candidateTokens[0]) {
+    score += 5;
+  }
+
+  // +3 per consecutive matched token pair in input that also appears consecutive in candidate
+  for (let i = 0; i < inputTokens.length - 1; i++) {
+    if (!matchedInput[i] || !matchedInput[i + 1]) continue;
+    const a = inputTokens[i], b = inputTokens[i + 1];
+    for (let j = 0; j < candidateTokens.length - 1; j++) {
+      if (candidateTokens[j] === a && candidateTokens[j + 1] === b) {
+        score += 3;
+        break;
+      }
+    }
+  }
+
+  // +8 area match (any input token fuzzy-matches an area token)
+  if (areaTokens.length > 0) {
+    for (const it of inputTokens) {
+      if (areaTokens.some(at => fuzzyAreaMatch(it, at))) {
+        score += 8;
+        break; // only one area bonus per candidate
+      }
+    }
+  }
+
+  // +3 token count match
+  if (inputTokens.length === candidateTokens.length) {
+    score += 3;
+  }
+
+  // Penalties
+  const inputMatchCount = matchedInput.filter(Boolean).length;
+  const candidateMatchCount = candidateTokens.filter(t => inputSet.has(t)).length;
+
+  if (inputMatchCount / inputTokens.length < 0.5) score -= 5;
+  if (candidateMatchCount / candidateTokens.length < 0.5) score -= 3;
+
+  return Math.max(0, score);
 }
