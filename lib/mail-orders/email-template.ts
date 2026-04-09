@@ -1,5 +1,5 @@
 import type { MoOrder } from "./types";
-import { smartTitleCase } from "./utils";
+import { cleanSubject, smartTitleCase } from "./utils";
 
 /**
  * Build an HTML email summarising a slot's orders for a given SO.
@@ -28,7 +28,7 @@ export function buildSlotSummaryHTML(
   }[] = [];
 
   for (const o of orders) {
-    const custName = smartTitleCase(o.customerName ?? o.subject);
+    const custName = smartTitleCase(o.customerName ? o.customerName : cleanSubject(o.subject));
     for (const line of o.lines) {
       if (line.lineStatus?.reason && line.lineStatus.found === false) {
         flaggedLines.push({
@@ -69,23 +69,23 @@ export function buildSlotSummaryHTML(
     return clean.split(/\s+/)[0] || clean;
   }
 
-  function getPendingNote(order: MoOrder): { text: string; color: string } {
+  function getPendingNote(order: MoOrder): { text: string; color: string; bg: string } {
     const combined = [order.remarks, order.billRemarks, order.deliveryRemarks]
       .filter(Boolean).join(" ").toLowerCase();
     if (/truck|transport|lorry|vehicle/.test(combined)) {
-      return { text: "Awaiting transport", color: "#d97706" };
+      return { text: "Awaiting transport", color: "#92400e", bg: "#fef3c7" };
     }
-    return { text: "Will process tomorrow", color: "#9ca3af" };
+    return { text: "Will process tomorrow", color: "#6b7280", bg: "#f1f5f9" };
   }
 
-  function getReasonLabel(reason: string): { text: string; color: string } {
+  function getReasonLabel(reason: string): { text: string; color: string; bg: string } {
     switch (reason) {
-      case "out_of_stock": return { text: "Out of stock", color: "#dc2626" };
-      case "wrong_pack": return { text: "Wrong pack", color: "#d97706" };
-      case "discontinued": return { text: "Discontinued", color: "#6b7280" };
-      case "other_depot": return { text: "Other depot", color: "#6b7280" };
-      case "other": return { text: "Other", color: "#9ca3af" };
-      default: return { text: reason, color: "#9ca3af" };
+      case "out_of_stock": return { text: "Out of stock", color: "#991b1b", bg: "#fee2e2" };
+      case "wrong_pack": return { text: "Wrong pack", color: "#92400e", bg: "#fef3c7" };
+      case "discontinued": return { text: "Discontinued", color: "#6b7280", bg: "#f1f5f9" };
+      case "other_depot": return { text: "Other depot", color: "#6b7280", bg: "#f1f5f9" };
+      case "other": return { text: "Other", color: "#6b7280", bg: "#f1f5f9" };
+      default: return { text: reason, color: "#6b7280", bg: "#f1f5f9" };
     }
   }
 
@@ -170,7 +170,7 @@ export function buildSlotSummaryHTML(
     h += `<table width="100%" cellpadding="0" cellspacing="0" border="0">`;
     processed.forEach((o, i) => {
       const isLast = i === processed.length - 1;
-      const cust = smartTitleCase(o.customerName ?? o.subject);
+      const cust = smartTitleCase(o.customerName ? o.customerName : cleanSubject(o.subject));
       const isHold = o.dispatchStatus === "Hold";
       const custColor = isHold ? "#9ca3af" : "#111827";
       const custSuffix = isHold ? " *" : "";
@@ -235,7 +235,7 @@ export function buildSlotSummaryHTML(
 
         h += `<tr>`;
         h += `<td style="font-size:11px;font-weight:400;color:#9ca3af;padding:4px 0;${ibb}${F}">${product}</td>`;
-        h += `<td style="font-size:10px;font-weight:400;color:${rs.color};text-align:right;white-space:nowrap;padding:4px 0 4px 12px;${ibb}${F}">${rs.text}</td>`;
+        h += `<td style="text-align:right;white-space:nowrap;padding:4px 0 4px 12px;${ibb}"><span style="font-size:10px;font-weight:400;color:${rs.color};background-color:${rs.bg};padding:2px 7px;border-radius:3px;${F}">${rs.text}</span></td>`;
         h += `</tr>`;
       });
 
@@ -255,7 +255,7 @@ export function buildSlotSummaryHTML(
     pending.forEach((o, i) => {
       const isLast = i === pending.length - 1;
       const bb = isLast ? "" : "border-bottom:1px solid #f3f4f6;";
-      const cust = smartTitleCase(o.customerName ?? o.subject);
+      const cust = smartTitleCase(o.customerName ? o.customerName : cleanSubject(o.subject));
       const note = getPendingNote(o);
 
       h += `<tr>`;
@@ -268,7 +268,7 @@ export function buildSlotSummaryHTML(
       }
       h += `</table></td>`;
       // Right — note
-      h += `<td style="font-size:10px;font-weight:400;color:${note.color};${F}padding:11px 0 11px 12px;vertical-align:middle;text-align:right;white-space:nowrap;${bb}">${note.text}</td>`;
+      h += `<td style="padding:11px 0 11px 12px;vertical-align:middle;text-align:right;white-space:nowrap;${bb}"><span style="font-size:10px;font-weight:400;color:${note.color};background-color:${note.bg};padding:2px 7px;border-radius:3px;${F}">${note.text}</span></td>`;
       h += `</tr>`;
     });
     h += `</table></td></tr>`;
