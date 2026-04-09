@@ -310,16 +310,16 @@ export function buildSlotSummaryHTML(
 
       // Row 1 — serial + name + note
       h += `<tr>`;
-      h += `<td width="24" style="font-size:11px;color:#9ca3af;padding:11px 0 3px 0;vertical-align:top;${F}">${i + 1}.</td>`;
-      h += `<td style="font-size:13px;color:#0f172a;padding:11px 0 3px 4px;vertical-align:top;${F}">${cust}</td>`;
-      h += `<td width="120" style="font-size:11px;color:#0f172a;text-align:right;vertical-align:top;white-space:nowrap;padding:12px 0 3px 16px;${F}">${note}</td>`;
+      h += `<td width="24" style="font-size:11px;color:#9ca3af;padding:11px 0 2px 0;vertical-align:top;${F}">${i + 1}.</td>`;
+      h += `<td style="font-size:13px;color:#0f172a;padding:11px 0 2px 4px;vertical-align:top;${F}">${cust}</td>`;
+      h += `<td width="120" style="font-size:11px;color:#0f172a;text-align:right;vertical-align:top;white-space:nowrap;padding:11px 0 2px 16px;${F}">${note}</td>`;
       h += `</tr>`;
 
       // Row 2 — customer code
       if (o.customerCode) {
         h += `<tr>`;
         h += `<td style="font-size:0;line-height:0;">&nbsp;</td>`;
-        h += `<td colspan="2" style="font-size:11px;color:#94a3b8;padding:0 0 12px 4px;${bb}${CM}">${o.customerCode}</td>`;
+        h += `<td colspan="2" style="font-size:11px;color:#94a3b8;padding:0 0 10px 4px;${bb}${CM}">${o.customerCode}</td>`;
         h += `</tr>`;
       } else if (bb) {
         h += `<tr><td colspan="3" style="height:1px;font-size:0;line-height:0;${bb}">&nbsp;</td></tr>`;
