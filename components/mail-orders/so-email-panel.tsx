@@ -29,7 +29,6 @@ const NOTABLE_REASONS = ["out_of_stock", "cross_delivery", "cross_material_avail
 function buildCards(orders: MoOrder[]): SoCard[] {
   const map = new Map<string, MoOrder[]>();
   for (const o of orders) {
-    if (!o.soNumber) continue;
     const key = o.soName?.toLowerCase() ?? "";
     if (!map.has(key)) map.set(key, []);
     map.get(key)!.push(o);
