@@ -141,7 +141,7 @@ export function buildSlotSummaryHTML(
   // Left
   h += `<td style="vertical-align:top;${F}">`;
   h += `<table cellpadding="0" cellspacing="0" border="0">`;
-  h += `<tr><td style="font-size:10px;font-weight:700;color:#9ca3af;letter-spacing:0.08em;text-transform:uppercase;padding-bottom:6px;${F}">JSW Dulux \u2014 Surat Depot</td></tr>`;
+  h += `<tr><td style="font-size:10px;font-weight:400;color:#9ca3af;letter-spacing:0.08em;text-transform:uppercase;padding-bottom:6px;${F}">JSW Dulux \u2014 Surat Depot</td></tr>`;
   h += `<tr><td style="font-size:18px;font-weight:700;color:#111827;letter-spacing:-1px;padding-bottom:4px;${F}">${slotName} Slot Summary</td></tr>`;
   h += `<tr><td style="font-size:11px;color:#9ca3af;${F}">${longDate}</td></tr>`;
   h += `</table></td>`;
@@ -156,7 +156,7 @@ export function buildSlotSummaryHTML(
   // ═══ SALUTATION ═══
   h += `<tr><td colspan="2" style="padding:20px 28px 18px;border-bottom:1px solid #f3f4f6;">`;
   h += `<table cellpadding="0" cellspacing="0" border="0">`;
-  h += `<tr><td style="padding-bottom:5px;${F}"><span style="font-size:13px;color:#374151;${F}">Dear </span><span style="font-size:13px;font-weight:700;color:#111827;${F}">${firstName} Sir,</span></td></tr>`;
+  h += `<tr><td style="padding-bottom:5px;${F}"><span style="font-size:13px;font-weight:400;color:#374151;${F}">Dear </span><span style="font-size:13px;font-weight:400;color:#111827;${F}">${firstName} Sir,</span></td></tr>`;
   h += `<tr><td style="font-size:12px;color:#6b7280;line-height:1.7;${F}">Please find below the ${slotName} slot summary for today.</td></tr>`;
   h += `</table></td></tr>`;
 
@@ -181,7 +181,7 @@ export function buildSlotSummaryHTML(
       // Left — nested table: name row + code row
       h += `<td style="padding:10px 0;vertical-align:top;${bb}">`;
       h += `<table cellpadding="0" cellspacing="0" border="0">`;
-      h += `<tr><td style="padding-bottom:2px;${F}"><span style="font-size:13px;font-weight:600;color:${custColor};${F}">${cust}${custSuffix}</span>`;
+      h += `<tr><td style="padding-bottom:2px;${F}"><span style="font-size:13px;font-weight:400;color:${custColor};${F}">${cust}${custSuffix}</span>`;
       if (splitSuffix) h += `<span style="font-size:11px;color:#9ca3af;${F}">${splitSuffix}</span>`;
       h += `</td></tr>`;
       if (o.customerCode) {
@@ -189,7 +189,7 @@ export function buildSlotSummaryHTML(
       }
       h += `</table></td>`;
       // Right — SO number
-      h += `<td style="font-size:14px;font-weight:700;color:#111827;${CM}padding:10px 0 10px 16px;vertical-align:top;text-align:right;white-space:nowrap;${bb}">${o.soNumber}</td>`;
+      h += `<td style="font-size:14px;font-weight:400;color:#111827;${CM}padding:10px 0 10px 16px;vertical-align:top;text-align:right;white-space:nowrap;${bb}">${o.soNumber}</td>`;
       h += `</tr>`;
     });
     h += `</table></td></tr>`;
@@ -213,7 +213,7 @@ export function buildSlotSummaryHTML(
 
       // Group header — customer + SO
       h += `<tr><td colspan="2" style="padding-bottom:7px;${F}">`;
-      h += `<span style="font-size:12px;font-weight:700;color:#111827;${F}">${group.customerName}</span>`;
+      h += `<span style="font-size:12px;font-weight:400;color:#6b7280;${F}">${group.customerName}</span>`;
       if (group.soNumber) {
         h += `<span style="font-size:11px;color:#9ca3af;${CM}">&nbsp;\u00b7&nbsp;${group.soNumber}</span>`;
       }
@@ -233,7 +233,7 @@ export function buildSlotSummaryHTML(
 
         h += `<tr>`;
         h += `<td style="font-size:11px;color:#6b7280;padding:4px 0;${ibb}${F}">${product}</td>`;
-        h += `<td style="font-size:10px;font-weight:700;color:${rs.color};text-align:right;white-space:nowrap;padding:4px 0 4px 12px;${ibb}${F}">${rs.text}</td>`;
+        h += `<td style="font-size:10px;font-weight:400;color:${rs.color};text-align:right;white-space:nowrap;padding:4px 0 4px 12px;${ibb}${F}">${rs.text}</td>`;
         h += `</tr>`;
       });
 
@@ -260,7 +260,7 @@ export function buildSlotSummaryHTML(
       // Left — nested table for name + code
       h += `<td style="padding:11px 0;vertical-align:middle;${bb}">`;
       h += `<table cellpadding="0" cellspacing="0" border="0">`;
-      h += `<tr><td style="font-size:13px;font-weight:600;color:#111827;padding:0;${F}">${cust}</td></tr>`;
+      h += `<tr><td style="font-size:13px;font-weight:400;color:#111827;padding:0;${F}">${cust}</td></tr>`;
       if (o.customerCode) {
         h += `<tr><td style="font-size:11px;font-weight:400;color:#6b7280;${CM}padding:1px 0 0 0;">${o.customerCode}</td></tr>`;
       }
@@ -285,14 +285,14 @@ export function buildSlotSummaryHTML(
   h += `<tr><td colspan="2" style="padding:14px 28px;border-bottom:1px solid #f3f4f6;${F}">`;
   h += `<span style="font-size:11px;color:#9ca3af;${F}">${totalCount} orders</span>`;
   h += `<span style="font-size:11px;color:#e5e7eb;padding:0 6px;${F}">\u00b7</span>`;
-  h += `<span style="font-size:11px;font-weight:600;color:#0d9488;${F}">${processed.length} billed</span>`;
+  h += `<span style="font-size:11px;font-weight:400;color:#0d9488;${F}">${processed.length} billed</span>`;
   if (pending.length > 0) {
     h += `<span style="font-size:11px;color:#e5e7eb;padding:0 6px;${F}">\u00b7</span>`;
-    h += `<span style="font-size:11px;font-weight:600;color:#9ca3af;${F}">${pending.length} pending</span>`;
+    h += `<span style="font-size:11px;font-weight:400;color:#9ca3af;${F}">${pending.length} pending</span>`;
   }
   if (flaggedLines.length > 0) {
     h += `<span style="font-size:11px;color:#e5e7eb;padding:0 6px;${F}">\u00b7</span>`;
-    h += `<span style="font-size:11px;font-weight:600;color:#dc2626;${F}">${flaggedLines.length} to note</span>`;
+    h += `<span style="font-size:11px;font-weight:400;color:#dc2626;${F}">${flaggedLines.length} to note</span>`;
   }
   h += `</td></tr>`;
 
@@ -302,10 +302,10 @@ export function buildSlotSummaryHTML(
   h += `<tr><td style="font-size:12px;color:#6b7280;padding-bottom:3px;${F}">Please share the SO numbers with your dealers at the earliest.</td></tr>`;
   h += `<tr><td style="font-size:12px;color:#6b7280;padding-bottom:16px;${F}">For any queries, call us directly.</td></tr>`;
   h += `<tr><td style="font-size:12px;color:#6b7280;padding-bottom:2px;${F}">Regards,</td></tr>`;
-  h += `<tr><td style="font-size:13px;font-weight:700;color:#111827;padding-bottom:2px;${F}">${senderName}</td></tr>`;
+  h += `<tr><td style="font-size:13px;font-weight:400;color:#111827;padding-bottom:2px;${F}">${senderName}</td></tr>`;
   h += `<tr><td style="font-size:11px;color:#9ca3af;padding-bottom:2px;${F}">JSW Dulux \u2014 Surat Depot</td></tr>`;
   if (senderPhone) {
-    h += `<tr><td style="font-size:11px;font-weight:600;color:#0d9488;${F}">${senderPhone}</td></tr>`;
+    h += `<tr><td style="font-size:11px;font-weight:400;color:#0d9488;${F}">${senderPhone}</td></tr>`;
   }
   h += `</table></td></tr>`;
 
