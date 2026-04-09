@@ -210,7 +210,7 @@ export function buildSlotSummaryHTML(
       const isLastGroup = gi === flaggedGroups.length - 1;
       const gpb = isLastGroup ? "padding:0 28px 20px;" : "padding:0 28px 16px;";
 
-      h += `<tr><td colspan="2" style="${gpb}">`;
+      h += `<tr><td colspan="2" style="${gpb}background-color:#ffffff;">`;
       h += `<table width="100%" cellpadding="0" cellspacing="0" border="0">`;
 
       // Group header — customer + SO
@@ -250,7 +250,7 @@ export function buildSlotSummaryHTML(
   if (pending.length > 0) {
     h += sectionLabel("Processing Tomorrow", pending.length, "#9ca3af");
 
-    h += `<tr><td colspan="2" style="padding:0 28px;">`;
+    h += `<tr><td colspan="2" style="padding:0 28px;background-color:#ffffff;">`;
     h += `<table width="100%" cellpadding="0" cellspacing="0" border="0">`;
     pending.forEach((o, i) => {
       const isLast = i === pending.length - 1;
