@@ -259,12 +259,21 @@ export function buildSlotSummaryHTML(
 
   // ═══ PENDING ═══
   if (pending.length > 0) {
-    // Label row — dark background
-    h += `<tr><td colspan="2" style="background-color:#e2e8f0;border-bottom:2px solid #475569;padding:9px 32px;">`;
+    // Label row — dark background with MSO conditional
+    h += `<!--[if mso]>`;
+    h += `<tr><td colspan="2" bgcolor="#0f172a" style="padding:9px 32px;${F}">`;
     h += `<table cellpadding="0" cellspacing="0" border="0"><tr>`;
-    h += `<td style="font-size:10px;font-weight:700;color:#0f172a;text-transform:uppercase;letter-spacing:0.08em;${F}">Pending</td>`;
-    h += `<td style="font-size:10px;color:#374151;padding-left:4px;${F}">\u2014 ${pending.length}</td>`;
+    h += `<td style="font-size:10px;font-weight:700;color:#ffffff;text-transform:uppercase;letter-spacing:0.08em;${F}">Pending</td>`;
+    h += `<td style="font-size:10px;color:#94a3b8;padding-left:4px;${F}">\u2014 ${pending.length}</td>`;
     h += `</tr></table></td></tr>`;
+    h += `<![endif]-->`;
+    h += `<!--[if !mso]><!-->`;
+    h += `<tr><td colspan="2" style="background-color:#0f172a;padding:9px 32px;border-bottom:2px solid #334155;">`;
+    h += `<table cellpadding="0" cellspacing="0" border="0"><tr>`;
+    h += `<td style="font-size:10px;font-weight:700;color:#ffffff;text-transform:uppercase;letter-spacing:0.08em;${F}">Pending</td>`;
+    h += `<td style="font-size:10px;color:#94a3b8;padding-left:4px;${F}">\u2014 ${pending.length}</td>`;
+    h += `</tr></table></td></tr>`;
+    h += `<!--<![endif]-->`;
 
     pending.forEach((o, i) => {
       const isLast = i === pending.length - 1;
@@ -274,7 +283,7 @@ export function buildSlotSummaryHTML(
       // Row 1 — customer name + note
       h += `<tr>`;
       h += `<td style="font-size:13px;color:#0f172a;padding:11px 0 3px 32px;${F}">${cust}</td>`;
-      h += `<td style="font-size:11px;color:#0f172a;background-color:${note.bg};text-align:right;vertical-align:top;white-space:nowrap;padding:12px 32px 3px 16px;${F}">${note.text}</td>`;
+      h += `<td style="font-size:11px;color:#0f172a;text-align:right;vertical-align:top;white-space:nowrap;padding:12px 32px 3px 16px;${F}">${note.text}</td>`;
       h += `</tr>`;
 
       // Row 2 — customer code
