@@ -170,6 +170,112 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Learned keyword auto-match check
+    if (customerMatch.customerMatchStatus !== "exact") {
+      let learnedText = subject.trim();
+      learnedText = learnedText.replace(/^(?:(?:fw|fwd|re)\s*:\s*)+/i, "").trim();
+      learnedText = learnedText.replace(/^urgent\s+/i, "").trim();
+      if (/^order\s*:/i.test(learnedText)) {
+        learnedText = learnedText.replace(/^order\s*:\s*/i, "").trim();
+      } else if (/^order\s+for\s+/i.test(learnedText)) {
+        learnedText = learnedText.replace(/^order\s+for\s+/i, "").trim();
+      } else if (/^order-\d+\s*/i.test(learnedText)) {
+        learnedText = learnedText.replace(/^order-\d+\s*/i, "").trim();
+      } else if (/^order\s+-\s*/i.test(learnedText)) {
+        learnedText = learnedText.replace(/^order\s+-\s*/i, "").trim();
+      } else if (/^order\s+/i.test(learnedText)) {
+        learnedText = learnedText.replace(/^order\s+/i, "").trim();
+      }
+      learnedText = learnedText.replace(/\s*-\s*order$/i, "").trim();
+      learnedText = learnedText.replace(/\.+$/, "").trim();
+      // Strip customer codes (leading/trailing digits)
+      learnedText = learnedText.replace(/^\d{4,}\s+/, "").trim();
+      learnedText = learnedText.replace(/\s+\d{4,}$/, "").trim();
+      learnedText = learnedText.replace(/\s*\(\d{4,}\)\s*/, " ").trim();
+      learnedText = learnedText.toUpperCase().replace(/\s{2,}/g, " ").trim();
+
+      if (learnedText.length >= 3) {
+        const learnedRows = await prisma.mo_learned_customers.findMany({
+          where: { normalizedText: learnedText },
+        });
+
+        if (learnedRows.length > 0) {
+          const best = learnedRows.reduce((a, b) =>
+            a.hitCount > b.hitCount ? a : b
+          );
+
+          let operators: number[] = [];
+          try { operators = JSON.parse(best.operators); } catch {}
+          const uniqueOps = new Set(operators).size;
+
+          const hasConflict = learnedRows.some(
+            (r) => r.customerCode !== best.customerCode && r.hitCount >= 2
+          );
+
+          const codeExists = await prisma.mo_customer_keywords.findFirst({
+            where: { customerCode: best.customerCode },
+          });
+
+          // AUTO-MATCH if all guards pass
+          if (
+            best.hitCount >= 3 &&
+            uniqueOps >= 2 &&
+            !hasConflict &&
+            codeExists
+          ) {
+            customerMatch = {
+              customerCode: best.customerCode,
+              customerName: codeExists.customerName,
+              customerMatchStatus: "exact",
+              customerCandidates: null,
+            };
+            console.log(
+              `[Customer Match] Learned auto-match: "${learnedText}" → ${best.customerCode} (hit=${best.hitCount}, ops=${uniqueOps})`,
+            );
+          }
+          // BOOST: upgrade unmatched to multiple so operator sees learned candidate
+          else if (
+            customerMatch.customerMatchStatus === "unmatched" &&
+            best.hitCount >= 1 &&
+            codeExists
+          ) {
+            const candidates = learnedRows
+              .filter((r) => r.hitCount >= 1)
+              .slice(0, 5)
+              .map((r) => ({
+                code: r.customerCode,
+                name: "",
+                area: "" as string | null,
+                deliveryType: "" as string | null,
+                route: "" as string | null,
+              }));
+
+            for (const c of candidates) {
+              const info = await prisma.mo_customer_keywords.findFirst({
+                where: { customerCode: c.code },
+              });
+              if (info) {
+                c.name = info.customerName;
+                c.area = info.area;
+                c.deliveryType = info.deliveryType;
+                c.route = info.route;
+              }
+            }
+
+            customerMatch = {
+              customerCode: null,
+              customerName: null,
+              customerMatchStatus: "multiple",
+              customerCandidates: JSON.stringify(candidates),
+            };
+            console.log(
+              `[Customer Match] Learned boost: "${learnedText}" → showing ${candidates.length} learned candidates`,
+            );
+          }
+        }
+      }
+    }
+
     console.log(
       `[Customer Match] "${customerInput}" → ${customerMatch.customerMatchStatus}` +
         (customerMatch.customerCode ? ` (${customerMatch.customerCode})` : "") +

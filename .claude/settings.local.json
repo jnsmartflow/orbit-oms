@@ -79,7 +79,8 @@
       "Bash(grep -v \":0$\")",
       "Bash(mkdir -p \"C:/Users/HP/OneDrive/VS Code/orbit-oms/app/api/mail-orders/[id]/punch\")",
       "Bash(mkdir -p \"C:/Users/HP/OneDrive/VS Code/orbit-oms/app/api/mail-orders/lines/[lineId]/resolve\")",
-      "Bash(echo \"EXIT: $?\")"
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(cp:*)"
     ]
   }
 }

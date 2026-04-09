@@ -123,6 +123,21 @@ export async function fetchSlotCutoffs(): Promise<SlotCutoffs> {
   return res.json();
 }
 
+export async function learnCustomer(
+  orderId: number,
+  customerCode: string,
+): Promise<void> {
+  try {
+    await fetch("/api/mail-orders/learn-customer", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ orderId, customerCode }),
+    });
+  } catch (err) {
+    console.error("[learnCustomer] Error:", err);
+  }
+}
+
 export async function saveLineStatus(
   lineId: number,
   data: {

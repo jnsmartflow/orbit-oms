@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
-import { fetchMailOrders, fetchSlotCutoffs, punchOrder, saveSoNumber, saveCustomer, getTodayIST, toggleLock } from "@/lib/mail-orders/api";
+import { fetchMailOrders, fetchSlotCutoffs, punchOrder, saveSoNumber, saveCustomer, getTodayIST, toggleLock, learnCustomer } from "@/lib/mail-orders/api";
 import { getSlotFromTime, groupOrdersBySlot, buildClipboardText, buildBatchClipboardText, BATCH_COPY_LIMIT, buildReplyTemplate, getOrderFlags, smartTitleCase, cleanSubject, isOdCiFlagged, getOrderVolume } from "@/lib/mail-orders/utils";
 import type { SlotCutoffs } from "@/lib/mail-orders/utils";
 import type { MoOrder, MoOrderLine } from "@/lib/mail-orders/types";
@@ -596,6 +596,14 @@ export default function MailOrdersPage() {
     );
     try {
       await saveCustomer(orderId, data);
+      // Fire-and-forget: teach the learned customer engine
+      if (
+        targetOrder &&
+        (targetOrder.customerMatchStatus === "unmatched" ||
+          targetOrder.customerMatchStatus === "multiple")
+      ) {
+        learnCustomer(orderId, data.customerCode);
+      }
     } catch {
       const d = await fetchMailOrders(selectedDate);
       setOrders(d.orders);

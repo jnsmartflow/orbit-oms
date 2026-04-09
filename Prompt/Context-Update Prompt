@@ -1,0 +1,16 @@
+Draft a context-update for this session. 
+
+Rules:
+- File name: context-update-v{N}.md
+- Current state ONLY — no "was X, changed to Y"
+- Max 50 lines for a small session, max 150 for a big one
+- Sections needed:
+  1. SCHEMA CHANGES (if any) — exact SQL + Prisma model changes
+  2. NEW/MODIFIED FILES — file path + one-line purpose
+  3. NEW API ENDPOINTS (if any) — method, path, auth, purpose
+  4. BUSINESS RULES ADDED — anything a future session must know
+  5. PENDING ITEMS — new items from THIS session only
+  6. CHECKLIST UPDATES — new items to add to session start checklist
+- Skip sections with no changes
+- No session narrative, no "we tried X then Y"
+- Write as if briefing someone who will never read this session

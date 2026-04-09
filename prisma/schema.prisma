@@ -1102,3 +1102,15 @@ model mo_line_status {
   line              mo_order_lines @relation(fields: [lineId], references: [id], onDelete: Cascade)
   user              users?         @relation(fields: [updatedBy], references: [id])
 }
+
+model mo_learned_customers {
+  id              Int      @id @default(autoincrement())
+  normalizedText  String
+  customerCode    String
+  hitCount        Int      @default(1)
+  operators       String   @default("[]")
+  lastConfirmedAt DateTime @default(now())
+  createdAt       DateTime @default(now())
+
+  @@unique([normalizedText, customerCode])
+}
