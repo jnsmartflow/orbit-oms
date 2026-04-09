@@ -264,7 +264,9 @@ export function buildSlotSummaryHTML(
       }
 
       // Item rows — product + status
-      group.items.forEach((fl) => {
+      group.items.forEach((fl, fi) => {
+        const isLastItem = fi === group.items.length - 1;
+        const itemPb = isLastItem ? "10px" : "2px";
         const prodBase = fl.baseColour
           ? `${fl.productName} ${smartTitleCase(fl.baseColour)}`
           : fl.productName;
@@ -275,8 +277,8 @@ export function buildSlotSummaryHTML(
 
         h += `<tr>`;
         h += `<td style="font-size:0;line-height:0;">&nbsp;</td>`;
-        h += `<td style="font-size:11px;color:#64748b;padding:2px 0 2px 4px;${F}">${product}</td>`;
-        h += `<td width="120" style="font-size:11px;color:#0f172a;text-align:right;white-space:nowrap;padding:2px 0 2px 16px;${F}">${rs}</td>`;
+        h += `<td style="font-size:11px;color:#374151;padding:2px 0 ${itemPb} 4px;${F}">${product}</td>`;
+        h += `<td width="120" style="font-size:11px;color:#0f172a;text-align:right;white-space:nowrap;padding:2px 0 ${itemPb} 16px;${F}">${rs}</td>`;
         h += `</tr>`;
       });
 
