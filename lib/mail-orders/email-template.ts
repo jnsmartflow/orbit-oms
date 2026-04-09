@@ -99,7 +99,7 @@ export function buildSlotSummaryHTML(
     const d = new Date(iso);
     const hh = String(d.getHours()).padStart(2, "0");
     const mm = String(d.getMinutes()).padStart(2, "0");
-    return `${hh}:${mm}`;
+    return `${hh}&#8203;:${mm}`;
   }
 
   function splitPartLabel(label: string | null | undefined): string {
@@ -155,7 +155,7 @@ export function buildSlotSummaryHTML(
   h += `</table></td>`;
   // Right column — teal count box
   h += `<td style="vertical-align:middle;text-align:right;padding:20px 32px 20px 16px;white-space:nowrap;">`;
-  h += `<table cellpadding="0" cellspacing="0" border="0" align="right"><tr>`;
+  h += `<table cellpadding="0" cellspacing="0" border="0"><tr>`;
   h += `<td style="background-color:#0d9488;padding:14px 24px;text-align:center;${F}">`;
   h += `<table cellpadding="0" cellspacing="0" border="0">`;
   h += `<tr><td style="font-size:32px;font-weight:700;color:#ffffff;text-align:center;line-height:1;${F}">${totalCount}</td></tr>`;
@@ -359,7 +359,7 @@ export function buildSlotSummaryHTML(
   h += `<tr><td colspan="2" style="font-size:12px;color:#0f172a;padding:0 32px 1px;${F}">${senderName}</td></tr>`;
   h += `<tr><td colspan="2" style="font-size:11px;color:#94a3b8;padding:0 32px 1px;${F}">JSW Dulux \u2014 Surat Depot</td></tr>`;
   if (senderPhone) {
-    h += `<tr><td colspan="2" style="font-size:11px;color:#0d9488;padding:0 32px 22px;${F}">${senderPhone}</td></tr>`;
+    h += `<tr><td colspan="2" style="font-size:11px;color:#0d9488;padding:0 32px 22px;${F}">${zwsp(senderPhone)}</td></tr>`;
   } else {
     h += `<tr><td colspan="2" style="height:22px;font-size:0;line-height:0;">&nbsp;</td></tr>`;
   }
