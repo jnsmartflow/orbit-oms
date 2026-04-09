@@ -96,8 +96,8 @@ export function buildSlotSummaryHTML(
     return ` (${label})`;
   }
 
-  function sectionLabel(text: string, count: number, color: string, borderColor: string): string {
-    return `<tr><td colspan="2" style="padding:20px 28px 4px;${F}"><table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="border-bottom:2px solid ${borderColor};padding-bottom:8px;"><span style="font-size:11px;font-weight:700;color:${color};text-transform:uppercase;letter-spacing:0.1em;${F}">${text}</span><span style="font-size:11px;color:#9ca3af;font-weight:400;${F}">&nbsp;\u2014 ${count}</span></td></tr></table></td></tr>`;
+  function sectionLabel(text: string, count: number, color: string): string {
+    return `<tr><td colspan="2" style="padding:20px 28px 12px;${F}"><span style="font-size:10px;font-weight:700;color:${color};text-transform:uppercase;letter-spacing:0.08em;${F}">${text}</span><span style="font-size:10px;color:#9ca3af;font-weight:400;${F}">&nbsp;\u2014 ${count}</span></td></tr>`;
   }
 
   const firstName = getFirstName(soName);
@@ -161,11 +161,13 @@ export function buildSlotSummaryHTML(
   h += `</table></td></tr>`;
 
   // ═══ BILLED ORDERS ═══
-  h += sectionLabel("Billed Orders", processed.length, "#0d9488", "#0d9488");
+  h += sectionLabel("Billed Orders", processed.length, "#0d9488");
 
   if (processed.length === 0) {
     h += `<tr><td colspan="2" style="font-size:12px;color:#9ca3af;padding:0 28px 20px;${F}">No billed orders in this slot.</td></tr>`;
   } else {
+    h += `<tr><td colspan="2" style="padding:0 28px;">`;
+    h += `<table width="100%" cellpadding="0" cellspacing="0" border="0">`;
     processed.forEach((o, i) => {
       const isLast = i === processed.length - 1;
       const cust = smartTitleCase(o.customerName ?? o.subject);
@@ -173,30 +175,28 @@ export function buildSlotSummaryHTML(
       const custColor = isHold ? "#9ca3af" : "#111827";
       const custSuffix = isHold ? " *" : "";
       const splitSuffix = splitPartLabel(o.splitLabel);
-      const padBot = isLast ? "padding-bottom:20px;" : "padding-bottom:11px;";
       const bb = isLast ? "" : "border-bottom:1px solid #f3f4f6;";
 
-      h += `<tr><td colspan="2" style="padding:0 28px;">`;
-      h += `<table width="100%" cellpadding="0" cellspacing="0" border="0" style="${bb}${padBot}">`;
       h += `<tr>`;
-      // Left — customer name with (code)
-      h += `<td style="vertical-align:middle;padding:11px 0 0 0;${F}">`;
-      h += `<span style="font-size:13px;font-weight:600;color:${custColor};${F}">${cust}${custSuffix}</span>`;
-      if (splitSuffix) {
-        h += `<span style="font-size:11px;color:#9ca3af;${F}">${splitSuffix}</span>`;
-      }
+      // Left — nested table: name row + code row
+      h += `<td style="padding:10px 0;vertical-align:top;${bb}">`;
+      h += `<table cellpadding="0" cellspacing="0" border="0">`;
+      h += `<tr><td style="font-size:13px;font-weight:600;color:${custColor};padding-bottom:2px;${F}">${cust}${custSuffix}`;
+      if (splitSuffix) h += `<span style="font-size:11px;color:#9ca3af;${F}">${splitSuffix}</span>`;
+      h += `</td></tr>`;
       if (o.customerCode) {
-        h += `<span style="font-size:12px;color:#9ca3af;${F}"> (</span>`;
-        h += `<span style="font-size:11px;font-weight:700;color:#0d9488;${CM}">${o.customerCode}</span>`;
-        h += `<span style="font-size:12px;color:#9ca3af;${F}">)</span>`;
+        h += `<tr><td style="font-size:11px;font-weight:400;color:#6b7280;${CM}padding:0;">${o.customerCode}</td></tr>`;
       }
-      h += `</td>`;
+      h += `</table></td>`;
       // Right — SO number
-      h += `<td style="vertical-align:middle;text-align:right;white-space:nowrap;padding:11px 0 0 16px;">`;
-      h += `<span style="font-size:15px;font-weight:700;color:#111827;${CM}">${o.soNumber}</span>`;
+      h += `<td style="padding:10px 0 10px 16px;vertical-align:top;text-align:right;white-space:nowrap;${bb}">`;
+      h += `<span style="font-size:14px;font-weight:700;color:#111827;${CM}">${o.soNumber}</span>`;
       h += `</td>`;
-      h += `</tr></table></td></tr>`;
+      h += `</tr>`;
     });
+    h += `</table></td></tr>`;
+    // Bottom spacing
+    h += `<tr><td colspan="2" style="height:10px;font-size:0;line-height:0;">&nbsp;</td></tr>`;
   }
 
   // ═══ DIVIDER ═══
@@ -204,7 +204,7 @@ export function buildSlotSummaryHTML(
 
   // ═══ COULD NOT SUPPLY — grouped by order ═══
   if (flaggedLines.length > 0) {
-    h += sectionLabel("Could Not Supply", flaggedLines.length, "#6b7280", "#e5e7eb");
+    h += sectionLabel("Could Not Supply", flaggedLines.length, "#6b7280");
 
     flaggedGroups.forEach((group, gi) => {
       const isLastGroup = gi === flaggedGroups.length - 1;
@@ -248,7 +248,7 @@ export function buildSlotSummaryHTML(
 
   // ═══ PROCESSING TOMORROW ═══
   if (pending.length > 0) {
-    h += sectionLabel("Processing Tomorrow", pending.length, "#9ca3af", "#e5e7eb");
+    h += sectionLabel("Processing Tomorrow", pending.length, "#9ca3af");
 
     h += `<tr><td colspan="2" style="padding:0 28px;">`;
     h += `<table width="100%" cellpadding="0" cellspacing="0" border="0">`;
@@ -262,9 +262,9 @@ export function buildSlotSummaryHTML(
       // Left — nested table for name + code
       h += `<td style="padding:11px 0;vertical-align:middle;${bb}">`;
       h += `<table cellpadding="0" cellspacing="0" border="0">`;
-      h += `<tr><td style="font-size:12px;font-weight:600;color:#111827;padding:0;${F}">${cust}</td></tr>`;
+      h += `<tr><td style="font-size:13px;font-weight:600;color:#111827;padding:0;${F}">${cust}</td></tr>`;
       if (o.customerCode) {
-        h += `<tr><td style="font-size:11px;color:#9ca3af;${CM}padding:1px 0 0 0;">${o.customerCode}</td></tr>`;
+        h += `<tr><td style="font-size:11px;font-weight:400;color:#6b7280;${CM}padding:1px 0 0 0;">${o.customerCode}</td></tr>`;
       }
       h += `</table></td>`;
       // Right — note
