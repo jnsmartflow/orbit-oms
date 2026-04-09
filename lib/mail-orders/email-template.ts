@@ -90,6 +90,13 @@ export function buildSlotSummaryHTML(
     }
   }
 
+  function fmtTime(iso: string): string {
+    const d = new Date(iso);
+    const hh = String(d.getHours()).padStart(2, "0");
+    const mm = String(d.getMinutes()).padStart(2, "0");
+    return `${hh}:${mm} IST`;
+  }
+
   function splitPartLabel(label: string | null | undefined): string {
     if (!label) return "";
     if (label === "A") return " (Part 1 of 2)";
@@ -177,7 +184,13 @@ export function buildSlotSummaryHTML(
       // Row 1 — customer name + SO number
       h += `<tr>`;
       h += `<td style="font-size:13px;color:${custColor};padding:11px 0 3px 32px;${F}">${cust}${custSuffix}${splitSuffix}</td>`;
-      h += `<td style="font-size:13px;color:#0f172a;text-align:right;vertical-align:top;white-space:nowrap;padding:11px 32px 3px 16px;${CM}">${o.soNumber}</td>`;
+      h += `<td style="vertical-align:top;text-align:right;white-space:nowrap;padding:11px 32px 3px 16px;">`;
+      h += `<table cellpadding="0" cellspacing="0" border="0" align="right">`;
+      h += `<tr><td style="font-size:13px;color:#0f172a;text-align:right;${CM}">${o.soNumber}</td></tr>`;
+      if (o.punchedAt) {
+        h += `<tr><td style="font-size:10px;color:#9ca3af;text-align:right;${F}">${fmtTime(o.punchedAt)}</td></tr>`;
+      }
+      h += `</table></td>`;
       h += `</tr>`;
 
       // Row 2 — customer code
