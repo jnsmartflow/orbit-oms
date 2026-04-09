@@ -245,7 +245,9 @@ export default function MailOrdersPage() {
         { name: "Evening", cutoff: slotCutoffs!.evening },
       ];
 
+      let triggered = false;
       for (const { name, cutoff } of slotDefs) {
+        if (triggered) break;
         const [h, m] = cutoff.split(":").map(Number);
         const cutoffMinutes = h * 60 + m + 15; // cutoff + 15 min grace
 
@@ -262,6 +264,7 @@ export default function MailOrdersPage() {
 
         localStorage.setItem(dateKey, "true");
         setCompletedSlot(name);
+        triggered = true;
         break;
       }
     }
@@ -654,12 +657,6 @@ export default function MailOrdersPage() {
       if ((e.ctrlKey || e.metaKey) && e.key === "m") {
         e.preventDefault();
         e.stopPropagation();
-        console.log("Ctrl+M fired", {
-          activeSlot,
-          completedSlot,
-          ordersCount: orders.length,
-          viewMode,
-        });
         const targetSlot = activeSlot ?? (() => {
           const slots = ["Morning", "Afternoon", "Evening", "Night"];
           for (const s of slots) {
@@ -670,7 +667,6 @@ export default function MailOrdersPage() {
           }
           return null;
         })();
-        console.log("targetSlot:", targetSlot);
         if (targetSlot) setCompletedSlot(targetSlot);
         return;
       }
@@ -1109,7 +1105,6 @@ export default function MailOrdersPage() {
       </div>
 
       {completedSlot && (
-        (() => { console.log("Modal rendering:", completedSlot); return null; })() ||
         <SlotCompletionModal
           slot={completedSlot}
           orders={orders.filter(
