@@ -156,7 +156,7 @@ export function buildSlotSummaryHTML(
   // ═══ SALUTATION ═══
   h += `<tr><td colspan="2" style="padding:20px 28px 18px;border-bottom:1px solid #f3f4f6;">`;
   h += `<table cellpadding="0" cellspacing="0" border="0">`;
-  h += `<tr><td style="font-size:13px;color:#374151;padding-bottom:5px;${F}">Dear <strong style="color:#111827;font-weight:700;">${firstName} Sir,</strong></td></tr>`;
+  h += `<tr><td style="padding-bottom:5px;${F}"><span style="font-size:13px;color:#374151;${F}">Dear </span><span style="font-size:13px;font-weight:700;color:#111827;${F}">${firstName} Sir,</span></td></tr>`;
   h += `<tr><td style="font-size:12px;color:#6b7280;line-height:1.7;${F}">Please find below the ${slotName} slot summary for today.</td></tr>`;
   h += `</table></td></tr>`;
 
@@ -181,7 +181,7 @@ export function buildSlotSummaryHTML(
       // Left — nested table: name row + code row
       h += `<td style="padding:10px 0;vertical-align:top;${bb}">`;
       h += `<table cellpadding="0" cellspacing="0" border="0">`;
-      h += `<tr><td style="font-size:13px;font-weight:600;color:${custColor};padding-bottom:2px;${F}">${cust}${custSuffix}`;
+      h += `<tr><td style="padding-bottom:2px;${F}"><span style="font-size:13px;font-weight:600;color:${custColor};${F}">${cust}${custSuffix}</span>`;
       if (splitSuffix) h += `<span style="font-size:11px;color:#9ca3af;${F}">${splitSuffix}</span>`;
       h += `</td></tr>`;
       if (o.customerCode) {
@@ -189,9 +189,7 @@ export function buildSlotSummaryHTML(
       }
       h += `</table></td>`;
       // Right — SO number
-      h += `<td style="padding:10px 0 10px 16px;vertical-align:top;text-align:right;white-space:nowrap;${bb}">`;
-      h += `<span style="font-size:14px;font-weight:700;color:#111827;${CM}">${o.soNumber}</span>`;
-      h += `</td>`;
+      h += `<td style="font-size:14px;font-weight:700;color:#111827;${CM}padding:10px 0 10px 16px;vertical-align:top;text-align:right;white-space:nowrap;${bb}">${o.soNumber}</td>`;
       h += `</tr>`;
     });
     h += `</table></td></tr>`;
@@ -268,9 +266,7 @@ export function buildSlotSummaryHTML(
       }
       h += `</table></td>`;
       // Right — note
-      h += `<td style="padding:11px 0 11px 16px;vertical-align:middle;text-align:right;white-space:nowrap;${bb}">`;
-      h += `<span style="font-size:10px;color:${note.color};${F}">${note.text}</span>`;
-      h += `</td>`;
+      h += `<td style="font-size:10px;font-weight:400;color:${note.color};${F}padding:11px 0 11px 16px;vertical-align:middle;text-align:right;white-space:nowrap;${bb}">${note.text}</td>`;
       h += `</tr>`;
     });
     h += `</table></td></tr>`;
