@@ -170,7 +170,7 @@ export function buildSlotSummaryHTML(
 
   // ═══ PROCESSED ═══
   // Label row
-  h += `<tr><td colspan="2" style="background-color:#d1fae5;border-bottom:2px solid #0d9488;padding:9px 32px;">`;
+  h += `<tr><td colspan="2" style="background-color:#f8fafc;border-bottom:2px solid #0d9488;padding:9px 32px;">`;
   h += `<table cellpadding="0" cellspacing="0" border="0"><tr>`;
   h += `<td style="font-size:10px;font-weight:700;color:#0f172a;text-transform:uppercase;letter-spacing:0.08em;${F}">Processed</td>`;
   h += `<td style="font-size:10px;color:#64748b;padding-left:4px;${F}">\u2014 ${processed.length}</td>`;
@@ -237,7 +237,7 @@ export function buildSlotSummaryHTML(
     h += `<tr><td colspan="2" style="height:1px;background-color:#e2e8f0;font-size:0;line-height:0;">&nbsp;</td></tr>`;
 
     // Label row
-    h += `<tr><td colspan="2" style="background-color:#fef3c7;border-bottom:2px solid #d97706;padding:9px 32px;">`;
+    h += `<tr><td colspan="2" style="background-color:#f8fafc;border-bottom:2px solid #b45309;padding:9px 32px;">`;
     h += `<table cellpadding="0" cellspacing="0" border="0"><tr>`;
     h += `<td style="font-size:10px;font-weight:700;color:#0f172a;text-transform:uppercase;letter-spacing:0.08em;${F}">Not Available</td>`;
     h += `<td style="font-size:10px;color:#64748b;padding-left:4px;${F}">\u2014 ${flaggedLines.length} items</td>`;
@@ -294,7 +294,7 @@ export function buildSlotSummaryHTML(
   // ═══ PENDING ═══
   if (pending.length > 0) {
     // Label row — slate background, consistent with other sections
-    h += `<tr><td colspan="2" style="background-color:#e2e8f0;border-bottom:2px solid #475569;padding:9px 32px;">`;
+    h += `<tr><td colspan="2" style="background-color:#f8fafc;border-bottom:2px solid #334155;padding:9px 32px;">`;
     h += `<table cellpadding="0" cellspacing="0" border="0"><tr>`;
     h += `<td style="font-size:10px;font-weight:700;color:#0f172a;text-transform:uppercase;letter-spacing:0.08em;${F}">Pending</td>`;
     h += `<td style="font-size:10px;color:#374151;padding-left:4px;${F}">\u2014 ${pending.length}</td>`;
