@@ -165,26 +165,40 @@ function ReasonDropdown({
         padding: 3,
       }}
     >
-      {REASON_OPTIONS.map((opt, i) =>
-        opt === null ? (
-          <div key={`div-${i}`} style={{ height: 1, background: "#f3f4f6", margin: "2px 0" }} />
-        ) : (
-          <button
-            key={opt.value}
-            onClick={() => onSelect(opt.value)}
-            style={{
-              display: "block", width: "100%", padding: "6px 10px",
-              fontSize: 11, fontWeight: 500, color: "#111827",
-              border: "none", background: "none", cursor: "pointer",
-              textAlign: "left", borderRadius: 5, transition: "background 0.08s",
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = "#f9fafb")}
-            onMouseLeave={(e) => (e.currentTarget.style.background = "none")}
-          >
-            {opt.label}
-          </button>
-        )
-      )}
+      {(() => {
+        let reasonNumber = 0;
+        return REASON_OPTIONS.map((opt, i) => {
+          if (opt === null) {
+            return <div key={`div-${i}`} style={{ height: 1, background: "#f3f4f6", margin: "2px 0" }} />;
+          }
+          reasonNumber++;
+          const num = reasonNumber;
+          return (
+            <button
+              key={opt.value}
+              onClick={() => onSelect(opt.value)}
+              style={{
+                display: "flex", alignItems: "center", gap: 6,
+                width: "100%", padding: "6px 10px",
+                fontSize: 11, fontWeight: 500, color: "#111827",
+                border: "none", background: "none", cursor: "pointer",
+                textAlign: "left", borderRadius: 5, transition: "background 0.08s",
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = "#f9fafb")}
+              onMouseLeave={(e) => (e.currentTarget.style.background = "none")}
+            >
+              <span style={{
+                fontSize: 9, fontWeight: 600, color: "#9ca3af",
+                width: 14, textAlign: "center", flexShrink: 0,
+                fontFamily: '"SF Mono", ui-monospace, monospace',
+              }}>
+                {num}
+              </span>
+              {opt.label}
+            </button>
+          );
+        });
+      })()}
     </div>
   );
 }
@@ -1303,8 +1317,8 @@ export function ReviewView({
                   data-review-line-index={idx}
                   className="transition-colors hover:bg-gray-50"
                   style={isActiveLine ? {
-                    background: "#f0fdfa",
-                    outline: "2px solid #0d9488",
+                    background: "#fefce8",
+                    outline: "2px solid #fde047",
                     outlineOffset: -2,
                   } : undefined}
                 >
