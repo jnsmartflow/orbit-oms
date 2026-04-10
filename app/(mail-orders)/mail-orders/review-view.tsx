@@ -10,9 +10,10 @@ import {
   isOdCiFlagged,
   getOrderFlags,
   getOrderVolume,
+  getPackVolumeLiters,
   buildReplyTemplate,
 } from "@/lib/mail-orders/utils";
-import { searchCustomers } from "@/lib/mail-orders/api";
+import { searchCustomers, saveLineStatus } from "@/lib/mail-orders/api";
 
 interface ReviewViewProps {
   orders: MoOrder[];           // filtered orders (by slot, search, filters)
@@ -62,6 +63,118 @@ function flagCategory(flag: string): "blocker" | "attention" | "info" {
   return "info";
 }
 
+// ── SKU Table types/helpers ────────────────────────────────────────────────
+
+type RowState = "normal" | "partial" | "not-found" | "unmatched";
+
+const REASON_OPTIONS: (string | null)[] = [
+  "Out of stock",
+  "Wrong pack",
+  "Discontinued",
+  "Other depot",
+  null, // divider
+  "Other",
+];
+
+// ── Toggle component ───────────────────────────────────────────────────────
+
+function SkuToggle({ isOn, onToggle }: { isOn: boolean; onToggle: () => void }) {
+  return (
+    <span
+      onClick={onToggle}
+      style={{
+        width: 28, height: 14, borderRadius: 7,
+        cursor: "pointer", position: "relative",
+        display: "inline-block", transition: "background 0.15s",
+        verticalAlign: "middle",
+        background: isOn ? "#16a34a" : "#d1d5db",
+      }}
+    >
+      <span style={{
+        width: 10, height: 10, borderRadius: "50%",
+        background: "#fff", position: "absolute", top: 2,
+        left: isOn ? 16 : 2,
+        transition: "left 0.12s",
+        boxShadow: "0 1px 2px rgba(0,0,0,0.08)",
+      }} />
+    </span>
+  );
+}
+
+// ── Reason Dropdown ────────────────────────────────────────────────────────
+
+function ReasonDropdown({
+  onSelect,
+  onClose,
+}: {
+  onSelect: (reason: string) => void;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  // Close on outside click
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        onClose();
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [onClose]);
+
+  // Close on Escape
+  useEffect(() => {
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        onClose();
+      }
+    }
+    document.addEventListener("keydown", handleKey, { capture: true });
+    return () => document.removeEventListener("keydown", handleKey, { capture: true });
+  }, [onClose]);
+
+  return (
+    <div
+      ref={ref}
+      style={{
+        position: "absolute",
+        top: "calc(100% + 2px)",
+        right: 0,
+        width: 148,
+        background: "#fff",
+        border: "1px solid #e5e7eb",
+        borderRadius: 8,
+        boxShadow: "0 4px 16px rgba(0,0,0,0.1)",
+        zIndex: 20,
+        padding: 3,
+      }}
+    >
+      {REASON_OPTIONS.map((reason, i) =>
+        reason === null ? (
+          <div key={`div-${i}`} style={{ height: 1, background: "#f3f4f6", margin: "2px 0" }} />
+        ) : (
+          <button
+            key={reason}
+            onClick={() => onSelect(reason)}
+            style={{
+              display: "block", width: "100%", padding: "6px 10px",
+              fontSize: 11, fontWeight: 500, color: "#111827",
+              border: "none", background: "none", cursor: "pointer",
+              textAlign: "left", borderRadius: 5, transition: "background 0.08s",
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "#f9fafb")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = "none")}
+          >
+            {reason}
+          </button>
+        )
+      )}
+    </div>
+  );
+}
+
 // ── Component ──────────────────────────────────────────────────────────────
 
 export function ReviewView({
@@ -93,6 +206,10 @@ export function ReviewView({
   const popoverRef = useRef<HTMLDivElement>(null);
   const custSearchInputRef = useRef<HTMLInputElement>(null);
 
+  // SKU table state
+  const [reasonDropdownLineId, setReasonDropdownLineId] = useState<number | null>(null);
+  const [lineStatusOverrides, setLineStatusOverrides] = useState<Map<number, { found: boolean; reason: string | null }>>(new Map());
+
   // ── Selected order ──────────────────────────────────────────────
   const selectedOrder = useMemo(() => {
     if (focusedId === null) return null;
@@ -107,6 +224,8 @@ export function ReviewView({
     setCustSearchQuery("");
     setCustSearchResults([]);
     setCustSearched(false);
+    setReasonDropdownLineId(null);
+    setLineStatusOverrides(new Map());
   }, [focusedId]);
 
   // Auto-select first pending order if none selected
@@ -299,6 +418,70 @@ export function ReviewView({
         </div>
       </div>
     );
+  }
+
+  // ── SKU table helpers ────────────────────────────────────────────
+  function getRowState(line: MoOrderLine): RowState {
+    const override = lineStatusOverrides.get(line.id);
+    if (override) {
+      if (!override.found) return "not-found";
+      // override found=true means cleared — fall through to match status
+    } else if (line.lineStatus?.found === false) {
+      return "not-found";
+    }
+    if (line.matchStatus === "partial") return "partial";
+    if (line.matchStatus === "unmatched") return "unmatched";
+    return "normal";
+  }
+
+  function getLineReason(line: MoOrderLine): string | null {
+    const override = lineStatusOverrides.get(line.id);
+    if (override) return override.reason;
+    return line.lineStatus?.reason ?? null;
+  }
+
+  async function handleToggle(line: MoOrderLine) {
+    const currentState = getRowState(line);
+    if (currentState === "not-found") {
+      // Toggle ON — clear the not-found status
+      setLineStatusOverrides(prev => {
+        const next = new Map(prev);
+        next.set(line.id, { found: true, reason: null });
+        return next;
+      });
+      try {
+        await saveLineStatus(line.id, { found: true });
+      } catch {
+        // Revert on failure
+        setLineStatusOverrides(prev => {
+          const next = new Map(prev);
+          next.delete(line.id);
+          return next;
+        });
+      }
+    } else {
+      // Toggle OFF — show reason dropdown
+      setReasonDropdownLineId(line.id);
+    }
+  }
+
+  async function handleReasonSelect(lineId: number, reason: string) {
+    setReasonDropdownLineId(null);
+    setLineStatusOverrides(prev => {
+      const next = new Map(prev);
+      next.set(lineId, { found: false, reason });
+      return next;
+    });
+    try {
+      await saveLineStatus(lineId, { found: false, reason });
+    } catch {
+      // Revert on failure
+      setLineStatusOverrides(prev => {
+        const next = new Map(prev);
+        next.delete(lineId);
+        return next;
+      });
+    }
   }
 
   // ── Detail header (right panel) ──────────────────────────────────
@@ -599,6 +782,247 @@ export function ReviewView({
     );
   }
 
+  // ── SKU Table renderer ───────────────────────────────────────────
+  function renderSkuTable(order: MoOrder) {
+    const sortedLines = [...order.lines].sort((a, b) => a.lineNumber - b.lineNumber);
+
+    const thStyle: React.CSSProperties = {
+      height: 32,
+      fontSize: 10,
+      fontWeight: 500,
+      textTransform: "uppercase",
+      letterSpacing: "0.05em",
+      color: "#9ca3af",
+      textAlign: "left",
+      background: "#f9fafb",
+      borderBottom: "1px solid #ebebeb",
+      paddingLeft: 14,
+      paddingRight: 14,
+      whiteSpace: "nowrap",
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+    };
+
+    const thFirst: React.CSSProperties = { paddingLeft: 10, paddingRight: 4, textAlign: "center" };
+    const thLast: React.CSSProperties = { paddingRight: 12, textAlign: "center" };
+
+    const tdBase: React.CSSProperties = {
+      height: 36,
+      fontSize: 11,
+      borderBottom: "1px solid #f0f0f0",
+      paddingLeft: 14,
+      paddingRight: 14,
+      verticalAlign: "middle",
+      whiteSpace: "nowrap",
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+    };
+
+    const tdFirst: React.CSSProperties = { paddingLeft: 10, paddingRight: 4, textAlign: "center" };
+    const tdLast: React.CSSProperties = { paddingRight: 12, textAlign: "center" };
+
+    return (
+      <div className="flex-1 overflow-y-auto" style={{ padding: "0 6px" }}>
+        <table className="w-full border-collapse" style={{ tableLayout: "fixed" }}>
+          <colgroup>
+            <col style={{ width: "4%" }} />
+            <col style={{ width: "24%" }} />
+            <col style={{ width: "11%" }} />
+            <col style={{ width: "26%" }} />
+            <col style={{ width: "5.5%" }} />
+            <col style={{ width: "5.5%" }} />
+            <col style={{ width: "5.5%" }} />
+            <col style={{ width: "12%" }} />
+            <col style={{ width: "6.5%" }} />
+          </colgroup>
+          <thead className="sticky top-0 z-[2]">
+            <tr>
+              <th style={{ ...thStyle, ...thFirst }}>#</th>
+              <th style={thStyle}>Raw Text</th>
+              <th style={thStyle}>SKU Code</th>
+              <th style={thStyle}>Description</th>
+              <th style={{ ...thStyle, textAlign: "center" }}>Pk</th>
+              <th style={{ ...thStyle, textAlign: "right" }}>Qty</th>
+              <th style={{ ...thStyle, textAlign: "right" }}>Vol</th>
+              <th style={{ ...thStyle, textAlign: "center" }}>Status</th>
+              <th style={{ ...thStyle, ...thLast }}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {sortedLines.map((line, idx) => {
+              const rowState = getRowState(line);
+              const reason = getLineReason(line);
+              const isFirst = idx === 0;
+              const isLast = idx === sortedLines.length - 1;
+
+              const rowEdge: React.CSSProperties = {};
+              if (isFirst) rowEdge.borderTop = "4px solid transparent";
+              if (isLast) rowEdge.borderBottom = "4px solid transparent";
+
+              const skuColor =
+                rowState === "not-found" ? "#d1d5db"
+                : rowState === "partial" ? "#d97706"
+                : "#6b7280";
+
+              const vol = getPackVolumeLiters(line.packCode) * line.quantity;
+
+              return (
+                <tr key={line.id} className="transition-colors hover:bg-gray-50">
+                  {/* # */}
+                  <td style={{ ...tdBase, ...tdFirst, ...rowEdge, color: "#9ca3af" }}>
+                    {line.lineNumber}
+                  </td>
+
+                  {/* Raw Text */}
+                  <td style={{ ...tdBase, ...rowEdge, color: rowState === "not-found" ? "#d1d5db" : "#374151" }}>
+                    {line.rawText}
+                  </td>
+
+                  {/* SKU Code */}
+                  <td style={{
+                    ...tdBase,
+                    ...rowEdge,
+                    fontFamily: '"SF Mono", ui-monospace, Menlo, monospace',
+                    color: skuColor,
+                  }}>
+                    {rowState === "unmatched" ? (
+                      <span style={{ color: "#d1d5db" }}>—</span>
+                    ) : (
+                      line.skuCode ?? "—"
+                    )}
+                  </td>
+
+                  {/* Description */}
+                  <td style={{ ...tdBase, ...rowEdge }}>
+                    {rowState === "normal" && (
+                      <>
+                        <span style={{ fontWeight: 500, color: "#111827" }}>{line.productName}</span>
+                        {line.baseColour && (
+                          <span style={{ color: "#6b7280" }}> · {line.baseColour}</span>
+                        )}
+                      </>
+                    )}
+                    {rowState === "partial" && (
+                      <>
+                        <span style={{ fontWeight: 500, color: "#b45309" }}>{line.productName}</span>
+                        {line.baseColour && (
+                          <span style={{ color: "#b45309" }}> · {line.baseColour}</span>
+                        )}
+                        <span style={{
+                          fontSize: 9, fontWeight: 600, padding: "0 4px", borderRadius: 2,
+                          background: "#fffbeb", color: "#b45309", border: "1px solid #fde68a",
+                          marginLeft: 4, display: "inline-block",
+                        }}>PARTIAL</span>
+                      </>
+                    )}
+                    {rowState === "unmatched" && (
+                      <>
+                        <span style={{ color: "#9ca3af", fontStyle: "italic" }}>No match found</span>
+                        <span style={{
+                          fontSize: 9, fontWeight: 600, padding: "0 4px", borderRadius: 2,
+                          background: "#f9fafb", color: "#9ca3af", border: "1px solid #e5e7eb",
+                          marginLeft: 4, display: "inline-block",
+                        }}>UNMATCHED</span>
+                        <span
+                          onClick={() => { /* TODO: open resolve popover — Step 4 */ }}
+                          style={{
+                            fontSize: 10, color: "#0d9488", cursor: "pointer", fontWeight: 500,
+                            marginLeft: 4,
+                          }}
+                          onMouseEnter={(e) => (e.currentTarget.style.textDecoration = "underline")}
+                          onMouseLeave={(e) => (e.currentTarget.style.textDecoration = "none")}
+                        >
+                          Resolve →
+                        </span>
+                      </>
+                    )}
+                    {rowState === "not-found" && (
+                      <>
+                        <span style={{ fontWeight: 400, color: "#d1d5db" }}>{line.productName}</span>
+                        {line.baseColour && (
+                          <span style={{ color: "#d1d5db" }}> · {line.baseColour}</span>
+                        )}
+                      </>
+                    )}
+                  </td>
+
+                  {/* Pk */}
+                  <td style={{
+                    ...tdBase,
+                    ...rowEdge,
+                    textAlign: "center",
+                    color: rowState === "not-found" ? "#d1d5db" : "#6b7280",
+                  }}>
+                    {line.packCode ?? "—"}
+                  </td>
+
+                  {/* Qty */}
+                  <td style={{
+                    ...tdBase,
+                    ...rowEdge,
+                    textAlign: "right",
+                    fontWeight: 500,
+                    color: "#374151",
+                  }}>
+                    {line.quantity}
+                  </td>
+
+                  {/* Vol */}
+                  <td style={{
+                    ...tdBase,
+                    ...rowEdge,
+                    textAlign: "right",
+                    color: rowState === "not-found" ? "#d1d5db" : "#9ca3af",
+                    fontVariantNumeric: "tabular-nums",
+                  }}>
+                    {vol > 0 ? `${Math.round(vol)}L` : "—"}
+                  </td>
+
+                  {/* Status */}
+                  <td style={{
+                    ...tdBase,
+                    ...rowEdge,
+                    textAlign: "center",
+                    position: "relative",
+                    overflow: "visible",
+                  }}>
+                    {rowState === "not-found" && reason && (
+                      <span
+                        onClick={() => setReasonDropdownLineId(line.id)}
+                        style={{
+                          fontSize: 10, fontWeight: 500, color: "#9ca3af",
+                          padding: "1px 6px", borderRadius: 3,
+                          background: "#f9fafb", border: "1px solid #e5e7eb",
+                          cursor: "pointer", whiteSpace: "nowrap", display: "inline-block",
+                        }}
+                      >
+                        {reason}
+                      </span>
+                    )}
+                    {reasonDropdownLineId === line.id && (
+                      <ReasonDropdown
+                        onSelect={(r) => handleReasonSelect(line.id, r)}
+                        onClose={() => setReasonDropdownLineId(null)}
+                      />
+                    )}
+                  </td>
+
+                  {/* Toggle */}
+                  <td style={{ ...tdBase, ...tdLast, ...rowEdge }}>
+                    <SkuToggle
+                      isOn={rowState !== "not-found"}
+                      onToggle={() => handleToggle(line)}
+                    />
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
   // ── Render ───────────────────────────────────────────────────────
   return (
     <div className="flex flex-1 overflow-hidden">
@@ -638,11 +1062,7 @@ export function ReviewView({
         {selectedOrder ? (
           <>
             {renderDetailHeader(selectedOrder)}
-
-            {/* SKU table — Step 3 placeholder */}
-            <div className="flex-1 overflow-y-auto flex items-center justify-center text-gray-400 text-[13px]">
-              SKU table — Step 3
-            </div>
+            {renderSkuTable(selectedOrder)}
           </>
         ) : (
           <div className="flex-1 flex items-center justify-center text-gray-400 text-[13px]">
