@@ -1318,12 +1318,16 @@ export function ReviewView({
                   className="transition-colors hover:bg-gray-50"
                   style={isActiveLine ? {
                     background: "#fefce8",
-                    outline: "2px solid #fde047",
-                    outlineOffset: -2,
                   } : undefined}
                 >
                   {/* # */}
-                  <td style={{ ...tdBase, ...tdFirst, ...rowEdge, color: "#9ca3af" }}>
+                  <td style={{
+                    ...tdBase,
+                    ...tdFirst,
+                    ...rowEdge,
+                    color: "#9ca3af",
+                    borderLeft: isActiveLine ? "3px solid #eab308" : "3px solid transparent",
+                  }}>
                     {line.lineNumber}
                   </td>
 
