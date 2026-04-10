@@ -792,6 +792,7 @@ export default function MailOrdersPage() {
       const key = e.key;
 
       if (key === "ArrowDown") {
+        if (viewMode === "review") return; // handled by review-view (line nav)
         e.preventDefault();
         setFocusedId((prev) => {
           const idx = flatOrders.findIndex((o) => o.id === prev);
@@ -802,6 +803,7 @@ export default function MailOrdersPage() {
       }
 
       if (key === "ArrowUp") {
+        if (viewMode === "review") return; // handled by review-view (line nav)
         e.preventDefault();
         setFocusedId((prev) => {
           const idx = flatOrders.findIndex((o) => o.id === prev);

@@ -67,14 +67,28 @@ function flagCategory(flag: string): "blocker" | "attention" | "info" {
 
 type RowState = "normal" | "partial" | "not-found" | "unmatched";
 
-const REASON_OPTIONS: (string | null)[] = [
-  "Out of stock",
-  "Wrong pack",
-  "Discontinued",
-  "Other depot",
+// API expects snake_case values; UI displays the label.
+type ReasonOption = { value: string; label: string };
+
+const REASON_OPTIONS: (ReasonOption | null)[] = [
+  { value: "out_of_stock", label: "Out of stock" },
+  { value: "wrong_pack", label: "Wrong pack" },
+  { value: "discontinued", label: "Discontinued" },
+  { value: "other_depot", label: "Other depot" },
   null, // divider
-  "Other",
+  { value: "other", label: "Other" },
 ];
+
+const REASON_LABELS: Record<string, string> = {
+  out_of_stock: "Out of stock",
+  wrong_pack: "Wrong pack",
+  discontinued: "Discontinued",
+  other_depot: "Other depot",
+  other: "Other",
+};
+
+// 1-5 quick-pick keyboard mapping (skips the divider)
+const REASON_KEY_VALUES = ["out_of_stock", "wrong_pack", "discontinued", "other_depot", "other"];
 
 // ── Toggle component ───────────────────────────────────────────────────────
 
@@ -151,13 +165,13 @@ function ReasonDropdown({
         padding: 3,
       }}
     >
-      {REASON_OPTIONS.map((reason, i) =>
-        reason === null ? (
+      {REASON_OPTIONS.map((opt, i) =>
+        opt === null ? (
           <div key={`div-${i}`} style={{ height: 1, background: "#f3f4f6", margin: "2px 0" }} />
         ) : (
           <button
-            key={reason}
-            onClick={() => onSelect(reason)}
+            key={opt.value}
+            onClick={() => onSelect(opt.value)}
             style={{
               display: "block", width: "100%", padding: "6px 10px",
               fontSize: 11, fontWeight: 500, color: "#111827",
@@ -167,7 +181,7 @@ function ReasonDropdown({
             onMouseEnter={(e) => (e.currentTarget.style.background = "#f9fafb")}
             onMouseLeave={(e) => (e.currentTarget.style.background = "none")}
           >
-            {reason}
+            {opt.label}
           </button>
         )
       )}
@@ -420,6 +434,7 @@ export function ReviewView({
     skuDescription: string;
     packCode: string;
   }>>(new Map());
+  const [activeLineIndex, setActiveLineIndex] = useState<number>(0);
 
   // ── Selected order ──────────────────────────────────────────────
   const selectedOrder = useMemo(() => {
@@ -439,6 +454,7 @@ export function ReviewView({
     setLineStatusOverrides(new Map());
     setResolveLineId(null);
     setResolvedLineOverrides(new Map());
+    setActiveLineIndex(0);
   }, [focusedId]);
 
   // Auto-select first pending order if none selected
@@ -501,15 +517,19 @@ export function ReviewView({
     return () => clearTimeout(timer);
   }, [custSearchQuery, codePopoverOpen]);
 
-  // Group orders into pending and punched
-  const pendingOrders = useMemo(
-    () => orders.filter(o => o.status !== "punched" || recentlyPunchedIds.has(o.id)),
-    [orders, recentlyPunchedIds],
-  );
-  const punchedOrders = useMemo(
-    () => orders.filter(o => o.status === "punched" && !recentlyPunchedIds.has(o.id)),
-    [orders, recentlyPunchedIds],
-  );
+  // Group orders into pending and punched (earliest first for review workflow)
+  const pendingOrders = useMemo(() => {
+    const list = orders.filter(o => o.status !== "punched" || recentlyPunchedIds.has(o.id));
+    return [...list].sort(
+      (a, b) => new Date(a.receivedAt).getTime() - new Date(b.receivedAt).getTime(),
+    );
+  }, [orders, recentlyPunchedIds]);
+  const punchedOrders = useMemo(() => {
+    const list = orders.filter(o => o.status === "punched" && !recentlyPunchedIds.has(o.id));
+    return [...list].sort(
+      (a, b) => new Date(a.receivedAt).getTime() - new Date(b.receivedAt).getTime(),
+    );
+  }, [orders, recentlyPunchedIds]);
 
   // ── Handlers ─────────────────────────────────────────────────────
   function handleCopyCode() {
@@ -664,7 +684,8 @@ export function ReviewView({
       });
       try {
         await saveLineStatus(line.id, { found: true });
-      } catch {
+      } catch (err) {
+        console.error("[review-view] saveLineStatus (clear) failed:", err);
         // Revert on failure
         setLineStatusOverrides(prev => {
           const next = new Map(prev);
@@ -678,16 +699,18 @@ export function ReviewView({
     }
   }
 
-  async function handleReasonSelect(lineId: number, reason: string) {
+  // reasonValue is the snake_case API value (e.g. "out_of_stock")
+  async function handleReasonSelect(lineId: number, reasonValue: string) {
     setReasonDropdownLineId(null);
     setLineStatusOverrides(prev => {
       const next = new Map(prev);
-      next.set(lineId, { found: false, reason });
+      next.set(lineId, { found: false, reason: reasonValue });
       return next;
     });
     try {
-      await saveLineStatus(lineId, { found: false, reason });
-    } catch {
+      await saveLineStatus(lineId, { found: false, reason: reasonValue });
+    } catch (err) {
+      console.error("[review-view] saveLineStatus (set reason) failed:", err);
       // Revert on failure
       setLineStatusOverrides(prev => {
         const next = new Map(prev);
@@ -715,14 +738,10 @@ export function ReviewView({
     }
   }
 
-  // ── Navigation list (left panel order: pending then optionally punched) ──
+  // ── Navigation list (matches left panel order: pending then optionally punched) ──
   const navigationList = useMemo(() => {
-    const pending = orders.filter(o => o.status !== "punched" || recentlyPunchedIds.has(o.id));
-    const punched = punchedVisible
-      ? orders.filter(o => o.status === "punched" && !recentlyPunchedIds.has(o.id))
-      : [];
-    return [...pending, ...punched];
-  }, [orders, punchedVisible, recentlyPunchedIds]);
+    return [...pendingOrders, ...(punchedVisible ? punchedOrders : [])];
+  }, [pendingOrders, punchedOrders, punchedVisible]);
 
   const currentIndex = useMemo(() => {
     if (focusedId === null) return -1;
@@ -754,6 +773,81 @@ export function ReviewView({
       }
     }
   }, [orders, focusedId, recentlyPunchedIds, onFocusChange]);
+
+  // Scroll active SKU line into view
+  useEffect(() => {
+    if (!selectedOrder || selectedOrder.lines.length === 0) return;
+    requestAnimationFrame(() => {
+      const row = document.querySelector(`[data-review-line-index="${activeLineIndex}"]`);
+      if (row) row.scrollIntoView({ block: "nearest" });
+    });
+  }, [activeLineIndex, selectedOrder]);
+
+  // ── Line-level keyboard navigation (review mode only) ─────────────
+  useEffect(() => {
+    function handleReviewKeys(e: KeyboardEvent) {
+      if (!selectedOrder) return;
+
+      const tag = (document.activeElement?.tagName ?? "").toUpperCase();
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (e.ctrlKey || e.metaKey) return;
+
+      const lines = selectedOrder.lines;
+      if (!lines || lines.length === 0) return;
+
+      // ↑↓ — Navigate lines
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        e.stopPropagation();
+        setActiveLineIndex(prev => Math.min(prev + 1, lines.length - 1));
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        e.stopPropagation();
+        setActiveLineIndex(prev => Math.max(prev - 1, 0));
+        return;
+      }
+
+      // Tab / Shift+Tab — Navigate orders
+      if (e.key === "Tab") {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.shiftKey) {
+          if (currentIndex > 0) onFocusChange(navigationList[currentIndex - 1].id);
+        } else {
+          if (currentIndex < navigationList.length - 1) onFocusChange(navigationList[currentIndex + 1].id);
+        }
+        return;
+      }
+
+      // Space — Toggle found/not-found on active line
+      if (e.key === " " || e.code === "Space") {
+        e.preventDefault();
+        e.stopPropagation();
+        const sortedLines = [...lines].sort((a, b) => a.lineNumber - b.lineNumber);
+        const activeLine = sortedLines[activeLineIndex];
+        if (activeLine) handleToggle(activeLine);
+        return;
+      }
+
+      // 1-5 — Quick pick reason (when dropdown is open)
+      if (reasonDropdownLineId !== null) {
+        const num = parseInt(e.key);
+        if (num >= 1 && num <= 5) {
+          e.preventDefault();
+          e.stopPropagation();
+          const reasonValue = REASON_KEY_VALUES[num - 1];
+          if (reasonValue) handleReasonSelect(reasonDropdownLineId, reasonValue);
+          return;
+        }
+      }
+    }
+
+    window.addEventListener("keydown", handleReviewKeys, { capture: true });
+    return () => window.removeEventListener("keydown", handleReviewKeys, { capture: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedOrder, activeLineIndex, currentIndex, navigationList, onFocusChange, reasonDropdownLineId]);
 
   // ── Detail header (right panel) ──────────────────────────────────
   function renderDetailHeader(order: MoOrder) {
@@ -1010,42 +1104,96 @@ export function ReviewView({
             ))}
           </div>
 
-          {/* RIGHT — Action buttons */}
-          <div className="flex items-center gap-[5px] flex-shrink-0">
+          {/* RIGHT — Compact icon action buttons */}
+          <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+            {/* Copy */}
             <button
               onClick={handleCopyClick}
-              className="h-[24px] px-[7px] border border-gray-200 rounded-[5px] text-[10px] font-medium text-gray-400 bg-white hover:bg-gray-50 hover:border-gray-300 hover:text-gray-600 inline-flex items-center gap-[3px] whitespace-nowrap transition-all"
+              title="Copy · Ctrl+C"
+              style={{
+                width: 28, height: 28, borderRadius: 6,
+                border: "1px solid #e5e7eb", background: "#fff",
+                cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+                color: "#9ca3af", transition: "all 0.12s",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = "#f9fafb";
+                e.currentTarget.style.borderColor = "#d1d5db";
+                e.currentTarget.style.color = "#6b7280";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "#fff";
+                e.currentTarget.style.borderColor = "#e5e7eb";
+                e.currentTarget.style.color = "#9ca3af";
+              }}
             >
-              <Copy size={11} />
-              Copy
-              <span className="text-[7px] font-bold text-gray-300 bg-gray-50 px-[2px] rounded-[2px] border border-gray-100 font-mono ml-0.5">Ctrl+C</span>
+              <Copy size={14} />
             </button>
+
+            {/* Reply */}
             <button
               onClick={handleReplyClick}
               disabled={!isPunched}
-              className={`h-[24px] px-[7px] border rounded-[5px] text-[10px] font-medium inline-flex items-center gap-[3px] whitespace-nowrap transition-all bg-white ${
-                !isPunched
-                  ? "border-gray-200 text-gray-400 opacity-35 pointer-events-none"
-                  : replyCopied
-                    ? "border-teal-200 text-teal-700 bg-teal-50"
-                    : "border-teal-200 text-teal-700 hover:bg-teal-50"
-              }`}
+              title="Reply · R"
+              style={{
+                width: 28, height: 28, borderRadius: 6,
+                border: "1px solid",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                transition: "all 0.12s",
+                ...(isPunched
+                  ? {
+                      borderColor: replyCopied ? "#5eead4" : "#99f6e4",
+                      background: replyCopied ? "#ccfbf1" : "#fff",
+                      color: "#0f766e",
+                      cursor: "pointer",
+                    }
+                  : {
+                      borderColor: "#e5e7eb",
+                      background: "#fff",
+                      color: "#d1d5db",
+                      opacity: 0.5,
+                      pointerEvents: "none" as const,
+                    }),
+              }}
+              onMouseEnter={(e) => { if (isPunched) e.currentTarget.style.background = "#f0fdfa"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = isPunched && replyCopied ? "#ccfbf1" : "#fff"; }}
             >
-              <Mail size={11} />
-              Reply
-              <span className="text-[7px] font-bold text-gray-300 bg-gray-50 px-[2px] rounded-[2px] border border-gray-100 font-mono ml-0.5">R</span>
+              <Mail size={14} />
             </button>
+
+            {/* Flag */}
             <button
               onClick={() => onFlag(order.id)}
-              className={`h-[24px] px-[7px] border rounded-[5px] text-[10px] font-medium inline-flex items-center gap-[3px] whitespace-nowrap transition-all bg-white ${
-                isFlagged
-                  ? "border-amber-200 text-amber-700 hover:bg-amber-50"
-                  : "border-gray-200 text-gray-400 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-600"
-              }`}
+              title="Flag · F"
+              style={{
+                width: 28, height: 28, borderRadius: 6,
+                border: "1px solid",
+                cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+                transition: "all 0.12s",
+                ...(isFlagged
+                  ? { borderColor: "#fde68a", background: "#fffbeb", color: "#b45309" }
+                  : { borderColor: "#e5e7eb", background: "#fff", color: "#9ca3af" }),
+              }}
+              onMouseEnter={(e) => {
+                if (isFlagged) {
+                  e.currentTarget.style.background = "#fef3c7";
+                } else {
+                  e.currentTarget.style.background = "#f9fafb";
+                  e.currentTarget.style.borderColor = "#d1d5db";
+                  e.currentTarget.style.color = "#6b7280";
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (isFlagged) {
+                  e.currentTarget.style.background = "#fffbeb";
+                } else {
+                  e.currentTarget.style.background = "#fff";
+                  e.currentTarget.style.borderColor = "#e5e7eb";
+                  e.currentTarget.style.color = "#9ca3af";
+                }
+              }}
             >
-              <Flag size={11} />
-              Flag
-              <span className="text-[7px] font-bold text-gray-300 bg-gray-50 px-[2px] rounded-[2px] border border-gray-100 font-mono ml-0.5">F</span>
+              <Flag size={14} />
             </button>
           </div>
         </div>
@@ -1147,9 +1295,19 @@ export function ReviewView({
                 : "#6b7280";
 
               const vol = getPackVolumeLiters(line.packCode) * line.quantity;
+              const isActiveLine = idx === activeLineIndex;
 
               return (
-                <tr key={line.id} className="transition-colors hover:bg-gray-50">
+                <tr
+                  key={line.id}
+                  data-review-line-index={idx}
+                  className="transition-colors hover:bg-gray-50"
+                  style={isActiveLine ? {
+                    background: "#f0fdfa",
+                    outline: "2px solid #0d9488",
+                    outlineOffset: -2,
+                  } : undefined}
+                >
                   {/* # */}
                   <td style={{ ...tdBase, ...tdFirst, ...rowEdge, color: "#9ca3af" }}>
                     {line.lineNumber}
@@ -1283,7 +1441,7 @@ export function ReviewView({
                           cursor: "pointer", whiteSpace: "nowrap", display: "inline-block",
                         }}
                       >
-                        {reason}
+                        {REASON_LABELS[reason] ?? reason}
                       </span>
                     )}
                     {reasonDropdownLineId === line.id && (
