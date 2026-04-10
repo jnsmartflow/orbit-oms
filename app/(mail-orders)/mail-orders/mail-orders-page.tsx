@@ -10,6 +10,7 @@ import type { ColumnConfig } from "./mail-orders-table";
 import { UniversalHeader } from "@/components/universal-header";
 import { SlotCompletionModal } from "./slot-completion-modal";
 import { FocusModeView } from "./focus-mode-view";
+import { ReviewView } from "./review-view";
 import { Check, Copy } from "lucide-react";
 
 // ── Column Picker ──────────────────────────────────────────────────────────
@@ -142,7 +143,7 @@ export default function MailOrdersPage() {
   const [skuPanelOrderId, setSkuPanelOrderId] = useState<number | null>(null);
   const [dismissedSlots, setDismissedSlots] = useState<Set<string>>(new Set());
   const [completedSlot, setCompletedSlot] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<"table" | "focus">("table");
+  const [viewMode, setViewMode] = useState<"table" | "review" | "focus">("table");
   const [slotCutoffs, setSlotCutoffs] = useState<SlotCutoffs | undefined>(undefined);
   // ── Smart copy state (Ctrl+C workflow for SAP) ──────────────────────────────
   const [smartCopyOrderId, setSmartCopyOrderId] = useState<number | null>(null);
@@ -983,6 +984,16 @@ export default function MailOrdersPage() {
                 Table
               </button>
               <button
+                onClick={() => setViewMode("review")}
+                className={`text-[10px] px-2.5 py-[3px] font-medium transition-colors ${
+                  viewMode === "review"
+                    ? "bg-gray-800 text-white"
+                    : "bg-white text-gray-500 hover:bg-gray-50"
+                }`}
+              >
+                Review
+              </button>
+              <button
                 onClick={() => setViewMode("focus")}
                 className={`text-[10px] px-2.5 py-[3px] font-medium transition-colors ${
                   viewMode === "focus"
@@ -1023,13 +1034,13 @@ export default function MailOrdersPage() {
         searchPlaceholder="Search orders..."
         searchValue={searchQuery}
         onSearchChange={setSearchQuery}
-        rightExtra={
+        rightExtra={viewMode === "table" ? (
           <ColumnPicker
             columns={ALL_COLUMNS}
             visible={visibleColumns}
             onChange={setVisibleColumns}
           />
-        }
+        ) : undefined}
         shortcuts={[
           { key: "Ctrl+C", label: "Smart copy" },
           { key: "Ctrl+V", label: "Paste SO" },
@@ -1042,94 +1053,121 @@ export default function MailOrdersPage() {
       />
 
       {/* ── Content area ───────────────────────────────────────────────────────── */}
-      <div className="flex-1 overflow-y-auto px-4 py-3">
-        {!loading && hasUrgentOrHold && (
-          <div className="sticky top-0 z-20 mb-2 -mx-0">
-            <div className="flex items-center justify-between px-3 py-2 rounded-lg border bg-red-50 border-red-200">
-              <div className="flex items-center gap-2">
-                <span className="text-red-600 text-[12px]">⚠</span>
-                <span className="text-[11px] font-medium text-red-700">
-                  {urgentCount > 0 && `${urgentCount} Urgent`}
-                  {urgentCount > 0 && holdCount > 0 && " \u00b7 "}
-                  {holdCount > 0 && `${holdCount} Hold`}
-                </span>
+      {/* Review mode — full bleed, manages own layout */}
+      {!loading && !error && orders.length > 0 && viewMode === "review" && (
+        <ReviewView
+          orders={filteredOrders}
+          allOrders={orders}
+          activeSlot={activeSlot}
+          flaggedIds={flaggedIds}
+          focusedId={focusedId}
+          onFocusChange={setFocusedId}
+          onFlag={handleFlag}
+          onSaveSoNumber={handleSaveSoNumber}
+          onSaveCustomer={handleSaveCustomer}
+          onCopy={handleCopy}
+          batchStates={batchStates}
+          onAdvanceBatch={handleAdvanceBatch}
+          punchedVisible={punchedVisible}
+          onTogglePunched={() => setPunchedVisible(prev => !prev)}
+          recentlyPunchedIds={recentlyPunchedIds}
+          slotCutoffs={slotCutoffs}
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+        />
+      )}
+
+      {/* Table/Focus mode — padded wrapper. Also shows loading/error/empty for review mode. */}
+      {(viewMode !== "review" || loading || error || orders.length === 0) && (
+        <div className="flex-1 overflow-y-auto px-4 py-3">
+          {!loading && hasUrgentOrHold && viewMode === "table" && (
+            <div className="sticky top-0 z-20 mb-2 -mx-0">
+              <div className="flex items-center justify-between px-3 py-2 rounded-lg border bg-red-50 border-red-200">
+                <div className="flex items-center gap-2">
+                  <span className="text-red-600 text-[12px]">⚠</span>
+                  <span className="text-[11px] font-medium text-red-700">
+                    {urgentCount > 0 && `${urgentCount} Urgent`}
+                    {urgentCount > 0 && holdCount > 0 && " \u00b7 "}
+                    {holdCount > 0 && `${holdCount} Hold`}
+                  </span>
+                </div>
+                <button
+                  onClick={() => {
+                    const el = document.querySelector('tr[data-urgent="true"]');
+                    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+                  }}
+                  className="text-[10px] font-medium text-red-600 hover:text-red-800 underline"
+                >
+                  Jump to first ↓
+                </button>
               </div>
-              <button
-                onClick={() => {
-                  const el = document.querySelector('tr[data-urgent="true"]');
-                  if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
-                }}
-                className="text-[10px] font-medium text-red-600 hover:text-red-800 underline"
-              >
-                Jump to first ↓
-              </button>
             </div>
-          </div>
-        )}
+          )}
 
-        {loading && (
-          <div className="flex flex-col gap-2">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="animate-pulse h-[52px] bg-gray-100 rounded" />
-            ))}
-          </div>
-        )}
+          {loading && (
+            <div className="flex flex-col gap-2">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="animate-pulse h-[52px] bg-gray-100 rounded" />
+              ))}
+            </div>
+          )}
 
-        {!loading && error && (
-          <p className="text-center text-gray-400 mt-12 text-[13px]">
-            Could not load orders. Retrying&hellip;
-          </p>
-        )}
+          {!loading && error && (
+            <p className="text-center text-gray-400 mt-12 text-[13px]">
+              Could not load orders. Retrying&hellip;
+            </p>
+          )}
 
-        {!loading && !error && orders.length === 0 && (
-          <p className="text-center text-gray-400 mt-12 text-[13px]">
-            No mail orders received today. Orders appear here automatically as emails arrive.
-          </p>
-        )}
+          {!loading && !error && orders.length === 0 && (
+            <p className="text-center text-gray-400 mt-12 text-[13px]">
+              No mail orders received today. Orders appear here automatically as emails arrive.
+            </p>
+          )}
 
-        {!loading && !error && orders.length > 0 && viewMode === "table" && (
-          <MailOrdersTable
-            groupedOrders={groupedOrders}
-            flaggedIds={flaggedIds}
-            expandedId={expandedId}
-            focusedId={focusedId}
-            copiedId={copiedId}
-            copiedCodeId={copiedCodeId}
-            onFlag={handleFlag}
-            onExpand={handleExpand}
-            onPunch={handlePunch}
-            onCopy={handleCopy}
-            onSaveSoNumber={handleSaveSoNumber}
-            onSaveCustomer={handleSaveCustomer}
-            openCodePopoverId={openCodePopoverId}
-            setOpenCodePopoverId={setOpenCodePopoverId}
-            batchStates={batchStates}
-            onAdvanceBatch={handleAdvanceBatch}
-            onSplitComplete={loadOrders}
-            visibleColumns={visibleColumns}
-            recentlyPunchedIds={recentlyPunchedIds}
-            separatePunched={activeSlot !== null}
-            punchedVisible={punchedVisible}
-            onTogglePunched={() => setPunchedVisible(prev => !prev)}
-            skuPanelOrderId={skuPanelOrderId}
-            onCloseSkuPanel={() => setSkuPanelOrderId(null)}
-          />
-        )}
+          {!loading && !error && orders.length > 0 && viewMode === "table" && (
+            <MailOrdersTable
+              groupedOrders={groupedOrders}
+              flaggedIds={flaggedIds}
+              expandedId={expandedId}
+              focusedId={focusedId}
+              copiedId={copiedId}
+              copiedCodeId={copiedCodeId}
+              onFlag={handleFlag}
+              onExpand={handleExpand}
+              onPunch={handlePunch}
+              onCopy={handleCopy}
+              onSaveSoNumber={handleSaveSoNumber}
+              onSaveCustomer={handleSaveCustomer}
+              openCodePopoverId={openCodePopoverId}
+              setOpenCodePopoverId={setOpenCodePopoverId}
+              batchStates={batchStates}
+              onAdvanceBatch={handleAdvanceBatch}
+              onSplitComplete={loadOrders}
+              visibleColumns={visibleColumns}
+              recentlyPunchedIds={recentlyPunchedIds}
+              separatePunched={activeSlot !== null}
+              punchedVisible={punchedVisible}
+              onTogglePunched={() => setPunchedVisible(prev => !prev)}
+              skuPanelOrderId={skuPanelOrderId}
+              onCloseSkuPanel={() => setSkuPanelOrderId(null)}
+            />
+          )}
 
-        {!loading && !error && orders.length > 0 && viewMode === "focus" && (
-          <FocusModeView
-            orders={orders}
-            activeSlot={activeSlot}
-            flaggedIds={flaggedIds}
-            onFlag={handleFlag}
-            onSaveSoNumber={handleSaveSoNumber}
-            onCopy={handleCopy}
-            batchStates={batchStates}
-            onAdvanceBatch={handleAdvanceBatch}
-            slotCutoffs={slotCutoffs}
-          />
-        )}
-      </div>
+          {!loading && !error && orders.length > 0 && viewMode === "focus" && (
+            <FocusModeView
+              orders={orders}
+              activeSlot={activeSlot}
+              flaggedIds={flaggedIds}
+              onFlag={handleFlag}
+              onSaveSoNumber={handleSaveSoNumber}
+              onCopy={handleCopy}
+              batchStates={batchStates}
+              onAdvanceBatch={handleAdvanceBatch}
+              slotCutoffs={slotCutoffs}
+            />
+          )}
+        </div>
+      )}
 
       {completedSlot && (
         <SlotCompletionModal

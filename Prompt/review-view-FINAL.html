@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mail Orders — Review View (Final Approved)</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --brand: #0d9488; --brand-dk: #0f766e; --brand-tint: #f0fdfa; --brand-bdr: #99f6e4;
+    --white: #fff; --bg2: #f9fafb; --bg3: #f3f4f6;
+    --bdr: #e5e7eb; --bl: #f3f4f6;
+    --t1: #111827; --t2: #4b5563; --t3: #9ca3af; --t4: #d1d5db;
+    --g50: #f0fdf4; --g200: #bbf7d0; --g600: #16a34a; --g700: #15803d;
+    --a50: #fffbeb; --a200: #fde68a; --a600: #d97706; --a700: #b45309;
+    --r50: #fef2f2; --r200: #fecaca; --r600: #dc2626; --r700: #b91c1c;
+    --b600: #2563eb; --o600: #ea580c; --rs600: #e11d48;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    font-size: 14px; color: var(--t1); -webkit-font-smoothing: antialiased;
+  }
+  html, body { height: 100%; overflow: hidden; background: var(--white); }
+  .shell { display: flex; flex-direction: column; height: 100vh; }
+
+  /* ═══ PAGE HEADERS ═══ */
+  .h1 { height: 52px; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; border-bottom: 1px solid var(--bdr); flex-shrink: 0; }
+  .h1-l { display: flex; align-items: center; gap: 10px; }
+  .h1-title { font-size: 14px; font-weight: 600; }
+  .vtog { display: inline-flex; border: 1px solid var(--t4); border-radius: 5px; overflow: hidden; }
+  .vtog button { font-size: 10px; padding: 3px 10px; font-weight: 500; border: none; cursor: pointer; }
+  .vtog .on { background: #1f2937; color: #fff; } .vtog .off { background: #fff; color: #6b7280; }
+  .divider { width: 1px; height: 16px; background: var(--bdr); }
+  .pct { font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 4px; background: var(--g50); color: var(--g600); }
+  .stats { font-size: 11px; color: var(--t3); } .stats b { color: var(--t1); font-weight: 600; }
+  .h1-r { display: flex; align-items: center; gap: 8px; }
+  .clock { font-size: 11px; color: var(--t3); font-variant-numeric: tabular-nums; }
+  .search { height: 28px; width: 180px; border: 1px solid var(--bdr); border-radius: 6px; padding: 0 10px; font-size: 11px; color: var(--t2); outline: none; }
+  .search:focus { border-color: var(--brand); box-shadow: 0 0 0 2px rgba(13,148,136,.1); }
+  .search::placeholder { color: var(--t4); }
+  .h2 { height: 40px; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; border-bottom: 1px solid var(--bdr); flex-shrink: 0; }
+  .h2-l { display: flex; align-items: center; gap: 8px; }
+  .h2-r { display: flex; align-items: center; gap: 8px; }
+  .seg { display: inline-flex; background: var(--bl); border-radius: 7px; padding: 3px; gap: 2px; }
+  .seg button { font-size: 11px; font-weight: 500; padding: 3px 12px; border-radius: 5px; border: none; cursor: pointer; color: #6b7280; background: transparent; }
+  .seg .sa { background: var(--brand); color: #fff; } .seg .sc { font-size: 9px; margin-left: 3px; opacity: .7; }
+  .fbtn { height: 28px; padding: 0 10px; border: 1px solid var(--bdr); border-radius: 6px; font-size: 11px; font-weight: 500; color: #6b7280; background: #fff; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
+  .ds { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 500; color: var(--t2); }
+  .ds button { width: 20px; height: 20px; border: 1px solid var(--bdr); border-radius: 4px; background: #fff; color: var(--t3); cursor: pointer; font-size: 12px; display: flex; align-items: center; justify-content: center; }
+  .ds .dis { opacity: .3; cursor: default; }
+
+  /* ═══ SPLIT ═══ */
+  .split { display: flex; flex: 1; overflow: hidden; }
+
+  /* ═══ LEFT PANEL (320px) ═══ */
+  .lp { width: 320px; flex-shrink: 0; border-right: 1px solid var(--bdr); display: flex; flex-direction: column; }
+  .lp-s { padding: 8px 12px; border-bottom: 1px solid var(--bdr); }
+  .lp-s input { width: 100%; height: 28px; border: 1px solid var(--bdr); border-radius: 6px; padding: 0 10px; font-size: 11px; outline: none; color: var(--t2); }
+  .lp-s input:focus { border-color: var(--brand); box-shadow: 0 0 0 2px rgba(13,148,136,.1); }
+  .lp-s input::placeholder { color: var(--t4); }
+  .lp-list { flex: 1; overflow-y: auto; }
+  .or { padding: 10px 14px; border-bottom: 1px solid var(--bl); cursor: pointer; border-left: 3px solid transparent; }
+  .or:hover { background: var(--bg2); }
+  .or.sel { background: var(--brand-tint); border-left-color: var(--brand); }
+  .or.pch { opacity: .4; } .or.flg { border-left-color: var(--a600); }
+  .or .l1 { display: flex; align-items: center; justify-content: space-between; }
+  .or .cn { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--t1); min-width: 0; }
+  .or .cn .t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .or.pch .cn { color: var(--t3); }
+  .or .tm { font-size: 11px; color: var(--t3); flex-shrink: 0; margin-left: 8px; font-variant-numeric: tabular-nums; }
+  .or .l2 { font-size: 11px; color: var(--t3); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
+  .dot-l { background: var(--b600); } .dot-u { background: var(--o600); }
+  .dot-i { background: var(--brand); } .dot-c { background: var(--rs600); }
+  .pdiv { font-size: 10px; color: var(--t3); padding: 8px 14px; border-bottom: 1px solid var(--bl); background: var(--bg2); cursor: pointer; }
+
+  /* ═══ RIGHT PANEL ═══ */
+  .rp { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+  /* ── DETAIL HEADER — 2-row Option A ───────────────────────── */
+  .dh { flex-shrink: 0; border-bottom: 1px solid var(--bdr); }
+
+  /* Row 1: Identity + match + dispatch + signals → Order No. input */
+  .dh-r1 {
+    padding: 12px 20px 7px;
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px;
+  }
+  .dh-r1-left { display: flex; align-items: center; gap: 8px; min-width: 0; flex-wrap: wrap; }
+  .dh-cust { font-size: 17px; font-weight: 700; letter-spacing: -0.01em; white-space: nowrap; }
+  /* Code chip — exact match */
+  .dh-code {
+    font-family: "SF Mono", ui-monospace, Menlo, monospace;
+    font-size: 11px; font-weight: 500; padding: 2px 7px;
+    background: var(--bg2); border: 1px solid var(--bdr); border-radius: 4px;
+    color: var(--t2); cursor: pointer; transition: all .15s; flex-shrink: 0;
+  }
+  .dh-code:hover { border-color: var(--brand-bdr); background: var(--brand-tint); color: var(--brand-dk); }
+  /* Code chip — multiple match */
+  .dh-code-multi {
+    font-size: 11px; font-weight: 600; padding: 2px 7px;
+    background: var(--a50); border: 1px solid var(--a200); border-radius: 4px;
+    color: var(--a700); cursor: pointer; flex-shrink: 0;
+  }
+  /* Code — unmatched search */
+  .dh-code-search {
+    display: inline-flex; align-items: center; height: 24px;
+    border: 1.5px solid var(--a200); border-radius: 4px; background: var(--a50);
+    overflow: hidden; flex-shrink: 0;
+  }
+  .dh-code-search input {
+    border: none; outline: none; background: transparent;
+    font-size: 11px; color: var(--t1); padding: 0 6px; width: 130px;
+  }
+  .dh-code-search input::placeholder { color: var(--a600); font-weight: 400; }
+
+  /* Match chip */
+  .match-chip { font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 3px; flex-shrink: 0; cursor: pointer; }
+  .mc-ok { background: var(--g50); color: var(--g700); border: 1px solid var(--g200); }
+  .mc-warn { background: var(--a50); color: var(--a700); border: 1px solid var(--a200); }
+
+  /* Dispatch badge */
+  .dh-badge { font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 4px; flex-shrink: 0; }
+  .dh-b-d { background: var(--g50); color: var(--g700); border: 1px solid var(--g200); }
+  .dh-b-h { background: var(--r50); color: var(--r700); border: 1px solid var(--r200); }
+
+  /* Signal badges */
+  .sig-badge { font-size: 9px; font-weight: 600; padding: 1px 5px; border-radius: 3px; flex-shrink: 0; }
+  .sig-blk { background: var(--r50); color: var(--r700); border: 1px solid var(--r200); }
+  .sig-inf { background: var(--bg2); color: #6b7280; border: 1px solid var(--bdr); }
+  .remark-preview { font-size: 9px; font-weight: 600; padding: 1px 5px; border-radius: 3px; background: var(--a50); color: var(--a700); border: 1px solid var(--a200); flex-shrink: 0; }
+
+  /* Order No. input group — NEUTRAL, no color tint */
+  .dh-r1-right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+  .so-grp {
+    display: flex; align-items: center;
+    border: 1.5px solid var(--bdr); border-radius: 6px; overflow: hidden;
+    transition: border-color .15s;
+  }
+  .so-grp:focus-within { border-color: var(--brand); box-shadow: 0 0 0 3px rgba(13,148,136,.08); }
+  .so-grp .lbl {
+    font-size: 10px; font-weight: 500; color: var(--t3);
+    padding: 0 0 0 8px; white-space: nowrap;
+  }
+  .so-grp input {
+    width: 120px; height: 30px; border: none; outline: none; background: transparent;
+    font-family: "SF Mono", ui-monospace, Menlo, monospace;
+    font-size: 14px; font-weight: 500; color: var(--t1); padding: 0 8px;
+  }
+  .so-grp input::placeholder { color: var(--t4); font-weight: 400; font-size: 12px; }
+  .punch-btn {
+    height: 32px; padding: 0 14px; border-radius: 6px; border: none;
+    font-size: 12px; font-weight: 600; cursor: pointer; transition: all .12s; white-space: nowrap;
+  }
+  .punch-btn.dim { background: var(--bg3); color: var(--t4); cursor: default; }
+  .punch-btn.rdy { background: var(--brand); color: #fff; }
+  .punch-btn.rdy:hover { background: var(--brand-dk); }
+
+  /* Punched state — static SO + edit icon */
+  .so-done {
+    display: flex; align-items: center; gap: 5px;
+    font-family: "SF Mono", ui-monospace, Menlo, monospace;
+    font-size: 14px; font-weight: 500; color: var(--t1);
+  }
+  .so-check { color: var(--g600); font-size: 14px; }
+  .so-edit {
+    width: 18px; height: 18px; border-radius: 4px; border: 1px solid var(--bdr);
+    background: var(--white); cursor: pointer; display: flex; align-items: center;
+    justify-content: center; font-size: 10px; color: var(--t3); transition: all .12s;
+  }
+  .so-edit:hover { background: var(--bg2); color: var(--t2); border-color: var(--t4); }
+  .punched-label {
+    font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 4px;
+    background: var(--g50); color: var(--g700); border: 1px solid var(--g200);
+  }
+
+  /* Row 2: Meta + secondary actions */
+  .dh-r2 {
+    padding: 0 20px 10px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .dh-meta { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; font-size: 11px; color: var(--t3); }
+  .dh-meta .s { color: var(--t4); }
+  .dh-actions { display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
+  .act {
+    height: 24px; padding: 0 7px; border: 1px solid var(--bdr); border-radius: 5px;
+    font-size: 10px; font-weight: 500; color: var(--t3); background: var(--white);
+    cursor: pointer; display: inline-flex; align-items: center; gap: 3px;
+    transition: all .12s; white-space: nowrap;
+  }
+  .act:hover { background: var(--bg2); border-color: var(--t4); color: var(--t2); }
+  .act.dim { opacity: .35; pointer-events: none; }
+  .act .k {
+    font-size: 7px; font-weight: 700; color: var(--t4); background: var(--bg2);
+    padding: 0 2px; border-radius: 2px; border: 1px solid var(--bl);
+    font-family: "SF Mono", ui-monospace, monospace;
+  }
+  .act-r { color: var(--brand-dk); border-color: var(--brand-bdr); }
+  .act-r:hover { background: var(--brand-tint); }
+  .act-f { color: var(--a700); border-color: var(--a200); }
+  .act-f:hover { background: var(--a50); }
+
+  /* ═══ TABLE — locked v13 ═══ */
+  .tw { flex: 1; overflow-y: auto; padding: 0 6px; }
+  .tbl { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  .tbl th, .tbl td {
+    padding-left: 14px; padding-right: 14px;
+    vertical-align: middle; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .tbl th:first-child, .tbl td:first-child { padding-left: 10px; padding-right: 4px; text-align: center; }
+  .tbl th:last-child, .tbl td:last-child { padding-right: 12px; text-align: center; }
+  .tbl thead { position: sticky; top: 0; z-index: 2; }
+  .tbl th {
+    height: 32px; font-size: 10px; font-weight: 500; text-transform: uppercase;
+    letter-spacing: 0.05em; color: var(--t3); text-align: left;
+    background: var(--bg2); border-bottom: 1px solid #ebebeb;
+  }
+  .tbl th.tc { text-align: center; } .tbl th.tr { text-align: right; }
+  .tbl td { height: 36px; font-size: 11px; border-bottom: 1px solid #f0f0f0; }
+  .tbl td.tc { text-align: center; } .tbl td.tr { text-align: right; }
+  .tbl tbody tr { transition: background .06s; }
+  .tbl tbody tr:first-child td { border-top: 4px solid transparent; }
+  .tbl tbody tr:last-child td { border-bottom: 4px solid transparent; }
+  .tbl tbody tr:hover td { background: var(--bg2); }
+
+  .tbl .ln { font-size: 11px; color: var(--t3); }
+  .tbl .raw { font-size: 11px; color: #374151; }
+  .tbl .sku { font-family: "SF Mono", ui-monospace, Menlo, monospace; font-size: 11px; color: #6b7280; font-weight: 400; }
+  .tbl .dsc { font-size: 11px; color: #6b7280; }
+  .tbl .dsc b { font-weight: 500; color: var(--t1); }
+  .tbl .pk { font-size: 11px; color: #6b7280; }
+  .tbl .qty { font-size: 11px; font-weight: 500; color: #374151; }
+  .tbl .vol { font-size: 11px; color: var(--t3); font-variant-numeric: tabular-nums; }
+
+  .toggle { width: 28px; height: 14px; border-radius: 7px; cursor: pointer; position: relative; display: inline-block; transition: background .15s; vertical-align: middle; }
+  .toggle.on { background: var(--g600); }
+  .toggle.off { background: var(--t4); }
+  .toggle .knob { width: 10px; height: 10px; border-radius: 50%; background: #fff; position: absolute; top: 2px; transition: left .12s; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+  .toggle.on .knob { left: 16px; }
+  .toggle.off .knob { left: 2px; }
+
+  .status-label { font-size: 10px; font-weight: 500; color: var(--t3); padding: 1px 6px; border-radius: 3px; background: var(--bg2); border: 1px solid var(--bdr); display: inline-block; cursor: pointer; white-space: nowrap; }
+  .remarks-drop { position: absolute; top: calc(100% + 2px); right: 0; width: 148px; background: var(--white); border: 1px solid var(--bdr); border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,.1); z-index: 20; padding: 3px; }
+  .remarks-drop .rd-item { display: block; width: 100%; padding: 6px 10px; font-size: 11px; font-weight: 500; color: var(--t1); border: none; background: none; cursor: pointer; text-align: left; border-radius: 5px; transition: background .08s; }
+  .remarks-drop .rd-item:hover { background: var(--bg2); }
+  .remarks-drop .rd-divider { height: 1px; background: var(--bl); margin: 2px 0; }
+
+  tr.r-pt td .dsc { color: var(--a700); } tr.r-pt td .sku { color: var(--a600); }
+  .tag-pt { font-size: 9px; font-weight: 600; padding: 0 4px; border-radius: 2px; background: var(--a50); color: var(--a700); border: 1px solid var(--a200); margin-left: 4px; }
+  tr.r-nf td .raw, tr.r-nf td .sku, tr.r-nf td .dsc, tr.r-nf td .pk, tr.r-nf td .vol { color: var(--t4); }
+  tr.r-nf td .dsc b { font-weight: 400; color: var(--t4); }
+  tr.r-um td .dsc { color: var(--t3); font-style: italic; } tr.r-um td .sku { color: var(--t4); }
+  .tag-um { font-size: 9px; font-weight: 600; padding: 0 4px; border-radius: 2px; background: var(--bg2); color: var(--t3); border: 1px solid var(--bdr); margin-left: 4px; }
+  .res-link { font-size: 10px; color: var(--brand); cursor: pointer; font-weight: 500; margin-left: 4px; }
+  .res-link:hover { text-decoration: underline; }
+
+  /* ═══ FOOTER ═══ */
+  .rf { flex-shrink: 0; border-top: 1px solid var(--bdr); padding: 8px 20px; display: flex; gap: 20px; background: var(--bg2); }
+  .rf-s { flex: 1; min-width: 0; }
+  .rf-s label { font-size: 9px; font-weight: 600; color: var(--t3); text-transform: uppercase; letter-spacing: .04em; display: block; margin-bottom: 1px; }
+  .rf-s p { font-size: 11px; color: var(--t2); line-height: 1.3; }
+  .rf-s p.em { color: var(--t4); font-style: italic; }
+  .rf-rt { font-size: 7px; font-weight: 700; padding: 1px 3px; border-radius: 2px; text-transform: uppercase; margin-right: 2px; }
+  .rf-rt-d { background: #dbeafe; color: #1d4ed8; }
+  .navf { flex-shrink: 0; height: 36px; border-top: 1px solid var(--bdr); display: flex; align-items: center; justify-content: center; gap: 10px; padding: 0 20px; }
+  .navb { height: 26px; font-size: 11px; font-weight: 500; padding: 0 12px; border-radius: 5px; border: 1px solid var(--bdr); background: var(--white); color: var(--t2); cursor: pointer; }
+  .navb:hover { background: var(--bg2); } .navb.nd { color: var(--t4); border-color: var(--bl); cursor: default; }
+  .navp { font-size: 11px; color: var(--t3); font-weight: 500; }
+  .navh { font-size: 9px; color: var(--t4); margin-left: 6px; }
+  .toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); z-index: 100; display: flex; align-items: center; gap: 6px; font-size: 11px; color: #fff; padding: 6px 14px; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,.12); background: var(--g700); }
+  .toast b { font-weight: 600; }
+  .lp-list::-webkit-scrollbar, .tw::-webkit-scrollbar { width: 3px; }
+  .lp-list::-webkit-scrollbar-thumb, .tw::-webkit-scrollbar-thumb { background: var(--t4); border-radius: 2px; }
+</style>
+</head>
+<body>
+<div class="shell">
+  <!-- Page headers -->
+  <div class="h1">
+    <div class="h1-l"><span class="h1-title">Mail Orders</span><div class="vtog"><button class="off">Table</button><button class="on">Review</button><button class="off">Focus</button></div><span class="divider"></span><span class="pct">62%</span><span class="stats"><b>21</b> orders</span></div>
+    <div class="h1-r"><span class="clock">IST 10:42</span><input class="search" placeholder="Search orders..." /></div>
+  </div>
+  <div class="h2">
+    <div class="h2-l"><div class="seg"><button class="sa">Morning <span class="sc">8</span></button><button>Afternoon <span class="sc">6</span></button><button>Evening <span class="sc">5</span></button><button>Night <span class="sc">2</span></button></div></div>
+    <div class="h2-r"><button class="fbtn">Filter ▾</button><div class="ds"><button>‹</button><span>Today · 10 Apr</span><button class="dis">›</button></div></div>
+  </div>
+
+  <div class="split">
+
+    <!-- ═══ LEFT PANEL ═══ -->
+    <div class="lp">
+      <div class="lp-s"><input placeholder="Filter orders..." /></div>
+      <div class="lp-list">
+        <div class="or sel"><div class="l1"><div class="cn"><span class="dot dot-l"></span><span class="t">Rajesh Traders</span></div><span class="tm">09:15</span></div><div class="l2">Nirav Tailor</div></div>
+        <div class="or"><div class="l1"><div class="cn"><span class="dot dot-u"></span><span class="t">Shree Krishna Hardware</span></div><span class="tm">09:22</span></div><div class="l2">Mukesh Patel</div></div>
+        <div class="or flg"><div class="l1"><div class="cn"><span class="dot dot-l"></span><span class="t">Balaji Paints</span></div><span class="tm">09:31</span></div><div class="l2">Nirav Tailor</div></div>
+        <div class="or"><div class="l1"><div class="cn"><span class="dot dot-i"></span><span class="t">Mahavir Enterprises</span></div><span class="tm">09:45</span></div><div class="l2">Amit Shah</div></div>
+        <div class="or"><div class="l1"><div class="cn"><span class="dot dot-l"></span><span class="t">Khodiyar Paint House</span></div><span class="tm">10:02</span></div><div class="l2">Nirav Tailor</div></div>
+        <div class="or"><div class="l1"><div class="cn"><span class="dot dot-l"></span><span class="t">Patel Paint Centre</span></div><span class="tm">10:08</span></div><div class="l2">Nirav Tailor</div></div>
+        <div class="or"><div class="l1"><div class="cn"><span class="dot dot-c"></span><span class="t">New India Paints</span></div><span class="tm">10:14</span></div><div class="l2">Ravi Mehta</div></div>
+        <div class="or"><div class="l1"><div class="cn"><span class="dot dot-l"></span><span class="t">Maruti Hardware Store</span></div><span class="tm">10:20</span></div><div class="l2">Amit Shah</div></div>
+        <div class="pdiv">▸ 3 punched</div>
+      </div>
+    </div>
+
+    <!-- ═══ RIGHT PANEL ═══ -->
+    <div class="rp">
+
+      <!-- ── Header ── -->
+      <div class="dh">
+        <!-- Row 1: dot · Name · Code · Match · Dispatch · Signals  →  Order No. + Punch -->
+        <div class="dh-r1">
+          <div class="dh-r1-left">
+            <span class="dot dot-l" style="width:6px;height:6px;"></span>
+            <span class="dh-cust">Rajesh Traders</span>
+            <span class="dh-code">549434</span>
+            <span class="match-chip mc-ok">10/10</span>
+            <span class="dh-badge dh-b-d">Dispatch</span>
+            <span class="sig-badge sig-inf">Truck</span>
+          </div>
+          <div class="dh-r1-right">
+            <div class="so-grp">
+              <span class="lbl">Order No.</span>
+              <input placeholder="Enter number" maxlength="10" />
+            </div>
+            <button class="punch-btn dim">Punch</button>
+          </div>
+        </div>
+        <!-- Row 2: Meta → Copy, Reply, Flag -->
+        <div class="dh-r2">
+          <div class="dh-meta">
+            <span>Nirav Tailor</span><span class="s">·</span>
+            <span>09:15</span><span class="s">·</span>
+            <span>Varachha</span><span class="s">·</span>
+            <span>Local</span><span class="s">·</span>
+            <span style="font-variant-numeric:tabular-nums;">42L</span><span class="s">·</span>
+            <span>10 lines</span>
+          </div>
+          <div class="dh-actions">
+            <button class="act">📋 Copy <span class="k">Ctrl+C</span></button>
+            <button class="act dim">✉ Reply <span class="k">R</span></button>
+            <button class="act act-f">⚑ Flag <span class="k">F</span></button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ TABLE ═══ -->
+      <div class="tw">
+        <table class="tbl">
+          <colgroup>
+            <col style="width: 4%">
+            <col style="width: 24%">
+            <col style="width: 11%">
+            <col style="width: 26%">
+            <col style="width: 5.5%">
+            <col style="width: 5.5%">
+            <col style="width: 5.5%">
+            <col style="width: 12%">
+            <col style="width: 6.5%">
+          </colgroup>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Raw Text</th>
+              <th>SKU Code</th>
+              <th>Description</th>
+              <th class="tc">Pk</th>
+              <th class="tr">Qty</th>
+              <th class="tr">Vol</th>
+              <th class="tc">Status</th>
+              <th class="tc"></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="ln">1</span></td>
+              <td><span class="raw">WS Max 10 ltr BW 2</span></td>
+              <td><span class="sku">IN5860142</span></td>
+              <td><span class="dsc"><b>Weathercoat Max</b> · BW</span></td>
+              <td class="tc"><span class="pk">10</span></td>
+              <td class="tr"><span class="qty">2</span></td>
+              <td class="tr"><span class="vol">20L</span></td>
+              <td class="tc"></td>
+              <td class="tc"><span class="toggle on"><span class="knob"></span></span></td>
+            </tr>
+            <tr>
+              <td><span class="ln">2</span></td>
+              <td><span class="raw">Promise exter 93 4ltr 3</span></td>
+              <td><span class="sku">IN5984201</span></td>
+              <td><span class="dsc"><b>Promise Exterior</b> · 93 Base</span></td>
+              <td class="tc"><span class="pk">4</span></td>
+              <td class="tr"><span class="qty">3</span></td>
+              <td class="tr"><span class="vol">12L</span></td>
+              <td class="tc"></td>
+              <td class="tc"><span class="toggle on"><span class="knob"></span></span></td>
+            </tr>
+            <tr>
+              <td><span class="ln">3</span></td>
+              <td><span class="raw">WS Protect 92 1L 4</span></td>
+              <td><span class="sku">IN5860098</span></td>
+              <td><span class="dsc"><b>WS Protect</b> · 92 Base</span></td>
+              <td class="tc"><span class="pk">1</span></td>
+              <td class="tr"><span class="qty">4</span></td>
+              <td class="tr"><span class="vol">4L</span></td>
+              <td class="tc"></td>
+              <td class="tc"><span class="toggle on"><span class="knob"></span></span></td>
+            </tr>
+            <tr class="r-pt">
+              <td><span class="ln">4</span></td>
+              <td><span class="raw">Aquatech seal 2ltr super 2</span></td>
+              <td><span class="sku">IN5967801</span></td>
+              <td><span class="dsc"><b>Aquatech Sealant</b> · BW?</span><span class="tag-pt">PARTIAL</span></td>
+              <td class="tc"><span class="pk">2</span></td>
+              <td class="tr"><span class="qty">2</span></td>
+              <td class="tr"><span class="vol">4L</span></td>
+              <td class="tc"></td>
+              <td class="tc"><span class="toggle on"><span class="knob"></span></span></td>
+            </tr>
+            <tr>
+              <td><span class="ln">5</span></td>
+              <td><span class="raw">GP white putty 1kg 2</span></td>
+              <td><span class="sku">IN5984055</span></td>
+              <td><span class="dsc"><b>GP White Putty</b> · N/A</span></td>
+              <td class="tc"><span class="pk">1</span></td>
+              <td class="tr"><span class="qty">2</span></td>
+              <td class="tr"><span class="vol">—</span></td>
+              <td class="tc"></td>
+              <td class="tc"><span class="toggle on"><span class="knob"></span></span></td>
+            </tr>
+            <tr>
+              <td><span class="ln">6</span></td>
+              <td><span class="raw">Sadolin PU Exterior 2L 3</span></td>
+              <td><span class="sku">IN5860221</span></td>
+              <td><span class="dsc"><b>Sadolin PU Exterior</b> · Clear</span></td>
+              <td class="tc"><span class="pk">4</span></td>
+              <td class="tr"><span class="qty">3</span></td>
+              <td class="tr"><span class="vol">12L</span></td>
+              <td class="tc"></td>
+              <td class="tc"><span class="toggle on"><span class="knob"></span></span></td>
+            </tr>
+            <tr>
+              <td><span class="ln">7</span></td>
+              <td><span class="raw">2KPU Matt clear 1L 2</span></td>
+              <td><span class="sku">IN5911903</span></td>
+              <td><span class="dsc"><b>2KPU Matt</b> · Clear</span></td>
+              <td class="tc"><span class="pk">1</span></td>
+              <td class="tr"><span class="qty">2</span></td>
+              <td class="tr"><span class="vol">2L</span></td>
+              <td class="tc"></td>
+              <td class="tc"><span class="toggle on"><span class="knob"></span></span></td>
+            </tr>
+            <!-- NOT FOUND — reason set -->
+            <tr class="r-nf">
+              <td><span class="ln">8</span></td>
+              <td><span class="raw">Super satin gloss red 1ltr 4</span></td>
+              <td><span class="sku">IN5860311</span></td>
+              <td><span class="dsc"><b>Super Satin Gloss</b> · Red</span></td>
+              <td class="tc"><span class="pk">1</span></td>
+              <td class="tr"><span class="qty" style="color:#374151;">4</span></td>
+              <td class="tr"><span class="vol">4L</span></td>
+              <td class="tc"><span class="status-label">Out of stock</span></td>
+              <td class="tc"><span class="toggle off"><span class="knob"></span></span></td>
+            </tr>
+            <!-- NOT FOUND — dropdown open -->
+            <tr class="r-nf">
+              <td><span class="ln">9</span></td>
+              <td><span class="raw">Duragloss hi sheen 4L 2</span></td>
+              <td><span class="sku">IN5860340</span></td>
+              <td><span class="dsc"><b>Duragloss Hi Sheen</b> · Clear</span></td>
+              <td class="tc"><span class="pk">4</span></td>
+              <td class="tr"><span class="qty" style="color:#374151;">2</span></td>
+              <td class="tr"><span class="vol">8L</span></td>
+              <td class="tc" style="position:relative;overflow:visible;">
+                <div class="remarks-drop">
+                  <button class="rd-item">Out of stock</button>
+                  <button class="rd-item">Wrong pack</button>
+                  <button class="rd-item">Discontinued</button>
+                  <button class="rd-item">Other depot</button>
+                  <div class="rd-divider"></div>
+                  <button class="rd-item">Other</button>
+                </div>
+              </td>
+              <td class="tc"><span class="toggle off"><span class="knob"></span></span></td>
+            </tr>
+            <!-- UNMATCHED -->
+            <tr class="r-um">
+              <td><span class="ln">10</span></td>
+              <td><span class="raw">Aqua primer 20L BW 1</span></td>
+              <td><span class="sku">—</span></td>
+              <td><span class="dsc">No match found</span><span class="tag-um">UNMATCHED</span><span class="res-link">Resolve →</span></td>
+              <td class="tc"><span class="pk">20</span></td>
+              <td class="tr"><span class="qty">1</span></td>
+              <td class="tr"><span class="vol">20L</span></td>
+              <td class="tc"></td>
+              <td class="tc"><span class="toggle on"><span class="knob"></span></span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Footer -->
+      <div class="rf">
+        <div class="rf-s"><label>Delivery</label><p>Truck delivery — call before dispatch</p></div>
+        <div class="rf-s"><label>Bill</label><p class="em">—</p></div>
+        <div class="rf-s"><label>Notes</label><p><span class="rf-rt rf-rt-d">del</span>Call before dispatch</p></div>
+        <div class="rf-s" style="width:60px;flex:none;"><label>Received</label><p>09:15</p></div>
+      </div>
+      <div class="navf">
+        <button class="navb nd">← Prev</button><span class="navp">1 of 8</span><button class="navb">Next →</button>
+        <span class="navh">↑↓ navigate · Ctrl+C copy · Ctrl+V paste SO</span>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="toast">📋 Customer: <b>549434</b> copied · Ctrl+C again for SKUs</div>
+</body>
+</html>
