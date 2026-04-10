@@ -13,7 +13,7 @@ import {
   getPackVolumeLiters,
   buildReplyTemplate,
 } from "@/lib/mail-orders/utils";
-import { searchCustomers, saveLineStatus } from "@/lib/mail-orders/api";
+import { searchCustomers, saveLineStatus, searchSkus, resolveLine } from "@/lib/mail-orders/api";
 
 interface ReviewViewProps {
   orders: MoOrder[];           // filtered orders (by slot, search, filters)
@@ -175,6 +175,211 @@ function ReasonDropdown({
   );
 }
 
+// ── Remark Section ─────────────────────────────────────────────────────────
+
+function RemarkSection({ label, value, isEmpty }: { label: string; value: string; isEmpty?: boolean }) {
+  return (
+    <div style={{ flex: 1, minWidth: 0 }}>
+      <div style={{
+        fontSize: 9, fontWeight: 600, color: "#9ca3af",
+        textTransform: "uppercase", letterSpacing: "0.04em",
+        marginBottom: 1,
+      }}>
+        {label}
+      </div>
+      <div style={{
+        fontSize: 11, color: isEmpty ? "#d1d5db" : "#4b5563",
+        lineHeight: 1.3,
+        whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+        fontStyle: isEmpty ? "italic" : "normal",
+      }}>
+        {value}
+      </div>
+    </div>
+  );
+}
+
+// ── Resolve Popover ────────────────────────────────────────────────────────
+
+interface SkuSearchResult {
+  material: string;
+  description: string;
+  packCode: string;
+  packMatch: boolean;
+}
+
+function ResolvePopover({
+  line,
+  onResolve,
+  onClose,
+}: {
+  line: MoOrderLine;
+  onResolve: (lineId: number, material: string, description: string, packCode: string) => void;
+  onClose: () => void;
+}) {
+  const [query, setQuery] = useState(line.rawText);
+  const [packFilter, setPackFilter] = useState<string | null>(null);
+  const [results, setResults] = useState<SkuSearchResult[]>([]);
+  const [searching, setSearching] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  // Outside click
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [onClose]);
+
+  // Escape
+  useEffect(() => {
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === "Escape") { e.stopPropagation(); onClose(); }
+    }
+    document.addEventListener("keydown", handleKey, { capture: true });
+    return () => document.removeEventListener("keydown", handleKey, { capture: true });
+  }, [onClose]);
+
+  // Debounced search
+  useEffect(() => {
+    const timer = setTimeout(async () => {
+      if (!query.trim()) { setResults([]); return; }
+      setSearching(true);
+      try {
+        const data = await searchSkus(query.trim(), packFilter ?? undefined);
+        setResults(data);
+      } catch { setResults([]); }
+      setSearching(false);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [query, packFilter]);
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div
+        style={{
+          position: "fixed", inset: 0, background: "rgba(0,0,0,0.2)", zIndex: 49,
+        }}
+      />
+      <div
+        ref={ref}
+        style={{
+          position: "fixed",
+          top: "50%", left: "50%", transform: "translate(-50%, -50%)",
+          width: 480, maxHeight: "70vh",
+          background: "#fff",
+          border: "1px solid #e5e7eb",
+          borderRadius: 12,
+          boxShadow: "0 8px 32px rgba(0,0,0,0.15)",
+          zIndex: 50,
+          display: "flex", flexDirection: "column",
+          overflow: "hidden",
+        }}
+      >
+        {/* Header */}
+        <div style={{
+          padding: "12px 16px",
+          borderBottom: "1px solid #e5e7eb",
+          display: "flex", justifyContent: "space-between", alignItems: "center",
+          gap: 12,
+        }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: "#111827" }}>Resolve Line</div>
+            <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{line.rawText}</div>
+          </div>
+          <button
+            onClick={onClose}
+            style={{
+              width: 24, height: 24, borderRadius: 4, border: "1px solid #e5e7eb",
+              background: "#fff", cursor: "pointer", fontSize: 14, color: "#9ca3af",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              flexShrink: 0,
+            }}
+          >
+            ×
+          </button>
+        </div>
+
+        {/* Detected info */}
+        <div style={{ padding: "8px 16px", background: "#f9fafb", fontSize: 11, color: "#6b7280", display: "flex", gap: 12, flexWrap: "wrap" }}>
+          {line.productName && <span>Product: <b style={{ color: "#111827" }}>{line.productName}</b></span>}
+          {line.baseColour && <span>Base: <b style={{ color: "#111827" }}>{line.baseColour}</b></span>}
+          {line.packCode && <span>Pack: <b style={{ color: "#111827" }}>{line.packCode}</b></span>}
+          <span>Qty: <b style={{ color: "#111827" }}>{line.quantity}</b></span>
+        </div>
+
+        {/* Search */}
+        <div style={{ padding: "8px 16px", display: "flex", gap: 8, alignItems: "center" }}>
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search SKU..."
+            autoFocus
+            style={{
+              flex: 1, height: 30, border: "1px solid #e5e7eb", borderRadius: 6,
+              padding: "0 10px", fontSize: 11, outline: "none", color: "#374151",
+            }}
+          />
+          {/* Pack filter chips */}
+          <div style={{ display: "flex", gap: 4 }}>
+            {["1", "4", "10", "20"].map(pk => (
+              <button
+                key={pk}
+                onClick={() => setPackFilter(packFilter === pk ? null : pk)}
+                style={{
+                  height: 24, padding: "0 8px", borderRadius: 4, fontSize: 10, fontWeight: 500,
+                  border: "1px solid", cursor: "pointer", transition: "all 0.1s",
+                  ...(packFilter === pk
+                    ? { background: "#111827", color: "#fff", borderColor: "#111827" }
+                    : { background: "#fff", color: "#6b7280", borderColor: "#e5e7eb" }
+                  ),
+                }}
+              >
+                {pk}L
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Results */}
+        <div style={{ flex: 1, overflowY: "auto", maxHeight: 320 }}>
+          {searching && (
+            <div style={{ padding: 16, textAlign: "center", fontSize: 11, color: "#9ca3af" }}>Searching...</div>
+          )}
+          {!searching && results.length === 0 && query.trim() && (
+            <div style={{ padding: 16, textAlign: "center", fontSize: 11, color: "#9ca3af" }}>No SKUs found</div>
+          )}
+          {results.map((sku) => (
+            <button
+              key={sku.material}
+              onClick={() => onResolve(line.id, sku.material, sku.description, sku.packCode)}
+              style={{
+                display: "flex", width: "100%", padding: "8px 16px", gap: 8,
+                border: "none", borderBottom: "1px solid #f3f4f6", background: "#fff",
+                cursor: "pointer", textAlign: "left", alignItems: "center",
+                transition: "background 0.08s",
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.background = "#f9fafb"}
+              onMouseLeave={(e) => e.currentTarget.style.background = "#fff"}
+            >
+              <span style={{ fontFamily: '"SF Mono", ui-monospace, Menlo, monospace', fontSize: 11, color: "#6b7280", width: 80, flexShrink: 0 }}>
+                {sku.material}
+              </span>
+              <span style={{ fontSize: 11, flex: 1, minWidth: 0, color: "#111827" }}>
+                {sku.description}
+                <span style={{ color: "#9ca3af" }}> · {sku.packCode}L</span>
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </>
+  );
+}
+
 // ── Component ──────────────────────────────────────────────────────────────
 
 export function ReviewView({
@@ -209,6 +414,12 @@ export function ReviewView({
   // SKU table state
   const [reasonDropdownLineId, setReasonDropdownLineId] = useState<number | null>(null);
   const [lineStatusOverrides, setLineStatusOverrides] = useState<Map<number, { found: boolean; reason: string | null }>>(new Map());
+  const [resolveLineId, setResolveLineId] = useState<number | null>(null);
+  const [resolvedLineOverrides, setResolvedLineOverrides] = useState<Map<number, {
+    skuCode: string;
+    skuDescription: string;
+    packCode: string;
+  }>>(new Map());
 
   // ── Selected order ──────────────────────────────────────────────
   const selectedOrder = useMemo(() => {
@@ -226,6 +437,8 @@ export function ReviewView({
     setCustSearched(false);
     setReasonDropdownLineId(null);
     setLineStatusOverrides(new Map());
+    setResolveLineId(null);
+    setResolvedLineOverrides(new Map());
   }, [focusedId]);
 
   // Auto-select first pending order if none selected
@@ -483,6 +696,64 @@ export function ReviewView({
       });
     }
   }
+
+  async function handleResolveLine(lineId: number, material: string, description: string, packCode: string) {
+    setResolveLineId(null);
+    setResolvedLineOverrides(prev => {
+      const next = new Map(prev);
+      next.set(lineId, { skuCode: material, skuDescription: description, packCode });
+      return next;
+    });
+    try {
+      await resolveLine(lineId, material, false);
+    } catch {
+      setResolvedLineOverrides(prev => {
+        const next = new Map(prev);
+        next.delete(lineId);
+        return next;
+      });
+    }
+  }
+
+  // ── Navigation list (left panel order: pending then optionally punched) ──
+  const navigationList = useMemo(() => {
+    const pending = orders.filter(o => o.status !== "punched" || recentlyPunchedIds.has(o.id));
+    const punched = punchedVisible
+      ? orders.filter(o => o.status === "punched" && !recentlyPunchedIds.has(o.id))
+      : [];
+    return [...pending, ...punched];
+  }, [orders, punchedVisible, recentlyPunchedIds]);
+
+  const currentIndex = useMemo(() => {
+    if (focusedId === null) return -1;
+    return navigationList.findIndex(o => o.id === focusedId);
+  }, [navigationList, focusedId]);
+
+  function handlePrevOrder() {
+    if (currentIndex > 0) {
+      onFocusChange(navigationList[currentIndex - 1].id);
+    }
+  }
+
+  function handleNextOrder() {
+    if (currentIndex < navigationList.length - 1) {
+      onFocusChange(navigationList[currentIndex + 1].id);
+    }
+  }
+
+  // Auto-advance: when focused order becomes fully punched (after grace period),
+  // move to next pending order
+  useEffect(() => {
+    if (focusedId === null) return;
+    const order = orders.find(o => o.id === focusedId);
+    if (!order) return;
+    if (order.status === "punched" && !recentlyPunchedIds.has(order.id)) {
+      const nextPending = orders.find(o => o.status !== "punched");
+      if (nextPending) {
+        onFocusChange(nextPending.id);
+      }
+    }
+  }, [orders, focusedId, recentlyPunchedIds, onFocusChange]);
 
   // ── Detail header (right panel) ──────────────────────────────────
   function renderDetailHeader(order: MoOrder) {
@@ -849,7 +1120,18 @@ export function ReviewView({
             </tr>
           </thead>
           <tbody>
-            {sortedLines.map((line, idx) => {
+            {sortedLines.map((origLine, idx) => {
+              // Apply resolved line overrides (from in-session resolves)
+              const resolved = resolvedLineOverrides.get(origLine.id);
+              const line: MoOrderLine = resolved
+                ? {
+                    ...origLine,
+                    skuCode: resolved.skuCode,
+                    skuDescription: resolved.skuDescription,
+                    packCode: resolved.packCode,
+                    matchStatus: "matched",
+                  }
+                : origLine;
               const rowState = getRowState(line);
               const reason = getLineReason(line);
               const isFirst = idx === 0;
@@ -886,7 +1168,12 @@ export function ReviewView({
                     color: skuColor,
                   }}>
                     {rowState === "unmatched" ? (
-                      <span style={{ color: "#d1d5db" }}>—</span>
+                      <span
+                        onClick={() => setResolveLineId(line.id)}
+                        style={{ color: "#d1d5db", cursor: "pointer" }}
+                      >
+                        —
+                      </span>
                     ) : (
                       line.skuCode ?? "—"
                     )}
@@ -924,7 +1211,7 @@ export function ReviewView({
                           marginLeft: 4, display: "inline-block",
                         }}>UNMATCHED</span>
                         <span
-                          onClick={() => { /* TODO: open resolve popover — Step 4 */ }}
+                          onClick={() => setResolveLineId(line.id)}
                           style={{
                             fontSize: 10, color: "#0d9488", cursor: "pointer", fontWeight: 500,
                             marginLeft: 4,
@@ -1063,6 +1350,117 @@ export function ReviewView({
           <>
             {renderDetailHeader(selectedOrder)}
             {renderSkuTable(selectedOrder)}
+
+            {/* ── Remarks Footer ── */}
+            <div style={{
+              flexShrink: 0,
+              borderTop: "1px solid #e5e7eb",
+              padding: "8px 20px",
+              display: "flex",
+              gap: 20,
+              background: "#f9fafb",
+            }}>
+              <RemarkSection
+                label="Delivery"
+                value={selectedOrder.deliveryRemarks || "—"}
+                isEmpty={!selectedOrder.deliveryRemarks}
+              />
+              <RemarkSection
+                label="Bill"
+                value={selectedOrder.billRemarks || "—"}
+                isEmpty={!selectedOrder.billRemarks}
+              />
+              <RemarkSection
+                label="Notes"
+                value={
+                  selectedOrder.remarks_list && selectedOrder.remarks_list.length > 0
+                    ? selectedOrder.remarks_list.map(r => r.rawText).join(" · ")
+                    : "—"
+                }
+                isEmpty={!selectedOrder.remarks_list || selectedOrder.remarks_list.length === 0}
+              />
+              <div style={{ width: 60, flex: "none" }}>
+                <div style={{
+                  fontSize: 9, fontWeight: 600, color: "#9ca3af",
+                  textTransform: "uppercase", letterSpacing: "0.04em",
+                  marginBottom: 1,
+                }}>
+                  Received
+                </div>
+                <div style={{ fontSize: 11, color: "#4b5563", fontVariantNumeric: "tabular-nums" }}>
+                  {formatTime(selectedOrder.receivedAt)}
+                </div>
+              </div>
+            </div>
+
+            {/* ── Nav Footer ── */}
+            <div style={{
+              flexShrink: 0,
+              height: 36,
+              borderTop: "1px solid #e5e7eb",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 10,
+              padding: "0 20px",
+            }}>
+              <button
+                onClick={handlePrevOrder}
+                disabled={currentIndex <= 0}
+                style={{
+                  height: 26, fontSize: 11, fontWeight: 500, padding: "0 12px",
+                  borderRadius: 5, border: "1px solid",
+                  background: "#fff",
+                  ...(currentIndex <= 0
+                    ? { color: "#d1d5db", borderColor: "#f3f4f6", cursor: "default" }
+                    : { color: "#4b5563", borderColor: "#e5e7eb", cursor: "pointer" }
+                  ),
+                }}
+                onMouseEnter={(e) => { if (currentIndex > 0) e.currentTarget.style.background = "#f9fafb"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = "#fff"; }}
+              >
+                ← Prev
+              </button>
+
+              <span style={{ fontSize: 11, color: "#9ca3af", fontWeight: 500 }}>
+                {currentIndex >= 0 ? currentIndex + 1 : 0} of {navigationList.length}
+              </span>
+
+              <button
+                onClick={handleNextOrder}
+                disabled={currentIndex >= navigationList.length - 1}
+                style={{
+                  height: 26, fontSize: 11, fontWeight: 500, padding: "0 12px",
+                  borderRadius: 5, border: "1px solid",
+                  background: "#fff",
+                  ...(currentIndex >= navigationList.length - 1
+                    ? { color: "#d1d5db", borderColor: "#f3f4f6", cursor: "default" }
+                    : { color: "#4b5563", borderColor: "#e5e7eb", cursor: "pointer" }
+                  ),
+                }}
+                onMouseEnter={(e) => { if (currentIndex < navigationList.length - 1) e.currentTarget.style.background = "#f9fafb"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = "#fff"; }}
+              >
+                Next →
+              </button>
+
+              <span style={{ fontSize: 9, color: "#d1d5db", marginLeft: 6 }}>
+                ↑↓ navigate · Ctrl+C copy · Ctrl+V paste SO
+              </span>
+            </div>
+
+            {/* ── Resolve Popover ── */}
+            {resolveLineId !== null && (() => {
+              const line = selectedOrder.lines.find(l => l.id === resolveLineId);
+              if (!line) return null;
+              return (
+                <ResolvePopover
+                  line={line}
+                  onResolve={handleResolveLine}
+                  onClose={() => setResolveLineId(null)}
+                />
+              );
+            })()}
           </>
         ) : (
           <div className="flex-1 flex items-center justify-center text-gray-400 text-[13px]">

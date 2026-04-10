@@ -637,7 +637,7 @@ export default function MailOrdersPage() {
   useEffect(() => {
     function onCtrlKey(e: KeyboardEvent) {
       if (!e.ctrlKey && !e.metaKey) return;
-      if (viewMode !== "table") return;
+      if (viewMode !== "table" && viewMode !== "review") return;
 
       const key = e.key.toLowerCase();
       const tag = (document.activeElement?.tagName ?? "").toUpperCase();
@@ -647,9 +647,14 @@ export default function MailOrdersPage() {
         if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
         if (focusedId === null) return;
         e.stopImmediatePropagation();
-        const row = document.querySelector(`tr[data-order-id="${focusedId}"]`);
-        if (!row) return;
-        const input = row.querySelector('input[placeholder="SO Number"]') as HTMLInputElement | null;
+        // Try table mode selector first
+        let input = document.querySelector(
+          `tr[data-order-id="${focusedId}"] input[placeholder="SO Number"]`,
+        ) as HTMLInputElement | null;
+        // Fallback for review mode — Order No. input in detail header
+        if (!input) {
+          input = document.querySelector('input[placeholder="Enter number"]') as HTMLInputElement | null;
+        }
         if (input) {
           input.focus();
           input.select();
@@ -779,7 +784,7 @@ export default function MailOrdersPage() {
         return;
       }
 
-      if (viewMode !== "table") return;
+      if (viewMode !== "table" && viewMode !== "review") return;
 
       const tag = (document.activeElement?.tagName ?? "").toUpperCase();
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
@@ -807,7 +812,7 @@ export default function MailOrdersPage() {
       }
 
       if (key === "Enter") {
-        if (focusedId !== null) handleExpand(focusedId);
+        if (viewMode === "table" && focusedId !== null) handleExpand(focusedId);
         return;
       }
 
@@ -849,12 +854,13 @@ export default function MailOrdersPage() {
         return;
       }
 
-      // / — Focus search box
+      // / — Focus search box (review mode focuses left panel filter)
       if (key === "/") {
         e.preventDefault();
-        const searchInput = document.querySelector(
-          'input[placeholder="Search orders..."]',
-        ) as HTMLInputElement | null;
+        const selector = viewMode === "review"
+          ? 'input[placeholder="Filter orders..."]'
+          : 'input[placeholder="Search orders..."]';
+        const searchInput = document.querySelector(selector) as HTMLInputElement | null;
         if (searchInput) {
           searchInput.focus();
           searchInput.select();
