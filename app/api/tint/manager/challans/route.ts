@@ -101,7 +101,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
           select: { challanNumber: true },
         },
       },
-      orderBy: { createdAt: "desc" },
+      orderBy: { orderDateTime: "asc" },
     });
 
     // ── Step 3: assemble response ─────────────────────────────────────────────
