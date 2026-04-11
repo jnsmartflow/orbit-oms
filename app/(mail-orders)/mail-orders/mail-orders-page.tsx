@@ -9,7 +9,6 @@ import { MailOrdersTable, ALL_COLUMNS } from "./mail-orders-table";
 import type { ColumnConfig } from "./mail-orders-table";
 import { UniversalHeader } from "@/components/universal-header";
 import { SlotCompletionModal } from "./slot-completion-modal";
-import { FocusModeView } from "./focus-mode-view";
 import { ReviewView } from "./review-view";
 import { Check, Copy } from "lucide-react";
 
@@ -143,7 +142,7 @@ export default function MailOrdersPage() {
   const [skuPanelOrderId, setSkuPanelOrderId] = useState<number | null>(null);
   const [dismissedSlots, setDismissedSlots] = useState<Set<string>>(new Set());
   const [completedSlot, setCompletedSlot] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<"table" | "review" | "focus">("table");
+  const [viewMode, setViewMode] = useState<"table" | "focus">("focus");
   const [slotCutoffs, setSlotCutoffs] = useState<SlotCutoffs | undefined>(undefined);
   // ── Smart copy state (Ctrl+C workflow for SAP) ──────────────────────────────
   const [smartCopyOrderId, setSmartCopyOrderId] = useState<number | null>(null);
@@ -637,7 +636,7 @@ export default function MailOrdersPage() {
   useEffect(() => {
     function onCtrlKey(e: KeyboardEvent) {
       if (!e.ctrlKey && !e.metaKey) return;
-      if (viewMode !== "table" && viewMode !== "review") return;
+      if (viewMode !== "table" && viewMode !== "focus") return;
 
       const key = e.key.toLowerCase();
       const tag = (document.activeElement?.tagName ?? "").toUpperCase();
@@ -651,7 +650,7 @@ export default function MailOrdersPage() {
         let input = document.querySelector(
           `tr[data-order-id="${focusedId}"] input[placeholder="SO Number"]`,
         ) as HTMLInputElement | null;
-        // Fallback for review mode — Order No. input in detail header
+        // Fallback for focus mode — Order No. input in detail header
         if (!input) {
           input = document.querySelector('input[placeholder="Enter number"]') as HTMLInputElement | null;
         }
@@ -784,7 +783,7 @@ export default function MailOrdersPage() {
         return;
       }
 
-      if (viewMode !== "table" && viewMode !== "review") return;
+      if (viewMode !== "table" && viewMode !== "focus") return;
 
       const tag = (document.activeElement?.tagName ?? "").toUpperCase();
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
@@ -792,7 +791,7 @@ export default function MailOrdersPage() {
       const key = e.key;
 
       if (key === "ArrowDown") {
-        if (viewMode === "review") return; // handled by review-view (line nav)
+        if (viewMode === "focus") return; // handled by review-view.tsx (line nav)
         e.preventDefault();
         setFocusedId((prev) => {
           const idx = flatOrders.findIndex((o) => o.id === prev);
@@ -803,7 +802,7 @@ export default function MailOrdersPage() {
       }
 
       if (key === "ArrowUp") {
-        if (viewMode === "review") return; // handled by review-view (line nav)
+        if (viewMode === "focus") return; // handled by review-view.tsx (line nav)
         e.preventDefault();
         setFocusedId((prev) => {
           const idx = flatOrders.findIndex((o) => o.id === prev);
@@ -856,10 +855,10 @@ export default function MailOrdersPage() {
         return;
       }
 
-      // / — Focus search box (review mode focuses left panel filter)
+      // / — Focus search box (focus mode focuses left panel filter)
       if (key === "/") {
         e.preventDefault();
-        const selector = viewMode === "review"
+        const selector = viewMode === "focus"
           ? 'input[placeholder="Filter orders..."]'
           : 'input[placeholder="Search orders..."]';
         const searchInput = document.querySelector(selector) as HTMLInputElement | null;
@@ -992,16 +991,6 @@ export default function MailOrdersPage() {
                 Table
               </button>
               <button
-                onClick={() => setViewMode("review")}
-                className={`text-[10px] px-2.5 py-[3px] font-medium transition-colors ${
-                  viewMode === "review"
-                    ? "bg-gray-800 text-white"
-                    : "bg-white text-gray-500 hover:bg-gray-50"
-                }`}
-              >
-                Review
-              </button>
-              <button
                 onClick={() => setViewMode("focus")}
                 className={`text-[10px] px-2.5 py-[3px] font-medium transition-colors ${
                   viewMode === "focus"
@@ -1061,8 +1050,8 @@ export default function MailOrdersPage() {
       />
 
       {/* ── Content area ───────────────────────────────────────────────────────── */}
-      {/* Review mode — full bleed, manages own layout */}
-      {!loading && !error && orders.length > 0 && viewMode === "review" && (
+      {/* Focus mode — full bleed, manages own layout */}
+      {!loading && !error && orders.length > 0 && viewMode === "focus" && (
         <ReviewView
           orders={filteredOrders}
           allOrders={orders}
@@ -1085,8 +1074,8 @@ export default function MailOrdersPage() {
         />
       )}
 
-      {/* Table/Focus mode — padded wrapper. Also shows loading/error/empty for review mode. */}
-      {(viewMode !== "review" || loading || error || orders.length === 0) && (
+      {/* Table mode — padded wrapper. Also shows loading/error/empty for focus mode. */}
+      {(viewMode !== "focus" || loading || error || orders.length === 0) && (
         <div className="flex-1 overflow-y-auto px-4 py-3">
           {!loading && hasUrgentOrHold && viewMode === "table" && (
             <div className="sticky top-0 z-20 mb-2 -mx-0">
@@ -1158,20 +1147,6 @@ export default function MailOrdersPage() {
               onTogglePunched={() => setPunchedVisible(prev => !prev)}
               skuPanelOrderId={skuPanelOrderId}
               onCloseSkuPanel={() => setSkuPanelOrderId(null)}
-            />
-          )}
-
-          {!loading && !error && orders.length > 0 && viewMode === "focus" && (
-            <FocusModeView
-              orders={orders}
-              activeSlot={activeSlot}
-              flaggedIds={flaggedIds}
-              onFlag={handleFlag}
-              onSaveSoNumber={handleSaveSoNumber}
-              onCopy={handleCopy}
-              batchStates={batchStates}
-              onAdvanceBatch={handleAdvanceBatch}
-              slotCutoffs={slotCutoffs}
             />
           )}
         </div>
