@@ -1,37 +1,42 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useState, useRef, useCallback } from "react";
 
 interface RoleSidebarContextValue {
-  isCollapsed: boolean;
-  toggle: () => void;
+  isExpanded: boolean;
+  expand: () => void;
+  collapse: () => void;
 }
 
 const RoleSidebarContext = createContext<RoleSidebarContextValue>({
-  isCollapsed: false,
-  toggle: () => {},
+  isExpanded: false,
+  expand: () => {},
+  collapse: () => {},
 });
 
 export function RoleSidebarProvider({ children }: { children: React.ReactNode }) {
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
+  const collapseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem("role-sidebar-collapsed");
-      setIsCollapsed(stored === "true");
-    } catch {}
+  const expand = useCallback(() => {
+    // Cancel any pending collapse
+    if (collapseTimer.current) {
+      clearTimeout(collapseTimer.current);
+      collapseTimer.current = null;
+    }
+    setIsExpanded(true);
   }, []);
 
-  function toggle() {
-    setIsCollapsed((prev) => {
-      const next = !prev;
-      try { localStorage.setItem("role-sidebar-collapsed", String(next)); } catch {}
-      return next;
-    });
-  }
+  const collapse = useCallback(() => {
+    // Small delay (150ms) to prevent flicker when mouse briefly leaves and re-enters
+    collapseTimer.current = setTimeout(() => {
+      setIsExpanded(false);
+      collapseTimer.current = null;
+    }, 150);
+  }, []);
 
   return (
-    <RoleSidebarContext.Provider value={{ isCollapsed, toggle }}>
+    <RoleSidebarContext.Provider value={{ isExpanded, expand, collapse }}>
       {children}
     </RoleSidebarContext.Provider>
   );

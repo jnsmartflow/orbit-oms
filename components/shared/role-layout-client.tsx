@@ -1,6 +1,5 @@
 "use client";
 
-import { useRoleSidebar } from "./role-sidebar-provider";
 import { RoleSidebar } from "./role-sidebar";
 import type { RoleSidebarRole } from "./role-sidebar";
 import type { NavItemConfig } from "@/lib/permissions";
@@ -20,8 +19,6 @@ export function RoleLayoutClient({
   navItems,
   children,
 }: RoleLayoutClientProps) {
-  const { isCollapsed } = useRoleSidebar();
-
   return (
     <div className="min-h-screen bg-white overflow-hidden">
       <RoleSidebar
@@ -31,10 +28,10 @@ export function RoleLayoutClient({
         navItems={navItems}
       />
       <div
-        className="transition-all duration-200 min-h-screen overflow-hidden"
+        className="min-h-screen overflow-hidden"
         style={{
-          marginLeft: isCollapsed ? "72px" : "220px",
-          maxWidth:   isCollapsed ? "calc(100vw - 72px)" : "calc(100vw - 220px)",
+          marginLeft: "72px",
+          maxWidth:   "calc(100vw - 72px)",
         }}
       >
         {children}

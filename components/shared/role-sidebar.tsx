@@ -74,7 +74,7 @@ const ROLE_LABELS: Record<RoleSidebarRole, string> = {
 
 export function RoleSidebar({ role, userName, userInitials, navItems }: RoleSidebarProps) {
   const pathname              = usePathname();
-  const { isCollapsed, toggle } = useRoleSidebar();
+  const { isExpanded, expand, collapse } = useRoleSidebar();
 
   const roleLabel = ROLE_LABELS[role];
 
@@ -148,32 +148,33 @@ export function RoleSidebar({ role, userName, userInitials, navItems }: RoleSide
 
   return (
     <aside
-      className="hidden md:flex md:fixed md:inset-y-0 md:left-0 md:z-50 flex-col bg-white shadow-sm transition-all duration-200"
+      onMouseEnter={expand}
+      onMouseLeave={collapse}
+      className="hidden md:flex md:fixed md:inset-y-0 md:left-0 md:z-50 flex-col bg-white transition-all duration-200"
       style={{
-        width:       isCollapsed ? "72px" : "220px",
+        width:       isExpanded ? "220px" : "72px",
         borderLeft:  "3px solid #0d9488",
         borderRight: "1px solid #e5e7eb",
+        boxShadow:   isExpanded ? "4px 0 16px rgba(0,0,0,0.06)" : "none",
       }}
     >
       {/* Brand block */}
       <div
         className={cn(
           "flex items-center shrink-0 border-b border-gray-200",
-          isCollapsed ? "justify-center px-0 h-[52px]" : "gap-2.5 px-4 h-[52px]",
+          !isExpanded ? "justify-center px-0 h-[52px]" : "gap-2.5 px-4 h-[52px]",
         )}
       >
-        <button
-          onClick={toggle}
-          className="w-9 h-9 bg-teal-600 rounded-xl flex items-center justify-center text-white font-extrabold text-[14px] cursor-pointer hover:bg-teal-700 transition-colors flex-shrink-0"
-          title={isCollapsed ? "Expand menu" : "Collapse menu"}
+        <div
+          className="w-9 h-9 bg-teal-600 rounded-xl flex items-center justify-center text-white font-extrabold text-[14px] hover:bg-teal-700 transition-colors flex-shrink-0"
         >
           <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
             <circle cx="11" cy="11" r="7" stroke="white" strokeWidth="1.6"/>
             <circle cx="11" cy="11" r="2.2" fill="white"/>
             <circle cx="18" cy="11" r="2" fill="white"/>
           </svg>
-        </button>
-        {!isCollapsed && (
+        </div>
+        {isExpanded && (
           <div className="min-w-0">
             <p className="text-[14px] font-bold text-gray-900 leading-tight">Orbit OMS</p>
             <p className="text-[10px] text-gray-400 leading-tight">{roleLabel}</p>
@@ -181,13 +182,13 @@ export function RoleSidebar({ role, userName, userInitials, navItems }: RoleSide
         )}
       </div>
 
-      {isCollapsed ? collapsedNav : expandedNav}
+      {!isExpanded ? collapsedNav : expandedNav}
 
       {/* User block */}
       <div
         className={cn(
           "shrink-0 border-t border-gray-200",
-          isCollapsed
+          !isExpanded
             ? "flex justify-center py-3"
             : "flex items-center gap-2.5 px-4 py-3",
         )}
@@ -199,7 +200,7 @@ export function RoleSidebar({ role, userName, userInitials, navItems }: RoleSide
         >
           {userInitials}
         </button>
-        {!isCollapsed && (
+        {isExpanded && (
           <div className="min-w-0 flex-1">
             <p className="text-[12px] font-semibold text-gray-800 truncate">{userName}</p>
             <p className="text-[10px] text-gray-400 truncate">{roleLabel}</p>
