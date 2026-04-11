@@ -5,6 +5,19 @@ import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
+function mergeEmailDateTime(emailDate: Date | null, emailTime: string | null): Date | null {
+  if (!emailDate || !emailTime) return emailDate;
+  const [h, m] = emailTime.split(":").map(Number);
+  const istMinutes = h * 60 + m;
+  const utcMinutes = istMinutes - 330;
+  const utcH = Math.floor(((utcMinutes % 1440) + 1440) % 1440 / 60);
+  const utcM = ((utcMinutes % 60) + 60) % 60;
+  const dt = new Date(emailDate);
+  dt.setUTCHours(utcH, utcM, 0, 0);
+  if (utcMinutes < 0) dt.setUTCDate(dt.getUTCDate() - 1);
+  return dt;
+}
+
 function getSlotFromTime(dateTime: Date | null, fallbackTime: string | null): { slotId: number; timeStr: string } {
   let timeStr: string;
 
@@ -81,8 +94,7 @@ export async function POST(): Promise<NextResponse> {
     }
     // Priority 2: obdEmailDate + obdEmailTime
     else if (summary?.obdEmailDate) {
-      orderDateTime = summary.obdEmailDate;
-      // obdEmailDate already has time merged from import (mergeEmailDateTime)
+      orderDateTime = mergeEmailDateTime(summary.obdEmailDate, summary.obdEmailTime);
       source = "obd";
       obdFallback++;
     }
