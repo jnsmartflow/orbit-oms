@@ -47,6 +47,18 @@ function formatObdDate(date: string | null, time: string | null): string {
   return time ? `${dateStr} · ${time.slice(0, 5)}` : dateStr;
 }
 
+function formatOrderDate(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const dateStr = d.toLocaleDateString("en-GB", {
+    day: "numeric", month: "short", timeZone: "Asia/Kolkata"
+  });
+  const timeStr = d.toLocaleTimeString("en-GB", {
+    hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata"
+  });
+  return `${dateStr} · ${timeStr}`;
+}
+
 function buildTs(date: string | null, time: string | null): number {
   const dateStr = date ?? "1970-01-01";
   const parts = (time ?? "00:00").split(":");
@@ -60,10 +72,12 @@ function buildTs(date: string | null, time: string | null): number {
 function seqPriDateSort(
   aSeq: number | null | undefined,
   aPri: number | null | undefined,
+  aIso: string | null,
   aDate: string | null,
   aTime: string | null,
   bSeq: number | null | undefined,
   bPri: number | null | undefined,
+  bIso: string | null,
   bDate: string | null,
   bTime: string | null,
 ): number {
@@ -71,7 +85,9 @@ function seqPriDateSort(
   if (seqDiff !== 0) return seqDiff;
   const priDiff = (aPri ?? 5) - (bPri ?? 5);
   if (priDiff !== 0) return priDiff;
-  return buildTs(aDate, aTime) - buildTs(bDate, bTime);
+  const tsA = aIso ? new Date(aIso).getTime() : buildTs(aDate, aTime);
+  const tsB = bIso ? new Date(bIso).getTime() : buildTs(bDate, bTime);
+  return tsA - tsB;
 }
 
 function deliveryDotCls(type: string | null | undefined): string {
@@ -327,17 +343,21 @@ export function TintTableView({
       ((o.workflowStage === "tint_assigned" || o.workflowStage === "tinting_in_progress") &&
        (o.remainingQty ?? 0) > 0)
     )
-    .sort((a, b) => buildTs(a.obdEmailDate, a.obdEmailTime) - buildTs(b.obdEmailDate, b.obdEmailTime));
+    .sort((a, b) => {
+      const tsA = a.orderDateTime ? new Date(a.orderDateTime).getTime() : buildTs(a.obdEmailDate, a.obdEmailTime);
+      const tsB = b.orderDateTime ? new Date(b.orderDateTime).getTime() : buildTs(b.obdEmailDate, b.obdEmailTime);
+      return tsA - tsB;
+    });
 
   // ── Section 2: Assigned ───────────────────────────────────────────────────
 
   const assignedOrderRows = filteredOrders
     .filter((o) => o.workflowStage === "tint_assigned" && (o.remainingQty ?? 0) === 0)
-    .sort((a, b) => seqPriDateSort(a.sequenceOrder, a.priorityLevel, a.obdEmailDate, a.obdEmailTime, b.sequenceOrder, b.priorityLevel, b.obdEmailDate, b.obdEmailTime));
+    .sort((a, b) => seqPriDateSort(a.sequenceOrder, a.priorityLevel, a.orderDateTime, a.obdEmailDate, a.obdEmailTime, b.sequenceOrder, b.priorityLevel, b.orderDateTime, b.obdEmailDate, b.obdEmailTime));
 
   const assignedSplitRows = filteredActiveSplits
     .filter((s) => s.status === "tint_assigned")
-    .sort((a, b) => seqPriDateSort(a.sequenceOrder, a.priorityLevel, a.obdEmailDate, a.obdEmailTime, b.sequenceOrder, b.priorityLevel, b.obdEmailDate, b.obdEmailTime));
+    .sort((a, b) => seqPriDateSort(a.sequenceOrder, a.priorityLevel, a.orderDateTime, a.obdEmailDate, a.obdEmailTime, b.sequenceOrder, b.priorityLevel, b.orderDateTime, b.obdEmailDate, b.obdEmailTime));
 
   // ── Section 3: In Progress ────────────────────────────────────────────────
 
@@ -368,6 +388,7 @@ export function TintTableView({
       smu:                a.smu,
       obdEmailDate:       a.obdEmailDate,
       obdEmailTime:       a.obdEmailTime,
+      orderDateTime:      a.orderDateTime,
       slotId:             a.slotId,
       slotName:           a.slotName,
       slotTime:           a.slotTime,
@@ -408,7 +429,7 @@ export function TintTableView({
   // ── Render helpers ──────────────────────────────────────────────────────
 
   function OrderObdCell({ order }: { order: TintOrder }) {
-    const dateStr = formatObdDate(order.obdEmailDate, order.obdEmailTime) || formatTime(order.createdAt);
+    const dateStr = formatOrderDate(order.orderDateTime) || formatObdDate(order.obdEmailDate, order.obdEmailTime) || formatTime(order.createdAt);
     return (
       <div className={cellCls}>
         <div className="flex items-center gap-1.5">
@@ -426,7 +447,7 @@ export function TintTableView({
   }
 
   function SplitObdCell({ split }: { split: SplitCard }) {
-    const dateStr = formatObdDate(split.obdEmailDate, split.obdEmailTime) || formatTime(split.createdAt);
+    const dateStr = formatOrderDate(split.orderDateTime) || formatObdDate(split.obdEmailDate, split.obdEmailTime) || formatTime(split.createdAt);
     return (
       <div className={cellCls}>
         <div className="flex items-center gap-1.5">
@@ -748,8 +769,8 @@ export function TintTableView({
                     >
                       <div className={cellCls}>
                         <div className="font-mono text-[11px] text-gray-800">{a.order.obdNumber}</div>
-                        {(a.obdEmailDate || a.completedAt) && (
-                          <div className="text-[10px] text-gray-400">{formatObdDate(a.obdEmailDate, a.obdEmailTime) || formatTime(a.completedAt)}</div>
+                        {(a.orderDateTime || a.obdEmailDate || a.completedAt) && (
+                          <div className="text-[10px] text-gray-400">{formatOrderDate(a.orderDateTime) || formatObdDate(a.obdEmailDate, a.obdEmailTime) || formatTime(a.completedAt)}</div>
                         )}
                       </div>
                       <div className={cellCls}><SmuBadge smu={a.smu} /></div>

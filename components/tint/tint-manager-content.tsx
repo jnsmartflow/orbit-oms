@@ -44,6 +44,7 @@ export interface TintOrder {
   smu:                string | null;
   obdEmailDate:       string | null;
   obdEmailTime:       string | null;
+  orderDateTime:      string | null;
   slotId:             number | null;
   slotName:           string | null;
   slotTime:           string | null;
@@ -116,6 +117,7 @@ export interface SplitCard {
   smu:              string | null;
   obdEmailDate:     string | null;
   obdEmailTime:     string | null;
+  orderDateTime:    string | null;
   slotId:           number | null;
   slotName:         string | null;
   slotTime:         string | null;
@@ -152,6 +154,7 @@ export interface CompletedAssignment {
   smu:              string | null;
   obdEmailDate:     string | null;
   obdEmailTime:     string | null;
+  orderDateTime:    string | null;
   slotId:           number | null;
   slotName:         string | null;
   slotTime:         string | null;
@@ -239,6 +242,28 @@ function formatObdDateTime(date: string | null, time: string | null): string {
   const d = new Date(date);
   const dateStr = d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
   return time ? `${dateStr} ${time}` : dateStr;
+}
+
+function formatOrderDateTime(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const dateStr = d.toLocaleDateString("en-GB", {
+    day: "numeric", month: "short", timeZone: "Asia/Kolkata"
+  });
+  const timeStr = d.toLocaleTimeString("en-GB", {
+    hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata"
+  });
+  return `${dateStr} ${timeStr}`;
+}
+
+function buildTs(date: string | null, time: string | null): number {
+  const dateStr = date ?? "1970-01-01";
+  const parts = (time ?? "00:00").split(":");
+  const h = Number(parts[0]) || 0;
+  const m = Number(parts[1]) || 0;
+  const ts = new Date(dateStr);
+  ts.setHours(h, m, 0, 0);
+  return ts.getTime();
 }
 
 function formatVolume(v: number): string {
@@ -750,10 +775,10 @@ function KanbanCard({ order, stage, onAssign, onCreateSplit, onRefresh, onMoveUp
           <ObdCode code={order.obdNumber} />
           <span>·</span>
           <span>{areaName}</span>
-          {formatObdDateTime(order.obdEmailDate, order.obdEmailTime) && (
+          {formatOrderDateTime(order.orderDateTime) && (
             <>
               <span>·</span>
-              <span>{formatObdDateTime(order.obdEmailDate, order.obdEmailTime)}</span>
+              <span>{formatOrderDateTime(order.orderDateTime)}</span>
             </>
           )}
         </div>
@@ -1453,10 +1478,10 @@ function SplitKanbanCard({
             />
           )}
           <ObdCode code={split.order.obdNumber} />
-          {formatObdDateTime(split.obdEmailDate, split.obdEmailTime) && (
+          {formatOrderDateTime(split.orderDateTime) && (
             <>
               <span>·</span>
-              <span>{formatObdDateTime(split.obdEmailDate, split.obdEmailTime)}</span>
+              <span>{formatOrderDateTime(split.orderDateTime)}</span>
             </>
           )}
         </div>
@@ -2534,25 +2559,9 @@ export function TintManagerContent() {
                      (o.remainingQty ?? 0) > 0)
                   )
                   .sort((a, b) => {
-                    // Parse date — obdEmailDate is stored as ISO date string e.g. "2026-03-19"
-                    const dateStrA = a.obdEmailDate ?? '1970-01-01'
-                    const dateStrB = b.obdEmailDate ?? '1970-01-01'
-
-                    // Parse time — obdEmailTime may be stored as "12:34" or "12:34:00"
-                    // Extract hours and minutes safely
-                    const timeA = a.obdEmailTime ?? '00:00'
-                    const timeB = b.obdEmailTime ?? '00:00'
-                    const [hA, mA] = timeA.split(':').map(Number)
-                    const [hB, mB] = timeB.split(':').map(Number)
-
-                    // Build comparable timestamps
-                    const tsA = new Date(dateStrA)
-                    tsA.setHours(hA ?? 0, mA ?? 0, 0, 0)
-
-                    const tsB = new Date(dateStrB)
-                    tsB.setHours(hB ?? 0, mB ?? 0, 0, 0)
-
-                    return tsA.getTime() - tsB.getTime()
+                    const tsA = a.orderDateTime ? new Date(a.orderDateTime).getTime() : buildTs(a.obdEmailDate, a.obdEmailTime);
+                    const tsB = b.orderDateTime ? new Date(b.orderDateTime).getTime() : buildTs(b.obdEmailDate, b.obdEmailTime);
+                    return tsA - tsB;
                   })
               : col.stage === "tint_assigned"
               ? filteredOrders.filter((o) => o.workflowStage === "tint_assigned" && (o.remainingQty ?? 0) === 0)
@@ -2561,17 +2570,9 @@ export function TintManagerContent() {
                     if (seqDiff !== 0) return seqDiff
                     const priDiff = (a.priorityLevel ?? 5) - (b.priorityLevel ?? 5)
                     if (priDiff !== 0) return priDiff
-                    const dateStrA = a.obdEmailDate ?? '1970-01-01'
-                    const dateStrB = b.obdEmailDate ?? '1970-01-01'
-                    const timeA = a.obdEmailTime ?? '00:00'
-                    const timeB = b.obdEmailTime ?? '00:00'
-                    const [hA, mA] = timeA.split(':').map(Number)
-                    const [hB, mB] = timeB.split(':').map(Number)
-                    const tsA = new Date(dateStrA)
-                    tsA.setHours(hA ?? 0, mA ?? 0, 0, 0)
-                    const tsB = new Date(dateStrB)
-                    tsB.setHours(hB ?? 0, mB ?? 0, 0, 0)
-                    return tsA.getTime() - tsB.getTime()
+                    const tsA = a.orderDateTime ? new Date(a.orderDateTime).getTime() : buildTs(a.obdEmailDate, a.obdEmailTime);
+                    const tsB = b.orderDateTime ? new Date(b.orderDateTime).getTime() : buildTs(b.obdEmailDate, b.obdEmailTime);
+                    return tsA - tsB;
                   })
               : col.stage === "tinting_in_progress"
               ? filteredOrders.filter((o) => o.workflowStage === "tinting_in_progress" && (o.remainingQty ?? 0) === 0)
@@ -2586,17 +2587,9 @@ export function TintManagerContent() {
                     if (seqDiff !== 0) return seqDiff
                     const priDiff = (a.priorityLevel ?? 5) - (b.priorityLevel ?? 5)
                     if (priDiff !== 0) return priDiff
-                    const dateStrA = a.obdEmailDate ?? '1970-01-01'
-                    const dateStrB = b.obdEmailDate ?? '1970-01-01'
-                    const timeA = a.obdEmailTime ?? '00:00'
-                    const timeB = b.obdEmailTime ?? '00:00'
-                    const [hA, mA] = timeA.split(':').map(Number)
-                    const [hB, mB] = timeB.split(':').map(Number)
-                    const tsA = new Date(dateStrA)
-                    tsA.setHours(hA ?? 0, mA ?? 0, 0, 0)
-                    const tsB = new Date(dateStrB)
-                    tsB.setHours(hB ?? 0, mB ?? 0, 0, 0)
-                    return tsA.getTime() - tsB.getTime()
+                    const tsA = a.orderDateTime ? new Date(a.orderDateTime).getTime() : buildTs(a.obdEmailDate, a.obdEmailTime);
+                    const tsB = b.orderDateTime ? new Date(b.orderDateTime).getTime() : buildTs(b.obdEmailDate, b.obdEmailTime);
+                    return tsA - tsB;
                   })
               : col.stage === "tinting_in_progress"
               ? filteredActiveSplits.filter((s) => s.status === "tinting_in_progress")
@@ -2623,6 +2616,7 @@ export function TintManagerContent() {
                       smu:                a.smu,
                       obdEmailDate:       a.obdEmailDate,
                       obdEmailTime:       a.obdEmailTime,
+                      orderDateTime:      a.orderDateTime,
                       slotId:             a.slotId,
                       slotName:           a.slotName,
                       slotTime:           a.slotTime,
