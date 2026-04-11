@@ -100,8 +100,8 @@ function deliveryDotCls(type: string | null | undefined): string {
 
 // ── Grid column templates ─────────────────────────────────────────────────────
 
-const TABLE_GRID = "1fr 1.2fr 1.8fr 0.7fr 0.7fr 1.1fr 0.6fr 1.6fr 0.8fr 0.5fr";
-//                  OBD  SMU    CUST   SLOT  PRIO  ART    VOL   STAGE  TIME   ACTIONS
+const TABLE_GRID = "1fr 1.2fr 2fr 0.7fr 1.1fr 0.6fr 1.8fr 0.8fr 0.5fr";
+//                  OBD  SMU    SITE PRIO  ART    VOL   STAGE  TIME   ACTIONS
 
 const hdrCls = "py-1.5 px-2 text-[10px] font-medium text-gray-400 uppercase tracking-wider border-b border-gray-100";
 const cellCls = "py-2 px-2 min-w-0";
@@ -468,7 +468,12 @@ export function TintTableView({
     );
   }
 
-  function CustomerCell({ name, missing, onMissing }: { name: string; missing?: boolean; onMissing?: (e: React.MouseEvent) => void }) {
+  function CustomerCell({ name, missing, onMissing, dispatchStatus }: {
+    name: string;
+    missing?: boolean;
+    onMissing?: (e: React.MouseEvent) => void;
+    dispatchStatus?: string | null;
+  }) {
     return (
       <div className={cellCls}>
         <div className="flex items-center gap-1.5">
@@ -483,12 +488,21 @@ export function TintTableView({
               <AlertCircle size={13} />
             </button>
           )}
+          {dispatchStatus === "dispatch" && (
+            <span className="inline-flex items-center gap-[3px] text-[9px] font-semibold bg-green-50 text-green-700 border border-green-200 px-1.5 py-0.5 rounded-full flex-shrink-0">Dispatch</span>
+          )}
+          {dispatchStatus === "hold" && (
+            <span className="inline-flex items-center gap-[3px] text-[9px] font-semibold bg-red-50 text-red-700 border border-red-200 px-1.5 py-0.5 rounded-full flex-shrink-0">Hold</span>
+          )}
+          {dispatchStatus === "waiting_for_confirmation" && (
+            <span className="inline-flex items-center gap-[3px] text-[9px] font-semibold bg-amber-50 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded-full flex-shrink-0">Waiting</span>
+          )}
         </div>
       </div>
     );
   }
 
-  /* 7 common cells for an order row */
+  /* 6 common cells for an order row */
   function OrderCommonCells({ order }: { order: TintOrder }) {
     return (
       <>
@@ -498,8 +512,8 @@ export function TintTableView({
           name={order.customer?.customerName ?? order.shipToCustomerName ?? "—"}
           missing={order.customerMissing}
           onMissing={(e) => { e.stopPropagation(); onCustomerMissing?.(order); }}
+          dispatchStatus={order.dispatchStatus}
         />
-        <div className={cellCls}><SlotBadge name={order.slotName} /></div>
         <div className={cellCls}><PriorityBadge level={order.priorityLevel} /></div>
         <div className={`${cellCls} font-mono text-[11px] text-gray-600`}>{order.querySnapshot?.articleTag ?? "—"}</div>
         <div className={`${cellCls} text-[11px] text-gray-600`}>{order.querySnapshot?.totalVolume != null ? `${Math.round(order.querySnapshot.totalVolume)} L` : "—"}</div>
@@ -507,14 +521,16 @@ export function TintTableView({
     );
   }
 
-  /* 7 common cells for a split row */
+  /* 6 common cells for a split row */
   function SplitCommonCells({ split }: { split: SplitCard }) {
     return (
       <>
         <SplitObdCell split={split} />
         <div className={cellCls}><SmuBadge smu={split.smu} /></div>
-        <CustomerCell name={split.order.customer?.customerName ?? "—"} />
-        <div className={cellCls}><SlotBadge name={split.slotName} /></div>
+        <CustomerCell
+          name={split.order.customer?.customerName ?? "—"}
+          dispatchStatus={split.dispatchStatus}
+        />
         <div className={cellCls}><PriorityBadge level={split.priorityLevel} /></div>
         <div className={`${cellCls} font-mono text-[11px] text-gray-600`}>{split.articleTag ?? `${split.totalQty} units`}</div>
         <div className={`${cellCls} text-[11px] text-gray-600`}>{split.totalVolume != null ? `${Math.round(split.totalVolume)} L` : "—"}</div>
@@ -541,7 +557,7 @@ export function TintTableView({
         <div className="bg-white border border-gray-200 border-t-0 rounded-b-lg overflow-hidden w-full">
             {/* Header */}
             <div style={{ display: "grid", gridTemplateColumns: TABLE_GRID, columnGap: 10, alignItems: "center", width: "100%" }} className={hdrCls}>
-              <div>OBD No.</div><div>SMU</div><div>Customer</div><div>Slot</div><div>Priority</div><div>Articles</div><div>Volume</div><div>Action</div><div /><div />
+              <div>OBD No.</div><div>SMU</div><div>Site Name</div><div>Priority</div><div>Articles</div><div>Volume</div><div>Action</div><div /><div />
             </div>
             {pendingRows.length === 0 ? (
               <div className="px-3 py-6 text-center text-gray-400 italic" style={{ gridColumn: "1 / -1" }}>No pending orders</div>
@@ -600,7 +616,7 @@ export function TintTableView({
         <SectionHeader dotClass="bg-amber-400" label="Assigned" count={assignedOrderRows.length + assignedSplitRows.length} volume={assignedSectionVolume} colorScheme="amber" />
         <div className="bg-white border border-gray-200 border-t-0 rounded-b-lg overflow-hidden w-full">
             <div style={{ display: "grid", gridTemplateColumns: TABLE_GRID, columnGap: 10, alignItems: "center", width: "100%" }} className={hdrCls}>
-              <div>OBD No.</div><div>SMU</div><div>Customer</div><div>Slot</div><div>Priority</div><div>Articles</div><div>Volume</div>
+              <div>OBD No.</div><div>SMU</div><div>Site Name</div><div>Priority</div><div>Articles</div><div>Volume</div>
               <div>Operator</div><div>Assigned At</div><div />
             </div>
             {assignedOrderRows.length === 0 && assignedSplitRows.length === 0 ? (
@@ -630,6 +646,7 @@ export function TintTableView({
                       <RowActionsMenu actions={[
                         { label: "Move Up",           icon: <ChevronUp size={13} />,   onClick: () => onMoveUp(order.id, "order") },
                         { label: "Move Down",         icon: <ChevronDown size={13} />, onClick: () => onMoveDown(order.id, "order") },
+                        { label: "Re-assign",         icon: <RefreshCw size={13} />,   onClick: () => onAssign(order) },
                         { label: "Cancel Assignment", icon: <X size={13} />,           onClick: () => onCancelAssignment(order), danger: true },
                       ]} />
                     </ActionCell>
@@ -674,7 +691,7 @@ export function TintTableView({
         <SectionHeader dotClass="bg-blue-400" label="In Progress" count={inProgressOrderRows.length + inProgressSplitRows.length} volume={inProgressSectionVolume} colorScheme="blue" />
         <div className="bg-white border border-gray-200 border-t-0 rounded-b-lg overflow-hidden w-full">
             <div style={{ display: "grid", gridTemplateColumns: TABLE_GRID, columnGap: 10, alignItems: "center", width: "100%" }} className={hdrCls}>
-              <div>OBD No.</div><div>SMU</div><div>Customer</div><div>Slot</div><div>Priority</div><div>Articles</div><div>Volume</div>
+              <div>OBD No.</div><div>SMU</div><div>Site Name</div><div>Priority</div><div>Articles</div><div>Volume</div>
               <div>Operator</div><div>Elapsed</div><div />
             </div>
             {inProgressOrderRows.length === 0 && inProgressSplitRows.length === 0 ? (
@@ -732,7 +749,7 @@ export function TintTableView({
         <SectionHeader dotClass="bg-green-400" label="Completed Today" count={completedSplitRows.length + completedAssignmentRows.length} volume={completedSectionVolume} colorScheme="green" />
         <div className="bg-white border border-gray-200 border-t-0 rounded-b-lg overflow-hidden w-full">
             <div style={{ display: "grid", gridTemplateColumns: TABLE_GRID, columnGap: 10, alignItems: "center", width: "100%" }} className={hdrCls}>
-              <div>OBD No.</div><div>SMU</div><div>Customer</div><div>Slot</div><div>Priority</div><div>Articles</div><div>Volume</div>
+              <div>OBD No.</div><div>SMU</div><div>Site Name</div><div>Priority</div><div>Articles</div><div>Volume</div>
               <div>Operator</div><div>Completed At</div><div />
             </div>
             {completedSplitRows.length === 0 && completedAssignmentRows.length === 0 ? (
@@ -774,8 +791,10 @@ export function TintTableView({
                         )}
                       </div>
                       <div className={cellCls}><SmuBadge smu={a.smu} /></div>
-                      <CustomerCell name={a.order.customer?.customerName ?? a.order.shipToCustomerName ?? "—"} />
-                      <div className={cellCls}><SlotBadge name={a.slotName} /></div>
+                      <CustomerCell
+                        name={a.order.customer?.customerName ?? a.order.shipToCustomerName ?? "—"}
+                        dispatchStatus={null}
+                      />
                       <div className={cellCls}><PriorityBadge level={5} /></div>
                       <div className={`${cellCls} font-mono text-[11px] text-gray-600`}>{a.order.querySnapshot?.articleTag ?? "—"}</div>
                       <div className={`${cellCls} text-[11px] text-gray-600`}>{a.order.querySnapshot?.totalVolume != null ? `${Math.round(a.order.querySnapshot.totalVolume)} L` : "—"}</div>
