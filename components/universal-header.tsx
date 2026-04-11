@@ -262,7 +262,7 @@ export function UniversalHeader({
   return (
     <>
       {/* ── Row 1 — Title Bar ──────────────────────────────────────────────── */}
-      <div className="h-[52px] min-h-[52px] sticky top-0 z-30 bg-white border-b border-gray-200 flex items-center justify-between px-4">
+      <div className="h-[52px] min-h-[52px] sticky top-0 z-40 bg-white border-b border-gray-200 flex items-center justify-between px-4">
         {/* Left: title + stats */}
         <div className="flex items-center">
           <span className="text-[14px] font-semibold text-gray-900">
