@@ -80,7 +80,10 @@
       "Bash(mkdir -p \"C:/Users/HP/OneDrive/VS Code/orbit-oms/app/api/mail-orders/[id]/punch\")",
       "Bash(mkdir -p \"C:/Users/HP/OneDrive/VS Code/orbit-oms/app/api/mail-orders/lines/[lineId]/resolve\")",
       "Bash(echo \"EXIT: $?\")",
-      "Bash(cp:*)"
+      "Bash(cp:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
     ]
   }
 }
