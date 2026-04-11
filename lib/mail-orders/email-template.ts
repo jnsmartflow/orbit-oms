@@ -147,7 +147,7 @@ export function buildSlotSummaryHTML(
   h += `<td style="vertical-align:middle;padding:20px 16px 20px 32px;">`;
   h += `<table cellpadding="0" cellspacing="0" border="0">`;
   h += `<tr><td style="font-size:10px;color:#94a3b8;letter-spacing:0.08em;text-transform:uppercase;padding-bottom:6px;${F}">JSW Dulux \u2014 Surat Depot</td></tr>`;
-  h += `<tr><td style="font-size:17px;font-weight:700;color:#0f172a;padding-bottom:4px;${F}">${slotName} Slot Summary</td></tr>`;
+  h += `<tr><td style="font-size:17px;font-weight:700;color:#0f172a;padding-bottom:4px;${F}">${slotName} Order Summary</td></tr>`;
   h += `<tr><td style="font-size:11px;color:#94a3b8;${F}">${longDate}</td></tr>`;
   h += `</table></td>`;
   // Right column — teal panel, flush right, full height
@@ -164,7 +164,7 @@ export function buildSlotSummaryHTML(
 
   // ═══ SALUTATION ═══
   h += `<tr><td colspan="2" style="font-size:13px;color:#334155;padding:18px 32px 4px;${F}">Dear <span style="color:#0f172a;">${firstName}</span> Sir,</td></tr>`;
-  h += `<tr><td colspan="2" style="font-size:12px;color:#64748b;padding:0 32px 16px;${F}">Please find below the ${slotName} slot summary for today.</td></tr>`;
+  h += `<tr><td colspan="2" style="font-size:12px;color:#64748b;padding:0 32px 16px;${F}">Please find your ${slotName} slot order summary below.</td></tr>`;
   // Salutation border
   h += `<tr><td colspan="2" style="height:1px;background-color:#e2e8f0;font-size:0;line-height:0;">&nbsp;</td></tr>`;
 
@@ -331,7 +331,7 @@ export function buildSlotSummaryHTML(
     h += `</table></td></tr>`;
 
     // Pending note
-    h += `<tr><td colspan="2" style="font-size:11px;color:#94a3b8;padding:4px 32px 18px;line-height:1.6;${F}">We will process these orders in tomorrow\u2019s first slot. Kindly inform your dealers.</td></tr>`;
+    h += `<tr><td colspan="2" style="font-size:11px;color:#94a3b8;padding:4px 32px 18px;line-height:1.6;${F}">These orders will be processed in tomorrow\u2019s first slot. We will keep you updated.</td></tr>`;
   }
 
   // ═══ TOTAL ROW ═══
@@ -352,10 +352,11 @@ export function buildSlotSummaryHTML(
   h += `</tr></table></td></tr>`;
 
   // ═══ REGARDS ═══
-  h += `<tr><td colspan="2" style="font-size:12px;color:#64748b;padding:18px 32px 3px;${F}">Please share the SO numbers with your dealers at the earliest.</td></tr>`;
-  h += `<tr><td colspan="2" style="font-size:12px;color:#64748b;padding:0 32px 14px;${F}">For any queries, call us directly.</td></tr>`;
-  h += `<tr><td colspan="2" style="font-size:12px;color:#64748b;padding:0 32px 2px;${F}">Regards,</td></tr>`;
+  h += `<tr><td colspan="2" style="font-size:12px;color:#64748b;padding:18px 32px 3px;${F}">Kindly note the order numbers for any future communication regarding these orders.</td></tr>`;
+  h += `<tr><td colspan="2" style="font-size:12px;color:#64748b;padding:0 32px 14px;${F}">For any order-related queries, feel free to reach out to us.</td></tr>`;
+  h += `<tr><td colspan="2" style="font-size:12px;color:#64748b;padding:0 32px 2px;${F}">Thanks &amp; regards,</td></tr>`;
   h += `<tr><td colspan="2" style="font-size:12px;color:#0f172a;padding:0 32px 1px;${F}">${senderName}</td></tr>`;
+  h += `<tr><td colspan="2" style="font-size:11px;color:#94a3b8;padding:0 32px 1px;${F}">Billing Desk</td></tr>`;
   h += `<tr><td colspan="2" style="font-size:11px;color:#94a3b8;padding:0 32px 1px;${F}">JSW Dulux \u2014 Surat Depot</td></tr>`;
   if (senderPhone) {
     h += `<tr><td colspan="2" style="font-size:11px;color:#0d9488;padding:0 32px 22px;${F}">${zwsp(senderPhone)}</td></tr>`;
@@ -364,7 +365,7 @@ export function buildSlotSummaryHTML(
   }
 
   // ═══ FOOTER ═══
-  h += `<tr><td colspan="2" style="background-color:#f8fafc;border-top:1px solid #e2e8f0;padding:10px 32px;text-align:center;font-size:9px;color:#cbd5e1;letter-spacing:0.03em;${F}">JSW Dulux Ltd \u2014 Surat Depot&nbsp;\u00b7&nbsp;Do not reply to this email</td></tr>`;
+  h += `<tr><td colspan="2" style="background-color:#f8fafc;border-top:1px solid #e2e8f0;padding:10px 32px;text-align:center;font-size:9px;color:#cbd5e1;letter-spacing:0.03em;${F}">JSW Dulux Ltd \u2014 Surat Depot&nbsp;\u00b7&nbsp;This is an auto-generated summary</td></tr>`;
 
   h += `</table>`; // close 560px
   h += `</td></tr></table>`; // close outer

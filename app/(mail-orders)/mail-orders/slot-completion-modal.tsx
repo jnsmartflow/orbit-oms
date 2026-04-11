@@ -112,7 +112,7 @@ export function SlotCompletionModal({
     }
 
     // Open mailto with no To address, just subject
-    const subject = `[JSW Dulux Surat] ${slot} Slot Summary — ${date}`;
+    const subject = `${slot} Orders — ${date} | JSW Dulux Surat`;
     window.open(`mailto:?subject=${encodeURIComponent(subject)}`, "_blank");
 
     setSentSoNames(prev => new Set(prev).add(group.soName));
