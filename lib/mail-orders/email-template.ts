@@ -361,7 +361,7 @@ export function buildSlotSummaryHTML(
   h += `<tr><td colspan="2" style="font-size:11px;color:#0d9488;padding:0 32px 22px;${F}">+91 ${zwsp("7435065023")}</td></tr>`;
 
   // ═══ FOOTER ═══
-  h += `<tr><td colspan="2" style="background-color:#f8fafc;border-top:1px solid #e2e8f0;padding:10px 32px;text-align:center;font-size:9px;color:#cbd5e1;letter-spacing:0.03em;${F}">JSW Dulux Ltd \u2014 Surat Depot&nbsp;\u00b7&nbsp;This is an auto-generated summary</td></tr>`;
+  h += `<tr><td colspan="2" style="background-color:#f8fafc;border-top:1px solid #e2e8f0;padding:10px 32px;text-align:center;font-size:9px;color:#cbd5e1;letter-spacing:0.03em;${F}">JSW Dulux Ltd \u2014 Surat Depot&nbsp;\u00b7&nbsp;Do not reply to this email</td></tr>`;
 
   h += `</table>`; // close 560px
   h += `</td></tr></table>`; // close outer
