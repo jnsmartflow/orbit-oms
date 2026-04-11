@@ -196,11 +196,6 @@ export function UniversalHeader({
         return;
       }
 
-      if (e.key === "?") {
-        setShortcutsOpen((v) => !v);
-        return;
-      }
-
       if (segments && segments.length > 0 && e.key >= "1" && e.key <= "9") {
         const idx = parseInt(e.key, 10) - 1;
         if (idx < segments.length) {
@@ -256,7 +251,6 @@ export function UniversalHeader({
   // Universal shortcuts
   const universalShortcuts: ShortcutItem[] = [
     { key: "/", label: "Focus search" },
-    { key: "?", label: "Toggle shortcuts" },
     { key: "Esc", label: "Close / clear" },
     ...(segments && segments.length > 0
       ? [{ key: "1-" + Math.min(segments.length, 9), label: "Jump to slot" }]
@@ -310,7 +304,7 @@ export function UniversalHeader({
               <Keyboard size={13} className="text-gray-400" />
             </button>
             {shortcutsOpen && (
-              <div className="absolute top-[52px] right-0 z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-3 w-[220px]">
+              <div className="absolute top-full right-0 mt-2 z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-3 w-[220px] max-h-[calc(100vh-120px)] overflow-y-auto">
                 <p className="text-[11px] font-semibold text-gray-900 mb-2">
                   Keyboard shortcuts
                 </p>

@@ -227,6 +227,23 @@ export default function MailOrdersPage() {
     };
   }, [loadOrders]);
 
+  // ── Auto logout at midnight IST ───────────────────────────────────────────
+  useEffect(() => {
+    function getMillisToMidnightIST(): number {
+      const now = new Date();
+      const istNow = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+      const midnight = new Date(istNow);
+      midnight.setHours(24, 0, 0, 0);
+      return midnight.getTime() - istNow.getTime();
+    }
+
+    const timeout = setTimeout(() => {
+      window.location.href = "/api/auth/signout?callbackUrl=/login";
+    }, getMillisToMidnightIST());
+
+    return () => clearTimeout(timeout);
+  }, []);
+
   // ── Time-based slot email auto-trigger ──────────────────────────────────────
   useEffect(() => {
     if (!autoComplete) return;
@@ -1053,7 +1070,6 @@ export default function MailOrdersPage() {
           { key: "E", label: "Slot email" },
           { key: "R", label: "Reply" },
           { key: "F", label: "Flag" },
-          { key: "S", label: "SKU panel" },
           { key: "N", label: "Next unmatched" },
         ]}
       />
