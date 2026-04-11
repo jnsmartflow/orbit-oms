@@ -31,8 +31,6 @@ export default async function TintManagerLayout({
     { pageKey: "shade_master", label: "Shade Master", href: "/tint/manager/shades" },
     // TI Report — always visible for TM; page has its own auth guard
     { pageKey: "ti_report", label: "TI Report", href: "/tint/manager/ti-report" },
-    // Mail Orders — visible for TM
-    { pageKey: "mail_orders", label: "Mail Orders", href: "/mail-orders" },
   ];
   const userName     = session.user.name ?? "User";
   const userInitials = getInitials(userName);
