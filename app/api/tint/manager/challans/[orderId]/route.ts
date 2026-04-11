@@ -45,24 +45,15 @@ export async function GET(
       return NextResponse.json({ error: "Order not found" }, { status: 404 });
     }
 
-    // ── 2. Auto-create delivery_challans if missing ───────────────────────────
-    // challanNumber format: CHN-{YEAR}-{MAX(id)+1 padded to 5 digits}
-    let challan = await prisma.delivery_challans.findUnique({
+    // ── 2. Lookup challan — must already exist ────────────────────────────────
+    // Challans are now auto-created at import time — no lazy creation needed.
+    // If no challan exists, the order's SMU wasn't eligible for a challan.
+    const challan = await prisma.delivery_challans.findUnique({
       where: { orderId },
     });
 
     if (!challan) {
-      const maxRow = await prisma.delivery_challans.findFirst({
-        orderBy: { id: "desc" },
-        select:  { id: true },
-      });
-      const nextSeq      = (maxRow?.id ?? 0) + 1;
-      const year         = new Date().getFullYear();
-      const challanNumber = `CHN-${year}-${String(nextSeq).padStart(5, "0")}`;
-
-      challan = await prisma.delivery_challans.create({
-        data: { orderId, challanNumber },
-      });
+      return NextResponse.json({ error: "Challan not found for this order" }, { status: 404 });
     }
 
     // ── 3. Parallel fetches (challan is now resolved) ─────────────────────────

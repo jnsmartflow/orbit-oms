@@ -816,6 +816,65 @@ async function handleConfirm(req: Request, session: Session): Promise<NextRespon
   });
   const orderIdMap = new Map(insertedOrders.map((o) => [o.obdNumber, o.id]));
 
+  // ── STEP D2b — Auto-create delivery challans ────────────────────────────
+  {
+    const CHALLAN_SMU_VALUES = ["Retail Offtake", "Decorative Projects"];
+
+    // Find which orders need challans (by SMU from raw summary)
+    const challanOrders = orderInterims
+      .filter((o) => {
+        const summary = rawSummaries.find((s) => s.obdNumber === o.obdNumber);
+        const smu = summary?.smu ?? "";
+        return CHALLAN_SMU_VALUES.includes(smu);
+      })
+      .map((o) => ({
+        orderId: orderIdMap.get(o.obdNumber) ?? 0,
+        obdNumber: o.obdNumber,
+        orderDateTime: o.orderData.orderDateTime,
+      }))
+      .filter((o) => o.orderId > 0)
+      .sort((a, b) => {
+        const tA = a.orderDateTime ? new Date(a.orderDateTime as Date).getTime() : 0;
+        const tB = b.orderDateTime ? new Date(b.orderDateTime as Date).getTime() : 0;
+        return tA - tB;
+      });
+
+    if (challanOrders.length > 0) {
+      try {
+        // Get current max challan number
+        const lastChallan = await prisma.delivery_challans.findFirst({
+          orderBy: { id: "desc" },
+          select: { challanNumber: true },
+        });
+
+        let nextSeq = 1;
+        if (lastChallan?.challanNumber) {
+          const parts = lastChallan.challanNumber.split("-");
+          const lastNum = parseInt(parts[parts.length - 1], 10);
+          if (!isNaN(lastNum)) nextSeq = lastNum + 1;
+        }
+
+        const year = new Date().getFullYear();
+
+        for (const co of challanOrders) {
+          const challanNumber = `CHN-${year}-${String(nextSeq).padStart(5, "0")}`;
+          await prisma.delivery_challans.create({
+            data: {
+              orderId: co.orderId,
+              challanNumber,
+            },
+          });
+          nextSeq++;
+        }
+
+        console.log(`[import] Auto-created ${challanOrders.length} delivery challan(s)`);
+      } catch (err) {
+        // Non-fatal — log but don't fail the import
+        console.error("[import] Challan auto-creation failed:", err);
+      }
+    }
+  }
+
   // ── STEP D3 — Bulk create import_obd_query_summary ───────────────────────
   const querySummaryData: Prisma.import_obd_query_summaryCreateManyInput[] =
     orderInterims.map((o) => {
@@ -1444,6 +1503,62 @@ async function handleAutoImport(req: Request): Promise<NextResponse> {
     select: { id: true, obdNumber: true },
   });
   const orderIdMap = new Map(insertedOrders.map((o) => [o.obdNumber, o.id]));
+
+  // ── CONFIRM D2b — Auto-create delivery challans ─────────────────────────
+  {
+    const CHALLAN_SMU_VALUES_AUTO = ["Retail Offtake", "Decorative Projects"];
+
+    const challanOrders = autoOrderInterims
+      .filter((o) => {
+        const summary = autoRawSummaries.find((s) => s.obdNumber === o.obdNumber);
+        const smu = summary?.smu ?? "";
+        return CHALLAN_SMU_VALUES_AUTO.includes(smu);
+      })
+      .map((o) => ({
+        orderId: orderIdMap.get(o.obdNumber) ?? 0,
+        obdNumber: o.obdNumber,
+        orderDateTime: o.orderData.orderDateTime,
+      }))
+      .filter((o) => o.orderId > 0)
+      .sort((a, b) => {
+        const tA = a.orderDateTime ? new Date(a.orderDateTime as Date).getTime() : 0;
+        const tB = b.orderDateTime ? new Date(b.orderDateTime as Date).getTime() : 0;
+        return tA - tB;
+      });
+
+    if (challanOrders.length > 0) {
+      try {
+        const lastChallan = await prisma.delivery_challans.findFirst({
+          orderBy: { id: "desc" },
+          select: { challanNumber: true },
+        });
+
+        let nextSeq = 1;
+        if (lastChallan?.challanNumber) {
+          const parts = lastChallan.challanNumber.split("-");
+          const lastNum = parseInt(parts[parts.length - 1], 10);
+          if (!isNaN(lastNum)) nextSeq = lastNum + 1;
+        }
+
+        const year = new Date().getFullYear();
+
+        for (const co of challanOrders) {
+          const challanNumber = `CHN-${year}-${String(nextSeq).padStart(5, "0")}`;
+          await prisma.delivery_challans.create({
+            data: {
+              orderId: co.orderId,
+              challanNumber,
+            },
+          });
+          nextSeq++;
+        }
+
+        console.log(`[auto-import] Auto-created ${challanOrders.length} delivery challan(s)`);
+      } catch (err) {
+        console.error("[auto-import] Challan auto-creation failed:", err);
+      }
+    }
+  }
 
   // ── CONFIRM D3 — Bulk create import_obd_query_summary ────────────────────
   const querySummaryData: Prisma.import_obd_query_summaryCreateManyInput[] =
