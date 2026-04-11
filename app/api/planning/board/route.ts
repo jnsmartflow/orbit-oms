@@ -18,11 +18,11 @@ export async function GET(req: Request): Promise<NextResponse> {
   const showDispatched = searchParams.get("showDispatched") === "true";
   const isHistoryView = date < todayIST;
 
-  // Only run cleanup for today's view
-  if (date === todayIST) {
-    await runDailyCleanupIfNeeded();
-    await runSlotCascadeIfNeeded(todayIST);
-  }
+  // DISABLED: slot cascade removed — slots are fixed by obdEmailTime
+  // if (date === todayIST) {
+  //   await runDailyCleanupIfNeeded();
+  //   await runSlotCascadeIfNeeded(todayIST);
+  // }
 
   const workflowStages = showDispatched
     ? ["dispatch_confirmation", "dispatched"]

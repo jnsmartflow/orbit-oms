@@ -20,9 +20,9 @@ export async function GET(req: Request): Promise<NextResponse> {
   const dateStart = new Date(dateStr + "T00:00:00.000Z");
   const dateEnd   = new Date(dateStr + "T23:59:59.999Z");
 
-  // Run cleanup + cascade (same as planning/warehouse boards)
-  await runDailyCleanupIfNeeded();
-  await runSlotCascadeIfNeeded(todayStr);
+  // DISABLED: slot cascade removed — slots are fixed by obdEmailTime
+  // await runDailyCleanupIfNeeded();
+  // await runSlotCascadeIfNeeded(todayStr);
 
   // Fetch all active slots ordered by sortOrder
   const slots = await prisma.slot_master.findMany({

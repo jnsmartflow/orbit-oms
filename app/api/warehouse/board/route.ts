@@ -60,11 +60,11 @@ export async function GET(req: Request): Promise<NextResponse> {
   const deliveryTypeFilter = searchParams.get("deliveryType");
   const isHistoryView = date < todayIST;
 
-  // Only run cleanup for today's view
-  if (date === todayIST) {
-    await runDailyCleanupIfNeeded();
-    await runSlotCascadeIfNeeded(todayIST);
-  }
+  // DISABLED: slot cascade removed — slots are fixed by obdEmailTime
+  // if (date === todayIST) {
+  //   await runDailyCleanupIfNeeded();
+  //   await runSlotCascadeIfNeeded(todayIST);
+  // }
 
   // Fetch orders ready for warehouse: today + carried-over (older, not completed)
   const rawOrders = await prisma.orders.findMany({

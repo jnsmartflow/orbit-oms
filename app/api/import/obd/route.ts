@@ -54,14 +54,6 @@ interface RawLineRow {
   [key: string]:      unknown;
 }
 
-type SlotConfig = {
-  slotRuleType: string;
-  windowStart:  string | null;
-  windowEnd:    string | null;
-  isDefault:    boolean;
-  slot: { id: number; name: string; slotTime: string; isNextDay: boolean };
-};
-
 // ── XLSX helpers ──────────────────────────────────────────────────────────────
 
 function parseSheet<T>(workbook: XLSX.WorkBook, sheetName: string): T[] {
@@ -131,45 +123,15 @@ function parseBooleanCell(value: unknown): boolean {
 // ── Slot resolution ───────────────────────────────────────────────────────────
 
 function resolveSlot(
-  configs: SlotConfig[],
   emailTime: string | null,
-  emailDate: Date | null,
-): { dispatchSlot: string | null; dispatchSlotDeadline: Date | null; slotId: number | null } {
-  if (!emailDate) {
-    const defaultCfg = configs.find((c) => c.isDefault) ?? null;
-    if (!defaultCfg) return { dispatchSlot: null, dispatchSlotDeadline: null, slotId: null };
-    return { dispatchSlot: defaultCfg.slot.name, dispatchSlotDeadline: null, slotId: defaultCfg.slot.id };
-  }
-
-  let matched: SlotConfig | null = null;
-
-  if (emailTime) {
-    for (const cfg of configs) {
-      if (
-        cfg.slotRuleType === "time_based" &&
-        cfg.windowStart &&
-        cfg.windowEnd &&
-        emailTime >= cfg.windowStart &&
-        emailTime <= cfg.windowEnd
-      ) {
-        matched = cfg;
-        break;
-      }
-    }
-  }
-
-  if (!matched) {
-    matched = configs.find((c) => c.isDefault) ?? null;
-  }
-
-  if (!matched) return { dispatchSlot: null, dispatchSlotDeadline: null, slotId: null };
-
-  const [slotH, slotM] = matched.slot.slotTime.split(":").map(Number);
-  const deadline = new Date(emailDate);
-  deadline.setHours(slotH, slotM, 0, 0);
-  if (matched.slot.isNextDay) deadline.setDate(deadline.getDate() + 1);
-
-  return { dispatchSlot: matched.slot.name, dispatchSlotDeadline: deadline, slotId: matched.slot.id };
+): { dispatchSlot: string; slotId: number } {
+  // Simple time-based slot assignment — mirrors Mail Orders' receivedAt logic.
+  // Fallback to Night (id=4) if emailTime is missing.
+  if (!emailTime)                 return { dispatchSlot: "Night",     slotId: 4 };
+  if (emailTime < "10:30")        return { dispatchSlot: "Morning",   slotId: 1 };
+  if (emailTime < "12:30")        return { dispatchSlot: "Afternoon", slotId: 2 };
+  if (emailTime < "15:30")        return { dispatchSlot: "Evening",   slotId: 3 };
+  return { dispatchSlot: "Night", slotId: 4 };
 }
 
 // ── Merge IST email time into date ───────────────────────────────────────────
@@ -708,7 +670,7 @@ async function handleConfirm(req: Request, session: Session): Promise<NextRespon
     .map((l) => l.skuCodeRaw)
     .filter((c): c is string => Boolean(c));
 
-  const [customers, skus, slotConfigs, localDeliveryType] = await Promise.all([
+  const [customers, skus] = await Promise.all([
     prisma.delivery_point_master.findMany({
       where:  { customerCode: { in: allCustomerCodes } },
       select: {
@@ -724,34 +686,10 @@ async function handleConfirm(req: Request, session: Session): Promise<NextRespon
       where:  { skuCode: { in: allSkuCodes } },
       select: { id: true, skuCode: true },
     }),
-    prisma.delivery_type_slot_config.findMany({
-      where:   { isActive: true },
-      include: { slot: { select: { id: true, name: true, slotTime: true, isNextDay: true } } },
-      orderBy: { sortOrder: "asc" },
-    }),
-    prisma.delivery_type_master.findFirst({
-      where:  { name: "Local" },
-      select: { id: true },
-    }),
   ]);
 
-  const customerByCode      = new Map(customers.map((c) => [c.customerCode, c]));
-  const skuByCode           = new Map(skus.map((s) => [s.skuCode, s]));
-  const localDeliveryTypeId = localDeliveryType?.id ?? null;
-
-  const slotsByDeliveryType = new Map<number, SlotConfig[]>();
-  for (const cfg of slotConfigs) {
-    if (!slotsByDeliveryType.has(cfg.deliveryTypeId)) {
-      slotsByDeliveryType.set(cfg.deliveryTypeId, []);
-    }
-    slotsByDeliveryType.get(cfg.deliveryTypeId)!.push({
-      slotRuleType: cfg.slotRuleType,
-      windowStart:  cfg.windowStart,
-      windowEnd:    cfg.windowEnd,
-      isDefault:    cfg.isDefault,
-      slot:         cfg.slot,
-    });
-  }
+  const customerByCode = new Map(customers.map((c) => [c.customerCode, c]));
+  const skuByCode      = new Map(skus.map((s) => [s.skuCode, s]));
 
   // ── STEP C — Build all data arrays in memory ─────────────────────────────
 
@@ -775,20 +713,7 @@ async function handleConfirm(req: Request, session: Session): Promise<NextRespon
       ? (customerByCode.get(summary.shipToCustomerId) ?? null)
       : null;
 
-    const deliveryTypeId =
-      customer?.dispatchDeliveryTypeId ??
-      customer?.area?.deliveryTypeId ??
-      localDeliveryTypeId;
-
-    const configs = deliveryTypeId
-      ? (slotsByDeliveryType.get(deliveryTypeId) ?? [])
-      : [];
-
-    const { dispatchSlot, dispatchSlotDeadline, slotId } = resolveSlot(
-      configs,
-      summary.obdEmailTime,
-      summary.obdEmailDate,
-    );
+    const { dispatchSlot, slotId } = resolveSlot(summary.obdEmailTime);
 
     const emailDateTime = mergeEmailDateTime(summary.obdEmailDate, summary.obdEmailTime);
 
@@ -826,7 +751,6 @@ async function handleConfirm(req: Request, session: Session): Promise<NextRespon
         orderType,
         workflowStage,
         dispatchSlot,
-        dispatchSlotDeadline,
         slotId,
         originalSlotId:      slotId,
         priorityLevel,
@@ -1383,51 +1307,26 @@ async function handleAutoImport(req: Request): Promise<NextResponse> {
     .map((l) => l.skuCodeRaw)
     .filter((c): c is string => Boolean(c));
 
-  const [confirmCustomers, confirmSkus, confirmSlotConfigs, confirmLocalDeliveryType] =
-    await Promise.all([
-      prisma.delivery_point_master.findMany({
-        where:  { customerCode: { in: confirmCustomerCodes } },
-        select: {
-          id:                     true,
-          customerCode:           true,
-          isKeyCustomer:          true,
-          isKeySite:              true,
-          dispatchDeliveryTypeId: true,
-          area: { select: { deliveryTypeId: true } },
-        },
-      }),
-      prisma.sku_master.findMany({
-        where:  { skuCode: { in: confirmSkuCodes } },
-        select: { id: true, skuCode: true },
-      }),
-      prisma.delivery_type_slot_config.findMany({
-        where:   { isActive: true },
-        include: { slot: { select: { id: true, name: true, slotTime: true, isNextDay: true } } },
-        orderBy: { sortOrder: "asc" },
-      }),
-      prisma.delivery_type_master.findFirst({
-        where:  { name: "Local" },
-        select: { id: true },
-      }),
-    ]);
+  const [confirmCustomers, confirmSkus] = await Promise.all([
+    prisma.delivery_point_master.findMany({
+      where:  { customerCode: { in: confirmCustomerCodes } },
+      select: {
+        id:                     true,
+        customerCode:           true,
+        isKeyCustomer:          true,
+        isKeySite:              true,
+        dispatchDeliveryTypeId: true,
+        area: { select: { deliveryTypeId: true } },
+      },
+    }),
+    prisma.sku_master.findMany({
+      where:  { skuCode: { in: confirmSkuCodes } },
+      select: { id: true, skuCode: true },
+    }),
+  ]);
 
-  const confirmCustomerByCode      = new Map(confirmCustomers.map((c) => [c.customerCode, c]));
-  const confirmSkuByCode           = new Map(confirmSkus.map((s) => [s.skuCode, s]));
-  const confirmLocalDeliveryTypeId = confirmLocalDeliveryType?.id ?? null;
-
-  const confirmSlotsByDeliveryType = new Map<number, SlotConfig[]>();
-  for (const cfg of confirmSlotConfigs) {
-    if (!confirmSlotsByDeliveryType.has(cfg.deliveryTypeId)) {
-      confirmSlotsByDeliveryType.set(cfg.deliveryTypeId, []);
-    }
-    confirmSlotsByDeliveryType.get(cfg.deliveryTypeId)!.push({
-      slotRuleType: cfg.slotRuleType,
-      windowStart:  cfg.windowStart,
-      windowEnd:    cfg.windowEnd,
-      isDefault:    cfg.isDefault,
-      slot:         cfg.slot,
-    });
-  }
+  const confirmCustomerByCode = new Map(confirmCustomers.map((c) => [c.customerCode, c]));
+  const confirmSkuByCode      = new Map(confirmSkus.map((s) => [s.skuCode, s]));
 
   // ── CONFIRM — build order interims ────────────────────────────────────────
   interface AutoOrderInterim {
@@ -1448,20 +1347,7 @@ async function handleAutoImport(req: Request): Promise<NextResponse> {
       ? (confirmCustomerByCode.get(summary.shipToCustomerId) ?? null)
       : null;
 
-    const deliveryTypeId =
-      customer?.dispatchDeliveryTypeId ??
-      customer?.area?.deliveryTypeId ??
-      confirmLocalDeliveryTypeId;
-
-    const configs = deliveryTypeId
-      ? (confirmSlotsByDeliveryType.get(deliveryTypeId) ?? [])
-      : [];
-
-    const { dispatchSlot, dispatchSlotDeadline, slotId } = resolveSlot(
-      configs,
-      summary.obdEmailTime,
-      summary.obdEmailDate,
-    );
+    const { dispatchSlot, slotId } = resolveSlot(summary.obdEmailTime);
 
     const emailDateTime = mergeEmailDateTime(summary.obdEmailDate, summary.obdEmailTime);
 
@@ -1495,7 +1381,6 @@ async function handleAutoImport(req: Request): Promise<NextResponse> {
         orderType,
         workflowStage,
         dispatchSlot,
-        dispatchSlotDeadline,
         slotId,
         originalSlotId:      slotId,
         priorityLevel,
