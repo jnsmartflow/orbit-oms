@@ -263,13 +263,17 @@ export function TutorialOverlay({ manualTrigger, onClose }: TutorialOverlayProps
       transform: "translate(-50%, -50%)",
     };
   } else if (step.position === "below") {
+    const tooltipHeight = 220; // approximate max tooltip height
+    const wouldOverflow = spotlightRect.bottom + PAD + 10 + tooltipHeight > window.innerHeight;
     tooltipStyle = {
       position: "fixed",
-      top: spotlightRect.bottom + PAD + 10,
       left: Math.min(
         Math.max(spotlightRect.left, 12),
         window.innerWidth - 296,
       ),
+      ...(wouldOverflow
+        ? { bottom: window.innerHeight - spotlightRect.top + PAD + 10 }
+        : { top: spotlightRect.bottom + PAD + 10 }),
     };
   } else if (step.position === "right") {
     tooltipStyle = {
