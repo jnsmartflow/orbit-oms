@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 export const dynamic = "force-dynamic";
 
 // ── Base SMU values shown on the Delivery Challan screen ──────────────────────
-const CHALLAN_SMU_VALUES = ["Retail Offtake", "Project"] as const;
+const CHALLAN_SMU_VALUES = ["Retail Offtake", "Decorative Projects"] as const;
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const session = await auth();
