@@ -892,7 +892,7 @@ export function ReviewView({
     return (
       <div className="flex-shrink-0 border-b border-gray-200">
         {/* ── Row 1 ── */}
-        <div className="flex items-center justify-between gap-3 px-5 pt-3 pb-[7px]">
+        <div data-tutorial="detail-header" className="flex items-center justify-between gap-3 px-5 pt-3 pb-[7px]">
           {/* LEFT */}
           <div className="flex items-center gap-2 min-w-0 flex-wrap">
             {/* Delivery dot */}
@@ -1060,7 +1060,7 @@ export function ReviewView({
           </div>
 
           {/* RIGHT — Order No. input or Punched state */}
-          <div className="flex items-center gap-1.5 flex-shrink-0">
+          <div data-tutorial="so-input" className="flex items-center gap-1.5 flex-shrink-0">
             {showInputMode ? (
               <>
                 <div className="flex items-center border-[1.5px] border-gray-200 rounded-md overflow-hidden focus-within:border-teal-500 focus-within:shadow-[0_0_0_3px_rgba(13,148,136,0.08)]">
@@ -1255,7 +1255,7 @@ export function ReviewView({
     const tdLast: React.CSSProperties = { paddingRight: 12, textAlign: "center" };
 
     return (
-      <div className="flex-1 overflow-y-auto" style={{ padding: "0 6px" }}>
+      <div data-tutorial="sku-table" className="flex-1 overflow-y-auto" style={{ padding: "0 6px" }}>
         <table className="w-full border-collapse" style={{ tableLayout: "fixed" }}>
           <colgroup>
             <col style={{ width: "4%" }} />
@@ -1490,7 +1490,7 @@ export function ReviewView({
   return (
     <div className="flex flex-1 overflow-hidden">
       {/* LEFT PANEL — 320px */}
-      <div className="w-[320px] flex-shrink-0 border-r border-gray-200 flex flex-col">
+      <div data-tutorial="order-list" className="w-[320px] flex-shrink-0 border-r border-gray-200 flex flex-col">
         {/* Search input */}
         <div className="px-3 py-2 border-b border-gray-200">
           <input

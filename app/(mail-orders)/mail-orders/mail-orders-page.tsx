@@ -10,6 +10,7 @@ import type { ColumnConfig } from "./mail-orders-table";
 import { UniversalHeader } from "@/components/universal-header";
 import { SlotCompletionModal } from "./slot-completion-modal";
 import { ReviewView } from "./review-view";
+import { TutorialOverlay } from "./tutorial-overlay";
 import { Check, Copy } from "lucide-react";
 
 // ── Column Picker ──────────────────────────────────────────────────────────
@@ -149,6 +150,7 @@ export default function MailOrdersPage() {
   const [smartCopyLineIdx, setSmartCopyLineIdx] = useState(0);
   const [copyToast, setCopyToast] = useState<{ text: string; type: "customer" | "sku" | "error" } | null>(null);
   const copyToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [showTutorial, setShowTutorial] = useState(false);
   const [visibleColumns, setVisibleColumns] = useState<Set<string>>(() => {
     if (typeof window === "undefined") {
       return new Set(ALL_COLUMNS.map(c => c.key));
@@ -855,6 +857,13 @@ export default function MailOrdersPage() {
         return;
       }
 
+      // ? — Show tutorial
+      if (key === "?" || (e.shiftKey && key === "/")) {
+        e.preventDefault();
+        setShowTutorial(true);
+        return;
+      }
+
       // / — Focus search box (focus mode focuses left panel filter)
       if (key === "/") {
         e.preventDefault();
@@ -979,7 +988,7 @@ export default function MailOrdersPage() {
         title={
           <div className="flex items-center gap-2.5">
             <span>Mail Orders</span>
-            <div className="flex border border-gray-300 rounded-[5px] overflow-hidden">
+            <div data-tutorial="view-toggle" className="flex border border-gray-300 rounded-[5px] overflow-hidden">
               <button
                 onClick={() => setViewMode("table")}
                 className={`text-[10px] px-2.5 py-[3px] font-medium transition-colors ${
@@ -1189,6 +1198,11 @@ export default function MailOrdersPage() {
           <span>{copyToast.text}</span>
         </div>
       )}
+
+      <TutorialOverlay
+        manualTrigger={showTutorial}
+        onClose={() => setShowTutorial(false)}
+      />
     </div>
   );
 }

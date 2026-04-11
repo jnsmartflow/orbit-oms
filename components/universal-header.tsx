@@ -384,7 +384,7 @@ export function UniversalHeader({
         {/* Left: segmented control + leftExtra */}
         <div className="flex items-center gap-2">
           {segments && segments.length > 0 && (
-            <div className="inline-flex bg-gray-100 rounded-[7px] p-[3px] gap-[2px]">
+            <div data-tutorial="slot-segments" className="inline-flex bg-gray-100 rounded-[7px] p-[3px] gap-[2px]">
               {segments.map((seg) => {
                 const isActive = activeSegment === seg.id;
                 return (
