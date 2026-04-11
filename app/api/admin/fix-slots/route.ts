@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 export async function POST(): Promise<NextResponse> {
   const session = await auth();
-  requireRole(session, [ROLES.ADMIN]);
+  requireRole(session, [ROLES.ADMIN, ROLES.OPERATIONS]);
 
   // Load all active orders
   const orders = await prisma.orders.findMany({
