@@ -207,6 +207,20 @@ async function applyMailOrderEnrichment(soNumbers: (string | null)[]): Promise<v
       updateData.slotToOverride = true;
     }
 
+    // Order date/time enrichment: use mail order receivedAt as the true order time
+    if (mailOrder.receivedAt) {
+      updateData.orderDateTime = mailOrder.receivedAt;
+
+      // Recalculate slotId from mail order received time (IST)
+      const istDate = new Date(mailOrder.receivedAt.toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+      const h = istDate.getHours();
+      const m = istDate.getMinutes();
+      const timeStr = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+      const { slotId } = resolveSlot(timeStr);
+      updateData.slotId = slotId;
+      updateData.originalSlotId = slotId;
+    }
+
     if (Object.keys(updateData).length === 0) continue;
 
     await prisma.orders.updateMany({
@@ -758,6 +772,7 @@ async function handleConfirm(req: Request, session: Session): Promise<NextRespon
         soNumber:            summary.soNumber,
         invoiceDate:         summary.invoiceDate,
         obdEmailDate:        emailDateTime,
+        orderDateTime:       emailDateTime,
         smu:                 summary.smu,
         sapStatus:           summary.sapStatus,
         materialType:        summary.materialType,
@@ -1388,6 +1403,7 @@ async function handleAutoImport(req: Request): Promise<NextResponse> {
         soNumber:            summary.soNumber,
         invoiceDate:         summary.invoiceDate,
         obdEmailDate:        emailDateTime,
+        orderDateTime:       emailDateTime,
         smu:                 summary.smu,
         sapStatus:           summary.sapStatus,
         materialType:        summary.materialType,

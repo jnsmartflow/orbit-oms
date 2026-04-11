@@ -531,6 +531,7 @@ model orders {
   soNumber            String?
   invoiceDate         DateTime?
   obdEmailDate        DateTime?
+  orderDateTime       DateTime?                 @db.Timestamptz(6)
   smu                 String?
   sapStatus           String?
   materialType        String?
