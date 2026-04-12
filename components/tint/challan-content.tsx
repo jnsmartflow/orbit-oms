@@ -1,11 +1,12 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Loader2, Search, Printer, Edit2, Save, X, FileText } from "lucide-react";
+import { Loader2, Printer, Edit2, Save, X, FileText } from "lucide-react";
 import {
   ChallanDocument,
   type ChallanApiResponse,
 } from "@/components/tint/challan-document";
+import { UniversalHeader } from "@/components/universal-header";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -21,13 +22,6 @@ interface ChallanListItem {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-function fmtDate(iso: string | null): string {
-  if (!iso) return "";
-  return new Date(iso).toLocaleDateString("en-GB", {
-    day: "numeric", month: "short", year: "numeric",
-  });
-}
 
 function initFormulaValues(lineItems: ChallanApiResponse["order"]["lineItems"]): Record<number, string> {
   const fv: Record<number, string> = {};
@@ -51,6 +45,13 @@ export function ChallanContent() {
   const [routeFilter, setRouteFilter] = useState("");
   const [smuFilter,   setSmuFilter]   = useState("");
 
+  // ── Header filters (UniversalHeader) ─────────────────────────────────────────
+  const [headerFilters, setHeaderFilters] = useState<Record<string, string[]>>({
+    smu: [],
+    route: [],
+  });
+  const [currentDate, setCurrentDate] = useState<Date>(() => new Date());
+
   // ── Detail state ─────────────────────────────────────────────────────────────
   const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
   const [challanData,     setChallanData]     = useState<ChallanApiResponse | null>(null);
@@ -66,6 +67,21 @@ export function ChallanContent() {
   const [transporterValue, setTransporterValue] = useState("");
   const [vehicleNoValue,   setVehicleNoValue]   = useState("");
   const [formulaValues,    setFormulaValues]    = useState<Record<number, string>>({});
+
+  // ── Date change handler ──────────────────────────────────────────────────────
+  function handleDateChange(date: Date) {
+    setCurrentDate(date);
+    const dateStr = date.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    setDateFilter(dateStr);
+  }
+
+  // ── Sync headerFilters → existing filter states ──────────────────────────────
+  useEffect(() => {
+    const smu = headerFilters.smu ?? [];
+    setSmuFilter(smu.length === 1 ? smu[0] : "");
+    const route = headerFilters.route ?? [];
+    setRouteFilter(route.length === 1 ? route[0] : "");
+  }, [headerFilters]);
 
   // ── Fetch list ───────────────────────────────────────────────────────────────
   const fetchList = useCallback(async () => {
@@ -224,6 +240,9 @@ export function ChallanContent() {
     new Set(items.map((i) => i.route).filter((r): r is string => r !== null)),
   );
 
+  // ── Selected item for action bar info ─────────────────────────────────────────
+  const selectedItem = items.find((i) => i.orderId === selectedOrderId) ?? null;
+
   // ─────────────────────────────────────────────────────────────────────────────
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden" }}>
@@ -252,122 +271,49 @@ export function ChallanContent() {
         </div>
       )}
 
-      {/* ── TOPBAR ──────────────────────────────────────────────────────────── */}
-      <header style={{
-        background: "#fff",
-        borderBottom: "1px solid #e5e7eb",
-        height: 52,
-        display: "flex",
-        alignItems: "center",
-        padding: "0 20px",
-        flexShrink: 0,
-        gap: 10,
-      }}>
-        <FileText size={18} color="#0d9488" />
-        <span style={{ fontSize: 17, fontWeight: 800, color: "#111827" }}>Delivery Challans</span>
-      </header>
+      {/* ── UNIVERSAL HEADER ───────────────────────────────────────────────── */}
+      <UniversalHeader
+        title="Delivery Challans"
+        stats={[
+          { label: "total", value: items.length },
+        ]}
+        filterGroups={[
+          {
+            label: "SMU",
+            key: "smu",
+            options: [
+              { value: "Retail Offtake", label: "Retail Offtake" },
+              { value: "Decorative Projects", label: "Decorative Projects" },
+            ],
+          },
+          {
+            label: "Route",
+            key: "route",
+            options: uniqueRoutes.map((r) => ({ value: r, label: r })),
+          },
+        ]}
+        activeFilters={headerFilters}
+        onFilterChange={setHeaderFilters}
+        currentDate={currentDate}
+        onDateChange={handleDateChange}
+        searchPlaceholder="Search OBD, customer..."
+        searchValue={searchValue}
+        onSearchChange={setSearchValue}
+      />
 
       {/* ── MAIN ────────────────────────────────────────────────────────────── */}
       <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
 
-        {/* ── LEFT PANEL — 35% — Order list ──────────────────────────────────── */}
+        {/* ── LEFT PANEL — 320px — Order list ──────────────────────────────── */}
         <div style={{
-          width: "35%",
+          width: 320,
+          flexShrink: 0,
+          borderRight: "1px solid #e5e7eb",
           display: "flex",
           flexDirection: "column",
-          borderRight: "1px solid #e5e7eb",
-          background: "#f9fafb",
-          flexShrink: 0,
           overflow: "hidden",
         }}>
-
-          {/* Search + filter bar */}
-          <div style={{
-            background: "#fff",
-            borderBottom: "1px solid #e5e7eb",
-            padding: "10px 16px",
-            display: "flex",
-            flexDirection: "column",
-            gap: 8,
-            flexShrink: 0,
-          }}>
-            {/* Search input */}
-            <div style={{ position: "relative" }}>
-              <Search
-                size={14}
-                style={{
-                  position: "absolute", left: 10,
-                  top: "50%", transform: "translateY(-50%)",
-                  color: "#94a3b8", pointerEvents: "none",
-                }}
-              />
-              <input
-                type="text"
-                placeholder="Search OBD No. or customer name…"
-                value={searchValue}
-                onChange={(e) => setSearchValue(e.target.value)}
-                style={{
-                  width: "100%", paddingLeft: 32, paddingRight: 10, height: 34,
-                  border: "1px solid #e5e7eb", borderRadius: 7, fontSize: 13,
-                  background: "#f9fafb", outline: "none", color: "#1e293b",
-                }}
-              />
-            </div>
-            {/* Filters */}
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <input
-                type="date"
-                value={dateFilter}
-                onChange={(e) => setDateFilter(e.target.value)}
-                style={{
-                  height: 30, border: "1px solid #e5e7eb", borderRadius: 6,
-                  fontSize: 12, padding: "0 8px", color: "#374151",
-                  background: "#fff", outline: "none",
-                }}
-              />
-              <select
-                value={routeFilter}
-                onChange={(e) => setRouteFilter(e.target.value)}
-                style={{
-                  height: 30, border: "1px solid #e5e7eb", borderRadius: 6,
-                  fontSize: 12, padding: "0 8px", color: "#374151",
-                  background: "#fff", outline: "none", flex: 1,
-                }}
-              >
-                <option value="">All Routes</option>
-                {uniqueRoutes.map((r) => <option key={r} value={r}>{r}</option>)}
-              </select>
-              <select
-                value={smuFilter}
-                onChange={(e) => setSmuFilter(e.target.value)}
-                style={{
-                  height: 30, border: "1px solid #e5e7eb", borderRadius: 6,
-                  fontSize: 12, padding: "0 8px", color: "#374151",
-                  background: "#fff", outline: "none", flex: 1,
-                }}
-              >
-                <option value="">All SMU</option>
-                <option value="Retail Offtake">Retail Offtake</option>
-                <option value="Project">Project</option>
-              </select>
-              {(dateFilter || routeFilter || smuFilter) && (
-                <button
-                  type="button"
-                  onClick={() => { setDateFilter(""); setRouteFilter(""); setSmuFilter(""); }}
-                  style={{
-                    height: 30, border: "1px solid #e5e7eb", borderRadius: 6,
-                    fontSize: 11, padding: "0 10px", color: "#6b7280",
-                    background: "#f9fafb", cursor: "pointer", whiteSpace: "nowrap",
-                  }}
-                >
-                  Clear
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* List */}
-          <div style={{ flex: 1, overflowY: "auto", padding: "10px 12px" }}>
+          <div style={{ flex: 1, overflowY: "auto" }}>
             {listLoading ? (
               <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 48, gap: 8, color: "#9ca3af" }}>
                 <Loader2 size={18} className="animate-spin" />
@@ -379,7 +325,7 @@ export function ChallanContent() {
                 <button
                   type="button"
                   onClick={fetchList}
-                  style={{ fontSize: 12, color: "#0d9488", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}
+                  style={{ fontSize: 12, color: "#6b7280", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}
                 >
                   Retry
                 </button>
@@ -394,72 +340,71 @@ export function ChallanContent() {
               </div>
             ) : (
               items.map((item) => {
-                const isSelected         = item.orderId === selectedOrderId;
-                const hasExistingChallan = item.challanNumber !== null;
+                const isSelected = item.orderId === selectedOrderId;
 
                 return (
                   <div
                     key={item.orderId}
                     onClick={() => handleSelectOrder(item.orderId)}
                     style={{
-                      background:  isSelected ? "#eff6ff" : "#fff",
-                      border:      `1px solid ${isSelected ? "#93c5fd" : "#e5e7eb"}`,
-                      borderLeft:  `3px solid ${
-                        isSelected          ? "#0d9488"
-                        : hasExistingChallan ? "#16a34a"
-                        : "#e5e7eb"
-                      }`,
-                      borderRadius: 8,
-                      marginBottom: 6,
-                      padding:      "10px 12px",
-                      cursor:       "pointer",
-                      transition:   "border-color 0.12s, background 0.12s",
+                      padding: "10px 14px",
+                      borderBottom: "1px solid #f3f4f6",
+                      borderLeft: `3px solid ${isSelected ? "#0d9488" : "transparent"}`,
+                      background: isSelected ? "#f0fdfa" : undefined,
+                      cursor: "pointer",
+                      transition: "background 0.1s",
                     }}
+                    onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.background = "#f9fafb"; }}
+                    onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.background = ""; }}
                   >
-                    {/* Row 1: OBD code + challan badge */}
+                    {/* Line 1: OBD number + challan badge */}
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 3 }}>
-                      <span style={{ fontFamily: "'Courier New', monospace", fontSize: 12, fontWeight: 700, color: "#0d9488" }}>
+                      <span style={{
+                        fontFamily: "'SF Mono', ui-monospace, monospace",
+                        fontSize: 11, fontWeight: 600,
+                        color: isSelected ? "#0d9488" : "#374151",
+                      }}>
                         {item.obdNumber}
                       </span>
                       {item.challanNumber && (
                         <span style={{
-                          fontSize: 10, fontWeight: 700,
-                          background: "#dcfce7", border: "1px solid #86efac", color: "#15803d",
-                          padding: "1px 7px", borderRadius: 8,
+                          fontFamily: "'SF Mono', ui-monospace, monospace",
+                          fontSize: 9, fontWeight: 600, padding: "1px 6px", borderRadius: 4,
+                          color: isSelected ? "#0d9488" : "#6b7280",
+                          background: isSelected ? "#f0fdfa" : "#f9fafb",
+                          border: `1px solid ${isSelected ? "#99f6e4" : "#e5e7eb"}`,
                         }}>
-                          {item.challanNumber}
+                          {item.challanNumber.replace("CHN-2026-", "CHN-")}
                         </span>
                       )}
                     </div>
-                    {/* Row 2: Customer name */}
+
+                    {/* Line 2: Customer name */}
                     <div style={{
-                      fontSize: 13, fontWeight: 600, color: "#111827",
-                      marginBottom: 5, whiteSpace: "nowrap",
-                      overflow: "hidden", textOverflow: "ellipsis",
+                      fontSize: 13, fontWeight: 600, color: "#111827", marginBottom: 3,
+                      whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
                     }}>
                       {item.billToCustomerName ?? "—"}
                     </div>
-                    {/* Row 3: Meta chips */}
-                    <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
-                      {item.obdEmailDate && (
-                        <span style={{ fontSize: 10, color: "#6b7280", background: "#f9fafb", border: "1px solid #e5e7eb", padding: "1px 6px", borderRadius: 4 }}>
-                          {fmtDate(item.obdEmailDate)}
-                        </span>
-                      )}
-                      {item.smu && (
-                        <span style={{ fontSize: 10, fontWeight: 600, color: "#0d9488", background: "#f0fdfa", border: "1px solid #99f6e4", padding: "1px 6px", borderRadius: 4 }}>
-                          {item.smu}
-                        </span>
-                      )}
+
+                    {/* Line 3: SMU dot + SMU name + route + slot */}
+                    <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10, color: "#9ca3af" }}>
+                      <span style={{
+                        display: "inline-block", width: 5, height: 5, borderRadius: "50%", flexShrink: 0,
+                        background: item.smu === "Retail Offtake" ? "#2563eb" : "#ea580c",
+                      }} />
+                      <span>{item.smu ?? "—"}</span>
                       {item.route && (
-                        <span style={{ fontSize: 10, color: "#374151", background: "#f9fafb", border: "1px solid #e5e7eb", padding: "1px 6px", borderRadius: 4 }}>
-                          {item.route}
-                        </span>
+                        <>
+                          <span style={{ color: "#d1d5db" }}>·</span>
+                          <span>{item.route}</span>
+                        </>
                       )}
                       {item.slot && (
-                        <span style={{ fontSize: 10, color: "#374151", background: "#f9fafb", border: "1px solid #e5e7eb", padding: "1px 6px", borderRadius: 4 }}>
-                          {item.slot}
-                        </span>
+                        <>
+                          <span style={{ color: "#d1d5db" }}>·</span>
+                          <span>{item.slot}</span>
+                        </>
                       )}
                     </div>
                   </div>
@@ -469,8 +414,8 @@ export function ChallanContent() {
           </div>
         </div>
 
-        {/* ── RIGHT PANEL — flex 1 (~65%) — Challan preview ──────────────────── */}
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "#f0f2f8" }}>
+        {/* ── RIGHT PANEL — flex 1 — Challan preview ───────────────────────── */}
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "#f9fafb" }}>
 
           {!selectedOrderId ? (
             /* Empty state */
@@ -495,7 +440,7 @@ export function ChallanContent() {
               <button
                 type="button"
                 onClick={() => { if (selectedOrderId) void fetchDetail(selectedOrderId); }}
-                style={{ fontSize: 12, color: "#0d9488", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}
+                style={{ fontSize: 12, color: "#6b7280", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}
               >
                 Retry
               </button>
@@ -513,14 +458,24 @@ export function ChallanContent() {
                 gap: 8,
                 flexShrink: 0,
               }}>
-                {/* Challan number badge */}
+                {/* Challan number — plain text */}
                 <span style={{
-                  fontSize: 12, fontWeight: 700,
-                  color: "#0d9488", background: "#f0fdfa", border: "1px solid #99f6e4",
-                  padding: "3px 10px", borderRadius: 6,
+                  fontFamily: "'SF Mono', ui-monospace, monospace",
+                  fontSize: 12, fontWeight: 600, color: "#111827",
                 }}>
                   {challanData.challan.challanNumber}
                 </span>
+
+                {/* Separator + OBD & customer */}
+                {selectedItem && (
+                  <>
+                    <span style={{ color: "#d1d5db", fontSize: 12 }}>|</span>
+                    <span style={{ fontSize: 11, color: "#9ca3af" }}>
+                      {selectedItem.obdNumber}
+                      {selectedItem.billToCustomerName ? ` · ${selectedItem.billToCustomerName}` : ""}
+                    </span>
+                  </>
+                )}
 
                 <div style={{ flex: 1 }} />
 
@@ -542,7 +497,7 @@ export function ChallanContent() {
                     >
                       <X size={13} /> Cancel
                     </button>
-                    {/* Save */}
+                    {/* Save — dark */}
                     <button
                       type="button"
                       onClick={() => void handleSave()}
@@ -551,7 +506,7 @@ export function ChallanContent() {
                         height: 32, padding: "0 14px",
                         border: "none", borderRadius: 6,
                         fontSize: 12, fontWeight: 700, color: "#fff",
-                        background: "#0d9488",
+                        background: "#111827",
                         cursor: isSaving || !isDirty ? "not-allowed" : "pointer",
                         display: "flex", alignItems: "center", gap: 5,
                         opacity: (!isDirty && !isSaving) ? 0.45 : 1,
@@ -564,15 +519,15 @@ export function ChallanContent() {
                     </button>
                   </>
                 ) : (
-                  /* Edit button */
+                  /* Edit button — outline */
                   <button
                     type="button"
                     onClick={() => setIsEditing(true)}
                     style={{
                       height: 32, padding: "0 12px",
-                      border: "1px solid #99f6e4", borderRadius: 6,
-                      fontSize: 12, fontWeight: 600, color: "#0d9488",
-                      background: "#f0fdfa", cursor: "pointer",
+                      border: "1px solid #e5e7eb", borderRadius: 6,
+                      fontSize: 12, fontWeight: 600, color: "#6b7280",
+                      background: "#fff", cursor: "pointer",
                       display: "flex", alignItems: "center", gap: 5,
                     }}
                   >
@@ -580,16 +535,16 @@ export function ChallanContent() {
                   </button>
                 )}
 
-                {/* Print */}
+                {/* Print — dark */}
                 <button
                   type="button"
                   onClick={() => void handlePrint()}
                   disabled={isPrinting || detailLoading}
                   style={{
                     height: 32, padding: "0 12px",
-                    border: "1px solid #e5e7eb", borderRadius: 6,
-                    fontSize: 12, fontWeight: 600, color: "#374151",
-                    background: "#f9fafb", cursor: "pointer",
+                    border: "none", borderRadius: 6,
+                    fontSize: 12, fontWeight: 600, color: "#fff",
+                    background: "#111827", cursor: "pointer",
                     display: "flex", alignItems: "center", gap: 5,
                     opacity: isPrinting ? 0.6 : 1,
                   }}
