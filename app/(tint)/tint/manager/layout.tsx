@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { checkPermission, getAllPermissionsForRole, buildNavItems } from "@/lib/permissions";
 import { RoleSidebarProvider } from "@/components/shared/role-sidebar-provider";
 import { RoleLayoutClient } from "@/components/shared/role-layout-client";
+import type { RoleSidebarRole } from "@/components/shared/role-sidebar";
 
 export const dynamic = "force-dynamic";
 
@@ -38,7 +39,7 @@ export default async function TintManagerLayout({
   return (
     <RoleSidebarProvider>
       <RoleLayoutClient
-        role="tint_manager"
+        role={session.user.role as RoleSidebarRole}
         userName={userName}
         userInitials={userInitials}
         navItems={navItems}

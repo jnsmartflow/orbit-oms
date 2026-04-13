@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { getAllPermissionsForRole, buildNavItems } from "@/lib/permissions";
 import { RoleSidebarProvider } from "@/components/shared/role-sidebar-provider";
 import { RoleLayoutClient } from "@/components/shared/role-layout-client";
+import type { RoleSidebarRole } from "@/components/shared/role-sidebar";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +28,7 @@ export default async function OperationsLayout({
   return (
     <RoleSidebarProvider>
       <RoleLayoutClient
-        role="operations"
+        role={session.user.role as RoleSidebarRole}
         userName={userName}
         userInitials={userInitials}
         navItems={navItems}
