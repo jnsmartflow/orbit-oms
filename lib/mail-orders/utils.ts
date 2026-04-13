@@ -113,7 +113,7 @@ export function formatTime(receivedAt: string): string {
   });
 }
 
-export const BATCH_COPY_LIMIT = 20;
+export const BATCH_COPY_LIMIT = 14;
 export const SPLIT_VOLUME_THRESHOLD = 1500; // liters
 export const SORT_DISPLAY_THRESHOLD = 5;
 
