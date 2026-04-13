@@ -116,21 +116,25 @@ function deliveryDotCls(type: string | null | undefined): string {
 
 // ── §40 table constants ──────────────────────────────────────────────────────
 
-const thCls = "h-8 px-3.5 text-[10px] font-medium text-gray-400 uppercase tracking-[0.05em] text-left whitespace-nowrap overflow-hidden text-ellipsis";
-const tdCls = "h-9 px-3.5 whitespace-nowrap overflow-hidden text-ellipsis align-middle";
+const thCls = "text-[10px] font-medium text-gray-400 uppercase tracking-[0.05em] text-left whitespace-nowrap overflow-hidden text-ellipsis align-middle";
+const thStyle: React.CSSProperties = { padding: "9px 14px" };
+const tdCls = "whitespace-nowrap overflow-hidden text-ellipsis align-middle";
+const tdStyle: React.CSSProperties = { padding: "10px 14px" };
+const tdObdCls = "overflow-hidden align-top";
+const tdObdStyle: React.CSSProperties = { padding: "10px 14px", whiteSpace: "normal" };
 
 function Colgroup() {
   return (
     <colgroup>
-      <col style={{ width: "12%" }} />
-      <col style={{ width: "11%" }} />
-      <col style={{ width: "22%" }} />
-      <col style={{ width: "8%" }} />
+      <col style={{ width: "13%" }} />
       <col style={{ width: "10%" }} />
+      <col style={{ width: "22%" }} />
       <col style={{ width: "7%" }} />
-      <col style={{ width: "15%" }} />
       <col style={{ width: "9%" }} />
       <col style={{ width: "6%" }} />
+      <col style={{ width: "15%" }} />
+      <col style={{ width: "10%" }} />
+      <col style={{ width: "8%" }} />
     </colgroup>
   );
 }
@@ -399,7 +403,7 @@ export function TintTableView({
     const dateStr = formatOrderDate(order.orderDateTime) || formatObdDate(order.obdEmailDate, order.obdEmailTime) || formatTime(order.createdAt);
     const ageBadge = getAgeBadge(order.orderDateTime, order.obdEmailDate);
     return (
-      <td className={tdCls}>
+      <td className={tdObdCls} style={tdObdStyle}>
         <div className="flex items-center gap-1.5">
           {order.deliveryTypeName && (
             <span className={`w-[5px] h-[5px] rounded-full flex-shrink-0 ${deliveryDotCls(order.deliveryTypeName)}`} title={order.deliveryTypeName} />
@@ -407,9 +411,9 @@ export function TintTableView({
           <span className="font-mono text-[11px] text-gray-800">{order.obdNumber}</span>
         </div>
         {dateStr && (
-          <div className="flex items-center gap-1.5">
+          <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 2 }}>
             <span className="text-[10px] text-gray-400">{dateStr}</span>
-            {ageBadge && <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded border ${ageBadge.className}`}>{ageBadge.text}</span>}
+            {ageBadge && <span className={`text-[9px] font-semibold px-[5px] py-[1px] rounded-[3px] border leading-none ${ageBadge.className}`}>{ageBadge.text}</span>}
           </div>
         )}
       </td>
@@ -418,15 +422,21 @@ export function TintTableView({
 
   function SplitObdTd({ split }: { split: SplitCard }) {
     const dateStr = formatOrderDate(split.orderDateTime) || formatObdDate(split.obdEmailDate, split.obdEmailTime) || formatTime(split.createdAt);
+    const ageBadge = getAgeBadge(split.orderDateTime, split.obdEmailDate);
     return (
-      <td className={tdCls}>
+      <td className={tdObdCls} style={tdObdStyle}>
         <div className="flex items-center gap-1.5">
           {split.deliveryTypeName && (
             <span className={`w-[5px] h-[5px] rounded-full flex-shrink-0 ${deliveryDotCls(split.deliveryTypeName)}`} title={split.deliveryTypeName} />
           )}
           <span className="font-mono text-[11px] text-gray-800">{split.order.obdNumber}</span>
         </div>
-        {dateStr && <div className="text-[10px] text-gray-400">{dateStr}</div>}
+        {dateStr && (
+          <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 2 }}>
+            <span className="text-[10px] text-gray-400">{dateStr}</span>
+            {ageBadge && <span className={`text-[9px] font-semibold px-[5px] py-[1px] rounded-[3px] border leading-none ${ageBadge.className}`}>{ageBadge.text}</span>}
+          </div>
+        )}
         <div className="inline-flex items-center gap-[3px] text-[9px] font-semibold text-purple-700 bg-purple-50 border border-purple-200 px-1.5 py-0.5 rounded mt-0.5">
           <Scissors size={8} />
           Split #{split.splitNumber}
@@ -439,7 +449,7 @@ export function TintTableView({
     name: string; missing?: boolean; onMissing?: (e: React.MouseEvent) => void; dispatchStatus?: string | null;
   }) {
     return (
-      <td className={tdCls}>
+      <td className={tdCls} style={tdStyle}>
         <div className="flex items-center gap-1.5">
           <span className="text-[11px] font-medium text-gray-900 truncate">{name}</span>
           {missing && onMissing && (
@@ -459,16 +469,16 @@ export function TintTableView({
     return (
       <>
         <OrderObdTd order={order} />
-        <td className={tdCls}><SmuBadge smu={order.smu} /></td>
+        <td className={tdCls} style={tdStyle}><SmuBadge smu={order.smu} /></td>
         <CustomerTd
           name={order.customer?.customerName ?? order.shipToCustomerName ?? "—"}
           missing={order.customerMissing}
           onMissing={(e) => { e.stopPropagation(); onCustomerMissing?.(order); }}
           dispatchStatus={order.dispatchStatus}
         />
-        <td className={tdCls}><PriorityBadge level={order.priorityLevel} /></td>
-        <td className={`${tdCls} font-mono text-[11px] text-gray-600`}>{order.querySnapshot?.articleTag ?? "—"}</td>
-        <td className={`${tdCls} text-[11px] text-gray-600`}>{order.querySnapshot?.totalVolume != null ? `${Math.round(order.querySnapshot.totalVolume)} L` : "—"}</td>
+        <td className={tdCls} style={tdStyle}><PriorityBadge level={order.priorityLevel} /></td>
+        <td className={`${tdCls} font-mono text-[11px] text-gray-600`} style={tdStyle}>{order.querySnapshot?.articleTag ?? "—"}</td>
+        <td className={`${tdCls} text-[11px] text-gray-600`} style={tdStyle}>{order.querySnapshot?.totalVolume != null ? `${Math.round(order.querySnapshot.totalVolume)} L` : "—"}</td>
       </>
     );
   }
@@ -477,20 +487,20 @@ export function TintTableView({
     return (
       <>
         <SplitObdTd split={split} />
-        <td className={tdCls}><SmuBadge smu={split.smu} /></td>
+        <td className={tdCls} style={tdStyle}><SmuBadge smu={split.smu} /></td>
         <CustomerTd name={split.order.customer?.customerName ?? "—"} dispatchStatus={split.dispatchStatus} />
-        <td className={tdCls}><PriorityBadge level={split.priorityLevel} /></td>
-        <td className={`${tdCls} font-mono text-[11px] text-gray-600`}>{split.articleTag ?? `${split.totalQty} units`}</td>
-        <td className={`${tdCls} text-[11px] text-gray-600`}>{split.totalVolume != null ? `${Math.round(split.totalVolume)} L` : "—"}</td>
+        <td className={tdCls} style={tdStyle}><PriorityBadge level={split.priorityLevel} /></td>
+        <td className={`${tdCls} font-mono text-[11px] text-gray-600`} style={tdStyle}>{split.articleTag ?? `${split.totalQty} units`}</td>
+        <td className={`${tdCls} text-[11px] text-gray-600`} style={tdStyle}>{split.totalVolume != null ? `${Math.round(split.totalVolume)} L` : "—"}</td>
       </>
     );
   }
 
   function OperatorTd({ name, avatarColor }: { name: string | null | undefined; avatarColor: string }) {
     return (
-      <td className={tdCls}>
+      <td className={tdCls} style={tdStyle}>
         <div className="flex items-center gap-1.5 min-w-0">
-          <div className={`w-5 h-5 rounded-full ${avatarColor} text-white text-[9px] font-bold flex items-center justify-center flex-shrink-0`}>{initials(name)}</div>
+          <div className={`rounded-full ${avatarColor} text-white text-[9px] font-bold flex items-center justify-center flex-shrink-0`} style={{ width: 22, height: 22 }}>{initials(name)}</div>
           <span className="text-[11px] text-gray-600 truncate">{name ?? "—"}</span>
         </div>
       </td>
@@ -499,13 +509,13 @@ export function TintTableView({
 
   function ActionsTd({ children }: { children: React.ReactNode }) {
     return (
-      <td className={`${tdCls} text-right`} onClick={(e) => e.stopPropagation()}>
+      <td className={`${tdCls} text-right`} style={{ ...tdStyle, paddingRight: 14 }} onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-1 justify-end">{children}</div>
       </td>
     );
   }
 
-  const rowCls = "border-b border-[#f0f0f0] hover:bg-gray-50 cursor-pointer transition-colors duration-100";
+  const rowCls = "border-b border-[#f0f0f0] last:border-b-0 hover:bg-[#fafafa] cursor-pointer transition-colors duration-100";
   const tableStyle: React.CSSProperties = { width: "100%", borderCollapse: "collapse", tableLayout: "fixed" };
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -514,16 +524,16 @@ export function TintTableView({
     <div className="bg-white px-3 pb-6 text-[12px]">
 
       {/* ── Section 1: Pending Assignment ──────────────────────────────────── */}
-      <div className="mb-5">
+      <div className="mb-4">
         <SectionHeader dotClass="bg-teal-500" label="Pending Assignment" count={pendingRows.length} volume={pendingSectionVolume} colorScheme="teal" />
         <div className="bg-white border border-gray-200 border-t-0 rounded-b-lg overflow-hidden">
           <table style={tableStyle}>
             <Colgroup />
             <thead>
               <tr className="bg-gray-50 border-b border-[#ebebeb]">
-                <th className={thCls}>OBD No.</th><th className={thCls}>SMU</th><th className={thCls}>Site Name</th>
-                <th className={thCls}>Priority</th><th className={thCls}>Articles</th><th className={thCls}>Volume</th>
-                <th className={thCls}>Action</th><th className={thCls} /><th className={thCls} />
+                <th className={thCls} style={thStyle}>OBD No.</th><th className={thCls} style={thStyle}>SMU</th><th className={thCls} style={thStyle}>Site Name</th>
+                <th className={thCls} style={thStyle}>Priority</th><th className={thCls} style={thStyle}>Articles</th><th className={thCls} style={thStyle}>Volume</th>
+                <th className={thCls} style={thStyle}>Action</th><th className={thCls} style={thStyle} /><th className={thCls} style={thStyle} />
               </tr>
             </thead>
             <tbody>
@@ -548,19 +558,19 @@ export function TintTableView({
                       {hasSplits ? (
                         <div className="flex items-center gap-2">
                           <button type="button" onClick={() => onCreateSplit(order)}
-                            className="inline-flex items-center justify-center gap-1.5 min-w-[120px] px-3 py-1.5 text-[11px] font-medium text-gray-700 bg-white border border-gray-200 rounded-md hover:bg-gray-50 hover:border-gray-300 transition-colors">
+                            className="inline-flex items-center justify-center gap-1.5 min-w-[120px] text-[11px] font-medium text-gray-700 bg-white rounded-[6px] hover:bg-gray-50 hover:border-gray-300 transition-colors" style={{ padding: "4px 14px", border: "0.5px solid #d1d5db" }}>
                             <Scissors size={11} /> Create Split
                           </button>
                           {remainingQty > 0 && <span className="text-[10px] font-semibold text-amber-600">{remainingQty} left</span>}
                         </div>
                       ) : (
                         <button type="button" onClick={() => onAssign(order)}
-                          className="inline-flex items-center justify-center gap-1.5 min-w-[120px] px-3 py-1.5 text-[11px] font-medium text-gray-700 bg-white border border-gray-200 rounded-md hover:bg-gray-50 hover:border-gray-300 transition-colors">
+                          className="inline-flex items-center justify-center gap-1.5 min-w-[120px] text-[11px] font-medium text-gray-700 bg-white rounded-[6px] hover:bg-gray-50 hover:border-gray-300 transition-colors" style={{ padding: "4px 14px", border: "0.5px solid #d1d5db" }}>
                           <UserPlus size={11} /> Assign
                         </button>
                       )}
                     </td>
-                    <td className={tdCls} />
+                    <td className={tdCls} style={tdStyle} />
                     <ActionsTd>
                       <PlusBtn id={order.id} type="order" onStatusPopover={onStatusPopover} />
                       <RowActionsMenu actions={actions} />
@@ -574,16 +584,16 @@ export function TintTableView({
       </div>
 
       {/* ── Section 2: Assigned ────────────────────────────────────────────── */}
-      <div className="mb-5">
+      <div className="mb-4">
         <SectionHeader dotClass="bg-amber-400" label="Assigned" count={assignedOrderRows.length + assignedSplitRows.length} volume={assignedSectionVolume} colorScheme="amber" />
         <div className="bg-white border border-gray-200 border-t-0 rounded-b-lg overflow-hidden">
           <table style={tableStyle}>
             <Colgroup />
             <thead>
               <tr className="bg-gray-50 border-b border-[#ebebeb]">
-                <th className={thCls}>OBD No.</th><th className={thCls}>SMU</th><th className={thCls}>Site Name</th>
-                <th className={thCls}>Priority</th><th className={thCls}>Articles</th><th className={thCls}>Volume</th>
-                <th className={thCls}>Operator</th><th className={thCls}>Assigned At</th><th className={thCls} />
+                <th className={thCls} style={thStyle}>OBD No.</th><th className={thCls} style={thStyle}>SMU</th><th className={thCls} style={thStyle}>Site Name</th>
+                <th className={thCls} style={thStyle}>Priority</th><th className={thCls} style={thStyle}>Articles</th><th className={thCls} style={thStyle}>Volume</th>
+                <th className={thCls} style={thStyle}>Operator</th><th className={thCls} style={thStyle}>Assigned At</th><th className={thCls} style={thStyle} />
               </tr>
             </thead>
             <tbody>
@@ -595,7 +605,7 @@ export function TintTableView({
                     <tr key={`ao-${order.id}`} onClick={() => onOrderClick(order)} className={rowCls}>
                       <OrderCommonTds order={order} />
                       <OperatorTd name={order.tintAssignments[0]?.assignedTo.name} avatarColor="bg-teal-600" />
-                      <td className={tdCls}><span className="text-[11px] text-gray-400">{formatTime(order.tintAssignments[0]?.updatedAt)}</span></td>
+                      <td className={tdCls} style={tdStyle}><span className="text-[11px] text-gray-400">{formatTime(order.tintAssignments[0]?.updatedAt)}</span></td>
                       <ActionsTd>
                         <PlusBtn id={order.id} type="order" onStatusPopover={onStatusPopover} />
                         <RowActionsMenu actions={[
@@ -611,7 +621,7 @@ export function TintTableView({
                     <tr key={`as-${split.id}`} onClick={() => onSplitClick(split)} className={rowCls}>
                       <SplitCommonTds split={split} />
                       <OperatorTd name={split.assignedTo.name} avatarColor="bg-teal-600" />
-                      <td className={tdCls}><span className="text-[11px] text-gray-400">{formatTime(split.createdAt)}</span></td>
+                      <td className={tdCls} style={tdStyle}><span className="text-[11px] text-gray-400">{formatTime(split.createdAt)}</span></td>
                       <ActionsTd>
                         <PlusBtn id={split.id} type="split" onStatusPopover={onStatusPopover} />
                         <RowActionsMenu actions={[
@@ -631,16 +641,16 @@ export function TintTableView({
       </div>
 
       {/* ── Section 3: In Progress ──────────────────────────────────────────── */}
-      <div className="mb-5">
+      <div className="mb-4">
         <SectionHeader dotClass="bg-blue-400" label="In Progress" count={inProgressOrderRows.length + inProgressSplitRows.length} volume={inProgressSectionVolume} colorScheme="blue" />
         <div className="bg-white border border-gray-200 border-t-0 rounded-b-lg overflow-hidden">
           <table style={tableStyle}>
             <Colgroup />
             <thead>
               <tr className="bg-gray-50 border-b border-[#ebebeb]">
-                <th className={thCls}>OBD No.</th><th className={thCls}>SMU</th><th className={thCls}>Site Name</th>
-                <th className={thCls}>Priority</th><th className={thCls}>Articles</th><th className={thCls}>Volume</th>
-                <th className={thCls}>Operator</th><th className={thCls}>Elapsed</th><th className={thCls} />
+                <th className={thCls} style={thStyle}>OBD No.</th><th className={thCls} style={thStyle}>SMU</th><th className={thCls} style={thStyle}>Site Name</th>
+                <th className={thCls} style={thStyle}>Priority</th><th className={thCls} style={thStyle}>Articles</th><th className={thCls} style={thStyle}>Volume</th>
+                <th className={thCls} style={thStyle}>Operator</th><th className={thCls} style={thStyle}>Elapsed</th><th className={thCls} style={thStyle} />
               </tr>
             </thead>
             <tbody>
@@ -654,7 +664,7 @@ export function TintTableView({
                       <tr key={`ipo-${order.id}`} onClick={() => onOrderClick(order)} className={rowCls}>
                         <OrderCommonTds order={order} />
                         <OperatorTd name={order.tintAssignments[0]?.assignedTo.name} avatarColor="bg-teal-600" />
-                        <td className={tdCls}><ElapsedBadge startedAt={startedAt} /></td>
+                        <td className={tdCls} style={tdStyle}><ElapsedBadge startedAt={startedAt} /></td>
                         <ActionsTd><PlusBtn id={order.id} type="order" onStatusPopover={onStatusPopover} /></ActionsTd>
                       </tr>
                     );
@@ -663,7 +673,7 @@ export function TintTableView({
                     <tr key={`ips-${split.id}`} onClick={() => onSplitClick(split)} className={rowCls}>
                       <SplitCommonTds split={split} />
                       <OperatorTd name={split.assignedTo.name} avatarColor="bg-teal-600" />
-                      <td className={tdCls}><ElapsedBadge startedAt={split.startedAt} /></td>
+                      <td className={tdCls} style={tdStyle}><ElapsedBadge startedAt={split.startedAt} /></td>
                       <ActionsTd><PlusBtn id={split.id} type="split" onStatusPopover={onStatusPopover} /></ActionsTd>
                     </tr>
                   ))}
@@ -675,16 +685,16 @@ export function TintTableView({
       </div>
 
       {/* ── Section 4: Completed Today ──────────────────────────────────────── */}
-      <div className="mb-5">
+      <div className="mb-4">
         <SectionHeader dotClass="bg-green-400" label="Completed Today" count={completedSplitRows.length + completedAssignmentRows.length} volume={completedSectionVolume} colorScheme="green" />
         <div className="bg-white border border-gray-200 border-t-0 rounded-b-lg overflow-hidden">
           <table style={tableStyle}>
             <Colgroup />
             <thead>
               <tr className="bg-gray-50 border-b border-[#ebebeb]">
-                <th className={thCls}>OBD No.</th><th className={thCls}>SMU</th><th className={thCls}>Site Name</th>
-                <th className={thCls}>Priority</th><th className={thCls}>Articles</th><th className={thCls}>Volume</th>
-                <th className={thCls}>Operator</th><th className={thCls}>Completed At</th><th className={thCls} />
+                <th className={thCls} style={thStyle}>OBD No.</th><th className={thCls} style={thStyle}>SMU</th><th className={thCls} style={thStyle}>Site Name</th>
+                <th className={thCls} style={thStyle}>Priority</th><th className={thCls} style={thStyle}>Articles</th><th className={thCls} style={thStyle}>Volume</th>
+                <th className={thCls} style={thStyle}>Operator</th><th className={thCls} style={thStyle}>Completed At</th><th className={thCls} style={thStyle} />
               </tr>
             </thead>
             <tbody>
@@ -696,7 +706,7 @@ export function TintTableView({
                     <tr key={`cs-${split.id}`} onClick={() => onSplitClick(split)} className={rowCls}>
                       <SplitCommonTds split={split} />
                       <OperatorTd name={split.assignedTo.name} avatarColor="bg-green-600" />
-                      <td className={tdCls}><span className="text-[11px] text-gray-400">{formatTime(split.completedAt)}</span></td>
+                      <td className={tdCls} style={tdStyle}><span className="text-[11px] text-gray-400">{formatTime(split.completedAt)}</span></td>
                       <ActionsTd><PlusBtn id={split.id} type="split" onStatusPopover={onStatusPopover} /></ActionsTd>
                     </tr>
                   ))}
@@ -704,19 +714,21 @@ export function TintTableView({
                     const order = assignmentAsOrder(a);
                     return (
                       <tr key={`ca-${a.id}`} onClick={() => onOrderClick(order)} className={rowCls}>
-                        <td className={tdCls}>
+                        <td className={tdObdCls} style={tdObdStyle}>
                           <div className="font-mono text-[11px] text-gray-800">{a.order.obdNumber}</div>
                           {(a.orderDateTime || a.obdEmailDate || a.completedAt) && (
-                            <div className="text-[10px] text-gray-400">{formatOrderDate(a.orderDateTime) || formatObdDate(a.obdEmailDate, a.obdEmailTime) || formatTime(a.completedAt)}</div>
+                            <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 2 }}>
+                              <span className="text-[10px] text-gray-400">{formatOrderDate(a.orderDateTime) || formatObdDate(a.obdEmailDate, a.obdEmailTime) || formatTime(a.completedAt)}</span>
+                            </div>
                           )}
                         </td>
-                        <td className={tdCls}><SmuBadge smu={a.smu} /></td>
+                        <td className={tdCls} style={tdStyle}><SmuBadge smu={a.smu} /></td>
                         <CustomerTd name={a.order.customer?.customerName ?? a.order.shipToCustomerName ?? "—"} dispatchStatus={null} />
-                        <td className={tdCls}><PriorityBadge level={5} /></td>
-                        <td className={`${tdCls} font-mono text-[11px] text-gray-600`}>{a.order.querySnapshot?.articleTag ?? "—"}</td>
-                        <td className={`${tdCls} text-[11px] text-gray-600`}>{a.order.querySnapshot?.totalVolume != null ? `${Math.round(a.order.querySnapshot.totalVolume)} L` : "—"}</td>
+                        <td className={tdCls} style={tdStyle}><PriorityBadge level={5} /></td>
+                        <td className={`${tdCls} font-mono text-[11px] text-gray-600`} style={tdStyle}>{a.order.querySnapshot?.articleTag ?? "—"}</td>
+                        <td className={`${tdCls} text-[11px] text-gray-600`} style={tdStyle}>{a.order.querySnapshot?.totalVolume != null ? `${Math.round(a.order.querySnapshot.totalVolume)} L` : "—"}</td>
                         <OperatorTd name={a.assignedTo.name} avatarColor="bg-green-600" />
-                        <td className={tdCls}><span className="text-[11px] text-gray-400">{formatTime(a.completedAt)}</span></td>
+                        <td className={tdCls} style={tdStyle}><span className="text-[11px] text-gray-400">{formatTime(a.completedAt)}</span></td>
                         <ActionsTd><PlusBtn id={a.order.id} type="order" onStatusPopover={onStatusPopover} /></ActionsTd>
                       </tr>
                     );
