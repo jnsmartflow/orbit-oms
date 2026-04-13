@@ -98,21 +98,32 @@ function deliveryDotCls(type: string | null | undefined): string {
   return "bg-gray-300";
 }
 
-// ── Grid column templates ─────────────────────────────────────────────────────
+// ── §40 table constants ──────────────────────────────────────────────────────
 
-const TABLE_GRID = "1fr 1.2fr 2fr 0.7fr 1.1fr 0.6fr 1.8fr 0.8fr 0.5fr";
-//                  OBD  SMU    SITE PRIO  ART    VOL   STAGE  TIME   ACTIONS
+const thCls = "h-8 px-3.5 text-[10px] font-medium text-gray-400 uppercase tracking-[0.05em] text-left whitespace-nowrap overflow-hidden text-ellipsis";
+const tdCls = "h-9 px-3.5 whitespace-nowrap overflow-hidden text-ellipsis align-middle";
 
-const hdrCls = "py-1.5 px-2 text-[10px] font-medium text-gray-400 uppercase tracking-wider border-b border-gray-100";
-const cellCls = "py-2 px-2 min-w-0";
+function Colgroup() {
+  return (
+    <colgroup>
+      <col style={{ width: "12%" }} />
+      <col style={{ width: "11%" }} />
+      <col style={{ width: "22%" }} />
+      <col style={{ width: "8%" }} />
+      <col style={{ width: "10%" }} />
+      <col style={{ width: "7%" }} />
+      <col style={{ width: "15%" }} />
+      <col style={{ width: "9%" }} />
+      <col style={{ width: "6%" }} />
+    </colgroup>
+  );
+}
 
-// ── Cell components ───────────────────────────────────────────────────────────
+// ── Cell components ──────────────────────────────────────────────────────────
 
 function SmuBadge({ smu }: { smu: string | null | undefined }) {
   if (!smu) return <span className="text-gray-400">—</span>;
-  return (
-    <span className="text-[11px] font-medium text-gray-600">{smu}</span>
-  );
+  return <span className="text-[11px] font-medium text-gray-600">{smu}</span>;
 }
 
 function PriorityBadge({ level }: { level: number | null | undefined }) {
@@ -146,35 +157,13 @@ function PlusBtn({ id, type, onStatusPopover }: {
   );
 }
 
+// ── Section header ───────────────────────────────────────────────────────────
+
 const SCHEME_MAP = {
-  teal: {
-    bg:        "bg-white",
-    border:    "border-b border-gray-200",
-    labelColor: "text-gray-900",
-    dot:       "bg-teal-500",
-    pill:      "bg-gray-100 text-gray-700 border border-gray-200",
-  },
-  amber: {
-    bg:        "bg-white",
-    border:    "border-b border-gray-200",
-    labelColor: "text-gray-900",
-    dot:       "bg-amber-400",
-    pill:      "bg-gray-100 text-gray-700 border border-gray-200",
-  },
-  blue: {
-    bg:        "bg-white",
-    border:    "border-b border-gray-200",
-    labelColor: "text-gray-900",
-    dot:       "bg-blue-400",
-    pill:      "bg-gray-100 text-gray-700 border border-gray-200",
-  },
-  green: {
-    bg:        "bg-white",
-    border:    "border-b border-gray-200",
-    labelColor: "text-gray-900",
-    dot:       "bg-green-400",
-    pill:      "bg-gray-100 text-gray-700 border border-gray-200",
-  },
+  teal:  { bg: "bg-white", border: "border-b border-gray-200", labelColor: "text-gray-900", dot: "bg-teal-500",  pill: "bg-gray-100 text-gray-700 border border-gray-200" },
+  amber: { bg: "bg-white", border: "border-b border-gray-200", labelColor: "text-gray-900", dot: "bg-amber-400", pill: "bg-gray-100 text-gray-700 border border-gray-200" },
+  blue:  { bg: "bg-white", border: "border-b border-gray-200", labelColor: "text-gray-900", dot: "bg-blue-400",  pill: "bg-gray-100 text-gray-700 border border-gray-200" },
+  green: { bg: "bg-white", border: "border-b border-gray-200", labelColor: "text-gray-900", dot: "bg-green-400", pill: "bg-gray-100 text-gray-700 border border-gray-200" },
 } as const;
 
 function SectionHeader({ dotClass, label, count, volume, colorScheme }: {
@@ -190,18 +179,14 @@ function SectionHeader({ dotClass, label, count, volume, colorScheme }: {
     <div className={`flex items-center gap-2.5 px-4 py-[10px] rounded-t-lg ${s.bg} ${s.border}`}>
       <div className={`w-2 h-2 rounded-full flex-shrink-0 ${s.dot}`} />
       <span className={`text-[12px] font-bold ${s.labelColor}`}>{label}</span>
-      <span className={`text-[11px] font-bold px-[9px] py-[1px] rounded-full ${s.pill}`}>
-        {count}
-      </span>
+      <span className={`text-[11px] font-bold px-[9px] py-[1px] rounded-full ${s.pill}`}>{count}</span>
       <div className="flex-1" />
       <span className="text-[13px] text-gray-700 font-semibold">{volStr}</span>
     </div>
   );
 }
 
-const ROW_CLS = "border-b border-gray-50 last:border-b-0 hover:bg-gray-50/50 cursor-pointer transition-colors duration-100";
-
-// ── Row actions menu ──────────────────────────────────────────────────────────
+// ── Row actions menu ─────────────────────────────────────────────────────────
 
 interface RowAction {
   label:   string;
@@ -280,7 +265,7 @@ function RowActionsMenu({ actions }: { actions: RowAction[] }) {
   );
 }
 
-// ── Main component ────────────────────────────────────────────────────────────
+// ── Main component ───────────────────────────────────────────────────────────
 
 export function TintTableView({
   filteredOrders,
@@ -365,42 +350,17 @@ export function TintTableView({
 
   function assignmentAsOrder(a: CompletedAssignment): TintOrder {
     return {
-      id:                 a.order.id,
-      obdNumber:          a.order.obdNumber,
-      workflowStage:      "pending_support",
-      dispatchSlot:       null,
-      dispatchStatus:     null,
-      priorityLevel:      5,
-      sequenceOrder:      null,
-      createdAt:          a.completedAt ?? "",
-      shipToCustomerName: a.order.shipToCustomerName,
-      shipToCustomerId:   null,
-      customerMissing:    false,
-      smu:                a.smu,
-      obdEmailDate:       a.obdEmailDate,
-      obdEmailTime:       a.obdEmailTime,
-      orderDateTime:      a.orderDateTime,
-      slotId:             a.slotId,
-      slotName:           a.slotName,
-      slotTime:           a.slotTime,
-      slotIsNextDay:      a.slotIsNextDay,
-      originalSlotId:     a.originalSlotId,
-      originalSlotName:   a.originalSlotName,
-      deliveryTypeName:   a.deliveryTypeName,
-      customer:           a.order.customer ?? null,
-      querySnapshot:      a.order.querySnapshot ?? null,
-      tintAssignments: [{
-        id:          a.id,
-        status:      "tinting_done",
-        assignedTo:  a.assignedTo,
-        startedAt:   null,
-        completedAt: a.completedAt,
-        updatedAt:   a.completedAt ?? "",
-      }],
-      lineItems:      [] as TintOrder["lineItems"],
-      existingSplits: [],
-      splits:         [],
-      remainingQty:   0,
+      id: a.order.id, obdNumber: a.order.obdNumber, workflowStage: "pending_support",
+      dispatchSlot: null, dispatchStatus: null, priorityLevel: 5, sequenceOrder: null,
+      createdAt: a.completedAt ?? "", shipToCustomerName: a.order.shipToCustomerName,
+      shipToCustomerId: null, customerMissing: false, smu: a.smu,
+      obdEmailDate: a.obdEmailDate, obdEmailTime: a.obdEmailTime, orderDateTime: a.orderDateTime,
+      slotId: a.slotId, slotName: a.slotName, slotTime: a.slotTime,
+      slotIsNextDay: a.slotIsNextDay, originalSlotId: a.originalSlotId,
+      originalSlotName: a.originalSlotName, deliveryTypeName: a.deliveryTypeName,
+      customer: a.order.customer ?? null, querySnapshot: a.order.querySnapshot ?? null,
+      tintAssignments: [{ id: a.id, status: "tinting_done", assignedTo: a.assignedTo, startedAt: null, completedAt: a.completedAt, updatedAt: a.completedAt ?? "" }],
+      lineItems: [] as TintOrder["lineItems"], existingSplits: [], splits: [], remainingQty: 0,
     };
   }
 
@@ -417,36 +377,30 @@ export function TintTableView({
     completedSplitRows.reduce((s, sp) => s + (sp.totalVolume ?? 0), 0) +
     completedAssignmentRows.reduce((s, a) => s + (a.order.querySnapshot?.totalVolume ?? 0), 0);
 
-  // ── Render helpers ──────────────────────────────────────────────────────
+  // ── Shared cell renderers ──────────────────────────────────────────────────
 
-  function OrderObdCell({ order }: { order: TintOrder }) {
+  function OrderObdTd({ order }: { order: TintOrder }) {
     const dateStr = formatOrderDate(order.orderDateTime) || formatObdDate(order.obdEmailDate, order.obdEmailTime) || formatTime(order.createdAt);
     return (
-      <div className={cellCls}>
+      <td className={tdCls}>
         <div className="flex items-center gap-1.5">
           {order.deliveryTypeName && (
-            <span
-              className={`w-[5px] h-[5px] rounded-full flex-shrink-0 ${deliveryDotCls(order.deliveryTypeName)}`}
-              title={order.deliveryTypeName}
-            />
+            <span className={`w-[5px] h-[5px] rounded-full flex-shrink-0 ${deliveryDotCls(order.deliveryTypeName)}`} title={order.deliveryTypeName} />
           )}
           <span className="font-mono text-[11px] text-gray-800">{order.obdNumber}</span>
         </div>
         {dateStr && <div className="text-[10px] text-gray-400">{dateStr}</div>}
-      </div>
+      </td>
     );
   }
 
-  function SplitObdCell({ split }: { split: SplitCard }) {
+  function SplitObdTd({ split }: { split: SplitCard }) {
     const dateStr = formatOrderDate(split.orderDateTime) || formatObdDate(split.obdEmailDate, split.obdEmailTime) || formatTime(split.createdAt);
     return (
-      <div className={cellCls}>
+      <td className={tdCls}>
         <div className="flex items-center gap-1.5">
           {split.deliveryTypeName && (
-            <span
-              className={`w-[5px] h-[5px] rounded-full flex-shrink-0 ${deliveryDotCls(split.deliveryTypeName)}`}
-              title={split.deliveryTypeName}
-            />
+            <span className={`w-[5px] h-[5px] rounded-full flex-shrink-0 ${deliveryDotCls(split.deliveryTypeName)}`} title={split.deliveryTypeName} />
           )}
           <span className="font-mono text-[11px] text-gray-800">{split.order.obdNumber}</span>
         </div>
@@ -455,87 +409,82 @@ export function TintTableView({
           <Scissors size={8} />
           Split #{split.splitNumber}
         </div>
-      </div>
+      </td>
     );
   }
 
-  function CustomerCell({ name, missing, onMissing, dispatchStatus }: {
-    name: string;
-    missing?: boolean;
-    onMissing?: (e: React.MouseEvent) => void;
-    dispatchStatus?: string | null;
+  function CustomerTd({ name, missing, onMissing, dispatchStatus }: {
+    name: string; missing?: boolean; onMissing?: (e: React.MouseEvent) => void; dispatchStatus?: string | null;
   }) {
     return (
-      <div className={cellCls}>
+      <td className={tdCls}>
         <div className="flex items-center gap-1.5">
           <span className="text-[11px] font-medium text-gray-900 truncate">{name}</span>
           {missing && onMissing && (
-            <button
-              type="button"
-              onClick={onMissing}
-              className="text-amber-500 hover:bg-amber-50 rounded p-0.5 flex-shrink-0 transition-colors"
-              title="Customer Missing — click to resolve"
-            >
+            <button type="button" onClick={onMissing} className="text-amber-500 hover:bg-amber-50 rounded p-0.5 flex-shrink-0 transition-colors" title="Customer Missing — click to resolve">
               <AlertCircle size={13} />
             </button>
           )}
-          {dispatchStatus === "dispatch" && (
-            <span className="inline-flex items-center gap-[3px] text-[9px] font-semibold bg-green-50 text-green-700 border border-green-200 px-1.5 py-0.5 rounded-full flex-shrink-0">Dispatch</span>
-          )}
-          {dispatchStatus === "hold" && (
-            <span className="inline-flex items-center gap-[3px] text-[9px] font-semibold bg-red-50 text-red-700 border border-red-200 px-1.5 py-0.5 rounded-full flex-shrink-0">Hold</span>
-          )}
-          {dispatchStatus === "waiting_for_confirmation" && (
-            <span className="inline-flex items-center gap-[3px] text-[9px] font-semibold bg-amber-50 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded-full flex-shrink-0">Waiting</span>
-          )}
+          {dispatchStatus === "dispatch" && <span className="inline-flex items-center text-[9px] font-semibold bg-green-50 text-green-700 border border-green-200 px-1.5 py-0.5 rounded-full flex-shrink-0">Dispatch</span>}
+          {dispatchStatus === "hold" && <span className="inline-flex items-center text-[9px] font-semibold bg-red-50 text-red-700 border border-red-200 px-1.5 py-0.5 rounded-full flex-shrink-0">Hold</span>}
+          {dispatchStatus === "waiting_for_confirmation" && <span className="inline-flex items-center text-[9px] font-semibold bg-amber-50 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded-full flex-shrink-0">Waiting</span>}
         </div>
-      </div>
+      </td>
     );
   }
 
-  /* 6 common cells for an order row */
-  function OrderCommonCells({ order }: { order: TintOrder }) {
+  function OrderCommonTds({ order }: { order: TintOrder }) {
     return (
       <>
-        <OrderObdCell order={order} />
-        <div className={cellCls}><SmuBadge smu={order.smu} /></div>
-        <CustomerCell
+        <OrderObdTd order={order} />
+        <td className={tdCls}><SmuBadge smu={order.smu} /></td>
+        <CustomerTd
           name={order.customer?.customerName ?? order.shipToCustomerName ?? "—"}
           missing={order.customerMissing}
           onMissing={(e) => { e.stopPropagation(); onCustomerMissing?.(order); }}
           dispatchStatus={order.dispatchStatus}
         />
-        <div className={cellCls}><PriorityBadge level={order.priorityLevel} /></div>
-        <div className={`${cellCls} font-mono text-[11px] text-gray-600`}>{order.querySnapshot?.articleTag ?? "—"}</div>
-        <div className={`${cellCls} text-[11px] text-gray-600`}>{order.querySnapshot?.totalVolume != null ? `${Math.round(order.querySnapshot.totalVolume)} L` : "—"}</div>
+        <td className={tdCls}><PriorityBadge level={order.priorityLevel} /></td>
+        <td className={`${tdCls} font-mono text-[11px] text-gray-600`}>{order.querySnapshot?.articleTag ?? "—"}</td>
+        <td className={`${tdCls} text-[11px] text-gray-600`}>{order.querySnapshot?.totalVolume != null ? `${Math.round(order.querySnapshot.totalVolume)} L` : "—"}</td>
       </>
     );
   }
 
-  /* 6 common cells for a split row */
-  function SplitCommonCells({ split }: { split: SplitCard }) {
+  function SplitCommonTds({ split }: { split: SplitCard }) {
     return (
       <>
-        <SplitObdCell split={split} />
-        <div className={cellCls}><SmuBadge smu={split.smu} /></div>
-        <CustomerCell
-          name={split.order.customer?.customerName ?? "—"}
-          dispatchStatus={split.dispatchStatus}
-        />
-        <div className={cellCls}><PriorityBadge level={split.priorityLevel} /></div>
-        <div className={`${cellCls} font-mono text-[11px] text-gray-600`}>{split.articleTag ?? `${split.totalQty} units`}</div>
-        <div className={`${cellCls} text-[11px] text-gray-600`}>{split.totalVolume != null ? `${Math.round(split.totalVolume)} L` : "—"}</div>
+        <SplitObdTd split={split} />
+        <td className={tdCls}><SmuBadge smu={split.smu} /></td>
+        <CustomerTd name={split.order.customer?.customerName ?? "—"} dispatchStatus={split.dispatchStatus} />
+        <td className={tdCls}><PriorityBadge level={split.priorityLevel} /></td>
+        <td className={`${tdCls} font-mono text-[11px] text-gray-600`}>{split.articleTag ?? `${split.totalQty} units`}</td>
+        <td className={`${tdCls} text-[11px] text-gray-600`}>{split.totalVolume != null ? `${Math.round(split.totalVolume)} L` : "—"}</td>
       </>
     );
   }
 
-  function ActionCell({ children }: { children: React.ReactNode }) {
+  function OperatorTd({ name, avatarColor }: { name: string | null | undefined; avatarColor: string }) {
     return (
-      <div className={`${cellCls} flex items-center gap-2 justify-end`} onClick={(e) => e.stopPropagation()}>
-        {children}
-      </div>
+      <td className={tdCls}>
+        <div className="flex items-center gap-1.5 min-w-0">
+          <div className={`w-5 h-5 rounded-full ${avatarColor} text-white text-[9px] font-bold flex items-center justify-center flex-shrink-0`}>{initials(name)}</div>
+          <span className="text-[11px] text-gray-600 truncate">{name ?? "—"}</span>
+        </div>
+      </td>
     );
   }
+
+  function ActionsTd({ children }: { children: React.ReactNode }) {
+    return (
+      <td className={`${tdCls} text-right`} onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-1 justify-end">{children}</div>
+      </td>
+    );
+  }
+
+  const rowCls = "border-b border-[#f0f0f0] hover:bg-gray-50 cursor-pointer transition-colors duration-100";
+  const tableStyle: React.CSSProperties = { width: "100%", borderCollapse: "collapse", tableLayout: "fixed" };
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -545,268 +494,215 @@ export function TintTableView({
       {/* ── Section 1: Pending Assignment ──────────────────────────────────── */}
       <div className="mb-5">
         <SectionHeader dotClass="bg-teal-500" label="Pending Assignment" count={pendingRows.length} volume={pendingSectionVolume} colorScheme="teal" />
-        <div className="bg-white border border-gray-200 border-t-0 rounded-b-lg overflow-hidden w-full">
-            {/* Header */}
-            <div style={{ display: "grid", gridTemplateColumns: TABLE_GRID, columnGap: 10, alignItems: "center", width: "100%" }} className={hdrCls}>
-              <div>OBD No.</div><div>SMU</div><div>Site Name</div><div>Priority</div><div>Articles</div><div>Volume</div><div>Action</div><div /><div />
-            </div>
-            {pendingRows.length === 0 ? (
-              <div className="px-3 py-6 text-center text-gray-400 italic" style={{ gridColumn: "1 / -1" }}>No pending orders</div>
-            ) : pendingRows.map((order) => {
-              const hasSplits =
-                (order.splits ?? []).filter((s) => s.status !== "cancelled").length > 0 ||
-                (order.existingSplits ?? []).length > 0 ||
-                filteredActiveSplits.some((s) => s.order.id === order.id && (s.status === "tint_assigned" || s.status === "tinting_in_progress"));
-              const actions: RowAction[] = hasSplits
-                ? [{ label: "Create Split", icon: <Scissors size={13} />, onClick: () => onCreateSplit(order) }]
-                : [
-                    { label: "Assign Operator", icon: <UserPlus size={13} />, onClick: () => onAssign(order) },
-                    { label: "Create Split",    icon: <Scissors size={13} />, onClick: () => onCreateSplit(order) },
-                  ];
-              const remainingQty = order.remainingQty ?? 0;
-              return (
-                <div key={`p-${order.id}`} onClick={() => onOrderClick(order)}
-                  style={{ display: "grid", gridTemplateColumns: TABLE_GRID, columnGap: 10, alignItems: "center", width: "100%" }}
-                  className={ROW_CLS}
-                >
-                  <OrderCommonCells order={order} />
-                  {/* col8: CTA */}
-                  <div className={`${cellCls} flex`} onClick={(e) => e.stopPropagation()}>
-                    {hasSplits ? (
-                      <div className="flex items-center gap-2">
-                        <button type="button" onClick={() => onCreateSplit(order)}
+        <div className="bg-white border border-gray-200 border-t-0 rounded-b-lg overflow-hidden">
+          <table style={tableStyle}>
+            <Colgroup />
+            <thead>
+              <tr className="bg-gray-50 border-b border-[#ebebeb]">
+                <th className={thCls}>OBD No.</th><th className={thCls}>SMU</th><th className={thCls}>Site Name</th>
+                <th className={thCls}>Priority</th><th className={thCls}>Articles</th><th className={thCls}>Volume</th>
+                <th className={thCls}>Action</th><th className={thCls} /><th className={thCls} />
+              </tr>
+            </thead>
+            <tbody>
+              {pendingRows.length === 0 ? (
+                <tr><td colSpan={9} className="px-3 py-6 text-center text-gray-400 italic">No pending orders</td></tr>
+              ) : pendingRows.map((order) => {
+                const hasSplits =
+                  (order.splits ?? []).filter((s) => s.status !== "cancelled").length > 0 ||
+                  (order.existingSplits ?? []).length > 0 ||
+                  filteredActiveSplits.some((s) => s.order.id === order.id && (s.status === "tint_assigned" || s.status === "tinting_in_progress"));
+                const actions: RowAction[] = hasSplits
+                  ? [{ label: "Create Split", icon: <Scissors size={13} />, onClick: () => onCreateSplit(order) }]
+                  : [
+                      { label: "Assign Operator", icon: <UserPlus size={13} />, onClick: () => onAssign(order) },
+                      { label: "Create Split",    icon: <Scissors size={13} />, onClick: () => onCreateSplit(order) },
+                    ];
+                const remainingQty = order.remainingQty ?? 0;
+                return (
+                  <tr key={`p-${order.id}`} onClick={() => onOrderClick(order)} className={rowCls}>
+                    <OrderCommonTds order={order} />
+                    <td className={tdCls} onClick={(e) => e.stopPropagation()}>
+                      {hasSplits ? (
+                        <div className="flex items-center gap-2">
+                          <button type="button" onClick={() => onCreateSplit(order)}
+                            className="inline-flex items-center justify-center gap-1.5 min-w-[120px] px-3 py-1.5 text-[11px] font-medium text-gray-700 bg-white border border-gray-200 rounded-md hover:bg-gray-50 hover:border-gray-300 transition-colors">
+                            <Scissors size={11} /> Create Split
+                          </button>
+                          {remainingQty > 0 && <span className="text-[10px] font-semibold text-amber-600">{remainingQty} left</span>}
+                        </div>
+                      ) : (
+                        <button type="button" onClick={() => onAssign(order)}
                           className="inline-flex items-center justify-center gap-1.5 min-w-[120px] px-3 py-1.5 text-[11px] font-medium text-gray-700 bg-white border border-gray-200 rounded-md hover:bg-gray-50 hover:border-gray-300 transition-colors">
-                          <Scissors size={11} />
-                          Create Split
+                          <UserPlus size={11} /> Assign
                         </button>
-                        {remainingQty > 0 && <span className="text-[10px] font-semibold text-amber-600">{remainingQty} left</span>}
-                      </div>
-                    ) : (
-                      <button type="button" onClick={() => onAssign(order)}
-                        className="inline-flex items-center justify-center gap-1.5 min-w-[120px] px-3 py-1.5 text-[11px] font-medium text-gray-700 bg-white border border-gray-200 rounded-md hover:bg-gray-50 hover:border-gray-300 transition-colors">
-                        <UserPlus size={11} />
-                        Assign
-                      </button>
-                    )}
-                  </div>
-                  {/* col9: empty */}
-                  <div />
-                  {/* col10: actions */}
-                  <ActionCell>
-                    <PlusBtn id={order.id} type="order" onStatusPopover={onStatusPopover} />
-                    <RowActionsMenu actions={actions} />
-                  </ActionCell>
-                </div>
-              );
-            })}
+                      )}
+                    </td>
+                    <td className={tdCls} />
+                    <ActionsTd>
+                      <PlusBtn id={order.id} type="order" onStatusPopover={onStatusPopover} />
+                      <RowActionsMenu actions={actions} />
+                    </ActionsTd>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       </div>
 
       {/* ── Section 2: Assigned ────────────────────────────────────────────── */}
       <div className="mb-5">
         <SectionHeader dotClass="bg-amber-400" label="Assigned" count={assignedOrderRows.length + assignedSplitRows.length} volume={assignedSectionVolume} colorScheme="amber" />
-        <div className="bg-white border border-gray-200 border-t-0 rounded-b-lg overflow-hidden w-full">
-            <div style={{ display: "grid", gridTemplateColumns: TABLE_GRID, columnGap: 10, alignItems: "center", width: "100%" }} className={hdrCls}>
-              <div>OBD No.</div><div>SMU</div><div>Site Name</div><div>Priority</div><div>Articles</div><div>Volume</div>
-              <div>Operator</div><div>Assigned At</div><div />
-            </div>
-            {assignedOrderRows.length === 0 && assignedSplitRows.length === 0 ? (
-              <div className="px-3 py-6 text-center text-gray-400 italic" style={{ gridColumn: "1 / -1" }}>No assigned orders</div>
-            ) : (
-              <>
-                {assignedOrderRows.map((order) => (
-                  <div key={`ao-${order.id}`} onClick={() => onOrderClick(order)}
-                    style={{ display: "grid", gridTemplateColumns: TABLE_GRID, columnGap: 10, alignItems: "center", width: "100%" }}
-                    className={ROW_CLS}
-                  >
-                    <OrderCommonCells order={order} />
-                    {/* col8: Operator */}
-                    <div className={cellCls}>
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <div className="w-5 h-5 rounded-full bg-teal-600 text-white text-[9px] font-bold flex items-center justify-center flex-shrink-0">{initials(order.tintAssignments[0]?.assignedTo.name)}</div>
-                        <span className="text-[11px] text-gray-600 truncate">{order.tintAssignments[0]?.assignedTo.name ?? "—"}</span>
-                      </div>
-                    </div>
-                    {/* col9: Assigned At */}
-                    <div className={cellCls}>
-                      <span className="text-[11px] text-gray-400">{formatTime(order.tintAssignments[0]?.updatedAt)}</span>
-                    </div>
-                    {/* col10: actions */}
-                    <ActionCell>
-                      <PlusBtn id={order.id} type="order" onStatusPopover={onStatusPopover} />
-                      <RowActionsMenu actions={[
-                        { label: "Move Up",           icon: <ChevronUp size={13} />,   onClick: () => onMoveUp(order.id, "order") },
-                        { label: "Move Down",         icon: <ChevronDown size={13} />, onClick: () => onMoveDown(order.id, "order") },
-                        { label: "Re-assign",         icon: <RefreshCw size={13} />,   onClick: () => onAssign(order) },
-                        { label: "Cancel Assignment", icon: <X size={13} />,           onClick: () => onCancelAssignment(order), danger: true },
-                      ]} />
-                    </ActionCell>
-                  </div>
-                ))}
-                {assignedSplitRows.map((split) => (
-                  <div key={`as-${split.id}`} onClick={() => onSplitClick(split)}
-                    style={{ display: "grid", gridTemplateColumns: TABLE_GRID, columnGap: 10, alignItems: "center", width: "100%" }}
-                    className={ROW_CLS}
-                  >
-                    <SplitCommonCells split={split} />
-                    {/* col8: Operator */}
-                    <div className={cellCls}>
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <div className="w-5 h-5 rounded-full bg-teal-600 text-white text-[9px] font-bold flex items-center justify-center flex-shrink-0">{initials(split.assignedTo.name)}</div>
-                        <span className="text-[11px] text-gray-600 truncate">{split.assignedTo.name ?? "—"}</span>
-                      </div>
-                    </div>
-                    {/* col9: Assigned At */}
-                    <div className={cellCls}>
-                      <span className="text-[11px] text-gray-400">{formatTime(split.createdAt)}</span>
-                    </div>
-                    {/* col10: actions */}
-                    <ActionCell>
-                      <PlusBtn id={split.id} type="split" onStatusPopover={onStatusPopover} />
-                      <RowActionsMenu actions={[
-                        { label: "Move Up",      icon: <ChevronUp size={13} />,   onClick: () => onMoveUp(split.id, "split") },
-                        { label: "Move Down",    icon: <ChevronDown size={13} />, onClick: () => onMoveDown(split.id, "split") },
-                        { label: "Reassign",     icon: <RefreshCw size={13} />,   onClick: () => onReassignSplit(split) },
-                        { label: "Cancel Split", icon: <X size={13} />,           onClick: () => onCancelSplit(split), danger: true },
-                      ]} />
-                    </ActionCell>
-                  </div>
-                ))}
-              </>
-            )}
+        <div className="bg-white border border-gray-200 border-t-0 rounded-b-lg overflow-hidden">
+          <table style={tableStyle}>
+            <Colgroup />
+            <thead>
+              <tr className="bg-gray-50 border-b border-[#ebebeb]">
+                <th className={thCls}>OBD No.</th><th className={thCls}>SMU</th><th className={thCls}>Site Name</th>
+                <th className={thCls}>Priority</th><th className={thCls}>Articles</th><th className={thCls}>Volume</th>
+                <th className={thCls}>Operator</th><th className={thCls}>Assigned At</th><th className={thCls} />
+              </tr>
+            </thead>
+            <tbody>
+              {assignedOrderRows.length === 0 && assignedSplitRows.length === 0 ? (
+                <tr><td colSpan={9} className="px-3 py-6 text-center text-gray-400 italic">No assigned orders</td></tr>
+              ) : (
+                <>
+                  {assignedOrderRows.map((order) => (
+                    <tr key={`ao-${order.id}`} onClick={() => onOrderClick(order)} className={rowCls}>
+                      <OrderCommonTds order={order} />
+                      <OperatorTd name={order.tintAssignments[0]?.assignedTo.name} avatarColor="bg-teal-600" />
+                      <td className={tdCls}><span className="text-[11px] text-gray-400">{formatTime(order.tintAssignments[0]?.updatedAt)}</span></td>
+                      <ActionsTd>
+                        <PlusBtn id={order.id} type="order" onStatusPopover={onStatusPopover} />
+                        <RowActionsMenu actions={[
+                          { label: "Move Up",           icon: <ChevronUp size={13} />,   onClick: () => onMoveUp(order.id, "order") },
+                          { label: "Move Down",         icon: <ChevronDown size={13} />, onClick: () => onMoveDown(order.id, "order") },
+                          { label: "Re-assign",         icon: <RefreshCw size={13} />,   onClick: () => onAssign(order) },
+                          { label: "Cancel Assignment", icon: <X size={13} />,           onClick: () => onCancelAssignment(order), danger: true },
+                        ]} />
+                      </ActionsTd>
+                    </tr>
+                  ))}
+                  {assignedSplitRows.map((split) => (
+                    <tr key={`as-${split.id}`} onClick={() => onSplitClick(split)} className={rowCls}>
+                      <SplitCommonTds split={split} />
+                      <OperatorTd name={split.assignedTo.name} avatarColor="bg-teal-600" />
+                      <td className={tdCls}><span className="text-[11px] text-gray-400">{formatTime(split.createdAt)}</span></td>
+                      <ActionsTd>
+                        <PlusBtn id={split.id} type="split" onStatusPopover={onStatusPopover} />
+                        <RowActionsMenu actions={[
+                          { label: "Move Up",      icon: <ChevronUp size={13} />,   onClick: () => onMoveUp(split.id, "split") },
+                          { label: "Move Down",    icon: <ChevronDown size={13} />, onClick: () => onMoveDown(split.id, "split") },
+                          { label: "Reassign",     icon: <RefreshCw size={13} />,   onClick: () => onReassignSplit(split) },
+                          { label: "Cancel Split", icon: <X size={13} />,           onClick: () => onCancelSplit(split), danger: true },
+                        ]} />
+                      </ActionsTd>
+                    </tr>
+                  ))}
+                </>
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
 
       {/* ── Section 3: In Progress ──────────────────────────────────────────── */}
       <div className="mb-5">
         <SectionHeader dotClass="bg-blue-400" label="In Progress" count={inProgressOrderRows.length + inProgressSplitRows.length} volume={inProgressSectionVolume} colorScheme="blue" />
-        <div className="bg-white border border-gray-200 border-t-0 rounded-b-lg overflow-hidden w-full">
-            <div style={{ display: "grid", gridTemplateColumns: TABLE_GRID, columnGap: 10, alignItems: "center", width: "100%" }} className={hdrCls}>
-              <div>OBD No.</div><div>SMU</div><div>Site Name</div><div>Priority</div><div>Articles</div><div>Volume</div>
-              <div>Operator</div><div>Elapsed</div><div />
-            </div>
-            {inProgressOrderRows.length === 0 && inProgressSplitRows.length === 0 ? (
-              <div className="px-3 py-6 text-center text-gray-400 italic" style={{ gridColumn: "1 / -1" }}>No orders in progress</div>
-            ) : (
-              <>
-                {inProgressOrderRows.map((order) => {
-                  const startedAt = order.tintAssignments[0]?.startedAt ?? null;
-                  return (
-                    <div key={`ipo-${order.id}`} onClick={() => onOrderClick(order)}
-                      style={{ display: "grid", gridTemplateColumns: TABLE_GRID, columnGap: 10, alignItems: "center", width: "100%" }}
-                      className={ROW_CLS}
-                    >
-                      <OrderCommonCells order={order} />
-                      {/* col8: Operator */}
-                      <div className={cellCls}>
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <div className="w-5 h-5 rounded-full bg-teal-600 text-white text-[9px] font-bold flex items-center justify-center flex-shrink-0">{initials(order.tintAssignments[0]?.assignedTo.name)}</div>
-                          <span className="text-[11px] text-gray-600 truncate">{order.tintAssignments[0]?.assignedTo.name ?? "—"}</span>
-                        </div>
-                      </div>
-                      {/* col9: Elapsed */}
-                      <div className={cellCls}><ElapsedBadge startedAt={startedAt} /></div>
-                      {/* col10: actions */}
-                      <ActionCell><PlusBtn id={order.id} type="order" onStatusPopover={onStatusPopover} /></ActionCell>
-                    </div>
-                  );
-                })}
-                {inProgressSplitRows.map((split) => (
-                  <div key={`ips-${split.id}`} onClick={() => onSplitClick(split)}
-                    style={{ display: "grid", gridTemplateColumns: TABLE_GRID, columnGap: 10, alignItems: "center", width: "100%" }}
-                    className={ROW_CLS}
-                  >
-                    <SplitCommonCells split={split} />
-                    {/* col8: Operator */}
-                    <div className={cellCls}>
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <div className="w-5 h-5 rounded-full bg-teal-600 text-white text-[9px] font-bold flex items-center justify-center flex-shrink-0">{initials(split.assignedTo.name)}</div>
-                        <span className="text-[11px] text-gray-600 truncate">{split.assignedTo.name ?? "—"}</span>
-                      </div>
-                    </div>
-                    {/* col9: Elapsed */}
-                    <div className={cellCls}><ElapsedBadge startedAt={split.startedAt} /></div>
-                    {/* col10: actions */}
-                    <ActionCell><PlusBtn id={split.id} type="split" onStatusPopover={onStatusPopover} /></ActionCell>
-                  </div>
-                ))}
-              </>
-            )}
+        <div className="bg-white border border-gray-200 border-t-0 rounded-b-lg overflow-hidden">
+          <table style={tableStyle}>
+            <Colgroup />
+            <thead>
+              <tr className="bg-gray-50 border-b border-[#ebebeb]">
+                <th className={thCls}>OBD No.</th><th className={thCls}>SMU</th><th className={thCls}>Site Name</th>
+                <th className={thCls}>Priority</th><th className={thCls}>Articles</th><th className={thCls}>Volume</th>
+                <th className={thCls}>Operator</th><th className={thCls}>Elapsed</th><th className={thCls} />
+              </tr>
+            </thead>
+            <tbody>
+              {inProgressOrderRows.length === 0 && inProgressSplitRows.length === 0 ? (
+                <tr><td colSpan={9} className="px-3 py-6 text-center text-gray-400 italic">No orders in progress</td></tr>
+              ) : (
+                <>
+                  {inProgressOrderRows.map((order) => {
+                    const startedAt = order.tintAssignments[0]?.startedAt ?? null;
+                    return (
+                      <tr key={`ipo-${order.id}`} onClick={() => onOrderClick(order)} className={rowCls}>
+                        <OrderCommonTds order={order} />
+                        <OperatorTd name={order.tintAssignments[0]?.assignedTo.name} avatarColor="bg-teal-600" />
+                        <td className={tdCls}><ElapsedBadge startedAt={startedAt} /></td>
+                        <ActionsTd><PlusBtn id={order.id} type="order" onStatusPopover={onStatusPopover} /></ActionsTd>
+                      </tr>
+                    );
+                  })}
+                  {inProgressSplitRows.map((split) => (
+                    <tr key={`ips-${split.id}`} onClick={() => onSplitClick(split)} className={rowCls}>
+                      <SplitCommonTds split={split} />
+                      <OperatorTd name={split.assignedTo.name} avatarColor="bg-teal-600" />
+                      <td className={tdCls}><ElapsedBadge startedAt={split.startedAt} /></td>
+                      <ActionsTd><PlusBtn id={split.id} type="split" onStatusPopover={onStatusPopover} /></ActionsTd>
+                    </tr>
+                  ))}
+                </>
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
 
       {/* ── Section 4: Completed Today ──────────────────────────────────────── */}
       <div className="mb-5">
         <SectionHeader dotClass="bg-green-400" label="Completed Today" count={completedSplitRows.length + completedAssignmentRows.length} volume={completedSectionVolume} colorScheme="green" />
-        <div className="bg-white border border-gray-200 border-t-0 rounded-b-lg overflow-hidden w-full">
-            <div style={{ display: "grid", gridTemplateColumns: TABLE_GRID, columnGap: 10, alignItems: "center", width: "100%" }} className={hdrCls}>
-              <div>OBD No.</div><div>SMU</div><div>Site Name</div><div>Priority</div><div>Articles</div><div>Volume</div>
-              <div>Operator</div><div>Completed At</div><div />
-            </div>
-            {completedSplitRows.length === 0 && completedAssignmentRows.length === 0 ? (
-              <div className="px-3 py-6 text-center text-gray-400 italic" style={{ gridColumn: "1 / -1" }}>No completed orders today</div>
-            ) : (
-              <>
-                {completedSplitRows.map((split) => (
-                  <div key={`cs-${split.id}`} onClick={() => onSplitClick(split)}
-                    style={{ display: "grid", gridTemplateColumns: TABLE_GRID, columnGap: 10, alignItems: "center", width: "100%" }}
-                    className={ROW_CLS}
-                  >
-                    <SplitCommonCells split={split} />
-                    {/* col8: Operator */}
-                    <div className={cellCls}>
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <div className="w-5 h-5 rounded-full bg-green-600 text-white text-[9px] font-bold flex items-center justify-center flex-shrink-0">{initials(split.assignedTo.name)}</div>
-                        <span className="text-[11px] text-gray-600 truncate">{split.assignedTo.name ?? "—"}</span>
-                      </div>
-                    </div>
-                    {/* col9: Completed At */}
-                    <div className={cellCls}>
-                      <span className="text-[11px] text-gray-400">{formatTime(split.completedAt)}</span>
-                    </div>
-                    {/* col10: actions */}
-                    <ActionCell><PlusBtn id={split.id} type="split" onStatusPopover={onStatusPopover} /></ActionCell>
-                  </div>
-                ))}
-                {completedAssignmentRows.map((a) => {
-                  const order = assignmentAsOrder(a);
-                  return (
-                    <div key={`ca-${a.id}`} onClick={() => onOrderClick(order)}
-                      style={{ display: "grid", gridTemplateColumns: TABLE_GRID, columnGap: 10, alignItems: "center", width: "100%" }}
-                      className={ROW_CLS}
-                    >
-                      <div className={cellCls}>
-                        <div className="font-mono text-[11px] text-gray-800">{a.order.obdNumber}</div>
-                        {(a.orderDateTime || a.obdEmailDate || a.completedAt) && (
-                          <div className="text-[10px] text-gray-400">{formatOrderDate(a.orderDateTime) || formatObdDate(a.obdEmailDate, a.obdEmailTime) || formatTime(a.completedAt)}</div>
-                        )}
-                      </div>
-                      <div className={cellCls}><SmuBadge smu={a.smu} /></div>
-                      <CustomerCell
-                        name={a.order.customer?.customerName ?? a.order.shipToCustomerName ?? "—"}
-                        dispatchStatus={null}
-                      />
-                      <div className={cellCls}><PriorityBadge level={5} /></div>
-                      <div className={`${cellCls} font-mono text-[11px] text-gray-600`}>{a.order.querySnapshot?.articleTag ?? "—"}</div>
-                      <div className={`${cellCls} text-[11px] text-gray-600`}>{a.order.querySnapshot?.totalVolume != null ? `${Math.round(a.order.querySnapshot.totalVolume)} L` : "—"}</div>
-                      {/* col8: Operator */}
-                      <div className={cellCls}>
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <div className="w-5 h-5 rounded-full bg-green-600 text-white text-[9px] font-bold flex items-center justify-center flex-shrink-0">{initials(a.assignedTo.name)}</div>
-                          <span className="text-[11px] text-gray-600 truncate">{a.assignedTo.name ?? "—"}</span>
-                        </div>
-                      </div>
-                      {/* col9: Completed At */}
-                      <div className={cellCls}>
-                        <span className="text-[11px] text-gray-400">{formatTime(a.completedAt)}</span>
-                      </div>
-                      {/* col10: actions */}
-                      <ActionCell><PlusBtn id={a.order.id} type="order" onStatusPopover={onStatusPopover} /></ActionCell>
-                    </div>
-                  );
-                })}
-              </>
-            )}
+        <div className="bg-white border border-gray-200 border-t-0 rounded-b-lg overflow-hidden">
+          <table style={tableStyle}>
+            <Colgroup />
+            <thead>
+              <tr className="bg-gray-50 border-b border-[#ebebeb]">
+                <th className={thCls}>OBD No.</th><th className={thCls}>SMU</th><th className={thCls}>Site Name</th>
+                <th className={thCls}>Priority</th><th className={thCls}>Articles</th><th className={thCls}>Volume</th>
+                <th className={thCls}>Operator</th><th className={thCls}>Completed At</th><th className={thCls} />
+              </tr>
+            </thead>
+            <tbody>
+              {completedSplitRows.length === 0 && completedAssignmentRows.length === 0 ? (
+                <tr><td colSpan={9} className="px-3 py-6 text-center text-gray-400 italic">No completed orders today</td></tr>
+              ) : (
+                <>
+                  {completedSplitRows.map((split) => (
+                    <tr key={`cs-${split.id}`} onClick={() => onSplitClick(split)} className={rowCls}>
+                      <SplitCommonTds split={split} />
+                      <OperatorTd name={split.assignedTo.name} avatarColor="bg-green-600" />
+                      <td className={tdCls}><span className="text-[11px] text-gray-400">{formatTime(split.completedAt)}</span></td>
+                      <ActionsTd><PlusBtn id={split.id} type="split" onStatusPopover={onStatusPopover} /></ActionsTd>
+                    </tr>
+                  ))}
+                  {completedAssignmentRows.map((a) => {
+                    const order = assignmentAsOrder(a);
+                    return (
+                      <tr key={`ca-${a.id}`} onClick={() => onOrderClick(order)} className={rowCls}>
+                        <td className={tdCls}>
+                          <div className="font-mono text-[11px] text-gray-800">{a.order.obdNumber}</div>
+                          {(a.orderDateTime || a.obdEmailDate || a.completedAt) && (
+                            <div className="text-[10px] text-gray-400">{formatOrderDate(a.orderDateTime) || formatObdDate(a.obdEmailDate, a.obdEmailTime) || formatTime(a.completedAt)}</div>
+                          )}
+                        </td>
+                        <td className={tdCls}><SmuBadge smu={a.smu} /></td>
+                        <CustomerTd name={a.order.customer?.customerName ?? a.order.shipToCustomerName ?? "—"} dispatchStatus={null} />
+                        <td className={tdCls}><PriorityBadge level={5} /></td>
+                        <td className={`${tdCls} font-mono text-[11px] text-gray-600`}>{a.order.querySnapshot?.articleTag ?? "—"}</td>
+                        <td className={`${tdCls} text-[11px] text-gray-600`}>{a.order.querySnapshot?.totalVolume != null ? `${Math.round(a.order.querySnapshot.totalVolume)} L` : "—"}</td>
+                        <OperatorTd name={a.assignedTo.name} avatarColor="bg-green-600" />
+                        <td className={tdCls}><span className="text-[11px] text-gray-400">{formatTime(a.completedAt)}</span></td>
+                        <ActionsTd><PlusBtn id={a.order.id} type="order" onStatusPopover={onStatusPopover} /></ActionsTd>
+                      </tr>
+                    );
+                  })}
+                </>
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
 
