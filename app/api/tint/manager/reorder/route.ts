@@ -28,9 +28,26 @@ export async function PATCH(req: Request): Promise<NextResponse> {
 
   try {
     if (type === "order") {
-      // Fetch all tint_assigned orders sorted by sequenceOrder, then createdAt
+      // Find the target order's operator
+      const targetAssignment = await prisma.tint_assignments.findFirst({
+        where:  { orderId: id, status: { not: "done" } },
+        select: { assignedToId: true },
+      });
+      if (!targetAssignment) {
+        return NextResponse.json({ error: "No active assignment for this order" }, { status: 404 });
+      }
+
+      // Fetch only orders assigned to the same operator
       const list = await prisma.orders.findMany({
-        where:   { workflowStage: "tint_assigned" },
+        where: {
+          workflowStage: "tint_assigned",
+          tintAssignments: {
+            some: {
+              assignedToId: targetAssignment.assignedToId,
+              status: { not: "done" },
+            },
+          },
+        },
         orderBy: [{ sequenceOrder: "asc" }, { createdAt: "asc" }],
         select:  { id: true, sequenceOrder: true },
       });
@@ -60,9 +77,21 @@ export async function PATCH(req: Request): Promise<NextResponse> {
       ]);
 
     } else {
-      // Fetch all tint_assigned splits sorted by sequenceOrder, then createdAt
+      // Find the target split's operator
+      const targetSplit = await prisma.order_splits.findUnique({
+        where:  { id },
+        select: { assignedToId: true },
+      });
+      if (!targetSplit?.assignedToId) {
+        return NextResponse.json({ error: "Split not found or not assigned" }, { status: 404 });
+      }
+
+      // Fetch only splits assigned to the same operator
       const list = await prisma.order_splits.findMany({
-        where:   { status: "tint_assigned" },
+        where: {
+          status: "tint_assigned",
+          assignedToId: targetSplit.assignedToId,
+        },
         orderBy: [{ sequenceOrder: "asc" }, { createdAt: "asc" }],
         select:  { id: true, sequenceOrder: true },
       });

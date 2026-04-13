@@ -124,10 +124,26 @@ export async function POST(req: Request): Promise<NextResponse> {
       }
 
       console.log("BEFORE orders.update workflowStage");
-      // 4. Update order workflow stage
+      // 4. Update order workflow stage + set sequenceOrder to end of operator's queue
+      const maxSeq = await tx.orders.aggregate({
+        where: {
+          workflowStage: "tint_assigned",
+          tintAssignments: {
+            some: {
+              assignedToId,
+              status: { not: "done" },
+            },
+          },
+        },
+        _max: { sequenceOrder: true },
+      });
+
       await tx.orders.update({
         where: { id: orderId },
-        data:  { workflowStage: "tint_assigned" },
+        data: {
+          workflowStage: "tint_assigned",
+          sequenceOrder: (maxSeq._max.sequenceOrder ?? 0) + 1,
+        },
       });
 
       // 5. INSERT tint_logs (INSERT-ONLY — never skip)

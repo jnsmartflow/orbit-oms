@@ -243,11 +243,11 @@ export async function GET(): Promise<NextResponse> {
     splitsWithCustomer.some(s => s.status === "tinting_in_progress");
 
   ordersWithLineItems.sort(
-    (a, b) =>
-      (a.tintAssignments[0]?.operatorSequence ?? 0) -
-      (b.tintAssignments[0]?.operatorSequence ?? 0),
+    (a, b) => (a.sequenceOrder ?? 0) - (b.sequenceOrder ?? 0),
   );
-  splitsWithCustomer.sort((a, b) => a.operatorSequence - b.operatorSequence);
+  splitsWithCustomer.sort(
+    (a, b) => (a.sequenceOrder ?? 0) - (b.sequenceOrder ?? 0),
+  );
 
   return NextResponse.json({
     assignedOrders:  ordersWithLineItems,
