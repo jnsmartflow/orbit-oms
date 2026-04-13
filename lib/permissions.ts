@@ -25,7 +25,10 @@ const PAGE_NAV_MAP: NavItemConfig[] = [
   { pageKey: "skus",          label: "SKUs",           href: "/admin/skus" },
   { pageKey: "routes_areas",  label: "Routes",         href: "/admin/routes" },
   { pageKey: "vehicles",      label: "Vehicles",        href: "/admin/vehicles" },
-  { pageKey: "mail_orders",  label: "Mail Orders",     href: "/mail-orders" },
+  { pageKey: "mail_orders",        label: "Mail Orders",       href: "/mail-orders" },
+  { pageKey: "delivery_challans",  label: "Delivery Challans", href: "/tint/manager/challan" },
+  { pageKey: "shade_master",       label: "Shade Master",      href: "/tint/manager/shades" },
+  { pageKey: "ti_report",          label: "TI Report",         href: "/tint/manager/ti-report" },
 ];
 
 // Per-role href overrides: non-admin roles access shared pages via their own route group
@@ -87,7 +90,10 @@ export type PageKey =
   | "planning_board"
   | "dispatcher"
   | "warehouse"
-  | "mail_orders";
+  | "mail_orders"
+  | "delivery_challans"
+  | "shade_master"
+  | "ti_report";
 
 export type ActionKey =
   | "canView"
@@ -126,6 +132,7 @@ const ALL_PAGE_KEYS: PageKey[] = [
   "customers", "skus", "routes_areas", "vehicles",
   "import_obd", "support_queue", "planning_board", "tint_manager", "tint_operator",
   "dispatcher", "warehouse", "mail_orders",
+  "delivery_challans", "shade_master", "ti_report",
 ];
 
 // ── Functions ─────────────────────────────────────────────────────────────────
