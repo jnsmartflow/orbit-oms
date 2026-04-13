@@ -2119,7 +2119,7 @@ export function TintManagerContent() {
         activeSegment={activeOperatorSegment}
         onSegmentChange={(id) => setActiveOperatorSegment(id === activeOperatorSegment ? null : id)}
         filterGroups={[
-          { label: "Delivery Type", key: "deliveryType", options: [{ value: "LOCAL", label: "Local" }, { value: "UPC", label: "UPC" }, { value: "IGT", label: "IGT" }, { value: "CROSS", label: "Cross" }] },
+          { label: "Delivery Type", key: "deliveryType", options: [{ value: "Local", label: "Local" }, { value: "Upcountry", label: "UPC" }, { value: "IGT", label: "IGT" }, { value: "Cross Depot", label: "Cross" }] },
           { label: "Priority", key: "priority", options: [{ value: "urgent", label: "Urgent" }, { value: "normal", label: "Normal" }] },
           { label: "Type", key: "type", options: [{ value: "split", label: "Split" }, { value: "whole", label: "Whole" }] },
         ]}
