@@ -35,7 +35,7 @@ export async function GET(): Promise<NextResponse> {
       include: {
         customer: {
           include: {
-            area: { select: { name: true } },
+            area: { select: { name: true, deliveryType: { select: { name: true } }, primaryRoute: { select: { name: true } } } },
           },
         },
         tintAssignments: {
@@ -67,7 +67,7 @@ export async function GET(): Promise<NextResponse> {
           include: {
             customer: {
               include: {
-                area: { select: { name: true } },
+                area: { select: { name: true, deliveryType: { select: { name: true } }, primaryRoute: { select: { name: true } } } },
               },
             },
           },
@@ -99,7 +99,7 @@ export async function GET(): Promise<NextResponse> {
       include: {
         order: {
           include: {
-            customer:      { include: { area: { select: { name: true } } } },
+            customer:      { include: { area: { select: { name: true, deliveryType: { select: { name: true } }, primaryRoute: { select: { name: true } } } } } },
             querySnapshot: { select: { totalVolume: true } },
           },
         },
@@ -116,7 +116,7 @@ export async function GET(): Promise<NextResponse> {
       include: {
         order: {
           include: {
-            customer: { include: { area: { select: { name: true } } } },
+            customer: { include: { area: { select: { name: true, deliveryType: { select: { name: true } }, primaryRoute: { select: { name: true } } } } } },
           },
         },
       },
@@ -161,7 +161,7 @@ export async function GET(): Promise<NextResponse> {
   const rawSummaries = uniqueObdNumbers.length > 0
     ? await prisma.import_raw_summary.findMany({
         where:  { obdNumber: { in: uniqueObdNumbers } },
-        select: { obdNumber: true, shipToCustomerId: true, shipToCustomerName: true },
+        select: { obdNumber: true, shipToCustomerId: true, shipToCustomerName: true, billToCustomerId: true, billToCustomerName: true },
       })
     : [];
 
@@ -199,12 +199,19 @@ export async function GET(): Promise<NextResponse> {
 
   const shipToCustomerIdMap   = new Map(rawSummaries.map(r => [r.obdNumber, r.shipToCustomerId ?? ""]));
   const shipToCustomerNameMap = new Map(rawSummaries.map(r => [r.obdNumber, r.shipToCustomerName ?? null]));
+  const billToCustomerIdMap   = new Map(rawSummaries.map(r => [r.obdNumber, r.billToCustomerId ?? null]));
+  const billToCustomerNameMap = new Map(rawSummaries.map(r => [r.obdNumber, r.billToCustomerName ?? null]));
 
   const ordersWithLineItems = assignedOrders.map(o => ({
     ...o,
     rawLineItems:       lineItemsByObd[o.obdNumber] ?? [],
     shipToCustomerId:   shipToCustomerIdMap.get(o.obdNumber) || o.shipToCustomerId,
     shipToCustomerName: shipToCustomerNameMap.get(o.obdNumber) ?? o.shipToCustomerName,
+    billToCustomerId:   billToCustomerIdMap.get(o.obdNumber) ?? null,
+    billToCustomerName: billToCustomerNameMap.get(o.obdNumber) ?? null,
+    areaName:           (o.customer as any)?.area?.name ?? null,
+    routeName:          (o.customer as any)?.area?.primaryRoute?.name ?? null,
+    deliveryTypeName:   (o.customer as any)?.area?.deliveryType?.name ?? null,
     tiCoveredLines:     coverageMap.get(`order:${o.id}`)?.size ?? 0,
     totalTintingLines:  (lineItemsByObd[o.obdNumber] ?? []).filter(li => li.isTinting).length,
   }));
@@ -215,6 +222,11 @@ export async function GET(): Promise<NextResponse> {
       ...s.order,
       shipToCustomerId:   shipToCustomerIdMap.get(s.order.obdNumber) || s.order.shipToCustomerId,
       shipToCustomerName: shipToCustomerNameMap.get(s.order.obdNumber) ?? s.order.shipToCustomerName,
+      billToCustomerId:   billToCustomerIdMap.get(s.order.obdNumber) ?? null,
+      billToCustomerName: billToCustomerNameMap.get(s.order.obdNumber) ?? null,
+      areaName:           (s.order.customer as any)?.area?.name ?? null,
+      routeName:          (s.order.customer as any)?.area?.primaryRoute?.name ?? null,
+      deliveryTypeName:   (s.order.customer as any)?.area?.deliveryType?.name ?? null,
     },
     tiCoveredLines:    coverageMap.get(`split:${s.id}`)?.size ?? 0,
     totalTintingLines: s.lineItems.filter(li => li.rawLineItem.isTinting).length,
@@ -249,11 +261,16 @@ export async function GET(): Promise<NextResponse> {
     (a, b) => (a.sequenceOrder ?? 0) - (b.sequenceOrder ?? 0),
   );
 
+  const totalDoneToday     = completedOrdersEnhanced.length + completedSplitsEnhanced.length;
+  const totalAssignedToday = ordersWithLineItems.length + splitsWithCustomer.length + totalDoneToday;
+
   return NextResponse.json({
     assignedOrders:  ordersWithLineItems,
     assignedSplits:  splitsWithCustomer,
     hasActiveJob,
     completedOrders: completedOrdersEnhanced,
     completedSplits: completedSplitsEnhanced,
+    totalAssignedToday,
+    totalDoneToday,
   });
 }
