@@ -6,7 +6,7 @@ import {
   Loader2,
   AlertCircle, Layers,
   Eye, Plus, MoreHorizontal, UserPlus, RefreshCw, X, Scissors,
-  Truck, Search, ChevronDown, ChevronUp, LayoutGrid, Table as TableIcon,
+  Truck, ChevronDown, ChevronUp, LayoutGrid, Table as TableIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -215,28 +215,6 @@ function formatTime(iso: string | null | undefined): string {
   return `${h}:${String(m).padStart(2, "0")} ${ampm}`;
 }
 
-function formatNow(d: Date): string {
-  const DAYS   = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-  const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
-                  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  let h = d.getHours();
-  const m    = d.getMinutes();
-  const ampm = h >= 12 ? "PM" : "AM";
-  h = h % 12 || 12;
-  return `${DAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]} · ${h}:${String(m).padStart(2, "0")} ${ampm}`;
-}
-
-function isSlotClosed(slotTime: string, isNextDay: boolean): boolean {
-  if (isNextDay) return false;
-  const now = new Date();
-  const istOffset = 5.5 * 60 * 60 * 1000;
-  const istNow = new Date(now.getTime() + istOffset);
-  const [h, m] = slotTime.split(":").map(Number);
-  const slotMinutes = (h ?? 0) * 60 + (m ?? 0) + 15; // 15-min grace
-  const nowMinutes = istNow.getUTCHours() * 60 + istNow.getUTCMinutes();
-  return nowMinutes > slotMinutes;
-}
-
 function formatObdDateTime(date: string | null, time: string | null): string {
   if (!date) return "";
   const d = new Date(date);
@@ -266,11 +244,7 @@ function buildTs(date: string | null, time: string | null): number {
   return ts.getTime();
 }
 
-function formatVolume(v: number): string {
-  if (!v) return "— L";
-  const n = Math.round(v);
-  return `${n >= 1000 ? n.toLocaleString("en-US") : n} L`;
-}
+
 
 // ── Dispatch / Priority badge helpers ─────────────────────────────────────────
 
@@ -1585,20 +1559,13 @@ export function TintManagerContent() {
   const [completedAssignments, setCompletedAssignments] = useState<CompletedAssignment[]>([]);
   const [operators, setOperators] = useState<Operator[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [now,       setNow]       = useState<Date>(() => new Date());
 
-  const [slotFilter,         setSlotFilter]         = useState<"all" | number>("all");
   const [priorityFilter,     setPriorityFilter]     = useState<"all" | "urgent" | "normal">("all");
   const [delTypeFilter,      setDelTypeFilter]      = useState<Set<string>>(new Set());
-  const [slotSummary,        setSlotSummary]        = useState<SlotSummaryItem[]>([]);
   const [typeFilter,         setTypeFilter]         = useState<"all" | "split" | "whole">("all");
   const [searchQuery,        setSearchQuery]        = useState("");
-  const [searchDropdownOpen, setSearchDropdownOpen] = useState(false);
-  const [workloadBarOpen,    setWorkloadBarOpen]    = useState(false);
-  const [operatorFilter,     setOperatorFilter]     = useState("");
-  const [filterDropdownOpen, setFilterDropdownOpen] = useState(false);
-  const [headerFilters,      setHeaderFilters]      = useState<Record<string, string[]>>({ deliveryType: [], priority: [], type: [], operator: [] });
-  const searchRef = useRef<HTMLDivElement>(null);
+  const [headerFilters,      setHeaderFilters]      = useState<Record<string, string[]>>({ deliveryType: [], priority: [], type: [] });
+  const [activeOperatorSegment, setActiveOperatorSegment] = useState<string | number | null>(null);
 
   const [selectedOrder,   setSelectedOrder]   = useState<TintOrder | null>(null);
   const [assignModalOpen, setAssignModalOpen] = useState(false);
@@ -1648,13 +1615,6 @@ export function TintManagerContent() {
   } | null>(null);
   const [tableSplitOpen, setTableSplitOpen] = useState(false);
 
-  // ── Clock ─────────────────────────────────────────────────────────────────
-
-  useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 60_000);
-    return () => clearInterval(id);
-  }, []);
-
   // Sync headerFilters → existing filter states
   useEffect(() => {
     const dt = headerFilters.deliveryType ?? [];
@@ -1663,19 +1623,7 @@ export function TintManagerContent() {
     setPriorityFilter(pr.length === 1 ? (pr[0] as "urgent" | "normal") : "all");
     const tp = headerFilters.type ?? [];
     setTypeFilter(tp.length === 1 ? (tp[0] as "split" | "whole") : "all");
-    const op = headerFilters.operator ?? [];
-    setOperatorFilter(op.length === 1 ? op[0] : "");
   }, [headerFilters]);
-
-  useEffect(() => {
-    function handleOutside(e: MouseEvent) {
-      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
-        setSearchDropdownOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handleOutside);
-    return () => document.removeEventListener("mousedown", handleOutside);
-  }, []);
 
   // ── Data fetching ─────────────────────────────────────────────────────────
 
@@ -1687,13 +1635,11 @@ export function TintManagerContent() {
         activeSplits:         SplitCard[];
         completedSplits:      SplitCard[];
         completedAssignments: CompletedAssignment[];
-        slotSummary:          SlotSummaryItem[];
       };
       setOrders(data.orders ?? []);
       setActiveSplits(data.activeSplits ?? []);
       setCompletedSplits(data.completedSplits ?? []);
       setCompletedAssignments(data.completedAssignments ?? []);
-      setSlotSummary(data.slotSummary ?? []);
     } catch {
       // leave stale
     }
@@ -1712,14 +1658,12 @@ export function TintManagerContent() {
           activeSplits:         SplitCard[];
           completedSplits:      SplitCard[];
           completedAssignments: CompletedAssignment[];
-          slotSummary:          SlotSummaryItem[];
         };
         const opsData    = (await opsRes.json())    as { operators: Operator[] };
         setOrders(ordersData.orders ?? []);
         setActiveSplits(ordersData.activeSplits ?? []);
         setCompletedSplits(ordersData.completedSplits ?? []);
         setCompletedAssignments(ordersData.completedAssignments ?? []);
-        setSlotSummary(ordersData.slotSummary ?? []);
         setOperators(opsData.operators ?? []);
       } finally {
         setIsLoading(false);
@@ -1746,16 +1690,11 @@ export function TintManagerContent() {
       );
       if (!hasSplits) return false;
     }
-    if (operatorFilter) {
-      if (o.workflowStage === "pending_tint_assignment") {
-        const hasSplitByOp = (o.splits ?? []).some(
-          (s) => s.assignedTo?.name === operatorFilter && ["tint_assigned", "tinting_in_progress"].includes(s.status)
-        );
-        if (!hasSplitByOp) return false;
-      } else {
-        const opName = o.tintAssignments[0]?.assignedTo.name ?? "";
-        if (opName !== operatorFilter) return false;
-      }
+    if (activeOperatorSegment === "unassigned") {
+      if (o.workflowStage !== "pending_tint_assignment" && !(o.remainingQty && o.remainingQty > 0)) return false;
+    } else if (activeOperatorSegment !== null) {
+      const opId = o.tintAssignments[0]?.assignedTo.id;
+      if (opId !== activeOperatorSegment) return false;
     }
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
@@ -1774,7 +1713,8 @@ export function TintManagerContent() {
     if (priorityFilter === "urgent" && !(pl <= 2)) return false;
     if (priorityFilter === "normal" && !(pl > 2)) return false;
     if (typeFilter === "whole") return false;
-    if (operatorFilter && (s.assignedTo.name ?? "") !== operatorFilter) return false;
+    if (activeOperatorSegment === "unassigned") return false;
+    if (typeof activeOperatorSegment === "number" && s.assignedTo.id !== activeOperatorSegment) return false;
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       const matchObd      = s.order.obdNumber.toLowerCase().includes(q);
@@ -1791,7 +1731,8 @@ export function TintManagerContent() {
     if (priorityFilter === "urgent" && !(pl <= 2)) return false;
     if (priorityFilter === "normal" && !(pl > 2)) return false;
     if (typeFilter === "whole") return false;
-    if (operatorFilter && (s.assignedTo.name ?? "") !== operatorFilter) return false;
+    if (activeOperatorSegment === "unassigned") return false;
+    if (typeof activeOperatorSegment === "number" && s.assignedTo.id !== activeOperatorSegment) return false;
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       const matchObd      = s.order.obdNumber.toLowerCase().includes(q);
@@ -1898,7 +1839,7 @@ export function TintManagerContent() {
     setDelTypeFilter(new Set());
     setTypeFilter("all");
     setSearchQuery("");
-    setOperatorFilter("");
+    setActiveOperatorSegment(null);
   }
 
   function closeAssignModal() {
@@ -2038,71 +1979,41 @@ export function TintManagerContent() {
 
   // ── Pre-render computations ────────────────────────────────────────────────
 
-  const operatorWorkload = (() => {
-    const map = new Map<string, { assigned: number; inProgress: number; done: number }>();
+  // Operator segments for UniversalHeader
+  const operatorSegments = (() => {
+    // Unassigned count: orders in Pending column
+    const unassignedCount = orders.filter(
+      (o) => o.workflowStage === "pending_tint_assignment" || (o.remainingQty && o.remainingQty > 0),
+    ).length;
+
+    // Count active workload (assigned + in progress) per operator ID
+    const opCounts = new Map<number, number>();
+    for (const o of orders) {
+      const ta = o.tintAssignments[0];
+      if (!ta) continue;
+      if (o.workflowStage === "tint_assigned" || o.workflowStage === "tinting_in_progress") {
+        opCounts.set(ta.assignedTo.id, (opCounts.get(ta.assignedTo.id) ?? 0) + 1);
+      }
+    }
     for (const s of activeSplits) {
-      const name  = s.assignedTo.name ?? "Unknown";
-      const entry = map.get(name) ?? { assigned: 0, inProgress: 0, done: 0 };
-      if (s.status === "tint_assigned")          entry.assigned++;
-      else if (s.status === "tinting_in_progress") entry.inProgress++;
-      map.set(name, entry);
+      if (s.status === "tint_assigned" || s.status === "tinting_in_progress") {
+        opCounts.set(s.assignedTo.id, (opCounts.get(s.assignedTo.id) ?? 0) + 1);
+      }
     }
-    for (const s of completedSplits) {
-      const name  = s.assignedTo.name ?? "Unknown";
-      const entry = map.get(name) ?? { assigned: 0, inProgress: 0, done: 0 };
-      entry.done++;
-      map.set(name, entry);
+
+    const segs: { id: string | number; label: string; count: number }[] = [
+      { id: "unassigned", label: "Unassigned", count: unassignedCount },
+    ];
+    for (const op of operators.filter((o) => o.name).sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""))) {
+      segs.push({
+        id: op.id,
+        label: (op.name ?? "").split(" ")[0],
+        count: opCounts.get(op.id) ?? 0,
+      });
     }
-    for (const o of orders) {
-      const name = o.tintAssignments[0]?.assignedTo.name;
-      if (!name) continue;
-      const entry = map.get(name) ?? { assigned: 0, inProgress: 0, done: 0 };
-      if (o.workflowStage === "tint_assigned")          entry.assigned++;
-      else if (o.workflowStage === "tinting_in_progress") entry.inProgress++;
-      else if (o.workflowStage === "pending_support")     entry.done++;
-      map.set(name, entry);
-    }
-    return Array.from(map.entries()).map(([name, counts]) => ({ name, ...counts }));
+    return segs;
   })();
 
-  const suggestions = (() => {
-    if (!searchQuery.trim()) return [] as { tag: "Customer" | "OBD" | "SKU"; value: string }[];
-    const q    = searchQuery.trim().toLowerCase();
-    const seen = new Set<string>();
-    const results: { tag: "Customer" | "OBD" | "SKU"; value: string }[] = [];
-    for (const o of orders) {
-      if (o.obdNumber.toLowerCase().includes(q)) {
-        const key = `OBD:${o.obdNumber}`;
-        if (!seen.has(key)) { seen.add(key); results.push({ tag: "OBD", value: o.obdNumber }); }
-      }
-    }
-    for (const o of orders) {
-      const name = o.customer?.customerName ?? "";
-      if (name && name.toLowerCase().includes(q)) {
-        const key = `Customer:${name}`;
-        if (!seen.has(key)) { seen.add(key); results.push({ tag: "Customer", value: name }); }
-      }
-    }
-    for (const o of orders) {
-      for (const l of o.lineItems) {
-        if (l.skuCodeRaw.toLowerCase().includes(q)) {
-          const key = `SKU:${l.skuCodeRaw}`;
-          if (!seen.has(key)) { seen.add(key); results.push({ tag: "SKU", value: l.skuCodeRaw }); }
-        }
-      }
-    }
-    return results.slice(0, 4);
-  })();
-
-  const hasActiveFilters =
-    priorityFilter !== "all" || delTypeFilter.size > 0 ||
-    typeFilter !== "all" || operatorFilter !== "" || searchQuery !== "";
-  const activeParts: string[] = [];
-  if (priorityFilter !== "all") activeParts.push(priorityFilter);
-  if (delTypeFilter.size > 0)   activeParts.push(Array.from(delTypeFilter).join(", "));
-  if (typeFilter !== "all")     activeParts.push(typeFilter);
-  if (operatorFilter)           activeParts.push(operatorFilter);
-  if (searchQuery)              activeParts.push(`"${searchQuery}"`);
 
   // ── Loading state ─────────────────────────────────────────────────────────
 
@@ -2155,14 +2066,17 @@ export function TintManagerContent() {
           { label: "in progress", value: inProgressCount },
           { label: "done", value: doneCount },
         ]}
+        segments={operatorSegments}
+        activeSegment={activeOperatorSegment}
+        onSegmentChange={(id) => setActiveOperatorSegment(id === activeOperatorSegment ? null : id)}
         filterGroups={[
           { label: "Delivery Type", key: "deliveryType", options: [{ value: "LOCAL", label: "Local" }, { value: "UPC", label: "UPC" }, { value: "IGT", label: "IGT" }, { value: "CROSS", label: "Cross" }] },
           { label: "Priority", key: "priority", options: [{ value: "urgent", label: "Urgent" }, { value: "normal", label: "Normal" }] },
           { label: "Type", key: "type", options: [{ value: "split", label: "Split" }, { value: "whole", label: "Whole" }] },
-          { label: "Operator", key: "operator", options: operators.filter((op) => op.name).map((op) => ({ value: String(op.id), label: op.name! })) },
         ]}
         activeFilters={headerFilters}
         onFilterChange={setHeaderFilters}
+        showDatePicker={false}
         searchPlaceholder="Search OBD, customer..."
         searchValue={searchQuery}
         onSearchChange={setSearchQuery}
@@ -2190,342 +2104,7 @@ export function TintManagerContent() {
         ]}
       />
 
-      {/* ── OLD HEADER START (hidden) ── */}
-      <div style={{ display: "none" }}>
-      {/* ── Topbar ───────────────────────────────────────────────────────── */}
-      <div className="h-[42px] bg-white border-b border-gray-200 px-5 flex items-center sticky top-0 z-40">
-        {/* Left: title + stats */}
-        <div className="flex items-center gap-2 flex-1 min-w-0">
-          <h1 className="text-[14px] font-semibold text-gray-900 flex-shrink-0">Tint Manager</h1>
-          <div className="flex items-center gap-2.5 text-[11px] text-gray-400 flex-shrink-0">
-            <span><span className="text-gray-900 font-semibold">{pendingCount}</span> Pending</span>
-            <span><span className="text-gray-900 font-semibold">{assignedCount}</span> Assigned</span>
-            <span><span className="text-gray-900 font-semibold">{inProgressCount}</span> In Progress</span>
-            <span><span className="text-gray-900 font-semibold">{doneCount}</span> Done</span>
-            <span className="text-gray-200">|</span>
-            <span><span className="text-gray-600 font-medium">{formatVolume(pendingVolume + assignedVolume + inProgressVolume + doneVolume)}</span></span>
-            <span className="text-gray-200">&middot;</span>
-            <span><span className="text-gray-600 font-medium">{orders.length}</span> OBDs</span>
-          </div>
-        </div>
-
-        {/* Right: search + view toggle + clock */}
-        <div className="flex items-center gap-3 flex-shrink-0">
-          {/* Search */}
-          <div ref={searchRef} className="relative">
-            <div className="relative flex items-center">
-              <Search size={12} className="absolute left-2 text-gray-300 pointer-events-none" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => {
-                  setSearchQuery(e.target.value);
-                  setSearchDropdownOpen(e.target.value.length > 0);
-                }}
-                onFocus={() => { if (searchQuery) setSearchDropdownOpen(true); }}
-                placeholder="Search..."
-                className="w-[140px] focus:w-[200px] transition-all duration-200 pl-7 pr-7 py-1 text-[11px] border border-gray-200 rounded-md focus:outline-none focus:border-gray-400 placeholder:text-gray-300 text-gray-700"
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  onClick={() => { setSearchQuery(""); setSearchDropdownOpen(false); }}
-                  className="absolute right-2 text-gray-300 hover:text-gray-500 transition-colors"
-                >
-                  <X size={10} />
-                </button>
-              )}
-            </div>
-            {searchDropdownOpen && suggestions.length > 0 && (
-              <div className="absolute top-full mt-1 right-0 w-[240px] bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-50">
-                {suggestions.map((s, i) => (
-                  <button
-                    key={i}
-                    type="button"
-                    onClick={() => { setSearchQuery(s.value); setSearchDropdownOpen(false); }}
-                    className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-gray-50 transition-colors"
-                  >
-                    <span className={cn(
-                      "text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wide flex-shrink-0",
-                      s.tag === "OBD" ? "bg-gray-100 text-gray-600"
-                      : s.tag === "Customer" ? "bg-amber-50 text-amber-600"
-                      : "bg-green-50 text-green-600",
-                    )}>
-                      {s.tag}
-                    </span>
-                    <span className="text-[11px] text-gray-700 truncate">{s.value}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* View toggle */}
-          <div className="flex items-center border border-gray-200 rounded-md overflow-hidden">
-            <button
-              type="button"
-              onClick={() => { setViewMode("card"); sessionStorage.setItem("tm_view_mode", "card"); }}
-              className={cn(
-                "flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium transition-colors",
-                viewMode === "card" ? "bg-gray-50 text-gray-900" : "text-gray-400 hover:text-gray-600",
-              )}
-            >
-              <LayoutGrid size={11} />
-              Cards
-            </button>
-            <button
-              type="button"
-              onClick={() => { setViewMode("table"); sessionStorage.setItem("tm_view_mode", "table"); }}
-              className={cn(
-                "flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium border-l border-gray-200 transition-colors",
-                viewMode === "table" ? "bg-gray-50 text-gray-900" : "text-gray-400 hover:text-gray-600",
-              )}
-            >
-              <TableIcon size={11} />
-              Table
-            </button>
-          </div>
-
-          <span className="text-[11px] text-gray-400" suppressHydrationWarning>
-            {formatNow(now)}
-          </span>
-        </div>
-      </div>
-
-      {/* ── Row 2: Slots + Filter + Workload ─────────────────────────── */}
-      <div className="bg-white border-b border-gray-200 px-5 py-1.5 flex items-center gap-2 sticky top-[42px] z-[39]">
-        {/* Slot pills */}
-        <div className="flex items-center gap-2 flex-1 overflow-x-auto">
-          {slotSummary.map((slot) => {
-            const closed = isSlotClosed(slot.slotTime, slot.isNextDay);
-            const isActive = slotFilter === slot.id;
-            const isDone = slot.tintPendingCount === 0;
-            return (
-              <button
-                key={slot.id}
-                type="button"
-                onClick={() => setSlotFilter(isActive ? "all" : slot.id)}
-                className={cn(
-                  "inline-flex items-center gap-1 px-2.5 py-0.5 border rounded-md text-xs whitespace-nowrap h-7 flex-shrink-0 transition-colors",
-                  closed && !isActive && "bg-gray-50 border-gray-100 text-gray-400",
-                  isActive && "border-gray-900 text-gray-900 font-medium",
-                  !closed && !isActive && "bg-white border-gray-200 text-gray-500 hover:border-gray-300",
-                )}
-              >
-                {isDone && !isActive && (
-                  <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                  </svg>
-                )}
-                {slot.name}
-                {isActive && slot.tintPendingCount > 0 && (
-                  <span className="text-[10px] text-gray-400 ml-0.5">{slot.tintPendingCount} pending</span>
-                )}
-                {!isActive && !isDone && slot.tintPendingCount > 0 && (
-                  <span className="text-[10px] text-gray-400 ml-0.5">{slot.tintPendingCount}</span>
-                )}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Right side: Filter dropdown + Workload dropdown */}
-        <div className="flex items-center gap-2 flex-shrink-0">
-          {/* Filter dropdown */}
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setFilterDropdownOpen((v) => !v)}
-              className={cn(
-                "inline-flex items-center gap-1.5 px-3 py-1 border rounded-md text-[11px] font-medium transition-colors h-7",
-                hasActiveFilters
-                  ? "border-gray-900 text-gray-900"
-                  : "border-gray-200 text-gray-500 hover:border-gray-300",
-              )}
-            >
-              <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
-                <path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z" />
-              </svg>
-              Filter
-              {hasActiveFilters && (
-                <span className="text-[9px] font-bold bg-gray-900 text-white px-1.5 py-0.5 rounded-full">
-                  {(delTypeFilter.size > 0 ? 1 : 0) + (priorityFilter !== "all" ? 1 : 0) + (typeFilter !== "all" ? 1 : 0) + (operatorFilter ? 1 : 0)}
-                </span>
-              )}
-            </button>
-
-            {filterDropdownOpen && (
-              <>
-                {/* Backdrop */}
-                <div className="fixed inset-0 z-40" onClick={() => setFilterDropdownOpen(false)} />
-                {/* Panel */}
-                <div className="absolute right-0 top-full mt-1 w-[260px] bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-3 px-4">
-                  {/* Del Type */}
-                  <div className="mb-3">
-                    <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1.5">Delivery Type</p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {(["Local", "Upcountry", "IGT", "Cross Depot"] as const).map((dt) => {
-                        const isActive = delTypeFilter.has(dt);
-                        const label = dt === "Upcountry" ? "UPC" : dt === "Cross Depot" ? "Cross" : dt;
-                        return (
-                          <button
-                            key={dt}
-                            type="button"
-                            onClick={() => {
-                              setDelTypeFilter((prev) => {
-                                const next = new Set(prev);
-                                if (next.has(dt)) next.delete(dt); else next.add(dt);
-                                return next;
-                              });
-                            }}
-                            className={cn(
-                              "px-2.5 py-1 text-[11px] font-medium border rounded-md transition-colors",
-                              isActive ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-500 border-gray-200 hover:border-gray-300",
-                            )}
-                          >
-                            {label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Priority */}
-                  <div className="mb-3">
-                    <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1.5">Priority</p>
-                    <div className="flex gap-1.5">
-                      {(["urgent", "normal"] as const).map((p) => {
-                        const isActive = priorityFilter === p;
-                        return (
-                          <button
-                            key={p}
-                            type="button"
-                            onClick={() => setPriorityFilter(isActive ? "all" : p)}
-                            className={cn(
-                              "px-2.5 py-1 text-[11px] font-medium border rounded-md transition-colors",
-                              isActive ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-500 border-gray-200 hover:border-gray-300",
-                            )}
-                          >
-                            {p === "urgent" ? "Urgent" : "Normal"}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Type */}
-                  <div className="mb-3">
-                    <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1.5">Type</p>
-                    <div className="flex gap-1.5">
-                      {(["split", "whole"] as const).map((t) => {
-                        const isActive = typeFilter === t;
-                        return (
-                          <button
-                            key={t}
-                            type="button"
-                            onClick={() => setTypeFilter(isActive ? "all" : t)}
-                            className={cn(
-                              "px-2.5 py-1 text-[11px] font-medium border rounded-md transition-colors",
-                              isActive ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-500 border-gray-200 hover:border-gray-300",
-                            )}
-                          >
-                            {t === "split" ? "Split" : "Whole"}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Operator */}
-                  <div className="mb-3">
-                    <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1.5">Operator</p>
-                    <select
-                      value={operatorFilter}
-                      onChange={(e) => setOperatorFilter(e.target.value)}
-                      className="w-full px-2.5 py-1.5 text-[11px] border border-gray-200 rounded-md text-gray-600 focus:outline-none focus:border-gray-400 bg-white"
-                    >
-                      <option value="">All Operators</option>
-                      {operators.map((op) => (
-                        <option key={op.id} value={op.name ?? ""}>
-                          {op.name ?? `Operator ${op.id}`}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* Clear */}
-                  {hasActiveFilters && (
-                    <button
-                      type="button"
-                      onClick={() => { clearAllFilters(); setFilterDropdownOpen(false); }}
-                      className="w-full text-center text-[11px] font-medium text-gray-400 hover:text-gray-600 py-1 transition-colors"
-                    >
-                      Clear all filters
-                    </button>
-                  )}
-                </div>
-              </>
-            )}
-          </div>
-
-          {/* Workload dropdown */}
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setWorkloadBarOpen((v) => !v)}
-              className={cn(
-                "inline-flex items-center gap-1.5 px-3 py-1 border rounded-md text-[11px] font-medium transition-colors h-7",
-                workloadBarOpen
-                  ? "border-gray-900 text-gray-900"
-                  : "border-gray-200 text-gray-500 hover:border-gray-300",
-              )}
-            >
-              <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
-                <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4-4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 00-3-3.87" /><path d="M16 3.13a4 4 0 010 7.75" />
-              </svg>
-              Workload
-            </button>
-
-            {workloadBarOpen && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setWorkloadBarOpen(false)} />
-                <div className="absolute right-0 top-full mt-1 w-[300px] bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-3 px-4">
-                  {operatorWorkload.length === 0 ? (
-                    <p className="text-[11px] text-gray-400 italic py-2">No operators with active work.</p>
-                  ) : (
-                    <div className="flex flex-col gap-2">
-                      {operatorWorkload.map((op) => (
-                        <div
-                          key={op.name}
-                          className="flex items-center gap-2 p-2 rounded-lg border border-gray-100 hover:border-gray-200 transition-colors"
-                        >
-                          <div className="w-6 h-6 rounded-full bg-teal-600 text-white text-[9px] font-bold flex items-center justify-center flex-shrink-0">
-                            {op.name.split(" ").map((w: string) => w[0]).join("").toUpperCase().slice(0, 2)}
-                          </div>
-                          <span className="text-[11px] font-medium text-gray-700 flex-1">{op.name}</span>
-                          <div className="flex items-center gap-1">
-                            {op.assigned > 0 && (
-                              <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700">{op.assigned}</span>
-                            )}
-                            {op.inProgress > 0 && (
-                              <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700">{op.inProgress}</span>
-                            )}
-                            {op.done > 0 && (
-                              <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-green-50 text-green-700">{op.done}</span>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      </div>
-
-      </div>{/* ── END OLD HEADER (hidden) ── */}
+      {/* OLD HEADER REMOVED */}
 
       {/* ── Kanban board ─────────────────────────────────────────────────── */}
       {viewMode === "card" && (
@@ -2591,6 +2170,11 @@ export function TintManagerContent() {
                   const existingOrderIds = new Set(colOrderItems.map((o) => o.id));
                   return completedAssignments
                     .filter((a) => !existingOrderIds.has(a.order.id))
+                    .filter((a) => {
+                      if (activeOperatorSegment === "unassigned") return false;
+                      if (typeof activeOperatorSegment === "number" && a.assignedTo.id !== activeOperatorSegment) return false;
+                      return true;
+                    })
                     .map((a): TintOrder => ({
                       id:                 a.order.id,
                       obdNumber:          a.order.obdNumber,
@@ -2746,7 +2330,12 @@ export function TintManagerContent() {
           filteredOrders={filteredOrders}
           filteredActiveSplits={filteredActiveSplits}
           filteredCompletedSplits={filteredCompletedSplits}
-          completedAssignments={completedAssignments}
+          completedAssignments={
+            activeOperatorSegment === "unassigned" ? [] :
+            typeof activeOperatorSegment === "number"
+              ? completedAssignments.filter((a) => a.assignedTo.id === activeOperatorSegment)
+              : completedAssignments
+          }
           onOrderClick={(order) => setDetailOrderId(order.id)}
           onSplitClick={(split) => {
             const colStage: ColStage = split.status === "tint_assigned"
