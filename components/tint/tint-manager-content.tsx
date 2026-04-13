@@ -1731,7 +1731,6 @@ export function TintManagerContent() {
   // ── Client-side filtering ─────────────────────────────────────────────────
 
   const filteredOrders = (orders ?? []).filter((o) => {
-    if (slotFilter !== "all" && o.slotId !== slotFilter) return false;
     if (delTypeFilter.size > 0 && !delTypeFilter.has(o.deliveryTypeName ?? "")) return false;
     if (priorityFilter === "urgent" && !(o.priorityLevel <= 2)) return false;
     if (priorityFilter === "normal" && !(o.priorityLevel > 2)) return false;
@@ -1770,7 +1769,6 @@ export function TintManagerContent() {
   });
 
   const filteredActiveSplits = activeSplits.filter((s) => {
-    if (slotFilter !== "all" && s.slotId !== slotFilter) return false;
     if (delTypeFilter.size > 0 && !delTypeFilter.has(s.deliveryTypeName ?? "")) return false;
     const pl = s.priorityLevel ?? 5;
     if (priorityFilter === "urgent" && !(pl <= 2)) return false;
@@ -1788,7 +1786,6 @@ export function TintManagerContent() {
   });
 
   const filteredCompletedSplits = completedSplits.filter((s) => {
-    if (slotFilter !== "all" && s.slotId !== slotFilter) return false;
     if (delTypeFilter.size > 0 && !delTypeFilter.has(s.deliveryTypeName ?? "")) return false;
     const pl = s.priorityLevel ?? 5;
     if (priorityFilter === "urgent" && !(pl <= 2)) return false;
@@ -1897,7 +1894,6 @@ export function TintManagerContent() {
   }
 
   function clearAllFilters() {
-    setSlotFilter("all");
     setPriorityFilter("all");
     setDelTypeFilter(new Set());
     setTypeFilter("all");
@@ -2099,10 +2095,9 @@ export function TintManagerContent() {
   })();
 
   const hasActiveFilters =
-    slotFilter !== "all" || priorityFilter !== "all" || delTypeFilter.size > 0 ||
+    priorityFilter !== "all" || delTypeFilter.size > 0 ||
     typeFilter !== "all" || operatorFilter !== "" || searchQuery !== "";
   const activeParts: string[] = [];
-  if (slotFilter !== "all")     activeParts.push(String(slotFilter));
   if (priorityFilter !== "all") activeParts.push(priorityFilter);
   if (delTypeFilter.size > 0)   activeParts.push(Array.from(delTypeFilter).join(", "));
   if (typeFilter !== "all")     activeParts.push(typeFilter);
@@ -2160,9 +2155,6 @@ export function TintManagerContent() {
           { label: "in progress", value: inProgressCount },
           { label: "done", value: doneCount },
         ]}
-        segments={slotSummary.filter((s) => !s.isNextDay).map((s) => ({ id: s.id, label: s.name, count: s.tintPendingCount }))}
-        activeSegment={slotFilter === "all" ? null : slotFilter}
-        onSegmentChange={(id) => setSlotFilter(id === null ? "all" : (id as number))}
         filterGroups={[
           { label: "Delivery Type", key: "deliveryType", options: [{ value: "LOCAL", label: "Local" }, { value: "UPC", label: "UPC" }, { value: "IGT", label: "IGT" }, { value: "CROSS", label: "Cross" }] },
           { label: "Priority", key: "priority", options: [{ value: "urgent", label: "Urgent" }, { value: "normal", label: "Normal" }] },
@@ -2171,8 +2163,6 @@ export function TintManagerContent() {
         ]}
         activeFilters={headerFilters}
         onFilterChange={setHeaderFilters}
-        currentDate={now}
-        onDateChange={() => {/* TODO: Wire viewDate to API fetch */}}
         searchPlaceholder="Search OBD, customer..."
         searchValue={searchQuery}
         onSearchChange={setSearchQuery}

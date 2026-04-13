@@ -115,15 +115,6 @@ function SmuBadge({ smu }: { smu: string | null | undefined }) {
   );
 }
 
-function SlotBadge({ name }: { name: string | null | undefined }) {
-  if (!name) return <span className="text-gray-400">—</span>;
-  return (
-    <span className="text-[10.5px] text-gray-400 bg-gray-50 border border-gray-200 px-[6px] py-[1px] rounded-[4px]">
-      {name}
-    </span>
-  );
-}
-
 function PriorityBadge({ level }: { level: number | null | undefined }) {
   if ((level ?? 5) <= 2) {
     return (
