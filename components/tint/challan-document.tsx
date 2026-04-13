@@ -249,6 +249,11 @@ export function ChallanDocument({
               <div style={{ fontSize: 8, color: "#9ca3af", fontWeight: 600, ...UP }}>Customer Code</div>
               <div style={{ fontSize: 11, color: "#374151", fontWeight: 600, fontFamily: "'SF Mono', ui-monospace, monospace", marginTop: 1 }}>{billTo.customerCode ?? ""}</div>
               <div style={{ fontSize: 13, fontWeight: 700, color: "#111827", marginTop: 4 }}>{billTo.name}</div>
+              {formatAddress(billTo.address).length > 0 && (
+                <div style={{ fontSize: 10, color: "#6b7280", marginTop: 2, lineHeight: 1.35 }}>
+                  {formatAddress(billTo.address).join(", ")}
+                </div>
+              )}
             </div>
           </div>
 
