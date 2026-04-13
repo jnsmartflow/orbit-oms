@@ -126,9 +126,10 @@ const tdObdStyle: React.CSSProperties = { padding: "10px 14px", whiteSpace: "nor
 function Colgroup() {
   return (
     <colgroup>
+      <col style={{ width: "4%" }} />
       <col style={{ width: "13%" }} />
       <col style={{ width: "10%" }} />
-      <col style={{ width: "22%" }} />
+      <col style={{ width: "18%" }} />
       <col style={{ width: "7%" }} />
       <col style={{ width: "9%" }} />
       <col style={{ width: "6%" }} />
@@ -137,6 +138,12 @@ function Colgroup() {
       <col style={{ width: "8%" }} />
     </colgroup>
   );
+}
+
+const NUM_COLS = 10;
+
+function SerialTd({ n }: { n: number }) {
+  return <td className={tdCls} style={{ ...tdStyle, textAlign: "center" }}><span className="text-[11px] font-mono text-gray-400">{n}</span></td>;
 }
 
 // ── Cell components ──────────────────────────────────────────────────────────
@@ -531,15 +538,15 @@ export function TintTableView({
             <Colgroup />
             <thead>
               <tr className="bg-gray-50 border-b border-[#ebebeb]">
-                <th className={thCls} style={thStyle}>OBD No.</th><th className={thCls} style={thStyle}>SMU</th><th className={thCls} style={thStyle}>Site Name</th>
+                <th className={thCls} style={{ ...thStyle, textAlign: "center" }}>#</th><th className={thCls} style={thStyle}>OBD No.</th><th className={thCls} style={thStyle}>SMU</th><th className={thCls} style={thStyle}>Site Name</th>
                 <th className={thCls} style={thStyle}>Priority</th><th className={thCls} style={thStyle}>Articles</th><th className={thCls} style={thStyle}>Volume</th>
                 <th className={thCls} style={thStyle}>Action</th><th className={thCls} style={thStyle} /><th className={thCls} style={thStyle} />
               </tr>
             </thead>
             <tbody>
               {pendingRows.length === 0 ? (
-                <tr><td colSpan={9} className="px-3 py-6 text-center text-gray-400 italic">No pending orders</td></tr>
-              ) : pendingRows.map((order) => {
+                <tr><td colSpan={NUM_COLS} className="px-3 py-6 text-center text-gray-400 italic">No pending orders</td></tr>
+              ) : pendingRows.map((order, idx) => {
                 const hasSplits =
                   (order.splits ?? []).filter((s) => s.status !== "cancelled").length > 0 ||
                   (order.existingSplits ?? []).length > 0 ||
@@ -553,6 +560,7 @@ export function TintTableView({
                 const remainingQty = order.remainingQty ?? 0;
                 return (
                   <tr key={`p-${order.id}`} onClick={() => onOrderClick(order)} className={rowCls}>
+                    <SerialTd n={idx + 1} />
                     <OrderCommonTds order={order} />
                     <td className={tdCls} onClick={(e) => e.stopPropagation()}>
                       {hasSplits ? (
@@ -591,18 +599,19 @@ export function TintTableView({
             <Colgroup />
             <thead>
               <tr className="bg-gray-50 border-b border-[#ebebeb]">
-                <th className={thCls} style={thStyle}>OBD No.</th><th className={thCls} style={thStyle}>SMU</th><th className={thCls} style={thStyle}>Site Name</th>
+                <th className={thCls} style={{ ...thStyle, textAlign: "center" }}>#</th><th className={thCls} style={thStyle}>OBD No.</th><th className={thCls} style={thStyle}>SMU</th><th className={thCls} style={thStyle}>Site Name</th>
                 <th className={thCls} style={thStyle}>Priority</th><th className={thCls} style={thStyle}>Articles</th><th className={thCls} style={thStyle}>Volume</th>
                 <th className={thCls} style={thStyle}>Operator</th><th className={thCls} style={thStyle}>Assigned At</th><th className={thCls} style={thStyle} />
               </tr>
             </thead>
             <tbody>
               {assignedOrderRows.length === 0 && assignedSplitRows.length === 0 ? (
-                <tr><td colSpan={9} className="px-3 py-6 text-center text-gray-400 italic">No assigned orders</td></tr>
+                <tr><td colSpan={NUM_COLS} className="px-3 py-6 text-center text-gray-400 italic">No assigned orders</td></tr>
               ) : (
                 <>
-                  {assignedOrderRows.map((order) => (
+                  {assignedOrderRows.map((order, idx) => (
                     <tr key={`ao-${order.id}`} onClick={() => onOrderClick(order)} className={rowCls}>
+                      <SerialTd n={idx + 1} />
                       <OrderCommonTds order={order} />
                       <OperatorTd name={order.tintAssignments[0]?.assignedTo.name} avatarColor="bg-teal-600" />
                       <td className={tdCls} style={tdStyle}><span className="text-[11px] text-gray-400">{formatTime(order.tintAssignments[0]?.updatedAt)}</span></td>
@@ -617,8 +626,9 @@ export function TintTableView({
                       </ActionsTd>
                     </tr>
                   ))}
-                  {assignedSplitRows.map((split) => (
+                  {assignedSplitRows.map((split, idx) => (
                     <tr key={`as-${split.id}`} onClick={() => onSplitClick(split)} className={rowCls}>
+                      <SerialTd n={assignedOrderRows.length + idx + 1} />
                       <SplitCommonTds split={split} />
                       <OperatorTd name={split.assignedTo.name} avatarColor="bg-teal-600" />
                       <td className={tdCls} style={tdStyle}><span className="text-[11px] text-gray-400">{formatTime(split.createdAt)}</span></td>
@@ -648,20 +658,21 @@ export function TintTableView({
             <Colgroup />
             <thead>
               <tr className="bg-gray-50 border-b border-[#ebebeb]">
-                <th className={thCls} style={thStyle}>OBD No.</th><th className={thCls} style={thStyle}>SMU</th><th className={thCls} style={thStyle}>Site Name</th>
+                <th className={thCls} style={{ ...thStyle, textAlign: "center" }}>#</th><th className={thCls} style={thStyle}>OBD No.</th><th className={thCls} style={thStyle}>SMU</th><th className={thCls} style={thStyle}>Site Name</th>
                 <th className={thCls} style={thStyle}>Priority</th><th className={thCls} style={thStyle}>Articles</th><th className={thCls} style={thStyle}>Volume</th>
                 <th className={thCls} style={thStyle}>Operator</th><th className={thCls} style={thStyle}>Elapsed</th><th className={thCls} style={thStyle} />
               </tr>
             </thead>
             <tbody>
               {inProgressOrderRows.length === 0 && inProgressSplitRows.length === 0 ? (
-                <tr><td colSpan={9} className="px-3 py-6 text-center text-gray-400 italic">No orders in progress</td></tr>
+                <tr><td colSpan={NUM_COLS} className="px-3 py-6 text-center text-gray-400 italic">No orders in progress</td></tr>
               ) : (
                 <>
-                  {inProgressOrderRows.map((order) => {
+                  {inProgressOrderRows.map((order, idx) => {
                     const startedAt = order.tintAssignments[0]?.startedAt ?? null;
                     return (
                       <tr key={`ipo-${order.id}`} onClick={() => onOrderClick(order)} className={rowCls}>
+                        <SerialTd n={idx + 1} />
                         <OrderCommonTds order={order} />
                         <OperatorTd name={order.tintAssignments[0]?.assignedTo.name} avatarColor="bg-teal-600" />
                         <td className={tdCls} style={tdStyle}><ElapsedBadge startedAt={startedAt} /></td>
@@ -669,8 +680,9 @@ export function TintTableView({
                       </tr>
                     );
                   })}
-                  {inProgressSplitRows.map((split) => (
+                  {inProgressSplitRows.map((split, idx) => (
                     <tr key={`ips-${split.id}`} onClick={() => onSplitClick(split)} className={rowCls}>
+                      <SerialTd n={inProgressOrderRows.length + idx + 1} />
                       <SplitCommonTds split={split} />
                       <OperatorTd name={split.assignedTo.name} avatarColor="bg-teal-600" />
                       <td className={tdCls} style={tdStyle}><ElapsedBadge startedAt={split.startedAt} /></td>
@@ -692,28 +704,30 @@ export function TintTableView({
             <Colgroup />
             <thead>
               <tr className="bg-gray-50 border-b border-[#ebebeb]">
-                <th className={thCls} style={thStyle}>OBD No.</th><th className={thCls} style={thStyle}>SMU</th><th className={thCls} style={thStyle}>Site Name</th>
+                <th className={thCls} style={{ ...thStyle, textAlign: "center" }}>#</th><th className={thCls} style={thStyle}>OBD No.</th><th className={thCls} style={thStyle}>SMU</th><th className={thCls} style={thStyle}>Site Name</th>
                 <th className={thCls} style={thStyle}>Priority</th><th className={thCls} style={thStyle}>Articles</th><th className={thCls} style={thStyle}>Volume</th>
                 <th className={thCls} style={thStyle}>Operator</th><th className={thCls} style={thStyle}>Completed At</th><th className={thCls} style={thStyle} />
               </tr>
             </thead>
             <tbody>
               {completedSplitRows.length === 0 && completedAssignmentRows.length === 0 ? (
-                <tr><td colSpan={9} className="px-3 py-6 text-center text-gray-400 italic">No completed orders today</td></tr>
+                <tr><td colSpan={NUM_COLS} className="px-3 py-6 text-center text-gray-400 italic">No completed orders today</td></tr>
               ) : (
                 <>
-                  {completedSplitRows.map((split) => (
+                  {completedSplitRows.map((split, idx) => (
                     <tr key={`cs-${split.id}`} onClick={() => onSplitClick(split)} className={rowCls}>
+                      <SerialTd n={idx + 1} />
                       <SplitCommonTds split={split} />
                       <OperatorTd name={split.assignedTo.name} avatarColor="bg-green-600" />
                       <td className={tdCls} style={tdStyle}><span className="text-[11px] text-gray-400">{formatTime(split.completedAt)}</span></td>
                       <ActionsTd><PlusBtn id={split.id} type="split" onStatusPopover={onStatusPopover} /></ActionsTd>
                     </tr>
                   ))}
-                  {completedAssignmentRows.map((a) => {
+                  {completedAssignmentRows.map((a, idx) => {
                     const order = assignmentAsOrder(a);
                     return (
                       <tr key={`ca-${a.id}`} onClick={() => onOrderClick(order)} className={rowCls}>
+                        <SerialTd n={completedSplitRows.length + idx + 1} />
                         <td className={tdObdCls} style={tdObdStyle}>
                           <div className="font-mono text-[11px] text-gray-800">{a.order.obdNumber}</div>
                           {(a.orderDateTime || a.obdEmailDate || a.completedAt) && (
