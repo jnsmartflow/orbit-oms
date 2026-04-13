@@ -1098,129 +1098,121 @@ export function TintOperatorContent() {
         showDatePicker={false}
       />
 
-      {/* Row 2: Dense Job Context Bar */}
-      <div className="min-h-[48px] bg-white border-b border-gray-200 px-5 flex items-center gap-3 flex-shrink-0" style={{ position: "sticky", top: 52, zIndex: 30 }}>
+      {/* Row 2: Full-width Job Pill */}
+      <div className="h-[44px] bg-white border-b border-gray-200 px-5 flex items-center gap-3 flex-shrink-0" style={{ position: "sticky", top: 52, zIndex: 30 }}>
         {selectedJob ? (
-          <>
-            {/* Job pill */}
-            <div className="relative flex-shrink-0" ref={queueBadgeRef}>
-              <button
-                onClick={() => setQueueDropdownOpen(!queueDropdownOpen)}
-                className={cn(
-                  "inline-flex items-center gap-1.5 text-[11px] font-medium rounded-[6px] px-2.5 py-1.5 cursor-pointer transition-colors border max-w-[320px]",
-                  queueDropdownOpen
-                    ? "bg-teal-50 border-teal-600 text-teal-800"
-                    : "border-gray-200 text-gray-700 hover:border-gray-300"
-                )}
-              >
-                <span className="text-[10px] font-semibold text-gray-400 bg-gray-100 rounded px-1.5 py-px">#{jobs.indexOf(selectedJob) + 1}</span>
-                <span className="text-[12px] font-semibold text-gray-900 truncate">{selectedJob.customerName}</span>
-                <span className="font-mono text-[10px] text-gray-400">{selectedJob.obdNumber}</span>
-                {selectedJob.status === "tinting_in_progress" ? (
-                  <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-green-50 border border-green-200 text-green-700">Active</span>
-                ) : (
-                  <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-700">Assigned</span>
-                )}
-                <div className="w-[40px] h-[4px] bg-gray-200 rounded-full overflow-hidden flex-shrink-0">
+          <div className="relative flex-1 min-w-0" ref={queueBadgeRef}>
+            <div
+              onClick={() => setQueueDropdownOpen(!queueDropdownOpen)}
+              className={cn(
+                "flex items-center gap-3 border rounded-lg px-3 py-1.5 cursor-pointer flex-1 min-w-0 transition-colors",
+                queueDropdownOpen
+                  ? "border-teal-600 bg-teal-50"
+                  : "border-gray-200 hover:border-gray-400"
+              )}
+            >
+              <span className="text-[10px] font-semibold text-gray-400 bg-gray-100 rounded px-1.5 py-px flex-shrink-0">#{jobs.indexOf(selectedJob) + 1}</span>
+              <span className="text-[13px] font-semibold text-gray-900 truncate">{selectedJob.customerName}</span>
+              <span className="font-mono text-[11px] text-gray-400 flex-shrink-0">{selectedJob.obdNumber}</span>
+              {selectedJob.status === "tinting_in_progress" ? (
+                <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-green-50 border border-green-200 text-green-700 flex-shrink-0">Active</span>
+              ) : (
+                <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-700 flex-shrink-0">Assigned</span>
+              )}
+              <div className="flex items-center gap-2 ml-auto flex-shrink-0">
+                <div className="w-[40px] h-[4px] bg-gray-200 rounded-full overflow-hidden">
                   <div className={`h-full rounded-full ${progressColor}`} style={{ width: `${Math.min(progressPct, 100)}%` }} />
                 </div>
-                <span className={`text-[9px] font-semibold ${progressTextColor}`}>{totalDoneToday}/{totalAssignedToday}</span>
-                <ChevronDown size={12} className={cn("transition-transform", queueDropdownOpen && "rotate-180")} />
-              </button>
+                <span className={cn("text-[10px] font-semibold", progressTextColor)}>{totalDoneToday}/{totalAssignedToday}</span>
+                <ChevronDown size={12} className={cn("text-gray-400 transition-transform", queueDropdownOpen && "rotate-180")} />
+              </div>
+            </div>
 
-              {/* Queue Dropdown */}
-              {queueDropdownOpen && (
-                <div className="absolute left-0 top-full mt-1 z-50 w-[380px] bg-white border border-gray-200 rounded-[10px] shadow-[0_8px_24px_rgba(0,0,0,0.1)] overflow-hidden">
-                  <div className="bg-gray-50 px-4 py-3 border-b border-gray-200">
-                    <div className="flex items-center justify-between mb-1.5">
-                      <p className="text-[11px] font-bold text-gray-900">Today&apos;s Target</p>
-                      <div className="text-right">
-                        <span className="text-[18px] font-bold text-gray-900">{totalDoneToday}</span>
-                        <span className="text-[13px] text-gray-400"> of {totalAssignedToday}</span>
-                      </div>
-                    </div>
-                    <div className="w-full h-[6px] bg-gray-200 rounded-full overflow-hidden">
-                      <div className={`h-full rounded-full transition-all ${progressColor}`} style={{ width: `${Math.min(progressPct, 100)}%` }} />
+            {/* Queue Dropdown */}
+            {queueDropdownOpen && (
+              <div className="absolute left-0 top-full mt-1 z-50 w-[380px] bg-white border border-gray-200 rounded-[10px] shadow-[0_8px_24px_rgba(0,0,0,0.1)] overflow-hidden">
+                <div className="bg-gray-50 px-4 py-3 border-b border-gray-200">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <p className="text-[11px] font-bold text-gray-900">Today&apos;s Target</p>
+                    <div className="text-right">
+                      <span className="text-[18px] font-bold text-gray-900">{totalDoneToday}</span>
+                      <span className="text-[13px] text-gray-400"> of {totalAssignedToday}</span>
                     </div>
                   </div>
-                  <div className="max-h-[480px] overflow-y-auto py-2">
-                    <p className="px-3 text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1.5">Remaining ({jobs.length} jobs)</p>
-                    {jobs.map((job, idx) => {
-                      const isCurrent = selectedJobId === job.id && selectedJobType === job.type;
-                      const isActive = job.status === "tinting_in_progress";
-                      const hasActive = jobs.some(j => j.status === "tinting_in_progress");
-                      const isFuture = !isActive && !isCurrent && (hasActive || idx > 0);
-                      return (
-                        <button key={`q-${job.type}-${job.id}`}
-                          onClick={() => { setSelectedJobId(job.id); setSelectedJobType(job.type); setQueueDropdownOpen(false); }}
-                          className={cn("w-full text-left px-3 py-2 transition-colors",
-                            isCurrent ? "bg-teal-50 border-l-[3px] border-l-teal-600" : "border-l-[3px] border-l-transparent hover:bg-gray-50",
-                            isFuture && "opacity-[0.45]"
-                          )}>
-                          <div className="flex items-center gap-2">
-                            <span className="text-[10px] font-mono text-gray-400">#{idx + 1}</span>
-                            <span className="text-[12px] font-semibold text-gray-900 truncate flex-1">{job.customerName}</span>
-                            <span className="font-mono text-[11px] text-gray-500">{job.obdNumber}</span>
-                            {isCurrent && <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-teal-600 text-white">Current</span>}
-                          </div>
-                          <div className="flex items-center gap-2 mt-0.5 text-[10px] text-gray-400">
-                            {job.articleTag && <span>{job.articleTag}</span>}
-                            {job.totalVolume != null && <span>· {Math.round(job.totalVolume)} L</span>}
-                            {job.totalTintingLines > 0 && (
-                              <span className={cn("font-semibold", job.tiCoveredLines >= job.totalTintingLines ? "text-green-600" : "text-amber-600")}>
-                                TI {job.tiCoveredLines}/{job.totalTintingLines}
-                              </span>
-                            )}
-                          </div>
-                        </button>
-                      );
-                    })}
+                  <div className="w-full h-[6px] bg-gray-200 rounded-full overflow-hidden">
+                    <div className={`h-full rounded-full transition-all ${progressColor}`} style={{ width: `${Math.min(progressPct, 100)}%` }} />
                   </div>
                 </div>
-              )}
-            </div>
-
-            {/* Separator */}
-            <div className="w-px h-5 bg-gray-200 flex-shrink-0" />
-
-            {/* Bill To card */}
-            <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 min-w-0 flex-1">
-              <span className="text-[8px] font-bold uppercase tracking-[.4px] text-gray-400 flex-shrink-0">Bill to</span>
-              <span className="text-[12px] font-semibold text-gray-900 truncate">{selectedJob.billToCustomerName ?? "—"}</span>
-              {selectedJob.billToCustomerId && <span className="font-mono text-[10px] text-gray-400 flex-shrink-0">{selectedJob.billToCustomerId}</span>}
-            </div>
-
-            {/* Ship To card */}
-            <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 min-w-0 flex-1">
-              <span className="text-[8px] font-bold uppercase tracking-[.4px] text-gray-400 flex-shrink-0">Ship to</span>
-              {selectedJob.deliveryTypeName && <span className={`w-[5px] h-[5px] rounded-full flex-shrink-0 ${deliveryDotClass(selectedJob.deliveryTypeName)}`} />}
-              <span className="text-[12px] font-semibold text-gray-900 truncate">{selectedJob.customerName}</span>
-              {(selectedJob.areaName || selectedJob.routeName) && (
-                <span className="text-[10px] text-gray-400 flex-shrink-0 truncate max-w-[120px]">{[selectedJob.areaName, selectedJob.routeName].filter(Boolean).join(" · ")}</span>
-              )}
-            </div>
-
-            {/* Queue / Done counts */}
-            <div className="flex items-center gap-1.5 flex-shrink-0 ml-auto">
-              <span className="text-[11px] font-semibold text-gray-900">Queue · {jobs.length}</span>
-              <span className="text-[11px] text-gray-400">Done · {completedCount}</span>
-            </div>
-          </>
+                <div className="max-h-[480px] overflow-y-auto py-2">
+                  <p className="px-3 text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1.5">Remaining ({jobs.length} jobs)</p>
+                  {jobs.map((job, idx) => {
+                    const isCurrent = selectedJobId === job.id && selectedJobType === job.type;
+                    const isActive = job.status === "tinting_in_progress";
+                    const hasActive = jobs.some(j => j.status === "tinting_in_progress");
+                    const isFuture = !isActive && !isCurrent && (hasActive || idx > 0);
+                    return (
+                      <button key={`q-${job.type}-${job.id}`}
+                        onClick={() => { setSelectedJobId(job.id); setSelectedJobType(job.type); setQueueDropdownOpen(false); }}
+                        className={cn("w-full text-left px-3 py-2 transition-colors",
+                          isCurrent ? "bg-teal-50 border-l-[3px] border-l-teal-600" : "border-l-[3px] border-l-transparent hover:bg-gray-50",
+                          isFuture && "opacity-[0.45]"
+                        )}>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-mono text-gray-400">#{idx + 1}</span>
+                          <span className="text-[12px] font-semibold text-gray-900 truncate flex-1">{job.customerName}</span>
+                          <span className="font-mono text-[11px] text-gray-500">{job.obdNumber}</span>
+                          {isCurrent && <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-teal-600 text-white">Current</span>}
+                        </div>
+                        <div className="flex items-center gap-2 mt-0.5 text-[10px] text-gray-400">
+                          {job.articleTag && <span>{job.articleTag}</span>}
+                          {job.totalVolume != null && <span>· {Math.round(job.totalVolume)} L</span>}
+                          {job.totalTintingLines > 0 && (
+                            <span className={cn("font-semibold", job.tiCoveredLines >= job.totalTintingLines ? "text-green-600" : "text-amber-600")}>
+                              TI {job.tiCoveredLines}/{job.totalTintingLines}
+                            </span>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
         ) : (
           <span className="text-[11px] text-gray-400">No jobs assigned</span>
         )}
       </div>
 
+      {/* Row 3: Bill To / Ship To Cards */}
+      {selectedJob && (
+        <div className="bg-white border-b border-gray-200 px-5 py-2 grid grid-cols-2 gap-3 flex-shrink-0" style={{ position: "sticky", top: 96, zIndex: 30 }}>
+          <div className="bg-gray-50 border border-gray-200 rounded-lg px-3.5 py-2.5">
+            <div className="text-[9px] font-semibold uppercase tracking-[.4px] text-gray-400 mb-1">Bill to (customer)</div>
+            <div className="text-[13px] font-semibold text-gray-900">{selectedJob.billToCustomerName ?? "—"}</div>
+            <div className="font-mono text-[11px] text-gray-400 mt-0.5">{selectedJob.billToCustomerId ?? "—"}</div>
+          </div>
+          <div className="bg-gray-50 border border-gray-200 rounded-lg px-3.5 py-2.5">
+            <div className="text-[9px] font-semibold uppercase tracking-[.4px] text-gray-400 mb-1">Ship to (site)</div>
+            <div className="text-[13px] font-semibold text-gray-900">{selectedJob.customerName}</div>
+            <div className="flex items-center gap-1.5 text-[11px] text-gray-400 mt-0.5">
+              {selectedJob.deliveryTypeName && <span className={cn("w-[5px] h-[5px] rounded-full flex-shrink-0", deliveryDotClass(selectedJob.deliveryTypeName))} />}
+              {[selectedJob.deliveryTypeName, selectedJob.areaName, selectedJob.routeName].filter(Boolean).join(" · ")}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── MAIN SPLIT ──────────────────────────────────────────────── */}
       <div className="flex flex-1 overflow-hidden">
 
         {/* ── LEFT PANEL — SKU Lines (320px) ──────────────────────────── */}
-        <div className="hidden md:flex w-[240px] flex-shrink-0 border-r border-gray-200 flex-col bg-white overflow-hidden">
+        <div className="hidden md:flex w-[320px] flex-shrink-0 border-r border-gray-200 flex-col bg-white overflow-hidden">
 
           {selectedJob ? (
             <>
               {/* Tinting lines header */}
-              <div className="px-2.5 py-2 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
+              <div className="px-3 py-2 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
                 <span className="text-[10px] font-extrabold uppercase tracking-[.6px] text-gray-400">Tinting lines</span>
                 <span className="text-[10px] text-gray-400">
                   {currentTintingLines.length} lines · {selectedJob.totalVolume != null ? `${Math.round(selectedJob.totalVolume)} L` : "—"}
@@ -1238,7 +1230,7 @@ export function TintOperatorContent() {
                       key={rawId}
                       onClick={() => { setSelectedLineIdx(idx); handleStripRowClick(rawId); }}
                       className={cn(
-                        "px-2.5 py-2.5 border-b border-gray-100 cursor-pointer transition-colors",
+                        "px-3 py-2.5 border-b border-gray-100 cursor-pointer transition-colors",
                         isSelected
                           ? "bg-teal-50 border-l-[3px] border-l-teal-600"
                           : tiEntry
