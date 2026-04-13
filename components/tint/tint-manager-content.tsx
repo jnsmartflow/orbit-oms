@@ -234,6 +234,22 @@ function formatOrderDateTime(iso: string | null): string {
   return `${dateStr} ${timeStr}`;
 }
 
+function getAgeBadge(orderDateTime: string | null, obdEmailDate: string | null): { text: string; className: string } | null {
+  const dateStr = orderDateTime ?? obdEmailDate;
+  if (!dateStr) return null;
+  const orderDate = new Date(dateStr);
+  const now = new Date();
+  const istOffset = 5.5 * 60 * 60 * 1000;
+  const istNow = new Date(now.getTime() + istOffset);
+  const istOrder = new Date(orderDate.getTime() + istOffset);
+  const nowDay = new Date(istNow.getUTCFullYear(), istNow.getUTCMonth(), istNow.getUTCDate());
+  const orderDay = new Date(istOrder.getUTCFullYear(), istOrder.getUTCMonth(), istOrder.getUTCDate());
+  const diffDays = Math.floor((nowDay.getTime() - orderDay.getTime()) / 86400000);
+  if (diffDays <= 0) return null;
+  if (diffDays === 1) return { text: "1d", className: "bg-amber-50 text-amber-700 border-amber-200" };
+  return { text: `${diffDays}d`, className: "bg-red-50 text-red-700 border-red-200" };
+}
+
 function buildTs(date: string | null, time: string | null): number {
   const dateStr = date ?? "1970-01-01";
   const parts = (time ?? "00:00").split(":");
@@ -409,25 +425,25 @@ const COLUMNS = [
     stage:     "pending_tint_assignment",
     label:     "Pending Assignment",
     dot:       "bg-teal-500",
-    pillClass: "bg-red-50 text-red-600 border border-red-200",
+    pillClass: "bg-gray-100 text-gray-700 border border-gray-200",
   },
   {
     stage:     "tint_assigned",
     label:     "Assigned",
     dot:       "bg-amber-400",
-    pillClass: "bg-amber-50 text-amber-600 border border-amber-200",
+    pillClass: "bg-gray-100 text-gray-700 border border-gray-200",
   },
   {
     stage:     "tinting_in_progress",
     label:     "In Progress",
     dot:       "bg-blue-400",
-    pillClass: "bg-blue-50 text-blue-600 border border-blue-200",
+    pillClass: "bg-gray-100 text-gray-700 border border-gray-200",
   },
   {
     stage:     "completed",
     label:     "Completed",
     dot:       "bg-green-400",
-    pillClass: "bg-green-50 text-green-600 border border-green-200",
+    pillClass: "bg-gray-100 text-gray-700 border border-gray-200",
   },
 ] as const;
 
@@ -755,6 +771,7 @@ function KanbanCard({ order, stage, onAssign, onCreateSplit, onRefresh, onMoveUp
               <span>{formatOrderDateTime(order.orderDateTime)}</span>
             </>
           )}
+          {(() => { const ab = getAgeBadge(order.orderDateTime, order.obdEmailDate); return ab ? <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded border ${ab.className}`}>{ab.text}</span> : null; })()}
         </div>
 
         {/* 4. Info grid */}
@@ -1458,6 +1475,7 @@ function SplitKanbanCard({
               <span>{formatOrderDateTime(split.orderDateTime)}</span>
             </>
           )}
+          {(() => { const ab = getAgeBadge(split.orderDateTime, split.obdEmailDate); return ab ? <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded border ${ab.className}`}>{ab.text}</span> : null; })()}
         </div>
 
         {/* Info grid */}
@@ -2240,20 +2258,14 @@ export function TintManagerContent() {
                     {itemCount}
                   </span>
                   <span className="text-[11px] text-gray-400 font-medium">
-                    {colVolume > 0 ? `${Math.round(colVolume).toLocaleString()} L` : "— L"}
+                    {colVolume > 0 ? `${Math.round(colVolume).toLocaleString()} L` : "—"}
                   </span>
                 </div>
 
                 {/* Card list */}
                 <div className="p-2 flex flex-col gap-2">
                   {itemCount === 0 ? (
-                    <div className="flex flex-col items-center py-12 text-center">
-                      <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center mb-3">
-                        <Layers className="h-5 w-5 text-gray-400" />
-                      </div>
-                      <p className="text-[13px] font-semibold text-gray-500">No orders</p>
-                      <p className="text-[12px] text-gray-400 mt-1">Nothing in this column</p>
-                    </div>
+                    <p className="text-[12px] text-gray-400 italic text-center py-8">No orders</p>
                   ) : (
                     pageItems.map((item) =>
                       item.type === "order" ? (

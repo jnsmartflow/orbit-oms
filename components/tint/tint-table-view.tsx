@@ -90,6 +90,22 @@ function seqPriDateSort(
   return tsA - tsB;
 }
 
+function getAgeBadge(orderDateTime: string | null, obdEmailDate: string | null): { text: string; className: string } | null {
+  const dateStr = orderDateTime ?? obdEmailDate;
+  if (!dateStr) return null;
+  const orderDate = new Date(dateStr);
+  const now = new Date();
+  const istOffset = 5.5 * 60 * 60 * 1000;
+  const istNow = new Date(now.getTime() + istOffset);
+  const istOrder = new Date(orderDate.getTime() + istOffset);
+  const nowDay = new Date(istNow.getUTCFullYear(), istNow.getUTCMonth(), istNow.getUTCDate());
+  const orderDay = new Date(istOrder.getUTCFullYear(), istOrder.getUTCMonth(), istOrder.getUTCDate());
+  const diffDays = Math.floor((nowDay.getTime() - orderDay.getTime()) / 86400000);
+  if (diffDays <= 0) return null;
+  if (diffDays === 1) return { text: "1d", className: "bg-amber-50 text-amber-700 border-amber-200" };
+  return { text: `${diffDays}d`, className: "bg-red-50 text-red-700 border-red-200" };
+}
+
 function deliveryDotCls(type: string | null | undefined): string {
   if (type === "Local")       return "bg-blue-600";
   if (type === "Upcountry")   return "bg-orange-600";
@@ -174,7 +190,7 @@ function SectionHeader({ dotClass, label, count, volume, colorScheme }: {
   colorScheme: "teal" | "amber" | "blue" | "green";
 }) {
   const s = SCHEME_MAP[colorScheme];
-  const volStr = volume > 0 ? `${Math.round(volume).toLocaleString()} L` : "— L";
+  const volStr = volume > 0 ? `${Math.round(volume).toLocaleString()} L` : "—";
   return (
     <div className={`flex items-center gap-2.5 px-4 py-[10px] rounded-t-lg ${s.bg} ${s.border}`}>
       <div className={`w-2 h-2 rounded-full flex-shrink-0 ${s.dot}`} />
@@ -381,6 +397,7 @@ export function TintTableView({
 
   function OrderObdTd({ order }: { order: TintOrder }) {
     const dateStr = formatOrderDate(order.orderDateTime) || formatObdDate(order.obdEmailDate, order.obdEmailTime) || formatTime(order.createdAt);
+    const ageBadge = getAgeBadge(order.orderDateTime, order.obdEmailDate);
     return (
       <td className={tdCls}>
         <div className="flex items-center gap-1.5">
@@ -389,7 +406,12 @@ export function TintTableView({
           )}
           <span className="font-mono text-[11px] text-gray-800">{order.obdNumber}</span>
         </div>
-        {dateStr && <div className="text-[10px] text-gray-400">{dateStr}</div>}
+        {dateStr && (
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] text-gray-400">{dateStr}</span>
+            {ageBadge && <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded border ${ageBadge.className}`}>{ageBadge.text}</span>}
+          </div>
+        )}
       </td>
     );
   }
