@@ -89,10 +89,27 @@ export async function POST(req: Request): Promise<NextResponse> {
       data:  { status: "tinting_done", completedAt: new Date() },
     })
 
-    // 4. Update order stage
+    // 4. Update order stage + assign dispatch slot based on completion time
+    const completionSlotId = (() => {
+      const now = new Date();
+      const istStr = now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" });
+      const ist = new Date(istStr);
+      const h = ist.getHours();
+      const m = ist.getMinutes();
+      const t = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+      if (t < "10:30") return 1;
+      if (t < "12:30") return 2;
+      if (t < "15:30") return 3;
+      return 4;
+    })();
+
     await prisma.orders.update({
       where: { id: orderId },
-      data:  { workflowStage: "pending_support" },
+      data: {
+        workflowStage: "pending_support",
+        slotId: completionSlotId,
+        originalSlotId: completionSlotId,
+      },
     })
 
     // 5. INSERT tint_logs

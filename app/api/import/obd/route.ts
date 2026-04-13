@@ -212,13 +212,20 @@ async function applyMailOrderEnrichment(soNumbers: (string | null)[]): Promise<v
       updateData.orderDateTime = mailOrder.receivedAt;
 
       // Recalculate slotId from mail order received time (IST)
-      const istDate = new Date(mailOrder.receivedAt.toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
-      const h = istDate.getHours();
-      const m = istDate.getMinutes();
-      const timeStr = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-      const { slotId } = resolveSlot(timeStr);
-      updateData.slotId = slotId;
-      updateData.originalSlotId = slotId;
+      // Skip for tint orders — their slot is assigned at tinting completion
+      const matchingOrder = await prisma.orders.findFirst({
+        where: { soNumber: soNum },
+        select: { orderType: true },
+      });
+      if (matchingOrder?.orderType !== "tint") {
+        const istDate = new Date(mailOrder.receivedAt.toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+        const h = istDate.getHours();
+        const m = istDate.getMinutes();
+        const timeStr = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+        const { slotId } = resolveSlot(timeStr);
+        updateData.slotId = slotId;
+        updateData.originalSlotId = slotId;
+      }
     }
 
     if (Object.keys(updateData).length === 0) continue;
@@ -727,8 +734,6 @@ async function handleConfirm(req: Request, session: Session): Promise<NextRespon
       ? (customerByCode.get(summary.shipToCustomerId) ?? null)
       : null;
 
-    const { dispatchSlot, slotId } = resolveSlot(summary.obdEmailTime);
-
     const emailDateTime = mergeEmailDateTime(summary.obdEmailDate, summary.obdEmailTime);
 
     const validLines    = summary.rawLineItems; // already filtered to rowStatus=valid
@@ -737,6 +742,11 @@ async function handleConfirm(req: Request, session: Session): Promise<NextRespon
     const workflowStage = orderType === "tint"
       ? "pending_tint_assignment"
       : "pending_support";
+
+    // Tint orders: slot assigned at tinting completion, not import
+    const { dispatchSlot, slotId } = orderType === "tint"
+      ? { dispatchSlot: null as string | null, slotId: null as number | null }
+      : resolveSlot(summary.obdEmailTime);
 
     const priorityLevel = (customer?.isKeyCustomer || customer?.isKeySite) ? 1 : 3;
 
@@ -1421,14 +1431,18 @@ async function handleAutoImport(req: Request): Promise<NextResponse> {
       ? (confirmCustomerByCode.get(summary.shipToCustomerId) ?? null)
       : null;
 
-    const { dispatchSlot, slotId } = resolveSlot(summary.obdEmailTime);
-
     const emailDateTime = mergeEmailDateTime(summary.obdEmailDate, summary.obdEmailTime);
 
     const validLines    = summary.rawLineItems;
     const hasTinting    = validLines.some((l) => l.isTinting);
     const orderType     = hasTinting ? "tint" : "non_tint";
     const workflowStage = orderType === "tint" ? "pending_tint_assignment" : "pending_support";
+
+    // Tint orders: slot assigned at tinting completion, not import
+    const { dispatchSlot, slotId } = orderType === "tint"
+      ? { dispatchSlot: null as string | null, slotId: null as number | null }
+      : resolveSlot(summary.obdEmailTime);
+
     const priorityLevel = (customer?.isKeyCustomer || customer?.isKeySite) ? 1 : 3;
 
     let totalLineQty = 0;

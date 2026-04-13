@@ -110,6 +110,29 @@ export async function POST(req: Request): Promise<NextResponse> {
           note:          "Split completed",
         },
       });
+
+      // 2d. Assign dispatch slot on parent order based on completion time.
+      // Each split completion updates the slot — the last split to finish
+      // determines the final slot (order can only dispatch after all splits done).
+      const completionSlotId = (() => {
+        const istStr = now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" });
+        const ist = new Date(istStr);
+        const h = ist.getHours();
+        const m = ist.getMinutes();
+        const t = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+        if (t < "10:30") return 1;
+        if (t < "12:30") return 2;
+        if (t < "15:30") return 3;
+        return 4;
+      })();
+
+      await tx.orders.update({
+        where: { id: split.orderId },
+        data: {
+          slotId: completionSlotId,
+          originalSlotId: completionSlotId,
+        },
+      });
     });
   } catch (err) {
     if (err instanceof NotAssignedError) {
