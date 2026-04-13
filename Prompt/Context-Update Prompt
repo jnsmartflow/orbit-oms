@@ -1,4 +1,4 @@
-yes draft a context file which i can merge later with my base
+now draft a context file which i can merge later with my base
 
 Draft a context-update for this session. 
 
@@ -16,3 +16,7 @@ Rules:
 - Skip sections with no changes
 - No session narrative, no "we tried X then Y"
 - Write as if briefing someone who will never read this session
+
+
+
+git add . ; git commit -m "update" ; git push

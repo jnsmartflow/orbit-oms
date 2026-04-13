@@ -1626,6 +1626,14 @@ export function TintManagerContent() {
   const [missingSheetOpen,  setMissingSheetOpen]  = useState(false);
   const [missingSheetOrder, setMissingSheetOrder] = useState<TintOrder | null>(null);
 
+  const [missingCustomers, setMissingCustomers] = useState<{
+    orderId: number; obdNumber: string; shipToCustomerId: string | null;
+    shipToCustomerName: string | null; smu: string | null; orderType: string;
+    obdEmailDate: string | null;
+  }[]>([]);
+  const [missingBadgeOpen, setMissingBadgeOpen] = useState(false);
+  const missingBadgeRef = useRef<HTMLButtonElement>(null);
+
   const [tableSplitData, setTableSplitData] = useState<{
     splitId:  number;
     orderId:  number;
@@ -1643,7 +1651,29 @@ export function TintManagerContent() {
     setTypeFilter(tp.length === 1 ? (tp[0] as "split" | "whole") : "all");
   }, [headerFilters]);
 
+  // Close missing-customer popover on outside click
+  useEffect(() => {
+    if (!missingBadgeOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (missingBadgeRef.current &&
+          !missingBadgeRef.current.parentElement?.contains(e.target as Node)) {
+        setMissingBadgeOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [missingBadgeOpen]);
+
   // ── Data fetching ─────────────────────────────────────────────────────────
+
+  const fetchMissingCustomers = useCallback(async () => {
+    try {
+      const res = await fetch("/api/tint/manager/missing-customers");
+      if (!res.ok) return;
+      const data = await res.json() as { orders: typeof missingCustomers };
+      setMissingCustomers(data.orders ?? []);
+    } catch { /* silent */ }
+  }, []);
 
   const fetchOrders = useCallback(async () => {
     try {
@@ -1688,7 +1718,8 @@ export function TintManagerContent() {
       }
     }
     void init();
-  }, [fetchOrders]);
+    void fetchMissingCustomers();
+  }, [fetchOrders, fetchMissingCustomers]);
 
   // ── Client-side filtering ─────────────────────────────────────────────────
 
@@ -2100,6 +2131,52 @@ export function TintManagerContent() {
         onSearchChange={setSearchQuery}
         rightExtra={
           <div className="flex items-center gap-1">
+            {/* Missing customer badge */}
+            {missingCustomers.length > 0 && (
+              <div className="relative">
+                <button
+                  ref={missingBadgeRef}
+                  onClick={() => setMissingBadgeOpen(!missingBadgeOpen)}
+                  className="inline-flex items-center gap-1 text-[11px] font-semibold bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-2.5 py-0.5 cursor-pointer hover:bg-amber-100 transition-colors"
+                >
+                  <AlertCircle size={12} />
+                  {missingCustomers.length} missing
+                </button>
+                {missingBadgeOpen && (
+                  <div className="absolute right-0 top-full mt-1 z-50 w-[300px] bg-white border border-gray-200 rounded-lg shadow-lg max-h-[320px] overflow-y-auto">
+                    <div className="px-3 py-2 border-b border-gray-100">
+                      <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Missing Customers</p>
+                    </div>
+                    {missingCustomers.map((mc) => (
+                      <button
+                        key={mc.orderId}
+                        type="button"
+                        onClick={() => {
+                          setMissingSheetOrder({ shipToCustomerId: mc.shipToCustomerId, shipToCustomerName: mc.shipToCustomerName } as TintOrder);
+                          setMissingSheetOpen(true);
+                          setMissingBadgeOpen(false);
+                        }}
+                        className="w-full text-left px-3 py-2 hover:bg-gray-50 border-b border-gray-50 last:border-b-0 transition-colors"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-[11px] text-gray-600">{mc.obdNumber}</span>
+                          <span className={cn(
+                            "text-[9px] font-medium px-1.5 py-0.5 rounded border",
+                            mc.orderType === "tint"
+                              ? "bg-purple-50 text-purple-600 border-purple-200"
+                              : "bg-gray-50 text-gray-500 border-gray-200"
+                          )}>
+                            {mc.orderType === "tint" ? "Tint" : "Non-Tint"}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-gray-900 font-medium mt-0.5 truncate">{mc.shipToCustomerName ?? "Unknown"}</p>
+                        <p className="text-[10px] text-gray-400 mt-0.5">{mc.smu === "Decorative Projects" ? "Deco Projects" : mc.smu}</p>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
             <button
               onClick={() => { setViewMode("card"); if (typeof window !== "undefined") sessionStorage.setItem("tm_view_mode", "card"); }}
               className={`p-1 rounded ${viewMode === "card" ? "bg-gray-100 text-gray-900" : "text-gray-400 hover:text-gray-600"}`}
@@ -2628,7 +2705,7 @@ export function TintManagerContent() {
         onOpenChange={setMissingSheetOpen}
         shipToCustomerId={missingSheetOrder?.shipToCustomerId}
         shipToCustomerName={missingSheetOrder?.shipToCustomerName}
-        onResolved={() => { setMissingSheetOpen(false); void fetchOrders(); }}
+        onResolved={() => { setMissingSheetOpen(false); void fetchOrders(); void fetchMissingCustomers(); }}
       />
 
       {/* ── Order Detail Panel ────────────────────────────────────────────── */}
