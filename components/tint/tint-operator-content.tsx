@@ -1049,7 +1049,8 @@ export function TintOperatorContent() {
 
   // ── Derived for layout ──────────────────────────────────────────────────────
   const progressPct = totalAssignedToday > 0 ? (totalDoneToday / totalAssignedToday) * 100 : 0;
-  const progressColor = progressPct < 25 ? "bg-amber-600" : progressPct <= 75 ? "bg-teal-600" : "bg-green-600";
+  const progressColor = progressPct < 25 ? "bg-amber-600" : progressPct < 75 ? "bg-teal-600" : "bg-green-600";
+  const progressTextColor = progressPct < 25 ? "text-amber-700" : progressPct < 75 ? "text-teal-700" : "text-green-700";
 
   const currentTintingLines = selectedJob
     ? selectedJob.lineItems.filter(li => li.rawLineItem.isTinting)
@@ -1072,10 +1073,13 @@ export function TintOperatorContent() {
     return () => document.removeEventListener("mousedown", handler);
   }, [queueDropdownOpen]);
 
-  // Reset selectedLineIdx when job changes
+  // Auto-select first uncovered tinting line when job changes or TI entries update
   useEffect(() => {
-    setSelectedLineIdx(0);
-  }, [selectedJobId, selectedJobType]);
+    if (!selectedJob) { setSelectedLineIdx(0); return; }
+    const lines = selectedJob.lineItems.filter(li => li.rawLineItem.isTinting);
+    const firstUncovered = lines.findIndex(l => !existingTIEntries.has(l.rawLineItemId ?? 0));
+    setSelectedLineIdx(firstUncovered >= 0 ? firstUncovered : 0);
+  }, [selectedJob?.id, selectedJob?.type, existingTIEntries.size]);
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -1122,7 +1126,7 @@ export function TintOperatorContent() {
                 <div className="w-[40px] h-[4px] bg-gray-200 rounded-full overflow-hidden flex-shrink-0">
                   <div className={`h-full rounded-full ${progressColor}`} style={{ width: `${Math.min(progressPct, 100)}%` }} />
                 </div>
-                <span className="text-[9px] font-semibold text-gray-500">{totalDoneToday}/{totalAssignedToday}</span>
+                <span className={`text-[9px] font-semibold ${progressTextColor}`}>{totalDoneToday}/{totalAssignedToday}</span>
                 <ChevronDown size={12} className={cn("transition-transform", queueDropdownOpen && "rotate-180")} />
               </button>
 
@@ -1132,10 +1136,7 @@ export function TintOperatorContent() {
                   {/* Scoreboard header */}
                   <div className="bg-gray-50 px-4 py-3 border-b border-gray-200">
                     <div className="flex items-center justify-between mb-1.5">
-                      <div>
-                        <p className="text-[12px] font-bold text-gray-900">Today&apos;s Target</p>
-                        <p className="text-[10px] text-gray-400">Assigned by Chandresh</p>
-                      </div>
+                      <p className="text-[11px] font-bold text-gray-900">Today&apos;s Target</p>
                       <div className="text-right">
                         <span className="text-[18px] font-bold text-gray-900">{totalDoneToday}</span>
                         <span className="text-[13px] text-gray-400"> of {totalAssignedToday}</span>
@@ -1186,7 +1187,7 @@ export function TintOperatorContent() {
               )}
             </div>
           ) : (
-            <span className="text-[11px] text-gray-400">No jobs assigned</span>
+            <span className="text-[11px] text-gray-400 px-2">No jobs assigned</span>
           )}
 
           {/* Separator */}
@@ -1227,7 +1228,7 @@ export function TintOperatorContent() {
       <div className="flex flex-1 overflow-hidden">
 
         {/* ── LEFT PANEL — SKU Lines (320px) ──────────────────────────── */}
-        <div className="w-[320px] flex-shrink-0 border-r border-gray-200 flex flex-col bg-white overflow-hidden">
+        <div className="hidden md:flex w-[320px] flex-shrink-0 border-r border-gray-200 flex-col bg-white overflow-hidden">
 
           {selectedJob ? (
             <>
@@ -1317,7 +1318,15 @@ export function TintOperatorContent() {
               })()}
             </>
           ) : (
-            <div className="flex-1 flex items-center justify-center text-[12px] text-gray-400">No job selected</div>
+            <div className="flex-1 flex flex-col items-center justify-center gap-2 text-center px-4">
+              <div className="w-10 h-10 rounded-full bg-gray-50 border border-gray-200 flex items-center justify-center">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" className="text-gray-400" strokeWidth="2">
+                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+                </svg>
+              </div>
+              <p className="text-[13px] font-semibold text-gray-500">Queue is clear!</p>
+              <p className="text-[11px] text-gray-400">All jobs done for today.</p>
+            </div>
           )}
         </div>
 
@@ -1397,44 +1406,48 @@ export function TintOperatorContent() {
 
                   return (
                     <div key={entryId} className="mb-4">
-                      {/* Entry header */}
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-[10px] font-extrabold uppercase tracking-[.5px] text-gray-400">Entry {idx + 1}</span>
-                          {idx === 0 && editingEntryId && (
-                            <>
-                              <span className="text-[9.5px] font-bold px-1.5 py-px rounded-[4px] bg-gray-100 border border-gray-300 text-gray-700">Editing</span>
-                              <button type="button"
-                                onClick={() => { setEditingEntryId(null); setTiEntries(prev => [defaultTIFormEntry(), ...prev.slice(1)]); }}
-                                className="text-[10.5px] font-semibold text-gray-500 bg-transparent border-none cursor-pointer underline p-0">
-                                Cancel
-                              </button>
-                            </>
+                      {/* Entry header — only when multiple entries or editing */}
+                      {(tiEntries.length > 1 || editingEntryId) && (
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] font-extrabold uppercase tracking-[.5px] text-gray-400">Entry {idx + 1}</span>
+                            {idx === 0 && editingEntryId && (
+                              <>
+                                <span className="text-[9.5px] font-bold px-1.5 py-px rounded-[4px] bg-gray-100 border border-gray-300 text-gray-700">Editing</span>
+                                <button type="button"
+                                  onClick={() => { setEditingEntryId(null); setTiEntries(prev => [defaultTIFormEntry(), ...prev.slice(1)]); }}
+                                  className="text-[10.5px] font-semibold text-gray-500 bg-transparent border-none cursor-pointer underline p-0">
+                                  Cancel
+                                </button>
+                              </>
+                            )}
+                          </div>
+                          {tiEntries.length > 1 && (
+                            <button type="button"
+                              onClick={() => setTiEntries(prev => prev.filter(e => e.id !== entryId))}
+                              className="w-[22px] h-[22px] rounded-[5px] border border-red-200 bg-red-50 flex items-center justify-center cursor-pointer text-red-600">
+                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                            </button>
                           )}
                         </div>
-                        {tiEntries.length > 1 && (
-                          <button type="button"
-                            onClick={() => setTiEntries(prev => prev.filter(e => e.id !== entryId))}
-                            className="w-[22px] h-[22px] rounded-[5px] border border-red-200 bg-red-50 flex items-center justify-center cursor-pointer text-red-600">
-                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                          </button>
-                        )}
-                      </div>
+                      )}
 
-                      {/* Base SKU Dropdown */}
-                      <div className="mb-2.5">
-                        <select
-                          value={entry.rawLineItemId ?? ""}
-                          onChange={e => { const val = Number(e.target.value); if (val) handleSkuSelect(entryId, val); }}
-                          className={`w-full border border-gray-200 rounded-md h-[34px] text-[12px] px-2 font-medium focus:border-gray-900 focus:outline-none ${entry.rawLineItemId ? "text-gray-900" : "text-gray-400"}`}>
-                          <option value="">Select SKU line…</option>
-                          {tintingLines.map(line => (
-                            <option key={line.rawLineItemId} value={line.rawLineItemId}>
-                              {line.skuCodeRaw}{line.skuDescriptionRaw ? ` · ${line.skuDescriptionRaw}` : ""} · {line.unitQty} qty · {PACK_CODES.find(p => p.value === line.packCode)?.label ?? line.packCode}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
+                      {/* Base SKU Dropdown — hidden for first entry (driven by left panel selection) */}
+                      {idx > 0 && (
+                        <div className="mb-2.5">
+                          <select
+                            value={entry.rawLineItemId ?? ""}
+                            onChange={e => { const val = Number(e.target.value); if (val) handleSkuSelect(entryId, val); }}
+                            className={`w-full border border-gray-200 rounded-md h-[34px] text-[12px] px-2 font-medium focus:border-gray-900 focus:outline-none ${entry.rawLineItemId ? "text-gray-900" : "text-gray-400"}`}>
+                            <option value="">Select SKU line…</option>
+                            {tintingLines.map(line => (
+                              <option key={line.rawLineItemId} value={line.rawLineItemId}>
+                                {line.skuCodeRaw}{line.skuDescriptionRaw ? ` · ${line.skuDescriptionRaw}` : ""} · {line.unitQty} qty · {PACK_CODES.find(p => p.value === line.packCode)?.label ?? line.packCode}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
 
                       {/* Horizontal suggestion strip */}
                       {entry.skuCodeRaw && (entry.suggestionsLoading || entry.suggestions.length > 0) && (
