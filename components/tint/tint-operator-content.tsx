@@ -1390,242 +1390,217 @@ export function TintOperatorContent() {
                   </div>
                 )}
 
-                {tintingLines.length > 0 && (
-                  <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+                {tintingLines.length > 0 && tiEntries.map((entry, idx) => {
+                  const shadeColumns = tinterType === "TINTER" ? SHADES : ACOTONE_SHADES;
+                  const flash = entry.flashActive;
+                  const entryId = entry.id;
 
-                    {/* All saved shades combobox */}
-                    <div className="px-3.5 py-2.5 border-b border-gray-200">
-                      <div className="flex items-center gap-1 mb-1.5">
-                        <span className="text-[9.5px] font-bold uppercase tracking-[.4px] text-gray-400">All Saved Shades</span>
-                        <span className="text-[9.5px] text-gray-300">(optional — applies to focused entry)</span>
-                      </div>
-                      <Popover open={allShadesComboOpen !== null} onOpenChange={(open) => {
-                        if (!open) { setAllShadesComboOpen(null); setAllShadesSearch(""); }
-                      }}>
-                        <PopoverTrigger
-                          onClick={() => {
-                            const firstEntryId = tiEntries[0]?.id ?? null;
-                            setAllShadesComboOpen(firstEntryId);
-                          }}
-                          className="w-full h-[34px] bg-gray-50 border border-gray-200 rounded-md px-2.5 text-[12px] font-medium text-gray-900 flex items-center justify-between cursor-pointer focus:outline-none">
-                          <span className="overflow-hidden text-ellipsis whitespace-nowrap text-[12px] text-gray-400">
-                            {allShadesLoading ? "Loading..." : "Browse all shades..."}
-                          </span>
-                          <ChevronDown size={13} className="flex-shrink-0 text-gray-400 ml-1" />
-                        </PopoverTrigger>
-                        <PopoverContent align="start" className="w-72 p-0">
-                          <div style={{ padding: 8 }}>
-                            <input type="text" placeholder="Search shades…" value={allShadesSearch}
-                              onChange={e => setAllShadesSearch(e.target.value)}
-                              className="w-full h-[30px] border border-gray-200 rounded-md px-2 text-[11.5px] focus:border-gray-900 focus:outline-none" />
-                          </div>
-                          <div style={{ maxHeight: 200, overflowY: "auto" }}>
-                            {allSavedShades
-                              .filter(s => !allShadesSearch || s.shadeName.toLowerCase().includes(allShadesSearch.toLowerCase()))
-                              .map(shade => (
-                                <div key={shade.id}
-                                  onClick={() => {
-                                    const targetId = allShadesComboOpen ?? tiEntries[0]?.id;
-                                    if (targetId) applyShadeToEntry(targetId, shade);
-                                    setAllShadesComboOpen(null);
-                                    setAllShadesSearch("");
-                                  }}
-                                  className="px-3 py-[7px] cursor-pointer text-[12px] font-medium text-gray-900 border-t border-gray-100 hover:bg-gray-50">
-                                  <span className="font-semibold">{shade.shadeName}</span>
-                                  <span className="text-gray-400 text-[11px]"> · {PACK_CODES.find(p => p.value === shade.packCode)?.label ?? shade.packCode ?? "—"}</span>
-                                </div>
-                              ))}
-                          </div>
-                        </PopoverContent>
-                      </Popover>
-                    </div>
-
-                    {/* TI Entries */}
-                    {tiEntries.map((entry, idx) => {
-                      const shadeColumns = tinterType === "TINTER" ? SHADES : ACOTONE_SHADES;
-                      const flash = entry.flashActive;
-                      const visibleSugs = entry.suggestionsExpanded ? entry.suggestions : entry.suggestions.slice(0, 3);
-
-                      return (
-                        <div key={entry.id} className="border-b border-gray-200">
-                          {/* Entry header */}
-                          <div className="px-3.5 py-2 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-[10px] font-extrabold uppercase tracking-[.5px] text-gray-400">Entry {idx + 1}</span>
-                              {idx === 0 && editingEntryId && (
-                                <>
-                                  <span className="text-[9.5px] font-bold px-1.5 py-px rounded-[4px] bg-gray-100 border border-gray-300 text-gray-700">Editing existing entry</span>
-                                  <button type="button"
-                                    onClick={() => { setEditingEntryId(null); setTiEntries(prev => [defaultTIFormEntry(), ...prev.slice(1)]); }}
-                                    className="text-[10.5px] font-semibold text-gray-500 bg-transparent border-none cursor-pointer underline p-0">
-                                    Cancel edit
-                                  </button>
-                                </>
-                              )}
-                            </div>
-                            {tiEntries.length > 1 && (
+                  return (
+                    <div key={entryId} className="mb-4">
+                      {/* Entry header */}
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] font-extrabold uppercase tracking-[.5px] text-gray-400">Entry {idx + 1}</span>
+                          {idx === 0 && editingEntryId && (
+                            <>
+                              <span className="text-[9.5px] font-bold px-1.5 py-px rounded-[4px] bg-gray-100 border border-gray-300 text-gray-700">Editing</span>
                               <button type="button"
-                                onClick={() => setTiEntries(prev => prev.filter(e => e.id !== entry.id))}
-                                className="w-[22px] h-[22px] rounded-[5px] border border-red-200 bg-red-50 flex items-center justify-center cursor-pointer text-red-600">
-                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                                onClick={() => { setEditingEntryId(null); setTiEntries(prev => [defaultTIFormEntry(), ...prev.slice(1)]); }}
+                                className="text-[10.5px] font-semibold text-gray-500 bg-transparent border-none cursor-pointer underline p-0">
+                                Cancel
                               </button>
-                            )}
+                            </>
+                          )}
+                        </div>
+                        {tiEntries.length > 1 && (
+                          <button type="button"
+                            onClick={() => setTiEntries(prev => prev.filter(e => e.id !== entryId))}
+                            className="w-[22px] h-[22px] rounded-[5px] border border-red-200 bg-red-50 flex items-center justify-center cursor-pointer text-red-600">
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Base SKU Dropdown */}
+                      <div className="mb-2.5">
+                        <select
+                          value={entry.rawLineItemId ?? ""}
+                          onChange={e => { const val = Number(e.target.value); if (val) handleSkuSelect(entryId, val); }}
+                          className={`w-full border border-gray-200 rounded-md h-[34px] text-[12px] px-2 font-medium focus:border-gray-900 focus:outline-none ${entry.rawLineItemId ? "text-gray-900" : "text-gray-400"}`}>
+                          <option value="">Select SKU line…</option>
+                          {tintingLines.map(line => (
+                            <option key={line.rawLineItemId} value={line.rawLineItemId}>
+                              {line.skuCodeRaw}{line.skuDescriptionRaw ? ` · ${line.skuDescriptionRaw}` : ""} · {line.unitQty} qty · {PACK_CODES.find(p => p.value === line.packCode)?.label ?? line.packCode}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Horizontal suggestion strip */}
+                      {entry.skuCodeRaw && (entry.suggestionsLoading || entry.suggestions.length > 0) && (
+                        <div className="flex gap-2 overflow-x-auto pb-1 mb-3">
+                          {entry.suggestionsLoading && (
+                            <div className="flex-shrink-0 border border-gray-200 rounded-lg px-3.5 py-2 min-w-[140px] bg-gray-50">
+                              <span className="text-[11px] text-gray-400">Loading…</span>
+                            </div>
+                          )}
+                          {entry.suggestions.map(sug => (
+                            <div key={sug.id}
+                              onClick={() => applyShadeToEntry(entryId, sug)}
+                              className={cn(
+                                "flex-shrink-0 border rounded-lg px-3.5 py-2 cursor-pointer min-w-[140px] transition-colors",
+                                entry.selectedShadeId === sug.id
+                                  ? "border-teal-600 bg-teal-50"
+                                  : "border-gray-200 bg-white hover:border-teal-600"
+                              )}>
+                              <div className="text-[12px] font-semibold text-gray-900">{sug.shadeName}</div>
+                              <div className="text-[10px] text-gray-400">
+                                {PACK_CODES.find(p => p.value === sug.packCode)?.label ?? sug.packCode ?? "—"} · {sug.lastUsedAt ? new Date(sug.lastUsedAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short" }) : "New"}
+                              </div>
+                            </div>
+                          ))}
+                          {/* All shades card */}
+                          <Popover open={allShadesComboOpen === entryId} onOpenChange={(open) => {
+                            if (!open) { setAllShadesComboOpen(null); setAllShadesSearch(""); }
+                          }}>
+                            <PopoverTrigger
+                              onClick={() => setAllShadesComboOpen(entryId)}
+                              className="flex-shrink-0 border border-gray-200 rounded-lg px-3.5 py-2 cursor-pointer min-w-[100px] flex items-center justify-center hover:border-gray-300">
+                              <span className="text-[11px] font-medium text-gray-500">{allShadesLoading ? "Loading…" : "All shades…"}</span>
+                            </PopoverTrigger>
+                            <PopoverContent align="start" className="w-72 p-0">
+                              <div style={{ padding: 8 }}>
+                                <input type="text" placeholder="Search shades…" value={allShadesSearch}
+                                  onChange={e => setAllShadesSearch(e.target.value)}
+                                  className="w-full h-[30px] border border-gray-200 rounded-md px-2 text-[11.5px] focus:border-gray-900 focus:outline-none" />
+                              </div>
+                              <div style={{ maxHeight: 200, overflowY: "auto" }}>
+                                {allSavedShades
+                                  .filter(s => !allShadesSearch || s.shadeName.toLowerCase().includes(allShadesSearch.toLowerCase()))
+                                  .map(shade => (
+                                    <div key={shade.id}
+                                      onClick={() => { applyShadeToEntry(entryId, shade); setAllShadesComboOpen(null); setAllShadesSearch(""); }}
+                                      className="px-3 py-[7px] cursor-pointer text-[12px] font-medium text-gray-900 border-t border-gray-100 hover:bg-gray-50">
+                                      <span className="font-semibold">{shade.shadeName}</span>
+                                      <span className="text-gray-400 text-[11px]"> · {PACK_CODES.find(p => p.value === shade.packCode)?.label ?? shade.packCode ?? "—"}</span>
+                                    </div>
+                                  ))}
+                              </div>
+                            </PopoverContent>
+                          </Popover>
+                        </div>
+                      )}
+
+                      {/* Form card */}
+                      <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+
+                        {/* Applied shade bar (pinned top) */}
+                        {entry.selectedShadeName !== null && (
+                          <div className="flex items-center justify-between px-3.5 py-2 bg-gray-50 border-b border-gray-200">
+                            <span className="inline-flex items-center gap-1.5 bg-gray-100 border border-gray-300 rounded-full px-2.5 py-0.5 text-[11px] font-semibold text-gray-900">
+                              <Palette size={11} />
+                              {entry.selectedShadeName}
+                            </span>
+                            <button type="button"
+                              onClick={() => setTiEntries(prev => prev.map(en => en.id === entryId ? { ...en, selectedShadeName: null, selectedShadeId: null, shadeValues: {}, showAllColumns: true } : en))}
+                              className="text-[10px] font-bold text-red-600 bg-transparent border-none cursor-pointer">
+                              Clear ×
+                            </button>
                           </div>
+                        )}
 
-                          <div className="px-3.5 py-3">
-                            {/* Base SKU Dropdown */}
-                            <div className="mb-2.5">
-                              <span className="text-[9.5px] font-bold uppercase tracking-[.4px] text-gray-400 block mb-1">Base SKU</span>
-                              <select
-                                value={entry.rawLineItemId ?? ""}
-                                onChange={e => { const val = Number(e.target.value); if (val) handleSkuSelect(entry.id, val); }}
-                                className={`w-full border border-gray-200 rounded-md h-[34px] text-[12px] px-2 font-medium focus:border-gray-900 focus:outline-none ${entry.rawLineItemId ? "text-gray-900" : "text-gray-400"}`}>
-                                <option value="">Select SKU line…</option>
-                                {tintingLines.map(line => (
-                                  <option key={line.rawLineItemId} value={line.rawLineItemId}>
-                                    {line.skuCodeRaw}{line.skuDescriptionRaw ? ` · ${line.skuDescriptionRaw}` : ""} · {line.unitQty} qty · {PACK_CODES.find(p => p.value === line.packCode)?.label ?? line.packCode}
-                                  </option>
-                                ))}
-                              </select>
+                        {/* Compact qty row: Tin Qty + Pack Size + Save shade toggle */}
+                        <div className="px-3.5 py-2.5 flex items-end gap-3 border-b border-gray-200">
+                          <div className="flex flex-col gap-0.5" style={{ width: 80 }}>
+                            <span className="text-[9.5px] font-bold uppercase tracking-[.4px] text-gray-400">Tin Qty</span>
+                            <input type="number" min={0} step={0.1} placeholder="0" value={entry.tinQty || ""}
+                              onChange={e => setTiEntries(prev => prev.map(en => en.id === entryId ? { ...en, tinQty: Number(e.target.value) } : en))}
+                              className={`border rounded-[5px] h-[32px] w-full text-center text-[13px] font-bold text-gray-900 focus:border-gray-900 focus:outline-none transition-colors ${flash ? "border-amber-300 bg-amber-50" : "border-gray-200"}`} />
+                          </div>
+                          <div className="flex flex-col gap-0.5" style={{ width: 60 }}>
+                            <span className="text-[9.5px] font-bold uppercase tracking-[.4px] text-gray-400">Pack</span>
+                            <div className={cn("h-[32px] border border-gray-200 rounded-[5px] px-1.5 text-[12px] font-semibold flex items-center justify-center", entry.packCode ? "text-gray-900" : "text-gray-400")}>
+                              {entry.packCode ? (PACK_CODES.find(p => p.value === entry.packCode)?.label ?? entry.packCode) : "—"}
                             </div>
-
-                            {/* Suggestions */}
-                            {entry.skuCodeRaw && (entry.suggestionsLoading || entry.suggestions.length > 0) && (
-                              <div className="mb-2.5 bg-gray-50 border-b border-gray-200 px-3.5 py-2.5">
-                                <div className="text-[9.5px] font-bold uppercase tracking-[.4px] text-gray-400 mb-1.5 flex items-center gap-1.5">
-                                  Suggestions
-                                  {entry.suggestionsLoading && <span className="text-[9px] font-medium text-gray-400">loading...</span>}
-                                </div>
-                                {visibleSugs.map(sug => (
-                                  <div key={sug.id} className="flex items-center gap-2 mb-1">
-                                    <div className="w-7 h-7 rounded-md bg-white border border-gray-200 flex items-center justify-center flex-shrink-0">
-                                      <Palette size={13} className="text-gray-400" />
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                      <span className="text-[12px] font-bold text-gray-900">{sug.shadeName}</span>
-                                      <span className="text-[10px] text-gray-400 ml-1">· {PACK_CODES.find(p => p.value === sug.packCode)?.label ?? sug.packCode ?? "—"}</span>
-                                      <div className="text-[10px] text-gray-400">
-                                        {sug.lastUsedAt ? `Last used: ${new Date(sug.lastUsedAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}` : "First time"}
-                                      </div>
-                                    </div>
-                                    <button type="button" onClick={() => applyShadeToEntry(entry.id, sug)}
-                                      className="bg-white border border-gray-200 text-gray-600 text-[10.5px] font-semibold rounded-[5px] px-2.5 py-1 hover:border-gray-300 hover:bg-gray-50 cursor-pointer flex-shrink-0">
-                                      Apply
-                                    </button>
-                                  </div>
-                                ))}
-                                {entry.suggestions.length > 3 && (
-                                  <button type="button"
-                                    onClick={() => setTiEntries(prev => prev.map(e => e.id === entry.id ? { ...e, suggestionsExpanded: !e.suggestionsExpanded } : e))}
-                                    className="text-[10.5px] font-semibold text-gray-500 bg-transparent border-none cursor-pointer p-0">
-                                    {entry.suggestionsExpanded ? "Show less" : `+${entry.suggestions.length - 3} more`}
-                                  </button>
-                                )}
-                              </div>
-                            )}
-
-                            {/* Tin Qty + Pack Size */}
-                            <div className="grid gap-2 mb-3" style={{ gridTemplateColumns: "1fr 100px" }}>
-                              <div className="flex flex-col gap-0.5">
-                                <span className="text-[9.5px] font-bold uppercase tracking-[.4px] text-gray-400">Tin Qty</span>
-                                <input type="number" min={0} step={0.1} placeholder="0" value={entry.tinQty || ""}
-                                  onChange={e => setTiEntries(prev => prev.map(en => en.id === entry.id ? { ...en, tinQty: Number(e.target.value) } : en))}
-                                  className={`border rounded-[5px] h-[32px] w-full text-center text-[13px] font-bold text-gray-900 focus:border-gray-900 focus:outline-none transition-colors ${flash ? "border-amber-300 bg-amber-50" : "border-gray-200"}`} />
-                              </div>
-                              <div className="flex flex-col gap-0.5">
-                                <span className="text-[9.5px] font-bold uppercase tracking-[.4px] text-gray-400">Pack Size</span>
-                                <div className={cn("h-[32px] border border-gray-200 rounded-[5px] px-2.5 text-[12px] font-semibold flex items-center", entry.packCode ? "text-gray-900" : "text-gray-400")}>
-                                  {entry.packCode ? (PACK_CODES.find(p => p.value === entry.packCode)?.label ?? entry.packCode) : "—"}
-                                </div>
-                              </div>
+                          </div>
+                          <div className="flex-1" />
+                          {entry.skuCodeRaw && (
+                            <div className="flex items-center gap-2 pb-1">
+                              <button type="button" role="switch" aria-checked={entry.saveAsShade}
+                                onClick={() => setTiEntries(prev => prev.map(en => en.id === entryId ? { ...en, saveAsShade: !en.saveAsShade, shadeNameError: "" } : en))}
+                                className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${entry.saveAsShade ? "bg-teal-600" : "bg-gray-300"}`}>
+                                <span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${entry.saveAsShade ? "translate-x-4" : "translate-x-0"}`} />
+                              </button>
+                              <span className="text-[11px] font-semibold text-gray-600">Save shade</span>
                             </div>
+                          )}
+                        </div>
 
-                            {/* Selected shade indicator */}
-                            {entry.selectedShadeName !== null && (
-                              <div className="flex items-center justify-between mb-2">
-                                <span className="inline-flex items-center gap-1.5 bg-gray-100 border border-gray-300 rounded-full px-2.5 py-px text-[11px] text-gray-900 font-semibold">
-                                  <Palette size={11} />
-                                  {entry.selectedShadeName}
-                                </span>
-                                <button type="button"
-                                  onClick={() => setTiEntries(prev => prev.map(en => en.id === entry.id ? { ...en, selectedShadeName: null, selectedShadeId: null, shadeValues: {}, showAllColumns: true } : en))}
-                                  className="text-[10.5px] font-bold text-red-600 bg-transparent border-none cursor-pointer px-0.5">
-                                  Clear ×
-                                </button>
-                              </div>
-                            )}
+                        {/* Shade name input (when save toggle ON) */}
+                        {entry.saveAsShade && (
+                          <div className="px-3.5 py-2 border-b border-gray-200 flex items-center gap-2">
+                            <label className="text-[9.5px] font-bold uppercase tracking-[.4px] text-gray-400 flex-shrink-0">Shade name</label>
+                            <input type="text" placeholder="e.g. Ivory White" value={entry.shadeName}
+                              onChange={e => setTiEntries(prev => prev.map(en => en.id === entryId ? { ...en, shadeName: e.target.value, shadeNameError: "" } : en))}
+                              className={`flex-1 h-[32px] border rounded-md text-[12px] px-2.5 font-medium text-gray-900 focus:border-gray-900 focus:outline-none ${entry.shadeNameError ? "border-red-300" : "border-gray-200"}`} />
+                            {entry.shadeNameError && <span className="text-[11px] text-red-600">{entry.shadeNameError}</span>}
+                          </div>
+                        )}
 
-                            {/* Shade Columns Grid */}
-                            {(() => {
-                              const allCols = (tinterType === "TINTER" ? SHADES : ACOTONE_SHADES) as readonly { code: string; bg: string; border: string; text: string }[];
-                              const activeCols = allCols.filter(col => (entry.shadeValues[col.code] ?? 0) > 0);
-                              const displayCols = (!entry.showAllColumns && activeCols.length > 0) ? activeCols : allCols;
-                              const hiddenCount = allCols.length - activeCols.length;
-                              const showToggle = entry.selectedShadeName !== null && activeCols.length > 0;
-                              return (
-                                <>
-                                  <div className="text-[9.5px] font-extrabold uppercase tracking-[.5px] text-gray-400 mb-1.5">Shade Quantities</div>
-                                  <div className="grid grid-cols-7 gap-x-[10px] gap-y-[8px] px-3.5 py-3.5">
-                                    {displayCols.map(shade => {
-                                      const hasVal = (entry.shadeValues[shade.code] ?? 0) > 0;
-                                      return (
-                                        <div key={shade.code} className="w-[60px] flex flex-col items-center gap-0.5">
-                                          <div className="text-[9.5px] font-bold uppercase tracking-[.4px] text-gray-400">{shade.code}</div>
-                                          <input type="number" min={0} step={0.01} placeholder="—"
-                                            value={entry.shadeValues[shade.code] || ""}
-                                            onChange={e => setTiEntries(prev => prev.map(en => en.id === entry.id ? { ...en, shadeValues: { ...en.shadeValues, [shade.code]: Number(e.target.value) } } : en))}
-                                            className={`w-[54px] h-[32px] border rounded-[5px] text-center text-[13px] font-semibold focus:border-gray-900 focus:outline-none transition-colors ${
-                                              flash ? "border-amber-300 bg-amber-50 text-gray-900" : hasVal ? "bg-green-50 border-green-200 text-green-700" : "border-gray-200 text-gray-900"
-                                            }`} />
-                                        </div>
-                                      );
-                                    })}
+                        {/* Shade Grid */}
+                        <div className="px-3.5 py-3">
+                          {(() => {
+                            const allCols = shadeColumns as readonly { code: string; bg: string; border: string; text: string }[];
+                            const activeCols = allCols.filter(col => (entry.shadeValues[col.code] ?? 0) > 0);
+                            const emptyPadCols = allCols.filter(col => (entry.shadeValues[col.code] ?? 0) === 0).slice(0, 2);
+                            const displayCols = (!entry.showAllColumns && activeCols.length > 0) ? [...activeCols, ...emptyPadCols] : allCols;
+                            const hiddenCount = allCols.length - activeCols.length;
+                            const hasActive = activeCols.length > 0;
+                            return (
+                              <>
+                                <div className="flex items-center justify-between mb-1.5">
+                                  <div className="text-[9.5px] font-extrabold uppercase tracking-[.5px] text-gray-400">
+                                    {!entry.showAllColumns && hasActive ? "Active shade values" : `Shade quantities (${tinterType})`}
                                   </div>
-                                  {showToggle && (
+                                  {hasActive && (
                                     <button type="button"
-                                      onClick={() => setTiEntries(prev => prev.map(en => en.id === entry.id ? { ...en, showAllColumns: !en.showAllColumns } : en))}
-                                      className="text-[10.5px] font-semibold text-gray-600 bg-transparent border-none cursor-pointer py-0.5 pb-2 block">
-                                      {!entry.showAllColumns ? `+ Show all columns (${hiddenCount} hidden)` : `− Show active columns only`}
+                                      onClick={() => setTiEntries(prev => prev.map(en => en.id === entryId ? { ...en, showAllColumns: !en.showAllColumns } : en))}
+                                      className="text-[10.5px] font-semibold text-gray-500 bg-transparent border-none cursor-pointer p-0">
+                                      {!entry.showAllColumns ? `+ Show all ${allCols.length}` : `− Active only`}
                                     </button>
                                   )}
-                                  {!showToggle && <div className="mb-2.5" />}
-                                </>
-                              );
-                            })()}
-
-                            {/* Save as Shade Toggle */}
-                            {entry.skuCodeRaw && (
-                              <div className="border-t border-gray-200 pt-2.5">
-                                <div className="flex items-center gap-2">
-                                  <button type="button" role="switch" aria-checked={entry.saveAsShade}
-                                    onClick={() => setTiEntries(prev => prev.map(en => en.id === entry.id ? { ...en, saveAsShade: !en.saveAsShade, shadeNameError: "" } : en))}
-                                    className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${entry.saveAsShade ? "bg-teal-600" : "bg-gray-300"}`}>
-                                    <span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${entry.saveAsShade ? "translate-x-4" : "translate-x-0"}`} />
-                                  </button>
-                                  <span className="text-[12px] font-semibold text-gray-700">Save as shade formula</span>
                                 </div>
-                                <div style={{ overflow: "hidden", maxHeight: entry.saveAsShade ? "80px" : "0px", transition: "max-height 200ms ease", marginTop: entry.saveAsShade ? 8 : 0 }}>
-                                  <div className="flex flex-col gap-0.5">
-                                    <span className="text-[9.5px] font-bold uppercase tracking-[.4px] text-gray-400">Shade name <span className="text-red-500">*</span></span>
-                                    <input type="text" placeholder="e.g. Ivory White" value={entry.shadeName}
-                                      onChange={e => setTiEntries(prev => prev.map(en => en.id === entry.id ? { ...en, shadeName: e.target.value, shadeNameError: "" } : en))}
-                                      className={`border rounded-md h-[34px] text-[12px] px-2.5 font-medium text-gray-900 focus:border-gray-900 focus:outline-none ${entry.shadeNameError ? "border-red-300" : "border-gray-200"}`} />
-                                    {entry.shadeNameError && <span className="text-[11px] text-red-600 mt-1">{entry.shadeNameError}</span>}
-                                  </div>
+                                <div className="grid grid-cols-7 gap-x-[10px] gap-y-[8px]">
+                                  {displayCols.map(shade => {
+                                    const hasVal = (entry.shadeValues[shade.code] ?? 0) > 0;
+                                    return (
+                                      <div key={shade.code} className="w-[60px] flex flex-col items-center gap-0.5">
+                                        <div className="text-[9.5px] font-bold uppercase tracking-[.4px] text-gray-400">{shade.code}</div>
+                                        <input type="number" min={0} step={0.01} placeholder="—"
+                                          value={entry.shadeValues[shade.code] || ""}
+                                          onChange={e => setTiEntries(prev => prev.map(en => en.id === entryId ? { ...en, shadeValues: { ...en.shadeValues, [shade.code]: Number(e.target.value) } } : en))}
+                                          className={`w-[54px] h-[32px] border rounded-[5px] text-center text-[13px] font-semibold focus:border-gray-900 focus:outline-none transition-colors ${
+                                            flash ? "border-amber-300 bg-amber-50 text-gray-900" : hasVal ? "bg-green-50 border-green-200 text-green-700" : "border-gray-200 text-gray-900"
+                                          }`} />
+                                      </div>
+                                    );
+                                  })}
                                 </div>
-                              </div>
-                            )}
-                          </div>
+                              </>
+                            );
+                          })()}
                         </div>
-                      );
-                    })}
-
-                    {/* Add Another Entry */}
-                    <div onClick={() => setTiEntries(prev => [...prev, defaultTIFormEntry()])}
-                      className="px-3.5 py-2.5 flex items-center justify-center gap-1.5 text-[11.5px] font-bold text-gray-700 cursor-pointer bg-gray-50 hover:bg-gray-100 transition-colors">
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                      Add Another Entry
+                      </div>
                     </div>
+                  );
+                })}
+
+                {/* Add Another Entry */}
+                {tintingLines.length > 0 && (
+                  <div onClick={() => setTiEntries(prev => [...prev, defaultTIFormEntry()])}
+                    className="flex items-center justify-center gap-1.5 text-[11.5px] font-bold text-gray-500 cursor-pointer py-2 hover:text-gray-700 transition-colors">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    Add Another Entry
                   </div>
                 )}
               </div>
