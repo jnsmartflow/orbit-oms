@@ -1694,8 +1694,8 @@ export function TintOperatorContent() {
                   const isCurrentJob = selectedJob.status === "tinting_in_progress" ||
                     (jobs.length > 0 && jobs[0].id === selectedJob.id && jobs[0].type === selectedJob.type && !jobs.some(j => j.status === "tinting_in_progress"));
 
-                  const btnSave = "flex-1 bg-gray-900 text-white border-none rounded-[10px] py-[11px] text-[13px] font-bold flex items-center justify-center gap-1.5 transition-opacity";
-                  const btnGreen = "flex-1 bg-green-600 text-white border-none rounded-[10px] py-[11px] text-[13px] font-bold flex items-center justify-center gap-1.5 transition-opacity";
+                  const btnSave = "flex-1 h-[44px] bg-gray-900 text-white border-none rounded-xl text-[13px] font-semibold flex items-center justify-center gap-1.5 transition-opacity";
+                  const btnGreen = "flex-1 h-[44px] bg-green-600 text-white border-none rounded-xl text-[13px] font-semibold flex items-center justify-center gap-1.5 transition-opacity";
 
                   // STATE C: In progress → Add TI Entry + Mark as Done
                   if (selectedJob.status === "tinting_in_progress") {
@@ -1703,7 +1703,7 @@ export function TintOperatorContent() {
                     const isDoneLoading = selectedJob.type === "split" ? splitActionLoading === selectedJob.id : orderActionLoading === selectedJob.id;
                     const anyLoading = isTILoading || isDoneLoading;
                     return (
-                      <div className="flex flex-col gap-2">
+                      <div className="flex flex-col gap-2 ml-auto max-w-[420px]">
                         {tiIncompleteWarning && tiIncompleteWarning.length > 0 && (
                           <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5">
                             <p className="text-[12px] font-bold text-amber-700 mb-1">Some tinting lines are missing TI entries:</p>
@@ -1744,28 +1744,32 @@ export function TintOperatorContent() {
                     // No tinting lines → Start directly (current job only)
                     if (tintingLines.length === 0 && isCurrentJob) {
                       return (
-                        <button type="button" onClick={() => startJob(selectedJob)} disabled={isActionLoading}
-                          className={cn(btnGreen, isActionLoading ? "opacity-60 cursor-not-allowed" : "cursor-pointer hover:bg-green-700")}>
-                          {isActionLoading ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
-                          Start Job
-                        </button>
+                        <div className="ml-auto max-w-[240px] flex">
+                          <button type="button" onClick={() => startJob(selectedJob)} disabled={isActionLoading}
+                            className={cn(btnGreen, isActionLoading ? "opacity-60 cursor-not-allowed" : "cursor-pointer hover:bg-green-700")}>
+                            {isActionLoading ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
+                            Start Job
+                          </button>
+                        </div>
                       );
                     }
 
                     if (editingEntryId) {
                       return (
-                        <button type="button" onClick={() => handleUpdateEntry(selectedJob)} disabled={isActionLoading}
-                          className={cn(btnSave, isActionLoading ? "opacity-60 cursor-not-allowed" : "cursor-pointer hover:bg-gray-800")}>
-                          {isActionLoading ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-                          Update TI Entry
-                        </button>
+                        <div className="ml-auto max-w-[240px] flex">
+                          <button type="button" onClick={() => handleUpdateEntry(selectedJob)} disabled={isActionLoading}
+                            className={cn(btnSave, isActionLoading ? "opacity-60 cursor-not-allowed" : "cursor-pointer hover:bg-gray-800")}>
+                            {isActionLoading ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                            Update TI Entry
+                          </button>
+                        </div>
                       );
                     }
 
                     // Current job → Save TI + Save TI & Start
                     if (isCurrentJob) {
                       return (
-                        <div className="flex gap-2 flex-1 max-w-[500px]">
+                        <div className="flex gap-2 ml-auto max-w-[420px]">
                           <button type="button" onClick={() => handleSubmitTI(selectedJob, false)} disabled={isActionLoading}
                             className={cn(btnSave, isActionLoading ? "opacity-60 cursor-not-allowed" : "cursor-pointer hover:bg-gray-800")}>
                             {isActionLoading ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
@@ -1782,18 +1786,20 @@ export function TintOperatorContent() {
 
                     // Future job → Save TI only
                     return (
-                      <button type="button" onClick={() => handleSubmitTI(selectedJob, false)} disabled={isActionLoading}
-                        className={cn(btnSave, isActionLoading ? "opacity-60 cursor-not-allowed" : "cursor-pointer hover:bg-gray-800")}>
-                        {isActionLoading ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-                        Save TI
-                      </button>
+                      <div className="ml-auto max-w-[240px] flex">
+                        <button type="button" onClick={() => handleSubmitTI(selectedJob, false)} disabled={isActionLoading}
+                          className={cn(btnSave, isActionLoading ? "opacity-60 cursor-not-allowed" : "cursor-pointer hover:bg-gray-800")}>
+                          {isActionLoading ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                          Save TI
+                        </button>
+                      </div>
                     );
                   }
 
                   // STATE B: TI submitted, current job, not in progress → Start Job
                   if (isCurrentJob && !hasActiveJob) {
                     return (
-                      <div className="flex gap-2 flex-1">
+                      <div className="flex gap-2 ml-auto max-w-[420px]">
                         {editingEntryId && (
                           <button type="button" onClick={() => handleUpdateEntry(selectedJob)} disabled={isActionLoading}
                             className={cn(btnSave, isActionLoading ? "opacity-60 cursor-not-allowed" : "cursor-pointer hover:bg-gray-800")}>
