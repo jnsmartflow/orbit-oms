@@ -664,6 +664,68 @@ export function getOrderFlags(order: MoOrder): string[] {
   return flags;
 }
 
+// ── Order signal extraction (shared by Table View + Review View) ───────────
+
+export interface OrderSignal {
+  label: string;
+  type: "blocker" | "attention" | "info" | "split";
+  dot?: string;
+}
+
+export function getOrderSignals(
+  order: MoOrder,
+  opts?: { isPunched?: boolean },
+): OrderSignal[] {
+  const result: OrderSignal[] = [];
+  const combined = [order.remarks, order.billRemarks, order.deliveryRemarks]
+    .filter(Boolean).join(" ").toLowerCase();
+
+  // ── BLOCKER (red) ──
+  if (/\b(od|overdue)\b/.test(combined))
+    result.push({ label: "OD", type: "blocker" });
+  if (/\b(ci|credit\s*(hold|block|issue))\b/.test(combined))
+    result.push({ label: "CI", type: "blocker" });
+  if (/\bbounce\b/.test(combined))
+    result.push({ label: "Bounce", type: "blocker" });
+
+  // ── ATTENTION (amber) ──
+  if (/bill\s*tomorrow/.test(combined))
+    result.push({ label: "Bill Tomorrow", type: "attention" });
+  if (/cross\s*billing/.test(combined)) {
+    const code = combined.match(/cross\s*billing\s*(\w+)/);
+    result.push({ label: code ? `Cross ${code[1].toUpperCase()}` : "Cross", type: "attention" });
+  }
+  if (order.shipToOverride)
+    result.push({ label: "\u2192 Ship-to", type: "attention" });
+  if (order.dispatchPriority === "Urgent")
+    result.push({ label: "Urgent", type: "attention" });
+
+  // ── INFO (gray) ──
+  if (/7\s*days/.test(combined))
+    result.push({ label: "7 Days", type: "info" });
+  if (/\bextension\b/.test(combined) && !/bill\s*tomorrow/.test(combined))
+    result.push({ label: "Extension", type: "info" });
+  const billMatch = combined.match(/\bbill\s+(\d+)\b/);
+  if (billMatch)
+    result.push({ label: `Bill ${billMatch[1]}`, type: "info" });
+  if (/dpl/.test(combined))
+    result.push({ label: "DPL", type: "info" });
+  if (/challan\s*attachment/.test(combined))
+    result.push({ label: "Challan", type: "info" });
+  if (/\btruck\b/i.test([order.subject, order.billRemarks, order.remarks].filter(Boolean).join(" ")))
+    result.push({ label: "Truck", type: "info" });
+
+  // ── SPLIT (purple) ──
+  if (order.splitLabel)
+    result.push({ label: `\u2702 ${order.splitLabel}`, type: "split" });
+  const totalVol = getOrderVolume(order.lines);
+  if (!order.splitLabel && !opts?.isPunched &&
+      (totalVol > SPLIT_VOLUME_THRESHOLD || order.totalLines > SPLIT_LINE_THRESHOLD))
+    result.push({ label: "\u26A0 Split", type: "split", dot: "bg-amber-400" });
+
+  return result;
+}
+
 // ── Reply template builder ─────────────────────────────────────────────────
 
 export function buildReplyTemplate(

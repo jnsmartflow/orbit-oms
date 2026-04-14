@@ -12,6 +12,7 @@ import {
   getOrderVolume,
   getPackVolumeLiters,
   buildReplyTemplate,
+  getOrderSignals,
 } from "@/lib/mail-orders/utils";
 import { searchCustomers, saveLineStatus, searchSkus, resolveLine } from "@/lib/mail-orders/api";
 
@@ -56,12 +57,6 @@ function formatTime(iso: string): string {
 }
 
 // Map flag string to badge category
-function flagCategory(flag: string): "blocker" | "attention" | "info" {
-  const upper = flag.toUpperCase();
-  if (upper === "OD" || upper === "CI" || upper === "BOUNCE") return "blocker";
-  if (upper === "HOLD") return "attention";
-  return "info";
-}
 
 // ── SKU Table types/helpers ────────────────────────────────────────────────
 
@@ -865,12 +860,15 @@ export function ReviewView({
 
   // ── Detail header (right panel) ──────────────────────────────────
   function renderDetailHeader(order: MoOrder) {
-    const flags = getOrderFlags(order);
-    const blockerFlags = flags.filter(f => flagCategory(f) === "blocker");
-    const attentionFlags = flags.filter(f => flagCategory(f) === "attention");
-    const infoFlags = flags.filter(f => flagCategory(f) === "info");
-    const isFlagged = !!order.isLocked || isOdCiFlagged(order);
     const isPunched = order.status === "punched" && !!order.soNumber;
+    const signals = getOrderSignals(order, { isPunched });
+    const signalStyles: Record<string, string> = {
+      blocker:   'bg-red-50 text-red-700 border-red-200',
+      attention: 'bg-amber-50 text-amber-700 border-amber-200',
+      info:      'bg-gray-50 text-gray-500 border-gray-200',
+      split:     'bg-purple-50 text-purple-600 border-purple-200',
+    };
+    const isFlagged = !!order.isLocked || isOdCiFlagged(order);
     const showInputMode = !isPunched || editingSoNumber;
     const punchReady = soInput.length === 10;
 
@@ -1035,26 +1033,16 @@ export function ReviewView({
                 {order.dispatchStatus}
               </span>
             )}
-            {order.dispatchPriority === "Urgent" && (
-              <span className="text-[10px] font-semibold px-2 py-[2px] rounded bg-amber-50 text-amber-700 border border-amber-200 flex-shrink-0">
-                Urgent
-              </span>
-            )}
-
             {/* Signal badges */}
-            {blockerFlags.map((f, i) => (
-              <span key={`b-${i}`} className="text-[9px] font-semibold px-[5px] py-[1px] rounded-[3px] bg-red-50 text-red-700 border border-red-200 flex-shrink-0">
-                {f}
-              </span>
-            ))}
-            {attentionFlags.map((f, i) => (
-              <span key={`a-${i}`} className="text-[9px] font-semibold px-[5px] py-[1px] rounded-[3px] bg-amber-50 text-amber-700 border border-amber-200 flex-shrink-0">
-                {f}
-              </span>
-            ))}
-            {infoFlags.map((f, i) => (
-              <span key={`i-${i}`} className="text-[9px] font-semibold px-[5px] py-[1px] rounded-[3px] bg-gray-50 text-gray-500 border border-gray-200 flex-shrink-0">
-                {f}
+            {signals.map((s, i) => (
+              <span
+                key={`sig-${i}`}
+                className={`relative text-[9px] font-medium px-1.5 py-0.5 rounded border flex-shrink-0 ${signalStyles[s.type] ?? signalStyles.info}`}
+              >
+                {s.dot && (
+                  <span className={`absolute -top-[3px] -right-[3px] w-[5px] h-[5px] rounded-full ${s.dot}`} />
+                )}
+                {s.label}
               </span>
             ))}
           </div>
@@ -1546,15 +1534,50 @@ export function ReviewView({
                 value={selectedOrder.billRemarks || "—"}
                 isEmpty={!selectedOrder.billRemarks}
               />
-              <RemarkSection
-                label="Notes"
-                value={
-                  selectedOrder.remarks_list && selectedOrder.remarks_list.length > 0
-                    ? selectedOrder.remarks_list.map(r => r.rawText).join(" · ")
-                    : "—"
-                }
-                isEmpty={!selectedOrder.remarks_list || selectedOrder.remarks_list.length === 0}
-              />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{
+                  fontSize: 9, fontWeight: 600, color: "#9ca3af",
+                  textTransform: "uppercase", letterSpacing: "0.04em",
+                  marginBottom: 1,
+                }}>
+                  Notes
+                </div>
+                {(() => {
+                  const filteredRemarks = (selectedOrder.remarks_list ?? []).filter(
+                    r => r.remarkType !== "delivery" && r.remarkType !== "billing"
+                  );
+                  if (filteredRemarks.length === 0) {
+                    return <div style={{ fontSize: 11, color: "#d1d5db", fontStyle: "italic" }}>—</div>;
+                  }
+                  const typeStyles: Record<string, { bg: string; color: string; border: string }> = {
+                    contact:     { bg: "#f9fafb", color: "#4b5563", border: "#e5e7eb" },
+                    instruction: { bg: "#f9fafb", color: "#6b7280", border: "#e5e7eb" },
+                    cross:       { bg: "#faf5ff", color: "#9333ea", border: "#e9d5ff" },
+                    customer:    { bg: "#f0fdfa", color: "#0d9488", border: "#ccfbf1" },
+                    unknown:     { bg: "#fffbeb", color: "#b45309", border: "#fde68a" },
+                  };
+                  return (
+                    <div>
+                      {filteredRemarks.map((r) => {
+                        const ts = typeStyles[r.remarkType] ?? typeStyles.unknown;
+                        return (
+                          <div key={r.id} style={{ display: "flex", alignItems: "flex-start", gap: 4, marginBottom: 2 }}>
+                            <span style={{
+                              fontSize: 9, fontWeight: 500, padding: "0 4px",
+                              borderRadius: 3, border: `1px solid ${ts.border}`,
+                              background: ts.bg, color: ts.color,
+                              textTransform: "capitalize", flexShrink: 0,
+                            }}>
+                              {r.remarkType}
+                            </span>
+                            <span style={{ fontSize: 11, color: "#4b5563" }}>{r.rawText}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
+              </div>
               <div style={{ width: 60, flex: "none" }}>
                 <div style={{
                   fontSize: 9, fontWeight: 600, color: "#9ca3af",

@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Check, Copy, ChevronDown, Pencil, Search, Lock, LockOpen } from "lucide-react";
-import { formatTime, smartTitleCase, getLineVolume, getOrderVolume, formatVolume, BATCH_COPY_LIMIT, SPLIT_VOLUME_THRESHOLD, SPLIT_LINE_THRESHOLD, SORT_DISPLAY_THRESHOLD, splitLinesByCategory, sortLinesForPicker, isOdCiFlagged, cleanSubject } from "@/lib/mail-orders/utils";
+import { formatTime, smartTitleCase, getLineVolume, getOrderVolume, formatVolume, BATCH_COPY_LIMIT, SPLIT_VOLUME_THRESHOLD, SPLIT_LINE_THRESHOLD, SORT_DISPLAY_THRESHOLD, splitLinesByCategory, sortLinesForPicker, isOdCiFlagged, cleanSubject, getOrderSignals } from "@/lib/mail-orders/utils";
 import { searchCustomers, saveLineStatus } from "@/lib/mail-orders/api";
 import type { MoOrder, MoOrderLine, CustomerSearchResult, LineStatus } from "@/lib/mail-orders/types";
 import { LINE_STATUS_REASONS } from "@/lib/mail-orders/types";
@@ -865,59 +865,7 @@ function OrderRow({
   const totalVol = getOrderVolume(order.lines);
   const volStr = formatVolume(totalVol);
 
-  const signals = (() => {
-    const result: { label: string; type: string; dot?: string }[] = [];
-    const combined = [order.remarks, order.billRemarks, order.deliveryRemarks]
-      .filter(Boolean).join(' ').toLowerCase();
-
-    // ── BLOCKER (red) — cannot punch ──
-    if (/\b(od|overdue)\b/.test(combined))
-      result.push({ label: 'OD', type: 'blocker' });
-    if (/\b(ci|credit\s*(hold|block|issue))\b/.test(combined))
-      result.push({ label: 'CI', type: 'blocker' });
-    if (/\bbounce\b/.test(combined))
-      result.push({ label: 'Bounce', type: 'blocker' });
-
-    // ── ATTENTION (amber) — can punch, handle carefully ──
-    if (/bill\s*tomorrow/.test(combined))
-      result.push({ label: 'Bill Tomorrow', type: 'attention' });
-    if (/cross\s*billing/.test(combined)) {
-      const code = combined.match(/cross\s*billing\s*(\w+)/);
-      result.push({
-        label: code ? `Cross ${code[1].toUpperCase()}` : 'Cross',
-        type: 'attention',
-      });
-    }
-    if (order.shipToOverride)
-      result.push({ label: '\u2192 Ship-to', type: 'attention' });
-    if (order.dispatchPriority === "Urgent")
-      result.push({ label: 'Urgent', type: 'attention' });
-
-    // ── INFO (gray) — context only ──
-    if (/7\s*days/.test(combined))
-      result.push({ label: '7 Days', type: 'info' });
-    if (/\bextension\b/.test(combined) && !/bill\s*tomorrow/.test(combined))
-      result.push({ label: 'Extension', type: 'info' });
-
-    const billMatch = combined.match(/\bbill\s+(\d+)\b/);
-    if (billMatch)
-      result.push({ label: `Bill ${billMatch[1]}`, type: 'info' });
-
-    if (/dpl/.test(combined))
-      result.push({ label: 'DPL', type: 'info' });
-    if (/challan\s*attachment/.test(combined))
-      result.push({ label: 'Challan', type: 'info' });
-    if (/\btruck\b/i.test([order.subject, order.billRemarks, order.remarks].filter(Boolean).join(' ')))
-      result.push({ label: 'Truck', type: 'info' });
-
-    if (order.splitLabel)
-      result.push({ label: `\u2702 ${order.splitLabel}`, type: 'split' });
-    if (!order.splitLabel && !isPunched &&
-        (totalVol > SPLIT_VOLUME_THRESHOLD || order.totalLines > SPLIT_LINE_THRESHOLD))
-      result.push({ label: '\u26A0 Split', type: 'split', dot: 'bg-amber-400' });
-
-    return result;
-  })();
+  const signals = getOrderSignals(order, { isPunched });
 
   const remarksTooltip = [order.remarks, order.billRemarks, order.deliveryRemarks]
     .filter(Boolean)
