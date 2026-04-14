@@ -526,18 +526,33 @@ export function ReviewView({
     return () => clearTimeout(timer);
   }, [custSearchQuery, codePopoverOpen]);
 
-  // Group orders into pending and punched (earliest first for review workflow)
+  function getBillNumber(order: MoOrder): number {
+    const combined = [order.remarks, order.billRemarks]
+      .filter(Boolean).join(" ").toLowerCase();
+    const m = combined.match(/\bbill\s+(\d+)\b/);
+    return m ? parseInt(m[1], 10) : 0;
+  }
+
+  // Group orders into pending and punched (earliest first, then bill number, then split label)
   const pendingOrders = useMemo(() => {
     const list = orders.filter(o => o.status !== "punched" || recentlyPunchedIds.has(o.id));
-    return [...list].sort(
-      (a, b) => new Date(a.receivedAt).getTime() - new Date(b.receivedAt).getTime(),
-    );
+    return [...list].sort((a, b) => {
+      const timeDiff = new Date(a.receivedAt).getTime() - new Date(b.receivedAt).getTime();
+      if (timeDiff !== 0) return timeDiff;
+      const billDiff = getBillNumber(a) - getBillNumber(b);
+      if (billDiff !== 0) return billDiff;
+      return (a.splitLabel ?? "").localeCompare(b.splitLabel ?? "");
+    });
   }, [orders, recentlyPunchedIds]);
   const punchedOrders = useMemo(() => {
     const list = orders.filter(o => o.status === "punched" && !recentlyPunchedIds.has(o.id));
-    return [...list].sort(
-      (a, b) => new Date(a.receivedAt).getTime() - new Date(b.receivedAt).getTime(),
-    );
+    return [...list].sort((a, b) => {
+      const timeDiff = new Date(a.receivedAt).getTime() - new Date(b.receivedAt).getTime();
+      if (timeDiff !== 0) return timeDiff;
+      const billDiff = getBillNumber(a) - getBillNumber(b);
+      if (billDiff !== 0) return billDiff;
+      return (a.splitLabel ?? "").localeCompare(b.splitLabel ?? "");
+    });
   }, [orders, recentlyPunchedIds]);
 
   // ── Handlers ─────────────────────────────────────────────────────
@@ -652,10 +667,9 @@ export function ReviewView({
             </span>
             {(() => {
               const sigs = getOrderSignals(order);
-              const leftPanelBadges = sigs.filter(s => s.type === "blocker" || s.type === "bill");
+              const leftPanelBadges = sigs.filter(s => s.type === "bill");
               if (leftPanelBadges.length === 0) return null;
               const badgeStyles: Record<string, string> = {
-                blocker: "bg-red-50 text-red-700 border-red-200",
                 bill: "bg-blue-50 text-blue-700 border-blue-200",
               };
               return leftPanelBadges.map((s, i) => (
@@ -1038,12 +1052,19 @@ export function ReviewView({
               {matchCount}/{totalCount}
             </span>
 
-            {/* Signal badges — punching-relevant only */}
-            {signals.filter(s => {
-              if (s.type === "split") return false;
-              const excluded = ["Hold", "Extension", "7 Days", "DPL", "Challan", "Urgent", "\u2192 Ship-to"];
-              return !excluded.includes(s.label);
-            }).map((s, i) => (
+            {/* Dispatch badge */}
+            {order.dispatchStatus && (
+              <span className={`text-[10px] font-semibold px-2 py-[2px] rounded flex-shrink-0 border ${
+                order.dispatchStatus === "Hold"
+                  ? "bg-red-50 text-red-700 border-red-200"
+                  : "bg-green-50 text-green-700 border-green-200"
+              }`}>
+                {order.dispatchStatus}
+              </span>
+            )}
+
+            {/* Signal badges */}
+            {signals.map((s, i) => (
               <span
                 key={`sig-${i}`}
                 className={`relative text-[9px] font-medium px-1.5 py-0.5 rounded border flex-shrink-0 ${signalStyles[s.type] ?? signalStyles.info}`}
