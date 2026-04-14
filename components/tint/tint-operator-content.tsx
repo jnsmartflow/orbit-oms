@@ -1119,7 +1119,11 @@ export function TintOperatorContent() {
     if (!selectedJob) { setSelectedLineIdx(0); return; }
     const lines = selectedJob.lineItems.filter(li => li.rawLineItem.isTinting);
     const firstUncovered = lines.findIndex(l => !existingTIEntries.has(l.rawLineItemId ?? 0));
-    setSelectedLineIdx(firstUncovered >= 0 ? firstUncovered : 0);
+    const newIdx = firstUncovered >= 0 ? firstUncovered : 0;
+    setSelectedLineIdx(newIdx);
+    // Also populate form for the auto-selected line
+    const line = lines[newIdx];
+    if (line) handleStripRowClick(line.rawLineItemId ?? 0);
   }, [selectedJob?.id, selectedJob?.type, existingTIEntries.size]);
 
   // ── Render ────────────────────────────────────────────────────────────────
