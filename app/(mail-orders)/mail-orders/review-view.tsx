@@ -650,6 +650,20 @@ export function ReviewView({
               {smartTitleCase(order.customerName ?? cleanSubject(order.subject))}
               {order.splitLabel ? ` (${order.splitLabel})` : ""}
             </span>
+            {(() => {
+              const sigs = getOrderSignals(order);
+              const leftPanelBadges = sigs.filter(s => s.type === "blocker" || s.type === "bill");
+              if (leftPanelBadges.length === 0) return null;
+              const badgeStyles: Record<string, string> = {
+                blocker: "bg-red-50 text-red-700 border-red-200",
+                bill: "bg-blue-50 text-blue-700 border-blue-200",
+              };
+              return leftPanelBadges.map((s, i) => (
+                <span key={`lp-${i}`} className={`text-[8px] font-semibold px-1 py-0 rounded border flex-shrink-0 ${badgeStyles[s.type] ?? ""}`}>
+                  {s.label}
+                </span>
+              ));
+            })()}
           </div>
           <span className="text-[11px] text-gray-400 flex-shrink-0 ml-2 tabular-nums">
             {formatTime(order.receivedAt)}
@@ -867,6 +881,7 @@ export function ReviewView({
       attention: 'bg-amber-50 text-amber-700 border-amber-200',
       info:      'bg-gray-50 text-gray-500 border-gray-200',
       split:     'bg-purple-50 text-purple-600 border-purple-200',
+      bill:      'bg-blue-50 text-blue-700 border-blue-200',
     };
     const isFlagged = !!order.isLocked || isOdCiFlagged(order);
     const showInputMode = !isPunched || editingSoNumber;
@@ -1023,18 +1038,12 @@ export function ReviewView({
               {matchCount}/{totalCount}
             </span>
 
-            {/* Dispatch badge */}
-            {order.dispatchStatus && (
-              <span className={`text-[10px] font-semibold px-2 py-[2px] rounded flex-shrink-0 border ${
-                order.dispatchStatus === "Hold"
-                  ? "bg-red-50 text-red-700 border-red-200"
-                  : "bg-green-50 text-green-700 border-green-200"
-              }`}>
-                {order.dispatchStatus}
-              </span>
-            )}
-            {/* Signal badges */}
-            {signals.map((s, i) => (
+            {/* Signal badges — punching-relevant only */}
+            {signals.filter(s => {
+              if (s.type === "split") return false;
+              const excluded = ["Hold", "Extension", "7 Days", "DPL", "Challan", "Urgent", "\u2192 Ship-to"];
+              return !excluded.includes(s.label);
+            }).map((s, i) => (
               <span
                 key={`sig-${i}`}
                 className={`relative text-[9px] font-medium px-1.5 py-0.5 rounded border flex-shrink-0 ${signalStyles[s.type] ?? signalStyles.info}`}

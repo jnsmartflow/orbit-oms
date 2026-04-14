@@ -668,7 +668,7 @@ export function getOrderFlags(order: MoOrder): string[] {
 
 export interface OrderSignal {
   label: string;
-  type: "blocker" | "attention" | "info" | "split";
+  type: "blocker" | "attention" | "info" | "split" | "bill";
   dot?: string;
 }
 
@@ -706,9 +706,9 @@ export function getOrderSignals(
   if (/\bextension\b/.test(combined) && !/bill\s*tomorrow/.test(combined))
     result.push({ label: "Extension", type: "info" });
   const billMatches = Array.from(combined.matchAll(/\bbill\s+(\d+)\b/g));
-  const billNums = Array.from(new Set(billMatches.map(m => parseInt(m[1])))).sort((a, b) => a - b);
+  const billNums = Array.from(new Set(billMatches.map(m => parseInt(m[1], 10)))).sort((a, b) => a - b);
   for (const n of billNums) {
-    result.push({ label: `Bill ${n}`, type: "info" });
+    result.push({ label: `Bill ${n}`, type: "bill" });
   }
   if (/dpl/.test(combined))
     result.push({ label: "DPL", type: "info" });

@@ -860,6 +860,7 @@ function OrderRow({
     attention: 'bg-amber-50 text-amber-700 border-amber-200',
     info:      'bg-gray-50 text-gray-500 border-gray-200',
     split:     'bg-purple-50 text-purple-600 border-purple-200',
+    bill:      'bg-blue-50 text-blue-700 border-blue-200',
   };
 
   const totalVol = getOrderVolume(order.lines);
