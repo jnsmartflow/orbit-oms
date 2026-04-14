@@ -620,9 +620,10 @@ export function TintOperatorContent() {
       setElapsed("00:00:00");
       return;
     }
-    const start = new Date(selectedJob.startedAt).getTime();
+    const raw = selectedJob.startedAt;
+    const start = new Date(typeof raw === "string" && !raw.endsWith("Z") ? raw + "Z" : raw).getTime();
     const update = () => {
-      const diff = Math.floor((Date.now() - start) / 1000);
+      const diff = Math.max(0, Math.floor((Date.now() - start) / 1000));
       const h = Math.floor(diff / 3600).toString().padStart(2, "0");
       const m = Math.floor((diff % 3600) / 60).toString().padStart(2, "0");
       const s = (diff % 60).toString().padStart(2, "0");
@@ -861,13 +862,16 @@ export function TintOperatorContent() {
     setTimeout(() => coverageStripRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 200);
     if (job.status === "tinting_in_progress") {
       setTiEntries([defaultTIFormEntry()]);
+      setEditingEntryId(null);
       setTiIncompleteWarning(null);
       setTiSuccessToast(true);
       setTimeout(() => setTiSuccessToast(false), 3000);
     } else if (andStart) {
+      setEditingEntryId(null);
       await startJob(job);
     } else {
       setTiEntries([defaultTIFormEntry()]);
+      setEditingEntryId(null);
       setTiSuccessToast(true);
       setTimeout(() => setTiSuccessToast(false), 3000);
     }
@@ -1275,12 +1279,10 @@ export function TintOperatorContent() {
                       key={rawId}
                       onClick={() => { setSelectedLineIdx(idx); handleStripRowClick(rawId); }}
                       className={cn(
-                        "px-3 py-2.5 border-b border-gray-100 cursor-pointer transition-colors border-l-[3px]",
+                        "px-3 py-2.5 border-b border-gray-100 cursor-pointer transition-colors",
                         isSelected
-                          ? "bg-gray-100 border-l-gray-900"
-                          : tiEntry
-                            ? "bg-white border-l-green-300 hover:bg-gray-50"
-                            : "bg-white border-l-amber-300 hover:bg-gray-50"
+                          ? "bg-gray-100 border-l-[3px] border-l-gray-900"
+                          : "bg-white hover:bg-gray-50"
                       )}
                     >
                       {/* Row 1: SKU code + status badge */}
