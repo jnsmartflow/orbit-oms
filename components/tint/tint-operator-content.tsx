@@ -248,6 +248,39 @@ const ACOTONE_SHADES = [
   { code: "BU1", bg: "#e0e7ff", border: "#6366f1", text: "#312e81" },
 ] as const;
 
+const TINTER_SHADE_COLORS: Record<string, { bg: string; bgFill: string; border: string; top: string; topFill: string; label: string }> = {
+  YOX: { bg: "#fdf6e3", bgFill: "#faf0d1", border: "#c8a951", top: "#b8860b", topFill: "#8d6e1f", label: "#8d6e1f" },
+  LFY: { bg: "#fefce8", bgFill: "#fef9c3", border: "#d4d430", top: "#cccc00", topFill: "#9e9d24", label: "#7d7d1e" },
+  GRN: { bg: "#e8f5e9", bgFill: "#c8e6c9", border: "#66bb6a", top: "#2e7d32", topFill: "#1b5e20", label: "#1b5e20" },
+  TBL: { bg: "#e3f2fd", bgFill: "#bbdefb", border: "#64b5f6", top: "#1565c0", topFill: "#0d47a1", label: "#0d47a1" },
+  WHT: { bg: "#fafafa", bgFill: "#f5f5f5", border: "#bdbdbd", top: "#757575", topFill: "#616161", label: "#616161" },
+  MAG: { bg: "#fce4ec", bgFill: "#f8bbd0", border: "#f48fb1", top: "#c2185b", topFill: "#880e4f", label: "#880e4f" },
+  FFR: { bg: "#ffebee", bgFill: "#ffcdd2", border: "#ef9a9a", top: "#d32f2f", topFill: "#b71c1c", label: "#b71c1c" },
+  BLK: { bg: "#eceff1", bgFill: "#cfd8dc", border: "#90a4ae", top: "#37474f", topFill: "#212121", label: "#212121" },
+  OXR: { bg: "#fbe9e7", bgFill: "#f5c4b3", border: "#a1553a", top: "#8d3c1a", topFill: "#5d1f0d", label: "#5d1f0d" },
+  HEY: { bg: "#fff9c4", bgFill: "#fff59d", border: "#d4c430", top: "#c9a800", topFill: "#8c7a00", label: "#8c7a00" },
+  HER: { bg: "#ffebee", bgFill: "#ffcdd2", border: "#ef9a9a", top: "#e53935", topFill: "#c62828", label: "#c62828" },
+  COB: { bg: "#e8eaf6", bgFill: "#c5cae9", border: "#7986cb", top: "#283593", topFill: "#1a237e", label: "#1a237e" },
+  COG: { bg: "#e0f2f1", bgFill: "#b2dfdb", border: "#4db6ac", top: "#00695c", topFill: "#004d40", label: "#004d40" },
+};
+
+const ACOTONE_SHADE_COLORS: Record<string, { bg: string; bgFill: string; border: string; top: string; topFill: string; label: string }> = {
+  YE2: { bg: "#fff8e1", bgFill: "#ffecb3", border: "#ffd54f", top: "#f9a825", topFill: "#f57f17", label: "#e65100" },
+  YE1: { bg: "#fffde7", bgFill: "#fff9c4", border: "#fff176", top: "#fdd835", topFill: "#f9a825", label: "#f57f17" },
+  XY1: { bg: "#fff3e0", bgFill: "#ffe0b2", border: "#ffb74d", top: "#ef6c00", topFill: "#e65100", label: "#bf360c" },
+  XR1: { bg: "#fbe9e7", bgFill: "#ffccbc", border: "#ff8a65", top: "#d84315", topFill: "#bf360c", label: "#bf360c" },
+  WH1: { bg: "#fafafa", bgFill: "#f5f5f5", border: "#bdbdbd", top: "#757575", topFill: "#616161", label: "#616161" },
+  RE2: { bg: "#ffebee", bgFill: "#ffcdd2", border: "#ef9a9a", top: "#c62828", topFill: "#b71c1c", label: "#b71c1c" },
+  RE1: { bg: "#ffebee", bgFill: "#ffcdd2", border: "#e57373", top: "#e53935", topFill: "#c62828", label: "#c62828" },
+  OR1: { bg: "#fff3e0", bgFill: "#ffe0b2", border: "#ffb74d", top: "#ef6c00", topFill: "#e65100", label: "#e65100" },
+  NO2: { bg: "#eceff1", bgFill: "#cfd8dc", border: "#90a4ae", top: "#263238", topFill: "#1a1a1a", label: "#212121" },
+  NO1: { bg: "#f5f5f5", bgFill: "#e0e0e0", border: "#9e9e9e", top: "#424242", topFill: "#212121", label: "#424242" },
+  MA1: { bg: "#f3e5f5", bgFill: "#e1bee7", border: "#ba68c8", top: "#7b1fa2", topFill: "#4a148c", label: "#4a148c" },
+  GR1: { bg: "#e8f5e9", bgFill: "#c8e6c9", border: "#66bb6a", top: "#2e7d32", topFill: "#1b5e20", label: "#1b5e20" },
+  BU2: { bg: "#e3f2fd", bgFill: "#bbdefb", border: "#64b5f6", top: "#1565c0", topFill: "#0d47a1", label: "#0d47a1" },
+  BU1: { bg: "#e8eaf6", bgFill: "#c5cae9", border: "#7986cb", top: "#283593", topFill: "#1a237e", label: "#1a237e" },
+};
+
 const PACK_CODES = [
   { value: "ml_500", label: "500ml" },
   { value: "L_1",    label: "1L" },
@@ -1576,20 +1609,32 @@ export function TintOperatorContent() {
                                   )}
                                 </div>
                                 <div className="grid grid-cols-7 gap-x-[10px] gap-y-[8px]">
-                                  {displayCols.map(shade => {
-                                    const hasVal = (entry.shadeValues[shade.code] ?? 0) > 0;
-                                    return (
-                                      <div key={shade.code} className="w-[60px] flex flex-col items-center gap-0.5">
-                                        <div className="text-[9.5px] font-bold uppercase tracking-[.4px] text-gray-400">{shade.code}</div>
-                                        <input type="number" min={0} step={0.01} placeholder="—"
-                                          value={entry.shadeValues[shade.code] || ""}
-                                          onChange={e => setTiEntries(prev => prev.map(en => en.id === entryId ? { ...en, shadeValues: { ...en.shadeValues, [shade.code]: Number(e.target.value) } } : en))}
-                                          className={`w-[54px] h-[32px] border rounded-[5px] text-center text-[13px] font-semibold focus:border-gray-900 focus:outline-none transition-colors ${
-                                            flash ? "border-amber-300 bg-amber-50 text-gray-900" : hasVal ? "bg-green-50 border-green-200 text-green-700" : "border-gray-200 text-gray-900"
-                                          }`} />
-                                      </div>
-                                    );
-                                  })}
+                                  {(() => {
+                                    const colorMap = tinterType === "TINTER" ? TINTER_SHADE_COLORS : ACOTONE_SHADE_COLORS;
+                                    return displayCols.map(shade => {
+                                      const hasVal = (entry.shadeValues[shade.code] ?? 0) > 0;
+                                      const sc = colorMap[shade.code];
+                                      return (
+                                        <div key={shade.code} className="flex flex-col items-center gap-[3px]">
+                                          <span style={{ color: sc?.label ?? "#9ca3af" }} className="text-[9px] font-bold uppercase tracking-[.3px]">{shade.code}</span>
+                                          <input type="number" min={0} step={0.01} placeholder="—"
+                                            value={entry.shadeValues[shade.code] || ""}
+                                            onChange={e => setTiEntries(prev => prev.map(en => en.id === entryId ? { ...en, shadeValues: { ...en.shadeValues, [shade.code]: Number(e.target.value) } } : en))}
+                                            style={{
+                                              background: hasVal ? (sc?.bgFill ?? "#f0fdf4") : (sc?.bg ?? "#fff"),
+                                              borderTop: `3px solid ${hasVal ? (sc?.topFill ?? "#d1d5db") : (sc?.top ?? "#d1d5db")}`,
+                                              borderLeft: `1.5px solid ${hasVal ? (sc?.topFill ?? "#d1d5db") : (sc?.border ?? "#d1d5db")}`,
+                                              borderRight: `1.5px solid ${hasVal ? (sc?.topFill ?? "#d1d5db") : (sc?.border ?? "#d1d5db")}`,
+                                              borderBottom: `1.5px solid ${hasVal ? (sc?.topFill ?? "#d1d5db") : (sc?.border ?? "#d1d5db")}`,
+                                              borderRadius: "0 0 6px 6px",
+                                            }}
+                                            className={cn("w-[56px] h-[34px] text-center text-[13px] font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-400/20 transition-colors",
+                                              flash && "ring-2 ring-amber-300"
+                                            )} />
+                                        </div>
+                                      );
+                                    });
+                                  })()}
                                 </div>
                               </>
                             );
