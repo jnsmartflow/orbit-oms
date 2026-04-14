@@ -1392,9 +1392,8 @@ export function TintOperatorContent() {
                 <div className="min-w-0 flex-1">
                   {currentTintingLines[selectedLineIdx] ? (
                     <>
-                      <div className="text-[13px] font-semibold text-gray-900 flex items-center gap-2 truncate">
+                      <div className="text-[13px] font-semibold text-gray-900 truncate">
                         {currentTintingLines[selectedLineIdx].rawLineItem.skuDescriptionRaw ?? currentTintingLines[selectedLineIdx].rawLineItem.skuCodeRaw}
-                        <span className="bg-purple-50 border border-purple-200 text-purple-700 text-[8px] font-bold uppercase px-1 py-px rounded flex-shrink-0">TINT</span>
                       </div>
                       <div className="text-[11px] text-gray-400 mt-0.5">
                         <span className="font-mono">{currentTintingLines[selectedLineIdx].rawLineItem.skuCodeRaw}</span>
@@ -1649,20 +1648,12 @@ export function TintOperatorContent() {
                   );
                 })}
 
-                {/* Add Another Entry */}
-                {tintingLines.length > 0 && (
-                  <div onClick={() => setTiEntries(prev => [...prev, defaultTIFormEntry()])}
-                    className="flex items-center justify-center gap-1.5 text-[11.5px] font-bold text-gray-500 cursor-pointer py-2 hover:text-gray-700 transition-colors">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                    Add Another Entry
-                  </div>
-                )}
               </div>
 
               {/* Footer bar (pinned) */}
-              <div className="border-t border-gray-200 bg-white px-4 py-2.5 flex-shrink-0 flex items-center gap-2.5">
+              <div className="border-t border-gray-200 bg-white px-5 py-2.5 flex-shrink-0 flex items-center gap-3">
                 {/* LEFT: Line navigation */}
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5 mr-auto">
                   <button type="button" disabled={selectedLineIdx <= 0}
                     onClick={() => { const i = selectedLineIdx - 1; setSelectedLineIdx(i); const rawId = currentTintingLines[i]?.rawLineItemId ?? 0; handleStripRowClick(rawId); }}
                     className="w-7 h-7 rounded border border-gray-200 flex items-center justify-center text-gray-400 hover:bg-gray-50 disabled:opacity-30">
@@ -1683,8 +1674,6 @@ export function TintOperatorContent() {
                   )}
                 </div>
 
-                <div className="flex-1" />
-
                 {/* RIGHT: Action buttons */}
                 {(() => {
                   const isActionLoading = (selectedJob.type === "split"
@@ -1694,8 +1683,8 @@ export function TintOperatorContent() {
                   const isCurrentJob = selectedJob.status === "tinting_in_progress" ||
                     (jobs.length > 0 && jobs[0].id === selectedJob.id && jobs[0].type === selectedJob.type && !jobs.some(j => j.status === "tinting_in_progress"));
 
-                  const btnSave = "flex-1 h-[44px] bg-gray-900 text-white border-none rounded-xl text-[13px] font-semibold flex items-center justify-center gap-1.5 transition-opacity";
-                  const btnGreen = "flex-1 h-[44px] bg-green-600 text-white border-none rounded-xl text-[13px] font-semibold flex items-center justify-center gap-1.5 transition-opacity";
+                  const btnSave = "h-[42px] px-5 bg-gray-900 text-white border-none rounded-xl text-[13px] font-semibold flex items-center justify-center gap-2 whitespace-nowrap flex-shrink-0 transition-opacity";
+                  const btnGreen = "h-[42px] px-5 bg-green-600 text-white border-none rounded-xl text-[13px] font-semibold flex items-center justify-center gap-2 whitespace-nowrap flex-shrink-0 transition-opacity";
 
                   // STATE C: In progress → Add TI Entry + Mark as Done
                   if (selectedJob.status === "tinting_in_progress") {
@@ -1703,7 +1692,7 @@ export function TintOperatorContent() {
                     const isDoneLoading = selectedJob.type === "split" ? splitActionLoading === selectedJob.id : orderActionLoading === selectedJob.id;
                     const anyLoading = isTILoading || isDoneLoading;
                     return (
-                      <div className="flex flex-col gap-2 ml-auto max-w-[420px]">
+                      <div className="flex flex-col gap-2 flex-shrink-0">
                         {tiIncompleteWarning && tiIncompleteWarning.length > 0 && (
                           <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5">
                             <p className="text-[12px] font-bold text-amber-700 mb-1">Some tinting lines are missing TI entries:</p>
@@ -1744,7 +1733,7 @@ export function TintOperatorContent() {
                     // No tinting lines → Start directly (current job only)
                     if (tintingLines.length === 0 && isCurrentJob) {
                       return (
-                        <div className="ml-auto max-w-[240px] flex">
+                        <div className="flex flex-shrink-0">
                           <button type="button" onClick={() => startJob(selectedJob)} disabled={isActionLoading}
                             className={cn(btnGreen, isActionLoading ? "opacity-60 cursor-not-allowed" : "cursor-pointer hover:bg-green-700")}>
                             {isActionLoading ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
@@ -1756,7 +1745,7 @@ export function TintOperatorContent() {
 
                     if (editingEntryId) {
                       return (
-                        <div className="ml-auto max-w-[240px] flex">
+                        <div className="flex flex-shrink-0">
                           <button type="button" onClick={() => handleUpdateEntry(selectedJob)} disabled={isActionLoading}
                             className={cn(btnSave, isActionLoading ? "opacity-60 cursor-not-allowed" : "cursor-pointer hover:bg-gray-800")}>
                             {isActionLoading ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
@@ -1769,7 +1758,7 @@ export function TintOperatorContent() {
                     // Current job → Save TI + Save TI & Start
                     if (isCurrentJob) {
                       return (
-                        <div className="flex gap-2 ml-auto max-w-[420px]">
+                        <div className="flex gap-2 flex-shrink-0">
                           <button type="button" onClick={() => handleSubmitTI(selectedJob, false)} disabled={isActionLoading}
                             className={cn(btnSave, isActionLoading ? "opacity-60 cursor-not-allowed" : "cursor-pointer hover:bg-gray-800")}>
                             {isActionLoading ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
@@ -1786,7 +1775,7 @@ export function TintOperatorContent() {
 
                     // Future job → Save TI only
                     return (
-                      <div className="ml-auto max-w-[240px] flex">
+                      <div className="flex flex-shrink-0">
                         <button type="button" onClick={() => handleSubmitTI(selectedJob, false)} disabled={isActionLoading}
                           className={cn(btnSave, isActionLoading ? "opacity-60 cursor-not-allowed" : "cursor-pointer hover:bg-gray-800")}>
                           {isActionLoading ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
@@ -1799,7 +1788,7 @@ export function TintOperatorContent() {
                   // STATE B: TI submitted, current job, not in progress → Start Job
                   if (isCurrentJob && !hasActiveJob) {
                     return (
-                      <div className="flex gap-2 ml-auto max-w-[420px]">
+                      <div className="flex gap-2 flex-shrink-0">
                         {editingEntryId && (
                           <button type="button" onClick={() => handleUpdateEntry(selectedJob)} disabled={isActionLoading}
                             className={cn(btnSave, isActionLoading ? "opacity-60 cursor-not-allowed" : "cursor-pointer hover:bg-gray-800")}>
