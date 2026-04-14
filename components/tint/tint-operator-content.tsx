@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from "react";
-import { Loader2, ChevronDown, ChevronLeft, ChevronRight, Palette } from "lucide-react";
+import { Loader2, ChevronDown, ChevronLeft, ChevronRight, Palette, Save, Play, Check, Plus } from "lucide-react";
 import { UniversalHeader } from "@/components/universal-header";
 import { cn } from "@/lib/utils";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -801,7 +801,7 @@ export function TintOperatorContent() {
     return body;
   }
 
-  async function saveShadesThenSubmitTI(job: Job, entryIds: string[]) {
+  async function saveShadesThenSubmitTI(job: Job, entryIds: string[], andStart: boolean = true) {
     for (const entryId of entryIds) {
       const entry = tiEntries.find(e => e.id === entryId);
       if (!entry?.saveAsShade) continue;
@@ -864,12 +864,16 @@ export function TintOperatorContent() {
       setTiIncompleteWarning(null);
       setTiSuccessToast(true);
       setTimeout(() => setTiSuccessToast(false), 3000);
-    } else {
+    } else if (andStart) {
       await startJob(job);
+    } else {
+      setTiEntries([defaultTIFormEntry()]);
+      setTiSuccessToast(true);
+      setTimeout(() => setTiSuccessToast(false), 3000);
     }
   }
 
-  async function handleSubmitTIAndStart(job: Job) {
+  async function handleSubmitTI(job: Job, andStart: boolean = true) {
     if (tiEntries.length === 0) { setError("Add at least one entry"); return; }
     for (const e of tiEntries) {
       if (!e.skuCodeRaw) { setError("Select a SKU line for all entries"); return; }
@@ -885,7 +889,7 @@ export function TintOperatorContent() {
     setError(null);
     try {
       const saveIds = tiEntries.filter(e => e.saveAsShade).map(e => e.id);
-      await saveShadesThenSubmitTI(job, saveIds);
+      await saveShadesThenSubmitTI(job, saveIds, andStart);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to submit TI");
     } finally {
@@ -1687,7 +1691,13 @@ export function TintOperatorContent() {
                     ? splitActionLoading === selectedJob.id
                     : orderActionLoading === selectedJob.id) || tiActionLoading;
 
-                  // Case 1 — In progress
+                  const isCurrentJob = selectedJob.status === "tinting_in_progress" ||
+                    (jobs.length > 0 && jobs[0].id === selectedJob.id && jobs[0].type === selectedJob.type && !jobs.some(j => j.status === "tinting_in_progress"));
+
+                  const btnSave = "flex-1 bg-gray-900 text-white border-none rounded-[10px] py-[11px] text-[13px] font-bold flex items-center justify-center gap-1.5 transition-opacity";
+                  const btnGreen = "flex-1 bg-green-600 text-white border-none rounded-[10px] py-[11px] text-[13px] font-bold flex items-center justify-center gap-1.5 transition-opacity";
+
+                  // STATE C: In progress → Add TI Entry + Mark as Done
                   if (selectedJob.status === "tinting_in_progress") {
                     const isTILoading = tiActionLoading;
                     const isDoneLoading = selectedJob.type === "split" ? splitActionLoading === selectedJob.id : orderActionLoading === selectedJob.id;
@@ -1708,22 +1718,20 @@ export function TintOperatorContent() {
                         <div className="flex gap-2">
                           {editingEntryId ? (
                             <button type="button" onClick={() => handleUpdateEntry(selectedJob)} disabled={anyLoading}
-                              className={cn("flex-1 bg-teal-600 text-white border-none rounded-[10px] py-[11px] text-[13px] font-bold flex items-center justify-center gap-1.5 transition-opacity", anyLoading ? "opacity-60 cursor-not-allowed" : "cursor-pointer hover:bg-teal-700")}>
-                              {isTILoading ? <Loader2 size={13} className="animate-spin" /> : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>}
+                              className={cn(btnSave, anyLoading ? "opacity-60 cursor-not-allowed" : "cursor-pointer hover:bg-gray-800")}>
+                              {isTILoading ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
                               Update TI Entry
                             </button>
                           ) : (
-                            <button type="button" onClick={() => handleSubmitTIAndStart(selectedJob)} disabled={anyLoading}
-                              className={cn("flex-1 bg-teal-600 text-white border-none rounded-[10px] py-[11px] text-[13px] font-bold flex items-center justify-center gap-1.5 transition-opacity", anyLoading ? "opacity-60 cursor-not-allowed" : "cursor-pointer hover:bg-teal-700")}>
-                              {isTILoading ? <Loader2 size={13} className="animate-spin" /> : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>}
+                            <button type="button" onClick={() => handleSubmitTI(selectedJob, false)} disabled={anyLoading}
+                              className={cn(btnSave, anyLoading ? "opacity-60 cursor-not-allowed" : "cursor-pointer hover:bg-gray-800")}>
+                              {isTILoading ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
                               Add TI Entry
                             </button>
                           )}
-                          <button type="button"
-                            onClick={() => markDone(selectedJob)}
-                            disabled={anyLoading}
-                            className={cn("flex-1 bg-green-600 text-white border-none rounded-[10px] py-[11px] text-[13px] font-bold flex items-center justify-center gap-1.5 transition-opacity", anyLoading ? "opacity-60 cursor-not-allowed" : "cursor-pointer hover:bg-green-700")}>
-                            {isDoneLoading ? <Loader2 size={13} className="animate-spin" /> : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>}
+                          <button type="button" onClick={() => markDone(selectedJob)} disabled={anyLoading}
+                            className={cn(btnGreen, anyLoading ? "opacity-60 cursor-not-allowed" : "cursor-pointer hover:bg-green-700")}>
+                            {isDoneLoading ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
                             Mark as Done
                           </button>
                         </div>
@@ -1731,51 +1739,82 @@ export function TintOperatorContent() {
                     );
                   }
 
-                  // Case 2 — TI not submitted
+                  // STATE A/D: TI not submitted
                   if (!selectedJob.tiSubmitted) {
-                    if (tintingLines.length === 0) {
+                    // No tinting lines → Start directly (current job only)
+                    if (tintingLines.length === 0 && isCurrentJob) {
                       return (
                         <button type="button" onClick={() => startJob(selectedJob)} disabled={isActionLoading}
-                          className={cn("flex-1 bg-teal-600 text-white border-none rounded-[10px] py-[11px] text-[13px] font-bold flex items-center justify-center gap-1.5 transition-opacity", isActionLoading ? "opacity-60 cursor-not-allowed" : "cursor-pointer hover:bg-teal-700")}>
-                          {isActionLoading ? <Loader2 size={13} className="animate-spin" /> : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>}
+                          className={cn(btnGreen, isActionLoading ? "opacity-60 cursor-not-allowed" : "cursor-pointer hover:bg-green-700")}>
+                          {isActionLoading ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
                           Start Job
                         </button>
                       );
                     }
+
+                    if (editingEntryId) {
+                      return (
+                        <button type="button" onClick={() => handleUpdateEntry(selectedJob)} disabled={isActionLoading}
+                          className={cn(btnSave, isActionLoading ? "opacity-60 cursor-not-allowed" : "cursor-pointer hover:bg-gray-800")}>
+                          {isActionLoading ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                          Update TI Entry
+                        </button>
+                      );
+                    }
+
+                    // Current job → Save TI + Save TI & Start
+                    if (isCurrentJob) {
+                      return (
+                        <div className="flex gap-2 flex-1 max-w-[500px]">
+                          <button type="button" onClick={() => handleSubmitTI(selectedJob, false)} disabled={isActionLoading}
+                            className={cn(btnSave, isActionLoading ? "opacity-60 cursor-not-allowed" : "cursor-pointer hover:bg-gray-800")}>
+                            {isActionLoading ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                            Save TI
+                          </button>
+                          <button type="button" onClick={() => handleSubmitTI(selectedJob, true)} disabled={isActionLoading}
+                            className={cn(btnGreen, isActionLoading ? "opacity-60 cursor-not-allowed" : "cursor-pointer hover:bg-green-700")}>
+                            {isActionLoading ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
+                            Save TI & Start
+                          </button>
+                        </div>
+                      );
+                    }
+
+                    // Future job → Save TI only
                     return (
-                      <button type="button" onClick={() => editingEntryId ? handleUpdateEntry(selectedJob) : handleSubmitTIAndStart(selectedJob)} disabled={isActionLoading}
-                        className={cn("flex-1 bg-teal-600 text-white border-none rounded-[10px] py-[11px] text-[13px] font-bold flex items-center justify-center gap-1.5 transition-opacity", isActionLoading ? "opacity-60 cursor-not-allowed" : "cursor-pointer hover:bg-teal-700")}>
-                        {isActionLoading ? <Loader2 size={13} className="animate-spin" /> : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>}
-                        {editingEntryId ? "Update TI Entry" : "Submit TI & Start"}
+                      <button type="button" onClick={() => handleSubmitTI(selectedJob, false)} disabled={isActionLoading}
+                        className={cn(btnSave, isActionLoading ? "opacity-60 cursor-not-allowed" : "cursor-pointer hover:bg-gray-800")}>
+                        {isActionLoading ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                        Save TI
                       </button>
                     );
                   }
 
-                  // Case 3 — TI submitted, another job in progress
-                  if (hasActiveJob) {
+                  // STATE B: TI submitted, current job, not in progress → Start Job
+                  if (isCurrentJob && !hasActiveJob) {
                     return (
-                      <div className="flex items-center gap-1.5 text-[11.5px] font-semibold text-gray-400">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="flex-shrink-0"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                        Another job is in progress — TI submitted ✓
+                      <div className="flex gap-2 flex-1">
+                        {editingEntryId && (
+                          <button type="button" onClick={() => handleUpdateEntry(selectedJob)} disabled={isActionLoading}
+                            className={cn(btnSave, isActionLoading ? "opacity-60 cursor-not-allowed" : "cursor-pointer hover:bg-gray-800")}>
+                            {isActionLoading ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                            Update TI Entry
+                          </button>
+                        )}
+                        <button type="button" onClick={() => startJob(selectedJob)} disabled={isActionLoading}
+                          className={cn(btnGreen, isActionLoading ? "opacity-60 cursor-not-allowed" : "cursor-pointer hover:bg-green-700")}>
+                          {isActionLoading ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
+                          Start Job
+                        </button>
                       </div>
                     );
                   }
 
-                  // Case 4 — TI submitted, no active job
+                  // STATE E: TI submitted, future job or another active → waiting
                   return (
-                    <div className="flex-1 flex gap-2">
-                      {editingEntryId && (
-                        <button type="button" onClick={() => handleUpdateEntry(selectedJob)} disabled={isActionLoading}
-                          className={cn("flex-1 bg-teal-600 text-white border-none rounded-[10px] py-[11px] text-[13px] font-bold flex items-center justify-center gap-1.5 transition-opacity", isActionLoading ? "opacity-60 cursor-not-allowed" : "cursor-pointer hover:bg-teal-700")}>
-                          {isActionLoading ? <Loader2 size={13} className="animate-spin" /> : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>}
-                          Update TI Entry
-                        </button>
-                      )}
-                      <button type="button" onClick={() => startJob(selectedJob)} disabled={isActionLoading}
-                        className={cn("flex-1 bg-teal-600 text-white border-none rounded-[10px] py-[11px] text-[13px] font-bold flex items-center justify-center gap-1.5 transition-opacity", isActionLoading ? "opacity-60 cursor-not-allowed" : "cursor-pointer hover:bg-teal-700")}>
-                        {isActionLoading ? <Loader2 size={13} className="animate-spin" /> : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>}
-                        Start Job
-                      </button>
+                    <div className="flex items-center gap-2 text-[12px] text-gray-400">
+                      <Check size={14} className="text-green-600" />
+                      TI saved — waiting in queue
                     </div>
                   );
                 })()}
