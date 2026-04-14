@@ -859,21 +859,12 @@ export function TintOperatorContent() {
     }
     await fetchOrders();
     await loadExistingTIEntries(job);
-    setTimeout(() => coverageStripRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 200);
-    if (job.status === "tinting_in_progress") {
-      setTiEntries([defaultTIFormEntry()]);
-      setEditingEntryId(null);
-      setTiIncompleteWarning(null);
-      setTiSuccessToast(true);
-      setTimeout(() => setTiSuccessToast(false), 3000);
-    } else if (andStart) {
-      setEditingEntryId(null);
+    // existingTIEntries update triggers the auto-select effect which repopulates the form
+    setTiIncompleteWarning(null);
+    setTiSuccessToast(true);
+    setTimeout(() => setTiSuccessToast(false), 3000);
+    if (andStart && job.status !== "tinting_in_progress") {
       await startJob(job);
-    } else {
-      setTiEntries([defaultTIFormEntry()]);
-      setEditingEntryId(null);
-      setTiSuccessToast(true);
-      setTimeout(() => setTiSuccessToast(false), 3000);
     }
   }
 
@@ -990,9 +981,7 @@ export function TintOperatorContent() {
       throw new Error(err.error ?? "Failed to update entry");
     }
     await loadExistingTIEntries(job);
-    setTimeout(() => coverageStripRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 200);
-    setEditingEntryId(null);
-    setTiEntries(prev => [defaultTIFormEntry(), ...prev.slice(1)]);
+    // existingTIEntries update triggers the auto-select effect which repopulates the form
     setTiUpdateToast(true);
     setTimeout(() => setTiUpdateToast(false), 3000);
   }
@@ -1124,7 +1113,7 @@ export function TintOperatorContent() {
     // Also populate form for the auto-selected line
     const line = lines[newIdx];
     if (line) handleStripRowClick(line.rawLineItemId ?? 0);
-  }, [selectedJob?.id, selectedJob?.type, existingTIEntries.size]);
+  }, [selectedJob?.id, selectedJob?.type, existingTIEntries]);
 
   // ── Render ────────────────────────────────────────────────────────────────
 
