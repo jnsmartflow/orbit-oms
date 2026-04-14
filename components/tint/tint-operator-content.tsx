@@ -1098,38 +1098,27 @@ export function TintOperatorContent() {
         showDatePicker={false}
       />
 
-      {/* Row 2: Dark Job Pill */}
-      <div className="h-[40px] min-h-[40px] bg-white border-b border-gray-200 px-5 flex items-center flex-shrink-0" style={{ position: "sticky", top: 52, zIndex: 30 }}>
+      {/* Row 2: Teal Segment Job Pill */}
+      <div className="h-[40px] min-h-[40px] bg-white border-b border-gray-200 px-4 flex items-center flex-shrink-0" style={{ position: "sticky", top: 52, zIndex: 30 }}>
         {selectedJob ? (
           <>
+            {/* Segment container + pill */}
             <div className="relative" ref={queueBadgeRef}>
-              <div
-                onClick={() => setQueueDropdownOpen(!queueDropdownOpen)}
-                className={cn(
-                  "inline-flex items-center gap-3 rounded-lg px-4 py-2 cursor-pointer transition-colors",
-                  queueDropdownOpen ? "bg-gray-700" : "bg-gray-800 hover:bg-gray-700"
-                )}
-              >
-                <span className="text-[11px] font-semibold text-white bg-teal-600 rounded px-2 py-0.5 flex-shrink-0">#{jobs.indexOf(selectedJob) + 1}</span>
-                <span className="text-[13px] font-semibold text-white truncate max-w-[200px]">{selectedJob.customerName}</span>
-                <span className="font-mono text-[11px] text-gray-400 flex-shrink-0">{selectedJob.obdNumber}</span>
-                {selectedJob.status === "tinting_in_progress" ? (
-                  <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded flex-shrink-0" style={{ background: "rgba(74,222,128,0.15)", color: "#4ade80", border: "1px solid rgba(74,222,128,0.25)" }}>In Progress</span>
-                ) : (
-                  <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded flex-shrink-0" style={{ background: "rgba(251,191,36,0.15)", color: "#fbbf24", border: "1px solid rgba(251,191,36,0.3)" }}>Assigned</span>
-                )}
-                {selectedJob.status === "tinting_in_progress" && elapsed && (
-                  <div className="flex items-center gap-1.5 rounded px-2 py-0.5 flex-shrink-0" style={{ background: "rgba(255,255,255,0.08)" }}>
-                    <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse flex-shrink-0" />
-                    <span className="font-mono text-[11px] font-semibold text-gray-300">{elapsed}</span>
-                  </div>
-                )}
-                <ChevronDown size={14} className={cn("text-gray-400 transition-transform flex-shrink-0", queueDropdownOpen && "rotate-180")} />
+              <div className="inline-flex bg-gray-100 rounded-[7px] p-[3px]">
+                <div
+                  onClick={() => setQueueDropdownOpen(!queueDropdownOpen)}
+                  className="inline-flex items-center gap-2.5 rounded-[5px] px-3 py-[5px] cursor-pointer transition-colors bg-teal-600 text-white font-medium"
+                >
+                  <span className="text-[11px] font-semibold opacity-80">#{jobs.indexOf(selectedJob) + 1}</span>
+                  <span className="text-[12px] font-semibold truncate max-w-[180px]">{selectedJob.customerName}</span>
+                  <span className="font-mono text-[10.5px] opacity-70">{selectedJob.obdNumber}</span>
+                  <ChevronDown size={13} className={cn("opacity-70 transition-transform flex-shrink-0", queueDropdownOpen && "rotate-180")} />
+                </div>
               </div>
 
               {/* Queue Dropdown */}
               {queueDropdownOpen && (
-                <div className="absolute left-0 top-full mt-1 z-50 w-[400px] bg-white border border-gray-200 rounded-[10px] shadow-[0_8px_24px_rgba(0,0,0,0.12)] overflow-hidden">
+                <div className="absolute left-0 top-full mt-1.5 z-50 w-[400px] bg-white border border-gray-200 rounded-[10px] shadow-[0_8px_24px_rgba(0,0,0,0.12)] overflow-hidden">
                   <div className="bg-gray-50 px-4 py-3 border-b border-gray-200">
                     <div className="flex items-center justify-between mb-1.5">
                       <p className="text-[11px] font-bold text-gray-900">Today&apos;s Target</p>
@@ -1179,8 +1168,23 @@ export function TintOperatorContent() {
               )}
             </div>
 
+            {/* Status badge — outside the teal pill */}
+            {selectedJob.status === "tinting_in_progress" ? (
+              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-[5px] border bg-green-50 border-green-200 text-green-700 ml-2 flex-shrink-0">In Progress</span>
+            ) : (
+              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-[5px] border bg-amber-50 border-amber-200 text-amber-700 ml-2 flex-shrink-0">Assigned</span>
+            )}
+
+            {/* Timer (in progress) */}
+            {selectedJob.status === "tinting_in_progress" && elapsed && (
+              <div className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 rounded-md px-2 py-0.5 ml-1.5 flex-shrink-0">
+                <span className="w-1.5 h-1.5 rounded-full bg-green-600 animate-pulse flex-shrink-0" />
+                <span className="font-mono text-[11px] font-semibold text-gray-600">{elapsed}</span>
+              </div>
+            )}
+
             {/* Progress bar + fraction — right side */}
-            <div className="flex items-center gap-2 ml-auto">
+            <div className="flex items-center gap-2 ml-auto flex-shrink-0">
               <div className="w-[48px] h-[4px] bg-gray-200 rounded-full overflow-hidden">
                 <div className={`h-full rounded-full ${progressColor}`} style={{ width: `${Math.min(progressPct, 100)}%` }} />
               </div>
