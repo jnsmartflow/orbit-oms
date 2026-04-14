@@ -647,6 +647,15 @@ export function cleanSubject(subject: string): string {
   return s.trim() || subject.trim();
 }
 
+// ── Bill label extraction ─────────────────────────────────────────────────
+
+export function getBillLabel(order: MoOrder): string {
+  const combined = [order.remarks, order.billRemarks]
+    .filter(Boolean).join(" ").toLowerCase();
+  const m = combined.match(/\bbill\s+(\d+)\b/);
+  return m ? `Bill ${m[1]}` : "";
+}
+
 // ── Order flag extraction ──────────────────────────────────────────────────
 
 export function getOrderFlags(order: MoOrder): string[] {

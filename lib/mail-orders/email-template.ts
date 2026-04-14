@@ -1,5 +1,5 @@
 import type { MoOrder } from "./types";
-import { cleanSubject, smartTitleCase } from "./utils";
+import { cleanSubject, smartTitleCase, getBillLabel } from "./utils";
 
 /**
  * Build an HTML email summarising a slot's orders for a given SO.
@@ -29,7 +29,9 @@ export function buildSlotSummaryHTML(
   }[] = [];
 
   for (const o of orders) {
-    const custName = smartTitleCase(o.customerName ?? cleanSubject(o.subject));
+    const custNameBase = smartTitleCase(o.customerName ?? cleanSubject(o.subject));
+    const custBillLabel = getBillLabel(o);
+    const custName = custBillLabel ? `${custNameBase} \u00b7 ${custBillLabel}` : custNameBase;
     for (const line of o.lines) {
       if (line.lineStatus?.reason && line.lineStatus.found === false) {
         flaggedLines.push({
@@ -192,17 +194,19 @@ export function buildSlotSummaryHTML(
     sortedProcessed.forEach((o, i) => {
       const isLast = i === sortedProcessed.length - 1;
       const cust = smartTitleCase(o.customerName ?? cleanSubject(o.subject));
+      const billLabel = getBillLabel(o);
       const isHold = o.dispatchStatus === "Hold";
       const custColor = isHold ? "#cbd5e1" : "#0f172a";
       const codeColor = isHold ? "#e2e8f0" : "#94a3b8";
       const custSuffix = isHold ? " *" : "";
       const splitSuffix = splitPartLabel(o.splitLabel);
+      const billSuffix = billLabel ? ` \u00b7 ${billLabel}` : "";
       const bb = isLast ? "" : "border-bottom:1px solid #f1f5f9;";
 
       // Row 1 — serial + name + SO number
       h += `<tr>`;
       h += `<td width="24" style="font-size:11px;color:#9ca3af;padding:11px 0 2px 0;vertical-align:top;${F}">${i + 1}.</td>`;
-      h += `<td style="font-size:13px;color:${custColor};padding:11px 0 2px 4px;vertical-align:top;${F}">${cust}${custSuffix}${splitSuffix}</td>`;
+      h += `<td style="font-size:13px;color:${custColor};padding:11px 0 2px 4px;vertical-align:top;${F}">${cust}${custSuffix}${splitSuffix}${billSuffix}</td>`;
       h += `<td width="120" style="font-size:13px;color:#0f172a;text-align:right;vertical-align:top;white-space:nowrap;padding:11px 0 2px 16px;${CM}">${zwsp(o.soNumber!)}</td>`;
       h += `</tr>`;
 
@@ -308,13 +312,15 @@ export function buildSlotSummaryHTML(
     pending.forEach((o, i) => {
       const isLast = i === pending.length - 1;
       const cust = smartTitleCase(o.customerName ?? cleanSubject(o.subject));
+      const billLabel = getBillLabel(o);
+      const billSuffix = billLabel ? ` \u00b7 ${billLabel}` : "";
       const note = getPendingNote(o);
       const bb = isLast ? "" : "border-bottom:1px solid #f1f5f9;";
 
       // Row 1 — serial + name + note
       h += `<tr>`;
       h += `<td width="24" style="font-size:11px;color:#9ca3af;padding:11px 0 2px 0;vertical-align:top;${F}">${i + 1}.</td>`;
-      h += `<td style="font-size:13px;color:#0f172a;padding:11px 0 2px 4px;vertical-align:top;${F}">${cust}</td>`;
+      h += `<td style="font-size:13px;color:#0f172a;padding:11px 0 2px 4px;vertical-align:top;${F}">${cust}${billSuffix}</td>`;
       h += `<td width="120" style="font-size:11px;color:#0f172a;text-align:right;vertical-align:top;white-space:nowrap;padding:11px 0 2px 16px;${F}">${note}</td>`;
       h += `</tr>`;
 

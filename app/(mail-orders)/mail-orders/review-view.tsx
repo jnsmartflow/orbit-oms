@@ -13,6 +13,7 @@ import {
   getPackVolumeLiters,
   buildReplyTemplate,
   getOrderSignals,
+  getBillLabel,
 } from "@/lib/mail-orders/utils";
 import { searchCustomers, saveLineStatus, searchSkus, resolveLine } from "@/lib/mail-orders/api";
 
@@ -583,11 +584,13 @@ export function ReviewView({
   function handleReplyClick() {
     if (!selectedOrder) return;
     if (selectedOrder.status !== "punched" || !selectedOrder.soNumber) return;
+    const billLabel = getBillLabel(selectedOrder);
     const name = smartTitleCase(
       selectedOrder.customerMatchStatus === "exact" && selectedOrder.customerName
         ? selectedOrder.customerName
         : cleanSubject(selectedOrder.subject),
-    ) + (selectedOrder.splitLabel ? ` (${selectedOrder.splitLabel})` : "");
+    ) + (selectedOrder.splitLabel ? ` (${selectedOrder.splitLabel})` : "")
+      + (billLabel ? ` · ${billLabel}` : "");
 
     const template = buildReplyTemplate(
       selectedOrder.soName,
