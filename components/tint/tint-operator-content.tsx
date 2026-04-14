@@ -1087,7 +1087,7 @@ export function TintOperatorContent() {
     <>
     <div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden" }}>
 
-      {/* Row 1: UniversalHeader */}
+      {/* UniversalHeader — Row 1 + Row 2 with job pill via leftExtra */}
       <UniversalHeader
         title="My Jobs"
         stats={[
@@ -1096,105 +1096,101 @@ export function TintOperatorContent() {
           { label: "done today", value: completedCount },
         ]}
         showDatePicker={false}
-      />
-
-      {/* Row 2: Teal Segment Job Pill */}
-      <div className="h-[40px] min-h-[40px] bg-white border-b border-gray-200 px-4 flex items-center flex-shrink-0" style={{ position: "sticky", top: 52, zIndex: 30 }}>
-        {selectedJob ? (
-          <>
-            {/* Segment container + pill */}
-            <div className="relative" ref={queueBadgeRef}>
-              <div className="inline-flex bg-gray-100 rounded-[7px] p-[3px]">
-                <div
-                  onClick={() => setQueueDropdownOpen(!queueDropdownOpen)}
-                  className="inline-flex items-center gap-2.5 rounded-[5px] px-3 py-[5px] cursor-pointer transition-colors bg-teal-600 text-white font-medium"
-                >
-                  <span className="text-[11px] font-semibold opacity-80">#{jobs.indexOf(selectedJob) + 1}</span>
-                  <span className="text-[12px] font-semibold truncate max-w-[180px]">{selectedJob.customerName}</span>
-                  <span className="font-mono text-[10.5px] opacity-70">{selectedJob.obdNumber}</span>
-                  <ChevronDown size={13} className={cn("opacity-70 transition-transform flex-shrink-0", queueDropdownOpen && "rotate-180")} />
+        leftExtra={
+          selectedJob ? (
+            <div className="flex items-center gap-2">
+              {/* Segment container + teal pill */}
+              <div className="relative" ref={queueBadgeRef}>
+                <div className="inline-flex bg-gray-100 rounded-[7px] p-[3px]">
+                  <div
+                    onClick={() => setQueueDropdownOpen(!queueDropdownOpen)}
+                    className="inline-flex items-center gap-2.5 rounded-[5px] px-3.5 py-[6px] cursor-pointer transition-colors bg-teal-600 text-white font-medium hover:bg-teal-700"
+                  >
+                    <span className="text-[11px] font-semibold opacity-80">#{jobs.indexOf(selectedJob) + 1}</span>
+                    <span className="text-[12.5px] font-semibold truncate max-w-[180px]">{selectedJob.customerName}</span>
+                    <span className="font-mono text-[11px] opacity-70">{selectedJob.obdNumber}</span>
+                    <ChevronDown size={14} className={cn("opacity-70 transition-transform flex-shrink-0", queueDropdownOpen && "rotate-180")} />
+                  </div>
                 </div>
-              </div>
 
-              {/* Queue Dropdown */}
-              {queueDropdownOpen && (
-                <div className="absolute left-0 top-full mt-1.5 z-50 w-[400px] bg-white border border-gray-200 rounded-[10px] shadow-[0_8px_24px_rgba(0,0,0,0.12)] overflow-hidden">
-                  <div className="bg-gray-50 px-4 py-3 border-b border-gray-200">
-                    <div className="flex items-center justify-between mb-1.5">
-                      <p className="text-[11px] font-bold text-gray-900">Today&apos;s Target</p>
-                      <div className="text-right">
-                        <span className="text-[18px] font-bold text-gray-900">{totalDoneToday}</span>
-                        <span className="text-[13px] text-gray-400"> of {totalAssignedToday}</span>
+                {/* Queue Dropdown */}
+                {queueDropdownOpen && (
+                  <div className="absolute left-0 top-full mt-1.5 z-50 w-[400px] bg-white border border-gray-200 rounded-[10px] shadow-[0_8px_24px_rgba(0,0,0,0.12)] overflow-hidden">
+                    <div className="bg-gray-50 px-4 py-3 border-b border-gray-200">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <p className="text-[11px] font-bold text-gray-900">Today&apos;s Target</p>
+                        <div className="text-right">
+                          <span className="text-[18px] font-bold text-gray-900">{totalDoneToday}</span>
+                          <span className="text-[13px] text-gray-400"> of {totalAssignedToday}</span>
+                        </div>
+                      </div>
+                      <div className="w-full h-[6px] bg-gray-200 rounded-full overflow-hidden">
+                        <div className={`h-full rounded-full transition-all ${progressColor}`} style={{ width: `${Math.min(progressPct, 100)}%` }} />
                       </div>
                     </div>
-                    <div className="w-full h-[6px] bg-gray-200 rounded-full overflow-hidden">
-                      <div className={`h-full rounded-full transition-all ${progressColor}`} style={{ width: `${Math.min(progressPct, 100)}%` }} />
+                    <div className="max-h-[480px] overflow-y-auto py-2">
+                      <p className="px-3 text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1.5">Remaining ({jobs.length} jobs)</p>
+                      {jobs.map((job, idx) => {
+                        const isCurrent = selectedJobId === job.id && selectedJobType === job.type;
+                        const isActive = job.status === "tinting_in_progress";
+                        const hasActive = jobs.some(j => j.status === "tinting_in_progress");
+                        const isFuture = !isActive && !isCurrent && (hasActive || idx > 0);
+                        return (
+                          <button key={`q-${job.type}-${job.id}`}
+                            onClick={() => { setSelectedJobId(job.id); setSelectedJobType(job.type); setQueueDropdownOpen(false); }}
+                            className={cn("w-full text-left px-3 py-2 transition-colors",
+                              isCurrent ? "bg-teal-50 border-l-[3px] border-l-teal-600" : "border-l-[3px] border-l-transparent hover:bg-gray-50",
+                              isFuture && "opacity-[0.45]"
+                            )}>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] font-mono text-gray-400">#{idx + 1}</span>
+                              <span className="text-[12px] font-semibold text-gray-900 truncate flex-1">{job.customerName}</span>
+                              <span className="font-mono text-[11px] text-gray-500">{job.obdNumber}</span>
+                              {isCurrent && <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-teal-600 text-white">Current</span>}
+                            </div>
+                            <div className="flex items-center gap-2 mt-0.5 text-[10px] text-gray-400">
+                              {job.articleTag && <span>{job.articleTag}</span>}
+                              {job.totalVolume != null && <span>· {Math.round(job.totalVolume)} L</span>}
+                              {job.totalTintingLines > 0 && (
+                                <span className={cn("font-semibold", job.tiCoveredLines >= job.totalTintingLines ? "text-green-600" : "text-amber-600")}>
+                                  TI {job.tiCoveredLines}/{job.totalTintingLines}
+                                </span>
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
-                  <div className="max-h-[480px] overflow-y-auto py-2">
-                    <p className="px-3 text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1.5">Remaining ({jobs.length} jobs)</p>
-                    {jobs.map((job, idx) => {
-                      const isCurrent = selectedJobId === job.id && selectedJobType === job.type;
-                      const isActive = job.status === "tinting_in_progress";
-                      const hasActive = jobs.some(j => j.status === "tinting_in_progress");
-                      const isFuture = !isActive && !isCurrent && (hasActive || idx > 0);
-                      return (
-                        <button key={`q-${job.type}-${job.id}`}
-                          onClick={() => { setSelectedJobId(job.id); setSelectedJobType(job.type); setQueueDropdownOpen(false); }}
-                          className={cn("w-full text-left px-3 py-2 transition-colors",
-                            isCurrent ? "bg-teal-50 border-l-[3px] border-l-teal-600" : "border-l-[3px] border-l-transparent hover:bg-gray-50",
-                            isFuture && "opacity-[0.45]"
-                          )}>
-                          <div className="flex items-center gap-2">
-                            <span className="text-[10px] font-mono text-gray-400">#{idx + 1}</span>
-                            <span className="text-[12px] font-semibold text-gray-900 truncate flex-1">{job.customerName}</span>
-                            <span className="font-mono text-[11px] text-gray-500">{job.obdNumber}</span>
-                            {isCurrent && <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-teal-600 text-white">Current</span>}
-                          </div>
-                          <div className="flex items-center gap-2 mt-0.5 text-[10px] text-gray-400">
-                            {job.articleTag && <span>{job.articleTag}</span>}
-                            {job.totalVolume != null && <span>· {Math.round(job.totalVolume)} L</span>}
-                            {job.totalTintingLines > 0 && (
-                              <span className={cn("font-semibold", job.tiCoveredLines >= job.totalTintingLines ? "text-green-600" : "text-amber-600")}>
-                                TI {job.tiCoveredLines}/{job.totalTintingLines}
-                              </span>
-                            )}
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
+                )}
+              </div>
+
+              {/* Status badge */}
+              {selectedJob.status === "tinting_in_progress" ? (
+                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-[5px] border bg-green-50 border-green-200 text-green-700 flex-shrink-0">In Progress</span>
+              ) : (
+                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-[5px] border bg-amber-50 border-amber-200 text-amber-700 flex-shrink-0">Assigned</span>
+              )}
+
+              {/* Timer (in progress) */}
+              {selectedJob.status === "tinting_in_progress" && elapsed && (
+                <div className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 rounded-md px-2 py-0.5 flex-shrink-0">
+                  <span className="w-1.5 h-1.5 rounded-full bg-green-600 animate-pulse flex-shrink-0" />
+                  <span className="font-mono text-[11px] font-semibold text-gray-600">{elapsed}</span>
                 </div>
               )}
             </div>
-
-            {/* Status badge — outside the teal pill */}
-            {selectedJob.status === "tinting_in_progress" ? (
-              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-[5px] border bg-green-50 border-green-200 text-green-700 ml-2 flex-shrink-0">In Progress</span>
-            ) : (
-              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-[5px] border bg-amber-50 border-amber-200 text-amber-700 ml-2 flex-shrink-0">Assigned</span>
-            )}
-
-            {/* Timer (in progress) */}
-            {selectedJob.status === "tinting_in_progress" && elapsed && (
-              <div className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 rounded-md px-2 py-0.5 ml-1.5 flex-shrink-0">
-                <span className="w-1.5 h-1.5 rounded-full bg-green-600 animate-pulse flex-shrink-0" />
-                <span className="font-mono text-[11px] font-semibold text-gray-600">{elapsed}</span>
-              </div>
-            )}
-
-            {/* Progress bar + fraction — right side */}
-            <div className="flex items-center gap-2 ml-auto flex-shrink-0">
-              <div className="w-[48px] h-[4px] bg-gray-200 rounded-full overflow-hidden">
-                <div className={`h-full rounded-full ${progressColor}`} style={{ width: `${Math.min(progressPct, 100)}%` }} />
-              </div>
-              <span className={cn("text-[11px] font-semibold", progressTextColor)}>{totalDoneToday}/{totalAssignedToday}</span>
+          ) : undefined
+        }
+        rightExtra={
+          <div className="flex items-center gap-2">
+            <div className="w-[48px] h-[4px] bg-gray-200 rounded-full overflow-hidden">
+              <div className={`h-full rounded-full ${progressColor}`} style={{ width: `${Math.min(progressPct, 100)}%` }} />
             </div>
-          </>
-        ) : (
-          <span className="text-[11px] text-gray-400">No jobs assigned</span>
-        )}
-      </div>
+            <span className={cn("text-[11px] font-semibold", progressTextColor)}>{totalDoneToday}/{totalAssignedToday}</span>
+          </div>
+        }
+      />
 
       {/* Row 3: Bill To / Ship To Cards */}
       {selectedJob && (
