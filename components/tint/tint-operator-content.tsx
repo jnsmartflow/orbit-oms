@@ -1104,10 +1104,10 @@ export function TintOperatorContent() {
                 <div className="inline-flex bg-gray-100 rounded-[7px] p-[3px]">
                   <div
                     onClick={() => setQueueDropdownOpen(!queueDropdownOpen)}
-                    className="inline-flex items-center gap-2.5 rounded-[5px] px-3.5 py-[6px] cursor-pointer transition-colors bg-teal-600 text-white font-medium hover:bg-teal-700"
+                    className="inline-flex items-center gap-2.5 rounded-[5px] px-3.5 py-[7px] cursor-pointer transition-colors bg-teal-600 text-white font-medium hover:bg-teal-700"
                   >
                     <span className="text-[11px] font-semibold opacity-80">#{jobs.indexOf(selectedJob) + 1}</span>
-                    <span className="text-[12.5px] font-semibold truncate max-w-[180px]">{selectedJob.customerName}</span>
+                    <span className="text-[13px] font-semibold truncate max-w-[180px]">{selectedJob.customerName}</span>
                     <span className="font-mono text-[11px] opacity-70">{selectedJob.obdNumber}</span>
                     <ChevronDown size={14} className={cn("opacity-70 transition-transform flex-shrink-0", queueDropdownOpen && "rotate-180")} />
                   </div>
@@ -1129,7 +1129,7 @@ export function TintOperatorContent() {
                       </div>
                     </div>
                     <div className="max-h-[480px] overflow-y-auto py-2">
-                      <p className="px-3 text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1.5">Remaining ({jobs.length} jobs)</p>
+                      <p className="px-3 text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1.5">Remaining ({jobs.length} {jobs.length === 1 ? "job" : "jobs"})</p>
                       {jobs.map((job, idx) => {
                         const isCurrent = selectedJobId === job.id && selectedJobType === job.type;
                         const isActive = job.status === "tinting_in_progress";
@@ -1195,12 +1195,12 @@ export function TintOperatorContent() {
       {/* Row 3: Bill To / Ship To Cards */}
       {selectedJob && (
         <div className="bg-white border-b border-gray-200 px-5 py-2 grid grid-cols-2 gap-3 flex-shrink-0" style={{ position: "sticky", top: 96, zIndex: 30 }}>
-          <div className="bg-gray-50 border border-gray-200 rounded-lg px-3.5 py-2.5">
+          <div className="bg-gray-50 border border-gray-200 rounded-lg px-3.5 py-3">
             <div className="text-[9px] font-semibold uppercase tracking-[.4px] text-gray-400 mb-1">Bill to (customer)</div>
             <div className="text-[13px] font-semibold text-gray-900">{selectedJob.billToCustomerName ?? "—"}</div>
             <div className="font-mono text-[11px] text-gray-400 mt-0.5">{selectedJob.billToCustomerId ?? "—"}</div>
           </div>
-          <div className="bg-gray-50 border border-gray-200 rounded-lg px-3.5 py-2.5">
+          <div className="bg-gray-50 border border-gray-200 rounded-lg px-3.5 py-3">
             <div className="text-[9px] font-semibold uppercase tracking-[.4px] text-gray-400 mb-1">Ship to (site)</div>
             <div className="text-[13px] font-semibold text-gray-900">{selectedJob.customerName}</div>
             <div className="flex items-center gap-1.5 text-[11px] text-gray-400 mt-0.5">
@@ -1223,7 +1223,7 @@ export function TintOperatorContent() {
               <div className="px-3 py-2 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
                 <span className="text-[10px] font-extrabold uppercase tracking-[.6px] text-gray-400">Tinting lines</span>
                 <span className="text-[10px] text-gray-400">
-                  {currentTintingLines.length} lines · {selectedJob.totalVolume != null ? `${Math.round(selectedJob.totalVolume)} L` : "—"}
+                  {currentTintingLines.length} {currentTintingLines.length === 1 ? "line" : "lines"} · {selectedJob.totalVolume != null ? `${Math.round(selectedJob.totalVolume)} L` : "—"}
                 </span>
               </div>
 
@@ -1293,7 +1293,7 @@ export function TintOperatorContent() {
                   <div className="px-3 py-2 border-t border-gray-200 flex-shrink-0">
                     <div className="flex items-center justify-between mb-1">
                       <span className={cn("text-[11px] font-semibold", allDone ? "text-green-700" : "text-amber-600")}>
-                        {covered} of {total} covered
+                        {covered} of {total} {total === 1 ? "line" : "lines"} covered
                       </span>
                     </div>
                     <div className="w-full h-[4px] bg-gray-200 rounded-full overflow-hidden">
@@ -1383,7 +1383,7 @@ export function TintOperatorContent() {
               </div>
 
               {/* Scrollable TI form content */}
-              <div className="flex-1 overflow-y-auto px-4 py-3">
+              <div className="flex-1 overflow-y-auto px-4 pt-2.5 pb-3">
 
                 {tintingLines.length === 0 && (
                   <div className="bg-white border border-gray-200 rounded-lg p-4 text-center">
