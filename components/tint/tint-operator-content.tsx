@@ -1275,12 +1275,12 @@ export function TintOperatorContent() {
                       key={rawId}
                       onClick={() => { setSelectedLineIdx(idx); handleStripRowClick(rawId); }}
                       className={cn(
-                        "px-3 py-2.5 border-b border-gray-100 cursor-pointer transition-colors",
+                        "px-3 py-2.5 border-b border-gray-100 cursor-pointer transition-colors border-l-[3px]",
                         isSelected
-                          ? "bg-teal-50 border-l-[3px] border-l-teal-600"
+                          ? "bg-gray-100 border-l-gray-900"
                           : tiEntry
-                            ? "border-l-[3px] border-l-green-200 hover:bg-gray-50"
-                            : "border-l-[3px] border-l-amber-200 bg-amber-50/30 hover:bg-amber-50/50"
+                            ? "bg-white border-l-green-300 hover:bg-gray-50"
+                            : "bg-white border-l-amber-300 hover:bg-gray-50"
                       )}
                     >
                       {/* Row 1: SKU code + status badge */}
