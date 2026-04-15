@@ -60,8 +60,19 @@ export function parseSubject(subject: string): SubjectParseResult {
 
   // Step 2: Strip "Order" prefix and extract code if present
   let customerCode: string | null = null;
+  const remarks: Array<{ text: string; remarkType: string }> = [];
 
-  if (/^order\s*:/i.test(s)) {
+  // Handle "ORDER N : ..." where N is a bill number
+  if (/^order\s+\d+\s*:\s*/i.test(s)) {
+    const billMatch = s.match(/^order\s+(\d+)\s*:\s*/i);
+    if (billMatch) {
+      remarks.push({
+        text: `Bill ${billMatch[1]}`,
+        remarkType: "billing",
+      });
+    }
+    s = s.replace(/^order\s+\d+\s*:\s*/i, "").trim();
+  } else if (/^order\s*:/i.test(s)) {
     s = s.replace(/^order\s*:\s*/i, "").trim();
   } else if (/^order\s+for\s+/i.test(s)) {
     s = s.replace(/^order\s+for\s+/i, "").trim();
@@ -69,6 +80,8 @@ export function parseSubject(subject: string): SubjectParseResult {
     const m = s.match(/^order-(\d+)\s*/i);
     if (m) customerCode = m[1];
     s = s.replace(/^order-\d+\s*/i, "").trim();
+  } else if (/^order-(?!\d)/i.test(s)) {
+    s = s.replace(/^order-/i, "").trim();
   } else if (/^order\s+-\s*/i.test(s)) {
     s = s.replace(/^order\s+-\s*/i, "").trim();
   } else if (/^order\s+/i.test(s)) {
@@ -79,6 +92,25 @@ export function parseSubject(subject: string): SubjectParseResult {
   s = s.replace(/\s*-\s*order$/i, "").trim();
   s = s.replace(/-order$/i, "").trim();
   s = s.replace(/\.+$/, "").trim();
+
+  // Step 2b2: Extract non-numeric parenthetical content as remark
+  const parenMatch = s.match(/\(([^)]*[a-zA-Z][^)]*)\)/);
+  if (parenMatch) {
+    const parenContent = parenMatch[1].trim();
+    if (parenContent) {
+      const lower = parenContent.toLowerCase();
+      let pRemarkType = "instruction";
+      if (/delivery|deliver\s+to|dispatch\s+to|site/i.test(lower)) {
+        pRemarkType = "delivery";
+      } else if (/cross|billing/i.test(lower)) {
+        pRemarkType = "cross";
+      } else if (/challan/i.test(lower)) {
+        pRemarkType = "context";
+      }
+      remarks.push({ text: parenContent, remarkType: pRemarkType });
+    }
+    s = s.replace(/\s*\([^)]*[a-zA-Z][^)]*\)\s*/g, " ").trim();
+  }
 
   // Step 2c: Leading code (e.g. "3128017 Polishwala Trading Co")
   if (!customerCode) {
@@ -122,7 +154,6 @@ export function parseSubject(subject: string): SubjectParseResult {
   }
 
   // Step 3: Scan for remark signals and strip them from string
-  const remarks: Array<{ text: string; remarkType: string }> = [];
   const seenLabels = new Set<string>();
 
   for (const signal of SUBJECT_SIGNALS) {
@@ -145,6 +176,25 @@ export function parseSubject(subject: string): SubjectParseResult {
   s = s.replace(/^[\s\-:.,]+|[\s\-:.,]+$/g, "").trim();
   // Collapse multiple spaces
   s = s.replace(/\s{2,}/g, " ").trim();
+
+  // Step 4b: Post-signal trailing code extraction (signals may have exposed a trailing code)
+  if (!customerCode) {
+    const postSignalTrailCode = s.match(/\s+(\d{4,})$/);
+    if (postSignalTrailCode) {
+      customerCode = postSignalTrailCode[1];
+      s = s.replace(/\s+\d{4,}$/, "").trim();
+    }
+  }
+
+  // Step 4c: Strip trailing single digit (bill number like "maruti paints 1")
+  const trailDigit = s.match(/\s+(\d)$/);
+  if (trailDigit) {
+    remarks.push({
+      text: `Bill ${trailDigit[1]}`,
+      remarkType: "billing",
+    });
+    s = s.replace(/\s+\d$/, "").trim();
+  }
 
   return {
     customerCode,
@@ -181,7 +231,10 @@ export function extractCustomerFromSubject(subject: string): string {
   s = s.replace(/^urgent\s+/i, "").trim();
 
   // 2. Strip "Order" prefix patterns
-  if (/^order\s*:/i.test(s)) {
+  // Handle "ORDER N : ..." where N is a bill number
+  if (/^order\s+\d+\s*:\s*/i.test(s)) {
+    s = s.replace(/^order\s+\d+\s*:\s*/i, "").trim();
+  } else if (/^order\s*:/i.test(s)) {
     s = s.replace(/^order\s*:\s*/i, "").trim();
   } else if (/^order\s+for\s+/i.test(s)) {
     s = s.replace(/^order\s+for\s+/i, "").trim();
@@ -191,6 +244,8 @@ export function extractCustomerFromSubject(subject: string): string {
     s = s.replace(/^order-\d+\s*/i, "").trim();
     // Prepend the code so matchCustomer() Step 0 can do exact code lookup
     if (codeNum) s = s ? `${codeNum} ${s}` : codeNum;
+  } else if (/^order-(?!\d)/i.test(s)) {
+    s = s.replace(/^order-/i, "").trim();
   } else if (/^order\s+-\s*/i.test(s)) {
     s = s.replace(/^order\s+-\s*/i, "").trim();
   } else if (/^order\s+/i.test(s)) {
@@ -202,6 +257,9 @@ export function extractCustomerFromSubject(subject: string): string {
   s = s.replace(/-order$/i, "").trim();
   s = s.replace(/\.+$/, "").trim();
 
+  // 3b. Strip non-numeric parenthetical delivery/billing instructions
+  s = s.replace(/\s*\([^)]*[a-zA-Z][^)]*\)\s*/g, " ").trim();
+
   // 4a. Trailing code → prepend for matchCustomer Step 0
   const trailingCode = s.match(/\s+(\d{4,})$/);
   if (trailingCode) {
@@ -209,6 +267,9 @@ export function extractCustomerFromSubject(subject: string): string {
     const nameOnly = s.replace(/\s+\d{4,}$/, "").trim();
     s = nameOnly ? `${code} ${nameOnly}` : code;
   }
+
+  // 4b. Strip trailing single digit (bill number)
+  s = s.replace(/\s+\d$/, "").trim();
 
   // 5. Fallback
   return s || original;

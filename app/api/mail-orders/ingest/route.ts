@@ -132,6 +132,19 @@ export async function POST(req: NextRequest) {
 
     // 4b. Customer matching — subject first, body fallback
     const subjectParsed = parseSubject(subject);
+
+    // Propagate subject-extracted delivery remarks
+    const deliveryFromSubject = subjectParsed.remarks
+      .filter(r => r.remarkType === "delivery")
+      .map(r => r.text)
+      .join("; ");
+
+    // Propagate subject-extracted billing remarks
+    const billFromSubject = subjectParsed.remarks
+      .filter(r => r.remarkType === "billing")
+      .map(r => r.text)
+      .join("; ");
+
     const customerInput = subjectParsed.customerCode
       ? subjectParsed.customerName
         ? `${subjectParsed.customerCode} ${subjectParsed.customerName}`
@@ -285,7 +298,12 @@ export async function POST(req: NextRequest) {
     );
 
     // 4c. Ship-to override detection from deliveryRemarks
-    let finalDeliveryRemarks = deliveryRemarks ?? null;
+    let finalDeliveryRemarks = deliveryFromSubject
+      ? deliveryFromSubject + (deliveryRemarks ? "; " + deliveryRemarks : "")
+      : deliveryRemarks ?? null;
+    const finalBillRemarks = billFromSubject
+      ? billFromSubject + (billRemarks ? "; " + billRemarks : "")
+      : billRemarks ?? null;
     let finalShipToOverride = shipToOverride || false;
 
     if (deliveryRemarks && deliveryRemarks.trim()) {
@@ -315,7 +333,7 @@ export async function POST(req: NextRequest) {
         customerCandidates: customerMatch.customerCandidates,
         deliveryRemarks: finalDeliveryRemarks,
         remarks: remarks ?? null,
-        billRemarks: billRemarks ?? null,
+        billRemarks: finalBillRemarks,
         dispatchStatus: dispatchStatus || "Dispatch",
         dispatchPriority: dispatchPriority || "Normal",
         shipToOverride: finalShipToOverride,
@@ -463,7 +481,7 @@ export async function POST(req: NextRequest) {
           customerCandidates: order.customerCandidates,
           deliveryRemarks: finalDeliveryRemarks,
           remarks: body.remarks ?? null,
-          billRemarks: body.billRemarks ?? null,
+          billRemarks: finalBillRemarks,
           dispatchStatus: body.dispatchStatus || "Dispatch",
           dispatchPriority: body.dispatchPriority || "Normal",
           shipToOverride: finalShipToOverride,
