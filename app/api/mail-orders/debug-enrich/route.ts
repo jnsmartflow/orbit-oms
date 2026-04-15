@@ -22,6 +22,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   const text = req.nextUrl.searchParams.get("text") ?? "";
   const pack = req.nextUrl.searchParams.get("pack") ?? "1";
+  const carryProduct = req.nextUrl.searchParams.get("carryProduct") || null;
 
   if (!text.trim()) {
     return NextResponse.json({ error: "Missing ?text= param" }, { status: 400 });
@@ -70,6 +71,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     productProfiles,
     prodRegexMap,
     baseRegexMap,
+    carryProduct,
   );
 
   // Debug info
@@ -94,7 +96,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     : null;
 
   return NextResponse.json({
-    input: { text, pack },
+    input: { text, pack, carryProduct },
     result,
     debug: {
       matchedProductKeywords: matchedProductKws,
