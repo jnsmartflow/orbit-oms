@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Tint Operator — v4 FINAL — Progress + Queue Dropdown</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:#f9fafb;color:#111827}
+:root{
+  --t50:#f0fdfa;--t200:#99f6e4;--t600:#0d9488;--t700:#0f766e;
+  --g50:#f9fafb;--g100:#f3f4f6;--g200:#e5e7eb;--g300:#d1d5db;--g400:#9ca3af;--g500:#6b7280;--g600:#4b5563;--g700:#374151;--g800:#1f2937;--g900:#111827;
+  --gn50:#f0fdf4;--gn200:#bbf7d0;--gn600:#16a34a;--gn700:#15803d;
+  --a50:#fffbeb;--a200:#fde68a;--a600:#d97706;--a700:#b45309;
+  --r50:#fef2f2;--r200:#fecaca;--r700:#b91c1c;
+  --p50:#faf5ff;--p200:#e9d5ff;--p700:#7c3aed;
+  --bl600:#2563eb
+}
+.mono{font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace}
+
+/* Mockup bar */
+.mbar{background:#1f2937;color:#fff;padding:8px 20px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:100}
+.mbar .ml{font-size:10px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;color:#9ca3af}
+.mbar button{font-size:11px;font-weight:600;padding:4px 12px;border-radius:5px;cursor:pointer;border:1px solid #374151;background:transparent;color:#9ca3af}
+.mbar button.act{background:#0d9488;color:#fff;border-color:#0d9488}
+.mbar button:hover:not(.act){background:#374151;color:#fff}
+.sv{display:none}.sv.vis{display:flex}
+.shell{display:flex;height:calc(100vh - 38px)}
+
+/* Sidebar */
+.sb{width:72px;background:#fff;border-left:3px solid var(--t600);border-right:1px solid var(--g200);display:flex;flex-direction:column;align-items:center;flex-shrink:0}
+.sb-b{width:100%;height:52px;display:flex;align-items:center;justify-content:center;border-bottom:1px solid var(--g200)}
+.logo{width:36px;height:36px;background:var(--t600);border-radius:12px;display:flex;align-items:center;justify-content:center}
+.sb-n{flex:1;display:flex;flex-direction:column;align-items:center;padding-top:12px;gap:4px}
+.si{width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--g400);cursor:pointer}
+.si.a{background:var(--t50);color:var(--t600)}
+.sb-u{border-top:1px solid var(--g200);width:100%;padding:12px 0;display:flex;justify-content:center}
+.av{width:32px;height:32px;border-radius:50%;background:var(--t600);color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center}
+
+.mn{flex:1;display:flex;flex-direction:column;overflow:hidden}
+
+/* Header Row 1 */
+.h1{height:52px;background:#fff;border-bottom:1px solid var(--g200);padding:0 20px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.ht{font-size:14px;font-weight:600;color:var(--g900)}
+.hs{display:inline-flex;gap:10px;margin-left:12px;font-size:11px;color:var(--g400)}
+.hs b{font-weight:600;color:var(--g900)}
+.hr{display:flex;align-items:center;gap:12px}
+.hc{font-size:11px;color:var(--g400);font-variant-numeric:tabular-nums}
+.hsp{color:var(--g300)}
+.hsr{width:180px;height:30px;border:1px solid var(--g200);border-radius:6px;padding:0 8px 0 28px;font-size:11px;color:var(--g600);background:#fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cline x1='21' y1='21' x2='16.65' y2='16.65'/%3E%3C/svg%3E") 8px center no-repeat}
+
+/* Header Row 2 */
+.h2{min-height:44px;background:#fff;border-bottom:1px solid var(--g200);padding:0 20px;display:flex;align-items:center;gap:10px;flex-shrink:0;position:relative}
+
+/* Job pill with progress */
+.jp{display:inline-flex;align-items:center;gap:8px;background:#fff;border:1px solid var(--g200);border-radius:8px;padding:5px 10px;cursor:pointer;flex-shrink:0;max-width:420px;position:relative}
+.jp:hover{border-color:var(--g400)}
+.jp.open{border-color:var(--t600);background:var(--t50)}
+.jp .js{font-size:10px;font-weight:600;color:var(--g400);background:var(--g100);border-radius:4px;padding:2px 5px;flex-shrink:0}
+.jp .jn{font-size:12px;font-weight:600;color:var(--g900);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px}
+.jp .jo{font-size:10px;color:var(--g400);flex-shrink:0}
+/* Mini progress bar in pill */
+.jp .mini-prog{display:flex;align-items:center;gap:5px;flex-shrink:0;margin-left:2px}
+.jp .mini-bar{width:40px;height:4px;background:var(--g200);border-radius:2px;overflow:hidden}
+.jp .mini-fill{height:100%;border-radius:2px;background:var(--t600);transition:width .3s}
+.jp .mini-text{font-size:9px;font-weight:600;color:var(--g500);white-space:nowrap}
+.jp .jch{color:var(--g400);flex-shrink:0;transition:transform .15s}
+.jp.open .jch{transform:rotate(180deg)}
+
+.h2s{width:1px;height:20px;background:var(--g200);flex-shrink:0}
+
+/* Bill/Ship pills */
+.bts{display:flex;gap:6px;flex:1;min-width:0;overflow:hidden}
+.bp{display:flex;align-items:center;gap:5px;background:var(--g50);border:1px solid var(--g200);border-radius:6px;padding:3px 8px;min-width:0;flex-shrink:1}
+.bp .bl{font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--g400);flex-shrink:0}
+.bp .bn{font-size:11px;font-weight:600;color:var(--g900);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bp .bs{font-size:10px;color:var(--g400);white-space:nowrap;flex-shrink:0}
+.dd{width:5px;height:5px;border-radius:50%;flex-shrink:0;background:var(--bl600)}
+
+/* Queue/Done segments */
+.sg{display:inline-flex;background:var(--g100);border-radius:7px;padding:3px;gap:2px;margin-left:auto;flex-shrink:0}
+.sb2{font-size:11px;font-weight:600;padding:4px 10px;border-radius:5px;cursor:pointer;border:none;white-space:nowrap}
+.sb2.on{background:var(--t600);color:#fff}
+.sb2.off{background:transparent;color:var(--g500)}
+
+/* ═══ QUEUE DROPDOWN ═══ */
+.jq{position:absolute;top:42px;left:20px;z-index:50;width:380px;background:#fff;border:1px solid var(--g200);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.1);overflow:hidden}
+
+/* Dropdown scoreboard header */
+.jq-score{padding:12px 14px;border-bottom:1px solid var(--g200);background:var(--g50)}
+.jq-score-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.jq-score-title{font-size:11px;font-weight:700;color:var(--g900)}
+.jq-score-frac{font-size:18px;font-weight:700;color:var(--g900)}
+.jq-score-frac .of{font-size:13px;font-weight:500;color:var(--g400)}
+.jq-score-label{font-size:10px;color:var(--g400);margin-top:1px}
+.jq-score-bar{width:100%;height:6px;background:var(--g200);border-radius:3px;overflow:hidden}
+.jq-score-fill{height:100%;border-radius:3px;transition:width .3s}
+.jq-score-fill.low{background:var(--a600)}
+.jq-score-fill.mid{background:var(--t600)}
+.jq-score-fill.high{background:var(--gn600)}
+
+/* Dropdown body */
+.jq-body{max-height:400px;overflow-y:auto;padding:6px}
+.jq-lbl{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--g400);padding:6px 8px 4px}
+
+/* Queue card in dropdown */
+.jqc{border:1px solid var(--g200);border-radius:8px;padding:10px 12px;cursor:pointer;margin-bottom:4px;border-left:3px solid transparent;transition:all .1s}
+.jqc:hover{border-color:var(--g300);background:var(--g50)}
+.jqc.cur{background:var(--t50);border-left-color:var(--t600)}
+.jqc.dim{opacity:.45}
+.jqc .r1{display:flex;align-items:center;justify-content:space-between;margin-bottom:3px}
+.jqc .sq{font-size:10px;font-weight:600;color:var(--g400)}
+.jqc .nm{font-size:13px;font-weight:700;color:var(--g900);margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.jqc .r3{display:flex;align-items:center;justify-content:space-between}
+.jqc .ob{font-size:11px;color:var(--g600)}
+.jqc .mt{font-size:10px;color:var(--g400);margin-top:3px}
+
+/* Split */
+.sp{display:flex;flex:1;overflow:hidden}
+
+/* Left panel: SKU lines */
+.lp{width:320px;background:#fff;border-right:1px solid var(--g200);display:flex;flex-direction:column;flex-shrink:0}
+.lh{padding:10px 14px;border-bottom:1px solid var(--g200);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.lht{font-size:11px;font-weight:700;color:var(--g900)}
+.lhm{font-size:10px;color:var(--g400)}
+.ls{flex:1;overflow-y:auto;padding:6px 8px;display:flex;flex-direction:column;gap:4px}
+
+.lc{border:1px solid var(--g200);border-radius:8px;padding:10px 12px;cursor:pointer;border-left:3px solid transparent;transition:all .1s}
+.lc:hover{border-color:var(--g300)}
+.lc.sel{background:var(--t50);border-left-color:var(--t600)}
+.lc.pe{border-left-color:var(--a200);background:rgba(255,251,235,.3)}
+.lc.sel.pe{background:var(--t50);border-left-color:var(--t600)}
+.lc.dn{border-left-color:var(--gn200)}
+.lc .r1{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px}
+.lc .cd{font-size:11px;color:var(--g500)}
+.lc .ds{font-size:12px;font-weight:600;color:var(--g900);margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lc .r3{display:flex;align-items:center;justify-content:space-between}
+.lc .mt2{font-size:11px;color:var(--g400)}
+
+/* Coverage */
+.cv{padding:10px 14px;border-top:1px solid var(--g200);flex-shrink:0;display:flex;align-items:center}
+.cvt{font-size:11px;font-weight:600}
+.cvt.pe{color:var(--a600)}.cvt.pa{color:var(--a600)}.cvt.do{color:var(--gn700)}
+.cvb{flex:1;height:4px;background:var(--g200);border-radius:2px;margin-left:12px;overflow:hidden}
+.cvf{height:100%;border-radius:2px;transition:width .3s}
+
+/* Right panel */
+.rp{flex:1;display:flex;flex-direction:column;background:var(--g50);overflow:hidden}
+.th{background:#fff;border-bottom:1px solid var(--g200);padding:12px 20px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.thi .tn{font-size:14px;font-weight:600;color:var(--g900);display:flex;align-items:center;gap:6px}
+.thi .td{font-size:11px;color:var(--g400);margin-top:2px}
+.tt{display:flex;gap:0}
+.ttb{font-size:11px;font-weight:600;padding:5px 14px;cursor:pointer;border:1px solid var(--g200)}
+.ttb:first-child{border-radius:5px 0 0 5px}.ttb:last-child{border-radius:0 5px 5px 0;border-left:none}
+.ttb.on{background:var(--g900);color:#fff;border-color:var(--g900)}.ttb.of{background:#fff;color:var(--g500)}
+
+.ts{flex:1;overflow-y:auto;padding:16px 20px 20px}
+.sl{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.sl span{font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--g400);flex-shrink:0}
+.sl .ln{flex:1;height:1px;background:var(--g200)}
+.ss{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;margin-bottom:16px}
+.ss::-webkit-scrollbar{height:4px}.ss::-webkit-scrollbar-thumb{background:var(--g300);border-radius:2px}
+.sc{flex-shrink:0;border:1px solid var(--g200);border-radius:8px;padding:8px 14px;background:#fff;cursor:pointer;min-width:140px;transition:border-color .1s}
+.sc:hover{border-color:var(--t600)}
+.sc.ap{border-color:var(--t600);background:var(--t50)}
+.sc .sn{font-size:12px;font-weight:600;color:var(--g900);margin-bottom:2px}
+.sc .sm{font-size:10px;color:var(--g400)}
+.scb{flex-shrink:0;border:1px solid var(--g200);border-radius:8px;padding:8px 14px;background:#fff;cursor:pointer;min-width:100px;display:flex;align-items:center;justify-content:center}
+.scb span{font-size:11px;font-weight:500;color:var(--g500)}
+
+/* TI card */
+.tc{background:#fff;border:1px solid var(--g200);border-radius:10px;overflow:hidden}
+.sa{display:flex;align-items:center;justify-content:space-between;padding:8px 16px;border-bottom:1px solid var(--g200);background:var(--g50)}
+.sap{display:inline-flex;align-items:center;gap:5px;background:var(--g100);border:1px solid var(--g300);border-radius:999px;padding:3px 10px;font-size:11px;font-weight:600;color:var(--g900)}
+.sac{font-size:10px;font-weight:700;color:var(--r700);cursor:pointer;background:none;border:none}
+.qr{display:flex;align-items:flex-end;gap:16px;padding:14px 16px;border-bottom:1px solid var(--g200)}
+.qg{display:flex;flex-direction:column;gap:3px}
+.qg label{font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.3px;color:var(--g400)}
+.qi{width:80px;height:36px;border:1px solid var(--g200);border-radius:6px;text-align:center;font-size:14px;font-weight:600;color:var(--g900)}
+.qi:focus{border-color:var(--t600);outline:none;box-shadow:0 0 0 2px rgba(13,148,136,.1)}
+.qd{height:36px;border:1px solid var(--g200);border-radius:6px;padding:0 12px;font-size:13px;font-weight:600;color:var(--g900);display:flex;align-items:center;background:var(--g50);min-width:60px}
+.qd.em{color:var(--g400)}
+.svt{margin-left:auto;display:flex;align-items:center;gap:8px}
+.it{width:36px;height:20px;border-radius:10px;position:relative;cursor:pointer;flex-shrink:0;background:var(--g300)}
+.it.on2{background:var(--t600)}
+.it .k{width:16px;height:16px;border-radius:50%;background:#fff;position:absolute;top:2px;left:2px;box-shadow:0 1px 2px rgba(0,0,0,.1)}
+.it.on2 .k{left:18px}
+.svl{font-size:11px;font-weight:600;color:var(--g600)}
+/* Shade name row */
+.snr{padding:0 16px 10px;display:flex;align-items:center;gap:8px}
+.snr label{font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.3px;color:var(--g400);flex-shrink:0}
+.snr input{flex:1;height:32px;border:1px solid var(--g200);border-radius:6px;padding:0 10px;font-size:12px;font-weight:500;color:var(--g900)}
+.snr input::placeholder{color:var(--g400)}
+.snr input:focus{border-color:var(--t600);outline:none}
+
+.gs{padding:14px 16px 16px}
+.gsh{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.gsl{font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--g400)}
+.gst{font-size:11px;font-weight:500;color:var(--g500);cursor:pointer;background:none;border:none}
+.gst:hover{color:var(--g700)}
+.gg{display:flex;flex-wrap:wrap;gap:8px}
+.gc{display:flex;flex-direction:column;align-items:center;gap:3px}
+.gc label{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.3px;color:var(--g400)}
+.gi{width:56px;height:34px;border:1px solid var(--g200);border-radius:6px;text-align:center;font-size:13px;font-weight:600;color:var(--g900);background:#fff}
+.gi:focus{border-color:var(--g900);outline:none}
+.gi.has{background:var(--gn50);border-color:var(--gn200);color:var(--gn700)}
+
+/* Footer */
+.ft{background:#fff;border-top:1px solid var(--g200);flex-shrink:0;padding:10px 20px;display:flex;gap:8px;align-items:center}
+.fn{display:flex;align-items:center;gap:8px;margin-right:auto}
+.na2{display:flex;gap:0}
+.na{width:30px;height:30px;border:1px solid var(--g200);display:flex;align-items:center;justify-content:center;cursor:pointer;background:#fff;color:var(--g400)}
+.na:first-child{border-radius:6px 0 0 6px}.na:last-child{border-radius:0 6px 6px 0;border-left:none}
+.na.dis{color:var(--g300);cursor:default}
+.na:hover:not(.dis){color:var(--g700);background:var(--g50)}
+.fp{font-size:11px;color:var(--g400)}
+.tb{display:inline-flex;align-items:center;gap:6px;background:var(--g50);border:1px solid var(--g200);border-radius:6px;padding:4px 10px}
+.tdot{width:6px;height:6px;border-radius:50%;background:var(--gn600);animation:pu 1.5s infinite}
+@keyframes pu{0%,100%{opacity:1}50%{opacity:.4}}
+.ttx{font-size:11px;font-weight:600;color:var(--g600)}
+.btn{height:42px;border-radius:10px;border:none;font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;padding:0 24px}
+.bt{background:var(--t600);color:#fff;flex:1}.bt:hover{background:var(--t700)}
+.bg{background:var(--gn600);color:#fff;flex:1}.bg:hover{background:var(--gn700)}
+
+/* Toast */
+.toast{display:flex;align-items:center;gap:8px;padding:8px 20px;background:var(--gn50);border-bottom:1px solid var(--gn200);flex-shrink:0}
+.toast span{font-size:12px;font-weight:600;color:var(--gn700)}
+
+/* Badges */
+.badge{font-size:9px;font-weight:600;padding:2px 7px;border-radius:4px;display:inline-flex;align-items:center;gap:3px;white-space:nowrap}
+.b-nx{background:var(--g900);color:#fff;font-size:10px}
+.b-cur{background:var(--t600);color:#fff;font-size:9px}
+.b-as{background:var(--a50);color:var(--a700);border:1px solid var(--a200)}
+.b-ip{background:var(--gn50);color:var(--gn700);border:1px solid var(--gn200)}
+.b-dn{background:var(--gn50);color:var(--gn700);border:1px solid var(--gn200)}
+.b-ti{background:var(--p50);color:var(--p700);border:1px solid var(--p200);font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.3px}
+.b-tp{background:var(--r50);color:var(--r700);border:1px solid var(--r200)}
+</style>
+</head>
+<body>
+
+<div class="mbar">
+  <span class="ml">View:</span>
+  <button class="act" onclick="sw('s1')">1. Assigned (0/8)</button>
+  <button onclick="sw('s2')">2. In Progress (3/8)</button>
+  <button onclick="sw('s3')">3. Queue Open</button>
+  <button onclick="sw('s4')">4. Almost Done (7/8)</button>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     STATE 1: ASSIGNED — Fresh start, 0 of 8 done
+     ═══════════════════════════════════════════════════════════════════════ -->
+<div id="s1" class="sv vis">
+<div class="shell">
+  <div class="sb"><div class="sb-b"><div class="logo"><svg width="22" height="22" viewBox="0 0 22 22" fill="none"><circle cx="11" cy="11" r="7" stroke="white" stroke-width="1.6"/><circle cx="11" cy="11" r="2.2" fill="white"/><circle cx="18" cy="11" r="2" fill="white"/></svg></div></div><div class="sb-n"><div class="si a"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div><div class="si"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg></div></div><div class="sb-u"><div class="av">DV</div></div></div>
+  <div class="mn">
+    <div class="h1">
+      <div style="display:flex;align-items:baseline"><span class="ht">My Jobs</span><span class="hs"><span><b>8</b> in queue</span><span><b>0</b> active</span><span><b>0</b> done today</span></span></div>
+      <div class="hr"><span class="hc mono">08:15</span><span class="hsp">|</span><input type="text" class="hsr" placeholder="Search…" /></div>
+    </div>
+    <div class="h2">
+      <div class="jp">
+        <span class="js">#1</span>
+        <span class="jn">Pradakshina Aparment</span>
+        <span class="jo mono">9106322336</span>
+        <span class="badge b-as" style="font-size:9px">Assigned</span>
+        <div class="mini-prog"><div class="mini-bar"><div class="mini-fill" style="width:0%"></div></div><span class="mini-text">0/8</span></div>
+        <svg class="jch" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+      </div>
+      <div class="h2s"></div>
+      <div class="bts">
+        <div class="bp"><span class="bl">Bill to</span><span class="bn">Pradakshina Enterprises</span><span class="bs mono">4007891</span></div>
+        <div class="bp"><span class="bl">Ship to</span><span class="dd"></span><span class="bn">Pradakshina Aparment</span><span class="bs">Adajan · Rte 5</span></div>
+      </div>
+      <div class="sg"><button class="sb2 on">Queue · 8</button><button class="sb2 off">Done · 0</button></div>
+    </div>
+    <div class="sp">
+      <div class="lp">
+        <div class="lh"><span class="lht">SKU Lines</span><span class="lhm">17 Drum · 340 L · 2 tinting</span></div>
+        <div class="ls">
+          <div class="lc sel pe"><div class="r1"><span class="cd mono">IN70449281</span><span class="badge b-ti">Tint</span></div><div class="ds">PS WS UltraClean TINT 92 Base 20L</div><div class="r3"><span class="mt2">13 qty · 260 L · 20L</span><span class="badge b-as">Pending</span></div></div>
+          <div class="lc pe"><div class="r1"><span class="cd mono">IN70449481</span><span class="badge b-ti">Tint</span></div><div class="ds">PS WS UltraClean GENRIC TINT 94 Base 18L</div><div class="r3"><span class="mt2">4 qty · 80 L · 20L</span><span class="badge b-as">Pending</span></div></div>
+        </div>
+        <div class="cv"><span class="cvt pe">0 of 2 covered</span><div class="cvb"><div class="cvf" style="width:0%;background:var(--a200)"></div></div></div>
+      </div>
+      <div class="rp">
+        <div class="th"><div class="thi"><div class="tn">Line 1 of 2 <span class="badge b-ti" style="margin-left:4px">Tint</span></div><div class="td mono">IN70449281 · PS WS UltraClean TINT 92 Base 20L · 13 qty</div></div><div class="tt"><button class="ttb on">TINTER</button><button class="ttb of">ACOTONE</button></div></div>
+        <div class="ts">
+          <div class="sl"><span>Suggestions for this SKU</span><div class="ln"></div></div>
+          <div class="ss"><div class="sc"><div class="sn">Ivory White</div><div class="sm">20L · Last: 12 Mar</div></div><div class="sc"><div class="sn">Pearl Cream</div><div class="sm">20L · Last: 28 Feb</div></div><div class="sc"><div class="sn">Soft Beige</div><div class="sm">20L · First time</div></div><div class="scb"><span>All shades…</span></div></div>
+          <div class="tc">
+            <div class="qr"><div class="qg"><label>Tin Qty</label><input type="number" class="qi" placeholder="0" /></div><div class="qg"><label>Pack Size</label><div class="qd em">—</div></div><div class="svt"><div class="it"><div class="k"></div></div><span class="svl">Save shade</span></div></div>
+            <div class="gs"><div class="gsh"><span class="gsl">Shade quantities (TINTER)</span></div><div class="gg"><div class="gc"><label>YOX</label><input class="gi" type="number" placeholder="—" /></div><div class="gc"><label>LFY</label><input class="gi" type="number" placeholder="—" /></div><div class="gc"><label>GRN</label><input class="gi" type="number" placeholder="—" /></div><div class="gc"><label>TBL</label><input class="gi" type="number" placeholder="—" /></div><div class="gc"><label>WHT</label><input class="gi" type="number" placeholder="—" /></div><div class="gc"><label>MAG</label><input class="gi" type="number" placeholder="—" /></div><div class="gc"><label>FFR</label><input class="gi" type="number" placeholder="—" /></div><div class="gc"><label>BLK</label><input class="gi" type="number" placeholder="—" /></div><div class="gc"><label>OXR</label><input class="gi" type="number" placeholder="—" /></div><div class="gc"><label>HEY</label><input class="gi" type="number" placeholder="—" /></div><div class="gc"><label>HER</label><input class="gi" type="number" placeholder="—" /></div><div class="gc"><label>COB</label><input class="gi" type="number" placeholder="—" /></div><div class="gc"><label>COG</label><input class="gi" type="number" placeholder="—" /></div></div></div>
+          </div>
+        </div>
+        <div class="ft"><div class="fn"><div class="na2"><div class="na dis"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg></div><div class="na"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg></div></div><span class="fp">Line 1 of 2</span></div><button class="btn bt"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>Submit TI &amp; Start</button></div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     STATE 2: IN PROGRESS — 3/8 done, shade applied, working on #4
+     ═══════════════════════════════════════════════════════════════════════ -->
+<div id="s2" class="sv">
+<div class="shell">
+  <div class="sb"><div class="sb-b"><div class="logo"><svg width="22" height="22" viewBox="0 0 22 22" fill="none"><circle cx="11" cy="11" r="7" stroke="white" stroke-width="1.6"/><circle cx="11" cy="11" r="2.2" fill="white"/><circle cx="18" cy="11" r="2" fill="white"/></svg></div></div><div class="sb-n"><div class="si a"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div><div class="si"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg></div></div><div class="sb-u"><div class="av">DV</div></div></div>
+  <div class="mn">
+    <div class="h1"><div style="display:flex;align-items:baseline"><span class="ht">My Jobs</span><span class="hs"><span><b>5</b> in queue</span><span><b>1</b> active</span><span><b>3</b> done today</span></span></div><div class="hr"><span class="hc mono">10:42</span><span class="hsp">|</span><input type="text" class="hsr" placeholder="Search…" /></div></div>
+    <div class="h2">
+      <div class="jp">
+        <span class="js">#4</span><span class="jn">Royal Residency</span><span class="jo mono">9106488210</span><span class="badge b-ip" style="font-size:9px">In Progress</span>
+        <div class="mini-prog"><div class="mini-bar"><div class="mini-fill" style="width:37.5%;background:var(--t600)"></div></div><span class="mini-text">3/8</span></div>
+        <svg class="jch" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+      </div>
+      <div class="h2s"></div>
+      <div class="bts">
+        <div class="bp"><span class="bl">Bill to</span><span class="bn">Royal Construction CO</span><span class="bs mono">4015678</span></div>
+        <div class="bp"><span class="bl">Ship to</span><span class="dd"></span><span class="bn">Royal Residency Ph-2</span><span class="bs">Vesu · Rte 3</span></div>
+      </div>
+      <div class="sg"><button class="sb2 on">Queue · 5</button><button class="sb2 off">Done · 3</button></div>
+    </div>
+    <div class="toast"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--gn600)" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg><span>TI entry saved — Line 1 covered</span></div>
+    <div class="sp">
+      <div class="lp">
+        <div class="lh"><span class="lht">SKU Lines</span><span class="lhm">22 Drum · 440 L · 3 tinting</span></div>
+        <div class="ls">
+          <div class="lc dn"><div class="r1"><span class="cd mono">IN70662100</span><span class="badge b-ti">Tint</span></div><div class="ds">PS Apex Ultima TINT 92 Base 10L</div><div class="r3"><span class="mt2">6 qty · 60 L · 10L</span><span class="badge b-dn">Done</span></div></div>
+          <div class="lc sel pe"><div class="r1"><span class="cd mono">IN70662255</span><span class="badge b-ti">Tint</span></div><div class="ds">PS WS Weathercoat TINT 93 Base 4L</div><div class="r3"><span class="mt2">10 qty · 40 L · 4L</span><span class="badge b-as">Pending</span></div></div>
+          <div class="lc pe"><div class="r1"><span class="cd mono">IN70662401</span><span class="badge b-ti">Tint</span></div><div class="ds">PS WS UltraClean TINT 94 Base 20L</div><div class="r3"><span class="mt2">8 qty · 160 L · 20L</span><span class="badge b-as">Pending</span></div></div>
+        </div>
+        <div class="cv"><span class="cvt pa">1 of 3 covered</span><div class="cvb"><div class="cvf" style="width:33%;background:var(--a600)"></div></div></div>
+      </div>
+      <div class="rp">
+        <div class="th"><div class="thi"><div class="tn">Line 2 of 3 <span class="badge b-ti" style="margin-left:4px">Tint</span></div><div class="td mono">IN70662255 · PS WS Weathercoat TINT 93 Base 4L · 10 qty</div></div><div class="tt"><button class="ttb on">TINTER</button><button class="ttb of">ACOTONE</button></div></div>
+        <div class="ts">
+          <div class="sl"><span>Suggestions for this SKU</span><div class="ln"></div></div>
+          <div class="ss"><div class="sc ap"><div class="sn">Warm Sand</div><div class="sm">4L · Last: 05 Mar</div></div><div class="sc"><div class="sn">Desert Glow</div><div class="sm">4L · First time</div></div><div class="scb"><span>All shades…</span></div></div>
+          <div class="tc">
+            <div class="sa"><span class="sap"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2"/></svg>Warm Sand</span><button class="sac">Clear ×</button></div>
+            <div class="qr"><div class="qg"><label>Tin Qty</label><input type="number" class="qi" value="10" /></div><div class="qg"><label>Pack Size</label><div class="qd">4L</div></div><div class="svt"><div class="it on2"><div class="k"></div></div><span class="svl">Save shade</span></div></div>
+            <div class="snr"><label>Shade name</label><input type="text" value="Warm Sand" placeholder="e.g. Ivory White" /></div>
+            <div class="gs"><div class="gsh"><span class="gsl">Active shade values</span><button class="gst">+ Show all 13</button></div><div class="gg"><div class="gc"><label>YOX</label><input class="gi has" type="number" value="3.2" /></div><div class="gc"><label>WHT</label><input class="gi has" type="number" value="52" /></div><div class="gc"><label>OXR</label><input class="gi has" type="number" value="1.1" /></div><div class="gc"><label>BLK</label><input class="gi" type="number" placeholder="—" /></div><div class="gc"><label>HEY</label><input class="gi" type="number" placeholder="—" /></div></div></div>
+          </div>
+        </div>
+        <div class="ft">
+          <div class="fn"><div class="na2"><div class="na"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg></div><div class="na"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg></div></div><div class="tb"><div class="tdot"></div><span class="ttx mono">00:04:23</span></div></div>
+          <button class="btn bt" style="max-width:220px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add TI Entry</button>
+          <button class="btn bg" style="max-width:220px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>Mark as Done</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     STATE 3: QUEUE DROPDOWN OPEN — showing scoreboard
+     ═══════════════════════════════════════════════════════════════════════ -->
+<div id="s3" class="sv">
+<div class="shell">
+  <div class="sb"><div class="sb-b"><div class="logo"><svg width="22" height="22" viewBox="0 0 22 22" fill="none"><circle cx="11" cy="11" r="7" stroke="white" stroke-width="1.6"/><circle cx="11" cy="11" r="2.2" fill="white"/><circle cx="18" cy="11" r="2" fill="white"/></svg></div></div><div class="sb-n"><div class="si a"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div><div class="si"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg></div></div><div class="sb-u"><div class="av">DV</div></div></div>
+  <div class="mn">
+    <div class="h1"><div style="display:flex;align-items:baseline"><span class="ht">My Jobs</span><span class="hs"><span><b>5</b> in queue</span><span><b>1</b> active</span><span><b>3</b> done today</span></span></div><div class="hr"><span class="hc mono">10:42</span><span class="hsp">|</span><input type="text" class="hsr" placeholder="Search…" /></div></div>
+    <div class="h2">
+      <div class="jp open">
+        <span class="js">#4</span><span class="jn">Royal Residency</span><span class="jo mono">9106488210</span><span class="badge b-ip" style="font-size:9px">In Progress</span>
+        <div class="mini-prog"><div class="mini-bar"><div class="mini-fill" style="width:37.5%;background:var(--t600)"></div></div><span class="mini-text">3/8</span></div>
+        <svg class="jch" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+      </div>
+      <div class="h2s"></div>
+      <div class="bts" style="opacity:.3"><div class="bp"><span class="bl">Bill to</span><span class="bn">Royal Construction CO</span></div><div class="bp"><span class="bl">Ship to</span><span class="bn">Royal Residency Ph-2</span></div></div>
+      <div class="sg" style="opacity:.3"><button class="sb2 on">Queue · 5</button><button class="sb2 off">Done · 3</button></div>
+
+      <!-- ═══ DROPDOWN WITH SCOREBOARD ═══ -->
+      <div class="jq">
+        <!-- Scoreboard -->
+        <div class="jq-score">
+          <div class="jq-score-row">
+            <div><div class="jq-score-title">Today's Target</div><div class="jq-score-label">Assigned by Chandresh</div></div>
+            <div style="text-align:right"><div class="jq-score-frac">3 <span class="of">of 8</span></div></div>
+          </div>
+          <div class="jq-score-bar"><div class="jq-score-fill mid" style="width:37.5%"></div></div>
+        </div>
+        <!-- Queue cards -->
+        <div class="jq-body">
+          <div class="jq-lbl">Remaining (5 jobs)</div>
+          <div class="jqc cur">
+            <div class="r1"><span class="sq">#4</span><span class="badge b-cur">Current</span></div>
+            <div class="nm">Royal Residency Ph-2</div>
+            <div class="r3"><span class="ob mono">9106488210</span><span class="badge b-tp">TI 1/3</span></div>
+            <div class="mt">22 Drum · 440 L · Local · Vesu</div>
+          </div>
+          <div class="jqc dim">
+            <div class="r1"><span class="sq">#5</span></div>
+            <div class="nm">Shreeji Heights</div>
+            <div class="r3"><span class="ob mono">9106399887</span><span class="badge b-tp">TI 0/3</span></div>
+            <div class="mt">12 Drum · 240 L · Local · Pal</div>
+          </div>
+          <div class="jqc dim">
+            <div class="r1"><span class="sq">#6</span></div>
+            <div class="nm">Apex Tower B-Wing</div>
+            <div class="r3"><span class="ob mono">9106512344</span><span class="badge b-tp">TI 0/1</span></div>
+            <div class="mt">5 Drum · 100 L · Local · Adajan</div>
+          </div>
+          <div class="jqc dim">
+            <div class="r1"><span class="sq">#7</span></div>
+            <div class="nm">Sagar Elegance</div>
+            <div class="r3"><span class="ob mono">9106518890</span><span class="badge b-tp">TI 0/2</span></div>
+            <div class="mt">9 Drum · 180 L · UPC · Navsari</div>
+          </div>
+          <div class="jqc dim">
+            <div class="r1"><span class="sq">#8</span></div>
+            <div class="nm">Pramukh Villa</div>
+            <div class="r3"><span class="ob mono">9106520012</span><span class="badge b-tp">TI 0/1</span></div>
+            <div class="mt">3 Drum · 60 L · Local · Piplod</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="sp">
+      <div class="lp" style="opacity:.35;pointer-events:none">
+        <div class="lh"><span class="lht">SKU Lines</span><span class="lhm">22 Drum · 440 L</span></div>
+        <div class="ls">
+          <div class="lc dn"><div class="r1"><span class="cd mono">IN70662100</span></div><div class="ds">PS Apex Ultima TINT 92 Base 10L</div><div class="r3"><span class="mt2">6 qty</span><span class="badge b-dn">Done</span></div></div>
+          <div class="lc sel pe"><div class="r1"><span class="cd mono">IN70662255</span></div><div class="ds">PS WS Weathercoat TINT 93 Base 4L</div><div class="r3"><span class="mt2">10 qty</span><span class="badge b-as">Pending</span></div></div>
+          <div class="lc pe"><div class="r1"><span class="cd mono">IN70662401</span></div><div class="ds">PS WS UltraClean TINT 94 Base 20L</div><div class="r3"><span class="mt2">8 qty</span><span class="badge b-as">Pending</span></div></div>
+        </div>
+        <div class="cv"><span class="cvt pa">1 of 3</span><div class="cvb"><div class="cvf" style="width:33%;background:var(--a600)"></div></div></div>
+      </div>
+      <div class="rp" style="opacity:.35;pointer-events:none">
+        <div class="th"><div class="thi"><div class="tn">Line 2 of 3</div><div class="td mono">IN70662255 · 10 qty</div></div></div>
+        <div class="ts" style="display:flex;align-items:center;justify-content:center"><span style="font-size:13px;color:var(--g400)">Queue open — select a job</span></div>
+        <div class="ft"><div class="fn"><span class="fp">Queue open</span></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     STATE 4: ALMOST DONE — 7/8, green progress
+     ═══════════════════════════════════════════════════════════════════════ -->
+<div id="s4" class="sv">
+<div class="shell">
+  <div class="sb"><div class="sb-b"><div class="logo"><svg width="22" height="22" viewBox="0 0 22 22" fill="none"><circle cx="11" cy="11" r="7" stroke="white" stroke-width="1.6"/><circle cx="11" cy="11" r="2.2" fill="white"/><circle cx="18" cy="11" r="2" fill="white"/></svg></div></div><div class="sb-n"><div class="si a"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div><div class="si"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg></div></div><div class="sb-u"><div class="av">DV</div></div></div>
+  <div class="mn">
+    <div class="h1"><div style="display:flex;align-items:baseline"><span class="ht">My Jobs</span><span class="hs"><span><b>1</b> in queue</span><span><b>0</b> active</span><span><b>7</b> done today</span></span></div><div class="hr"><span class="hc mono">15:38</span><span class="hsp">|</span><input type="text" class="hsr" placeholder="Search…" /></div></div>
+    <div class="h2">
+      <div class="jp">
+        <span class="js">#8</span><span class="jn">Pramukh Villa</span><span class="jo mono">9106520012</span><span class="badge b-as" style="font-size:9px">Assigned</span>
+        <div class="mini-prog"><div class="mini-bar"><div class="mini-fill" style="width:87.5%;background:var(--gn600)"></div></div><span class="mini-text" style="color:var(--gn700)">7/8</span></div>
+        <svg class="jch" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+      </div>
+      <div class="h2s"></div>
+      <div class="bts">
+        <div class="bp"><span class="bl">Bill to</span><span class="bn">Pramukh Developers</span><span class="bs mono">4019876</span></div>
+        <div class="bp"><span class="bl">Ship to</span><span class="dd"></span><span class="bn">Pramukh Villa</span><span class="bs">Piplod · Rte 2</span></div>
+      </div>
+      <div class="sg"><button class="sb2 on">Queue · 1</button><button class="sb2 off">Done · 7</button></div>
+    </div>
+    <div class="sp">
+      <div class="lp">
+        <div class="lh"><span class="lht">SKU Lines</span><span class="lhm">3 Drum · 60 L · 1 tinting</span></div>
+        <div class="ls">
+          <div class="lc sel pe"><div class="r1"><span class="cd mono">IN70775500</span><span class="badge b-ti">Tint</span></div><div class="ds">PS Royale Atmos TINT 92 Base 1L</div><div class="r3"><span class="mt2">3 qty · 3 L · 1L</span><span class="badge b-as">Pending</span></div></div>
+        </div>
+        <div class="cv"><span class="cvt pe">0 of 1 covered</span><div class="cvb"><div class="cvf" style="width:0%;background:var(--a200)"></div></div></div>
+      </div>
+      <div class="rp">
+        <div class="th"><div class="thi"><div class="tn">Line 1 of 1 <span class="badge b-ti" style="margin-left:4px">Tint</span></div><div class="td mono">IN70775500 · PS Royale Atmos TINT 92 Base 1L · 3 qty</div></div><div class="tt"><button class="ttb on">TINTER</button><button class="ttb of">ACOTONE</button></div></div>
+        <div class="ts">
+          <div class="sl"><span>Suggestions for this SKU</span><div class="ln"></div></div>
+          <div class="ss"><div class="sc"><div class="sn">Mint Fresh</div><div class="sm">1L · Last: 14 Apr</div></div><div class="scb"><span>All shades…</span></div></div>
+          <div class="tc">
+            <div class="qr"><div class="qg"><label>Tin Qty</label><input type="number" class="qi" value="3" /></div><div class="qg"><label>Pack Size</label><div class="qd">1L</div></div><div class="svt"><div class="it"><div class="k"></div></div><span class="svl">Save shade</span></div></div>
+            <div class="gs"><div class="gsh"><span class="gsl">Shade quantities (TINTER)</span></div><div class="gg"><div class="gc"><label>YOX</label><input class="gi" type="number" placeholder="—" /></div><div class="gc"><label>LFY</label><input class="gi" type="number" placeholder="—" /></div><div class="gc"><label>GRN</label><input class="gi" type="number" placeholder="—" /></div><div class="gc"><label>TBL</label><input class="gi" type="number" placeholder="—" /></div><div class="gc"><label>WHT</label><input class="gi" type="number" placeholder="—" /></div><div class="gc"><label>MAG</label><input class="gi" type="number" placeholder="—" /></div><div class="gc"><label>FFR</label><input class="gi" type="number" placeholder="—" /></div><div class="gc"><label>BLK</label><input class="gi" type="number" placeholder="—" /></div><div class="gc"><label>OXR</label><input class="gi" type="number" placeholder="—" /></div><div class="gc"><label>HEY</label><input class="gi" type="number" placeholder="—" /></div><div class="gc"><label>HER</label><input class="gi" type="number" placeholder="—" /></div><div class="gc"><label>COB</label><input class="gi" type="number" placeholder="—" /></div><div class="gc"><label>COG</label><input class="gi" type="number" placeholder="—" /></div></div></div>
+          </div>
+        </div>
+        <div class="ft"><div class="fn"><span class="fp">Last job — one line remaining</span></div><button class="btn bt"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>Submit TI &amp; Start</button></div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<script>
+function sw(id){document.querySelectorAll('.sv').forEach(e=>e.classList.remove('vis'));document.getElementById(id).classList.add('vis');document.querySelectorAll('.mbar button').forEach(b=>b.classList.remove('act'));event.target.classList.add('act')}
+</script>
+</body>
+</html>
