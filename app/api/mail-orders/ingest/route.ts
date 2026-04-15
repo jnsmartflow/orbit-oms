@@ -53,6 +53,7 @@ interface IngestRequest {
     packCode: string;
     quantity: number;
     isCarton?: boolean;
+    carryProduct?: string | null;
   }>;
   remarkLines?: Array<{
     rawText: string;
@@ -362,6 +363,7 @@ export async function POST(req: NextRequest) {
         productProfiles,
         prodRegexMap,
         baseRegexMap,
+        line.carryProduct || null,
       );
 
       // Carton multiplication

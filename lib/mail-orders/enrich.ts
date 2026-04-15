@@ -388,6 +388,54 @@ export function enrichLine(
   // v3 additions — pre-compiled keyword regexes (optional, built internally if not provided)
   prodRegexMap?: Map<string, RegExp>,
   baseRegexMap?: Map<string, RegExp>,
+  // v3.2 — carry-forward product hint from parser v6.5
+  carryProduct?: string | null,
+): EnrichResult {
+  const result = enrichLineCore(
+    rawText, packCode, productKeywords, baseKeywords,
+    skuByCombo, skuByMaterial, skuByComboAlt, productProfiles,
+    prodRegexMap, baseRegexMap,
+  );
+
+  // carryProduct hint: if unmatched/partial and carryProduct provided,
+  // retry with carryProduct prepended to rawText (no carryProduct passed
+  // to recursive call — prevents infinite recursion)
+  if (result.matchStatus === 'unmatched' && carryProduct) {
+    const hintResult = enrichLineCore(
+      `${carryProduct} ${rawText}`, packCode, productKeywords, baseKeywords,
+      skuByCombo, skuByMaterial, skuByComboAlt, productProfiles,
+      prodRegexMap, baseRegexMap,
+    );
+    if (hintResult.matchStatus === 'matched' || hintResult.matchStatus === 'partial') {
+      return hintResult;
+    }
+  }
+
+  if (result.matchStatus === 'partial' && carryProduct) {
+    const hintResult = enrichLineCore(
+      `${carryProduct} ${rawText}`, packCode, productKeywords, baseKeywords,
+      skuByCombo, skuByMaterial, skuByComboAlt, productProfiles,
+      prodRegexMap, baseRegexMap,
+    );
+    if (hintResult.matchStatus === 'matched') {
+      return hintResult;
+    }
+  }
+
+  return result;
+}
+
+function enrichLineCore(
+  rawText: string,
+  packCode: string,
+  productKeywords: ProductKeyword[],
+  baseKeywords: BaseKeyword[],
+  skuByCombo: Map<string, SkuEntry>,
+  skuByMaterial: Map<string, SkuEntry>,
+  skuByComboAlt?: Map<string, SkuEntry>,
+  productProfiles?: Map<string, ProductProfile>,
+  prodRegexMap?: Map<string, RegExp>,
+  baseRegexMap?: Map<string, RegExp>,
 ): EnrichResult {
   const EMPTY: EnrichResult = {
     productName: "",
