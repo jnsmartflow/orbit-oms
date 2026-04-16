@@ -11,9 +11,14 @@ import {
   getOrderFlags,
   getOrderVolume,
   getPackVolumeLiters,
+  getLineVolume,
   buildReplyTemplate,
   getOrderSignals,
   getBillLabel,
+  splitLinesByCategory,
+  SPLIT_VOLUME_THRESHOLD,
+  SPLIT_LINE_THRESHOLD,
+  formatVolume,
 } from "@/lib/mail-orders/utils";
 import { searchCustomers, saveLineStatus, searchSkus, resolveLine } from "@/lib/mail-orders/api";
 
@@ -446,6 +451,8 @@ export function ReviewView({
     packCode: string;
   }>>(new Map());
   const [activeLineIndex, setActiveLineIndex] = useState<number>(0);
+  const [splitDismissed, setSplitDismissed] = useState(false);
+  const [splitting, setSplitting] = useState(false);
 
   // ── Selected order ──────────────────────────────────────────────
   const selectedOrder = useMemo(() => {
@@ -466,6 +473,8 @@ export function ReviewView({
     setResolveLineId(null);
     setResolvedLineOverrides(new Map());
     setActiveLineIndex(0);
+    setSplitDismissed(false);
+    setSplitting(false);
   }, [focusedId]);
 
   // Auto-select first pending order if none selected
@@ -614,6 +623,34 @@ export function ReviewView({
     window.print();
   }
 
+  async function handleSplitClick() {
+    if (!selectedOrder || !splitPreview || splitting) return;
+    setSplitting(true);
+    try {
+      const res = await fetch(
+        `/api/mail-orders/${selectedOrder.id}/split`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            groups: [splitPreview.groupA.lineIds, splitPreview.groupB.lineIds],
+          }),
+        },
+      );
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        console.error("[review-view] split failed:", err);
+        setSplitting(false);
+        return;
+      }
+      // Success: the next poll refresh will show the new A/B rows.
+      // Don't clear splitting here — focus change via polling will reset it.
+    } catch (err) {
+      console.error("[review-view] split error:", err);
+      setSplitting(false);
+    }
+  }
+
   function handleCopyClick() {
     if (!selectedOrder) return;
     onCopy(selectedOrder.id, selectedOrder.lines);
@@ -644,6 +681,54 @@ export function ReviewView({
     } catch {
       return [];
     }
+  }, [selectedOrder]);
+
+  const splitPreview = useMemo(() => {
+    if (!selectedOrder) return null;
+    if (selectedOrder.splitLabel) return null;
+    if (selectedOrder.status === "punched") return null;
+    if (selectedOrder.lines.length <= 1) return null;
+
+    const totalVol = getOrderVolume(selectedOrder.lines);
+    const tripsThreshold =
+      totalVol > SPLIT_VOLUME_THRESHOLD ||
+      selectedOrder.lines.length > SPLIT_LINE_THRESHOLD;
+    if (!tripsThreshold) return null;
+
+    const effectiveLines = selectedOrder.lines;
+    const lineItems = effectiveLines.map((l, idx) => ({
+      index: idx,
+      quantity: l.quantity,
+      packCode: l.packCode,
+      productName: l.productName,
+      paintType: l.paintType,
+      materialType: l.materialType,
+    }));
+
+    const [groupAIdx, groupBIdx] = splitLinesByCategory(lineItems);
+    if (groupAIdx.length === 0 || groupBIdx.length === 0) return null;
+
+    const toIds = (indices: number[]) =>
+      indices.map((i) => effectiveLines[i].id);
+    const toVol = (indices: number[]) =>
+      indices.reduce(
+        (s, i) =>
+          s + getLineVolume(effectiveLines[i].quantity, effectiveLines[i].packCode),
+        0,
+      );
+
+    return {
+      groupA: {
+        lineIds: toIds(groupAIdx),
+        count: groupAIdx.length,
+        volume: toVol(groupAIdx),
+      },
+      groupB: {
+        lineIds: toIds(groupBIdx),
+        count: groupBIdx.length,
+        volume: toVol(groupBIdx),
+      },
+    };
   }, [selectedOrder]);
 
   // ── Order row renderer (left panel) ──────────────────────────────
@@ -1580,6 +1665,42 @@ export function ReviewView({
         {selectedOrder ? (
           <>
             {renderDetailHeader(selectedOrder)}
+
+            {splitPreview && !splitDismissed && (
+              <div className="mo-print-hide mx-5 my-2 p-2.5 bg-amber-50 border border-amber-200 rounded-md flex items-center justify-between gap-3 flex-shrink-0">
+                <div className="min-w-0 flex-1">
+                  <div className="text-[12px] font-semibold text-amber-800">
+                    {"\u26A0"} Large order — split recommended
+                  </div>
+                  <div className="text-[11px] text-amber-600 mt-0.5">
+                    Group A: {splitPreview.groupA.count} lines · {formatVolume(splitPreview.groupA.volume)}
+                    <span className="mx-2 text-amber-300">|</span>
+                    Group B: {splitPreview.groupB.count} lines · {formatVolume(splitPreview.groupB.volume)}
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                  <button
+                    onClick={handleSplitClick}
+                    disabled={splitting}
+                    className={`h-7 px-3 text-[11px] font-medium rounded text-white transition-colors ${
+                      splitting
+                        ? "bg-amber-400 cursor-wait"
+                        : "bg-amber-600 hover:bg-amber-700 cursor-pointer"
+                    }`}
+                  >
+                    {splitting ? "Splitting..." : "Split"}
+                  </button>
+                  <button
+                    onClick={() => setSplitDismissed(true)}
+                    disabled={splitting}
+                    className="h-7 px-3 text-[11px] font-medium text-amber-700 hover:bg-amber-100 rounded transition-colors"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            )}
+
             {renderSkuTable(selectedOrder)}
 
             {/* ── Remarks Footer ── */}
