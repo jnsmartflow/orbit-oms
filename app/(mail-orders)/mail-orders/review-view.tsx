@@ -548,7 +548,7 @@ export function ReviewView({
   const punchedOrders = useMemo(() => {
     const list = orders.filter(o => o.status === "punched" && !recentlyPunchedIds.has(o.id));
     return [...list].sort((a, b) => {
-      const timeDiff = new Date(a.receivedAt).getTime() - new Date(b.receivedAt).getTime();
+      const timeDiff = new Date(b.receivedAt).getTime() - new Date(a.receivedAt).getTime();
       if (timeDiff !== 0) return timeDiff;
       const billDiff = getBillNumber(a) - getBillNumber(b);
       if (billDiff !== 0) return billDiff;
@@ -799,20 +799,6 @@ export function ReviewView({
       onFocusChange(navigationList[currentIndex + 1].id);
     }
   }
-
-  // Auto-advance: when focused order becomes fully punched (after grace period),
-  // move to next pending order
-  useEffect(() => {
-    if (focusedId === null) return;
-    const order = orders.find(o => o.id === focusedId);
-    if (!order) return;
-    if (order.status === "punched" && !recentlyPunchedIds.has(order.id)) {
-      const nextPending = orders.find(o => o.status !== "punched");
-      if (nextPending) {
-        onFocusChange(nextPending.id);
-      }
-    }
-  }, [orders, focusedId, recentlyPunchedIds, onFocusChange]);
 
   // Scroll active SKU line into view
   useEffect(() => {
