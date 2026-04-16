@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useRef } from "react";
-import { Check, Pencil, Copy, Mail, Flag, Search } from "lucide-react";
+import { Check, Pencil, Copy, Mail, Flag, Search, Printer } from "lucide-react";
 import type { MoOrder, MoOrderLine, CustomerSearchResult } from "@/lib/mail-orders/types";
 import type { SlotCutoffs } from "@/lib/mail-orders/utils";
 import {
@@ -91,6 +91,7 @@ const REASON_KEY_VALUES = ["out_of_stock", "wrong_pack", "discontinued", "other_
 function SkuToggle({ isOn, onToggle }: { isOn: boolean; onToggle: () => void }) {
   return (
     <span
+      className="mo-print-hide"
       onClick={onToggle}
       style={{
         width: 28, height: 14, borderRadius: 7,
@@ -606,6 +607,11 @@ export function ReviewView({
     navigator.clipboard.writeText(template);
     setReplyCopied(true);
     setTimeout(() => setReplyCopied(false), 1500);
+  }
+
+  function handlePrintClick() {
+    if (!selectedOrder) return;
+    window.print();
   }
 
   function handleCopyClick() {
@@ -1144,7 +1150,7 @@ export function ReviewView({
           </div>
 
           {/* RIGHT — Compact icon action buttons */}
-          <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+          <div className="mo-print-hide" style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
             {/* Copy */}
             <button
               onClick={handleCopyClick}
@@ -1233,6 +1239,30 @@ export function ReviewView({
               }}
             >
               <Flag size={14} />
+            </button>
+
+            {/* Print */}
+            <button
+              onClick={handlePrintClick}
+              title="Print order"
+              style={{
+                width: 28, height: 28, borderRadius: 6,
+                border: "1px solid #e5e7eb", background: "#fff",
+                cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+                color: "#9ca3af", transition: "all 0.12s",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = "#f9fafb";
+                e.currentTarget.style.borderColor = "#d1d5db";
+                e.currentTarget.style.color = "#6b7280";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "#fff";
+                e.currentTarget.style.borderColor = "#e5e7eb";
+                e.currentTarget.style.color = "#9ca3af";
+              }}
+            >
+              <Printer size={14} />
             </button>
           </div>
         </div>
@@ -1546,7 +1576,7 @@ export function ReviewView({
       </div>
 
       {/* RIGHT PANEL */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div id="mo-print-area" className="flex-1 flex flex-col overflow-hidden">
         {selectedOrder ? (
           <>
             {renderDetailHeader(selectedOrder)}
@@ -1630,16 +1660,19 @@ export function ReviewView({
             </div>
 
             {/* ── Nav Footer ── */}
-            <div style={{
-              flexShrink: 0,
-              height: 36,
-              borderTop: "1px solid #e5e7eb",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 10,
-              padding: "0 20px",
-            }}>
+            <div
+              className="mo-print-hide"
+              style={{
+                flexShrink: 0,
+                height: 36,
+                borderTop: "1px solid #e5e7eb",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 10,
+                padding: "0 20px",
+              }}
+            >
               <button
                 onClick={handlePrevOrder}
                 disabled={currentIndex <= 0}
@@ -1697,6 +1730,15 @@ export function ReviewView({
                 />
               );
             })()}
+
+            {/* ── Print Footer (only visible when printing) ── */}
+            <div className="mo-print-footer">
+              OrbitOMS · JSW Dulux Surat Depot · Printed {new Date().toLocaleString("en-IN", {
+                day: "2-digit", month: "short", year: "numeric",
+                hour: "2-digit", minute: "2-digit",
+                hour12: false, timeZone: "Asia/Kolkata",
+              })} IST
+            </div>
           </>
         ) : (
           <div className="flex-1 flex items-center justify-center text-gray-400 text-[13px]">

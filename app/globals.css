@@ -442,4 +442,63 @@
 
   /* ── Screen-only elements ───────────────────────────────────────────────── */
   .print-hide { visibility: hidden !important; display: none !important; }
+
+  /* ═════════════════════════════════════════════
+     Mail Orders — Review View print styles
+     ═════════════════════════════════════════════ */
+
+  #mo-print-area,
+  #mo-print-area * {
+    visibility: visible !important;
+  }
+
+  #mo-print-area {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    background: white !important;
+    color: black !important;
+  }
+
+  /* Hide MO action icons, toggles, nav footer */
+  #mo-print-area .mo-print-hide,
+  #mo-print-area .mo-print-hide * {
+    visibility: hidden !important;
+    display: none !important;
+  }
+
+  /* Show the MO print footer */
+  #mo-print-area .mo-print-footer {
+    display: block !important;
+    visibility: visible !important;
+    margin-top: 24px;
+    padding: 12px 20px;
+    border-top: 1px solid #999;
+    font-size: 10px;
+    color: #555;
+    text-align: center;
+  }
+
+  /* MO B&W aesthetics */
+  #mo-print-area * {
+    background: white !important;
+    box-shadow: none !important;
+  }
+
+  /* MO table borders in print */
+  #mo-print-area table {
+    border-collapse: collapse;
+    width: 100%;
+  }
+  #mo-print-area th,
+  #mo-print-area td {
+    border-bottom: 1px solid #999 !important;
+  }
+  #mo-print-area thead th {
+    border-bottom: 2px solid #000 !important;
+  }
 }
+
+/* MO print footer — hidden by default on screen */
+.mo-print-footer { display: none; }
