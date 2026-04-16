@@ -689,6 +689,11 @@ export function ReviewView({
         <div className="text-[11px] text-gray-400 mt-0.5 truncate">
           {smartTitleCase(cleanSubject(order.soName))}
         </div>
+        {isPunched && order.punchedBy?.name && order.punchedAt && (
+          <div className="text-[10px] text-gray-400 mt-0.5 truncate tabular-nums">
+            ✓ {smartTitleCase(order.punchedBy.name)} {formatTime(order.punchedAt)}
+          </div>
+        )}
       </div>
     );
   }
@@ -904,6 +909,19 @@ export function ReviewView({
     const vol = Math.round(getOrderVolume(order.lines));
     if (vol > 0) metaParts.push({ key: "vol", el: <span className="tabular-nums">{vol}L</span> });
     metaParts.push({ key: "lines", el: <>{order.totalLines} lines</> });
+
+    if (order.status === "punched" && order.punchedBy?.name && order.punchedAt) {
+      metaParts.unshift({
+        key: "punched",
+        el: (
+          <>
+            ✓ {smartTitleCase(order.punchedBy.name)}
+            {" "}
+            <span className="tabular-nums">{formatTime(order.punchedAt)}</span>
+          </>
+        ),
+      });
+    }
 
     return (
       <div className="flex-shrink-0 border-b border-gray-200">
