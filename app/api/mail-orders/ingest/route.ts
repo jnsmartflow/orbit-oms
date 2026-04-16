@@ -12,7 +12,7 @@ import {
 } from "@/lib/mail-orders/enrich";
 import { extractCustomerFromSubject, matchCustomer, parseSubject } from "@/lib/mail-orders/customer-match";
 import { matchDeliveryCustomer } from "@/lib/mail-orders/delivery-match";
-import { getLineVolume, SPLIT_VOLUME_THRESHOLD, SPLIT_LINE_THRESHOLD, splitLinesByCategory } from "@/lib/mail-orders/utils";
+
 
 export const dynamic = "force-dynamic";
 
@@ -405,17 +405,6 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // 6b. Check volume for auto-split
-    const insertedLines = await prisma.mo_order_lines.findMany({
-      where: { moOrderId: order.id },
-      orderBy: { lineNumber: "asc" },
-      select: { id: true, lineNumber: true, quantity: true, packCode: true, matchStatus: true, productName: true, paintType: true, materialType: true },
-    });
-
-    const totalVolume = insertedLines.reduce(
-      (sum, l) => sum + getLineVolume(l.quantity, l.packCode), 0,
-    );
-
     // 6b. Store remark lines (if any)
     if (remarkLines && remarkLines.length > 0) {
       let remarkNum = 0;
@@ -451,112 +440,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    if (insertedLines.length > 1 && (totalVolume > SPLIT_VOLUME_THRESHOLD || insertedLines.length > SPLIT_LINE_THRESHOLD)) {
-      // 6c. Auto-split
-      const lineItems = insertedLines.map((l, idx) => ({
-        index: idx,
-        quantity: l.quantity,
-        packCode: l.packCode,
-        productName: l.productName,
-        paintType: l.paintType,
-        materialType: l.materialType,
-      }));
-
-      const [groupAIndices, groupBIndices] = splitLinesByCategory(lineItems);
-
-      const groupALines = groupAIndices.map((i) => insertedLines[i]);
-      const groupBLines = groupBIndices.map((i) => insertedLines[i]);
-
-      const groupAMatched = groupALines.filter((l) => l.matchStatus === "matched").length;
-      const groupBMatched = groupBLines.filter((l) => l.matchStatus === "matched").length;
-
-      // Create Group B order (copy all fields from original)
-      const orderB = await prisma.mo_orders.create({
-        data: {
-          soName: body.soName,
-          soEmail: body.soEmail ?? null,
-          receivedAt: new Date(body.receivedAt),
-          subject: body.subject,
-          customerName: order.customerName,
-          customerCode: order.customerCode,
-          customerMatchStatus: order.customerMatchStatus,
-          customerCandidates: order.customerCandidates,
-          deliveryRemarks: finalDeliveryRemarks,
-          remarks: body.remarks ?? null,
-          billRemarks: finalBillRemarks,
-          dispatchStatus: body.dispatchStatus || "Dispatch",
-          dispatchPriority: body.dispatchPriority || "Normal",
-          shipToOverride: finalShipToOverride,
-          slotToOverride: body.slotToOverride || false,
-          emailEntryId: `${emailEntryId}__B`,
-          status: "pending",
-          totalLines: groupBLines.length,
-          matchedLines: groupBMatched,
-          splitFromId: order.id,
-          splitLabel: "B",
-        },
-      });
-
-      // Update original order to be Group A
-      await prisma.mo_orders.update({
-        where: { id: order.id },
-        data: {
-          splitLabel: "A",
-          totalLines: groupALines.length,
-          matchedLines: groupAMatched,
-        },
-      });
-
-      // Reassign Group B lines to orderB
-      const groupBLineIds = groupBLines.map((l) => l.id);
-      await prisma.mo_order_lines.updateMany({
-        where: { id: { in: groupBLineIds } },
-        data: { moOrderId: orderB.id },
-      });
-
-      // Re-number lineNumber sequentially for Group A
-      for (let i = 0; i < groupALines.length; i++) {
-        await prisma.mo_order_lines.update({
-          where: { id: groupALines[i].id },
-          data: { lineNumber: i + 1 },
-        });
-      }
-
-      // Store subject remarks for split order B
-      if (subjectParsed.remarks.length > 0) {
-        let subjectRemarkNumB = 0;
-        for (const sr of subjectParsed.remarks) {
-          subjectRemarkNumB++;
-          await prisma.mo_order_remarks.create({
-            data: {
-              moOrderId: orderB.id,
-              lineNumber: 900 + subjectRemarkNumB,
-              rawText: sr.text,
-              remarkType: sr.remarkType,
-              detectedBy: "subject",
-            },
-          });
-        }
-      }
-
-      // Re-number lineNumber sequentially for Group B
-      for (let i = 0; i < groupBLines.length; i++) {
-        await prisma.mo_order_lines.update({
-          where: { id: groupBLines[i].id },
-          data: { lineNumber: i + 1 },
-        });
-      }
-
-      return NextResponse.json({
-        status: "created",
-        split: true,
-        orderA: { id: order.id, totalLines: groupALines.length, matchedLines: groupAMatched },
-        orderB: { id: orderB.id, totalLines: groupBLines.length, matchedLines: groupBMatched },
-        totalVolume: Math.round(totalVolume),
-      });
-    }
-
-    // 7. Update matched count (no split needed)
+    // 7. Update matched count
     await prisma.mo_orders.update({
       where: { id: order.id },
       data: { matchedLines: matchedCount },
