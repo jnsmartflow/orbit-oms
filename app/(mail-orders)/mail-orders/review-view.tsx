@@ -15,6 +15,7 @@ import {
   buildReplyTemplate,
   getOrderSignals,
   getBillLabel,
+  getSplitDisplayLabel,
   splitLinesByCategory,
   SPLIT_VOLUME_THRESHOLD,
   SPLIT_LINE_THRESHOLD,
@@ -615,7 +616,7 @@ export function ReviewView({
       selectedOrder.customerMatchStatus === "exact" && selectedOrder.customerName
         ? selectedOrder.customerName
         : cleanSubject(selectedOrder.subject),
-    ) + (selectedOrder.splitLabel ? ` (${selectedOrder.splitLabel})` : "")
+    ) + (selectedOrder.splitLabel ? ` (${getSplitDisplayLabel(selectedOrder)})` : "")
       + (billLabel ? ` · ${billLabel}` : "");
 
     const template = buildReplyTemplate(
@@ -776,7 +777,7 @@ export function ReviewView({
             <span className={`w-[5px] h-[5px] rounded-full flex-shrink-0 ${getDeliveryDotClass(order.customerDeliveryType)}`} />
             <span className="text-[13px] font-semibold text-gray-900 truncate">
               {smartTitleCase(order.customerName ?? cleanSubject(order.subject))}
-              {order.splitLabel ? ` (${order.splitLabel})` : ""}
+              {order.splitLabel ? ` (${getSplitDisplayLabel(order)})` : ""}
             </span>
             {(() => {
               const sigs = getOrderSignals(order);
@@ -1045,7 +1046,7 @@ export function ReviewView({
             {/* Customer name */}
             <span className="text-[17px] font-bold tracking-tight text-gray-900 truncate">
               {smartTitleCase(order.customerName ?? cleanSubject(order.subject))}
-              {order.splitLabel ? ` (${order.splitLabel})` : ""}
+              {order.splitLabel ? ` (${getSplitDisplayLabel(order)})` : ""}
             </span>
 
             {/* Code chip — 3 states */}

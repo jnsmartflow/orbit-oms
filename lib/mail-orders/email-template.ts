@@ -106,8 +106,8 @@ export function buildSlotSummaryHTML(
 
   function splitPartLabel(label: string | null | undefined): string {
     if (!label) return "";
-    if (label === "A") return " (Part 1 of 2)";
-    if (label === "B") return " (Part 2 of 2)";
+    if (label === "A") return " (Bill 1)";
+    if (label === "B") return " (Bill 2)";
     return ` (${label})`;
   }
 

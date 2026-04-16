@@ -662,6 +662,33 @@ export function getBillLabel(order: MoOrder): string {
   return m ? `Bill ${m[1]}` : "";
 }
 
+/**
+ * Display label for a split order.
+ * - No split (splitLabel null): returns ""
+ * - Simple split: "Bill 1" for A, "Bill 2" for B
+ * - Compound (parent order already labelled with Bill N from
+ *   parser-level bill splits): "Bill N-1" / "Bill N-2"
+ *
+ * UI-only transform. DB splitLabel column still stores "A" / "B".
+ */
+export function getSplitDisplayLabel(order: MoOrder): string {
+  if (!order.splitLabel) return "";
+
+  const combined = [order.remarks, order.billRemarks, order.subject]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  const match = combined.match(/\bbill\s+(\d+)\b/);
+  const parentBillNum = match ? parseInt(match[1], 10) : null;
+
+  const suffix = order.splitLabel === "A" ? "1" : "2";
+
+  if (parentBillNum !== null) {
+    return `Bill ${parentBillNum}-${suffix}`;
+  }
+  return `Bill ${suffix}`;
+}
+
 // ── Order flag extraction ──────────────────────────────────────────────────
 
 export function getOrderFlags(order: MoOrder): string[] {
@@ -733,8 +760,10 @@ export function getOrderSignals(
     result.push({ label: "Truck", type: "info" });
 
   // ── SPLIT (purple) ──
-  if (order.splitLabel)
-    result.push({ label: `\u2702 ${order.splitLabel}`, type: "split" });
+  if (order.splitLabel) {
+    const splitDisplay = getSplitDisplayLabel(order);
+    result.push({ label: `\u2702 ${splitDisplay}`, type: "split" });
+  }
   const totalVol = getOrderVolume(order.lines);
   if (!order.splitLabel && !opts?.isPunched &&
       (totalVol > SPLIT_VOLUME_THRESHOLD || order.totalLines > SPLIT_LINE_THRESHOLD))

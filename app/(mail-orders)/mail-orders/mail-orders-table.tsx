@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Check, Copy, ChevronDown, Pencil, Search, Lock, LockOpen } from "lucide-react";
-import { formatTime, smartTitleCase, getLineVolume, getOrderVolume, formatVolume, BATCH_COPY_LIMIT, SPLIT_VOLUME_THRESHOLD, SPLIT_LINE_THRESHOLD, SORT_DISPLAY_THRESHOLD, SAP_PASTE_SORT, splitLinesByCategory, sortLinesForPicker, isOdCiFlagged, cleanSubject, getOrderSignals } from "@/lib/mail-orders/utils";
+import { formatTime, smartTitleCase, getLineVolume, getOrderVolume, formatVolume, BATCH_COPY_LIMIT, SPLIT_VOLUME_THRESHOLD, SPLIT_LINE_THRESHOLD, SORT_DISPLAY_THRESHOLD, SAP_PASTE_SORT, splitLinesByCategory, sortLinesForPicker, isOdCiFlagged, cleanSubject, getOrderSignals, getSplitDisplayLabel } from "@/lib/mail-orders/utils";
 import { searchCustomers, saveLineStatus } from "@/lib/mail-orders/api";
 import type { MoOrder, MoOrderLine, CustomerSearchResult, LineStatus } from "@/lib/mail-orders/types";
 import { LINE_STATUS_REASONS } from "@/lib/mail-orders/types";
@@ -915,7 +915,7 @@ function OrderRow({
               ? order.customerName
               : cleanSubject(order.subject);
             const displayName = smartTitleCase(rawName);
-            const splitSuffix = order.splitLabel ? ` (${order.splitLabel})` : '';
+            const splitSuffix = order.splitLabel ? ` (${getSplitDisplayLabel(order)})` : '';
             const displayNameFull = displayName + splitSuffix;
             const dot = getDeliveryDotColor(order.customerDeliveryType);
             const area = isExact ? smartTitleCase(order.customerArea) : null;

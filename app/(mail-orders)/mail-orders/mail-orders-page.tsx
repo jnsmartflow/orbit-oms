@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { fetchMailOrders, fetchSlotCutoffs, punchOrder, saveSoNumber, saveCustomer, getTodayIST, toggleLock, learnCustomer } from "@/lib/mail-orders/api";
-import { getSlotFromTime, groupOrdersBySlot, buildClipboardText, buildBatchClipboardText, BATCH_COPY_LIMIT, buildReplyTemplate, getOrderFlags, getBillLabel, smartTitleCase, cleanSubject, isOdCiFlagged, getOrderVolume } from "@/lib/mail-orders/utils";
+import { getSlotFromTime, groupOrdersBySlot, buildClipboardText, buildBatchClipboardText, BATCH_COPY_LIMIT, buildReplyTemplate, getOrderFlags, getBillLabel, getSplitDisplayLabel, smartTitleCase, cleanSubject, isOdCiFlagged, getOrderVolume } from "@/lib/mail-orders/utils";
 import type { SlotCutoffs } from "@/lib/mail-orders/utils";
 import type { MoOrder, MoOrderLine } from "@/lib/mail-orders/types";
 import { MailOrdersTable, ALL_COLUMNS } from "./mail-orders-table";
@@ -889,7 +889,7 @@ export default function MailOrdersPage() {
               order.customerMatchStatus === "exact" && order.customerName
                 ? order.customerName
                 : cleanSubject(order.subject)
-            ) + (order.splitLabel ? ` (${order.splitLabel})` : "")
+            ) + (order.splitLabel ? ` (${getSplitDisplayLabel(order)})` : "")
               + (billLabel ? ` · ${billLabel}` : "");
 
             const template = buildReplyTemplate(
