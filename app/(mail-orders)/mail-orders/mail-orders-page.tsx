@@ -588,6 +588,11 @@ export default function MailOrdersPage() {
     }
   }, [selectedDate]);
 
+  const handleSplitComplete = useCallback(async (orderAId: number) => {
+    await loadOrders();
+    setFocusedId(orderAId);
+  }, [loadOrders]);
+
   const handleSaveCustomer = useCallback(async (
     orderId: number,
     data: { customerCode: string; customerName: string; saveKeyword?: boolean; keyword?: string; area?: string; deliveryType?: string; route?: string },
@@ -1098,6 +1103,7 @@ export default function MailOrdersPage() {
           slotCutoffs={slotCutoffs}
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
+          onSplitComplete={handleSplitComplete}
         />
       )}
 

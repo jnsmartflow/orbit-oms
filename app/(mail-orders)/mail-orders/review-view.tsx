@@ -41,6 +41,7 @@ interface ReviewViewProps {
   slotCutoffs: SlotCutoffs | undefined;
   searchQuery: string;
   onSearchChange: (q: string) => void;
+  onSplitComplete?: (orderAId: number) => void;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -425,6 +426,7 @@ export function ReviewView({
   recentlyPunchedIds,
   searchQuery,
   onSearchChange,
+  onSplitComplete,
 }: ReviewViewProps) {
   // ── Local state ─────────────────────────────────────────────────
   const [soInput, setSoInput] = useState("");
@@ -643,8 +645,11 @@ export function ReviewView({
         setSplitting(false);
         return;
       }
-      // Success: the next poll refresh will show the new A/B rows.
-      // Don't clear splitting here — focus change via polling will reset it.
+      const orderAId = selectedOrder.id;
+      if (onSplitComplete) {
+        onSplitComplete(orderAId);
+      }
+      setSplitting(false);
     } catch (err) {
       console.error("[review-view] split error:", err);
       setSplitting(false);
