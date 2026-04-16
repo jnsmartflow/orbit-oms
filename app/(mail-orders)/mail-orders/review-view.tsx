@@ -453,6 +453,11 @@ export function ReviewView({
     packCode: string;
   }>>(new Map());
   const [activeLineIndex, setActiveLineIndex] = useState<number>(0);
+  const [descMode, setDescMode] = useState<"long" | "short">(() => {
+    if (typeof window === "undefined") return "long";
+    const stored = window.localStorage.getItem("mo-review-desc-mode");
+    return stored === "short" ? "short" : "long";
+  });
   const [splitDismissed, setSplitDismissed] = useState(false);
   const [splitting, setSplitting] = useState(false);
 
@@ -478,6 +483,15 @@ export function ReviewView({
     setSplitDismissed(false);
     setSplitting(false);
   }, [focusedId]);
+
+  // Persist desc mode to localStorage
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("mo-review-desc-mode", descMode);
+    } catch {
+      // localStorage unavailable — ignore
+    }
+  }, [descMode]);
 
   // Auto-select first pending order if none selected
   useEffect(() => {
@@ -1399,6 +1413,16 @@ export function ReviewView({
     const tdFirst: React.CSSProperties = { paddingLeft: 10, paddingRight: 4, textAlign: "center" };
     const tdLast: React.CSSProperties = { paddingRight: 12, textAlign: "center" };
 
+    function descriptionText(line: MoOrderLine): { primary: string; secondary: string | null } {
+      if (descMode === "long" && line.skuDescription && line.skuDescription.trim()) {
+        return { primary: line.skuDescription, secondary: null };
+      }
+      return {
+        primary: line.productName ?? "—",
+        secondary: line.baseColour ?? null,
+      };
+    }
+
     return (
       <div data-tutorial="sku-table" className="flex-1 overflow-y-auto" style={{ padding: "0 6px" }}>
         <table className="w-full border-collapse" style={{ tableLayout: "fixed" }}>
@@ -1418,7 +1442,32 @@ export function ReviewView({
               <th style={{ ...thStyle, ...thFirst }}>#</th>
               <th style={thStyle}>Raw Text</th>
               <th style={thStyle}>SKU Code</th>
-              <th style={thStyle}>Description</th>
+              <th style={thStyle}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
+                  <span>Description</span>
+                  <button
+                    onClick={() => setDescMode(m => m === "long" ? "short" : "long")}
+                    title={descMode === "long" ? "Switch to short description" : "Switch to long description"}
+                    style={{
+                      fontSize: 9,
+                      fontWeight: 500,
+                      padding: "1px 6px",
+                      borderRadius: 4,
+                      border: "1px solid #e5e7eb",
+                      background: "#fff",
+                      color: "#6b7280",
+                      cursor: "pointer",
+                      letterSpacing: "0.02em",
+                      textTransform: "uppercase",
+                      transition: "background 0.12s",
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = "#f9fafb"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = "#fff"; }}
+                  >
+                    {descMode}
+                  </button>
+                </div>
+              </th>
               <th style={{ ...thStyle, textAlign: "center" }}>Pk</th>
               <th style={{ ...thStyle, textAlign: "right" }}>Qty</th>
               <th style={{ ...thStyle, textAlign: "right" }}>Vol</th>
@@ -1502,27 +1551,33 @@ export function ReviewView({
 
                   {/* Description */}
                   <td style={{ ...tdBase, ...rowEdge }}>
-                    {rowState === "normal" && (
-                      <>
-                        <span style={{ fontWeight: 500, color: "#111827" }}>{line.productName}</span>
-                        {line.baseColour && (
-                          <span style={{ color: "#6b7280" }}> · {line.baseColour}</span>
-                        )}
-                      </>
-                    )}
-                    {rowState === "partial" && (
-                      <>
-                        <span style={{ fontWeight: 500, color: "#b45309" }}>{line.productName}</span>
-                        {line.baseColour && (
-                          <span style={{ color: "#b45309" }}> · {line.baseColour}</span>
-                        )}
-                        <span style={{
-                          fontSize: 9, fontWeight: 600, padding: "0 4px", borderRadius: 2,
-                          background: "#fffbeb", color: "#b45309", border: "1px solid #fde68a",
-                          marginLeft: 4, display: "inline-block",
-                        }}>PARTIAL</span>
-                      </>
-                    )}
+                    {rowState === "normal" && (() => {
+                      const { primary, secondary } = descriptionText(line);
+                      return (
+                        <>
+                          <span style={{ fontWeight: 500, color: "#111827" }}>{primary}</span>
+                          {secondary && (
+                            <span style={{ color: "#6b7280" }}> · {secondary}</span>
+                          )}
+                        </>
+                      );
+                    })()}
+                    {rowState === "partial" && (() => {
+                      const { primary, secondary } = descriptionText(line);
+                      return (
+                        <>
+                          <span style={{ fontWeight: 500, color: "#b45309" }}>{primary}</span>
+                          {secondary && (
+                            <span style={{ color: "#b45309" }}> · {secondary}</span>
+                          )}
+                          <span style={{
+                            fontSize: 9, fontWeight: 600, padding: "0 4px", borderRadius: 2,
+                            background: "#fffbeb", color: "#b45309", border: "1px solid #fde68a",
+                            marginLeft: 4, display: "inline-block",
+                          }}>PARTIAL</span>
+                        </>
+                      );
+                    })()}
                     {rowState === "unmatched" && (
                       <>
                         <span style={{ color: "#9ca3af", fontStyle: "italic" }}>No match found</span>
