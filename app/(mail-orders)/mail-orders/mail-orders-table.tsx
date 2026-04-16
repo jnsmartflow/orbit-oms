@@ -915,8 +915,7 @@ function OrderRow({
               ? order.customerName
               : cleanSubject(order.subject);
             const displayName = smartTitleCase(rawName);
-            const splitSuffix = order.splitLabel ? ` (${getSplitDisplayLabel(order)})` : '';
-            const displayNameFull = displayName + splitSuffix;
+            const displayNameFull = displayName;
             const dot = getDeliveryDotColor(order.customerDeliveryType);
             const area = isExact ? smartTitleCase(order.customerArea) : null;
             const route = isExact ? smartTitleCase(order.customerRoute) : null;

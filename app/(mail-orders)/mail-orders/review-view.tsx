@@ -777,7 +777,6 @@ export function ReviewView({
             <span className={`w-[5px] h-[5px] rounded-full flex-shrink-0 ${getDeliveryDotClass(order.customerDeliveryType)}`} />
             <span className="text-[13px] font-semibold text-gray-900 truncate">
               {smartTitleCase(order.customerName ?? cleanSubject(order.subject))}
-              {order.splitLabel ? ` (${getSplitDisplayLabel(order)})` : ""}
             </span>
             {(() => {
               const sigs = getOrderSignals(order);
@@ -1046,7 +1045,6 @@ export function ReviewView({
             {/* Customer name */}
             <span className="text-[17px] font-bold tracking-tight text-gray-900 truncate">
               {smartTitleCase(order.customerName ?? cleanSubject(order.subject))}
-              {order.splitLabel ? ` (${getSplitDisplayLabel(order)})` : ""}
             </span>
 
             {/* Code chip — 3 states */}

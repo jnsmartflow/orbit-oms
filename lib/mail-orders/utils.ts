@@ -747,10 +747,14 @@ export function getOrderSignals(
     result.push({ label: "7 Days", type: "info" });
   if (/\bextension\b/.test(combined) && !/bill\s*tomorrow/.test(combined))
     result.push({ label: "Extension", type: "info" });
-  const billMatches = Array.from(combined.matchAll(/\bbill\s+(\d+)\b/g));
-  const billNums = Array.from(new Set(billMatches.map(m => parseInt(m[1], 10)))).sort((a, b) => a - b);
-  for (const n of billNums) {
-    result.push({ label: `Bill ${n}`, type: "bill" });
+  // Only show parent Bill N badges when the order is NOT a split.
+  // Split orders show their bill info via the "✂ Bill X-Y" purple badge.
+  if (!order.splitLabel) {
+    const billMatches = Array.from(combined.matchAll(/\bbill\s+(\d+)\b/g));
+    const billNums = Array.from(new Set(billMatches.map(m => parseInt(m[1], 10)))).sort((a, b) => a - b);
+    for (const n of billNums) {
+      result.push({ label: `Bill ${n}`, type: "bill" });
+    }
   }
   if (/dpl/.test(combined))
     result.push({ label: "DPL", type: "info" });
