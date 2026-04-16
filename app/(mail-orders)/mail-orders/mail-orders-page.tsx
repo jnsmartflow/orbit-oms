@@ -589,9 +589,47 @@ export default function MailOrdersPage() {
   }, [selectedDate]);
 
   const handleSplitComplete = useCallback(async (orderAId: number) => {
-    await loadOrders();
+    // Optimistically focus Group A immediately so the user sees
+    // the split has happened (ReviewView will render it once data
+    // arrives)
     setFocusedId(orderAId);
-  }, [loadOrders]);
+
+    // Poll for the split to become visible — Supabase pooler
+    // eventual consistency. Max 5 attempts × 400ms = 2s worst case.
+    const MAX_ATTEMPTS = 5;
+    const DELAY_MS = 400;
+
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      try {
+        const data = await fetchMailOrders(selectedDate);
+        // Check if Group B exists yet (splitFromId === orderAId)
+        // OR if Group A is now labelled "A"
+        const groupA = data.orders.find(
+          (o: MoOrder) => o.id === orderAId && o.splitLabel === "A",
+        );
+        const groupB = data.orders.find(
+          (o: MoOrder) => o.splitFromId === orderAId && o.splitLabel === "B",
+        );
+
+        if (groupA && groupB) {
+          // Split is visible. Update state and stop polling.
+          setOrders(data.orders);
+          return;
+        }
+      } catch (err) {
+        console.error("[mail-orders] split refresh poll error:", err);
+      }
+
+      if (attempt < MAX_ATTEMPTS - 1) {
+        await new Promise((resolve) => setTimeout(resolve, DELAY_MS));
+      }
+    }
+
+    // Fallback: if split never appeared after 2s, fall back to
+    // regular loadOrders which will eventually settle.
+    console.warn("[mail-orders] split not visible after retries, falling back to loadOrders");
+    await loadOrders();
+  }, [selectedDate, loadOrders]);
 
   const handleSaveCustomer = useCallback(async (
     orderId: number,
