@@ -498,6 +498,46 @@
   #mo-print-area thead th {
     border-bottom: 2px solid #000 !important;
   }
+
+  /* MO — switch to landscape for wider table */
+  @page mo-landscape {
+    size: A4 landscape;
+    margin: 10mm;
+  }
+  #mo-print-area {
+    page: mo-landscape;
+  }
+
+  /* MO — override fixed table layout in print only */
+  #mo-print-area table {
+    table-layout: auto !important;
+  }
+  #mo-print-area colgroup {
+    display: none !important;
+  }
+  #mo-print-area col {
+    width: auto !important;
+  }
+
+  /* MO — remove truncation, allow wrap in print */
+  #mo-print-area th,
+  #mo-print-area td {
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    word-break: break-word !important;
+    vertical-align: top !important;
+    padding: 4px 6px !important;
+  }
+
+  /* MO — smaller print font for density */
+  #mo-print-area {
+    font-size: 10px !important;
+  }
+  #mo-print-area thead th {
+    font-size: 9px !important;
+    font-weight: 600 !important;
+  }
 }
 
 /* MO print footer — hidden by default on screen */
