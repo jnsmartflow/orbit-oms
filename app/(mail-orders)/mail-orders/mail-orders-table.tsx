@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Check, Copy, ChevronDown, Pencil, Search, Lock, LockOpen } from "lucide-react";
-import { formatTime, smartTitleCase, getLineVolume, getOrderVolume, formatVolume, BATCH_COPY_LIMIT, SPLIT_VOLUME_THRESHOLD, SPLIT_LINE_THRESHOLD, SORT_DISPLAY_THRESHOLD, splitLinesByCategory, sortLinesForPicker, isOdCiFlagged, cleanSubject, getOrderSignals } from "@/lib/mail-orders/utils";
+import { formatTime, smartTitleCase, getLineVolume, getOrderVolume, formatVolume, BATCH_COPY_LIMIT, SPLIT_VOLUME_THRESHOLD, SPLIT_LINE_THRESHOLD, SORT_DISPLAY_THRESHOLD, SAP_PASTE_SORT, splitLinesByCategory, sortLinesForPicker, isOdCiFlagged, cleanSubject, getOrderSignals } from "@/lib/mail-orders/utils";
 import { searchCustomers, saveLineStatus } from "@/lib/mail-orders/api";
 import type { MoOrder, MoOrderLine, CustomerSearchResult, LineStatus } from "@/lib/mail-orders/types";
 import { LINE_STATUS_REASONS } from "@/lib/mail-orders/types";
@@ -666,9 +666,9 @@ function OrderRow({
   const currentBatch = batchStates[order.id] ?? 0;
   const needsBatching = matchedCount > BATCH_COPY_LIMIT;
   const totalBatches = needsBatching ? Math.ceil(matchedCount / BATCH_COPY_LIMIT) : 1;
-  const sortedLines = order.lines.length > SORT_DISPLAY_THRESHOLD
+  const sortedLines = SAP_PASTE_SORT === "picker"
     ? sortLinesForPicker(order.lines)
-    : order.lines;
+    : [...order.lines].sort((a, b) => a.lineNumber - b.lineNumber);
 
   const [editingSo, setEditingSo] = useState(false);
   const [soInput, setSoInput] = useState(order.soNumber ?? "");
@@ -1424,9 +1424,11 @@ function ExpandRow({ order, onSplitComplete, colCount, lineStatuses, onOpenPanel
   >(null);
   const [loadingOriginal, setLoadingOriginal] = useState(false);
 
-  const shouldSort = order.lines.length > SORT_DISPLAY_THRESHOLD;
-  const displayLines = shouldSort ? sortLinesForPicker(order.lines) : order.lines;
-  const linesToRender = showOriginal && !order.splitLabel ? order.lines : displayLines;
+  // Default: show lines in email order (lineNumber ASC).
+  // Toggle showOriginal flips to picker-sorted view.
+  const displayLines = [...order.lines].sort((a, b) => a.lineNumber - b.lineNumber);
+  const pickerSortedLines = sortLinesForPicker(order.lines);
+  const linesToRender = showOriginal ? pickerSortedLines : displayLines;
 
   async function fetchOriginalLines() {
     if (order.splitLabel) {
@@ -1577,7 +1579,7 @@ function ExpandRow({ order, onSplitComplete, colCount, lineStatuses, onOpenPanel
           </div>
         )}
         {/* Toolbar row — for sorted or split orders */}
-        {shouldSort && (
+        {order.lines.length > 1 && (
           <div className="flex items-center justify-between px-4 pt-3 pb-1">
             <div className="flex items-center gap-2">
               <button
@@ -1597,15 +1599,15 @@ function ExpandRow({ order, onSplitComplete, colCount, lineStatuses, onOpenPanel
                 {loadingOriginal
                   ? "Loading..."
                   : showOriginal
-                    ? (order.splitLabel ? "✂ Split View" : "📦 Sorted View")
-                    : (order.splitLabel ? "📧 Original Order" : "📧 Email Order")
+                    ? "📦 Picker-Sorted View"
+                    : "📧 Email Order"
                 }
               </button>
               {showOriginal && (
                 <span className="text-[10px] text-gray-400">
                   {order.splitLabel && originalLines
                     ? `${originalLines.length} lines · original email sequence`
-                    : `${order.lines.length} lines · email sequence`
+                    : `${order.lines.length} lines · picker-sorted`
                   }
                 </span>
               )}

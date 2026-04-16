@@ -117,6 +117,12 @@ export const BATCH_COPY_LIMIT = 14;
 export const SPLIT_VOLUME_THRESHOLD = 1500; // liters
 export const SORT_DISPLAY_THRESHOLD = 5;
 
+// SAP paste sort order: "email" = lineNumber ASC (parser order),
+// "picker" = sortLinesForPicker (product-grouped warehouse order).
+// Flip this single value to change SAP copy behaviour site-wide.
+export type SapPasteSort = "email" | "picker";
+export const SAP_PASTE_SORT: SapPasteSort = "email";
+
 // Warehouse zone walk order: deep → dispatch
 const ZONE_ORDER: Record<string, number> = {
   putty: 1, oil: 2, wood: 3, water: 4, stainer: 5,
