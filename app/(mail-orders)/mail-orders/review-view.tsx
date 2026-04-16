@@ -780,13 +780,22 @@ export function ReviewView({
             </span>
             {(() => {
               const sigs = getOrderSignals(order);
-              const leftPanelBadges = sigs.filter(s => s.type === "bill");
+              // Show bill OR split badges in left panel — each order gets
+              // at most one of these because getOrderSignals emits the
+              // parent "Bill N" only when splitLabel is null.
+              const leftPanelBadges = sigs.filter(
+                s => s.type === "bill" || s.type === "split"
+              );
               if (leftPanelBadges.length === 0) return null;
               const badgeStyles: Record<string, string> = {
-                bill: "bg-blue-50 text-blue-700 border-blue-200",
+                bill:  "bg-blue-50 text-blue-700 border-blue-200",
+                split: "bg-purple-50 text-purple-600 border-purple-200",
               };
               return leftPanelBadges.map((s, i) => (
-                <span key={`lp-${i}`} className={`text-[8px] font-semibold px-1 py-0 rounded border flex-shrink-0 ${badgeStyles[s.type] ?? ""}`}>
+                <span
+                  key={`lp-${i}`}
+                  className={`text-[8px] font-semibold px-1 py-0 rounded border flex-shrink-0 ${badgeStyles[s.type] ?? ""}`}
+                >
                   {s.label}
                 </span>
               ));
