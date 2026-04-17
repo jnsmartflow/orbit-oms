@@ -26,13 +26,13 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       ? { equals: smuParam }
       : { in: [...CHALLAN_SMU_VALUES] };
 
-    // Date filter: match full calendar day in UTC (obdEmailDate is stored as DateTime)
-    let obdDateFilter: { gte: Date; lt: Date } | undefined;
+    // Date filter: IST day window on orders.orderDateTime (the true order time).
+    // Matches the pattern at app/api/operations/summary/route.ts.
+    let orderDateFilter: { gte: Date; lt: Date } | undefined;
     if (dateParam) {
-      const day  = new Date(dateParam);
-      const next = new Date(day);
-      next.setUTCDate(next.getUTCDate() + 1);
-      obdDateFilter = { gte: day, lt: next };
+      const day  = new Date(`${dateParam}T00:00:00+05:30`);
+      const next = new Date(day.getTime() + 24 * 60 * 60 * 1000);
+      orderDateFilter = { gte: day, lt: next };
     }
 
     // Search filter: ILIKE on obdNumber OR billToCustomerName
@@ -48,7 +48,6 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const rawSummaries = await prisma.import_raw_summary.findMany({
       where: {
         smu: smuFilter,
-        ...(obdDateFilter && { obdEmailDate: obdDateFilter }),
         ...(searchFilter  && searchFilter),
       },
       select: {
@@ -71,6 +70,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const orders = await prisma.orders.findMany({
       where: {
         obdNumber: { in: obdNumbers },
+        ...(orderDateFilter && { orderDateTime: orderDateFilter }),
         ...(routeParam && {
           customer: {
             OR: [

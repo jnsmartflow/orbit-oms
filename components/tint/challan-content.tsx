@@ -41,7 +41,9 @@ export function ChallanContent() {
 
   // ── Filters ──────────────────────────────────────────────────────────────────
   const [searchValue, setSearchValue] = useState("");
-  const [dateFilter,  setDateFilter]  = useState("");
+  const [dateFilter,  setDateFilter]  = useState<string>(() =>
+    new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }),
+  );
   const [routeFilter, setRouteFilter] = useState("");
   const [smuFilter,   setSmuFilter]   = useState("");
 
