@@ -376,7 +376,7 @@ export function ChallanContent() {
                           background: isSelected ? "#f0fdfa" : "#f9fafb",
                           border: `1px solid ${isSelected ? "#99f6e4" : "#e5e7eb"}`,
                         }}>
-                          {item.challanNumber.replace("CHN-2026-", "CHN-")}
+                          {item.challanNumber}
                         </span>
                       )}
                     </div>
