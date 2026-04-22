@@ -287,7 +287,14 @@ export function ChallanDocument({
           <div style={{ flex: 1, padding: "8px 14px 8px 24px", borderRight: "1px solid #d1d5db" }}>
             <div style={{ fontSize: 9, fontWeight: 700, color: "#111827", ...UP, letterSpacing: 0.3 }}>Customer</div>
             {billTo.contact?.name ? (
-              <div style={{ fontSize: 11, color: "#374151", marginTop: 3 }}>{billTo.contact.name}</div>
+              <>
+                <div style={{ fontSize: 11, color: "#374151", marginTop: 3 }}>{billTo.contact.name}</div>
+                {billTo.contact.phone && (
+                  <div style={{ fontSize: 10, color: "#6b7280", marginTop: 1, fontFamily: "'SF Mono', ui-monospace, monospace" }}>
+                    {billTo.contact.phone}
+                  </div>
+                )}
+              </>
             ) : (
               <div style={{ height: 20 }} />
             )}
@@ -296,7 +303,14 @@ export function ChallanDocument({
           <div style={{ flex: 1, padding: "8px 14px", borderRight: "1px solid #d1d5db" }}>
             <div style={{ fontSize: 9, fontWeight: 700, color: "#111827", ...UP, letterSpacing: 0.3 }}>Sales Officer</div>
             {shipTo.salesOfficer?.name ? (
-              <div style={{ fontSize: 11, color: "#374151", marginTop: 3 }}>{shipTo.salesOfficer.name}</div>
+              <>
+                <div style={{ fontSize: 11, color: "#374151", marginTop: 3 }}>{shipTo.salesOfficer.name}</div>
+                {shipTo.salesOfficer.phone && (
+                  <div style={{ fontSize: 10, color: "#6b7280", marginTop: 1, fontFamily: "'SF Mono', ui-monospace, monospace" }}>
+                    {shipTo.salesOfficer.phone}
+                  </div>
+                )}
+              </>
             ) : (
               <div style={{ height: 20 }} />
             )}
@@ -305,7 +319,14 @@ export function ChallanDocument({
           <div style={{ flex: 1, padding: "8px 14px 8px 14px" }}>
             <div style={{ fontSize: 9, fontWeight: 700, color: "#111827", ...UP, letterSpacing: 0.3 }}>Site / Receiver</div>
             {shipTo.siteContact?.name ? (
-              <div style={{ fontSize: 11, color: "#374151", marginTop: 3 }}>{shipTo.siteContact.name}</div>
+              <>
+                <div style={{ fontSize: 11, color: "#374151", marginTop: 3 }}>{shipTo.siteContact.name}</div>
+                {shipTo.siteContact.phone && (
+                  <div style={{ fontSize: 10, color: "#6b7280", marginTop: 1, fontFamily: "'SF Mono', ui-monospace, monospace" }}>
+                    {shipTo.siteContact.phone}
+                  </div>
+                )}
+              </>
             ) : (
               <div style={{ height: 20 }} />
             )}

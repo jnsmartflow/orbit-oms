@@ -143,6 +143,7 @@ export async function GET(
                 select: {
                   name:        true,
                   phone:       true,
+                  isPrimary:   true,
                   contactRole: { select: { name: true } },
                 },
               },
@@ -173,6 +174,7 @@ export async function GET(
                 select: {
                   name:        true,
                   phone:       true,
+                  isPrimary:   true,
                   contactRole: { select: { name: true } },
                 },
               },
@@ -207,6 +209,7 @@ export async function GET(
             select: {
               name:        true,
               phone:       true,
+              isPrimary:   true,
               contactRole: { select: { name: true } },
             },
           },
@@ -220,17 +223,40 @@ export async function GET(
 
     // ── 6. Resolve contacts (single contact per role group) ───────────────────
     const billToContact = (() => {
-      const match = billToPoint?.contacts.find(
-        (c) => c.contactRole?.name === "Owner" || c.contactRole?.name === "Manager",
-      );
-      return match ? { name: match.name, phone: match.phone ?? null } : null;
+      const contacts = billToPoint?.contacts ?? [];
+      if (contacts.length === 0) return null;
+      const OWNER_ROLES = ["Owner", "Manager", "Proprietor", "Partner", "Director"];
+      const match =
+        contacts.find((c) => c.isPrimary) ??
+        contacts.find((c) => c.contactRole?.name != null && OWNER_ROLES.includes(c.contactRole.name)) ??
+        contacts[0];
+      return { name: match.name, phone: match.phone ?? null };
     })();
 
     const shipToSiteContact = (() => {
-      const match = resolvedShipTo?.contacts.find(
-        (c) => c.contactRole?.name === "Site Engineer" || c.contactRole?.name === "Contractor",
-      );
+      const contacts = resolvedShipTo?.contacts ?? [];
+      if (contacts.length === 0) return null;
+      const SITE_ROLES = ["Site Engineer", "Contractor", "Supervisor"];
+      const match =
+        contacts.find((c) => c.isPrimary && c.contactRole?.name !== "Sales Officer") ??
+        contacts.find((c) => c.contactRole?.name != null && SITE_ROLES.includes(c.contactRole.name)) ??
+        contacts.find((c) => c.contactRole?.name !== "Sales Officer") ??
+        null;
       return match ? { name: match.name, phone: match.phone ?? null } : null;
+    })();
+
+    const resolvedSalesOfficer = (() => {
+      const fromGroup = resolvedShipTo?.salesOfficerGroup?.salesOfficer;
+      if (fromGroup) {
+        return { name: fromGroup.name, phone: fromGroup.phone ?? null };
+      }
+      const fromContact = resolvedShipTo?.contacts.find(
+        (c) => c.contactRole?.name === "Sales Officer",
+      );
+      if (fromContact) {
+        return { name: fromContact.name, phone: fromContact.phone ?? null };
+      }
+      return null;
     })();
 
     // ── 7. Assemble and return ────────────────────────────────────────────────
@@ -283,12 +309,7 @@ export async function GET(
             resolvedShipTo?.area?.primaryRoute?.name ??
             null,
           area:         resolvedShipTo?.area?.name ?? null,
-          salesOfficer: resolvedShipTo?.salesOfficerGroup?.salesOfficer
-            ? {
-                name:  resolvedShipTo.salesOfficerGroup.salesOfficer.name,
-                phone: resolvedShipTo.salesOfficerGroup.salesOfficer.phone ?? null,
-              }
-            : null,
+          salesOfficer: resolvedSalesOfficer,
           siteContact: shipToSiteContact,
         },
 
