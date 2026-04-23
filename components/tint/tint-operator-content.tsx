@@ -4,6 +4,9 @@ import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from "rea
 import { Loader2, ChevronDown, ChevronLeft, ChevronRight, Palette, Save, Play, Check, Plus } from "lucide-react";
 import { UniversalHeader } from "@/components/universal-header";
 import { cn } from "@/lib/utils";
+import { useSkuDisplayMode } from "@/lib/hooks/use-sku-display-mode";
+import { pickSkuDisplay, type SkuDisplay } from "@/types/sku-display";
+import { SkuDisplayToggle } from "@/components/tint/sku-display-toggle";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -19,6 +22,7 @@ interface SplitLineItem {
     unitQty:           number;
     volumeLine:        number | null;
     isTinting:         boolean;
+    skuDisplay:        SkuDisplay;
   };
 }
 
@@ -94,6 +98,7 @@ interface OperatorOrder {
     unitQty:           number;
     volumeLine:        number | null;
     isTinting:         boolean;
+    skuDisplay:        SkuDisplay;
   }[];
 }
 
@@ -122,6 +127,7 @@ interface TintingLine {
   unitQty:           number;
   volumeLine:        number | null;
   packCode:          string;
+  skuDisplay:        SkuDisplay;
 }
 
 interface TIFormEntry {
@@ -334,6 +340,8 @@ function deliveryDotClass(type: string | null | undefined): string {
 // ── Page Content ──────────────────────────────────────────────────────────────
 
 export function TintOperatorContent() {
+  const { mode: skuDisplayMode } = useSkuDisplayMode();
+
   const [assignedSplits,   setAssignedSplits]   = useState<OperatorSplit[]>([]);
   const [assignedOrders,   setAssignedOrders]   = useState<OperatorOrder[]>([]);
   const [completedOrders,  setCompletedOrders]  = useState<CompletedAssignment[]>([]);
@@ -612,6 +620,7 @@ export function TintOperatorContent() {
         unitQty:           li.rawLineItem.unitQty,
         volumeLine:        li.rawLineItem.volumeLine,
         packCode:          derivePackCode(li.rawLineItem.volumeLine, li.rawLineItem.unitQty),
+        skuDisplay:        li.rawLineItem.skuDisplay,
       }));
   }, [selectedJob]);
 
@@ -1218,6 +1227,8 @@ export function TintOperatorContent() {
         }
         rightExtra={
           <div className="flex items-center gap-2">
+            <SkuDisplayToggle />
+            <div className="w-px h-4 bg-gray-200" />
             <div className="w-[48px] h-[4px] bg-gray-200 rounded-full overflow-hidden">
               <div className={`h-full rounded-full ${progressColor}`} style={{ width: `${Math.min(progressPct, 100)}%` }} />
             </div>
@@ -1279,18 +1290,25 @@ export function TintOperatorContent() {
                       )}
                     >
                       {/* Row 1: SKU code + status badge */}
-                      <div className="flex items-center justify-between">
-                        <span className="font-mono text-[11px] text-gray-500 truncate">{item.rawLineItem.skuCodeRaw}</span>
-                        {tiEntry ? (
-                          <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-green-50 border border-green-200 text-green-700 flex-shrink-0 ml-1">✓</span>
-                        ) : (
-                          <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-700 flex-shrink-0 ml-1">Pending</span>
-                        )}
-                      </div>
-                      {/* Row 2: Description */}
-                      <div className="text-[12px] font-semibold text-gray-900 truncate mt-0.5">
-                        {item.rawLineItem.skuDescriptionRaw ?? "—"}
-                      </div>
+                      {(() => {
+                        const d = pickSkuDisplay(item.rawLineItem.skuDisplay, skuDisplayMode);
+                        return (
+                          <>
+                            <div className="flex items-center justify-between">
+                              <span className="font-mono text-[11px] text-gray-500 truncate">{d.code}</span>
+                              {tiEntry ? (
+                                <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-green-50 border border-green-200 text-green-700 flex-shrink-0 ml-1">✓</span>
+                              ) : (
+                                <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-700 flex-shrink-0 ml-1">Pending</span>
+                              )}
+                            </div>
+                            {/* Row 2: Description */}
+                            <div className="text-[12px] font-semibold text-gray-900 truncate mt-0.5">
+                              {d.description ?? "—"}
+                            </div>
+                          </>
+                        );
+                      })()}
                       {/* Row 3: Qty · Volume */}
                       <div className="text-[11px] text-gray-400 mt-0.5">
                         {item.rawLineItem.unitQty} qty · {item.rawLineItem.volumeLine != null ? `${item.rawLineItem.volumeLine} L` : "—"}
@@ -1307,7 +1325,7 @@ export function TintOperatorContent() {
                     </div>
                     {currentNonTintingLines.map((item, idx) => (
                       <div key={`nt-${idx}`} className="px-3 py-1.5 border-b border-gray-50 text-[11px] text-gray-400">
-                        <span className="font-mono">{item.rawLineItem.skuCodeRaw}</span>
+                        <span className="font-mono">{pickSkuDisplay(item.rawLineItem.skuDisplay, skuDisplayMode).code}</span>
                         <span className="ml-2">{item.rawLineItem.unitQty} qty</span>
                       </div>
                     ))}
@@ -1386,16 +1404,22 @@ export function TintOperatorContent() {
               <div className="bg-white border-b border-gray-200 px-4 py-2.5 flex items-center justify-between flex-shrink-0">
                 <div className="min-w-0 flex-1">
                   {currentTintingLines[selectedLineIdx] ? (
-                    <>
-                      <div className="text-[13px] font-semibold text-gray-900 truncate">
-                        {currentTintingLines[selectedLineIdx].rawLineItem.skuDescriptionRaw ?? currentTintingLines[selectedLineIdx].rawLineItem.skuCodeRaw}
-                      </div>
-                      <div className="text-[11px] text-gray-400 mt-0.5">
-                        <span className="font-mono">{currentTintingLines[selectedLineIdx].rawLineItem.skuCodeRaw}</span>
-                        <span> · {currentTintingLines[selectedLineIdx].rawLineItem.unitQty} qty</span>
-                        {currentTintingLines[selectedLineIdx].rawLineItem.volumeLine != null && <span> · {currentTintingLines[selectedLineIdx].rawLineItem.volumeLine} L</span>}
-                      </div>
-                    </>
+                    (() => {
+                      const activeLine = currentTintingLines[selectedLineIdx].rawLineItem;
+                      const d = pickSkuDisplay(activeLine.skuDisplay, skuDisplayMode);
+                      return (
+                        <>
+                          <div className="text-[13px] font-semibold text-gray-900 truncate">
+                            {d.description ?? d.code}
+                          </div>
+                          <div className="text-[11px] text-gray-400 mt-0.5">
+                            <span className="font-mono">{d.code}</span>
+                            <span> · {activeLine.unitQty} qty</span>
+                            {activeLine.volumeLine != null && <span> · {activeLine.volumeLine} L</span>}
+                          </div>
+                        </>
+                      );
+                    })()
                   ) : (
                     <span className="text-[11px] text-gray-400">No line selected</span>
                   )}
@@ -1463,11 +1487,14 @@ export function TintOperatorContent() {
                             onChange={e => { const val = Number(e.target.value); if (val) handleSkuSelect(entryId, val); }}
                             className={`w-full border border-gray-200 rounded-md h-[34px] text-[12px] px-2 font-medium focus:border-gray-900 focus:outline-none ${entry.rawLineItemId ? "text-gray-900" : "text-gray-400"}`}>
                             <option value="">Select SKU line…</option>
-                            {tintingLines.map(line => (
-                              <option key={line.rawLineItemId} value={line.rawLineItemId}>
-                                {line.skuCodeRaw}{line.skuDescriptionRaw ? ` · ${line.skuDescriptionRaw}` : ""} · {line.unitQty} qty · {PACK_CODES.find(p => p.value === line.packCode)?.label ?? line.packCode}
-                              </option>
-                            ))}
+                            {tintingLines.map(line => {
+                              const d = pickSkuDisplay(line.skuDisplay, skuDisplayMode);
+                              return (
+                                <option key={line.rawLineItemId} value={line.rawLineItemId}>
+                                  {d.code}{d.description ? ` · ${d.description}` : ""} · {line.unitQty} qty · {PACK_CODES.find(p => p.value === line.packCode)?.label ?? line.packCode}
+                                </option>
+                              );
+                            })}
                           </select>
                         </div>
                       )}
@@ -1691,9 +1718,15 @@ export function TintOperatorContent() {
                           <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5">
                             <p className="text-[12px] font-bold text-amber-700 mb-1">Some tinting lines are missing TI entries:</p>
                             <ul className="text-[11.5px] text-amber-600 mb-1.5 ml-3.5" style={{ padding: 0 }}>
-                              {tiIncompleteWarning.map(line => (
-                                <li key={line.rawLineItemId}>{line.skuCodeRaw}{line.skuDescriptionRaw ? ` · ${line.skuDescriptionRaw}` : ""}</li>
-                              ))}
+                              {tiIncompleteWarning.map(line => {
+                                const match = tintingLines.find(t => t.rawLineItemId === line.rawLineItemId);
+                                const d = match
+                                  ? pickSkuDisplay(match.skuDisplay, skuDisplayMode)
+                                  : { code: line.skuCodeRaw, description: line.skuDescriptionRaw };
+                                return (
+                                  <li key={line.rawLineItemId}>{d.code}{d.description ? ` · ${d.description}` : ""}</li>
+                                );
+                              })}
                             </ul>
                             <p className="text-[11px] text-amber-700">Submit remaining entries or proceed to mark as done.</p>
                           </div>

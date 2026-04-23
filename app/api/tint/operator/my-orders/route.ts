@@ -3,6 +3,8 @@ import { auth } from "@/lib/auth";
 import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { checkPermission } from "@/lib/permissions";
+import { resolveFiniMap } from "@/lib/fini-resolver";
+import { buildSkuDisplay } from "@/types/sku-display";
 
 export const dynamic = "force-dynamic";
 
@@ -142,7 +144,7 @@ export async function GET(): Promise<NextResponse> {
   if (allAssignedSplitIds.length > 0) coverageOr.push({ splitId: { in: allAssignedSplitIds } });
 
   // Query 3a: Raw line items for assigned orders (orders has no direct Prisma relation to import_raw_line_items)
-  const rawLineItemsRows = obdNumbers.length > 0
+  const rawLineItemsRaw = obdNumbers.length > 0
     ? await prisma.import_raw_line_items.findMany({
         where: { obdNumber: { in: obdNumbers } },
         select: {
@@ -156,6 +158,19 @@ export async function GET(): Promise<NextResponse> {
         },
       })
     : [];
+
+  // ── Fini/Generic mapping — single lookup per request ───────────────────────
+  const allSkuCodes = new Set<string>();
+  for (const li of rawLineItemsRaw) if (li.skuCodeRaw) allSkuCodes.add(li.skuCodeRaw);
+  for (const s of assignedSplits) {
+    for (const li of s.lineItems) if (li.rawLineItem?.skuCodeRaw) allSkuCodes.add(li.rawLineItem.skuCodeRaw);
+  }
+  const finiMap = await resolveFiniMap(Array.from(allSkuCodes));
+
+  const rawLineItemsRows = rawLineItemsRaw.map((li) => ({
+    ...li,
+    skuDisplay: buildSkuDisplay(li.skuCodeRaw, li.skuDescriptionRaw, finiMap),
+  }));
 
   // Query 3b: import_raw_summary — authoritative source of shipToCustomerId/Name
   const rawSummaries = uniqueObdNumbers.length > 0
@@ -218,6 +233,13 @@ export async function GET(): Promise<NextResponse> {
 
   const splitsWithCustomer = assignedSplits.map(s => ({
     ...s,
+    lineItems: s.lineItems.map(li => ({
+      ...li,
+      rawLineItem: {
+        ...li.rawLineItem,
+        skuDisplay: buildSkuDisplay(li.rawLineItem.skuCodeRaw, li.rawLineItem.skuDescriptionRaw, finiMap),
+      },
+    })),
     order: {
       ...s.order,
       shipToCustomerId:   shipToCustomerIdMap.get(s.order.obdNumber) || s.order.shipToCustomerId,

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
+import { resolveFiniMap } from "@/lib/fini-resolver";
+import { buildSkuDisplay } from "@/types/sku-display";
 
 export const dynamic = "force-dynamic";
 
@@ -221,6 +223,11 @@ export async function GET(
     const formulaMap = new Map(formulas.map((f) => [f.rawLineItemId, f.formula]));
     const configMap  = new Map(configRows.map((c) => [c.key, c.value]));
 
+    // Fini/Generic mapping for line display
+    const finiMap = await resolveFiniMap(
+      lineItems.map((li) => li.skuCodeRaw).filter((c): c is string => !!c),
+    );
+
     // ── 6. Resolve contacts (single contact per role group) ───────────────────
     const billToContact = (() => {
       const contacts = billToPoint?.contacts ?? [];
@@ -323,6 +330,7 @@ export async function GET(
           isTinting:         li.isTinting,
           articleTag:        li.articleTag         ?? null,
           formula:           formulaMap.get(li.id) ?? null,
+          skuDisplay:        buildSkuDisplay(li.skuCodeRaw, li.skuDescriptionRaw, finiMap),
         })),
 
         totals: querySummary

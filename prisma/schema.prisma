@@ -1058,6 +1058,7 @@ model mo_sku_lookup {
   packCode    String
   unit         String?
   refMaterial  String?
+  refDescription String?
   paintType        String?
   materialType     String?
   piecesPerCarton  Int?

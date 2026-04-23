@@ -17,6 +17,9 @@ import { TintTableView } from "@/components/tint/tint-table-view";
 import { CustomerMissingSheet } from "@/components/shared/customer-missing-sheet";
 import { OrderDetailPanel } from "@/components/shared/order-detail-panel";
 import { UniversalHeader } from "@/components/universal-header";
+import { useSkuDisplayMode } from "@/lib/hooks/use-sku-display-mode";
+import { pickSkuDisplay, type SkuDisplay } from "@/types/sku-display";
+import { SkuDisplayToggle } from "@/components/tint/sku-display-toggle";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -75,6 +78,7 @@ export interface TintOrder {
     isTinting:         boolean;
     article:           number | null;
     articleTag:        string | null;
+    skuDisplay:        SkuDisplay;
   }[];
   remainingQty?: number;
   existingSplits?: {
@@ -96,6 +100,7 @@ export interface TintOrder {
       rawLineItem: {
         skuCodeRaw:        string;
         skuDescriptionRaw: string | null;
+        skuDisplay:        SkuDisplay;
       };
     }[];
   }[];
@@ -134,6 +139,7 @@ export interface SplitCard {
       skuDescriptionRaw: string | null;
       volumeLine:        number | null;
       isTinting:         boolean;
+      skuDisplay:        SkuDisplay;
     };
   }[];
   order: {
@@ -906,6 +912,7 @@ interface SplitDetailLine {
     skuDescriptionRaw: string | null;
     volumeLine:        number | null;
     isTinting:         boolean;
+    skuDisplay:        SkuDisplay;
   };
 }
 
@@ -943,6 +950,8 @@ function SplitDetailSheet({
   onReassign: () => void;
   onCancel:   () => void;
 }) {
+  const { mode: skuDisplayMode } = useSkuDisplayMode();
+
   const [orderData, setOrderData] = useState<SplitDetailOrder | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -1034,10 +1043,15 @@ function SplitDetailSheet({
                       key={li.rawLineItemId}
                       className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-[11px]"
                     >
-                      <div className="flex items-center justify-between">
-                        <span className="font-mono text-violet-600 flex-shrink-0">{li.rawLineItem.skuCodeRaw}</span>
-                        <span className="flex-1 px-2 truncate text-gray-500">{li.rawLineItem.skuDescriptionRaw ?? "—"}</span>
-                      </div>
+                      {(() => {
+                        const d = pickSkuDisplay(li.rawLineItem.skuDisplay, skuDisplayMode);
+                        return (
+                          <div className="flex items-center justify-between">
+                            <span className="font-mono text-violet-600 flex-shrink-0">{d.code}</span>
+                            <span className="flex-1 px-2 truncate text-gray-500">{d.description ?? "—"}</span>
+                          </div>
+                        );
+                      })()}
                       <div className="flex gap-4 text-[11px] mt-1.5">
                         <div>
                           <p className="text-gray-400 mb-0.5">QTY</p>
@@ -1167,13 +1181,16 @@ function SplitDetailSheet({
                         </div>
                         {/* Line items */}
                         <div className="flex flex-col gap-1">
-                          {s.lineItems.map((item) => (
-                            <div key={item.rawLineItemId} className="flex items-center justify-between text-[11px] text-gray-500">
-                              <span className="font-mono text-violet-600 flex-shrink-0">{item.rawLineItem.skuCodeRaw}</span>
-                              <span className="flex-1 px-2 truncate">{item.rawLineItem.skuDescriptionRaw ?? "—"}</span>
-                              <span className="font-semibold text-gray-700 flex-shrink-0">{item.assignedQty} units</span>
-                            </div>
-                          ))}
+                          {s.lineItems.map((item) => {
+                            const d = pickSkuDisplay(item.rawLineItem.skuDisplay, skuDisplayMode);
+                            return (
+                              <div key={item.rawLineItemId} className="flex items-center justify-between text-[11px] text-gray-500">
+                                <span className="font-mono text-violet-600 flex-shrink-0">{d.code}</span>
+                                <span className="flex-1 px-2 truncate">{d.description ?? "—"}</span>
+                                <span className="font-semibold text-gray-700 flex-shrink-0">{item.assignedQty} units</span>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
                     );
@@ -1571,6 +1588,8 @@ function SplitKanbanCard({
 // ── Page Content ──────────────────────────────────────────────────────────────
 
 export function TintManagerContent() {
+  const { mode: skuDisplayMode } = useSkuDisplayMode();
+
   const [orders,               setOrders]               = useState<TintOrder[]>([]);
   const [activeSplits,         setActiveSplits]         = useState<SplitCard[]>([]);
   const [completedSplits,      setCompletedSplits]      = useState<SplitCard[]>([]);
@@ -1750,7 +1769,7 @@ export function TintManagerContent() {
       const matchObd      = o.obdNumber.toLowerCase().includes(q);
       const matchCustomer = (o.customer?.customerName ?? "").toLowerCase().includes(q);
       const matchSO       = (o.customer?.salesOfficerGroup?.salesOfficer?.name ?? "").toLowerCase().includes(q);
-      const matchSku      = o.lineItems.some((l) => l.skuCodeRaw.toLowerCase().includes(q));
+      const matchSku      = o.lineItems.some((l) => pickSkuDisplay(l.skuDisplay, skuDisplayMode).code.toLowerCase().includes(q));
       if (!matchObd && !matchCustomer && !matchSO && !matchSku) return false;
     }
     return true;
@@ -2177,6 +2196,8 @@ export function TintManagerContent() {
                 )}
               </div>
             )}
+            <SkuDisplayToggle />
+            <div className="w-px h-4 bg-gray-200 mx-0.5" />
             <button
               onClick={() => { setViewMode("card"); if (typeof window !== "undefined") sessionStorage.setItem("tm_view_mode", "card"); }}
               className={`p-1 rounded ${viewMode === "card" ? "bg-gray-100 text-gray-900" : "text-gray-400 hover:text-gray-600"}`}

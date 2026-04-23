@@ -4,6 +4,8 @@ import { useState, useEffect } from "react";
 import { Loader2, Plus, X, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { useSkuDisplayMode } from "@/lib/hooks/use-sku-display-mode";
+import { pickSkuDisplay, type SkuDisplay } from "@/types/sku-display";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -17,6 +19,7 @@ interface ModalLineItem {
   isTinting:         boolean;
   article:           number | null;
   articleTag:        string | null;
+  skuDisplay:        SkuDisplay;
 }
 
 interface ExistingSplitItem {
@@ -38,6 +41,7 @@ interface PreviousSplit {
     rawLineItem: {
       skuCodeRaw:        string;
       skuDescriptionRaw: string | null;
+      skuDisplay:        SkuDisplay;
     };
   }[];
 }
@@ -87,6 +91,7 @@ export function SplitBuilderModal({
   operators,
   onSuccess,
 }: SplitBuilderModalProps) {
+  const { mode: skuDisplayMode } = useSkuDisplayMode();
   const [splits,           setSplits]           = useState<SplitDraft[]>(makeInitialSplits);
   const [isLoading,        setIsLoading]        = useState(false);
   const [error,            setError]            = useState<string | null>(null);
@@ -256,6 +261,7 @@ export function SplitBuilderModal({
                   .reduce((sum, l) => sum + l.assignedQty, 0);
                 const remaining = line.unitQty - existing - draftUsed;
 
+                const dLeft = pickSkuDisplay(line.skuDisplay, skuDisplayMode);
                 return (
                   <div
                     key={line.id}
@@ -263,7 +269,7 @@ export function SplitBuilderModal({
                   >
                     <div className="flex items-center gap-2 mb-1">
                       <span className="font-mono text-[11.5px] font-semibold text-violet-600">
-                        {line.skuCodeRaw}
+                        {dLeft.code}
                       </span>
                       {line.isTinting && (
                         <span className="text-[9.5px] font-bold uppercase tracking-wide bg-violet-50 text-violet-600 border border-violet-200 px-1.5 py-0.5 rounded-full">
@@ -271,9 +277,9 @@ export function SplitBuilderModal({
                         </span>
                       )}
                     </div>
-                    {line.skuDescriptionRaw && (
+                    {dLeft.description && (
                       <p className="text-[11px] text-gray-500 leading-snug line-clamp-2 mb-2">
-                        {line.skuDescriptionRaw}
+                        {dLeft.description}
                       </p>
                     )}
                     <div className="flex items-center gap-3 text-[11px] flex-wrap">
@@ -395,14 +401,21 @@ export function SplitBuilderModal({
                                 className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2"
                               >
                                 <div className="flex-1 min-w-0">
-                                  <p className="font-mono text-[11.5px] font-semibold text-violet-600 truncate">
-                                    {rawLine.skuCodeRaw}
-                                  </p>
-                                  {rawLine.skuDescriptionRaw && (
-                                    <p className="text-[10.5px] text-gray-400 truncate">
-                                      {rawLine.skuDescriptionRaw}
-                                    </p>
-                                  )}
+                                  {(() => {
+                                    const dRaw = pickSkuDisplay(rawLine.skuDisplay, skuDisplayMode);
+                                    return (
+                                      <>
+                                        <p className="font-mono text-[11.5px] font-semibold text-violet-600 truncate">
+                                          {dRaw.code}
+                                        </p>
+                                        {dRaw.description && (
+                                          <p className="text-[10.5px] text-gray-400 truncate">
+                                            {dRaw.description}
+                                          </p>
+                                        )}
+                                      </>
+                                    );
+                                  })()}
                                 </div>
                                 <input
                                   type="number"
@@ -460,6 +473,7 @@ export function SplitBuilderModal({
                           >
                             {availableToAdd.map((line) => {
                               const rem = getRemainingQty(line.id);
+                              const dAdd = pickSkuDisplay(line.skuDisplay, skuDisplayMode);
                               return (
                                 <button
                                   key={line.id}
@@ -468,10 +482,10 @@ export function SplitBuilderModal({
                                   className="w-full flex items-center gap-2 px-3.5 py-2.5 text-left hover:bg-gray-50 transition-colors"
                                 >
                                   <span className="font-mono text-[11.5px] font-semibold text-violet-600 flex-shrink-0">
-                                    {line.skuCodeRaw}
+                                    {dAdd.code}
                                   </span>
                                   <span className="text-[11px] text-gray-400 flex-1 truncate">
-                                    {line.skuDescriptionRaw}
+                                    {dAdd.description}
                                   </span>
                                   <span className="text-[11px] text-green-600 font-semibold flex-shrink-0">
                                     {rem} left
@@ -599,19 +613,22 @@ export function SplitBuilderModal({
 
                         {/* Line items */}
                         <div className="flex flex-col gap-1">
-                          {split.lineItems.map((item, idx) => (
-                            <div key={idx} className="flex items-center justify-between text-[11px] text-gray-500">
-                              <span className="font-mono text-violet-600 flex-shrink-0">
-                                {item.rawLineItem.skuCodeRaw}
-                              </span>
-                              <span className="flex-1 px-2 truncate">
-                                {item.rawLineItem.skuDescriptionRaw}
-                              </span>
-                              <span className="font-semibold text-gray-700 flex-shrink-0">
-                                {item.assignedQty} units
-                              </span>
-                            </div>
-                          ))}
+                          {split.lineItems.map((item, idx) => {
+                            const dHist = pickSkuDisplay(item.rawLineItem.skuDisplay, skuDisplayMode);
+                            return (
+                              <div key={idx} className="flex items-center justify-between text-[11px] text-gray-500">
+                                <span className="font-mono text-violet-600 flex-shrink-0">
+                                  {dHist.code}
+                                </span>
+                                <span className="flex-1 px-2 truncate">
+                                  {dHist.description}
+                                </span>
+                                <span className="font-semibold text-gray-700 flex-shrink-0">
+                                  {item.assignedQty} units
+                                </span>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
                     ))}

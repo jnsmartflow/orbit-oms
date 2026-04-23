@@ -1,5 +1,7 @@
 "use client";
 
+import type { SkuDisplay } from "@/types/sku-display";
+
 // ─────────────────────────────────────────────────────────────────────────────
 // ChallanDocument — pure presentational component.
 // B&W print-optimized layout. No colored backgrounds.
@@ -67,6 +69,7 @@ interface LineItem {
   isTinting:         boolean;
   articleTag:        string | null;
   formula:           string | null;
+  skuDisplay:        SkuDisplay;
 }
 
 interface Totals {
@@ -367,16 +370,17 @@ export function ChallanDocument({
             <tbody>
               {lineItems.map((li, idx) => {
                 const currentFormula = formulaValues[li.id] ?? li.formula ?? "";
+                const d = li.skuDisplay.fini ?? li.skuDisplay.sap;
                 return (
                   <tr key={li.id}>
                     <td style={{ height: 32, padding: "0 10px 0 24px", borderBottom: "1px solid #e5e7eb", textAlign: "center", color: "#9ca3af", fontSize: 10, verticalAlign: "middle" }}>
                       {idx + 1}
                     </td>
                     <td style={{ height: 32, padding: "0 10px", borderBottom: "1px solid #e5e7eb", fontSize: 10, color: "#6b7280", fontFamily: "'SF Mono', ui-monospace, monospace", verticalAlign: "middle", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                      {li.skuCodeRaw}
+                      {d.code}
                     </td>
                     <td style={{ height: 32, padding: "0 10px", borderBottom: "1px solid #e5e7eb", color: "#374151", verticalAlign: "middle", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                      {li.skuDescriptionRaw ?? ""}
+                      {d.description ?? ""}
                     </td>
 
                     {/* Formula cell */}

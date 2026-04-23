@@ -3,6 +3,8 @@ import { auth } from "@/lib/auth";
 import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { checkPermission } from "@/lib/permissions";
+import { resolveFiniMap } from "@/lib/fini-resolver";
+import { buildSkuDisplay } from "@/types/sku-display";
 
 export const dynamic = "force-dynamic";
 
@@ -268,7 +270,7 @@ export async function GET(): Promise<NextResponse> {
 
     // ── Line items for orders (split builder modal needs these) ───────────────
     const orderObdNumbers = orders.map((o) => o.obdNumber);
-    const rawLineItems = orderObdNumbers.length > 0
+    const rawLineItemsRaw = orderObdNumbers.length > 0
       ? await prisma.import_raw_line_items.findMany({
           where: { obdNumber: { in: orderObdNumbers } },
           select: {
@@ -285,6 +287,25 @@ export async function GET(): Promise<NextResponse> {
           },
         })
       : [];
+
+    // ── Fini/Generic mapping — one lookup per request ────────────────────────
+    const allSkuCodes = new Set<string>();
+    for (const li of rawLineItemsRaw) if (li.skuCodeRaw) allSkuCodes.add(li.skuCodeRaw);
+    for (const o of activeOrders) {
+      for (const s of (o as { splits?: { lineItems: { rawLineItem: { skuCodeRaw: string } }[] }[] }).splits ?? []) {
+        for (const li of s.lineItems) if (li.rawLineItem?.skuCodeRaw) allSkuCodes.add(li.rawLineItem.skuCodeRaw);
+      }
+    }
+    for (const s of activeSplits)    for (const li of s.lineItems) if (li.rawLineItem?.skuCodeRaw) allSkuCodes.add(li.rawLineItem.skuCodeRaw);
+    for (const s of completedSplits) for (const li of s.lineItems) if (li.rawLineItem?.skuCodeRaw) allSkuCodes.add(li.rawLineItem.skuCodeRaw);
+
+    const finiMap = await resolveFiniMap(Array.from(allSkuCodes));
+
+    const rawLineItems = rawLineItemsRaw.map((li) => ({
+      ...li,
+      skuDisplay: buildSkuDisplay(li.skuCodeRaw, li.skuDescriptionRaw, finiMap),
+    }));
+
     const linesByObd = new Map<string, typeof rawLineItems>();
     for (const line of rawLineItems) {
       if (!linesByObd.has(line.obdNumber)) linesByObd.set(line.obdNumber, []);
@@ -324,8 +345,36 @@ export async function GET(): Promise<NextResponse> {
       );
       const effectiveRemainingQty = hasActiveWholeOBDAssignment ? 0 : remainingQty;
 
+      // Enrich nested splits with skuDisplay on each rawLineItem.
+      type RichSplit = {
+        lineItems: {
+          rawLineItemId: number;
+          assignedQty:   number;
+          rawLineItem: {
+            skuCodeRaw:        string;
+            skuDescriptionRaw: string | null;
+          };
+        }[];
+      };
+      const splitsRich = ((o as { splits?: RichSplit[] }).splits) ?? [];
+      const enrichedSplits = splitsRich.map((s) => ({
+        ...s,
+        lineItems: s.lineItems.map((li) => ({
+          ...li,
+          rawLineItem: {
+            ...li.rawLineItem,
+            skuDisplay: buildSkuDisplay(
+              li.rawLineItem.skuCodeRaw,
+              li.rawLineItem.skuDescriptionRaw,
+              finiMap,
+            ),
+          },
+        })),
+      }));
+
       return {
         ...o,
+        splits:           enrichedSplits,
         smu:              smuMap.get(o.obdNumber) ?? null,
         obdEmailDate:     obdDateMap.get(o.obdNumber)?.date ?? null,
         obdEmailTime:     obdDateMap.get(o.obdNumber)?.time ?? null,
@@ -345,6 +394,13 @@ export async function GET(): Promise<NextResponse> {
 
     const activeSplitsWithSmu    = activeSplits.map((s) => ({
       ...s,
+      lineItems: s.lineItems.map((li) => ({
+        ...li,
+        rawLineItem: {
+          ...li.rawLineItem,
+          skuDisplay: buildSkuDisplay(li.rawLineItem.skuCodeRaw, li.rawLineItem.skuDescriptionRaw, finiMap),
+        },
+      })),
       smu:              smuMap.get(s.order.obdNumber) ?? null,
       obdEmailDate:     obdDateMap.get(s.order.obdNumber)?.date ?? null,
       obdEmailTime:     obdDateMap.get(s.order.obdNumber)?.time ?? null,
@@ -359,6 +415,13 @@ export async function GET(): Promise<NextResponse> {
     }));
     const completedSplitsWithSmu = completedSplits.map((s) => ({
       ...s,
+      lineItems: s.lineItems.map((li) => ({
+        ...li,
+        rawLineItem: {
+          ...li.rawLineItem,
+          skuDisplay: buildSkuDisplay(li.rawLineItem.skuCodeRaw, li.rawLineItem.skuDescriptionRaw, finiMap),
+        },
+      })),
       smu:              smuMap.get(s.order.obdNumber) ?? null,
       obdEmailDate:     obdDateMap.get(s.order.obdNumber)?.date ?? null,
       obdEmailTime:     obdDateMap.get(s.order.obdNumber)?.time ?? null,
