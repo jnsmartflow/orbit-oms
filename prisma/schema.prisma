@@ -33,11 +33,23 @@ enum TinterType {
 }
 
 enum PackCode {
-  ml_500 @map("500ml")
-  L_1    @map("1L")
-  L_4    @map("4L")
-  L_10   @map("10L")
-  L_20   @map("20L")
+  ml_500  @map("500ml")
+  L_0_9   @map("0.9L")
+  L_0_925 @map("0.925L")
+  L_1     @map("1L")
+  L_3_6   @map("3.6L")
+  L_3_7   @map("3.7L")
+  L_4     @map("4L")
+  L_9     @map("9L")
+  L_9_25  @map("9.25L")
+  L_10    @map("10L")
+  L_15    @map("15L")
+  L_18    @map("18L")
+  L_18_5  @map("18.5L")
+  L_20    @map("20L")
+  L_22    @map("22L")
+  L_30    @map("30L")
+  L_40    @map("40L")
 }
 
 // ─────────────────────────────────────────────
