@@ -492,7 +492,7 @@ UniversalHeader: no segments. Filter groups: SMU (Retail Offtake / Decorative Pr
 
 **Structure:** Header (logo grayscale + DELIVERY CHALLAN centred + challan no.) → dark address bar (#374151, only dark section) → SMU/OBD/Warehouse fields → Bill To / Ship To (with #f9fafb sub-headers, billToAddress lookup via billToCustomerId) → Customer/SO/Receiver → Line items table → Footer (terms + transport + signatures) → bottom bar (regd office + GSTIN).
 
-**Table:** `table-layout: fixed` with `<colgroup>`: 5/13/35/15/8/12/12%. Header 28px #f9fafb. Data rows 32px. Blank rows to minimum 8. Totals row with 2px top border.
+**Table:** `table-layout: fixed` with `<colgroup>`: 5/13/30/22/8/10/12%. Header 28px #f9fafb. Data rows 32px. Blank rows to minimum 8. Totals row with 2px top border.
 
 ---
 

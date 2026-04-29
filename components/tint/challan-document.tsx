@@ -112,6 +112,19 @@ export interface ChallanDocumentProps {
 
 const UP: React.CSSProperties = { textTransform: "uppercase" };
 
+// ── OBD date formatter (UTC — obdEmailDate is date-only) ─────────────────────
+
+function formatObdDate(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  const day   = String(d.getUTCDate()).padStart(2, "0");
+  const month = ["Jan","Feb","Mar","Apr","May","Jun",
+                 "Jul","Aug","Sep","Oct","Nov","Dec"][d.getUTCMonth()];
+  const year  = d.getUTCFullYear();
+  return `${day} ${month} ${year}`;
+}
+
 // ── Address formatter ─────────────────────────────────────────────────────────
 
 function formatAddress(address: string | null): string[] {
@@ -195,14 +208,19 @@ export function ChallanDocument({
             </div>
           </div>
 
-          {/* Right — Challan Number */}
+          {/* Right — Challan Number + Date */}
           <div style={{ flexShrink: 0, textAlign: "right" }}>
-            <div style={{ fontSize: 8, fontWeight: 600, color: "#9ca3af", letterSpacing: 0.5, ...UP }}>
-              Challan No.
-            </div>
             <div style={{ fontSize: 14, fontWeight: 700, color: "#111827", fontFamily: "'SF Mono', ui-monospace, monospace", marginTop: 1 }}>
               {challan.challanNumber}
             </div>
+            {(() => {
+              const formatted = formatObdDate(order.obdEmailDate);
+              return (
+                <div style={{ fontSize: 10, fontWeight: 500, color: formatted ? "#4b5563" : "#9ca3af", marginTop: 3 }}>
+                  {formatted || "—"}
+                </div>
+              );
+            })()}
           </div>
         </div>
 
@@ -223,19 +241,19 @@ export function ChallanDocument({
 
         {/* ── S3 FIELDS ROW — SMU | OBD | Warehouse ───────────────────────── */}
         <div style={{ display: "flex", borderBottom: "1px solid #d1d5db", flexShrink: 0 }}>
-          {/* SMU Number */}
-          <div style={{ flex: 1, padding: "8px 14px 8px 24px", borderRight: "1px solid #d1d5db" }}>
-            <div style={{ fontSize: 8, fontWeight: 600, color: "#9ca3af", ...UP, letterSpacing: 0.3 }}>SMU Number</div>
-            <div style={{ fontSize: 11, fontWeight: 600, color: "#111827", marginTop: 1 }}>{order.smu ?? "—"}</div>
-          </div>
           {/* OBD No. */}
-          <div style={{ flex: 1, padding: "8px 14px", borderRight: "1px solid #d1d5db" }}>
-            <div style={{ fontSize: 8, fontWeight: 600, color: "#9ca3af", ...UP, letterSpacing: 0.3 }}>OBD No.</div>
+          <div style={{ flex: 1, padding: "8px 14px 8px 24px", borderRight: "1px solid #d1d5db" }}>
+            <div style={{ fontSize: 8, fontWeight: 600, color: "#4b5563", ...UP, letterSpacing: 0.3 }}>OBD No.</div>
             <div style={{ fontSize: 12, fontWeight: 700, color: "#111827", fontFamily: "'SF Mono', ui-monospace, monospace", marginTop: 1 }}>{order.obdNumber}</div>
+          </div>
+          {/* SMU */}
+          <div style={{ flex: 1, padding: "8px 14px", borderRight: "1px solid #d1d5db" }}>
+            <div style={{ fontSize: 8, fontWeight: 600, color: "#4b5563", ...UP, letterSpacing: 0.3 }}>SMU</div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: "#111827", marginTop: 1 }}>{order.smu ?? "—"}</div>
           </div>
           {/* Warehouse */}
           <div style={{ flex: 1, padding: "8px 14px 8px 14px" }}>
-            <div style={{ fontSize: 8, fontWeight: 600, color: "#9ca3af", ...UP, letterSpacing: 0.3 }}>Warehouse</div>
+            <div style={{ fontSize: 8, fontWeight: 600, color: "#4b5563", ...UP, letterSpacing: 0.3 }}>Warehouse</div>
             <div style={{ fontSize: 11, fontWeight: 600, color: "#111827", marginTop: 1 }}>{order.warehouse ?? "Surat Depot"}</div>
           </div>
         </div>
@@ -249,11 +267,11 @@ export function ChallanDocument({
               Bill To
             </div>
             <div style={{ padding: "10px 14px 10px 24px" }}>
-              <div style={{ fontSize: 8, color: "#9ca3af", fontWeight: 600, ...UP }}>Customer Code</div>
+              <div style={{ fontSize: 8, color: "#4b5563", fontWeight: 600, ...UP }}>Customer Code</div>
               <div style={{ fontSize: 11, color: "#374151", fontWeight: 600, fontFamily: "'SF Mono', ui-monospace, monospace", marginTop: 1 }}>{billTo.customerCode ?? ""}</div>
               <div style={{ fontSize: 13, fontWeight: 700, color: "#111827", marginTop: 4 }}>{billTo.name}</div>
               {formatAddress(billTo.address).length > 0 && (
-                <div style={{ fontSize: 10, color: "#6b7280", marginTop: 2, lineHeight: 1.35 }}>
+                <div style={{ fontSize: 10, color: "#374151", marginTop: 2, lineHeight: 1.35 }}>
                   {formatAddress(billTo.address).join(", ")}
                 </div>
               )}
@@ -265,17 +283,17 @@ export function ChallanDocument({
             <div style={{ padding: "5px 24px 5px 14px", background: "#f9fafb", borderBottom: "1px solid #d1d5db", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <span style={{ fontSize: 9, fontWeight: 700, color: "#111827", letterSpacing: 0.5, ...UP }}>Ship To</span>
               {(shipTo.area || shipTo.route) && (
-                <span style={{ fontSize: 9, color: "#9ca3af", fontWeight: 500 }}>
+                <span style={{ fontSize: 9, color: "#4b5563", fontWeight: 500 }}>
                   {[shipTo.area, shipTo.route].filter(Boolean).join(" · ")}
                 </span>
               )}
             </div>
             <div style={{ padding: "10px 24px 10px 14px" }}>
-              <div style={{ fontSize: 8, color: "#9ca3af", fontWeight: 600, ...UP }}>Ship-to Code</div>
+              <div style={{ fontSize: 8, color: "#4b5563", fontWeight: 600, ...UP }}>Ship-to Code</div>
               <div style={{ fontSize: 11, color: "#374151", fontWeight: 600, fontFamily: "'SF Mono', ui-monospace, monospace", marginTop: 1 }}>{shipTo.shipToCode ?? ""}</div>
               <div style={{ fontSize: 13, fontWeight: 700, color: "#111827", marginTop: 4 }}>{shipTo.name}</div>
               {formatAddress(shipTo.address).length > 0 && (
-                <div style={{ fontSize: 10, color: "#6b7280", marginTop: 2, lineHeight: 1.35 }}>
+                <div style={{ fontSize: 10, color: "#374151", marginTop: 2, lineHeight: 1.35 }}>
                   {formatAddress(shipTo.address).join(", ")}
                 </div>
               )}
@@ -293,7 +311,7 @@ export function ChallanDocument({
               <>
                 <div style={{ fontSize: 11, color: "#374151", marginTop: 3 }}>{billTo.contact.name}</div>
                 {billTo.contact.phone && (
-                  <div style={{ fontSize: 10, color: "#6b7280", marginTop: 1, fontFamily: "'SF Mono', ui-monospace, monospace" }}>
+                  <div style={{ fontSize: 10, color: "#374151", marginTop: 1, fontFamily: "'SF Mono', ui-monospace, monospace" }}>
                     {billTo.contact.phone}
                   </div>
                 )}
@@ -309,7 +327,7 @@ export function ChallanDocument({
               <>
                 <div style={{ fontSize: 11, color: "#374151", marginTop: 3 }}>{shipTo.salesOfficer.name}</div>
                 {shipTo.salesOfficer.phone && (
-                  <div style={{ fontSize: 10, color: "#6b7280", marginTop: 1, fontFamily: "'SF Mono', ui-monospace, monospace" }}>
+                  <div style={{ fontSize: 10, color: "#374151", marginTop: 1, fontFamily: "'SF Mono', ui-monospace, monospace" }}>
                     {shipTo.salesOfficer.phone}
                   </div>
                 )}
@@ -325,7 +343,7 @@ export function ChallanDocument({
               <>
                 <div style={{ fontSize: 11, color: "#374151", marginTop: 3 }}>{shipTo.siteContact.name}</div>
                 {shipTo.siteContact.phone && (
-                  <div style={{ fontSize: 10, color: "#6b7280", marginTop: 1, fontFamily: "'SF Mono', ui-monospace, monospace" }}>
+                  <div style={{ fontSize: 10, color: "#374151", marginTop: 1, fontFamily: "'SF Mono', ui-monospace, monospace" }}>
                     {shipTo.siteContact.phone}
                   </div>
                 )}
@@ -338,7 +356,7 @@ export function ChallanDocument({
 
         {/* ── S6 LINE ITEMS TABLE — flex:1 pushes footer to bottom ──────────── */}
         <div style={{ flex: 1 }}>
-          <div style={{ padding: "10px 24px 4px", fontSize: 9, fontWeight: 600, color: "#9ca3af", letterSpacing: 0.5, ...UP }}>
+          <div style={{ padding: "10px 24px 4px", fontSize: 9, fontWeight: 600, color: "#4b5563", letterSpacing: 0.5, ...UP }}>
             Line Items
           </div>
 
@@ -346,23 +364,23 @@ export function ChallanDocument({
             <colgroup>
               <col style={{ width: "5%" }} />
               <col style={{ width: "13%" }} />
-              <col style={{ width: "35%" }} />
-              <col style={{ width: "15%" }} />
+              <col style={{ width: "30%" }} />
+              <col style={{ width: "22%" }} />
               <col style={{ width: "8%" }} />
-              <col style={{ width: "12%" }} />
+              <col style={{ width: "10%" }} />
               <col style={{ width: "12%" }} />
             </colgroup>
 
             <thead>
               <tr>
-                <th style={{ height: 28, padding: "0 10px 0 24px", fontSize: 9, fontWeight: 600, color: "#111827", ...UP, letterSpacing: 0.4, textAlign: "center", borderTop: "2px solid #111827", borderBottom: "1px solid #374151", background: "#f9fafb", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>#</th>
+                <th style={{ height: 28, padding: "0 10px 0 12px", fontSize: 9, fontWeight: 600, color: "#111827", ...UP, letterSpacing: 0.4, textAlign: "center", borderTop: "2px solid #111827", borderBottom: "1px solid #374151", background: "#f9fafb", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>#</th>
                 <th style={{ height: 28, padding: "0 10px", fontSize: 9, fontWeight: 600, color: "#111827", ...UP, letterSpacing: 0.4, textAlign: "left", borderTop: "2px solid #111827", borderBottom: "1px solid #374151", background: "#f9fafb", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>SKU Code</th>
                 <th style={{ height: 28, padding: "0 10px", fontSize: 9, fontWeight: 600, color: "#111827", ...UP, letterSpacing: 0.4, textAlign: "left", borderTop: "2px solid #111827", borderBottom: "1px solid #374151", background: "#f9fafb", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>Material Description</th>
                 <th style={{ height: 28, padding: "0 10px", fontSize: 9, fontWeight: 600, color: "#111827", ...UP, letterSpacing: 0.4, textAlign: "left", borderTop: "2px solid #111827", borderBottom: "1px solid #374151", background: "#f9fafb", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                  Formula <span className="print-hide" style={{ fontWeight: 400, color: "#9ca3af", textTransform: "none", fontSize: 7 }}>(editable)</span>
+                  Shade <span className="print-hide" style={{ fontWeight: 400, color: "#4b5563", textTransform: "none", fontSize: 7 }}>(editable)</span>
                 </th>
                 <th style={{ height: 28, padding: "0 10px", fontSize: 9, fontWeight: 600, color: "#111827", ...UP, letterSpacing: 0.4, textAlign: "right", borderTop: "2px solid #111827", borderBottom: "1px solid #374151", background: "#f9fafb", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>Qty</th>
-                <th style={{ height: 28, padding: "0 10px", fontSize: 9, fontWeight: 600, color: "#111827", ...UP, letterSpacing: 0.4, textAlign: "right", borderTop: "2px solid #111827", borderBottom: "1px solid #374151", background: "#f9fafb", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>Volume (L)</th>
+                <th style={{ height: 28, padding: "0 10px", fontSize: 9, fontWeight: 600, color: "#111827", ...UP, letterSpacing: 0.4, textAlign: "right", borderTop: "2px solid #111827", borderBottom: "1px solid #374151", background: "#f9fafb", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>Volume</th>
                 <th style={{ height: 28, padding: "0 10px 0 10px", fontSize: 9, fontWeight: 600, color: "#111827", ...UP, letterSpacing: 0.4, textAlign: "center", borderTop: "2px solid #111827", borderBottom: "1px solid #374151", background: "#f9fafb", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>Tinting</th>
               </tr>
             </thead>
@@ -373,10 +391,10 @@ export function ChallanDocument({
                 const d = li.skuDisplay.fini ?? li.skuDisplay.sap;
                 return (
                   <tr key={li.id}>
-                    <td style={{ height: 32, padding: "0 10px 0 24px", borderBottom: "1px solid #e5e7eb", textAlign: "center", color: "#9ca3af", fontSize: 10, verticalAlign: "middle" }}>
+                    <td style={{ height: 32, padding: "0 10px 0 12px", borderBottom: "1px solid #e5e7eb", textAlign: "center", color: "#4b5563", fontSize: 10, verticalAlign: "middle" }}>
                       {idx + 1}
                     </td>
-                    <td style={{ height: 32, padding: "0 10px", borderBottom: "1px solid #e5e7eb", fontSize: 10, color: "#6b7280", fontFamily: "'SF Mono', ui-monospace, monospace", verticalAlign: "middle", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    <td style={{ height: 32, padding: "0 10px", borderBottom: "1px solid #e5e7eb", fontSize: 10, color: "#374151", fontFamily: "'SF Mono', ui-monospace, monospace", verticalAlign: "middle", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                       {d.code}
                     </td>
                     <td style={{ height: 32, padding: "0 10px", borderBottom: "1px solid #e5e7eb", color: "#374151", verticalAlign: "middle", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
@@ -390,7 +408,7 @@ export function ChallanDocument({
                           <input
                             type="text"
                             value={currentFormula}
-                            placeholder="Enter formula…"
+                            placeholder="Enter shade…"
                             onChange={(e) => onFormulaChange(li.id, e.target.value)}
                             style={{
                               border: "none", borderBottom: "1px dashed #9ca3af",
@@ -425,7 +443,7 @@ export function ChallanDocument({
               {/* Blank rows to ensure minimum 8 body rows */}
               {Array.from({ length: blankRows }).map((_, i) => (
                 <tr key={`blank-${i}`}>
-                  <td style={{ height: 32, padding: "0 10px 0 24px", borderBottom: "1px solid #f0f0f0", textAlign: "center", color: "#e5e7eb", fontSize: 10, verticalAlign: "middle" }}>
+                  <td style={{ height: 32, padding: "0 10px 0 12px", borderBottom: "1px solid #f0f0f0", textAlign: "center", color: "#e5e7eb", fontSize: 10, verticalAlign: "middle" }}>
                     {lineItems.length + i + 1}
                   </td>
                   <td style={{ height: 32, borderBottom: "1px solid #f0f0f0" }} />
@@ -442,7 +460,7 @@ export function ChallanDocument({
             {totals && (
               <tfoot>
                 <tr>
-                  <td style={{ height: 32, padding: "0 10px 0 24px", borderTop: "2px solid #111827", verticalAlign: "middle" }} />
+                  <td style={{ height: 32, padding: "0 10px 0 12px", borderTop: "2px solid #111827", verticalAlign: "middle" }} />
                   <td style={{ height: 32, padding: "0 10px", borderTop: "2px solid #111827", verticalAlign: "middle" }} />
                   <td style={{ height: 32, padding: "0 10px", borderTop: "2px solid #111827", verticalAlign: "middle" }} />
                   <td style={{ height: 32, padding: "0 10px", borderTop: "2px solid #111827", fontSize: 9, fontWeight: 700, color: "#111827", ...UP, textAlign: "right", verticalAlign: "middle" }}>
@@ -473,7 +491,7 @@ export function ChallanDocument({
             <div style={{ fontSize: 8, fontWeight: 700, color: "#111827", ...UP, marginBottom: 5 }}>
               Terms &amp; Conditions
             </div>
-            <div style={{ fontSize: 9, color: "#6b7280", lineHeight: 1.45 }}>
+            <div style={{ fontSize: 9, color: "#374151", lineHeight: 1.45 }}>
               Goods once dispatched cannot be returned without prior written
               approval from the depot manager. Rejection or shortage must be
               reported within 3 days of delivery date.
@@ -492,13 +510,13 @@ export function ChallanDocument({
                     onChange={(e) => onTransporterChange(e.target.value)}
                     style={{
                       border: "none", background: "transparent",
-                      fontSize: 11, fontFamily: "inherit", color: "#6b7280",
+                      fontSize: 11, fontFamily: "inherit", color: "#374151",
                       padding: "2px 0", outline: "none",
                       borderBottom: "1.5px dashed #9ca3af", minWidth: 90,
                     }}
                   />
                 ) : (
-                  <span style={{ fontSize: 11, color: "#6b7280", borderBottom: "1px dotted #9ca3af", paddingBottom: 2, minWidth: 90, display: "block" }}>
+                  <span style={{ fontSize: 11, color: "#374151", borderBottom: "1px dotted #9ca3af", paddingBottom: 2, minWidth: 90, display: "block" }}>
                     {transporterValue || "\u00a0"}
                   </span>
                 )}
@@ -515,13 +533,13 @@ export function ChallanDocument({
                     onChange={(e) => onVehicleNoChange(e.target.value)}
                     style={{
                       border: "none", background: "transparent",
-                      fontSize: 11, fontFamily: "inherit", color: "#6b7280",
+                      fontSize: 11, fontFamily: "inherit", color: "#374151",
                       padding: "2px 0", outline: "none",
                       borderBottom: "1.5px dashed #9ca3af", minWidth: 90,
                     }}
                   />
                 ) : (
-                  <span style={{ fontSize: 11, color: "#6b7280", borderBottom: "1px dotted #9ca3af", paddingBottom: 2, minWidth: 90, display: "block" }}>
+                  <span style={{ fontSize: 11, color: "#374151", borderBottom: "1px dotted #9ca3af", paddingBottom: 2, minWidth: 90, display: "block" }}>
                     {vehicleNoValue || "\u00a0"}
                   </span>
                 )}
@@ -557,8 +575,8 @@ export function ChallanDocument({
         {/* ── S8 BOTTOM BAR ────────────────────────────────────────────────── */}
         <div style={{
           padding: "6px 24px",
-          fontSize: 7.5,
-          color: "#9ca3af",
+          fontSize: 8.5,
+          color: "#4b5563",
           display: "flex",
           justifyContent: "space-between",
           alignItems: "center",
@@ -571,7 +589,7 @@ export function ChallanDocument({
               systemConfig.website,
             ].filter(Boolean).join(" · ")}
           </span>
-          <span style={{ fontWeight: 700, color: "#6b7280" }}>
+          <span style={{ fontWeight: 700, color: "#374151" }}>
             {systemConfig.gstin ? `GSTIN: ${systemConfig.gstin}` : ""}
           </span>
         </div>

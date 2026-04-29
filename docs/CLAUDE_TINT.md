@@ -258,7 +258,7 @@ Sort: `orderBy: { orderDateTime: "asc" }`.
 - Address bar (#374151) is the only dark section
 - Structure: Header → dark address bar → SMU/OBD/Warehouse fields → Bill To / Ship To → Customer/SO/Receiver → Line items table → Footer (terms + transport + signatures) → bottom bar (regd office + GSTIN)
 - Bill To includes address (lookup via `billToCustomerId` from `delivery_point_master`)
-- Table: `table-layout: fixed` + `<colgroup>` 5/13/35/15/8/12/12%. Header 28px `#f9fafb`. Data rows 32px. Blank rows to minimum 8. Totals row 2px top border.
+- Table: `table-layout: fixed` + `<colgroup>` 5/13/30/22/8/10/12%. Header 28px `#f9fafb`. Data rows 32px. Blank rows to minimum 8. Totals row 2px top border.
 
 ### 4.5 Print CSS
 
