@@ -8,7 +8,9 @@ import {
   Download,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
 } from "lucide-react";
+import { DatePickerPopover } from "@/components/ui/date-picker-popover";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -481,7 +483,7 @@ export function UniversalHeader({
             </div>
           )}
 
-          {/* Date stepper */}
+          {/* Date stepper + picker */}
           {showDatePicker !== false && currentDate && onDateChange && (
             <>
               {filterGroups && filterGroups.length > 0 && (
@@ -494,9 +496,15 @@ export function UniversalHeader({
                 >
                   <ChevronLeft size={12} />
                 </button>
-                <span className="px-[10px] py-[3px] text-[10px] font-medium text-gray-900 border-t border-b border-gray-200">
-                  {dateLabel}
-                </span>
+                <DatePickerPopover value={currentDate} onChange={onDateChange}>
+                  <button
+                    type="button"
+                    className="px-[10px] py-[3px] text-[10px] font-medium text-gray-900 border-t border-b border-gray-200 hover:bg-gray-50 cursor-pointer inline-flex items-center gap-[3px]"
+                  >
+                    {dateLabel}
+                    <ChevronDown size={10} className="text-gray-400" />
+                  </button>
+                </DatePickerPopover>
                 <button
                   onClick={() => !isToday && onDateChange(shiftDay(currentDate, 1))}
                   className={`px-[6px] py-[3px] text-[10px] text-gray-400 border border-gray-200 rounded-r-[4px] ${
