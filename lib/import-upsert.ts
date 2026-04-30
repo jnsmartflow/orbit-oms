@@ -29,6 +29,7 @@ import type {
   ExistingSummary,
   ImportSource,
   ObdInput,
+  UpsertOptions,
   UpsertResult,
 } from "./import-upsert/types";
 
@@ -38,9 +39,13 @@ export type {
   AppliedChangeType,
   DownstreamEffect,
   EffectType,
+  ExistingLine,
+  ExistingOrder,
+  ExistingSummary,
   ImportSource,
   ObdInput,
   ObdLineInput,
+  UpsertOptions,
   UpsertOutcome,
   UpsertResult,
 } from "./import-upsert/types";
@@ -90,7 +95,9 @@ export async function upsertObd(
   batchRef: string,
   userId:   number,
   now:      Date,
+  options:  UpsertOptions = {},
 ): Promise<UpsertResult> {
+  const dryRun = options.dryRun === true;
   const result: UpsertResult = {
     obdNumber: input.obdNumber,
     outcome:   "errored",
@@ -98,6 +105,7 @@ export async function upsertObd(
     applied:   [],
     effects:   [],
     errors:    [],
+    dryRun,
   };
 
   if (!input.obdNumber) {
@@ -107,17 +115,21 @@ export async function upsertObd(
 
   try {
     const divisionResolved   = resolveSmuFromDivision(input.division);
-    const resolvedCustomerId = await resolveCustomerId(input.shipToCustomerId);
-    const loaded             = await loadExistingObd(input.obdNumber);
+    const resolvedCustomerId = options.preloaded
+      ? options.preloaded.customerId
+      : await resolveCustomerId(input.shipToCustomerId);
+    const loaded             = options.preloaded
+      ? { order: options.preloaded.order, summary: options.preloaded.summary, lines: options.preloaded.lines }
+      : await loadExistingObd(input.obdNumber);
 
     if (loaded.order === null) {
       return await createPath(input, source, batchId, batchRef, userId, now,
-        divisionResolved, resolvedCustomerId, result);
+        divisionResolved, resolvedCustomerId, result, dryRun);
     }
 
     return await patchPath(loaded.order, loaded.summary, loaded.lines,
       input, source, batchId, batchRef, userId, now,
-      divisionResolved, resolvedCustomerId, result);
+      divisionResolved, resolvedCustomerId, result, dryRun);
   } catch (err) {
     result.outcome = "errored";
     result.errors.push(err instanceof Error ? err.message : String(err));
@@ -137,6 +149,7 @@ async function createPath(
   divisionResolved:   { smu: string | null; smuCode: string | null },
   resolvedCustomerId: number | null,
   result:             UpsertResult,
+  dryRun:             boolean,
 ): Promise<UpsertResult> {
   const hasTinting    = input.lines.some((l) => l.isTinting);
   const orderType     = hasTinting ? "tint" : "non_tint";
@@ -144,102 +157,104 @@ async function createPath(
   const slot          = orderType === "tint" ? null : resolveSlotFromTime(input.obdEmailTime);
   const orderDate     = mergeEmailDateTime(input.obdEmailDate, input.obdEmailTime);
 
-  let createdOrderId: number;
-  try {
-    const created = await prisma.orders.create({
+  let createdOrderId: number | null = null;
+  if (!dryRun) {
+    try {
+      const created = await prisma.orders.create({
+        data: {
+          obdNumber:           input.obdNumber,
+          batchId,
+          customerId:          resolvedCustomerId,
+          shipToCustomerId:    input.shipToCustomerId ?? input.obdNumber,
+          shipToCustomerName:  input.shipToCustomerName,
+          orderType,
+          workflowStage,
+          slotId:              slot?.slotId ?? null,
+          originalSlotId:      slot?.slotId ?? null,
+          dispatchSlot:        slot?.dispatchSlot ?? null,
+          invoiceNo:           input.invoiceNo,
+          soNumber:            input.soNumber,
+          invoiceDate:         input.invoiceDate,
+          obdEmailDate:        input.obdEmailDate,
+          orderDateTime:       orderDate,
+          smu:                 divisionResolved.smu,
+          sapStatus:           source === "auto-import" ? input.sapStatus : null,
+          materialType:        input.materialType,
+          natureOfTransaction: input.natureOfTransaction,
+          warehouse:           input.warehouse,
+          totalUnitQty:        input.totalUnitQty,
+          grossWeight:         input.grossWeight,
+          volume:              input.volume,
+          customerMissing:     resolvedCustomerId === null,
+        },
+        select: { id: true },
+      });
+      createdOrderId = created.id;
+    } catch (err) {
+      if ((err as { code?: string }).code === "P2002") {
+        // Race: another batch created the OBD between our findUnique and create.
+        // Retry as patch path.
+        const retry = await loadExistingObd(input.obdNumber);
+        if (retry.order) {
+          return await patchPath(retry.order, retry.summary, retry.lines,
+            input, source, batchId, batchRef, userId, now,
+            divisionResolved, resolvedCustomerId, result, dryRun);
+        }
+        result.errors.push(`P2002 on create but order still not found: ${input.obdNumber}`);
+        return result;
+      }
+      throw err;
+    }
+
+    const newSummary = await prisma.import_raw_summary.create({
       data: {
-        obdNumber:           input.obdNumber,
         batchId,
-        customerId:          resolvedCustomerId,
-        shipToCustomerId:    input.shipToCustomerId ?? input.obdNumber,
-        shipToCustomerName:  input.shipToCustomerName,
-        orderType,
-        workflowStage,
-        slotId:              slot?.slotId ?? null,
-        originalSlotId:      slot?.slotId ?? null,
-        dispatchSlot:        slot?.dispatchSlot ?? null,
-        invoiceNo:           input.invoiceNo,
-        soNumber:            input.soNumber,
-        invoiceDate:         input.invoiceDate,
-        obdEmailDate:        input.obdEmailDate,
-        orderDateTime:       orderDate,
+        obdNumber:           input.obdNumber,
+        sapStatus:           input.sapStatus,
         smu:                 divisionResolved.smu,
-        sapStatus:           source === "auto-import" ? input.sapStatus : null,
+        smuCode:             divisionResolved.smuCode,
         materialType:        input.materialType,
         natureOfTransaction: input.natureOfTransaction,
         warehouse:           input.warehouse,
+        obdEmailDate:        input.obdEmailDate,
+        obdEmailTime:        input.obdEmailTime,
         totalUnitQty:        input.totalUnitQty,
         grossWeight:         input.grossWeight,
         volume:              input.volume,
-        customerMissing:     resolvedCustomerId === null,
+        billToCustomerId:    input.billToCustomerId,
+        billToCustomerName:  input.billToCustomerName,
+        shipToCustomerId:    input.shipToCustomerId,
+        shipToCustomerName:  input.shipToCustomerName,
+        invoiceNo:           input.invoiceNo,
+        soNumber:            input.soNumber,
+        invoiceDate:         input.invoiceDate,
+        rowStatus:           "valid",
       },
       select: { id: true },
     });
-    createdOrderId = created.id;
-  } catch (err) {
-    if ((err as { code?: string }).code === "P2002") {
-      // Race: another batch created the OBD between our findUnique and create.
-      // Retry as patch path.
-      const retry = await loadExistingObd(input.obdNumber);
-      if (retry.order) {
-        return await patchPath(retry.order, retry.summary, retry.lines,
-          input, source, batchId, batchRef, userId, now,
-          divisionResolved, resolvedCustomerId, result);
-      }
-      result.errors.push(`P2002 on create but order still not found: ${input.obdNumber}`);
-      return result;
+
+    if (input.lines.length > 0) {
+      await prisma.import_raw_line_items.createMany({
+        data: input.lines.map((l) => ({
+          rawSummaryId:      newSummary.id,
+          obdNumber:         input.obdNumber,
+          lineId:            l.lineId,
+          skuCodeRaw:        l.skuCodeRaw,
+          skuDescriptionRaw: l.skuDescriptionRaw,
+          batchCode:         l.batchCode,
+          unitQty:           l.unitQty,
+          volumeLine:        l.volumeLine,
+          isTinting:         l.isTinting,
+          article:           l.article,
+          articleTag:        l.articleTag,
+          lineStatus:        "active",
+        })),
+      });
     }
-    throw err;
-  }
-
-  const newSummary = await prisma.import_raw_summary.create({
-    data: {
-      batchId,
-      obdNumber:           input.obdNumber,
-      sapStatus:           input.sapStatus,
-      smu:                 divisionResolved.smu,
-      smuCode:             divisionResolved.smuCode,
-      materialType:        input.materialType,
-      natureOfTransaction: input.natureOfTransaction,
-      warehouse:           input.warehouse,
-      obdEmailDate:        input.obdEmailDate,
-      obdEmailTime:        input.obdEmailTime,
-      totalUnitQty:        input.totalUnitQty,
-      grossWeight:         input.grossWeight,
-      volume:              input.volume,
-      billToCustomerId:    input.billToCustomerId,
-      billToCustomerName:  input.billToCustomerName,
-      shipToCustomerId:    input.shipToCustomerId,
-      shipToCustomerName:  input.shipToCustomerName,
-      invoiceNo:           input.invoiceNo,
-      soNumber:            input.soNumber,
-      invoiceDate:         input.invoiceDate,
-      rowStatus:           "valid",
-    },
-    select: { id: true },
-  });
-
-  if (input.lines.length > 0) {
-    await prisma.import_raw_line_items.createMany({
-      data: input.lines.map((l) => ({
-        rawSummaryId:      newSummary.id,
-        obdNumber:         input.obdNumber,
-        lineId:            l.lineId,
-        skuCodeRaw:        l.skuCodeRaw,
-        skuDescriptionRaw: l.skuDescriptionRaw,
-        batchCode:         l.batchCode,
-        unitQty:           l.unitQty,
-        volumeLine:        l.volumeLine,
-        isTinting:         l.isTinting,
-        article:           l.article,
-        articleTag:        l.articleTag,
-        lineStatus:        "active",
-      })),
-    });
   }
 
   result.outcome = "created";
-  result.orderId = createdOrderId;
+  result.orderId = createdOrderId;  // null in dryRun mode
   result.applied.push({
     type: "obd_created",
     note: formatAuditNote("obd_created", source, batchRef,
@@ -255,7 +270,7 @@ async function createPath(
   }
 
   result.effects = buildEffects({
-    orderId:                 createdOrderId,
+    orderId:                 createdOrderId ?? 0,
     obdNumber:               input.obdNumber,
     outcome:                 "created",
     headerEntries:           [],
@@ -269,8 +284,10 @@ async function createPath(
     incomingLinesHasTinting: hasTinting,
   });
 
-  await writeAuditLogs(createdOrderId, userId, workflowStage,
-    result.applied.map((c) => ({ type: c.type, note: c.note })));
+  if (!dryRun && createdOrderId !== null) {
+    await writeAuditLogs(createdOrderId, userId, workflowStage,
+      result.applied.map((c) => ({ type: c.type, note: c.note })));
+  }
 
   return result;
 }
@@ -290,6 +307,7 @@ async function patchPath(
   divisionResolved:   { smu: string | null; smuCode: string | null },
   resolvedCustomerId: number | null,
   result:             UpsertResult,
+  dryRun:             boolean,
 ): Promise<UpsertResult> {
   const headerPlan = patchHeader(existing, existingSummary, input, source, divisionResolved, resolvedCustomerId);
   const linePlan   = patchLines(existingLines, input.lines, source, batchId, now);
@@ -305,7 +323,7 @@ async function patchPath(
   // then mark unchanged. (Keeps split_line_items.lastSeenInBatchId fresh
   // even when nothing else changed for an OBD.)
   if (!headerHadChanges && !lineHadChanges) {
-    if (linePlan.splitCascades.length > 0 && existingSummary) {
+    if (!dryRun && linePlan.splitCascades.length > 0 && existingSummary) {
       await applyLinePatch(existingSummary.id, input.obdNumber, linePlan, source, batchId, now);
     }
     result.outcome = "unchanged";
@@ -313,11 +331,11 @@ async function patchPath(
     return result;
   }
 
-  if (headerHadChanges) {
+  if (!dryRun && headerHadChanges) {
     await applyHeaderPatch(existing.id, existingSummary?.id ?? null, headerPlan);
   }
 
-  if (lineHadChanges || linePlan.splitCascades.length > 0) {
+  if (!dryRun && (lineHadChanges || linePlan.splitCascades.length > 0)) {
     if (!existingSummary) {
       result.errors.push(`OBD ${input.obdNumber}: no import_raw_summary; cannot apply line patches`);
     } else {
@@ -393,8 +411,10 @@ async function patchPath(
     incomingLinesHasTinting: input.lines.some((l) => l.isTinting),
   });
 
-  await writeAuditLogs(existing.id, userId, existing.workflowStage,
-    result.applied.map((c) => ({ type: c.type, note: c.note })));
+  if (!dryRun) {
+    await writeAuditLogs(existing.id, userId, existing.workflowStage,
+      result.applied.map((c) => ({ type: c.type, note: c.note })));
+  }
 
   result.outcome = "patched";
   result.orderId = existing.id;

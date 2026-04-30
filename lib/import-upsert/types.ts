@@ -85,6 +85,33 @@ export interface UpsertResult {
   applied:   AppliedChange[];
   effects:   DownstreamEffect[];
   errors:    string[];
+  /** True when this result was produced by a `dryRun: true` invocation. */
+  dryRun:    boolean;
+}
+
+/**
+ * Options for upsertObd. Default `{}` matches the original (write) behaviour.
+ *
+ * - dryRun: when true, all DB writes are skipped. The result still contains
+ *   the full `applied[]` and `effects[]` plan as if writes had occurred.
+ *   For created OBDs, `orderId` is null in the dryRun result (no row to
+ *   reference yet). Audit log writes are also skipped.
+ *
+ * - preloaded: when provided, upsertObd skips its three internal reads
+ *   (orders.findUnique, import_raw_summary.findFirst, import_raw_line_items.findMany)
+ *   and the customer resolution lookup. Allows the caller to bulk-load
+ *   state up-front and amortise round-trips across many OBDs.
+ *   When omitted, upsertObd performs the reads itself per-OBD.
+ *   All four fields are required when `preloaded` is provided.
+ */
+export interface UpsertOptions {
+  dryRun?: boolean;
+  preloaded?: {
+    order:      ExistingOrder | null;
+    summary:    ExistingSummary | null;
+    lines:      ExistingLine[];
+    customerId: number | null;
+  };
 }
 
 // ─── Internal types (re-exported within the subfolder, not from the barrel) ─

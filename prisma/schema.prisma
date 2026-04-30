@@ -1178,3 +1178,19 @@ model mo_learned_customers {
 
   @@unique([normalizedText, customerCode])
 }
+
+model import_shadow_log {
+  id            Int      @id @default(autoincrement())
+  batchId       Int
+  obdNumber     String
+  source        String
+  actualOutcome String
+  shadowOutcome String
+  decision      Json
+  errors        String?
+  createdAt     DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([batchId], map: "idx_import_shadow_log_batch")
+  @@index([obdNumber], map: "idx_import_shadow_log_obd")
+  @@index([createdAt], map: "idx_import_shadow_log_created")
+}

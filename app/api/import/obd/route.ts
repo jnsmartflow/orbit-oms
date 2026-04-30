@@ -16,6 +16,13 @@ import type {
   ImportConfirmBody,
   ImportConfirmResponse,
 } from "@/lib/import-types";
+import { upsertObd, resolveSmuFromDivision } from "@/lib/import-upsert";
+import type {
+  ExistingLine,
+  ExistingOrder,
+  ExistingSummary,
+  ObdInput,
+} from "@/lib/import-upsert";
 
 export const dynamic = "force-dynamic";
 
@@ -1057,6 +1064,241 @@ function verifyHmacSignature(req: Request): boolean {
   }
 }
 
+// ── Shadow-mode runner (Step 4A — auto-import only) ─────────────────────────
+//
+// Runs upsertObd in dryRun=true mode for every OBD seen in this auto-import
+// run, after the existing handler has finished its real writes. Captures a
+// "decision log" comparing what auto-import actually did vs what upsertObd
+// would have done. Output goes to import_shadow_log.
+//
+// Gated by IMPORT_SHADOW_MODE env var. Default-OFF: only runs when set to
+// the literal string "true". Outer try/catch ensures this can never crash
+// the auto-import response.
+//
+// Pre-loads existing orders / summaries / lines / customers in 4 bulk reads
+// up-front (mirrors the existingObdSet pattern around line 1102) so the
+// shadow loop doesn't fan out to per-OBD reads inside upsertObd.
+async function runAutoImportShadow(args: {
+  headerRows:          RawHeaderRow[];
+  lineRows:            RawLineRow[];
+  existingObdSet:      Set<string>;
+  confirmedObdNumbers: string[];
+  errorObdNumbers:     string[];
+  batchId:             number;
+  batchRef:            string;
+}): Promise<void> {
+  if (process.env.IMPORT_SHADOW_MODE !== "true") return;
+
+  try {
+    const { headerRows, lineRows, existingObdSet,
+            confirmedObdNumbers, errorObdNumbers, batchId, batchRef } = args;
+
+    const confirmedSet = new Set(confirmedObdNumbers);
+    const errorSet     = new Set(errorObdNumbers);
+    const allObdNumbers = headerRows.map((r) => toStr(r["OBD Number"])).filter(Boolean);
+    if (allObdNumbers.length === 0) return;
+
+    // Bulk preload (4 reads, one per table).
+    const [shadowOrders, shadowSummaries, shadowCustomers] = await Promise.all([
+      prisma.orders.findMany({
+        where: { obdNumber: { in: allObdNumbers } },
+        select: {
+          id: true, obdNumber: true, customerId: true, shipToCustomerName: true,
+          customerMissing: true, orderType: true, workflowStage: true, slotId: true,
+          invoiceNo: true, invoiceDate: true, soNumber: true,
+          obdEmailDate: true, orderDateTime: true, smu: true, sapStatus: true,
+          materialType: true, natureOfTransaction: true, warehouse: true,
+          totalUnitQty: true, grossWeight: true, volume: true,
+        },
+      }),
+      prisma.import_raw_summary.findMany({
+        where:   { obdNumber: { in: allObdNumbers } },
+        orderBy: { id: "asc" },
+        select:  { id: true, obdNumber: true, obdEmailTime: true, smuCode: true },
+      }),
+      prisma.delivery_point_master.findMany({
+        where:  { customerCode: { in: headerRows.map((r) => toStr(r["ShipToCustomerId"])).filter(Boolean) } },
+        select: { id: true, customerCode: true },
+      }),
+    ]);
+
+    const orderByObd = new Map<string, ExistingOrder>();
+    for (const o of shadowOrders) {
+      const { obdNumber, ...existing } = o;
+      orderByObd.set(obdNumber, existing as ExistingOrder);
+    }
+
+    const summaryByObd = new Map<string, ExistingSummary>();
+    for (const s of shadowSummaries) {
+      if (!summaryByObd.has(s.obdNumber)) {
+        summaryByObd.set(s.obdNumber, { id: s.id, obdEmailTime: s.obdEmailTime, smuCode: s.smuCode });
+      }
+    }
+
+    const summaryIds = Array.from(summaryByObd.values()).map((s) => s.id);
+    const shadowLines = summaryIds.length > 0
+      ? await prisma.import_raw_line_items.findMany({
+          where:  { rawSummaryId: { in: summaryIds } }, // intentionally NO lineStatus filter — shadow needs to see soft-removed too
+          select: {
+            id: true, rawSummaryId: true, lineId: true, skuCodeRaw: true,
+            unitQty: true, volumeLine: true, isTinting: true, lineStatus: true,
+          },
+        })
+      : [];
+    const linesBySummaryId = new Map<number, ExistingLine[]>();
+    for (const l of shadowLines) {
+      if (!linesBySummaryId.has(l.rawSummaryId)) linesBySummaryId.set(l.rawSummaryId, []);
+      linesBySummaryId.get(l.rawSummaryId)!.push(l as ExistingLine);
+    }
+
+    const customerIdByCode = new Map(shadowCustomers.map((c) => [c.customerCode, c.id]));
+
+    // Group line rows by OBD for incoming-input building.
+    const linesByObd = new Map<string, RawLineRow[]>();
+    for (const lr of lineRows) {
+      const obd = toStr(lr["obd_number"]);
+      if (!obd) continue;
+      if (!linesByObd.has(obd)) linesByObd.set(obd, []);
+      linesByObd.get(obd)!.push(lr);
+    }
+
+    const now = new Date();
+
+    for (const hr of headerRows) {
+      const obdNumber = toStr(hr["OBD Number"]);
+      if (!obdNumber) continue;
+
+      let actualOutcome: "created" | "skipped" | "errored";
+      if (existingObdSet.has(obdNumber))      actualOutcome = "skipped";
+      else if (confirmedSet.has(obdNumber))   actualOutcome = "created";
+      else if (errorSet.has(obdNumber))       actualOutcome = "errored";
+      else continue; // unrecognised — skip defensively
+
+      try {
+        const smuFromFile = toStr(hr["SMU"]) || null;
+        const smuCodeRaw  = toStr(hr["SMU Code"]) || null;
+        const obdLines    = linesByObd.get(obdNumber) ?? [];
+
+        const input = headerRowToObdInput(hr, obdLines);
+        const existingOrder   = orderByObd.get(obdNumber) ?? null;
+        const existingSummary = summaryByObd.get(obdNumber) ?? null;
+        const existingLines   = existingSummary
+          ? (linesBySummaryId.get(existingSummary.id) ?? [])
+          : [];
+        const customerId      = input.shipToCustomerId
+          ? (customerIdByCode.get(input.shipToCustomerId) ?? null)
+          : null;
+
+        const result = await upsertObd(
+          input, "auto-import", batchId, batchRef, /* userId */ 1, now,
+          { dryRun: true, preloaded: { order: existingOrder, summary: existingSummary, lines: existingLines, customerId } },
+        );
+
+        const divisionResolved = resolveSmuFromDivision(smuCodeRaw);
+        const noteworthy: string[] = [];
+        if (smuFromFile && divisionResolved.smu && smuFromFile !== divisionResolved.smu) {
+          noteworthy.push("smu_mismatch_file_vs_map");
+        }
+        if (!smuCodeRaw || !divisionResolved.smu) {
+          noteworthy.push("division_unmapped");
+        }
+        if (actualOutcome === "skipped" && (result.outcome === "patched" || result.outcome === "created")) {
+          noteworthy.push(`actual_${actualOutcome}_but_shadow_${result.outcome}`);
+        }
+        if (result.errors.length > 0) noteworthy.push("shadow_errors_present");
+
+        const decision = {
+          actualHeader: existingOrder,
+          actualLines:  existingLines,
+          incomingHeader: {
+            obdNumber:           input.obdNumber,
+            division:            input.division,
+            sapStatus:           input.sapStatus,
+            materialType:        input.materialType,
+            natureOfTransaction: input.natureOfTransaction,
+            warehouse:           input.warehouse,
+            obdEmailDate:        input.obdEmailDate,
+            obdEmailTime:        input.obdEmailTime,
+            totalUnitQty:        input.totalUnitQty,
+            grossWeight:         input.grossWeight,
+            volume:              input.volume,
+            billToCustomerId:    input.billToCustomerId,
+            billToCustomerName:  input.billToCustomerName,
+            shipToCustomerId:    input.shipToCustomerId,
+            shipToCustomerName:  input.shipToCustomerName,
+            invoiceNo:           input.invoiceNo,
+            invoiceDate:         input.invoiceDate,
+            soNumber:            input.soNumber,
+          },
+          incomingLines:        input.lines,
+          shadowAppliedChanges: result.applied,
+          shadowEffects:        result.effects,
+          metadata: {
+            smuFromFile,
+            smuFromMap: divisionResolved.smu,
+            noteworthy,
+          },
+        };
+
+        await prisma.import_shadow_log.create({
+          data: {
+            batchId,
+            obdNumber,
+            source:        "auto-import",
+            actualOutcome,
+            shadowOutcome: result.outcome,
+            decision:      decision as unknown as Prisma.InputJsonValue,
+            errors:        result.errors.length > 0 ? result.errors.join(" | ") : null,
+          },
+        });
+      } catch (err) {
+        console.error(`[SHADOW] OBD ${obdNumber} failed:`, err);
+      }
+    }
+  } catch (outer) {
+    console.error("[SHADOW] runAutoImportShadow outer failure:", outer);
+  }
+}
+
+/**
+ * Convert a parsed RawHeaderRow + its grouped RawLineRow[] into the
+ * ObdInput shape consumed by upsertObd. Used by the shadow runner only —
+ * the real auto-import path builds its own interim structures.
+ */
+function headerRowToObdInput(hr: RawHeaderRow, lineRows: RawLineRow[]): ObdInput {
+  return {
+    obdNumber:           toStr(hr["OBD Number"]),
+    division:            toStr(hr["SMU Code"]) || null,
+    sapStatus:           toStr(hr["Status"]) || null,
+    materialType:        toStr(hr["MaterialType"]) || null,
+    natureOfTransaction: toStr(hr["NatureOfTransaction"]) || null,
+    warehouse:           toStr(hr["Warehouse"]) || null,
+    obdEmailDate:        parseDateCell(hr["OBD Email Date"]),
+    obdEmailTime:        parseTimeCell(hr["OBD Email Time"]),
+    totalUnitQty:        toInt(hr["UnitQty"]),
+    grossWeight:         toNum(hr["GrossWeight"]),
+    volume:              toNum(hr["Volume"]),
+    billToCustomerId:    toStr(hr["Bill To Customer Id"]) || null,
+    billToCustomerName:  toStr(hr["Bill To Customer Name"]) || null,
+    shipToCustomerId:    toStr(hr["ShipToCustomerId"]) || null,
+    shipToCustomerName:  toStr(hr["Ship To Customer Name"]) || null,
+    invoiceNo:           toStr(hr["InvoiceNo"]) || null,
+    invoiceDate:         parseDateCell(hr["InvoiceDate"]),
+    soNumber:            toStr(hr["SONum"]) || null,
+    lines: lineRows.map((lr) => ({
+      lineId:            toInt(lr["line_id"]) ?? 0,
+      skuCodeRaw:        toStr(lr["sku_codes"]),
+      skuDescriptionRaw: toStr(lr["sku_description"]) || null,
+      batchCode:         toStr(lr["batch_code"]) || null,
+      unitQty:           toInt(lr["unit_qty"]) ?? 0,
+      volumeLine:        toNum(lr["volume_line"]),
+      isTinting:         parseBooleanCell(lr["Tinting"]),
+      article:           lr["article"] != null ? parseInt(String(lr["article"]), 10) : null,
+      articleTag:        lr["article_tag"] != null ? String(lr["article_tag"]).trim() || null : null,
+    })),
+  };
+}
+
 // ── AUTO-IMPORT handler ───────────────────────────────────────────────────────
 
 async function handleAutoImport(req: Request): Promise<NextResponse> {
@@ -1763,6 +2005,21 @@ async function handleAutoImport(req: Request): Promise<NextResponse> {
       },
     })
     .catch(() => undefined);
+
+  // ── Step 4A — Shadow upsertObd in dry-run mode (no behaviour change) ─────
+  // Gated by IMPORT_SHADOW_MODE env var, default off. Outer try/catch ensures
+  // shadow can never crash the auto-import response.
+  await runAutoImportShadow({
+    headerRows,
+    lineRows,
+    existingObdSet,
+    confirmedObdNumbers,
+    errorObdNumbers: insertedSummaries
+      .filter((s) => s.rowStatus === "error")
+      .map((s) => s.obdNumber),
+    batchId,
+    batchRef,
+  });
 
   return NextResponse.json({
     success:           true,
