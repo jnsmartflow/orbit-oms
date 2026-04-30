@@ -25,12 +25,16 @@ import type {
   ImportObdPreview,
   ImportLinePreview,
   ImportConfirmResponse,
+  SapPreviewResponse,
+  SapConfirmResponse,
 } from "@/lib/import-types";
 import {
   IMPORT_TEMPLATES,
   DEFAULT_TEMPLATE_ID,
 } from "@/lib/import-templates";
 import type { ImportTemplateId } from "@/lib/import-templates";
+import { getTodayIST } from "@/lib/dates";
+import { SapPreview } from "@/components/import/sap-preview";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -60,9 +64,11 @@ interface FileZoneProps {
   inputRef: React.RefObject<HTMLInputElement>;
   onFile: (file: File) => void;
   onClear: () => void;
+  /** File extensions accepted. Default ".xlsx,.xls" matches existing usage. */
+  accept?: string;
 }
 
-function FileZone({ label, file, inputRef, onFile, onClear }: FileZoneProps) {
+function FileZone({ label, file, inputRef, onFile, onClear, accept = ".xlsx,.xls" }: FileZoneProps) {
   const [isDragOver, setIsDragOver] = useState(false);
 
   function handleDrop(e: React.DragEvent<HTMLDivElement>) {
@@ -98,7 +104,7 @@ function FileZone({ label, file, inputRef, onFile, onClear }: FileZoneProps) {
       <input
         ref={inputRef}
         type="file"
-        accept=".xlsx,.xls"
+        accept={accept}
         className="hidden"
         onChange={(e) => {
           const f = e.target.files?.[0];
@@ -129,7 +135,7 @@ function FileZone({ label, file, inputRef, onFile, onClear }: FileZoneProps) {
           <div className="text-center">
             <p className="font-medium text-sm text-gray-700">{label}</p>
             <p className="text-sm text-gray-400">Drag &amp; drop or click to browse</p>
-            <p className="text-xs text-gray-400 mt-1">.xlsx, .xls only</p>
+            <p className="text-xs text-gray-400 mt-1">{accept.split(",").map((s) => s.trim()).join(", ")} only</p>
           </div>
         </>
       )}
@@ -211,9 +217,18 @@ export function ImportPageContent({ viewOrdersHref = "/support" }: ImportPageCon
   const [error, setError] = useState<string | null>(null);
   const [expandedObds, setExpandedObds] = useState<Set<number>>(new Set());
 
-  const headerInputRef = useRef<HTMLInputElement>(null);
-  const lineInputRef = useRef<HTMLInputElement>(null);
-  const combinedInputRef = useRef<HTMLInputElement>(null);
+  // ── Manual-SAP state slots (Step 8) ───────────────────────────────────────
+  const [sapFile, setSapFile]                 = useState<File | null>(null);
+  const [sapDate, setSapDate]                 = useState<string>(getTodayIST());
+  const [sapPreview, setSapPreview]           = useState<SapPreviewResponse | null>(null);
+  const [sapConfirmResult, setSapConfirmResult] = useState<SapConfirmResponse | null>(null);
+
+  const headerInputRef    = useRef<HTMLInputElement>(null);
+  const lineInputRef      = useRef<HTMLInputElement>(null);
+  const combinedInputRef  = useRef<HTMLInputElement>(null);
+  const sapInputRef       = useRef<HTMLInputElement>(null);
+
+  const SAP_MAX_BYTES = 10 * 1024 * 1024;
 
   function resetAll() {
     setStage("upload");
@@ -228,6 +243,75 @@ export function ImportPageContent({ viewOrdersHref = "/support" }: ImportPageCon
     setConfirmResult(null);
     setError(null);
     setExpandedObds(new Set());
+    // SAP slots
+    setSapFile(null);
+    setSapDate(getTodayIST());
+    setSapPreview(null);
+    setSapConfirmResult(null);
+    if (sapInputRef.current) sapInputRef.current.value = "";
+  }
+
+  function setSapFileChecked(f: File) {
+    if (f.size > SAP_MAX_BYTES) {
+      setError("File too large (max 10MB)");
+      return;
+    }
+    if (!f.name.toLowerCase().endsWith(".xlsx")) {
+      setError("Only .xlsx files accepted");
+      return;
+    }
+    setError(null);
+    setSapFile(f);
+  }
+
+  async function handleSapPreviewSubmit() {
+    if (!sapFile || !sapDate) return;
+    setIsLoading(true);
+    setError(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", sapFile);
+      fd.append("obdEmailDate", sapDate);
+      const res  = await fetch("/api/import/obd?action=manual-sap-preview", {
+        method: "POST",
+        body:   fd,
+      });
+      const data = (await res.json()) as (SapPreviewResponse & { ok?: boolean; error?: string });
+      if (res.status === 503) throw new Error("SAP import is not enabled in this environment");
+      if (res.status === 403) throw new Error("You don't have permission to import");
+      if (!res.ok)            throw new Error(data.error ?? "Preview failed");
+      setSapPreview(data);
+      setStage("preview");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Preview failed");
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function handleSapConfirm() {
+    if (!sapFile || !sapDate || !sapPreview) return;
+    setIsLoading(true);
+    setError(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", sapFile);
+      fd.append("obdEmailDate", sapDate);
+      const res  = await fetch("/api/import/obd?action=manual-sap-confirm", {
+        method: "POST",
+        body:   fd,
+      });
+      const data = (await res.json()) as (SapConfirmResponse & { ok?: boolean; error?: string });
+      if (res.status === 503) throw new Error("SAP import is not enabled in this environment");
+      if (res.status === 403) throw new Error("You don't have permission to import");
+      if (!res.ok)            throw new Error(data.error ?? "Confirm failed");
+      setSapConfirmResult(data);
+      setStage("result");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Confirm failed");
+    } finally {
+      setIsLoading(false);
+    }
   }
 
   function toggleObd(id: number) {
@@ -362,7 +446,12 @@ export function ImportPageContent({ viewOrdersHref = "/support" }: ImportPageCon
   // ── Stage 1: Upload ──────────────────────────────────────────────────────────
   if (stage === "upload") {
     const tmpl = IMPORT_TEMPLATES[templateId];
-    const isDisabled = isLoading || (tmpl.files.combined ? !combinedFile : !headerFile);
+    const isSap = tmpl.id === "manual-sap";
+    const isDisabled = isLoading || (
+      isSap
+        ? (!sapFile || !sapDate)
+        : (tmpl.files.combined ? !combinedFile : !headerFile)
+    );
 
     return (
       <div>
@@ -380,9 +469,12 @@ export function ImportPageContent({ viewOrdersHref = "/support" }: ImportPageCon
                   setHeaderFile(null);
                   setLineFile(null);
                   setCombinedFile(null);
-                  if (headerInputRef.current) headerInputRef.current.value = "";
-                  if (lineInputRef.current) lineInputRef.current.value = "";
+                  setSapFile(null);
+                  setError(null);
+                  if (headerInputRef.current)   headerInputRef.current.value   = "";
+                  if (lineInputRef.current)     lineInputRef.current.value     = "";
                   if (combinedInputRef.current) combinedInputRef.current.value = "";
+                  if (sapInputRef.current)      sapInputRef.current.value      = "";
                 }}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/10 focus:border-teal-500"
               >
@@ -391,23 +483,26 @@ export function ImportPageContent({ viewOrdersHref = "/support" }: ImportPageCon
                 ))}
               </select>
             </div>
-            <div className="flex flex-col items-end gap-1 shrink-0 pb-0.5">
-              <span className="text-sm font-medium text-gray-700">Preview</span>
-              <button
-                onClick={() => setPreviewEnabled((v) => !v)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-                  previewEnabled
-                    ? "bg-teal-600 text-white"
-                    : "bg-gray-200 text-gray-600 hover:bg-gray-300"
-                }`}
-              >
-                {previewEnabled ? <Eye size={13} /> : <EyeOff size={13} />}
-                {previewEnabled ? "On" : "Off"}
-              </button>
-            </div>
+            {/* "Import Now" toggle hidden for SAP template — SAP forces preview-then-confirm. */}
+            {!isSap && (
+              <div className="flex flex-col items-end gap-1 shrink-0 pb-0.5">
+                <span className="text-sm font-medium text-gray-700">Preview</span>
+                <button
+                  onClick={() => setPreviewEnabled((v) => !v)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                    previewEnabled
+                      ? "bg-teal-600 text-white"
+                      : "bg-gray-200 text-gray-600 hover:bg-gray-300"
+                  }`}
+                >
+                  {previewEnabled ? <Eye size={13} /> : <EyeOff size={13} />}
+                  {previewEnabled ? "On" : "Off"}
+                </button>
+              </div>
+            )}
           </div>
           <p className="mt-1 text-xs text-gray-400">{tmpl.description}</p>
-          {previewEnabled && (
+          {!isSap && previewEnabled && (
             <p className="mt-1.5 text-xs text-amber-600">
               Preview enabled — you will review OBDs before confirming import
             </p>
@@ -443,15 +538,53 @@ export function ImportPageContent({ viewOrdersHref = "/support" }: ImportPageCon
               onClear={() => setLineFile(null)}
             />
           )}
+          {tmpl.files.singleSap && (
+            <FileZone
+              label={tmpl.files.singleSap.label}
+              file={sapFile}
+              inputRef={sapInputRef}
+              onFile={setSapFileChecked}
+              onClear={() => setSapFile(null)}
+              accept=".xlsx"
+            />
+          )}
         </div>
 
+        {/* Date picker — only for templates that require an operator-picked obdEmailDate */}
+        {tmpl.requiresObdEmailDate && (
+          <div className="mb-6">
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              OBD Date
+            </label>
+            <input
+              type="date"
+              value={sapDate}
+              onChange={(e) => setSapDate(e.target.value)}
+              className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/10 focus:border-teal-500"
+            />
+            <p className="mt-1 text-xs text-gray-400">
+              Stamped on every imported OBD. Defaults to today (IST).
+            </p>
+          </div>
+        )}
+
         <button
-          onClick={previewEnabled ? handlePreviewSubmit : handleImportNow}
+          onClick={
+            isSap
+              ? handleSapPreviewSubmit
+              : (previewEnabled ? handlePreviewSubmit : handleImportNow)
+          }
           disabled={isDisabled}
           className="w-full bg-teal-600 text-white rounded-lg py-3 font-medium flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-teal-600/90 transition-colors"
         >
           {isLoading && <Loader2 className="animate-spin" size={18} />}
-          {isLoading ? "Importing…" : previewEnabled ? "Preview Import" : "Import Now"}
+          {isLoading
+            ? "Importing…"
+            : isSap
+              ? "Preview Import"
+              : previewEnabled
+                ? "Preview Import"
+                : "Import Now"}
         </button>
 
         {error && (
@@ -460,6 +593,23 @@ export function ImportPageContent({ viewOrdersHref = "/support" }: ImportPageCon
           </div>
         )}
       </div>
+    );
+  }
+
+  // ── Stage 2 (SAP): Preview ───────────────────────────────────────────────────
+  if (stage === "preview" && sapPreview) {
+    return (
+      <SapPreview
+        preview={sapPreview}
+        obdEmailDate={sapDate}
+        isLoading={isLoading}
+        error={error}
+        onCancel={() => {
+          setStage("upload");
+          setError(null);
+        }}
+        onConfirm={handleSapConfirm}
+      />
     );
   }
 
@@ -745,6 +895,66 @@ export function ImportPageContent({ viewOrdersHref = "/support" }: ImportPageCon
     );
   }
 
+  // ── Stage 3 (SAP): Result ────────────────────────────────────────────────────
+  if (stage === "result" && sapConfirmResult) {
+    const r = sapConfirmResult;
+    const erroredColour = r.summary.errored > 0 ? "bg-red-50 text-red-700" : "bg-gray-50 text-gray-700";
+    return (
+      <div className="max-w-md mx-auto mt-16 bg-white rounded-2xl p-10 shadow-sm text-center">
+        <CheckCircle2 size={64} className="text-green-500 mx-auto mb-4" />
+        <h1 className="text-2xl font-semibold text-gray-800 mb-2">Import Complete</h1>
+        <p className="font-mono text-sm text-gray-500 mb-8">{r.batchRef}</p>
+
+        <div className="grid grid-cols-2 gap-4 mb-6">
+          <div className="bg-gray-50 rounded-xl p-4">
+            <div className="text-2xl font-bold text-teal-700">{r.summary.created}</div>
+            <div className="text-sm text-gray-500 mt-1">Created</div>
+          </div>
+          <div className="bg-gray-50 rounded-xl p-4">
+            <div className="text-2xl font-bold text-amber-700">{r.summary.patched}</div>
+            <div className="text-sm text-gray-500 mt-1">Patched</div>
+          </div>
+          <div className="bg-gray-50 rounded-xl p-4">
+            <div className="text-2xl font-bold text-gray-700">{r.summary.unchanged}</div>
+            <div className="text-sm text-gray-500 mt-1">Unchanged</div>
+          </div>
+          <div className={`rounded-xl p-4 ${erroredColour}`}>
+            <div className="text-2xl font-bold">{r.summary.errored}</div>
+            <div className="text-sm mt-1 opacity-75">Errored</div>
+          </div>
+        </div>
+
+        {r.errors.length > 0 && (
+          <div className="text-left bg-red-50 border border-red-200 rounded-lg p-3 mb-6 max-h-40 overflow-y-auto">
+            <p className="text-xs font-medium text-red-700 mb-1">Errored OBDs:</p>
+            <ul className="text-xs text-red-600 space-y-1">
+              {r.errors.map((e, i) => (
+                <li key={i}>
+                  <span className="font-mono">{e.obdNumber}</span>: {e.message}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        <div className="flex flex-col gap-3">
+          <button
+            onClick={resetAll}
+            className="w-full border border-gray-300 text-gray-700 rounded-lg py-2.5 font-medium hover:bg-gray-50 transition-colors"
+          >
+            Import Another Batch
+          </button>
+          <button
+            onClick={() => { window.location.href = viewOrdersHref; }}
+            className="w-full bg-teal-600 text-white rounded-lg py-2.5 font-medium hover:bg-teal-600/90 transition-colors"
+          >
+            View Orders
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   // ── Stage 3: Result ──────────────────────────────────────────────────────────
   if (stage === "result" && confirmResult) {
     return (
@@ -802,3 +1012,9 @@ export function ImportPageContent({ viewOrdersHref = "/support" }: ImportPageCon
 
   return null;
 }
+
+// FOLLOW-UP: this file is now ~1,000 LOC across upload/preview/result stages
+// for three templates (two_file_v1, combined_v2, manual-sap). When a fourth
+// template lands, consider splitting per stage (upload-stage.tsx,
+// preview-stage.tsx, result-stage.tsx) and lifting state up. Deferred this
+// PR to keep the diff focused on Step 8.

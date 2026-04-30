@@ -1,8 +1,5 @@
 import { prisma } from "@/lib/prisma";
-
-function getTodayIST(): string {
-  return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
-}
+import { getTodayIST } from "@/lib/dates";
 
 export async function runDailyCleanupIfNeeded(): Promise<void> {
   try {

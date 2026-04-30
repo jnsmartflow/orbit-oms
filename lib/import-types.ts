@@ -53,3 +53,52 @@ export interface ImportConfirmResponse {
   ordersCreated: number
   linesEnriched: number
 }
+
+// ─── Manual-SAP response shapes (Step 7 endpoint) ─────────────────────────
+
+export interface SapPreviewObd {
+  obdNumber:    string
+  outcome:      'new' | 'patch' | 'skipped' | 'error'
+  lineCount:    number
+  totalUnitQty: number
+  issues:       string[]
+}
+
+export interface SapPreviewWarning {
+  delivery?:  string
+  kind:       string
+  message:    string
+  rowNumbers: number[]
+}
+
+export interface SapPreviewResponse {
+  ok:        true
+  filename:  string
+  fileStats: {
+    totalRows:         number
+    uniqueDeliveries:  number
+    createdObds:       number
+    skippedDeliveries: number
+  }
+  summary: {
+    newOBDs:     number
+    patchOBDs:   number
+    skippedOBDs: number
+    errorOBDs:   number
+  }
+  obds:     SapPreviewObd[]
+  warnings: SapPreviewWarning[]
+}
+
+export interface SapConfirmResponse {
+  ok:       true
+  batchId:  number
+  batchRef: string
+  summary: {
+    created:   number
+    patched:   number
+    unchanged: number
+    errored:   number
+  }
+  errors:   Array<{ obdNumber: string; message: string }>
+}
