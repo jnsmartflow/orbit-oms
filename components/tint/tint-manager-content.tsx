@@ -22,7 +22,6 @@ import { OrderDetailPanel } from "@/components/shared/order-detail-panel";
 import { UniversalHeader } from "@/components/universal-header";
 import { useSkuDisplayMode } from "@/lib/hooks/use-sku-display-mode";
 import { pickSkuDisplay, type SkuDisplay } from "@/types/sku-display";
-import { SkuDisplayToggle } from "@/components/tint/sku-display-toggle";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -2244,16 +2243,14 @@ export function TintManagerContent() {
                 )}
               </div>
             )}
-            <SkuDisplayToggle />
-            <div className="w-px h-4 bg-gray-200 mx-0.5" />
             <button
               type="button"
               onClick={() => setPullModalOpen(true)}
               className="inline-flex items-center gap-1 text-[11px] font-semibold bg-white text-gray-700 border border-gray-200 rounded-full px-2.5 py-0.5 hover:bg-gray-50 hover:border-gray-300 transition-colors"
-              title="Pull OBD into Tint (M)"
+              title="Add OBD to Tint (M)"
             >
               <Plus size={12} />
-              Pull OBD
+              Add to Tint
             </button>
             <div className="w-px h-4 bg-gray-200 mx-0.5" />
             <button
@@ -2275,7 +2272,7 @@ export function TintManagerContent() {
         shortcuts={[
           { key: "\u2191\u2193", label: "Navigate rows" },
           { key: "\u21B5", label: "Order details" },
-          { key: "M", label: "Pull OBD into Tint" },
+          { key: "M", label: "Add OBD to Tint" },
         ]}
       />
 
