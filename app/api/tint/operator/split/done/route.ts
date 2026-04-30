@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
-import { checkPermission } from "@/lib/permissions";
+import { checkAnyPermission } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -28,8 +28,10 @@ class TIIncompleteError extends Error {
 export async function POST(req: Request): Promise<NextResponse> {
   const session = await auth();
   requireRole(session, [ROLES.TINT_OPERATOR, ROLES.OPERATIONS]);
-  if (session!.user.role !== "admin" && session!.user.role !== ROLES.OPERATIONS) {
-    const allowed = await checkPermission(session!.user.role, "tint_operator", "canEdit");
+  const userRoles = session!.user.roles ?? [session!.user.role];
+  const isAdminOrOps = userRoles.includes("admin") || userRoles.includes(ROLES.OPERATIONS);
+  if (!isAdminOrOps) {
+    const allowed = await checkAnyPermission(userRoles, "tint_operator", "canEdit");
     if (!allowed) return NextResponse.json({ error: "Permission denied" }, { status: 403 });
   }
 

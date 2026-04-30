@@ -15,7 +15,12 @@ export async function GET(): Promise<NextResponse> {
   }
 
   const users = await prisma.users.findMany({
-    where:   { role: { name: "tint_operator" }, isActive: true },
+    where: {
+      isActive: true,
+      userRoles: {
+        some: { role: { name: "tint_operator" } },
+      },
+    },
     select:  { id: true, name: true },
     orderBy: { name: "asc" },
   });

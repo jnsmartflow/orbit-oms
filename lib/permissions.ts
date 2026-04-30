@@ -152,6 +152,22 @@ export async function checkPermission(
   return perm[action];
 }
 
+export async function checkAnyPermission(
+  roleSlugs: string[],
+  pageKey: PageKey,
+  action: ActionKey,
+): Promise<boolean> {
+  if (roleSlugs.includes("admin")) return true;
+  if (roleSlugs.length === 0) return false;
+
+  const rows = await prisma.role_permissions.findMany({
+    where:  { roleSlug: { in: roleSlugs }, pageKey },
+    select: { canView: true, canEdit: true, canImport: true, canExport: true, canDelete: true },
+  });
+
+  return rows.some(r => r[action] === true);
+}
+
 export async function getPagePermissions(
   roleSlug: string,
   pageKey: PageKey,
@@ -195,4 +211,47 @@ export async function getAllPermissionsForRole(
     };
   }
   return result;
+}
+
+/**
+ * Multi-role variant of getAllPermissionsForRole.
+ * Returns a permission map representing the UNION of permissions across
+ * all roles passed in: a page action is `true` if ANY role grants it.
+ *
+ * Admin short-circuits to ALL_TRUE (same as single-role variant).
+ */
+export async function getAllPermissionsForRoles(
+  roleSlugs: string[],
+): Promise<Record<string, PagePermissions>> {
+  if (roleSlugs.length === 0) return {};
+  if (roleSlugs.includes("admin")) {
+    return getAllPermissionsForRole("admin");
+  }
+
+  const rows = await prisma.role_permissions.findMany({
+    where: { roleSlug: { in: roleSlugs } },
+  });
+
+  const merged: Record<string, PagePermissions> = {};
+  for (const row of rows) {
+    const existing = merged[row.pageKey];
+    if (!existing) {
+      merged[row.pageKey] = {
+        canView:   row.canView,
+        canImport: row.canImport,
+        canExport: row.canExport,
+        canEdit:   row.canEdit,
+        canDelete: row.canDelete,
+      };
+    } else {
+      merged[row.pageKey] = {
+        canView:   existing.canView   || row.canView,
+        canImport: existing.canImport || row.canImport,
+        canExport: existing.canExport || row.canExport,
+        canEdit:   existing.canEdit   || row.canEdit,
+        canDelete: existing.canDelete || row.canDelete,
+      };
+    }
+  }
+  return merged;
 }

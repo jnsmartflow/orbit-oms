@@ -1,6 +1,6 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { checkPermission, getAllPermissionsForRole, buildNavItems } from "@/lib/permissions";
+import { checkAnyPermission, getAllPermissionsForRoles, buildNavItems } from "@/lib/permissions";
 import { RoleSidebarProvider } from "@/components/shared/role-sidebar-provider";
 import { RoleLayoutClient } from "@/components/shared/role-layout-client";
 import type { RoleSidebarRole } from "@/components/shared/role-sidebar";
@@ -18,23 +18,35 @@ export default async function SupportLayout({
 }) {
   const session = await auth();
   if (!session?.user) redirect("/login");
-  if (session.user.role !== "admin") {
-    const allowed = await checkPermission(session.user.role, "support_queue", "canView");
+
+  const roles       = session.user.roles ?? [session.user.role];
+  const primaryRole = session.user.role;
+
+  if (!roles.includes("admin")) {
+    const allowed = await checkAnyPermission(roles, "support_queue", "canView");
     if (!allowed) redirect("/unauthorized");
   }
 
-  const allPerms     = await getAllPermissionsForRole(session.user.role);
-  const navItems     = buildNavItems(allPerms, session.user.role);
+  const allPerms     = await getAllPermissionsForRoles(roles);
+  const navItems     = buildNavItems(allPerms, primaryRole);
+
+  const seen = new Set<string>();
+  const dedupedNavItems = navItems.filter(item => {
+    if (seen.has(item.pageKey)) return false;
+    seen.add(item.pageKey);
+    return true;
+  });
+
   const userName     = session.user.name ?? "User";
   const userInitials = getInitials(userName);
 
   return (
     <RoleSidebarProvider>
       <RoleLayoutClient
-        role={session.user.role as RoleSidebarRole}
+        role={primaryRole as RoleSidebarRole}
         userName={userName}
         userInitials={userInitials}
-        navItems={navItems}
+        navItems={dedupedNavItems}
       >
         {children}
       </RoleLayoutClient>

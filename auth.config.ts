@@ -6,10 +6,12 @@ declare module "next-auth" {
     user: {
       id: string;
       role: string;
+      roles: string[];
     } & DefaultSession["user"];
   }
   interface User {
     role: string;
+    roles: string[];
   }
 }
 
@@ -25,6 +27,7 @@ export const authConfig: NextAuthConfig = {
       if (user) {
         token.id = user.id;
         token.role = user.role;
+        token.roles = user.roles;
       }
       return token;
     },
@@ -32,6 +35,7 @@ export const authConfig: NextAuthConfig = {
       if (token) {
         session.user.id = (token.id as string | undefined) ?? "";
         session.user.role = (token.role as string | undefined) ?? "";
+        session.user.roles = (token.roles as string[] | undefined) ?? [];
       }
       return session;
     },

@@ -29,7 +29,8 @@ export function requireRole(session: Session | null, allowed: string[]): void {
   if (!session?.user) {
     redirect("/unauthorized");
   }
-  if (!allowed.includes(session.user.role)) {
+  const userRoles = session.user.roles ?? [session.user.role];
+  if (!userRoles.some(r => allowed.includes(r))) {
     redirect("/unauthorized");
   }
 }
@@ -41,6 +42,7 @@ export function requireRole(session: Session | null, allowed: string[]): void {
  *   if (hasRole(session, [ROLES.ADMIN, ROLES.DISPATCHER])) { ... }
  */
 export function hasRole(session: Session | null, allowed: string[]): boolean {
-  if (!session?.user?.role) return false;
-  return allowed.includes(session.user.role);
+  if (!session?.user) return false;
+  const userRoles = session.user.roles ?? (session.user.role ? [session.user.role] : []);
+  return userRoles.some(r => allowed.includes(r));
 }

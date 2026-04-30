@@ -68,6 +68,24 @@ model role_master {
   name        String  @unique
   description String?
   users       users[]
+  userRoles   user_roles[]
+}
+
+model user_roles {
+  id            Int         @id @default(autoincrement())
+  userId        Int
+  roleId        Int
+  isPrimary     Boolean     @default(false)
+  createdAt     DateTime    @default(now())
+  createdById   Int?
+
+  user          users       @relation("UserRoleAssignments", fields: [userId], references: [id], onDelete: Cascade)
+  role          role_master @relation(fields: [roleId], references: [id])
+  createdBy     users?      @relation("UserRoleCreator", fields: [createdById], references: [id])
+
+  @@unique([userId, roleId])
+  @@index([userId])
+  @@index([roleId])
 }
 
 model role_permissions {
@@ -127,6 +145,9 @@ model users {
   // Mail Order back-relations
   mailOrdersPunched         mo_orders[]              @relation("MoOrderPunchedBy")
   lineStatuses              mo_line_status[]
+  // Multi-role back-relations
+  userRoles                 user_roles[]             @relation("UserRoleAssignments")
+  userRolesCreated          user_roles[]             @relation("UserRoleCreator")
 }
 
 model status_master {

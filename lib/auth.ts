@@ -31,7 +31,10 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 
         const user = await prisma.users.findUnique({
           where: { email },
-          include: { role: true },
+          include: {
+            role: true,
+            userRoles: { include: { role: true } },
+          },
         });
 
         if (!user || !user.isActive) return null;
@@ -39,13 +42,20 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         const passwordValid = await bcrypt.compare(password, user.password);
         if (!passwordValid) return null;
 
+        // Normalize to snake_case to match ROLES constants and role_permissions.roleSlug
+        // e.g. "Tint Operator" → "tint_operator", "Admin" → "admin"
+        const primaryRole = user.role.name.toLowerCase().replace(/\s+/g, "_");
+        const allRoles = user.userRoles.map((ur) =>
+          ur.role.name.toLowerCase().replace(/\s+/g, "_")
+        );
+        const roles = allRoles.length > 0 ? allRoles : [primaryRole];
+
         return {
           id: user.id.toString(),
           email: user.email,
           name: user.name,
-          // Normalize to snake_case to match ROLES constants and role_permissions.roleSlug
-          // e.g. "Tint Operator" → "tint_operator", "Admin" → "admin"
-          role: user.role.name.toLowerCase().replace(/\s+/g, "_"),
+          role: primaryRole,
+          roles,
         };
       },
     }),
