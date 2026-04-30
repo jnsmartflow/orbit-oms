@@ -86,7 +86,7 @@ export async function GET(
 
       // import_raw_line_items — line items ordered by lineId
       prisma.import_raw_line_items.findMany({
-        where:   { obdNumber: order.obdNumber },
+        where:   { obdNumber: order.obdNumber, lineStatus: "active" },
         orderBy: { lineId: "asc" },
         select: {
           id:                true,
@@ -420,9 +420,10 @@ export async function PATCH(
 
       const tintingLines = await prisma.import_raw_line_items.findMany({
         where: {
-          id:        { in: requestedIds },
-          obdNumber: orderRow.obdNumber,
-          isTinting: true,
+          id:         { in: requestedIds },
+          obdNumber:  orderRow.obdNumber,
+          isTinting:  true,
+          lineStatus: "active",
         },
         select: { id: true },
       });

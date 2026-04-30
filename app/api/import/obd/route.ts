@@ -560,7 +560,7 @@ async function handlePreview(req: Request, session: Session): Promise<NextRespon
   const summaryIds = Array.from(summaryIdMap.values());
   const insertedLines = summaryIds.length > 0
     ? await prisma.import_raw_line_items.findMany({
-        where:  { rawSummaryId: { in: summaryIds } },
+        where:  { rawSummaryId: { in: summaryIds }, lineStatus: "active" },
         select: { id: true, obdNumber: true, lineId: true },
       })
     : [];
@@ -665,6 +665,7 @@ async function handleConfirm(req: Request, session: Session): Promise<NextRespon
     },
     include: {
       rawLineItems: {
+        where: { lineStatus: "active" },
         select: {
           id:         true,
           obdNumber:  true,
@@ -1388,6 +1389,7 @@ async function handleAutoImport(req: Request): Promise<NextResponse> {
     },
     include: {
       rawLineItems: {
+        where: { lineStatus: "active" },
         select: {
           id:         true,
           obdNumber:  true,

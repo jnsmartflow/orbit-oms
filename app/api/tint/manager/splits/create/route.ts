@@ -87,14 +87,14 @@ export async function POST(req: Request): Promise<NextResponse> {
 
   // ── STEP 2: Load all raw line items for this OBD ───────────────────────────
   const rawLineItems = await prisma.import_raw_line_items.findMany({
-    where:  { obdNumber: order.obdNumber },
+    where:  { obdNumber: order.obdNumber, lineStatus: "active" },
     select: { id: true, unitQty: true, volumeLine: true, article: true, articleTag: true, isTinting: true },
   });
   const rawLineMap = new Map(rawLineItems.map((l) => [l.id, l]));
 
   // ── STEP 3: Load existing split assignments for this order ─────────────────
   const existingSplitItems = await prisma.split_line_items.findMany({
-    where:  { split: { orderId } },
+    where:  { split: { orderId }, lineStatus: "active" },
     select: { rawLineItemId: true, assignedQty: true },
   });
   const existingAssignedMap = new Map<number, number>();

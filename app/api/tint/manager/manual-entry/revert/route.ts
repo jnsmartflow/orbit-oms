@@ -194,9 +194,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     // Step C — recompute hasTinting defensively for this OBD
     const remainingTintingLines = await prisma.import_raw_line_items.count({
       where: {
-        obdNumber: order.obdNumber,
-        rowStatus: "valid",
-        isTinting: true,
+        obdNumber:  order.obdNumber,
+        rowStatus:  "valid",
+        isTinting:  true,
+        lineStatus: "active",
       },
     });
 

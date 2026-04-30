@@ -44,6 +44,7 @@ export async function GET(
         include: {
           assignedTo: { select: { id: true, name: true } },
           lineItems: {
+            where: { lineStatus: "active" },
             include: {
               rawLineItem: {
                 select: {

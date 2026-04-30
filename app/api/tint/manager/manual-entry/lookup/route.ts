@@ -84,8 +84,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   const lines = await prisma.import_raw_line_items.findMany({
     where: {
-      obdNumber: order.obdNumber,
-      rowStatus: "valid",
+      obdNumber:  order.obdNumber,
+      rowStatus:  "valid",
+      lineStatus: "active",
     },
     orderBy: { lineId: "asc" },
     select: {

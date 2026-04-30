@@ -156,9 +156,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // Validate that all lineIds belong to this order's OBD and are valid rows.
   const matchingLines = await prisma.import_raw_line_items.findMany({
     where: {
-      id:        { in: lineIds },
-      obdNumber: order.obdNumber,
-      rowStatus: "valid",
+      id:         { in: lineIds },
+      obdNumber:  order.obdNumber,
+      rowStatus:  "valid",
+      lineStatus: "active",
     },
     select: { id: true },
   });

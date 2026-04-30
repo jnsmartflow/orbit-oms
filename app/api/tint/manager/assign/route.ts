@@ -52,7 +52,7 @@ export async function POST(req: Request): Promise<NextResponse> {
       ) {
         const activeSplits = await tx.order_splits.findMany({
           where:   { orderId, status: { not: "cancelled" } },
-          include: { lineItems: { select: { rawLineItemId: true, assignedQty: true } } },
+          include: { lineItems: { where: { lineStatus: "active" }, select: { rawLineItemId: true, assignedQty: true } } },
         });
 
         if (activeSplits.length === 0) {
@@ -60,7 +60,7 @@ export async function POST(req: Request): Promise<NextResponse> {
         } else {
           // Case 3 / Case 4 — has active splits, compute remaining qty
           const rawLines = await tx.import_raw_line_items.findMany({
-            where:  { obdNumber: order.obdNumber },
+            where:  { obdNumber: order.obdNumber, lineStatus: "active" },
             select: { id: true, unitQty: true },
           });
           const assignedQtyByLine = new Map<number, number>();

@@ -63,6 +63,7 @@ export async function GET(): Promise<NextResponse> {
               createdAt:      true,
               assignedTo:     { select: { name: true } },
               lineItems: {
+                where: { lineStatus: "active" },
                 select: {
                   rawLineItemId: true,
                   assignedQty:   true,
@@ -141,6 +142,7 @@ export async function GET(): Promise<NextResponse> {
           },
           assignedTo: { select: { id: true, name: true } },
           lineItems: {
+            where: { lineStatus: "active" },
             include: {
               rawLineItem: {
                 select: {
@@ -180,6 +182,7 @@ export async function GET(): Promise<NextResponse> {
           },
           assignedTo: { select: { id: true, name: true } },
           lineItems: {
+            where: { lineStatus: "active" },
             include: {
               rawLineItem: {
                 select: {
@@ -272,7 +275,7 @@ export async function GET(): Promise<NextResponse> {
     const orderObdNumbers = orders.map((o) => o.obdNumber);
     const rawLineItemsRaw = orderObdNumbers.length > 0
       ? await prisma.import_raw_line_items.findMany({
-          where: { obdNumber: { in: orderObdNumbers } },
+          where: { obdNumber: { in: orderObdNumbers }, lineStatus: "active" },
           select: {
             id:                true,
             lineId:            true,

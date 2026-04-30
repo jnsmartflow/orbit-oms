@@ -40,6 +40,7 @@ export async function GET(
             completedAt:    true,
             assignedTo:     { select: { name: true } },
             lineItems: {
+              where: { lineStatus: "active" },
               select: {
                 rawLineItemId: true,
                 assignedQty:   true,

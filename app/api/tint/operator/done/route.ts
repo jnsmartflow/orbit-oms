@@ -55,7 +55,7 @@ export async function POST(req: Request): Promise<NextResponse> {
 
     // TI completion gate — all isTinting lines must have at least one TI entry
     const isTintingRawLines = await prisma.import_raw_line_items.findMany({
-      where: { obdNumber: order.obdNumber, isTinting: true },
+      where: { obdNumber: order.obdNumber, isTinting: true, lineStatus: "active" },
       select: { id: true, skuCodeRaw: true, skuDescriptionRaw: true },
     });
     if (isTintingRawLines.length > 0) {

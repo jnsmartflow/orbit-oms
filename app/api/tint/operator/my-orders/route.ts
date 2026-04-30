@@ -77,6 +77,7 @@ export async function GET(): Promise<NextResponse> {
           },
         },
         lineItems: {
+          where: { lineStatus: "active" },
           include: {
             rawLineItem: {
               select: {
@@ -148,7 +149,7 @@ export async function GET(): Promise<NextResponse> {
   // Query 3a: Raw line items for assigned orders (orders has no direct Prisma relation to import_raw_line_items)
   const rawLineItemsRaw = obdNumbers.length > 0
     ? await prisma.import_raw_line_items.findMany({
-        where: { obdNumber: { in: obdNumbers } },
+        where: { obdNumber: { in: obdNumbers }, lineStatus: "active" },
         select: {
           id:                true,
           obdNumber:         true,

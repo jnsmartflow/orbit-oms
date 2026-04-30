@@ -56,7 +56,7 @@ export async function POST(req: Request): Promise<NextResponse> {
 
       // TI completion gate — all isTinting lines must have at least one TI entry
       const splitLineItems = await tx.split_line_items.findMany({
-        where: { splitId },
+        where: { splitId, lineStatus: "active" },
         include: { rawLineItem: { select: { isTinting: true, skuCodeRaw: true, skuDescriptionRaw: true } } },
       });
       const isTintingLines = splitLineItems.filter(sl => sl.rawLineItem.isTinting);
