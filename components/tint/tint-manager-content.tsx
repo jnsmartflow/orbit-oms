@@ -7,12 +7,15 @@ import {
   AlertCircle, Layers,
   Eye, Plus, MoreHorizontal, UserPlus, RefreshCw, X, Scissors,
   Truck, ChevronDown, ChevronUp, LayoutGrid, Table as TableIcon,
+  RotateCcw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { ObdCode } from "@/components/shared/obd-code";
 import { SplitBuilderModal } from "@/components/tint/split-builder-modal";
 import type { SplitBuilderModalProps } from "@/components/tint/split-builder-modal";
+import { ManualTintEntryModal } from "@/components/tint/manual-tint-entry-modal";
+import { ManualTintRevertModal } from "@/components/tint/manual-tint-revert-modal";
 import { TintTableView } from "@/components/tint/tint-table-view";
 import { CustomerMissingSheet } from "@/components/shared/customer-missing-sheet";
 import { OrderDetailPanel } from "@/components/shared/order-detail-panel";
@@ -44,6 +47,7 @@ export interface TintOrder {
   shipToCustomerName: string | null;
   shipToCustomerId:   string | null;
   customerMissing:    boolean;
+  manualTintEntry:    boolean;
   smu:                string | null;
   obdEmailDate:       string | null;
   obdEmailTime:       string | null;
@@ -469,9 +473,10 @@ interface KanbanCardProps {
   onMoveDown:         () => void;
   onViewDetail:       () => void;
   onCustomerMissing?: () => void;
+  onRequestRevert:    () => void;
 }
 
-function KanbanCard({ order, stage, onAssign, onCreateSplit, onRefresh, onMoveUp, onMoveDown, onViewDetail, onCustomerMissing }: KanbanCardProps) {
+function KanbanCard({ order, stage, onAssign, onCreateSplit, onRefresh, onMoveUp, onMoveDown, onViewDetail, onCustomerMissing, onRequestRevert }: KanbanCardProps) {
   const [menuOpen,     setMenuOpen]     = useState(false);
   const [popoverOpen,  setPopoverOpen]  = useState(false);
   const [popoverPos,   setPopoverPos]   = useState<{ top: number; right: number } | null>(null);
@@ -666,6 +671,19 @@ function KanbanCard({ order, stage, onAssign, onCreateSplit, onRefresh, onMoveUp
                         <Scissors size={12} className="text-gray-400 flex-shrink-0" />
                         Create Split
                       </button>
+                      {order.manualTintEntry && (order.tintAssignments ?? []).length === 0 && !hasSplits && (
+                        <>
+                          <div className="mx-3 border-t border-gray-100" />
+                          <button
+                            type="button"
+                            onClick={() => { setMenuOpen(false); onRequestRevert(); }}
+                            className="w-full flex items-center gap-2.5 px-3.5 py-2 text-[12px] text-red-600 hover:bg-red-50 transition-colors whitespace-nowrap"
+                          >
+                            <RotateCcw size={12} className="text-red-400 flex-shrink-0" />
+                            Remove from Tint
+                          </button>
+                        </>
+                      )}
                     </>
                   )}
 
@@ -778,6 +796,14 @@ function KanbanCard({ order, stage, onAssign, onCreateSplit, onRefresh, onMoveUp
             </>
           )}
           {(() => { const ab = getAgeBadge(order.orderDateTime, order.obdEmailDate); return ab ? <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded border ${ab.className}`}>{ab.text}</span> : null; })()}
+          {order.manualTintEntry && (
+            <span
+              className="text-[9px] font-medium px-1.5 py-0.5 rounded border bg-purple-50 text-purple-700 border-purple-200"
+              title="Manually pulled into tint"
+            >
+              Manual
+            </span>
+          )}
         </div>
 
         {/* 4. Info grid */}
@@ -1645,6 +1671,12 @@ export function TintManagerContent() {
   const [missingSheetOpen,  setMissingSheetOpen]  = useState(false);
   const [missingSheetOrder, setMissingSheetOrder] = useState<TintOrder | null>(null);
 
+  const [pullModalOpen, setPullModalOpen] = useState(false);
+
+  const [revertOrderId,   setRevertOrderId]   = useState<number | null>(null);
+  const [revertObdNumber, setRevertObdNumber] = useState<string | null>(null);
+  const revertOpen = revertOrderId !== null;
+
   const [missingCustomers, setMissingCustomers] = useState<{
     orderId: number; obdNumber: string; shipToCustomerId: string | null;
     shipToCustomerName: string | null; smu: string | null; orderType: string;
@@ -1682,6 +1714,22 @@ export function TintManagerContent() {
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [missingBadgeOpen]);
+
+  // M shortcut → open Pull OBD modal (ignored while typing in form fields)
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) {
+        return;
+      }
+      if (e.key === "m" || e.key === "M") {
+        e.preventDefault();
+        setPullModalOpen(true);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   // ── Data fetching ─────────────────────────────────────────────────────────
 
@@ -2199,6 +2247,16 @@ export function TintManagerContent() {
             <SkuDisplayToggle />
             <div className="w-px h-4 bg-gray-200 mx-0.5" />
             <button
+              type="button"
+              onClick={() => setPullModalOpen(true)}
+              className="inline-flex items-center gap-1 text-[11px] font-semibold bg-white text-gray-700 border border-gray-200 rounded-full px-2.5 py-0.5 hover:bg-gray-50 hover:border-gray-300 transition-colors"
+              title="Pull OBD into Tint (M)"
+            >
+              <Plus size={12} />
+              Pull OBD
+            </button>
+            <div className="w-px h-4 bg-gray-200 mx-0.5" />
+            <button
               onClick={() => { setViewMode("card"); if (typeof window !== "undefined") sessionStorage.setItem("tm_view_mode", "card"); }}
               className={`p-1 rounded ${viewMode === "card" ? "bg-gray-100 text-gray-900" : "text-gray-400 hover:text-gray-600"}`}
               title="Card view"
@@ -2217,6 +2275,7 @@ export function TintManagerContent() {
         shortcuts={[
           { key: "\u2191\u2193", label: "Navigate rows" },
           { key: "\u21B5", label: "Order details" },
+          { key: "M", label: "Pull OBD into Tint" },
         ]}
       />
 
@@ -2303,6 +2362,7 @@ export function TintManagerContent() {
                       shipToCustomerName: a.order.shipToCustomerName,
                       shipToCustomerId:   null,
                       customerMissing:    false,
+                      manualTintEntry:    false,
                       smu:                a.smu,
                       obdEmailDate:       a.obdEmailDate,
                       obdEmailTime:       a.obdEmailTime,
@@ -2378,6 +2438,10 @@ export function TintManagerContent() {
                           onMoveDown={() => handleReorder("order", item.data.id, "down")}
                           onViewDetail={() => setDetailOrderId(item.data.id)}
                           onCustomerMissing={() => { setMissingSheetOrder(item.data); setMissingSheetOpen(true); }}
+                          onRequestRevert={() => {
+                            setRevertOrderId(item.data.id);
+                            setRevertObdNumber(item.data.obdNumber);
+                          }}
                         />
                       ) : (
                         <SplitKanbanCard
@@ -2733,6 +2797,31 @@ export function TintManagerContent() {
       <OrderDetailPanel
         orderId={detailOrderId}
         onClose={() => setDetailOrderId(null)}
+      />
+
+      {/* ── Manual Tint Entry Modal ──────────────────────────────────────── */}
+      <ManualTintEntryModal
+        open={pullModalOpen}
+        onClose={() => setPullModalOpen(false)}
+        onSuccess={(obdNumber) => {
+          console.log(`[tint-manager] OBD ${obdNumber} pulled in — refreshing`);
+          void fetchOrders();
+        }}
+      />
+
+      {/* ── Manual Tint Revert Modal ─────────────────────────────────────── */}
+      <ManualTintRevertModal
+        open={revertOpen}
+        onClose={() => {
+          setRevertOrderId(null);
+          setRevertObdNumber(null);
+        }}
+        orderId={revertOrderId}
+        obdNumber={revertObdNumber}
+        onSuccess={(obdNumber) => {
+          console.log(`[tint-manager] OBD ${obdNumber} reverted from tint — refreshing`);
+          void fetchOrders();
+        }}
       />
 
     </div>

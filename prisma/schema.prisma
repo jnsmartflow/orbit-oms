@@ -97,6 +97,7 @@ model users {
   // Phase 2 back-relations
   importBatches             import_batches[]
   statusLogs                order_status_logs[]
+  manualTintEntries         manual_tint_entries[] @relation("ManualTintEntryPerformedBy")
   tintAssignmentsAsOperator tint_assignments[]  @relation("TintAssignmentOperator")
   tintAssignmentsAsManager  tint_assignments[]  @relation("TintAssignmentManager")
   tintLogs                  tint_logs[]
@@ -556,12 +557,14 @@ model orders {
   shipToOverride      Boolean                   @default(false)
   slotToOverride      Boolean                   @default(false)
   customerMissing     Boolean                   @default(false)
+  manualTintEntry     Boolean                   @default(false)
   isActive            Boolean                   @default(true)
   sequenceOrder       Int                       @default(0)
   createdAt           DateTime                  @default(now())
   updatedAt           DateTime                  @updatedAt
   querySnapshot       import_obd_query_summary?
   statusLogs          order_status_logs[]
+  manualTintEntries   manual_tint_entries[]
   tintAssignments     tint_assignments[]
   tintLogs            tint_logs[]
   splits              order_splits[]
@@ -684,6 +687,23 @@ model order_status_logs {
   changedBy   users    @relation(fields: [changedById], references: [id])
   note        String?
   createdAt   DateTime @default(now())
+}
+
+model manual_tint_entries {
+  id            Int      @id @default(autoincrement())
+  orderId       Int
+  order         orders   @relation(fields: [orderId], references: [id])
+  action        String   // 'pulled_in' | 'reverted'
+  reasonCode    String   // 'sample' | 'custom_shade' | 'late_addition' | 'classification_miss' | 'other'
+  reasonNotes   String?
+  lineIds       Int[]
+  performedById Int
+  performedBy   users    @relation("ManualTintEntryPerformedBy", fields: [performedById], references: [id])
+  createdAt     DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([orderId])
+  @@index([createdAt(sort: Desc)])
+  @@index([action])
 }
 
 // ─────────────────────────────────────────────

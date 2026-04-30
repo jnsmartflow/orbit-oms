@@ -1,5 +1,5 @@
 # CLAUDE_TINT.md — Tint Module
-# v1.0 · Schema v26.5 · April 2026
+# v1.1 · Schema v26.6 · April 2026
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -106,6 +106,28 @@ Operator screen reads `sequenceOrder` from `orders`/`order_splits` (NOT `operato
 ### 1.10 API
 
 `GET /api/tint/manager/orders` returns slot/deliveryType data, slotSummary, orderDateTime on all order/split/assignment payloads.
+
+### 1.11 Manual tint entry
+
+For OBDs that auto-classification missed (sample requests, custom shades, late additions). Schema additions in CORE §7.3.
+
+**Trigger:** "+ Pull OBD" button in header rightExtra (between SkuDisplayToggle and view toggle). Keyboard shortcut: `M`.
+
+**Modal flow:** OBD input → Fetch → loaded view shows customer, lines (all pre-checked), reason dropdown (Sample default), notes textarea → "Pull into Tint" submits.
+
+**Reason codes:** `sample` · `custom_shade` · `late_addition` · `classification_miss` · `other`. Notes required when reason is Other.
+
+**Server validates:** orderType=non_tint AND workflowStage=pending_support AND orderDateTime within 7 days AND smu in {Retail Offtake, Decorative Projects} AND all lineIds belong to that OBD's import_raw_line_items.
+
+**Pull-in flips:** `import_raw_line_items.isTinting=true` on selected lines · `import_obd_query_summary.hasTinting=true` · order to tint workflow · clears slot fields · inserts `order_status_logs` + `manual_tint_entries` audit rows · ensures delivery_challan exists.
+
+**"Manual" pill:** purple `bg-purple-50 text-purple-700 border-purple-200` (CLAUDE_UI §32 sizing) on cards and table OBD cell. Visible whenever `order.manualTintEntry=true`.
+
+**Revert flow:** card kebab → "Remove from Tint" (red) → 400px confirm dialog with red CTA. Visible only when `manualTintEntry=true` AND no `tint_assignments` AND no `order_splits`. Reverts lines, restores non-tint slot via `resolveSlot()`, inserts second `manual_tint_entries` row with `action='reverted'`. Both pull-in and revert rows persist permanently.
+
+**Endpoints:** `GET /api/tint/manager/manual-entry/lookup?obd=...` · `POST /api/tint/manager/manual-entry` · `POST /api/tint/manager/manual-entry/revert`. All TM + ADMIN only. Sequential awaits (no transactions).
+
+**Components:** `components/tint/manual-tint-entry-modal.tsx` (520px) · `components/tint/manual-tint-revert-modal.tsx` (400px, red CTA — divergence from §13 annotated in code).
 
 ---
 
@@ -325,6 +347,7 @@ Layout `app/(tint)/tint/manager/layout.tsx` uses `buildNavItems()` only — neve
 - Reorder API uses `prisma.$transaction` — violates project rule but left as-is (simple two-update swap). Refactor to sequential awaits later.
 - CustomerMissingSheet styling doesn't match admin customer split-view form (cosmetic)
 - CustomerMissingSheet area/route dropdown 403 fix pushed, needs production verification
+- Manual Tint Entry: revert action card-only — table view has no kebab. Add table-view kebab if Chandresh asks for it.
 
 ### Tint Operator (post-launch verification)
 - Full end-to-end workflow test: assign from TM → fill TI → save → start → add entry → mark done → auto-advance

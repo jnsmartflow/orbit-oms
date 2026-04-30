@@ -1,5 +1,5 @@
 # CLAUDE_CORE.md — Orbit OMS Core
-# v72 · Schema v26.5 · Lives in: orbit-oms/docs/
+# v73 · Schema v26.6 · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_UI.md · April 2026
 
 ---
@@ -112,7 +112,7 @@ Never introduce new libraries without being asked.
 
 ## 7. Database schema — v26.5
 
-Evolution: v21 base → v22 (6 mo_*) → v23 (orders dispatch) → v24 (customer match) → v25 (split) → v26 (mo_order_remarks) → v26.1 (isLocked) → v26.2 (mo_line_status) → v26.3 (carton + piecesPerCarton) → v26.4 (mo_learned_customers) → v26.5 (orders.orderDateTime).
+Evolution: v21 base → v22 (6 mo_*) → v23 (orders dispatch) → v24 (customer match) → v25 (split) → v26 (mo_order_remarks) → v26.1 (isLocked) → v26.2 (mo_line_status) → v26.3 (carton + piecesPerCarton) → v26.4 (mo_learned_customers) → v26.5 (orders.orderDateTime) → v26.6 (orders.manualTintEntry + manual_tint_entries audit table).
 
 ### 7.1 Setup / Master (23 tables)
 
@@ -158,7 +158,7 @@ import_obd_query_summary   — Per-OBD totals: weight, qty, volume, hasTinting, 
 Volume always in LITRES (L). Never display m³.
 ```
 
-### 7.3 Orders + Tinting (9 tables)
+### 7.3 Orders + Tinting (10 tables)
 
 ```
 orders                     — Parent container, one per OBD. workflowStage = overall status.
@@ -170,6 +170,7 @@ orders                     — Parent container, one per OBD. workflowStage = ov
                              remarks, shipToOverride BOOLEAN, slotToOverride BOOLEAN
                              sequenceOrder INT (single source for operator queue sort)
                              orderType — 'tint' gets slotId=null at import
+                             manualTintEntry — true when manually pulled in via /tint/manager
 
 order_splits               — Per tint batch/split. dispatchStatus drives planning.
                              isPicked, pickedAt, pickedById, sequenceOrder
@@ -180,6 +181,7 @@ tint_assignments           — Per whole-OBD assignment (non-split flow).
 tint_logs                  — INSERT-ONLY. orderId + optional splitId.
 order_status_logs          — INSERT-ONLY. changeType: slot_cascade, day_boundary_slot_reset (both DISABLED).
 tinter_issue_entries       — INSERT-ONLY. Per base batch TI entry.
+manual_tint_entries        — INSERT-ONLY. Per pull-in or revert action. Reason + lineIds preserved.
 ```
 
 ### 7.4 Dispatch + Warehouse (7 tables)
@@ -375,7 +377,7 @@ Files: `components/shared/role-sidebar-provider.tsx`, `role-sidebar.tsx`, `role-
 Before generating any code, confirm:
 
 1. Read `CLAUDE.md` (repo root), `docs/CLAUDE_CORE.md`, `docs/CLAUDE_UI.md`, and the relevant domain file(s). State "Files read: ..." at the top.
-2. Schema version **v26.5**. If user mentions a table you don't see in §7, ask before proceeding.
+2. Schema version **v26.6**. If user mentions a table you don't see in §7, ask before proceeding.
 3. `<UniversalHeader />` is mandatory for all boards. No custom headers.
 4. `page.tsx` pattern: bare component, no wrapper.
 5. Planning at **ORDER level** (not split). Table name is `dispatch_plan_orders`, not `dispatch_plan_splits`.

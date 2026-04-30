@@ -380,7 +380,7 @@ export function TintTableView({
       id: a.order.id, obdNumber: a.order.obdNumber, workflowStage: "pending_support",
       dispatchSlot: null, dispatchStatus: null, priorityLevel: 5, sequenceOrder: null,
       createdAt: a.completedAt ?? "", shipToCustomerName: a.order.shipToCustomerName,
-      shipToCustomerId: null, customerMissing: false, smu: a.smu,
+      shipToCustomerId: null, customerMissing: false, manualTintEntry: false, smu: a.smu,
       obdEmailDate: a.obdEmailDate, obdEmailTime: a.obdEmailTime, orderDateTime: a.orderDateTime,
       slotId: a.slotId, slotName: a.slotName, slotTime: a.slotTime,
       slotIsNextDay: a.slotIsNextDay, originalSlotId: a.originalSlotId,
@@ -418,9 +418,17 @@ export function TintTableView({
           <span className="font-mono text-[11px] text-gray-800">{order.obdNumber}</span>
         </div>
         {dateStr && (
-          <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 2 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 2, flexWrap: "wrap" }}>
             <span className="text-[10px] text-gray-400">{dateStr}</span>
             {ageBadge && <span className={`text-[9px] font-semibold px-[5px] py-[1px] rounded-[3px] border leading-none ${ageBadge.className}`}>{ageBadge.text}</span>}
+            {order.manualTintEntry && (
+              <span
+                className="text-[9px] font-medium px-1.5 py-0.5 rounded border bg-purple-50 text-purple-700 border-purple-200 leading-none"
+                title="Manually pulled into tint"
+              >
+                Manual
+              </span>
+            )}
           </div>
         )}
       </td>
