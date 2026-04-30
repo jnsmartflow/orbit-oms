@@ -4,9 +4,9 @@ generator client {
 }
 
 datasource db {
-  provider   = "postgresql"
-  url        = env("DATABASE_URL")
-  directUrl  = env("DIRECT_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 // ─────────────────────────────────────────────
@@ -64,24 +64,24 @@ model system_config {
 }
 
 model role_master {
-  id          Int     @id @default(autoincrement())
-  name        String  @unique
+  id          Int          @id @default(autoincrement())
+  name        String       @unique
   description String?
   users       users[]
   userRoles   user_roles[]
 }
 
 model user_roles {
-  id            Int         @id @default(autoincrement())
-  userId        Int
-  roleId        Int
-  isPrimary     Boolean     @default(false)
-  createdAt     DateTime    @default(now())
-  createdById   Int?
+  id          Int      @id @default(autoincrement())
+  userId      Int
+  roleId      Int
+  isPrimary   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  createdById Int?
 
-  user          users       @relation("UserRoleAssignments", fields: [userId], references: [id], onDelete: Cascade)
-  role          role_master @relation(fields: [roleId], references: [id])
-  createdBy     users?      @relation("UserRoleCreator", fields: [createdById], references: [id])
+  user      users       @relation("UserRoleAssignments", fields: [userId], references: [id], onDelete: Cascade)
+  role      role_master @relation(fields: [roleId], references: [id])
+  createdBy users?      @relation("UserRoleCreator", fields: [createdById], references: [id])
 
   @@unique([userId, roleId])
   @@index([userId])
@@ -90,8 +90,8 @@ model user_roles {
 
 model role_permissions {
   id        Int      @id @default(autoincrement())
-  roleSlug  String   // matches ROLES constants: "admin","dispatcher","support","tint_manager","tint_operator","floor_supervisor","picker"
-  pageKey   String   // e.g. "support_queue", "tint_manager", "import_obd", "customers", etc.
+  roleSlug  String // matches ROLES constants: "admin","dispatcher","support","tint_manager","tint_operator","floor_supervisor","picker"
+  pageKey   String // e.g. "support_queue", "tint_manager", "import_obd", "customers", etc.
   canView   Boolean  @default(false)
   canImport Boolean  @default(false)
   canExport Boolean  @default(false)
@@ -103,31 +103,31 @@ model role_permissions {
 }
 
 model users {
-  id                        Int                @id @default(autoincrement())
-  email                     String             @unique
+  id                        Int                      @id @default(autoincrement())
+  email                     String                   @unique
   password                  String
   name                      String
   roleId                    Int
-  role                      role_master        @relation(fields: [roleId], references: [id])
-  isActive                  Boolean            @default(true)
-  createdAt                 DateTime           @default(now())
-  updatedAt                 DateTime           @updatedAt
+  role                      role_master              @relation(fields: [roleId], references: [id])
+  isActive                  Boolean                  @default(true)
+  createdAt                 DateTime                 @default(now())
+  updatedAt                 DateTime                 @updatedAt
   // Phase 2 back-relations
   importBatches             import_batches[]
   statusLogs                order_status_logs[]
-  manualTintEntries         manual_tint_entries[] @relation("ManualTintEntryPerformedBy")
-  tintAssignmentsAsOperator tint_assignments[]  @relation("TintAssignmentOperator")
-  tintAssignmentsAsManager  tint_assignments[]  @relation("TintAssignmentManager")
+  manualTintEntries         manual_tint_entries[]    @relation("ManualTintEntryPerformedBy")
+  tintAssignmentsAsOperator tint_assignments[]       @relation("TintAssignmentOperator")
+  tintAssignmentsAsManager  tint_assignments[]       @relation("TintAssignmentManager")
   tintLogs                  tint_logs[]
   // Phase 3 back-relations
-  splitsAsOperator          order_splits[]      @relation("SplitOperator")
-  splitsAsManager           order_splits[]      @relation("SplitManager")
-  splitStatusLogs           split_status_logs[] @relation("SplitStatusLogUser")
+  splitsAsOperator          order_splits[]           @relation("SplitOperator")
+  splitsAsManager           order_splits[]           @relation("SplitManager")
+  splitStatusLogs           split_status_logs[]      @relation("SplitStatusLogUser")
   tinterIssueEntries        tinter_issue_entries[]
   tinterIssueEntriesB       tinter_issue_entries_b[]
   shadeMasters              shade_master[]
   // Phase 3.5 back-relations
-  challansPrinted           delivery_challans[] @relation("ChallanPrintedBy")
+  challansPrinted           delivery_challans[]      @relation("ChallanPrintedBy")
   // Phase 4 back-relations
   plansCreated              dispatch_plans[]         @relation("PlanCreatedBy")
   plansConfirmed            dispatch_plans[]         @relation("PlanConfirmedBy")
@@ -245,18 +245,18 @@ model delivery_type_master {
 }
 
 model slot_master {
-  id          Int                         @id @default(autoincrement())
-  name        String                      @unique
-  slotTime    String
-  isNextDay   Boolean                     @default(false)
-  isActive    Boolean                     @default(true)
-  sortOrder   Int
-  createdAt   DateTime                    @default(now())
-  updatedAt   DateTime                    @updatedAt
-  slotConfigs           delivery_type_slot_config[]
-  orders                orders[]                    @relation("OrderCurrentSlot")
-  ordersOriginalSlot    orders[]                    @relation("OrderOriginalSlot")
-  dispatchPlans         dispatch_plans[]
+  id                 Int                         @id @default(autoincrement())
+  name               String                      @unique
+  slotTime           String
+  isNextDay          Boolean                     @default(false)
+  isActive           Boolean                     @default(true)
+  sortOrder          Int
+  createdAt          DateTime                    @default(now())
+  updatedAt          DateTime                    @updatedAt
+  slotConfigs        delivery_type_slot_config[]
+  orders             orders[]                    @relation("OrderCurrentSlot")
+  ordersOriginalSlot orders[]                    @relation("OrderOriginalSlot")
+  dispatchPlans      dispatch_plans[]
 }
 
 model delivery_type_slot_config {
@@ -289,14 +289,14 @@ model route_master {
 }
 
 model area_master {
-  id             Int                    @id @default(autoincrement())
+  id             Int                     @id @default(autoincrement())
   name           String
   deliveryTypeId Int
-  deliveryType   delivery_type_master   @relation(fields: [deliveryTypeId], references: [id])
+  deliveryType   delivery_type_master    @relation(fields: [deliveryTypeId], references: [id])
   primaryRouteId Int?
-  primaryRoute   route_master?          @relation("AreaPrimaryRoute", fields: [primaryRouteId], references: [id])
-  isActive       Boolean                @default(true)
-  createdAt      DateTime               @default(now())
+  primaryRoute   route_master?           @relation("AreaPrimaryRoute", fields: [primaryRouteId], references: [id])
+  isActive       Boolean                 @default(true)
+  createdAt      DateTime                @default(now())
   areaRoutes     area_route_map[]
   subAreas       sub_area_master[]
   deliveryPoints delivery_point_master[]
@@ -313,12 +313,12 @@ model area_route_map {
 }
 
 model sub_area_master {
-  id             Int                    @id @default(autoincrement())
+  id             Int                     @id @default(autoincrement())
   name           String
   areaId         Int
-  area           area_master            @relation(fields: [areaId], references: [id])
-  isActive       Boolean                @default(true)
-  createdAt      DateTime               @default(now())
+  area           area_master             @relation(fields: [areaId], references: [id])
+  isActive       Boolean                 @default(true)
+  createdAt      DateTime                @default(now())
   deliveryPoints delivery_point_master[]
 }
 
@@ -327,25 +327,25 @@ model sub_area_master {
 // ─────────────────────────────────────────────
 
 model sales_officer_master {
-  id             Int                    @id @default(autoincrement())
+  id             Int                     @id @default(autoincrement())
   name           String
   employeeCode   String
-  email          String?                @unique
+  email          String?                 @unique
   phone          String?
-  isActive       Boolean                @default(true)
-  createdAt      DateTime               @default(now())
+  isActive       Boolean                 @default(true)
+  createdAt      DateTime                @default(now())
   deliveryPoints delivery_point_master[]
   groups         sales_officer_group[]
 }
 
 model sales_officer_group {
-  id             Int                    @id @default(autoincrement())
-  name           String                 @unique
+  id             Int                     @id @default(autoincrement())
+  name           String                  @unique
   salesOfficerId Int
-  salesOfficer   sales_officer_master   @relation(fields: [salesOfficerId], references: [id])
-  isActive       Boolean                @default(true)
-  createdAt      DateTime               @default(now())
-  updatedAt      DateTime               @updatedAt
+  salesOfficer   sales_officer_master    @relation(fields: [salesOfficerId], references: [id])
+  isActive       Boolean                 @default(true)
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
   customers      delivery_point_master[]
 }
 
@@ -382,43 +382,43 @@ model contact_role_master {
 }
 
 model delivery_point_master {
-  id                     Int                       @id @default(autoincrement())
-  customerCode           String                    @unique
-  customerName           String
-  areaId                 Int
-  area                   area_master               @relation(fields: [areaId], references: [id])
-  subAreaId              Int?
-  subArea                sub_area_master?          @relation(fields: [subAreaId], references: [id])
-  salesOfficerId         Int?
-  salesOfficer           sales_officer_master?     @relation(fields: [salesOfficerId], references: [id])
-  primaryRouteId         Int?
-  primaryRoute           route_master?             @relation("CustomerPrimaryRoute", fields: [primaryRouteId], references: [id])
-  dispatchDeliveryTypeId   Int?
-  dispatchDeliveryType     delivery_type_master?     @relation("DispatchDeliveryType", fields: [dispatchDeliveryTypeId], references: [id])
-  reportingDeliveryTypeId  Int?
-  reportingDeliveryType    delivery_type_master?     @relation("ReportingDeliveryType", fields: [reportingDeliveryTypeId], references: [id])
-  customerTypeId           Int?
-  customerType             customer_type_master?     @relation(fields: [customerTypeId], references: [id])
-  premisesTypeId           Int?
-  premisesType             premises_type_master?     @relation(fields: [premisesTypeId], references: [id])
-  salesOfficerGroupId      Int?
-  salesOfficerGroup      sales_officer_group?      @relation(fields: [salesOfficerGroupId], references: [id])
-  address                String?
-  customerRating         String?
-  isKeyCustomer          Boolean                   @default(false)
-  isKeySite              Boolean                   @default(false)
-  acceptsPartialDelivery Boolean                   @default(true)
-  workingHoursStart      String?
-  workingHoursEnd        String?
-  noDeliveryDays         String[]
-  latitude               Float?
-  longitude              Float?
-  isActive               Boolean                   @default(true)
-  createdAt              DateTime                  @default(now())
-  updatedAt              DateTime                  @updatedAt
-  contacts               delivery_point_contacts[]
+  id                      Int                       @id @default(autoincrement())
+  customerCode            String                    @unique
+  customerName            String
+  areaId                  Int
+  area                    area_master               @relation(fields: [areaId], references: [id])
+  subAreaId               Int?
+  subArea                 sub_area_master?          @relation(fields: [subAreaId], references: [id])
+  salesOfficerId          Int?
+  salesOfficer            sales_officer_master?     @relation(fields: [salesOfficerId], references: [id])
+  primaryRouteId          Int?
+  primaryRoute            route_master?             @relation("CustomerPrimaryRoute", fields: [primaryRouteId], references: [id])
+  dispatchDeliveryTypeId  Int?
+  dispatchDeliveryType    delivery_type_master?     @relation("DispatchDeliveryType", fields: [dispatchDeliveryTypeId], references: [id])
+  reportingDeliveryTypeId Int?
+  reportingDeliveryType   delivery_type_master?     @relation("ReportingDeliveryType", fields: [reportingDeliveryTypeId], references: [id])
+  customerTypeId          Int?
+  customerType            customer_type_master?     @relation(fields: [customerTypeId], references: [id])
+  premisesTypeId          Int?
+  premisesType            premises_type_master?     @relation(fields: [premisesTypeId], references: [id])
+  salesOfficerGroupId     Int?
+  salesOfficerGroup       sales_officer_group?      @relation(fields: [salesOfficerGroupId], references: [id])
+  address                 String?
+  customerRating          String?
+  isKeyCustomer           Boolean                   @default(false)
+  isKeySite               Boolean                   @default(false)
+  acceptsPartialDelivery  Boolean                   @default(true)
+  workingHoursStart       String?
+  workingHoursEnd         String?
+  noDeliveryDays          String[]
+  latitude                Float?
+  longitude               Float?
+  isActive                Boolean                   @default(true)
+  createdAt               DateTime                  @default(now())
+  updatedAt               DateTime                  @updatedAt
+  contacts                delivery_point_contacts[]
   // Phase 2 back-relation
-  orders                 orders[]
+  orders                  orders[]
 }
 
 model delivery_point_contacts {
@@ -456,9 +456,9 @@ model import_batches {
 }
 
 model import_raw_summary {
-  id                  Int                    @id @default(autoincrement())
+  id                  Int                     @id @default(autoincrement())
   batchId             Int
-  batch               import_batches         @relation(fields: [batchId], references: [id])
+  batch               import_batches          @relation(fields: [batchId], references: [id])
   obdNumber           String
   sapStatus           String?
   smu                 String?
@@ -479,29 +479,32 @@ model import_raw_summary {
   soNumber            String?
   invoiceDate         DateTime?
   smuNumber           String?
-  rowStatus           String                 @default("valid")
+  rowStatus           String                  @default("valid")
   rowError            String?
-  createdAt           DateTime               @default(now())
+  createdAt           DateTime                @default(now())
   rawLineItems        import_raw_line_items[]
 }
 
 model import_raw_line_items {
-  id               Int                         @id @default(autoincrement())
-  rawSummaryId     Int
-  rawSummary       import_raw_summary          @relation(fields: [rawSummaryId], references: [id])
-  obdNumber        String
-  lineId           Int
-  skuCodeRaw       String
-  skuDescriptionRaw String?
-  batchCode        String?
-  unitQty          Int
-  volumeLine       Float?
-  isTinting        Boolean                     @default(false)
-  article          Int?
-  articleTag       String?
-  rowStatus        String                      @default("valid")
-  rowError         String?
-  createdAt        DateTime                    @default(now())
+  id                  Int                         @id @default(autoincrement())
+  rawSummaryId        Int
+  rawSummary          import_raw_summary          @relation(fields: [rawSummaryId], references: [id])
+  obdNumber           String
+  lineId              Int
+  skuCodeRaw          String
+  skuDescriptionRaw   String?
+  batchCode           String?
+  unitQty             Int
+  volumeLine          Float?
+  isTinting           Boolean                     @default(false)
+  article             Int?
+  articleTag          String?
+  rowStatus           String                      @default("valid")
+  rowError            String?
+  createdAt           DateTime                    @default(now())
+  lineStatus          String                      @default("active")
+  removedAt           DateTime?                   @db.Timestamptz(6)
+  removedReason       String?
   enrichedLineItem    import_enriched_line_items?
   splitLineItems      split_line_items[]
   challanFormulas     delivery_challan_formulas[]
@@ -532,10 +535,10 @@ model import_obd_query_summary {
   totalUnitQty Int
   totalWeight  Float
   totalVolume  Float
-  hasTinting    Boolean
-  totalArticle  Int      @default(0)
-  articleTag    String?
-  createdAt     DateTime @default(now())
+  hasTinting   Boolean
+  totalArticle Int      @default(0)
+  articleTag   String?
+  createdAt    DateTime @default(now())
 }
 
 // ─────────────────────────────────────────────
@@ -543,113 +546,119 @@ model import_obd_query_summary {
 // ─────────────────────────────────────────────
 
 model orders {
-  id                  Int                       @id @default(autoincrement())
-  obdNumber           String                    @unique
-  batchId             Int
-  batch               import_batches            @relation(fields: [batchId], references: [id])
-  customerId          Int?
-  customer            delivery_point_master?    @relation(fields: [customerId], references: [id])
-  shipToCustomerId    String
-  shipToCustomerName  String?
-  orderType           String
-  workflowStage       String                    @default("order_created")
-  dispatchSlot        String?
+  id                   Int                       @id @default(autoincrement())
+  obdNumber            String                    @unique
+  batchId              Int
+  batch                import_batches            @relation(fields: [batchId], references: [id])
+  customerId           Int?
+  customer             delivery_point_master?    @relation(fields: [customerId], references: [id])
+  shipToCustomerId     String
+  shipToCustomerName   String?
+  orderType            String
+  workflowStage        String                    @default("order_created")
+  dispatchSlot         String?
   dispatchSlotDeadline DateTime?
-  slotId              Int?
-  slot                slot_master?              @relation("OrderCurrentSlot", fields: [slotId], references: [id])
-  originalSlotId      Int?
-  originalSlot        slot_master?              @relation("OrderOriginalSlot", fields: [originalSlotId], references: [id])
-  priorityLevel       Int                       @default(3)
-  dispatchStatus      String?
-  invoiceNo           String?
-  soNumber            String?
-  invoiceDate         DateTime?
-  obdEmailDate        DateTime?
-  orderDateTime       DateTime?                 @db.Timestamptz(6)
-  smu                 String?
-  sapStatus           String?
-  materialType        String?
-  natureOfTransaction String?
-  warehouse           String?
-  totalUnitQty        Int?
-  grossWeight         Float?
-  volume              Float?
-  remarks             String?
-  shipToOverride      Boolean                   @default(false)
-  slotToOverride      Boolean                   @default(false)
-  customerMissing     Boolean                   @default(false)
-  manualTintEntry     Boolean                   @default(false)
-  isActive            Boolean                   @default(true)
-  sequenceOrder       Int                       @default(0)
-  createdAt           DateTime                  @default(now())
-  updatedAt           DateTime                  @updatedAt
-  querySnapshot       import_obd_query_summary?
-  statusLogs          order_status_logs[]
-  manualTintEntries   manual_tint_entries[]
-  tintAssignments     tint_assignments[]
-  tintLogs            tint_logs[]
-  splits              order_splits[]
-  tinterIssueEntries  tinter_issue_entries[]
-  tinterIssueEntriesB tinter_issue_entries_b[]
-  challan             delivery_challans?
+  slotId               Int?
+  slot                 slot_master?              @relation("OrderCurrentSlot", fields: [slotId], references: [id])
+  originalSlotId       Int?
+  originalSlot         slot_master?              @relation("OrderOriginalSlot", fields: [originalSlotId], references: [id])
+  priorityLevel        Int                       @default(3)
+  dispatchStatus       String?
+  invoiceNo            String?
+  soNumber             String?
+  invoiceDate          DateTime?
+  obdEmailDate         DateTime?
+  orderDateTime        DateTime?                 @db.Timestamptz(6)
+  smu                  String?
+  sapStatus            String?
+  materialType         String?
+  natureOfTransaction  String?
+  warehouse            String?
+  totalUnitQty         Int?
+  grossWeight          Float?
+  volume               Float?
+  remarks              String?
+  shipToOverride       Boolean                   @default(false)
+  slotToOverride       Boolean                   @default(false)
+  customerMissing      Boolean                   @default(false)
+  manualTintEntry      Boolean                   @default(false)
+  isActive             Boolean                   @default(true)
+  sequenceOrder        Int                       @default(0)
+  createdAt            DateTime                  @default(now())
+  updatedAt            DateTime                  @updatedAt
+  querySnapshot        import_obd_query_summary?
+  statusLogs           order_status_logs[]
+  manualTintEntries    manual_tint_entries[]
+  tintAssignments      tint_assignments[]
+  tintLogs             tint_logs[]
+  splits               order_splits[]
+  tinterIssueEntries   tinter_issue_entries[]
+  tinterIssueEntriesB  tinter_issue_entries_b[]
+  challan              delivery_challans?
   // Phase 4 pick fields (for non-tinting orders without splits)
-  isPicked            Boolean                   @default(false)
-  pickedAt            DateTime?
-  pickedById          Int?
-  pickedBy            users?                    @relation("OrderPickedBy", fields: [pickedById], references: [id])
+  isPicked             Boolean                   @default(false)
+  pickedAt             DateTime?
+  pickedById           Int?
+  pickedBy             users?                    @relation("OrderPickedBy", fields: [pickedById], references: [id])
   // Phase 4 back-relations
-  dispatchPlanOrders  dispatch_plan_orders[]
-  pickListItems       pick_list_items[]
-  changeQueue         dispatch_change_queue[]
-  pickAssignment      pick_assignments?
+  dispatchPlanOrders   dispatch_plan_orders[]
+  pickListItems        pick_list_items[]
+  changeQueue          dispatch_change_queue[]
+  pickAssignment       pick_assignments?
 }
 
 model order_splits {
-  id             Int                 @id @default(autoincrement())
-  orderId        Int
-  order          orders              @relation(fields: [orderId], references: [id])
-  splitNumber    Int
-  assignedToId   Int
-  assignedTo     users               @relation("SplitOperator", fields: [assignedToId], references: [id])
-  assignedById   Int
-  assignedBy     users               @relation("SplitManager", fields: [assignedById], references: [id])
-  status         String              @default("tint_assigned")
-  dispatchStatus String?
-  priorityLevel  Int                 @default(3)
-  dispatchSlot   String?
-  totalQty       Int                 @default(0)
-  totalVolume    Float?
-  articleTag     String?
-  note           String?
-  sequenceOrder  Int                 @default(0)
-  startedAt      DateTime?
-  completedAt    DateTime?
-  createdAt      DateTime            @default(now())
-  updatedAt      DateTime            @updatedAt
-  tiSubmitted        Boolean             @default(false)
-  operatorSequence   Int                 @default(0)
-  lineItems          split_line_items[]
-  statusLogs         split_status_logs[]
-  tintLogs           tint_logs[]
-  tintAssignment     tint_assignments?
+  id                  Int                      @id @default(autoincrement())
+  orderId             Int
+  order               orders                   @relation(fields: [orderId], references: [id])
+  splitNumber         Int
+  assignedToId        Int
+  assignedTo          users                    @relation("SplitOperator", fields: [assignedToId], references: [id])
+  assignedById        Int
+  assignedBy          users                    @relation("SplitManager", fields: [assignedById], references: [id])
+  status              String                   @default("tint_assigned")
+  dispatchStatus      String?
+  priorityLevel       Int                      @default(3)
+  dispatchSlot        String?
+  totalQty            Int                      @default(0)
+  totalVolume         Float?
+  articleTag          String?
+  note                String?
+  sequenceOrder       Int                      @default(0)
+  startedAt           DateTime?
+  completedAt         DateTime?
+  createdAt           DateTime                 @default(now())
+  updatedAt           DateTime                 @updatedAt
+  tiSubmitted         Boolean                  @default(false)
+  operatorSequence    Int                      @default(0)
+  lineItems           split_line_items[]
+  statusLogs          split_status_logs[]
+  tintLogs            tint_logs[]
+  tintAssignment      tint_assignments?
   tinterIssueEntries  tinter_issue_entries[]
   tinterIssueEntriesB tinter_issue_entries_b[]
   // Phase 4 pick fields
-  isPicked             Boolean              @default(false)
-  pickedAt             DateTime?
-  pickedById           Int?
-  pickedBy             users?               @relation("SplitPickedBy", fields: [pickedById], references: [id])
+  isPicked            Boolean                  @default(false)
+  pickedAt            DateTime?
+  pickedById          Int?
+  pickedBy            users?                   @relation("SplitPickedBy", fields: [pickedById], references: [id])
 }
 
 model split_line_items {
-  id            Int                   @id @default(autoincrement())
-  splitId       Int
-  split         order_splits          @relation(fields: [splitId], references: [id])
-  rawLineItemId Int
-  rawLineItem   import_raw_line_items @relation(fields: [rawLineItemId], references: [id])
-  assignedQty   Int
-  createdAt     DateTime              @default(now())
-  pickListItems pick_list_items[]
+  id                Int                   @id @default(autoincrement())
+  splitId           Int
+  split             order_splits          @relation(fields: [splitId], references: [id])
+  rawLineItemId     Int
+  rawLineItem       import_raw_line_items @relation(fields: [rawLineItemId], references: [id])
+  assignedQty       Int
+  createdAt         DateTime              @default(now())
+  lineStatus        String                @default("active")
+  removedAt         DateTime?             @db.Timestamptz(6)
+  removedReason     String?
+  lastSeenInBatchId Int?
+  pickListItems     pick_list_items[]
+
+  @@index([lineStatus], map: "idx_split_line_items_status")
 }
 
 model split_status_logs {
@@ -665,22 +674,22 @@ model split_status_logs {
 }
 
 model tint_assignments {
-  id           Int           @id @default(autoincrement())
-  orderId      Int
-  order        orders        @relation(fields: [orderId], references: [id])
-  splitId      Int?          @unique
-  split        order_splits? @relation(fields: [splitId], references: [id])
-  assignedToId Int
-  assignedTo   users         @relation("TintAssignmentOperator", fields: [assignedToId], references: [id])
-  assignedById Int
-  assignedBy   users         @relation("TintAssignmentManager", fields: [assignedById], references: [id])
-  status             String        @default("assigned")
-  startedAt          DateTime?
-  completedAt        DateTime?
-  createdAt          DateTime      @default(now())
-  updatedAt          DateTime      @updatedAt
-  tiSubmitted        Boolean       @default(false)
-  operatorSequence   Int           @default(0)
+  id                  Int                      @id @default(autoincrement())
+  orderId             Int
+  order               orders                   @relation(fields: [orderId], references: [id])
+  splitId             Int?                     @unique
+  split               order_splits?            @relation(fields: [splitId], references: [id])
+  assignedToId        Int
+  assignedTo          users                    @relation("TintAssignmentOperator", fields: [assignedToId], references: [id])
+  assignedById        Int
+  assignedBy          users                    @relation("TintAssignmentManager", fields: [assignedById], references: [id])
+  status              String                   @default("assigned")
+  startedAt           DateTime?
+  completedAt         DateTime?
+  createdAt           DateTime                 @default(now())
+  updatedAt           DateTime                 @updatedAt
+  tiSubmitted         Boolean                  @default(false)
+  operatorSequence    Int                      @default(0)
   tinterIssueEntries  tinter_issue_entries[]
   tinterIssueEntriesB tinter_issue_entries_b[]
 }
@@ -714,8 +723,8 @@ model manual_tint_entries {
   id            Int      @id @default(autoincrement())
   orderId       Int
   order         orders   @relation(fields: [orderId], references: [id])
-  action        String   // 'pulled_in' | 'reverted'
-  reasonCode    String   // 'sample' | 'custom_shade' | 'late_addition' | 'classification_miss' | 'other'
+  action        String // 'pulled_in' | 'reverted'
+  reasonCode    String // 'sample' | 'custom_shade' | 'late_addition' | 'classification_miss' | 'other'
   reasonNotes   String?
   lineIds       Int[]
   performedById Int
@@ -748,27 +757,27 @@ model vehicle_master {
 }
 
 model dispatch_plans {
-  id             Int                    @id @default(autoincrement())
-  createdAt      DateTime               @default(now())
-  updatedAt      DateTime               @updatedAt
-  planDate       DateTime               @db.Date
+  id             Int                     @id @default(autoincrement())
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
+  planDate       DateTime                @db.Date
   slotId         Int
-  slot           slot_master            @relation(fields: [slotId], references: [id])
+  slot           slot_master             @relation(fields: [slotId], references: [id])
   vehicleId      Int?
-  vehicle        vehicle_master?        @relation(fields: [vehicleId], references: [id])
-  tripNumber     Int                    @default(1) @db.SmallInt
-  status         String                 @default("draft")
-  totalOrders    Int                    @default(0)
-  totalWeightKg  Float                  @default(0)
-  totalVolume    Float                  @default(0)
+  vehicle        vehicle_master?         @relation(fields: [vehicleId], references: [id])
+  tripNumber     Int                     @default(1) @db.SmallInt
+  status         String                  @default("draft")
+  totalOrders    Int                     @default(0)
+  totalWeightKg  Float                   @default(0)
+  totalVolume    Float                   @default(0)
   createdById    Int
-  createdBy      users                  @relation("PlanCreatedBy", fields: [createdById], references: [id])
+  createdBy      users                   @relation("PlanCreatedBy", fields: [createdById], references: [id])
   confirmedAt    DateTime?
   confirmedById  Int?
-  confirmedBy    users?                 @relation("PlanConfirmedBy", fields: [confirmedById], references: [id])
+  confirmedBy    users?                  @relation("PlanConfirmedBy", fields: [confirmedById], references: [id])
   dispatchedAt   DateTime?
   dispatchedById Int?
-  dispatchedBy   users?                 @relation("PlanDispatchedBy", fields: [dispatchedById], references: [id])
+  dispatchedBy   users?                  @relation("PlanDispatchedBy", fields: [dispatchedById], references: [id])
   notes          String?
   orders         dispatch_plan_orders[]
   pickLists      pick_lists[]
@@ -793,41 +802,41 @@ model dispatch_plan_orders {
 }
 
 model pick_lists {
-  id           Int            @id @default(autoincrement())
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
+  id           Int               @id @default(autoincrement())
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
   planId       Int
-  plan         dispatch_plans @relation(fields: [planId], references: [id], onDelete: Cascade)
+  plan         dispatch_plans    @relation(fields: [planId], references: [id], onDelete: Cascade)
   pickerId     Int?
-  picker       users?         @relation("PickListPicker", fields: [pickerId], references: [id])
-  status       String         @default("pending_pick")
+  picker       users?            @relation("PickListPicker", fields: [pickerId], references: [id])
+  status       String            @default("pending_pick")
   assignedAt   DateTime?
   assignedById Int?
-  assignedBy   users?         @relation("PickListAssignedBy", fields: [assignedById], references: [id])
+  assignedBy   users?            @relation("PickListAssignedBy", fields: [assignedById], references: [id])
   startedAt    DateTime?
   completedAt  DateTime?
   verifiedAt   DateTime?
   verifiedById Int?
-  verifiedBy   users?         @relation("PickListVerifiedBy", fields: [verifiedById], references: [id])
+  verifiedBy   users?            @relation("PickListVerifiedBy", fields: [verifiedById], references: [id])
   notes        String?
   items        pick_list_items[]
 }
 
 model pick_list_items {
-  id              Int              @id @default(autoincrement())
-  createdAt       DateTime         @default(now())
+  id              Int               @id @default(autoincrement())
+  createdAt       DateTime          @default(now())
   pickListId      Int
-  pickList        pick_lists       @relation(fields: [pickListId], references: [id], onDelete: Cascade)
+  pickList        pick_lists        @relation(fields: [pickListId], references: [id], onDelete: Cascade)
   splitLineItemId Int?
   splitLineItem   split_line_items? @relation(fields: [splitLineItemId], references: [id])
   orderId         Int
-  order           orders           @relation(fields: [orderId], references: [id])
+  order           orders            @relation(fields: [orderId], references: [id])
   skuCode         String?
   skuDescription  String?
-  qtyRequired     Int              @default(0)
-  qtyPicked       Int              @default(0)
-  isPicked        Boolean          @default(false)
-  isVerified      Boolean          @default(false)
+  qtyRequired     Int               @default(0)
+  qtyPicked       Int               @default(0)
+  isPicked        Boolean           @default(false)
+  isVerified      Boolean           @default(false)
   pickedAt        DateTime?
   verifiedAt      DateTime?
   notes           String?
@@ -869,35 +878,35 @@ model pick_assignments {
 }
 
 model tinter_issue_entries {
-  id               Int               @id @default(autoincrement())
+  id               Int        @id @default(autoincrement())
   orderId          Int
   splitId          Int?
   tintAssignmentId Int?
   submittedById    Int
   baseSku          String
-  tinQty           Decimal           @default(0)
-  YOX              Decimal           @default(0)
-  LFY              Decimal           @default(0)
-  GRN              Decimal           @default(0)
-  TBL              Decimal           @default(0)
-  WHT              Decimal           @default(0)
-  MAG              Decimal           @default(0)
-  FFR              Decimal           @default(0)
-  BLK              Decimal           @default(0)
-  OXR              Decimal           @default(0)
-  HEY              Decimal           @default(0)
-  HER              Decimal           @default(0)
-  COB              Decimal           @default(0)
-  COG              Decimal           @default(0)
-  tinterType       TinterType        @default(TINTER)
+  tinQty           Decimal    @default(0)
+  YOX              Decimal    @default(0)
+  LFY              Decimal    @default(0)
+  GRN              Decimal    @default(0)
+  TBL              Decimal    @default(0)
+  WHT              Decimal    @default(0)
+  MAG              Decimal    @default(0)
+  FFR              Decimal    @default(0)
+  BLK              Decimal    @default(0)
+  OXR              Decimal    @default(0)
+  HEY              Decimal    @default(0)
+  HER              Decimal    @default(0)
+  COB              Decimal    @default(0)
+  COG              Decimal    @default(0)
+  tinterType       TinterType @default(TINTER)
   packCode         PackCode?
   rawLineItemId    Int?
-  createdAt        DateTime          @default(now())
+  createdAt        DateTime   @default(now())
 
-  order          orders                @relation(fields: [orderId], references: [id])
-  split          order_splits?         @relation(fields: [splitId], references: [id])
-  tintAssignment tint_assignments?     @relation(fields: [tintAssignmentId], references: [id])
-  submittedBy    users                 @relation(fields: [submittedById], references: [id])
+  order          orders                 @relation(fields: [orderId], references: [id])
+  split          order_splits?          @relation(fields: [splitId], references: [id])
+  tintAssignment tint_assignments?      @relation(fields: [tintAssignmentId], references: [id])
+  submittedBy    users                  @relation(fields: [submittedById], references: [id])
   rawLineItem    import_raw_line_items? @relation(fields: [rawLineItemId], references: [id])
 
   @@map("tinter_issue_entries")
@@ -923,13 +932,13 @@ model delivery_challans {
 }
 
 model delivery_challan_formulas {
-  id            Int               @id @default(autoincrement())
+  id            Int                   @id @default(autoincrement())
   challanId     Int
-  challan       delivery_challans @relation(fields: [challanId], references: [id])
+  challan       delivery_challans     @relation(fields: [challanId], references: [id])
   rawLineItemId Int
   rawLineItem   import_raw_line_items @relation(fields: [rawLineItemId], references: [id])
   formula       String
-  updatedAt     DateTime          @updatedAt
+  updatedAt     DateTime              @updatedAt
 
   @@unique([challanId, rawLineItemId])
 }
@@ -939,84 +948,84 @@ model delivery_challan_formulas {
 // ─────────────────────────────────────────────
 
 model tinter_issue_entries_b {
-  id               Int               @id @default(autoincrement())
+  id               Int        @id @default(autoincrement())
   orderId          Int
   splitId          Int?
   tintAssignmentId Int?
   submittedById    Int
   baseSku          String
-  tinQty           Decimal           @default(0)
-  YE2              Decimal           @default(0)
-  YE1              Decimal           @default(0)
-  XY1              Decimal           @default(0)
-  XR1              Decimal           @default(0)
-  WH1              Decimal           @default(0)
-  RE2              Decimal           @default(0)
-  RE1              Decimal           @default(0)
-  OR1              Decimal           @default(0)
-  NO2              Decimal           @default(0)
-  NO1              Decimal           @default(0)
-  MA1              Decimal           @default(0)
-  GR1              Decimal           @default(0)
-  BU2              Decimal           @default(0)
-  BU1              Decimal           @default(0)
-  tinterType       TinterType        @default(ACOTONE)
+  tinQty           Decimal    @default(0)
+  YE2              Decimal    @default(0)
+  YE1              Decimal    @default(0)
+  XY1              Decimal    @default(0)
+  XR1              Decimal    @default(0)
+  WH1              Decimal    @default(0)
+  RE2              Decimal    @default(0)
+  RE1              Decimal    @default(0)
+  OR1              Decimal    @default(0)
+  NO2              Decimal    @default(0)
+  NO1              Decimal    @default(0)
+  MA1              Decimal    @default(0)
+  GR1              Decimal    @default(0)
+  BU2              Decimal    @default(0)
+  BU1              Decimal    @default(0)
+  tinterType       TinterType @default(ACOTONE)
   packCode         PackCode?
   rawLineItemId    Int?
-  createdAt        DateTime          @default(now())
+  createdAt        DateTime   @default(now())
 
-  order          orders                @relation(fields: [orderId], references: [id])
-  split          order_splits?         @relation(fields: [splitId], references: [id])
-  tintAssignment tint_assignments?     @relation(fields: [tintAssignmentId], references: [id])
-  submittedBy    users                 @relation(fields: [submittedById], references: [id])
+  order          orders                 @relation(fields: [orderId], references: [id])
+  split          order_splits?          @relation(fields: [splitId], references: [id])
+  tintAssignment tint_assignments?      @relation(fields: [tintAssignmentId], references: [id])
+  submittedBy    users                  @relation(fields: [submittedById], references: [id])
   rawLineItem    import_raw_line_items? @relation(fields: [rawLineItemId], references: [id])
 
   @@map("tinter_issue_entries_b")
 }
 
 model shade_master {
-  id                  Int        @id @default(autoincrement())
-  shadeName           String
-  shipToCustomerId    String
-  shipToCustomerName  String
-  tinterType          TinterType
-  packCode            PackCode?
-  skuCode             String?
-  baseSku             String
-  tinQty              Decimal    @default(0)
+  id                 Int        @id @default(autoincrement())
+  shadeName          String
+  shipToCustomerId   String
+  shipToCustomerName String
+  tinterType         TinterType
+  packCode           PackCode?
+  skuCode            String?
+  baseSku            String
+  tinQty             Decimal    @default(0)
   // TINTER columns
-  YOX                 Decimal?   @default(0)
-  LFY                 Decimal?   @default(0)
-  GRN                 Decimal?   @default(0)
-  TBL                 Decimal?   @default(0)
-  WHT                 Decimal?   @default(0)
-  MAG                 Decimal?   @default(0)
-  FFR                 Decimal?   @default(0)
-  BLK                 Decimal?   @default(0)
-  OXR                 Decimal?   @default(0)
-  HEY                 Decimal?   @default(0)
-  HER                 Decimal?   @default(0)
-  COB                 Decimal?   @default(0)
-  COG                 Decimal?   @default(0)
+  YOX                Decimal?   @default(0)
+  LFY                Decimal?   @default(0)
+  GRN                Decimal?   @default(0)
+  TBL                Decimal?   @default(0)
+  WHT                Decimal?   @default(0)
+  MAG                Decimal?   @default(0)
+  FFR                Decimal?   @default(0)
+  BLK                Decimal?   @default(0)
+  OXR                Decimal?   @default(0)
+  HEY                Decimal?   @default(0)
+  HER                Decimal?   @default(0)
+  COB                Decimal?   @default(0)
+  COG                Decimal?   @default(0)
   // ACOTONE columns
-  YE2                 Decimal?   @default(0)
-  YE1                 Decimal?   @default(0)
-  XY1                 Decimal?   @default(0)
-  XR1                 Decimal?   @default(0)
-  WH1                 Decimal?   @default(0)
-  RE2                 Decimal?   @default(0)
-  RE1                 Decimal?   @default(0)
-  OR1                 Decimal?   @default(0)
-  NO2                 Decimal?   @default(0)
-  NO1                 Decimal?   @default(0)
-  MA1                 Decimal?   @default(0)
-  GR1                 Decimal?   @default(0)
-  BU2                 Decimal?   @default(0)
-  BU1                 Decimal?   @default(0)
-  createdById         Int
-  isActive            Boolean    @default(true)
-  createdAt           DateTime   @default(now())
-  updatedAt           DateTime   @updatedAt
+  YE2                Decimal?   @default(0)
+  YE1                Decimal?   @default(0)
+  XY1                Decimal?   @default(0)
+  XR1                Decimal?   @default(0)
+  WH1                Decimal?   @default(0)
+  RE2                Decimal?   @default(0)
+  RE1                Decimal?   @default(0)
+  OR1                Decimal?   @default(0)
+  NO2                Decimal?   @default(0)
+  NO1                Decimal?   @default(0)
+  MA1                Decimal?   @default(0)
+  GR1                Decimal?   @default(0)
+  BU2                Decimal?   @default(0)
+  BU1                Decimal?   @default(0)
+  createdById        Int
+  isActive           Boolean    @default(true)
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
 
   createdBy users @relation(fields: [createdById], references: [id])
 
@@ -1029,36 +1038,36 @@ model shade_master {
 // ─────────────────────────────────────────────
 
 model mo_orders {
-  id               Int       @id @default(autoincrement())
-  soName           String
-  soEmail          String?
-  receivedAt       DateTime
-  subject          String
-  customerName     String?
-  customerCode     String?
-  deliveryRemarks  String?
-  remarks          String?
-  billRemarks      String?
-  soNumber         String?
-  dispatchStatus   String?   @default("Dispatch")
-  dispatchPriority String?   @default("Normal")
-  shipToOverride   Boolean?  @default(false)
-  slotToOverride       Boolean?  @default(false)
-  customerMatchStatus  String?   @default("unmatched")
-  customerCandidates   String?
-  status               String    @default("pending")
-  punchedById      Int?
-  punchedBy        users?    @relation("MoOrderPunchedBy", fields: [punchedById], references: [id])
-  punchedAt        DateTime?
-  emailEntryId     String    @unique
-  totalLines       Int       @default(0)
-  matchedLines     Int       @default(0)
-  splitFromId      Int?
-  splitLabel       String?
-  isLocked         Boolean   @default(false)
-  createdAt        DateTime  @default(now())
-  lines            mo_order_lines[]
-  remarks_list     mo_order_remarks[]
+  id                  Int                @id @default(autoincrement())
+  soName              String
+  soEmail             String?
+  receivedAt          DateTime
+  subject             String
+  customerName        String?
+  customerCode        String?
+  deliveryRemarks     String?
+  remarks             String?
+  billRemarks         String?
+  soNumber            String?
+  dispatchStatus      String?            @default("Dispatch")
+  dispatchPriority    String?            @default("Normal")
+  shipToOverride      Boolean?           @default(false)
+  slotToOverride      Boolean?           @default(false)
+  customerMatchStatus String?            @default("unmatched")
+  customerCandidates  String?
+  status              String             @default("pending")
+  punchedById         Int?
+  punchedBy           users?             @relation("MoOrderPunchedBy", fields: [punchedById], references: [id])
+  punchedAt           DateTime?
+  emailEntryId        String             @unique
+  totalLines          Int                @default(0)
+  matchedLines        Int                @default(0)
+  splitFromId         Int?
+  splitLabel          String?
+  isLocked            Boolean            @default(false)
+  createdAt           DateTime           @default(now())
+  lines               mo_order_lines[]
+  remarks_list        mo_order_remarks[]
 }
 
 model mo_order_lines {
@@ -1068,21 +1077,21 @@ model mo_order_lines {
   lineNumber         Int
   originalLineNumber Int?
   rawText            String
-  packCode        String?
-  quantity        Int       @default(0)
-  productName     String?
-  baseColour      String?
-  skuCode         String?
-  skuDescription  String?
-  refSkuCode      String?
-  paintType       String?
-  materialType    String?
-  matchStatus     String    @default("unmatched")
-  isCarton        Boolean   @default(false)
-  cartonCount     Int?
-  createdAt       DateTime  @default(now())
+  packCode           String?
+  quantity           Int       @default(0)
+  productName        String?
+  baseColour         String?
+  skuCode            String?
+  skuDescription     String?
+  refSkuCode         String?
+  paintType          String?
+  materialType       String?
+  matchStatus        String    @default("unmatched")
+  isCarton           Boolean   @default(false)
+  cartonCount        Int?
+  createdAt          DateTime  @default(now())
 
-  lineStatus  mo_line_status?
+  lineStatus mo_line_status?
 }
 
 model mo_product_keywords {
@@ -1102,20 +1111,20 @@ model mo_base_keywords {
 }
 
 model mo_sku_lookup {
-  id          Int      @id @default(autoincrement())
-  material    String   @unique
-  description String
-  category    String
-  product     String
-  baseColour  String
-  packCode    String
-  unit         String?
-  refMaterial  String?
-  refDescription String?
-  paintType        String?
-  materialType     String?
-  piecesPerCarton  Int?
-  createdAt        DateTime @default(now())
+  id              Int      @id @default(autoincrement())
+  material        String   @unique
+  description     String
+  category        String
+  product         String
+  baseColour      String
+  packCode        String
+  unit            String?
+  refMaterial     String?
+  refDescription  String?
+  paintType       String?
+  materialType    String?
+  piecesPerCarton Int?
+  createdAt       DateTime @default(now())
 }
 
 model mo_customer_keywords {
@@ -1144,18 +1153,18 @@ model mo_order_remarks {
 }
 
 model mo_line_status {
-  id                Int       @id @default(autoincrement())
-  lineId            Int       @unique
-  found             Boolean   @default(true)
+  id                Int      @id @default(autoincrement())
+  lineId            Int      @unique
+  found             Boolean  @default(true)
   reason            String?
   altSkuCode        String?
   altSkuDescription String?
   note              String?
   updatedBy         Int?
-  updatedAt         DateTime  @default(now())
+  updatedAt         DateTime @default(now())
 
-  line              mo_order_lines @relation(fields: [lineId], references: [id], onDelete: Cascade)
-  user              users?         @relation(fields: [updatedBy], references: [id])
+  line mo_order_lines @relation(fields: [lineId], references: [id], onDelete: Cascade)
+  user users?         @relation(fields: [updatedBy], references: [id])
 }
 
 model mo_learned_customers {
