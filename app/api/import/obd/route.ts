@@ -23,6 +23,7 @@ import type {
   ExistingSummary,
   ObdInput,
 } from "@/lib/import-upsert";
+import { parseSapFile, FileFormatError, FileParseError } from "@/lib/sap-parser";
 
 export const dynamic = "force-dynamic";
 
@@ -244,6 +245,139 @@ async function applyMailOrderEnrichment(soNumbers: (string | null)[]): Promise<v
 
     console.log(`[mail-order-enrichment] Applied to soNumber=${soNum}`);
   }
+}
+
+// ── Effect-firing helpers (consumed by manual-SAP confirm) ───────────────────
+
+/**
+ * Create a delivery_challans row for one order. Idempotent: returns silently
+ * if the order already has a challan (handles the patch-path case where a
+ * challan-create effect re-fires for an order that previously had eligible SMU).
+ *
+ * Sequence-number reservation: caller pre-computes a baseline from the
+ * current max challan number and supplies `nextSeq` as a closure that
+ * returns and advances the next reserved number. This eliminates intra-batch
+ * collisions (sequential awaits + closure = unique numbers per call).
+ *
+ * Inter-batch races (two operators confirming simultaneously) are caught
+ * via P2002 try/catch with a single re-fetch-and-retry — beyond that we
+ * surface the error to the caller's effect-loop, which logs and continues.
+ */
+async function createChallanForOrder(
+  orderId:  number,
+  nextSeq:  () => number,
+  year:     number,
+): Promise<void> {
+  const existing = await prisma.delivery_challans.findFirst({
+    where:  { orderId },
+    select: { id: true },
+  });
+  if (existing) return;
+
+  const seq = nextSeq();
+  const challanNumber = `CHN-${year}-${String(seq).padStart(5, "0")}`;
+  try {
+    await prisma.delivery_challans.create({
+      data: { orderId, challanNumber },
+    });
+  } catch (err) {
+    if ((err as { code?: string }).code !== "P2002") throw err;
+
+    // Inter-batch race: another operator's batch took this number.
+    // Re-fetch DB max and retry with the next free seq above it.
+    const latest = await prisma.delivery_challans.findFirst({
+      orderBy: { id: "desc" },
+      select: { challanNumber: true },
+    });
+    let retrySeq = seq + 1;
+    if (latest?.challanNumber) {
+      const parts   = latest.challanNumber.split("-");
+      const lastNum = parseInt(parts[parts.length - 1], 10);
+      if (!isNaN(lastNum)) retrySeq = lastNum + 1;
+    }
+    await prisma.delivery_challans.create({
+      data: {
+        orderId,
+        challanNumber: `CHN-${year}-${String(retrySeq).padStart(5, "0")}`,
+      },
+    });
+  }
+}
+
+/**
+ * Upsert one row into import_obd_query_summary for an order. Used by the
+ * manual-SAP confirm path's effect loop. The `orderId` column is @unique,
+ * so this is an upsert — both the create-path (new OBD) and patch-path
+ * (existing OBD whose lines changed) callers can use it without branching.
+ *
+ * Computes totals from the current active import_raw_line_items rows for
+ * the order's OBD. Reads the rows here rather than accepting them as an
+ * arg so callers don't need to hold them in memory after upsertObd returns.
+ */
+async function rebuildQuerySummaryForOrder(
+  orderId:   number,
+  obdNumber: string,
+): Promise<void> {
+  const lines = await prisma.import_raw_line_items.findMany({
+    where:  { obdNumber, lineStatus: "active" },
+    select: { unitQty: true, volumeLine: true, isTinting: true, article: true, articleTag: true },
+  });
+
+  const summary = await prisma.import_raw_summary.findFirst({
+    where:   { obdNumber },
+    orderBy: { id: "asc" },
+    select:  { grossWeight: true, totalUnitQty: true, volume: true },
+  });
+
+  const totalLines   = lines.length;
+  const totalUnitQty = lines.reduce((sum, l) => sum + l.unitQty,                 0);
+  const totalVolume  = lines.reduce((sum, l) => sum + (l.volumeLine ?? 0),       0);
+  const totalArticle = lines.reduce((sum, l) => sum + (l.article ?? 0),          0);
+  const hasTinting   = lines.some((l) => l.isTinting);
+
+  // articleTag aggregation: parse "<qty> <type>" pairs and sum by type.
+  const tagTotals: Record<string, number> = {};
+  for (const l of lines) {
+    if (!l.articleTag) continue;
+    const parts = l.articleTag.split(" ");
+    if (parts.length >= 2) {
+      const qty  = parseInt(parts[0], 10);
+      const type = parts.slice(1).join(" ");
+      if (!isNaN(qty) && type) tagTotals[type] = (tagTotals[type] ?? 0) + qty;
+    }
+  }
+  const typeOrder     = ["Drum", "Bag", "Carton", "Tin"];
+  const articleTagStr = typeOrder
+    .filter((t) => tagTotals[t] > 0)
+    .map((t) => `${tagTotals[t]} ${t}`)
+    .join(", ") || null;
+
+  const totalUnitQtyResolved = totalLines > 0 ? totalUnitQty : (summary?.totalUnitQty ?? 0);
+  const totalVolumeResolved  = totalLines > 0 ? totalVolume  : (summary?.volume       ?? 0);
+
+  await prisma.import_obd_query_summary.upsert({
+    where:  { orderId },
+    update: {
+      totalLines,
+      totalUnitQty: totalUnitQtyResolved,
+      totalWeight:  summary?.grossWeight ?? 0,
+      totalVolume:  totalVolumeResolved,
+      hasTinting,
+      totalArticle,
+      articleTag:   articleTagStr,
+    },
+    create: {
+      orderId,
+      obdNumber,
+      totalLines,
+      totalUnitQty: totalUnitQtyResolved,
+      totalWeight:  summary?.grossWeight ?? 0,
+      totalVolume:  totalVolumeResolved,
+      hasTinting,
+      totalArticle,
+      articleTag:   articleTagStr,
+    },
+  });
 }
 
 // ── PREVIEW handler ───────────────────────────────────────────────────────────
@@ -1051,6 +1185,440 @@ async function handleConfirm(req: Request, session: Session): Promise<NextRespon
   };
 
   return NextResponse.json(result);
+}
+
+// ── MANUAL-SAP PREVIEW handler ────────────────────────────────────────────────
+//
+// Step 7 — first endpoint of the manual-SAP path. Pure read + classify.
+// Operator uploads a SAP OBT export XLSX; this handler parses it, classifies
+// each parsed OBD as new / patch / skipped / error against current DB state,
+// and returns the per-OBD outcome list to the UI for review. NO live writes.
+//
+// Auth: handled by the action router (session + import_obd canImport).
+// Feature flag: SAP_IMPORT_ENABLED must be the literal "true".
+
+const MANUAL_SAP_MAX_BYTES = 10 * 1024 * 1024; // 10MB
+
+async function handleManualSapPreview(_req: Request, _session: Session): Promise<NextResponse> {
+  if (process.env.SAP_IMPORT_ENABLED !== "true") {
+    return NextResponse.json(
+      { ok: false, error: "SAP import path not enabled in this environment" },
+      { status: 503 },
+    );
+  }
+
+  const parsed = await parseManualSapForm(_req);
+  if (parsed.kind === "error") return parsed.response;
+  const { fileName, buffer, fallbackObdEmailDate } = parsed;
+
+  let parseResult;
+  try {
+    parseResult = parseSapFile(buffer, { fallbackObdEmailDate });
+  } catch (err) {
+    if (err instanceof FileParseError || err instanceof FileFormatError) {
+      return NextResponse.json({ ok: false, error: err.message }, { status: 400 });
+    }
+    throw err;
+  }
+
+  const obdNumbers = parseResult.obds.map((o) => o.obdNumber);
+  const shipToIds  = parseResult.obds
+    .map((o) => o.shipToCustomerId)
+    .filter((c): c is string => c !== null && c !== "");
+  const skuCodes = Array.from(new Set(
+    parseResult.obds.flatMap((o) => o.lines.map((l) => l.skuCodeRaw)).filter(Boolean),
+  ));
+
+  const [existingOrders, existingCustomers, existingSkus] = await Promise.all([
+    obdNumbers.length > 0
+      ? prisma.orders.findMany({
+          where:  { obdNumber: { in: obdNumbers } },
+          select: { obdNumber: true },
+        })
+      : Promise.resolve([] as { obdNumber: string }[]),
+    shipToIds.length > 0
+      ? prisma.delivery_point_master.findMany({
+          where:  { customerCode: { in: shipToIds } },
+          select: { customerCode: true },
+        })
+      : Promise.resolve([] as { customerCode: string }[]),
+    skuCodes.length > 0
+      ? prisma.sku_master.findMany({
+          where:  { skuCode: { in: skuCodes } },
+          select: { skuCode: true },
+        })
+      : Promise.resolve([] as { skuCode: string }[]),
+  ]);
+
+  const existingObdSet  = new Set(existingOrders.map((o) => o.obdNumber));
+  const existingCustSet = new Set(existingCustomers.map((c) => c.customerCode));
+  const existingSkuSet  = new Set(existingSkus.map((s) => s.skuCode));
+
+  // Group warnings by delivery for per-OBD `issues[]` annotation.
+  const warningsByObd = new Map<string, string[]>();
+  for (const w of parseResult.warnings) {
+    if (!w.delivery) continue;
+    if (!warningsByObd.has(w.delivery)) warningsByObd.set(w.delivery, []);
+    // Strip the trailing "Future: …" suffix on duplicate-sku-summed for compact display.
+    const compact = w.message.replace(/\. Future:.*$/, "");
+    warningsByObd.get(w.delivery)!.push(`${w.kind}: ${compact}`);
+  }
+
+  type PreviewObd = {
+    obdNumber:    string;
+    outcome:      "new" | "patch" | "skipped" | "error";
+    lineCount:    number;
+    totalUnitQty: number;
+    issues:       string[];
+  };
+
+  const obdEntries: PreviewObd[] = [];
+
+  // Created (non-skipped) OBDs.
+  for (const o of parseResult.obds) {
+    const issues: string[] = warningsByObd.get(o.obdNumber) ?? [];
+    if (o.shipToCustomerId && !existingCustSet.has(o.shipToCustomerId)) {
+      issues.push(`unknown customer code: ${o.shipToCustomerId}`);
+    }
+    if (!o.division || !resolveSmuFromDivision(o.division).smu) {
+      issues.push(`unmapped SMU division: ${o.division ?? "(none)"}`);
+    }
+    for (const line of o.lines) {
+      if (!existingSkuSet.has(line.skuCodeRaw)) {
+        issues.push(`unknown SKU: ${line.skuCodeRaw}`);
+      }
+    }
+    obdEntries.push({
+      obdNumber:    o.obdNumber,
+      outcome:      existingObdSet.has(o.obdNumber) ? "patch" : "new",
+      lineCount:    o.lines.length,
+      totalUnitQty: o.totalUnitQty ?? 0,
+      issues,
+    });
+  }
+
+  // Skipped OBDs (parser-level skip rules).
+  for (const s of parseResult.skipped) {
+    const issues = warningsByObd.get(s.delivery) ?? [];
+    issues.unshift(`skip-reason: ${s.reason} (rows ${s.rowNumbers.join(",")})`);
+    obdEntries.push({
+      obdNumber:    s.delivery,
+      outcome:      "skipped",
+      lineCount:    0,
+      totalUnitQty: 0,
+      issues,
+    });
+  }
+
+  const summary = {
+    newOBDs:     obdEntries.filter((o) => o.outcome === "new").length,
+    patchOBDs:   obdEntries.filter((o) => o.outcome === "patch").length,
+    skippedOBDs: obdEntries.filter((o) => o.outcome === "skipped").length,
+    errorOBDs:   obdEntries.filter((o) => o.outcome === "error").length,
+  };
+
+  return NextResponse.json({
+    ok:        true,
+    filename:  fileName,
+    fileStats: parseResult.fileStats,
+    summary,
+    obds:      obdEntries,
+    warnings:  parseResult.warnings,
+  });
+}
+
+// ── MANUAL-SAP CONFIRM handler ────────────────────────────────────────────────
+//
+// Step 7 — second endpoint. Re-parses the uploaded file, calls upsertObd per
+// OBD via the bulk-preloaded existing state, fires downstream effects, and
+// writes one import_batches row tagged "[manual-sap]". Audit per-OBD lives
+// in order_status_logs via lib/import-upsert/audit.ts.
+
+async function handleManualSapConfirm(_req: Request, session: Session): Promise<NextResponse> {
+  if (process.env.SAP_IMPORT_ENABLED !== "true") {
+    return NextResponse.json(
+      { ok: false, error: "SAP import path not enabled in this environment" },
+      { status: 503 },
+    );
+  }
+
+  const parsedForm = await parseManualSapForm(_req);
+  if (parsedForm.kind === "error") return parsedForm.response;
+  const { fileName, buffer, fallbackObdEmailDate, dateStr } = parsedForm;
+
+  let parseResult;
+  try {
+    parseResult = parseSapFile(buffer, { fallbackObdEmailDate });
+  } catch (err) {
+    if (err instanceof FileParseError || err instanceof FileFormatError) {
+      return NextResponse.json({ ok: false, error: err.message }, { status: 400 });
+    }
+    throw err;
+  }
+
+  const userId = parseInt(session.user.id, 10);
+  if (isNaN(userId)) {
+    return NextResponse.json({ ok: false, error: "Invalid session user id" }, { status: 500 });
+  }
+
+  // Create batch row.
+  const batchRef = await generateBatchRef();
+  const batch = await prisma.import_batches.create({
+    data: {
+      batchRef,
+      importedById: userId,
+      headerFile:   `[manual-sap] ${fileName} (obdEmailDate: ${dateStr})`,
+      lineFile:     "",
+      status:       "processing",
+    },
+    select: { id: true },
+  });
+  const batchId = batch.id;
+
+  try {
+    const obdNumbers = parseResult.obds.map((o) => o.obdNumber);
+
+    // Bulk preload for upsertObd injection.
+    const [shadowOrders, shadowSummaries, shadowCustomers] = await Promise.all([
+      obdNumbers.length > 0
+        ? prisma.orders.findMany({
+            where: { obdNumber: { in: obdNumbers } },
+            select: {
+              id: true, obdNumber: true, customerId: true, shipToCustomerName: true,
+              customerMissing: true, orderType: true, workflowStage: true, slotId: true,
+              invoiceNo: true, invoiceDate: true, soNumber: true,
+              obdEmailDate: true, orderDateTime: true, smu: true, sapStatus: true,
+              materialType: true, natureOfTransaction: true, warehouse: true,
+              totalUnitQty: true, grossWeight: true, volume: true,
+            },
+          })
+        : Promise.resolve([] as Array<ExistingOrder & { obdNumber: string }>),
+      obdNumbers.length > 0
+        ? prisma.import_raw_summary.findMany({
+            where:   { obdNumber: { in: obdNumbers } },
+            orderBy: { id: "asc" },
+            select:  { id: true, obdNumber: true, obdEmailTime: true, smuCode: true },
+          })
+        : Promise.resolve([] as Array<{ id: number; obdNumber: string; obdEmailTime: string | null; smuCode: string | null }>),
+      prisma.delivery_point_master.findMany({
+        where:  { customerCode: { in: parseResult.obds.map((o) => o.shipToCustomerId).filter((c): c is string => c !== null && c !== "") } },
+        select: { id: true, customerCode: true },
+      }),
+    ]);
+
+    const orderByObd = new Map<string, ExistingOrder>();
+    for (const o of shadowOrders) {
+      const { obdNumber, ...existing } = o;
+      orderByObd.set(obdNumber, existing as ExistingOrder);
+    }
+
+    const summaryByObd = new Map<string, ExistingSummary>();
+    for (const s of shadowSummaries) {
+      if (!summaryByObd.has(s.obdNumber)) {
+        summaryByObd.set(s.obdNumber, { id: s.id, obdEmailTime: s.obdEmailTime, smuCode: s.smuCode });
+      }
+    }
+
+    const summaryIds = Array.from(summaryByObd.values()).map((s) => s.id);
+    const shadowLines = summaryIds.length > 0
+      ? await prisma.import_raw_line_items.findMany({
+          where:  { rawSummaryId: { in: summaryIds } }, // no lineStatus filter — patch logic needs to see soft-removed
+          select: {
+            id: true, rawSummaryId: true, lineId: true, skuCodeRaw: true,
+            unitQty: true, volumeLine: true, isTinting: true, lineStatus: true,
+          },
+        })
+      : [];
+
+    const linesBySummaryId = new Map<number, ExistingLine[]>();
+    for (const l of shadowLines) {
+      if (!linesBySummaryId.has(l.rawSummaryId)) linesBySummaryId.set(l.rawSummaryId, []);
+      linesBySummaryId.get(l.rawSummaryId)!.push(l as ExistingLine);
+    }
+
+    const customerIdByCode = new Map(shadowCustomers.map((c) => [c.customerCode, c.id]));
+
+    // Per-OBD upsert loop.
+    const now = new Date();
+    type Counter = { created: number; patched: number; unchanged: number; errored: number };
+    const counters: Counter = { created: 0, patched: 0, unchanged: 0, errored: 0 };
+    const errors: Array<{ obdNumber: string; message: string }> = [];
+
+    type ResultEntry = { obdNumber: string; outcome: string; orderId: number | null; effects: import("@/lib/import-upsert").DownstreamEffect[] };
+    const results: ResultEntry[] = [];
+
+    for (const input of parseResult.obds) {
+      const existingOrder   = orderByObd.get(input.obdNumber) ?? null;
+      const existingSummary = summaryByObd.get(input.obdNumber) ?? null;
+      const existingLines   = existingSummary
+        ? (linesBySummaryId.get(existingSummary.id) ?? [])
+        : [];
+      const customerId      = input.shipToCustomerId
+        ? (customerIdByCode.get(input.shipToCustomerId) ?? null)
+        : null;
+
+      const r = await upsertObd(
+        input, "manual-sap", batchId, batchRef, userId, now,
+        { dryRun: false, preloaded: { order: existingOrder, summary: existingSummary, lines: existingLines, customerId } },
+      );
+
+      counters[r.outcome] += 1;
+      if (r.outcome === "errored" && r.errors.length > 0) {
+        errors.push({ obdNumber: r.obdNumber, message: r.errors.join(" | ") });
+      }
+      results.push({ obdNumber: r.obdNumber, outcome: r.outcome, orderId: r.orderId, effects: r.effects });
+    }
+
+    // Reserve a challan-number range from the current DB max, once.
+    const challanEffectCount = results.reduce(
+      (acc, r) => acc + r.effects.filter((e) => e.type === "challan-create").length,
+      0,
+    );
+    let nextChallanSeq = 1;
+    if (challanEffectCount > 0) {
+      const lastChallan = await prisma.delivery_challans.findFirst({
+        orderBy: { id: "desc" },
+        select: { challanNumber: true },
+      });
+      if (lastChallan?.challanNumber) {
+        const parts   = lastChallan.challanNumber.split("-");
+        const lastNum = parseInt(parts[parts.length - 1], 10);
+        if (!isNaN(lastNum)) nextChallanSeq = lastNum + 1;
+      }
+    }
+    const challanYear = new Date().getFullYear();
+    const nextSeqClosure = (): number => nextChallanSeq++;
+
+    // Effect dispatch — sequential, per OBD, every effect wrapped in try/catch.
+    for (const r of results) {
+      if (r.outcome === "errored") continue;
+      for (const eff of r.effects) {
+        try {
+          switch (eff.type) {
+            case "mail-order-enrichment":
+              await applyMailOrderEnrichment([eff.payload.soNumber as string]);
+              break;
+            case "challan-create":
+              await createChallanForOrder(eff.orderId, nextSeqClosure, challanYear);
+              break;
+            case "query-summary-rebuild":
+              await rebuildQuerySummaryForOrder(
+                eff.orderId,
+                String(eff.payload.obdNumber ?? r.obdNumber),
+              );
+              break;
+            case "customer-resolved":
+              console.log("[manual-sap] customer-resolved effect", eff);
+              break;
+            case "order-type-mismatch":
+              console.log("[manual-sap] order-type-mismatch effect", eff);
+              break;
+            default: {
+              // TODO: implement when slot-recalc effect is emitted (currently buildEffects does not)
+              console.log("[manual-sap] slot-recalc effect (no-op)", eff);
+            }
+          }
+        } catch (effErr) {
+          console.error("[manual-sap] effect failed", { type: eff.type, orderId: eff.orderId }, effErr);
+        }
+      }
+    }
+
+    // Update batch status.
+    // - totalObds   = parser-skipped + (created + patched + unchanged + errored)
+    // - skippedObds = parser-skipped only (unchanged is a no-op patch, not a skip)
+    // - failedObds  = errored only
+    await prisma.import_batches
+      .update({
+        where: { id: batchId },
+        data: {
+          status:      "completed",
+          totalObds:   parseResult.skipped.length + results.length,
+          skippedObds: parseResult.skipped.length,
+          failedObds:  counters.errored,
+        },
+      })
+      .catch(() => undefined);
+
+    return NextResponse.json({
+      ok:       true,
+      batchId,
+      batchRef,
+      summary:  counters,
+      errors,
+    });
+  } catch (err) {
+    await prisma.import_batches
+      .update({ where: { id: batchId }, data: { status: "failed" } })
+      .catch(() => undefined);
+    return NextResponse.json(
+      { ok: false, error: err instanceof Error ? err.message : "Manual-SAP confirm failed" },
+      { status: 500 },
+    );
+  }
+}
+
+// ── Manual-SAP form parsing helper (shared by preview + confirm) ─────────────
+
+type ParsedManualSapForm =
+  | {
+      kind:                 "ok";
+      fileName:             string;
+      buffer:               Buffer;
+      fallbackObdEmailDate: Date;
+      dateStr:              string;
+    }
+  | { kind: "error"; response: NextResponse };
+
+async function parseManualSapForm(req: Request): Promise<ParsedManualSapForm> {
+  let formData: FormData;
+  try {
+    formData = await req.formData();
+  } catch {
+    return { kind: "error", response: NextResponse.json(
+      { ok: false, error: "Failed to parse multipart form data" }, { status: 400 },
+    )};
+  }
+
+  const fileEntry = formData.get("file");
+  if (!(fileEntry instanceof File)) {
+    return { kind: "error", response: NextResponse.json(
+      { ok: false, error: "file is required" }, { status: 400 },
+    )};
+  }
+  if (fileEntry.size > MANUAL_SAP_MAX_BYTES) {
+    return { kind: "error", response: NextResponse.json(
+      { ok: false, error: "File too large (max 10MB)" }, { status: 400 },
+    )};
+  }
+  if (!fileEntry.name.toLowerCase().endsWith(".xlsx")) {
+    return { kind: "error", response: NextResponse.json(
+      { ok: false, error: "Only .xlsx files accepted" }, { status: 400 },
+    )};
+  }
+
+  const dateStr = formData.get("obdEmailDate");
+  if (typeof dateStr !== "string" || dateStr.trim() === "") {
+    return { kind: "error", response: NextResponse.json(
+      { ok: false, error: "obdEmailDate is required" }, { status: 400 },
+    )};
+  }
+  const fallbackObdEmailDate = new Date(dateStr.trim());
+  if (isNaN(fallbackObdEmailDate.getTime())) {
+    return { kind: "error", response: NextResponse.json(
+      { ok: false, error: "obdEmailDate is not a valid date" }, { status: 400 },
+    )};
+  }
+
+  const buffer = Buffer.from(await fileEntry.arrayBuffer());
+
+  return {
+    kind: "ok",
+    fileName: fileEntry.name,
+    buffer,
+    fallbackObdEmailDate,
+    dateStr: dateStr.trim(),
+  };
 }
 
 // ── HMAC verification ─────────────────────────────────────────────────────────
@@ -2378,9 +2946,11 @@ export async function POST(req: Request): Promise<NextResponse> {
 
   if (action === "preview") return handlePreview(req, session!);
   if (action === "confirm") return handleConfirm(req, session!);
+  if (action === "manual-sap-preview") return handleManualSapPreview(req, session!);
+  if (action === "manual-sap-confirm") return handleManualSapConfirm(req, session!);
 
   return NextResponse.json(
-    { error: "Invalid action. Use ?action=preview or ?action=confirm" },
+    { error: "Invalid action. Use ?action=preview, ?action=confirm, ?action=manual-sap-preview, or ?action=manual-sap-confirm" },
     { status: 400 },
   );
 }
