@@ -1026,6 +1026,21 @@ async function handleConfirm(req: Request, session: Session): Promise<NextRespon
     })
     .catch(() => undefined);
 
+  // ── Step 4B — Shadow upsertObd in dry-run mode (no behaviour change) ─────
+  // Gated by IMPORT_SHADOW_MODE env var, default off. Outer try/catch ensures
+  // shadow can never crash the confirm response. Duplicates were filtered
+  // at preview (rowStatus="duplicate" excluded from rawSummaries) — shadow
+  // covers only created/errored OBDs; the duplicate count is recorded in
+  // metadata.batchDuplicatesSkipped for context.
+  await runManualTemplateShadow({
+    rawSummaries,
+    confirmedObdNumbers,
+    batchDuplicatesSkipped: skippedObds,
+    batchId,
+    batchRef:               batch.batchRef,
+    userId,
+  });
+
   // ── STEP F — Return ImportConfirmResponse ─────────────────────────────────
   const result: ImportConfirmResponse = {
     success:       true,
@@ -1062,6 +1077,321 @@ function verifyHmacSignature(req: Request): boolean {
   } catch {
     return false;
   }
+}
+
+// ── Shadow-mode runner (Step 4B — manual-template confirm only) ─────────────
+//
+// Runs upsertObd in dryRun=true mode for every OBD just confirmed via the
+// manual-template handler, comparing what handleConfirm actually wrote vs
+// what upsertObd would have written. Output goes to import_shadow_log with
+// source = "manual-template".
+//
+// Gated by IMPORT_SHADOW_MODE env var (same flag as Step 4A — one flip
+// enables both shadow paths). Default-OFF: only runs when the env var is
+// the literal string "true". Outer try/catch ensures this can never affect
+// the confirm response.
+//
+// Differences from Step 4A:
+// - Duplicates are filtered at preview (rowStatus="duplicate" excluded from
+//   `rawSummaries` at line 671). Shadow only iterates OBDs that confirm
+//   actually attempted to write — created or errored. Skipped is impossible.
+//   `metadata.batchDuplicatesSkipped` records the preview-time duplicate
+//   count for context.
+// - `existingOrder` will reflect the row that confirm just wrote (created
+//   moments ago). upsertObd's dryRun will therefore take the patch path
+//   and report `unchanged` (success — confirm wrote what upsertObd would
+//   have written) or `patched` (divergence — investigate). Per-field
+//   divergence detail is recorded in `metadata.noteworthy`.
+async function runManualTemplateShadow(args: {
+  rawSummaries:        Array<{
+    id:                  number;
+    obdNumber:           string;
+    sapStatus:           string | null;
+    smu:                 string | null;
+    smuCode:             string | null;
+    materialType:        string | null;
+    natureOfTransaction: string | null;
+    warehouse:           string | null;
+    obdEmailDate:        Date | null;
+    obdEmailTime:        string | null;
+    totalUnitQty:        number | null;
+    grossWeight:         number | null;
+    volume:              number | null;
+    billToCustomerId:    string | null;
+    billToCustomerName:  string | null;
+    shipToCustomerId:    string | null;
+    shipToCustomerName:  string | null;
+    invoiceNo:           string | null;
+    invoiceDate:         Date | null;
+    soNumber:            string | null;
+    rowStatus:           string;
+    rawLineItems:        Array<{
+      id:         number;
+      obdNumber:  string;
+      lineId:     number;
+      skuCodeRaw: string;
+      unitQty:    number;
+      volumeLine: number | null;
+      isTinting:  boolean;
+      article:    number | null;
+      articleTag: string | null;
+      rowStatus:  string;
+    }>;
+  }>;
+  confirmedObdNumbers:    string[];
+  batchDuplicatesSkipped: number;
+  batchId:                number;
+  batchRef:               string;
+  userId:                 number;
+}): Promise<void> {
+  if (process.env.IMPORT_SHADOW_MODE !== "true") return;
+
+  try {
+    const { rawSummaries, confirmedObdNumbers, batchDuplicatesSkipped,
+            batchId, batchRef, userId } = args;
+
+    const obdNumbers = rawSummaries.map((s) => s.obdNumber);
+    if (obdNumbers.length === 0) return;
+
+    // Bulk preload (3 reads). The orders rows we just created live in DB now;
+    // upsertObd will see them and route to the patch path under dryRun.
+    const [shadowOrders, shadowFullLines, shadowCustomers] = await Promise.all([
+      prisma.orders.findMany({
+        where: { obdNumber: { in: obdNumbers } },
+        select: {
+          id: true, obdNumber: true, customerId: true, shipToCustomerName: true,
+          customerMissing: true, orderType: true, workflowStage: true, slotId: true,
+          invoiceNo: true, invoiceDate: true, soNumber: true,
+          obdEmailDate: true, orderDateTime: true, smu: true, sapStatus: true,
+          materialType: true, natureOfTransaction: true, warehouse: true,
+          totalUnitQty: true, grossWeight: true, volume: true,
+        },
+      }),
+      // Re-fetch raw_line_items with full ExistingLine shape (the in-scope
+      // include from handleConfirm has a narrower select). NO lineStatus
+      // filter — shadow needs to see soft-removed too.
+      prisma.import_raw_line_items.findMany({
+        where: { rawSummaryId: { in: rawSummaries.map((s) => s.id) } },
+        select: {
+          id: true, rawSummaryId: true, lineId: true, skuCodeRaw: true,
+          unitQty: true, volumeLine: true, isTinting: true, lineStatus: true,
+        },
+      }),
+      prisma.delivery_point_master.findMany({
+        where:  { customerCode: { in: rawSummaries.map((s) => s.shipToCustomerId).filter((c): c is string => c !== null) } },
+        select: { id: true, customerCode: true },
+      }),
+    ]);
+
+    const orderByObd = new Map<string, ExistingOrder>();
+    for (const o of shadowOrders) {
+      const { obdNumber, ...existing } = o;
+      orderByObd.set(obdNumber, existing as ExistingOrder);
+    }
+
+    const linesBySummaryId = new Map<number, ExistingLine[]>();
+    for (const l of shadowFullLines) {
+      if (!linesBySummaryId.has(l.rawSummaryId)) linesBySummaryId.set(l.rawSummaryId, []);
+      linesBySummaryId.get(l.rawSummaryId)!.push(l as ExistingLine);
+    }
+
+    const customerIdByCode = new Map(shadowCustomers.map((c) => [c.customerCode, c.id]));
+    const confirmedSet     = new Set(confirmedObdNumbers);
+    const now              = new Date();
+
+    for (const summary of rawSummaries) {
+      const obdNumber = summary.obdNumber;
+
+      let actualOutcome: "created" | "errored";
+      if (confirmedSet.has(obdNumber)) actualOutcome = "created";
+      else if (summary.rowStatus === "error") actualOutcome = "errored";
+      else continue; // unrecognised — defensive skip (duplicates already filtered upstream)
+
+      try {
+        const input = summaryToObdInput(summary);
+        const existingOrder   = orderByObd.get(obdNumber) ?? null;
+        const existingSummary: ExistingSummary = {
+          id:           summary.id,
+          obdEmailTime: summary.obdEmailTime,
+          smuCode:      summary.smuCode,
+        };
+        const existingLines = linesBySummaryId.get(summary.id) ?? [];
+        const customerId    = input.shipToCustomerId
+          ? (customerIdByCode.get(input.shipToCustomerId) ?? null)
+          : null;
+
+        const result = await upsertObd(
+          input, "manual-template", batchId, batchRef, userId, now,
+          { dryRun: true, preloaded: { order: existingOrder, summary: existingSummary, lines: existingLines, customerId } },
+        );
+
+        const divisionResolved = resolveSmuFromDivision(summary.smuCode);
+        const noteworthy: string[] = [];
+
+        // Per-adjustment 2: list each diverged field in noteworthy when shadow
+        // would patch. Header field divergences carry actual=oldValue and
+        // shadow=newValue. Line-level divergences reuse the audit-formatted
+        // detail (minus the [type] prefix).
+        if (result.outcome === "patched") {
+          for (const change of result.applied) {
+            if (change.type === "header_patched" || change.type === "header_overwritten") {
+              noteworthy.push(`divergence: ${change.field} actual=${fmtForNoteworthy(change.oldValue)} shadow=${fmtForNoteworthy(change.newValue)}`);
+            } else {
+              const detail = change.note.replace(/^\[[^\]]+\] /, "");
+              noteworthy.push(`divergence: ${detail}`);
+            }
+          }
+        }
+
+        if (summary.smu && divisionResolved.smu && summary.smu !== divisionResolved.smu) {
+          noteworthy.push("smu_mismatch_file_vs_map");
+        }
+        if (!summary.smuCode || !divisionResolved.smu) {
+          noteworthy.push("division_unmapped");
+        }
+        if (result.errors.length > 0) noteworthy.push("shadow_errors_present");
+
+        const decision = {
+          actualHeader: existingOrder,
+          actualLines:  existingLines,
+          incomingHeader: {
+            obdNumber:           input.obdNumber,
+            division:            input.division,
+            sapStatus:           input.sapStatus,
+            materialType:        input.materialType,
+            natureOfTransaction: input.natureOfTransaction,
+            warehouse:           input.warehouse,
+            obdEmailDate:        input.obdEmailDate,
+            obdEmailTime:        input.obdEmailTime,
+            totalUnitQty:        input.totalUnitQty,
+            grossWeight:         input.grossWeight,
+            volume:              input.volume,
+            billToCustomerId:    input.billToCustomerId,
+            billToCustomerName:  input.billToCustomerName,
+            shipToCustomerId:    input.shipToCustomerId,
+            shipToCustomerName:  input.shipToCustomerName,
+            invoiceNo:           input.invoiceNo,
+            invoiceDate:         input.invoiceDate,
+            soNumber:            input.soNumber,
+          },
+          incomingLines:        input.lines,
+          shadowAppliedChanges: result.applied,
+          shadowEffects:        result.effects,
+          metadata: {
+            smuFromFile:            summary.smu,
+            smuFromMap:             divisionResolved.smu,
+            batchDuplicatesSkipped,
+            noteworthy,
+          },
+        };
+
+        await prisma.import_shadow_log.create({
+          data: {
+            batchId,
+            obdNumber,
+            source:        "manual-template",
+            actualOutcome,
+            shadowOutcome: result.outcome,
+            decision:      decision as unknown as Prisma.InputJsonValue,
+            errors:        result.errors.length > 0 ? result.errors.join(" | ") : null,
+          },
+        });
+      } catch (err) {
+        console.error(`[SHADOW] manual-template OBD ${obdNumber} failed:`, err);
+      }
+    }
+  } catch (outer) {
+    console.error("[SHADOW] runManualTemplateShadow outer failure:", outer);
+  }
+}
+
+/**
+ * Format a value for inclusion in a noteworthy divergence string.
+ * Mirrors lib/import-upsert/helpers fmt() but lives here to keep the
+ * route file self-contained — same rules: Date → ISO, string → quoted,
+ * null/undefined → literal "null".
+ */
+function fmtForNoteworthy(v: unknown): string {
+  if (v === null || v === undefined) return "null";
+  if (v instanceof Date)              return v.toISOString();
+  if (typeof v === "string")          return JSON.stringify(v);
+  return String(v);
+}
+
+/**
+ * Convert the in-memory `rawSummaries[i]` shape (with included rawLineItems)
+ * from handleConfirm into the ObdInput shape consumed by upsertObd. Sister
+ * helper to headerRowToObdInput; both are internal, neither exported.
+ *
+ * `division` is populated from `summary.smuCode` so resolveSmuFromDivision
+ * can map back to a label and surface mismatches against the operator-typed
+ * `summary.smu` via metadata.noteworthy.
+ *
+ * `skuDescriptionRaw` and `batchCode` are not in the in-scope rawLineItems
+ * select and are passed as null. patchLines treats nulls as "no opinion"
+ * for non-authoritative sources, so this does not cause spurious divergence.
+ */
+function summaryToObdInput(summary: {
+  obdNumber:           string;
+  smu:                 string | null;
+  smuCode:             string | null;
+  sapStatus:           string | null;
+  materialType:        string | null;
+  natureOfTransaction: string | null;
+  warehouse:           string | null;
+  obdEmailDate:        Date | null;
+  obdEmailTime:        string | null;
+  totalUnitQty:        number | null;
+  grossWeight:         number | null;
+  volume:              number | null;
+  billToCustomerId:    string | null;
+  billToCustomerName:  string | null;
+  shipToCustomerId:    string | null;
+  shipToCustomerName:  string | null;
+  invoiceNo:           string | null;
+  invoiceDate:         Date | null;
+  soNumber:            string | null;
+  rawLineItems:        Array<{
+    lineId:     number;
+    skuCodeRaw: string;
+    unitQty:    number;
+    volumeLine: number | null;
+    isTinting:  boolean;
+    article:    number | null;
+    articleTag: string | null;
+  }>;
+}): ObdInput {
+  return {
+    obdNumber:           summary.obdNumber,
+    division:            summary.smuCode,
+    sapStatus:           summary.sapStatus,
+    materialType:        summary.materialType,
+    natureOfTransaction: summary.natureOfTransaction,
+    warehouse:           summary.warehouse,
+    obdEmailDate:        summary.obdEmailDate,
+    obdEmailTime:        summary.obdEmailTime,
+    totalUnitQty:        summary.totalUnitQty,
+    grossWeight:         summary.grossWeight,
+    volume:              summary.volume,
+    billToCustomerId:    summary.billToCustomerId,
+    billToCustomerName:  summary.billToCustomerName,
+    shipToCustomerId:    summary.shipToCustomerId,
+    shipToCustomerName:  summary.shipToCustomerName,
+    invoiceNo:           summary.invoiceNo,
+    invoiceDate:         summary.invoiceDate,
+    soNumber:            summary.soNumber,
+    lines: summary.rawLineItems.map((l) => ({
+      lineId:            l.lineId,
+      skuCodeRaw:        l.skuCodeRaw,
+      skuDescriptionRaw: null,
+      batchCode:         null,
+      unitQty:           l.unitQty,
+      volumeLine:        l.volumeLine,
+      isTinting:         l.isTinting,
+      article:           l.article,
+      articleTag:        l.articleTag,
+    })),
+  };
 }
 
 // ── Shadow-mode runner (Step 4A — auto-import only) ─────────────────────────
