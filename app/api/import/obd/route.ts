@@ -1319,14 +1319,37 @@ async function handleAutoImport(req: Request): Promise<NextResponse> {
   });
 
   if (lineItemData.length > 0) {
+    let lineInsertResult: { count: number };
     try {
-      await prisma.import_raw_line_items.createMany({ data: lineItemData });
+      lineInsertResult = await prisma.import_raw_line_items.createMany({ data: lineItemData });
     } catch (err) {
       await prisma.import_batches
         .update({ where: { id: batchId }, data: { status: "failed" } })
         .catch(() => undefined);
       return NextResponse.json(
         { error: err instanceof Error ? err.message : "Failed to write line items" },
+        { status: 500 },
+      );
+    }
+
+    // GUARD 1 — verify createMany inserted every row we sent. Silent shortfalls
+    // (transient pgbouncer/pooler issues) produced the CHN-2026-00062 zombie challan.
+    if (lineInsertResult.count !== lineItemData.length) {
+      const affectedObds = Array.from(new Set(lineItemData.map((l) => l.obdNumber)));
+      console.error("[auto-import] GUARD 1 line-count mismatch", {
+        batchId,
+        batchRef,
+        expected:   lineItemData.length,
+        actual:     lineInsertResult.count,
+        obdNumbers: affectedObds,
+      });
+      await prisma.import_batches
+        .update({ where: { id: batchId }, data: { status: "failed" } })
+        .catch(() => undefined);
+      return NextResponse.json(
+        {
+          error: `Line item write count mismatch (expected ${lineItemData.length}, got ${lineInsertResult.count}) — batch ${batchRef} marked failed`,
+        },
         { status: 500 },
       );
     }
@@ -1380,6 +1403,42 @@ async function handleAutoImport(req: Request): Promise<NextResponse> {
       },
     },
   });
+
+  // GUARD 2 — read-side cross-verify: every OBD we intended to have lines must
+  // come back from DB with the same line count. Independent of GUARD 1 — catches
+  // any future regression where lines silently fail to persist.
+  {
+    const expectedByObd = new Map<string, number>();
+    for (const obd of obdInterims) {
+      if (obd.lines.length > 0) expectedByObd.set(obd.obdNumber, obd.lines.length);
+    }
+
+    const mismatches: { obdNumber: string; expected: number; actual: number }[] = [];
+    for (const summary of autoRawSummaries) {
+      const expected = expectedByObd.get(summary.obdNumber) ?? 0;
+      const actual   = summary.rawLineItems.length;
+      if (expected > 0 && actual !== expected) {
+        mismatches.push({ obdNumber: summary.obdNumber, expected, actual });
+      }
+    }
+
+    if (mismatches.length > 0) {
+      console.error("[auto-import] GUARD 2 read-side line mismatch", {
+        batchId,
+        batchRef,
+        mismatches,
+      });
+      await prisma.import_batches
+        .update({ where: { id: batchId }, data: { status: "failed" } })
+        .catch(() => undefined);
+      return NextResponse.json(
+        {
+          error: `Line item read-back mismatch — batch ${batchRef} marked failed (${mismatches.length} OBD${mismatches.length === 1 ? "" : "s"} affected)`,
+        },
+        { status: 500 },
+      );
+    }
+  }
 
   // ── CONFIRM — bulk preload for enrichment ─────────────────────────────────
   const confirmCustomerCodes = autoRawSummaries
@@ -1526,7 +1585,19 @@ async function handleAutoImport(req: Request): Promise<NextResponse> {
       .filter((o) => {
         const summary = autoRawSummaries.find((s) => s.obdNumber === o.obdNumber);
         const smu = summary?.smu ?? "";
-        return CHALLAN_SMU_VALUES_AUTO.includes(smu);
+        if (!CHALLAN_SMU_VALUES_AUTO.includes(smu)) return false;
+        // GUARD 3 — never auto-create a challan for an order with zero line items.
+        // Last line of defence; if GUARDs 1 & 2 work this never fires.
+        if (o.validLines.length === 0) {
+          console.warn("[auto-import] GUARD 3 skipping zero-line challan", {
+            batchId,
+            batchRef,
+            obdNumber: o.obdNumber,
+            smu,
+          });
+          return false;
+        }
+        return true;
       })
       .map((o) => ({
         orderId: orderIdMap.get(o.obdNumber) ?? 0,
