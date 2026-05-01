@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createHmac, timingSafeEqual } from "crypto";
 import type { Session } from "next-auth";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import * as XLSX from "xlsx";
 import { auth } from "@/lib/auth";
 import { requireRole, ROLES } from "@/lib/rbac";
@@ -167,13 +167,58 @@ async function generateBatchRef(): Promise<string> {
   const mo      = String(now.getMonth() + 1).padStart(2, "0");
   const d       = String(now.getDate()).padStart(2, "0");
   const dateStr = `${y}${mo}${d}`;
+  const prefix  = `BATCH-${dateStr}-`;
 
-  const startOfToday = new Date(y, now.getMonth(), now.getDate());
-  const todayCount   = await prisma.import_batches.count({
-    where: { createdAt: { gte: startOfToday } },
+  // Find highest existing sequence number for today.
+  // Using LIKE on batchRef directly (not date-window) so we don't
+  // miss batches with createdAt in odd timezones or backdated test data.
+  const latest = await prisma.import_batches.findFirst({
+    where:   { batchRef: { startsWith: prefix } },
+    orderBy: { batchRef: "desc" },
+    select:  { batchRef: true },
   });
 
-  return `BATCH-${dateStr}-${String(todayCount + 1).padStart(3, "0")}`;
+  let nextSeq = 1;
+  if (latest) {
+    const tail   = latest.batchRef.slice(prefix.length); // e.g. "047"
+    const parsed = parseInt(tail, 10);
+    if (!Number.isNaN(parsed)) {
+      nextSeq = parsed + 1;
+    }
+  }
+
+  return `${prefix}${String(nextSeq).padStart(3, "0")}`;
+}
+
+/**
+ * Create an import_batches row, retrying on P2002 (unique-constraint
+ * violation on batchRef) up to maxRetries times. Each retry regenerates
+ * a fresh batchRef via generateBatchRef. Used at all three import-path
+ * entry points so the same hardening applies to manual-template,
+ * manual-sap, and auto-import.
+ */
+async function createBatchWithRetry(
+  data:        Prisma.import_batchesCreateInput,
+  maxRetries = 3,
+): Promise<{ id: number; batchRef: string }> {
+  let lastErr: unknown = null;
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const batch = await prisma.import_batches.create({ data });
+      return { id: batch.id, batchRef: batch.batchRef };
+    } catch (err) {
+      const isP2002 =
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === "P2002";
+      if (!isP2002 || attempt === maxRetries - 1) {
+        lastErr = err;
+        break;
+      }
+      // Collision — regenerate batchRef and retry.
+      data = { ...data, batchRef: await generateBatchRef() };
+    }
+  }
+  throw lastErr;
 }
 
 // ── Mail-order enrichment hook ────────────────────────────────────────────────
@@ -503,14 +548,12 @@ async function handlePreview(req: Request, session: Session): Promise<NextRespon
   // ── STEP E1 — Create import_batches row (outside any transaction) ─────────
   let batchId: number;
   try {
-    const batch = await prisma.import_batches.create({
-      data: {
-        batchRef,
-        importedById: userId,
-        headerFile:   `[${templateId}] ${batchFileName}`,
-        lineFile:     lineFileName,
-        status:       "processing",
-      },
+    const batch = await createBatchWithRetry({
+      batchRef,
+      importedBy:   { connect: { id: userId } },
+      headerFile:   `[${templateId}] ${batchFileName}`,
+      lineFile:     lineFileName,
+      status:       "processing",
     });
     batchId = batch.id;
   } catch (err) {
@@ -1361,17 +1404,14 @@ async function handleManualSapConfirm(_req: Request, session: Session): Promise<
     return NextResponse.json({ ok: false, error: "Invalid session user id" }, { status: 500 });
   }
 
-  // Create batch row.
+  // Create batch row (P2002-safe via createBatchWithRetry).
   const batchRef = await generateBatchRef();
-  const batch = await prisma.import_batches.create({
-    data: {
-      batchRef,
-      importedById: userId,
-      headerFile:   `[manual-sap] ${fileName} (obdEmailDate: ${dateStr})`,
-      lineFile:     "",
-      status:       "processing",
-    },
-    select: { id: true },
+  const batch = await createBatchWithRetry({
+    batchRef,
+    importedBy:   { connect: { id: userId } },
+    headerFile:   `[manual-sap] ${fileName} (obdEmailDate: ${dateStr})`,
+    lineFile:     "",
+    status:       "processing",
   });
   const batchId = batch.id;
 
@@ -2283,14 +2323,12 @@ async function handleAutoImport(req: Request): Promise<NextResponse> {
   // ── STEP E1 — Create import_batches row ───────────────────────────────────
   let batchId: number;
   try {
-    const batch = await prisma.import_batches.create({
-      data: {
-        batchRef,
-        importedById: 1,
-        headerFile:   `[auto-import] ${combinedEntry.name}`,
-        lineFile:     "",
-        status:       "processing",
-      },
+    const batch = await createBatchWithRetry({
+      batchRef,
+      importedBy:   { connect: { id: 1 } },
+      headerFile:   `[auto-import] ${combinedEntry.name}`,
+      lineFile:     "",
+      status:       "processing",
     });
     batchId = batch.id;
   } catch (err) {
