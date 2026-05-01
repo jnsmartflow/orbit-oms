@@ -40,15 +40,42 @@ export function patchLines(
   now:           Date,
 ): LinePatchPlan {
   const auth = LINE_AUTHORITY[source];
-  const byLineId         = new Map(existingLines.map((l) => [l.lineId, l]));
-  const incomingByLineId = new Map(incomingLines.map((l) => [l.lineId, l]));
+
+  // Match by SKU code (skuCodeRaw, trimmed). lineId is unreliable as a
+  // matching key across import sources — auto-import wrote 0 historically
+  // while SAP brings real SAP item numbers (10, 20, 900001…). Material
+  // codes are case-sensitive identifiers in SAP, so exact match (no
+  // .toLowerCase()), trimmed defensively for stray whitespace.
+  //
+  // Same-SKU duplicates inside either set are unexpected — the parser
+  // sums by SKU per delivery, and existing rows should be one-per-SKU.
+  // When duplicates do appear (e.g. legacy data from a prior bad import),
+  // prefer the first occurrence and log a warning so it's diagnosable.
+  const bySkuCode = new Map<string, ExistingLine>();
+  for (const l of existingLines) {
+    const key = l.skuCodeRaw.trim();
+    if (bySkuCode.has(key)) {
+      console.warn(`[patchLines] Duplicate SKU '${key}' in existing lines for batch ${batchId}; using first (id=${bySkuCode.get(key)!.id}, ignored=${l.id})`);
+      continue;
+    }
+    bySkuCode.set(key, l);
+  }
+  const incomingBySkuCode = new Map<string, ObdLineInput>();
+  for (const l of incomingLines) {
+    const key = l.skuCodeRaw.trim();
+    if (incomingBySkuCode.has(key)) {
+      console.warn(`[patchLines] Duplicate SKU '${key}' in incoming lines for batch ${batchId}; using first occurrence`);
+      continue;
+    }
+    incomingBySkuCode.set(key, l);
+  }
 
   const plan: LinePatchPlan = {
     adds: [], patches: [], restores: [], removes: [], splitCascades: [],
   };
 
-  for (const inc of incomingLines) {
-    const existing = byLineId.get(inc.lineId);
+  for (const inc of Array.from(incomingBySkuCode.values())) {
+    const existing = bySkuCode.get(inc.skuCodeRaw.trim());
     if (!existing) {
       plan.adds.push(inc);
       continue;
@@ -68,10 +95,7 @@ export function patchLines(
         updates.volumeLine = inc.volumeLine;
         fieldChanges.push({ field: "volumeLine", oldValue: existing.volumeLine, newValue: inc.volumeLine });
       }
-      if (existing.skuCodeRaw !== inc.skuCodeRaw) {
-        updates.skuCodeRaw = inc.skuCodeRaw;
-        fieldChanges.push({ field: "skuCodeRaw", oldValue: existing.skuCodeRaw, newValue: inc.skuCodeRaw });
-      }
+      // skuCodeRaw never changes here — matched by SKU, equal by construction.
       if (existing.isTinting !== inc.isTinting) {
         updates.isTinting = inc.isTinting;
         fieldChanges.push({ field: "isTinting", oldValue: existing.isTinting, newValue: inc.isTinting });
@@ -108,7 +132,7 @@ export function patchLines(
   if (auth && incomingLines.length > 0) {
     for (const ex of existingLines) {
       if (ex.lineStatus !== "active") continue;
-      if (incomingByLineId.has(ex.lineId)) continue;
+      if (incomingBySkuCode.has(ex.skuCodeRaw.trim())) continue;
       plan.removes.push({ existingId: ex.id, lineId: ex.lineId, sku: ex.skuCodeRaw });
       plan.splitCascades.push({
         rawLineItemId: ex.id,
