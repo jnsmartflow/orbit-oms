@@ -53,6 +53,7 @@ interface OrderDetail {
     volumeLine: number | null;
     isTinting: boolean;
   }[];
+  removedLineCount: number;
   splits: {
     id: number;
     status: string;
@@ -63,6 +64,18 @@ interface OrderDetail {
     totalUnitQty: number;
     articleTag: string | null;
   } | null;
+}
+
+interface RemovedLine {
+  skuCode:        string;
+  skuDescription: string;
+  unitQty:        number;
+  lineWeight:     number | null;
+  volumeLine:     number | null;
+  isTinting:      boolean;
+  lineStatus:     string;
+  removedAt:      string | null;
+  removedReason:  string | null;
 }
 
 interface OrderDetailPanelProps {
@@ -108,6 +121,10 @@ export function OrderDetailPanel({ orderId, onClose }: OrderDetailPanelProps) {
   const [expandLines, setExpandLines] = useState(false);
   const [expandSplits, setExpandSplits] = useState(false);
   const [expandHistory, setExpandHistory] = useState(false);
+  const [expandRemoved, setExpandRemoved]       = useState(false);
+  const [removedLines, setRemovedLines]         = useState<RemovedLine[] | null>(null);
+  const [removedLoading, setRemovedLoading]     = useState(false);
+  const [removedError, setRemovedError]         = useState<string | null>(null);
 
   useEffect(() => {
     if (!orderId) {
@@ -118,6 +135,10 @@ export function OrderDetailPanel({ orderId, onClose }: OrderDetailPanelProps) {
     setExpandLines(false);
     setExpandSplits(false);
     setExpandHistory(false);
+    setExpandRemoved(false);
+    setRemovedLines(null);
+    setRemovedLoading(false);
+    setRemovedError(null);
     fetch(`/api/orders/${orderId}/detail`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => setData(d as OrderDetail | null))
@@ -268,6 +289,92 @@ export function OrderDetailPanel({ orderId, onClose }: OrderDetailPanelProps) {
                     </button>
                   )}
                 </>
+              )}
+
+              {/* Removed-line toggle + greyed list */}
+              {data && data.removedLineCount > 0 && (
+                <div className="mt-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = !expandRemoved;
+                      setExpandRemoved(next);
+                      // Lazy-fetch on first expand. Cache for panel-open lifetime.
+                      if (next && removedLines === null && !removedLoading) {
+                        setRemovedLoading(true);
+                        setRemovedError(null);
+                        fetch(`/api/orders/${orderId}/removed-lines`)
+                          .then(async (r) => {
+                            if (!r.ok) throw new Error("fetch failed");
+                            return r.json() as Promise<{ lines: RemovedLine[] }>;
+                          })
+                          .then((d) => setRemovedLines(d.lines))
+                          .catch(() => setRemovedError("Failed to load removed lines"))
+                          .finally(() => setRemovedLoading(false));
+                      }
+                    }}
+                    className="text-xs text-gray-500 hover:text-gray-700 transition-colors"
+                  >
+                    {expandRemoved
+                      ? `Hide removed (${data.removedLineCount}) ▴`
+                      : `Show removed (${data.removedLineCount}) ▾`}
+                  </button>
+
+                  {expandRemoved && (
+                    <div className="mt-2">
+                      {removedLoading && (
+                        <div className="space-y-1">
+                          {[0, 1, 2].map((i) => (
+                            <div key={i} className="animate-pulse bg-gray-100 h-7 rounded" />
+                          ))}
+                        </div>
+                      )}
+                      {removedError && (
+                        <p className="text-xs text-red-500 italic">{removedError}</p>
+                      )}
+                      {removedLines && removedLines.length > 0 && (
+                        <div className="rounded border border-gray-100 overflow-hidden text-xs">
+                          {removedLines.map((rl, i) => {
+                            const tooltip = rl.removedReason ?? "Removed line";
+                            const removedTs = rl.removedAt
+                              ? new Date(rl.removedAt).toLocaleString("en-GB", {
+                                  timeZone: "Asia/Kolkata",
+                                  day: "2-digit", month: "short",
+                                  hour: "2-digit", minute: "2-digit", hour12: false,
+                                })
+                              : null;
+                            return (
+                              <div
+                                key={i}
+                                title={tooltip}
+                                className="bg-gray-50/50"
+                              >
+                                <div className="grid grid-cols-[1fr_2fr_50px_60px_70px] gap-2 px-3 py-1.5">
+                                  <span className="font-mono text-gray-400 line-through truncate">{rl.skuCode}</span>
+                                  <span className="text-gray-400 line-through truncate">{rl.skuDescription}</span>
+                                  <span className="text-right text-gray-400 line-through tabular-nums">{rl.unitQty}</span>
+                                  <span className="text-right text-gray-400 line-through tabular-nums">{rl.volumeLine != null ? Math.round(rl.volumeLine) : "—"}</span>
+                                  <span className="text-right">
+                                    <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded border bg-gray-100 border-gray-200 text-gray-500">
+                                      removed
+                                    </span>
+                                  </span>
+                                </div>
+                                {(removedTs || rl.removedReason) && (
+                                  <p className="text-[10px] text-gray-400 italic px-3 py-0.5 pb-1.5">
+                                    {removedTs && <>Removed {removedTs}</>}
+                                    {removedTs && rl.removedReason && " — "}
+                                    {rl.removedReason}
+                                  </p>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               )}
 
               {/* ── Section 4: Splits ────────────────────────────────── */}

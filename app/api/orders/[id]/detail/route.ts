@@ -100,10 +100,12 @@ export async function GET(
       // Column doesn't exist yet — ignore
     }
 
-    // Line items — enriched join raw join sku
+    // Line items — enriched join raw join sku.
+    // lineStatus filter on rawLineItem closes the Step 3 gap: only active
+    // raw lines feed the detail panel's lineItems list.
     const enrichedItems = await prisma.import_enriched_line_items.findMany({
       where: {
-        rawLineItem: { obdNumber: order.obdNumber },
+        rawLineItem: { obdNumber: order.obdNumber, lineStatus: "active" },
       },
       select: {
         unitQty: true,
@@ -126,6 +128,12 @@ export async function GET(
       orderBy: { id: "asc" },
     });
 
+    // Count soft-removed lines (any status other than "active") for the
+    // detail panel's "Show removed (N)" toggle. Cheap — single COUNT.
+    const removedLineCount = await prisma.import_raw_line_items.count({
+      where: { obdNumber: order.obdNumber, lineStatus: { not: "active" } },
+    });
+
     const lineItems = enrichedItems.map((e) => ({
       skuCode: e.sku?.skuCode ?? e.rawLineItem.skuCodeRaw,
       skuDescription: e.sku?.skuName ?? e.rawLineItem.skuDescriptionRaw ?? "—",
@@ -141,6 +149,7 @@ export async function GET(
         ? { ...importSummary, soNumber }
         : null,
       lineItems,
+      removedLineCount,
       splits: order.splits,
       querySnapshot: order.querySnapshot,
     });
