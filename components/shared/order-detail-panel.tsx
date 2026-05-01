@@ -1,9 +1,10 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { X } from "lucide-react";
+import { X, ChevronRight, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CascadeBadge, shouldShowCascadeBadge } from "@/components/shared/cascade-badge";
+import { OrderAuditHistory } from "@/components/shared/order-audit-history";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -106,6 +107,7 @@ export function OrderDetailPanel({ orderId, onClose }: OrderDetailPanelProps) {
   const [loading, setLoading] = useState(false);
   const [expandLines, setExpandLines] = useState(false);
   const [expandSplits, setExpandSplits] = useState(false);
+  const [expandHistory, setExpandHistory] = useState(false);
 
   useEffect(() => {
     if (!orderId) {
@@ -115,6 +117,7 @@ export function OrderDetailPanel({ orderId, onClose }: OrderDetailPanelProps) {
     setLoading(true);
     setExpandLines(false);
     setExpandSplits(false);
+    setExpandHistory(false);
     fetch(`/api/orders/${orderId}/detail`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => setData(d as OrderDetail | null))
@@ -333,8 +336,20 @@ export function OrderDetailPanel({ orderId, onClose }: OrderDetailPanelProps) {
 
               {/* ── Section 6: Audit History ─────────────────────────── */}
               <div className={SEC_DIV} />
-              <h3 className={SEC_HDR}>Audit History</h3>
-              <p className="text-xs text-gray-400 italic">Coming soon</p>
+              <button
+                type="button"
+                onClick={() => setExpandHistory((v) => !v)}
+                className="flex items-center gap-1.5 mb-2 group"
+                aria-expanded={expandHistory}
+              >
+                {expandHistory
+                  ? <ChevronDown  size={12} className="text-gray-400 group-hover:text-gray-600 transition-colors" />
+                  : <ChevronRight size={12} className="text-gray-400 group-hover:text-gray-600 transition-colors" />}
+                <h3 className={cn(SEC_HDR, "mb-0 group-hover:text-gray-600 transition-colors")}>History</h3>
+              </button>
+              {o?.id != null && (
+                <OrderAuditHistory orderId={o.id} isOpen={expandHistory} />
+              )}
             </>
           )}
         </div>
