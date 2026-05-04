@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from "react";
 import { Loader2, ChevronDown, ChevronLeft, ChevronRight, Palette, Save, Play, Check, Plus } from "lucide-react";
 import { UniversalHeader } from "@/components/universal-header";
+import { useSession } from "next-auth/react";
 import { cn } from "@/lib/utils";
 import { useSkuDisplayMode } from "@/lib/hooks/use-sku-display-mode";
 import { pickSkuDisplay, type SkuDisplay } from "@/types/sku-display";
@@ -356,6 +357,10 @@ function deliveryDotClass(type: string | null | undefined): string {
 // ── Page Content ──────────────────────────────────────────────────────────────
 
 export function TintOperatorContent() {
+  const { data: session } = useSession();
+  const canImportOBDs = ["admin", "dispatcher", "support", "billing_operator", "tint_manager"]
+    .includes(session?.user?.role ?? "");
+
   const { mode: skuDisplayMode } = useSkuDisplayMode();
 
   const [assignedSplits,   setAssignedSplits]   = useState<OperatorSplit[]>([]);
@@ -1149,6 +1154,7 @@ export function TintOperatorContent() {
       {/* UniversalHeader — Row 1 + Row 2 with job pill via leftExtra */}
       <UniversalHeader
         title="My Jobs"
+        showImport={canImportOBDs}
         stats={[
           { label: "in queue", value: jobs.length },
           { label: "active", value: inProgressCount },

@@ -20,6 +20,7 @@ import { TintTableView } from "@/components/tint/tint-table-view";
 import { CustomerMissingSheet } from "@/components/shared/customer-missing-sheet";
 import { OrderDetailPanel } from "@/components/shared/order-detail-panel";
 import { UniversalHeader } from "@/components/universal-header";
+import { useSession } from "next-auth/react";
 import { useSkuDisplayMode } from "@/lib/hooks/use-sku-display-mode";
 import { pickSkuDisplay, type SkuDisplay } from "@/types/sku-display";
 
@@ -1613,6 +1614,10 @@ function SplitKanbanCard({
 // ── Page Content ──────────────────────────────────────────────────────────────
 
 export function TintManagerContent() {
+  const { data: session } = useSession();
+  const canImportOBDs = ["admin", "dispatcher", "support", "billing_operator", "tint_manager"]
+    .includes(session?.user?.role ?? "");
+
   const { mode: skuDisplayMode } = useSkuDisplayMode();
 
   const [orders,               setOrders]               = useState<TintOrder[]>([]);
@@ -2175,6 +2180,7 @@ export function TintManagerContent() {
 
       <UniversalHeader
         title="Tint Manager"
+        showImport={canImportOBDs}
         stats={[
           { label: "pending", value: pendingCount },
           { label: "assigned", value: assignedCount },

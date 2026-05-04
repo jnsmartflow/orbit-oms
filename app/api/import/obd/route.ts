@@ -2976,7 +2976,13 @@ export async function POST(req: Request): Promise<NextResponse> {
 
   // All other actions require session auth
   const session = await auth();
-  requireRole(session, [ROLES.ADMIN, ROLES.DISPATCHER, ROLES.SUPPORT]);
+  requireRole(session, [
+    ROLES.ADMIN,
+    ROLES.DISPATCHER,
+    ROLES.SUPPORT,
+    ROLES.BILLING_OPERATOR,
+    ROLES.TINT_MANAGER,
+  ]);
   if (session!.user.role !== "admin") {
     const allowed = await checkPermission(session!.user.role, "import_obd", "canImport");
     if (!allowed) return NextResponse.json({ error: "Permission denied" }, { status: 403 });

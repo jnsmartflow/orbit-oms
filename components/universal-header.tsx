@@ -6,11 +6,13 @@ import {
   Keyboard,
   Filter,
   Download,
+  Upload,
   ChevronLeft,
   ChevronRight,
   ChevronDown,
 } from "lucide-react";
 import { DatePickerPopover } from "@/components/ui/date-picker-popover";
+import { ImportModal } from "@/components/import/import-modal";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -72,6 +74,11 @@ export interface UniversalHeaderProps {
 
   // Shortcuts
   shortcuts?: ShortcutItem[];
+
+  // Import — when true, renders the Import button leftmost in Row 1 right
+  // cluster. Each board page sets this from session role; the header itself
+  // does not read session. Open/close is managed internally.
+  showImport?: boolean;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -122,11 +129,13 @@ export function UniversalHeader({
   searchValue,
   onSearchChange,
   shortcuts,
+  showImport,
 }: UniversalHeaderProps) {
   const [clock, setClock] = useState("");
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
   const [searchFocused, setSearchFocused] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   const shortcutsRef = useRef<HTMLDivElement>(null);
   const filterRef = useRef<HTMLDivElement>(null);
@@ -283,8 +292,24 @@ export function UniversalHeader({
           )}
         </div>
 
-        {/* Right: clock, shortcuts, download, search */}
+        {/* Right: import, clock, shortcuts, download, search */}
         <div className="flex items-center gap-2">
+          {/* Import — leftmost, only when caller passes showImport=true */}
+          {showImport && (
+            <>
+              <button
+                type="button"
+                title="Import OBDs"
+                onClick={() => setImportOpen(true)}
+                className="bg-gray-50 rounded-[5px] p-[4px_8px] cursor-pointer hover:bg-gray-100 transition-colors flex items-center gap-[4px]"
+              >
+                <Upload size={13} className="text-gray-400" />
+                <span className="text-[10px] text-gray-500 font-medium">Import</span>
+              </button>
+              <div className="w-px h-4 bg-gray-200" />
+            </>
+          )}
+
           {/* Clock */}
           <span
             suppressHydrationWarning
@@ -520,6 +545,13 @@ export function UniversalHeader({
           )}
         </div>
       </div>
+
+      {/* Import modal — single instance, owned by the header. Only rendered
+          when consumer opted in via showImport, to avoid mounting unused
+          state on screens that don't expose the button. */}
+      {showImport && (
+        <ImportModal open={importOpen} onClose={() => setImportOpen(false)} />
+      )}
     </>
   );
 }

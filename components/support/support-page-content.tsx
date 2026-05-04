@@ -9,6 +9,7 @@ import { SupportOrdersTable } from "@/components/support/support-orders-table";
 import { CancelOrderDialog } from "@/components/support/cancel-order-dialog";
 import type { SupportOrder } from "@/components/support/support-orders-table";
 import { UniversalHeader } from "@/components/universal-header";
+import { useSession } from "next-auth/react";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -89,6 +90,10 @@ function pickDefaultSlot(slots: SlotNavItem[], historyView: boolean): SlotNavIte
 // ── Component ────────────────────────────────────────────────────────────────
 
 export function SupportPageContent() {
+  const { data: session } = useSession();
+  const canImportOBDs = ["admin", "dispatcher", "support", "billing_operator", "tint_manager"]
+    .includes(session?.user?.role ?? "");
+
   const [date, setDate] = useState(() => new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }));
   const [slots, setSlots] = useState<SlotNavItem[]>([]);
   const [holdCount, setHoldCount] = useState(0);
@@ -405,6 +410,7 @@ export function SupportPageContent() {
 
       <UniversalHeader
         title="Support Queue"
+        showImport={canImportOBDs}
         stats={[
           { label: "pending", value: headerPending },
           { label: "dispatched", value: headerDispatched },

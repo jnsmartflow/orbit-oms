@@ -80,6 +80,7 @@ interface PickersResponse {
 export function WarehousePage() {
   const { data: session } = useSession();
   const role = session?.user?.role ?? "";
+  const canImportOBDs = ["admin", "dispatcher", "support", "billing_operator", "tint_manager"].includes(role);
   const [date, setDate] = useState(() =>
     new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }),
   );
@@ -354,6 +355,7 @@ export function WarehousePage() {
     <div className="min-h-screen bg-[#f8f9fa] text-[13px] text-gray-600">
       <UniversalHeader
         title="Warehouse"
+        showImport={canImportOBDs}
         stats={[
           { label: "unassigned", value: stats.unassigned },
           { label: "picking", value: stats.picking },

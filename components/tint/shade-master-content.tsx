@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/table";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { UniversalHeader } from "@/components/universal-header";
+import { useSession } from "next-auth/react";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -130,6 +131,10 @@ function IosToggle({
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function ShadeMasterContent() {
+  const { data: session } = useSession();
+  const canImportOBDs = ["admin", "dispatcher", "support", "billing_operator", "tint_manager"]
+    .includes(session?.user?.role ?? "");
+
   const [page,           setPage]           = useState(1);
   const [search,         setSearch]         = useState("");
   const [tinterFilter,   setTinterFilter]   = useState<TinterFilter>("");
@@ -214,6 +219,7 @@ export function ShadeMasterContent() {
 
       <UniversalHeader
         title="Shade Master"
+        showImport={canImportOBDs}
         stats={[
           { label: "shades", value: total },
           { label: "active", value: activeCount },

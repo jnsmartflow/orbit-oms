@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>01 — Universal header with Import button</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  body { font-family: 'Inter', system-ui, sans-serif; background: #f9fafb; color: #111827; }
+  .font-mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+</style>
+</head>
+<body class="m-0">
+
+<!-- Page wrapper: 72px sidebar gutter to mimic role layout -->
+<div style="margin-left: 72px;">
+
+<!-- ── Row 1 (52px) ───────────────────────────────────────────────────── -->
+<div class="h-[52px] min-h-[52px] sticky top-0 z-30 bg-white border-b border-gray-200 flex items-center justify-between px-4">
+
+  <!-- Left: title + stats -->
+  <div class="flex items-center gap-3">
+    <div class="text-[14px] font-semibold text-gray-900">Mail Orders</div>
+    <div class="flex items-center gap-3 text-[11px] text-gray-400">
+      <span>Pending <span class="text-gray-900 font-semibold">23</span></span>
+      <span>Reviewed <span class="text-gray-900 font-semibold">142</span></span>
+      <span>Punched <span class="text-gray-900 font-semibold">98</span></span>
+    </div>
+  </div>
+
+  <!-- Right cluster: [Import] | Clock | ⌨ | (Download) | Search -->
+  <div class="flex items-center gap-2">
+
+    <!-- ╔═══ NEW IMPORT BUTTON ═══╗ -->
+    <button
+      type="button"
+      title="Import OBDs"
+      class="bg-gray-50 rounded-[5px] p-[4px_8px] cursor-pointer hover:bg-gray-100 transition-colors flex items-center gap-[4px]"
+    >
+      <!-- lucide Upload icon, size 13 -->
+      <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-gray-400"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      <span class="text-[10px] text-gray-500 font-medium">Import</span>
+    </button>
+    <!-- ╚═════════════════════════╝ -->
+
+    <div class="w-px h-4 bg-gray-200"></div>
+
+    <!-- Clock -->
+    <span class="text-[11px] font-medium text-gray-400" style="font-variant-numeric: tabular-nums; letter-spacing: 0.5px;">14:32</span>
+
+    <div class="w-px h-4 bg-gray-200"></div>
+
+    <!-- Shortcuts -->
+    <button class="bg-gray-50 rounded-[5px] p-[4px_8px] cursor-pointer hover:bg-gray-100 transition-colors flex items-center gap-[4px]">
+      <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-gray-400"><path d="M2 4h20v16H2z"/><path d="M6 8h.001"/><path d="M10 8h.001"/><path d="M14 8h.001"/><path d="M18 8h.001"/><path d="M8 12h.001"/><path d="M12 12h.001"/><path d="M16 12h.001"/><path d="M7 16h10"/></svg>
+      <span class="text-[10px] text-gray-500 font-medium">⌨</span>
+    </button>
+
+    <div class="w-px h-4 bg-gray-200"></div>
+
+    <!-- Download (existing teal CTA — kept untouched) -->
+    <button class="bg-teal-600 hover:bg-teal-700 text-white text-[10px] font-medium rounded-[5px] px-[10px] py-[4px] flex items-center gap-[4px] cursor-pointer">
+      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      Download
+    </button>
+
+    <div class="w-px h-4 bg-gray-200"></div>
+
+    <!-- Search -->
+    <div class="bg-gray-50 rounded-[6px] px-[10px] py-[4px] flex items-center gap-[6px] w-[180px]">
+      <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-gray-400 flex-shrink-0"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="text" placeholder="Search..." class="bg-transparent border-none outline-none text-[11px] text-gray-900 placeholder:text-gray-400 flex-1 w-full">
+      <span class="text-[9px] text-gray-400 bg-white border border-gray-200 rounded-[3px] px-[4px] py-[1px] flex-shrink-0">/</span>
+    </div>
+  </div>
+</div>
+
+<!-- ── Row 2 (40px) ───────────────────────────────────────────────────── -->
+<div class="h-[40px] min-h-[40px] sticky top-[52px] z-30 bg-white border-b border-gray-200 flex items-center justify-between px-4">
+
+  <!-- Left: segmented control -->
+  <div class="flex items-center gap-2">
+    <div class="inline-flex bg-gray-100 rounded-[7px] p-[3px] gap-[2px]">
+      <button class="px-[11px] py-[4px] text-[11px] rounded-[5px] bg-teal-600 text-white font-medium cursor-pointer">Morning · 8</button>
+      <button class="px-[11px] py-[4px] text-[11px] rounded-[5px] text-gray-500 hover:bg-white/60 cursor-pointer">Afternoon · 12</button>
+      <button class="px-[11px] py-[4px] text-[11px] rounded-[5px] text-gray-500 hover:bg-white/60 cursor-pointer">Evening · 5</button>
+      <button class="px-[11px] py-[4px] text-[11px] rounded-[5px] text-gray-500 hover:bg-white/60 cursor-pointer">Night · 0</button>
+    </div>
+  </div>
+
+  <!-- Right: filter + date -->
+  <div class="flex items-center gap-2">
+    <button class="border border-gray-200 hover:border-gray-300 rounded-[5px] px-[7px] py-[3px] flex items-center gap-[4px] cursor-pointer">
+      <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-gray-500"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+      <span class="text-[10px] text-gray-500">Filter</span>
+    </button>
+
+    <div class="w-px h-4 bg-gray-200"></div>
+
+    <div class="inline-flex items-center gap-0">
+      <button class="px-[6px] py-[3px] text-[10px] text-gray-400 border border-gray-200 rounded-l-[4px] cursor-pointer hover:bg-gray-50">‹</button>
+      <button class="px-[10px] py-[3px] text-[10px] font-medium text-gray-900 border-t border-b border-gray-200 hover:bg-gray-50 cursor-pointer inline-flex items-center gap-[3px]">
+        Today · 04 May
+        <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-gray-400"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      <button class="px-[6px] py-[3px] text-[10px] text-gray-400 border border-gray-200 rounded-r-[4px] opacity-40 cursor-not-allowed">›</button>
+    </div>
+  </div>
+</div>
+
+<!-- Annotation pointing to the new button -->
+<div class="px-4 py-8" style="background: #f9fafb;">
+  <div class="max-w-[600px] mx-auto bg-amber-50 border border-amber-200 rounded-lg p-4">
+    <p class="text-[12px] font-semibold text-amber-900 mb-1">Mockup notes</p>
+    <ul class="text-[11px] text-amber-800 space-y-1 list-disc pl-4">
+      <li>New <b>Import</b> button: leftmost in Row 1 right cluster, before Clock.</li>
+      <li>Style: <code>bg-gray-50</code> neutral utility — matches Shortcuts. Not teal.</li>
+      <li>Visible only when <code>showImport</code> prop is true (set per board page from session role).</li>
+      <li>Allowed roles: admin, dispatcher, support, billing_operator, tint_manager.</li>
+      <li>Click opens the Import modal (mockups 02–05).</li>
+    </ul>
+  </div>
+</div>
+
+</div>
+</body>
+</html>

@@ -115,6 +115,7 @@ export function PlanningPage() {
   const role = session?.user?.role ?? "";
   const canManagePlan = ["dispatcher", "admin"].includes(role);
   const canPick = ["floor_supervisor", "admin"].includes(role);
+  const canImportOBDs = ["admin", "dispatcher", "support", "billing_operator", "tint_manager"].includes(role);
 
   const [date, setDate] = useState(() =>
     new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }),
@@ -529,6 +530,7 @@ export function PlanningPage() {
     <div className="min-h-screen bg-[#f8f9fa] text-[13px] text-gray-600">
       <UniversalHeader
         title="Planning Board"
+        showImport={canImportOBDs}
         stats={[
           { label: "customers", value: stats.customers },
           { label: "OBDs", value: stats.obds },

@@ -8,6 +8,7 @@ import type { MoOrder, MoOrderLine } from "@/lib/mail-orders/types";
 import { MailOrdersTable, ALL_COLUMNS } from "./mail-orders-table";
 import type { ColumnConfig } from "./mail-orders-table";
 import { UniversalHeader } from "@/components/universal-header";
+import { useSession } from "next-auth/react";
 import { SlotCompletionModal } from "./slot-completion-modal";
 import { ReviewView } from "./review-view";
 import { TutorialOverlay } from "./tutorial-overlay";
@@ -118,6 +119,10 @@ function ColumnPicker({
 // ── Main Page ──────────────────────────────────────────────────────────────
 
 export default function MailOrdersPage() {
+  const { data: session } = useSession();
+  const canImportOBDs = ["admin", "dispatcher", "support", "billing_operator", "tint_manager"]
+    .includes(session?.user?.role ?? "");
+
   // ── State ────────────────────────────────────────────────────────────────────
   const [orders, setOrders] = useState<MoOrder[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1047,6 +1052,7 @@ export default function MailOrdersPage() {
         .smart-copy-flash-blue { animation: flash-blue 0.4s ease-out; }
       `}</style>
       <UniversalHeader
+        showImport={canImportOBDs}
         title={
           <div className="flex items-center gap-2.5">
             <span>Mail Orders</span>
