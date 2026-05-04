@@ -5,7 +5,7 @@ import { authConfig } from "./auth.config";
 
 const { auth } = NextAuth(authConfig);
 
-const PUBLIC_PATHS = ["/login", "/unauthorized", "/not-ready", "/api/auth", "/api/health"];
+const PUBLIC_PATHS = ["/login", "/unauthorized", "/not-ready", "/api/auth", "/api/health", "/order"];
 const PHASE1_BLOCKED: string[] = [];
 
 export default auth(function middleware(req) {
