@@ -1,9 +1,14 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
-// Public, unauthenticated endpoint serving customer + SKU data to the
+// Public, unauthenticated endpoint serving customer + product data to the
 // Sales Officer order form at /order. Whitelisted in middleware via the
 // /api/order PUBLIC_PATHS prefix.
+//
+// Products come from mo_order_form_index — the curated catalog with
+// pre-built searchTokens, family grouping, and tinterType classification.
+// Pack sizes are still sourced from mo_sku_lookup, joined by subProduct
+// = product.
 
 export const dynamic = "force-dynamic";
 
@@ -35,17 +40,21 @@ export async function GET(): Promise<NextResponse> {
       orderBy: { customerName: "asc" },
     });
 
+    const indexRows = await prisma.mo_order_form_index.findMany({
+      where:   { isActive: true },
+      select: {
+        family:       true,
+        subProduct:   true,
+        displayName:  true,
+        searchTokens: true,
+        tinterType:   true,
+        sortOrder:    true,
+      },
+      orderBy: [{ family: "asc" }, { sortOrder: "asc" }],
+    });
+
     const skuRows = await prisma.mo_sku_lookup.findMany({
-      select:  { product: true, baseColour: true, packCode: true },
-      orderBy: [{ product: "asc" }, { baseColour: "asc" }],
-    });
-
-    const productKwRows = await prisma.mo_product_keywords.findMany({
-      select: { keyword: true, product: true },
-    });
-
-    const baseKwRows = await prisma.mo_base_keywords.findMany({
-      select: { keyword: true, baseColour: true },
+      select: { product: true, packCode: true },
     });
 
     // ── Customers — dedupe by code (keep first occurrence) ─────────────
@@ -57,70 +66,32 @@ export async function GET(): Promise<NextResponse> {
       customers.push({ name: r.customerName, code: r.customerCode });
     }
 
-    // ── Keyword maps ───────────────────────────────────────────────────
-    const productKwMap = new Map<string, Set<string>>();
-    for (const row of productKwRows) {
-      if (!row.product || !row.keyword) continue;
-      let bucket = productKwMap.get(row.product);
-      if (!bucket) {
-        bucket = new Set();
-        productKwMap.set(row.product, bucket);
-      }
-      bucket.add(row.keyword.toLowerCase());
-    }
-
-    const baseKwMap = new Map<string, Set<string>>();
-    for (const row of baseKwRows) {
-      if (!row.baseColour || !row.keyword) continue;
-      let bucket = baseKwMap.get(row.baseColour);
-      if (!bucket) {
-        bucket = new Set();
-        baseKwMap.set(row.baseColour, bucket);
-      }
-      bucket.add(row.keyword.toLowerCase());
-    }
-
-    // ── Group SKUs by (product, baseColour) ────────────────────────────
-    // packCode in mo_sku_lookup is the unit (e.g. "1", "4", "10") —
-    // grouping by description was wrong because the description string
-    // contains the pack size, splitting one product into many entries.
-    type SkuBucket = { product: string; baseColour: string; packs: Set<string> };
-    const skuMap = new Map<string, SkuBucket>();
-
+    // ── Pack map: subProduct → set of packCodes ────────────────────────
+    // mo_sku_lookup.product matches mo_order_form_index.subProduct.
+    const packMap = new Map<string, Set<string>>();
     for (const r of skuRows) {
-      if (!r.product || !r.baseColour) continue;
-      const key = `${r.product}|||${r.baseColour}`;
-      let bucket = skuMap.get(key);
+      if (!r.product || !r.packCode) continue;
+      let bucket = packMap.get(r.product);
       if (!bucket) {
-        bucket = { product: r.product, baseColour: r.baseColour, packs: new Set() };
-        skuMap.set(key, bucket);
+        bucket = new Set();
+        packMap.set(r.product, bucket);
       }
-      if (r.packCode) bucket.packs.add(r.packCode);
+      bucket.add(String(r.packCode));
     }
 
-    // ── Build output with combined keyword array ───────────────────────
-    const skus = Array.from(skuMap.values()).map(({ product, baseColour, packs }) => {
-      const productKws = Array.from(productKwMap.get(product)    ?? []);
-      const baseKws    = Array.from(baseKwMap.get(baseColour)    ?? []);
-      const keywords   = Array.from(new Set([
-        ...productKws,
-        ...baseKws,
-        product.toLowerCase(),
-        baseColour.toLowerCase(),
-      ]));
+    // ── Products — one row per index entry, packs joined in by subProduct
+    const products = indexRows.map((row) => ({
+      family:       row.family,
+      subProduct:   row.subProduct,
+      displayName:  row.displayName,
+      searchTokens: row.searchTokens,
+      tinterType:   row.tinterType ?? null,
+      packs:        sortPacks(packMap.get(row.subProduct) ?? new Set()),
+    }));
 
-      return {
-        name:       `${product} — ${baseColour}`,
-        product,
-        baseColour,
-        keywords,
-        packs:      sortPacks(packs),
-      };
-    });
-
-    return NextResponse.json({ customers, skus });
+    return NextResponse.json({ customers, products });
   } catch (err) {
     console.error("[/api/order/data] error", err);
-    return NextResponse.json({ customers: [], skus: [] });
+    return NextResponse.json({ customers: [], products: [] });
   }
 }

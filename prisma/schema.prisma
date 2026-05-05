@@ -1179,6 +1179,20 @@ model mo_learned_customers {
   @@unique([normalizedText, customerCode])
 }
 
+model mo_order_form_index {
+  id           Int      @id @default(autoincrement())
+  family       String
+  subProduct   String   @unique
+  displayName  String
+  searchTokens String
+  tinterType   String?
+  sortOrder    Int      @default(0)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  @@map("mo_order_form_index")
+}
+
 model import_shadow_log {
   id            Int      @id @default(autoincrement())
   batchId       Int

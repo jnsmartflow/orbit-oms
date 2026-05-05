@@ -43,26 +43,26 @@ declare global {
 // ── Types ────────────────────────────────────────────────────────────────
 
 type Customer = { name: string; code: string };
-type Sku = {
-  name:       string;   // display name "{product} — {baseColour}"
-  product:    string;
-  baseColour: string;
-  keywords:   string[]; // lowercased, used by per-bill search filter
-  packs:      string[];
+type Product = {
+  family:       string;
+  subProduct:   string;   // unique catalog key; also used as dedup key + email-line text
+  displayName:  string;   // shown in suggestion + active-product UI
+  searchTokens: string;   // pre-built lowercase token blob for filtering
+  tinterType:   string | null;
+  packs:        string[];
 };
 type PackQty  = { pack: string; qty: number };
 type BillLine = {
-  name:       string;   // display key (also dedup key within a bill)
-  product:    string;   // for the SAP-friendly email line format
-  baseColour: string;
-  packs:      PackQty[];
+  displayName: string;    // shown in the added-lines list
+  subProduct:  string;    // dedup key within a bill, and the email-line product text
+  packs:       PackQty[];
 };
 type Bill = {
-  id:           number;
-  searchQuery:  string;
-  lines:        BillLine[];
-  activeSku:    Sku | null;
-  packQtys:     Record<string, number>;
+  id:             number;
+  searchQuery:    string;
+  lines:          BillLine[];
+  activeProduct:  Product | null;
+  packQtys:       Record<string, number>;
 };
 type Dispatch = "Normal" | "Hold" | "Urgent";
 type Marker   = "Truck" | "Cross Delivery" | "DTS" | null;
@@ -72,7 +72,7 @@ type Marker   = "Truck" | "Cross Delivery" | "DTS" | null;
 export default function OrderPage(): React.JSX.Element {
   // Data
   const [customers,    setCustomers]   = useState<Customer[]>([]);
-  const [skus,         setSkus]        = useState<Sku[]>([]);
+  const [products,     setProducts]    = useState<Product[]>([]);
   const [dataLoading,  setDataLoading] = useState(true);
 
   // Customer
@@ -103,9 +103,9 @@ export default function OrderPage(): React.JSX.Element {
   useEffect(() => {
     fetch("/api/order/data")
       .then((r) => r.json())
-      .then((data: { customers?: Customer[]; skus?: Sku[] }) => {
+      .then((data: { customers?: Customer[]; products?: Product[] }) => {
         setCustomers(data.customers ?? []);
-        setSkus(data.skus ?? []);
+        setProducts(data.products ?? []);
       })
       .catch(() => { /* silent — form still usable, just empty pickers */ })
       .finally(() => setDataLoading(false));
@@ -177,7 +177,7 @@ export default function OrderPage(): React.JSX.Element {
     setBillCounter(id);
     setBills((prev) => [
       ...prev,
-      { id, searchQuery: "", lines: [], activeSku: null, packQtys: {} },
+      { id, searchQuery: "", lines: [], activeProduct: null, packQtys: {} },
     ]);
   }
 
@@ -190,12 +190,12 @@ export default function OrderPage(): React.JSX.Element {
     setBills((prev) => prev.map((b) => (b.id === billId ? { ...b, searchQuery: q } : b)));
   }
 
-  function pickSku(billId: number, sku: Sku): void {
+  function pickProduct(billId: number, product: Product): void {
     if (listeningBillId === billId) stopListening();
     const packQtys: Record<string, number> = {};
-    for (const p of sku.packs) packQtys[p] = 0;
+    for (const p of product.packs) packQtys[p] = 0;
     setBills((prev) => prev.map((b) =>
-      b.id === billId ? { ...b, activeSku: sku, packQtys, searchQuery: "" } : b,
+      b.id === billId ? { ...b, activeProduct: product, packQtys, searchQuery: "" } : b,
     ));
   }
 
@@ -255,9 +255,9 @@ export default function OrderPage(): React.JSX.Element {
     else                             startListening(billId);
   }
 
-  function clearActiveSku(billId: number): void {
+  function clearActiveProduct(billId: number): void {
     setBills((prev) => prev.map((b) =>
-      b.id === billId ? { ...b, activeSku: null, packQtys: {} } : b,
+      b.id === billId ? { ...b, activeProduct: null, packQtys: {} } : b,
     ));
   }
 
@@ -281,23 +281,21 @@ export default function OrderPage(): React.JSX.Element {
 
   function addToBill(billId: number): void {
     setBills((prev) => prev.map((b) => {
-      if (b.id !== billId || !b.activeSku) return b;
-      const sku     = b.activeSku;
-      const skuName = sku.name;
-      const packs = sku.packs
+      if (b.id !== billId || !b.activeProduct) return b;
+      const product = b.activeProduct;
+      const packs = product.packs
         .filter((p) => (b.packQtys[p] ?? 0) > 0)
         .map((p) => ({ pack: p, qty: b.packQtys[p] }));
       if (packs.length === 0) return b;
 
-      // Replace any existing line for this SKU within this bill.
-      const filtered = b.lines.filter((l) => l.name !== skuName);
+      // Replace any existing line for this subProduct within this bill.
+      const filtered = b.lines.filter((l) => l.subProduct !== product.subProduct);
       const newLine: BillLine = {
-        name:       skuName,
-        product:    sku.product,
-        baseColour: sku.baseColour,
+        displayName: product.displayName,
+        subProduct:  product.subProduct,
         packs,
       };
-      return { ...b, lines: [...filtered, newLine], activeSku: null, packQtys: {} };
+      return { ...b, lines: [...filtered, newLine], activeProduct: null, packQtys: {} };
     }));
   }
 
@@ -308,18 +306,15 @@ export default function OrderPage(): React.JSX.Element {
     }));
   }
 
-  function getSkuSuggestions(query: string): Sku[] {
-    if (query.length < 2) return [];
-    const words = query.toLowerCase().split(/\s+/).filter(Boolean);
-    return skus
-      .filter((s) => {
-        const nameLower = s.name.toLowerCase();
-        return words.every((w) =>
-          nameLower.includes(w)
-          || s.keywords.some((kw) => kw.includes(w)),
-        );
+  function getProductSuggestions(query: string): Product[] {
+    if (query.trim().length < 2) return [];
+    const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    return products
+      .filter((p) => {
+        const tokens = p.searchTokens.toLowerCase();
+        return words.every((w) => tokens.includes(w));
       })
-      .slice(0, 5);
+      .slice(0, 6);
   }
 
   // ── Email build ───────────────────────────────────────────────────────
@@ -343,9 +338,9 @@ export default function OrderPage(): React.JSX.Element {
       if (activeBills.length > 1) lines.push("Bill " + b.id);
       b.lines.forEach((l) => {
         const packStr = l.packs.map((p) => `${p.pack}*${p.qty}`).join(", ");
-        // Email format: "{product} {baseColour} {packs}" — SAP-friendly,
-        // no em-dash. Display in the UI still uses l.name with the dash.
-        lines.push(`${l.product} ${l.baseColour} ${packStr}`);
+        // Email format: "{subProduct} {packs}" — SAP-friendly, matches the
+        // shape the parser already handles. Display in the UI uses l.displayName.
+        lines.push(`${l.subProduct} ${packStr}`);
       });
     });
 
@@ -472,11 +467,11 @@ export default function OrderPage(): React.JSX.Element {
                 key={b.id}
                 bill={b}
                 dataLoading={dataLoading}
-                getSkuSuggestions={getSkuSuggestions}
+                getProductSuggestions={getProductSuggestions}
                 onRemove={() => removeBill(b.id)}
                 onSetQuery={(q) => setBillQuery(b.id, q)}
-                onPickSku={(sku) => pickSku(b.id, sku)}
-                onClearActiveSku={() => clearActiveSku(b.id)}
+                onPickProduct={(product) => pickProduct(b.id, product)}
+                onClearActiveProduct={() => clearActiveProduct(b.id)}
                 onStepPack={(pack, delta) => stepPack(b.id, pack, delta)}
                 onSetPack={(pack, raw) => setPack(b.id, pack, raw)}
                 onAddToBill={() => addToBill(b.id)}
@@ -736,26 +731,26 @@ function PreviewRow({
 interface BillCardProps {
   bill:              Bill;
   dataLoading:       boolean;
-  getSkuSuggestions: (query: string) => Sku[];
-  onRemove:          () => void;
-  onSetQuery:        (q: string) => void;
-  onPickSku:         (sku: Sku) => void;
-  onClearActiveSku:  () => void;
-  onStepPack:        (pack: string, delta: number) => void;
-  onSetPack:         (pack: string, raw: string) => void;
-  onAddToBill:       () => void;
-  onDeleteLine:      (idx: number) => void;
-  speechSupported:   boolean;
-  isListening:       boolean;
-  onMicToggle:       () => void;
+  getProductSuggestions: (query: string) => Product[];
+  onRemove:              () => void;
+  onSetQuery:            (q: string) => void;
+  onPickProduct:         (product: Product) => void;
+  onClearActiveProduct:  () => void;
+  onStepPack:            (pack: string, delta: number) => void;
+  onSetPack:             (pack: string, raw: string) => void;
+  onAddToBill:           () => void;
+  onDeleteLine:          (idx: number) => void;
+  speechSupported:       boolean;
+  isListening:           boolean;
+  onMicToggle:           () => void;
 }
 
 function BillCard({
-  bill, dataLoading, getSkuSuggestions, onRemove, onSetQuery,
-  onPickSku, onClearActiveSku, onStepPack, onSetPack, onAddToBill, onDeleteLine,
+  bill, dataLoading, getProductSuggestions, onRemove, onSetQuery,
+  onPickProduct, onClearActiveProduct, onStepPack, onSetPack, onAddToBill, onDeleteLine,
   speechSupported, isListening, onMicToggle,
 }: BillCardProps): React.JSX.Element {
-  const suggestions = getSkuSuggestions(bill.searchQuery);
+  const suggestions = getProductSuggestions(bill.searchQuery);
   const hasAnyQty   = Object.values(bill.packQtys).some((q) => q > 0);
 
   return (
@@ -776,16 +771,22 @@ function BillCard({
         </button>
       </div>
 
-      {/* Active SKU area */}
-      {bill.activeSku ? (
+      {/* Active product area */}
+      {bill.activeProduct ? (
         <>
-          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-            <p className="text-[15px] font-semibold text-gray-900 truncate pr-3">
-              {bill.activeSku.name}
-            </p>
+          <div className="flex items-start justify-between px-4 py-3 border-b border-gray-100 gap-3">
+            <div className="min-w-0 flex-1">
+              <p className="text-[15px] font-semibold text-gray-900 truncate">
+                {bill.activeProduct.displayName}
+              </p>
+              <p className="text-[11px] text-gray-400 mt-0.5">
+                {bill.activeProduct.family}
+                {bill.activeProduct.tinterType ? ` · ${bill.activeProduct.tinterType}` : ""}
+              </p>
+            </div>
             <button
               type="button"
-              onClick={onClearActiveSku}
+              onClick={onClearActiveProduct}
               className="text-[13px] text-teal-600 font-medium shrink-0"
             >
               Change
@@ -793,7 +794,7 @@ function BillCard({
           </div>
 
           {/* Pack counters */}
-          {bill.activeSku.packs.map((pack) => (
+          {bill.activeProduct.packs.map((pack) => (
             <div key={pack} className="flex items-center px-4 py-2.5 border-b border-gray-50">
               <div className="flex-1">
                 <p className="text-[16px] font-medium text-gray-900">{pack}</p>
@@ -892,18 +893,22 @@ function BillCard({
             )}
           </div>
 
-          {/* SKU suggestions */}
+          {/* Product suggestions */}
           {suggestions.length > 0 && (
             <div>
-              {suggestions.map((s) => (
+              {suggestions.map((p) => (
                 <button
-                  key={s.name}
+                  key={p.subProduct}
                   type="button"
-                  onClick={() => onPickSku(s)}
+                  onClick={() => onPickProduct(p)}
                   className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left border-b border-gray-50 last:border-b-0 active:bg-gray-50"
                 >
                   <div className="w-1.5 h-1.5 rounded-full bg-teal-600 shrink-0" />
-                  <p className="text-[14px] text-gray-900 truncate flex-1">{s.name}</p>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[14px] font-medium text-gray-900 truncate">{p.displayName}</p>
+                    <p className="text-[11px] text-gray-400 mt-0.5">{p.family}</p>
+                  </div>
+                  <span className="text-gray-300 text-lg shrink-0 leading-none">›</span>
                 </button>
               ))}
             </div>
@@ -920,12 +925,12 @@ function BillCard({
         ) : (
           bill.lines.map((line, idx) => (
             <div
-              key={`${line.name}-${idx}`}
+              key={`${line.subProduct}-${idx}`}
               className="flex items-center px-4 py-2.5 border-b border-gray-50 last:border-b-0"
             >
               <div className="w-1.5 h-1.5 rounded-full bg-teal-600 shrink-0 mr-3" />
               <div className="flex-1 min-w-0">
-                <p className="text-[14px] font-medium text-gray-900 truncate">{line.name}</p>
+                <p className="text-[14px] font-medium text-gray-900 truncate">{line.displayName}</p>
                 <p className="text-[13px] text-teal-600 font-mono mt-0.5">
                   {line.packs.map((p) => `${p.pack}*${p.qty}`).join(", ")}
                 </p>
