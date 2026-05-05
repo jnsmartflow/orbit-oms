@@ -236,23 +236,24 @@ export default function OrderPage(): React.JSX.Element {
 
   // Update the search query AND derive the bill's mode based on the new
   // result count. Locked while the bill is in 'picking' mode (search input
-  // is greyed out). Resets selectedProducts on every query change so users
-  // always see a fresh selection state for the new result list.
+  // is greyed out). selectedProducts deliberately PERSIST across query
+  // changes — refining or clearing the search must not wipe the basket.
+  // The basket is cleared only by startPicking, nextProduct's finishing
+  // branch, or removeBill.
   function setBillQuery(billId: number, q: string): void {
     setBills((prev) => prev.map((b) => {
       if (b.id !== billId) return b;
       if (b.mode === "picking") return b; // search is locked while picking
       const trimmed = q.trim();
       if (trimmed.length < 2) {
-        return { ...b, searchQuery: q, mode: "search", selectedProducts: [], suggestionPage: 0 };
+        return { ...b, searchQuery: q, mode: "search", suggestionPage: 0 };
       }
       const matched = getProductSuggestions(q);
       return {
         ...b,
-        searchQuery:      q,
-        mode:             matched.length >= 1 ? "multi-select" : "search",
-        selectedProducts: [],
-        suggestionPage:   0,
+        searchQuery:    q,
+        mode:           matched.length >= 1 ? "multi-select" : "search",
+        suggestionPage: 0,
       };
     }));
   }
@@ -1141,45 +1142,61 @@ function BillCard({
                   </>
                 )}
 
-                {/* Results — paginated, checkbox each row */}
-                {pageItems.map((p) => (
-                  <div
-                    key={`res-${p.subProduct}|||${p.baseColour ?? ""}`}
-                    onClick={() => onToggleProduct(p)}
-                    className="flex items-center gap-[10px] px-[13px] py-[11px] border-b border-[#f0f0f0] cursor-pointer active:bg-teal-50"
-                  >
-                    <div className="w-5 h-5 rounded-[6px] border-2 bg-white border-gray-300 flex items-center justify-center shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[14px] font-medium text-gray-900 truncate">{p.displayName}</p>
-                      <p className="text-[11px] text-gray-400 mt-0.5">{p.family}</p>
+                {/* Results — paginated, checkbox each row, swipe to navigate.
+                    touchStart writes the start clientX onto the container's
+                    DOM dataset; touchEnd reads it and decides next/prev.
+                    The 40px threshold lets ordinary taps (toggle row) pass
+                    through without registering as a swipe. */}
+                <div
+                  onTouchStart={(e) => {
+                    const t = e.touches[0];
+                    e.currentTarget.dataset.touchStartX = String(t.clientX);
+                  }}
+                  onTouchEnd={(e) => {
+                    const startStr = e.currentTarget.dataset.touchStartX ?? "0";
+                    const startX   = parseFloat(startStr);
+                    const endX     = e.changedTouches[0].clientX;
+                    const diff     = startX - endX;
+                    if (Math.abs(diff) < 40) return;
+                    if (diff > 0 && currentPage < totalPages - 1) {
+                      onGoToPage(currentPage + 1);     // swipe left → next
+                    } else if (diff < 0 && currentPage > 0) {
+                      onGoToPage(currentPage - 1);     // swipe right → prev
+                    }
+                  }}
+                  className="select-none"
+                >
+                  {pageItems.map((p) => (
+                    <div
+                      key={`res-${p.subProduct}|||${p.baseColour ?? ""}`}
+                      onClick={() => onToggleProduct(p)}
+                      className="flex items-center gap-[10px] px-[13px] py-[11px] border-b border-[#f0f0f0] cursor-pointer active:bg-teal-50"
+                    >
+                      <div className="w-5 h-5 rounded-[6px] border-2 bg-white border-gray-300 flex items-center justify-center shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[14px] font-medium text-gray-900 truncate">{p.displayName}</p>
+                        <p className="text-[11px] text-gray-400 mt-0.5">{p.family}</p>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
 
-                {/* Pagination bar — only when more than one page of unselected results */}
+                {/* Page dot indicators — active = wide teal pill, others = small gray circles */}
                 {totalPages > 1 && (
-                  <div className="flex items-center justify-between px-[13px] py-[8px] border-b border-[#f0f0f0]">
-                    <button
-                      type="button"
-                      onClick={() => onGoToPage(currentPage - 1)}
-                      disabled={currentPage === 0}
-                      className="w-8 h-8 flex items-center justify-center rounded-[7px] bg-gray-100 text-gray-500 disabled:opacity-30 text-[16px]"
-                      aria-label="Previous page"
-                    >
-                      ‹
-                    </button>
-                    <span className="text-[12px] text-gray-400 font-medium">
-                      {currentPage + 1} of {totalPages}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => onGoToPage(currentPage + 1)}
-                      disabled={currentPage >= totalPages - 1}
-                      className="w-8 h-8 flex items-center justify-center rounded-[7px] bg-gray-100 text-gray-500 disabled:opacity-30 text-[16px]"
-                      aria-label="Next page"
-                    >
-                      ›
-                    </button>
+                  <div className="flex items-center justify-center gap-[6px] py-[8px] border-b border-[#f0f0f0]">
+                    {Array.from({ length: totalPages }).map((_, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => onGoToPage(i)}
+                        aria-label={`Page ${i + 1}`}
+                        className={`rounded-full transition-all cursor-pointer ${
+                          i === currentPage
+                            ? "w-[18px] h-[6px] bg-teal-600"
+                            : "w-[6px] h-[6px] bg-gray-200"
+                        }`}
+                      />
+                    ))}
                   </div>
                 )}
 
