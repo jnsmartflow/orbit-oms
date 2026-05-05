@@ -7,8 +7,11 @@ import { prisma } from "@/lib/prisma";
 //
 // Products come from mo_order_form_index — the curated catalog with
 // pre-built searchTokens, family grouping, and tinterType classification.
-// Pack sizes are still sourced from mo_sku_lookup, joined by subProduct
-// = product.
+// Pack sizes are still sourced from mo_sku_lookup. Index rows can be
+// either base products (baseColour = null) or colour variants
+// (baseColour set, e.g. "GOLDEN BROWN") — pack lookup uses a composite
+// (product, baseColour) key for variants and a product-only key for the
+// base rows.
 
 export const dynamic = "force-dynamic";
 
@@ -45,16 +48,18 @@ export async function GET(): Promise<NextResponse> {
       select: {
         family:       true,
         subProduct:   true,
+        baseColour:   true,
         displayName:  true,
         searchTokens: true,
         tinterType:   true,
+        productType:  true,
         sortOrder:    true,
       },
       orderBy: [{ family: "asc" }, { sortOrder: "asc" }],
     });
 
     const skuRows = await prisma.mo_sku_lookup.findMany({
-      select: { product: true, packCode: true },
+      select: { product: true, baseColour: true, packCode: true },
     });
 
     // ── Customers — dedupe by code (keep first occurrence) ─────────────
@@ -66,28 +71,83 @@ export async function GET(): Promise<NextResponse> {
       customers.push({ name: r.customerName, code: r.customerCode });
     }
 
-    // ── Pack map: subProduct → set of packCodes ────────────────────────
-    // mo_sku_lookup.product matches mo_order_form_index.subProduct.
+    // ── Pack map: dual-keyed for base products + colour variants ──────
+    // - Key A = product           — used by index rows with baseColour=null
+    //                               (collects every pack across all colours)
+    // - Key B = product|||colour  — used by index rows with a baseColour
+    //                               (specific packs for that colour variant)
     const packMap = new Map<string, Set<string>>();
-    for (const r of skuRows) {
-      if (!r.product || !r.packCode) continue;
-      let bucket = packMap.get(r.product);
+    const addToPackMap = (key: string, pack: string): void => {
+      let bucket = packMap.get(key);
       if (!bucket) {
         bucket = new Set();
-        packMap.set(r.product, bucket);
+        packMap.set(key, bucket);
+      }
+      bucket.add(pack);
+    };
+    for (const r of skuRows) {
+      if (!r.product || !r.packCode) continue;
+      const pack = String(r.packCode);
+      addToPackMap(r.product, pack);
+      if (r.baseColour) {
+        addToPackMap(`${r.product}|||${r.baseColour}`, pack);
+      }
+    }
+
+    // ── basePacks map: subProduct → { baseColour: sortedPacks[] } ──────
+    // Powers the BASE chip flow on the form: when a BASE product is
+    // picked, the UI shows a chip per base; tapping a chip reveals only
+    // the packs available for that base. Built from mo_sku_lookup rows
+    // with a non-null baseColour.
+    const basePacksMap = new Map<string, Map<string, Set<string>>>();
+    for (const r of skuRows) {
+      if (!r.product || !r.packCode || !r.baseColour) continue;
+      let inner = basePacksMap.get(r.product);
+      if (!inner) {
+        inner = new Map();
+        basePacksMap.set(r.product, inner);
+      }
+      let bucket = inner.get(r.baseColour);
+      if (!bucket) {
+        bucket = new Set();
+        inner.set(r.baseColour, bucket);
       }
       bucket.add(String(r.packCode));
     }
 
-    // ── Products — one row per index entry, packs joined in by subProduct
-    const products = indexRows.map((row) => ({
-      family:       row.family,
-      subProduct:   row.subProduct,
-      displayName:  row.displayName,
-      searchTokens: row.searchTokens,
-      tinterType:   row.tinterType ?? null,
-      packs:        sortPacks(packMap.get(row.subProduct) ?? new Set()),
-    }));
+    const basePacksFor = (subProduct: string): Record<string, string[]> | null => {
+      const inner = basePacksMap.get(subProduct);
+      if (!inner) return null;
+      const out: Record<string, string[]> = {};
+      for (const [base, packs] of Array.from(inner.entries())) {
+        out[base] = sortPacks(packs);
+      }
+      return out;
+    };
+
+    // ── Products — one row per index entry. Pack key depends on whether
+    //    the row is a base product or a colour variant. BASE rows
+    //    (productType='BASE', baseColour=null) also carry a basePacks map.
+    const products = indexRows.map((row) => {
+      const packKey = row.baseColour
+        ? `${row.subProduct}|||${row.baseColour}`
+        : row.subProduct;
+      const productType = (row.productType ?? "PLAIN") as "BASE" | "COLOUR" | "PLAIN";
+      const basePacks   = (productType === "BASE" && !row.baseColour)
+        ? basePacksFor(row.subProduct)
+        : null;
+      return {
+        family:       row.family,
+        subProduct:   row.subProduct,
+        baseColour:   row.baseColour ?? null,
+        displayName:  row.displayName,
+        searchTokens: row.searchTokens,
+        tinterType:   row.tinterType ?? null,
+        productType,
+        packs:        sortPacks(packMap.get(packKey) ?? new Set()),
+        basePacks,
+      };
+    });
 
     return NextResponse.json({ customers, products });
   } catch (err) {

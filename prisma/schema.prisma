@@ -1182,14 +1182,17 @@ model mo_learned_customers {
 model mo_order_form_index {
   id           Int      @id @default(autoincrement())
   family       String
-  subProduct   String   @unique
+  subProduct   String
+  baseColour   String?
   displayName  String
   searchTokens String
   tinterType   String?
+  productType  String?  @default("PLAIN")
   sortOrder    Int      @default(0)
   isActive     Boolean  @default(true)
   createdAt    DateTime @default(now())
 
+  @@unique([subProduct, baseColour])
   @@map("mo_order_form_index")
 }
 
