@@ -795,24 +795,31 @@ function BillCard({
   const suggestions = getProductSuggestions(bill.searchQuery);
   const hasAnyQty   = Object.values(bill.packQtys).some((q) => q > 0);
 
-  // Layout flow (top → bottom):
-  //   Bill header
-  //   Added lines list (or "No products added" empty state)
-  //   IF activeProduct: product header → pack counters → sticky Add button
-  //   ELSE:             search row at the bottom, suggestions float above
+  // v8 layout (top → bottom):
+  //   Bill header (with line-count badge)
+  //   Cart lines (full height, no internal scroll) OR empty state
+  //   Search row (always visible — even when activeProduct is set)
+  //   Suggestions inline below search (only when !activeProduct && query≥2)
+  //   Pack picker (only when activeProduct — replaces suggestions)
+  //   Sticky Add button (only when activeProduct && hasAnyQty)
   //
-  // overflow-hidden is intentionally absent on the outer card so that
-  //   1) the sticky Add button can pin to the visual viewport bottom
-  //      when the mobile keyboard is open
-  //   2) the suggestion overlay can render outside the card's top edge
+  // overflow-hidden is intentionally absent so the sticky Add button
+  // can pin to the visual viewport bottom when the mobile keyboard is up.
   return (
-    <div className="bg-white rounded-[14px] shadow-sm border border-gray-100">
+    <div id={`bill-${bill.id}`} className="bg-white rounded-[14px] shadow-sm">
 
       {/* Bill header */}
-      <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100 bg-gray-50/40 rounded-t-[14px]">
-        <span className="text-[13px] font-semibold uppercase tracking-wide text-teal-600">
-          Bill {bill.id}
-        </span>
+      <div className="flex items-center justify-between px-[14px] py-[10px] bg-[#fafafa] border-b border-[#f0f0f0] rounded-t-[14px]">
+        <div className="flex items-center gap-1.5">
+          <span className="text-[12px] font-semibold uppercase tracking-[0.07em] text-teal-600">
+            Bill {bill.id}
+          </span>
+          {bill.lines.length > 0 && (
+            <span className="inline-flex items-center justify-center w-[17px] h-[17px] rounded-full bg-teal-600 text-white text-[10px] font-bold">
+              {bill.lines.length}
+            </span>
+          )}
+        </div>
         <button
           type="button"
           onClick={onRemove}
@@ -823,47 +830,119 @@ function BillCard({
         </button>
       </div>
 
-      {/* Added lines list — always at top now */}
-      <div>
-        {bill.lines.length === 0 ? (
-          <p className="px-4 py-4 text-[13px] text-gray-300 italic text-center">
-            No products added
-          </p>
-        ) : (
-          bill.lines.map((line, idx) => (
+      {/* Cart lines OR empty state — full height, no internal scroll */}
+      {bill.lines.length > 0 ? (
+        <div className="border-b border-[#f0f0f0]">
+          {bill.lines.map((line, idx) => (
             <div
               key={`${line.subProduct}|||${line.baseColour ?? ""}-${idx}`}
-              className="flex items-center px-4 py-2.5 border-b border-gray-50 last:border-b-0"
+              className="flex items-center gap-2.5 px-[14px] py-[9px] border-b border-[#f0f0f0] last:border-b-0"
             >
-              <div className="w-1.5 h-1.5 rounded-full bg-teal-600 shrink-0 mr-3" />
+              <div className="w-[6px] h-[6px] rounded-full bg-teal-600 shrink-0" />
               <div className="flex-1 min-w-0">
-                <p className="text-[14px] font-medium text-gray-900 truncate">{line.displayName}</p>
-                <p className="text-[13px] text-teal-600 font-mono mt-0.5">
+                <p className="text-[13px] font-medium text-gray-900 truncate">{line.displayName}</p>
+                <p className="text-[11px] text-teal-600 font-mono mt-0.5">
                   {line.packs.map((p) => `${formatPack(p.pack)}*${p.qty}`).join(", ")}
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => onDeleteLine(idx)}
-                className="text-gray-300 text-xl ml-2 leading-none px-1"
+                className="text-gray-300 text-[17px] leading-none shrink-0"
                 aria-label="Delete line"
               >
                 ×
               </button>
             </div>
-          ))
+          ))}
+        </div>
+      ) : (
+        <div className="px-[14px] py-3 text-[13px] text-gray-300 italic border-b border-[#f0f0f0]">
+          No products added
+        </div>
+      )}
+
+      {/* Search row — ALWAYS visible (even when activeProduct is set) */}
+      <div className="flex items-center gap-2 px-[14px] py-[10px] border-b border-[#f0f0f0]">
+        <Search className="w-4 h-4 text-gray-300 shrink-0" />
+        <input
+          type="text"
+          disabled={dataLoading}
+          value={bill.searchQuery}
+          onChange={(e) => onSetQuery(e.target.value)}
+          placeholder={dataLoading ? "Loading products…" : "Search next product…"}
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="none"
+          spellCheck={false}
+          className="flex-1 text-[16px] text-gray-900 bg-transparent border-none outline-none placeholder:text-gray-300 placeholder:text-[14px] disabled:opacity-60"
+        />
+        {speechSupported && (
+          isListening ? (
+            <button
+              type="button"
+              onClick={onMicToggle}
+              title="Tap to stop"
+              aria-label="Stop voice input"
+              className="shrink-0 w-7 h-7 flex items-center justify-center rounded-full bg-red-500 text-white animate-pulse"
+            >
+              <MicSvg />
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={onMicToggle}
+              disabled={dataLoading}
+              title="Tap to speak"
+              aria-label="Start voice input"
+              className="shrink-0 w-7 h-7 flex items-center justify-center text-gray-300 hover:text-teal-600 disabled:opacity-50"
+            >
+              <MicSvg />
+            </button>
+          )
+        )}
+        {bill.searchQuery && (
+          <button
+            type="button"
+            onClick={() => onSetQuery("")}
+            className="bg-[#e5e5ea] rounded-full w-[17px] h-[17px] flex items-center justify-center text-[11px] text-gray-500 shrink-0 leading-none"
+            aria-label="Clear"
+          >
+            ×
+          </button>
         )}
       </div>
 
-      {/* Active product UI (when picked) — pack counters + sticky Add */}
+      {/* Suggestions — inline below search, only when !activeProduct and query≥2 */}
+      {!bill.activeProduct && suggestions.length > 0 && (
+        <div className="border-b border-[#f0f0f0]">
+          {suggestions.map((p) => (
+            <button
+              key={`${p.subProduct}|||${p.baseColour ?? ""}`}
+              type="button"
+              onClick={() => onPickProduct(p)}
+              className="w-full flex items-center gap-2.5 px-[14px] py-[11px] text-left border-b border-[#f0f0f0] last:border-b-0 active:bg-teal-50"
+            >
+              <div className="w-[7px] h-[7px] rounded-full bg-teal-100 border-2 border-teal-600 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-[14px] font-medium text-gray-900 truncate">{p.displayName}</p>
+                <p className="text-[11px] text-gray-400 mt-0.5">{p.family}</p>
+              </div>
+              <span className="text-gray-300 text-[17px] shrink-0 leading-none">›</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Pack picker — replaces the suggestion area when a product is active */}
       {bill.activeProduct && (
-        <>
-          <div className="flex items-start justify-between px-4 py-3 border-t border-b border-gray-100 gap-3">
-            <div className="min-w-0 flex-1">
-              <p className="text-[15px] font-semibold text-gray-900 truncate">
+        <div>
+          <div className="flex items-center justify-between px-[14px] py-[9px] bg-teal-50 border-b border-teal-200">
+            <div className="min-w-0 pr-3">
+              <p className="text-[13px] font-semibold text-teal-700 truncate">
                 {bill.activeProduct.displayName}
               </p>
-              <p className="text-[11px] text-gray-400 mt-0.5">
+              <p className="text-[11px] text-teal-400 mt-0.5">
                 {bill.activeProduct.family}
                 {bill.activeProduct.tinterType ? ` · ${bill.activeProduct.tinterType}` : ""}
               </p>
@@ -871,138 +950,85 @@ function BillCard({
             <button
               type="button"
               onClick={onClearActiveProduct}
-              className="text-[13px] text-teal-600 font-medium shrink-0"
+              className="text-[12px] font-medium text-teal-600 shrink-0"
             >
               Change
             </button>
           </div>
 
-          {/* Pack counters — sorted by ML-equivalent volume */}
-          {sortPacksForDisplay(bill.activeProduct.packs).map((pack) => (
-            <div key={pack} className="flex items-center px-4 py-2.5 border-b border-gray-50">
-              <div className="flex-1">
-                <p className="text-[16px] font-medium text-gray-900">{formatPack(pack)}</p>
-              </div>
-              <div className="flex items-center bg-gray-100 rounded-[10px] overflow-hidden">
-                <button
-                  type="button"
-                  onClick={() => onStepPack(pack, -1)}
-                  className="w-10 h-10 flex items-center justify-center text-[22px] font-light text-teal-600 active:bg-gray-200"
-                  aria-label={`Decrease ${formatPack(pack)}`}
-                >
-                  −
-                </button>
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  value={bill.packQtys[pack] ?? 0}
-                  onChange={(e) => onSetPack(pack, e.target.value)}
-                  onFocus={(e) => e.target.select()}
-                  className="w-12 text-center text-[16px] font-semibold text-gray-900 bg-transparent border-none outline-none"
-                />
-                <button
-                  type="button"
-                  onClick={() => onStepPack(pack, 1)}
-                  className="w-10 h-10 flex items-center justify-center text-[22px] font-light text-teal-600 active:bg-gray-200"
-                  aria-label={`Increase ${formatPack(pack)}`}
-                >
-                  +
-                </button>
-              </div>
-            </div>
-          ))}
-
-          {/* Sticky Add button — pins to visual viewport bottom while in view */}
-          {hasAnyQty && (
-            <div className="sticky bottom-0 bg-white border-t border-gray-100 px-4 py-3 z-10 rounded-b-[14px]">
-              <button
-                type="button"
-                onClick={onAddToBill}
-                className="w-full h-11 bg-teal-600 hover:bg-teal-700 text-white rounded-[10px] text-[15px] font-semibold"
+          {sortPacksForDisplay(bill.activeProduct.packs).map((pack) => {
+            const qty = bill.packQtys[pack] ?? 0;
+            return (
+              <div
+                key={pack}
+                className="flex items-center gap-3 px-[14px] py-[10px] border-b border-[#f0f0f0]"
               >
-                + Add to Bill {bill.id}
-              </button>
-            </div>
-          )}
-        </>
+                <p className="text-[15px] font-medium flex-1">{formatPack(pack)}</p>
+                <div className="flex items-center bg-gray-100 rounded-[10px] overflow-hidden shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => onStepPack(pack, -1)}
+                    className={`w-[38px] h-[38px] flex items-center justify-center text-[21px] font-light bg-transparent border-none ${
+                      qty === 0 ? "text-gray-300" : "text-teal-600"
+                    }`}
+                    aria-label={`Decrease ${formatPack(pack)}`}
+                  >
+                    −
+                  </button>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    min={0}
+                    value={qty}
+                    onChange={(e) => onSetPack(pack, e.target.value)}
+                    onFocus={(e) => e.target.select()}
+                    className="w-[40px] text-center text-[15px] font-semibold bg-transparent border-none outline-none"
+                    style={{ color: qty > 0 ? "#0d9488" : "#111827" }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => onStepPack(pack, 1)}
+                    className="w-[38px] h-[38px] flex items-center justify-center text-[21px] font-light text-teal-600 bg-transparent border-none"
+                    aria-label={`Increase ${formatPack(pack)}`}
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       )}
 
-      {/* Search row at the BOTTOM (only when no active product) */}
-      {!bill.activeProduct && (
-        <div className="relative">
-          {/* Suggestions float ABOVE the search input */}
-          {suggestions.length > 0 && (
-            <div className="absolute bottom-full left-0 right-0 bg-white border border-gray-200 rounded-t-[10px] shadow-lg max-h-48 overflow-y-auto z-20">
-              {suggestions.map((p) => (
-                <button
-                  key={`${p.subProduct}|||${p.baseColour ?? ""}`}
-                  type="button"
-                  onClick={() => onPickProduct(p)}
-                  className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left border-b border-gray-50 last:border-b-0 active:bg-gray-50"
-                >
-                  <div className="w-1.5 h-1.5 rounded-full bg-teal-600 shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[14px] font-medium text-gray-900 truncate">{p.displayName}</p>
-                    <p className="text-[11px] text-gray-400 mt-0.5">{p.family}</p>
-                  </div>
-                  <span className="text-gray-300 text-lg shrink-0 leading-none">›</span>
-                </button>
-              ))}
-            </div>
-          )}
-
-          <div className="flex items-center gap-2.5 px-4 py-3 border-t border-gray-100 rounded-b-[14px]">
-            <Search className="w-4 h-4 text-gray-300 shrink-0" />
-            <input
-              type="text"
-              disabled={dataLoading}
-              value={bill.searchQuery}
-              onChange={(e) => onSetQuery(e.target.value)}
-              placeholder={dataLoading ? "Loading products…" : "Search product…"}
-              autoComplete="off"
-              autoCorrect="off"
-              spellCheck={false}
-              className="flex-1 text-[16px] text-gray-900 bg-transparent border-none outline-none placeholder:text-gray-300 disabled:opacity-60"
-            />
-            {speechSupported && (
-              <button
-                type="button"
-                onClick={onMicToggle}
-                disabled={dataLoading}
-                title={isListening ? "Tap to stop" : "Tap to speak"}
-                aria-label={isListening ? "Stop voice input" : "Start voice input"}
-                className={`shrink-0 w-8 h-8 flex items-center justify-center rounded-full transition-colors disabled:opacity-50 ${
-                  isListening
-                    ? "bg-red-500 text-white animate-pulse"
-                    : "text-gray-300 hover:text-teal-600"
-                }`}
-              >
-                <svg
-                  width="15" height="15" viewBox="0 0 24 24" fill="none"
-                  stroke="currentColor" strokeWidth="2"
-                  strokeLinecap="round" strokeLinejoin="round"
-                >
-                  <path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z" />
-                  <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                  <line x1="12" y1="19" x2="12" y2="22" />
-                </svg>
-              </button>
-            )}
-            {bill.searchQuery && (
-              <button
-                type="button"
-                onClick={() => onSetQuery("")}
-                className="text-gray-300 text-lg leading-none px-1"
-                aria-label="Clear"
-              >
-                ×
-              </button>
-            )}
-          </div>
+      {/* Sticky Add button — pins to visual viewport bottom while in view */}
+      {bill.activeProduct && hasAnyQty && (
+        <div className="sticky bottom-0 bg-white border-t border-[#f0f0f0] px-[14px] py-[10px] rounded-b-[14px] z-10">
+          <button
+            type="button"
+            onClick={onAddToBill}
+            className="w-full h-[42px] bg-teal-600 hover:bg-teal-700 text-white rounded-[10px] text-[14px] font-semibold"
+          >
+            + Add to Bill {bill.id}
+          </button>
         </div>
       )}
 
     </div>
+  );
+}
+
+// Inline mic-icon SVG used by the search row in BillCard.
+function MicSvg(): React.JSX.Element {
+  return (
+    <svg
+      width="15" height="15" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" strokeWidth="2"
+      strokeLinecap="round" strokeLinejoin="round"
+    >
+      <path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z" />
+      <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+      <line x1="12" y1="19" x2="12" y2="22" />
+    </svg>
   );
 }
