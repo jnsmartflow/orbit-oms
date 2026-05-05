@@ -7,11 +7,11 @@ import { prisma } from "@/lib/prisma";
 //
 // Products come from mo_order_form_index — the curated catalog with
 // pre-built searchTokens, family grouping, and tinterType classification.
-// Pack sizes are still sourced from mo_sku_lookup. Index rows can be
-// either base products (baseColour = null) or colour variants
-// (baseColour set, e.g. "GOLDEN BROWN") — pack lookup uses a composite
-// (product, baseColour) key for variants and a product-only key for the
-// base rows.
+// Each index row is one searchable entry; numbered-base variants (e.g.
+// "WS Max — 92") and colour variants (e.g. "Gloss — Golden Brown") are
+// flat rows with their own baseColour and searchTokens. Pack sizes
+// joined in from mo_sku_lookup via a (product, baseColour) composite
+// key (or product-only when the row's baseColour is null).
 
 export const dynamic = "force-dynamic";
 
@@ -94,48 +94,12 @@ export async function GET(): Promise<NextResponse> {
       }
     }
 
-    // ── basePacks map: subProduct → { baseColour: sortedPacks[] } ──────
-    // Powers the BASE chip flow on the form: when a BASE product is
-    // picked, the UI shows a chip per base; tapping a chip reveals only
-    // the packs available for that base. Built from mo_sku_lookup rows
-    // with a non-null baseColour.
-    const basePacksMap = new Map<string, Map<string, Set<string>>>();
-    for (const r of skuRows) {
-      if (!r.product || !r.packCode || !r.baseColour) continue;
-      let inner = basePacksMap.get(r.product);
-      if (!inner) {
-        inner = new Map();
-        basePacksMap.set(r.product, inner);
-      }
-      let bucket = inner.get(r.baseColour);
-      if (!bucket) {
-        bucket = new Set();
-        inner.set(r.baseColour, bucket);
-      }
-      bucket.add(String(r.packCode));
-    }
-
-    const basePacksFor = (subProduct: string): Record<string, string[]> | null => {
-      const inner = basePacksMap.get(subProduct);
-      if (!inner) return null;
-      const out: Record<string, string[]> = {};
-      for (const [base, packs] of Array.from(inner.entries())) {
-        out[base] = sortPacks(packs);
-      }
-      return out;
-    };
-
-    // ── Products — one row per index entry. Pack key depends on whether
-    //    the row is a base product or a colour variant. BASE rows
-    //    (productType='BASE', baseColour=null) also carry a basePacks map.
+    // ── Products — one row per index entry. Pack key uses the composite
+    //    (product, baseColour) when baseColour is set, else product alone.
     const products = indexRows.map((row) => {
       const packKey = row.baseColour
         ? `${row.subProduct}|||${row.baseColour}`
         : row.subProduct;
-      const productType = (row.productType ?? "PLAIN") as "BASE" | "COLOUR" | "PLAIN";
-      const basePacks   = (productType === "BASE" && !row.baseColour)
-        ? basePacksFor(row.subProduct)
-        : null;
       return {
         family:       row.family,
         subProduct:   row.subProduct,
@@ -143,9 +107,8 @@ export async function GET(): Promise<NextResponse> {
         displayName:  row.displayName,
         searchTokens: row.searchTokens,
         tinterType:   row.tinterType ?? null,
-        productType,
+        productType:  row.productType ?? "PLAIN",
         packs:        sortPacks(packMap.get(packKey) ?? new Set()),
-        basePacks,
       };
     });
 

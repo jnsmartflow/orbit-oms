@@ -43,17 +43,15 @@ declare global {
 // ── Types ────────────────────────────────────────────────────────────────
 
 type Customer = { name: string; code: string };
-type ProductType = "BASE" | "COLOUR" | "PLAIN";
 type Product = {
   family:       string;
   subProduct:   string;          // catalog key
-  baseColour:   string | null;   // null for BASE/PLAIN rows; named colour for COLOUR variants
+  baseColour:   string | null;   // null for PLAIN rows; named base/colour for variants
   displayName:  string;          // shown in suggestion + active-product UI
   searchTokens: string;          // pre-built lowercase token blob for filtering
   tinterType:   string | null;
-  productType:  ProductType;
-  packs:        string[];        // merged packs (used by COLOUR/PLAIN; informational for BASE)
-  basePacks:    Record<string, string[]> | null;  // BASE only: per-base pack list
+  productType:  string;          // BASE_VARIANT | COLOUR | PLAIN; informational only
+  packs:        string[];
 };
 type PackQty  = { pack: string; qty: number };
 type BillLine = {
@@ -67,7 +65,6 @@ type Bill = {
   searchQuery:    string;
   lines:          BillLine[];
   activeProduct:  Product | null;
-  selectedBase:   string | null;   // BASE flow: which base chip is active
   packQtys:       Record<string, number>;
 };
 type Dispatch = "Normal" | "Hold" | "Urgent";
@@ -183,7 +180,7 @@ export default function OrderPage(): React.JSX.Element {
     setBillCounter(id);
     setBills((prev) => [
       ...prev,
-      { id, searchQuery: "", lines: [], activeProduct: null, selectedBase: null, packQtys: {} },
+      { id, searchQuery: "", lines: [], activeProduct: null, packQtys: {} },
     ]);
   }
 
@@ -200,24 +197,9 @@ export default function OrderPage(): React.JSX.Element {
     if (listeningBillId === billId) stopListening();
     setBills((prev) => prev.map((b) =>
       b.id === billId
-        ? {
-            ...b,
-            activeProduct: product,
-            selectedBase:  null,   // reset on new product pick
-            packQtys:      {},     // BASE: filled per base; COLOUR/PLAIN: filled by step buttons
-            searchQuery:   "",
-          }
+        ? { ...b, activeProduct: product, packQtys: {}, searchQuery: "" }
         : b,
     ));
-  }
-
-  function selectBase(billId: number, base: string): void {
-    setBills((prev) => prev.map((b) => {
-      if (b.id !== billId) return b;
-      // Toggle: tapping the active chip deselects.
-      const next = b.selectedBase === base ? null : base;
-      return { ...b, selectedBase: next, packQtys: {} };
-    }));
   }
 
   // ── Voice input handlers ──────────────────────────────────────────────
@@ -278,7 +260,7 @@ export default function OrderPage(): React.JSX.Element {
 
   function clearActiveProduct(billId: number): void {
     setBills((prev) => prev.map((b) =>
-      b.id === billId ? { ...b, activeProduct: null, selectedBase: null, packQtys: {} } : b,
+      b.id === billId ? { ...b, activeProduct: null, packQtys: {} } : b,
     ));
   }
 
@@ -305,54 +287,23 @@ export default function OrderPage(): React.JSX.Element {
       if (b.id !== billId || !b.activeProduct) return b;
       const product = b.activeProduct;
 
-      // BASE products require a selected base before they can be added.
-      if (product.productType === "BASE" && !b.selectedBase) return b;
-
-      // Pick the right pack pool: BASE+selectedBase → basePacks[selectedBase];
-      // COLOUR/PLAIN → product.packs.
-      const packPool = product.productType === "BASE" && b.selectedBase
-        ? (product.basePacks?.[b.selectedBase] ?? [])
-        : product.packs;
-
-      const packs = packPool
+      const packs = product.packs
         .filter((p) => (b.packQtys[p] ?? 0) > 0)
         .map((p) => ({ pack: p, qty: b.packQtys[p] }));
       if (packs.length === 0) return b;
 
-      // The line's effective baseColour: for BASE products, the chip
-      // selection becomes the line's baseColour. For COLOUR, the row's
-      // baseColour. For PLAIN, null.
-      const lineBaseColour = product.productType === "BASE"
-        ? (b.selectedBase ?? null)
-        : (product.baseColour ?? null);
-
-      // Display name in the added-lines list. BASE selections append a
-      // formatted base label so the operator sees "WS Max — 92" not just
-      // "WS Max".
-      const lineDisplayName = product.productType === "BASE" && b.selectedBase
-        ? `${product.displayName} — ${formatBase(b.selectedBase)}`
-        : product.displayName;
-
-      // Dedup composite key: (subProduct, baseColour). For BASE,
-      // baseColour is the selectedBase; different base chips coexist
-      // as separate lines.
+      // Dedup composite key: (subProduct, baseColour).
       const filtered = b.lines.filter(
-        (l) => !(l.subProduct === product.subProduct && l.baseColour === lineBaseColour),
+        (l) => !(l.subProduct === product.subProduct && l.baseColour === (product.baseColour ?? null)),
       );
 
       const newLine: BillLine = {
-        displayName: lineDisplayName,
+        displayName: product.displayName,
         subProduct:  product.subProduct,
-        baseColour:  lineBaseColour,
+        baseColour:  product.baseColour ?? null,
         packs,
       };
-      return {
-        ...b,
-        lines:         [...filtered, newLine],
-        activeProduct: null,
-        selectedBase:  null,
-        packQtys:      {},
-      };
+      return { ...b, lines: [...filtered, newLine], activeProduct: null, packQtys: {} };
     }));
   }
 
@@ -534,7 +485,6 @@ export default function OrderPage(): React.JSX.Element {
                 onSetQuery={(q) => setBillQuery(b.id, q)}
                 onPickProduct={(product) => pickProduct(b.id, product)}
                 onClearActiveProduct={() => clearActiveProduct(b.id)}
-                onSelectBase={(base) => selectBase(b.id, base)}
                 onStepPack={(pack, delta) => stepPack(b.id, pack, delta)}
                 onSetPack={(pack, raw) => setPack(b.id, pack, raw)}
                 onAddToBill={() => addToBill(b.id)}
@@ -696,40 +646,6 @@ export default function OrderPage(): React.JSX.Element {
   );
 }
 
-// ── BASE chip helpers ────────────────────────────────────────────────────
-
-// Canonical base ordering for the chip strip. Anything outside this list
-// sorts to the end alphabetically. Mirrors the ordering convention used
-// in the dispatch SAP file so chip layout matches what operators see in
-// other contexts.
-const BASE_ORDER: ReadonlyArray<string> = [
-  "BRILLIANT WHITE", "90 BASE", "91 BASE", "92 BASE", "93 BASE", "94 BASE",
-  "95 BASE",         "96 BASE", "97 BASE", "98 BASE",
-  "GREEN BASE",      "PASTEL BASE", "PRO BASE", "YELLOW BASE",
-  "RED OXIDE",       "ROX",     "YOX",     "YELLOW OXIDE",
-  "METAL BASE",      "BASECOAT",
-];
-
-function sortBases(bases: string[]): string[] {
-  return [...bases].sort((a, b) => {
-    const ai = BASE_ORDER.indexOf(a);
-    const bi = BASE_ORDER.indexOf(b);
-    if (ai === -1 && bi === -1) return a.localeCompare(b);
-    if (ai === -1) return 1;
-    if (bi === -1) return -1;
-    return ai - bi;
-  });
-}
-
-// Compact chip label. "92 BASE" → "92". "BRILLIANT WHITE" → "BW".
-// "BASECOAT" → "Basecoat". Anything else falls through unchanged.
-function formatBase(base: string): string {
-  if (base === "BRILLIANT WHITE") return "BW";
-  if (base === "BASECOAT")        return "Basecoat";
-  if (base.endsWith(" BASE"))     return base.replace(" BASE", "");
-  return base;
-}
-
 // ── Sub-components ───────────────────────────────────────────────────────
 
 function Section({
@@ -833,7 +749,6 @@ interface BillCardProps {
   onSetQuery:            (q: string) => void;
   onPickProduct:         (product: Product) => void;
   onClearActiveProduct:  () => void;
-  onSelectBase:          (base: string) => void;
   onStepPack:            (pack: string, delta: number) => void;
   onSetPack:             (pack: string, raw: string) => void;
   onAddToBill:           () => void;
@@ -845,28 +760,12 @@ interface BillCardProps {
 
 function BillCard({
   bill, dataLoading, getProductSuggestions, onRemove, onSetQuery,
-  onPickProduct, onClearActiveProduct, onSelectBase,
+  onPickProduct, onClearActiveProduct,
   onStepPack, onSetPack, onAddToBill, onDeleteLine,
   speechSupported, isListening, onMicToggle,
 }: BillCardProps): React.JSX.Element {
   const suggestions = getProductSuggestions(bill.searchQuery);
   const hasAnyQty   = Object.values(bill.packQtys).some((q) => q > 0);
-
-  // BASE products: pack counters render only when a base chip is active.
-  // For BASE+selectedBase, show the packs registered against that base.
-  // For COLOUR/PLAIN, show the row's merged packs.
-  const isBase           = bill.activeProduct?.productType === "BASE";
-  const baseChips        = isBase && bill.activeProduct?.basePacks
-    ? sortBases(Object.keys(bill.activeProduct.basePacks))
-    : [];
-  const packsToShow: string[] = !bill.activeProduct
-    ? []
-    : isBase
-      ? (bill.selectedBase
-          ? (bill.activeProduct.basePacks?.[bill.selectedBase] ?? [])
-          : [])
-      : bill.activeProduct.packs;
-  const showAddButton = hasAnyQty && (!isBase || bill.selectedBase !== null);
 
   return (
     <div className="bg-white rounded-[14px] overflow-hidden shadow-sm border border-gray-100">
@@ -908,33 +807,8 @@ function BillCard({
             </button>
           </div>
 
-          {/* Base chip strip — BASE products only */}
-          {isBase && baseChips.length > 0 && (
-            <div className="px-4 py-3 border-b border-gray-100">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-2">
-                Select Base
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {baseChips.map((base) => (
-                  <button
-                    key={base}
-                    type="button"
-                    onClick={() => onSelectBase(base)}
-                    className={`h-9 px-3 rounded-[8px] border text-[13px] transition-colors ${
-                      bill.selectedBase === base
-                        ? "border-teal-500 bg-teal-50 text-teal-700 font-semibold"
-                        : "border-gray-200 bg-white text-gray-500 font-medium"
-                    }`}
-                  >
-                    {formatBase(base)}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Pack counters — gated on base selection for BASE products */}
-          {packsToShow.map((pack) => (
+          {/* Pack counters */}
+          {bill.activeProduct.packs.map((pack) => (
             <div key={pack} className="flex items-center px-4 py-2.5 border-b border-gray-50">
               <div className="flex-1">
                 <p className="text-[16px] font-medium text-gray-900">{pack}</p>
@@ -969,7 +843,7 @@ function BillCard({
           ))}
 
           {/* Add to bill button — only when at least one pack has qty > 0 */}
-          {showAddButton && (
+          {hasAnyQty && (
             <div className="px-4 py-3 border-t border-gray-100">
               <button
                 type="button"
