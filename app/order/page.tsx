@@ -89,11 +89,16 @@ function sortPacksForDisplay(packs: string[]): string[] {
   return [...packs].sort((a, b) => packToMl(a) - packToMl(b));
 }
 type Bill = {
-  id:             number;
-  searchQuery:    string;
-  lines:          BillLine[];
-  activeProduct:  Product | null;
-  packQtys:       Record<string, number>;
+  id:                number;
+  searchQuery:       string;
+  lines:             BillLine[];
+  activeProduct:     Product | null;       // current product in pack picker (= selectedProducts[pickerIndex] during picking)
+  packQtys:          Record<string, number>;
+  // Multi-SKU select-then-pack state:
+  mode:              "search" | "multi-select" | "picking";
+  selectedProducts:  Product[];            // basket order = selection order
+  pickerIndex:       number;                // which selectedProducts item we're on (0-based)
+  recentlyAddedKeys: string[];              // composite keys highlighted in cart during/after a picking journey
 };
 type Dispatch = "Normal" | "Hold" | "Urgent";
 type Marker   = "Truck" | "Cross Delivery" | "DTS" | null;
@@ -208,7 +213,17 @@ export default function OrderPage(): React.JSX.Element {
     setBillCounter(id);
     setBills((prev) => [
       ...prev,
-      { id, searchQuery: "", lines: [], activeProduct: null, packQtys: {} },
+      {
+        id,
+        searchQuery:       "",
+        lines:             [],
+        activeProduct:     null,
+        packQtys:          {},
+        mode:              "search",
+        selectedProducts:  [],
+        pickerIndex:       0,
+        recentlyAddedKeys: [],
+      },
     ]);
   }
 
@@ -217,17 +232,139 @@ export default function OrderPage(): React.JSX.Element {
     setBills((prev) => prev.filter((b) => b.id !== billId));
   }
 
+  // Update the search query AND derive the bill's mode based on the new
+  // result count. Locked while the bill is in 'picking' mode (search input
+  // is greyed out). Resets selectedProducts on every query change so users
+  // always see a fresh selection state for the new result list.
   function setBillQuery(billId: number, q: string): void {
-    setBills((prev) => prev.map((b) => (b.id === billId ? { ...b, searchQuery: q } : b)));
+    setBills((prev) => prev.map((b) => {
+      if (b.id !== billId) return b;
+      if (b.mode === "picking") return b; // search is locked while picking
+      const trimmed = q.trim();
+      if (trimmed.length < 2) {
+        return { ...b, searchQuery: q, mode: "search", selectedProducts: [] };
+      }
+      const matched = getProductSuggestions(q);
+      return {
+        ...b,
+        searchQuery:      q,
+        mode:             matched.length >= 1 ? "multi-select" : "search",
+        selectedProducts: [],
+      };
+    }));
   }
 
+  // Single-result auto-pick path. Reads the latest searchQuery from the
+  // updater's `prev` state (avoids the stale-closure bug where `bills.find`
+  // outside the updater captured an outdated value).
   function pickProduct(billId: number, product: Product): void {
     if (listeningBillId === billId) stopListening();
-    setBills((prev) => prev.map((b) =>
-      b.id === billId
-        ? { ...b, activeProduct: product, packQtys: {}, searchQuery: "" }
-        : b,
-    ));
+    setBills((prev) => prev.map((b) => {
+      if (b.id !== billId) return b;
+      return {
+        ...b,
+        selectedProducts:  [product],
+        pickerIndex:       0,
+        activeProduct:     product,
+        packQtys:          {},
+        mode:              "picking",
+        recentlyAddedKeys: [],
+      };
+    }));
+  }
+
+  // Toggle a product in the multi-select basket. Add if absent, remove if
+  // present. Keyed by (subProduct, baseColour) since same subProduct can
+  // appear with different baseColour as separate index rows.
+  function toggleProductSelection(billId: number, product: Product): void {
+    setBills((prev) => prev.map((b) => {
+      if (b.id !== billId || b.mode !== "multi-select") return b;
+      const exists = b.selectedProducts.some(
+        (p) => p.subProduct === product.subProduct && p.baseColour === product.baseColour,
+      );
+      const nextSelected = exists
+        ? b.selectedProducts.filter(
+            (p) => !(p.subProduct === product.subProduct && p.baseColour === product.baseColour),
+          )
+        : [...b.selectedProducts, product];
+      return { ...b, selectedProducts: nextSelected };
+    }));
+  }
+
+  // Begin the multi-step pack-picker journey. mode → 'picking', activeProduct
+  // becomes the first selected product, packQtys reset.
+  function startPicking(billId: number): void {
+    setBills((prev) => prev.map((b) => {
+      if (b.id !== billId || b.selectedProducts.length === 0) return b;
+      return {
+        ...b,
+        mode:              "picking",
+        pickerIndex:       0,
+        activeProduct:     b.selectedProducts[0],
+        packQtys:          {},
+        recentlyAddedKeys: [],
+      };
+    }));
+  }
+
+  // Advance the picker. `skip=false` (Next): commit current product's qty
+  // as a new line if any pack has qty > 0, then move on. `skip=true`
+  // (Skip): don't commit the line, just move on. When pickerIndex reaches
+  // the end of selectedProducts, return to 'search' mode and clear
+  // searchQuery so the bill is ready for the next product hunt.
+  function nextProduct(billId: number, skip: boolean): void {
+    setBills((prev) => prev.map((b) => {
+      if (b.id !== billId || b.mode !== "picking" || !b.activeProduct) return b;
+
+      let lines  = b.lines;
+      let recent = b.recentlyAddedKeys;
+
+      if (!skip) {
+        const current = b.activeProduct;
+        const packs = current.packs
+          .filter((p) => (b.packQtys[p] ?? 0) > 0)
+          .map((p) => ({ pack: p, qty: b.packQtys[p] }));
+        if (packs.length > 0) {
+          // Dedup composite key: (subProduct, baseColour).
+          const filtered = lines.filter(
+            (l) => !(l.subProduct === current.subProduct && l.baseColour === (current.baseColour ?? null)),
+          );
+          const newLine: BillLine = {
+            displayName: current.displayName,
+            subProduct:  current.subProduct,
+            baseColour:  current.baseColour ?? null,
+            packs,
+          };
+          lines  = [...filtered, newLine];
+          recent = [...recent, `${newLine.subProduct}|||${newLine.baseColour ?? ""}`];
+        }
+      }
+
+      const nextIndex = b.pickerIndex + 1;
+      if (nextIndex >= b.selectedProducts.length) {
+        // Done — return to plain search mode, ready for next product.
+        return {
+          ...b,
+          lines,
+          recentlyAddedKeys: recent,
+          selectedProducts:  [],
+          pickerIndex:       0,
+          activeProduct:     null,
+          packQtys:          {},
+          mode:              "search",
+          searchQuery:       "",
+        };
+      }
+
+      return {
+        ...b,
+        lines,
+        recentlyAddedKeys: recent,
+        pickerIndex:       nextIndex,
+        activeProduct:     b.selectedProducts[nextIndex],
+        packQtys:          {},
+      };
+    }));
   }
 
   // ── Voice input handlers ──────────────────────────────────────────────
@@ -286,12 +423,6 @@ export default function OrderPage(): React.JSX.Element {
     else                             startListening(billId);
   }
 
-  function clearActiveProduct(billId: number): void {
-    setBills((prev) => prev.map((b) =>
-      b.id === billId ? { ...b, activeProduct: null, packQtys: {} } : b,
-    ));
-  }
-
   function stepPack(billId: number, pack: string, delta: number): void {
     setBills((prev) => prev.map((b) => {
       if (b.id !== billId) return b;
@@ -307,31 +438,6 @@ export default function OrderPage(): React.JSX.Element {
     setBills((prev) => prev.map((b) => {
       if (b.id !== billId) return b;
       return { ...b, packQtys: { ...b.packQtys, [pack]: qty } };
-    }));
-  }
-
-  function addToBill(billId: number): void {
-    setBills((prev) => prev.map((b) => {
-      if (b.id !== billId || !b.activeProduct) return b;
-      const product = b.activeProduct;
-
-      const packs = product.packs
-        .filter((p) => (b.packQtys[p] ?? 0) > 0)
-        .map((p) => ({ pack: p, qty: b.packQtys[p] }));
-      if (packs.length === 0) return b;
-
-      // Dedup composite key: (subProduct, baseColour).
-      const filtered = b.lines.filter(
-        (l) => !(l.subProduct === product.subProduct && l.baseColour === (product.baseColour ?? null)),
-      );
-
-      const newLine: BillLine = {
-        displayName: product.displayName,
-        subProduct:  product.subProduct,
-        baseColour:  product.baseColour ?? null,
-        packs,
-      };
-      return { ...b, lines: [...filtered, newLine], activeProduct: null, packQtys: {} };
     }));
   }
 
@@ -512,10 +618,11 @@ export default function OrderPage(): React.JSX.Element {
                 onRemove={() => removeBill(b.id)}
                 onSetQuery={(q) => setBillQuery(b.id, q)}
                 onPickProduct={(product) => pickProduct(b.id, product)}
-                onClearActiveProduct={() => clearActiveProduct(b.id)}
+                onToggleProduct={(product) => toggleProductSelection(b.id, product)}
+                onStartPicking={() => startPicking(b.id)}
+                onNextProduct={(skip) => nextProduct(b.id, skip)}
                 onStepPack={(pack, delta) => stepPack(b.id, pack, delta)}
                 onSetPack={(pack, raw) => setPack(b.id, pack, raw)}
-                onAddToBill={() => addToBill(b.id)}
                 onDeleteLine={(idx) => deleteLineFromBill(b.id, idx)}
                 speechSupported={speechSupported}
                 isListening={listeningBillId === b.id}
@@ -770,16 +877,17 @@ function PreviewRow({
 // ── Bill card ────────────────────────────────────────────────────────────
 
 interface BillCardProps {
-  bill:              Bill;
-  dataLoading:       boolean;
+  bill:                  Bill;
+  dataLoading:           boolean;
   getProductSuggestions: (query: string) => Product[];
   onRemove:              () => void;
   onSetQuery:            (q: string) => void;
   onPickProduct:         (product: Product) => void;
-  onClearActiveProduct:  () => void;
+  onToggleProduct:       (product: Product) => void;
+  onStartPicking:        () => void;
+  onNextProduct:         (skip: boolean) => void;
   onStepPack:            (pack: string, delta: number) => void;
   onSetPack:             (pack: string, raw: string) => void;
-  onAddToBill:           () => void;
   onDeleteLine:          (idx: number) => void;
   speechSupported:       boolean;
   isListening:           boolean;
@@ -788,23 +896,35 @@ interface BillCardProps {
 
 function BillCard({
   bill, dataLoading, getProductSuggestions, onRemove, onSetQuery,
-  onPickProduct, onClearActiveProduct,
-  onStepPack, onSetPack, onAddToBill, onDeleteLine,
+  onPickProduct, onToggleProduct, onStartPicking, onNextProduct,
+  onStepPack, onSetPack, onDeleteLine,
   speechSupported, isListening, onMicToggle,
 }: BillCardProps): React.JSX.Element {
-  const suggestions = getProductSuggestions(bill.searchQuery);
-  const hasAnyQty   = Object.values(bill.packQtys).some((q) => q > 0);
+  const suggestions  = getProductSuggestions(bill.searchQuery);
+  const hasAnyQty    = Object.values(bill.packQtys).some((q) => q > 0);
+  const inPicking    = bill.mode === "picking";
+  const inMultiSel   = bill.mode === "multi-select";
 
-  // v8 layout (top → bottom):
-  //   Bill header (with line-count badge)
-  //   Cart lines (full height, no internal scroll) OR empty state
-  //   Search row (always visible — even when activeProduct is set)
-  //   Suggestions inline below search (only when !activeProduct && query≥2)
-  //   Pack picker (only when activeProduct — replaces suggestions)
-  //   Sticky Add button (only when activeProduct && hasAnyQty)
+  // Multi-SKU select-then-pack flow (top → bottom):
+  //   Bill header (line-count badge)
+  //   Cart lines (full height, recently-added rows highlighted teal during/after a picking journey)
+  //   Search row (greyed out in picking mode; otherwise editable, with mic + clear)
+  //   IF mode === 'multi-select':
+  //      - 1 result  → render plain row, tap = pickProduct (single-result fast path)
+  //      - 2+ result → render checkbox rows, tap = toggleProductSelection
+  //                    Set Quantities bar when ≥1 selected (only on 2+ result path)
+  //   IF mode === 'picking':
+  //      - Progress dots + "n of N"
+  //      - Product header (teal, no Change button — exit via Skip-through-end)
+  //      - Pack counters
+  //      - Sticky Skip + Next/Add-All bar
   //
-  // overflow-hidden is intentionally absent so the sticky Add button
-  // can pin to the visual viewport bottom when the mobile keyboard is up.
+  // overflow-hidden is intentionally absent so the sticky bottom bar can
+  // pin to the visual viewport bottom when the mobile keyboard is up.
+  const nextProductInQueue = inPicking && bill.pickerIndex < bill.selectedProducts.length - 1
+    ? bill.selectedProducts[bill.pickerIndex + 1]
+    : null;
+
   return (
     <div id={`bill-${bill.id}`} className="bg-white rounded-[14px] shadow-sm">
 
@@ -830,31 +950,37 @@ function BillCard({
         </button>
       </div>
 
-      {/* Cart lines OR empty state — full height, no internal scroll */}
+      {/* Cart lines OR empty state — recently-added rows highlighted */}
       {bill.lines.length > 0 ? (
         <div className="border-b border-[#f0f0f0]">
-          {bill.lines.map((line, idx) => (
-            <div
-              key={`${line.subProduct}|||${line.baseColour ?? ""}-${idx}`}
-              className="flex items-center gap-2.5 px-[14px] py-[9px] border-b border-[#f0f0f0] last:border-b-0"
-            >
-              <div className="w-[6px] h-[6px] rounded-full bg-teal-600 shrink-0" />
-              <div className="flex-1 min-w-0">
-                <p className="text-[13px] font-medium text-gray-900 truncate">{line.displayName}</p>
-                <p className="text-[11px] text-teal-600 font-mono mt-0.5">
-                  {line.packs.map((p) => `${formatPack(p.pack)}*${p.qty}`).join(", ")}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => onDeleteLine(idx)}
-                className="text-gray-300 text-[17px] leading-none shrink-0"
-                aria-label="Delete line"
+          {bill.lines.map((line, idx) => {
+            const lineKey  = `${line.subProduct}|||${line.baseColour ?? ""}`;
+            const isRecent = bill.recentlyAddedKeys.includes(lineKey);
+            return (
+              <div
+                key={`${lineKey}-${idx}`}
+                className={`flex items-center gap-2.5 px-[14px] py-[9px] border-b border-[#f0f0f0] last:border-b-0 transition-colors ${
+                  isRecent ? "bg-teal-50/50" : ""
+                }`}
               >
-                ×
-              </button>
-            </div>
-          ))}
+                <div className="w-[6px] h-[6px] rounded-full bg-teal-600 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-[13px] font-medium text-gray-900 truncate">{line.displayName}</p>
+                  <p className="text-[11px] text-teal-600 font-mono mt-0.5">
+                    {line.packs.map((p) => `${formatPack(p.pack)}*${p.qty}`).join(", ")}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onDeleteLine(idx)}
+                  className="text-gray-300 text-[17px] leading-none shrink-0"
+                  aria-label="Delete line"
+                >
+                  ×
+                </button>
+              </div>
+            );
+          })}
         </div>
       ) : (
         <div className="px-[14px] py-3 text-[13px] text-gray-300 italic border-b border-[#f0f0f0]">
@@ -862,12 +988,16 @@ function BillCard({
         </div>
       )}
 
-      {/* Search row — ALWAYS visible (even when activeProduct is set) */}
-      <div className="flex items-center gap-2 px-[14px] py-[10px] border-b border-[#f0f0f0]">
+      {/* Search row — greyed out in picking mode (input disabled, mic & clear hidden) */}
+      <div
+        className={`flex items-center gap-2 px-[14px] py-[10px] border-b border-[#f0f0f0] transition-opacity ${
+          inPicking ? "opacity-50" : ""
+        }`}
+      >
         <Search className="w-4 h-4 text-gray-300 shrink-0" />
         <input
           type="text"
-          disabled={dataLoading}
+          disabled={dataLoading || inPicking}
           value={bill.searchQuery}
           onChange={(e) => onSetQuery(e.target.value)}
           placeholder={dataLoading ? "Loading products…" : "Search next product…"}
@@ -875,9 +1005,9 @@ function BillCard({
           autoCorrect="off"
           autoCapitalize="none"
           spellCheck={false}
-          className="flex-1 text-[16px] text-gray-900 bg-transparent border-none outline-none placeholder:text-gray-300 placeholder:text-[14px] disabled:opacity-60"
+          className="flex-1 text-[16px] text-gray-900 bg-transparent border-none outline-none placeholder:text-gray-300 placeholder:text-[14px] disabled:opacity-60 disabled:cursor-not-allowed"
         />
-        {speechSupported && (
+        {speechSupported && !inPicking && (
           isListening ? (
             <button
               type="button"
@@ -901,7 +1031,7 @@ function BillCard({
             </button>
           )
         )}
-        {bill.searchQuery && (
+        {bill.searchQuery && !inPicking && (
           <button
             type="button"
             onClick={() => onSetQuery("")}
@@ -913,49 +1043,112 @@ function BillCard({
         )}
       </div>
 
-      {/* Suggestions — inline below search, only when !activeProduct and query≥2 */}
-      {!bill.activeProduct && suggestions.length > 0 && (
+      {/* Multi-select suggestions */}
+      {inMultiSel && suggestions.length > 0 && (
         <div className="border-b border-[#f0f0f0]">
-          {suggestions.map((p) => (
-            <button
-              key={`${p.subProduct}|||${p.baseColour ?? ""}`}
-              type="button"
-              onClick={() => onPickProduct(p)}
-              className="w-full flex items-center gap-2.5 px-[14px] py-[11px] text-left border-b border-[#f0f0f0] last:border-b-0 active:bg-teal-50"
-            >
-              <div className="w-[7px] h-[7px] rounded-full bg-teal-100 border-2 border-teal-600 shrink-0" />
-              <div className="flex-1 min-w-0">
-                <p className="text-[14px] font-medium text-gray-900 truncate">{p.displayName}</p>
-                <p className="text-[11px] text-gray-400 mt-0.5">{p.family}</p>
-              </div>
-              <span className="text-gray-300 text-[17px] shrink-0 leading-none">›</span>
-            </button>
-          ))}
+          {suggestions.length === 1 ? (
+            // Single result fast path — no checkbox, tap = pick straight to picker.
+            (() => {
+              const p = suggestions[0];
+              return (
+                <button
+                  type="button"
+                  onClick={() => onPickProduct(p)}
+                  className="w-full flex items-center gap-2.5 px-[14px] py-[11px] text-left active:bg-teal-50"
+                >
+                  <div className="w-[7px] h-[7px] rounded-full bg-teal-100 border-2 border-teal-600 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[14px] font-medium text-gray-900 truncate">{p.displayName}</p>
+                    <p className="text-[11px] text-gray-400 mt-0.5">{p.family}</p>
+                  </div>
+                  <span className="text-gray-300 text-[17px] shrink-0 leading-none">›</span>
+                </button>
+              );
+            })()
+          ) : (
+            // Multi-result path — checkboxes, tap = toggle selection.
+            suggestions.map((p) => {
+              const isSelected = bill.selectedProducts.some(
+                (sp) => sp.subProduct === p.subProduct && sp.baseColour === p.baseColour,
+              );
+              return (
+                <div
+                  key={`${p.subProduct}|||${p.baseColour ?? ""}`}
+                  onClick={() => onToggleProduct(p)}
+                  className="flex items-center gap-[10px] px-[13px] py-[11px] border-b border-[#f0f0f0] last:border-b-0 cursor-pointer active:bg-teal-50"
+                >
+                  <div
+                    className={`w-5 h-5 rounded-[6px] border-2 flex items-center justify-center shrink-0 transition-all ${
+                      isSelected ? "bg-teal-600 border-teal-600" : "bg-white border-gray-300"
+                    }`}
+                  >
+                    {isSelected && (
+                      <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
+                        <path d="M2 6l3 3 5-5" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[14px] font-medium text-gray-900 truncate">{p.displayName}</p>
+                    <p className="text-[11px] text-gray-400 mt-0.5">{p.family}</p>
+                  </div>
+                </div>
+              );
+            })
+          )}
+
+          {/* Set Quantities bar — only when 2+ results AND ≥1 selected */}
+          {suggestions.length >= 2 && bill.selectedProducts.length > 0 && (
+            <div className="flex items-center justify-between px-[13px] py-[10px] bg-teal-50 border-t border-teal-200">
+              <span className="text-[13px] font-semibold text-teal-700">
+                {bill.selectedProducts.length} product{bill.selectedProducts.length > 1 ? "s" : ""} selected
+              </span>
+              <button
+                type="button"
+                onClick={onStartPicking}
+                className="bg-teal-600 hover:bg-teal-700 text-white text-[13px] font-semibold px-4 py-2 rounded-[8px]"
+              >
+                Set Quantities →
+              </button>
+            </div>
+          )}
         </div>
       )}
 
-      {/* Pack picker — replaces the suggestion area when a product is active */}
-      {bill.activeProduct && (
-        <div>
-          <div className="flex items-center justify-between px-[14px] py-[9px] bg-teal-50 border-b border-teal-200">
-            <div className="min-w-0 pr-3">
-              <p className="text-[13px] font-semibold text-teal-700 truncate">
-                {bill.activeProduct.displayName}
-              </p>
-              <p className="text-[11px] text-teal-400 mt-0.5">
-                {bill.activeProduct.family}
-                {bill.activeProduct.tinterType ? ` · ${bill.activeProduct.tinterType}` : ""}
-              </p>
+      {/* Picker — progress + product header + pack counters + Skip/Next bar */}
+      {inPicking && bill.activeProduct && (
+        <>
+          {/* Progress dots + count */}
+          <div className="flex items-center gap-2 px-[14px] py-[8px] bg-[#fafafa] border-b border-[#f0f0f0]">
+            <div className="flex gap-[5px]">
+              {bill.selectedProducts.map((_, i) => (
+                <div
+                  key={i}
+                  className={`w-2 h-2 rounded-full ${
+                    i < bill.pickerIndex
+                      ? "bg-teal-600"
+                      : i === bill.pickerIndex
+                        ? "bg-teal-600 ring-2 ring-teal-100"
+                        : "bg-gray-200"
+                  }`}
+                />
+              ))}
             </div>
-            <button
-              type="button"
-              onClick={onClearActiveProduct}
-              className="text-[12px] font-medium text-teal-600 shrink-0"
-            >
-              Change
-            </button>
+            <span className="text-[11px] text-gray-400 ml-auto">
+              {bill.pickerIndex + 1} of {bill.selectedProducts.length}
+            </span>
           </div>
 
+          {/* Product header (no Change button — flow exits via Skip-to-end) */}
+          <div className="px-[14px] py-[10px] bg-teal-50 border-b border-teal-200">
+            <p className="text-[13px] font-semibold text-teal-700 truncate">{bill.activeProduct.displayName}</p>
+            <p className="text-[11px] text-teal-400 mt-0.5">
+              {bill.activeProduct.family}
+              {bill.activeProduct.tinterType ? ` · ${bill.activeProduct.tinterType}` : ""}
+            </p>
+          </div>
+
+          {/* Pack counters */}
           {sortPacksForDisplay(bill.activeProduct.packs).map((pack) => {
             const qty = bill.packQtys[pack] ?? 0;
             return (
@@ -963,12 +1156,12 @@ function BillCard({
                 key={pack}
                 className="flex items-center gap-3 px-[14px] py-[10px] border-b border-[#f0f0f0]"
               >
-                <p className="text-[15px] font-medium flex-1">{formatPack(pack)}</p>
-                <div className="flex items-center bg-gray-100 rounded-[10px] overflow-hidden shrink-0">
+                <p className="text-[14px] font-medium flex-1">{formatPack(pack)}</p>
+                <div className="flex items-center bg-gray-100 rounded-[9px] overflow-hidden shrink-0">
                   <button
                     type="button"
                     onClick={() => onStepPack(pack, -1)}
-                    className={`w-[38px] h-[38px] flex items-center justify-center text-[21px] font-light bg-transparent border-none ${
+                    className={`w-9 h-9 flex items-center justify-center text-[20px] font-light bg-transparent border-none ${
                       qty === 0 ? "text-gray-300" : "text-teal-600"
                     }`}
                     aria-label={`Decrease ${formatPack(pack)}`}
@@ -983,13 +1176,13 @@ function BillCard({
                     value={qty}
                     onChange={(e) => onSetPack(pack, e.target.value)}
                     onFocus={(e) => e.target.select()}
-                    className="w-[40px] text-center text-[15px] font-semibold bg-transparent border-none outline-none"
+                    className="w-10 text-center text-[14px] font-bold bg-transparent border-none outline-none"
                     style={{ color: qty > 0 ? "#0d9488" : "#111827" }}
                   />
                   <button
                     type="button"
                     onClick={() => onStepPack(pack, 1)}
-                    className="w-[38px] h-[38px] flex items-center justify-center text-[21px] font-light text-teal-600 bg-transparent border-none"
+                    className="w-9 h-9 flex items-center justify-center text-[20px] font-light text-teal-600 bg-transparent border-none"
                     aria-label={`Increase ${formatPack(pack)}`}
                   >
                     +
@@ -998,20 +1191,27 @@ function BillCard({
               </div>
             );
           })}
-        </div>
-      )}
 
-      {/* Sticky Add button — pins to visual viewport bottom while in view */}
-      {bill.activeProduct && hasAnyQty && (
-        <div className="sticky bottom-0 bg-white border-t border-[#f0f0f0] px-[14px] py-[10px] rounded-b-[14px] z-10">
-          <button
-            type="button"
-            onClick={onAddToBill}
-            className="w-full h-[42px] bg-teal-600 hover:bg-teal-700 text-white rounded-[10px] text-[14px] font-semibold"
-          >
-            + Add to Bill {bill.id}
-          </button>
-        </div>
+          {/* Sticky Skip + Next/Add-All bar */}
+          <div className="sticky bottom-0 bg-white border-t border-[#f0f0f0] px-[14px] py-[10px] rounded-b-[14px] z-10 flex gap-2">
+            <button
+              type="button"
+              onClick={() => onNextProduct(true)}
+              className="text-[12px] font-medium text-gray-500 bg-gray-100 active:bg-gray-200 rounded-[9px] px-4 h-10 shrink-0"
+            >
+              Skip
+            </button>
+            <button
+              type="button"
+              onClick={() => onNextProduct(false)}
+              className="flex-1 h-10 bg-teal-600 hover:bg-teal-700 text-white rounded-[9px] text-[13px] font-semibold truncate min-w-0 px-3"
+            >
+              {nextProductInQueue
+                ? `Next → ${nextProductInQueue.displayName}`
+                : "+ Add All to Bill"}
+            </button>
+          </div>
+        </>
       )}
 
     </div>
