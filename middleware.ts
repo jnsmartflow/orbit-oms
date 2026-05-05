@@ -5,7 +5,17 @@ import { authConfig } from "./auth.config";
 
 const { auth } = NextAuth(authConfig);
 
-const PUBLIC_PATHS = ["/login", "/unauthorized", "/not-ready", "/api/auth", "/api/health", "/order", "/api/order"];
+const PUBLIC_PATHS = [
+  "/login",
+  "/unauthorized",
+  "/not-ready",
+  "/api/auth",
+  "/api/health",
+  "/order",
+  "/api/order",
+  "/demo",            // rewrites to /order-demo.html (matcher catches the rewritten URL via the dot rule, but the original /demo arrives here first)
+  "/order-demo.html", // explicit safety net — matcher already excludes paths with file extensions
+];
 const PHASE1_BLOCKED: string[] = [];
 
 export default auth(function middleware(req) {
@@ -51,5 +61,9 @@ export default auth(function middleware(req) {
 });
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  // Skip middleware for Next.js internals AND any path with a file extension
+  // (e.g. .html, .png, .css, .js, .ico) so static files in /public/ bypass
+  // auth automatically. Routed paths and API endpoints have no extension and
+  // still flow through.
+  matcher: ["/((?!_next/static|_next/image|.*\\..*).*)"],
 };
