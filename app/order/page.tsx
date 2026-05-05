@@ -60,6 +60,34 @@ type BillLine = {
   baseColour:  string | null;
   packs:       PackQty[];
 };
+
+// ── Pack label helpers ──────────────────────────────────────────────────
+//
+// packCode in mo_sku_lookup is a bare numeric string. Conventions:
+// - Values ≥ 50  → millilitres (e.g. "50"   → "50ML",  "200"   → "200ML")
+// - Values < 1   → also millilitres, decimalised litres (e.g. "0.5" → "500ML")
+// - Values 1..40 → litres                              (e.g. "1"   → "1L",   "4" → "4L")
+// Used for both display (pack counter rows, added-lines list) and email
+// output. Sort by ML-equivalent so 50ML/100ML/200ML come before 1L.
+
+function formatPack(pack: string): string {
+  const num = parseFloat(pack);
+  if (Number.isNaN(num)) return pack;
+  if (num >= 50)         return `${num}ML`;
+  if (num < 1)           return `${Math.round(num * 1000)}ML`;
+  return `${num}L`;
+}
+
+function packToMl(pack: string): number {
+  const num = parseFloat(pack);
+  if (Number.isNaN(num)) return Number.MAX_SAFE_INTEGER;
+  if (num >= 50)         return num;          // already millilitres
+  return num * 1000;                          // litres or sub-1L decimals → ML
+}
+
+function sortPacksForDisplay(packs: string[]): string[] {
+  return [...packs].sort((a, b) => packToMl(a) - packToMl(b));
+}
 type Bill = {
   id:             number;
   searchQuery:    string;
@@ -345,11 +373,11 @@ export default function OrderPage(): React.JSX.Element {
       lines.push("");
       if (activeBills.length > 1) lines.push("Bill " + b.id);
       b.lines.forEach((l) => {
-        const packStr     = l.packs.map((p) => `${p.pack}*${p.qty}`).join(", ");
+        const packStr     = l.packs.map((p) => `${formatPack(p.pack)}*${p.qty}`).join(", ");
         // Email format: "{subProduct} [{baseColour}] {packs}" — SAP-friendly,
         // matches the shape the parser already handles. baseColour is
         // appended only for colour-variant rows. Display in the UI uses
-        // l.displayName.
+        // l.displayName. Pack labels are formatted (e.g. "1L", "200ML").
         const productText = l.baseColour
           ? `${l.subProduct} ${l.baseColour}`
           : l.subProduct;
@@ -767,11 +795,21 @@ function BillCard({
   const suggestions = getProductSuggestions(bill.searchQuery);
   const hasAnyQty   = Object.values(bill.packQtys).some((q) => q > 0);
 
+  // Layout flow (top → bottom):
+  //   Bill header
+  //   Added lines list (or "No products added" empty state)
+  //   IF activeProduct: product header → pack counters → sticky Add button
+  //   ELSE:             search row at the bottom, suggestions float above
+  //
+  // overflow-hidden is intentionally absent on the outer card so that
+  //   1) the sticky Add button can pin to the visual viewport bottom
+  //      when the mobile keyboard is open
+  //   2) the suggestion overlay can render outside the card's top edge
   return (
-    <div className="bg-white rounded-[14px] overflow-hidden shadow-sm border border-gray-100">
+    <div className="bg-white rounded-[14px] shadow-sm border border-gray-100">
 
       {/* Bill header */}
-      <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100 bg-gray-50/40">
+      <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100 bg-gray-50/40 rounded-t-[14px]">
         <span className="text-[13px] font-semibold uppercase tracking-wide text-teal-600">
           Bill {bill.id}
         </span>
@@ -785,10 +823,42 @@ function BillCard({
         </button>
       </div>
 
-      {/* Active product area */}
-      {bill.activeProduct ? (
+      {/* Added lines list — always at top now */}
+      <div>
+        {bill.lines.length === 0 ? (
+          <p className="px-4 py-4 text-[13px] text-gray-300 italic text-center">
+            No products added
+          </p>
+        ) : (
+          bill.lines.map((line, idx) => (
+            <div
+              key={`${line.subProduct}|||${line.baseColour ?? ""}-${idx}`}
+              className="flex items-center px-4 py-2.5 border-b border-gray-50 last:border-b-0"
+            >
+              <div className="w-1.5 h-1.5 rounded-full bg-teal-600 shrink-0 mr-3" />
+              <div className="flex-1 min-w-0">
+                <p className="text-[14px] font-medium text-gray-900 truncate">{line.displayName}</p>
+                <p className="text-[13px] text-teal-600 font-mono mt-0.5">
+                  {line.packs.map((p) => `${formatPack(p.pack)}*${p.qty}`).join(", ")}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => onDeleteLine(idx)}
+                className="text-gray-300 text-xl ml-2 leading-none px-1"
+                aria-label="Delete line"
+              >
+                ×
+              </button>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Active product UI (when picked) — pack counters + sticky Add */}
+      {bill.activeProduct && (
         <>
-          <div className="flex items-start justify-between px-4 py-3 border-b border-gray-100 gap-3">
+          <div className="flex items-start justify-between px-4 py-3 border-t border-b border-gray-100 gap-3">
             <div className="min-w-0 flex-1">
               <p className="text-[15px] font-semibold text-gray-900 truncate">
                 {bill.activeProduct.displayName}
@@ -807,24 +877,25 @@ function BillCard({
             </button>
           </div>
 
-          {/* Pack counters */}
-          {bill.activeProduct.packs.map((pack) => (
+          {/* Pack counters — sorted by ML-equivalent volume */}
+          {sortPacksForDisplay(bill.activeProduct.packs).map((pack) => (
             <div key={pack} className="flex items-center px-4 py-2.5 border-b border-gray-50">
               <div className="flex-1">
-                <p className="text-[16px] font-medium text-gray-900">{pack}</p>
+                <p className="text-[16px] font-medium text-gray-900">{formatPack(pack)}</p>
               </div>
               <div className="flex items-center bg-gray-100 rounded-[10px] overflow-hidden">
                 <button
                   type="button"
                   onClick={() => onStepPack(pack, -1)}
                   className="w-10 h-10 flex items-center justify-center text-[22px] font-light text-teal-600 active:bg-gray-200"
-                  aria-label={`Decrease ${pack}`}
+                  aria-label={`Decrease ${formatPack(pack)}`}
                 >
                   −
                 </button>
                 <input
                   type="number"
                   inputMode="numeric"
+                  pattern="[0-9]*"
                   value={bill.packQtys[pack] ?? 0}
                   onChange={(e) => onSetPack(pack, e.target.value)}
                   onFocus={(e) => e.target.select()}
@@ -834,7 +905,7 @@ function BillCard({
                   type="button"
                   onClick={() => onStepPack(pack, 1)}
                   className="w-10 h-10 flex items-center justify-center text-[22px] font-light text-teal-600 active:bg-gray-200"
-                  aria-label={`Increase ${pack}`}
+                  aria-label={`Increase ${formatPack(pack)}`}
                 >
                   +
                 </button>
@@ -842,9 +913,9 @@ function BillCard({
             </div>
           ))}
 
-          {/* Add to bill button — only when at least one pack has qty > 0 */}
+          {/* Sticky Add button — pins to visual viewport bottom while in view */}
           {hasAnyQty && (
-            <div className="px-4 py-3 border-t border-gray-100">
+            <div className="sticky bottom-0 bg-white border-t border-gray-100 px-4 py-3 z-10 rounded-b-[14px]">
               <button
                 type="button"
                 onClick={onAddToBill}
@@ -855,10 +926,33 @@ function BillCard({
             </div>
           )}
         </>
-      ) : (
-        <>
-          {/* Search input */}
-          <div className="flex items-center gap-2.5 px-4 py-3 border-b border-gray-100">
+      )}
+
+      {/* Search row at the BOTTOM (only when no active product) */}
+      {!bill.activeProduct && (
+        <div className="relative">
+          {/* Suggestions float ABOVE the search input */}
+          {suggestions.length > 0 && (
+            <div className="absolute bottom-full left-0 right-0 bg-white border border-gray-200 rounded-t-[10px] shadow-lg max-h-48 overflow-y-auto z-20">
+              {suggestions.map((p) => (
+                <button
+                  key={`${p.subProduct}|||${p.baseColour ?? ""}`}
+                  type="button"
+                  onClick={() => onPickProduct(p)}
+                  className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left border-b border-gray-50 last:border-b-0 active:bg-gray-50"
+                >
+                  <div className="w-1.5 h-1.5 rounded-full bg-teal-600 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[14px] font-medium text-gray-900 truncate">{p.displayName}</p>
+                    <p className="text-[11px] text-gray-400 mt-0.5">{p.family}</p>
+                  </div>
+                  <span className="text-gray-300 text-lg shrink-0 leading-none">›</span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          <div className="flex items-center gap-2.5 px-4 py-3 border-t border-gray-100 rounded-b-[14px]">
             <Search className="w-4 h-4 text-gray-300 shrink-0" />
             <input
               type="text"
@@ -906,61 +1000,8 @@ function BillCard({
               </button>
             )}
           </div>
-
-          {/* Product suggestions */}
-          {suggestions.length > 0 && (
-            <div>
-              {suggestions.map((p) => (
-                <button
-                  key={`${p.subProduct}|||${p.baseColour ?? ""}`}
-                  type="button"
-                  onClick={() => onPickProduct(p)}
-                  className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left border-b border-gray-50 last:border-b-0 active:bg-gray-50"
-                >
-                  <div className="w-1.5 h-1.5 rounded-full bg-teal-600 shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[14px] font-medium text-gray-900 truncate">{p.displayName}</p>
-                    <p className="text-[11px] text-gray-400 mt-0.5">{p.family}</p>
-                  </div>
-                  <span className="text-gray-300 text-lg shrink-0 leading-none">›</span>
-                </button>
-              ))}
-            </div>
-          )}
-        </>
+        </div>
       )}
-
-      {/* Added lines list */}
-      <div>
-        {bill.lines.length === 0 ? (
-          <p className="px-4 py-4 text-[13px] text-gray-300 italic text-center">
-            No products added
-          </p>
-        ) : (
-          bill.lines.map((line, idx) => (
-            <div
-              key={`${line.subProduct}|||${line.baseColour ?? ""}-${idx}`}
-              className="flex items-center px-4 py-2.5 border-b border-gray-50 last:border-b-0"
-            >
-              <div className="w-1.5 h-1.5 rounded-full bg-teal-600 shrink-0 mr-3" />
-              <div className="flex-1 min-w-0">
-                <p className="text-[14px] font-medium text-gray-900 truncate">{line.displayName}</p>
-                <p className="text-[13px] text-teal-600 font-mono mt-0.5">
-                  {line.packs.map((p) => `${p.pack}*${p.qty}`).join(", ")}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => onDeleteLine(idx)}
-                className="text-gray-300 text-xl ml-2 leading-none px-1"
-                aria-label="Delete line"
-              >
-                ×
-              </button>
-            </div>
-          ))
-        )}
-      </div>
 
     </div>
   );
