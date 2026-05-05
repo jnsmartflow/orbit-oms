@@ -470,7 +470,11 @@ export default function OrderPage(): React.JSX.Element {
         const tokens = p.searchTokens.toLowerCase();
         return words.every((w) => tokens.includes(w));
       })
-      .slice(0, 6);
+      // Cap at 50 so the multi-select pagination has items to paginate
+      // across. SUGGESTION_PAGE_SIZE (6) drives the per-page split — searches
+      // like "gloss" with 30+ colour variants now produce ~5 swipeable pages
+      // instead of a single capped slice that hid the Set Quantities bar.
+      .slice(0, 50);
   }
 
   // ── Email build ───────────────────────────────────────────────────────
@@ -1200,26 +1204,32 @@ function BillCard({
                   </div>
                 )}
 
-                {/* Set Quantities bar — visible whenever at least one is selected */}
-                {bill.selectedProducts.length > 0 && (
-                  <div className="flex items-center justify-between px-[13px] py-[10px] bg-teal-50 border-t border-teal-200">
-                    <span className="text-[13px] font-semibold text-teal-700">
-                      {bill.selectedProducts.length} product{bill.selectedProducts.length > 1 ? "s" : ""} selected
-                    </span>
-                    <button
-                      type="button"
-                      onClick={onStartPicking}
-                      className="bg-teal-600 hover:bg-teal-700 text-white text-[13px] font-semibold px-4 py-2 rounded-[8px]"
-                    >
-                      Set Quantities →
-                    </button>
-                  </div>
-                )}
               </>
             )}
           </div>
         );
       })()}
+
+      {/* Set Quantities bar — sticky to the visual viewport bottom so it
+          stays above the keyboard regardless of how long the results list
+          is. Lives at bill-card level (outside the multi-select block) so
+          it's also visible when search has been cleared but the basket
+          still has selections. Hidden during picking — that mode has its
+          own Skip/Next sticky bar. */}
+      {bill.selectedProducts.length > 0 && !inPicking && (
+        <div className="sticky bottom-0 bg-teal-50 border-t border-teal-200 px-[13px] py-[10px] rounded-b-[14px] z-10 flex items-center justify-between">
+          <span className="text-[13px] font-semibold text-teal-700">
+            {bill.selectedProducts.length} product{bill.selectedProducts.length > 1 ? "s" : ""} selected
+          </span>
+          <button
+            type="button"
+            onClick={onStartPicking}
+            className="bg-teal-600 hover:bg-teal-700 text-white text-[13px] font-semibold px-4 py-2 rounded-[8px]"
+          >
+            Set Quantities →
+          </button>
+        </div>
+      )}
 
       {/* Picker — progress + product header + pack counters + Skip/Next bar */}
       {inPicking && bill.activeProduct && (
