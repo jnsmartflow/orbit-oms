@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Search, Send } from "lucide-react";
 
 // Public mobile order form for Sales Officers. Picker UI for customer
@@ -10,12 +10,53 @@ import { Search, Send } from "lucide-react";
 
 const ORDER_TO = "surat.order@outlook.com";
 
+// ── SpeechRecognition types (not in default lib.dom.d.ts) ───────────────
+// Minimal shape for the Web Speech API surface we use. Voice input feeds
+// the per-bill product search (en-IN locale for Indian English paint
+// product names). Browser support is a runtime check; on unsupported
+// browsers the mic button is hidden entirely.
+
+interface SpeechRecognitionEventLike {
+  readonly results: ArrayLike<ArrayLike<{ readonly transcript: string }>>;
+}
+interface SpeechRecognitionInstance {
+  lang:            string;
+  continuous:      boolean;
+  interimResults:  boolean;
+  maxAlternatives: number;
+  onresult:        ((ev: SpeechRecognitionEventLike) => void) | null;
+  onerror:         (() => void) | null;
+  onend:           (() => void) | null;
+  start():         void;
+  stop():          void;
+}
+interface SpeechRecognitionCtor {
+  new (): SpeechRecognitionInstance;
+}
+declare global {
+  interface Window {
+    SpeechRecognition?:       SpeechRecognitionCtor;
+    webkitSpeechRecognition?: SpeechRecognitionCtor;
+  }
+}
+
 // ── Types ────────────────────────────────────────────────────────────────
 
 type Customer = { name: string; code: string };
-type Sku      = { name: string; packs: string[] };
+type Sku = {
+  name:       string;   // display name "{product} — {baseColour}"
+  product:    string;
+  baseColour: string;
+  keywords:   string[]; // lowercased, used by per-bill search filter
+  packs:      string[];
+};
 type PackQty  = { pack: string; qty: number };
-type BillLine = { name: string; packs: PackQty[] };
+type BillLine = {
+  name:       string;   // display key (also dedup key within a bill)
+  product:    string;   // for the SAP-friendly email line format
+  baseColour: string;
+  packs:      PackQty[];
+};
 type Bill = {
   id:           number;
   searchQuery:  string;
@@ -50,6 +91,13 @@ export default function OrderPage(): React.JSX.Element {
   const [bills,       setBills]       = useState<Bill[]>([]);
   const [billCounter, setBillCounter] = useState(0);
 
+  // Voice input — Web Speech API. speechSupported is set client-side only
+  // (avoids SSR mismatch); listeningBillId tracks which bill currently has
+  // mic active (one mic at a time across all bills).
+  const [speechSupported,  setSpeechSupported]  = useState(false);
+  const [listeningBillId,  setListeningBillId]  = useState<number | null>(null);
+  const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
+
   // ── Effects ────────────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -68,6 +116,24 @@ export default function OrderPage(): React.JSX.Element {
     if (!dataLoading && bills.length === 0) addBill();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dataLoading]);
+
+  // Detect SpeechRecognition support (client-only).
+  useEffect(() => {
+    if (typeof window !== "undefined"
+        && (window.SpeechRecognition || window.webkitSpeechRecognition)) {
+      setSpeechSupported(true);
+    }
+  }, []);
+
+  // Stop any active recognition on unmount so it doesn't leak.
+  useEffect(() => {
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+        recognitionRef.current = null;
+      }
+    };
+  }, []);
 
   // ── Customer handlers ─────────────────────────────────────────────────
 
@@ -116,6 +182,7 @@ export default function OrderPage(): React.JSX.Element {
   }
 
   function removeBill(billId: number): void {
+    if (listeningBillId === billId) stopListening();
     setBills((prev) => prev.filter((b) => b.id !== billId));
   }
 
@@ -124,11 +191,68 @@ export default function OrderPage(): React.JSX.Element {
   }
 
   function pickSku(billId: number, sku: Sku): void {
+    if (listeningBillId === billId) stopListening();
     const packQtys: Record<string, number> = {};
     for (const p of sku.packs) packQtys[p] = 0;
     setBills((prev) => prev.map((b) =>
       b.id === billId ? { ...b, activeSku: sku, packQtys, searchQuery: "" } : b,
     ));
+  }
+
+  // ── Voice input handlers ──────────────────────────────────────────────
+
+  function startListening(billId: number): void {
+    // Stop any active recognition first (one mic at a time across all bills).
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+      recognitionRef.current = null;
+    }
+
+    const Ctor = window.SpeechRecognition ?? window.webkitSpeechRecognition;
+    if (!Ctor) return;
+
+    const recognition = new Ctor();
+    recognition.lang            = "en-IN";  // Indian English — paint product names
+    recognition.continuous      = false;
+    recognition.interimResults  = false;
+    recognition.maxAlternatives = 1;
+
+    recognition.onresult = (event) => {
+      const transcript = event.results[0]?.[0]?.transcript ?? "";
+      if (transcript.trim()) setBillQuery(billId, transcript.trim());
+    };
+    recognition.onerror = () => {
+      setListeningBillId(null);
+      recognitionRef.current = null;
+    };
+    recognition.onend = () => {
+      setListeningBillId(null);
+      recognitionRef.current = null;
+    };
+
+    recognitionRef.current = recognition;
+    setListeningBillId(billId);
+
+    try {
+      recognition.start();
+    } catch {
+      // start() can throw if invoked too soon after a prior stop().
+      setListeningBillId(null);
+      recognitionRef.current = null;
+    }
+  }
+
+  function stopListening(): void {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+      recognitionRef.current = null;
+    }
+    setListeningBillId(null);
+  }
+
+  function toggleMic(billId: number): void {
+    if (listeningBillId === billId) stopListening();
+    else                             startListening(billId);
   }
 
   function clearActiveSku(billId: number): void {
@@ -158,15 +282,21 @@ export default function OrderPage(): React.JSX.Element {
   function addToBill(billId: number): void {
     setBills((prev) => prev.map((b) => {
       if (b.id !== billId || !b.activeSku) return b;
-      const skuName = b.activeSku.name;
-      const packs = b.activeSku.packs
+      const sku     = b.activeSku;
+      const skuName = sku.name;
+      const packs = sku.packs
         .filter((p) => (b.packQtys[p] ?? 0) > 0)
         .map((p) => ({ pack: p, qty: b.packQtys[p] }));
       if (packs.length === 0) return b;
 
       // Replace any existing line for this SKU within this bill.
       const filtered = b.lines.filter((l) => l.name !== skuName);
-      const newLine: BillLine = { name: skuName, packs };
+      const newLine: BillLine = {
+        name:       skuName,
+        product:    sku.product,
+        baseColour: sku.baseColour,
+        packs,
+      };
       return { ...b, lines: [...filtered, newLine], activeSku: null, packQtys: {} };
     }));
   }
@@ -182,7 +312,13 @@ export default function OrderPage(): React.JSX.Element {
     if (query.length < 2) return [];
     const words = query.toLowerCase().split(/\s+/).filter(Boolean);
     return skus
-      .filter((s) => words.every((w) => s.name.toLowerCase().includes(w)))
+      .filter((s) => {
+        const nameLower = s.name.toLowerCase();
+        return words.every((w) =>
+          nameLower.includes(w)
+          || s.keywords.some((kw) => kw.includes(w)),
+        );
+      })
       .slice(0, 5);
   }
 
@@ -207,7 +343,9 @@ export default function OrderPage(): React.JSX.Element {
       if (activeBills.length > 1) lines.push("Bill " + b.id);
       b.lines.forEach((l) => {
         const packStr = l.packs.map((p) => `${p.pack}*${p.qty}`).join(", ");
-        lines.push(`${l.name} ${packStr}`);
+        // Email format: "{product} {baseColour} {packs}" — SAP-friendly,
+        // no em-dash. Display in the UI still uses l.name with the dash.
+        lines.push(`${l.product} ${l.baseColour} ${packStr}`);
       });
     });
 
@@ -343,6 +481,9 @@ export default function OrderPage(): React.JSX.Element {
                 onSetPack={(pack, raw) => setPack(b.id, pack, raw)}
                 onAddToBill={() => addToBill(b.id)}
                 onDeleteLine={(idx) => deleteLineFromBill(b.id, idx)}
+                speechSupported={speechSupported}
+                isListening={listeningBillId === b.id}
+                onMicToggle={() => toggleMic(b.id)}
               />
             ))}
             <button
@@ -604,11 +745,15 @@ interface BillCardProps {
   onSetPack:         (pack: string, raw: string) => void;
   onAddToBill:       () => void;
   onDeleteLine:      (idx: number) => void;
+  speechSupported:   boolean;
+  isListening:       boolean;
+  onMicToggle:       () => void;
 }
 
 function BillCard({
   bill, dataLoading, getSkuSuggestions, onRemove, onSetQuery,
   onPickSku, onClearActiveSku, onStepPack, onSetPack, onAddToBill, onDeleteLine,
+  speechSupported, isListening, onMicToggle,
 }: BillCardProps): React.JSX.Element {
   const suggestions = getSkuSuggestions(bill.searchQuery);
   const hasAnyQty   = Object.values(bill.packQtys).some((q) => q > 0);
@@ -711,6 +856,30 @@ function BillCard({
               spellCheck={false}
               className="flex-1 text-[16px] text-gray-900 bg-transparent border-none outline-none placeholder:text-gray-300 disabled:opacity-60"
             />
+            {speechSupported && (
+              <button
+                type="button"
+                onClick={onMicToggle}
+                disabled={dataLoading}
+                title={isListening ? "Tap to stop" : "Tap to speak"}
+                aria-label={isListening ? "Stop voice input" : "Start voice input"}
+                className={`shrink-0 w-8 h-8 flex items-center justify-center rounded-full transition-colors disabled:opacity-50 ${
+                  isListening
+                    ? "bg-red-500 text-white animate-pulse"
+                    : "text-gray-300 hover:text-teal-600"
+                }`}
+              >
+                <svg
+                  width="15" height="15" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" strokeWidth="2"
+                  strokeLinecap="round" strokeLinejoin="round"
+                >
+                  <path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z" />
+                  <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                  <line x1="12" y1="19" x2="12" y2="22" />
+                </svg>
+              </button>
+            )}
             {bill.searchQuery && (
               <button
                 type="button"

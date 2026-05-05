@@ -7,29 +7,48 @@ import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
-// Canonical pack-size order, smallest to largest. Anything not listed
-// sorts to the end alphabetically.
+// Canonical pack-size order, smallest to largest. packCode values in
+// mo_sku_lookup are bare numeric strings ("1", "4", "10", "20", "0.9"…)
+// without unit suffix. Anything outside this list sorts to the end
+// alphabetically.
 const PACK_ORDER: ReadonlyArray<string> = [
-  "200ML", "500ML", "0.9L", "0.925L", "1L", "3.6L", "3.7L", "4L", "9L", "9.25L",
-  "10L",   "15L",   "18L",  "18.5L",  "20L", "22L",  "30L",  "40L",
-  "1KG",   "5KG",   "10KG", "20KG",   "25KG", "40KG",
+  "0.2", "0.5", "0.9", "0.925", "0.975", "1", "2", "3", "3.6", "3.7",
+  "4",   "5",   "9",   "9.25",  "10",    "15", "18", "18.5", "20", "22",
+  "25",  "30",  "40",  "100",   "200",   "400", "500",
 ];
 const PACK_INDEX = new Map(PACK_ORDER.map((p, i) => [p, i] as const));
 
+function sortPacks(packs: Set<string>): string[] {
+  return Array.from(packs).sort((a, b) => {
+    const ai = PACK_INDEX.has(a) ? PACK_INDEX.get(a)! : Number.MAX_SAFE_INTEGER;
+    const bi = PACK_INDEX.has(b) ? PACK_INDEX.get(b)! : Number.MAX_SAFE_INTEGER;
+    if (ai !== bi) return ai - bi;
+    return a.localeCompare(b);
+  });
+}
+
 export async function GET(): Promise<NextResponse> {
   try {
+    // Sequential awaits — no prisma.$transaction (CLAUDE_CORE.md §3).
     const custRows = await prisma.mo_customer_keywords.findMany({
       select:  { customerCode: true, customerName: true },
       orderBy: { customerName: "asc" },
     });
 
     const skuRows = await prisma.mo_sku_lookup.findMany({
-      select:  { description: true, packCode: true },
-      orderBy: { description: "asc" },
+      select:  { product: true, baseColour: true, packCode: true },
+      orderBy: [{ product: "asc" }, { baseColour: "asc" }],
     });
 
-    // Customers — dedupe by code (keep first occurrence per the alphabetical
-    // customerName order so the kept name is alphabetically earliest).
+    const productKwRows = await prisma.mo_product_keywords.findMany({
+      select: { keyword: true, product: true },
+    });
+
+    const baseKwRows = await prisma.mo_base_keywords.findMany({
+      select: { keyword: true, baseColour: true },
+    });
+
+    // ── Customers — dedupe by code (keep first occurrence) ─────────────
     const seenCodes = new Set<string>();
     const customers: { name: string; code: string }[] = [];
     for (const r of custRows) {
@@ -38,29 +57,66 @@ export async function GET(): Promise<NextResponse> {
       customers.push({ name: r.customerName, code: r.customerCode });
     }
 
-    // SKUs — group by description, dedupe packs per description.
-    const skuMap = new Map<string, Set<string>>();
-    for (const r of skuRows) {
-      if (!r.description || !r.packCode) continue;
-      let bucket = skuMap.get(r.description);
+    // ── Keyword maps ───────────────────────────────────────────────────
+    const productKwMap = new Map<string, Set<string>>();
+    for (const row of productKwRows) {
+      if (!row.product || !row.keyword) continue;
+      let bucket = productKwMap.get(row.product);
       if (!bucket) {
         bucket = new Set();
-        skuMap.set(r.description, bucket);
+        productKwMap.set(row.product, bucket);
       }
-      bucket.add(r.packCode);
+      bucket.add(row.keyword.toLowerCase());
     }
 
-    const skus: { name: string; packs: string[] }[] = [];
-    for (const [name, packSet] of Array.from(skuMap.entries())) {
-      const packs = Array.from(packSet).sort((a, b) => {
-        const ia = PACK_INDEX.has(a) ? PACK_INDEX.get(a)! : Number.MAX_SAFE_INTEGER;
-        const ib = PACK_INDEX.has(b) ? PACK_INDEX.get(b)! : Number.MAX_SAFE_INTEGER;
-        if (ia !== ib) return ia - ib;
-        // Both unknown → alphabetical fallback.
-        return a.localeCompare(b);
-      });
-      skus.push({ name, packs });
+    const baseKwMap = new Map<string, Set<string>>();
+    for (const row of baseKwRows) {
+      if (!row.baseColour || !row.keyword) continue;
+      let bucket = baseKwMap.get(row.baseColour);
+      if (!bucket) {
+        bucket = new Set();
+        baseKwMap.set(row.baseColour, bucket);
+      }
+      bucket.add(row.keyword.toLowerCase());
     }
+
+    // ── Group SKUs by (product, baseColour) ────────────────────────────
+    // packCode in mo_sku_lookup is the unit (e.g. "1", "4", "10") —
+    // grouping by description was wrong because the description string
+    // contains the pack size, splitting one product into many entries.
+    type SkuBucket = { product: string; baseColour: string; packs: Set<string> };
+    const skuMap = new Map<string, SkuBucket>();
+
+    for (const r of skuRows) {
+      if (!r.product || !r.baseColour) continue;
+      const key = `${r.product}|||${r.baseColour}`;
+      let bucket = skuMap.get(key);
+      if (!bucket) {
+        bucket = { product: r.product, baseColour: r.baseColour, packs: new Set() };
+        skuMap.set(key, bucket);
+      }
+      if (r.packCode) bucket.packs.add(r.packCode);
+    }
+
+    // ── Build output with combined keyword array ───────────────────────
+    const skus = Array.from(skuMap.values()).map(({ product, baseColour, packs }) => {
+      const productKws = Array.from(productKwMap.get(product)    ?? []);
+      const baseKws    = Array.from(baseKwMap.get(baseColour)    ?? []);
+      const keywords   = Array.from(new Set([
+        ...productKws,
+        ...baseKws,
+        product.toLowerCase(),
+        baseColour.toLowerCase(),
+      ]));
+
+      return {
+        name:       `${product} — ${baseColour}`,
+        product,
+        baseColour,
+        keywords,
+        packs:      sortPacks(packs),
+      };
+    });
 
     return NextResponse.json({ customers, skus });
   } catch (err) {
