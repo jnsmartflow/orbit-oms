@@ -96,9 +96,10 @@ type Bill = {
   packQtys:          Record<string, number>;
   // Multi-SKU select-then-pack state:
   mode:              "search" | "multi-select" | "picking";
-  selectedProducts:  Product[];            // basket order = selection order
-  pickerIndex:       number;                // which selectedProducts item we're on (0-based)
-  recentlyAddedKeys: string[];              // composite keys highlighted in cart during/after a picking journey
+  selectedProducts:  Product[];             // basket order = selection order
+  pickerIndex:       number;                 // which selectedProducts item we're on (0-based)
+  recentlyAddedKeys: string[];               // composite keys highlighted in cart during/after a picking journey
+  suggestionPage:    number;                 // 0-based current page in paginated multi-select results
 };
 type Dispatch = "Normal" | "Hold" | "Urgent";
 type Marker   = "Truck" | "Cross Delivery" | "DTS" | null;
@@ -223,6 +224,7 @@ export default function OrderPage(): React.JSX.Element {
         selectedProducts:  [],
         pickerIndex:       0,
         recentlyAddedKeys: [],
+        suggestionPage:    0,
       },
     ]);
   }
@@ -242,7 +244,7 @@ export default function OrderPage(): React.JSX.Element {
       if (b.mode === "picking") return b; // search is locked while picking
       const trimmed = q.trim();
       if (trimmed.length < 2) {
-        return { ...b, searchQuery: q, mode: "search", selectedProducts: [] };
+        return { ...b, searchQuery: q, mode: "search", selectedProducts: [], suggestionPage: 0 };
       }
       const matched = getProductSuggestions(q);
       return {
@@ -250,6 +252,7 @@ export default function OrderPage(): React.JSX.Element {
         searchQuery:      q,
         mode:             matched.length >= 1 ? "multi-select" : "search",
         selectedProducts: [],
+        suggestionPage:   0,
       };
     }));
   }
@@ -269,6 +272,7 @@ export default function OrderPage(): React.JSX.Element {
         packQtys:          {},
         mode:              "picking",
         recentlyAddedKeys: [],
+        suggestionPage:    0,
       };
     }));
   }
@@ -303,8 +307,16 @@ export default function OrderPage(): React.JSX.Element {
         activeProduct:     b.selectedProducts[0],
         packQtys:          {},
         recentlyAddedKeys: [],
+        suggestionPage:    0,
       };
     }));
+  }
+
+  // Pagination handler for the multi-select results list.
+  function goToPage(billId: number, page: number): void {
+    setBills((prev) => prev.map((b) =>
+      b.id === billId ? { ...b, suggestionPage: Math.max(0, page) } : b,
+    ));
   }
 
   // Advance the picker. `skip=false` (Next): commit current product's qty
@@ -353,6 +365,7 @@ export default function OrderPage(): React.JSX.Element {
           packQtys:          {},
           mode:              "search",
           searchQuery:       "",
+          suggestionPage:    0,
         };
       }
 
@@ -621,6 +634,7 @@ export default function OrderPage(): React.JSX.Element {
                 onToggleProduct={(product) => toggleProductSelection(b.id, product)}
                 onStartPicking={() => startPicking(b.id)}
                 onNextProduct={(skip) => nextProduct(b.id, skip)}
+                onGoToPage={(page) => goToPage(b.id, page)}
                 onStepPack={(pack, delta) => stepPack(b.id, pack, delta)}
                 onSetPack={(pack, raw) => setPack(b.id, pack, raw)}
                 onDeleteLine={(idx) => deleteLineFromBill(b.id, idx)}
@@ -886,6 +900,7 @@ interface BillCardProps {
   onToggleProduct:       (product: Product) => void;
   onStartPicking:        () => void;
   onNextProduct:         (skip: boolean) => void;
+  onGoToPage:            (page: number) => void;
   onStepPack:            (pack: string, delta: number) => void;
   onSetPack:             (pack: string, raw: string) => void;
   onDeleteLine:          (idx: number) => void;
@@ -894,9 +909,11 @@ interface BillCardProps {
   onMicToggle:           () => void;
 }
 
+const SUGGESTION_PAGE_SIZE = 6;
+
 function BillCard({
   bill, dataLoading, getProductSuggestions, onRemove, onSetQuery,
-  onPickProduct, onToggleProduct, onStartPicking, onNextProduct,
+  onPickProduct, onToggleProduct, onStartPicking, onNextProduct, onGoToPage,
   onStepPack, onSetPack, onDeleteLine,
   speechSupported, isListening, onMicToggle,
 }: BillCardProps): React.JSX.Element {
@@ -1043,77 +1060,149 @@ function BillCard({
         )}
       </div>
 
-      {/* Multi-select suggestions */}
-      {inMultiSel && suggestions.length > 0 && (
-        <div className="border-b border-[#f0f0f0]">
-          {suggestions.length === 1 ? (
-            // Single result fast path — no checkbox, tap = pick straight to picker.
-            (() => {
-              const p = suggestions[0];
-              return (
-                <button
-                  type="button"
-                  onClick={() => onPickProduct(p)}
-                  className="w-full flex items-center gap-2.5 px-[14px] py-[11px] text-left active:bg-teal-50"
-                >
-                  <div className="w-[7px] h-[7px] rounded-full bg-teal-100 border-2 border-teal-600 shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[14px] font-medium text-gray-900 truncate">{p.displayName}</p>
-                    <p className="text-[11px] text-gray-400 mt-0.5">{p.family}</p>
-                  </div>
-                  <span className="text-gray-300 text-[17px] shrink-0 leading-none">›</span>
-                </button>
-              );
-            })()
-          ) : (
-            // Multi-result path — checkboxes, tap = toggle selection.
-            suggestions.map((p) => {
-              const isSelected = bill.selectedProducts.some(
-                (sp) => sp.subProduct === p.subProduct && sp.baseColour === p.baseColour,
-              );
-              return (
-                <div
-                  key={`${p.subProduct}|||${p.baseColour ?? ""}`}
-                  onClick={() => onToggleProduct(p)}
-                  className="flex items-center gap-[10px] px-[13px] py-[11px] border-b border-[#f0f0f0] last:border-b-0 cursor-pointer active:bg-teal-50"
-                >
-                  <div
-                    className={`w-5 h-5 rounded-[6px] border-2 flex items-center justify-center shrink-0 transition-all ${
-                      isSelected ? "bg-teal-600 border-teal-600" : "bg-white border-gray-300"
-                    }`}
-                  >
-                    {isSelected && (
-                      <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
-                        <path d="M2 6l3 3 5-5" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[14px] font-medium text-gray-900 truncate">{p.displayName}</p>
-                    <p className="text-[11px] text-gray-400 mt-0.5">{p.family}</p>
-                  </div>
-                </div>
-              );
-            })
-          )}
+      {/* Multi-select suggestions — paginated, with pinned Selected section */}
+      {inMultiSel && suggestions.length > 0 && (() => {
+        const unselectedSuggestions = suggestions.filter(
+          (p) => !bill.selectedProducts.some(
+            (s) => s.subProduct === p.subProduct && s.baseColour === p.baseColour,
+          ),
+        );
+        const totalPages  = Math.max(1, Math.ceil(unselectedSuggestions.length / SUGGESTION_PAGE_SIZE));
+        const currentPage = Math.min(bill.suggestionPage, totalPages - 1);
+        const pageItems   = unselectedSuggestions.slice(
+          currentPage * SUGGESTION_PAGE_SIZE,
+          (currentPage + 1) * SUGGESTION_PAGE_SIZE,
+        );
+        // Fast path only when no prior selections AND exactly one unselected
+        // result — preserves multi-select work if user has already ticked items.
+        const isFastPath  = bill.selectedProducts.length === 0 && unselectedSuggestions.length === 1;
 
-          {/* Set Quantities bar — only when 2+ results AND ≥1 selected */}
-          {suggestions.length >= 2 && bill.selectedProducts.length > 0 && (
-            <div className="flex items-center justify-between px-[13px] py-[10px] bg-teal-50 border-t border-teal-200">
-              <span className="text-[13px] font-semibold text-teal-700">
-                {bill.selectedProducts.length} product{bill.selectedProducts.length > 1 ? "s" : ""} selected
-              </span>
-              <button
-                type="button"
-                onClick={onStartPicking}
-                className="bg-teal-600 hover:bg-teal-700 text-white text-[13px] font-semibold px-4 py-2 rounded-[8px]"
-              >
-                Set Quantities →
-              </button>
-            </div>
-          )}
-        </div>
-      )}
+        return (
+          <div className="border-b border-[#f0f0f0]">
+            {isFastPath ? (
+              // Single result, no prior selection — tap = pick straight to picker.
+              (() => {
+                const p = unselectedSuggestions[0];
+                return (
+                  <button
+                    type="button"
+                    onClick={() => onPickProduct(p)}
+                    className="w-full flex items-center gap-2.5 px-[14px] py-[11px] text-left active:bg-teal-50"
+                  >
+                    <div className="w-[7px] h-[7px] rounded-full bg-teal-100 border-2 border-teal-600 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[14px] font-medium text-gray-900 truncate">{p.displayName}</p>
+                      <p className="text-[11px] text-gray-400 mt-0.5">{p.family}</p>
+                    </div>
+                    <span className="text-gray-300 text-[17px] shrink-0 leading-none">›</span>
+                  </button>
+                );
+              })()
+            ) : (
+              <>
+                {/* Selected section — pinned at top while multi-selecting */}
+                {bill.selectedProducts.length > 0 && (
+                  <>
+                    <div className="px-[13px] py-[6px] bg-gray-50 border-b border-[#f0f0f0]">
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+                        Selected ({bill.selectedProducts.length})
+                      </span>
+                    </div>
+                    {bill.selectedProducts.map((product) => (
+                      <div
+                        key={`sel-${product.subProduct}|||${product.baseColour ?? ""}`}
+                        onClick={() => onToggleProduct(product)}
+                        className="flex items-center gap-[10px] px-[13px] py-[10px] border-b border-[#f0f0f0] bg-teal-50/30 cursor-pointer active:bg-teal-50/60"
+                      >
+                        <div className="w-5 h-5 rounded-[6px] border-2 bg-teal-600 border-teal-600 flex items-center justify-center shrink-0">
+                          <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
+                            <path d="M2 6l3 3 5-5" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[13px] font-medium text-gray-900 truncate">{product.displayName}</p>
+                          <p className="text-[11px] text-gray-400 mt-0.5">{product.family}</p>
+                        </div>
+                        <span
+                          className="text-gray-300 text-[18px] leading-none shrink-0 px-1"
+                          aria-label="Deselect"
+                        >
+                          ×
+                        </span>
+                      </div>
+                    ))}
+                    {unselectedSuggestions.length > 0 && (
+                      <div className="px-[13px] py-[6px] bg-gray-50 border-b border-[#f0f0f0]">
+                        <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+                          Results
+                        </span>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {/* Results — paginated, checkbox each row */}
+                {pageItems.map((p) => (
+                  <div
+                    key={`res-${p.subProduct}|||${p.baseColour ?? ""}`}
+                    onClick={() => onToggleProduct(p)}
+                    className="flex items-center gap-[10px] px-[13px] py-[11px] border-b border-[#f0f0f0] cursor-pointer active:bg-teal-50"
+                  >
+                    <div className="w-5 h-5 rounded-[6px] border-2 bg-white border-gray-300 flex items-center justify-center shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[14px] font-medium text-gray-900 truncate">{p.displayName}</p>
+                      <p className="text-[11px] text-gray-400 mt-0.5">{p.family}</p>
+                    </div>
+                  </div>
+                ))}
+
+                {/* Pagination bar — only when more than one page of unselected results */}
+                {totalPages > 1 && (
+                  <div className="flex items-center justify-between px-[13px] py-[8px] border-b border-[#f0f0f0]">
+                    <button
+                      type="button"
+                      onClick={() => onGoToPage(currentPage - 1)}
+                      disabled={currentPage === 0}
+                      className="w-8 h-8 flex items-center justify-center rounded-[7px] bg-gray-100 text-gray-500 disabled:opacity-30 text-[16px]"
+                      aria-label="Previous page"
+                    >
+                      ‹
+                    </button>
+                    <span className="text-[12px] text-gray-400 font-medium">
+                      {currentPage + 1} of {totalPages}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => onGoToPage(currentPage + 1)}
+                      disabled={currentPage >= totalPages - 1}
+                      className="w-8 h-8 flex items-center justify-center rounded-[7px] bg-gray-100 text-gray-500 disabled:opacity-30 text-[16px]"
+                      aria-label="Next page"
+                    >
+                      ›
+                    </button>
+                  </div>
+                )}
+
+                {/* Set Quantities bar — visible whenever at least one is selected */}
+                {bill.selectedProducts.length > 0 && (
+                  <div className="flex items-center justify-between px-[13px] py-[10px] bg-teal-50 border-t border-teal-200">
+                    <span className="text-[13px] font-semibold text-teal-700">
+                      {bill.selectedProducts.length} product{bill.selectedProducts.length > 1 ? "s" : ""} selected
+                    </span>
+                    <button
+                      type="button"
+                      onClick={onStartPicking}
+                      className="bg-teal-600 hover:bg-teal-700 text-white text-[13px] font-semibold px-4 py-2 rounded-[8px]"
+                    >
+                      Set Quantities →
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Picker — progress + product header + pack counters + Skip/Next bar */}
       {inPicking && bill.activeProduct && (
