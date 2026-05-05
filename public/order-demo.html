@@ -1,0 +1,1360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>OrbitOMS — Place Order Demo</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+:root {
+  --teal: #0d9488;
+  --teal-dark: #0f766e;
+  --teal-light: #f0fdfa;
+  --teal-border: #99f6e4;
+  --page: #f2f2f7;
+  --border: #f0f0f0;
+  --g4: #9ca3af;
+  --g3: #d1d5db;
+  --g2: #e5e7eb;
+  --g1: #f3f4f6;
+  --red: #ef4444;
+  --amber: #f59e0b;
+  --indigo: #6366f1;
+}
+
+body {
+  font-family: 'DM Sans', sans-serif;
+  background: var(--page);
+  max-width: 390px;
+  margin: 0 auto;
+  min-height: 100vh;
+  position: relative;
+  overflow-x: hidden;
+}
+
+/* ── Phone chrome ── */
+.phone-status {
+  background: white;
+  padding: 12px 20px 6px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: #111;
+}
+.status-right { display: flex; gap: 5px; align-items: center; font-size: 11px; }
+
+/* ── Topbar ── */
+.topbar {
+  background: white;
+  padding: 10px 16px 10px;
+  border-bottom: 1px solid var(--g2);
+  display: flex; align-items: center; gap: 10px;
+}
+.logo {
+  width: 32px; height: 32px; background: var(--teal);
+  border-radius: 8px; display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.topbar h1 { font-size: 15px; font-weight: 600; }
+.topbar p  { font-size: 11px; color: var(--g4); }
+
+/* ── Section ── */
+.section { margin: 14px 14px 0; }
+.slabel {
+  font-size: 11px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--g4);
+  margin-bottom: 6px; padding-left: 2px;
+}
+
+/* ── Card ── */
+.card { background: white; border-radius: 13px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+
+/* ── Customer ── */
+.cust-search-row {
+  padding: 12px 14px;
+  display: flex; align-items: center; gap: 8px;
+}
+.cust-selected {
+  padding: 12px 14px;
+  display: flex; align-items: center; justify-content: space-between;
+  display: none;
+}
+.cust-name { font-size: 14px; font-weight: 600; }
+.cust-code { font-size: 11px; color: var(--g4); font-family: 'DM Mono',monospace; margin-top: 1px; }
+.change-btn { font-size: 12px; font-weight: 500; color: var(--teal); background: none; border: none; }
+
+.search-icon { color: var(--g3); flex-shrink: 0; }
+.fake-input {
+  flex: 1; font-size: 15px; color: #111;
+  font-family: 'DM Sans', sans-serif;
+  min-height: 22px;
+}
+.fake-input .cursor {
+  display: inline-block;
+  width: 2px; height: 16px;
+  background: var(--teal);
+  margin-left: 1px;
+  vertical-align: middle;
+  animation: blink 1s infinite;
+}
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+
+/* ── Suggestions ── */
+.suggestions { display: none; }
+.sug-item {
+  padding: 11px 14px;
+  display: flex; align-items: center; gap: 9px;
+  border-top: 1px solid var(--border);
+  cursor: pointer;
+}
+.sug-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: #ccfbf1; border: 2px solid var(--teal); flex-shrink: 0;
+}
+.sug-name { flex: 1; font-size: 14px; color: #111; font-weight: 500; }
+.sug-sub  { font-size: 11px; color: var(--g4); margin-top: 1px; }
+.sug-arr  { color: var(--g3); font-size: 17px; }
+
+/* ── Bill card ── */
+.bill-card {
+  background: white; border-radius: 13px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  margin-bottom: 8px;
+}
+.bill-header {
+  padding: 9px 13px;
+  display: flex; align-items: center; justify-content: space-between;
+  background: #fafafa; border-bottom: 1px solid var(--border);
+  border-radius: 13px 13px 0 0;
+}
+.bill-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--teal); }
+.bill-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; border-radius: 50%;
+  background: var(--teal); color: white;
+  font-size: 9px; font-weight: 700; margin-left: 5px;
+}
+.bill-x { background: none; border: none; color: var(--g3); font-size: 18px; }
+
+/* ── Cart lines ── */
+.cart-line {
+  padding: 9px 13px;
+  display: flex; align-items: center; gap: 9px;
+  border-bottom: 1px solid var(--border);
+  opacity: 0; transform: translateX(-8px);
+  transition: all 0.4s ease;
+}
+.cart-line.in { opacity: 1; transform: translateX(0); }
+.line-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--teal); flex-shrink: 0; }
+.line-name { font-size: 12px; font-weight: 500; color: #111; }
+.line-packs { font-size: 11px; color: var(--teal); font-family: 'DM Mono',monospace; margin-top: 1px; }
+.line-del { background: none; border: none; color: var(--g3); font-size: 16px; margin-left: auto; }
+
+.no-lines { padding: 12px 13px; font-size: 12px; color: var(--g3); font-style: italic; border-bottom: 1px solid var(--border); }
+
+/* ── Search row ── */
+.prod-search-row {
+  padding: 10px 13px;
+  display: flex; align-items: center; gap: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.mic-icon { color: var(--g3); }
+.clear-x {
+  background: #e5e5ea; border: none; border-radius: 50%;
+  width: 16px; height: 16px; font-size: 10px; color: #666;
+  display: none; align-items: center; justify-content: center;
+}
+.clear-x.show { display: flex; }
+
+/* ── Pack picker ── */
+.pack-picker { display: none; }
+.pack-prod-bar {
+  padding: 9px 13px;
+  display: flex; align-items: center; justify-content: space-between;
+  background: var(--teal-light); border-bottom: 1px solid var(--teal-border);
+}
+.pack-prod-name { font-size: 13px; font-weight: 600; color: var(--teal-dark); }
+.pack-prod-fam  { font-size: 10px; color: #5eead4; margin-top: 1px; }
+.pack-change    { font-size: 11px; font-weight: 500; color: var(--teal); background: none; border: none; }
+
+.pack-row {
+  padding: 10px 13px;
+  display: flex; align-items: center;
+  border-bottom: 1px solid var(--border);
+}
+.pack-lbl { font-size: 14px; font-weight: 500; flex: 1; }
+.stepper {
+  display: flex; align-items: center;
+  background: var(--g1); border-radius: 9px; overflow: hidden;
+}
+.step-btn {
+  width: 36px; height: 36px; border: none; background: transparent;
+  font-size: 20px; font-weight: 300; color: var(--teal);
+  display: flex; align-items: center; justify-content: center;
+}
+.step-btn.z { color: var(--g3); }
+.step-val {
+  width: 38px; text-align: center; font-size: 14px; font-weight: 700;
+  color: #111; background: transparent; border: none; font-family: 'DM Sans',sans-serif;
+}
+.step-val.on { color: var(--teal); }
+
+/* ── Add button ── */
+.add-bar {
+  display: none; padding: 9px 13px;
+  background: white; border-top: 1px solid var(--border);
+  border-radius: 0 0 13px 13px;
+  position: sticky; bottom: 0; z-index: 3;
+}
+.add-btn {
+  width: 100%; height: 40px;
+  background: var(--teal); border: none; border-radius: 9px;
+  color: white; font-family: 'DM Sans',sans-serif;
+  font-size: 13px; font-weight: 600;
+}
+
+/* ── Add bill btn ── */
+.add-bill-btn {
+  width: 100%; height: 40px;
+  background: white; border: 1.5px dashed var(--g3);
+  border-radius: 13px; font-family: 'DM Sans',sans-serif;
+  font-size: 13px; font-weight: 500; color: var(--g4);
+  margin-top: 2px;
+}
+
+/* ── Ship To ── */
+.field-row { padding: 11px 14px; border-bottom: 1px solid var(--border); }
+.field-row:last-child { border-bottom: none; }
+
+/* ── Chips ── */
+.chips { display: flex; gap: 6px; padding: 10px 13px; }
+.chip {
+  flex: 1; height: 37px; border-radius: 9px;
+  border: 1.5px solid var(--g2); background: white;
+  font-family: 'DM Sans',sans-serif; font-size: 12px; font-weight: 500; color: var(--g4);
+  display: flex; align-items: center; justify-content: center; gap: 5px;
+  transition: all 0.3s;
+}
+.cdot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.chip.sn { border-color: var(--teal); background: var(--teal-light); color: var(--teal-dark); font-weight: 600; }
+.chip.sh { border-color: #fca5a5; background: #fff5f4; color: #c0392b; font-weight: 600; }
+.chip.si { border-color: #c4b5fd; background: #f5f3ff; color: #5b21b6; font-weight: 600; }
+
+/* ── Preview ── */
+.preview-card { background: white; border-radius: 13px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+.prev-row {
+  padding: 9px 13px;
+  display: flex; gap: 8px; align-items: flex-start;
+  border-bottom: 1px solid var(--border);
+}
+.prev-row:last-child { border-bottom: none; }
+.prev-key { font-size: 10px; font-weight: 600; color: var(--g3); width: 48px; flex-shrink: 0; padding-top: 1px; text-transform: uppercase; letter-spacing: 0.05em; }
+.prev-val { font-size: 12px; color: #111; font-family: 'DM Mono',monospace; flex: 1; white-space: pre-wrap; line-height: 1.55; }
+.prev-val.dim { color: var(--g3); font-style: italic; font-family: 'DM Sans',sans-serif; font-size: 11px; }
+
+/* ── Send ── */
+.send-wrap { padding: 12px 14px 8px; }
+.send-btn {
+  width: 100%; height: 48px; background: var(--teal);
+  border: none; border-radius: 13px; color: white;
+  font-family: 'DM Sans',sans-serif; font-size: 15px; font-weight: 600;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  transition: transform 0.15s;
+}
+.send-btn:active { transform: scale(0.98); }
+.send-note { text-align: center; font-size: 10px; color: var(--g4); margin-top: 6px; }
+.bottom-gap { height: 40px; }
+
+/* ══════════════════════
+   CAPTION OVERLAY
+══════════════════════ */
+.caption-overlay {
+  position: fixed;
+  bottom: 0;
+  left: 0; right: 0;
+  width: 100%;
+  max-width: 390px;
+  background: rgba(0,0,0,0.95);
+  color: #facc15;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.6;
+  padding: 14px 18px 30px;
+  text-align: center;
+  opacity: 0;
+  transition: opacity 0.3s;
+  z-index: 100;
+  pointer-events: none;
+  border-top: 3px solid #facc15;
+  letter-spacing: 0.01em;
+  text-shadow: 0 0 20px rgba(250,204,21,0.3);
+}
+.caption-overlay.show { opacity: 1; }
+
+/* ══════════════════════
+   TAP INDICATOR
+══════════════════════ */
+.tap-ring {
+  position: fixed;
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  background: rgba(13,148,136,0.25);
+  border: 2px solid var(--teal);
+  pointer-events: none;
+  z-index: 200;
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.5);
+  transition: opacity 0.2s, transform 0.3s;
+}
+.tap-ring.show {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+}
+.tap-ring.fade {
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(1.5);
+}
+
+/* ══════════════════════
+   PROGRESS BAR
+══════════════════════ */
+.progress-bar {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: rgba(0,0,0,0.1);
+  z-index: 300;
+}
+.progress-fill {
+  height: 100%;
+  background: var(--teal);
+  width: 0%;
+  transition: width 0.5s linear;
+}
+
+/* ══════════════════════
+   STEP LABEL
+══════════════════════ */
+.step-label {
+  position: fixed;
+  top: 12px; right: 14px;
+  background: rgba(13,148,136,0.9);
+  color: white;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 20px;
+  z-index: 300;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+.step-label.show { opacity: 1; }
+
+/* ══════════════════════
+   HIGHLIGHT PULSE
+══════════════════════ */
+.highlight-pulse {
+  outline: 2px solid var(--teal) !important;
+  outline-offset: 2px;
+  border-radius: 10px;
+  animation: pulse-border 0.8s ease infinite;
+}
+@keyframes pulse-border {
+  0%,100% { outline-color: var(--teal); }
+  50% { outline-color: #5eead4; }
+}
+
+/* ── Replay button ── */
+.replay-btn {
+  position: fixed;
+  bottom: 30px; left: 50%; transform: translateX(-50%);
+  background: var(--teal); color: white;
+  border: none; border-radius: 24px;
+  padding: 12px 28px;
+  font-family: 'DM Sans',sans-serif;
+  font-size: 14px; font-weight: 600;
+  cursor: pointer; z-index: 400;
+  display: none;
+  box-shadow: 0 4px 16px rgba(13,148,136,0.4);
+}
+</style>
+</head>
+<body>
+
+<!-- Progress bar -->
+<div class="progress-bar"><div class="progress-fill" id="progress"></div></div>
+<div class="step-label" id="step-label"></div>
+<div class="tap-ring" id="tap"></div>
+<div class="caption-overlay" id="caption"></div>
+<button class="replay-btn" id="replay-btn" onclick="startDemo()">▶ Watch Again</button>
+
+<!-- Phone status -->
+<div class="phone-status">
+  <span>9:41</span>
+  <div class="status-right">
+    <span>5G</span>
+    <span>●●●</span>
+  </div>
+</div>
+
+<!-- Topbar -->
+<div class="topbar">
+  <div class="logo">
+    <svg width="16" height="16" viewBox="0 0 22 22" fill="none">
+      <circle cx="11" cy="11" r="7" stroke="white" stroke-width="1.6"/>
+      <circle cx="11" cy="11" r="2.2" fill="white"/>
+      <circle cx="18" cy="11" r="2" fill="white"/>
+    </svg>
+  </div>
+  <div><h1>Place Order</h1><p>JSW Dulux · Surat Depot</p></div>
+</div>
+
+<!-- Customer -->
+<div class="section">
+  <div class="slabel">Customer</div>
+  <div class="card" id="cust-card">
+    <div class="cust-search-row" id="cust-search-row">
+      <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+        <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+      </svg>
+      <div class="fake-input" id="cust-input"><span class="cursor"></span></div>
+    </div>
+    <div class="suggestions" id="cust-suggs"></div>
+    <div class="cust-selected" id="cust-selected">
+      <div>
+        <div class="cust-name" id="cust-name-val"></div>
+        <div class="cust-code" id="cust-code-val"></div>
+      </div>
+      <button class="change-btn">Change</button>
+    </div>
+  </div>
+</div>
+
+<!-- Products -->
+<div class="section">
+  <div class="slabel">Products</div>
+
+  <!-- Bill 1 -->
+  <div class="bill-card" id="bill-1">
+    <div class="bill-header">
+      <div><span class="bill-title">Bill 1</span><span class="bill-badge" id="badge-1" style="display:none">0</span></div>
+      <button class="bill-x">×</button>
+    </div>
+    <div id="cart-1"><div class="no-lines" id="empty-1">No products added</div></div>
+    <div class="prod-search-row" id="psr-1">
+      <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+        <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+      </svg>
+      <div class="fake-input" id="prod-input-1"><span style="color:var(--g3);font-size:14px;">Search next product…</span></div>
+      <svg class="mic-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"/>
+        <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+        <line x1="12" y1="19" x2="12" y2="22"/>
+      </svg>
+    </div>
+    <div class="suggestions" id="prod-suggs-1"></div>
+    <div class="pack-picker" id="picker-1"></div>
+    <div class="add-bar" id="add-bar-1"><button class="add-btn" id="add-btn-1">+ Add to Bill 1</button></div>
+  </div>
+
+  <!-- Bill 2 (hidden initially) -->
+  <div class="bill-card" id="bill-2" style="display:none;">
+    <div class="bill-header">
+      <div><span class="bill-title">Bill 2</span><span class="bill-badge" id="badge-2" style="display:none">0</span></div>
+      <button class="bill-x">×</button>
+    </div>
+    <div id="cart-2"><div class="no-lines" id="empty-2">No products added</div></div>
+    <div class="prod-search-row" id="psr-2">
+      <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+        <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+      </svg>
+      <div class="fake-input" id="prod-input-2"><span style="color:var(--g3);font-size:14px;">Search next product…</span></div>
+    </div>
+    <div class="suggestions" id="prod-suggs-2"></div>
+    <div class="pack-picker" id="picker-2"></div>
+    <div class="add-bar" id="add-bar-2"><button class="add-btn">+ Add to Bill 2</button></div>
+  </div>
+
+  <button class="add-bill-btn" id="add-bill-btn">+ Add Bill</button>
+</div>
+
+<!-- Ship To -->
+<div class="section">
+  <div class="slabel">Ship To</div>
+  <div class="card">
+    <div class="field-row">
+      <div class="fake-input" id="shipto-input" style="color:var(--g3);font-size:14px;">Site name or delivery address…</div>
+    </div>
+  </div>
+</div>
+
+<!-- Dispatch -->
+<div class="section">
+  <div class="slabel">Dispatch</div>
+  <div class="card">
+    <div class="chips">
+      <button class="chip sn" id="chip-n"><span class="cdot" style="background:var(--teal)"></span> Normal</button>
+      <button class="chip" id="chip-h"><span class="cdot" style="background:var(--red)"></span> Hold</button>
+      <button class="chip" id="chip-u"><span class="cdot" style="background:var(--amber)"></span> Urgent</button>
+    </div>
+  </div>
+</div>
+
+<!-- Order Marker -->
+<div class="section">
+  <div class="slabel">Order Marker <span style="font-weight:400;color:var(--g3);font-size:10px;text-transform:none;letter-spacing:0">· optional</span></div>
+  <div class="card">
+    <div class="chips">
+      <button class="chip" id="marker-truck">🚛 Truck</button>
+      <button class="chip" id="marker-cross">🔄 Cross</button>
+      <button class="chip" id="marker-dts">📦 DTS</button>
+    </div>
+  </div>
+</div>
+
+<!-- Preview -->
+<div class="section">
+  <div class="slabel">Preview</div>
+  <div class="preview-card">
+    <div class="prev-row">
+      <div class="prev-key">To</div>
+      <div class="prev-val">surat.order@outlook.com</div>
+    </div>
+    <div class="prev-row">
+      <div class="prev-key">Subject</div>
+      <div class="prev-val dim" id="prev-sub">—</div>
+    </div>
+    <div class="prev-row">
+      <div class="prev-key">Body</div>
+      <div class="prev-val dim" id="prev-body">Fill the form above</div>
+    </div>
+  </div>
+</div>
+
+<!-- Send -->
+<div class="send-wrap">
+  <button class="send-btn" id="send-btn">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+    </svg>
+    Send Order
+  </button>
+  <div class="send-note">Opens your mail app · ready to send</div>
+</div>
+<div class="bottom-gap"></div>
+
+<script>
+// ── Helpers ──
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const el = id => document.getElementById(id);
+
+function showCaption(text, duration, wait=false) {
+  const c = el('caption');
+  c.textContent = text;
+  c.classList.add('show');
+  const p = sleep(duration).then(() => {
+    c.classList.remove('show');
+    return sleep(300);
+  });
+  // If wait=true, caller awaits. Otherwise fire-and-forget.
+  return wait ? p : Promise.resolve();
+}
+
+function setStep(label, pct) {
+  el('step-label').textContent = label;
+  el('step-label').classList.add('show');
+  el('progress').style.width = pct + '%';
+}
+
+function scrollTo(elementId, offset=80) {
+  const el2 = document.getElementById(elementId);
+  if (!el2) return;
+  const top = el2.getBoundingClientRect().top + window.scrollY - offset;
+  window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+}
+
+async function tapAt(x, y) {
+  const t = el('tap');
+  t.style.left = x + 'px';
+  t.style.top = y + 'px';
+  t.classList.remove('fade');
+  t.classList.add('show');
+  await sleep(300);
+  t.classList.add('fade');
+  await sleep(300);
+  t.classList.remove('show','fade');
+}
+
+async function typeText(elId, text, speed=80, isInput=false) {
+  const target = el(elId);
+  let current = '';
+  for (let i = 0; i < text.length; i++) {
+    current += text[i];
+    if (isInput) {
+      target.innerHTML = current + '<span class="cursor"></span>';
+    } else {
+      target.innerHTML = current + '<span class="cursor"></span>';
+    }
+    await sleep(speed + Math.random()*40);
+  }
+}
+
+function searchProducts(query) {
+  if (!query || query.trim().length < 2) return [];
+  const words = query.trim().toLowerCase().split(/\s+/);
+  return REAL_PRODUCTS.filter(p =>
+    words.every(w => p.tokens.toLowerCase().includes(w))
+  ).slice(0, 5);
+}
+
+function showSuggestions(containerId, items) {
+  const c = el(containerId);
+  c.innerHTML = items.map(item => `
+    <div class="sug-item">
+      <div class="sug-dot"></div>
+      <div style="flex:1">
+        <div class="sug-name">${item.name}</div>
+        ${item.sub ? `<div class="sug-sub">${item.sub}</div>` : ''}
+      </div>
+      <div class="sug-arr">›</div>
+    </div>`).join('');
+  c.style.display = 'block';
+  c.style.opacity = '0';
+  c.style.transform = 'translateY(-6px)';
+  c.style.transition = 'all 0.3s';
+  requestAnimationFrame(() => {
+    c.style.opacity = '1';
+    c.style.transform = 'translateY(0)';
+  });
+}
+
+function hideSuggestions(containerId) {
+  const c = el(containerId);
+  c.style.opacity = '0';
+  setTimeout(() => { c.style.display = 'none'; c.innerHTML = ''; }, 550);
+}
+
+function selectFirstSugg(containerId) {
+  const c = el(containerId);
+  const first = c.querySelector('.sug-item');
+  if (first) {
+    first.style.background = 'var(--teal-light)';
+    setTimeout(() => first.style.background = '', 700);
+  }
+}
+
+function showPackPicker(billId, prodName, prodFamily, packs) {
+  const p = el('picker-' + billId);
+  const rows = packs.map(pack => `
+    <div class="pack-row">
+      <div class="pack-lbl">${pack.l}</div>
+      <div class="stepper">
+        <button class="step-btn z">−</button>
+        <div class="step-val" id="sv-${billId}-${pack.id}">0</div>
+        <button class="step-btn">+</button>
+      </div>
+    </div>`).join('');
+
+  p.innerHTML = `
+    <div class="pack-prod-bar">
+      <div>
+        <div class="pack-prod-name">${prodName}</div>
+        <div class="pack-prod-fam">${prodFamily}</div>
+      </div>
+      <button class="pack-change">Change</button>
+    </div>
+    ${rows}`;
+  p.style.display = 'block';
+}
+
+async function animateQty(billId, packId, targetQty, delay=150) {
+  const sv = el(`sv-${billId}-${packId}`);
+  if (!sv) return;
+  for (let i = 1; i <= targetQty; i++) {
+    sv.textContent = i;
+    sv.className = 'step-val on';
+    await sleep(delay);
+  }
+}
+
+function addCartLine(billId, name, packs) {
+  const emptyEl = el('empty-' + billId);
+  if (emptyEl) emptyEl.remove();
+
+  const cart = el('cart-' + billId);
+  const div = document.createElement('div');
+  div.className = 'cart-line';
+  div.innerHTML = `
+    <div class="line-dot"></div>
+    <div style="flex:1;min-width:0;">
+      <div class="line-name">${name}</div>
+      <div class="line-packs">${packs}</div>
+    </div>
+    <button class="line-del">×</button>`;
+  cart.appendChild(div);
+  setTimeout(() => div.classList.add('in'), 50);
+
+  // Update badge
+  const badge = el('badge-' + billId);
+  badge.style.display = 'inline-flex';
+  badge.textContent = cart.querySelectorAll('.cart-line').length;
+}
+
+function updatePreview(subject, body) {
+  const sub = el('prev-sub');
+  const bod = el('prev-body');
+  sub.textContent = subject;
+  sub.className = 'prev-val';
+  bod.textContent = body;
+  bod.className = 'prev-val';
+}
+
+function flashAddBtn(billId) {
+  const bar = el('add-bar-' + billId);
+  const btn = el('add-btn-' + billId);
+  if (!bar) return;
+  bar.style.display = 'block';
+  btn.style.transform = 'scale(1.02)';
+  setTimeout(() => btn.style.transform = '', 400);
+}
+
+const REAL_PRODUCTS = [{"display": "Crackfiller", "family": "AQUATECH", "tokens": "crackfiller crack crackfiller aquatech aquatech crack crackfiller", "subProduct": "CRACKFILLER", "baseColour": "10MM", "packs": ["500ML", "1L"]}, {"display": "Damp Protect 2in1", "family": "AQUATECH", "tokens": "damp protect 2in1 damp protect 2in1 aquatech protect", "subProduct": "DAMP PROTECT 2IN1", "baseColour": null, "packs": ["1L", "4L", "10L", "20L"]}, {"display": "Damp Protect Basecoat — Basecoat", "family": "AQUATECH", "tokens": "damp protect basecoat damp protect basecoat basecoat basecoat aquatech protect", "subProduct": "DAMP PROTECT BASECOAT", "baseColour": "BASECOAT", "packs": ["1L", "4L", "10L", "20L"]}, {"display": "Flexible Coat — Advance", "family": "AQUATECH", "tokens": "flexible coat flexible coat advance aquatech", "subProduct": "FLEXIBLE COAT", "baseColour": "ADVANCE", "packs": ["1L", "4L", "10L", "20L"]}, {"display": "Flexible Coat — Neo", "family": "AQUATECH", "tokens": "flexible coat flexible coat neo aquatech", "subProduct": "FLEXIBLE COAT", "baseColour": "NEO", "packs": ["1L", "4L", "10L", "20L"]}, {"display": "Ibc Advance — Advance", "family": "AQUATECH", "tokens": "ibc advance ibc advance advance aquatech", "subProduct": "IBC ADVANCE", "baseColour": "ADVANCE", "packs": ["1L", "4L", "20L"]}, {"display": "Duwel Farco White Primer", "family": "OTHER", "tokens": "duwel farco white primer duwel farco white primer other", "subProduct": "DUWEL FARCO WHITE PRIMER", "baseColour": null, "packs": ["1L", "4L", "10L", "20L"]}, {"display": "Duwel Interior Acrylic Primer", "family": "OTHER", "tokens": "duwel interior acrylic primer duwel interior acrylic primer other", "subProduct": "DUWEL INTERIOR ACRYLIC PRIMER", "baseColour": null, "packs": ["1L", "4L", "10L", "20L"]}, {"display": "Duwel Red Oxide Metal Primer", "family": "OTHER", "tokens": "duwel red oxide metal primer duwel red oxide metal primer other red", "subProduct": "DUWEL RED OXIDE METAL PRIMER", "baseColour": null, "packs": ["4L", "10L"]}, {"display": "Duwel Wb Cement Primer", "family": "OTHER", "tokens": "duwel wb cement primer duwel wb cement primer other", "subProduct": "DUWEL WB CEMENT PRIMER", "baseColour": null, "packs": ["1L", "10L"]}, {"display": "Duwel Wood Primer — Pink", "family": "OTHER", "tokens": "duwel wood primer duwel wood primer pink other", "subProduct": "DUWEL WOOD PRIMER", "baseColour": "PINK", "packs": ["500ML", "1L", "4L"]}, {"display": "Duwel Wood Primer — BW", "family": "OTHER", "tokens": "duwel wood primer duwel wood primer brilliant white bw other bw white brilliant", "subProduct": "DUWEL WOOD PRIMER", "baseColour": "BRILLIANT WHITE", "packs": ["500ML", "1L", "4L", "10L", "20L"]}, {"display": "Gloss — 94", "family": "DULUX", "tokens": "gloss gloss 94 base 94 dulux gloss dulux 94 94base", "subProduct": "GLOSS", "baseColour": "94 BASE", "packs": ["1L", "4L", "20L"]}, {"display": "Gloss — Aquamarine", "family": "DULUX", "tokens": "gloss gloss aquamarine dulux gloss dulux", "subProduct": "GLOSS", "baseColour": "AQUAMARINE", "packs": ["500ML", "1L", "4L"]}, {"display": "Gloss — Black", "family": "DULUX", "tokens": "gloss gloss black dulux gloss dulux black", "subProduct": "GLOSS", "baseColour": "BLACK", "packs": ["100ML", "200ML", "500ML", "1L", "4L", "10L", "20L"]}, {"display": "Gloss — Blazing White", "family": "DULUX", "tokens": "gloss gloss blazing white dulux gloss dulux", "subProduct": "GLOSS", "baseColour": "BLAZING WHITE", "packs": ["500ML", "1L", "4L", "10L", "20L"]}, {"display": "Gloss — BW", "family": "DULUX", "tokens": "gloss gloss brilliant white bw dulux gloss dulux bw white brilliant", "subProduct": "GLOSS", "baseColour": "BRILLIANT WHITE", "packs": ["100ML", "200ML", "500ML", "1L", "4L", "10L", "20L"]}, {"display": "Gloss — Bus Green", "family": "DULUX", "tokens": "gloss gloss bus green dulux gloss dulux green", "subProduct": "GLOSS", "baseColour": "BUS GREEN", "packs": ["100ML", "200ML", "500ML", "1L", "4L", "20L"]}, {"display": "Promise Smartchoice Acrylic Distemper", "family": "OTHER", "tokens": "promise smartchoice acrylic distemper promise smartchoice acrylic distemper other", "subProduct": "PROMISE SMARTCHOICE ACRYLIC DISTEMPER", "baseColour": null, "packs": ["5L", "10L", "20L"]}, {"display": "Promise Smartchoice Ext — BW", "family": "PROMISE", "tokens": "promise smartchoice ext promise smartchoice ext brilliant white bw promise bw white brilliant", "subProduct": "PROMISE SMARTCHOICE EXT", "baseColour": "BRILLIANT WHITE", "packs": ["1L", "4L", "10L", "20L"]}, {"display": "Promise Smartchoice Ext Primer", "family": "OTHER", "tokens": "promise smartchoice ext primer promise smartchoice ext primer other", "subProduct": "PROMISE SMARTCHOICE EXT PRIMER", "baseColour": null, "packs": ["1L", "4L", "10L", "20L"]}, {"display": "Smartchoice Int — BW", "family": "PROMISE", "tokens": "smartchoice int promise smartchoice int brilliant white bw promise bw white brilliant", "subProduct": "PROMISE SMARTCHOICE INT", "baseColour": "BRILLIANT WHITE", "packs": ["1L", "4L", "10L", "20L"]}, {"display": "Promise Smartchoice Int Primer", "family": "OTHER", "tokens": "promise smartchoice int primer promise smartchoice int primer other", "subProduct": "PROMISE SMARTCHOICE INT PRIMER", "baseColour": null, "packs": ["1L", "4L", "10L", "20L"]}, {"display": "2Kpu Thinner", "family": "OTHER", "tokens": "2kpu thinner 2kpu thinner other", "subProduct": "2KPU THINNER", "baseColour": null, "packs": ["1L", "3L", "20L"]}, {"display": "Int Clr 2K Pu Sealer", "family": "OTHER", "tokens": "int clr 2k pu sealer int clr 2k pu sealer other", "subProduct": "INT CLR 2K PU SEALER", "baseColour": null, "packs": ["1L", "4L", "20L"]}, {"display": "Int Clr Melamine Sealer", "family": "OTHER", "tokens": "int clr melamine sealer int clr melamine sealer other", "subProduct": "INT CLR MELAMINE SEALER", "baseColour": null, "packs": ["1L", "4L", "20L"]}, {"display": "Luxurio Pu Sealer", "family": "OTHER", "tokens": "luxurio pu sealer luxurio pu sealer other", "subProduct": "LUXURIO PU SEALER", "baseColour": null, "packs": ["1L", "4L", "30L"]}, {"display": "Luxurio Pu Sealer — BW", "family": "OTHER", "tokens": "luxurio pu sealer luxurio pu sealer brilliant white bw other bw white brilliant", "subProduct": "LUXURIO PU SEALER", "baseColour": "BRILLIANT WHITE", "packs": ["1L", "4L", "30L"]}, {"display": "Melamine Thinner", "family": "OTHER", "tokens": "melamine thinner melamine thinner other", "subProduct": "MELAMINE THINNER", "baseColour": null, "packs": ["1L", "5L", "20L"]}, {"display": "Nc Sanding Sealer", "family": "OTHER", "tokens": "nc sanding sealer nc sanding sealer other", "subProduct": "NC SANDING SEALER", "baseColour": null, "packs": ["500ML", "1L", "4L", "20L"]}, {"display": "Nc Wood Thinner", "family": "OTHER", "tokens": "nc wood thinner nc wood thinner other", "subProduct": "NC WOOD THINNER", "baseColour": null, "packs": ["1L", "4L"]}, {"display": "Pu Prime Thinner", "family": "OTHER", "tokens": "pu prime thinner pu prime thinner other", "subProduct": "PU PRIME THINNER", "baseColour": null, "packs": ["1L", "5L", "20L"]}, {"display": "Satin Stay Bright — BW", "family": "DULUX", "tokens": "satin stay bright satin stay bright brilliant white bw dulux wb satin ssb water satin bw white brilliant", "subProduct": "SATIN STAY BRIGHT", "baseColour": "BRILLIANT WHITE", "packs": ["1L", "4L", "10L", "20L"]}, {"display": "Super Satin — BW", "family": "DULUX", "tokens": "super satin super satin brilliant white bw dulux oil satin supersatin oilsatin satin bw white brilliant", "subProduct": "SUPER SATIN", "baseColour": "BRILLIANT WHITE", "packs": ["500ML", "1L", "4L", "10L", "20L"]}, {"display": "Stainer Black — Black", "family": "STAINER", "tokens": "stainer black black black stainer stainer fast universal black", "subProduct": "BLACK", "baseColour": "BLACK", "packs": ["50ML", "100ML", "200ML"]}, {"display": "Stainer Burnt Sienna", "family": "STAINER", "tokens": "stainer burnt sienna burnt sienna stainer stainer fast universal", "subProduct": "BURNT SIENNA", "baseColour": null, "packs": ["50ML", "100ML", "200ML"]}, {"display": "Stainer Blue — Blue", "family": "STAINER", "tokens": "stainer blue fast blue blue stainer stainer fast universal blue", "subProduct": "FAST BLUE", "baseColour": "BLUE", "packs": ["50ML", "100ML", "200ML"]}, {"display": "Stainer Green — Green", "family": "STAINER", "tokens": "stainer green fast green green stainer stainer fast universal green", "subProduct": "FAST GREEN", "baseColour": "GREEN", "packs": ["50ML", "100ML", "200ML"]}, {"display": "Stainer Orange — Orange", "family": "STAINER", "tokens": "stainer orange fast orange orange stainer stainer fast universal", "subProduct": "FAST ORANGE", "baseColour": "ORANGE", "packs": ["50ML", "100ML", "200ML"]}, {"display": "Stainer Red — Red", "family": "STAINER", "tokens": "stainer red fast red red stainer stainer fast universal red", "subProduct": "FAST RED", "baseColour": "RED", "packs": ["50ML", "100ML", "200ML"]}, {"display": "Ambiance — 94", "family": "VT", "tokens": "ambiance ambiance 94 base 94 vt vt 94 94base", "subProduct": "AMBIANCE", "baseColour": "94 BASE", "packs": ["4L"]}, {"display": "VT Diamond Glo — 94", "family": "VT", "tokens": "vt diamond glo diamond glo 94 base 94 vt vt diamond diamondglo 94 94base", "subProduct": "DIAMOND GLO", "baseColour": "94 BASE", "packs": ["1L", "4L", "10L", "20L"]}, {"display": "VT Eterna — 94", "family": "VT", "tokens": "vt eterna eterna 94 base 94 vt vt eterna 94 94base", "subProduct": "ETERNA", "baseColour": "94 BASE", "packs": ["1L", "4L"]}, {"display": "VT Eterna Matt — 94", "family": "VT", "tokens": "vt eterna matt eterna matt 94 base 94 vt vt eterna 94 94base", "subProduct": "ETERNA MATT", "baseColour": "94 BASE", "packs": ["1L", "4L"]}, {"display": "VT Pearl Glo — 94", "family": "VT", "tokens": "vt pearl glo pearl glo 94 base 94 vt vt pearl pearlglo 94 94base", "subProduct": "PEARL GLO", "baseColour": "94 BASE", "packs": ["200ML", "1L", "4L", "10L", "20L"]}, {"display": "VT Platinum Glo — 94", "family": "VT", "tokens": "vt platinum glo platinum glo 94 base 94 vt vt platinum platinumglo 94 94base", "subProduct": "PLATINUM GLO", "baseColour": "94 BASE", "packs": ["1L", "4L", "10L"]}, {"display": "WS Max — 92", "family": "WS", "tokens": "ws max max 92 base 92 ws ws weathercoat weathershield max maxx 92 92base", "subProduct": "MAX", "baseColour": "92 BASE", "packs": ["1L", "4L", "10L", "20L"]}, {"display": "WS Powerflexx — 92", "family": "WS", "tokens": "ws powerflexx powerflexx 92 base 92 ws ws weathercoat weathershield flexx powerflexx power flex 92 92base", "subProduct": "POWERFLEXX", "baseColour": "92 BASE", "packs": ["1L", "3.6L", "4L", "10L", "20L"]}, {"display": "WS Protect — 92", "family": "WS", "tokens": "ws protect protect 92 base 92 ws ws weathercoat weathershield protect 92 92base", "subProduct": "PROTECT", "baseColour": "92 BASE", "packs": ["200ML", "900ML", "1L", "4L", "10L", "18L", "20L"]}, {"display": "WS Protect Rainproof — 92", "family": "WS", "tokens": "ws protect rainproof protect rainproof 92 base 92 ws ws weathercoat weathershield protect 92 92base roof roofcoat", "subProduct": "PROTECT RAINPROOF", "baseColour": "92 BASE", "packs": ["1L", "4L", "10L", "20L"]}, {"display": "WS Hi-Sheen — 92", "family": "WS", "tokens": "ws hi-sheen hisheen 92 base 92 ws ws weathercoat weathershield hisheen sheen 92 92base", "subProduct": "HISHEEN", "baseColour": "92 BASE", "packs": ["1L", "4L", "10L", "20L"]}, {"display": "Acotone BU1", "family": "TINTER", "tokens": "acotone bu1 bu1 tinter tinter acotone bu1 bu 1 blue acotone", "subProduct": "BU1", "baseColour": null, "packs": ["1L"]}, {"display": "Acotone BU2", "family": "TINTER", "tokens": "acotone bu2 bu2 tinter tinter acotone bu2 bu 2", "subProduct": "BU2", "baseColour": null, "packs": ["1L"]}, {"display": "Pu Prime Clear Sealer", "family": "OTHER", "tokens": "pu prime clear sealer pu prime clear sealer other", "subProduct": "PU PRIME CLEAR SEALER", "baseColour": null, "packs": ["1L", "4L", "20L"]}, {"display": "Duco Pu Thinner", "family": "OTHER", "tokens": "duco pu thinner duco pu thinner other", "subProduct": "DUCO PU THINNER", "baseColour": null, "packs": ["1L"]}, {"display": "Nc Necol Thinner", "family": "OTHER", "tokens": "nc necol thinner nc necol thinner other", "subProduct": "NC NECOL THINNER", "baseColour": null, "packs": ["1L", "5L", "20L"]}, {"display": "Texture — 92", "family": "WS", "tokens": "texture texture 92 base 92 ws ws weathercoat weathershield 92 92base", "subProduct": "TEXTURE", "baseColour": "92 BASE", "packs": ["18L"]}];
+// Patch Sadolin + Smartchoice search tokens
+if (typeof REAL_PRODUCTS !== 'undefined') {
+  REAL_PRODUCTS.forEach(p => {
+    if (!p) return;
+    if (p.subProduct && p.subProduct.includes('SMARTCHOICE')) {
+      p.tokens += ' smartchoice sc promise';
+    }
+    if (p.subProduct === 'PROMISE SMARTCHOICE INT') p.tokens += ' smartchoice int interior sc int';
+    if (p.subProduct === 'PROMISE SMARTCHOICE EXT') p.tokens += ' smartchoice ext exterior sc ext';
+  });
+}
+
+// Patch Sadolin search tokens (safe - tokens may not exist after trim)
+if (typeof REAL_PRODUCTS !== 'undefined') {
+  REAL_PRODUCTS.forEach(p => {
+    if (!p || !p.tokens) return;
+    if (p.subProduct === 'PU PRIME MATT') p.tokens += ' matt pu prime sadolin';
+    if (p.subProduct === 'PU PRIME WHITE SEALER') p.tokens += ' sealer white sealer sadolin';
+    if (p.subProduct === 'PU PRIME CLEAR SEALER') p.tokens += ' sealer clear sealer sadolin';
+    if (p.subProduct === 'LUXURIO PU MATT') p.tokens += ' luxurio matt sadolin';
+    if (p.subProduct === 'LUXURIO PU SEALER') p.tokens += ' luxurio sealer sadolin';
+    if (p.subProduct === 'MELAMINE THINNER') p.tokens += ' thinner melamine sadolin';
+  });
+}
+
+
+// ══════════════════════════════════════
+//  DEMO DATA
+// ══════════════════════════════════════
+const DEMO_LINES_B1 = [{"search": "ws 92", "display": "WS Max — 92", "family": "WS", "suggestions": [{"name": "WS Max — 92", "sub": "WS"}, {"name": "WS Protect — 92", "sub": "WS"}, {"name": "WS Powerflexx — 92", "sub": "WS"}, {"name": "WS Hi-Sheen — 92", "sub": "WS"}], "packs": [{"l": "1L", "id": "a1"}, {"l": "4L", "id": "a2"}, {"l": "10L", "id": "a3"}, {"l": "20L", "id": "a4"}], "qty": {"a2": 10, "a3": 2}, "result": "MAX 92 BASE 4L*10, 10L*2"}, {"search": "vt 94", "display": "VT Pearl Glo — 94", "family": "VT", "suggestions": [{"name": "VT Pearl Glo — 94", "sub": "VT"}, {"name": "VT Diamond Glo — 94", "sub": "VT"}, {"name": "VT Platinum Glo — 94", "sub": "VT"}, {"name": "VT Eterna — 94", "sub": "VT"}], "packs": [{"l": "1L", "id": "b1"}, {"l": "4L", "id": "b2"}, {"l": "10L", "id": "b3"}, {"l": "20L", "id": "b4"}], "qty": {"b1": 3, "b2": 4}, "result": "PEARL GLO 94 BASE 1L*3, 4L*4"}, {"search": "gloss", "display": "Gloss — Golden Brown", "family": "DULUX", "suggestions": [{"name": "Gloss — Golden Brown", "sub": "DULUX"}, {"name": "Gloss — Black", "sub": "DULUX"}, {"name": "Gloss — Phiroza", "sub": "DULUX"}, {"name": "Gloss — BW", "sub": "DULUX"}, {"name": "Gloss — Oxford Blue", "sub": "DULUX"}], "packs": [{"l": "1L", "id": "c1"}, {"l": "4L", "id": "c2"}, {"l": "100ML", "id": "c3"}], "qty": {"c1": 4, "c2": 2}, "result": "GLOSS GOLDEN BROWN 1L*4, 4L*2"}, {"search": "satin bw", "display": "Satin Stay Bright — BW", "family": "DULUX", "suggestions": [{"name": "Satin Stay Bright — BW", "sub": "DULUX"}, {"name": "Super Satin — BW", "sub": "DULUX"}], "packs": [{"l": "1L", "id": "d1"}, {"l": "4L", "id": "d2"}, {"l": "10L", "id": "d3"}, {"l": "20L", "id": "d4"}], "qty": {"d2": 6}, "result": "SATIN STAY BRIGHT BRILLIANT WHITE 4L*6"}, {"search": "smartchoice", "display": "Smartchoice Interior — 92", "family": "PROMISE", "suggestions": [{"name": "Smartchoice Interior — 92", "sub": "PROMISE"}, {"name": "Smartchoice Exterior — 92", "sub": "PROMISE"}, {"name": "Smartchoice Int Primer — BW", "sub": "PROMISE"}, {"name": "Smartchoice Ext Primer — BW", "sub": "PROMISE"}], "packs": [{"l": "1L", "id": "e1"}, {"l": "4L", "id": "e2"}, {"l": "10L", "id": "e3"}, {"l": "20L", "id": "e4"}], "qty": {"e2": 8}, "result": "PROMISE SMARTCHOICE INT 92 BASE 4L*8"}, {"search": "sealer", "display": "PU Prime White Sealer", "family": "SADOLIN", "suggestions": [{"name": "PU Prime White Sealer", "sub": "SADOLIN"}, {"name": "PU Prime Clear Sealer", "sub": "SADOLIN"}, {"name": "Luxurio PU Sealer — BW", "sub": "SADOLIN"}], "packs": [{"l": "1L", "id": "f1"}, {"l": "4L", "id": "f2"}, {"l": "20L", "id": "f3"}], "qty": {"f1": 18, "f2": 20}, "result": "PU PRIME WHITE SEALER 1L*18, 4L*20"}, {"search": "thinner", "display": "Melamine Thinner", "family": "SADOLIN", "suggestions": [{"name": "Melamine Thinner", "sub": "SADOLIN"}, {"name": "PU Prime Thinner", "sub": "SADOLIN"}, {"name": "2K PU Thinner", "sub": "SADOLIN"}, {"name": "NC Wood Thinner", "sub": "SADOLIN"}], "packs": [{"l": "1L", "id": "g1"}, {"l": "5L", "id": "g2"}, {"l": "20L", "id": "g3"}], "qty": {"g3": 5}, "result": "MELAMINE THINNER 20L*5"}, {"search": "aquatech", "display": "Waterproof Putty", "family": "AQUATECH", "suggestions": [{"name": "Crackfiller", "sub": "AQUATECH"}, {"name": "Waterproof Putty", "sub": "AQUATECH"}, {"name": "Flexible Coat — Neo", "sub": "AQUATECH"}, {"name": "Damp Protect 2in1", "sub": "AQUATECH"}, {"name": "Roof Coat — Grey", "sub": "AQUATECH"}], "packs": [{"l": "40KG", "id": "h1"}], "qty": {"h1": 2}, "result": "WATERPROOF PUTTY 40KG*2"}, {"search": "stainer", "display": "Stainer Blue — Blue", "family": "STAINER", "suggestions": [{"name": "Stainer Blue — Blue", "sub": "STAINER"}, {"name": "Stainer Red — Red", "sub": "STAINER"}, {"name": "Stainer Green — Green", "sub": "STAINER"}, {"name": "Stainer Yellow", "sub": "STAINER"}, {"name": "Stainer Black", "sub": "STAINER"}], "packs": [{"l": "50ML", "id": "i1"}, {"l": "100ML", "id": "i2"}, {"l": "200ML", "id": "i3"}], "qty": {"i2": 6, "i3": 2}, "result": "FAST BLUE 100ML*6, 200ML*2"}];
+
+const DEMO_LINES_B2 = [{"search": "primer", "display": "Exterior Acrylic Primer", "family": "PRIMER", "suggestions": [{"name": "Exterior Acrylic Primer", "sub": "PRIMER"}, {"name": "SB Cement Primer", "sub": "PRIMER"}, {"name": "Dulux WB Cement Primer", "sub": "PRIMER"}, {"name": "Zinc Yellow Metal Primer", "sub": "PRIMER"}], "packs": [{"l": "1L", "id": "j1"}, {"l": "4L", "id": "j2"}, {"l": "20L", "id": "j3"}], "qty": {"j2": 4, "j3": 1}, "result": "EXTERIOR ACRYLIC PRIMER 4L*4, 20L*1"}, {"search": "tinter bu", "display": "Acotone BU1", "family": "TINTER", "suggestions": [{"name": "Acotone BU1", "sub": "TINTER"}, {"name": "Acotone BU2", "sub": "TINTER"}], "packs": [{"l": "1L", "id": "k1"}], "qty": {"k1": 5}, "result": "BU1 1L*5"}];
+const FAMILY_CAPTIONS = {
+  'WS':      '🌧️ WS (Weathercoat) — "max 92", "protect bw", "flexx"',
+  'VT':      '✨ VT Range — "pearl 92", "diamond 94", "platinum 92"',
+  'DULUX':   '🎨 Dulux — "cover 92", "clean 90", "oil satin bw"',
+  'AQUATECH':'💧 Aquatech — "crack", "roof grey", "waterproof"',
+  'STAINER': '🔴 Stainer — "stainer red", "stainer blue", "stainer green"',
+  'TINTER':  '🧪 Tinter/Acotone — "tinter bu1", "tinter mag"',
+};
+
+// ══════════════════════════════════════
+//  MAIN DEMO SEQUENCE
+// ══════════════════════════════════════
+async function startDemo() {
+  try {
+  resetAll();
+  el('replay-btn').style.display = 'none';
+  el('step-label').classList.add('show');
+  await sleep(500);
+
+  // ══ CUSTOMER ══
+  setStep('Customer Search', 5);
+  showCaption('sirf 2-3 letter likho — customer aa jaata hai', 4000);
+  el('cust-search-row').classList.add('highlight-pulse');
+  await sleep(1200);
+  
+  await typeText('cust-input', 'Amb', 220);
+  await sleep(800);
+  
+  showSuggestions('cust-suggs', [
+    { name:'AMBIKA PAINTS', sub:'102492' },
+    { name:'AMBIKA PAINTS', sub:'327298' },
+    { name:'AMBIKA HARDWARE', sub:'103211' },
+  ]);
+  await sleep(2000);
+  
+  const cr = el('cust-card').getBoundingClientRect();
+  await tapAt(cr.left+200, cr.top+85);
+  selectFirstSugg('cust-suggs');
+  await sleep(600);
+  el('cust-search-row').classList.remove('highlight-pulse');
+  hideSuggestions('cust-suggs');
+  el('cust-search-row').style.display = 'none';
+  el('cust-name-val').textContent = 'AMBIKA PAINTS';
+  el('cust-code-val').textContent = '102492';
+  el('cust-selected').style.display = 'flex';
+  await sleep(800);
+  scrollTo('bill-1', 100);
+  await sleep(800);
+
+  // ══ PRODUCTS ══
+  let b1Results = [];
+  
+  // Product 1: WS family — show family breadth
+  setStep('WS Range', 10);
+  showCaption('"ws 92" — WS ki puri range aa jaati hai', 4000);
+  scrollTo('psr-1', 120);
+  await sleep(1200);
+  el('prod-input-1').innerHTML = '<span class="cursor"></span>';
+  await typeText('prod-input-1', 'ws 92', 180);
+  await sleep(600);
+  showSuggestions('prod-suggs-1', DEMO_LINES_B1[0].suggestions);
+  await sleep(3000);
+  showCaption('WS Max 92 select kiya — 4L × 10 aur 10L × 2', 4000);
+  const b1r = el('bill-1').getBoundingClientRect();
+  await tapAt(b1r.left + 190, b1r.top + 180);
+  selectFirstSugg('prod-suggs-1');
+  await sleep(500);
+  hideSuggestions('prod-suggs-1');
+  el('prod-input-1').innerHTML = '<span style="color:var(--g3);font-size:14px;">Search next product…</span>';
+  showPackPicker(1, DEMO_LINES_B1[0].display, DEMO_LINES_B1[0].family, DEMO_LINES_B1[0].packs);
+  await sleep(400);
+  scrollTo('picker-1', 100);
+  await sleep(800);
+  await animateQty(1, 'a2', 10, 100);
+  await sleep(300);
+  await animateQty(1, 'a3', 2, 200);
+  await sleep(600);
+  el('add-bar-1').style.display = 'block';
+  await sleep(800);
+  await tapAt(b1r.left + 190, b1r.top + 350);
+  await sleep(400);
+  el('picker-1').style.display = 'none';
+  el('add-bar-1').style.display = 'none';
+  scrollTo('cart-1', 80);
+  await sleep(200);
+  addCartLine(1, DEMO_LINES_B1[0].display, '4L*10, 10L*2');
+  b1Results.push(DEMO_LINES_B1[0].result);
+  await sleep(1000);
+
+  // Product 2: VT — show family
+  setStep('VT Range', 18);
+  showCaption('"vt 94" — Pearl Glo, Diamond Glo, Platinum, Eterna — sab ek saath', 4500);
+  scrollTo('psr-1', 120);
+  await sleep(1200);
+  el('prod-input-1').innerHTML = '<span class="cursor"></span>';
+  await typeText('prod-input-1', 'vt 94', 180);
+  await sleep(600);
+  showSuggestions('prod-suggs-1', DEMO_LINES_B1[1].suggestions);
+  await sleep(3500);
+  showCaption('VT Pearl Glo 94 — 1L × 3, 4L × 4', 3500);
+  await tapAt(b1r.left + 190, b1r.top + 180);
+  selectFirstSugg('prod-suggs-1');
+  await sleep(500);
+  hideSuggestions('prod-suggs-1');
+  el('prod-input-1').innerHTML = '<span style="color:var(--g3);font-size:14px;">Search next product…</span>';
+  showPackPicker(1, DEMO_LINES_B1[1].display, DEMO_LINES_B1[1].family, DEMO_LINES_B1[1].packs);
+  await sleep(400);
+  scrollTo('picker-1', 100);
+  await sleep(700);
+  await animateQty(1, 'c1', 3, 180);
+  await sleep(300);
+  await animateQty(1, 'c2', 4, 180);
+  await sleep(600);
+  el('add-bar-1').style.display = 'block';
+  await sleep(700);
+  await tapAt(b1r.left + 190, b1r.top + 350);
+  await sleep(400);
+  el('picker-1').style.display = 'none';
+  el('add-bar-1').style.display = 'none';
+  scrollTo('cart-1', 80);
+  addCartLine(1, DEMO_LINES_B1[1].display, '1L*3, 4L*4');
+  b1Results.push(DEMO_LINES_B1[1].result);
+  await sleep(1000);
+
+  // Product 3: Gloss colour
+  setStep('Gloss Colours', 26);
+  showCaption('"gloss" — 30 se zyada colours milte hain, color ka naam likho', 4500);
+  scrollTo('psr-1', 120);
+  await sleep(1200);
+  el('prod-input-1').innerHTML = '<span class="cursor"></span>';
+  await typeText('prod-input-1', 'gloss', 180);
+  await sleep(600);
+  showSuggestions('prod-suggs-1', DEMO_LINES_B1[2].suggestions);
+  await sleep(3500);
+  showCaption('Gloss Golden Brown select kiya', 3000);
+  await tapAt(b1r.left + 190, b1r.top + 180);
+  selectFirstSugg('prod-suggs-1');
+  await sleep(500);
+  hideSuggestions('prod-suggs-1');
+  el('prod-input-1').innerHTML = '<span style="color:var(--g3);font-size:14px;">Search next product…</span>';
+  showPackPicker(1, DEMO_LINES_B1[2].display, DEMO_LINES_B1[2].family, DEMO_LINES_B1[2].packs);
+  await sleep(400);
+  scrollTo('picker-1', 100);
+  await sleep(700);
+  await animateQty(1, 'c1', 4, 180);
+  await sleep(300);
+  await animateQty(1, 'c2', 2, 200);
+  await sleep(600);
+  el('add-bar-1').style.display = 'block';
+  await sleep(700);
+  await tapAt(b1r.left + 190, b1r.top + 350);
+  await sleep(400);
+  el('picker-1').style.display = 'none';
+  el('add-bar-1').style.display = 'none';
+  scrollTo('cart-1', 80);
+  addCartLine(1, DEMO_LINES_B1[2].display, '1L*4, 4L*2');
+  b1Results.push(DEMO_LINES_B1[2].result);
+  await sleep(1000);
+
+  // Product 4: Smartchoice
+  setStep('Promise Range', 34);
+  showCaption('"smartchoice" — SC Interior, Exterior, Primer sab ek jagah', 4500);
+  scrollTo('psr-1', 120);
+  await sleep(1200);
+  el('prod-input-1').innerHTML = '<span class="cursor"></span>';
+  await typeText('prod-input-1', 'smartchoice', 130);
+  await sleep(600);
+  showSuggestions('prod-suggs-1', DEMO_LINES_B1[4].suggestions);
+  await sleep(3500);
+  showCaption('Smartchoice Interior 92 — 4L × 8', 3000);
+  await tapAt(b1r.left + 190, b1r.top + 180);
+  selectFirstSugg('prod-suggs-1');
+  await sleep(500);
+  hideSuggestions('prod-suggs-1');
+  el('prod-input-1').innerHTML = '<span style="color:var(--g3);font-size:14px;">Search next product…</span>';
+  showPackPicker(1, DEMO_LINES_B1[4].display, DEMO_LINES_B1[4].family, DEMO_LINES_B1[4].packs);
+  await sleep(400);
+  scrollTo('picker-1', 100);
+  await sleep(700);
+  await animateQty(1, 'e2', 8, 120);
+  await sleep(600);
+  el('add-bar-1').style.display = 'block';
+  await sleep(700);
+  await tapAt(b1r.left + 190, b1r.top + 350);
+  await sleep(400);
+  el('picker-1').style.display = 'none';
+  el('add-bar-1').style.display = 'none';
+  scrollTo('cart-1', 80);
+  addCartLine(1, DEMO_LINES_B1[4].display, '4L*8');
+  b1Results.push(DEMO_LINES_B1[4].result);
+  await sleep(1000);
+
+  // Product 5: Sadolin sealer
+  setStep('Sadolin Range', 42);
+  showCaption('"sealer" likhne se — White Sealer, Clear Sealer, Luxurio Sealer sab', 4500);
+  scrollTo('psr-1', 120);
+  await sleep(1200);
+  el('prod-input-1').innerHTML = '<span class="cursor"></span>';
+  await typeText('prod-input-1', 'sealer', 180);
+  await sleep(600);
+  showSuggestions('prod-suggs-1', DEMO_LINES_B1[5].suggestions);
+  await sleep(3500);
+  showCaption('PU Prime White Sealer — 1L × 18, 4L × 20', 3500);
+  await tapAt(b1r.left + 190, b1r.top + 180);
+  selectFirstSugg('prod-suggs-1');
+  await sleep(500);
+  hideSuggestions('prod-suggs-1');
+  el('prod-input-1').innerHTML = '<span style="color:var(--g3);font-size:14px;">Search next product…</span>';
+  showPackPicker(1, DEMO_LINES_B1[5].display, DEMO_LINES_B1[5].family, DEMO_LINES_B1[5].packs);
+  await sleep(400);
+  scrollTo('picker-1', 100);
+  await sleep(700);
+  await animateQty(1, 'f1', 18, 60);
+  await sleep(300);
+  await animateQty(1, 'f2', 20, 55);
+  await sleep(600);
+  el('add-bar-1').style.display = 'block';
+  await sleep(700);
+  await tapAt(b1r.left + 190, b1r.top + 350);
+  await sleep(400);
+  el('picker-1').style.display = 'none';
+  el('add-bar-1').style.display = 'none';
+  scrollTo('cart-1', 80);
+  addCartLine(1, DEMO_LINES_B1[5].display, '1L*18, 4L*20');
+  b1Results.push(DEMO_LINES_B1[5].result);
+  await sleep(1000);
+
+  // Product 6: Stainer
+  setStep('Stainer Range', 52);
+  showCaption('"stainer" — Blue, Red, Green, Yellow, Black — sare colours', 4500);
+  scrollTo('psr-1', 120);
+  await sleep(1200);
+  el('prod-input-1').innerHTML = '<span class="cursor"></span>';
+  await typeText('prod-input-1', 'stainer', 180);
+  await sleep(600);
+  showSuggestions('prod-suggs-1', DEMO_LINES_B1[8].suggestions);
+  await sleep(3500);
+  showCaption('Stainer Blue — 100ML × 6, 200ML × 2', 3500);
+  await tapAt(b1r.left + 190, b1r.top + 180);
+  selectFirstSugg('prod-suggs-1');
+  await sleep(500);
+  hideSuggestions('prod-suggs-1');
+  el('prod-input-1').innerHTML = '<span style="color:var(--g3);font-size:14px;">Search next product…</span>';
+  showPackPicker(1, DEMO_LINES_B1[8].display, DEMO_LINES_B1[8].family, DEMO_LINES_B1[8].packs);
+  await sleep(400);
+  scrollTo('picker-1', 100);
+  await sleep(700);
+  await animateQty(1, 'i2', 6, 150);
+  await sleep(300);
+  await animateQty(1, 'i3', 2, 220);
+  await sleep(600);
+  el('add-bar-1').style.display = 'block';
+  await sleep(700);
+  await tapAt(b1r.left + 190, b1r.top + 350);
+  await sleep(400);
+  el('picker-1').style.display = 'none';
+  el('add-bar-1').style.display = 'none';
+  scrollTo('cart-1', 80);
+  addCartLine(1, DEMO_LINES_B1[8].display, '100ML*6, 200ML*2');
+  b1Results.push(DEMO_LINES_B1[8].result);
+  await sleep(1200);
+
+  // ══ BILL 2 ══
+  setStep('Bill 2', 65);
+  showCaption('same customer ke liye alag bill chahiye? "+ Add Bill" tap karo', 4000);
+  scrollTo('add-bill-btn', 200);
+  await sleep(1500);
+
+  const bbr = el('add-bill-btn').getBoundingClientRect();
+  await tapAt(bbr.left + 140, bbr.top + 20);
+  el('add-bill-btn').style.transform = 'scale(0.97)';
+  await sleep(150);
+  el('add-bill-btn').style.transform = '';
+  el('bill-2').style.display = 'block';
+  el('bill-2').style.opacity = '0';
+  el('bill-2').style.transform = 'translateY(8px)';
+  el('bill-2').style.transition = 'all 0.35s';
+  await sleep(50);
+  el('bill-2').style.opacity = '1';
+  el('bill-2').style.transform = 'translateY(0)';
+  await sleep(400);
+  scrollTo('bill-2', 80);
+  await sleep(800);
+
+  let b2Results = [];
+
+  // Bill 2 Product 1: Primer
+  setStep('Primer Range', 70);
+  showCaption('"primer" — Acrylic, Cement, Metal Primer sab ek jagah milta hai', 4500);
+  const b2r = el('bill-2').getBoundingClientRect();
+  scrollTo('psr-2', 120);
+  await sleep(1200);
+  el('prod-input-2').innerHTML = '<span class="cursor"></span>';
+  await typeText('prod-input-2', 'primer', 180);
+  await sleep(600);
+  showSuggestions('prod-suggs-2', DEMO_LINES_B2[0].suggestions);
+  await sleep(3500);
+  showCaption('Exterior Acrylic Primer — 4L × 4, 20L × 1', 3500);
+  await tapAt(b2r.left + 190, b2r.top + 180);
+  selectFirstSugg('prod-suggs-2');
+  await sleep(500);
+  hideSuggestions('prod-suggs-2');
+  el('prod-input-2').innerHTML = '<span style="color:var(--g3);font-size:14px;">Search next product…</span>';
+  showPackPicker(2, DEMO_LINES_B2[0].display, DEMO_LINES_B2[0].family, DEMO_LINES_B2[0].packs);
+  await sleep(400);
+  scrollTo('picker-2', 100);
+  await sleep(700);
+  await animateQty(2, 'j2', 4, 180);
+  await sleep(300);
+  await animateQty(2, 'j3', 1, 300);
+  await sleep(600);
+  el('add-bar-2').style.display = 'block';
+  await sleep(700);
+  await tapAt(b2r.left + 190, b2r.top + 320);
+  await sleep(400);
+  el('picker-2').style.display = 'none';
+  el('add-bar-2').style.display = 'none';
+  addCartLine(2, DEMO_LINES_B2[0].display, '4L*4, 20L*1');
+  b2Results.push(DEMO_LINES_B2[0].result);
+  await sleep(1000);
+
+  // Bill 2 Product 2: Tinter
+  setStep('Tinter / Acotone', 78);
+  showCaption('"tinter bu" — BU1 aur BU2 dono Acotone codes aa jaate hain', 4000);
+  scrollTo('psr-2', 120);
+  await sleep(1200);
+  el('prod-input-2').innerHTML = '<span class="cursor"></span>';
+  await typeText('prod-input-2', 'tinter bu', 150);
+  await sleep(600);
+  showSuggestions('prod-suggs-2', DEMO_LINES_B2[1].suggestions);
+  await sleep(3000);
+  showCaption('Acotone BU1 — 1L × 5', 3000);
+  await tapAt(b2r.left + 190, b2r.top + 180);
+  selectFirstSugg('prod-suggs-2');
+  await sleep(500);
+  hideSuggestions('prod-suggs-2');
+  el('prod-input-2').innerHTML = '<span style="color:var(--g3);font-size:14px;">Search next product…</span>';
+  showPackPicker(2, DEMO_LINES_B2[1].display, DEMO_LINES_B2[1].family, DEMO_LINES_B2[1].packs);
+  await sleep(400);
+  scrollTo('picker-2', 100);
+  await sleep(700);
+  await animateQty(2, 'k1', 5, 200);
+  await sleep(600);
+  el('add-bar-2').style.display = 'block';
+  await sleep(700);
+  await tapAt(b2r.left + 190, b2r.top + 280);
+  await sleep(400);
+  el('picker-2').style.display = 'none';
+  el('add-bar-2').style.display = 'none';
+  addCartLine(2, DEMO_LINES_B2[1].display, '1L*5');
+  b2Results.push(DEMO_LINES_B2[1].result);
+  await sleep(1200);
+
+  // ══ SHIP TO ══
+  setStep('Ship To', 84);
+  showCaption('Ship To mein kuch bhi likho — site name, address ya customer', 4000);
+  scrollTo('shipto-input', 200);
+  await sleep(1500);
+  const shipEl = el('shipto-input');
+  shipEl.style.color = '#111';
+  shipEl.style.fontSize = '14px';
+  shipEl.innerHTML = '';
+  for (const t of ['Shiv', ' Shakti', ' Site,', ' Katargam']) {
+    shipEl.innerHTML += t;
+    await sleep(260);
+  }
+  await sleep(1200);
+
+  // ══ DISPATCH ══
+  setStep('Dispatch', 89);
+  showCaption('Dispatch status — Normal, Hold ya Urgent', 3500);
+  scrollTo('chip-n', 200);
+  await sleep(1200);
+  const chipUr = el('chip-u').getBoundingClientRect();
+  await tapAt(chipUr.left + 40, chipUr.top + 18);
+  el('chip-n').className = 'chip';
+  el('chip-u').className = 'chip si';
+  await sleep(800);
+  showCaption('Order Marker — Truck, Cross Delivery ya DTS', 3500);
+  await sleep(600);
+  const mkr = el('marker-truck').getBoundingClientRect();
+  await tapAt(mkr.left + 40, mkr.top + 18);
+  el('marker-truck').className = 'chip si';
+  await sleep(1200);
+
+  // ══ PREVIEW + SEND ══
+  setStep('Preview', 93);
+  scrollTo('send-btn', 150);
+  await sleep(700);
+
+  updatePreview('Order — AMBIKA PAINTS 102492',
+    'Customer: AMBIKA PAINTS (102492)\nDispatch: Urgent\nMarker: Truck\nShip To: Shiv Shakti Site, Katargam\n\nBill 1\n'
+    + b1Results.join('\n') + '\n\nBill 2\n' + b2Results.join('\n'));
+
+  showCaption('preview check karo — sab sahi laga? ab send karo', 4000);
+  await sleep(2500);
+
+  const sr = el('send-btn').getBoundingClientRect();
+  await tapAt(sr.left + 170, sr.top + 24);
+  el('send-btn').style.transform = 'scale(0.97)';
+  el('send-btn').style.background = 'var(--teal-dark)';
+  await sleep(500);
+  el('send-btn').style.transform = '';
+
+  // ══ OUTLOOK ══
+  setStep('Mail Opens', 97);
+  const emailSubject = 'Order — AMBIKA PAINTS 102492';
+  const emailBody = `Customer: AMBIKA PAINTS (102492)
+Dispatch: Urgent
+Marker: Truck
+Ship To: Shiv Shakti Site, Katargam
+
+Bill 1
+MAX 92 BASE 4L*10, 10L*2
+PEARL GLO 94 BASE 1L*3, 4L*4
+GLOSS GOLDEN BROWN 1L*4, 4L*2
+PROMISE SMARTCHOICE INT 92 BASE 4L*8
+PU PRIME WHITE SEALER 1L*18, 4L*20
+FAST BLUE 100ML*6, 200ML*2
+
+Bill 2
+EXTERIOR ACRYLIC PRIMER 4L*4, 20L*1
+BU1 1L*5`;
+
+  openOutlook(emailSubject, emailBody);
+  await sleep(600);
+  showCaption('mail app khul gaya — To, Subject, Body sab automatic bhar gaya', 4500);
+  await sleep(3000);
+  showCaption('bas Send tap karo — depot ko order pahunch jaayega', 4000);
+  await sleep(2000);
+  await simulateSend();
+  await sleep(1000);
+
+  setStep('✅ Done!', 100);
+  await showCaption('order send ho gaya! orbitoms.in/order — bookmark karo', 4000, true);
+  await sleep(500);
+
+  el('step-label').classList.remove('show');
+  el('replay-btn').style.display = 'block';
+
+  } catch(err) {
+    console.error('Demo error:', err);
+    const c = document.getElementById('caption');
+    if (c) { c.textContent = '⚠️ ' + err.message; c.classList.add('show'); c.style.color = '#f87171'; }
+    document.getElementById('replay-btn').style.display = 'block';
+  }
+}
+function resetAll() {
+  // Customer
+  el('cust-search-row').style.display = 'flex';
+  el('cust-selected').style.display = 'none';
+  el('cust-input').innerHTML = '<span class="cursor"></span>';
+  el('cust-suggs').style.display = 'none'; el('cust-suggs').innerHTML = '';
+
+  // Bill 1
+  el('cart-1').innerHTML = '<div class="no-lines" id="empty-1">No products added</div>';
+  el('prod-input-1').innerHTML = '<span style="color:var(--g3);font-size:14px;">Search next product…</span>';
+  el('prod-suggs-1').style.display = 'none'; el('prod-suggs-1').innerHTML = '';
+  el('picker-1').style.display = 'none'; el('picker-1').innerHTML = '';
+  el('add-bar-1').style.display = 'none';
+  el('badge-1').style.display = 'none';
+  el('psr-1').classList.remove('highlight-pulse');
+
+  // Bill 2
+  el('bill-2').style.display = 'none';
+  el('cart-2').innerHTML = '<div class="no-lines" id="empty-2">No products added</div>';
+  el('prod-suggs-2').style.display = 'none'; el('prod-suggs-2').innerHTML = '';
+  el('picker-2').style.display = 'none'; el('picker-2').innerHTML = '';
+  el('add-bar-2').style.display = 'none';
+  el('badge-2').style.display = 'none';
+
+  // Chips
+  el('chip-n').className = 'chip sn';
+  el('chip-h').className = 'chip';
+  el('chip-u').className = 'chip';
+  el('marker-truck').className = 'chip';
+
+  // Preview
+  el('prev-sub').textContent = '—'; el('prev-sub').className = 'prev-val dim';
+  el('prev-body').textContent = 'Fill the form above'; el('prev-body').className = 'prev-val dim';
+
+  // Send btn
+  el('send-btn').style.background = 'var(--teal)';
+
+  // Progress
+  el('progress').style.width = '0%';
+  el('progress').style.transition = 'none';
+  setTimeout(() => el('progress').style.transition = 'width 0.5s linear', 50);
+}
+
+// Auto-start on load
+window.addEventListener('load', async () => {
+  const cap = document.getElementById('caption');
+  cap.style.color = '#facc15';
+  
+  await new Promise(r => setTimeout(r, 1200));
+  
+  // 3,2,1 countdown
+  for (const num of ['3', '2', '1']) {
+    cap.textContent = num;
+    cap.classList.add('show');
+    await new Promise(r => setTimeout(r, 900));
+    cap.classList.remove('show');
+    await new Promise(r => setTimeout(r, 200));
+  }
+  
+  cap.textContent = '▶ Demo shuru ho raha hai...';
+  cap.classList.add('show');
+  await new Promise(r => setTimeout(r, 1200));
+  cap.classList.remove('show');
+  await new Promise(r => setTimeout(r, 400));
+  
+  startDemo();
+});
+</script>
+
+<!-- Outlook simulation overlay -->
+<div id="outlook-overlay" style="
+  display:none; position:fixed; inset:0; z-index:500;
+  background:white; flex-direction:column;
+  font-family:'DM Sans',sans-serif;
+  max-width:390px; margin:0 auto;
+">
+  <!-- Outlook header -->
+  <div style="background:#0078d4; padding:14px 16px 12px; display:flex; align-items:center; gap:10px;">
+    <div style="width:32px;height:32px;background:white;border-radius:6px;display:flex;align-items:center;justify-content:center;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="#0078d4">
+        <path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/>
+      </svg>
+    </div>
+    <div style="flex:1;">
+      <div style="color:white;font-size:15px;font-weight:600;">New Message</div>
+      <div style="color:rgba(255,255,255,0.7);font-size:11px;">surat.order@outlook.com</div>
+    </div>
+    <div style="display:flex;gap:12px;">
+      <span style="color:white;font-size:20px;cursor:pointer;" onclick="closeOutlook()">×</span>
+      <div style="width:32px;height:32px;background:#106ebe;border-radius:6px;display:flex;align-items:center;justify-content:center;cursor:pointer;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
+          <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+        </svg>
+      </div>
+    </div>
+  </div>
+
+  <!-- Email fields -->
+  <div style="border-bottom:1px solid #e5e7eb; padding:10px 16px; display:flex; gap:10px; align-items:center;">
+    <span style="font-size:12px;color:#6b7280;width:50px;flex-shrink:0;">To:</span>
+    <span style="font-size:13px;color:#111;background:#f0f9ff;border:1px solid #bae6fd;padding:2px 8px;border-radius:4px;">surat.order@outlook.com</span>
+  </div>
+  <div style="border-bottom:1px solid #e5e7eb; padding:10px 16px; display:flex; gap:10px; align-items:flex-start;">
+    <span style="font-size:12px;color:#6b7280;width:50px;flex-shrink:0;padding-top:2px;">Subject:</span>
+    <span style="font-size:13px;color:#111;font-weight:500;" id="ol-subject"></span>
+  </div>
+
+  <!-- Email body -->
+  <div style="flex:1;padding:14px 16px;overflow-y:auto;">
+    <pre style="font-family:'DM Mono',monospace;font-size:12px;color:#111;line-height:1.7;white-space:pre-wrap;word-break:break-word;" id="ol-body"></pre>
+  </div>
+
+  <!-- Outlook footer -->
+  <div style="padding:10px 16px;border-top:1px solid #e5e7eb;display:flex;justify-content:space-between;align-items:center;background:#f9fafb;">
+    <div style="display:flex;gap:16px;">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="#6b7280"><path d="M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5c0-1.38 1.12-2.5 2.5-2.5s2.5 1.12 2.5 2.5v10.5c0 .55-.45 1-1 1s-1-.45-1-1V6H10v9.5c0 1.38 1.12 2.5 2.5 2.5s2.5-1.12 2.5-2.5V5c0-2.21-1.79-4-4-4S7 2.79 7 5v12.5c0 3.04 2.46 5.5 5.5 5.5s5.5-2.46 5.5-5.5V6h-1.5z"/></svg>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="#6b7280"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>
+    </div>
+    <div style="font-size:11px;color:#9ca3af;">Get Outlook for iOS</div>
+  </div>
+
+  <!-- Send confirmation animation -->
+  <div id="ol-sent" style="display:none;position:absolute;inset:0;background:rgba(255,255,255,0.95);flex-direction:column;align-items:center;justify-content:center;gap:12px;">
+    <div style="width:64px;height:64px;background:#0d9488;border-radius:50%;display:flex;align-items:center;justify-content:center;">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="white"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+    </div>
+    <div style="font-size:18px;font-weight:700;color:#111;">Order Sent! ✅</div>
+    <div style="font-size:13px;color:#6b7280;text-align:center;">Email delivered to<br>surat.order@outlook.com</div>
+  </div>
+</div>
+
+<script>
+function openOutlook(subject, body) {
+  const overlay = document.getElementById('outlook-overlay');
+  overlay.style.display = 'flex';
+  document.getElementById('ol-subject').textContent = subject;
+  document.getElementById('ol-body').textContent = body;
+  document.getElementById('ol-sent').style.display = 'none';
+}
+
+function closeOutlook() {
+  document.getElementById('outlook-overlay').style.display = 'none';
+}
+
+async function simulateSend() {
+  await sleep(600);
+  document.getElementById('ol-sent').style.display = 'flex';
+  document.getElementById('ol-sent').style.opacity = '0';
+  document.getElementById('ol-sent').style.transition = 'opacity 0.4s';
+  await sleep(50);
+  document.getElementById('ol-sent').style.opacity = '1';
+}
+</script>
+
+</body>
+</html>
