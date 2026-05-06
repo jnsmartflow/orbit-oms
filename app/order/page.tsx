@@ -88,6 +88,26 @@ function packToMl(pack: string): number {
 function sortPacksForDisplay(packs: string[]): string[] {
   return [...packs].sort((a, b) => packToMl(a) - packToMl(b));
 }
+
+// Step multiple per pack for the +/− stepper. Aligns increments with the
+// natural ordering unit (carton/drum) so SO doesn't tap 12× to reach a
+// 100ML carton. Manual entry is rounded down to the nearest multiple on
+// blur. Anything not in this map (rare/odd packs) steps by 1.
+const PACK_STEP: Record<string, number> = {
+  "50ML":  12,
+  "100ML": 12,
+  "200ML": 12,
+  "500ML": 12,
+  "1L":    6,
+  "4L":    4,
+  "10L":   2,
+  "20L":   1,
+  "30L":   1,
+  "40KG":  1,
+};
+function packStep(packLabel: string): number {
+  return PACK_STEP[packLabel] ?? 1;
+}
 type Bill = {
   id:                number;
   searchQuery:       string;
@@ -100,6 +120,7 @@ type Bill = {
   pickerIndex:       number;                 // which selectedProducts item we're on (0-based)
   recentlyAddedKeys: string[];               // composite keys highlighted in cart during/after a picking journey
   suggestionPage:    number;                 // 0-based current page in paginated multi-select results
+  highlightedIndex:  number;                 // -1 = none; index into unselectedSuggestions for keyboard nav (laptop)
 };
 type Dispatch = "Normal" | "Hold" | "Urgent";
 type Marker   = "Truck" | "Cross Delivery" | "DTS" | null;
@@ -225,6 +246,7 @@ export default function OrderPage(): React.JSX.Element {
         pickerIndex:       0,
         recentlyAddedKeys: [],
         suggestionPage:    0,
+        highlightedIndex:  -1,
       },
     ]);
   }
@@ -246,14 +268,15 @@ export default function OrderPage(): React.JSX.Element {
       if (b.mode === "picking") return b; // search is locked while picking
       const trimmed = q.trim();
       if (trimmed.length < 2) {
-        return { ...b, searchQuery: q, mode: "search", suggestionPage: 0 };
+        return { ...b, searchQuery: q, mode: "search", suggestionPage: 0, highlightedIndex: -1 };
       }
       const matched = getProductSuggestions(q);
       return {
         ...b,
-        searchQuery:    q,
-        mode:           matched.length >= 1 ? "multi-select" : "search",
-        suggestionPage: 0,
+        searchQuery:     q,
+        mode:            matched.length >= 1 ? "multi-select" : "search",
+        suggestionPage:  0,
+        highlightedIndex: -1,
       };
     }));
   }
@@ -274,6 +297,7 @@ export default function OrderPage(): React.JSX.Element {
         mode:              "picking",
         recentlyAddedKeys: [],
         suggestionPage:    0,
+        highlightedIndex:  -1,
       };
     }));
   }
@@ -292,7 +316,7 @@ export default function OrderPage(): React.JSX.Element {
             (p) => !(p.subProduct === product.subProduct && p.baseColour === product.baseColour),
           )
         : [...b.selectedProducts, product];
-      return { ...b, selectedProducts: nextSelected };
+      return { ...b, selectedProducts: nextSelected, highlightedIndex: -1 };
     }));
   }
 
@@ -309,6 +333,7 @@ export default function OrderPage(): React.JSX.Element {
         packQtys:          {},
         recentlyAddedKeys: [],
         suggestionPage:    0,
+        highlightedIndex:  -1,
       };
     }));
   }
@@ -316,7 +341,7 @@ export default function OrderPage(): React.JSX.Element {
   // Pagination handler for the multi-select results list.
   function goToPage(billId: number, page: number): void {
     setBills((prev) => prev.map((b) =>
-      b.id === billId ? { ...b, suggestionPage: Math.max(0, page) } : b,
+      b.id === billId ? { ...b, suggestionPage: Math.max(0, page), highlightedIndex: -1 } : b,
     ));
   }
 
@@ -367,6 +392,7 @@ export default function OrderPage(): React.JSX.Element {
           mode:              "search",
           searchQuery:       "",
           suggestionPage:    0,
+          highlightedIndex:  -1,
         };
       }
 
@@ -377,6 +403,7 @@ export default function OrderPage(): React.JSX.Element {
         pickerIndex:       nextIndex,
         activeProduct:     b.selectedProducts[nextIndex],
         packQtys:          {},
+        highlightedIndex:  -1,
       };
     }));
   }
@@ -440,8 +467,9 @@ export default function OrderPage(): React.JSX.Element {
   function stepPack(billId: number, pack: string, delta: number): void {
     setBills((prev) => prev.map((b) => {
       if (b.id !== billId) return b;
+      const step = packStep(formatPack(pack));
       const cur  = b.packQtys[pack] ?? 0;
-      const next = Math.max(0, cur + delta);
+      const next = Math.max(0, cur + delta * step);
       return { ...b, packQtys: { ...b.packQtys, [pack]: next } };
     }));
   }
@@ -453,6 +481,50 @@ export default function OrderPage(): React.JSX.Element {
       if (b.id !== billId) return b;
       return { ...b, packQtys: { ...b.packQtys, [pack]: qty } };
     }));
+  }
+
+  // Laptop/desktop keyboard navigation for the multi-select suggestion list.
+  // ↓/↑ wrap through unselectedSuggestions and auto-advance the page so the
+  // highlight stays visible. Enter mirrors a tap (fast-path pickProduct when
+  // exactly one unselected match and no prior selection, else toggle).
+  // Escape closes suggestions by clearing the query.
+  function handleSearchKeyDown(
+    e: React.KeyboardEvent<HTMLInputElement>,
+    billId: number,
+    items: Product[],
+  ): void {
+    if (!items.length) return;
+
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setBills((prev) => prev.map((b) => {
+        if (b.id !== billId) return b;
+        const next = b.highlightedIndex < items.length - 1 ? b.highlightedIndex + 1 : 0;
+        return { ...b, highlightedIndex: next, suggestionPage: Math.floor(next / SUGGESTION_PAGE_SIZE) };
+      }));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setBills((prev) => prev.map((b) => {
+        if (b.id !== billId) return b;
+        const next = b.highlightedIndex > 0 ? b.highlightedIndex - 1 : items.length - 1;
+        return { ...b, highlightedIndex: next, suggestionPage: Math.floor(next / SUGGESTION_PAGE_SIZE) };
+      }));
+    } else if (e.key === "Enter") {
+      const bill = bills.find((b) => b.id === billId);
+      if (!bill || bill.highlightedIndex < 0) return;
+      const product = items[bill.highlightedIndex];
+      if (!product) return;
+      e.preventDefault();
+      const isFastPath = bill.selectedProducts.length === 0 && items.length === 1;
+      if (isFastPath) pickProduct(billId, product);
+      else            toggleProductSelection(billId, product);
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      setBills((prev) => prev.map((b) => {
+        if (b.id !== billId) return b;
+        return { ...b, searchQuery: "", mode: "search", suggestionPage: 0, highlightedIndex: -1 };
+      }));
+    }
   }
 
   function deleteLineFromBill(billId: number, idx: number): void {
@@ -642,6 +714,7 @@ export default function OrderPage(): React.JSX.Element {
                 onGoToPage={(page) => goToPage(b.id, page)}
                 onStepPack={(pack, delta) => stepPack(b.id, pack, delta)}
                 onSetPack={(pack, raw) => setPack(b.id, pack, raw)}
+                onSearchKeyDown={(e, items) => handleSearchKeyDown(e, b.id, items)}
                 onDeleteLine={(idx) => deleteLineFromBill(b.id, idx)}
                 speechSupported={speechSupported}
                 isListening={listeningBillId === b.id}
@@ -908,6 +981,7 @@ interface BillCardProps {
   onGoToPage:            (page: number) => void;
   onStepPack:            (pack: string, delta: number) => void;
   onSetPack:             (pack: string, raw: string) => void;
+  onSearchKeyDown:       (e: React.KeyboardEvent<HTMLInputElement>, items: Product[]) => void;
   onDeleteLine:          (idx: number) => void;
   speechSupported:       boolean;
   isListening:           boolean;
@@ -919,13 +993,32 @@ const SUGGESTION_PAGE_SIZE = 6;
 function BillCard({
   bill, dataLoading, getProductSuggestions, onRemove, onSetQuery,
   onPickProduct, onToggleProduct, onStartPicking, onNextProduct, onGoToPage,
-  onStepPack, onSetPack, onDeleteLine,
+  onStepPack, onSetPack, onSearchKeyDown, onDeleteLine,
   speechSupported, isListening, onMicToggle,
 }: BillCardProps): React.JSX.Element {
   const suggestions  = getProductSuggestions(bill.searchQuery);
   const hasAnyQty    = Object.values(bill.packQtys).some((q) => q > 0);
   const inPicking    = bill.mode === "picking";
   const inMultiSel   = bill.mode === "multi-select";
+
+  // Hoisted from the multi-select IIFE so the search input's onKeyDown can
+  // pass the live unselectedSuggestions list to the parent's keyboard handler.
+  const unselectedSuggestions = inMultiSel
+    ? suggestions.filter((p) => !bill.selectedProducts.some(
+        (s) => s.subProduct === p.subProduct && s.baseColour === p.baseColour,
+      ))
+    : [];
+  const totalPages  = Math.max(1, Math.ceil(unselectedSuggestions.length / SUGGESTION_PAGE_SIZE));
+  const currentPage = Math.min(bill.suggestionPage, totalPages - 1);
+
+  // Keyboard nav scroll: when ↓/↑ moves highlightedIndex, scroll the new
+  // suggestion row into view. Page auto-advance has already updated
+  // suggestionPage, so by the time this effect runs the row is in the DOM.
+  useEffect(() => {
+    if (bill.highlightedIndex < 0) return;
+    const el = document.getElementById(`sugg-${bill.id}-${bill.highlightedIndex}`);
+    el?.scrollIntoView({ block: "nearest" });
+  }, [bill.highlightedIndex, bill.id]);
 
   // Multi-SKU select-then-pack flow (top → bottom):
   //   Bill header (line-count badge)
@@ -1022,6 +1115,7 @@ function BillCard({
           disabled={dataLoading || inPicking}
           value={bill.searchQuery}
           onChange={(e) => onSetQuery(e.target.value)}
+          onKeyDown={(e) => onSearchKeyDown(e, unselectedSuggestions)}
           placeholder={dataLoading ? "Loading products…" : "Search next product…"}
           autoComplete="off"
           autoCorrect="off"
@@ -1065,15 +1159,10 @@ function BillCard({
         )}
       </div>
 
-      {/* Multi-select suggestions — paginated, with pinned Selected section */}
+      {/* Multi-select suggestions — paginated, with pinned Selected section.
+          unselectedSuggestions / totalPages / currentPage are hoisted to the
+          BillCard top so the search input's onKeyDown can pass them in. */}
       {inMultiSel && suggestions.length > 0 && (() => {
-        const unselectedSuggestions = suggestions.filter(
-          (p) => !bill.selectedProducts.some(
-            (s) => s.subProduct === p.subProduct && s.baseColour === p.baseColour,
-          ),
-        );
-        const totalPages  = Math.max(1, Math.ceil(unselectedSuggestions.length / SUGGESTION_PAGE_SIZE));
-        const currentPage = Math.min(bill.suggestionPage, totalPages - 1);
         const pageItems   = unselectedSuggestions.slice(
           currentPage * SUGGESTION_PAGE_SIZE,
           (currentPage + 1) * SUGGESTION_PAGE_SIZE,
@@ -1088,11 +1177,15 @@ function BillCard({
               // Single result, no prior selection — tap = pick straight to picker.
               (() => {
                 const p = unselectedSuggestions[0];
+                const isHighlighted = bill.highlightedIndex === 0;
                 return (
                   <button
+                    id={`sugg-${bill.id}-0`}
                     type="button"
                     onClick={() => onPickProduct(p)}
-                    className="w-full flex items-center gap-2.5 px-[14px] py-[11px] text-left active:bg-teal-50"
+                    className={`w-full flex items-center gap-2.5 px-[14px] py-[11px] text-left ${
+                      isHighlighted ? "bg-teal-50 outline-none" : "active:bg-teal-50"
+                    }`}
                   >
                     <div className="w-[7px] h-[7px] rounded-full bg-teal-100 border-2 border-teal-600 shrink-0" />
                     <div className="flex-1 min-w-0">
@@ -1170,19 +1263,26 @@ function BillCard({
                   }}
                   className="select-none"
                 >
-                  {pageItems.map((p) => (
-                    <div
-                      key={`res-${p.subProduct}|||${p.baseColour ?? ""}`}
-                      onClick={() => onToggleProduct(p)}
-                      className="flex items-center gap-[10px] px-[13px] py-[11px] border-b border-[#f0f0f0] cursor-pointer active:bg-teal-50"
-                    >
-                      <div className="w-5 h-5 rounded-[6px] border-2 bg-white border-gray-300 flex items-center justify-center shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[14px] font-medium text-gray-900 truncate">{p.displayName}</p>
-                        <p className="text-[11px] text-gray-400 mt-0.5">{p.family}</p>
+                  {pageItems.map((p, pageIdx) => {
+                    const globalIdx     = currentPage * SUGGESTION_PAGE_SIZE + pageIdx;
+                    const isHighlighted = globalIdx === bill.highlightedIndex;
+                    return (
+                      <div
+                        id={`sugg-${bill.id}-${globalIdx}`}
+                        key={`res-${p.subProduct}|||${p.baseColour ?? ""}`}
+                        onClick={() => onToggleProduct(p)}
+                        className={`flex items-center gap-[10px] px-[13px] py-[11px] border-b border-[#f0f0f0] cursor-pointer ${
+                          isHighlighted ? "bg-teal-50 outline-none" : "active:bg-teal-50"
+                        }`}
+                      >
+                        <div className="w-5 h-5 rounded-[6px] border-2 bg-white border-gray-300 flex items-center justify-center shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[14px] font-medium text-gray-900 truncate">{p.displayName}</p>
+                          <p className="text-[11px] text-gray-400 mt-0.5">{p.family}</p>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
 
                 {/* Page dot indicators — active = wide teal pill, others = small gray circles */}
@@ -1264,15 +1364,22 @@ function BillCard({
             </p>
           </div>
 
-          {/* Pack counters */}
+          {/* Pack counters — step multiples align taps with cartons. */}
           {sortPacksForDisplay(bill.activeProduct.packs).map((pack) => {
-            const qty = bill.packQtys[pack] ?? 0;
+            const qty   = bill.packQtys[pack] ?? 0;
+            const label = formatPack(pack);
+            const step  = packStep(label);
             return (
               <div
                 key={pack}
                 className="flex items-center gap-3 px-[14px] py-[10px] border-b border-[#f0f0f0]"
               >
-                <p className="text-[14px] font-medium flex-1">{formatPack(pack)}</p>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[14px] font-medium">{label}</p>
+                  {step > 1 && (
+                    <p className="text-[10px] text-gray-400 mt-0.5">per {step}</p>
+                  )}
+                </div>
                 <div className="flex items-center bg-gray-100 rounded-[9px] overflow-hidden shrink-0">
                   <button
                     type="button"
@@ -1280,7 +1387,7 @@ function BillCard({
                     className={`w-9 h-9 flex items-center justify-center text-[20px] font-light bg-transparent border-none ${
                       qty === 0 ? "text-gray-300" : "text-teal-600"
                     }`}
-                    aria-label={`Decrease ${formatPack(pack)}`}
+                    aria-label={`Decrease ${label}`}
                   >
                     −
                   </button>
@@ -1292,6 +1399,13 @@ function BillCard({
                     value={qty}
                     onChange={(e) => onSetPack(pack, e.target.value)}
                     onFocus={(e) => e.target.select()}
+                    onBlur={(e) => {
+                      // Round down to the nearest carton on blur — keeps free-form
+                      // typing during entry but enforces the step on commit.
+                      const raw     = parseInt(e.target.value, 10) || 0;
+                      const rounded = Math.floor(raw / step) * step;
+                      if (rounded !== qty) onSetPack(pack, String(rounded));
+                    }}
                     className="w-10 text-center text-[14px] font-bold bg-transparent border-none outline-none"
                     style={{ color: qty > 0 ? "#0d9488" : "#111827" }}
                   />
@@ -1299,7 +1413,7 @@ function BillCard({
                     type="button"
                     onClick={() => onStepPack(pack, 1)}
                     className="w-9 h-9 flex items-center justify-center text-[20px] font-light text-teal-600 bg-transparent border-none"
-                    aria-label={`Increase ${formatPack(pack)}`}
+                    aria-label={`Increase ${label}`}
                   >
                     +
                   </button>
