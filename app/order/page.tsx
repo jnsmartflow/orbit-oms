@@ -1399,13 +1399,6 @@ function BillCard({
                     value={qty}
                     onChange={(e) => onSetPack(pack, e.target.value)}
                     onFocus={(e) => e.target.select()}
-                    onBlur={(e) => {
-                      // Round down to the nearest carton on blur — keeps free-form
-                      // typing during entry but enforces the step on commit.
-                      const raw     = parseInt(e.target.value, 10) || 0;
-                      const rounded = Math.floor(raw / step) * step;
-                      if (rounded !== qty) onSetPack(pack, String(rounded));
-                    }}
                     className="w-10 text-center text-[14px] font-bold bg-transparent border-none outline-none"
                     style={{ color: qty > 0 ? "#0d9488" : "#111827" }}
                   />
