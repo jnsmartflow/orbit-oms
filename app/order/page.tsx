@@ -108,6 +108,32 @@ const PACK_STEP: Record<string, number> = {
 function packStep(packLabel: string): number {
   return PACK_STEP[packLabel] ?? 1;
 }
+
+// After a toggle-and-advance (Enter on an unselected item), return the new
+// highlightedIndex in the next render's coordinate system. The caller passes
+// the OLD `items` list (before the toggle), the NEW selectedProducts (with
+// the toggled item appended), and the index of the just-toggled item in the
+// old list. The next render's unselectedSuggestions excludes that one item,
+// so any old index > addedAtOldIdx shifts down by 1; indices < addedAtOldIdx
+// are unchanged. Wraps to start of list. Returns -1 if every item is now
+// selected (caller should set highlightedIndex to -1; next Enter falls into
+// Priority 4 — commit).
+function findNextUnselectedAfterAdd(
+  oldItems: Product[],
+  newSelected: Product[],
+  addedAtOldIdx: number,
+): number {
+  if (oldItems.length === 0) return -1;
+  const isSel = (p: Product): boolean =>
+    newSelected.some((s) => s.subProduct === p.subProduct && s.baseColour === p.baseColour);
+  for (let offset = 1; offset <= oldItems.length; offset++) {
+    const oldIdx = (addedAtOldIdx + offset) % oldItems.length;
+    if (!isSel(oldItems[oldIdx])) {
+      return oldIdx > addedAtOldIdx ? oldIdx - 1 : oldIdx;
+    }
+  }
+  return -1;
+}
 type Bill = {
   id:                number;
   searchQuery:       string;
@@ -559,19 +585,21 @@ export default function OrderPage(): React.JSX.Element {
   // ↓/↑ wrap through unselectedSuggestions and auto-advance the page so the
   // highlight stays visible.
   //
-  // Phase 1 routing for Enter / Space:
-  //   - basket has ≥1 selected      → confirm basket → startPicking
-  //   - empty basket + 1 result      → fast-path pickProduct
-  //   - otherwise                    → toggle highlight into basket
+  // Phase 1.2 Enter routing — single-key multi-select. Space is no longer
+  // intercepted (literal space character types into the search input).
+  // Priority order:
+  //   1. empty basket + exactly 1 result        → fast-path pickProduct
+  //   2. highlighted item NOT yet in basket      → ✓ add and auto-advance
+  //                                                 highlight to next unselected
+  //   3. highlighted item ALREADY in basket      → commit → startPicking
+  //   4. no highlight + basket ≥1                → commit → startPicking
+  //   5. nothing actionable                      → no-op
   //
-  // Space additionally guards on highlightedIndex >= 0 so that typing literal
-  // spaces ("weather coat") into the search input still works.
-  //
-  // All bill-state reads happen inside setBills(prev => ...) updaters so we
-  // never inherit a stale `bills` closure. Helpers (pickProduct,
-  // toggleProductSelection, startPicking) own their own setBills updates;
-  // we resolve the routing decision against `prev`, stash the chosen action,
-  // and dispatch it after the updater returns.
+  // Bill state is read via setBills(prev => ...) so we never inherit a stale
+  // `bills` closure. State-only changes (priority 2) update inline within the
+  // updater. Side-effect helpers (pickProduct, startPicking) are stashed as
+  // pendingAction and fired after the updater returns — calling them inside
+  // the updater would nest setBills, which is unsafe.
   function handleSearchKeyDown(
     e: React.KeyboardEvent<HTMLInputElement>,
     billId: number,
@@ -594,61 +622,61 @@ export default function OrderPage(): React.JSX.Element {
         return { ...b, highlightedIndex: next, suggestionPage: Math.floor(next / SUGGESTION_PAGE_SIZE) };
       }));
     } else if (e.key === "Enter") {
-      // Priority order (1.1 fix):
-      //   1. basket has ≥1 selected → confirm and start picking. ALWAYS wins,
-      //      regardless of highlightedIndex. (toggleProductSelection resets
-      //      highlightedIndex to -1, so without this Enter would silently
-      //      no-op after a Space-select — the bug Phase 1 shipped with.)
-      //   2. exactly 1 result + empty basket → fast-path pickProduct. Works
-      //      whether or not the user has pressed ↓ first (items[hi] ?? items[0]).
-      //   3. highlighted item + empty basket → toggle into basket.
+      e.preventDefault();
       let pendingAction: (() => void) | null = null;
       setBills((prev) => {
         const b = prev.find((x) => x.id === billId);
         if (!b) return prev;
 
-        if (b.selectedProducts.length >= 1) {
+        const hasHighlight = b.highlightedIndex >= 0;
+        const highlighted  = hasHighlight ? items[b.highlightedIndex] : null;
+        const isHighlightedSelected = highlighted
+          ? b.selectedProducts.some((p) =>
+              p.subProduct === highlighted.subProduct && p.baseColour === highlighted.baseColour)
+          : false;
+
+        // Priority 1: empty basket + 1 result → fast path. Works with or
+        // without ↓ first (uses highlighted ?? items[0]).
+        if (b.selectedProducts.length === 0 && items.length === 1) {
+          const fast = highlighted ?? items[0];
+          pendingAction = () => pickProduct(billId, fast);
+          return prev;
+        }
+
+        // Priority 2: highlighted + not in basket → ✓ add and advance the
+        // highlight to the next unselected item. Inline state update so we
+        // can set highlightedIndex against the post-toggle coordinate system.
+        if (highlighted && !isHighlightedSelected) {
+          const newSelected = [...b.selectedProducts, highlighted];
+          const nextIdx     = findNextUnselectedAfterAdd(items, newSelected, b.highlightedIndex);
+          return prev.map((x) =>
+            x.id === billId
+              ? {
+                  ...x,
+                  selectedProducts: newSelected,
+                  highlightedIndex: nextIdx,
+                  suggestionPage:   nextIdx >= 0 ? Math.floor(nextIdx / SUGGESTION_PAGE_SIZE) : 0,
+                }
+              : x,
+          );
+        }
+
+        // Priority 3: highlighted + already in basket → commit.
+        if (highlighted && isHighlightedSelected) {
           pendingAction = () => startPicking(billId);
           return prev;
         }
 
-        if (items.length === 1) {
-          const fastProduct = (b.highlightedIndex >= 0 ? items[b.highlightedIndex] : null) ?? items[0];
-          pendingAction = () => pickProduct(billId, fastProduct);
+        // Priority 4: no highlight + basket ≥1 → commit.
+        if (!hasHighlight && b.selectedProducts.length >= 1) {
+          pendingAction = () => startPicking(billId);
           return prev;
         }
 
-        if (b.highlightedIndex >= 0) {
-          const product = items[b.highlightedIndex];
-          if (product) pendingAction = () => toggleProductSelection(billId, product);
-        }
+        // Priority 5: no-op.
         return prev;
       });
-      if (pendingAction !== null) {
-        e.preventDefault();
-        (pendingAction as () => void)();
-      }
-    } else if (e.key === " ") {
-      // Space: only intercept when a suggestion is actively highlighted —
-      // otherwise let the literal character pass through so users can type
-      // "weather coat" etc. into the search input.
-      let pendingAction: (() => void) | null = null;
-      setBills((prev) => {
-        const b = prev.find((x) => x.id === billId);
-        if (!b || b.highlightedIndex < 0) return prev;
-        const product = items[b.highlightedIndex];
-        if (!product) return prev;
-        if (b.selectedProducts.length === 0 && items.length === 1) {
-          pendingAction = () => pickProduct(billId, product);
-        } else {
-          pendingAction = () => toggleProductSelection(billId, product);
-        }
-        return prev;
-      });
-      if (pendingAction !== null) {
-        e.preventDefault();
-        (pendingAction as () => void)();
-      }
+      if (pendingAction !== null) (pendingAction as () => void)();
     } else if (e.key === "Escape") {
       e.preventDefault();
       setBills((prev) => prev.map((b) => {
@@ -1072,7 +1100,6 @@ export default function OrderPage(): React.JSX.Element {
         <div className="hidden md:flex flex-wrap items-center justify-center gap-3 mt-6 mx-[14px] py-3 px-4 bg-white border border-gray-200 rounded-[10px]">
           <span className="text-[11px] text-gray-500 font-mono px-2 py-1 bg-gray-50 rounded border border-gray-200">Tab → next</span>
           <span className="text-[11px] text-gray-500 font-mono px-2 py-1 bg-gray-50 rounded border border-gray-200">Enter → confirm</span>
-          <span className="text-[11px] text-gray-500 font-mono px-2 py-1 bg-gray-50 rounded border border-gray-200">Space → toggle</span>
           <span className="text-[11px] text-gray-500 font-mono px-2 py-1 bg-gray-50 rounded border border-gray-200">Esc → cancel</span>
           <span className="text-[11px] text-gray-500 font-mono px-2 py-1 bg-gray-50 rounded border border-gray-200">Alt+Enter → add line</span>
           <span className="text-[11px] text-gray-500 font-mono px-2 py-1 bg-gray-50 rounded border border-gray-200">Ctrl+Enter → send</span>
