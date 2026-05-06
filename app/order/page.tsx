@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { Search, Send } from "lucide-react";
 
 // Public mobile order form for Sales Officers. Picker UI for customer
@@ -125,6 +125,14 @@ type Bill = {
 type Dispatch = "Normal" | "Hold" | "Urgent";
 type Marker   = "Truck" | "Cross Delivery" | "DTS" | null;
 
+// Phase 1 keyboard workflow — imperative handle exposed by each BillCard so
+// the parent can focus a specific bill's product-search input or its first
+// pack-qty input after auto-advance moments (selectCustomer, picker open).
+type BillCardHandle = {
+  focusProductSearch: () => void;
+  focusFirstPackRow:  () => void;
+};
+
 // ── Component ────────────────────────────────────────────────────────────
 
 export default function OrderPage(): React.JSX.Element {
@@ -155,6 +163,21 @@ export default function OrderPage(): React.JSX.Element {
   const [speechSupported,  setSpeechSupported]  = useState(false);
   const [listeningBillId,  setListeningBillId]  = useState<number | null>(null);
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
+
+  // Phase 1 keyboard workflow — refs + state for the laptop tele-caller flow
+  // (customer → product → pack → send) entirely from the keyboard. Mobile is
+  // unaffected: handlers are additive and mount auto-focus is matchMedia-gated.
+  const [custHighlightedIndex, setCustHighlightedIndex] = useState<number>(-1);
+  const custInputRef        = useRef<HTMLInputElement | null>(null);
+  const sendButtonRef       = useRef<HTMLButtonElement | null>(null);
+  const billHandlesRef      = useRef<Map<number, BillCardHandle>>(new Map());
+  // Latest-callback ref for the page-level Ctrl+Enter listener — keeps the
+  // window keydown handler attached once on mount while still firing the
+  // freshest canSend / handleSend snapshot.
+  const latestHandleSendRef = useRef<(() => void) | null>(null);
+  // Guard so the post-selectCustomer focus effect fires once per selection,
+  // even though `bills` re-renders on every keystroke during product search.
+  const focusedAfterCustRef = useRef<boolean>(false);
 
   // ── Effects ────────────────────────────────────────────────────────────
 
@@ -192,6 +215,55 @@ export default function OrderPage(): React.JSX.Element {
       }
     };
   }, []);
+
+  // Keep latestHandleSendRef in sync with the freshest canSend/handleSend
+  // snapshot every render. Intentionally no deps array — runs every render so
+  // the ref always points at the current closure. Lint-clean: exhaustive-deps
+  // only fires when a deps array is present.
+  useEffect(() => {
+    latestHandleSendRef.current = () => {
+      if (canSend) handleSend();
+    };
+  });
+
+  // Page-level Ctrl/Cmd+Enter listener. Attached once on mount, reads via the
+  // latest-callback ref so it never sees a stale canSend.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent): void {
+      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+        latestHandleSendRef.current?.();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  // Mount auto-focus on the customer search input — desktop only. Mobile
+  // users do not get the keyboard popped on load. matchMedia is read inside
+  // the effect so SSR doesn't see `window`.
+  useEffect(() => {
+    if (dataLoading || selectedCust) return;
+    if (typeof window === "undefined") return;
+    if (!window.matchMedia("(min-width: 768px)").matches) return;
+    custInputRef.current?.focus();
+  }, [dataLoading, selectedCust]);
+
+  // After selectCustomer, focus Bill 1's product-search input. focusedAfterCustRef
+  // gates this so the effect fires once per selection — bills re-renders on
+  // every keystroke would otherwise yank focus back.
+  useEffect(() => {
+    if (!selectedCust) {
+      focusedAfterCustRef.current = false;
+      return;
+    }
+    if (focusedAfterCustRef.current) return;
+    if (bills.length === 0) return;
+    const handle = billHandlesRef.current.get(bills[0].id);
+    if (handle) {
+      handle.focusProductSearch();
+      focusedAfterCustRef.current = true;
+    }
+  }, [selectedCust, bills]);
 
   // ── Customer handlers ─────────────────────────────────────────────────
 
@@ -485,9 +557,21 @@ export default function OrderPage(): React.JSX.Element {
 
   // Laptop/desktop keyboard navigation for the multi-select suggestion list.
   // ↓/↑ wrap through unselectedSuggestions and auto-advance the page so the
-  // highlight stays visible. Enter mirrors a tap (fast-path pickProduct when
-  // exactly one unselected match and no prior selection, else toggle).
-  // Escape closes suggestions by clearing the query.
+  // highlight stays visible.
+  //
+  // Phase 1 routing for Enter / Space:
+  //   - basket has ≥1 selected      → confirm basket → startPicking
+  //   - empty basket + 1 result      → fast-path pickProduct
+  //   - otherwise                    → toggle highlight into basket
+  //
+  // Space additionally guards on highlightedIndex >= 0 so that typing literal
+  // spaces ("weather coat") into the search input still works.
+  //
+  // All bill-state reads happen inside setBills(prev => ...) updaters so we
+  // never inherit a stale `bills` closure. Helpers (pickProduct,
+  // toggleProductSelection, startPicking) own their own setBills updates;
+  // we resolve the routing decision against `prev`, stash the chosen action,
+  // and dispatch it after the updater returns.
   function handleSearchKeyDown(
     e: React.KeyboardEvent<HTMLInputElement>,
     billId: number,
@@ -510,14 +594,46 @@ export default function OrderPage(): React.JSX.Element {
         return { ...b, highlightedIndex: next, suggestionPage: Math.floor(next / SUGGESTION_PAGE_SIZE) };
       }));
     } else if (e.key === "Enter") {
-      const bill = bills.find((b) => b.id === billId);
-      if (!bill || bill.highlightedIndex < 0) return;
-      const product = items[bill.highlightedIndex];
-      if (!product) return;
-      e.preventDefault();
-      const isFastPath = bill.selectedProducts.length === 0 && items.length === 1;
-      if (isFastPath) pickProduct(billId, product);
-      else            toggleProductSelection(billId, product);
+      let pendingAction: (() => void) | null = null;
+      setBills((prev) => {
+        const b = prev.find((x) => x.id === billId);
+        if (!b || b.highlightedIndex < 0) return prev;
+        const product = items[b.highlightedIndex];
+        if (!product) return prev;
+        if (b.selectedProducts.length >= 1) {
+          pendingAction = () => startPicking(billId);
+        } else if (items.length === 1) {
+          pendingAction = () => pickProduct(billId, product);
+        } else {
+          pendingAction = () => toggleProductSelection(billId, product);
+        }
+        return prev;
+      });
+      if (pendingAction !== null) {
+        e.preventDefault();
+        (pendingAction as () => void)();
+      }
+    } else if (e.key === " ") {
+      // Space: only intercept when a suggestion is actively highlighted —
+      // otherwise let the literal character pass through so users can type
+      // "weather coat" etc. into the search input.
+      let pendingAction: (() => void) | null = null;
+      setBills((prev) => {
+        const b = prev.find((x) => x.id === billId);
+        if (!b || b.highlightedIndex < 0) return prev;
+        const product = items[b.highlightedIndex];
+        if (!product) return prev;
+        if (b.selectedProducts.length === 0 && items.length === 1) {
+          pendingAction = () => pickProduct(billId, product);
+        } else {
+          pendingAction = () => toggleProductSelection(billId, product);
+        }
+        return prev;
+      });
+      if (pendingAction !== null) {
+        e.preventDefault();
+        (pendingAction as () => void)();
+      }
     } else if (e.key === "Escape") {
       e.preventDefault();
       setBills((prev) => prev.map((b) => {
@@ -525,6 +641,55 @@ export default function OrderPage(): React.JSX.Element {
         return { ...b, searchQuery: "", mode: "search", suggestionPage: 0, highlightedIndex: -1 };
       }));
     }
+  }
+
+  // Customer-search keyboard nav: ↓/↑ wrap through custSuggestions, Enter
+  // selects the highlighted candidate (the post-selectCustomer effect then
+  // hands focus to Bill 1's product search). Escape clears the query.
+  function handleCustKeyDown(e: React.KeyboardEvent<HTMLInputElement>): void {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      setCustQuery("");
+      setCustHighlightedIndex(-1);
+      return;
+    }
+    if (custSuggestions.length === 0) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setCustHighlightedIndex((i) => i < custSuggestions.length - 1 ? i + 1 : 0);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setCustHighlightedIndex((i) => i > 0 ? i - 1 : custSuggestions.length - 1);
+    } else if (e.key === "Enter") {
+      if (custHighlightedIndex < 0) return;
+      const c = custSuggestions[custHighlightedIndex];
+      if (!c) return;
+      e.preventDefault();
+      selectCustomer(c);
+    }
+  }
+
+  // Esc-out of the pack picker. Per spec: searchQuery and committed lines are
+  // PRESERVED so the tele-caller can refine the same query immediately. The
+  // basket and any in-flight pack qtys are cleared. mode is forced back to
+  // "search"; the next keystroke in setBillQuery will recompute multi-select
+  // mode if the preserved query still matches products.
+  function cancelPicking(billId: number): void {
+    setBills((prev) => prev.map((b) => {
+      if (b.id !== billId) return b;
+      return {
+        ...b,
+        mode:              "search",
+        selectedProducts:  [],
+        pickerIndex:       0,
+        activeProduct:     null,
+        packQtys:          {},
+        recentlyAddedKeys: [],
+        suggestionPage:    0,
+        highlightedIndex:  -1,
+        // searchQuery and lines deliberately preserved.
+      };
+    }));
   }
 
   function deleteLineFromBill(billId: number, idx: number): void {
@@ -651,9 +816,14 @@ export default function OrderPage(): React.JSX.Element {
               <div className="flex items-center gap-2.5 px-4 py-3">
                 <Search className="w-4 h-4 text-gray-300 shrink-0" />
                 <input
+                  ref={custInputRef}
                   type="text"
                   value={custQuery}
-                  onChange={(e) => setCustQuery(e.target.value)}
+                  onChange={(e) => {
+                    setCustQuery(e.target.value);
+                    setCustHighlightedIndex(-1);
+                  }}
+                  onKeyDown={handleCustKeyDown}
                   placeholder="Name or customer code…"
                   autoComplete="off"
                   autoCorrect="off"
@@ -673,20 +843,25 @@ export default function OrderPage(): React.JSX.Element {
               </div>
               {custSuggestions.length > 0 && (
                 <div className="border-t border-gray-100">
-                  {custSuggestions.map((c) => (
-                    <button
-                      key={c.code}
-                      type="button"
-                      onClick={() => selectCustomer(c)}
-                      className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left border-b border-gray-50 last:border-b-0 active:bg-gray-50"
-                    >
-                      <div className="w-1.5 h-1.5 rounded-full bg-teal-600 shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[14px] text-gray-900 truncate">{c.name}</p>
-                        <p className="text-[12px] text-gray-400 font-mono mt-0.5">{c.code}</p>
-                      </div>
-                    </button>
-                  ))}
+                  {custSuggestions.map((c, i) => {
+                    const isHighlighted = i === custHighlightedIndex;
+                    return (
+                      <button
+                        key={c.code}
+                        type="button"
+                        onClick={() => selectCustomer(c)}
+                        className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-left border-b border-gray-50 last:border-b-0 ${
+                          isHighlighted ? "bg-teal-50 outline-none" : "active:bg-gray-50"
+                        }`}
+                      >
+                        <div className="w-1.5 h-1.5 rounded-full bg-teal-600 shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[14px] text-gray-900 truncate">{c.name}</p>
+                          <p className="text-[12px] text-gray-400 font-mono mt-0.5">{c.code}</p>
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
               )}
             </>
@@ -702,6 +877,12 @@ export default function OrderPage(): React.JSX.Element {
             {bills.map((b) => (
               <BillCard
                 key={b.id}
+                ref={(handle) => {
+                  // Register / unregister this bill's imperative handle so the
+                  // parent can call focusProductSearch / focusFirstPackRow.
+                  if (handle) billHandlesRef.current.set(b.id, handle);
+                  else        billHandlesRef.current.delete(b.id);
+                }}
                 bill={b}
                 dataLoading={dataLoading}
                 getProductSuggestions={getProductSuggestions}
@@ -715,6 +896,7 @@ export default function OrderPage(): React.JSX.Element {
                 onStepPack={(pack, delta) => stepPack(b.id, pack, delta)}
                 onSetPack={(pack, raw) => setPack(b.id, pack, raw)}
                 onSearchKeyDown={(e, items) => handleSearchKeyDown(e, b.id, items)}
+                onCancelPicking={() => cancelPicking(b.id)}
                 onDeleteLine={(idx) => deleteLineFromBill(b.id, idx)}
                 speechSupported={speechSupported}
                 isListening={listeningBillId === b.id}
@@ -851,6 +1033,7 @@ export default function OrderPage(): React.JSX.Element {
         {/* Send */}
         <div className="mx-[14px] mt-6">
           <button
+            ref={sendButtonRef}
             type="button"
             disabled={!canSend}
             onClick={handleSend}
@@ -866,6 +1049,17 @@ export default function OrderPage(): React.JSX.Element {
           <p className="text-center text-[12px] text-gray-400 mt-2">
             Opens your mail app · ready to send
           </p>
+        </div>
+
+        {/* Keyboard hint bar — desktop only (≥768px). Static, not sticky.
+            Mirrors the Phase 1 keyboard map so a tele-caller can see at a
+            glance what each shortcut does. Mobile users don't see it. */}
+        <div className="hidden md:flex flex-wrap items-center justify-center gap-3 mt-6 mx-[14px] py-3 px-4 bg-white border border-gray-200 rounded-[10px]">
+          <span className="text-[11px] text-gray-500 font-mono px-2 py-1 bg-gray-50 rounded border border-gray-200">Tab → next</span>
+          <span className="text-[11px] text-gray-500 font-mono px-2 py-1 bg-gray-50 rounded border border-gray-200">Enter → confirm</span>
+          <span className="text-[11px] text-gray-500 font-mono px-2 py-1 bg-gray-50 rounded border border-gray-200">Space → toggle</span>
+          <span className="text-[11px] text-gray-500 font-mono px-2 py-1 bg-gray-50 rounded border border-gray-200">Esc → cancel</span>
+          <span className="text-[11px] text-gray-500 font-mono px-2 py-1 bg-gray-50 rounded border border-gray-200">Ctrl+Enter → send</span>
         </div>
 
       </div>
@@ -982,6 +1176,7 @@ interface BillCardProps {
   onStepPack:            (pack: string, delta: number) => void;
   onSetPack:             (pack: string, raw: string) => void;
   onSearchKeyDown:       (e: React.KeyboardEvent<HTMLInputElement>, items: Product[]) => void;
+  onCancelPicking:       () => void;
   onDeleteLine:          (idx: number) => void;
   speechSupported:       boolean;
   isListening:           boolean;
@@ -990,12 +1185,12 @@ interface BillCardProps {
 
 const SUGGESTION_PAGE_SIZE = 6;
 
-function BillCard({
+const BillCard = forwardRef<BillCardHandle, BillCardProps>(function BillCard({
   bill, dataLoading, getProductSuggestions, onRemove, onSetQuery,
   onPickProduct, onToggleProduct, onStartPicking, onNextProduct, onGoToPage,
-  onStepPack, onSetPack, onSearchKeyDown, onDeleteLine,
+  onStepPack, onSetPack, onSearchKeyDown, onCancelPicking, onDeleteLine,
   speechSupported, isListening, onMicToggle,
-}: BillCardProps): React.JSX.Element {
+}, ref) {
   const suggestions  = getProductSuggestions(bill.searchQuery);
   const hasAnyQty    = Object.values(bill.packQtys).some((q) => q > 0);
   const inPicking    = bill.mode === "picking";
@@ -1011,6 +1206,55 @@ function BillCard({
   const totalPages  = Math.max(1, Math.ceil(unselectedSuggestions.length / SUGGESTION_PAGE_SIZE));
   const currentPage = Math.min(bill.suggestionPage, totalPages - 1);
 
+  // Phase 1 keyboard refs — productSearch for selectCustomer/Esc auto-focus,
+  // packInputs for pack-row Enter chaining, nextButton as 0-pack fallback.
+  const productSearchRef = useRef<HTMLInputElement | null>(null);
+  const packInputsRef    = useRef<HTMLInputElement[]>([]);
+  const nextButtonRef    = useRef<HTMLButtonElement | null>(null);
+  // prevModeRef + prevActiveRef gate the focus effect to fire exactly once
+  // per transition: search→picking, picking→search, or picker advancing to
+  // the next product within the same picking journey.
+  const prevModeRef      = useRef<Bill["mode"]>(bill.mode);
+  const prevActiveRef    = useRef<Product | null>(bill.activeProduct);
+
+  // Imperative handle exposed to OrderPage so it can focus this bill's
+  // product-search or first pack-row from outside.
+  useImperativeHandle(ref, () => ({
+    focusProductSearch: () => productSearchRef.current?.focus(),
+    focusFirstPackRow:  () => {
+      const first = packInputsRef.current[0];
+      if (first) first.focus();
+      else       nextButtonRef.current?.focus();
+    },
+  }), []);
+
+  // Mode + activeProduct transition focus:
+  //   - search → picking            : focus first pack of new product
+  //   - picking → picking (new prod) : focus first pack of new product
+  //   - picking → search             : focus this bill's product-search input
+  // prevModeRef + prevActiveRef gate so we fire once per transition.
+  useEffect(() => {
+    const prevMode   = prevModeRef.current;
+    const prevActive = prevActiveRef.current;
+    const nextMode   = bill.mode;
+    const nextActive = bill.activeProduct;
+
+    const enteredPicking   = prevMode !== "picking" && nextMode === "picking";
+    const advancedProduct  = prevMode === "picking" && nextMode === "picking" && prevActive !== nextActive;
+    const exitedPicking    = prevMode === "picking" && nextMode === "search";
+
+    if (enteredPicking || advancedProduct) {
+      const first = packInputsRef.current[0];
+      if (first) first.focus();
+      else       nextButtonRef.current?.focus();   // 0-pack fallback
+    } else if (exitedPicking) {
+      productSearchRef.current?.focus();
+    }
+
+    prevModeRef.current   = nextMode;
+    prevActiveRef.current = nextActive;
+  }, [bill.mode, bill.activeProduct]);
+
   // Keyboard nav scroll: when ↓/↑ moves highlightedIndex, scroll the new
   // suggestion row into view. Page auto-advance has already updated
   // suggestionPage, so by the time this effect runs the row is in the DOM.
@@ -1019,6 +1263,27 @@ function BillCard({
     const el = document.getElementById(`sugg-${bill.id}-${bill.highlightedIndex}`);
     el?.scrollIntoView({ block: "nearest" });
   }, [bill.highlightedIndex, bill.id]);
+
+  // Hoisted so handlePackKeyDown's "is last row" check + the pack input
+  // ref-callback both index against the same array.
+  const sortedPacks = bill.activeProduct ? sortPacksForDisplay(bill.activeProduct.packs) : [];
+
+  // Pack-row keyboard handler: Enter chains to next pack input, or fires
+  // onNextProduct(false) when on the last row (which advances to the next
+  // product or finishes the journey). Esc cancels the picker entirely.
+  function handlePackKeyDown(e: React.KeyboardEvent<HTMLInputElement>, i: number): void {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      if (i < sortedPacks.length - 1) {
+        packInputsRef.current[i + 1]?.focus();
+      } else {
+        onNextProduct(false);
+      }
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      onCancelPicking();
+    }
+  }
 
   // Multi-SKU select-then-pack flow (top → bottom):
   //   Bill header (line-count badge)
@@ -1111,6 +1376,7 @@ function BillCard({
       >
         <Search className="w-4 h-4 text-gray-300 shrink-0" />
         <input
+          ref={productSearchRef}
           type="text"
           disabled={dataLoading || inPicking}
           value={bill.searchQuery}
@@ -1364,8 +1630,10 @@ function BillCard({
             </p>
           </div>
 
-          {/* Pack counters — step multiples align taps with cartons. */}
-          {sortPacksForDisplay(bill.activeProduct.packs).map((pack) => {
+          {/* Pack counters — step multiples align taps with cartons. Pack
+              qty inputs receive Tab + Enter via packInputsRef; the +/-
+              buttons are tabIndex={-1} so Tab walks input → input. */}
+          {sortedPacks.map((pack, i) => {
             const qty   = bill.packQtys[pack] ?? 0;
             const label = formatPack(pack);
             const step  = packStep(label);
@@ -1383,6 +1651,7 @@ function BillCard({
                 <div className="flex items-center bg-gray-100 rounded-[9px] overflow-hidden shrink-0">
                   <button
                     type="button"
+                    tabIndex={-1}
                     onClick={() => onStepPack(pack, -1)}
                     className={`w-9 h-9 flex items-center justify-center text-[20px] font-light bg-transparent border-none ${
                       qty === 0 ? "text-gray-300" : "text-teal-600"
@@ -1392,6 +1661,7 @@ function BillCard({
                     −
                   </button>
                   <input
+                    ref={(el) => { if (el) packInputsRef.current[i] = el; }}
                     type="number"
                     inputMode="numeric"
                     pattern="[0-9]*"
@@ -1399,11 +1669,13 @@ function BillCard({
                     value={qty}
                     onChange={(e) => onSetPack(pack, e.target.value)}
                     onFocus={(e) => e.target.select()}
+                    onKeyDown={(e) => handlePackKeyDown(e, i)}
                     className="w-10 text-center text-[14px] font-bold bg-transparent border-none outline-none"
                     style={{ color: qty > 0 ? "#0d9488" : "#111827" }}
                   />
                   <button
                     type="button"
+                    tabIndex={-1}
                     onClick={() => onStepPack(pack, 1)}
                     className="w-9 h-9 flex items-center justify-center text-[20px] font-light text-teal-600 bg-transparent border-none"
                     aria-label={`Increase ${label}`}
@@ -1425,6 +1697,7 @@ function BillCard({
               Skip
             </button>
             <button
+              ref={nextButtonRef}
               type="button"
               onClick={() => onNextProduct(false)}
               className="flex-1 h-10 bg-teal-600 hover:bg-teal-700 text-white rounded-[9px] text-[13px] font-semibold truncate min-w-0 px-3"
@@ -1439,7 +1712,7 @@ function BillCard({
 
     </div>
   );
-}
+});
 
 // Inline mic-icon SVG used by the search row in BillCard.
 function MicSvg(): React.JSX.Element {
