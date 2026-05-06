@@ -594,18 +594,33 @@ export default function OrderPage(): React.JSX.Element {
         return { ...b, highlightedIndex: next, suggestionPage: Math.floor(next / SUGGESTION_PAGE_SIZE) };
       }));
     } else if (e.key === "Enter") {
+      // Priority order (1.1 fix):
+      //   1. basket has ≥1 selected → confirm and start picking. ALWAYS wins,
+      //      regardless of highlightedIndex. (toggleProductSelection resets
+      //      highlightedIndex to -1, so without this Enter would silently
+      //      no-op after a Space-select — the bug Phase 1 shipped with.)
+      //   2. exactly 1 result + empty basket → fast-path pickProduct. Works
+      //      whether or not the user has pressed ↓ first (items[hi] ?? items[0]).
+      //   3. highlighted item + empty basket → toggle into basket.
       let pendingAction: (() => void) | null = null;
       setBills((prev) => {
         const b = prev.find((x) => x.id === billId);
-        if (!b || b.highlightedIndex < 0) return prev;
-        const product = items[b.highlightedIndex];
-        if (!product) return prev;
+        if (!b) return prev;
+
         if (b.selectedProducts.length >= 1) {
           pendingAction = () => startPicking(billId);
-        } else if (items.length === 1) {
-          pendingAction = () => pickProduct(billId, product);
-        } else {
-          pendingAction = () => toggleProductSelection(billId, product);
+          return prev;
+        }
+
+        if (items.length === 1) {
+          const fastProduct = (b.highlightedIndex >= 0 ? items[b.highlightedIndex] : null) ?? items[0];
+          pendingAction = () => pickProduct(billId, fastProduct);
+          return prev;
+        }
+
+        if (b.highlightedIndex >= 0) {
+          const product = items[b.highlightedIndex];
+          if (product) pendingAction = () => toggleProductSelection(billId, product);
         }
         return prev;
       });
@@ -1059,6 +1074,7 @@ export default function OrderPage(): React.JSX.Element {
           <span className="text-[11px] text-gray-500 font-mono px-2 py-1 bg-gray-50 rounded border border-gray-200">Enter → confirm</span>
           <span className="text-[11px] text-gray-500 font-mono px-2 py-1 bg-gray-50 rounded border border-gray-200">Space → toggle</span>
           <span className="text-[11px] text-gray-500 font-mono px-2 py-1 bg-gray-50 rounded border border-gray-200">Esc → cancel</span>
+          <span className="text-[11px] text-gray-500 font-mono px-2 py-1 bg-gray-50 rounded border border-gray-200">Alt+Enter → add line</span>
           <span className="text-[11px] text-gray-500 font-mono px-2 py-1 bg-gray-50 rounded border border-gray-200">Ctrl+Enter → send</span>
         </div>
 
@@ -1268,10 +1284,28 @@ const BillCard = forwardRef<BillCardHandle, BillCardProps>(function BillCard({
   // ref-callback both index against the same array.
   const sortedPacks = bill.activeProduct ? sortPacksForDisplay(bill.activeProduct.packs) : [];
 
-  // Pack-row keyboard handler: Enter chains to next pack input, or fires
-  // onNextProduct(false) when on the last row (which advances to the next
-  // product or finishes the journey). Esc cancels the picker entirely.
+  // Pack-row keyboard handler. Key map:
+  //   Alt+Enter   → add line from any row (commits product, advances/finishes
+  //                 the journey). No-op when every pack qty is 0.
+  //   Enter       → next pack input, or commit on last row.
+  //   Esc         → cancel picker entirely.
+  //   + / ↑       → onStepPack(pack, +1) — routes through stepPack so the
+  //                 step size respects packStep(label) for cartons (12, 6, 4…)
+  //                 instead of the browser's native 1 step on number inputs.
+  //   - / ↓       → onStepPack(pack, -1) — same, descending.
+  // Other keys fall through to native input behaviour (typing, selection).
   function handlePackKeyDown(e: React.KeyboardEvent<HTMLInputElement>, i: number): void {
+    const pack = sortedPacks[i];
+    if (!pack) return;
+
+    if (e.altKey && e.key === "Enter") {
+      e.preventDefault();
+      const hasAnyQty = Object.values(bill.packQtys).some((q) => q > 0);
+      if (!hasAnyQty) return;   // silent no-op — don't advance with empty line
+      onNextProduct(false);
+      return;
+    }
+
     if (e.key === "Enter") {
       e.preventDefault();
       if (i < sortedPacks.length - 1) {
@@ -1279,9 +1313,25 @@ const BillCard = forwardRef<BillCardHandle, BillCardProps>(function BillCard({
       } else {
         onNextProduct(false);
       }
-    } else if (e.key === "Escape") {
+      return;
+    }
+
+    if (e.key === "Escape") {
       e.preventDefault();
       onCancelPicking();
+      return;
+    }
+
+    if (e.key === "+" || e.key === "ArrowUp") {
+      e.preventDefault();
+      onStepPack(pack, +1);
+      return;
+    }
+
+    if (e.key === "-" || e.key === "ArrowDown") {
+      e.preventDefault();
+      onStepPack(pack, -1);
+      return;
     }
   }
 
