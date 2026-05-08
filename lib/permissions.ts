@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import type { RolloutStage } from "@/auth.config";
 
 // ── Nav config ─────────────────────────────────────────────────────────────────
 
@@ -6,6 +7,11 @@ export interface NavItemConfig {
   pageKey: string;
   label:   string;
   href:    string;
+}
+
+export interface NavUserFlags {
+  attendanceTestUser?: boolean;
+  rolloutStage?:       RolloutStage;
 }
 
 const PAGE_NAV_MAP: NavItemConfig[] = [
@@ -25,10 +31,12 @@ const PAGE_NAV_MAP: NavItemConfig[] = [
   { pageKey: "skus",          label: "SKUs",           href: "/admin/skus" },
   { pageKey: "routes_areas",  label: "Routes",         href: "/admin/routes" },
   { pageKey: "vehicles",      label: "Vehicles",        href: "/admin/vehicles" },
+  { pageKey: "place_order",        label: "Place Order",       href: "/place-order" },
   { pageKey: "mail_orders",        label: "Mail Orders",       href: "/mail-orders" },
   { pageKey: "delivery_challans",  label: "Delivery Challans", href: "/tint/manager/challan" },
   { pageKey: "shade_master",       label: "Shade Master",      href: "/tint/manager/shades" },
   { pageKey: "ti_report",          label: "TI Report",         href: "/tint/manager/ti-report" },
+  { pageKey: "attendance",         label: "Attendance",        href: "/attendance" },
 ];
 
 // Per-role href overrides: non-admin roles access shared pages via their own route group
@@ -54,12 +62,25 @@ const ROLE_HREF_OVERRIDES: Record<string, Record<string, string>> = {
 };
 
 export function buildNavItems(
-  allPerms:  Record<string, PagePermissions>,
-  roleSlug?: string,
+  allPerms:   Record<string, PagePermissions>,
+  roleSlug?:  string,
+  userFlags?: NavUserFlags,
 ): NavItemConfig[] {
   const overrides = roleSlug ? (ROLE_HREF_OVERRIDES[roleSlug] ?? {}) : {};
   return PAGE_NAV_MAP
-    .filter((item) => allPerms[item.pageKey]?.canView === true)
+    .filter((item) => {
+      // The attendance nav item is gated on user-level flags + rollout stage,
+      // not on role_permissions (no row exists for "attendance" — visibility
+      // is intentionally per-user). Admin always sees it for self-test.
+      if (item.pageKey === "attendance") {
+        if (roleSlug === "admin") return true;
+        return (
+          (userFlags?.attendanceTestUser ?? false) ||
+          userFlags?.rolloutStage === "ALL_USERS"
+        );
+      }
+      return allPerms[item.pageKey]?.canView === true;
+    })
     .map((item) =>
       overrides[item.pageKey] !== undefined
         ? { ...item, href: overrides[item.pageKey] }
@@ -90,10 +111,12 @@ export type PageKey =
   | "planning_board"
   | "dispatcher"
   | "warehouse"
+  | "place_order"
   | "mail_orders"
   | "delivery_challans"
   | "shade_master"
-  | "ti_report";
+  | "ti_report"
+  | "attendance";
 
 export type ActionKey =
   | "canView"
@@ -131,7 +154,7 @@ const ALL_PAGE_KEYS: PageKey[] = [
   "dashboard", "users", "system_config", "permissions",
   "customers", "skus", "routes_areas", "vehicles",
   "import_obd", "support_queue", "planning_board", "tint_manager", "tint_operator",
-  "dispatcher", "warehouse", "mail_orders",
+  "dispatcher", "warehouse", "place_order", "mail_orders",
   "delivery_challans", "shade_master", "ti_report",
 ];
 

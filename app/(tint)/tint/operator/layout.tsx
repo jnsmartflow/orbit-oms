@@ -29,7 +29,10 @@ export default async function TintOperatorLayout({
 
   const allPerms     = await getAllPermissionsForRoles(roles);
   const navItems = [
-    ...buildNavItems(allPerms, primaryRole),
+    ...buildNavItems(allPerms, primaryRole, {
+      attendanceTestUser: session.user.attendanceTestUser,
+      rolloutStage:       session.user.rolloutStage,
+    }),
     // Shade Master — always visible for Operator; page has its own auth guard
     { pageKey: "shade_master", label: "Shade Master", href: "/tint/shades" },
   ];

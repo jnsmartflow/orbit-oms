@@ -10,7 +10,7 @@ import {
   Truck, Clock, CalendarClock, Map, MapPin, Layers,
   Tag, Palette, Package,
   Building2, UserCheck, ContactRound, Store,
-  Upload, ClipboardList, Paintbrush, Briefcase,
+  Upload, ClipboardList, ClipboardCheck, Paintbrush, Briefcase,
 } from "lucide-react";
 import { useSidebar } from "./sidebar-provider";
 import type { PagePermissions } from "@/lib/permissions";
@@ -74,6 +74,12 @@ const NAV_SECTIONS: NavSection[] = [
       { label: "Shade Master",  href: "/tint/shades" },
     ],
   },
+  {
+    label: "Personal",
+    items: [
+      { label: "Attendance", href: "/attendance" },
+    ],
+  },
 ];
 
 // ── Icon map ─────────────────────────────────────────────────────────────────
@@ -107,6 +113,7 @@ const ICONS: Record<string, NavIcon> = {
   "Tint Manager":        Palette,
   "Shade Master":        Palette,
   "My Tint Jobs":        Paintbrush,
+  "Attendance":          ClipboardCheck,
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

@@ -112,6 +112,11 @@ model users {
   isActive                  Boolean                  @default(true)
   createdAt                 DateTime                 @default(now())
   updatedAt                 DateTime                 @updatedAt
+  // Attendance fields (v27.0 + v27.1 rollout flag)
+  attendanceConsentAt       DateTime?                @db.Timestamptz(6)
+  attendanceConsentVersion  String?
+  attendanceExempt          Boolean                  @default(false)
+  attendanceTestUser        Boolean                  @default(false)
   // Phase 2 back-relations
   importBatches             import_batches[]
   statusLogs                order_status_logs[]
@@ -148,6 +153,11 @@ model users {
   // Multi-role back-relations
   userRoles                 user_roles[]             @relation("UserRoleAssignments")
   userRolesCreated          user_roles[]             @relation("UserRoleCreator")
+  // Attendance back-relations (v27.0)
+  attendanceRecords         attendance_records[]     @relation("AttendanceUser")
+  attendanceRecordsCreated  attendance_records[]     @relation("AttendanceCreatedBy")
+  attendanceSummaries       attendance_summary[]
+  attendanceSettingsUpdated attendance_settings[]
 }
 
 model status_master {
@@ -1192,7 +1202,12 @@ model mo_order_form_index {
   isActive     Boolean  @default(true)
   createdAt    DateTime @default(now())
 
-  @@unique([subProduct, baseColour])
+  // Widened from (subProduct, baseColour) to (family, subProduct, baseColour)
+  // for Phase 1 taxonomy redesign — same (subProduct, baseColour) needs to
+  // appear under multiple families when a Promise primer is cross-listed in
+  // PRIMER + PROMISE INTERIOR + PROMISE umbrella. Migration SQL lives at
+  // scripts/phase1-taxonomy-unique-constraint.sql; not yet applied.
+  @@unique([family, subProduct, baseColour])
   @@map("mo_order_form_index")
 }
 
@@ -1210,4 +1225,92 @@ model import_shadow_log {
   @@index([batchId], map: "idx_import_shadow_log_batch")
   @@index([obdNumber], map: "idx_import_shadow_log_obd")
   @@index([createdAt], map: "idx_import_shadow_log_created")
+}
+
+// ─────────────────────────────────────────────
+// ATTENDANCE (v27.0) — records, summary, settings
+// ─────────────────────────────────────────────
+
+model attendance_records {
+  id                     Int       @id @default(autoincrement())
+  userId                 Int
+  user                   users     @relation("AttendanceUser", fields: [userId], references: [id])
+  type                   String
+  timestamp              DateTime  @db.Timestamptz(6)
+  attendanceDate         String
+  sessionId              Int?
+  latitude               Decimal?  @db.Decimal(10, 7)
+  longitude              Decimal?  @db.Decimal(10, 7)
+  locationAccuracyMeters Int?
+  locationVerified       Boolean   @default(false)
+  locationDistanceMeters Int?
+  photoPath              String?
+  photoSizeBytes         Int?
+  userAgent              String?
+  ipAddress              String?
+  deviceLabel            String?
+  isManualEntry          Boolean   @default(false)
+  manualReason           String?
+  createdById            Int?
+  createdBy              users?    @relation("AttendanceCreatedBy", fields: [createdById], references: [id])
+  isLate                 Boolean   @default(false)
+  isOvertime             Boolean   @default(false)
+  isOutsideGeofence      Boolean   @default(false)
+  hasNoPhoto             Boolean   @default(false)
+  hasNoLocation          Boolean   @default(false)
+  createdAt              DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@index([userId, attendanceDate])
+  @@index([attendanceDate])
+  @@index([type, attendanceDate])
+}
+
+model attendance_summary {
+  id                   Int       @id @default(autoincrement())
+  userId               Int
+  user                 users     @relation(fields: [userId], references: [id])
+  attendanceDate       String
+  firstCheckInAt       DateTime? @db.Timestamptz(6)
+  lastCheckOutAt       DateTime? @db.Timestamptz(6)
+  sessionCount         Int       @default(0)
+  totalMinutesWorked   Int       @default(0)
+  overtimeMinutes      Int       @default(0)
+  lateMinutes          Int       @default(0)
+  status               String    @default("ABSENT")
+  exceptionReason      String?
+  hasMissingCheckout   Boolean   @default(false)
+  hasGeofenceViolation Boolean   @default(false)
+  hasManualEntries     Boolean   @default(false)
+  updatedAt            DateTime  @updatedAt @db.Timestamptz(6)
+
+  @@unique([userId, attendanceDate])
+  @@index([attendanceDate])
+  @@index([status, attendanceDate])
+}
+
+model attendance_settings {
+  id                      Int      @id @default(autoincrement())
+  scope                   String   @default("GLOBAL")
+  roleSlug                String?
+  rolloutStage            String   @default("OFF")
+  workStartTime           String   @default("09:30")
+  workEndTime             String   @default("19:00")
+  lateGraceMinutes        Int      @default(15)
+  halfDayThresholdMinutes Int      @default(240)
+  checkInWindowStart      String   @default("08:00")
+  checkInWindowEnd        String   @default("23:59")
+  geofenceLat             Decimal  @default(21.1702000) @db.Decimal(10, 7)
+  geofenceLng             Decimal  @default(72.8311000) @db.Decimal(10, 7)
+  geofenceRadiusMeters    Int      @default(150)
+  requirePhoto            Boolean  @default(true)
+  requireLocation         Boolean  @default(true)
+  photoRetentionDays      Int      @default(90)
+  photoMaxWidthPx         Int      @default(640)
+  photoJpegQuality        Int      @default(70)
+  dpdpConsentVersion      String   @default("v1.0")
+  updatedAt               DateTime @updatedAt @db.Timestamptz(6)
+  updatedById             Int?
+  updatedBy               users?   @relation(fields: [updatedById], references: [id])
+
+  @@unique([scope, roleSlug])
 }
