@@ -25,7 +25,10 @@ export default async function OperationsLayout({
   if (!roles.some(r => ["operations", "admin"].includes(r))) redirect("/unauthorized");
 
   const allPerms     = await getAllPermissionsForRoles(roles);
-  const navItems     = buildNavItems(allPerms, primaryRole);
+  const navItems     = buildNavItems(allPerms, primaryRole, {
+    attendanceTestUser: session.user.attendanceTestUser,
+    rolloutStage:       session.user.rolloutStage,
+  });
 
   const seen = new Set<string>();
   const dedupedNavItems = navItems.filter(item => {

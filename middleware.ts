@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import NextAuth from "next-auth";
 import { authConfig } from "./auth.config";
+import { istDateString } from "./lib/attendance/date";
 
 const { auth } = NextAuth(authConfig);
 
@@ -55,6 +56,35 @@ export default auth(function middleware(req) {
   // No session → redirect to login
   if (!req.auth) {
     return NextResponse.redirect(new URL("/login", req.url));
+  }
+
+  // Attendance gate (v27.1) — block authenticated users who haven't
+  // checked in for today's IST date, when the rollout flag applies to
+  // them. Logic mirrors gateAppliesTo() in lib/auth.ts; kept inline
+  // (no import) so middleware stays Edge-clean.
+  //
+  // Always allow attendance routes themselves so the gate doesn't
+  // trap users on the very screen they need to clear it.
+  if (
+    !pathname.startsWith("/attendance") &&
+    !pathname.startsWith("/api/attendance")
+  ) {
+    const role = req.auth.user?.role;
+    const stage = req.auth.user?.rolloutStage ?? "OFF";
+    const isTest = req.auth.user?.attendanceTestUser ?? false;
+    const isExempt = req.auth.user?.attendanceExempt ?? false;
+    const lastCheckIn = req.auth.user?.lastCheckInDate ?? null;
+
+    let gateApplies = false;
+    if (stage === "OFF") gateApplies = false;
+    else if (isExempt) gateApplies = false;
+    else if (role === "admin") gateApplies = isTest;
+    else if (stage === "TEST_USERS_ONLY") gateApplies = isTest;
+    else if (stage === "ALL_USERS") gateApplies = true;
+
+    if (gateApplies && lastCheckIn !== istDateString()) {
+      return NextResponse.redirect(new URL("/attendance", req.url));
+    }
   }
 
   return NextResponse.next();
