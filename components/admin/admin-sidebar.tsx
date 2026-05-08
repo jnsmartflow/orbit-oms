@@ -10,7 +10,7 @@ import {
   Truck, Clock, CalendarClock, Map, MapPin, Layers,
   Tag, Palette, Package,
   Building2, UserCheck, ContactRound, Store,
-  Upload, ClipboardList, ClipboardCheck, Paintbrush, Briefcase,
+  Upload, ClipboardList, ClipboardCheck, CalendarCheck, Paintbrush, Briefcase,
 } from "lucide-react";
 import { useSidebar } from "./sidebar-provider";
 import type { PagePermissions } from "@/lib/permissions";
@@ -21,6 +21,7 @@ interface NavItem {
   label:    string;
   href:     string;
   pageKey?: string;   // if set: show to admin OR if allPerms[pageKey]?.canView; if absent: admin-only
+  icon?:    React.ComponentType<{ className?: string }>; // optional override; falls back to ICONS[label]
 }
 
 interface NavSection {
@@ -72,6 +73,9 @@ const NAV_SECTIONS: NavSection[] = [
       { label: "Support Queue", href: "/admin/support" },
       { label: "Tint Manager",  href: "/admin/tint-manager" },
       { label: "Shade Master",  href: "/tint/shades" },
+      // CalendarCheck icon distinguishes the admin all-users view from
+      // the personal "My Attendance" entry below (which uses ClipboardCheck).
+      { label: "Attendance",    href: "/admin/attendance", icon: CalendarCheck },
     ],
   },
   {
@@ -170,7 +174,7 @@ export function AdminSidebar({ userName, userRole, allPerms }: AdminSidebarProps
             </p>
             <div className="flex flex-col">
               {items.map((item) => {
-                const Icon   = ICONS[item.label] ?? LayoutDashboard;
+                const Icon   = item.icon ?? ICONS[item.label] ?? LayoutDashboard;
                 const active = isActive(item.href);
                 return (
                   <Link
@@ -207,7 +211,7 @@ export function AdminSidebar({ userName, userRole, allPerms }: AdminSidebarProps
           <div key={section.label} className={cn("w-full flex flex-col items-center", si > 0 && "mt-1")}>
             {si > 0 && <div className="w-8 border-t border-gray-200 my-2" />}
             {items.map((item) => {
-              const Icon   = ICONS[item.label] ?? LayoutDashboard;
+              const Icon   = item.icon ?? ICONS[item.label] ?? LayoutDashboard;
               const active = isActive(item.href);
               return (
                 <div key={item.href} className="relative group w-full flex justify-center mb-0.5">

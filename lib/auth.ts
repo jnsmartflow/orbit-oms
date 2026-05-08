@@ -83,7 +83,33 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   ...authConfig,
   callbacks: {
     ...authConfig.callbacks,
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger }) {
+      // Update path: client called session.update() — narrow re-read of
+      // both the consent claim (P4 consent flow) AND lastCheckInDate
+      // (P6 check-in flow). rolloutStageStaleAt is intentionally left
+      // alone so the 5-min stale window for rollout flags keeps working
+      // independently of explicit user-driven refreshes.
+      if (trigger === "update") {
+        const userIdRaw = token.id as string | undefined;
+        const userId = userIdRaw ? parseInt(userIdRaw, 10) : NaN;
+        if (Number.isFinite(userId)) {
+          const userRow = await prisma.users.findUnique({
+            where: { id: userId },
+            select: { attendanceConsentVersion: true },
+          });
+          token.attendanceConsentVersion = userRow?.attendanceConsentVersion ?? null;
+
+          // Re-read today's CHECK_IN so the gate clears immediately
+          // after a successful check-in. Always re-read on explicit
+          // update — this is user-driven, not a passive refresh.
+          token.lastCheckInDate = await fetchLastCheckInForToday(
+            userId,
+            istDateString(),
+          );
+        }
+        return token;
+      }
+
       // Sign-in path: Credentials provider just authorized this user.
       if (user) {
         token.id = user.id;

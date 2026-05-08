@@ -27,6 +27,12 @@ export default auth(function middleware(req) {
     return NextResponse.next();
   }
 
+  // Cron endpoints carry their own Bearer-token auth (lib/cron-auth.ts).
+  // Skip the session-redirect path so Vercel Cron isn't bounced to /login.
+  if (pathname.startsWith("/api/cron/")) {
+    return NextResponse.next();
+  }
+
   // Allow HMAC auto-import
   if (
     pathname === "/api/import/obd" &&
