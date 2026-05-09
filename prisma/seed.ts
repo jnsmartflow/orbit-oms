@@ -28,21 +28,26 @@ async function main() {
   console.log(`  ✓ system_config — ${configRows.length} rows`);
 
   // ── role_master ────────────────────────────────────────────────────────────
-  const roles = [
-    "admin",
-    "dispatcher",
-    "support",
-    "tint_manager",
-    "tint_operator",
-    "floor_supervisor",
-    "picker",
+  // Order matches ROLES const in lib/rbac.ts. Idempotent: re-running the seed
+  // refreshes descriptions on existing rows so this file stays authoritative.
+  const roles: { name: string; description: string }[] = [
+    { name: "admin",            description: "System administrator" },
+    { name: "dispatcher",       description: "Dispatch planning" },
+    { name: "support",          description: "Support queue" },
+    { name: "tint_manager",     description: "Tint manager" },
+    { name: "tint_operator",    description: "Tint operator" },
+    { name: "operations",       description: "Operations (read-only across boards)" },
+    { name: "ops_admin",        description: "Operations Admin (attendance supervision)" },
+    { name: "floor_supervisor", description: "Warehouse floor supervisor" },
+    { name: "picker",           description: "Warehouse picker" },
+    { name: "billing_operator", description: "Billing operator (mail orders + SAP punching)" },
   ];
 
-  for (const name of roles) {
+  for (const role of roles) {
     await prisma.role_master.upsert({
-      where: { name },
-      update: {},
-      create: { name },
+      where:  { name: role.name },
+      update: { description: role.description },
+      create: role,
     });
   }
   console.log(`  ✓ role_master — ${roles.length} rows`);

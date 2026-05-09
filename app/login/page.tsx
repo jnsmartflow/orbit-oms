@@ -1,19 +1,9 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
+import { ROLE_REDIRECTS } from "@/lib/rbac";
 import { LoginForm } from "./login-form";
 
 export const dynamic = 'force-dynamic';
-
-const ROLE_REDIRECTS: Record<string, string> = {
-  admin: "/admin",
-  dispatcher: "/planning",
-  support: "/support",
-  tint_manager: "/tint/manager",
-  tint_operator: "/tint/operator",
-  operations: "/operations/support",
-  floor_supervisor: "/warehouse",
-  picker: "/warehouse",
-};
 
 export default async function LoginPage() {
   const session = await auth();
