@@ -150,6 +150,7 @@ const ALL_FALSE: PagePermissions = {
 };
 
 const ALL_PAGE_KEYS: PageKey[] = [
+  "attendance",
   "operations_support", "operations_tinting", "operations_tint_operator", "operations_dispatch", "operations_warehouse",
   "dashboard", "users", "system_config", "permissions",
   "customers", "skus", "routes_areas", "vehicles",

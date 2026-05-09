@@ -9,10 +9,28 @@ export const ROLES = {
   TINT_MANAGER: "tint_manager",
   TINT_OPERATOR: "tint_operator",
   OPERATIONS: "operations",
+  OPS_ADMIN: "ops_admin",
   FLOOR_SUPERVISOR: "floor_supervisor",
   PICKER: "picker",
   BILLING_OPERATOR: "billing_operator",
 } as const;
+
+// ── Login redirect map ────────────────────────────────────────────────────────
+// Single source for role → landing route. Imported by app/page.tsx (post-login
+// root redirect) and app/login/page.tsx (already-authenticated guard). Falls
+// back to /unauthorized at the call site if the role isn't in this map.
+export const ROLE_REDIRECTS: Record<string, string> = {
+  admin: "/admin",
+  dispatcher: "/dispatcher",
+  support: "/support",
+  tint_manager: "/tint/manager",
+  tint_operator: "/tint/operator",
+  operations: "/operations/support",
+  floor_supervisor: "/warehouse/supervisor",
+  picker: "/warehouse/picker",
+  billing_operator: "/mail-orders",
+  ops_admin: "/admin/attendance",
+};
 
 // ── Guards ─────────────────────────────────────────────────────────────────────
 
