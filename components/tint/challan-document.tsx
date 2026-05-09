@@ -185,15 +185,14 @@ export function ChallanDocument({
           flexShrink: 0,
         }}>
           {/* Left — Logo */}
-          <div style={{ width: 80, flexShrink: 0 }}>
+          <div style={{ flexShrink: 0 }}>
             <img
-              src="/akzonobel-logo.png"
-              alt="AkzoNobel"
+              src="/jsw-dulux-logo.png"
+              alt="JSW Dulux"
               style={{
-                height: 56,
+                height: 44,
                 width: "auto",
                 display: "block",
-                filter: "grayscale(100%) brightness(0)",
               }}
             />
           </div>
