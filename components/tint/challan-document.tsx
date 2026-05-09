@@ -185,12 +185,12 @@ export function ChallanDocument({
           flexShrink: 0,
         }}>
           {/* Left — Logo */}
-          <div style={{ flexShrink: 0 }}>
+          <div style={{ flexShrink: 0, paddingRight: 24 }}>
             <img
               src="/jsw-dulux-logo.png"
               alt="JSW Dulux"
               style={{
-                height: 44,
+                height: 34,
                 width: "auto",
                 display: "block",
               }}
@@ -208,7 +208,7 @@ export function ChallanDocument({
           </div>
 
           {/* Right — Challan Number + Date */}
-          <div style={{ flexShrink: 0, textAlign: "right" }}>
+          <div style={{ flexShrink: 0, textAlign: "right", minWidth: 165 }}>
             <div style={{ fontSize: 14, fontWeight: 700, color: "#111827", fontFamily: "'SF Mono', ui-monospace, monospace", marginTop: 1 }}>
               {challan.challanNumber}
             </div>
@@ -586,6 +586,7 @@ export function ChallanDocument({
             {[
               systemConfig.registeredOffice ? `Regd. Office: ${systemConfig.registeredOffice}` : "",
               systemConfig.website,
+              "JSW Dulux Limited (formerly Akzo Nobel India Limited)",
             ].filter(Boolean).join(" · ")}
           </span>
           <span style={{ fontWeight: 700, color: "#374151" }}>
