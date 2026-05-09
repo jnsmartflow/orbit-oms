@@ -37,6 +37,7 @@ const PAGE_NAV_MAP: NavItemConfig[] = [
   { pageKey: "shade_master",       label: "Shade Master",      href: "/tint/manager/shades" },
   { pageKey: "ti_report",          label: "TI Report",         href: "/tint/manager/ti-report" },
   { pageKey: "attendance",         label: "Attendance",        href: "/attendance" },
+  { pageKey: "attendance_admin",   label: "Attendance",        href: "/admin/attendance" },
 ];
 
 // Per-role href overrides: non-admin roles access shared pages via their own route group
@@ -74,6 +75,11 @@ export function buildNavItems(
       // is intentionally per-user). Admin always sees it for self-test.
       if (item.pageKey === "attendance") {
         if (roleSlug === "admin") return true;
+        // ops_admin reaches the user-facing /attendance flow via the gate
+        // redirect, not the sidebar — they get /admin/attendance via the
+        // separate attendance_admin pageKey. Suppress this entry to avoid a
+        // duplicate "Attendance" nav item.
+        if (roleSlug === "ops_admin") return false;
         return (
           (userFlags?.attendanceTestUser ?? false) ||
           userFlags?.rolloutStage === "ALL_USERS"
@@ -116,7 +122,8 @@ export type PageKey =
   | "delivery_challans"
   | "shade_master"
   | "ti_report"
-  | "attendance";
+  | "attendance"
+  | "attendance_admin";
 
 export type ActionKey =
   | "canView"
@@ -150,7 +157,7 @@ const ALL_FALSE: PagePermissions = {
 };
 
 const ALL_PAGE_KEYS: PageKey[] = [
-  "attendance",
+  "attendance", "attendance_admin",
   "operations_support", "operations_tinting", "operations_tint_operator", "operations_dispatch", "operations_warehouse",
   "dashboard", "users", "system_config", "permissions",
   "customers", "skus", "routes_areas", "vehicles",

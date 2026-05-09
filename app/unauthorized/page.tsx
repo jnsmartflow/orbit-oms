@@ -1,22 +1,13 @@
 import Link from "next/link";
 import { auth } from "@/lib/auth";
+import { ROLE_REDIRECTS } from "@/lib/rbac";
 
 export const dynamic = 'force-dynamic';
-
-const ROLE_HOME: Record<string, string> = {
-  admin: "/admin",
-  dispatcher: "/dispatcher",
-  support: "/support",
-  tint_manager: "/tint/manager",
-  tint_operator: "/tint/operator",
-  floor_supervisor: "/warehouse/supervisor",
-  picker: "/warehouse/picker",
-};
 
 export default async function UnauthorizedPage() {
   const session = await auth();
   const role = session?.user?.role;
-  const homeHref = role ? (ROLE_HOME[role] ?? "/") : "/login";
+  const homeHref = role ? (ROLE_REDIRECTS[role] ?? "/") : "/login";
   const homeLinkLabel = role ? "Go to my dashboard" : "Back to login";
 
   return (
