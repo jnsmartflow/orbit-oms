@@ -1,0 +1,101 @@
+id,family,subProduct,displayName,searchTokens,tinterType,sortOrder,isActive,createdAt,baseColour,productType
+57,AQUATECH,CRACKFILLER,Crackfiller,aquatech crackfiller crack filler,null,1,true,2026-05-05 07:09:11.66536+00,null,PLAIN
+58,AQUATECH,DAMP PROTECT 2IN1,Damp Protect 2in1,aquatech damp protect 2in1 dampprotect,null,2,true,2026-05-05 07:09:11.66536+00,null,PLAIN
+60,AQUATECH,WATERBLOCK 2K,Waterblock 2K,aquatech waterblock 2k water block,null,4,true,2026-05-05 07:09:11.66536+00,null,PLAIN
+61,AQUATECH,WATERPROOF PUTTY,Waterproof Putty,aquatech waterproof putty,null,5,true,2026-05-05 07:09:11.66536+00,null,PLAIN
+62,AQUATECH,FLEXIBLE COAT,Flexible Coat,aquatech flexible coat flex coat,null,6,true,2026-05-05 07:09:11.66536+00,null,PLAIN
+64,AQUATECH,IBC ADVANCE,IBC Advance,aquatech ibc advance fbc,null,8,true,2026-05-05 07:09:11.66536+00,null,PLAIN
+65,AQUATECH,INTERIOR WBC,Interior WBC,aquatech interior wbc,null,9,true,2026-05-05 07:09:11.66536+00,null,PLAIN
+67,AQUATECH,PU COAT,PU Coat,aquatech pu coat,null,11,true,2026-05-05 07:09:11.66536+00,null,PLAIN
+68,AQUATECH,LW PLUS,LW Plus,aquatech lw plus lwplus,null,12,true,2026-05-05 07:09:11.66536+00,null,PLAIN
+69,AQUATECH,PRETREATMENT COAT,Pretreatment Coat,aquatech pretreatment coat pre treatment,null,13,true,2026-05-05 07:09:11.66536+00,null,PLAIN
+70,AQUATECH,RP LATEX,RP Latex,aquatech rp latex,null,14,true,2026-05-05 07:09:11.66536+00,null,PLAIN
+71,AQUATECH,TG COTTON WOOL,TG Cotton Wool,aquatech tg cotton wool,null,15,true,2026-05-05 07:09:11.66536+00,null,PLAIN
+72,AQUATECH,WRP,WRP,aquatech wrp,null,16,true,2026-05-05 07:09:11.66536+00,null,PLAIN
+227,AQUATECH,FLOOR PLUS,Floor Plus — Black,floor plus aquatech floorplus black,null,500,true,2026-05-05 08:04:37.295157+00,BLACK,COLOUR
+228,AQUATECH,FLOOR PLUS,Floor Plus — Forest Green,floor plus aquatech floorplus forest green forest,null,501,true,2026-05-05 08:04:37.295157+00,FOREST GREEN,COLOUR
+229,AQUATECH,FLOOR PLUS,Floor Plus — Golden Yellow,floor plus aquatech floorplus golden yellow golden,null,502,true,2026-05-05 08:04:37.295157+00,GOLDEN YELLOW,COLOUR
+230,AQUATECH,FLOOR PLUS,Floor Plus — Gun Grey,floor plus aquatech floorplus gun grey gun,null,503,true,2026-05-05 08:04:37.295157+00,GUN GREY,COLOUR
+231,AQUATECH,FLOOR PLUS,Floor Plus — Paver Grey,floor plus aquatech floorplus paver grey paver,null,504,true,2026-05-05 08:04:37.295157+00,PAVER GREY,COLOUR
+232,AQUATECH,FLOOR PLUS,Floor Plus — Peacock Blue,floor plus aquatech floorplus peacock blue peacock,null,505,true,2026-05-05 08:04:37.295157+00,PEACOCK BLUE,COLOUR
+233,AQUATECH,FLOOR PLUS,Floor Plus — Po Red,floor plus aquatech floorplus po red po,null,506,true,2026-05-05 08:04:37.295157+00,PO RED,COLOUR
+234,AQUATECH,FLOOR PLUS,Floor Plus — Signal Red,floor plus aquatech floorplus signal red signal,null,507,true,2026-05-05 08:04:37.295157+00,SIGNAL RED,COLOUR
+235,AQUATECH,FLOOR PLUS,Floor Plus — Signal Red Plus,floor plus aquatech floorplus signal red plus signal,null,508,true,2026-05-05 08:04:37.295157+00,SIGNAL RED PLUS,COLOUR
+236,AQUATECH,FLOOR PLUS,Floor Plus — Teracotta,floor plus aquatech floorplus teracotta,null,509,true,2026-05-05 08:04:37.295157+00,TERACOTTA,COLOUR
+237,AQUATECH,FLOOR PLUS,Floor Plus — White,floor plus aquatech floorplus white,null,510,true,2026-05-05 08:04:37.295157+00,WHITE,COLOUR
+316,AQUATECH,DAMP PROTECT BASECOAT,Damp Protect Basecoat — Basecoat,aquatech damp protect basecoat basecoat,null,1600,true,2026-05-05 08:37:02.716448+00,BASECOAT,BASE_VARIANT
+291,AQUATECH,ROOF COAT,Roof Coat — Grey,aquatech roof coat grey,null,1800,true,2026-05-05 08:04:37.295157+00,GREY,COLOUR
+292,AQUATECH,ROOF COAT,Roof Coat — Teracotta,aquatech roof coat teracotta,null,1801,true,2026-05-05 08:04:37.295157+00,TERACOTTA,COLOUR
+343,AQUATECH,FLOOR PLUS,Floor Plus — BW,aquatech floor plus floorplus bw white brilliant,null,2600,true,2026-05-05 08:37:02.716448+00,BRILLIANT WHITE,BASE_VARIANT
+344,AQUATECH,FLOOR PLUS,Floor Plus — 93,aquatech floor plus floorplus 93 93base,null,2601,true,2026-05-05 08:37:02.716448+00,93 BASE,BASE_VARIANT
+479,AQUATECH,ROOF COAT,Roof Coat — BW,aquatech roof coat roofcoat bw white brilliant,null,5600,true,2026-05-05 08:37:02.716448+00,BRILLIANT WHITE,BASE_VARIANT
+218,AUTO,AUTO STAR,Auto Star — Black,auto star autostar black,null,400,true,2026-05-05 08:04:37.295157+00,BLACK,COLOUR
+219,AUTO,AUTO STAR,Auto Star — Brown,auto star autostar brown,null,401,true,2026-05-05 08:04:37.295157+00,BROWN,COLOUR
+220,AUTO,AUTO STAR,Auto Star — Bus Green,auto star autostar bus green bus,null,402,true,2026-05-05 08:04:37.295157+00,BUS GREEN,COLOUR
+221,AUTO,AUTO STAR,Auto Star — Cherry,auto star autostar cherry,null,403,true,2026-05-05 08:04:37.295157+00,CHERRY,COLOUR
+222,AUTO,AUTO STAR,Auto Star — Golden Brown,auto star autostar golden brown golden,null,404,true,2026-05-05 08:04:37.295157+00,GOLDEN BROWN,COLOUR
+223,AUTO,AUTO STAR,Auto Star — Golden Yellow,auto star autostar golden yellow golden,null,405,true,2026-05-05 08:04:37.295157+00,GOLDEN YELLOW,COLOUR
+224,AUTO,AUTO STAR,Auto Star — Phiroza Blue,auto star autostar phiroza blue phiroza,null,406,true,2026-05-05 08:04:37.295157+00,PHIROZA BLUE,COLOUR
+225,AUTO,AUTO STAR,Auto Star — Po Red,auto star autostar po red po,null,407,true,2026-05-05 08:04:37.295157+00,PO RED,COLOUR
+226,AUTO,AUTO STAR,Auto Star — Signal Red,auto star autostar signal red signal,null,408,true,2026-05-05 08:04:37.295157+00,SIGNAL RED,COLOUR
+315,AUTO,AUTO STAR,Auto Star — BW,auto star autostar bw white brilliant,null,1500,true,2026-05-05 08:37:02.716448+00,BRILLIANT WHITE,BASE_VARIANT
+124,DUCO,DUCO PU CLEAR,Duco PU Clear,duco pu clear,null,1,true,2026-05-05 07:09:11.66536+00,null,PLAIN
+125,DUCO,DUCO PU HARDENER,Duco PU Hardener,duco pu hardener hard,null,2,true,2026-05-05 07:09:11.66536+00,null,PLAIN
+126,DUCO,DUCO PU MATT CLEAR,Duco PU Matt Clear,duco pu matt clear,null,3,true,2026-05-05 07:09:11.66536+00,null,PLAIN
+128,DUCO,DUCO PU RM BLACK,Duco PU RM Black,duco pu rm black,null,5,true,2026-05-05 07:09:11.66536+00,null,PLAIN
+130,DUCO,DUCO PU SEALING FILLER,Duco PU Sealing Filler,duco pu sealing filler seal,null,7,true,2026-05-05 07:09:11.66536+00,null,PLAIN
+132,DUCO,DUCO PU THINNER,Duco PU Thinner,duco pu thinner,null,9,true,2026-05-05 07:09:11.66536+00,null,PLAIN
+325,DUCO,DUCO PU MATT WHITE,Duco PU Matt White — BW,duco pu matt white bw white brilliant,null,1800,true,2026-05-05 08:37:02.716448+00,BRILLIANT WHITE,BASE_VARIANT
+326,DUCO,DUCO PU RM WHITE,Duco PU Rm White — BW,duco pu rm white bw white brilliant,null,1900,true,2026-05-05 08:37:02.716448+00,BRILLIANT WHITE,BASE_VARIANT
+327,DUCO,DUCO PU SEALING FILLER WHITE,Duco PU Sealing Filler White — BW,duco pu sealing filler white bw white brilliant,null,2000,true,2026-05-05 08:37:02.716448+00,BRILLIANT WHITE,BASE_VARIANT
+49,DULUX,SILK FINISH,Silk Finish,silk finish dulux,null,7,true,2026-05-05 07:09:11.66536+00,null,PLAIN
+51,DULUX,SMOOTHOVER,Smoothover,smoothover smooth over dulux,null,9,true,2026-05-05 07:09:11.66536+00,null,PLAIN
+52,DULUX,INTERIOR DISTEMPER,Interior Distemper,interior distemper distemper dulux,null,10,true,2026-05-05 07:09:11.66536+00,null,PLAIN
+56,DULUX,ALKALI BLOC PRIMER,Alkali Bloc Primer,alkali bloc primer dulux,null,14,true,2026-05-05 07:09:11.66536+00,null,PLAIN
+177,DULUX,GLOSS,Gloss — Aquamarine,gloss dulux premium enamel aquamarine,null,200,true,2026-05-05 08:04:37.295157+00,AQUAMARINE,COLOUR
+178,DULUX,GLOSS,Gloss — Black,gloss dulux premium enamel black,null,201,true,2026-05-05 08:04:37.295157+00,BLACK,COLOUR
+179,DULUX,GLOSS,Gloss — Blazing White,gloss dulux premium enamel blazing white blazing,null,202,true,2026-05-05 08:04:37.295157+00,BLAZING WHITE,COLOUR
+180,DULUX,GLOSS,Gloss — Bus Green,gloss dulux premium enamel bus green bus,null,203,true,2026-05-05 08:04:37.295157+00,BUS GREEN,COLOUR
+181,DULUX,GLOSS,Gloss — Cascade Green,gloss dulux premium enamel cascade green cascade,null,204,true,2026-05-05 08:04:37.295157+00,CASCADE GREEN,COLOUR
+182,DULUX,GLOSS,Gloss — Cherry,gloss dulux premium enamel cherry,null,205,true,2026-05-05 08:04:37.295157+00,CHERRY,COLOUR
+183,DULUX,GLOSS,Gloss — Classic White,gloss dulux premium enamel classic white classic,null,206,true,2026-05-05 08:04:37.295157+00,CLASSIC WHITE,COLOUR
+184,DULUX,GLOSS,Gloss — Da Grey,gloss dulux premium enamel da grey da,null,207,true,2026-05-05 08:04:37.295157+00,DA GREY,COLOUR
+185,DULUX,GLOSS,Gloss — Dark Brown,gloss dulux premium enamel dark brown dark,null,208,true,2026-05-05 08:04:37.295157+00,DARK BROWN,COLOUR
+186,DULUX,GLOSS,Gloss — Dawn,gloss dulux premium enamel dawn,null,209,true,2026-05-05 08:04:37.295157+00,DAWN,COLOUR
+187,DULUX,GLOSS,Gloss — Deep Green,gloss dulux premium enamel deep green deep,null,210,true,2026-05-05 08:04:37.295157+00,DEEP GREEN,COLOUR
+188,DULUX,GLOSS,Gloss — Deep Orange,gloss dulux premium enamel deep orange deep,null,211,true,2026-05-05 08:04:37.295157+00,DEEP ORANGE,COLOUR
+189,DULUX,GLOSS,Gloss — Golden Brown,gloss dulux premium enamel golden brown golden,null,212,true,2026-05-05 08:04:37.295157+00,GOLDEN BROWN,COLOUR
+190,DULUX,GLOSS,Gloss — Golden Yellow,gloss dulux premium enamel golden yellow golden,null,213,true,2026-05-05 08:04:37.295157+00,GOLDEN YELLOW,COLOUR
+191,DULUX,GLOSS,Gloss — Leaf Brown,gloss dulux premium enamel leaf brown leaf,null,214,true,2026-05-05 08:04:37.295157+00,LEAF BROWN,COLOUR
+192,DULUX,GLOSS,Gloss — Light Grey,gloss dulux premium enamel light grey light,null,215,true,2026-05-05 08:04:37.295157+00,LIGHT GREY,COLOUR
+193,DULUX,GLOSS,Gloss — Mahogany,gloss dulux premium enamel mahogany,null,216,true,2026-05-05 08:04:37.295157+00,MAHOGANY,COLOUR
+194,DULUX,GLOSS,Gloss — Middle Buff,gloss dulux premium enamel middle buff middle,null,217,true,2026-05-05 08:04:37.295157+00,MIDDLE BUFF,COLOUR
+195,DULUX,GLOSS,Gloss — Mint Green,gloss dulux premium enamel mint green mint,null,218,true,2026-05-05 08:04:37.295157+00,MINT GREEN,COLOUR
+196,DULUX,GLOSS,Gloss — Off White,gloss dulux premium enamel off white off,null,219,true,2026-05-05 08:04:37.295157+00,OFF WHITE,COLOUR
+197,DULUX,GLOSS,Gloss — Opaline Green,gloss dulux premium enamel opaline green opaline,null,220,true,2026-05-05 08:04:37.295157+00,OPALINE GREEN,COLOUR
+198,DULUX,GLOSS,Gloss — Oxford Blue,gloss dulux premium enamel oxford blue oxford,null,221,true,2026-05-05 08:04:37.295157+00,OXFORD BLUE,COLOUR
+199,DULUX,GLOSS,Gloss — Pale Cream,gloss dulux premium enamel pale cream pale,null,222,true,2026-05-05 08:04:37.295157+00,PALE CREAM,COLOUR
+200,DULUX,GLOSS,Gloss — Phiroza,gloss dulux premium enamel phiroza,null,223,true,2026-05-05 08:04:37.295157+00,PHIROZA,COLOUR
+201,DULUX,GLOSS,Gloss — Po Red,gloss dulux premium enamel po red po,null,224,true,2026-05-05 08:04:37.295157+00,PO RED,COLOUR
+202,DULUX,GLOSS,Gloss — Royal Ivory,gloss dulux premium enamel royal ivory royal,null,225,true,2026-05-05 08:04:37.295157+00,ROYAL IVORY,COLOUR
+203,DULUX,GLOSS,Gloss — Sand Stone,gloss dulux premium enamel sand stone sand,null,226,true,2026-05-05 08:04:37.295157+00,SAND STONE,COLOUR
+204,DULUX,GLOSS,Gloss — Signal Red,gloss dulux premium enamel signal red signal,null,227,true,2026-05-05 08:04:37.295157+00,SIGNAL RED,COLOUR
+205,DULUX,GLOSS,Gloss — Sky Blue,gloss dulux premium enamel sky blue sky,null,228,true,2026-05-05 08:04:37.295157+00,SKY BLUE,COLOUR
+206,DULUX,GLOSS,Gloss — Smoke Grey,gloss dulux premium enamel smoke grey smoke,null,229,true,2026-05-05 08:04:37.295157+00,SMOKE GREY,COLOUR
+207,DULUX,GLOSS,Gloss — Truck Brown,gloss dulux premium enamel truck brown truck,null,230,true,2026-05-05 08:04:37.295157+00,TRUCK BROWN,COLOUR
+208,DULUX,GLOSS,Gloss — Wild Purple,gloss dulux premium enamel wild purple wild,null,231,true,2026-05-05 08:04:37.295157+00,WILD PURPLE,COLOUR
+256,DULUX,SUPER SATIN,Super Satin — Black,super satin supersatin dulux black oil satin oilsatin satin oil solvent satin 800 satin satin finish,null,800,true,2026-05-05 08:04:37.295157+00,BLACK,COLOUR
+257,DULUX,SUPER SATIN,Super Satin — Brown,super satin supersatin dulux brown oil satin oilsatin satin oil solvent satin 800 satin satin finish,null,801,true,2026-05-05 08:04:37.295157+00,BROWN,COLOUR
+258,DULUX,SUPER SATIN,Super Satin — Mahogany,super satin supersatin dulux mahogany oil satin oilsatin satin oil solvent satin 800 satin satin finish,null,802,true,2026-05-05 08:04:37.295157+00,MAHOGANY,COLOUR
+259,DULUX,SUPER SATIN,Super Satin — Rich Brown,super satin supersatin dulux rich brown rich oil satin oilsatin satin oil solvent satin 800 satin satin finish,null,803,true,2026-05-05 08:04:37.295157+00,RICH BROWN,COLOUR
+260,DULUX,SUPER SATIN,Super Satin — Special Teak,super satin supersatin dulux special teak special oil satin oilsatin satin oil solvent satin 800 satin satin finish,null,804,true,2026-05-05 08:04:37.295157+00,SPECIAL TEAK,COLOUR
+261,DULUX,SUPER SATIN,Super Satin — Teak,super satin supersatin dulux teak oil satin oilsatin satin oil solvent satin 800 satin satin finish,null,805,true,2026-05-05 08:04:37.295157+00,TEAK,COLOUR
+262,DULUX,SUPER SATIN,Super Satin — Timber Golden Brown,super satin supersatin dulux timber golden brown timber oil satin oilsatin satin oil solvent satin 800 satin satin finish,null,806,true,2026-05-05 08:04:37.295157+00,TIMBER GOLDEN BROWN,COLOUR
+263,DULUX,5IN1,5in1 — Black,5in1 five in one dulux black,null,900,true,2026-05-05 08:04:37.295157+00,BLACK,COLOUR
+264,DULUX,5IN1,5in1 — Brown,5in1 five in one dulux brown,null,901,true,2026-05-05 08:04:37.295157+00,BROWN,COLOUR
+265,DULUX,5IN1,5in1 — Cherry,5in1 five in one dulux cherry,null,902,true,2026-05-05 08:04:37.295157+00,CHERRY,COLOUR
+266,DULUX,5IN1,5in1 — Golden Brown,5in1 five in one dulux golden brown golden,null,903,true,2026-05-05 08:04:37.295157+00,GOLDEN BROWN,COLOUR
+267,DULUX,5IN1,5in1 — Phiroza,5in1 five in one dulux phiroza,null,904,true,2026-05-05 08:04:37.295157+00,PHIROZA,COLOUR
+268,DULUX,PU ENAMEL,PU Enamel — Black,pu enamel dulux black,null,1000,true,2026-05-05 08:04:37.295157+00,BLACK,COLOUR
+269,DULUX,PU ENAMEL,PU Enamel — Dark Brown,pu enamel dulux dark brown dark,null,1001,true,2026-05-05 08:04:37.295157+00,DARK BROWN,COLOUR
+270,DULUX,PU ENAMEL,PU Enamel — Golden Brown,pu enamel dulux golden brown golden,null,1002,true,2026-05-05 08:04:37.295157+00,GOLDEN BROWN,COLOUR
