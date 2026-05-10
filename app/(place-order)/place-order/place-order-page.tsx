@@ -69,7 +69,7 @@ export default function PlaceOrderPage(): React.JSX.Element {
 
   // Mount data fetch.
   useEffect(() => {
-    fetch("/api/order/data")
+    fetch("/api/place-order/data")
       .then((r) => r.json())
       .then((data: { customers?: Customer[]; products?: Product[] }) => {
         setCustomers(data.customers ?? []);

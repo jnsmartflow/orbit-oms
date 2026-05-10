@@ -248,11 +248,17 @@ export default function ExpandedPanel({
             </span>
           </span>
           <span className="text-[11px] text-gray-400">
-            <span className="text-gray-600">{productCount}</span> product{productCount === 1 ? "" : "s"}
-            {" · "}
-            <span className="text-gray-600">{totalSkus}</span> SKUs
-            {" · "}
-            <span className="text-gray-600">{activeBaseCount}</span> base{activeBaseCount === 1 ? "" : "s"} for {activeSubProduct}
+            {totalSkus === 0 ? (
+              <span className="italic">Catalog awaiting pack configuration</span>
+            ) : (
+              <>
+                <span className="text-gray-600">{productCount}</span> product{productCount === 1 ? "" : "s"}
+                {" · "}
+                <span className="text-gray-600">{totalSkus}</span> SKUs
+                {" · "}
+                <span className="text-gray-600">{activeBaseCount}</span> base{activeBaseCount === 1 ? "" : "s"} for {activeSubProduct}
+              </>
+            )}
           </span>
           <button
             type="button"
@@ -326,6 +332,11 @@ export default function ExpandedPanel({
 
       {/* Variant table */}
       <div className="pt-[6px]">
+        {columns.length === 0 ? (
+          <div className="flex items-center justify-center min-h-[140px] px-[18px] text-xs text-gray-400 italic">
+            No packs configured yet
+          </div>
+        ) : (
         <table className="w-full border-collapse text-[12px]" style={{ tableLayout: "fixed" }}>
           <thead>
             <tr>
@@ -398,6 +409,7 @@ export default function ExpandedPanel({
             )}
           </tbody>
         </table>
+        )}
       </div>
 
       {/* Bottom keyhint bar — live key map for the cell context. */}
