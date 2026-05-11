@@ -25,13 +25,18 @@ import { forwardRef, useImperativeHandle, useRef } from "react";
 export type CellNavDirection = "up" | "down" | "left" | "right" | "enter";
 
 interface VariantCellProps {
-  qty:         number;
-  isAvailable: boolean;
-  rowIdx:      number;
-  colIdx:      number;
-  onSetQty:    (qty: number) => void;
-  onCellNav:   (direction: CellNavDirection, fromRow: number, fromCol: number) => void;
-  onClose:     () => void;
+  qty:              number;
+  isAvailable:      boolean;
+  rowIdx:           number;
+  colIdx:           number;
+  onSetQty:         (qty: number) => void;
+  onCellNav:        (direction: CellNavDirection, fromRow: number, fromCol: number) => void;
+  onClose:          () => void;
+  // Optional — only wired in family/section-drilled contexts where a
+  // tab bar exists. When undefined, PageDown/PageUp are still
+  // intercepted (suppressing browser page-scroll) but no-op.
+  onNextSubProduct?: () => void;
+  onPrevSubProduct?: () => void;
 }
 
 export interface VariantCellHandle {
@@ -39,7 +44,7 @@ export interface VariantCellHandle {
 }
 
 const VariantCell = forwardRef<VariantCellHandle, VariantCellProps>(function VariantCell(
-  { qty, isAvailable, rowIdx, colIdx, onSetQty, onCellNav, onClose },
+  { qty, isAvailable, rowIdx, colIdx, onSetQty, onCellNav, onClose, onNextSubProduct, onPrevSubProduct },
   ref,
 ) {
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -51,7 +56,7 @@ const VariantCell = forwardRef<VariantCellHandle, VariantCellProps>(function Var
   if (!isAvailable) {
     return (
       <div
-        className="w-[64px] h-[36px] mx-auto rounded-[7px] flex items-center justify-center text-gray-200 text-[13px] cursor-not-allowed"
+        className="w-[72px] h-[44px] mx-auto rounded-[6px] flex items-center justify-center text-gray-200 text-[15px] cursor-not-allowed"
         aria-label="Not available"
       >
         —
@@ -67,10 +72,20 @@ const VariantCell = forwardRef<VariantCellHandle, VariantCellProps>(function Var
     if (e.key === "ArrowDown")  { e.preventDefault(); onCellNav("down",  rowIdx, colIdx); return; }
     if (e.key === "ArrowUp")    { e.preventDefault(); onCellNav("up",    rowIdx, colIdx); return; }
     if (e.key === "Enter")      { e.preventDefault(); onCellNav("enter", rowIdx, colIdx); return; }
+    if (e.key === "PageDown")   { e.preventDefault(); onNextSubProduct?.(); return; }
+    if (e.key === "PageUp")     { e.preventDefault(); onPrevSubProduct?.(); return; }
     if (e.key === "+")          { e.preventDefault(); onSetQty(qty + 1); return; }
     if (e.key === "-")          { e.preventDefault(); onSetQty(Math.max(0, qty - 1)); return; }
     if (e.key === "Escape" || e.key === "*") {
+      // The cell legitimately owns Esc while focused. Stop both the
+      // React-synthetic and native propagation so the window-level
+      // keyboard router doesn't ALSO fire its own Escape branch on the
+      // same keydown — without these two stops, the native event keeps
+      // bubbling to window, sees focus has just moved to <main> (from
+      // onClose), and triggers onClosePanel → re-focuses search bar.
       e.preventDefault();
+      e.stopPropagation();
+      e.nativeEvent.stopPropagation();
       onClose();
       return;
     }
@@ -93,12 +108,12 @@ const VariantCell = forwardRef<VariantCellHandle, VariantCellProps>(function Var
       }}
       onFocus={(e) => e.target.select()}
       onKeyDown={handleKeyDown}
-      className={`w-[64px] h-[36px] mx-auto rounded-[7px] text-center text-[14px] font-semibold bg-transparent border-0 outline-none transition-colors
+      className={`w-[72px] h-[44px] mx-auto rounded-[6px] text-center text-[15px] font-semibold border-0 outline-none transition-all duration-75
         placeholder:text-[20px] placeholder:text-gray-300 placeholder:font-normal
-        focus:bg-white focus:text-gray-900 focus:shadow-[0_0_0_2px_#14b8a6,0_0_0_4px_rgba(20,184,166,0.18)] focus:relative focus:z-[2]
+        focus:bg-white focus:text-gray-900 focus:relative focus:z-[2] focus:shadow-[inset_0_0_0_2px_#0d9488,0_0_0_4px_rgba(20,184,166,0.18)]
         ${isActive
-          ? "bg-teal-50 text-teal-700"
-          : "text-transparent caret-gray-400"
+          ? "bg-teal-50 text-teal-700 hover:bg-teal-100"
+          : "bg-[#fafbfc] text-transparent caret-gray-400 hover:bg-[#f3f4f6]"
         }`}
     />
   );

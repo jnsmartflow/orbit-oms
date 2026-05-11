@@ -2,8 +2,8 @@
 
 import { useEffect } from "react";
 
-// Keyboard help modal — shows the §8 keymap. Triggered by `?` (Shift+/) and
-// dismissed by `?` again, Esc, or `*`. While mounted, the page-level
+// Keyboard help modal — shows the v4 keymap. Triggered by `?` (Shift+/)
+// and dismissed by `?` again or Esc. While mounted, the page-level
 // keyboard router bails out (helpOpen flag), so this component owns key
 // dispatch.
 
@@ -16,53 +16,69 @@ type Group = { title: string; rows: Row[] };
 
 const GROUPS: Group[] = [
   {
-    title: "Customer search",
+    title: "Customer search (top bar)",
     rows: [
-      { keys: ["letters"],    desc: "Filter by name" },
-      { keys: ["digits"],     desc: "Filter by SAP code" },
-      { keys: ["↓", "↑"],     desc: "Move highlight" },
-      { keys: ["Enter"],      desc: "Select customer · focus jumps to grid" },
-      { keys: ["Esc"],        desc: "Clear input" },
+      { keys: ["letters"], desc: "Filter by name" },
+      { keys: ["digits"],  desc: "Filter by SAP code" },
+      { keys: ["↓", "↑"],  desc: "Move highlight" },
+      { keys: ["Enter"],   desc: "Select customer" },
+      { keys: ["Esc"],     desc: "Clear input" },
     ],
   },
   {
-    title: "Category grid (no panel open)",
+    title: "Page (no input / cell focused)",
     rows: [
-      { keys: ["1", "2", "…", "9"], desc: "Open Nth top-9 category" },
-      { keys: ["letters"],          desc: "Focus search · seed first char" },
-      { keys: ["*"],                desc: "Focus search bar" },
-      { keys: ["Esc"],              desc: "Close current panel" },
-      { keys: ["?"],                desc: "This help" },
+      { keys: ["1", "…", "9"], desc: "Open speed dial tile" },
+      { keys: ["/"],           desc: "Focus search bar" },
+      { keys: ["?"],           desc: "Toggle this help" },
+      { keys: ["Esc"],         desc: "Close active panel" },
     ],
   },
   {
-    title: "Product search",
+    title: "Search bar (empty)",
     rows: [
-      { keys: ["letters", "digits"], desc: "Filter products" },
-      { keys: ["↓", "↑"],            desc: "Move highlight" },
-      { keys: ["Enter"],             desc: "Open highlighted product · focus first base-row" },
-      { keys: ["Esc", "*"],          desc: "Close search · return to grid" },
+      { keys: ["letters", "digits"], desc: "Start typing query" },
+      { keys: ["Tab"],               desc: "Focus next page element (browser default)" },
+      { keys: ["Esc"],               desc: "Blur search (focus to body, then 1-9 fires speed dial)" },
     ],
   },
   {
-    title: "Variant grid (panel open · cell focused)",
+    title: "Search bar (with query)",
     rows: [
-      { keys: ["←", "→", "↑", "↓"], desc: "Move cell (skips NA)" },
-      { keys: ["Tab", "Shift+Tab"], desc: "Next / prev cell (DOM order)" },
-      { keys: ["Enter"],            desc: "Move down one row" },
+      { keys: ["letters", "digits"], desc: "Filter query" },
+      { keys: ["↓", "↑"],            desc: "Navigate results" },
+      { keys: ["Tab", "Shift+Tab"],  desc: "Navigate results (alternate)" },
+      { keys: ["Enter"],             desc: "Select highlighted result" },
+      { keys: ["Esc"],               desc: "Clear query (focus stays in search bar)" },
+    ],
+  },
+  {
+    title: "Section mini-dial (e.g. WOODCARE)",
+    rows: [
+      { keys: ["click"],              desc: "Pick a family from the mini-dial" },
+      { keys: ["1", "…", "9"],        desc: "Still opens the top-level speed-dial tile at that position" },
+      { keys: ["PageDown", "PageUp"], desc: "After a family opens, switch sub-product tabs from inside a cell" },
+    ],
+  },
+  {
+    title: "Variant cell (focused)",
+    rows: [
       { keys: ["0", "…", "9"],      desc: "Type qty (boxes)" },
+      { keys: ["←", "→", "↑", "↓"], desc: "Navigate cells (skips NA)" },
+      { keys: ["Tab", "Shift+Tab"], desc: "Next / previous cell" },
+      { keys: ["PageDown", "PageUp"], desc: "Next / previous sub-product tab (no need to leave the grid)" },
+      { keys: ["Enter"],            desc: "Move down one row, same pack" },
       { keys: ["+"],                desc: "Increment by 1 box" },
       { keys: ["−"],                desc: "Decrement by 1 box (floor 0)" },
       { keys: ["Backspace"],        desc: "Clear cell" },
-      { keys: ["Esc", "*"],         desc: "Close panel · return to grid" },
+      { keys: ["Esc"],              desc: "Back to page body (then 1-9 for speed dial · / for search)" },
     ],
   },
   {
-    title: "Send",
+    title: "Send confirm overlay",
     rows: [
-      { keys: ["/"],          desc: "Open send-confirm overlay (cart not empty)" },
-      { keys: ["Enter", "/"], desc: "Submit · opens mailto in default mail client" },
-      { keys: ["Esc", "*"],   desc: "Cancel overlay" },
+      { keys: ["Enter", "/"], desc: "Submit — opens mailto in default mail client" },
+      { keys: ["Esc"],        desc: "Cancel" },
     ],
   },
 ];
@@ -70,7 +86,7 @@ const GROUPS: Group[] = [
 export default function KeyboardHelpOverlay({ onClose }: KeyboardHelpOverlayProps): React.JSX.Element {
   useEffect(() => {
     function onKey(e: KeyboardEvent): void {
-      if (e.key === "?" || e.key === "Escape" || e.key === "*") {
+      if (e.key === "?" || e.key === "Escape") {
         e.preventDefault();
         onClose();
       }

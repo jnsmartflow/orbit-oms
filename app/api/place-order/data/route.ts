@@ -67,6 +67,8 @@ export async function GET(): Promise<NextResponse> {
       where:   { isActive: true },
       select: {
         family:       true,
+        section:      true,
+        subgroup:     true,
         subProduct:   true,
         baseColour:   true,
         displayName:  true,
@@ -122,6 +124,8 @@ export async function GET(): Promise<NextResponse> {
         : row.subProduct;
       return {
         family:       row.family,
+        section:      row.section,
+        subgroup:     row.subgroup,
         subProduct:   row.subProduct,
         baseColour:   row.baseColour ?? null,
         displayName:  row.displayName,

@@ -8,6 +8,8 @@ export type Customer = {
 
 export type Product = {
   family:       string;        // category — "WS", "GLOSS", "VT", etc.
+  section:      string;        // grid section — UTILITY / INTERIORS / EXTERIORS / ENAMELS / WOODCARE / MULTI-USE
+  subgroup:     string;        // within-section visual cluster — render-time row-break label, never displayed
   subProduct:   string;        // product line — "MAX", "ETERNA", "DIAMOND GLO"
   baseColour:   string | null; // null for PLAIN rows; named base/colour for variants
   displayName:  string;
@@ -27,6 +29,7 @@ export type CartLine = {
   displayName: string;
   baseColour:  string | null;
   packQtys:    Record<string, number>;
+  touchedAt?:  number;                 // ms epoch — last setQty call on this line; powers RecentlyUsed sort. Optional for back-compat with pre-existing localStorage drafts.
 };
 
 export type Bill = {

@@ -1235,6 +1235,8 @@ model mo_order_form_index_v2 {
   productType  String?  @default("PLAIN")
   sortOrder    Int      @default(0)
   isActive     Boolean  @default(true)
+  section      String
+  subgroup     String
   createdAt    DateTime @default(now())
 
   @@unique([family, subProduct, baseColour])
