@@ -18,7 +18,7 @@ export const QUICK_TILES_V1: ReadonlyArray<QuickTile> = [
   { position: 1, type: "family",      label: "GLOSS",          parentLabel: "ENAMELS",   familyName:     "GLOSS"          },
   { position: 2, type: "family",      label: "SATIN",          parentLabel: "ENAMELS",   familyName:     "SATIN"          },
   { position: 3, type: "sub-product", label: "PROMISE ENAMEL", parentLabel: "ENAMELS",   subProductName: "PROMISE ENAMEL" },
-  { position: 4, type: "family",      label: "MAX",            parentLabel: "EXTERIORS", familyName:     "MAX"            },
+  { position: 4, type: "family",      label: "WS",             parentLabel: "EXTERIORS", familyName:     "WS"             },
   { position: 5, type: "family",      label: "VT GLO",         parentLabel: "INTERIORS", familyName:     "VT GLO"         },
   { position: 6, type: "section",     label: "WOODCARE",       parentLabel: null,        sectionName:    "WOODCARE"       },
   { position: 7, type: "family",      label: "STAINER",        parentLabel: "UTILITY",   familyName:     "STAINER"        },
