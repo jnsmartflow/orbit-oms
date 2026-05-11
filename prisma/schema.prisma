@@ -1137,6 +1137,29 @@ model mo_sku_lookup {
   createdAt       DateTime @default(now())
 }
 
+// Parallel v2 SKU lookup table — drives /place-order under the May 6 33-family
+// taxonomy redesign. category/product hold v2 family/subProduct names.
+// Live mo_sku_lookup continues to drive /order, parser, and enrichment.
+// See docs/prompts/drafts/session-end-2026-05-10-recovery-and-branch-hygiene.md
+model mo_sku_lookup_v2 {
+  id              Int      @id @default(autoincrement())
+  material        String   @unique
+  description     String
+  category        String
+  product         String
+  baseColour      String
+  packCode        String
+  unit            String?
+  refMaterial     String?
+  refDescription  String?
+  paintType       String?
+  materialType    String?
+  piecesPerCarton Int?
+  createdAt       DateTime @default(now())
+
+  @@map("mo_sku_lookup_v2")
+}
+
 model mo_customer_keywords {
   id           Int      @id @default(autoincrement())
   customerCode String
@@ -1209,6 +1232,30 @@ model mo_order_form_index {
   // scripts/phase1-taxonomy-unique-constraint.sql; not yet applied.
   @@unique([family, subProduct, baseColour])
   @@map("mo_order_form_index")
+}
+
+// Parallel v2 catalog table — drives /place-order under the May 6 33-family
+// taxonomy redesign. Live mo_order_form_index drives /order (mobile).
+// After /place-order is approved on v2, /order will switch to v2 too and the
+// legacy table can be dropped.
+// See docs/prompts/drafts/session-end-2026-05-10-recovery-and-branch-hygiene.md
+model mo_order_form_index_v2 {
+  id           Int      @id @default(autoincrement())
+  family       String
+  subProduct   String
+  baseColour   String?
+  displayName  String
+  searchTokens String
+  tinterType   String?
+  productType  String?  @default("PLAIN")
+  sortOrder    Int      @default(0)
+  isActive     Boolean  @default(true)
+  section      String
+  subgroup     String
+  createdAt    DateTime @default(now())
+
+  @@unique([family, subProduct, baseColour])
+  @@map("mo_order_form_index_v2")
 }
 
 model import_shadow_log {

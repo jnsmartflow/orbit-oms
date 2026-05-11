@@ -57,6 +57,15 @@ const config: Config = {
       backgroundColor: {
         DEFAULT: "var(--bg)",
       },
+      keyframes: {
+        "cart-flash": {
+          "0%":   { backgroundColor: "#f0fdfa" },
+          "100%": { backgroundColor: "transparent" },
+        },
+      },
+      animation: {
+        "cart-flash": "cart-flash 1.2s ease-out",
+      },
     },
   },
   plugins: [require("tailwindcss-animate")],
