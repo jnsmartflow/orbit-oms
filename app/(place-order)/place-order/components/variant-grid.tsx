@@ -21,13 +21,29 @@ export interface VariantGridProps {
   onEscape:          () => void;
   onNextSubProduct?: () => void;    // PageDown from cell → next tab (family/drilled-section only)
   onPrevSubProduct?: () => void;    // PageUp  from cell → previous tab
+  onPageChange?:     (direction: -1 | 1) => void;   // `[` / `]` from cell → prev/next page (paginated sub-products only)
 }
 
-const BASE_COL_PERCENT = 32;
+// v5: base column is fixed-width pixel (was 32% in v4). Pack columns omit
+// width on <col> so table-layout:fixed distributes remaining table width
+// evenly across them.
+const BASE_COL_WIDTH_PX = 160;
+
+// Pagination — sub-products with more bases than the THRESHOLD render
+// across pages of PAGE_SIZE each (with the threshold > page-size buffer
+// avoiding 1-row trailing pages). Today GLOSS (38 bases) and WS PROTECT
+// (16 bases) paginate; all other 194 sub-products render single-page.
+//
+// Sort note: pagination ships as a MECHANISM only. Which bases land on
+// which page is whatever catalog sortOrder returns today (alphabetical).
+// Popularity ranking (most-ordered first) is pending a separate
+// baseOrderRank migration on mo_order_form_index_v2.
+export const VARIANT_GRID_PAGE_SIZE             = 15;
+export const VARIANT_GRID_PAGINATION_THRESHOLD  = 17;
 
 export default function VariantGrid({
   products, qtyAt, onSetQty, focusHintBase, onFocused, onEscape,
-  onNextSubProduct, onPrevSubProduct,
+  onNextSubProduct, onPrevSubProduct, onPageChange,
 }: VariantGridProps): React.JSX.Element {
   const packs = useMemo<string[]>(() => {
     const set = new Set<string>();
@@ -55,15 +71,18 @@ export default function VariantGrid({
   // and stealing focus from whichever base row we just landed on.
   const prevFocusHintRef = useRef<string | null | undefined>(undefined);
 
-  // Auto-focus first available cell on mount / sub-product change. When
-  // focusHintBase is set (search hand-off), target that base-row.
+  // Auto-focus first available cell on mount / sub-product change / page
+  // flip. When focusHintBase is set (search hand-off), target that
+  // base-row.
   //
-  // Deps key on `viewKey` (string fingerprint of the active sub-product)
-  // rather than the `products` array directly — the dispatcher rebuilds
-  // `filtered` on every parent render, so a reference-keyed dep would
-  // re-fire (and steal focus) on every keystroke / qty edit. viewKey
-  // is by-value-stable across re-renders of the same view.
-  const viewKey = `${products[0]?.family ?? ""}|${products[0]?.subProduct ?? ""}`;
+  // Deps key on `viewKey` (string fingerprint of the active sub-product +
+  // first visible base) rather than the `products` array directly — the
+  // dispatcher rebuilds `filtered` on every parent render, so a reference-
+  // keyed dep would re-fire (and steal focus) on every keystroke / qty
+  // edit. viewKey is by-value-stable across re-renders of the same slice.
+  // Including the first row's baseColour means page flips also change the
+  // viewKey → effect fires → first cell of new page focuses.
+  const viewKey = `${products[0]?.family ?? ""}|${products[0]?.subProduct ?? ""}|${products[0]?.baseColour ?? ""}`;
 
   useEffect(() => {
     // Always update the ref so future transitions are detected correctly,
@@ -152,28 +171,25 @@ export default function VariantGrid({
     );
   }
 
-  const packColPercent = (100 - BASE_COL_PERCENT) / packs.length;
-
   return (
     <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
       <colgroup>
-        <col style={{ width: `${BASE_COL_PERCENT}%` }} />
+        <col style={{ width: `${BASE_COL_WIDTH_PX}px` }} />
         {packs.map((p) => (
-          <col key={p} style={{ width: `${packColPercent}%` }} />
+          <col key={p} style={{ width: "80px" }} />
         ))}
       </colgroup>
       <thead>
         <tr className="bg-gray-50 border-b border-gray-200">
-          <th className="text-left px-5 py-2.5 text-[10px] font-medium uppercase tracking-wider text-gray-400">
+          <th className="text-left px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider text-gray-400">
             Base · Colour
           </th>
           {packs.map((pack) => {
             const label = formatPack(pack);
             const step  = packStep(label);
             return (
-              <th key={pack} className="text-center px-2 py-2.5">
-                <div className="text-[12px] font-semibold text-gray-700">{label}</div>
-                <div className="text-[9.5px] font-mono text-gray-400">box of {step}</div>
+              <th key={pack} className="text-center px-1 py-1.5">
+                <div className="text-[10.5px] font-semibold text-gray-700">{label} · <span className="font-mono text-gray-400">box {step}</span></div>
               </th>
             );
           })}
@@ -188,8 +204,8 @@ export default function VariantGrid({
               key={`${product.subProduct}|||${product.baseColour ?? ""}`}
               className={`${isLastRow ? "" : "border-b border-gray-50"} hover:bg-gray-50/40`}
             >
-              <td className="px-5 py-3">
-                <div className="text-[13px] font-semibold text-gray-900">{baseLabel}</div>
+              <td className="px-3 py-1">
+                <div className="text-[12px] font-semibold text-gray-900">{baseLabel}</div>
               </td>
               {packs.map((pack, colIdx) => {
                 const cell = cellMatrix[rowIdx][colIdx];
@@ -212,6 +228,7 @@ export default function VariantGrid({
                       onClose={onEscape}
                       onNextSubProduct={onNextSubProduct}
                       onPrevSubProduct={onPrevSubProduct}
+                      onPageChange={onPageChange}
                     />
                   </td>
                 );
@@ -221,5 +238,107 @@ export default function VariantGrid({
         })}
       </tbody>
     </table>
+  );
+}
+
+// ─── Pagination chrome ────────────────────────────────────────────────────
+// Co-located here because the constants + visuals are tightly coupled to
+// the variant grid. Parent panels (sub-product-direct, family-nav-with-
+// tabs) own the currentPage state and render these into the card header /
+// footer slots.
+
+export interface PaginationIndicatorProps {
+  currentPage:   number;        // 0-indexed
+  totalPages:    number;
+  onPageChange:  (page: number) => void;
+}
+
+export function PaginationIndicator({
+  currentPage, totalPages, onPageChange,
+}: PaginationIndicatorProps): React.JSX.Element {
+  return (
+    <div className="flex items-center gap-2 mr-3 flex-shrink-0">
+      <button
+        type="button"
+        onClick={() => onPageChange(currentPage - 1)}
+        disabled={currentPage === 0}
+        title="Previous page"
+        aria-label="Previous page"
+        className="text-gray-400 hover:text-teal-600 text-[16px] leading-none w-5 h-5 flex items-center justify-center rounded hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-gray-400"
+      >
+        ‹
+      </button>
+      <div className="flex items-center gap-1">
+        {Array.from({ length: totalPages }, (_, i) => {
+          const isActive = i === currentPage;
+          return (
+            <button
+              key={i}
+              type="button"
+              onClick={() => onPageChange(i)}
+              aria-label={`Page ${i + 1}`}
+              aria-current={isActive ? "page" : undefined}
+              className={`transition-all duration-150 ${
+                isActive
+                  ? "w-[22px] h-[7px] bg-teal-600 rounded-[4px]"
+                  : "w-[7px] h-[7px] bg-gray-300 rounded-full hover:bg-gray-400"
+              }`}
+            />
+          );
+        })}
+      </div>
+      <button
+        type="button"
+        onClick={() => onPageChange(currentPage + 1)}
+        disabled={currentPage === totalPages - 1}
+        title="Next page"
+        aria-label="Next page"
+        className="text-gray-600 hover:text-teal-600 text-[16px] leading-none w-5 h-5 flex items-center justify-center rounded hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-gray-600"
+      >
+        ›
+      </button>
+      <span className="text-[10px] font-mono text-gray-400 ml-1">
+        {currentPage + 1} of {totalPages}
+      </span>
+    </div>
+  );
+}
+
+export interface PaginationFooterProps {
+  pageStart:    number;         // 0-indexed inclusive
+  pageEnd:      number;         // 0-indexed exclusive
+  totalItems:   number;
+  currentPage:  number;
+  totalPages:   number;
+}
+
+export function PaginationFooter({
+  pageStart, pageEnd, totalItems, currentPage, totalPages,
+}: PaginationFooterProps): React.JSX.Element {
+  const kbd = "font-mono px-1 bg-white border border-gray-200 rounded text-[9px]";
+  return (
+    <div className="px-3 py-1 bg-teal-50/40 border-t border-teal-100 flex items-center gap-3 text-[9.5px]">
+      <span className="text-gray-500">
+        <kbd className={kbd}>Shift+PgDn</kbd>
+        {" / "}
+        <kbd className={kbd}>Shift+PgUp</kbd>
+        {" "}page
+      </span>
+      <span className="text-gray-300">·</span>
+      <span className="text-gray-500">
+        <kbd className={kbd}>↓↑←→</kbd>
+        {" "}nav
+      </span>
+      <span className="text-gray-300">·</span>
+      <span className="text-gray-500">
+        <kbd className={kbd}>0</kbd>
+        <span className="mx-0.5">–</span>
+        <kbd className={kbd}>9</kbd>
+        {" "}qty
+      </span>
+      <span className="ml-auto text-teal-700 font-medium">
+        Showing bases {pageStart + 1}–{pageEnd} of {totalItems} · Page {currentPage + 1} of {totalPages}
+      </span>
+    </div>
   );
 }

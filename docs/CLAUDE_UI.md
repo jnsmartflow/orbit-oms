@@ -1,5 +1,5 @@
 # CLAUDE_UI.md — Orbit OMS UI Design System
-# v5.1 · Lives in: orbit-oms/docs/
+# v5.2 · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md · April 2026
 # Single source of truth for visual styling across all screens.
 
@@ -593,4 +593,37 @@ Sign-off: "Billing Team" (not Desk/Department). Phone hardcoded `+91 7435065023`
 
 ---
 
-*UI v5.1 · Fixed table standard · Review View · Challan B&W · Tint Operator v4 · Signal badges · April 2026*
+## 51. No-scroll page layout (place-order v5)
+
+- Page locked to viewport height: `<main>` is `h-[calc(100vh-52px)]` and inner `<section>` is `overflow-hidden`. The page does not vertical-scroll under any state.
+- Variant grid card never scrolls internally.
+- Cell sizing: **56×36px** (was 72×44px in v4), `rounded-[5px]`, font 13.5px/600. NA cell uses em-dash at the same dimensions.
+- Base name cell: `px-4 py-1.5`, font 12.5px/600. Base column locked to 160px fixed width; pack columns flow via `table-layout:fixed` with empty `<col />` for even distribution.
+- Pack header: title 11.5px/600 + sub-line 9px mono gray-400 ("box of N"); `px-1 py-2`.
+- Row stride ≈ 40px (cell 36 + row padding 4).
+- Card header (panel): `px-4 py-2.5`, title 14px/bold, monogram 28×28px (10.5px font). Meta line 10.5px gray-400.
+- Hint footer: `px-4 py-1.5`, 10px text. Replaced by **PaginationFooter** when paginated: `bg-teal-50/40 border-t border-teal-100`, includes `Shift+PgDn / Shift+PgUp` kbd glyph, right-aligned "Showing bases X–Y of Z · Page N of M" in teal-700 weight 500.
+
+### Speed dial dual mode
+
+- **Full 9-tile grid** when no sub-product is active: tile 98px × 78px, white bg, gray-200 border. Hover lifts (-1px translate) + teal-600 border + teal-50 bg. Active: teal-600 border + teal-50 bg + teal halo (no lift).
+- **Compact pill strip** when a sub-product is active: `inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11.5px]`. Active pill: `bg-teal-50 border border-teal-600 text-teal-700 font-semibold` + `▸` marker. Inactive: `bg-white border border-gray-200 text-gray-600 font-medium hover:border-teal-600 hover:text-teal-600`. Number prefix font-mono 10px gray-400 (teal-600 when active). Strip total height ~40px including the "Quick:" label prefix.
+
+### Pagination treatment (variant grid)
+
+Renders only when `bases.length > 15`. Page size = 13.
+
+- **Card-header indicator** (right side, before the × close button): `flex items-center gap-2 mr-3`. Prev `‹` 16px gray-400 (hover teal-600, disabled at page 0). Page dots: active = `w-[22px] h-[7px] bg-teal-600 rounded-[4px]`, inactive = `w-[7px] h-[7px] bg-gray-300 rounded-full hover:bg-gray-400`, transition 150ms. Next `›` 16px gray-600 (hover teal-600, disabled at last page). Trailing label `1 of 3` in 10px font-mono gray-400.
+- **Footer banner**: `px-4 py-1.5 bg-teal-50/40 border-t border-teal-100`. Hints: `[` / `]` page, ↓↑←→ nav, 0–9 qty. Right-aligned status `Showing bases X–Y of Z · Page N of M` in teal-700 font-medium.
+
+### Customer pill (top bar)
+
+`ml-4 inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-teal-50 border border-teal-200`. Dot 1.5px teal-600, name 12px font-medium teal-800, code 10px mono teal-600, × button teal-400 hover:teal-700 14px leading-none. Padding-based sizing (no fixed height) — centers vertically inside the 52px top bar via parent flex.
+
+### State-driven panel visibility
+
+RecentlyUsed and LastOrderRecall are hidden when `activeState.kind !== 'idle'`. BrowseAllFamilies stays visible (collapsed `<details>` summary has negligible idle height).
+
+---
+
+*UI v5.2 · No-scroll grid · Pagination · Compact speed dial · Fixed table standard · Review View · Challan B&W · Tint Operator v4 · Signal badges · April 2026*

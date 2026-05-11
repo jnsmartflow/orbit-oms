@@ -37,6 +37,11 @@ interface VariantCellProps {
   // intercepted (suppressing browser page-scroll) but no-op.
   onNextSubProduct?: () => void;
   onPrevSubProduct?: () => void;
+  // Optional — only wired when the active sub-product is paginated.
+  // `[` = prev page, `]` = next page. When undefined (or sub-product
+  // not paginated), the keys still preventDefault (suppress literal
+  // bracket input) but no-op.
+  onPageChange?:     (direction: -1 | 1) => void;
 }
 
 export interface VariantCellHandle {
@@ -44,7 +49,7 @@ export interface VariantCellHandle {
 }
 
 const VariantCell = forwardRef<VariantCellHandle, VariantCellProps>(function VariantCell(
-  { qty, isAvailable, rowIdx, colIdx, onSetQty, onCellNav, onClose, onNextSubProduct, onPrevSubProduct },
+  { qty, isAvailable, rowIdx, colIdx, onSetQty, onCellNav, onClose, onNextSubProduct, onPrevSubProduct, onPageChange },
   ref,
 ) {
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -56,7 +61,7 @@ const VariantCell = forwardRef<VariantCellHandle, VariantCellProps>(function Var
   if (!isAvailable) {
     return (
       <div
-        className="w-[72px] h-[44px] mx-auto rounded-[6px] flex items-center justify-center text-gray-200 text-[15px] cursor-not-allowed"
+        className="w-[56px] h-[32px] mx-auto rounded-[4px] flex items-center justify-center text-gray-200 text-[13px] cursor-not-allowed"
         aria-label="Not available"
       >
         —
@@ -72,8 +77,26 @@ const VariantCell = forwardRef<VariantCellHandle, VariantCellProps>(function Var
     if (e.key === "ArrowDown")  { e.preventDefault(); onCellNav("down",  rowIdx, colIdx); return; }
     if (e.key === "ArrowUp")    { e.preventDefault(); onCellNav("up",    rowIdx, colIdx); return; }
     if (e.key === "Enter")      { e.preventDefault(); onCellNav("enter", rowIdx, colIdx); return; }
-    if (e.key === "PageDown")   { e.preventDefault(); onNextSubProduct?.(); return; }
-    if (e.key === "PageUp")     { e.preventDefault(); onPrevSubProduct?.(); return; }
+    // PageDown / PageUp — v4: next/prev sub-product TAB.
+    // Shift+PageDown / Shift+PageUp — v5: next/prev pagination PAGE.
+    // Order-of-check pattern: guard the unshifted branch with
+    // !e.shiftKey so Shift-modified keys fall through to the v5 branch.
+    if (e.key === "PageDown" && !e.shiftKey) { e.preventDefault(); onNextSubProduct?.(); return; }
+    if (e.key === "PageUp"   && !e.shiftKey) { e.preventDefault(); onPrevSubProduct?.(); return; }
+    if (e.key === "PageDown" &&  e.shiftKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      e.nativeEvent.stopPropagation();
+      onPageChange?.(1);
+      return;
+    }
+    if (e.key === "PageUp"   &&  e.shiftKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      e.nativeEvent.stopPropagation();
+      onPageChange?.(-1);
+      return;
+    }
     if (e.key === "+")          { e.preventDefault(); onSetQty(qty + 1); return; }
     if (e.key === "-")          { e.preventDefault(); onSetQty(Math.max(0, qty - 1)); return; }
     if (e.key === "Escape" || e.key === "*") {
@@ -108,7 +131,7 @@ const VariantCell = forwardRef<VariantCellHandle, VariantCellProps>(function Var
       }}
       onFocus={(e) => e.target.select()}
       onKeyDown={handleKeyDown}
-      className={`w-[72px] h-[44px] mx-auto rounded-[6px] text-center text-[15px] font-semibold border-0 outline-none transition-all duration-75
+      className={`w-[56px] h-[32px] mx-auto rounded-[4px] text-center text-[13px] font-semibold border-0 outline-none transition-all duration-75
         placeholder:text-[20px] placeholder:text-gray-300 placeholder:font-normal
         focus:bg-white focus:text-gray-900 focus:relative focus:z-[2] focus:shadow-[inset_0_0_0_2px_#0d9488,0_0_0_4px_rgba(20,184,166,0.18)]
         ${isActive

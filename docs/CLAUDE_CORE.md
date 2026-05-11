@@ -370,6 +370,8 @@ Full visual spec: `CLAUDE_UI.md §6`.
 
 Files: `components/shared/role-sidebar-provider.tsx`, `role-sidebar.tsx`, `role-layout-client.tsx`.
 
+`/place-order` is the one route that runs full-bleed without the sidebar (its own `(place-order)` route group + layout). The place-order page is fixed-height (`h-screen` / inner sections `overflow-hidden`); the page does not vertical-scroll. Variant grid paginates at >15 bases per sub-product instead of scrolling. See `CLAUDE_MAIL_ORDERS.md §19` for the place-order spec.
+
 ---
 
 ## 14. Session start checklist

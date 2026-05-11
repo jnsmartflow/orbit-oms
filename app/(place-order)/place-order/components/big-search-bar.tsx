@@ -107,10 +107,10 @@ const BigSearchBar = forwardRef<HTMLInputElement, BigSearchBarProps>(
     }
 
     return (
-      <div className="mb-4 relative">
+      <div className="mb-2 relative">
         <div className="relative">
-          <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-            <Search className="w-5 h-5 text-gray-400" />
+          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+            <Search className="w-4 h-4 text-gray-400" />
           </div>
           <input
             ref={ref}
@@ -130,7 +130,7 @@ const BigSearchBar = forwardRef<HTMLInputElement, BigSearchBarProps>(
             aria-activedescendant={
               activeIndex >= 0 ? `${listboxId}-row-${activeIndex}` : undefined
             }
-            className="w-full h-[56px] pl-12 pr-[220px] text-[16px] border border-gray-200 rounded-xl bg-white shadow-sm focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10 focus:outline-none"
+            className="w-full h-[36px] pl-9 pr-[210px] text-[13px] border border-gray-200 rounded-lg bg-white shadow-sm focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10 focus:outline-none"
           />
           <div className="absolute inset-y-0 right-0 pr-4 flex items-center text-[11px] text-gray-400 pointer-events-none">
             {query ? (

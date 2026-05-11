@@ -556,4 +556,79 @@ R key reply handler includes Bill N suffix in customer name.
 
 ---
 
+## 19. /place-order — layout, speed dial, variant grid (v4 + v5)
+
+`/place-order` is the desktop phone-order entry surface. Built on top of the mo_* catalog (mo_order_form_index_v2 + mo_sku_lookup_v2). Primary users: Deepanshu (billing_operator), Bankim (billing_operator).
+
+### Component tree
+
+```
+PlaceOrderPage (place-order-page.tsx)
+├── <header> top bar (52px) — logo, "Place Order" title, <CustomerSearch> pill, ? shortcuts
+└── <main h-[calc(100vh-52px)] overflow-hidden>
+    ├── <section flex-1 overflow-hidden>
+    │   ├── <BigSearchBar> (forwardRef, 56px tall)
+    │   ├── <SpeedDialGrid compact={activeState.kind !== 'idle'}>
+    │   ├── <ActiveProductPanel state={activeState}> (dispatcher → SubProductDirect / FamilyNavWithTabs / SectionLanding; returns null when idle)
+    │   ├── {activeState.kind === 'idle' && <RecentlyUsed />}
+    │   ├── {activeState.kind === 'idle' && <LastOrderRecall />}
+    │   └── <BrowseAllFamilies> (always rendered; collapsed by default)
+    └── <CartPanel w-[340px]> (own flex-col + internal scroll on line list)
+```
+
+### Render-state matrix
+
+| activeState.kind | SpeedDial | ActivePanel | RecentlyUsed | LastOrderRecall | BrowseAll |
+|---|---|---|---|---|---|
+| idle | full 9-tile grid | hidden | shown | shown | shown |
+| sub-product / family / section | compact pill strip | shown | hidden | hidden | shown |
+
+### Speed dial
+
+`<SpeedDialGrid>` renders in two modes:
+- **Full 9-tile grid** when no sub-product is active (activeState.kind === 'idle')
+- **Compact horizontal pill strip** when a sub-product panel is active
+
+The compact strip uses ~40px vertical space vs the full grid's ~110px, contributing to the no-scroll page layout. The compact mode is keyed on `compact={activeState.kind !== "idle"}` passed by the page.
+
+### Variant grid
+
+Cell sizing 56×36px (v5; was 72×44px in v4). Base name column is 160px fixed; pack columns flow via table-layout:fixed with `<col />` (no explicit width) so remaining space distributes evenly.
+
+Variant grid paginates when `bases.length > VARIANT_GRID_PAGINATION_THRESHOLD` (15). Page size: `VARIANT_GRID_PAGE_SIZE` (13). Page-flip via mouse (page dots + ‹/› buttons in card header) or keyboard (`[` and `]`). Today affects **GLOSS** (38 bases, 3 pages) and **WS·PROTECT** (16 bases, 2 pages). All other 194 sub-products render single-page. Bases render in the catalog's sortOrder; popularity ranking via a `baseOrderRank` column is pending a separate migration.
+
+Pagination state lives in the parent panel (sub-product-direct.tsx / family-nav-with-tabs.tsx). Indicator (dots + ‹/›) renders inside the card header; footer banner ("Showing bases X–Y of Z · Page N of M") replaces the regular hint footer when paginated. Embedded mode (drilled WOODCARE family inside section-landing) hides the indicator since the family card header is skipped — currently dormant since no woodcare family has >15 bases.
+
+### Keyboard model (locked at v5)
+
+| Context | Keys | Behaviour |
+|---|---|---|
+| Customer locked | (auto) | Search bar focused |
+| Search bar focused | letters, digits, all punctuation | Query input — no passthroughs |
+| Search bar (with query) | ↓ ↑ / Tab / Shift+Tab / Enter / Esc | Navigate results / select / clear |
+| Page body | 1-9 | Open speed dial tile |
+| Page body | / | Focus search bar |
+| Page body | ? | Toggle help overlay |
+| Page body | Esc | Close active panel |
+| Variant cell | 0-9 | Qty input |
+| Variant cell | Tab / Shift+Tab | Pack column nav |
+| Variant cell | ←→↑↓ | Cell-to-cell nav |
+| Variant cell | PageDown / PageUp | Next / prev sub-product |
+| Variant cell | **Shift+PageDown / Shift+PageUp** | **Page next / prev (paginated sub-products only)** |
+| Variant cell | Esc | Back to page body (panel closes, tile de-highlights) |
+| Mouse | Send button | Open send confirm overlay |
+
+### Search hand-off + base focus
+
+Search emits three result types:
+- **family** — opens FamilyNavWithTabs with first sub-product active
+- **sub-product** — opens SubProductDirect, focuses first base's first cell
+- **sub-product-base** — opens SubProductDirect with `focusHint = { base }`; variant-grid's auto-focus effect targets the matched base row. For paginated sub-products, a panel-level effect flips the page BEFORE slicing so the target cell lands in the visible slice.
+
+### Mailto byte-identical guarantee
+
+`lib/place-order/email.ts` and `lib/place-order/pack.ts` are zero-diff from pre-v4 baseline (commit 05ef5aae). Page-level conversion strips CartLine to `{subProduct, baseColour, packQtys}` only (the 3 fields email.ts uses). No CartLine additions (e.g. touchedAt) leak into the EmailLine path.
+
+---
+
 *Mail Orders v1.0 · Schema v26.5 · Parser v6.5 · Enrichment v3 · April 2026*

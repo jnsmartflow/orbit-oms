@@ -93,16 +93,19 @@ export default function CustomerSearch({
   }
 
   if (selected) {
+    // v5 spec — padding-based sizing (no fixed height), per-element colour
+    // weights. Pill sits inside the h-[52px] top bar and centers vertically
+    // via the parent flex container.
     return (
-      <span className="ml-6 inline-flex items-center gap-2 h-[34px] rounded-[8px] px-3 bg-teal-50 border border-teal-200 text-teal-700 text-[12px]">
-        <span className="w-1.5 h-1.5 rounded-full bg-teal-600" />
-        <span className="font-semibold">{selected.name}</span>
-        <span className="font-mono text-[11px] text-teal-500">{selected.code}</span>
+      <span className="ml-4 inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-teal-50 border border-teal-200 max-w-full min-w-0">
+        <span className="w-1.5 h-1.5 rounded-full bg-teal-600 flex-shrink-0" />
+        <span className="text-[12px] font-medium text-teal-800 truncate">{selected.name}</span>
+        <span className="font-mono text-[10px] text-teal-600 flex-shrink-0">{selected.code}</span>
         <button
           type="button"
           onClick={onClear}
           aria-label="Clear customer"
-          className="ml-1 px-1.5 py-0.5 rounded text-teal-500 hover:text-teal-700 hover:bg-teal-100 leading-none text-[14px]"
+          className="ml-1 text-teal-400 hover:text-teal-700 text-[14px] leading-none"
         >
           ×
         </button>

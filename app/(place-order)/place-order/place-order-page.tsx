@@ -597,7 +597,8 @@ export default function PlaceOrderPage(): React.JSX.Element {
           </svg>
         </div>
         <span className="text-[14px] font-semibold text-gray-900">Place Order</span>
-        <div className="flex-1 max-w-[420px] mx-4">
+        {/* min-w-0 lets the pill's `truncate` actually clip; NO overflow-hidden here — that would clip the absolute-positioned dropdown when typing a customer query. */}
+        <div className="flex-1 max-w-[420px] mx-4 min-w-0">
           <CustomerSearch
             customers={customers}
             selected={selectedCustomer}
@@ -626,8 +627,8 @@ export default function PlaceOrderPage(): React.JSX.Element {
         tabIndex={-1}
         className="flex h-[calc(100vh-52px)] focus:outline-none"
       >
-        <section className="flex-1 bg-gray-50 overflow-y-auto">
-          <div className="max-w-[920px] mx-auto p-6">
+        <section className="flex-1 bg-gray-50 overflow-hidden">
+          <div className="max-w-[920px] mx-auto p-3">
             {dataLoading ? (
               <p className="text-[13px] text-gray-400 text-center py-12">Loading customers and products…</p>
             ) : !selectedCustomer ? (
@@ -654,6 +655,7 @@ export default function PlaceOrderPage(): React.JSX.Element {
                   cartItemLabels={cartItemLabels}
                   onTileClick={handleTileClick}
                   headerSubtitle={`${quickTiles.length} most-ordered families`}
+                  compact={activeState.kind !== "idle"}
                 />
                 <ActiveProductPanel
                   state={activeState}
@@ -669,15 +671,19 @@ export default function PlaceOrderPage(): React.JSX.Element {
                   focusHintBase={focusHint?.base ?? null}
                   onFocused={() => setFocusHint(null)}
                 />
-                <RecentlyUsed
-                  items={recentlyUsedItems}
-                  onItemClick={handleRecentlyUsedClick}
-                />
-                <LastOrderRecall
-                  customerCode={selectedCustomer.code}
-                  customerName={selectedCustomer.name}
-                  onRepeatOrder={handleRepeatOrder}
-                />
+                {activeState.kind === "idle" && (
+                  <>
+                    <RecentlyUsed
+                      items={recentlyUsedItems}
+                      onItemClick={handleRecentlyUsedClick}
+                    />
+                    <LastOrderRecall
+                      customerCode={selectedCustomer.code}
+                      customerName={selectedCustomer.name}
+                      onRepeatOrder={handleRepeatOrder}
+                    />
+                  </>
+                )}
                 <BrowseAllFamilies
                   productsAll={products}
                   onFamilyClick={handleBrowseFamilyClick}

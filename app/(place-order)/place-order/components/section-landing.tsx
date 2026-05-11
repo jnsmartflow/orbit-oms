@@ -74,15 +74,15 @@ export default function SectionLanding({
 
   return (
     <div className="bg-white border border-gray-200 rounded-xl overflow-hidden mb-5">
-      <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-3">
+      <div className="px-3 py-1.5 border-b border-gray-100 flex items-center gap-3">
         <span
-          className="w-[28px] h-[28px] rounded-[5px] inline-flex items-center justify-center text-[10px] font-bold text-gray-500 flex-shrink-0"
+          className="w-[24px] h-[24px] rounded-[5px] inline-flex items-center justify-center text-[10px] font-bold text-gray-500 flex-shrink-0"
           style={{ background: "linear-gradient(135deg, #f3f4f6, #e5e7eb)" }}
         >
           {monogramFor(sectionName)}
         </span>
         <div className="flex-1 min-w-0">
-          <div className="text-[15px] font-bold text-gray-900 truncate">{sectionName}</div>
+          <div className="text-[13px] font-bold text-gray-900 truncate">{sectionName}</div>
           <div className="text-[10.5px] text-gray-400 truncate">{headerLine2}</div>
         </div>
         {speedDialPosition !== undefined && (

@@ -30,7 +30,7 @@ export default function SubProductTabBar({
               key={tab.name}
               type="button"
               onClick={() => onSelect(tab.name)}
-              className={`px-4 py-2.5 text-[13px] flex items-center transition-all duration-75 border-b-2 ${
+              className={`px-3 py-1.5 text-[12px] flex items-center transition-all duration-75 border-b-2 ${
                 isActive
                   ? "text-gray-900 font-bold border-gray-900"
                   : "text-gray-500 border-transparent hover:text-gray-900"

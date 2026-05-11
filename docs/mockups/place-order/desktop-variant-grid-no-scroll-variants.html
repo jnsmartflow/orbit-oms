@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Orbit OMS · Place Order — v5 · No-Scroll Grid (Variants A & B)</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; background: #f0f2f5; }
+  .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+
+  /* Qty cells — VARIANT A keeps current size */
+  .qty-cell-A {
+    width: 56px; height: 36px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 5px;
+    font-size: 13.5px; font-weight: 600;
+    cursor: pointer;
+    transition: all 0.08s ease;
+  }
+  /* Qty cells — VARIANT B compressed */
+  .qty-cell-B {
+    width: 52px; height: 28px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 4px;
+    font-size: 12.5px; font-weight: 600;
+    cursor: pointer;
+    transition: all 0.08s ease;
+  }
+  .qty-cell-A.empty, .qty-cell-B.empty { color: #d1d5db; background: #fafbfc; }
+  .qty-cell-A.empty:hover, .qty-cell-B.empty:hover { background: #f3f4f6; color: #6b7280; }
+  .qty-cell-A.filled, .qty-cell-B.filled { background: #f0fdfa; color: #0f766e; }
+  .qty-cell-A.focused, .qty-cell-B.focused {
+    background: #ffffff;
+    outline: 2px solid #0d9488;
+    outline-offset: -2px;
+    box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.18);
+  }
+
+  .speed-pill {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 4px 10px; border-radius: 6px;
+    background: white; border: 1px solid #e5e7eb;
+    font-size: 11.5px; font-weight: 500; color: #4b5563;
+    cursor: pointer; transition: all 0.1s;
+  }
+  .speed-pill:hover { border-color: #0d9488; color: #0d9488; }
+  .speed-pill.active { border-color: #0d9488; background: #f0fdfa; color: #0f766e; font-weight: 600; }
+  .speed-pill .num { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 10px; color: #9ca3af; }
+  .speed-pill.active .num { color: #0d9488; }
+  .speed-pill .check { color: #14b8a6; font-size: 10px; }
+
+  .monogram {
+    width: 28px; height: 28px;
+    border-radius: 6px;
+    background: linear-gradient(135deg, #0d9488 0%, #14b8a6 100%);
+    color: white;
+    font-size: 10.5px; font-weight: 700;
+    display: inline-flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .frame {
+    background: white; border: 2px solid #d1d5db; border-radius: 12px;
+    box-shadow: 0 6px 24px -8px rgba(0,0,0,0.15);
+  }
+  .label-banner {
+    background: #1f2937; color: white;
+    font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+    padding: 8px 16px; border-radius: 8px 8px 0 0;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .label-banner.alt { background: #0f766e; }
+
+  .page-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: #d1d5db; transition: all 0.15s;
+  }
+  .page-dot.active { background: #0d9488; width: 22px; border-radius: 4px; }
+
+</style>
+</head>
+<body class="p-6">
+
+  <div class="max-w-[1480px] mx-auto">
+    <h1 class="text-[20px] font-bold text-gray-900 mb-1">Variant Grid — No-Scroll Design Options</h1>
+    <p class="text-[13px] text-gray-600 mb-6 leading-snug">
+      Two layout variants for fitting all bases on a single laptop viewport (1440×900 reference).
+      Variant A collapses the speed dial when a sub-product is active. Variant B keeps the speed dial and compresses cells instead.
+      Both use pagination (●●●) for sub-products with &gt;13 bases — only GLOSS triggers it.
+    </p>
+
+    <!-- ================================================================ -->
+    <!-- VARIANT A — Collapsed speed-dial breadcrumb, current cell size -->
+    <!-- ================================================================ -->
+    <div class="mb-10">
+      <div class="frame">
+        <div class="label-banner">
+          <span>Variant A — Collapsed speed dial · MAX (12 bases, no scroll)</span>
+          <span class="opacity-70">1440 × 900 viewport · grid card has 600px vertical budget</span>
+        </div>
+
+        <!-- Simulated browser viewport -->
+        <div class="bg-gray-50" style="height: 900px; overflow: hidden;">
+
+          <!-- Top bar (52px) -->
+          <header class="bg-white border-b border-gray-200 h-[52px] flex items-center px-4 gap-3">
+            <div class="w-[28px] h-[28px] rounded-md bg-teal-600 flex items-center justify-center flex-shrink-0">
+              <svg viewBox="0 0 22 22" class="w-[16px] h-[16px]" fill="none">
+                <circle cx="11" cy="11" r="8" stroke="white" stroke-width="2"/>
+              </svg>
+            </div>
+            <div class="text-[14px] font-semibold text-gray-900">Place Order</div>
+            <!-- Customer moved into top bar -->
+            <div class="ml-4 px-2.5 py-1 bg-teal-50 border border-teal-200 rounded-md flex items-center gap-2">
+              <div class="w-1.5 h-1.5 rounded-full bg-teal-600"></div>
+              <div class="text-[12px] font-medium text-teal-800">PARAM HARDWARE & PLY</div>
+              <div class="text-[10px] mono text-teal-600">3321025</div>
+              <button class="text-teal-400 hover:text-teal-700 text-[14px] leading-none ml-1">×</button>
+            </div>
+            <div class="ml-auto flex items-center gap-3">
+              <div class="text-[11px] text-gray-400">? shortcuts</div>
+              <div class="w-[24px] h-[24px] rounded-full bg-teal-600 text-white text-[10px] font-semibold flex items-center justify-center">DT</div>
+            </div>
+          </header>
+
+          <!-- Content area -->
+          <div class="px-6 py-4 flex gap-6">
+            <div class="flex-1 max-w-[940px]">
+
+              <!-- Compact search bar -->
+              <div class="mb-3">
+                <div class="relative">
+                  <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <circle cx="11" cy="11" r="8" stroke-width="2"/><path d="M21 21l-4-4" stroke-width="2"/>
+                  </svg>
+                  <input type="text" placeholder="Type to search products… (or press 1-9 for tiles)"
+                    class="w-full h-[40px] pl-10 pr-3 text-[14px] border border-gray-200 rounded-lg bg-white focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10 focus:outline-none">
+                </div>
+              </div>
+
+              <!-- COLLAPSED speed dial — single 32px strip -->
+              <div class="mb-4 flex items-center gap-1.5 flex-wrap">
+                <span class="text-[10px] uppercase tracking-wider text-gray-400 font-medium mr-1">Quick:</span>
+                <span class="speed-pill"><span class="num">1</span>GLOSS</span>
+                <span class="speed-pill"><span class="num">2</span>SATIN</span>
+                <span class="speed-pill"><span class="num">3</span>PROMISE ENML</span>
+                <span class="speed-pill active"><span class="num">4</span>MAX <span class="check">▸</span></span>
+                <span class="speed-pill"><span class="num">5</span>VT GLO</span>
+                <span class="speed-pill"><span class="num">6</span>WOODCARE</span>
+                <span class="speed-pill"><span class="num">7</span>STAINER</span>
+                <span class="speed-pill"><span class="num">8</span>PRIMER</span>
+                <span class="speed-pill"><span class="num">9</span>AQUATECH</span>
+              </div>
+
+              <!-- Active sub-product card — NO inner scroll, all bases visible -->
+              <div class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+
+                <!-- Header (44px) -->
+                <div class="px-4 py-2.5 border-b border-gray-100 flex items-center gap-3">
+                  <span class="monogram">MA</span>
+                  <div class="flex-1">
+                    <div class="text-[14px] font-bold text-gray-900">MAX family</div>
+                    <div class="text-[10px] text-gray-400">EXTERIORS · 12 bases · 7 packs · 84 SKUs</div>
+                  </div>
+                  <button class="text-gray-300 hover:text-gray-500 text-[16px]">×</button>
+                </div>
+
+                <!-- Pack header (40px) -->
+                <table style="width:100%; border-collapse:collapse; table-layout:fixed;">
+                  <colgroup>
+                    <col style="width:160px"><col><col><col><col><col><col><col>
+                  </colgroup>
+                  <thead>
+                    <tr class="bg-gray-50 border-b border-gray-200">
+                      <th class="text-left px-4 py-2 text-[10px] font-medium uppercase tracking-wider text-gray-400">Base · Colour</th>
+                      <th class="text-center px-1 py-2"><div class="text-[11.5px] font-semibold text-gray-700">900ml</div><div class="text-[9px] mono text-gray-400">box 1</div></th>
+                      <th class="text-center px-1 py-2"><div class="text-[11.5px] font-semibold text-gray-700">1L</div><div class="text-[9px] mono text-gray-400">box 6</div></th>
+                      <th class="text-center px-1 py-2"><div class="text-[11.5px] font-semibold text-gray-700">3.6L</div><div class="text-[9px] mono text-gray-400">box 1</div></th>
+                      <th class="text-center px-1 py-2"><div class="text-[11.5px] font-semibold text-gray-700">4L</div><div class="text-[9px] mono text-gray-400">box 4</div></th>
+                      <th class="text-center px-1 py-2"><div class="text-[11.5px] font-semibold text-gray-700">10L</div><div class="text-[9px] mono text-gray-400">box 2</div></th>
+                      <th class="text-center px-1 py-2"><div class="text-[11.5px] font-semibold text-gray-700">18L</div><div class="text-[9px] mono text-gray-400">box 1</div></th>
+                      <th class="text-center px-1 py-2"><div class="text-[11.5px] font-semibold text-gray-700">20L</div><div class="text-[9px] mono text-gray-400">box 1</div></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <!-- 12 base rows — fit comfortably -->
+                    <!-- Row height ~36px, font ~13.5px -->
+                    <tr class="border-b border-gray-50 hover:bg-gray-50/40">
+                      <td class="px-4 py-1.5"><div class="text-[12.5px] font-semibold text-gray-900">BRILLIANT WHITE</div></td>
+                      <td class="text-center"><span class="qty-cell-A empty">·</span></td>
+                      <td class="text-center"><span class="qty-cell-A filled">2</span></td>
+                      <td class="text-center"><span class="qty-cell-A empty">·</span></td>
+                      <td class="text-center"><span class="qty-cell-A focused">5</span></td>
+                      <td class="text-center"><span class="qty-cell-A empty">·</span></td>
+                      <td class="text-center"><span class="qty-cell-A empty">·</span></td>
+                      <td class="text-center"><span class="qty-cell-A filled">1</span></td>
+                    </tr>
+                    <tr class="border-b border-gray-50 hover:bg-gray-50/40">
+                      <td class="px-4 py-1.5"><div class="text-[12.5px] font-semibold text-gray-900">90 BASE</div></td>
+                      <td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td>
+                    </tr>
+                    <tr class="border-b border-gray-50 hover:bg-gray-50/40">
+                      <td class="px-4 py-1.5"><div class="text-[12.5px] font-semibold text-gray-900">92 BASE</div></td>
+                      <td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td>
+                    </tr>
+                    <tr class="border-b border-gray-50 hover:bg-gray-50/40">
+                      <td class="px-4 py-1.5"><div class="text-[12.5px] font-semibold text-gray-900">93 BASE</div></td>
+                      <td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td>
+                    </tr>
+                    <tr class="border-b border-gray-50 hover:bg-gray-50/40">
+                      <td class="px-4 py-1.5"><div class="text-[12.5px] font-semibold text-gray-900">94 BASE</div></td>
+                      <td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td>
+                    </tr>
+                    <tr class="border-b border-gray-50 hover:bg-gray-50/40">
+                      <td class="px-4 py-1.5"><div class="text-[12.5px] font-semibold text-gray-900">95 BASE</div></td>
+                      <td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td>
+                    </tr>
+                    <tr class="border-b border-gray-50 hover:bg-gray-50/40">
+                      <td class="px-4 py-1.5"><div class="text-[12.5px] font-semibold text-gray-900">96 BASE</div></td>
+                      <td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td>
+                    </tr>
+                    <tr class="border-b border-gray-50 hover:bg-gray-50/40">
+                      <td class="px-4 py-1.5"><div class="text-[12.5px] font-semibold text-gray-900">97 BASE</div></td>
+                      <td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td>
+                    </tr>
+                    <tr class="border-b border-gray-50 hover:bg-gray-50/40">
+                      <td class="px-4 py-1.5"><div class="text-[12.5px] font-semibold text-gray-900">BLACK</div></td>
+                      <td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td>
+                    </tr>
+                    <tr class="border-b border-gray-50 hover:bg-gray-50/40">
+                      <td class="px-4 py-1.5"><div class="text-[12.5px] font-semibold text-gray-900">SIGNAL RED</div></td>
+                      <td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td>
+                    </tr>
+                    <tr class="border-b border-gray-50 hover:bg-gray-50/40">
+                      <td class="px-4 py-1.5"><div class="text-[12.5px] font-semibold text-gray-900">SEA GREEN</div></td>
+                      <td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td>
+                    </tr>
+                    <tr class="hover:bg-gray-50/40">
+                      <td class="px-4 py-1.5"><div class="text-[12.5px] font-semibold text-gray-900">IVORY</div></td>
+                      <td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td>
+                    </tr>
+                  </tbody>
+                </table>
+
+                <!-- Hint footer -->
+                <div class="px-4 py-1.5 bg-gray-50/60 border-t border-gray-100 flex items-center gap-3 text-[10px] text-gray-500">
+                  <span><kbd class="mono px-1 bg-white border border-gray-200 rounded text-[9px]">↓↑←→</kbd> nav</span>
+                  <span class="text-gray-300">·</span>
+                  <span><kbd class="mono px-1 bg-white border border-gray-200 rounded text-[9px]">0-9</kbd> qty</span>
+                  <span class="text-gray-300">·</span>
+                  <span><kbd class="mono px-1 bg-white border border-gray-200 rounded text-[9px]">Esc</kbd> back</span>
+                  <span class="ml-auto text-gray-400">12 bases · all visible · no scroll</span>
+                </div>
+              </div>
+
+              <!-- Annotation -->
+              <div class="mt-3 text-[11px] text-gray-500 italic">
+                ▴ Variant A: speed dial collapsed to a 9-pill strip when sub-product is active. Cells slightly smaller (56×36px vs v4's 72×44px). All 12 MAX bases visible. Operator presses <kbd class="mono px-1 bg-gray-100 rounded">Esc</kbd> to return to full speed dial view.
+              </div>
+            </div>
+
+            <!-- Cart (340px) -->
+            <aside class="w-[340px] bg-white border border-gray-200 rounded-xl flex flex-col self-start" style="max-height: 720px;">
+              <div class="px-4 py-2.5 border-b border-gray-200 flex items-center justify-between">
+                <div class="text-[13px] font-bold text-gray-900">Cart</div>
+                <div class="text-[10px] text-gray-400">3 lines</div>
+              </div>
+              <div class="flex-1 px-4 py-3 text-[11px] text-gray-400 italic">[ cart unchanged from v4 ]</div>
+              <div class="px-4 py-2.5 border-t border-gray-200">
+                <button class="w-full h-[36px] bg-teal-600 hover:bg-teal-700 text-white text-[13px] font-medium rounded-lg">Send Email</button>
+              </div>
+            </aside>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- ================================================================ -->
+    <!-- VARIANT B — Full speed dial kept, rows compressed -->
+    <!-- ================================================================ -->
+    <div class="mb-10">
+      <div class="frame">
+        <div class="label-banner alt">
+          <span>Variant B — Speed dial stays full · Rows compressed · MAX (12 bases, no scroll)</span>
+          <span class="opacity-70">1440 × 900 viewport · grid card has ~460px vertical budget</span>
+        </div>
+
+        <div class="bg-gray-50" style="height: 900px; overflow: hidden;">
+
+          <header class="bg-white border-b border-gray-200 h-[52px] flex items-center px-4 gap-3">
+            <div class="w-[28px] h-[28px] rounded-md bg-teal-600 flex items-center justify-center flex-shrink-0">
+              <svg viewBox="0 0 22 22" class="w-[16px] h-[16px]"><circle cx="11" cy="11" r="8" stroke="white" stroke-width="2" fill="none"/></svg>
+            </div>
+            <div class="text-[14px] font-semibold text-gray-900">Place Order</div>
+            <div class="ml-4 px-2.5 py-1 bg-teal-50 border border-teal-200 rounded-md flex items-center gap-2">
+              <div class="w-1.5 h-1.5 rounded-full bg-teal-600"></div>
+              <div class="text-[12px] font-medium text-teal-800">PARAM HARDWARE & PLY</div>
+              <div class="text-[10px] mono text-teal-600">3321025</div>
+              <button class="text-teal-400 hover:text-teal-700 text-[14px] leading-none ml-1">×</button>
+            </div>
+            <div class="ml-auto text-[11px] text-gray-400">? shortcuts</div>
+          </header>
+
+          <div class="px-6 py-4 flex gap-6">
+            <div class="flex-1 max-w-[940px]">
+
+              <!-- Search bar (compact) -->
+              <div class="mb-3">
+                <div class="relative">
+                  <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8" stroke-width="2"/><path d="M21 21l-4-4" stroke-width="2"/></svg>
+                  <input type="text" placeholder="Type to search…" class="w-full h-[36px] pl-10 pr-3 text-[13px] border border-gray-200 rounded-lg bg-white focus:border-teal-500 focus:outline-none">
+                </div>
+              </div>
+
+              <!-- FULL speed dial — 9 tiles in 2 rows (4+5) to keep height low -->
+              <div class="grid grid-cols-9 gap-1.5 mb-3">
+                <div class="bg-white border border-gray-200 rounded-md p-1.5 text-center cursor-pointer hover:border-teal-400">
+                  <div class="text-[9px] mono text-gray-400">1</div><div class="text-[10.5px] font-semibold text-gray-800 leading-tight">GLOSS</div><div class="text-[8.5px] text-gray-400">ENAMELS</div>
+                </div>
+                <div class="bg-white border border-gray-200 rounded-md p-1.5 text-center cursor-pointer hover:border-teal-400">
+                  <div class="text-[9px] mono text-gray-400">2</div><div class="text-[10.5px] font-semibold text-gray-800 leading-tight">SATIN</div><div class="text-[8.5px] text-gray-400">ENAMELS</div>
+                </div>
+                <div class="bg-white border border-gray-200 rounded-md p-1.5 text-center cursor-pointer hover:border-teal-400">
+                  <div class="text-[9px] mono text-gray-400">3</div><div class="text-[10.5px] font-semibold text-gray-800 leading-tight">PROMISE</div><div class="text-[8.5px] text-gray-400">ENAMELS</div>
+                </div>
+                <div class="bg-teal-50 border border-teal-500 rounded-md p-1.5 text-center ring-2 ring-teal-500/15">
+                  <div class="text-[9px] mono text-teal-600">4</div><div class="text-[10.5px] font-bold text-teal-800 leading-tight">MAX</div><div class="text-[8.5px] text-teal-600">EXTERIORS</div>
+                </div>
+                <div class="bg-white border border-gray-200 rounded-md p-1.5 text-center cursor-pointer hover:border-teal-400">
+                  <div class="text-[9px] mono text-gray-400">5</div><div class="text-[10.5px] font-semibold text-gray-800 leading-tight">VT GLO</div><div class="text-[8.5px] text-gray-400">INTERIORS</div>
+                </div>
+                <div class="bg-white border border-gray-200 rounded-md p-1.5 text-center cursor-pointer hover:border-teal-400">
+                  <div class="text-[9px] mono text-gray-400">6</div><div class="text-[10.5px] font-semibold text-gray-800 leading-tight">WOOD</div><div class="text-[8.5px] text-gray-400">CARE</div>
+                </div>
+                <div class="bg-white border border-gray-200 rounded-md p-1.5 text-center cursor-pointer hover:border-teal-400">
+                  <div class="text-[9px] mono text-gray-400">7</div><div class="text-[10.5px] font-semibold text-gray-800 leading-tight">STAINER</div><div class="text-[8.5px] text-gray-400">UTILITY</div>
+                </div>
+                <div class="bg-white border border-gray-200 rounded-md p-1.5 text-center cursor-pointer hover:border-teal-400">
+                  <div class="text-[9px] mono text-gray-400">8</div><div class="text-[10.5px] font-semibold text-gray-800 leading-tight">PRIMER</div><div class="text-[8.5px] text-gray-400">UTILITY</div>
+                </div>
+                <div class="bg-white border border-gray-200 rounded-md p-1.5 text-center cursor-pointer hover:border-teal-400">
+                  <div class="text-[9px] mono text-gray-400">9</div><div class="text-[10.5px] font-semibold text-gray-800 leading-tight">AQUA</div><div class="text-[8.5px] text-gray-400">TECH</div>
+                </div>
+              </div>
+
+              <!-- Card -->
+              <div class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                <div class="px-4 py-2 border-b border-gray-100 flex items-center gap-2.5">
+                  <span class="monogram" style="width:22px;height:22px;font-size:9.5px;">MA</span>
+                  <div class="flex-1">
+                    <div class="text-[13px] font-bold text-gray-900">MAX family</div>
+                  </div>
+                  <div class="text-[10px] text-gray-400">EXTERIORS · 12 bases · 7 packs</div>
+                  <button class="text-gray-300 hover:text-gray-500 text-[14px] ml-2">×</button>
+                </div>
+
+                <table style="width:100%; border-collapse:collapse; table-layout:fixed;">
+                  <colgroup>
+                    <col style="width:160px"><col><col><col><col><col><col><col>
+                  </colgroup>
+                  <thead>
+                    <tr class="bg-gray-50 border-b border-gray-200">
+                      <th class="text-left px-4 py-1.5 text-[9.5px] font-medium uppercase tracking-wider text-gray-400">Base · Colour</th>
+                      <th class="text-center px-1 py-1.5"><div class="text-[11px] font-semibold text-gray-700">900ml</div></th>
+                      <th class="text-center px-1 py-1.5"><div class="text-[11px] font-semibold text-gray-700">1L</div></th>
+                      <th class="text-center px-1 py-1.5"><div class="text-[11px] font-semibold text-gray-700">3.6L</div></th>
+                      <th class="text-center px-1 py-1.5"><div class="text-[11px] font-semibold text-gray-700">4L</div></th>
+                      <th class="text-center px-1 py-1.5"><div class="text-[11px] font-semibold text-gray-700">10L</div></th>
+                      <th class="text-center px-1 py-1.5"><div class="text-[11px] font-semibold text-gray-700">18L</div></th>
+                      <th class="text-center px-1 py-1.5"><div class="text-[11px] font-semibold text-gray-700">20L</div></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <!-- 12 rows at ~30px each -->
+                    <tr class="border-b border-gray-50 hover:bg-gray-50/40">
+                      <td class="px-4 py-1"><div class="text-[12px] font-semibold text-gray-900">BRILLIANT WHITE</div></td>
+                      <td class="text-center"><span class="qty-cell-B empty">·</span></td>
+                      <td class="text-center"><span class="qty-cell-B filled">2</span></td>
+                      <td class="text-center"><span class="qty-cell-B empty">·</span></td>
+                      <td class="text-center"><span class="qty-cell-B focused">5</span></td>
+                      <td class="text-center"><span class="qty-cell-B empty">·</span></td>
+                      <td class="text-center"><span class="qty-cell-B empty">·</span></td>
+                      <td class="text-center"><span class="qty-cell-B filled">1</span></td>
+                    </tr>
+                    <tr class="border-b border-gray-50 hover:bg-gray-50/40"><td class="px-4 py-1"><div class="text-[12px] font-semibold text-gray-900">90 BASE</div></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td></tr>
+                    <tr class="border-b border-gray-50 hover:bg-gray-50/40"><td class="px-4 py-1"><div class="text-[12px] font-semibold text-gray-900">92 BASE</div></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td></tr>
+                    <tr class="border-b border-gray-50 hover:bg-gray-50/40"><td class="px-4 py-1"><div class="text-[12px] font-semibold text-gray-900">93 BASE</div></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td></tr>
+                    <tr class="border-b border-gray-50 hover:bg-gray-50/40"><td class="px-4 py-1"><div class="text-[12px] font-semibold text-gray-900">94 BASE</div></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td></tr>
+                    <tr class="border-b border-gray-50 hover:bg-gray-50/40"><td class="px-4 py-1"><div class="text-[12px] font-semibold text-gray-900">95 BASE</div></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td></tr>
+                    <tr class="border-b border-gray-50 hover:bg-gray-50/40"><td class="px-4 py-1"><div class="text-[12px] font-semibold text-gray-900">96 BASE</div></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td></tr>
+                    <tr class="border-b border-gray-50 hover:bg-gray-50/40"><td class="px-4 py-1"><div class="text-[12px] font-semibold text-gray-900">97 BASE</div></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td></tr>
+                    <tr class="border-b border-gray-50 hover:bg-gray-50/40"><td class="px-4 py-1"><div class="text-[12px] font-semibold text-gray-900">BLACK</div></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td></tr>
+                    <tr class="border-b border-gray-50 hover:bg-gray-50/40"><td class="px-4 py-1"><div class="text-[12px] font-semibold text-gray-900">SIGNAL RED</div></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td></tr>
+                    <tr class="border-b border-gray-50 hover:bg-gray-50/40"><td class="px-4 py-1"><div class="text-[12px] font-semibold text-gray-900">SEA GREEN</div></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td></tr>
+                    <tr class="hover:bg-gray-50/40"><td class="px-4 py-1"><div class="text-[12px] font-semibold text-gray-900">IVORY</div></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td><td class="text-center"><span class="qty-cell-B empty">·</span></td></tr>
+                  </tbody>
+                </table>
+
+                <div class="px-4 py-1 bg-gray-50/60 border-t border-gray-100 flex items-center gap-2 text-[10px] text-gray-500">
+                  <span><kbd class="mono px-1 bg-white border border-gray-200 rounded text-[9px]">↓↑←→</kbd> nav</span>
+                  <span class="text-gray-300">·</span>
+                  <span><kbd class="mono px-1 bg-white border border-gray-200 rounded text-[9px]">0-9</kbd> qty</span>
+                  <span class="ml-auto text-gray-400">12 bases · all visible</span>
+                </div>
+              </div>
+
+              <div class="mt-3 text-[11px] text-gray-500 italic">
+                ▴ Variant B: speed dial stays as full tiles (operator never loses context of what's available). Cells smaller still (52×28px), row padding tightened. Slightly harder to read but full speed dial visible at all times.
+              </div>
+            </div>
+
+            <aside class="w-[340px] bg-white border border-gray-200 rounded-xl flex flex-col self-start" style="max-height: 600px;">
+              <div class="px-4 py-2.5 border-b border-gray-200 flex items-center justify-between">
+                <div class="text-[13px] font-bold text-gray-900">Cart</div>
+                <div class="text-[10px] text-gray-400">3 lines</div>
+              </div>
+              <div class="flex-1 px-4 py-3 text-[11px] text-gray-400 italic">[ cart unchanged from v4 ]</div>
+              <div class="px-4 py-2.5 border-t border-gray-200">
+                <button class="w-full h-[36px] bg-teal-600 hover:bg-teal-700 text-white text-[13px] font-medium rounded-lg">Send Email</button>
+              </div>
+            </aside>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================================================================ -->
+    <!-- GLOSS pagination treatment — shown on Variant A chrome -->
+    <!-- ================================================================ -->
+    <div class="mb-6">
+      <div class="frame">
+        <div class="label-banner" style="background: #7c2d12;">
+          <span>GLOSS (38 bases) — Pagination treatment · Page 1 of 3</span>
+          <span class="opacity-70">Operator presses PgDn / PgUp to flip pages within sub-product</span>
+        </div>
+
+        <div class="bg-gray-50 p-6">
+
+          <div class="max-w-[940px]">
+
+            <!-- Reuse collapsed speed dial -->
+            <div class="mb-4 flex items-center gap-1.5 flex-wrap">
+              <span class="text-[10px] uppercase tracking-wider text-gray-400 font-medium mr-1">Quick:</span>
+              <span class="speed-pill active"><span class="num">1</span>GLOSS <span class="check">▸</span></span>
+              <span class="speed-pill"><span class="num">2</span>SATIN</span>
+              <span class="speed-pill"><span class="num">3</span>PROMISE ENML</span>
+              <span class="speed-pill"><span class="num">4</span>MAX</span>
+              <span class="speed-pill"><span class="num">5</span>VT GLO</span>
+              <span class="speed-pill"><span class="num">6</span>WOODCARE</span>
+              <span class="speed-pill"><span class="num">7</span>STAINER</span>
+              <span class="speed-pill"><span class="num">8</span>PRIMER</span>
+              <span class="speed-pill"><span class="num">9</span>AQUATECH</span>
+            </div>
+
+            <div class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+              <div class="px-4 py-2.5 border-b border-gray-100 flex items-center gap-3">
+                <span class="monogram">GL</span>
+                <div class="flex-1">
+                  <div class="text-[14px] font-bold text-gray-900">GLOSS family</div>
+                  <div class="text-[10px] text-gray-400">ENAMELS · 38 bases · 3 packs · 114 SKUs</div>
+                </div>
+                <!-- Pagination indicator in header -->
+                <div class="flex items-center gap-2 mr-3">
+                  <button class="text-gray-400 hover:text-teal-600 text-[16px] leading-none w-5 h-5 flex items-center justify-center rounded hover:bg-gray-100" title="Previous page (PgUp)">‹</button>
+                  <div class="flex items-center gap-1">
+                    <div class="page-dot active"></div>
+                    <div class="page-dot"></div>
+                    <div class="page-dot"></div>
+                  </div>
+                  <button class="text-gray-600 hover:text-teal-600 text-[16px] leading-none w-5 h-5 flex items-center justify-center rounded hover:bg-gray-100" title="Next page (PgDn)">›</button>
+                  <span class="text-[10px] mono text-gray-400 ml-1">1 of 3</span>
+                </div>
+                <button class="text-gray-300 hover:text-gray-500 text-[16px]">×</button>
+              </div>
+
+              <table style="width:100%; border-collapse:collapse; table-layout:fixed;">
+                <colgroup>
+                  <col style="width:200px"><col><col><col>
+                </colgroup>
+                <thead>
+                  <tr class="bg-gray-50 border-b border-gray-200">
+                    <th class="text-left px-4 py-2 text-[10px] font-medium uppercase tracking-wider text-gray-400">Base · Colour</th>
+                    <th class="text-center px-1 py-2"><div class="text-[11.5px] font-semibold text-gray-700">1L</div><div class="text-[9px] mono text-gray-400">box of 6</div></th>
+                    <th class="text-center px-1 py-2"><div class="text-[11.5px] font-semibold text-gray-700">4L</div><div class="text-[9px] mono text-gray-400">box of 4</div></th>
+                    <th class="text-center px-1 py-2"><div class="text-[11.5px] font-semibold text-gray-700">20L</div><div class="text-[9px] mono text-gray-400">single</div></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <!-- 13 bases on page 1 — the most-popular -->
+                  <tr class="border-b border-gray-50 hover:bg-gray-50/40"><td class="px-4 py-1.5"><div class="text-[12.5px] font-semibold text-gray-900">BRILLIANT WHITE</div></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A filled">2</span></td><td class="text-center"><span class="qty-cell-A focused">5</span></td></tr>
+                  <tr class="border-b border-gray-50 hover:bg-gray-50/40"><td class="px-4 py-1.5"><div class="text-[12.5px] font-semibold text-gray-900">BLACK</div></td><td class="text-center"><span class="qty-cell-A filled">1</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td></tr>
+                  <tr class="border-b border-gray-50 hover:bg-gray-50/40"><td class="px-4 py-1.5"><div class="text-[12.5px] font-semibold text-gray-900">SIGNAL RED</div></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td></tr>
+                  <tr class="border-b border-gray-50 hover:bg-gray-50/40"><td class="px-4 py-1.5"><div class="text-[12.5px] font-semibold text-gray-900">IVORY</div></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td></tr>
+                  <tr class="border-b border-gray-50 hover:bg-gray-50/40"><td class="px-4 py-1.5"><div class="text-[12.5px] font-semibold text-gray-900">SEA GREEN</div></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td></tr>
+                  <tr class="border-b border-gray-50 hover:bg-gray-50/40"><td class="px-4 py-1.5"><div class="text-[12.5px] font-semibold text-gray-900">CREAM</div></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td></tr>
+                  <tr class="border-b border-gray-50 hover:bg-gray-50/40"><td class="px-4 py-1.5"><div class="text-[12.5px] font-semibold text-gray-900">LEMON YELLOW</div></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td></tr>
+                  <tr class="border-b border-gray-50 hover:bg-gray-50/40"><td class="px-4 py-1.5"><div class="text-[12.5px] font-semibold text-gray-900">SKY BLUE</div></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td></tr>
+                  <tr class="border-b border-gray-50 hover:bg-gray-50/40"><td class="px-4 py-1.5"><div class="text-[12.5px] font-semibold text-gray-900">TERRACOTTA</div></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td></tr>
+                  <tr class="border-b border-gray-50 hover:bg-gray-50/40"><td class="px-4 py-1.5"><div class="text-[12.5px] font-semibold text-gray-900">OFF WHITE</div></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td></tr>
+                  <tr class="border-b border-gray-50 hover:bg-gray-50/40"><td class="px-4 py-1.5"><div class="text-[12.5px] font-semibold text-gray-900">PEARL GREY</div></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td></tr>
+                  <tr class="border-b border-gray-50 hover:bg-gray-50/40"><td class="px-4 py-1.5"><div class="text-[12.5px] font-semibold text-gray-900">BUFF</div></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td></tr>
+                  <tr class="hover:bg-gray-50/40"><td class="px-4 py-1.5"><div class="text-[12.5px] font-semibold text-gray-900">CHOCOLATE</div></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td><td class="text-center"><span class="qty-cell-A empty">·</span></td></tr>
+                </tbody>
+              </table>
+
+              <!-- Pagination footer -->
+              <div class="px-4 py-2 bg-teal-50/40 border-t border-teal-100 flex items-center gap-3 text-[10.5px]">
+                <span class="text-gray-500"><kbd class="mono px-1 bg-white border border-gray-200 rounded text-[9px]">PgDn</kbd> / <kbd class="mono px-1 bg-white border border-gray-200 rounded text-[9px]">PgUp</kbd> flip page</span>
+                <span class="text-gray-300">·</span>
+                <span class="text-gray-500"><kbd class="mono px-1 bg-white border border-gray-200 rounded text-[9px]">↓↑←→</kbd> nav</span>
+                <span class="text-gray-300">·</span>
+                <span class="text-gray-500"><kbd class="mono px-1 bg-white border border-gray-200 rounded text-[9px]">0-9</kbd> qty</span>
+                <span class="ml-auto text-teal-700 font-medium">Showing bases 1–13 of 38 · Page 1 of 3</span>
+              </div>
+            </div>
+
+            <div class="mt-4 grid grid-cols-3 gap-3">
+              <div class="bg-white border border-gray-200 rounded-lg p-3">
+                <div class="text-[10px] font-semibold uppercase text-teal-700 mb-1">Page 1</div>
+                <div class="text-[11px] text-gray-600 leading-snug">Bases 1–13 · Most-popular running items (Brilliant White, Black, Signal Red, Ivory, Sea Green…)</div>
+              </div>
+              <div class="bg-white border border-gray-200 rounded-lg p-3">
+                <div class="text-[10px] font-semibold uppercase text-gray-500 mb-1">Page 2</div>
+                <div class="text-[11px] text-gray-600 leading-snug">Bases 14–26 · Mid-tier (Maroon, Brown, Cobalt Blue, Mid Buff, Emerald Green…)</div>
+              </div>
+              <div class="bg-white border border-gray-200 rounded-lg p-3">
+                <div class="text-[10px] font-semibold uppercase text-gray-500 mb-1">Page 3</div>
+                <div class="text-[11px] text-gray-600 leading-snug">Bases 27–38 · Slow-movers (Mauve, Magenta, Lavender, Aluminium, Bottle Green…)</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Comparison notes -->
+    <div class="bg-amber-50 border border-amber-200 rounded-xl p-5">
+      <div class="text-[12px] font-semibold uppercase tracking-wider text-amber-700 mb-3">Comparison · pros / cons</div>
+      <div class="grid grid-cols-2 gap-6 text-[12px] text-gray-700">
+        <div>
+          <div class="font-bold text-gray-900 mb-1">Variant A — Collapsed speed dial</div>
+          <ul class="space-y-1 leading-snug">
+            <li>✔ Cells stay readable (56×36px, font 13.5px)</li>
+            <li>✔ ~14-16 bases fit at full cell size</li>
+            <li>✔ Speed dial as breadcrumb keeps context</li>
+            <li>✖ Mode switch: full grid ↔ breadcrumb (extra state)</li>
+            <li>✖ Less product browse-ability when sub-product is open</li>
+          </ul>
+        </div>
+        <div>
+          <div class="font-bold text-gray-900 mb-1">Variant B — Full speed dial, compact cells</div>
+          <ul class="space-y-1 leading-snug">
+            <li>✔ Speed dial always visible (no mode switch)</li>
+            <li>✔ Operator can browse families while qty-entering</li>
+            <li>✖ Cells smaller (52×28px, font 12.5px) — harder to read</li>
+            <li>✖ Mouse-click targets smaller (28px tall is the floor)</li>
+            <li>✖ Less padding = denser feel</li>
+          </ul>
+        </div>
+      </div>
+      <div class="mt-4 pt-4 border-t border-amber-200 text-[12px] text-gray-700">
+        <div class="font-bold text-gray-900 mb-1">Pagination (both variants, for GLOSS only)</div>
+        <ul class="space-y-1 leading-snug">
+          <li>● Page dots in card header show position (Page 1 of 3)</li>
+          <li>● <kbd class="mono px-1 bg-white border border-gray-200 rounded text-[10px]">PgDn</kbd> / <kbd class="mono px-1 bg-white border border-gray-200 rounded text-[10px]">PgUp</kbd> flip pages (currently bound to sub-product nav in v4 — would need re-bind in two-page contexts, or use Shift+PgDn/PgUp)</li>
+          <li>● 13 bases per page · popular-first sort puts running items on Page 1</li>
+          <li>● Cart never moves, footer cue tells operator which page they're on</li>
+        </ul>
+      </div>
+    </div>
+
+  </div>
+
+</body>
+</html>
