@@ -31,7 +31,7 @@ const PAGE_NAV_MAP: NavItemConfig[] = [
   { pageKey: "skus",          label: "SKUs",           href: "/admin/skus" },
   { pageKey: "routes_areas",  label: "Routes",         href: "/admin/routes" },
   { pageKey: "vehicles",      label: "Vehicles",        href: "/admin/vehicles" },
-  { pageKey: "place_order",        label: "Place Order",       href: "/place-order" },
+  { pageKey: "place_order",        label: "Purchase Order (PO)", href: "/place-order" },
   { pageKey: "mail_orders",        label: "Mail Orders",       href: "/mail-orders" },
   { pageKey: "delivery_challans",  label: "Delivery Challans", href: "/tint/manager/challan" },
   { pageKey: "shade_master",       label: "Shade Master",      href: "/tint/manager/shades" },

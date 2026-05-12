@@ -596,7 +596,7 @@ export default function PlaceOrderPage(): React.JSX.Element {
             <circle cx="18" cy="11" r="2" fill="white" />
           </svg>
         </div>
-        <span className="text-[14px] font-semibold text-gray-900">Place Order</span>
+        <span className="text-[14px] font-semibold text-gray-900">Purchase Order (PO)</span>
         {/* min-w-0 lets the pill's `truncate` actually clip; NO overflow-hidden here — that would clip the absolute-positioned dropdown when typing a customer query. */}
         <div className="flex-1 max-w-[420px] mx-4 min-w-0">
           <CustomerSearch
