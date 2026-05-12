@@ -599,7 +599,7 @@ Sign-off: "Billing Team" (not Desk/Department). Phone hardcoded `+91 7435065023`
 - Variant grid card never scrolls internally.
 - Cell sizing: **56×36px** (was 72×44px in v4), `rounded-[5px]`, font 13.5px/600. NA cell uses em-dash at the same dimensions.
 - Base name cell: `px-4 py-1.5`, font 12.5px/600. Base column locked to 160px fixed width; pack columns flow via `table-layout:fixed` with empty `<col />` for even distribution.
-- Pack header: title 11.5px/600 + sub-line 9px mono gray-400 ("box of N"); `px-1 py-2`.
+- Pack header: title 11.5px/600 + suffix 10.5px mono gray-400 from `packContainerLabel()` — `"box 12"` / `"box 6"` / `"box 4"` for cartonable packs, `"drum"` for 10L/20L/30L, `"bag"` for 40KG, no suffix for unknown packs (separator dot also suppressed). Decoupled from `packStep` (math vs. UI text are independent concerns).
 - Row stride ≈ 40px (cell 36 + row padding 4).
 - Card header (panel): `px-4 py-2.5`, title 14px/bold, monogram 28×28px (10.5px font). Meta line 10.5px gray-400.
 - Hint footer: `px-4 py-1.5`, 10px text. Replaced by **PaginationFooter** when paginated: `bg-teal-50/40 border-t border-teal-100`, includes `Shift+PgDn / Shift+PgUp` kbd glyph, right-aligned "Showing bases X–Y of Z · Page N of M" in teal-700 weight 500.
@@ -624,6 +624,14 @@ Renders only when `bases.length > 15`. Page size = 13.
 
 RecentlyUsed and LastOrderRecall are hidden when `activeState.kind !== 'idle'`. BrowseAllFamilies stays visible (collapsed `<details>` summary has negligible idle height).
 
+### Cell + cart units semantics (post 2026-05-12 flip)
+
+- **Cell** shows only the unit number — no in-cell `"N box"` hint. Cell remains 56×32px (wrapper `relative w-[56px] h-[32px] mx-auto group`; input fills via `absolute inset-0 w-full h-full`).
+- **Cart panel chip** carries the box translation: `×N · M box` format when `units > 0` AND `step > 1` AND `units % step === 0`. Primary `×N` span: `font-mono font-semibold text-gray-700`. Secondary `· M box` span: `font-normal text-gray-400 ml-1`. Otherwise just `×N` (non-clean multiple or step=1 drum/bag).
+- **Pack column header** uses `packContainerLabel()` for the suffix (see pack header bullet above).
+- **+/− cell buttons** stack vertically on the right edge: shared `right-[1px] w-[16px] h-[14px] rounded-[2px] text-[11px] leading-none text-gray-400 hover:text-gray-700 hover:bg-gray-100 z-[3]`. `+` at `top-[1px]`, `−` at `bottom-[1px]`. Visibility: `opacity-0 group-hover:opacity-100 [.group:focus-within_&]:opacity-100` (arbitrary-variant fallback for Tailwind <3.2). Neutral grey — no teal (one-teal-element rule preserved). `onMouseDown preventDefault` retains input focus on click; `tabIndex={-1}` excludes the buttons from the Tab cycle.
+- **Volume total** in cart panel is `Σ units × packToLitres(pack)` — the pre-flip code's `× packStep` factor was removed (it was the boxes→units multiplier).
+
 ---
 
-*UI v5.2 · No-scroll grid · Pagination · Compact speed dial · Fixed table standard · Review View · Challan B&W · Tint Operator v4 · Signal badges · April 2026*
+*UI v5.3 · Units semantics for /place-order · No-scroll grid · Pagination · Compact speed dial · Fixed table standard · Review View · Challan B&W · Tint Operator v4 · Signal badges · May 2026*

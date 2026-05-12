@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef } from "react";
 import type { Product } from "../types";
-import { formatPack, packStep, sortPacks } from "@/lib/place-order/pack";
+import { formatPack, packContainerLabel, packStep, sortPacks } from "@/lib/place-order/pack";
 import VariantCell, { type CellNavDirection, type VariantCellHandle } from "./variant-cell";
 
 // Base × pack qty matrix. `products` is one row per baseColour for the
@@ -185,11 +185,16 @@ export default function VariantGrid({
             Base · Colour
           </th>
           {packs.map((pack) => {
-            const label = formatPack(pack);
-            const step  = packStep(label);
+            const label     = formatPack(pack);
+            const container = packContainerLabel(label);
             return (
               <th key={pack} className="text-center px-1 py-1.5">
-                <div className="text-[10.5px] font-semibold text-gray-700">{label} · <span className="font-mono text-gray-400">box {step}</span></div>
+                <div className="text-[10.5px] font-semibold text-gray-700">
+                  {label}
+                  {container !== null && (
+                    <> · <span className="font-mono text-gray-400">{container}</span></>
+                  )}
+                </div>
               </th>
             );
           })}
@@ -208,10 +213,11 @@ export default function VariantGrid({
                 <div className="text-[12px] font-semibold text-gray-900">{baseLabel}</div>
               </td>
               {packs.map((pack, colIdx) => {
-                const cell = cellMatrix[rowIdx][colIdx];
-                const qty  = cell.available
+                const cell    = cellMatrix[rowIdx][colIdx];
+                const qty     = cell.available
                   ? qtyAt(product.subProduct, product.baseColour ?? null, pack)
                   : 0;
+                const boxSize = packStep(formatPack(pack));
                 return (
                   <td key={pack} className="text-center">
                     <VariantCell
@@ -220,6 +226,7 @@ export default function VariantGrid({
                         cellRefs.current[rowIdx][colIdx] = handle;
                       }}
                       qty={qty}
+                      boxSize={boxSize}
                       isAvailable={cell.available}
                       rowIdx={rowIdx}
                       colIdx={colIdx}
@@ -328,6 +335,13 @@ export function PaginationFooter({
       <span className="text-gray-500">
         <kbd className={kbd}>↓↑←→</kbd>
         {" "}nav
+      </span>
+      <span className="text-gray-300">·</span>
+      <span className="text-gray-500">
+        <kbd className={kbd}>+</kbd>
+        <span className="mx-0.5">/</span>
+        <kbd className={kbd}>−</kbd>
+        {" "}box
       </span>
       <span className="text-gray-300">·</span>
       <span className="text-gray-500">

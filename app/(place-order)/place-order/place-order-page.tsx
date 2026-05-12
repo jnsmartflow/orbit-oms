@@ -430,7 +430,7 @@ export default function PlaceOrderPage(): React.JSX.Element {
         console.warn(`[place-order-page] repeat-order entry not in catalog: ${entry.productName} / ${entry.baseColour ?? "null"}`);
         continue;
       }
-      setQty(matching, entry.packCode, entry.boxes);
+      setQty(matching, entry.packCode, entry.units);
     }
   }
 

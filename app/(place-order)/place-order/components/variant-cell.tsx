@@ -14,9 +14,9 @@ import { forwardRef, useImperativeHandle, useRef } from "react";
 //   ←/→/↑/↓   → onCellNav("left"/"right"/"up"/"down")
 //   Enter     → onCellNav("enter") — moves down one row
 //   Tab/S+Tab → native (DOM order; NA cells are non-focusable divs)
-//   0–9       → typed natively into the input (overwrites since onFocus selects)
-//   +         → increment qty by 1
-//   -         → decrement qty by 1 (floor 0)
+//   0–9       → typed natively into the input (UNITS — 2026-05-12 flip)
+//   +  or  =  → add one box worth of units (qty + boxSize)
+//   -  or  _  → subtract one box (Math.max(0, qty - boxSize))
 //   Backspace → native (clears input value → onChange → setQty(0))
 //   Esc / *   → onClose (close panel, return to grid)
 //
@@ -26,6 +26,13 @@ export type CellNavDirection = "up" | "down" | "left" | "right" | "enter";
 
 interface VariantCellProps {
   qty:              number;
+  // Units per box for this pack column (packStep(formatPack(pack))).
+  // Drives the +/- keyboard handlers (qty ± boxSize) and the hover/focus
+  // +/− buttons stacked on the left edge of the cell. Pass packStep(
+  // formatPack(pack)) from the grid. For step=1 packs (drums, bag) the
+  // +/- still works — increments by 1 — so the operator can dial in
+  // single-unit qtys without losing the box-shortcut habit.
+  boxSize:          number;
   isAvailable:      boolean;
   rowIdx:           number;
   colIdx:           number;
@@ -49,7 +56,7 @@ export interface VariantCellHandle {
 }
 
 const VariantCell = forwardRef<VariantCellHandle, VariantCellProps>(function VariantCell(
-  { qty, isAvailable, rowIdx, colIdx, onSetQty, onCellNav, onClose, onNextSubProduct, onPrevSubProduct, onPageChange },
+  { qty, boxSize, isAvailable, rowIdx, colIdx, onSetQty, onCellNav, onClose, onNextSubProduct, onPrevSubProduct, onPageChange },
   ref,
 ) {
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -97,8 +104,12 @@ const VariantCell = forwardRef<VariantCellHandle, VariantCellProps>(function Var
       onPageChange?.(-1);
       return;
     }
-    if (e.key === "+")          { e.preventDefault(); onSetQty(qty + 1); return; }
-    if (e.key === "-")          { e.preventDefault(); onSetQty(Math.max(0, qty - 1)); return; }
+    // Box-step shortcut: "+" / "=" add one box worth of units; "-" / "_"
+    // subtract one box (floor 0). "=" is the unshifted variant of "+";
+    // "_" is the shifted variant of "-" — both pairs share keycaps, so
+    // accept either. Native key-repeat handles "hold to repeat" naturally.
+    if (e.key === "+" || e.key === "=") { e.preventDefault(); onSetQty(qty + boxSize); return; }
+    if (e.key === "-" || e.key === "_") { e.preventDefault(); onSetQty(Math.max(0, qty - boxSize)); return; }
     if (e.key === "Escape" || e.key === "*") {
       // The cell legitimately owns Esc while focused. Stop both the
       // React-synthetic and native propagation so the window-level
@@ -115,30 +126,68 @@ const VariantCell = forwardRef<VariantCellHandle, VariantCellProps>(function Var
     // Backspace / Delete / digits / Tab → native input handling.
   }
 
+  // Box-step shortcut buttons stacked on the RIGHT edge of the cell
+  // (matches numeric-stepper convention; the "N box" hint that originally
+  // occupied this corner was removed in Phase 3.4-fix-1, freeing the
+  // right edge). Visible on hover or when the cell's input has focus.
+  // Neutral gray, no teal — preserves the "one teal element" UI rule.
+  //
+  // Focus visibility uses the arbitrary-variant
+  // [.group:focus-within_&] instead of group-focus-within: — the latter
+  // didn't trigger reliably in browser test (Tailwind <3.2 fallback).
+  //
+  // onMouseDown preventDefault keeps focus on the input when clicked.
+  // tabIndex={-1} excludes the buttons from the Tab cycle.
+  const stepUp   = (): void => { onSetQty(qty + boxSize); };
+  const stepDown = (): void => { onSetQty(Math.max(0, qty - boxSize)); };
+  const btnClass =
+    "absolute right-[1px] w-[16px] h-[14px] rounded-[2px] text-[11px] leading-none "
+    + "text-gray-400 hover:text-gray-700 hover:bg-gray-100 "
+    + "opacity-0 group-hover:opacity-100 [.group:focus-within_&]:opacity-100 "
+    + "transition-opacity duration-75 flex items-center justify-center z-[3]";
+
   return (
-    <input
-      ref={inputRef}
-      type="text"
-      inputMode="numeric"
-      pattern="[0-9]*"
-      data-place-order-input="cell"
-      value={isActive ? String(qty) : ""}
-      placeholder="·"
-      onChange={(e) => {
-        const raw = e.target.value.replace(/\D/g, "");
-        const n   = raw === "" ? 0 : parseInt(raw, 10);
-        onSetQty(Number.isFinite(n) && n >= 0 ? n : 0);
-      }}
-      onFocus={(e) => e.target.select()}
-      onKeyDown={handleKeyDown}
-      className={`w-[56px] h-[32px] mx-auto rounded-[4px] text-center text-[13px] font-semibold border-0 outline-none transition-all duration-75
-        placeholder:text-[20px] placeholder:text-gray-300 placeholder:font-normal
-        focus:bg-white focus:text-gray-900 focus:relative focus:z-[2] focus:shadow-[inset_0_0_0_2px_#0d9488,0_0_0_4px_rgba(20,184,166,0.18)]
-        ${isActive
-          ? "bg-teal-50 text-teal-700 hover:bg-teal-100"
-          : "bg-[#fafbfc] text-transparent caret-gray-400 hover:bg-[#f3f4f6]"
-        }`}
-    />
+    <div className="relative w-[56px] h-[32px] mx-auto group">
+      <input
+        ref={inputRef}
+        type="text"
+        inputMode="numeric"
+        pattern="[0-9]*"
+        data-place-order-input="cell"
+        value={isActive ? String(qty) : ""}
+        placeholder="·"
+        onChange={(e) => {
+          const raw = e.target.value.replace(/\D/g, "");
+          const n   = raw === "" ? 0 : parseInt(raw, 10);
+          onSetQty(Number.isFinite(n) && n >= 0 ? n : 0);
+        }}
+        onFocus={(e) => e.target.select()}
+        onKeyDown={handleKeyDown}
+        className={`absolute inset-0 w-full h-full rounded-[4px] text-center text-[13px] font-semibold border-0 outline-none transition-all duration-75
+          placeholder:text-[20px] placeholder:text-gray-300 placeholder:font-normal
+          focus:bg-white focus:text-gray-900 focus:z-[2] focus:shadow-[inset_0_0_0_2px_#0d9488,0_0_0_4px_rgba(20,184,166,0.18)]
+          ${isActive
+            ? "bg-teal-50 text-teal-700 hover:bg-teal-100"
+            : "bg-[#fafbfc] text-transparent caret-gray-400 hover:bg-[#f3f4f6]"
+          }`}
+      />
+      <button
+        type="button"
+        tabIndex={-1}
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={stepUp}
+        aria-label="Increment by 1 box"
+        className={`${btnClass} top-[1px]`}
+      >+</button>
+      <button
+        type="button"
+        tabIndex={-1}
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={stepDown}
+        aria-label="Decrement by 1 box"
+        className={`${btnClass} bottom-[1px]`}
+      >−</button>
+    </div>
   );
 });
 

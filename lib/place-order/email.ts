@@ -4,27 +4,28 @@
 // PowerShell parser (Parse-MailOrders-v6_5.ps1) accepts both. The parser
 // was trained on the mobile body format.
 //
-// Cell qty on /place-order represents BOXES (per locked decision in the
-// project memory note `place_order_cell_vs_email_units.md`). The mobile
-// page's qty already represents UNITS. Both pages must emit the email body
-// in UNITS, so this builder multiplies cell qty × packStep(label) at
-// emission time. Mobile is unchanged.
+// Cell qty on /place-order represents UNITS (2026-05-12 flip — supersedes
+// the prior boxes-semantics decision in memory note
+// `place_order_cell_vs_email_units.md`). Mobile already emits units. Both
+// pages now store + emit units universally, so this builder is a no-op
+// pass-through: `packQtys` values land in the body verbatim. The +/- keys
+// in the variant cell are what move qty in box-step multiples.
 //
 //   Cell column          Cell qty     Email emits
 //   ─────────────────────────────────────────────────
-//   1L  (box of 6)       6            1L*36
-//   4L  (box of 4)       4            4L*16
+//   1L  (box of 6)       36           1L*36
+//   4L  (box of 4)       16           4L*16
 //   20L (box of 1)       1            20L*1
-//   200ML (box of 12)    12           200ML*144
+//   200ML (box of 12)    144          200ML*144
 
-import { formatPack, packStep, sortPacks } from "./pack";
+import { formatPack, sortPacks } from "./pack";
 
 export type EmailCustomer = { name: string; code: string };
 
 export type EmailLine = {
   subProduct:  string;
   baseColour:  string | null;
-  packQtys:    Record<string, number>;   // pack-code (raw, e.g. "1") → qty in BOXES
+  packQtys:    Record<string, number>;   // pack-code (raw, e.g. "1") → qty in UNITS
 };
 
 export type EmailDispatch = "Normal" | "Hold" | "Urgent";
@@ -74,8 +75,7 @@ export function buildEmail(input: EmailInput): EmailOutput {
       if (sortedKeys.length === 0) continue;     // line had only zero qtys
       const packStr = sortedKeys.map((k) => {
         const label = formatPack(k);
-        const boxes = line.packQtys[k] ?? 0;
-        const units = boxes * packStep(label);   // BOXES → UNITS
+        const units = line.packQtys[k] ?? 0;
         return `${label}*${units}`;
       }).join(", ");
       const productText = line.baseColour

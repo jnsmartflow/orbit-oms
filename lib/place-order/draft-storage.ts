@@ -12,8 +12,15 @@
 import type { Bill, Customer } from "@/app/(place-order)/place-order/types";
 import type { EmailDispatch, EmailMarker } from "./email";
 
-const STORAGE_KEY = "orbitoms_place_order_draft_v1";
+const STORAGE_KEY = "orbitoms_place_order_draft_v2";
 const TTL_MS      = 24 * 60 * 60 * 1000;
+
+// One-shot cleanup of the v1 key (2026-05-12 flip — packQtys interpretation
+// changed boxes → units, so v1 entries are misleading rather than
+// migratable). removeItem is a no-op after the first run on each browser.
+if (typeof window !== "undefined") {
+  window.localStorage.removeItem("orbitoms_place_order_draft_v1");
+}
 
 export interface DraftSnapshot {
   bills:        Bill[];

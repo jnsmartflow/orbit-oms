@@ -63,13 +63,13 @@ const GROUPS: Group[] = [
   {
     title: "Variant cell (focused)",
     rows: [
-      { keys: ["0", "…", "9"],      desc: "Type qty (boxes)" },
+      { keys: ["0", "…", "9"],      desc: "Type qty (units)" },
       { keys: ["←", "→", "↑", "↓"], desc: "Navigate cells (skips NA)" },
       { keys: ["Tab", "Shift+Tab"], desc: "Next / previous cell" },
       { keys: ["PageDown", "PageUp"], desc: "Next / previous sub-product tab (no need to leave the grid)" },
       { keys: ["Enter"],            desc: "Move down one row, same pack" },
-      { keys: ["+"],                desc: "Increment by 1 box" },
-      { keys: ["−"],                desc: "Decrement by 1 box (floor 0)" },
+      { keys: ["+", "="],           desc: "Add one box (12 / 6 / 4 / 1 units, per pack)" },
+      { keys: ["−", "_"],           desc: "Subtract one box (floor 0)" },
       { keys: ["Backspace"],        desc: "Clear cell" },
       { keys: ["Esc"],              desc: "Back to page body (then 1-9 for speed dial · / for search)" },
     ],

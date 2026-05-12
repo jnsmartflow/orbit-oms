@@ -60,14 +60,17 @@ export default function CartPanel({
   const activeLines: CartLine[] = activeBill?.lines ?? [];
 
   // Total volume across ALL bills (order-wide, not just active).
+  // Post-2026-05-12 flip: packQtys values are UNITS, so the volume
+  // calculation is units × litres-per-unit directly (no × packStep
+  // factor — that was the boxes→units multiplier in the pre-flip code).
   const totalLitres = useMemo<number>(() => {
     let sum = 0;
     for (const bill of bills) {
       for (const line of bill.lines) {
         for (const pack of Object.keys(line.packQtys)) {
-          const qty = line.packQtys[pack] ?? 0;
-          if (qty <= 0) continue;
-          sum += qty * packStep(formatPack(pack)) * packToLitres(pack);
+          const units = line.packQtys[pack] ?? 0;
+          if (units <= 0) continue;
+          sum += units * packToLitres(pack);
         }
       }
     }
@@ -167,7 +170,9 @@ export default function CartPanel({
                     return sortPacks(
                       Object.keys(line.packQtys).filter((p) => (line.packQtys[p] ?? 0) > 0),
                     ).map((pack) => {
-                      const boxes = line.packQtys[pack] ?? 0;
+                      const units   = line.packQtys[pack] ?? 0;
+                      const step    = packStep(formatPack(pack));
+                      const isClean = step > 1 && units > 0 && units % step === 0;
                       return (
                         <div
                           key={`${lineKey(line.subProduct, line.baseColour)}|${pack}`}
@@ -179,8 +184,13 @@ export default function CartPanel({
                             {baseLabel} · {formatPack(pack)}
                           </span>
                           <div className="flex items-center gap-2">
-                            <span className="font-mono font-semibold text-gray-900">
-                              ×{boxes}
+                            <span className="font-mono font-semibold text-gray-700">
+                              ×{units}
+                              {isClean && (
+                                <span className="font-normal text-gray-400 ml-1">
+                                  · {units / step} box
+                                </span>
+                              )}
                             </span>
                             <button
                               type="button"

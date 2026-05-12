@@ -44,7 +44,7 @@ const PACK_STEP_MAP: Record<string, number> = {
   "500ML": 12,
   "1L":    6,
   "4L":    4,
-  "10L":   2,
+  "10L":   1,   // 2026-05-12 — 10L is a drum at this depot, no box
   "20L":   1,
   "30L":   1,
   "40KG":  1,
@@ -52,4 +52,29 @@ const PACK_STEP_MAP: Record<string, number> = {
 
 export function packStep(packLabel: string): number {
   return PACK_STEP_MAP[packLabel] ?? 1;
+}
+
+// Display-only container label for the variant grid column header.
+// Intentionally decoupled from PACK_STEP_MAP — packStep is math (boxes
+// → units multiplier), this is UI text. A future pack could have
+// step=1 without being a drum (e.g. a loose can), or step>1 without
+// being a "box" (carton vs. tray). Keep the two lookups independent.
+//
+// Returns null when the pack isn't in the map; the caller hides the
+// suffix in that case (header renders just the pack label).
+const PACK_CONTAINER_MAP: Record<string, string> = {
+  "50ML":  "box 12",
+  "100ML": "box 12",
+  "200ML": "box 12",
+  "500ML": "box 12",
+  "1L":    "box 6",
+  "4L":    "box 4",
+  "10L":   "drum",
+  "20L":   "drum",
+  "30L":   "drum",
+  "40KG":  "bag",
+};
+
+export function packContainerLabel(packLabel: string): string | null {
+  return PACK_CONTAINER_MAP[packLabel] ?? null;
 }

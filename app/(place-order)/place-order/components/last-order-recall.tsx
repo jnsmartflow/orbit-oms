@@ -1,16 +1,19 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { formatPack, packStep, packToLitres } from "@/lib/place-order/pack";
+import { formatPack, packToLitres } from "@/lib/place-order/pack";
 
 // Last-order recall card. Fetches /api/place-order/last-order/[code] on
 // customer change and renders a comma-separated summary of the recent
 // order's matched lines, with a Repeat-order button that bulk-applies
-// boxified entries via the page-level handler.
+// units-keyed entries via the page-level handler.
 //
-// Boxes/units conversion uses lib/place-order/pack.ts → packStep(label)
-// (units per box). When isCarton=true, cartonCount is already in boxes
-// from the parser — use it directly.
+// Post-2026-05-12 flip: parser-emitted `quantity` is already UNITS, and
+// /place-order's cart now stores UNITS too, so this card passes units
+// straight through to setQty (no units→boxes→units round-trip). Lines
+// that previously rounded to 0 boxes (e.g. 7 units of 50ML when step=12)
+// will now appear in the recall list — honest representation per
+// 2026-05-12 design Q2 resolution.
 //
 // Empty / error states preserve the card placement so the page layout
 // doesn't shift on customer-change (decision J Stage 2).
@@ -31,7 +34,7 @@ export type RepeatOrderEntry = {
   productName: string;
   baseColour:  string | null;
   packCode:    string;
-  boxes:       number;
+  units:       number;
 };
 
 type ApiLastOrder = {
@@ -56,13 +59,6 @@ export interface LastOrderRecallProps {
 
 const SUMMARY_MAX_LINES = 6;
 
-function unitsToBoxes(line: RecallLine, packLabel: string): number {
-  if (line.isCarton && line.cartonCount != null) return line.cartonCount;
-  const step = packStep(packLabel);
-  if (step <= 0) return line.quantity;
-  return Math.round(line.quantity / step);
-}
-
 function dayLabel(receivedAt: string): string {
   const days = Math.floor((Date.now() - new Date(receivedAt).getTime()) / 86_400_000);
   if (days <= 0) return "today";
@@ -77,17 +73,13 @@ function isMatchable(l: RecallLine): l is RecallLine & { productName: string; pa
 function buildEntries(lines: RecallLine[]): RepeatOrderEntry[] {
   return lines
     .filter(isMatchable)
-    .map((l) => {
-      const packLabel = formatPack(l.packCode);
-      const boxes     = unitsToBoxes(l, packLabel);
-      return {
-        productName: l.productName,
-        baseColour:  l.baseColour,
-        packCode:    l.packCode,
-        boxes,
-      };
-    })
-    .filter((e) => e.boxes > 0);
+    .map((l) => ({
+      productName: l.productName,
+      baseColour:  l.baseColour,
+      packCode:    l.packCode,
+      units:       l.quantity,
+    }))
+    .filter((e) => e.units > 0);
 }
 
 function buildSummary(lines: RecallLine[]): string {
@@ -95,15 +87,15 @@ function buildSummary(lines: RecallLine[]): string {
     .filter(isMatchable)
     .map((l) => {
       const packLabel = formatPack(l.packCode);
-      const boxes     = unitsToBoxes(l, packLabel);
+      const units     = l.quantity;
       const baseDisp  = l.baseColour ?? "Plain";
       return {
         productName: l.productName,
-        itemText:    `${baseDisp} ${packLabel} ×${boxes}`,
-        boxes,
+        itemText:    `${baseDisp} ${packLabel} ×${units}`,
+        units,
       };
     })
-    .filter((e) => e.boxes > 0);
+    .filter((e) => e.units > 0);
 
   const shown     = flat.slice(0, SUMMARY_MAX_LINES);
   const truncated = flat.length > SUMMARY_MAX_LINES;

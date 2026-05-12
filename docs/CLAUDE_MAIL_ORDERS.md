@@ -610,9 +610,11 @@ Pagination state lives in the parent panel (sub-product-direct.tsx / family-nav-
 | Page body | / | Focus search bar |
 | Page body | ? | Toggle help overlay |
 | Page body | Esc | Close active panel |
-| Variant cell | 0-9 | Qty input |
+| Variant cell | 0-9 | Qty input (UNITS — post 2026-05-12 flip) |
 | Variant cell | Tab / Shift+Tab | Pack column nav |
 | Variant cell | ←→↑↓ | Cell-to-cell nav |
+| Variant cell | **+ or =** | **Add one box worth of units (qty + boxSize)** |
+| Variant cell | **− or _** | **Subtract one box (floor 0)** |
 | Variant cell | PageDown / PageUp | Next / prev sub-product |
 | Variant cell | **Shift+PageDown / Shift+PageUp** | **Page next / prev (paginated sub-products only)** |
 | Variant cell | Esc | Back to page body (panel closes, tile de-highlights) |
@@ -625,9 +627,13 @@ Search emits three result types:
 - **sub-product** — opens SubProductDirect, focuses first base's first cell
 - **sub-product-base** — opens SubProductDirect with `focusHint = { base }`; variant-grid's auto-focus effect targets the matched base row. For paginated sub-products, a panel-level effect flips the page BEFORE slicing so the target cell lands in the visible slice.
 
+### Cart semantics (post 2026-05-12 flip)
+
+`CartLine.packQtys` values are **UNITS** (was BOXES pre-2026-05-12). The cell types units directly; the `+` / `=` keys (and the right-edge hover/focus buttons) add `boxSize` per press, where `boxSize = packStep(formatPack(pack))`. `−` / `_` subtract `boxSize` (floor 0). Pack column header uses `packContainerLabel()` for the suffix: `"box 12"` / `"box 6"` / `"box 4"` for cartonable packs, `"drum"` for 10L/20L/30L, `"bag"` for 40KG, no suffix for unknown packs. Cart panel chip carries the box translation as a secondary span: `×N · M box` when `units > 0` AND `step > 1` AND `units % step === 0`; `×N` only otherwise. Cell never shows a `"N box"` hint — the chip is the single location for that information.
+
 ### Mailto byte-identical guarantee
 
-`lib/place-order/email.ts` and `lib/place-order/pack.ts` are zero-diff from pre-v4 baseline (commit 05ef5aae). Page-level conversion strips CartLine to `{subProduct, baseColour, packQtys}` only (the 3 fields email.ts uses). No CartLine additions (e.g. touchedAt) leak into the EmailLine path.
+`lib/place-order/email.ts` is a **no-op pass-through** post-flip — `packQtys` values are already units and emit verbatim into the body. Output is byte-identical to the pre-flip emission for clean-multiple orders. Page-level conversion strips CartLine to `{subProduct, baseColour, packQtys}` only (the 3 fields email.ts uses). No CartLine additions (e.g. touchedAt) leak into the EmailLine path. The catalog-only `"drum"` / `"bag"` header wording never appears in the email body — only the pack label + `*units` syntax.
 
 ---
 

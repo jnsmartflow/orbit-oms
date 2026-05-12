@@ -201,6 +201,13 @@ export default function FamilyNavWithTabs({
           </span>
           <span className="text-gray-300">·</span>
           <span>
+            <kbd className={KBD_CLASS}>+</kbd>
+            <span className="mx-0.5">/</span>
+            <kbd className={KBD_CLASS}>−</kbd>
+            {" "}box
+          </span>
+          <span className="text-gray-300">·</span>
+          <span>
             <kbd className={KBD_CLASS}>0</kbd>
             <span className="mx-0.5">–</span>
             <kbd className={KBD_CLASS}>9</kbd>

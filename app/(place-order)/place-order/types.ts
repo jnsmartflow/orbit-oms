@@ -20,9 +20,12 @@ export type Product = {
 };
 
 // Cart shape — used by page state, cart panel, draft persistence, and email
-// build. CartLine.packQtys values are BOXES (per locked decision in memory
-// note place_order_cell_vs_email_units.md); email build multiplies by
-// packStep at emission to convert boxes → units.
+// build. CartLine.packQtys values are UNITS (2026-05-12 flip — supersedes
+// the prior boxes-semantics decision in memory note
+// place_order_cell_vs_email_units.md). Email build is a no-op pass-through;
+// the +/- keys in the variant cell move qty in box-step multiples
+// (boxSize × units per "+"/"−" press) so the operator still thinks in boxes
+// while the stored number is always units.
 export type CartLine = {
   family:      string;
   subProduct:  string;
