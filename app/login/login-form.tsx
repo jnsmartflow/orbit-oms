@@ -44,13 +44,13 @@ export function LoginForm() {
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="space-y-1.5">
         <label htmlFor="email" className="block text-[13px] font-medium text-gray-700">
-          Email
+          Email or Mobile Number
         </label>
         <input
           id="email"
-          type="email"
-          placeholder="you@orbitoms.com"
-          autoComplete="email"
+          type="text"
+          placeholder="Enter email or 10-digit mobile"
+          autoComplete="username"
           required
           value={email}
           onChange={(e) => setEmail(e.target.value)}

@@ -8,7 +8,7 @@ import { istDateString } from "@/lib/attendance/date";
 
 // ── Validation schema ──────────────────────────────────────────────────────────
 const loginSchema = z.object({
-  email: z.string().email(),
+  email: z.string().min(1),
   password: z.string().min(1),
 });
 
@@ -181,8 +181,13 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 
         const { email, password } = parsed.data;
 
-        const user = await prisma.users.findUnique({
-          where: { email },
+        const input = email.trim();
+        const isPhone = /^\d{10}$/.test(input);
+
+        const user = await prisma.users.findFirst({
+          where: isPhone
+            ? { phone: input }
+            : { email: input.toLowerCase() },
           include: {
             role: true,
             userRoles: { include: { role: true } },

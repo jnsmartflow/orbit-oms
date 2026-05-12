@@ -105,6 +105,7 @@ model role_permissions {
 model users {
   id                        Int                      @id @default(autoincrement())
   email                     String                   @unique
+  phone                     String?                  @unique
   password                  String
   name                      String
   roleId                    Int
