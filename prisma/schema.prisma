@@ -159,6 +159,11 @@ model users {
   attendanceRecordsCreated  attendance_records[]     @relation("AttendanceCreatedBy")
   attendanceSummaries       attendance_summary[]
   attendanceSettingsUpdated attendance_settings[]
+  // OT (overtime) approval back-relations
+  attendanceOtApprovals        attendance_records[]  @relation("AttendanceOtApprover")
+  attendanceOtGraceCounters    attendance_ot_grace[] @relation("AttendanceOtGraceUser")
+  attendanceOtAudits           attendance_ot_audit[] @relation("AttendanceOtAuditUser")
+  attendanceOtAuditsPerformed  attendance_ot_audit[] @relation("AttendanceOtAuditPerformer")
 }
 
 model status_master {
@@ -1307,10 +1312,22 @@ model attendance_records {
   hasNoPhoto             Boolean   @default(false)
   hasNoLocation          Boolean   @default(false)
   createdAt              DateTime  @default(now()) @db.Timestamptz(6)
+  // OT (overtime) approval fields
+  otClaimed              Boolean?
+  otClaimReason          String?
+  otTotalLessThan95      Boolean?
+  otApprovalStatus       String?
+  otMinutesCredited      Int?      @default(0)
+  otApprovedById         Int?
+  otApprovedBy           users?    @relation("AttendanceOtApprover", fields: [otApprovedById], references: [id], onDelete: SetNull)
+  otApprovedAt           DateTime? @db.Timestamptz(6)
+  otAdminNote            String?
+  otAudits               attendance_ot_audit[]
 
   @@index([userId, attendanceDate])
   @@index([attendanceDate])
   @@index([type, attendanceDate])
+  @@index([otApprovalStatus, attendanceDate])
 }
 
 model attendance_summary {
@@ -1329,6 +1346,9 @@ model attendance_summary {
   hasMissingCheckout   Boolean   @default(false)
   hasGeofenceViolation Boolean   @default(false)
   hasManualEntries     Boolean   @default(false)
+  // OT (overtime) day-level rollup
+  otMinutesCredited    Int       @default(0)
+  otApprovalState      String?
   updatedAt            DateTime  @updatedAt @db.Timestamptz(6)
 
   @@unique([userId, attendanceDate])
@@ -1356,9 +1376,49 @@ model attendance_settings {
   photoMaxWidthPx         Int      @default(640)
   photoJpegQuality        Int      @default(70)
   dpdpConsentVersion      String   @default("v1.0")
+  // OT (overtime) policy knobs
+  depotWorkingMinutes     Int      @default(570)
+  otTriggerTime           String   @default("19:00")
+  otMonthlyGraceLimit     Int      @default(3)
+  otPromptEnabled         Boolean  @default(true)
   updatedAt               DateTime @updatedAt @db.Timestamptz(6)
   updatedById             Int?
   updatedBy               users?   @relation(fields: [updatedById], references: [id])
 
   @@unique([scope, roleSlug])
+}
+
+// ─────────────────────────────────────────────
+// ATTENDANCE OT — grace counters + audit log
+// ─────────────────────────────────────────────
+
+model attendance_ot_grace {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  user      users    @relation("AttendanceOtGraceUser", fields: [userId], references: [id], onDelete: Cascade)
+  yearMonth String
+  flagCount Int      @default(0)
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @default(now()) @db.Timestamptz(6)
+
+  @@unique([userId, yearMonth])
+  @@index([yearMonth])
+}
+
+model attendance_ot_audit {
+  id            Int                @id @default(autoincrement())
+  recordId      Int
+  record        attendance_records @relation(fields: [recordId], references: [id], onDelete: Cascade)
+  userId        Int
+  user          users              @relation("AttendanceOtAuditUser", fields: [userId], references: [id], onDelete: Cascade)
+  action        String
+  performedById Int
+  performedBy   users              @relation("AttendanceOtAuditPerformer", fields: [performedById], references: [id], onDelete: Restrict)
+  performedAt   DateTime           @default(now()) @db.Timestamptz(6)
+  fromStatus    String?
+  toStatus      String?
+  note          String?
+
+  @@index([recordId])
+  @@index([userId, performedAt(sort: Desc)])
 }
