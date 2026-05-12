@@ -21,8 +21,8 @@ export const ROLES = {
 // back to /unauthorized at the call site if the role isn't in this map.
 export const ROLE_REDIRECTS: Record<string, string> = {
   admin: "/admin",
-  dispatcher: "/dispatcher",
-  support: "/support",
+  dispatcher: "/place-order",
+  support: "/place-order",
   tint_manager: "/tint/manager",
   tint_operator: "/tint/operator",
   operations: "/operations/support",
