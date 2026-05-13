@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import type { Bill, CartLine, Customer } from "../types";
-import { formatPack, packStep, packToLitres, sortPacks } from "@/lib/place-order/pack";
+import { formatPack, packStep, packToKg, packToLitres, parsePackKey, sortPacks } from "@/lib/place-order/pack";
 import type { EmailDispatch, EmailMarker } from "@/lib/place-order/email";
 
 // Cart panel — right pane (340px) per v4 mockup. Renders ONLY the active
@@ -27,7 +27,12 @@ interface CartPanelProps {
   onShipToChange:  (value: string) => void;
   onDispatchChange:(value: EmailDispatch) => void;
   onMarkerChange:  (value: EmailMarker) => void;
-  onRemovePack:    (subProduct: string, baseColour: string | null, pack: string) => void;
+  // Phase 3 (2026-05-13): productId is the first arg so the parent
+  // can resolve the exact catalog row even for filled families where
+  // multiple rows share (subProduct, baseColour). Pre-Phase-3 legacy
+  // cart lines pass undefined; the parent falls back to the legacy
+  // (subProduct, baseColour) lookup.
+  onRemovePack:    (productId: number | undefined, subProduct: string, baseColour: string | null, pack: string) => void;
   onConfirmSend:   () => void;
   canSend:         boolean;
   // Page-owned ref so Send Email button participates in the Tab cycle
@@ -35,12 +40,18 @@ interface CartPanelProps {
   sendButtonRef?:  React.RefObject<HTMLButtonElement>;
 }
 
-function lineKey(subProduct: string, baseColour: string | null): string {
+// Phase 3 (2026-05-13): productId is the canonical cart-line identity.
+// Falls back to (subProduct, baseColour) for pre-Phase-3 localStorage
+// drafts that pre-date the cutover — those lines never match the flash
+// keys (which are productId-only) so they just don't flash, which is
+// fine for legacy carts.
+function lineKey(productId: number | undefined, subProduct: string, baseColour: string | null): string {
+  if (productId !== undefined) return `id:${productId}`;
   return `${subProduct}|||${baseColour ?? ""}`;
 }
 
-function billLineKey(billId: number, subProduct: string, baseColour: string | null): string {
-  return `${billId}|||${lineKey(subProduct, baseColour)}`;
+function billLineKey(billId: number, productId: number | undefined, subProduct: string, baseColour: string | null): string {
+  return `${billId}|||${lineKey(productId, subProduct, baseColour)}`;
 }
 
 function formatLitres(l: number): string {
@@ -59,40 +70,62 @@ export default function CartPanel({
   const activeBill = bills.find((b) => b.id === activeBillId);
   const activeLines: CartLine[] = activeBill?.lines ?? [];
 
-  // Total volume across ALL bills (order-wide, not just active).
+  // Total volume + KG across ALL bills (order-wide, not just active).
   // Post-2026-05-12 flip: packQtys values are UNITS, so the volume
   // calculation is units × litres-per-unit directly (no × packStep
   // factor — that was the boxes→units multiplier in the pre-flip code).
-  const totalLitres = useMemo<number>(() => {
-    let sum = 0;
+  //
+  // Phase 3.5 (2026-05-13): keys are composite "<packCode>|<unit>"
+  // (parsePackKey handles legacy bare keys too). KG packs are
+  // excluded from the L total per policy C1 and accumulated
+  // separately into totalKg — surfaced as "+ Y KG" on the totals
+  // line when > 0.
+  const { totalLitres, totalKg } = useMemo<{ totalLitres: number; totalKg: number }>(() => {
+    let litres = 0;
+    let kg = 0;
     for (const bill of bills) {
       for (const line of bill.lines) {
-        for (const pack of Object.keys(line.packQtys)) {
-          const units = line.packQtys[pack] ?? 0;
+        for (const key of Object.keys(line.packQtys)) {
+          const units = line.packQtys[key] ?? 0;
           if (units <= 0) continue;
-          sum += units * packToLitres(pack);
+          const { packCode, unit } = parsePackKey(key);
+          litres += units * packToLitres(packCode, unit);
+          kg     += units * packToKg(packCode, unit);
         }
       }
     }
-    return sum;
+    return { totalLitres: litres, totalKg: kg };
   }, [bills]);
 
   const totalLines  = bills.reduce((acc, b) => acc + b.lines.length, 0);
   const isMultiBill = bills.length > 1;
 
-  // Sub-product groups within the active bill, ordered by max(touchedAt)
-  // DESC so the most-recently-touched group floats to the top (matches the
-  // mockup's "PROMISE ENML at top with the just-added flash" intent).
-  const subProductGroups = useMemo(() => {
-    const map = new Map<string, { subProduct: string; lines: CartLine[]; latestTouchedAt: number }>();
+  // Cart groups within the active bill, ordered by max(touchedAt) DESC
+  // so the most-recently-touched group floats to the top.
+  //
+  // Phase 3.5 (2026-05-13): grouping key is `${family}|||${tab}` where
+  // `tab = uiGroup ?? subProduct`. Headers render "FAMILY · tab" so
+  // operators immediately see which family the items belong to. Two
+  // families that happen to share a tab name (e.g. WS MAX vs some
+  // future MAX) stay in separate sections.
+  interface CartGroup {
+    family:           string;
+    tab:              string;          // uiGroup or subProduct fallback
+    lines:            CartLine[];
+    latestTouchedAt:  number;
+  }
+  const cartGroups = useMemo<CartGroup[]>(() => {
+    const map = new Map<string, CartGroup>();
     for (const line of activeLines) {
-      const t = line.touchedAt ?? 0;
-      const existing = map.get(line.subProduct);
+      const tab = line.uiGroup ?? line.subProduct;
+      const key = `${line.family}|||${tab}`;
+      const t   = line.touchedAt ?? 0;
+      const existing = map.get(key);
       if (existing) {
         existing.lines.push(line);
         if (t > existing.latestTouchedAt) existing.latestTouchedAt = t;
       } else {
-        map.set(line.subProduct, { subProduct: line.subProduct, lines: [line], latestTouchedAt: t });
+        map.set(key, { family: line.family, tab, lines: [line], latestTouchedAt: t });
       }
     }
     return Array.from(map.values()).sort((a, b) => b.latestTouchedAt - a.latestTouchedAt);
@@ -148,40 +181,64 @@ export default function CartPanel({
             {customer ? "No items yet — search or tap a tile to add." : "Select a customer to start."}
           </div>
         ) : (
-          subProductGroups.map((group, gIdx) => {
+          cartGroups.map((group, gIdx) => {
             const isFirstGroup = gIdx === 0;
             const totalPackRows = group.lines.reduce(
               (acc, l) => acc + Object.keys(l.packQtys).filter((p) => (l.packQtys[p] ?? 0) > 0).length,
               0,
             );
+            // Header format "FAMILY · tab" — except when family and
+            // tab happen to be identical (e.g. a single-sub-product
+            // family with subProduct = family name), in which case
+            // just the family avoids the visual duplicate.
+            const headerLabel = group.family === group.tab
+              ? group.family
+              : `${group.family} · ${group.tab}`;
             return (
               <div
-                key={group.subProduct}
+                key={`${group.family}|||${group.tab}`}
                 className={`mb-4 ${isFirstGroup ? "" : "pt-3 border-t border-gray-100"}`}
               >
                 <div className="text-[10px] uppercase tracking-wider text-gray-400 mb-1.5 flex items-center justify-between">
-                  <span className="font-semibold">{group.subProduct}</span>
+                  <span className="font-semibold">{headerLabel}</span>
                   <span className="font-mono">{totalPackRows} {totalPackRows === 1 ? "line" : "lines"}</span>
                 </div>
                 <div>
                   {group.lines.flatMap((line) => {
-                    const isFlashed = justAddedKeys[billLineKey(activeBillId, line.subProduct, line.baseColour)] === true;
-                    const baseLabel = line.baseColour ?? "Plain";
+                    const isFlashed = justAddedKeys[billLineKey(activeBillId, line.productId, line.subProduct, line.baseColour)] === true;
+                    // Phase 3.5 (2026-05-13): match the row-label chain
+                    // used by variant-grid so filled families display
+                    // their real variant ("Crackfiller 5mm", "Metal
+                    // Primer (Red Oxide)") instead of the
+                    // baseColour=null fallback "Plain". CartLine
+                    // already carries displayName + product + subProduct
+                    // (populated at add-to-cart in place-order-page).
+                    const baseLabel =
+                      line.baseColour
+                      ?? line.displayName
+                      ?? line.product
+                      ?? line.subProduct;
                     return sortPacks(
                       Object.keys(line.packQtys).filter((p) => (line.packQtys[p] ?? 0) > 0),
-                    ).map((pack) => {
-                      const units   = line.packQtys[pack] ?? 0;
-                      const step    = packStep(formatPack(pack));
-                      const isClean = step > 1 && units > 0 && units % step === 0;
+                    ).map((packCompositeKey) => {
+                      const units   = line.packQtys[packCompositeKey] ?? 0;
+                      // Phase 3.5 (2026-05-13): packQtys keys are
+                      // composite "<packCode>|<unit>". Parse first so
+                      // formatPack picks the right unit and packStep
+                      // looks up the formatted label correctly.
+                      const { packCode, unit } = parsePackKey(packCompositeKey);
+                      const packLabel = formatPack(packCode, unit);
+                      const step      = packStep(packLabel);
+                      const isClean   = step > 1 && units > 0 && units % step === 0;
                       return (
                         <div
-                          key={`${lineKey(line.subProduct, line.baseColour)}|${pack}`}
+                          key={`${lineKey(line.productId, line.subProduct, line.baseColour)}|${packCompositeKey}`}
                           className={`group flex items-center justify-between text-[12.5px] py-1.5 px-1 -mx-1 rounded transition-colors duration-150 hover:bg-gray-50 ${
                             isFlashed ? "animate-cart-flash" : ""
                           }`}
                         >
                           <span className="text-gray-800">
-                            {baseLabel} · {formatPack(pack)}
+                            {baseLabel} · {packLabel}
                           </span>
                           <div className="flex items-center gap-2">
                             <span className="font-mono font-semibold text-gray-700">
@@ -194,8 +251,8 @@ export default function CartPanel({
                             </span>
                             <button
                               type="button"
-                              onClick={() => onRemovePack(line.subProduct, line.baseColour, pack)}
-                              aria-label={`Remove ${baseLabel} ${formatPack(pack)}`}
+                              onClick={() => onRemovePack(line.productId, line.subProduct, line.baseColour, packCompositeKey)}
+                              aria-label={`Remove ${baseLabel} ${packLabel}`}
                               className="text-gray-300 hover:text-red-500 text-[14px] leading-none opacity-0 group-hover:opacity-100 transition-opacity duration-100"
                             >
                               ×
@@ -280,6 +337,11 @@ export default function CartPanel({
           <span className="text-gray-500">Total</span>
           <span className="font-mono text-gray-900 font-semibold">
             {totalLines} {totalLines === 1 ? "line" : "lines"} · {formatLitres(totalLitres)} L
+            {/* Phase 3.5 (2026-05-13): KG packs are excluded from the
+                L total per policy C1 and surfaced as a tail when
+                non-zero. WRP / Waterblock 2K / cement-paste SKUs land
+                here. */}
+            {totalKg > 0 && ` · ${formatLitres(totalKg)} KG`}
             {isMultiBill && ` · ${bills.length} bills`}
           </span>
         </div>

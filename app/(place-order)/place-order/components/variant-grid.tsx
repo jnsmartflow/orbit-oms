@@ -2,7 +2,16 @@
 
 import { useEffect, useMemo, useRef } from "react";
 import type { Product } from "../types";
-import { formatPack, packContainerLabel, packStep, sortPacks } from "@/lib/place-order/pack";
+import { formatPack, packContainerLabel, packStep } from "@/lib/place-order/pack";
+import {
+  bucketColumnsForTab,
+  bucketDisplayLabel,
+  packHintLabel,
+  packNeedsHint,
+  packToBucket,
+  type BucketColumn,
+  type RawPack,
+} from "@/lib/place-order/pack-buckets";
 import VariantCell, { type CellNavDirection, type VariantCellHandle } from "./variant-cell";
 
 // Base × pack qty matrix. `products` is one row per baseColour for the
@@ -14,8 +23,8 @@ import VariantCell, { type CellNavDirection, type VariantCellHandle } from "./va
 
 export interface VariantGridProps {
   products:          Product[];
-  qtyAt:             (subProduct: string, baseColour: string | null, pack: string) => number;
-  onSetQty:          (product: Product, pack: string, qty: number) => void;
+  qtyAt:             (product: Product, pack: RawPack) => number;
+  onSetQty:          (product: Product, pack: RawPack, qty: number) => void;
   focusHintBase?:    string | null;
   onFocused?:        () => void;
   onEscape:          () => void;
@@ -45,21 +54,43 @@ export default function VariantGrid({
   products, qtyAt, onSetQty, focusHintBase, onFocused, onEscape,
   onNextSubProduct, onPrevSubProduct, onPageChange,
 }: VariantGridProps): React.JSX.Element {
-  const packs = useMemo<string[]>(() => {
-    const set = new Set<string>();
-    for (const p of products) for (const pack of p.packs) set.add(pack);
-    return sortPacks(Array.from(set));
+  // Phase 3.5 (2026-05-13): columns are bucket-based, not packCode-based.
+  // bucketColumnsForTab walks every SKU in the tab and returns the
+  // ordered list of buckets that have at least one mapping SKU
+  // (subset of STANDARD_COLUMNS). The grid no longer renders one
+  // column per distinct packCode — operators see "1 L · 4 L · 10 L"
+  // instead of "1L · 900ML · 3.6L · 4L · 9L · 10L".
+  const columns = useMemo<BucketColumn[]>(() => {
+    const allPacks: RawPack[] = [];
+    for (const p of products) for (const pack of p.packs) allPacks.push(pack);
+    return bucketColumnsForTab(allPacks);
   }, [products]);
 
-  const cellMatrix = useMemo(() => {
+  interface CellInfo {
+    selectedPack: RawPack | null;   // null = no SKU in this row for this bucket
+    hintLabel:    string | null;    // "900ML" hint when real pack != bucket
+  }
+
+  // For each row × bucket, pick the canonical SKU:
+  //   - exact match (e.g. a 1L pack for the 1L bucket) wins over the
+  //     non-canonical (900ML in the same bucket)
+  //   - first match otherwise
+  // Hint label appears below the cell when canonical differs from bucket.
+  const cellMatrix = useMemo<CellInfo[][]>(() => {
     return products.map((product) =>
-      packs.map((pack) => ({
-        product,
-        pack,
-        available: product.packs.includes(pack),
-      })),
+      columns.map((bucket) => {
+        const matching = product.packs.filter((p) => packToBucket(p) === bucket);
+        if (matching.length === 0) return { selectedPack: null, hintLabel: null };
+        const canonical =
+          matching.find((p) => formatPack(p.packCode, p.unit) === bucket)
+          ?? matching[0];
+        return {
+          selectedPack: canonical,
+          hintLabel: packNeedsHint(canonical, bucket) ? packHintLabel(canonical) : null,
+        };
+      }),
     );
-  }, [products, packs]);
+  }, [products, columns]);
 
   // 2D ref grid populated via ref callbacks below.
   const cellRefs = useRef<Array<Array<VariantCellHandle | null>>>([]);
@@ -96,7 +127,7 @@ export default function VariantGrid({
     // to 0 and override the row we just focused.
     if (prevHint != null && focusHintBase == null) return;
 
-    if (products.length === 0 || packs.length === 0) return;
+    if (products.length === 0 || columns.length === 0) return;
 
     let targetRow = 0;
     if (focusHintBase != null) {
@@ -109,13 +140,13 @@ export default function VariantGrid({
     }
 
     let targetCol = -1;
-    for (let c = 0; c < packs.length; c++) {
-      if (cellMatrix[targetRow]?.[c]?.available) { targetCol = c; break; }
+    for (let c = 0; c < columns.length; c++) {
+      if (cellMatrix[targetRow]?.[c]?.selectedPack) { targetCol = c; break; }
     }
     if (targetCol < 0) {
       outer: for (let r = 0; r < products.length; r++) {
-        for (let c = 0; c < packs.length; c++) {
-          if (cellMatrix[r]?.[c]?.available) { targetRow = r; targetCol = c; break outer; }
+        for (let c = 0; c < columns.length; c++) {
+          if (cellMatrix[r]?.[c]?.selectedPack) { targetRow = r; targetCol = c; break outer; }
         }
       }
     }
@@ -129,33 +160,33 @@ export default function VariantGrid({
   // Walk to next available cell in `direction`, skipping NA cells.
   function navigate(direction: CellNavDirection, fromRow: number, fromCol: number): void {
     const rows = products.length;
-    const cols = packs.length;
+    const cols = columns.length;
     if (rows === 0 || cols === 0) return;
 
     if (direction === "left") {
       for (let c = fromCol - 1; c >= 0; c--) {
-        if (cellMatrix[fromRow][c].available) {
+        if (cellMatrix[fromRow][c].selectedPack) {
           cellRefs.current[fromRow]?.[c]?.focus();
           return;
         }
       }
     } else if (direction === "right") {
       for (let c = fromCol + 1; c < cols; c++) {
-        if (cellMatrix[fromRow][c].available) {
+        if (cellMatrix[fromRow][c].selectedPack) {
           cellRefs.current[fromRow]?.[c]?.focus();
           return;
         }
       }
     } else if (direction === "up") {
       for (let r = fromRow - 1; r >= 0; r--) {
-        if (cellMatrix[r][fromCol].available) {
+        if (cellMatrix[r][fromCol].selectedPack) {
           cellRefs.current[r]?.[fromCol]?.focus();
           return;
         }
       }
     } else if (direction === "down" || direction === "enter") {
       for (let r = fromRow + 1; r < rows; r++) {
-        if (cellMatrix[r][fromCol].available) {
+        if (cellMatrix[r][fromCol].selectedPack) {
           cellRefs.current[r]?.[fromCol]?.focus();
           return;
         }
@@ -163,7 +194,7 @@ export default function VariantGrid({
     }
   }
 
-  if (products.length === 0 || packs.length === 0) {
+  if (products.length === 0 || columns.length === 0) {
     return (
       <div className="px-5 py-6 text-center text-[11px] text-gray-400 italic">
         No SKUs available for this sub-product.
@@ -175,8 +206,8 @@ export default function VariantGrid({
     <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
       <colgroup>
         <col style={{ width: `${BASE_COL_WIDTH_PX}px` }} />
-        {packs.map((p) => (
-          <col key={p} style={{ width: "80px" }} />
+        {columns.map((bucket) => (
+          <col key={bucket} style={{ width: "80px" }} />
         ))}
       </colgroup>
       <thead>
@@ -184,13 +215,12 @@ export default function VariantGrid({
           <th className="text-left px-3 py-2 text-[10px] font-medium uppercase tracking-wider text-gray-500">
             Base · Colour
           </th>
-          {packs.map((pack) => {
-            const label     = formatPack(pack);
-            const container = packContainerLabel(label);
+          {columns.map((bucket) => {
+            const container = packContainerLabel(bucket);
             return (
-              <th key={pack} className="text-center px-1 py-2">
+              <th key={bucket} className="text-center px-1 py-2">
                 <div className="text-[10.5px] font-semibold text-gray-700">
-                  {label}
+                  {bucketDisplayLabel(bucket)}
                   {container !== null && (
                     <> · <span className="font-mono text-gray-400">{container}</span></>
                   )}
@@ -202,24 +232,48 @@ export default function VariantGrid({
       </thead>
       <tbody>
         {products.map((product, rowIdx) => {
-          const baseLabel = product.baseColour ?? "Plain";
+          // Phase 3 row-label fallback (2026-05-13). Filled families
+          // often encode the variant in `product` + `displayName`
+          // rather than `baseColour` (e.g. a Red Oxide Metal Primer
+          // row has baseColour=null, product="RED OXIDE METAL PRIMER",
+          // displayName="Metal Primer (Red Oxide)"). Falling back to
+          // "Plain" hid that detail. Chain:
+          //   baseColour  — explicit colour variant (GLOSS BLACK)
+          //   displayName — descriptive label (Aquatech Crackfiller 5mm)
+          //   product     — filled-family last resort
+          //   subProduct  — ultimate non-null fallback for unmigrated rows
+          const baseLabel =
+            product.baseColour
+            ?? product.displayName
+            ?? product.product
+            ?? product.subProduct;
           const isLastRow = rowIdx === products.length - 1;
           return (
             <tr
-              key={`${product.subProduct}|||${product.baseColour ?? ""}`}
+              // Phase 3 (2026-05-13): include `product` in the key so
+              // filled families where multiple rows share
+              // (subProduct, baseColour) but differ in product (e.g.
+              // AQUATECH PREP rows: subProduct=AQUATECH, baseColour=null,
+              // product=CRACKFILLER 5MM/10MM/20MM) don't collide on the
+              // React key. Non-unique keys cause stale-DOM reuse on tab
+              // switches, which manifests as rows from a previous tab
+              // appearing to "leak" into the active tab.
+              key={`${product.subProduct}|||${product.baseColour ?? ""}|||${product.product ?? ""}`}
               className={`group/row ${isLastRow ? "" : "border-b border-gray-200"} hover:bg-amber-50/30 focus-within:bg-amber-50/70`}
             >
               <td className="px-3 py-2 border-l-[3px] border-l-transparent group-focus-within/row:border-l-amber-500">
                 <div className="text-[12px] font-semibold text-gray-900 group-focus-within/row:font-bold">{baseLabel}</div>
               </td>
-              {packs.map((pack, colIdx) => {
-                const cell    = cellMatrix[rowIdx][colIdx];
-                const qty     = cell.available
-                  ? qtyAt(product.subProduct, product.baseColour ?? null, pack)
-                  : 0;
-                const boxSize = packStep(formatPack(pack));
+              {columns.map((bucket, colIdx) => {
+                const cell         = cellMatrix[rowIdx][colIdx];
+                const selectedPack = cell.selectedPack;
+                const isAvailable  = selectedPack !== null;
+                const qty          = isAvailable ? qtyAt(product, selectedPack) : 0;
+                const boxSize      = selectedPack
+                  ? packStep(formatPack(selectedPack.packCode, selectedPack.unit))
+                  : 1;
                 return (
-                  <td key={pack} className="text-center py-1">
+                  <td key={bucket} className="text-center py-1 align-top">
                     <VariantCell
                       ref={(handle) => {
                         if (!cellRefs.current[rowIdx]) cellRefs.current[rowIdx] = [];
@@ -227,16 +281,26 @@ export default function VariantGrid({
                       }}
                       qty={qty}
                       boxSize={boxSize}
-                      isAvailable={cell.available}
+                      isAvailable={isAvailable}
                       rowIdx={rowIdx}
                       colIdx={colIdx}
-                      onSetQty={(q) => onSetQty(product, pack, q)}
+                      onSetQty={(q) => {
+                        if (selectedPack) onSetQty(product, selectedPack, q);
+                      }}
                       onCellNav={navigate}
                       onClose={onEscape}
                       onNextSubProduct={onNextSubProduct}
                       onPrevSubProduct={onPrevSubProduct}
                       onPageChange={onPageChange}
                     />
+                    {cell.hintLabel && (
+                      // Real pack differs from bucket label — show the
+                      // raw SAP unit ("900ML", "3.6L", "5KG") under the
+                      // cell as low-emphasis hint text. Non-interactive.
+                      <div className="text-[9px] text-gray-400 mt-0.5 leading-none font-mono">
+                        {cell.hintLabel}
+                      </div>
+                    )}
                   </td>
                 );
               })}

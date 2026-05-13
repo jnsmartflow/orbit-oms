@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { CartLine, Product } from "../types";
+import type { RawPack } from "@/lib/place-order/pack-buckets";
 import VariantGrid, {
   VARIANT_GRID_PAGE_SIZE,
   VARIANT_GRID_PAGINATION_THRESHOLD,
@@ -27,8 +28,8 @@ export interface FamilyNavWithTabsProps {
   products:             Product[];                                                        // ALL rows in this family
   activeSubProduct:     string;
   onSubProductChange:   (subProduct: string) => void;
-  qtyAt:                (subProduct: string, baseColour: string | null, pack: string) => number;
-  onSetQty:             (product: Product, pack: string, qty: number) => void;
+  qtyAt:                (product: Product, pack: RawPack) => number;
+  onSetQty:             (product: Product, pack: RawPack, qty: number) => void;
   cartLines:            CartLine[];                                                       // active bill's lines
   speedDialPosition?:   number;
   focusHintBase?:       string | null;
@@ -46,15 +47,23 @@ export default function FamilyNavWithTabs({
   focusHintBase, onFocused, onEscape, onClose,
   embedded = false,
 }: FamilyNavWithTabsProps): React.JSX.Element {
-  // Distinct sub-product names in catalog order (products payload is
-  // pre-sorted by sortOrder upstream).
+  // Tab names in catalog order (products payload is pre-sorted by
+  // sortOrder upstream). Phase 3 cutover (2026-05-13): each tab is a
+  // uiGroup when present (filled families: GLOSS=BASE/COLOUR,
+  // PRIMER=WOOD/METAL/CEMENT/…), else falls back to subProduct
+  // (unmigrated families behave identically to before).
+  //
+  // The variable + prop name `activeSubProduct` is kept for now to
+  // minimise churn in callers — semantically it now holds the active
+  // tab name, which may be a uiGroup or a legacy subProduct.
   const subProductNames = useMemo<string[]>(() => {
     const seen  = new Set<string>();
     const order: string[] = [];
     for (const p of products) {
-      if (!seen.has(p.subProduct)) {
-        seen.add(p.subProduct);
-        order.push(p.subProduct);
+      const tabName = p.uiGroup ?? p.subProduct;
+      if (!seen.has(tabName)) {
+        seen.add(tabName);
+        order.push(tabName);
       }
     }
     return order;
@@ -71,15 +80,27 @@ export default function FamilyNavWithTabs({
 
   const tabs = useMemo<SubProductTab[]>(() => {
     return subProductNames.map((name) => {
-      const rows         = products.filter((p) => p.subProduct === name);
-      const skuCount     = rows.reduce((acc, p) => acc + p.packs.length, 0);
-      const hasCartLines = cartLines.some((l) => l.subProduct === name);
+      const rowsInTab = products.filter(
+        (p) => (p.uiGroup ?? p.subProduct) === name,
+      );
+      const skuCount = rowsInTab.reduce((acc, p) => acc + p.packs.length, 0);
+      // In-cart dot: a cart line belongs to this tab if a catalog
+      // entry matching its (subProduct, baseColour) lives in this
+      // tab. Done via lookup rather than putting uiGroup on CartLine
+      // — CartLine only carries product per the Phase 3 contract.
+      const hasCartLines = cartLines.some((l) =>
+        rowsInTab.some(
+          (p) =>
+            p.subProduct === l.subProduct
+            && (p.baseColour ?? null) === (l.baseColour ?? null),
+        ),
+      );
       return { name, skuCount, hasCartLines };
     });
   }, [subProductNames, products, cartLines]);
 
   const filteredProducts = useMemo(
-    () => products.filter((p) => p.subProduct === activeSubProduct),
+    () => products.filter((p) => (p.uiGroup ?? p.subProduct) === activeSubProduct),
     [products, activeSubProduct],
   );
 

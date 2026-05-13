@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import type { RawPack } from "@/lib/place-order/pack-buckets";
+import { packToMl } from "@/lib/place-order/pack";
 
 // Endpoint serving customer + product data to the desktop Place Order page
 // at /place-order. The live endpoint /api/order/data continues to serve the
@@ -35,23 +37,15 @@ import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
-// Canonical pack-size order, smallest to largest. packCode values in
-// mo_sku_lookup are bare numeric strings ("1", "4", "10", "20", "0.9"…)
-// without unit suffix. Anything outside this list sorts to the end
-// alphabetically.
-const PACK_ORDER: ReadonlyArray<string> = [
-  "0.2", "0.5", "0.9", "0.925", "0.975", "1", "2", "3", "3.6", "3.7",
-  "4",   "5",   "9",   "9.25",  "10",    "15", "18", "18.5", "20", "22",
-  "25",  "30",  "40",  "100",   "200",   "400", "500",
-];
-const PACK_INDEX = new Map(PACK_ORDER.map((p, i) => [p, i] as const));
-
-function sortPacks(packs: Set<string>): string[] {
-  return Array.from(packs).sort((a, b) => {
-    const ai = PACK_INDEX.has(a) ? PACK_INDEX.get(a)! : Number.MAX_SAFE_INTEGER;
-    const bi = PACK_INDEX.has(b) ? PACK_INDEX.get(b)! : Number.MAX_SAFE_INTEGER;
-    if (ai !== bi) return ai - bi;
-    return a.localeCompare(b);
+// Sort RawPacks by ML magnitude with KG anchored last (per packToMl
+// rule — KG packs return 0, sorting them before everything; this
+// comparator flips them to the end explicitly).
+function sortRawPacks(packs: RawPack[]): RawPack[] {
+  return [...packs].sort((a, b) => {
+    const aKg = (a.unit ?? "").toUpperCase() === "KG";
+    const bKg = (b.unit ?? "").toUpperCase() === "KG";
+    if (aKg !== bKg) return aKg ? 1 : -1;
+    return packToMl(a.packCode, a.unit) - packToMl(b.packCode, b.unit);
   });
 }
 
@@ -66,10 +60,20 @@ export async function GET(): Promise<NextResponse> {
     const indexRows = await prisma.mo_order_form_index_v2.findMany({
       where:   { isActive: true },
       select: {
+        // Phase 3 cart-line identity (2026-05-13). The frontend uses
+        // id as the cart dedup key so multiple rows sharing
+        // (subProduct, baseColour) but differing in `product` don't
+        // collide in setQty/qtyAt.
+        id:           true,
         family:       true,
         section:      true,
         subgroup:     true,
         subProduct:   true,
+        // Phase 3 taxonomy cutover. product + uiGroup are nullable for
+        // unmigrated families — consumers fall back to subProduct via
+        // `?? subProduct`.
+        product:      true,
+        uiGroup:      true,
         baseColour:   true,
         displayName:  true,
         searchTokens: true,
@@ -81,7 +85,10 @@ export async function GET(): Promise<NextResponse> {
     });
 
     const skuRows = await prisma.mo_sku_lookup_v2.findMany({
-      select: { product: true, baseColour: true, packCode: true },
+      // Phase 3.5 (2026-05-13): also select `unit` so KG packs reach
+      // the frontend and the bucket helper can place them correctly
+      // (5 KG → 4L bucket, 25 KG → its own column).
+      select: { product: true, baseColour: true, packCode: true, unit: true },
     });
 
     // ── Customers — dedupe by code (keep first occurrence) ─────────────
@@ -98,41 +105,58 @@ export async function GET(): Promise<NextResponse> {
     //                               (collects every pack across all colours)
     // - Key B = product|||colour  — used by index rows with a baseColour
     //                               (specific packs for that colour variant)
-    const packMap = new Map<string, Set<string>>();
-    const addToPackMap = (key: string, pack: string): void => {
+    //
+    // Phase 3.5 (2026-05-13): values now carry (packCode, unit) so
+    // KG vs L distinction survives the join. Dedup is per
+    // (packCode, unit) — two SKUs of the same packCode but different
+    // units (e.g. 1 L vs 1 KG) both make it through.
+    const packMap = new Map<string, RawPack[]>();
+    const seenComposite = new Set<string>();
+    const addToPackMap = (key: string, pack: RawPack): void => {
+      const dedup = `${key}|||${pack.packCode}|${pack.unit ?? ""}`;
+      if (seenComposite.has(dedup)) return;
+      seenComposite.add(dedup);
       let bucket = packMap.get(key);
       if (!bucket) {
-        bucket = new Set();
+        bucket = [];
         packMap.set(key, bucket);
       }
-      bucket.add(pack);
+      bucket.push(pack);
     };
     for (const r of skuRows) {
       if (!r.product || !r.packCode) continue;
-      const pack = String(r.packCode);
+      const pack: RawPack = { packCode: String(r.packCode), unit: r.unit ?? null };
       addToPackMap(r.product, pack);
       if (r.baseColour) {
         addToPackMap(`${r.product}|||${r.baseColour}`, pack);
       }
     }
 
-    // ── Products — one row per index entry. Pack key uses the composite
-    //    (product, baseColour) when baseColour is set, else product alone.
+    // ── Products — one row per index entry. Pack-join key uses
+    //    (row.product ?? row.subProduct) so filled families (GLOSS,
+    //    PRIMER, AQUATECH, WS, STAINER, SATIN — 2026-05-13 Phase 1)
+    //    match against the real product names now stored in
+    //    mo_sku_lookup_v2.product. Unmigrated families still match
+    //    via subProduct. baseColour composite key unchanged.
     const products = indexRows.map((row) => {
+      const joinName = row.product ?? row.subProduct;
       const packKey = row.baseColour
-        ? `${row.subProduct}|||${row.baseColour}`
-        : row.subProduct;
+        ? `${joinName}|||${row.baseColour}`
+        : joinName;
       return {
+        id:           row.id,
         family:       row.family,
         section:      row.section,
         subgroup:     row.subgroup,
         subProduct:   row.subProduct,
+        product:      row.product ?? null,
+        uiGroup:      row.uiGroup ?? null,
         baseColour:   row.baseColour ?? null,
         displayName:  row.displayName,
         searchTokens: row.searchTokens,
         tinterType:   row.tinterType ?? null,
         productType:  row.productType ?? "PLAIN",
-        packs:        sortPacks(packMap.get(packKey) ?? new Set()),
+        packs:        sortRawPacks(packMap.get(packKey) ?? []),
       };
     });
 

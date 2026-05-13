@@ -18,12 +18,18 @@
 //   20L (box of 1)       1            20L*1
 //   200ML (box of 12)    144          200ML*144
 
-import { formatPack, sortPacks } from "./pack";
+import { formatPack, parsePackKey, sortPacks } from "./pack";
 
 export type EmailCustomer = { name: string; code: string };
 
 export type EmailLine = {
   subProduct:  string;
+  // Real product name (Phase 3 taxonomy cutover, 2026-05-13). Null
+  // for unmigrated families; rendered text falls back to subProduct
+  // via `?? subProduct`. Outgoing format only — does not feed the
+  // upstream parser (parser reads inbound dealer mail, not these
+  // outgoing depot emails).
+  product?:    string | null;
   baseColour:  string | null;
   packQtys:    Record<string, number>;   // pack-code (raw, e.g. "1") → qty in UNITS
 };
@@ -74,13 +80,20 @@ export function buildEmail(input: EmailInput): EmailOutput {
       );
       if (sortedKeys.length === 0) continue;     // line had only zero qtys
       const packStr = sortedKeys.map((k) => {
-        const label = formatPack(k);
+        // Phase 3.5 (2026-05-13): packQtys keys are composite
+        // "<packCode>|<unit>" so KG packs render with their real
+        // unit ("5KG*4"). parsePackKey also handles legacy bare
+        // keys for pre-Phase-3.5 drafts — unit is null in that case
+        // and formatPack falls back to magnitude inference.
+        const { packCode, unit } = parsePackKey(k);
+        const label = formatPack(packCode, unit);
         const units = line.packQtys[k] ?? 0;
         return `${label}*${units}`;
       }).join(", ");
+      const productName = line.product ?? line.subProduct;
       const productText = line.baseColour
-        ? `${line.subProduct} ${line.baseColour}`
-        : line.subProduct;
+        ? `${productName} ${line.baseColour}`
+        : productName;
       lines.push(`${productText} ${packStr}`);
     }
   });

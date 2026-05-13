@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { Product } from "../types";
+import type { RawPack } from "@/lib/place-order/pack-buckets";
 import VariantGrid, {
   VARIANT_GRID_PAGE_SIZE,
   VARIANT_GRID_PAGINATION_THRESHOLD,
@@ -24,8 +25,8 @@ export interface SubProductDirectProps {
   family:             string;
   section:            string;
   products:           Product[];        // pre-filtered to this sub-product (parent's filterBySubProduct)
-  qtyAt:              (subProduct: string, baseColour: string | null, pack: string) => number;
-  onSetQty:           (product: Product, pack: string, qty: number) => void;
+  qtyAt:              (product: Product, pack: RawPack) => number;
+  onSetQty:           (product: Product, pack: RawPack, qty: number) => void;
   cartCount:          number;           // distinct cart lines for this sub-product
   speedDialPosition?: number;           // 1-9 when entered via speed dial; undefined when via search
   focusHintBase?:     string | null;

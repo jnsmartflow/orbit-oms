@@ -12,6 +12,8 @@ import CartPanel from "./components/cart-panel";
 import SendConfirmOverlay from "./components/send-confirm-overlay";
 import KeyboardHelpOverlay from "./components/keyboard-help-overlay";
 import type { Bill, CartLine, Customer, Product } from "./types";
+import type { RawPack } from "@/lib/place-order/pack-buckets";
+import { packKey, parsePackKey } from "@/lib/place-order/pack";
 import { buildEmail, buildMailtoUrl, type EmailDispatch, type EmailMarker } from "@/lib/place-order/email";
 import { clearDraft, loadDraft, saveDraft, type DraftSnapshot } from "@/lib/place-order/draft-storage";
 import type { QuickTile } from "@/lib/place-order/quick-tiles-config";
@@ -35,11 +37,25 @@ import { useKeyboardRouting, routeDigit } from "@/lib/place-order/use-keyboard-r
 // Keyboard wiring is intentionally absent from this file — page-level
 // global handlers land in lib via use-keyboard-routing.ts (Step 3.6).
 
-function lineKey(subProduct: string, baseColour: string | null): string {
-  return `${subProduct}|||${baseColour ?? ""}`;
+// Cart-line identity (Phase 3 cutover, 2026-05-13). Catalog row id
+// is the dedup key — survives Phase 4 when subProduct is dropped.
+// Legacy drafts saved before Phase 3 stored no productId; matching
+// falls back to (subProduct, baseColour) via cartLineMatches below.
+function lineKey(productId: number): string {
+  return `id:${productId}`;
 }
-function billLineKey(billId: number, subProduct: string, baseColour: string | null): string {
-  return `${billId}|||${lineKey(subProduct, baseColour)}`;
+function billLineKey(billId: number, productId: number): string {
+  return `${billId}|||${lineKey(productId)}`;
+}
+function cartLineMatches(line: CartLine, product: Product): boolean {
+  if (line.productId !== undefined) return line.productId === product.id;
+  // Legacy fallback for pre-Phase-3 localStorage drafts. For filled
+  // families with multiple rows sharing (subProduct, baseColour),
+  // this can match the wrong row — an acceptable transitional
+  // state since (a) the user re-touches the cell and the new line
+  // gets productId, (b) the alternative is orphaning every draft.
+  return line.subProduct === product.subProduct
+      && (line.baseColour ?? null) === (product.baseColour ?? null);
 }
 
 const JUST_ADDED_FLASH_MS  = 1200;
@@ -131,8 +147,8 @@ export default function PlaceOrderPage(): React.JSX.Element {
 
   // ── Cart helpers (write to ACTIVE bill) ────────────────────────────────
 
-  function flashLine(billId: number, subProduct: string, baseColour: string | null): void {
-    const k = billLineKey(billId, subProduct, baseColour);
+  function flashLine(billId: number, productId: number): void {
+    const k = billLineKey(billId, productId);
     setJustAddedKeys((prev) => ({ ...prev, [k]: true }));
     setTimeout(() => {
       setJustAddedKeys((prev) => {
@@ -144,24 +160,34 @@ export default function PlaceOrderPage(): React.JSX.Element {
     }, JUST_ADDED_FLASH_MS);
   }
 
-  function qtyAt(subProduct: string, baseColour: string | null, pack: string): number {
+  function qtyAt(product: Product, pack: RawPack): number {
     if (!activeBill) return 0;
-    const k    = lineKey(subProduct, baseColour);
-    const line = activeBill.lines.find((l) => lineKey(l.subProduct, l.baseColour) === k);
-    return line?.packQtys[pack] ?? 0;
+    const line = activeBill.lines.find((l) => cartLineMatches(l, product));
+    if (!line) return 0;
+    // Phase 3.5 (2026-05-13): composite key first, then legacy bare
+    // packCode fallback so pre-cutover localStorage drafts still read.
+    // Once the user edits the cell, setQty migrates the key forward.
+    const composite = packKey(pack.packCode, pack.unit);
+    if (line.packQtys[composite] !== undefined) return line.packQtys[composite];
+    return line.packQtys[pack.packCode] ?? 0;
   }
 
-  function setQty(product: Product, pack: string, qty: number): void {
-    const k   = lineKey(product.subProduct, product.baseColour ?? null);
+  function setQty(product: Product, pack: RawPack, qty: number): void {
+    const composite = packKey(pack.packCode, pack.unit);
+    const legacyBare = pack.packCode;
     const now = Date.now();
     setBills((prev) => prev.map((bill) => {
       if (bill.id !== activeBillId) return bill;
-      const idx = bill.lines.findIndex((l) => lineKey(l.subProduct, l.baseColour) === k);
+      const idx = bill.lines.findIndex((l) => cartLineMatches(l, product));
       if (qty <= 0) {
         if (idx < 0) return bill;
         const line = bill.lines[idx];
+        // Delete both the composite key and the legacy bare key —
+        // covers carts that hold both forms during the migration
+        // window (a user edited some packs but not others).
         const nextPackQtys = { ...line.packQtys };
-        delete nextPackQtys[pack];
+        delete nextPackQtys[composite];
+        if (composite !== legacyBare) delete nextPackQtys[legacyBare];
         if (Object.keys(nextPackQtys).length === 0) {
           return { ...bill, lines: bill.lines.filter((_, i) => i !== idx) };
         }
@@ -173,35 +199,54 @@ export default function PlaceOrderPage(): React.JSX.Element {
         };
       }
       if (idx < 0) {
-        flashLine(bill.id, product.subProduct, product.baseColour ?? null);
+        flashLine(bill.id, product.id);
         const newLine: CartLine = {
+          // Phase 3 cart-line identity: productId is the primary
+          // dedup key. subProduct/baseColour/product/uiGroup are
+          // carried for email + cart display + legacy-draft fallback.
+          productId:   product.id,
           family:      product.family,
           subProduct:  product.subProduct,
+          product:     product.product ?? null,
+          uiGroup:     product.uiGroup ?? null,
           displayName: product.displayName,
           baseColour:  product.baseColour ?? null,
-          packQtys:    { [pack]: qty },
+          packQtys:    { [composite]: qty },
           touchedAt:   now,
         };
         return { ...bill, lines: [...bill.lines, newLine] };
       }
+      // Existing line — write composite key and migrate any legacy
+      // bare key off the same line so the cart doesn't carry both.
       return {
         ...bill,
-        lines: bill.lines.map((l, i) =>
-          i === idx ? { ...l, packQtys: { ...l.packQtys, [pack]: qty }, touchedAt: now } : l,
-        ),
+        lines: bill.lines.map((l, i) => {
+          if (i !== idx) return l;
+          const next = { ...l.packQtys, [composite]: qty };
+          if (composite !== legacyBare) delete next[legacyBare];
+          return { ...l, packQtys: next, touchedAt: now };
+        }),
       };
     }));
   }
 
-  function handleRemovePack(subProduct: string, baseColour: string | null, pack: string): void {
-    const matching = products.find(
-      (p) => p.subProduct === subProduct && (p.baseColour ?? null) === baseColour,
-    );
+  function handleRemovePack(productId: number | undefined, subProduct: string, baseColour: string | null, packKeyStr: string): void {
+    // Prefer id lookup so filled families where multiple rows share
+    // (subProduct, baseColour) resolve to the exact row the user
+    // clicked. Legacy drafts (no productId) fall back to the old
+    // (subProduct, baseColour) match.
+    const matching = productId !== undefined
+      ? products.find((p) => p.id === productId)
+      : products.find(
+          (p) => p.subProduct === subProduct && (p.baseColour ?? null) === baseColour,
+        );
     if (!matching) {
-      console.warn(`[place-order-page] remove pack: product not in catalog: ${subProduct} / ${baseColour ?? "null"}`);
+      console.warn(`[place-order-page] remove pack: product not in catalog: id=${productId ?? "?"} ${subProduct} / ${baseColour ?? "null"}`);
       return;
     }
-    setQty(matching, pack, 0);
+    // packKeyStr may be a composite "5|KG" or a legacy bare "5".
+    // parsePackKey handles both and returns the right RawPack.
+    setQty(matching, parsePackKey(packKeyStr), 0);
   }
 
   // ── Multi-bill ─────────────────────────────────────────────────────────
@@ -315,7 +360,11 @@ export default function PlaceOrderPage(): React.JSX.Element {
       setFocusHint(null);
     } else if (tile.type === "family" && tile.familyName) {
       const familyProducts  = products.filter((p) => p.family === tile.familyName);
-      const firstSubProduct = familyProducts[0]?.subProduct ?? "";
+      // Phase 3 (2026-05-13): default tab is the first row's uiGroup
+      // when present, else its subProduct (unmigrated families).
+      const firstSubProduct = familyProducts[0]
+        ? familyProducts[0].uiGroup ?? familyProducts[0].subProduct
+        : "";
       setActiveState({
         kind:              "family",
         familyName:        tile.familyName,
@@ -342,7 +391,9 @@ export default function PlaceOrderPage(): React.JSX.Element {
   function handleSearchSelect(result: SearchResult): void {
     if (result.type === "family") {
       const familyProducts = products.filter((p) => p.family === result.family);
-      const firstSubProduct = familyProducts[0]?.subProduct ?? "";
+      const firstSubProduct = familyProducts[0]
+        ? familyProducts[0].uiGroup ?? familyProducts[0].subProduct
+        : "";
       setActiveState({
         kind:             "family",
         familyName:       result.family,
@@ -430,7 +481,15 @@ export default function PlaceOrderPage(): React.JSX.Element {
         console.warn(`[place-order-page] repeat-order entry not in catalog: ${entry.productName} / ${entry.baseColour ?? "null"}`);
         continue;
       }
-      setQty(matching, entry.packCode, entry.units);
+      // Phase 3.5 (2026-05-13): RepeatOrderEntry only carries packCode
+      // (the recall payload is unit-blind). Look up the catalog row's
+      // pack with this packCode to inherit its unit — that way the
+      // qty lands on the right composite key. If the catalog has
+      // multiple packs sharing the packCode but differing in unit
+      // (rare), the first wins; acceptable for a repeat-order shortcut.
+      const catalogPack = matching.packs.find((p) => p.packCode === entry.packCode);
+      const pack = catalogPack ?? { packCode: entry.packCode, unit: null };
+      setQty(matching, pack, entry.units);
     }
   }
 
@@ -445,7 +504,9 @@ export default function PlaceOrderPage(): React.JSX.Element {
 
   function handleBrowseFamilyClick(familyName: string): void {
     const familyProducts  = products.filter((p) => p.family === familyName);
-    const firstSubProduct = familyProducts[0]?.subProduct ?? "";
+    const firstSubProduct = familyProducts[0]
+      ? familyProducts[0].uiGroup ?? familyProducts[0].subProduct
+      : "";
     setActiveState({
       kind:             "family",
       familyName,
@@ -461,6 +522,10 @@ export default function PlaceOrderPage(): React.JSX.Element {
       customer: selectedCustomer,
       bills:    bills.map((b) => b.lines.map((l) => ({
         subProduct: l.subProduct,
+        // Phase 3 (2026-05-13): pass real product name through so the
+        // email body shows e.g. "GLOSS BRILLIANT WHITE 1L*1" instead
+        // of the bucket subProduct. Null for unmigrated families.
+        product:    l.product ?? null,
         baseColour: l.baseColour,
         packQtys:   l.packQtys,
       }))),

@@ -1,6 +1,7 @@
 "use client";
 
 import type { CartLine, Product } from "../types";
+import type { RawPack } from "@/lib/place-order/pack-buckets";
 import { filterBySection, groupProductsByFamily } from "@/lib/place-order/queries";
 import SubProductDirect from "./sub-product-direct";
 import FamilyNavWithTabs from "./family-nav-with-tabs";
@@ -22,8 +23,8 @@ export interface ActiveProductPanelProps {
   state:              ActivePanelState;
   productsAll:        Product[];
   cartLines:          CartLine[];
-  qtyAt:              (subProduct: string, baseColour: string | null, pack: string) => number;
-  onSetQty:           (product: Product, pack: string, qty: number) => void;
+  qtyAt:              (product: Product, pack: RawPack) => number;
+  onSetQty:           (product: Product, pack: RawPack, qty: number) => void;
   onClose:            () => void;
   onEscape:           () => void;
   onSubProductChange: (subProduct: string) => void;
