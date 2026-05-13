@@ -625,9 +625,9 @@ export default function PlaceOrderPage(): React.JSX.Element {
       <main
         ref={pageBodyRef}
         tabIndex={-1}
-        className="flex h-[calc(100vh-52px)] focus:outline-none"
+        className="flex min-h-[calc(100vh-52px)] focus:outline-none"
       >
-        <section className="flex-1 bg-gray-50 overflow-hidden">
+        <section className="flex-1 bg-gray-50">
           <div className="max-w-[920px] mx-auto p-3">
             {dataLoading ? (
               <p className="text-[13px] text-gray-400 text-center py-12">Loading customers and products…</p>

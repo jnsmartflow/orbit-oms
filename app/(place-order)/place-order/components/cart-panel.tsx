@@ -99,7 +99,7 @@ export default function CartPanel({
   }, [activeLines]);
 
   return (
-    <aside className="w-[340px] bg-white border-l border-gray-200 flex flex-col flex-shrink-0">
+    <aside className="w-[340px] bg-white border-l border-gray-200 flex flex-col flex-shrink-0 sticky top-[52px] h-[calc(100vh-52px)]">
       {customer && (
         <div className="px-4 py-3 border-b border-gray-200">
           <div className="text-[13px] font-semibold text-gray-900 truncate">{customer.name}</div>
