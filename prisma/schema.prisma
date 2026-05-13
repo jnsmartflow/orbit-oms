@@ -1249,6 +1249,12 @@ model mo_order_form_index_v2 {
   id           Int      @id @default(autoincrement())
   family       String
   subProduct   String
+  product      String?   // Real product name — used for email, parser,
+                         // dispatch. NULL during Phase 2 migration,
+                         // becomes NOT NULL in Phase 4.
+  uiGroup      String?   // Tab label on /place-order — frontend only.
+                         // NULL during Phase 2 migration, becomes
+                         // NOT NULL in Phase 4.
   baseColour   String?
   displayName  String
   searchTokens String
