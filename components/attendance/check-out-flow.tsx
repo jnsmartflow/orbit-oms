@@ -80,7 +80,7 @@ type FlowStep =
     }
   | { kind: "success"; result: CheckOutSuccessPayload };
 
-const REASON_MIN_LEN = 10;
+const REASON_MIN_LEN = 1;
 const REASON_MAX_LEN = 200;
 
 export function CheckOutFlow({
