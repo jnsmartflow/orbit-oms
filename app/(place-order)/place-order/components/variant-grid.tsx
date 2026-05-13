@@ -207,7 +207,7 @@ export default function VariantGrid({
           return (
             <tr
               key={`${product.subProduct}|||${product.baseColour ?? ""}`}
-              className={`group/row ${isLastRow ? "" : "border-b border-gray-200"} hover:bg-gray-50 focus-within:bg-amber-50/70`}
+              className={`group/row ${isLastRow ? "" : "border-b border-gray-200"} hover:bg-amber-50/30 focus-within:bg-amber-50/70`}
             >
               <td className="px-3 py-2 border-l-[3px] border-l-transparent group-focus-within/row:border-l-amber-500">
                 <div className="text-[12px] font-semibold text-gray-900 group-focus-within/row:font-bold">{baseLabel}</div>
