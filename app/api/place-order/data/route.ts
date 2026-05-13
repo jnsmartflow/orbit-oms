@@ -53,7 +53,11 @@ export async function GET(): Promise<NextResponse> {
   try {
     // Sequential awaits — no prisma.$transaction (CLAUDE_CORE.md §3).
     const custRows = await prisma.mo_customer_keywords.findMany({
-      select:  { customerCode: true, customerName: true },
+      // Phase 3.6 (2026-05-13): also select `area` so the customer-
+      // search dropdown can render "CODE · AREA" and operators can
+      // distinguish similarly-named customers by locality. Dedupe
+      // below carries first non-null area per customerCode.
+      select:  { customerCode: true, customerName: true, area: true },
       orderBy: { customerName: "asc" },
     });
 
@@ -92,13 +96,27 @@ export async function GET(): Promise<NextResponse> {
     });
 
     // ── Customers — dedupe by code (keep first occurrence) ─────────────
-    const seenCodes = new Set<string>();
-    const customers: { name: string; code: string }[] = [];
+    // Phase 3.6 (2026-05-13): also carry the first non-null `area`
+    // per customerCode. If the first keyword row had area=null but a
+    // later row for the same customer has area set, surface that
+    // later value instead of silently dropping it. JS Map preserves
+    // insertion order, so the orderBy customerName ASC ordering is
+    // preserved in the output array.
+    const byCode = new Map<string, { name: string; code: string; area: string | null }>();
     for (const r of custRows) {
-      if (!r.customerCode || seenCodes.has(r.customerCode)) continue;
-      seenCodes.add(r.customerCode);
-      customers.push({ name: r.customerName, code: r.customerCode });
+      if (!r.customerCode) continue;
+      const existing = byCode.get(r.customerCode);
+      if (!existing) {
+        byCode.set(r.customerCode, {
+          name: r.customerName,
+          code: r.customerCode,
+          area: r.area ?? null,
+        });
+      } else if (existing.area === null && r.area) {
+        existing.area = r.area;
+      }
     }
+    const customers = Array.from(byCode.values());
 
     // ── Pack map: dual-keyed for base products + colour variants ──────
     // - Key A = product           — used by index rows with baseColour=null

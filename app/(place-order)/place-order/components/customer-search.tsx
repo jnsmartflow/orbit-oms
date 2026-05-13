@@ -154,7 +154,14 @@ export default function CustomerSearch({
                 <span className="w-1.5 h-1.5 rounded-full bg-teal-600 shrink-0" />
                 <span className="flex-1 min-w-0">
                   <span className="block text-[13px] text-gray-900 truncate">{c.name}</span>
-                  <span className="block text-[11px] text-gray-400 font-mono mt-0.5">{c.code}</span>
+                  <span className="block text-[11px] text-gray-400 font-mono mt-0.5 truncate">
+                    {c.code}
+                    {/* Phase 3.6 (2026-05-13): show area when present
+                        so operators can disambiguate similar names by
+                        locality. Same muted style as the code; same
+                        line, separator dot. */}
+                    {c.area && <span className="font-sans"> · {c.area}</span>}
+                  </span>
                 </span>
               </button>
             );

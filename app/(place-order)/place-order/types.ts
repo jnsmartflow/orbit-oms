@@ -6,6 +6,12 @@ import type { RawPack } from "@/lib/place-order/pack-buckets";
 export type Customer = {
   name: string;
   code: string;
+  // Area / locality from mo_customer_keywords. Surfaced in the
+  // /place-order customer-search dropdown so operators can
+  // distinguish customers with similar names (Phase 3.6,
+  // 2026-05-13). Null when no keyword row for the customer has a
+  // non-null area; dropdown then renders just the code.
+  area?: string | null;
 };
 
 export type Product = {
