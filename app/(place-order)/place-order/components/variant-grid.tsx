@@ -180,15 +180,15 @@ export default function VariantGrid({
         ))}
       </colgroup>
       <thead>
-        <tr className="bg-gray-50 border-b border-gray-200">
-          <th className="text-left px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider text-gray-400">
+        <tr className="bg-gray-100 border-b-2 border-gray-300">
+          <th className="text-left px-3 py-2 text-[10px] font-medium uppercase tracking-wider text-gray-500">
             Base · Colour
           </th>
           {packs.map((pack) => {
             const label     = formatPack(pack);
             const container = packContainerLabel(label);
             return (
-              <th key={pack} className="text-center px-1 py-1.5">
+              <th key={pack} className="text-center px-1 py-2">
                 <div className="text-[10.5px] font-semibold text-gray-700">
                   {label}
                   {container !== null && (
@@ -207,10 +207,10 @@ export default function VariantGrid({
           return (
             <tr
               key={`${product.subProduct}|||${product.baseColour ?? ""}`}
-              className={`${isLastRow ? "" : "border-b border-gray-50"} hover:bg-gray-50/40`}
+              className={`group/row ${isLastRow ? "" : "border-b border-gray-200"} hover:bg-gray-50 focus-within:bg-amber-50/70`}
             >
-              <td className="px-3 py-1">
-                <div className="text-[12px] font-semibold text-gray-900">{baseLabel}</div>
+              <td className="px-3 py-2 border-l-[3px] border-l-transparent group-focus-within/row:border-l-amber-500">
+                <div className="text-[12px] font-semibold text-gray-900 group-focus-within/row:font-bold">{baseLabel}</div>
               </td>
               {packs.map((pack, colIdx) => {
                 const cell    = cellMatrix[rowIdx][colIdx];
@@ -219,7 +219,7 @@ export default function VariantGrid({
                   : 0;
                 const boxSize = packStep(formatPack(pack));
                 return (
-                  <td key={pack} className="text-center">
+                  <td key={pack} className="text-center py-1">
                     <VariantCell
                       ref={(handle) => {
                         if (!cellRefs.current[rowIdx]) cellRefs.current[rowIdx] = [];
