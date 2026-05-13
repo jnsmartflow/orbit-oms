@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle2 } from "lucide-react";
+import { CheckCircle2, Clock } from "lucide-react";
 import { StatusChip } from "./status-chip";
 import {
   format24To12,
@@ -10,6 +10,13 @@ import {
   shiftCalendarDate,
 } from "@/lib/attendance/format";
 import type { DaySummary } from "./attendance-home";
+
+export type DaySummaryOtOutcome = {
+  status: "NOT_CLAIMED" | "AUTO_CREDITED" | "AUTO_CREDITED_GRACE" | "PENDING";
+  minutesCredited: number;
+  graceUsedThisMonth: number;
+  graceLimit: number;
+};
 
 interface DaySummaryViewProps {
   userName: string;
@@ -22,6 +29,7 @@ interface DaySummaryViewProps {
   workStartTime: string;
   workEndTime: string;
   weekSummaries: DaySummary[]; // includes today + past 6
+  otOutcome?: DaySummaryOtOutcome;
   onDone(): void;
 }
 
@@ -42,6 +50,7 @@ export function DaySummaryView({
   workStartTime,
   workEndTime,
   weekSummaries,
+  otOutcome,
   onDone,
 }: DaySummaryViewProps) {
   const firstName = userName.split(" ")[0] || userName || "—";
@@ -63,6 +72,10 @@ export function DaySummaryView({
           Checked out at {formatIstClock(lastCheckOutISO)}
         </p>
       </header>
+
+      {otOutcome && otOutcome.status !== "NOT_CLAIMED" && (
+        <OtOutcomeBanner outcome={otOutcome} />
+      )}
 
       {/* Big card — slate gradient + dot pattern (matches P5 status-card) */}
       <div className="relative overflow-hidden rounded-2xl text-white shadow-sm bg-gradient-to-br from-slate-800 to-slate-900 mb-4">
@@ -148,6 +161,47 @@ export function DaySummaryView({
       >
         Done
       </button>
+    </div>
+  );
+}
+
+function OtOutcomeBanner({ outcome }: { outcome: DaySummaryOtOutcome }) {
+  let bg: string;
+  let border: string;
+  let text: string;
+  let Icon: typeof CheckCircle2;
+  let label: string;
+  switch (outcome.status) {
+    case "AUTO_CREDITED":
+      bg = "bg-green-50";
+      border = "border-green-200";
+      text = "text-green-900";
+      Icon = CheckCircle2;
+      label = `OT credited: ${outcome.minutesCredited} min`;
+      break;
+    case "AUTO_CREDITED_GRACE":
+      bg = "bg-amber-50";
+      border = "border-amber-200";
+      text = "text-amber-900";
+      Icon = CheckCircle2;
+      label = `OT credited under grace · ${outcome.graceUsedThisMonth} of ${outcome.graceLimit} used this month`;
+      break;
+    case "PENDING":
+      bg = "bg-amber-50";
+      border = "border-amber-200";
+      text = "text-amber-900";
+      Icon = Clock;
+      label = "OT submitted for admin approval · grace limit reached";
+      break;
+    default:
+      return null;
+  }
+  return (
+    <div
+      className={`rounded-lg border p-3 flex items-center gap-2 text-[14px] font-medium mb-4 ${bg} ${border} ${text}`}
+    >
+      <Icon className="w-[18px] h-[18px] shrink-0" />
+      <span>{label}</span>
     </div>
   );
 }

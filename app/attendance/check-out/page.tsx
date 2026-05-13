@@ -33,6 +33,8 @@ export default async function CheckOutPage() {
       photoJpegQuality: true,
       workStartTime: true,
       workEndTime: true,
+      otTriggerTime: true,
+      otPromptEnabled: true,
     },
   });
   if (!settings) redirect("/attendance");
@@ -71,6 +73,8 @@ export default async function CheckOutPage() {
       }}
       workStartTime={settings.workStartTime}
       workEndTime={settings.workEndTime}
+      otTriggerTime={settings.otTriggerTime}
+      otPromptEnabled={settings.otPromptEnabled}
       today={today}
     />
   );
