@@ -68,7 +68,7 @@ const VariantCell = forwardRef<VariantCellHandle, VariantCellProps>(function Var
   if (!isAvailable) {
     return (
       <div
-        className="w-[56px] h-[32px] mx-auto rounded-[4px] border border-gray-100 bg-gray-50 flex items-center justify-center text-gray-300 text-[13px] cursor-not-allowed"
+        className="w-[56px] h-[32px] mx-auto rounded-[4px] border border-dashed border-gray-200 bg-transparent flex items-center justify-center text-gray-300 text-[13px] cursor-not-allowed"
         aria-label="Not available"
       >
         —
@@ -163,12 +163,12 @@ const VariantCell = forwardRef<VariantCellHandle, VariantCellProps>(function Var
         }}
         onFocus={(e) => e.target.select()}
         onKeyDown={handleKeyDown}
-        className={`absolute inset-0 w-full h-full rounded-[4px] text-center text-[13px] font-semibold border border-gray-200 outline-none transition-all duration-75
-          placeholder:text-[20px] placeholder:text-gray-500 placeholder:font-normal
+        className={`absolute inset-0 w-full h-full rounded-[4px] text-center text-[13px] font-semibold border border-gray-300 outline-none transition-all duration-75
+          placeholder:text-[20px] placeholder:text-gray-600 placeholder:font-normal
           focus:bg-white focus:text-gray-900 focus:z-[2] focus:border-amber-500 focus:shadow-[inset_0_0_0_1px_#f59e0b,0_0_0_3px_rgba(245,158,11,0.18)]
           ${isActive
             ? "bg-teal-50 text-teal-700 hover:bg-teal-100"
-            : "bg-[#f3f4f6] text-transparent caret-gray-400 hover:bg-[#e5e7eb]"
+            : "bg-[#e5e7eb] text-transparent caret-gray-400 hover:bg-[#d1d5db]"
           }`}
       />
       <button
