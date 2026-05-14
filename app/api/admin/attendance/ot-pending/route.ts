@@ -37,7 +37,7 @@ export const dynamic = "force-dynamic";
 //      index. No N+1.
 export async function GET() {
   const session = await auth();
-  if (!hasRole(session, [ROLES.ADMIN])) {
+  if (!hasRole(session, [ROLES.ADMIN, ROLES.OPS_ADMIN])) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

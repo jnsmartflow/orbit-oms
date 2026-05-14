@@ -139,7 +139,7 @@ type UpdateData = {
 
 export async function GET() {
   const session = await auth();
-  if (!hasRole(session, [ROLES.ADMIN])) {
+  if (!hasRole(session, [ROLES.ADMIN, ROLES.OPS_ADMIN])) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -162,7 +162,7 @@ export async function GET() {
 
 export async function PATCH(req: Request) {
   const session = await auth();
-  if (!hasRole(session, [ROLES.ADMIN])) {
+  if (!hasRole(session, [ROLES.ADMIN, ROLES.OPS_ADMIN])) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const adminIdRaw = session?.user?.id;

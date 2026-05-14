@@ -37,7 +37,7 @@ export async function PATCH(
   { params }: { params: { recordId: string } },
 ) {
   const session = await auth();
-  if (!hasRole(session, [ROLES.ADMIN])) {
+  if (!hasRole(session, [ROLES.ADMIN, ROLES.OPS_ADMIN])) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const adminIdRaw = session?.user?.id;

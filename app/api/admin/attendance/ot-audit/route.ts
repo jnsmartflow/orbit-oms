@@ -44,7 +44,7 @@ const MAX_MONTHS_BACK = 24;
 // any summary counter, so summary.totalAudits === rows.length holds.
 export async function GET(req: Request) {
   const session = await auth();
-  if (!hasRole(session, [ROLES.ADMIN])) {
+  if (!hasRole(session, [ROLES.ADMIN, ROLES.OPS_ADMIN])) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
