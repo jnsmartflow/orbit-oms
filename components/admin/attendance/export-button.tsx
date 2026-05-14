@@ -6,9 +6,16 @@ import { Download } from "lucide-react";
  * Trigger a CSV download for the given date by navigating to the
  * export endpoint. The browser handles the file save via the
  * Content-Disposition header. No JS state to manage.
+ *
+ * Pass `undefined` (or omit) to let the server pick today's IST date —
+ * the endpoint computes `istDateString()` server-side, which is timezone-
+ * aware and reliably IST regardless of the Vercel UTC runtime. Avoiding
+ * client-side date computation here removes a fragility surface.
  */
-export function triggerCsvExport(date: string): void {
-  const url = `/api/admin/attendance/export?date=${encodeURIComponent(date)}`;
+export function triggerCsvExport(date?: string): void {
+  const url = date
+    ? `/api/admin/attendance/export?date=${encodeURIComponent(date)}`
+    : `/api/admin/attendance/export`;
   window.location.assign(url);
 }
 

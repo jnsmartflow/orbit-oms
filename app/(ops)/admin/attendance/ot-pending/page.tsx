@@ -1,15 +1,11 @@
 import { prisma } from "@/lib/prisma";
-import { UniversalHeader } from "@/components/universal-header";
-import { AdminSubNav } from "@/components/admin/attendance/admin-sub-nav";
 import {
   OtPendingTable,
   type PendingRow,
 } from "@/components/admin/attendance/ot-pending-table";
-import { istDateString } from "@/lib/attendance/date";
 import {
   istMinutesSinceMidnight,
   parseTimeToMin,
-  shiftCalendarDate,
 } from "@/lib/attendance/format";
 
 export const dynamic = "force-dynamic";
@@ -19,24 +15,7 @@ export const dynamic = "force-dynamic";
 
 export default async function OtPendingPage() {
   const rows = await loadPendingRows();
-  const stats = computeStats(rows);
-
-  return (
-    <div className="min-w-[1100px]">
-      <UniversalHeader
-        title="OT Pending Queue"
-        stats={[
-          { label: "Total", value: stats.total },
-          { label: "This week", value: stats.thisWeek },
-          { label: "Older", value: stats.older },
-        ]}
-      />
-      <AdminSubNav active="ot-pending" otPendingCount={rows.length} />
-      <div className="p-4">
-        <OtPendingTable initialRows={rows} />
-      </div>
-    </div>
-  );
+  return <OtPendingTable initialRows={rows} />;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -125,24 +104,3 @@ async function loadPendingRows(): Promise<PendingRow[]> {
   return out;
 }
 
-function computeStats(rows: PendingRow[]): {
-  total: number;
-  thisWeek: number;
-  older: number;
-} {
-  const today = istDateString();
-  const weekStart = mondayOfWeek(today);
-  let thisWeek = 0;
-  for (const r of rows) {
-    if (r.attendanceDate >= weekStart) thisWeek++;
-  }
-  return { total: rows.length, thisWeek, older: rows.length - thisWeek };
-}
-
-function mondayOfWeek(dateStr: string): string {
-  const [y, m, d] = dateStr.split("-").map(Number);
-  const utcDate = new Date(Date.UTC(y, (m ?? 1) - 1, d ?? 1));
-  const dayOfWeek = utcDate.getUTCDay(); // 0=Sun, 6=Sat
-  const daysFromMon = (dayOfWeek + 6) % 7; // 0 if Mon, 6 if Sun
-  return shiftCalendarDate(dateStr, daysFromMon);
-}

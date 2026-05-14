@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { AttendancePageHeader } from "./attendance-page-header";
 import { MonthPicker } from "./month-picker";
 import { OtAuditStats, type DerivedStats } from "./ot-audit-stats";
 import { OtAuditTable } from "./ot-audit-table";
@@ -81,6 +82,7 @@ interface OtAuditViewProps {
   initialData: AuditResponse | null; // null → future-month placeholder, no fetch
   initialMonth: string;              // YYYY-MM
   currentIstMonth: string;           // YYYY-MM — for picker bounds
+  otPendingCount: number;            // for sub-nav badge in the header
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -91,6 +93,7 @@ export function OtAuditView({
   initialData,
   initialMonth,
   currentIstMonth,
+  otPendingCount,
 }: OtAuditViewProps) {
   const router = useRouter();
   const [expandedId, setExpandedId] = useState<number | null>(null);
@@ -119,66 +122,86 @@ export function OtAuditView({
     setExpandedId((prev) => (prev === userId ? null : userId));
   }
 
-  // Header strip with month picker (lives in body, not the UH chrome — see
-  // server page for why: UH's `rightExtra` is owned by Row 2, not Row 1,
-  // and we want the picker visually anchored to this view).
-  const monthPickerNode = (
-    <MonthPicker
-      currentMonth={initialMonth}
-      currentIstMonth={currentIstMonth}
-      onChange={handleMonthChange}
-    />
+  // Strip 2 contents — summary text on the left, month picker on the right.
+  // Counts come from the same userSummaries / derivedStats used by the body
+  // so what the admin sees in the strip matches what the body lists.
+  const summaryText = isFutureMonth
+    ? "Future month — no data"
+    : `${userSummaries.length} ${userSummaries.length === 1 ? "user" : "users"} · ${formatHours(derivedStats.totalCreditedMin)} OT hrs · ${derivedStats.pendingCount} pending`;
+
+  const header = (
+    <AttendancePageHeader activeTab={null} otPendingCount={otPendingCount}>
+      <p className="text-xs text-gray-600">
+        Showing: <span className="font-medium text-gray-900">OT Audit</span>
+        <span className="text-gray-300 mx-1.5">·</span>
+        <span className="tabular-nums">{summaryText}</span>
+      </p>
+      <MonthPicker
+        currentMonth={initialMonth}
+        currentIstMonth={currentIstMonth}
+        onChange={handleMonthChange}
+      />
+    </AttendancePageHeader>
   );
 
   // ── Future-month placeholder ────────────────────────────────────────────
   if (isFutureMonth) {
     return (
-      <>
-        <div className="flex items-center justify-end mb-4">
-          {monthPickerNode}
+      <div className="min-w-[1100px]">
+        {header}
+        <div className="max-w-6xl mx-auto p-6">
+          <EmptyCard
+            icon="📈"
+            title="Future month selected"
+            subtitle="OT audit only shows past and current months."
+          />
         </div>
-        <EmptyCard
-          icon="📈"
-          title="Future month selected"
-          subtitle="OT audit only shows past and current months."
-        />
-      </>
+      </div>
     );
   }
 
   // ── No-data month ──────────────────────────────────────────────────────
   if (!initialData || initialData.rows.length === 0 || userSummaries.length === 0) {
     return (
-      <>
-        <div className="flex items-center justify-end mb-4">
-          {monthPickerNode}
+      <div className="min-w-[1100px]">
+        {header}
+        <div className="max-w-6xl mx-auto p-6">
+          <OtAuditStats stats={derivedStats} />
+          <EmptyCard
+            icon="📅"
+            title={`No OT activity in ${formatMonthLabel(initialMonth)}`}
+            subtitle="Nothing was credited, claimed, or actioned this month."
+          />
         </div>
-        <OtAuditStats stats={derivedStats} />
-        <EmptyCard
-          icon="📅"
-          title={`No OT activity in ${formatMonthLabel(initialMonth)}`}
-          subtitle="Nothing was credited, claimed, or actioned this month."
-        />
-      </>
+      </div>
     );
   }
 
   // ── Populated ──────────────────────────────────────────────────────────
   return (
-    <>
-      <div className="flex items-center justify-end mb-4">{monthPickerNode}</div>
-      <OtAuditStats stats={derivedStats} />
-      <OtAuditTable
-        userSummaries={userSummaries}
-        expandedId={expandedId}
-        onToggle={handleToggle}
-      />
-      <p className="text-[11px] text-gray-400 mt-3 tabular-nums">
-        {userSummaries.length} user{userSummaries.length === 1 ? "" : "s"} with OT
-        activity in {formatMonthLabel(initialMonth)}
-      </p>
-    </>
+    <div className="min-w-[1100px]">
+      {header}
+      <div className="max-w-6xl mx-auto p-6">
+        <OtAuditStats stats={derivedStats} />
+        <OtAuditTable
+          userSummaries={userSummaries}
+          expandedId={expandedId}
+          onToggle={handleToggle}
+        />
+        <p className="text-[11px] text-gray-400 mt-3 tabular-nums">
+          {userSummaries.length} user{userSummaries.length === 1 ? "" : "s"} with
+          OT activity in {formatMonthLabel(initialMonth)}
+        </p>
+      </div>
+    </div>
   );
+}
+
+function formatHours(min: number): string {
+  if (min <= 0) return "0";
+  const hrs = min / 60;
+  // Compact one-decimal for non-integer hours, integer for round counts.
+  return Number.isInteger(hrs) ? String(hrs) : hrs.toFixed(1);
 }
 
 // ────────────────────────────────────────────────────────────────────────

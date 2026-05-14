@@ -1,7 +1,5 @@
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { UniversalHeader } from "@/components/universal-header";
-import { AdminSubNav } from "@/components/admin/attendance/admin-sub-nav";
 import {
   SettingsForm,
   type SettingsResponse,
@@ -11,16 +9,9 @@ export const dynamic = "force-dynamic";
 
 // Admin gating already enforced by app/(ops)/layout.tsx
 // (admin | ops_admin) — same delegation pattern as the other admin pages.
-
-const istLastUpdatedFormatter = new Intl.DateTimeFormat("en-IN", {
-  timeZone: "Asia/Kolkata",
-  year: "numeric",
-  month: "short",
-  day: "2-digit",
-  hour: "2-digit",
-  minute: "2-digit",
-  hour12: false,
-});
+//
+// Settings is intentionally not linked from the workflow switcher or the
+// Reports dropdown — direct-URL access only.
 
 export default async function AttendanceSettingsPage() {
   // Sequential awaits — never $transaction (Vercel pooler timeout rule).
@@ -35,8 +26,6 @@ export default async function AttendanceSettingsPage() {
   });
 
   // Mirror buildSettingsResponse() in app/api/admin/attendance/settings/route.ts.
-  // Decimal → number, Date → ISO so the client form can hold every field
-  // as a plain JS primitive without a Decimal dependency.
   const initial: SettingsResponse = {
     scope: row.scope,
     roleSlug: row.roleSlug,
@@ -65,26 +54,5 @@ export default async function AttendanceSettingsPage() {
     updatedByName: row.updatedBy?.name ?? null,
   };
 
-  const subtitle = `Last updated ${istLastUpdatedFormatter.format(row.updatedAt)} IST by ${
-    initial.updatedByName ?? "system"
-  }`;
-
-  return (
-    <div className="min-w-[800px]">
-      <UniversalHeader
-        title={
-          <span className="flex flex-col leading-tight">
-            <span>Attendance Settings</span>
-            <span className="text-[11px] font-normal text-gray-400 tabular-nums">
-              {subtitle}
-            </span>
-          </span>
-        }
-      />
-      <AdminSubNav active="settings" otPendingCount={otPendingCount} />
-      <div className="max-w-3xl mx-auto p-6 pb-24">
-        <SettingsForm initial={initial} />
-      </div>
-    </div>
-  );
+  return <SettingsForm initial={initial} otPendingCount={otPendingCount} />;
 }

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MapPin } from "lucide-react";
+import { AttendancePageHeader } from "./attendance-page-header";
 import { SettingsSection } from "./settings-section";
 import {
   SettingsConfirmModal,
@@ -76,6 +77,7 @@ const DPDP_VERSION_REGEX = /^v\d+\.\d+$/;
 
 interface SettingsFormProps {
   initial: SettingsResponse;
+  otPendingCount: number;
 }
 
 // Sections that own cross-field invariants. Keys map to error slot IDs
@@ -98,7 +100,7 @@ interface ErrorResponse {
 // Component
 // ────────────────────────────────────────────────────────────────────────
 
-export function SettingsForm({ initial }: SettingsFormProps) {
+export function SettingsForm({ initial, otPendingCount }: SettingsFormProps) {
   const [formValues, setFormValues] = useState<SettingsResponse>(initial);
   const [originalValues, setOriginalValues] = useState<SettingsResponse>(initial);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -374,7 +376,47 @@ export function SettingsForm({ initial }: SettingsFormProps) {
 
   // ── Render ───────────────────────────────────────────────────────────────
   return (
-    <>
+    <div className="min-w-[1100px]">
+      <AttendancePageHeader
+        activeTab={null}
+        otPendingCount={otPendingCount}
+        showWorkflowSwitcher={false}
+        titleOverride="Attendance · Settings"
+      >
+        {/* Strip 2 left — dirty count (or empty when clean) */}
+        {isDirty ? (
+          <span className="text-xs text-amber-700 tabular-nums">
+            {changedKeys.length} field{changedKeys.length === 1 ? "" : "s"} changed
+          </span>
+        ) : (
+          <span className="text-xs text-gray-400">No changes</span>
+        )}
+        {/* Strip 2 right — Discard + Save */}
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={handleDiscard}
+            disabled={!isDirty || isSubmitting}
+            className="text-xs text-gray-600 hover:text-gray-900 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Discard
+          </button>
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={!isDirty || isSubmitting}
+            className={
+              isDirty
+                ? "bg-gray-900 hover:bg-gray-800 text-white text-xs font-medium px-3 py-1.5 rounded-md disabled:opacity-50"
+                : "bg-gray-200 text-gray-400 text-xs font-medium px-3 py-1.5 rounded-md cursor-not-allowed"
+            }
+          >
+            {isSubmitting ? "Saving…" : "Save changes"}
+          </button>
+        </div>
+      </AttendancePageHeader>
+
+      <div className="max-w-3xl mx-auto p-6 pb-24">
       {/* SECTION 1 — Rollout */}
       <SettingsSection
         title="Rollout"
@@ -691,42 +733,6 @@ export function SettingsForm({ initial }: SettingsFormProps) {
         </div>
       </SettingsSection>
 
-      {/* Sticky save bar */}
-      <div className="sticky bottom-0 -mx-6 mt-6 bg-white border-t border-gray-200 shadow-[0_-2px_8px_rgba(0,0,0,0.04)]">
-        <div className="max-w-3xl mx-auto px-6 py-4 flex justify-between items-center">
-          {isDirty ? (
-            <button
-              type="button"
-              onClick={handleDiscard}
-              disabled={isSubmitting}
-              className="text-[13px] text-gray-500 hover:text-gray-900 disabled:opacity-50"
-            >
-              Discard changes
-            </button>
-          ) : (
-            <span />
-          )}
-          <div className="flex items-center gap-3">
-            {isDirty && (
-              <span className="text-[12px] text-gray-500 tabular-nums">
-                {changedKeys.length} field
-                {changedKeys.length === 1 ? "" : "s"} changed
-              </span>
-            )}
-            <button
-              type="button"
-              onClick={handleSubmit}
-              disabled={!isDirty || isSubmitting}
-              className={
-                isDirty
-                  ? "h-9 px-4 bg-gray-900 hover:bg-gray-800 text-white text-[13px] font-semibold rounded-md disabled:opacity-50"
-                  : "h-9 px-4 bg-gray-200 text-gray-400 text-[13px] font-semibold rounded-md cursor-not-allowed"
-              }
-            >
-              {isSubmitting ? "Saving…" : "Save changes"}
-            </button>
-          </div>
-        </div>
       </div>
 
       {pendingConfirm && (
@@ -744,7 +750,7 @@ export function SettingsForm({ initial }: SettingsFormProps) {
           onDismiss={() => setToast(null)}
         />
       )}
-    </>
+    </div>
   );
 }
 
@@ -894,8 +900,10 @@ function Toggle({
   onClick(): void;
   label: string;
 }) {
-  // Per spec (UI §6 strict): toggle ON = gray-700 because the active
-  // sub-nav tab already owns the page's single teal element.
+  // One-teal audit: redesign moves toggle ON colour to gray-900 to match
+  // the page's Save-changes button (also gray-900). No teal on this page;
+  // the active sub-nav tab is the page's only teal element when present,
+  // and Settings hides the sub-nav entirely.
   return (
     <button
       type="button"
@@ -904,7 +912,7 @@ function Toggle({
       aria-label={label}
       onClick={onClick}
       className={`relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors ${
-        value ? "bg-gray-700" : "bg-gray-300"
+        value ? "bg-gray-900" : "bg-gray-300"
       }`}
     >
       <span

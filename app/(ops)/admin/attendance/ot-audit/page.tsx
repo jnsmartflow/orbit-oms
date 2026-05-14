@@ -1,6 +1,4 @@
 import { prisma } from "@/lib/prisma";
-import { UniversalHeader } from "@/components/universal-header";
-import { AdminSubNav } from "@/components/admin/attendance/admin-sub-nav";
 import {
   OtAuditView,
   type AuditResponse,
@@ -45,17 +43,12 @@ export default async function OtAuditPage({ searchParams }: PageProps) {
   }
 
   return (
-    <div className="min-w-[1200px]">
-      <UniversalHeader title="OT Audit" />
-      <AdminSubNav active="ot-audit" otPendingCount={otPendingCount} />
-      <div className="max-w-6xl mx-auto p-6">
-        <OtAuditView
-          initialData={initialData}
-          initialMonth={month}
-          currentIstMonth={currentIstMonth}
-        />
-      </div>
-    </div>
+    <OtAuditView
+      initialData={initialData}
+      initialMonth={month}
+      currentIstMonth={currentIstMonth}
+      otPendingCount={otPendingCount}
+    />
   );
 }
 

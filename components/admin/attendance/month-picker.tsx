@@ -76,14 +76,16 @@ export function MonthPicker({
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="dialog"
         aria-expanded={open}
-        className={`inline-flex items-center gap-1 rounded-[5px] px-2.5 py-1 text-[11px] font-medium transition-colors ${
+        className={`inline-flex items-center rounded-md px-3 py-1.5 text-xs transition-colors ${
           open
-            ? "bg-gray-100 text-gray-900 border border-gray-300"
-            : "bg-gray-50 hover:bg-gray-100 text-gray-700"
+            ? "border border-gray-300 bg-gray-50 text-gray-900"
+            : "border border-gray-200 bg-white text-gray-900 hover:bg-gray-50"
         }`}
       >
         {triggerLabel}
-        <span className="text-[8px] text-gray-400">▾</span>
+        <span className="text-[9px] text-gray-400 ml-1" aria-hidden>
+          ▾
+        </span>
       </button>
       {open && (
         <div

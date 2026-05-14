@@ -2,11 +2,11 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { UniversalHeader } from "@/components/universal-header";
-import { AdminSubNav } from "./admin-sub-nav";
+import { DatePickerPopover } from "@/components/ui/date-picker-popover";
+import { ChevronLeft, ChevronRight, ChevronDown } from "lucide-react";
+import { AttendancePageHeader } from "./attendance-page-header";
 import { RosterTable } from "./roster-table";
 import { UserDetailPanel } from "./user-detail-panel";
-import { triggerCsvExport } from "./export-button";
 import type { AdminDisplayStatus } from "@/lib/attendance/admin-status";
 
 // ── Serialised shapes (mirror the page's serialisation) ────────────────────────
@@ -82,6 +82,7 @@ type SegmentId = "ALL" | "PRESENT" | "LATE" | "ABSENT" | "FLAGS";
 
 export function AttendanceDashboard({
   viewedDate,
+  today,
   rows,
   photoRetentionDays,
   otPendingCount,
@@ -89,21 +90,17 @@ export function AttendanceDashboard({
   const router = useRouter();
 
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
-  const [searchQuery, setSearchQuery] = useState("");
   const [activeSegment, setActiveSegment] = useState<SegmentId>("ALL");
 
-  // ── Stats (computed from full roster — not affected by filters, per UI §6) ──
-  // EXEMPT users excluded from stats math (Q5b). The Total denominator
-  // counts only users we expect to attend.
+  // ── Stats (computed from full roster — not affected by segment selection) ──
+  // EXEMPT users excluded from stats math. The Total denominator counts only
+  // users we expect to attend.
   const stats = useMemo(() => {
     const expected = rows.filter((r) => r.status !== "EXEMPT");
-    const inSet = new Set<AdminDisplayStatus>(["PRESENT", "LATE", "HALF_DAY", "INCOMPLETE"]);
     return {
       total: expected.length,
-      inCount: expected.filter((r) => inSet.has(r.status)).length,
       lateCount: expected.filter((r) => r.status === "LATE").length,
       absentCount: expected.filter((r) => r.status === "ABSENT").length,
-      pendingCount: expected.filter((r) => r.status === "NOT_IN_YET").length,
       flagsCount: expected.filter(
         (r) => r.flags.geo || r.flags.manual || r.flags.yesterday,
       ).length,
@@ -111,11 +108,10 @@ export function AttendanceDashboard({
     };
   }, [rows]);
 
-  // ── Filter (search + segment) ──────────────────────────────────────────────
+  // Segment filter only — search bar removed in the redesign per
+  // docs/mockups/attendance/admin-redesign.html.
   const filteredRows = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
     return rows.filter((row) => {
-      if (q && !row.user.name.toLowerCase().includes(q)) return false;
       switch (activeSegment) {
         case "PRESENT":
           return row.status === "PRESENT";
@@ -124,18 +120,15 @@ export function AttendanceDashboard({
         case "ABSENT":
           return row.status === "ABSENT";
         case "FLAGS":
-          // Q5a: Flags = GEO | MANUAL | Y'DAY (LATE excluded — has its own segment)
           return row.flags.geo || row.flags.manual || row.flags.yesterday;
         case "ALL":
         default:
           return true;
       }
     });
-  }, [rows, searchQuery, activeSegment]);
+  }, [rows, activeSegment]);
 
-  // ── Date picker handler — URL-driven server re-render ──────────────────────
   const viewedDateObj = useMemo(() => {
-    // Parse YYYY-MM-DD as IST midnight so the date picker shows the right day.
     return new Date(`${viewedDate}T00:00:00+05:30`);
   }, [viewedDate]);
 
@@ -144,41 +137,33 @@ export function AttendanceDashboard({
     router.push(`/admin/attendance?date=${istStr}`);
   }
 
-  function handleExport() {
-    triggerCsvExport(viewedDate);
+  function shiftDay(days: number) {
+    const next = new Date(viewedDateObj);
+    next.setDate(next.getDate() + days);
+    handleDateChange(next);
   }
+
+  const isToday = viewedDate === today;
 
   return (
     <div className="min-w-[1100px]">
-      <UniversalHeader
-        title={<span className="text-[14px] font-semibold text-gray-900">Attendance</span>}
-        stats={[
-          { label: "Total", value: stats.total },
-          { label: "In", value: stats.inCount },
-          { label: "Late", value: stats.lateCount },
-          { label: "Absent", value: stats.absentCount },
-          { label: "Not in yet", value: stats.pendingCount },
-        ]}
-        showDownload
-        onDownload={handleExport}
-        segments={[
-          { id: "ALL", label: "All", count: stats.total },
-          { id: "PRESENT", label: "Present", count: stats.presentCount },
-          { id: "LATE", label: "Late", count: stats.lateCount },
-          { id: "ABSENT", label: "Absent", count: stats.absentCount },
-          { id: "FLAGS", label: "Flags", count: stats.flagsCount },
-        ]}
-        activeSegment={activeSegment}
-        onSegmentChange={(id) => setActiveSegment((id as SegmentId) ?? "ALL")}
-        searchPlaceholder="Search users…"
-        searchValue={searchQuery}
-        onSearchChange={setSearchQuery}
-        showDatePicker
-        currentDate={viewedDateObj}
-        onDateChange={handleDateChange}
-      />
-
-      <AdminSubNav active="dashboard" otPendingCount={otPendingCount} />
+      <AttendancePageHeader
+        activeTab="dashboard"
+        otPendingCount={otPendingCount}
+      >
+        <SegmentRow
+          activeSegment={activeSegment}
+          onChange={setActiveSegment}
+          stats={stats}
+        />
+        <DateStepper
+          viewedDate={viewedDateObj}
+          isToday={isToday}
+          onPrev={() => shiftDay(-1)}
+          onNext={() => shiftDay(1)}
+          onPick={handleDateChange}
+        />
+      </AttendancePageHeader>
 
       <div className="flex gap-4 p-4">
         <div className="flex-1 min-w-0">
@@ -201,4 +186,161 @@ export function AttendanceDashboard({
       </div>
     </div>
   );
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// Strip 2 — segment pills
+// ────────────────────────────────────────────────────────────────────────
+
+interface SegmentRowProps {
+  activeSegment: SegmentId;
+  onChange(id: SegmentId): void;
+  stats: {
+    total: number;
+    presentCount: number;
+    lateCount: number;
+    absentCount: number;
+    flagsCount: number;
+  };
+}
+
+function SegmentRow({ activeSegment, onChange, stats }: SegmentRowProps) {
+  return (
+    <div className="inline-flex items-center gap-1.5">
+      <SegmentPill
+        active={activeSegment === "ALL"}
+        onClick={() => onChange("ALL")}
+        count={stats.total}
+      >
+        All
+      </SegmentPill>
+      <SegmentPill
+        active={activeSegment === "PRESENT"}
+        onClick={() => onChange("PRESENT")}
+        count={stats.presentCount}
+      >
+        Present
+      </SegmentPill>
+      <SegmentPill
+        active={activeSegment === "LATE"}
+        onClick={() => onChange("LATE")}
+        count={stats.lateCount}
+      >
+        Late
+      </SegmentPill>
+      <SegmentPill
+        active={activeSegment === "ABSENT"}
+        onClick={() => onChange("ABSENT")}
+        count={stats.absentCount}
+      >
+        Absent
+      </SegmentPill>
+      <SegmentPill
+        active={activeSegment === "FLAGS"}
+        onClick={() => onChange("FLAGS")}
+        count={stats.flagsCount}
+      >
+        Flags
+      </SegmentPill>
+    </div>
+  );
+}
+
+function SegmentPill({
+  active,
+  onClick,
+  count,
+  children,
+}: {
+  active: boolean;
+  onClick(): void;
+  count: number;
+  children: React.ReactNode;
+}) {
+  if (active) {
+    // Single teal element on the page per UI §6.
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className="inline-flex items-center px-3 py-1 text-xs font-medium rounded-md text-white bg-teal-600 hover:bg-teal-700"
+      >
+        {children}
+        <span className="opacity-80 ml-1 tabular-nums">· {count}</span>
+      </button>
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="inline-flex items-center px-3 py-1 text-xs text-gray-600 hover:bg-gray-50 rounded-md"
+    >
+      {children}
+      <span className="text-gray-400 ml-1 tabular-nums">· {count}</span>
+    </button>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// Strip 2 — date stepper (‹ Today · 14 May ›)
+// ────────────────────────────────────────────────────────────────────────
+
+function DateStepper({
+  viewedDate,
+  isToday,
+  onPrev,
+  onNext,
+  onPick,
+}: {
+  viewedDate: Date;
+  isToday: boolean;
+  onPrev(): void;
+  onNext(): void;
+  onPick(d: Date): void;
+}) {
+  const label = formatStepperLabel(viewedDate, isToday);
+  return (
+    <div className="inline-flex items-center border border-gray-200 rounded-md bg-white text-xs">
+      <button
+        type="button"
+        onClick={onPrev}
+        className="px-2 py-1 text-gray-500 hover:bg-gray-50 hover:text-gray-700"
+        aria-label="Previous day"
+      >
+        <ChevronLeft className="w-3.5 h-3.5" />
+      </button>
+      <DatePickerPopover value={viewedDate} onChange={onPick}>
+        <button
+          type="button"
+          className="px-2 py-1 font-medium text-gray-900 border-x border-gray-200 hover:bg-gray-50 inline-flex items-center gap-1"
+        >
+          {label}
+          <ChevronDown className="w-3 h-3 text-gray-400" />
+        </button>
+      </DatePickerPopover>
+      <button
+        type="button"
+        onClick={isToday ? undefined : onNext}
+        disabled={isToday}
+        className={`px-2 py-1 ${
+          isToday
+            ? "text-gray-300 cursor-not-allowed"
+            : "text-gray-500 hover:bg-gray-50 hover:text-gray-700"
+        }`}
+        aria-label="Next day"
+      >
+        <ChevronRight className="w-3.5 h-3.5" />
+      </button>
+    </div>
+  );
+}
+
+function formatStepperLabel(d: Date, isToday: boolean): string {
+  const dayMonth = d.toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    timeZone: "Asia/Kolkata",
+  });
+  return isToday ? `Today · ${dayMonth}` : dayMonth;
 }
