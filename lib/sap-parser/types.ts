@@ -38,7 +38,7 @@ export interface ParseResult {
 
 export interface SkippedRow {
   delivery:   string;
-  reason:     "non-LF return" | "all-lines-ZZRE" | "no-valid-lines";
+  reason:     "non-LF return" | "all-lines-ZZRE" | "no-valid-lines" | "non-LF row";
   rowNumbers: number[];
 }
 
@@ -49,7 +49,6 @@ export type WarningKind =
   | "unknown-item-category"
   | "mixed-zzre-line"
   | "duplicate-delivery-header"
-  | "duplicate-sku-summed"
   | "row-parse-failed"
   | "zinr-article-tag-pending"
   | "stats-mismatch";
@@ -72,20 +71,23 @@ export interface RawSapRow {
   /** 1-indexed row number in the source file (header is row 1, data starts at 2). */
   rowNumber:           number;
   delivery:            string;
-  item:                number;        // parsed integer; 0 if unparseable
+  warehouse:           string | null; // Shipping Point/Receiving Pt
   division:            string | null; // raw code
   soldToParty:         string | null;
   soldToName:          string | null;
-  refItem:             number | null; // links sub-row to parent's `item`
+  shipToParty:         string | null;
+  shipToName:          string | null;
+  referenceDoc:        string | null; // SAP Reference Document → soNumber
+  deliveryType:        string | null;
+  itemCategory:        string | null;
+  item:                number;        // parsed integer; 0 if unparseable
   material:            string | null;
   description:         string | null;
   deliveryQuantity:    number | null;
   volume:              number | null;
+  netWeight:           number | null;
   totalWeight:         number | null;
-  shipToParty:         string | null;
-  shipToName:          string | null;
-  itemCategory:        string | null;
-  deliveryType:        string | null;
+  batch:               string | null; // per-row Batch number
 }
 
 /**

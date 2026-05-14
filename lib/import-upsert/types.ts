@@ -16,6 +16,11 @@ export interface ObdLineInput {
   batchCode:         string | null;
   unitQty:           number;
   volumeLine:        number | null;
+  /** Optional so existing constructors (auto-import, manual-template) don't
+   *  need to be touched. Parser supplies values; others omit → undefined →
+   *  NULL on DB insert. Schema column is nullable. */
+  netWeight?:        number | null;
+  totalWeight?:      number | null;
   isTinting:         boolean;
   article:           number | null;
   articleTag:        string | null;

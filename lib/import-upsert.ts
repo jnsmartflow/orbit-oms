@@ -244,6 +244,8 @@ async function createPath(
           batchCode:         l.batchCode,
           unitQty:           l.unitQty,
           volumeLine:        l.volumeLine,
+          netWeight:         l.netWeight,
+          totalWeight:       l.totalWeight,
           isTinting:         l.isTinting,
           article:           l.article,
           articleTag:        l.articleTag,

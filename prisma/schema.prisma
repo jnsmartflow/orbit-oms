@@ -512,6 +512,8 @@ model import_raw_line_items {
   batchCode           String?
   unitQty             Int
   volumeLine          Float?
+  netWeight           Float?
+  totalWeight         Float?
   isTinting           Boolean                     @default(false)
   article             Int?
   articleTag          String?

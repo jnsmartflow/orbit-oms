@@ -17,34 +17,43 @@ import {
 } from "./types";
 import { toInt, toNum, toStr, toStrOrNull } from "./cells";
 
-/** 1-based column positions of fields the parser depends on (from design §C). */
+/** 1-based column positions for the 19-column SAP OBT export layout. */
 const COL = {
-  delivery:        1,
-  item:            2,
-  division:        5,
-  soldToParty:     6,
-  soldToName:      7,
-  refItem:         9,
-  material:       10,
-  description:    11,
-  deliveryQty:    12,
-  volume:         14,
-  totalWeight:    15,
-  shipToParty:    16,
-  shipToName:     17,
-  itemCategory:   24,
-  deliveryType:   25,
+  delivery:        1,   // Delivery (OBD number)
+  warehouse:       2,   // Shipping Point/Receiving Pt
+  storageLocation: 3,   // Storage Location — read but unused downstream
+  division:        4,   // Division → SMU
+  soldToParty:     5,   // Sold-To Party (Bill-To code)
+  soldToName:      6,   // Name of sold-to party
+  shipToParty:     7,   // Ship-To Party
+  shipToName:      8,   // Name of the ship-to party
+  referenceDoc:    9,   // Reference Document (SO number, string)
+  deliveryType:   10,   // Delivery Type — LF filter only
+  itemCategory:   11,   // Item category (Z007 = tinting, ZZRE = return)
+  item:           12,   // Item — lineId source
+  material:       13,   // Material (SKU code)
+  description:    14,   // Description
+  deliveryQty:    15,   // Delivery quantity
+  volume:         16,   // Volume
+  netWeight:      17,   // Net weight
+  totalWeight:    18,   // Total Weight
+  batch:          19,   // Batch
 } as const;
 
 /**
  * Columns the parser cannot function without. If any of these are blank
  * across the entire header row, throw FileFormatError. We do not validate
- * header *text*, only that the slot exists (i.e. row 1 has at least 25 cells).
+ * header *text*, only that the slot exists.
+ *
+ * Optional (not required): storageLocation, soldToName, shipToName, volume,
+ * netWeight, totalWeight, batch — any of these can legitimately be blank on
+ * individual rows, so requiring the header text adds no safety.
  */
 const REQUIRED_COLS = [
-  COL.delivery, COL.item, COL.division,
-  COL.material, COL.deliveryQty,
-  COL.itemCategory, COL.deliveryType,
+  COL.delivery, COL.warehouse, COL.division,
+  COL.soldToParty, COL.shipToParty,
+  COL.referenceDoc, COL.deliveryType, COL.itemCategory,
+  COL.item, COL.material, COL.deliveryQty,
 ];
 
 interface ReadSheetResult {
@@ -130,20 +139,23 @@ export function readSheet(
       rows.push({
         rowNumber,
         delivery,
-        item:             toInt(r[COL.item - 1]) ?? 0,
+        warehouse:        toStrOrNull(r[COL.warehouse - 1]),
         division:         toStrOrNull(r[COL.division - 1]),
         soldToParty:      toStrOrNull(r[COL.soldToParty - 1]),
         soldToName:       toStrOrNull(r[COL.soldToName - 1]),
-        refItem:          toInt(r[COL.refItem - 1]),
+        shipToParty:      toStrOrNull(r[COL.shipToParty - 1]),
+        shipToName:       toStrOrNull(r[COL.shipToName - 1]),
+        referenceDoc:     toStrOrNull(r[COL.referenceDoc - 1]),
+        deliveryType:     toStrOrNull(r[COL.deliveryType - 1]),
+        itemCategory:     toStrOrNull(r[COL.itemCategory - 1]),
+        item:             toInt(r[COL.item - 1]) ?? 0,
         material:         toStrOrNull(r[COL.material - 1]),
         description:      toStrOrNull(r[COL.description - 1]),
         deliveryQuantity: toNum(r[COL.deliveryQty - 1]),
         volume:           toNum(r[COL.volume - 1]),
+        netWeight:        toNum(r[COL.netWeight - 1]),
         totalWeight:      toNum(r[COL.totalWeight - 1]),
-        shipToParty:      toStrOrNull(r[COL.shipToParty - 1]),
-        shipToName:       toStrOrNull(r[COL.shipToName - 1]),
-        itemCategory:     toStrOrNull(r[COL.itemCategory - 1]),
-        deliveryType:     toStrOrNull(r[COL.deliveryType - 1]),
+        batch:            toStrOrNull(r[COL.batch - 1]),
       });
     } catch (err) {
       warnings.push({
