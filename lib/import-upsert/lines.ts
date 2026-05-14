@@ -16,6 +16,20 @@ import {
 } from "./types";
 
 /**
+ * Composite key for matching incoming SAP rows to existing DB rows.
+ * SKU alone is not unique — same SKU can appear on multiple lineIds
+ * within one OBD (e.g. line 10 and line 20 both carry IN70270181, or
+ * line 900001 and 900002 both carry the same tinter SKU with different
+ * batches). lineId disambiguates these.
+ *
+ * skuCodeRaw is trimmed defensively (stray whitespace from XLS cells).
+ * Material codes are case-sensitive identifiers in SAP — no .toLowerCase().
+ */
+function makeKey(lineId: number, skuCodeRaw: string): string {
+  return `${lineId}|${skuCodeRaw.trim()}`;
+}
+
+/**
  * Compute the line-level diff between an existing OBD's lines and the
  * incoming set. Pure: no DB access.
  *
@@ -41,41 +55,47 @@ export function patchLines(
 ): LinePatchPlan {
   const auth = LINE_AUTHORITY[source];
 
-  // Match by SKU code (skuCodeRaw, trimmed). lineId is unreliable as a
-  // matching key across import sources — auto-import wrote 0 historically
-  // while SAP brings real SAP item numbers (10, 20, 900001…). Material
-  // codes are case-sensitive identifiers in SAP, so exact match (no
-  // .toLowerCase()), trimmed defensively for stray whitespace.
+  // Match by composite key (lineId + skuCodeRaw, trimmed). SKU alone is
+  // not unique within an OBD — duplicate SKUs occur on separate lineIds
+  // (e.g. same tinter SKU on lineIds 10 and 20, or on the 900001/900002
+  // breakwall series with different batches).
   //
-  // Same-SKU duplicates inside either set are unexpected — the parser
-  // sums by SKU per delivery, and existing rows should be one-per-SKU.
-  // When duplicates do appear (e.g. legacy data from a prior bad import),
-  // prefer the first occurrence and log a warning so it's diagnosable.
-  const bySkuCode = new Map<string, ExistingLine>();
+  // lineId is stored as Int in DB, so leading-zero padding from SAP
+  // (e.g. "000070") is stripped at parse time — "70" and "000070"
+  // converge on 70 and match correctly across import sources.
+  //
+  // Material codes are case-sensitive identifiers in SAP, so exact
+  // match (no .toLowerCase()), trimmed defensively for stray whitespace.
+  const byKey = new Map<string, ExistingLine>();
   for (const l of existingLines) {
-    const key = l.skuCodeRaw.trim();
-    if (bySkuCode.has(key)) {
-      console.warn(`[patchLines] Duplicate SKU '${key}' in existing lines for batch ${batchId}; using first (id=${bySkuCode.get(key)!.id}, ignored=${l.id})`);
+    const key = makeKey(l.lineId, l.skuCodeRaw);
+    if (byKey.has(key)) {
+      const prior = byKey.get(key)!;
+      console.warn(
+        `[patchLines] Duplicate (lineId=${l.lineId}, sku='${l.skuCodeRaw.trim()}') in existing lines for batch ${batchId}; using first (id=${prior.id}, ignored=${l.id})`,
+      );
       continue;
     }
-    bySkuCode.set(key, l);
+    byKey.set(key, l);
   }
-  const incomingBySkuCode = new Map<string, ObdLineInput>();
+  const incomingByKey = new Map<string, ObdLineInput>();
   for (const l of incomingLines) {
-    const key = l.skuCodeRaw.trim();
-    if (incomingBySkuCode.has(key)) {
-      console.warn(`[patchLines] Duplicate SKU '${key}' in incoming lines for batch ${batchId}; using first occurrence`);
+    const key = makeKey(l.lineId, l.skuCodeRaw);
+    if (incomingByKey.has(key)) {
+      console.warn(
+        `[patchLines] Duplicate (lineId=${l.lineId}, sku='${l.skuCodeRaw.trim()}') in incoming lines for batch ${batchId}; using first occurrence`,
+      );
       continue;
     }
-    incomingBySkuCode.set(key, l);
+    incomingByKey.set(key, l);
   }
 
   const plan: LinePatchPlan = {
     adds: [], patches: [], restores: [], removes: [], splitCascades: [],
   };
 
-  for (const inc of Array.from(incomingBySkuCode.values())) {
-    const existing = bySkuCode.get(inc.skuCodeRaw.trim());
+  for (const inc of Array.from(incomingByKey.values())) {
+    const existing = byKey.get(makeKey(inc.lineId, inc.skuCodeRaw));
     if (!existing) {
       plan.adds.push(inc);
       continue;
@@ -132,7 +152,7 @@ export function patchLines(
   if (auth && incomingLines.length > 0) {
     for (const ex of existingLines) {
       if (ex.lineStatus !== "active") continue;
-      if (incomingBySkuCode.has(ex.skuCodeRaw.trim())) continue;
+      if (incomingByKey.has(makeKey(ex.lineId, ex.skuCodeRaw))) continue;
       plan.removes.push({ existingId: ex.id, lineId: ex.lineId, sku: ex.skuCodeRaw });
       plan.splitCascades.push({
         rawLineItemId: ex.id,
@@ -174,6 +194,8 @@ export async function applyLinePatch(
         batchCode:         inc.batchCode,
         unitQty:           inc.unitQty,
         volumeLine:        inc.volumeLine,
+        netWeight:         inc.netWeight   ?? null,
+        totalWeight:       inc.totalWeight ?? null,
         isTinting:         inc.isTinting,
         article:           inc.article,
         articleTag:        inc.articleTag,
