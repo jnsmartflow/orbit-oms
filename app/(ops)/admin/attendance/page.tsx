@@ -73,6 +73,10 @@ export default async function AdminAttendancePage({ searchParams }: PageProps) {
     },
   });
 
+  const otPendingCount = await prisma.attendance_records.count({
+    where: { otApprovalStatus: "PENDING" },
+  });
+
   const records = await prisma.attendance_records.findMany({
     where: { attendanceDate: viewedDate },
     orderBy: { timestamp: "asc" },
@@ -216,6 +220,7 @@ export default async function AdminAttendancePage({ searchParams }: PageProps) {
       today={today}
       rows={rosterRows}
       photoRetentionDays={settings.photoRetentionDays}
+      otPendingCount={otPendingCount}
     />
   );
 }

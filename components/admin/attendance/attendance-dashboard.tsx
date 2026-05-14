@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { UniversalHeader } from "@/components/universal-header";
+import { AdminSubNav } from "./admin-sub-nav";
 import { RosterTable } from "./roster-table";
 import { UserDetailPanel } from "./user-detail-panel";
 import { triggerCsvExport } from "./export-button";
@@ -74,6 +75,7 @@ interface AttendanceDashboardProps {
   today: string;
   rows: RosterRow[];
   photoRetentionDays: number;
+  otPendingCount: number;
 }
 
 type SegmentId = "ALL" | "PRESENT" | "LATE" | "ABSENT" | "FLAGS";
@@ -82,6 +84,7 @@ export function AttendanceDashboard({
   viewedDate,
   rows,
   photoRetentionDays,
+  otPendingCount,
 }: AttendanceDashboardProps) {
   const router = useRouter();
 
@@ -174,6 +177,8 @@ export function AttendanceDashboard({
         currentDate={viewedDateObj}
         onDateChange={handleDateChange}
       />
+
+      <AdminSubNav active="dashboard" otPendingCount={otPendingCount} />
 
       <div className="flex gap-4 p-4">
         <div className="flex-1 min-w-0">
