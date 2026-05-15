@@ -1398,6 +1398,24 @@ const BillCard = forwardRef<BillCardHandle, BillCardProps>(function BillCard({
     prevActiveRef.current = nextActive;
   }, [bill.mode, bill.activeProduct]);
 
+  // Auto-scroll: on picking entry or Next-→ advance, bring the first pack
+  // row to the top of the viewport (under the sticky header). Removes the
+  // need to scroll past previous bill lines / search input to reach the
+  // packs for the current product. scroll-mt-[140px] on the row gives the
+  // ~119px STATE-3 header room. Fires whenever bill.mode === "picking" and
+  // the activeProduct reference changes (rAF defer waits one frame for the
+  // re-render to commit new pack rows).
+  useEffect(() => {
+    if (bill.mode !== "picking" || !bill.activeProduct) return;
+    const frameId = requestAnimationFrame(() => {
+      const firstPack = packInputsRef.current[0];
+      if (!firstPack) return;
+      const row = firstPack.closest("[data-pack-row]") as HTMLElement | null;
+      (row ?? firstPack).scrollIntoView({ block: "start", behavior: "smooth" });
+    });
+    return () => cancelAnimationFrame(frameId);
+  }, [bill.mode, bill.activeProduct]);
+
   // Keyboard nav scroll: when ↓/↑ moves highlightedIndex, scroll the new
   // suggestion row into view. Page auto-advance has already updated
   // suggestionPage, so by the time this effect runs the row is in the DOM.
@@ -1791,7 +1809,8 @@ const BillCard = forwardRef<BillCardHandle, BillCardProps>(function BillCard({
             return (
               <div
                 key={pack}
-                className="flex items-center gap-3 px-[14px] py-[10px] border-b border-[#f0f0f0]"
+                data-pack-row
+                className="flex items-center gap-3 px-[14px] py-[10px] border-b border-[#f0f0f0] scroll-mt-[140px]"
               >
                 <div className="flex-1 min-w-0">
                   <p className="text-[14px] font-medium">{label}</p>
