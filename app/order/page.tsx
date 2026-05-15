@@ -1385,32 +1385,7 @@ const BillCard = forwardRef<BillCardHandle, BillCardProps>(function BillCard({
     : null;
 
   return (
-    <>
-      {/* Sticky action bar — sibling of the card so it pins to viewport top
-          (top-[60px] sits just below the 59px page header) and stays put even
-          when the qty card scrolls upward as iOS opens the keyboard. */}
-      {inPicking && bill.activeProduct && (
-        <div className="sticky top-[60px] z-20 bg-white border-b border-[#f0f0f0] shadow-sm px-[14px] py-[10px] flex gap-2 rounded-[10px]">
-          <button
-            type="button"
-            onClick={() => onNextProduct(true)}
-            className="text-[12px] font-medium text-gray-500 bg-gray-100 active:bg-gray-200 rounded-[9px] px-4 h-10 shrink-0"
-          >
-            Skip
-          </button>
-          <button
-            ref={nextButtonRef}
-            type="button"
-            onClick={() => onNextProduct(false)}
-            className="flex-1 h-10 bg-teal-600 hover:bg-teal-700 text-white rounded-[9px] text-[13px] font-semibold truncate min-w-0 px-3"
-          >
-            {nextProductInQueue
-              ? `Next → ${nextProductInQueue.displayName}`
-              : "+ Add All to Bill"}
-          </button>
-        </div>
-      )}
-      <div id={`bill-${bill.id}`} className="bg-white rounded-[14px] shadow-sm">
+    <div id={`bill-${bill.id}`} className="bg-white rounded-[14px] shadow-sm">
 
       {/* Bill header */}
       <div className="flex items-center justify-between px-[14px] py-[10px] bg-[#fafafa] border-b border-[#f0f0f0] rounded-t-[14px]">
@@ -1734,6 +1709,28 @@ const BillCard = forwardRef<BillCardHandle, BillCardProps>(function BillCard({
             </p>
           </div>
 
+          {/* Skip + Next/Add-All bar — placed at the top of the qty card so it
+              never overlaps qty rows or hides behind the iOS soft keyboard. */}
+          <div className="sticky top-0 z-10 bg-white border-b border-[#f0f0f0] px-[14px] py-[10px] flex gap-2">
+            <button
+              type="button"
+              onClick={() => onNextProduct(true)}
+              className="text-[12px] font-medium text-gray-500 bg-gray-100 active:bg-gray-200 rounded-[9px] px-4 h-10 shrink-0"
+            >
+              Skip
+            </button>
+            <button
+              ref={nextButtonRef}
+              type="button"
+              onClick={() => onNextProduct(false)}
+              className="flex-1 h-10 bg-teal-600 hover:bg-teal-700 text-white rounded-[9px] text-[13px] font-semibold truncate min-w-0 px-3"
+            >
+              {nextProductInQueue
+                ? `Next → ${nextProductInQueue.displayName}`
+                : "+ Add All to Bill"}
+            </button>
+          </div>
+
           {/* Pack counters — step multiples align taps with cartons. Pack
               qty inputs receive Tab + Enter via packInputsRef; the +/-
               buttons are tabIndex={-1} so Tab walks input → input. */}
@@ -1802,8 +1799,7 @@ const BillCard = forwardRef<BillCardHandle, BillCardProps>(function BillCard({
         </>
       )}
 
-      </div>
-    </>
+    </div>
   );
 });
 
