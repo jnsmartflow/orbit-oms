@@ -1353,9 +1353,19 @@ const BillCard = forwardRef<BillCardHandle, BillCardProps>(function BillCard({
     const exitedPicking    = prevMode === "picking" && nextMode === "search";
 
     if (enteredPicking || advancedProduct) {
-      const first = packInputsRef.current[0];
-      if (first) first.focus();
-      else       nextButtonRef.current?.focus();   // 0-pack fallback
+      // Desktop-only auto-focus. On mobile this would (a) pop the soft
+      // keyboard immediately and (b) race the qty-input onFocus
+      // scrollIntoView against iOS Safari's keyboard auto-scroll, which
+      // displaces the page-level picker bar. 768px matches the existing
+      // customer-search auto-focus convention at the top of the file.
+      const isDesktop =
+        typeof window !== "undefined" &&
+        window.matchMedia("(min-width: 768px)").matches;
+      if (isDesktop) {
+        const first = packInputsRef.current[0];
+        if (first) first.focus();
+        else       nextButtonRef.current?.focus();   // 0-pack fallback
+      }
     } else if (exitedPicking) {
       productSearchRef.current?.focus();
     }
