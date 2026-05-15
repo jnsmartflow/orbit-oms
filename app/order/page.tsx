@@ -159,6 +159,46 @@ type BillCardHandle = {
   focusFirstPackRow:  () => void;
 };
 
+/**
+ * useKeyboardOffset
+ *
+ * Returns the pixel height the iOS soft keyboard is currently occluding
+ * at the bottom of the screen. Returns 0 when the keyboard is closed,
+ * on non-iOS devices, or on desktop.
+ *
+ * Use as a CSS transform translateY(-{offset}px) on sticky bottom bars
+ * so they stay above the keyboard.
+ *
+ * Android Chrome resizes the layout viewport on keyboard open, so
+ * window.innerHeight === visualViewport.height and the offset is 0.
+ * iOS Safari/Chrome do NOT resize the layout viewport, so the offset
+ * equals the keyboard height.
+ */
+function useKeyboardOffset(): number {
+  const [offset, setOffset] = useState(0);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.visualViewport) return;
+
+    const vv = window.visualViewport;
+    const update = () => {
+      const next = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      setOffset(next);
+    };
+
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
+    update();
+
+    return () => {
+      vv.removeEventListener("resize", update);
+      vv.removeEventListener("scroll", update);
+    };
+  }, []);
+
+  return offset;
+}
+
 // ── Component ────────────────────────────────────────────────────────────
 
 export default function OrderPage(): React.JSX.Element {
@@ -1234,6 +1274,7 @@ const BillCard = forwardRef<BillCardHandle, BillCardProps>(function BillCard({
   onStepPack, onSetPack, onSearchKeyDown, onCancelPicking, onDeleteLine,
   speechSupported, isListening, onMicToggle,
 }, ref) {
+  const keyboardOffset = useKeyboardOffset();
   const suggestions  = getProductSuggestions(bill.searchQuery);
   const hasAnyQty    = Object.values(bill.packQtys).some((q) => q > 0);
   const inPicking    = bill.mode === "picking";
@@ -1376,8 +1417,10 @@ const BillCard = forwardRef<BillCardHandle, BillCardProps>(function BillCard({
   //      - Pack counters
   //      - Sticky Skip + Next/Add-All bar
   //
-  // overflow-hidden is intentionally absent so the sticky bottom bar can
-  // pin to the visual viewport bottom when the mobile keyboard is up.
+  // overflow-hidden is intentionally absent so natural document scroll works
+  // while the keyboard is up. The sticky bottom bar is translated by
+  // useKeyboardOffset to stay above the iOS keyboard (sticky-position on iOS
+  // anchors to the layout viewport, not the visual viewport).
   const nextProductInQueue = inPicking && bill.pickerIndex < bill.selectedProducts.length - 1
     ? bill.selectedProducts[bill.pickerIndex + 1]
     : null;
@@ -1660,7 +1703,13 @@ const BillCard = forwardRef<BillCardHandle, BillCardProps>(function BillCard({
           still has selections. Hidden during picking — that mode has its
           own Skip/Next sticky bar. */}
       {bill.selectedProducts.length > 0 && !inPicking && (
-        <div className="sticky bottom-0 bg-teal-50 border-t border-teal-200 px-[13px] py-[10px] rounded-b-[14px] z-10 flex items-center justify-between">
+        <div
+          className="sticky bottom-0 bg-teal-50 border-t border-teal-200 px-[13px] py-[10px] rounded-b-[14px] z-10 flex items-center justify-between"
+          style={{
+            transform: `translateY(-${keyboardOffset}px)`,
+            transition: "transform 150ms ease-out",
+          }}
+        >
           <span className="text-[13px] font-semibold text-teal-700">
             {bill.selectedProducts.length} product{bill.selectedProducts.length > 1 ? "s" : ""} selected
           </span>
@@ -1773,7 +1822,13 @@ const BillCard = forwardRef<BillCardHandle, BillCardProps>(function BillCard({
           })}
 
           {/* Sticky Skip + Next/Add-All bar */}
-          <div className="sticky bottom-0 bg-white border-t border-[#f0f0f0] px-[14px] py-[10px] rounded-b-[14px] z-10 flex gap-2">
+          <div
+            className="sticky bottom-0 bg-white border-t border-[#f0f0f0] px-[14px] py-[10px] rounded-b-[14px] z-10 flex gap-2"
+            style={{
+              transform: `translateY(-${keyboardOffset}px)`,
+              transition: "transform 150ms ease-out",
+            }}
+          >
             <button
               type="button"
               onClick={() => onNextProduct(true)}
