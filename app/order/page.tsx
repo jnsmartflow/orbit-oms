@@ -896,17 +896,10 @@ export default function OrderPage(): React.JSX.Element {
                   </span>
                 </div>
                 {/* Row B — current product name */}
-                <div className="px-[14px] pb-[10px]">
+                <div className="px-[14px] pb-[10px] border-b border-gray-200">
                   <div className="text-[17px] font-semibold text-gray-900 leading-tight truncate">
                     {currentName}
                   </div>
-                </div>
-                {/* Progress strip — fills as the user advances through the queue. */}
-                <div className="h-[3px] bg-gray-100 mx-[14px]">
-                  <div
-                    className="h-full bg-teal-600 transition-all duration-300 ease-out"
-                    style={{ width: `${((idx + 1) / total) * 100}%` }}
-                  />
                 </div>
                 {/* Row C — Skip + Next/Add-All */}
                 <div className="flex gap-2 px-[14px] py-[10px]">
