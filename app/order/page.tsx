@@ -817,85 +817,122 @@ export default function OrderPage(): React.JSX.Element {
   return (
     <main className="min-h-screen bg-[#f2f2f7] pb-12">
 
-      {/* Page-level Picker Bar — pinned at viewport top while any bill is in
-          picking mode. Carries product name, progress, Skip, and Next/Add-All.
-          Replaces the in-card product header, progress dots, and Skip/Next bar
-          (removed below). z-30 sits above the page header (z-10) — in practice
-          they don't coexist (header only shows when no customer is locked). */}
-      {anyBillInPicking && (() => {
-        // Prefer the first bill in picking mode. Multi-picking shouldn't
-        // happen in normal flow, but the find() is defensive.
-        const activeBill = bills.find(
-          (b) => b.mode === "picking" && b.activeProduct !== null,
-        );
-        if (!activeBill || !activeBill.activeProduct) return null;
+      {/* Unified sticky header — three mutually exclusive states:
+          STATE 1: !selectedCust                       → "Place Order" branding
+          STATE 2: selectedCust && !anyBillInPicking   → customer + Change
+          STATE 3: selectedCust && anyBillInPicking    → customer + progress + product + Skip/Next */}
+      <header className="sticky top-0 z-30 bg-white border-b border-gray-200">
+        <div className="max-w-[480px] mx-auto">
 
-        const queue       = activeBill.selectedProducts;
-        const idx         = activeBill.pickerIndex;
-        const total       = queue.length;
-        const isLast      = idx >= total - 1;
-        const currentName = activeBill.activeProduct.displayName;
-        const nextName    = isLast ? null : queue[idx + 1]?.displayName;
-
-        return (
-          <div className="sticky top-0 z-30 bg-white border-b border-gray-200 shadow-sm">
-            <div className="max-w-[480px] mx-auto px-[14px] pt-[10px] pb-[8px]">
-              {/* Row 1: product name + progress */}
-              <div className="flex items-center justify-between mb-[8px]">
-                <span className="text-[15px] font-semibold text-gray-900 truncate">
-                  {currentName}
-                </span>
-                <span className="text-[12px] font-medium text-gray-400 ml-2 shrink-0">
-                  {idx + 1} of {total}
-                </span>
+          {/* STATE 1 — Place Order branding */}
+          {!selectedCust && (
+            <div className="flex items-center gap-3 px-[14px] py-3">
+              <div className="w-[34px] h-[34px] bg-teal-600 rounded-[9px] flex items-center justify-center flex-shrink-0">
+                <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+                  <circle cx="11" cy="11" r="7" stroke="white" strokeWidth="1.6" />
+                  <circle cx="11" cy="11" r="2.2" fill="white" />
+                  <circle cx="18" cy="11" r="2" fill="white" />
+                </svg>
               </div>
-              {/* Row 2: Skip + Next/Add-All */}
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => nextProduct(activeBill.id, true)}
-                  className="px-[14px] py-[8px] rounded-[9px] bg-gray-100 text-gray-700 text-[14px] font-medium"
-                >
-                  Skip
-                </button>
-                <button
-                  type="button"
-                  onClick={() => nextProduct(activeBill.id, false)}
-                  className="flex-1 rounded-[9px] bg-teal-600 text-white text-[14px] font-semibold py-[8px] px-[14px] truncate min-w-0"
-                >
-                  {isLast
-                    ? "+ Add All to Bill"
-                    : `Next → ${nextName}`}
-                </button>
+              <div className="min-w-0">
+                <div className="text-[16px] font-semibold text-gray-900 leading-tight truncate">
+                  Place Order
+                </div>
+                <div className="text-[11px] font-medium text-gray-500 leading-tight truncate">
+                  JSW Dulux · Surat Depot
+                </div>
               </div>
             </div>
-          </div>
-        );
-      })()}
+          )}
 
-      {/* Sticky header — hidden once a customer is locked. The page-level
-          picker bar takes over the top during picking. */}
-      {!selectedCust && (
-        <div className="sticky top-0 z-10 bg-white border-b border-gray-100">
-          <div className="max-w-[480px] mx-auto px-4 py-3 flex items-center gap-3">
-            <div className="w-[34px] h-[34px] bg-teal-600 rounded-[9px] flex items-center justify-center flex-shrink-0">
-              <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
-                <circle cx="11" cy="11" r="7" stroke="white" strokeWidth="1.6" />
-                <circle cx="11" cy="11" r="2.2" fill="white" />
-                <circle cx="18" cy="11" r="2" fill="white" />
-              </svg>
+          {/* STATE 2 — customer locked, browsing */}
+          {selectedCust && !anyBillInPicking && (
+            <div className="flex items-center gap-3 px-[14px] py-3">
+              <div className="flex-1 min-w-0">
+                <div className="text-[16px] font-semibold text-gray-900 leading-tight truncate">
+                  {selectedCust.name}
+                </div>
+                {selectedCust.code && (
+                  <div className="text-[12px] font-medium text-gray-500 leading-tight truncate">
+                    {selectedCust.code}
+                  </div>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={clearCustomer}
+                className="text-teal-600 text-[13px] font-medium px-[10px] py-[6px] -mr-[6px] shrink-0"
+              >
+                Change
+              </button>
             </div>
-            <div className="flex flex-col">
-              <span className="text-[16px] font-semibold text-gray-900 leading-tight">Place Order</span>
-              <span className="text-[11px] text-gray-400 leading-tight">JSW Dulux · Surat Depot</span>
-            </div>
-          </div>
+          )}
+
+          {/* STATE 3 — customer locked, picking */}
+          {selectedCust && anyBillInPicking && (() => {
+            // Defensive: bills.some() inside anyBillInPicking already guarantees
+            // this find() returns a bill with activeProduct, but null-check anyway.
+            const activeBill = bills.find(
+              (b) => b.mode === "picking" && b.activeProduct !== null,
+            );
+            if (!activeBill || !activeBill.activeProduct) return null;
+
+            const queue       = activeBill.selectedProducts;
+            const idx         = activeBill.pickerIndex;
+            const total       = queue.length;
+            const isLast      = idx >= total - 1;
+            const currentName = activeBill.activeProduct.displayName;
+            const nextName    = isLast ? null : queue[idx + 1]?.displayName;
+
+            return (
+              <>
+                {/* Row A — customer name + progress count */}
+                <div className="flex items-center justify-between px-[14px] pt-[10px] pb-[2px]">
+                  <span className="text-[13px] font-medium text-gray-600 truncate">
+                    {selectedCust.name}
+                  </span>
+                  <span className="text-[11px] font-medium text-gray-400 ml-2 shrink-0">
+                    {idx + 1} of {total}
+                  </span>
+                </div>
+                {/* Row B — current product name */}
+                <div className="px-[14px] pb-[10px] border-b border-gray-100">
+                  <div className="text-[17px] font-semibold text-gray-900 leading-tight truncate">
+                    {currentName}
+                  </div>
+                </div>
+                {/* Row C — Skip + Next/Add-All */}
+                <div className="flex gap-2 px-[14px] py-[10px]">
+                  <button
+                    type="button"
+                    onClick={() => nextProduct(activeBill.id, true)}
+                    className="px-[14px] py-[10px] rounded-[9px] bg-gray-100 text-gray-700 text-[14px] font-medium"
+                  >
+                    Skip
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => nextProduct(activeBill.id, false)}
+                    className="flex-1 rounded-[9px] bg-teal-600 text-white text-[14px] font-semibold px-[14px] py-[10px] truncate"
+                  >
+                    {isLast
+                      ? "+ Add All to Bill"
+                      : `Next → ${nextName}`}
+                  </button>
+                </div>
+              </>
+            );
+          })()}
+
         </div>
-      )}
+      </header>
 
       <div className="max-w-[480px] mx-auto">
 
-        {/* Customer */}
+        {/* Customer — hidden once a customer is locked. The unified header at
+            the top of <main> carries customer info (and the Change button)
+            from that point on. */}
+        {!selectedCust && (
         <Section title="Customer">
           {dataLoading ? (
             <div className="flex items-center gap-2.5 px-4 py-3">
@@ -905,20 +942,6 @@ export default function OrderPage(): React.JSX.Element {
                 placeholder="Loading customers…"
                 className="flex-1 text-[16px] bg-transparent border-none outline-none placeholder:text-gray-300"
               />
-            </div>
-          ) : selectedCust ? (
-            <div className="flex items-center justify-between px-4 py-3">
-              <div className="min-w-0 pr-3">
-                <p className="text-[15px] font-semibold text-gray-900 truncate">{selectedCust.name}</p>
-                <p className="text-[12px] text-gray-400 font-mono mt-0.5">{selectedCust.code}</p>
-              </div>
-              <button
-                type="button"
-                onClick={clearCustomer}
-                className="text-[13px] text-teal-600 font-medium shrink-0"
-              >
-                Change
-              </button>
             </div>
           ) : (
             <>
@@ -976,6 +999,7 @@ export default function OrderPage(): React.JSX.Element {
             </>
           )}
         </Section>
+        )}
 
         {/* Products / Bills */}
         <div className="mx-[14px] mt-5">
