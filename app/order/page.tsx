@@ -896,17 +896,24 @@ export default function OrderPage(): React.JSX.Element {
                   </span>
                 </div>
                 {/* Row B — current product name */}
-                <div className="px-[14px] pb-[10px] border-b border-gray-100">
+                <div className="px-[14px] pb-[10px]">
                   <div className="text-[17px] font-semibold text-gray-900 leading-tight truncate">
                     {currentName}
                   </div>
+                </div>
+                {/* Progress strip — fills as the user advances through the queue. */}
+                <div className="h-[3px] bg-gray-100 mx-[14px]">
+                  <div
+                    className="h-full bg-teal-600 transition-all duration-300 ease-out"
+                    style={{ width: `${((idx + 1) / total) * 100}%` }}
+                  />
                 </div>
                 {/* Row C — Skip + Next/Add-All */}
                 <div className="flex gap-2 px-[14px] py-[10px]">
                   <button
                     type="button"
                     onClick={() => nextProduct(activeBill.id, true)}
-                    className="px-[14px] py-[10px] rounded-[9px] bg-gray-100 text-gray-700 text-[14px] font-medium"
+                    className="px-[10px] py-[10px] text-gray-500 hover:text-gray-700 text-[13px] font-medium"
                   >
                     Skip
                   </button>
@@ -1511,11 +1518,20 @@ const BillCard = forwardRef<BillCardHandle, BillCardProps>(function BillCard({
           <span className="text-[12px] font-semibold uppercase tracking-[0.07em] text-teal-600">
             Bill {bill.id}
           </span>
-          {bill.lines.length > 0 && (
-            <span className="inline-flex items-center justify-center w-[17px] h-[17px] rounded-full bg-teal-600 text-white text-[10px] font-bold">
-              {bill.lines.length}
-            </span>
-          )}
+          {bill.lines.length > 0 && (() => {
+            // Bill summary: N products · M units. Display-only.
+            const billProductCount = bill.lines.length;
+            const billUnitCount = bill.lines.reduce(
+              (sum, line) => sum + line.packs.reduce((s, p) => s + p.qty, 0),
+              0,
+            );
+            return (
+              <span className="text-gray-500 text-[12px] font-medium">
+                · {billProductCount} {billProductCount === 1 ? "product" : "products"}
+                {" · "}{billUnitCount} {billUnitCount === 1 ? "unit" : "units"}
+              </span>
+            );
+          })()}
         </div>
         <button
           type="button"
@@ -1801,19 +1817,24 @@ const BillCard = forwardRef<BillCardHandle, BillCardProps>(function BillCard({
         <>
           {/* Pack counters — step multiples align taps with cartons. Pack
               qty inputs receive Tab + Enter via packInputsRef; the +/-
-              buttons are tabIndex={-1} so Tab walks input → input. */}
+              buttons are tabIndex={-1} so Tab walks input → input. Single-
+              pack products get a larger, more finger-friendly row. */}
+          <div className={sortedPacks.length === 1 ? "py-[8px]" : ""}>
           {sortedPacks.map((pack, i) => {
             const qty   = bill.packQtys[pack] ?? 0;
             const label = formatPack(pack);
             const step  = packStep(label);
+            const onlyPack = sortedPacks.length === 1;
             return (
               <div
                 key={pack}
                 data-pack-row
-                className="flex items-center gap-3 px-[14px] py-[10px] border-b border-[#f0f0f0] scroll-mt-[140px]"
+                className={`flex items-center gap-3 px-[14px] ${
+                  onlyPack ? "py-[18px]" : "py-[10px]"
+                } border-b border-[#f0f0f0] scroll-mt-[140px]`}
               >
                 <div className="flex-1 min-w-0">
-                  <p className="text-[14px] font-medium">{label}</p>
+                  <p className={`${onlyPack ? "text-[16px]" : "text-[14px]"} font-medium`}>{label}</p>
                   {step > 1 && (
                     <p className="text-[10px] text-gray-400 mt-0.5">per {step}</p>
                   )}
@@ -1848,7 +1869,11 @@ const BillCard = forwardRef<BillCardHandle, BillCardProps>(function BillCard({
                       });
                     }}
                     onKeyDown={(e) => handlePackKeyDown(e, i)}
-                    className="w-10 text-center text-[16px] font-bold bg-transparent border-none outline-none"
+                    className={`w-10 text-center text-[16px] font-bold bg-transparent outline-none ${
+                      qty === 0
+                        ? "border-b border-dashed border-gray-300"
+                        : "border-none"
+                    }`}
                     style={{ color: qty > 0 ? "#0d9488" : "#111827" }}
                   />
                   <button
@@ -1864,6 +1889,7 @@ const BillCard = forwardRef<BillCardHandle, BillCardProps>(function BillCard({
               </div>
             );
           })}
+          </div>
 
         </>
       )}
