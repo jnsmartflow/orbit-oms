@@ -1747,7 +1747,7 @@ const BillCard = forwardRef<BillCardHandle, BillCardProps>(function BillCard({
                     onChange={(e) => onSetPack(pack, e.target.value)}
                     onFocus={(e) => e.target.select()}
                     onKeyDown={(e) => handlePackKeyDown(e, i)}
-                    className="w-10 text-center text-[14px] font-bold bg-transparent border-none outline-none"
+                    className="w-10 text-center text-[16px] font-bold bg-transparent border-none outline-none"
                     style={{ color: qty > 0 ? "#0d9488" : "#111827" }}
                   />
                   <button
