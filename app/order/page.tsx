@@ -1745,7 +1745,15 @@ const BillCard = forwardRef<BillCardHandle, BillCardProps>(function BillCard({
                     min={0}
                     value={qty}
                     onChange={(e) => onSetPack(pack, e.target.value)}
-                    onFocus={(e) => e.target.select()}
+                    onFocus={(e) => {
+                      e.target.select();
+                      // Scroll focused row above the keyboard on iOS.
+                      // requestAnimationFrame defers until after the keyboard begins to
+                      // open so the layout has settled before we measure & scroll.
+                      requestAnimationFrame(() => {
+                        e.target.scrollIntoView({ block: "center", behavior: "smooth" });
+                      });
+                    }}
                     onKeyDown={(e) => handlePackKeyDown(e, i)}
                     className="w-10 text-center text-[16px] font-bold bg-transparent border-none outline-none"
                     style={{ color: qty > 0 ? "#0d9488" : "#111827" }}
