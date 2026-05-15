@@ -1711,7 +1711,7 @@ const BillCard = forwardRef<BillCardHandle, BillCardProps>(function BillCard({
 
           {/* Skip + Next/Add-All bar — placed at the top of the qty card so it
               never overlaps qty rows or hides behind the iOS soft keyboard. */}
-          <div className="bg-white border-b border-[#f0f0f0] px-[14px] py-[10px] flex gap-2">
+          <div className="sticky top-0 z-10 bg-white border-b border-[#f0f0f0] px-[14px] py-[10px] flex gap-2">
             <button
               type="button"
               onClick={() => onNextProduct(true)}
