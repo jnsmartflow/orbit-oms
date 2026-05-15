@@ -159,46 +159,6 @@ type BillCardHandle = {
   focusFirstPackRow:  () => void;
 };
 
-/**
- * useKeyboardOffset
- *
- * Returns the pixel height the iOS soft keyboard is currently occluding
- * at the bottom of the screen. Returns 0 when the keyboard is closed,
- * on non-iOS devices, or on desktop.
- *
- * Use as a CSS transform translateY(-{offset}px) on sticky bottom bars
- * so they stay above the keyboard.
- *
- * Android Chrome resizes the layout viewport on keyboard open, so
- * window.innerHeight === visualViewport.height and the offset is 0.
- * iOS Safari/Chrome do NOT resize the layout viewport, so the offset
- * equals the keyboard height.
- */
-function useKeyboardOffset(): number {
-  const [offset, setOffset] = useState(0);
-
-  useEffect(() => {
-    if (typeof window === "undefined" || !window.visualViewport) return;
-
-    const vv = window.visualViewport;
-    const update = () => {
-      const next = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
-      setOffset(next);
-    };
-
-    vv.addEventListener("resize", update);
-    vv.addEventListener("scroll", update);
-    update();
-
-    return () => {
-      vv.removeEventListener("resize", update);
-      vv.removeEventListener("scroll", update);
-    };
-  }, []);
-
-  return offset;
-}
-
 // ── Component ────────────────────────────────────────────────────────────
 
 export default function OrderPage(): React.JSX.Element {
@@ -1274,7 +1234,6 @@ const BillCard = forwardRef<BillCardHandle, BillCardProps>(function BillCard({
   onStepPack, onSetPack, onSearchKeyDown, onCancelPicking, onDeleteLine,
   speechSupported, isListening, onMicToggle,
 }, ref) {
-  const keyboardOffset = useKeyboardOffset();
   const suggestions  = getProductSuggestions(bill.searchQuery);
   const hasAnyQty    = Object.values(bill.packQtys).some((q) => q > 0);
   const inPicking    = bill.mode === "picking";
@@ -1418,9 +1377,9 @@ const BillCard = forwardRef<BillCardHandle, BillCardProps>(function BillCard({
   //      - Sticky Skip + Next/Add-All bar
   //
   // overflow-hidden is intentionally absent so natural document scroll works
-  // while the keyboard is up. The sticky bottom bar is translated by
-  // useKeyboardOffset to stay above the iOS keyboard (sticky-position on iOS
-  // anchors to the layout viewport, not the visual viewport).
+  // while the keyboard is up. The Skip / Next action bar sits near the top
+  // of the qty card (not sticky-bottom) so it never overlaps qty rows or
+  // hides behind the iOS soft keyboard.
   const nextProductInQueue = inPicking && bill.pickerIndex < bill.selectedProducts.length - 1
     ? bill.selectedProducts[bill.pickerIndex + 1]
     : null;
@@ -1703,13 +1662,7 @@ const BillCard = forwardRef<BillCardHandle, BillCardProps>(function BillCard({
           still has selections. Hidden during picking — that mode has its
           own Skip/Next sticky bar. */}
       {bill.selectedProducts.length > 0 && !inPicking && (
-        <div
-          className="sticky bottom-0 bg-teal-50 border-t border-teal-200 px-[13px] py-[10px] rounded-b-[14px] z-10 flex items-center justify-between"
-          style={{
-            transform: `translateY(-${keyboardOffset}px)`,
-            transition: "transform 150ms ease-out",
-          }}
-        >
+        <div className="sticky bottom-0 bg-teal-50 border-t border-teal-200 px-[13px] py-[10px] rounded-b-[14px] z-10 flex items-center justify-between">
           <span className="text-[13px] font-semibold text-teal-700">
             {bill.selectedProducts.length} product{bill.selectedProducts.length > 1 ? "s" : ""} selected
           </span>
@@ -1754,6 +1707,28 @@ const BillCard = forwardRef<BillCardHandle, BillCardProps>(function BillCard({
               {bill.activeProduct.family}
               {bill.activeProduct.tinterType ? ` · ${bill.activeProduct.tinterType}` : ""}
             </p>
+          </div>
+
+          {/* Skip + Next/Add-All bar — placed at the top of the qty card so it
+              never overlaps qty rows or hides behind the iOS soft keyboard. */}
+          <div className="bg-white border-b border-[#f0f0f0] px-[14px] py-[10px] flex gap-2">
+            <button
+              type="button"
+              onClick={() => onNextProduct(true)}
+              className="text-[12px] font-medium text-gray-500 bg-gray-100 active:bg-gray-200 rounded-[9px] px-4 h-10 shrink-0"
+            >
+              Skip
+            </button>
+            <button
+              ref={nextButtonRef}
+              type="button"
+              onClick={() => onNextProduct(false)}
+              className="flex-1 h-10 bg-teal-600 hover:bg-teal-700 text-white rounded-[9px] text-[13px] font-semibold truncate min-w-0 px-3"
+            >
+              {nextProductInQueue
+                ? `Next → ${nextProductInQueue.displayName}`
+                : "+ Add All to Bill"}
+            </button>
           </div>
 
           {/* Pack counters — step multiples align taps with cartons. Pack
@@ -1821,32 +1796,6 @@ const BillCard = forwardRef<BillCardHandle, BillCardProps>(function BillCard({
             );
           })}
 
-          {/* Sticky Skip + Next/Add-All bar */}
-          <div
-            className="sticky bottom-0 bg-white border-t border-[#f0f0f0] px-[14px] py-[10px] rounded-b-[14px] z-10 flex gap-2"
-            style={{
-              transform: `translateY(-${keyboardOffset}px)`,
-              transition: "transform 150ms ease-out",
-            }}
-          >
-            <button
-              type="button"
-              onClick={() => onNextProduct(true)}
-              className="text-[12px] font-medium text-gray-500 bg-gray-100 active:bg-gray-200 rounded-[9px] px-4 h-10 shrink-0"
-            >
-              Skip
-            </button>
-            <button
-              ref={nextButtonRef}
-              type="button"
-              onClick={() => onNextProduct(false)}
-              className="flex-1 h-10 bg-teal-600 hover:bg-teal-700 text-white rounded-[9px] text-[13px] font-semibold truncate min-w-0 px-3"
-            >
-              {nextProductInQueue
-                ? `Next → ${nextProductInQueue.displayName}`
-                : "+ Add All to Bill"}
-            </button>
-          </div>
         </>
       )}
 
