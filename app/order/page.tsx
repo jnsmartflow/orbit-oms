@@ -799,6 +799,13 @@ export default function OrderPage(): React.JSX.Element {
 
   const { subject, body, valid: canSend } = buildEmail();
 
+  // True if any bill is currently in picking mode. Drives the page-level
+  // picker bar visibility (and the header hides once a customer is locked,
+  // independently — both states are mutually exclusive in practice).
+  const anyBillInPicking = bills.some(
+    (b) => b.mode === "picking" && b.activeProduct !== null,
+  );
+
   function handleSend(): void {
     if (!canSend) return;
     const url = `mailto:${ORDER_TO}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
@@ -810,22 +817,81 @@ export default function OrderPage(): React.JSX.Element {
   return (
     <main className="min-h-screen bg-[#f2f2f7] pb-12">
 
-      {/* Sticky header */}
-      <div className="sticky top-0 z-10 bg-white border-b border-gray-100">
-        <div className="max-w-[480px] mx-auto px-4 py-3 flex items-center gap-3">
-          <div className="w-[34px] h-[34px] bg-teal-600 rounded-[9px] flex items-center justify-center flex-shrink-0">
-            <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
-              <circle cx="11" cy="11" r="7" stroke="white" strokeWidth="1.6" />
-              <circle cx="11" cy="11" r="2.2" fill="white" />
-              <circle cx="18" cy="11" r="2" fill="white" />
-            </svg>
+      {/* Page-level Picker Bar — pinned at viewport top while any bill is in
+          picking mode. Carries product name, progress, Skip, and Next/Add-All.
+          Replaces the in-card product header, progress dots, and Skip/Next bar
+          (removed below). z-30 sits above the page header (z-10) — in practice
+          they don't coexist (header only shows when no customer is locked). */}
+      {anyBillInPicking && (() => {
+        // Prefer the first bill in picking mode. Multi-picking shouldn't
+        // happen in normal flow, but the find() is defensive.
+        const activeBill = bills.find(
+          (b) => b.mode === "picking" && b.activeProduct !== null,
+        );
+        if (!activeBill || !activeBill.activeProduct) return null;
+
+        const queue       = activeBill.selectedProducts;
+        const idx         = activeBill.pickerIndex;
+        const total       = queue.length;
+        const isLast      = idx >= total - 1;
+        const currentName = activeBill.activeProduct.displayName;
+        const nextName    = isLast ? null : queue[idx + 1]?.displayName;
+
+        return (
+          <div className="sticky top-0 z-30 bg-white border-b border-gray-200 shadow-sm">
+            <div className="max-w-[480px] mx-auto px-[14px] pt-[10px] pb-[8px]">
+              {/* Row 1: product name + progress */}
+              <div className="flex items-center justify-between mb-[8px]">
+                <span className="text-[15px] font-semibold text-gray-900 truncate">
+                  {currentName}
+                </span>
+                <span className="text-[12px] font-medium text-gray-400 ml-2 shrink-0">
+                  {idx + 1} of {total}
+                </span>
+              </div>
+              {/* Row 2: Skip + Next/Add-All */}
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => nextProduct(activeBill.id, true)}
+                  className="px-[14px] py-[8px] rounded-[9px] bg-gray-100 text-gray-700 text-[14px] font-medium"
+                >
+                  Skip
+                </button>
+                <button
+                  type="button"
+                  onClick={() => nextProduct(activeBill.id, false)}
+                  className="flex-1 rounded-[9px] bg-teal-600 text-white text-[14px] font-semibold py-[8px] px-[14px] truncate min-w-0"
+                >
+                  {isLast
+                    ? "+ Add All to Bill"
+                    : `Next → ${nextName}`}
+                </button>
+              </div>
+            </div>
           </div>
-          <div className="flex flex-col">
-            <span className="text-[16px] font-semibold text-gray-900 leading-tight">Place Order</span>
-            <span className="text-[11px] text-gray-400 leading-tight">JSW Dulux · Surat Depot</span>
+        );
+      })()}
+
+      {/* Sticky header — hidden once a customer is locked. The page-level
+          picker bar takes over the top during picking. */}
+      {!selectedCust && (
+        <div className="sticky top-0 z-10 bg-white border-b border-gray-100">
+          <div className="max-w-[480px] mx-auto px-4 py-3 flex items-center gap-3">
+            <div className="w-[34px] h-[34px] bg-teal-600 rounded-[9px] flex items-center justify-center flex-shrink-0">
+              <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+                <circle cx="11" cy="11" r="7" stroke="white" strokeWidth="1.6" />
+                <circle cx="11" cy="11" r="2.2" fill="white" />
+                <circle cx="18" cy="11" r="2" fill="white" />
+              </svg>
+            </div>
+            <div className="flex flex-col">
+              <span className="text-[16px] font-semibold text-gray-900 leading-tight">Place Order</span>
+              <span className="text-[11px] text-gray-400 leading-tight">JSW Dulux · Surat Depot</span>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       <div className="max-w-[480px] mx-auto">
 
@@ -1676,61 +1742,11 @@ const BillCard = forwardRef<BillCardHandle, BillCardProps>(function BillCard({
         </div>
       )}
 
-      {/* Picker — progress + product header + pack counters + Skip/Next bar */}
+      {/* Picker — qty rows only. Product name, progress count, and the Skip /
+          Next-Add-All controls now live in the page-level picker bar at the
+          top of <main>. */}
       {inPicking && bill.activeProduct && (
         <>
-          {/* Progress dots + count */}
-          <div className="flex items-center gap-2 px-[14px] py-[8px] bg-[#fafafa] border-b border-[#f0f0f0]">
-            <div className="flex gap-[5px]">
-              {bill.selectedProducts.map((_, i) => (
-                <div
-                  key={i}
-                  className={`w-2 h-2 rounded-full ${
-                    i < bill.pickerIndex
-                      ? "bg-teal-600"
-                      : i === bill.pickerIndex
-                        ? "bg-teal-600 ring-2 ring-teal-100"
-                        : "bg-gray-200"
-                  }`}
-                />
-              ))}
-            </div>
-            <span className="text-[11px] text-gray-400 ml-auto">
-              {bill.pickerIndex + 1} of {bill.selectedProducts.length}
-            </span>
-          </div>
-
-          {/* Product header (no Change button — flow exits via Skip-to-end) */}
-          <div className="px-[14px] py-[10px] bg-teal-50 border-b border-teal-200">
-            <p className="text-[13px] font-semibold text-teal-700 truncate">{bill.activeProduct.displayName}</p>
-            <p className="text-[11px] text-teal-400 mt-0.5">
-              {bill.activeProduct.family}
-              {bill.activeProduct.tinterType ? ` · ${bill.activeProduct.tinterType}` : ""}
-            </p>
-          </div>
-
-          {/* Skip + Next/Add-All bar — placed at the top of the qty card so it
-              never overlaps qty rows or hides behind the iOS soft keyboard. */}
-          <div className="sticky top-0 z-10 bg-white border-b border-[#f0f0f0] px-[14px] py-[10px] flex gap-2">
-            <button
-              type="button"
-              onClick={() => onNextProduct(true)}
-              className="text-[12px] font-medium text-gray-500 bg-gray-100 active:bg-gray-200 rounded-[9px] px-4 h-10 shrink-0"
-            >
-              Skip
-            </button>
-            <button
-              ref={nextButtonRef}
-              type="button"
-              onClick={() => onNextProduct(false)}
-              className="flex-1 h-10 bg-teal-600 hover:bg-teal-700 text-white rounded-[9px] text-[13px] font-semibold truncate min-w-0 px-3"
-            >
-              {nextProductInQueue
-                ? `Next → ${nextProductInQueue.displayName}`
-                : "+ Add All to Bill"}
-            </button>
-          </div>
-
           {/* Pack counters — step multiples align taps with cartons. Pack
               qty inputs receive Tab + Enter via packInputsRef; the +/-
               buttons are tabIndex={-1} so Tab walks input → input. */}
