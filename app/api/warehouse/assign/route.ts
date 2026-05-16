@@ -35,8 +35,8 @@ export async function POST(req: Request): Promise<NextResponse> {
 
   // Validate all orders exist and have dispatched splits (or no splits for non-tinting)
   for (const orderId of body.orderIds) {
-    const order = await prisma.orders.findUnique({
-      where: { id: orderId },
+    const order = await prisma.orders.findFirst({
+      where: { id: orderId, isRemoved: false },
       include: {
         splits: {
           where: { status: { not: "cancelled" } },

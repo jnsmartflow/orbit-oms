@@ -2,8 +2,9 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Plus, Scissors, MoreHorizontal, UserPlus, ChevronUp, ChevronDown, RefreshCw, X, AlertCircle } from "lucide-react";
+import { Plus, Scissors, MoreHorizontal, UserPlus, ChevronUp, ChevronDown, RefreshCw, X, AlertCircle, Trash2, SkipForward, History, Pause } from "lucide-react";
 import type { TintOrder, SplitCard, CompletedAssignment } from "@/components/tint/tint-manager-content";
+import { computeElapsedMs } from "@/lib/tint/elapsed-time";
 
 export interface TintTableViewProps {
   filteredOrders:          TintOrder[];
@@ -21,6 +22,15 @@ export interface TintTableViewProps {
   onReassignSplit:         (split: SplitCard) => void;
   onCancelSplit:           (split: SplitCard) => void;
   onCustomerMissing?:      (order: TintOrder) => void;
+  /** When true, append "Remove OBD…" to pending-stage row action menus. */
+  canRemove?:              boolean;
+  /** Fires when the user clicks "Remove OBD…" on a pending row. */
+  onRequestRemove?:        (order: TintOrder) => void;
+  /** Phase 3d — opens the parent's SkipHistoryModal. Receives (orderId,
+      obdNumber, customerName) so the parent doesn't need to look it up. */
+  onOpenSkipHistory?:      (orderId: number, obdNumber: string, customerName: string | null) => void;
+  /** Phase 4e — opens the parent's PauseHistoryModal. Same call shape. */
+  onOpenPauseHistory?:     (orderId: number, obdNumber: string, customerName: string | null) => void;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -310,6 +320,10 @@ export function TintTableView({
   onReassignSplit,
   onCancelSplit,
   onCustomerMissing,
+  canRemove,
+  onRequestRemove,
+  onOpenSkipHistory,
+  onOpenPauseHistory,
 }: TintTableViewProps) {
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
@@ -317,23 +331,34 @@ export function TintTableView({
     return () => clearInterval(id);
   }, []);
 
-  function elapsed(startedAt: string | null): { text: string; isLong: boolean } {
-    if (!startedAt) return { text: "—", isLong: false };
-    const ms = now.getTime() - new Date(startedAt).getTime();
-    const h  = Math.floor(ms / 3_600_000);
-    const m  = Math.floor((ms % 3_600_000) / 60_000);
-    return { text: `${h}h ${m}m`, isLong: h >= 2 };
-  }
-
-  function ElapsedBadge({ startedAt }: { startedAt: string | null }) {
-    const el = elapsed(startedAt);
-    if (el.text === "—") return <span className="text-gray-400">—</span>;
+  // Phase 4-smoke-2 — delegates to lib/tint/elapsed-time.ts so paused +
+  // resumed cycles fold accumulatedMinutes into the displayed total.
+  // Splits never pause, so call sites for split rows pass accumulatedMinutes: 0.
+  function ElapsedBadge({
+    status,
+    startedAt,
+    accumulatedMinutes,
+  }: {
+    status:             string | null;
+    startedAt:          string | null;
+    accumulatedMinutes: number;
+  }) {
+    const ms = computeElapsedMs({
+      status:             status ?? "",
+      startedAt,
+      accumulatedMinutes,
+      nowMs:              now.getTime(),
+    });
+    if (ms == null) return <span className="text-gray-400">—</span>;
+    const h      = Math.floor(ms / 3_600_000);
+    const m      = Math.floor((ms % 3_600_000) / 60_000);
+    const isLong = h >= 2;
     return (
-      <span className={el.isLong
+      <span className={isLong
         ? "font-mono text-[11.5px] font-medium text-red-700 bg-red-50 border border-red-200 px-[7px] py-[2px] rounded-[5px]"
         : "font-mono text-[11.5px] font-medium text-blue-700 bg-blue-50 border border-blue-200 px-[7px] py-[2px] rounded-[5px]"
       }>
-        {el.text}
+        {h}h {m}m
       </span>
     );
   }
@@ -386,7 +411,7 @@ export function TintTableView({
       slotIsNextDay: a.slotIsNextDay, originalSlotId: a.originalSlotId,
       originalSlotName: a.originalSlotName, deliveryTypeName: a.deliveryTypeName,
       customer: a.order.customer ?? null, querySnapshot: a.order.querySnapshot ?? null,
-      tintAssignments: [{ id: a.id, status: "tinting_done", assignedTo: a.assignedTo, startedAt: null, completedAt: a.completedAt, updatedAt: a.completedAt ?? "" }],
+      tintAssignments: [{ id: a.id, status: "tinting_done", assignedTo: a.assignedTo, startedAt: null, completedAt: a.completedAt, updatedAt: a.completedAt ?? "", accumulatedMinutes: 0 }],
       lineItems: [] as TintOrder["lineItems"], existingSplits: [], splits: [], remainingQty: 0,
     };
   }
@@ -409,6 +434,12 @@ export function TintTableView({
   function OrderObdTd({ order }: { order: TintOrder }) {
     const dateStr = formatOrderDate(order.orderDateTime) || formatObdDate(order.obdEmailDate, order.obdEmailTime) || formatTime(order.createdAt);
     const ageBadge = getAgeBadge(order.orderDateTime, order.obdEmailDate);
+    // Phase 3d — show the Skipped Nx badge only on pending-stage rows (the
+    // returned-state surface). Skipped re-assignments don't show the badge.
+    const showSkippedBadge =
+      order.skipSummary
+      && order.skipSummary.count >= 1
+      && order.workflowStage === "pending_tint_assignment";
     return (
       <td className={tdObdCls} style={tdObdStyle}>
         <div className="flex items-center gap-1.5">
@@ -431,6 +462,61 @@ export function TintTableView({
             )}
           </div>
         )}
+        {showSkippedBadge && order.skipSummary && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (onOpenSkipHistory) {
+                onOpenSkipHistory(
+                  order.id,
+                  order.obdNumber,
+                  order.customer?.customerName ?? order.shipToCustomerName,
+                );
+              }
+            }}
+            className="inline-flex items-center gap-1 bg-amber-50 text-amber-700 border border-amber-200 text-[9.5px] font-semibold rounded px-1.5 py-[1px] mt-0.5 cursor-pointer hover:bg-amber-100"
+            title="View skip history"
+          >
+            <SkipForward size={8} style={{ transform: "rotate(180deg)" }} />
+            Skipped {order.skipSummary.count}×
+          </button>
+        )}
+        {/* Phase 4e — Pause badge. Two variants:
+              • Currently paused → solid amber-700 with PAUSED label
+              • Historical only  → softer gray-bordered pill
+            Stage-agnostic, unlike the Skip badge — a paused order is most
+            often in tinting_in_progress, not pending. */}
+        {order.pauseSummary && order.pauseSummary.count >= 1 && (() => {
+          const p = order.pauseSummary;
+          const isActive = p.currentlyPaused;
+          return (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (onOpenPauseHistory) {
+                  onOpenPauseHistory(
+                    order.id,
+                    order.obdNumber,
+                    order.customer?.customerName ?? order.shipToCustomerName,
+                  );
+                }
+              }}
+              className={`inline-flex items-center gap-1 text-[9.5px] font-semibold rounded px-1.5 py-[1px] mt-0.5 cursor-pointer ${
+                isActive
+                  ? "bg-amber-700 text-white hover:bg-amber-800"
+                  : "bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100"
+              }`}
+              title="View pause history"
+            >
+              <Pause size={8} fill="currentColor" />
+              {isActive
+                ? `Paused${p.count > 1 ? ` ${p.count}×` : ""}`
+                : `Paused ${p.count}×`}
+            </button>
+          );
+        })()}
       </td>
     );
   }
@@ -565,6 +651,51 @@ export function TintTableView({
                       { label: "Assign Operator", icon: <UserPlus size={13} />, onClick: () => onAssign(order) },
                       { label: "Create Split",    icon: <Scissors size={13} />, onClick: () => onCreateSplit(order) },
                     ];
+                // Phase 3d — "View skip history" at the top of the menu when the
+                // order has been skipped. Stage-agnostic but gates on skipSummary.
+                if (
+                  order.skipSummary
+                  && order.skipSummary.count >= 1
+                  && onOpenSkipHistory
+                ) {
+                  actions.unshift({
+                    label:   "View skip history",
+                    icon:    <History size={13} />,
+                    onClick: () => onOpenSkipHistory(
+                      order.id,
+                      order.obdNumber,
+                      order.customer?.customerName ?? order.shipToCustomerName,
+                    ),
+                  });
+                }
+                // Phase 4e — "View pause history" item, mirrors skip. Stage-
+                // agnostic; gates on pauseSummary count. unshift after the
+                // skip insert so order is: skip → pause → rest of menu.
+                if (
+                  order.pauseSummary
+                  && order.pauseSummary.count >= 1
+                  && onOpenPauseHistory
+                ) {
+                  actions.unshift({
+                    label:   "View pause history",
+                    icon:    <History size={13} />,
+                    onClick: () => onOpenPauseHistory(
+                      order.id,
+                      order.obdNumber,
+                      order.customer?.customerName ?? order.shipToCustomerName,
+                    ),
+                  });
+                }
+                // Phase 2d — "Remove OBD…" gated on Admin OR tint_manager role (parent computes).
+                // Pending-stage rows only (this map block is the pending section).
+                if (canRemove && onRequestRemove) {
+                  actions.push({
+                    label:   "Remove OBD…",
+                    icon:    <Trash2 size={13} />,
+                    onClick: () => onRequestRemove(order),
+                    danger:  true,
+                  });
+                }
                 const remainingQty = order.remainingQty ?? 0;
                 return (
                   <tr key={`p-${order.id}`} onClick={() => onOrderClick(order)} className={rowCls}>
@@ -677,13 +808,25 @@ export function TintTableView({
               ) : (
                 <>
                   {inProgressOrderRows.map((order, idx) => {
-                    const startedAt = order.tintAssignments[0]?.startedAt ?? null;
+                    const asg                = order.tintAssignments[0];
+                    const startedAt          = asg?.startedAt ?? null;
+                    // A paused order with workflowStage=tinting_in_progress still
+                    // surfaces here; the badge needs the real assignment status
+                    // to render the frozen accumulated time correctly.
+                    const status             = asg?.status ?? null;
+                    const accumulatedMinutes = asg?.accumulatedMinutes ?? 0;
                     return (
                       <tr key={`ipo-${order.id}`} onClick={() => onOrderClick(order)} className={rowCls}>
                         <SerialTd n={idx + 1} />
                         <OrderCommonTds order={order} />
                         <OperatorTd name={order.tintAssignments[0]?.assignedTo.name} avatarColor="bg-teal-600" />
-                        <td className={tdCls} style={tdStyle}><ElapsedBadge startedAt={startedAt} /></td>
+                        <td className={tdCls} style={tdStyle}>
+                          <ElapsedBadge
+                            status={status}
+                            startedAt={startedAt}
+                            accumulatedMinutes={accumulatedMinutes}
+                          />
+                        </td>
                         <ActionsTd><PlusBtn id={order.id} type="order" onStatusPopover={onStatusPopover} /></ActionsTd>
                       </tr>
                     );
@@ -693,7 +836,15 @@ export function TintTableView({
                       <SerialTd n={inProgressOrderRows.length + idx + 1} />
                       <SplitCommonTds split={split} />
                       <OperatorTd name={split.assignedTo.name} avatarColor="bg-teal-600" />
-                      <td className={tdCls} style={tdStyle}><ElapsedBadge startedAt={split.startedAt} /></td>
+                      <td className={tdCls} style={tdStyle}>
+                        {/* Splits never pause (Phase 4a contract) — pass status
+                            "tinting_in_progress" + accumulatedMinutes 0. */}
+                        <ElapsedBadge
+                          status="tinting_in_progress"
+                          startedAt={split.startedAt}
+                          accumulatedMinutes={0}
+                        />
+                      </td>
                       <ActionsTd><PlusBtn id={split.id} type="split" onStatusPopover={onStatusPopover} /></ActionsTd>
                     </tr>
                   ))}

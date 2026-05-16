@@ -17,7 +17,9 @@ export interface ImportObdPreview {
   obdEmailDate: string | null
   totalUnitQty: number | null
   grossWeight: number | null
-  rowStatus: 'valid' | 'duplicate' | 'error' | 'warning'
+  // 'previously_removed' — OBD exists in DB but was soft-removed by TM/Admin.
+  // Skipped on re-import (no auto-restore — admin must explicitly restore).
+  rowStatus: 'valid' | 'duplicate' | 'previously_removed' | 'error' | 'warning'
   rowError: string | null
   lineCount: number
   tintLineCount: number
@@ -32,6 +34,7 @@ export interface ImportPreviewResponse {
     totalObds: number
     validObds: number
     duplicateObds: number
+    previouslyRemovedObds: number
     errorObds: number
     warningObds: number
     totalLines: number

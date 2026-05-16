@@ -41,6 +41,7 @@ export async function PATCH(req: Request): Promise<NextResponse> {
       const list = await prisma.orders.findMany({
         where: {
           workflowStage: "tint_assigned",
+          isRemoved: false,
           tintAssignments: {
             some: {
               assignedToId: targetAssignment.assignedToId,

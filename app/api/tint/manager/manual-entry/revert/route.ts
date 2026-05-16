@@ -100,8 +100,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  const order = await prisma.orders.findUnique({
-    where: { id: orderId },
+  const order = await prisma.orders.findFirst({
+    where: { id: orderId, isRemoved: false },
   });
 
   if (!order) {

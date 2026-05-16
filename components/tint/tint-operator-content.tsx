@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from "react";
-import { Loader2, ChevronDown, ChevronLeft, ChevronRight, Palette, Save, Play, Check, Plus } from "lucide-react";
+import { Loader2, ChevronDown, ChevronLeft, ChevronRight, Palette, Save, Play, Check, Plus, SkipForward, Pause, Eye, Inbox } from "lucide-react";
 import { UniversalHeader } from "@/components/universal-header";
 import { useSession } from "next-auth/react";
 import { cn } from "@/lib/utils";
@@ -11,6 +11,14 @@ import { SkuDisplayToggle } from "@/components/tint/sku-display-toggle";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { TINTER_SHADE_COLORS, ACOTONE_SHADE_COLORS } from "@/lib/tint/shade-colors";
+import { humaniseReason } from "@/lib/tint/pause-reasons";
+import { computeElapsedMs } from "@/lib/tint/elapsed-time";
+import { SkipJobModal } from "@/components/tint/SkipJobModal";
+import { PauseJobModal } from "@/components/tint/PauseJobModal";
+import { MarkDoneConfirmModal } from "@/components/tint/MarkDoneConfirmModal";
+import { Tooltip } from "@/components/ui/tooltip";
+import { toast } from "sonner";
 
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -84,6 +92,16 @@ interface OperatorOrder {
     startedAt:        string | null;
     tiSubmitted:      boolean;
     operatorSequence: number;
+    // Phase 4c — pause-related fields surfaced by /api/tint/operator/my-orders.
+    // currentProgress is jsonb shaped as { items: [{skuId, doneQty}], capturedAt }.
+    pauseCount:       number;
+    lastPausedAt:     string | null;
+    currentProgress:  { items?: Array<{ skuId: number; doneQty: number }>; capturedAt?: string } | null;
+    // Phase 4d — latest open pause event flattened by the route.
+    lastPauseReason:  string | null;
+    lastPauseRemark:  string | null;
+    // Phase 4f — finalised as total minutes on done; running counter while paused.
+    accumulatedMinutes: number;
   }[];
   querySnapshot: {
     totalUnitQty: number;
@@ -192,6 +210,16 @@ interface Job {
   deliveryTypeName:   string | null;
   tiCoveredLines:     number;
   totalTintingLines:  number;
+  // Phase 4c — pause-related fields. Splits never pause (whole-OBD only per
+  // Phase 4a route contract), so split jobs carry the zero/null defaults.
+  pauseCount:         number;
+  lastPausedAt:       string | null;
+  currentProgress:    { items?: Array<{ skuId: number; doneQty: number }>; capturedAt?: string } | null;
+  // Phase 4d — surfaced from the latest open tint_pause_events row.
+  lastPauseReason:    string | null;
+  lastPauseRemark:    string | null;
+  // Phase 4f — finalised as total minutes on done; powers the modal summary.
+  accumulatedMinutes: number;
 }
 
 interface CompletedAssignment {
@@ -255,38 +283,9 @@ const ACOTONE_SHADES = [
   { code: "BU1", bg: "#e0e7ff", border: "#6366f1", text: "#312e81" },
 ] as const;
 
-const TINTER_SHADE_COLORS: Record<string, { bg: string; bgFill: string; border: string; top: string; topFill: string; label: string }> = {
-  YOX: { bg: "#fdf6e3", bgFill: "#faf0d1", border: "#c8a951", top: "#b8860b", topFill: "#8d6e1f", label: "#8d6e1f" },
-  LFY: { bg: "#fefce8", bgFill: "#fef9c3", border: "#d4d430", top: "#cccc00", topFill: "#9e9d24", label: "#7d7d1e" },
-  GRN: { bg: "#e8f5e9", bgFill: "#c8e6c9", border: "#66bb6a", top: "#2e7d32", topFill: "#1b5e20", label: "#1b5e20" },
-  TBL: { bg: "#e3f2fd", bgFill: "#bbdefb", border: "#64b5f6", top: "#1565c0", topFill: "#0d47a1", label: "#0d47a1" },
-  WHT: { bg: "#fafafa", bgFill: "#f5f5f5", border: "#bdbdbd", top: "#757575", topFill: "#616161", label: "#616161" },
-  MAG: { bg: "#fce4ec", bgFill: "#f8bbd0", border: "#f48fb1", top: "#c2185b", topFill: "#880e4f", label: "#880e4f" },
-  FFR: { bg: "#ffebee", bgFill: "#ffcdd2", border: "#ef9a9a", top: "#d32f2f", topFill: "#b71c1c", label: "#b71c1c" },
-  BLK: { bg: "#eceff1", bgFill: "#cfd8dc", border: "#90a4ae", top: "#37474f", topFill: "#212121", label: "#212121" },
-  OXR: { bg: "#fbe9e7", bgFill: "#f5c4b3", border: "#a1553a", top: "#8d3c1a", topFill: "#5d1f0d", label: "#5d1f0d" },
-  HEY: { bg: "#fff9c4", bgFill: "#fff59d", border: "#d4c430", top: "#c9a800", topFill: "#8c7a00", label: "#8c7a00" },
-  HER: { bg: "#ffebee", bgFill: "#ffcdd2", border: "#ef9a9a", top: "#e53935", topFill: "#c62828", label: "#c62828" },
-  COB: { bg: "#e8eaf6", bgFill: "#c5cae9", border: "#7986cb", top: "#283593", topFill: "#1a237e", label: "#1a237e" },
-  COG: { bg: "#e0f2f1", bgFill: "#b2dfdb", border: "#4db6ac", top: "#00695c", topFill: "#004d40", label: "#004d40" },
-};
-
-const ACOTONE_SHADE_COLORS: Record<string, { bg: string; bgFill: string; border: string; top: string; topFill: string; label: string }> = {
-  YE2: { bg: "#fff8e1", bgFill: "#ffecb3", border: "#ffd54f", top: "#f9a825", topFill: "#f57f17", label: "#e65100" },
-  YE1: { bg: "#fffde7", bgFill: "#fff9c4", border: "#fff176", top: "#fdd835", topFill: "#f9a825", label: "#f57f17" },
-  XY1: { bg: "#fff3e0", bgFill: "#ffe0b2", border: "#ffb74d", top: "#ef6c00", topFill: "#e65100", label: "#bf360c" },
-  XR1: { bg: "#fbe9e7", bgFill: "#ffccbc", border: "#ff8a65", top: "#d84315", topFill: "#bf360c", label: "#bf360c" },
-  WH1: { bg: "#fafafa", bgFill: "#f5f5f5", border: "#bdbdbd", top: "#757575", topFill: "#616161", label: "#616161" },
-  RE2: { bg: "#ffebee", bgFill: "#ffcdd2", border: "#ef9a9a", top: "#c62828", topFill: "#b71c1c", label: "#b71c1c" },
-  RE1: { bg: "#ffebee", bgFill: "#ffcdd2", border: "#e57373", top: "#e53935", topFill: "#c62828", label: "#c62828" },
-  OR1: { bg: "#fff3e0", bgFill: "#ffe0b2", border: "#ffb74d", top: "#ef6c00", topFill: "#e65100", label: "#e65100" },
-  NO2: { bg: "#eceff1", bgFill: "#cfd8dc", border: "#90a4ae", top: "#263238", topFill: "#1a1a1a", label: "#212121" },
-  NO1: { bg: "#f5f5f5", bgFill: "#e0e0e0", border: "#9e9e9e", top: "#424242", topFill: "#212121", label: "#424242" },
-  MA1: { bg: "#f3e5f5", bgFill: "#e1bee7", border: "#ba68c8", top: "#7b1fa2", topFill: "#4a148c", label: "#4a148c" },
-  GR1: { bg: "#e8f5e9", bgFill: "#c8e6c9", border: "#66bb6a", top: "#2e7d32", topFill: "#1b5e20", label: "#1b5e20" },
-  BU2: { bg: "#e3f2fd", bgFill: "#bbdefb", border: "#64b5f6", top: "#1565c0", topFill: "#0d47a1", label: "#0d47a1" },
-  BU1: { bg: "#e8eaf6", bgFill: "#c5cae9", border: "#7986cb", top: "#283593", topFill: "#1a237e", label: "#1a237e" },
-};
+// TINTER_SHADE_COLORS and ACOTONE_SHADE_COLORS now live in
+// lib/tint/shade-colors.ts so they can be shared with SkipJobModal (Phase 3c)
+// and the upcoming PauseJobModal (Phase 4). Imported at the top of the file.
 
 // Ascending by actual litres. `litres` is the authoritative per-unit size
 // used by derivePackCode() for exact-match lookup.
@@ -354,6 +353,22 @@ function deliveryDotClass(type: string | null | undefined): string {
   return "bg-gray-400";
 }
 
+// Phase 4c — relative time formatter for paused-card "Last paused" summary.
+// Server returns ISO; treat as UTC if no Z suffix, matching the existing
+// elapsed-timer parse on line ~637.
+function formatTimeAgo(iso: string): string {
+  const raw = iso.endsWith("Z") ? iso : iso + "Z";
+  const ms = Math.max(0, Date.now() - new Date(raw).getTime());
+  const m  = Math.floor(ms / 60000);
+  if (m < 1) return "just now";
+  if (m < 60) return `${m} min ago`;
+  const h  = Math.floor(m / 60);
+  const mr = m % 60;
+  if (h < 24) return mr === 0 ? `${h}h ago` : `${h}h ${mr}m ago`;
+  const d = Math.floor(h / 24);
+  return `${d}d ago`;
+}
+
 // ── Page Content ──────────────────────────────────────────────────────────────
 
 export function TintOperatorContent() {
@@ -374,6 +389,38 @@ export function TintOperatorContent() {
   const [hasActiveJob,    setHasActiveJob]    = useState(false);
   const [selectedJobId,   setSelectedJobId]   = useState<number | null>(null);
   const [selectedJobType, setSelectedJobType] = useState<"split" | "order" | null>(null);
+
+  // Phase 3c — Skip Job modal. Holds the assignment payload while open.
+  const [skipModalJob, setSkipModalJob] = useState<{
+    assignmentId:       number;
+    obdNumber:          string;
+    shipToCustomerName: string | null;
+    smu:                string | null;
+    articleTag:         string | null;
+    totalVolume:        number | null;
+  } | null>(null);
+  // Phase 4c — Pause Job modal. Built lazily from selectedJob when triggered.
+  const [pauseModalJob, setPauseModalJob] = useState<{
+    id:           number;
+    obdNumber:    string;
+    customerName: string;
+    startedAt:    string;
+    skus: Array<{ skuId: number; skuCode: string; shadeName: string; assignedQty: number }>;
+  } | null>(null);
+  // Phase 4f — Mark Done confirm modal. Holds the assignment payload while open.
+  const [markDoneModalJob, setMarkDoneModalJob] = useState<{
+    orderId:            number;
+    obdNumber:          string;
+    customerName:       string;
+    startedAt:          string | null;
+    accumulatedMinutes: number;
+    pauseCount:         number;
+    skus: Array<{ skuId: number; skuCode: string; shadeName: string; assignedQty: number }>;
+  } | null>(null);
+  // Phase 4c — which paused card's View Progress accordion is expanded.
+  const [expandedPausedId, setExpandedPausedId] = useState<number | null>(null);
+  // Phase 4d — the assignment id of the paused job whose Resume click is in flight.
+  const [resumingId,       setResumingId]       = useState<number | null>(null);
   const [queueDropdownOpen, setQueueDropdownOpen] = useState(false);
   const [totalAssignedToday, setTotalAssignedToday] = useState(0);
   const [totalDoneToday,     setTotalDoneToday]     = useState(0);
@@ -559,7 +606,11 @@ export function TintOperatorContent() {
 
   // ── Memos ─────────────────────────────────────────────────────────────────
 
-  const jobs = useMemo<Job[]>(() => {
+  // Phase 4c — build allOperatorJobs once (incl. paused), then split into
+  // `jobs` (active queue: non-paused) and `pausedJobs` (shelf). The TI form
+  // and existing button cluster operate on `jobs` only, so keeping paused
+  // separate preserves all downstream `jobs[0]` / `selectedJob` semantics.
+  const allOperatorJobs = useMemo<Job[]>(() => {
     const splitJobs: Job[] = assignedSplits
       .filter(s => ["tint_assigned", "tinting_in_progress"].includes(s.status))
       .map(s => ({
@@ -587,10 +638,17 @@ export function TintOperatorContent() {
         deliveryTypeName:   s.order.deliveryTypeName ?? null,
         tiCoveredLines:    s.tiCoveredLines,
         totalTintingLines: s.totalTintingLines,
+        // Splits never pause (whole-OBD only).
+        pauseCount:        0,
+        lastPausedAt:      null,
+        currentProgress:   null,
+        lastPauseReason:   null,
+        lastPauseRemark:   null,
+        accumulatedMinutes: 0,
       }));
 
     const orderJobs: Job[] = assignedOrders
-      .filter(o => ["tint_assigned", "assigned", "tinting_in_progress"].includes(o.tintAssignments[0]?.status ?? ""))
+      .filter(o => ["tint_assigned", "assigned", "tinting_in_progress", "paused"].includes(o.tintAssignments[0]?.status ?? ""))
       .map(o => ({
         id:               o.id,
         type:             "order" as const,
@@ -618,12 +676,31 @@ export function TintOperatorContent() {
         deliveryTypeName:   o.deliveryTypeName ?? null,
         tiCoveredLines:    o.tiCoveredLines,
         totalTintingLines: o.totalTintingLines,
+        pauseCount:        o.tintAssignments[0]?.pauseCount      ?? 0,
+        lastPausedAt:      o.tintAssignments[0]?.lastPausedAt    ?? null,
+        currentProgress:   o.tintAssignments[0]?.currentProgress ?? null,
+        lastPauseReason:   o.tintAssignments[0]?.lastPauseReason ?? null,
+        lastPauseRemark:   o.tintAssignments[0]?.lastPauseRemark ?? null,
+        accumulatedMinutes: o.tintAssignments[0]?.accumulatedMinutes ?? 0,
       }));
 
     return [...splitJobs, ...orderJobs].sort(
       (a, b) => a.operatorSequence - b.operatorSequence,
     );
   }, [assignedSplits, assignedOrders]);
+
+  // Active queue (CURRENT + UP NEXT). Excludes paused — preserves all
+  // downstream `jobs[0]` / canSkip / selectedJob behaviour.
+  const jobs = useMemo<Job[]>(
+    () => allOperatorJobs.filter(j => j.status !== "paused"),
+    [allOperatorJobs],
+  );
+
+  // Paused shelf. Whole-OBD only — splits never appear here.
+  const pausedJobs = useMemo<Job[]>(
+    () => allOperatorJobs.filter(j => j.status === "paused"),
+    [allOperatorJobs],
+  );
 
   const selectedJob = useMemo(
     () => jobs.find(j => j.id === selectedJobId && j.type === selectedJobType) ?? null,
@@ -646,23 +723,37 @@ export function TintOperatorContent() {
   }, [selectedJob]);
 
   useEffect(() => {
-    if (!selectedJob?.startedAt || selectedJob.status !== "tinting_in_progress") {
+    if (!selectedJob) {
       setElapsed("00:00:00");
       return;
     }
-    const raw = selectedJob.startedAt;
-    const start = new Date(typeof raw === "string" && !raw.endsWith("Z") ? raw + "Z" : raw).getTime();
+    // Phase 4-smoke-2 — fold accumulatedMinutes into the displayed total.
+    // computeElapsedMs returns null for states the timer doesn't apply to;
+    // we still set "00:00:00" so the placeholder is stable, even though
+    // the display sites are gated on status === "tinting_in_progress".
     const update = () => {
-      const diff = Math.max(0, Math.floor((Date.now() - start) / 1000));
-      const h = Math.floor(diff / 3600).toString().padStart(2, "0");
-      const m = Math.floor((diff % 3600) / 60).toString().padStart(2, "0");
-      const s = (diff % 60).toString().padStart(2, "0");
+      const ms = computeElapsedMs({
+        status:             selectedJob.status,
+        startedAt:          selectedJob.startedAt,
+        accumulatedMinutes: selectedJob.accumulatedMinutes,
+      });
+      if (ms == null) {
+        setElapsed("00:00:00");
+        return;
+      }
+      const totalSeconds = Math.floor(ms / 1000);
+      const h = Math.floor(totalSeconds / 3600).toString().padStart(2, "0");
+      const m = Math.floor((totalSeconds % 3600) / 60).toString().padStart(2, "0");
+      const s = (totalSeconds % 60).toString().padStart(2, "0");
       setElapsed(`${h}:${m}:${s}`);
     };
     update();
+    // Only tick live for running jobs. Paused = frozen at accumulatedMinutes,
+    // no setInterval needed (value won't change until next refetch).
+    if (selectedJob.status !== "tinting_in_progress") return;
     const id = setInterval(update, 1000);
     return () => clearInterval(id);
-  }, [selectedJob?.startedAt, selectedJob?.status]);
+  }, [selectedJob?.status, selectedJob?.startedAt, selectedJob?.accumulatedMinutes]);
 
   // Reset TI form state when job changes
   useEffect(() => {
@@ -1049,6 +1140,36 @@ export function TintOperatorContent() {
     }
   }
 
+  // Phase 4d — Resume a paused assignment. Client gate (canResumeAny) mirrors
+  // the server's zero-in-progress check in /api/tint/operator/resume so a
+  // green-button click never trips the 409 in normal use.
+  async function handleResume(assignmentId: number): Promise<void> {
+    if (resumingId != null) return;
+    setResumingId(assignmentId);
+    try {
+      const res = await fetch("/api/tint/operator/resume", {
+        method:      "POST",
+        credentials: "include",
+        headers:     { "Content-Type": "application/json" },
+        body:        JSON.stringify({ assignmentId }),
+      });
+      const data = await res.json().catch(() => ({} as Record<string, unknown>));
+      if (!res.ok || (data as { ok?: boolean }).ok === false) {
+        const errRaw = (data as { error?: unknown }).error;
+        const errMsg = typeof errRaw === "string" ? errRaw : "Could not resume job. Please retry.";
+        toast.error(errMsg);
+        return;
+      }
+      toast.success("Job resumed");
+      await fetchOrders();
+    } catch (err) {
+      console.error("[resume-job] submit failed", err);
+      toast.error("Network error. Please retry.");
+    } finally {
+      setResumingId(null);
+    }
+  }
+
   async function startJob(job: Job) {
     if (job.type === "split") {
       await postSplitAction("/api/tint/operator/split/start", job.id);
@@ -1162,20 +1283,33 @@ export function TintOperatorContent() {
         ]}
         showDatePicker={false}
         leftExtra={
-          selectedJob ? (
+          (selectedJob || pausedJobs.length > 0) ? (
             <div className="flex items-center gap-2">
               {/* Segment container + teal pill */}
               <div className="relative" ref={queueBadgeRef}>
                 <div className="inline-flex bg-gray-100 rounded-[7px] p-[3px]">
-                  <div
-                    onClick={() => setQueueDropdownOpen(!queueDropdownOpen)}
-                    className="inline-flex items-center gap-2.5 rounded-[5px] px-3.5 py-[7px] cursor-pointer transition-colors bg-teal-600 text-white font-medium hover:bg-teal-700"
-                  >
-                    <span className="text-[11px] font-semibold opacity-80">#{jobs.indexOf(selectedJob) + 1}</span>
-                    <span className="text-[13px] font-semibold truncate max-w-[180px]">{selectedJob.customerName}</span>
-                    <span className="font-mono text-[11px] opacity-70">{selectedJob.obdNumber}</span>
-                    <ChevronDown size={14} className={cn("opacity-70 transition-transform flex-shrink-0", queueDropdownOpen && "rotate-180")} />
-                  </div>
+                  {selectedJob ? (
+                    <div
+                      onClick={() => setQueueDropdownOpen(!queueDropdownOpen)}
+                      className="inline-flex items-center gap-2.5 rounded-[5px] px-3.5 py-[7px] cursor-pointer transition-colors bg-teal-600 text-white font-medium hover:bg-teal-700"
+                    >
+                      <span className="text-[11px] font-semibold opacity-80">#{jobs.indexOf(selectedJob) + 1}</span>
+                      <span className="text-[13px] font-semibold truncate max-w-[180px]">{selectedJob.customerName}</span>
+                      <span className="font-mono text-[11px] opacity-70">{selectedJob.obdNumber}</span>
+                      <ChevronDown size={14} className={cn("opacity-70 transition-transform flex-shrink-0", queueDropdownOpen && "rotate-180")} />
+                    </div>
+                  ) : (
+                    /* Surface 1C — no CURRENT, only paused work on the shelf. */
+                    <div
+                      onClick={() => setQueueDropdownOpen(!queueDropdownOpen)}
+                      className="inline-flex items-center gap-2.5 rounded-[5px] px-3.5 py-[7px] cursor-pointer transition-colors bg-amber-50 border border-amber-200 text-amber-800 font-medium hover:bg-amber-100"
+                    >
+                      <Pause size={12} fill="currentColor" />
+                      <span className="text-[12.5px] font-semibold">No active job</span>
+                      <span className="text-[11px] opacity-80">· {pausedJobs.length} paused</span>
+                      <ChevronDown size={14} className={cn("opacity-70 transition-transform flex-shrink-0", queueDropdownOpen && "rotate-180")} />
+                    </div>
+                  )}
                 </div>
 
                 {/* Queue Dropdown */}
@@ -1194,24 +1328,30 @@ export function TintOperatorContent() {
                       </div>
                     </div>
                     <div className="max-h-[480px] overflow-y-auto py-2">
-                      <p className="px-3 text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1.5">Remaining ({jobs.length} {jobs.length === 1 ? "job" : "jobs"})</p>
-                      {jobs.map((job, idx) => {
-                        const isCurrent = selectedJobId === job.id && selectedJobType === job.type;
-                        const isActive = job.status === "tinting_in_progress";
-                        const hasActive = jobs.some(j => j.status === "tinting_in_progress");
-                        const isFuture = !isActive && !isCurrent && (hasActive || idx > 0);
+                      {/* === CURRENT === */}
+                      <p className="px-3 text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1.5">
+                        Current ({jobs.length > 0 ? 1 : 0})
+                      </p>
+                      {jobs.length > 0 ? (() => {
+                        const job        = jobs[0];
+                        const isCurrent  = selectedJobId === job.id && selectedJobType === job.type;
+                        const inProgress = job.status === "tinting_in_progress";
                         return (
-                          <button key={`q-${job.type}-${job.id}`}
+                          <button
+                            key={`q-cur-${job.type}-${job.id}`}
                             onClick={() => { setSelectedJobId(job.id); setSelectedJobType(job.type); setQueueDropdownOpen(false); }}
                             className={cn("w-full text-left px-3 py-2 transition-colors",
-                              isCurrent ? "bg-teal-50 border-l-[3px] border-l-teal-600" : "border-l-[3px] border-l-transparent hover:bg-gray-50",
-                              isFuture && "opacity-[0.45]"
-                            )}>
+                              isCurrent ? "bg-teal-50 border-l-[3px] border-l-teal-600" : "border-l-[3px] border-l-transparent hover:bg-gray-50")}
+                          >
                             <div className="flex items-center gap-2">
-                              <span className="text-[10px] font-mono text-gray-400">#{idx + 1}</span>
+                              <span className="text-[10px] font-mono text-gray-400">#1</span>
                               <span className="text-[12px] font-semibold text-gray-900 truncate flex-1">{job.customerName}</span>
                               <span className="font-mono text-[11px] text-gray-500">{job.obdNumber}</span>
-                              {isCurrent && <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-teal-600 text-white">Current</span>}
+                              {inProgress ? (
+                                <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded border bg-green-50 text-green-700 border-green-200">In Progress</span>
+                              ) : (
+                                <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded border bg-blue-50 text-blue-700 border-blue-200">Ready</span>
+                              )}
                             </div>
                             <div className="flex items-center gap-2 mt-0.5 text-[10px] text-gray-400">
                               {job.articleTag && <span>{job.articleTag}</span>}
@@ -1224,21 +1364,186 @@ export function TintOperatorContent() {
                             </div>
                           </button>
                         );
-                      })}
+                      })() : (
+                        <div className="mx-3 mb-2 px-3 py-4 border border-dashed border-gray-200 rounded-lg text-center">
+                          <Inbox className="text-gray-400 mx-auto mb-1.5" size={20} />
+                          <div className="text-[12px] font-semibold text-gray-600">No active job</div>
+                          <div className="text-[11px] text-gray-400 mt-1 leading-relaxed">
+                            All assigned jobs are paused or complete.<br />
+                            Resume a paused job to continue.
+                          </div>
+                        </div>
+                      )}
+
+                      {/* === PAUSED === */}
+                      {pausedJobs.length > 0 && (
+                        <>
+                          <p className="px-3 mt-3 text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1.5">
+                            Paused ({pausedJobs.length})
+                          </p>
+                          {pausedJobs.map(job => {
+                            const isExpanded    = expandedPausedId === job.id;
+                            const progressArr   = job.currentProgress?.items ?? [];
+                            const tintingLines  = job.lineItems.filter(li => li.rawLineItem.isTinting);
+                            const totalAssigned = tintingLines.reduce((s, li) => s + li.rawLineItem.unitQty, 0);
+                            const totalDone     = progressArr.reduce((s, p) => s + p.doneQty, 0);
+                            // Phase 4d — Resume gate. Mirrors the server's zero-in-progress
+                            // precondition in /api/tint/operator/resume.
+                            const canResumeAny  = !jobs.some(j => j.status === "tinting_in_progress");
+                            const isResumingThis = resumingId === job.id;
+                            const remarkTrimmed = job.lastPauseRemark?.trim() ?? "";
+                            const remarkDisplay = remarkTrimmed.length > 80
+                              ? `${remarkTrimmed.slice(0, 80)}…`
+                              : remarkTrimmed;
+                            return (
+                              <div key={`q-pau-${job.type}-${job.id}`} className="mx-3 mb-2 bg-amber-50 border border-amber-200 rounded-lg overflow-hidden">
+                                <div className="px-3 py-2">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-[12px] font-semibold text-gray-900 truncate flex-1">{job.customerName}</span>
+                                    <span className="font-mono text-[11px] text-gray-600">{job.obdNumber}</span>
+                                    <span className="inline-flex items-center gap-1 text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-700 text-white">
+                                      <Pause size={9} fill="currentColor" />
+                                      Paused{job.pauseCount > 1 ? ` ${job.pauseCount}×` : ""}
+                                    </span>
+                                  </div>
+                                  <div className="bg-amber-100/60 border border-amber-200 rounded-md px-2 py-1.5 mt-2 text-[10.5px] text-amber-800 leading-relaxed">
+                                    {job.lastPausedAt && (
+                                      <div>Last paused: {formatTimeAgo(job.lastPausedAt)}</div>
+                                    )}
+                                    <div className="mt-0.5">Reason: {humaniseReason(job.lastPauseReason)}</div>
+                                    {remarkTrimmed && (
+                                      <div
+                                        className="mt-0.5 italic text-gray-600 truncate"
+                                        title={remarkTrimmed.length > 80 ? remarkTrimmed : undefined}
+                                      >
+                                        Note: {remarkDisplay}
+                                      </div>
+                                    )}
+                                    {totalAssigned > 0 && (
+                                      <div className="mt-0.5">Progress: {totalDone} of {totalAssigned} tins done</div>
+                                    )}
+                                  </div>
+
+                                  <div className="flex items-center justify-end gap-2 mt-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => setExpandedPausedId(isExpanded ? null : job.id)}
+                                      className="h-7 px-2.5 text-[11px] font-medium bg-white border border-amber-300 text-amber-700 rounded-md hover:bg-amber-100 inline-flex items-center gap-1"
+                                    >
+                                      <Eye size={11} />
+                                      {isExpanded ? "Hide" : "View"} Progress
+                                    </button>
+                                    {/* Phase 4d — conditional Resume render. Enabled when no
+                                        in-progress job; disabled+Tooltip otherwise. */}
+                                    {canResumeAny ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleResume(job.tintAssignmentId!)}
+                                        disabled={isResumingThis || resumingId != null}
+                                        className={cn(
+                                          "h-7 px-2.5 text-[11px] font-medium rounded-md inline-flex items-center gap-1 text-white",
+                                          isResumingThis || resumingId != null
+                                            ? "bg-gray-400 cursor-not-allowed"
+                                            : "bg-gray-900 hover:bg-black cursor-pointer",
+                                        )}
+                                      >
+                                        {isResumingThis ? (
+                                          <>
+                                            <Loader2 size={11} className="animate-spin" />
+                                            Resuming…
+                                          </>
+                                        ) : (
+                                          <>
+                                            <Play size={11} />
+                                            Resume
+                                          </>
+                                        )}
+                                      </button>
+                                    ) : (
+                                      <Tooltip content="Finish or pause your current job before resuming this one.">
+                                        <button
+                                          type="button"
+                                          disabled
+                                          className="h-7 px-2.5 text-[11px] font-medium bg-gray-200 text-gray-500 rounded-md inline-flex items-center gap-1 cursor-not-allowed"
+                                        >
+                                          <Play size={11} />
+                                          Resume
+                                        </button>
+                                      </Tooltip>
+                                    )}
+                                  </div>
+                                </div>
+
+                                {isExpanded && (
+                                  <div className="bg-white border-t border-amber-200 px-3 py-2.5">
+                                    <div className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-1.5">Per-SKU progress</div>
+                                    {tintingLines.length === 0 ? (
+                                      <div className="text-[11px] text-gray-400 italic">No tinting lines on this OBD.</div>
+                                    ) : tintingLines.map(li => {
+                                      const done = progressArr.find(p => p.skuId === (li.rawLineItemId ?? -1))?.doneQty ?? 0;
+                                      return (
+                                        <div key={li.rawLineItemId} className="flex items-center justify-between text-[11px] py-0.5">
+                                          <span className="font-mono text-gray-600 truncate flex-1 mr-2">{li.rawLineItem.skuCodeRaw}</span>
+                                          <span className="text-gray-700 font-semibold tabular-nums">{done} / {li.rawLineItem.unitQty}</span>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </>
+                      )}
+
+                      {/* === UP NEXT === */}
+                      <p className="px-3 mt-3 text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1.5">
+                        Up Next ({Math.max(jobs.length - 1, 0)})
+                      </p>
+                      {jobs.length > 1 ? (
+                        jobs.slice(1).map((job, idx) => {
+                          const isCurrent = selectedJobId === job.id && selectedJobType === job.type;
+                          const tintingCount = job.lineItems.filter(li => li.rawLineItem.isTinting).length;
+                          // Up-next rows remain click-to-select for prep workflows; visually
+                          // styled as compact read-only previews per spec.
+                          return (
+                            <button
+                              key={`q-up-${job.type}-${job.id}`}
+                              onClick={() => { setSelectedJobId(job.id); setSelectedJobType(job.type); setQueueDropdownOpen(false); }}
+                              className={cn("w-full text-left px-3 py-1.5 transition-colors opacity-70 hover:opacity-100",
+                                isCurrent ? "bg-teal-50 border-l-[3px] border-l-teal-600" : "border-l-[3px] border-l-transparent hover:bg-gray-50")}
+                            >
+                              <div className="flex items-center gap-2 text-[11.5px] text-gray-600">
+                                <span className="font-mono text-[10px] text-gray-400">#{idx + 2}</span>
+                                <span className="font-mono text-[11px] text-gray-500">{job.obdNumber}</span>
+                                <span className="text-gray-400">·</span>
+                                <span className="font-medium text-gray-700 truncate flex-1">{job.customerName}</span>
+                                {tintingCount > 0 && (
+                                  <span className="text-[10px] text-gray-400">{tintingCount} SKU{tintingCount === 1 ? "" : "s"}</span>
+                                )}
+                              </div>
+                            </button>
+                          );
+                        })
+                      ) : (
+                        <div className="mx-3 px-3 py-2 text-[11px] text-gray-400 italic text-center">
+                          Nothing queued. Check with Chandresh for new assignments.
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
               </div>
 
-              {/* Status badge */}
-              {selectedJob.status === "tinting_in_progress" ? (
+              {/* Status badge — only when a CURRENT job is selected */}
+              {selectedJob && (selectedJob.status === "tinting_in_progress" ? (
                 <span className="text-[10px] font-semibold px-2 py-0.5 rounded-[5px] border bg-green-50 border-green-200 text-green-700 flex-shrink-0">In Progress</span>
               ) : (
                 <span className="text-[10px] font-semibold px-2 py-0.5 rounded-[5px] border bg-amber-50 border-amber-200 text-amber-700 flex-shrink-0">Assigned</span>
-              )}
+              ))}
 
               {/* Timer (in progress) */}
-              {selectedJob.status === "tinting_in_progress" && elapsed && (
+              {selectedJob && selectedJob.status === "tinting_in_progress" && elapsed && (
                 <div className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 rounded-md px-2 py-0.5 flex-shrink-0">
                   <span className="w-1.5 h-1.5 rounded-full bg-green-600 animate-pulse flex-shrink-0" />
                   <span className="font-mono text-[11px] font-semibold text-gray-600">{elapsed}</span>
@@ -1767,11 +2072,86 @@ export function TintOperatorContent() {
                               Add TI Entry
                             </button>
                           )}
-                          <button type="button" onClick={() => markDone(selectedJob)} disabled={anyLoading}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              // Phase 4f — splits use the legacy one-shot /split/done
+                              // route (untouched). Whole-OBD orders open the new
+                              // confirm modal which collects per-SKU final qty.
+                              if (selectedJob.type === "split") {
+                                void markDone(selectedJob);
+                                return;
+                              }
+                              // Client-side TI-completion preflight. existingTIEntries
+                              // is already maintained for the active job; this
+                              // surfaces the existing per-line "TI incomplete" warning
+                              // BEFORE the modal opens, preserving the Phase 3 UX.
+                              // The server still re-checks defensively.
+                              const tintingLines = selectedJob.lineItems
+                                .filter(li => li.rawLineItem.isTinting);
+                              const missing = tintingLines.filter(
+                                li => !existingTIEntries.has(li.rawLineItemId ?? 0),
+                              );
+                              if (missing.length > 0) {
+                                setTiIncompleteWarning(missing.map(li => ({
+                                  rawLineItemId:     li.rawLineItemId ?? 0,
+                                  skuCodeRaw:        li.rawLineItem.skuCodeRaw,
+                                  skuDescriptionRaw: li.rawLineItem.skuDescriptionRaw,
+                                })));
+                                return;
+                              }
+                              setTiIncompleteWarning(null);
+                              setMarkDoneModalJob({
+                                orderId:            selectedJob.id,
+                                obdNumber:          selectedJob.obdNumber,
+                                customerName:       selectedJob.customerName,
+                                startedAt:          selectedJob.startedAt,
+                                accumulatedMinutes: selectedJob.accumulatedMinutes,
+                                pauseCount:         selectedJob.pauseCount,
+                                skus: selectedJob.lineItems
+                                  .filter(li => li.rawLineItem.isTinting && li.rawLineItemId != null)
+                                  .map(li => ({
+                                    skuId:       li.rawLineItemId as number,
+                                    skuCode:     li.rawLineItem.skuCodeRaw,
+                                    shadeName:   li.rawLineItem.skuDescriptionRaw ?? li.rawLineItem.skuCodeRaw,
+                                    assignedQty: li.rawLineItem.unitQty,
+                                  })),
+                              });
+                            }}
+                            disabled={anyLoading}
                             className={cn(btnGreen, anyLoading ? "opacity-60 cursor-not-allowed" : "cursor-pointer hover:bg-green-700")}>
                             {isDoneLoading ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
                             Mark as Done
                           </button>
+                          {/* Phase 4c — Pause CTA. Whole-OBD only; route rejects splits. */}
+                          {selectedJob.type === "order" && selectedJob.tintAssignmentId !== null && selectedJob.startedAt && (
+                            <button
+                              type="button"
+                              onClick={() => setPauseModalJob({
+                                id:           selectedJob.tintAssignmentId!,
+                                obdNumber:    selectedJob.obdNumber,
+                                customerName: selectedJob.customerName,
+                                startedAt:    selectedJob.startedAt!,
+                                skus: selectedJob.lineItems
+                                  .filter(li => li.rawLineItem.isTinting && li.rawLineItemId != null)
+                                  .map(li => ({
+                                    skuId:       li.rawLineItemId as number,
+                                    skuCode:     li.rawLineItem.skuCodeRaw,
+                                    shadeName:   li.rawLineItem.skuDescriptionRaw ?? li.rawLineItem.skuCodeRaw,
+                                    assignedQty: li.rawLineItem.unitQty,
+                                  })),
+                              })}
+                              disabled={anyLoading}
+                              className={cn(
+                                "h-[42px] px-5 bg-amber-600 text-white border-none rounded-xl text-[13px] font-semibold flex items-center justify-center gap-2 whitespace-nowrap flex-shrink-0 transition-opacity",
+                                anyLoading ? "opacity-60 cursor-not-allowed" : "cursor-pointer hover:bg-amber-700",
+                              )}
+                              title="Pause this job — frees your slot for the next assignment"
+                            >
+                              <Pause size={14} fill="currentColor" />
+                              Pause
+                            </button>
+                          )}
                         </div>
                       </div>
                     );
@@ -1811,6 +2191,19 @@ export function TintOperatorContent() {
                     }
 
                     // Save TI + Save TI & Start (always available for current job)
+                    // Phase 3c — Skip button rightmost, only when canSkip evaluates true.
+                    // NOTE: client status for whole-OBD jobs is normalized to "tint_assigned"
+                    // at the Job-shape build step (~line 598-600), so the literal status
+                    // compared here matches that normalized value.
+                    const canSkip =
+                      !!selectedJob &&
+                      jobs.length > 0 &&
+                      jobs[0].id === selectedJob.id &&
+                      jobs[0].type === selectedJob.type &&
+                      jobs[0].type === "order" &&
+                      selectedJob.status === "tint_assigned" &&
+                      !selectedJob.startedAt &&
+                      !jobs.some(j => j.status === "tinting_in_progress");
                     return (
                       <div className="flex gap-2 flex-shrink-0">
                         <button type="button" onClick={() => handleSubmitTI(selectedJob, false)} disabled={isActionLoading}
@@ -1823,6 +2216,28 @@ export function TintOperatorContent() {
                           {isActionLoading ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
                           Save TI & Start
                         </button>
+                        {canSkip && selectedJob.tintAssignmentId !== null && (
+                          <button
+                            type="button"
+                            onClick={() => setSkipModalJob({
+                              assignmentId:       selectedJob.tintAssignmentId!,
+                              obdNumber:          selectedJob.obdNumber,
+                              shipToCustomerName: selectedJob.shipToCustomerName,
+                              smu:                null, // not on Job shape today
+                              articleTag:         selectedJob.articleTag,
+                              totalVolume:        selectedJob.totalVolume,
+                            })}
+                            disabled={isActionLoading}
+                            className={cn(
+                              "h-[38px] px-4 bg-white border border-gray-200 text-red-700 rounded-lg text-[13px] font-medium inline-flex items-center gap-1.5 whitespace-nowrap flex-shrink-0 transition-colors",
+                              isActionLoading ? "opacity-60 cursor-not-allowed" : "cursor-pointer hover:bg-red-50 hover:border-red-200",
+                            )}
+                            title="Skip this job — sends it back to Tint Manager"
+                          >
+                            <SkipForward size={13} />
+                            Skip
+                          </button>
+                        )}
                       </div>
                     );
                   }
@@ -1882,6 +2297,46 @@ export function TintOperatorContent() {
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    {/* Phase 3c — Skip Job modal. Single instance; gated on skipModalJob state. */}
+    {skipModalJob && (
+      <SkipJobModal
+        open
+        job={skipModalJob}
+        onClose={() => setSkipModalJob(null)}
+        onSkipped={() => {
+          setSkipModalJob(null);
+          void fetchOrders();
+        }}
+      />
+    )}
+
+    {/* Phase 4c — Pause Job modal. Single instance; gated on pauseModalJob state. */}
+    {pauseModalJob && (
+      <PauseJobModal
+        open
+        assignment={pauseModalJob}
+        onClose={() => setPauseModalJob(null)}
+        onSuccess={() => {
+          setPauseModalJob(null);
+          void fetchOrders();
+        }}
+      />
+    )}
+
+    {/* Phase 4f — Mark Done confirm modal. Single instance; whole-OBD only. */}
+    {markDoneModalJob && (
+      <MarkDoneConfirmModal
+        open
+        assignment={markDoneModalJob}
+        onClose={() => setMarkDoneModalJob(null)}
+        onSuccess={() => {
+          setMarkDoneModalJob(null);
+          setTiIncompleteWarning(null);
+          void fetchOrders();
+        }}
+      />
+    )}
     </>
   );
 }

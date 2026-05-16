@@ -46,8 +46,8 @@ export async function POST(
 
   for (const orderId of body.orderIds) {
     // Check order is in dispatch_confirmation (with or without splits)
-    const order = await prisma.orders.findUnique({
-      where: { id: orderId },
+    const order = await prisma.orders.findFirst({
+      where: { id: orderId, isRemoved: false },
       include: {
         splits: {
           where: { dispatchStatus: "dispatch", status: { not: "cancelled" } },

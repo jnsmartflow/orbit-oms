@@ -31,8 +31,8 @@ export async function GET(
       return NextResponse.json({ error: "Invalid order ID" }, { status: 400 });
     }
 
-    const order = await prisma.orders.findUnique({
-      where:  { id: orderId },
+    const order = await prisma.orders.findFirst({
+      where:  { id: orderId, isRemoved: false },
       select: { obdNumber: true },
     });
     if (!order) {

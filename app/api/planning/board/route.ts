@@ -32,6 +32,7 @@ export async function GET(req: Request): Promise<NextResponse> {
   const orders = await prisma.orders.findMany({
     where: {
       workflowStage: { in: workflowStages },
+      isRemoved: false,
       obdEmailDate: {
         lte: new Date(date + "T23:59:59"),
       },
@@ -134,7 +135,9 @@ export async function GET(req: Request): Promise<NextResponse> {
       vehicle: { select: { id: true, vehicleNo: true, category: true, capacityKg: true } },
       createdBy: { select: { id: true, name: true } },
       orders: {
-        where: isHistoryView ? {} : { clearedAt: null },
+        where: isHistoryView
+          ? { order: { isRemoved: false } }
+          : { clearedAt: null, order: { isRemoved: false } },
         include: {
           order: {
             select: {

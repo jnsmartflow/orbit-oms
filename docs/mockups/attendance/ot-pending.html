@@ -1,0 +1,1509 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OT Pending Queue — UI mockup</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: { sans: ["Inter", "ui-sans-serif", "system-ui", "sans-serif"] },
+          },
+        },
+      };
+    </script>
+
+    <style>
+      :root {
+        font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+        font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+      }
+      body {
+        font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+      }
+
+      /* Fixed-table layout per CLAUDE_UI.md §28 */
+      table.ut {
+        width: 100%;
+        border-collapse: collapse;
+        table-layout: fixed;
+        font-feature-settings: "tnum";
+      }
+      table.ut th {
+        font-size: 10px;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: #9ca3af;
+        text-align: left;
+        padding: 0 14px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      table.ut th.first {
+        text-align: center;
+        padding: 0 4px 0 10px;
+      }
+      table.ut tr.head {
+        height: 32px;
+        background: #f9fafb;
+        border-bottom: 1px solid #ebebeb;
+      }
+      table.ut tr.row {
+        height: 36px;
+        border-bottom: 1px solid #f0f0f0;
+      }
+      table.ut tr.row:hover {
+        background: rgba(249, 250, 251, 0.6);
+      }
+      table.ut td {
+        font-size: 11px;
+        font-weight: 400;
+        color: #4b5563;
+        text-align: left;
+        padding: 0 14px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        font-variant-numeric: tabular-nums;
+      }
+      table.ut td.first {
+        text-align: center;
+        padding: 0 4px 0 10px;
+        color: #9ca3af;
+      }
+      table.ut td.primary {
+        font-weight: 500;
+        color: #111827;
+      }
+      table.ut td.mono {
+        font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      }
+
+      /* Sub-nav: hide horizontal scrollbar on mobile (Tailwind plugin not loaded via CDN) */
+      .scrollbar-hide::-webkit-scrollbar {
+        display: none;
+      }
+      .scrollbar-hide {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+      }
+
+      /* Mockup chrome */
+      .frame-label {
+        font-size: 10px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: #6b7280;
+      }
+      .desktop-frame {
+        width: 1200px;
+        max-width: 100%;
+      }
+      .mobile-frame {
+        width: 480px;
+      }
+    </style>
+  </head>
+
+  <body class="bg-gray-100 text-gray-900 min-h-screen pb-24">
+    <!-- ── Page header ─────────────────────────────────────────────────────── -->
+    <div class="bg-white border-b border-gray-200">
+      <div class="max-w-[1320px] mx-auto px-8 py-6">
+        <div class="flex items-end justify-between gap-6 flex-wrap">
+          <div>
+            <p class="text-[11px] font-semibold uppercase tracking-wider text-teal-700 mb-1">
+              UI mockup · v1
+            </p>
+            <h1 class="text-[24px] font-semibold text-gray-900">OT Pending Queue</h1>
+            <p class="text-[13px] text-gray-500 mt-1">
+              Static design exploration for
+              <span class="font-mono text-gray-700">/admin/attendance/ot-pending</span> — desktop
+              (1200&#8201;px) above, mobile (480&#8201;px) below. Each state in its own labelled
+              frame. Two modals at the top are interactive demos.
+            </p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button
+              type="button"
+              onclick="openLive('approve')"
+              class="h-9 px-3 bg-teal-600 hover:bg-teal-700 text-white text-[12px] font-semibold rounded-md inline-flex items-center gap-1.5 shadow-sm"
+            >
+              ▶ Try Approve modal
+            </button>
+            <button
+              type="button"
+              onclick="openLive('reject')"
+              class="h-9 px-3 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 text-[12px] font-semibold rounded-md inline-flex items-center gap-1.5"
+            >
+              ▶ Try Reject modal
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ──────────────────────────────────────────────────────────────────── -->
+    <!-- DESKTOP                                                              -->
+    <!-- ──────────────────────────────────────────────────────────────────── -->
+    <section class="max-w-[1320px] mx-auto px-8 pt-8">
+      <h2 class="text-[14px] font-semibold text-gray-900 mb-1">Desktop — 1200&#8201;px</h2>
+      <p class="text-[12px] text-gray-500 mb-6">
+        Min-width admin breakpoint. Mirrors the existing
+        <span class="font-mono text-gray-700">app/(ops)/admin/attendance</span> dashboard chrome.
+      </p>
+
+      <!-- ── State 1 — POPULATED ─────────────────────────────────────────── -->
+      <div class="mb-10">
+        <div class="flex items-center gap-3 mb-2">
+          <span class="frame-label">State 1</span>
+          <span class="text-[12px] text-gray-700">Populated — typical case</span>
+        </div>
+        <div class="desktop-frame bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
+          <!-- Universal header row 1 — 52px -->
+          <div class="h-[52px] flex items-center justify-between px-4 border-b border-gray-200">
+            <div class="flex items-center">
+              <span class="text-[14px] font-semibold text-gray-900">OT Pending Queue</span>
+              <span class="text-[11px] text-gray-400 ml-3">
+                <span class="text-gray-900 font-semibold">7</span> Total ·
+                <span class="text-gray-900 font-semibold">4</span> This week ·
+                <span class="text-gray-900 font-semibold">3</span> Older
+              </span>
+            </div>
+            <div class="flex items-center gap-2">
+              <span
+                class="text-[11px] font-medium text-gray-400"
+                style="font-variant-numeric: tabular-nums; letter-spacing: 0.5px"
+                >18:42</span
+              >
+              <div class="w-px h-4 bg-gray-200"></div>
+              <button class="bg-gray-50 rounded-[5px] px-2 py-1 hover:bg-gray-100" title="Shortcuts">
+                <span class="text-[11px] text-gray-400">⌨</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Sub-nav -->
+          <div class="bg-white border-b border-gray-200">
+            <nav class="flex items-end gap-1 px-4 h-[44px]">
+              <a
+                href="#"
+                class="px-3 py-2.5 text-[13px] font-medium text-gray-500 hover:text-gray-900"
+                >Dashboard</a
+              >
+              <a
+                href="#"
+                class="px-3 py-2.5 text-[13px] font-semibold text-teal-600 border-b-2 border-teal-600 -mb-px inline-flex items-center gap-1.5"
+              >
+                OT Pending
+                <span
+                  class="bg-teal-50 text-teal-700 text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
+                  >5</span
+                >
+              </a>
+              <a
+                href="#"
+                class="px-3 py-2.5 text-[13px] font-medium text-gray-500 hover:text-gray-900"
+                >Settings</a
+              >
+              <a
+                href="#"
+                class="px-3 py-2.5 text-[13px] font-medium text-gray-500 hover:text-gray-900"
+                >OT Audit</a
+              >
+            </nav>
+          </div>
+
+          <!-- Table -->
+          <div class="px-4 pt-4 pb-3">
+            <table class="ut">
+              <colgroup>
+                <col style="width: 4%" />
+                <col style="width: 18%" />
+                <col style="width: 13%" />
+                <col style="width: 9%" />
+                <col style="width: 9%" />
+                <col style="width: 32%" />
+                <col style="width: 15%" />
+              </colgroup>
+              <thead>
+                <tr class="head">
+                  <th class="first">#</th>
+                  <th>User</th>
+                  <th>Date</th>
+                  <th>Worked</th>
+                  <th>OT raw</th>
+                  <th>Reason</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr class="row">
+                  <td class="first">1</td>
+                  <td class="primary">Deepanshu Thakur</td>
+                  <td>Tue · May 12</td>
+                  <td>9h 12m</td>
+                  <td class="primary">47&nbsp;min</td>
+                  <td title="Stayed back to finish dispatch challan for OBD 8234567">
+                    Stayed back to finish dispatch challan for OBD&nbsp;8234567
+                  </td>
+                  <td>
+                    <span class="inline-flex gap-1.5">
+                      <button
+                        type="button"
+                        onclick="openLive('approve')"
+                        class="bg-teal-600 hover:bg-teal-700 text-white text-[10px] font-medium px-2 py-0.5 rounded"
+                      >
+                        Approve
+                      </button>
+                      <button
+                        type="button"
+                        onclick="openLive('reject')"
+                        class="bg-gray-100 hover:bg-gray-200 text-gray-700 text-[10px] font-medium px-2 py-0.5 rounded"
+                      >
+                        Reject
+                      </button>
+                    </span>
+                  </td>
+                </tr>
+                <tr class="row">
+                  <td class="first">2</td>
+                  <td class="primary">Bankim</td>
+                  <td>Mon · May 11</td>
+                  <td>8h 34m</td>
+                  <td class="primary">32&nbsp;min</td>
+                  <td title="Helping with stock count">Helping with stock count</td>
+                  <td>
+                    <span class="inline-flex gap-1.5">
+                      <button
+                        type="button"
+                        onclick="openLive('approve')"
+                        class="bg-teal-600 hover:bg-teal-700 text-white text-[10px] font-medium px-2 py-0.5 rounded"
+                      >
+                        Approve
+                      </button>
+                      <button
+                        type="button"
+                        onclick="openLive('reject')"
+                        class="bg-gray-100 hover:bg-gray-200 text-gray-700 text-[10px] font-medium px-2 py-0.5 rounded"
+                      >
+                        Reject
+                      </button>
+                    </span>
+                  </td>
+                </tr>
+                <tr class="row">
+                  <td class="first">3</td>
+                  <td class="primary">Chandresh Kolgha</td>
+                  <td>Wed · May 13</td>
+                  <td>10h 5m</td>
+                  <td class="primary">1h 18m</td>
+                  <td title="Tinting backlog cleared after evening rush — last 4 challans punched">
+                    Tinting backlog cleared after evening rush — last 4 challans punched
+                  </td>
+                  <td>
+                    <span class="inline-flex gap-1.5">
+                      <button
+                        type="button"
+                        onclick="openLive('approve')"
+                        class="bg-teal-600 hover:bg-teal-700 text-white text-[10px] font-medium px-2 py-0.5 rounded"
+                      >
+                        Approve
+                      </button>
+                      <button
+                        type="button"
+                        onclick="openLive('reject')"
+                        class="bg-gray-100 hover:bg-gray-200 text-gray-700 text-[10px] font-medium px-2 py-0.5 rounded"
+                      >
+                        Reject
+                      </button>
+                    </span>
+                  </td>
+                </tr>
+                <tr class="row">
+                  <td class="first">4</td>
+                  <td class="primary">Deepak Vasava</td>
+                  <td>Tue · May 12</td>
+                  <td>9h 47m</td>
+                  <td class="primary">55&nbsp;min</td>
+                  <td title="Manual mix for urgent IGT order — site shade match required two retries">
+                    Manual mix for urgent IGT order — site shade match required two retries
+                  </td>
+                  <td>
+                    <span class="inline-flex gap-1.5">
+                      <button
+                        type="button"
+                        onclick="openLive('approve')"
+                        class="bg-teal-600 hover:bg-teal-700 text-white text-[10px] font-medium px-2 py-0.5 rounded"
+                      >
+                        Approve
+                      </button>
+                      <button
+                        type="button"
+                        onclick="openLive('reject')"
+                        class="bg-gray-100 hover:bg-gray-200 text-gray-700 text-[10px] font-medium px-2 py-0.5 rounded"
+                      >
+                        Reject
+                      </button>
+                    </span>
+                  </td>
+                </tr>
+                <tr class="row">
+                  <td class="first">5</td>
+                  <td class="primary">Chandrasing Valvi</td>
+                  <td>Mon · May 11</td>
+                  <td>8h 18m</td>
+                  <td class="primary">40&nbsp;min</td>
+                  <td title="Operator cover for second shift; closed last 6 jobs solo after Deepak left">
+                    Operator cover for second shift; closed last 6 jobs solo after Deepak left
+                  </td>
+                  <td>
+                    <span class="inline-flex gap-1.5">
+                      <button
+                        type="button"
+                        onclick="openLive('approve')"
+                        class="bg-teal-600 hover:bg-teal-700 text-white text-[10px] font-medium px-2 py-0.5 rounded"
+                      >
+                        Approve
+                      </button>
+                      <button
+                        type="button"
+                        onclick="openLive('reject')"
+                        class="bg-gray-100 hover:bg-gray-200 text-gray-700 text-[10px] font-medium px-2 py-0.5 rounded"
+                      >
+                        Reject
+                      </button>
+                    </span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <p class="text-[11px] text-gray-400 mt-3">5 pending claims · oldest first</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── State 2 — EMPTY ─────────────────────────────────────────────── -->
+      <div class="mb-10">
+        <div class="flex items-center gap-3 mb-2">
+          <span class="frame-label">State 2</span>
+          <span class="text-[12px] text-gray-700">Empty — nothing pending</span>
+        </div>
+        <div class="desktop-frame bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
+          <div class="h-[52px] flex items-center justify-between px-4 border-b border-gray-200">
+            <div class="flex items-center">
+              <span class="text-[14px] font-semibold text-gray-900">OT Pending Queue</span>
+              <span class="text-[11px] text-gray-400 ml-3">
+                <span class="text-gray-900 font-semibold">0</span> Total ·
+                <span class="text-gray-900 font-semibold">0</span> This week ·
+                <span class="text-gray-900 font-semibold">0</span> Older
+              </span>
+            </div>
+            <div class="flex items-center gap-2">
+              <span
+                class="text-[11px] font-medium text-gray-400"
+                style="font-variant-numeric: tabular-nums; letter-spacing: 0.5px"
+                >18:42</span
+              >
+              <div class="w-px h-4 bg-gray-200"></div>
+              <button class="bg-gray-50 rounded-[5px] px-2 py-1 hover:bg-gray-100" title="Shortcuts">
+                <span class="text-[11px] text-gray-400">⌨</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Sub-nav -->
+          <div class="bg-white border-b border-gray-200">
+            <nav class="flex items-end gap-1 px-4 h-[44px]">
+              <a
+                href="#"
+                class="px-3 py-2.5 text-[13px] font-medium text-gray-500 hover:text-gray-900"
+                >Dashboard</a
+              >
+              <a
+                href="#"
+                class="px-3 py-2.5 text-[13px] font-semibold text-teal-600 border-b-2 border-teal-600 -mb-px inline-flex items-center gap-1.5"
+              >
+                OT Pending
+                <span
+                  class="bg-teal-50 text-teal-700 text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
+                  >5</span
+                >
+              </a>
+              <a
+                href="#"
+                class="px-3 py-2.5 text-[13px] font-medium text-gray-500 hover:text-gray-900"
+                >Settings</a
+              >
+              <a
+                href="#"
+                class="px-3 py-2.5 text-[13px] font-medium text-gray-500 hover:text-gray-900"
+                >OT Audit</a
+              >
+            </nav>
+          </div>
+
+          <div class="p-4">
+            <div class="bg-white border border-gray-200 rounded-lg p-8 text-center">
+              <div class="text-4xl mb-3" aria-hidden>👍</div>
+              <p class="text-[14px] font-semibold text-gray-900 mb-1">Nothing pending</p>
+              <p class="text-[12px] text-gray-500">
+                All caught up — no OT claims awaiting decision.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── State 3 — APPROVE MODAL OPEN ────────────────────────────────── -->
+      <div class="mb-10">
+        <div class="flex items-center gap-3 mb-2">
+          <span class="frame-label">State 3</span>
+          <span class="text-[12px] text-gray-700">Approve modal open (static preview)</span>
+        </div>
+        <div
+          class="desktop-frame relative bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm"
+        >
+          <!-- Dimmed page background -->
+          <div class="opacity-50 pointer-events-none">
+            <div class="h-[52px] flex items-center justify-between px-4 border-b border-gray-200">
+              <div class="flex items-center">
+                <span class="text-[14px] font-semibold text-gray-900">OT Pending Queue</span>
+                <span class="text-[11px] text-gray-400 ml-3">
+                  <span class="text-gray-900 font-semibold">7</span> Total ·
+                  <span class="text-gray-900 font-semibold">4</span> This week ·
+                  <span class="text-gray-900 font-semibold">3</span> Older
+                </span>
+              </div>
+              <div class="flex items-center gap-2">
+                <span
+                  class="text-[11px] font-medium text-gray-400"
+                  style="font-variant-numeric: tabular-nums; letter-spacing: 0.5px"
+                  >18:42</span
+                >
+              </div>
+            </div>
+            <!-- Sub-nav -->
+            <div class="bg-white border-b border-gray-200">
+              <nav class="flex items-end gap-1 px-4 h-[44px]">
+                <a
+                  href="#"
+                  class="px-3 py-2.5 text-[13px] font-medium text-gray-500 hover:text-gray-900"
+                  >Dashboard</a
+                >
+                <a
+                  href="#"
+                  class="px-3 py-2.5 text-[13px] font-semibold text-teal-600 border-b-2 border-teal-600 -mb-px inline-flex items-center gap-1.5"
+                >
+                  OT Pending
+                  <span
+                    class="bg-teal-50 text-teal-700 text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
+                    >5</span
+                  >
+                </a>
+                <a
+                  href="#"
+                  class="px-3 py-2.5 text-[13px] font-medium text-gray-500 hover:text-gray-900"
+                  >Settings</a
+                >
+                <a
+                  href="#"
+                  class="px-3 py-2.5 text-[13px] font-medium text-gray-500 hover:text-gray-900"
+                  >OT Audit</a
+                >
+              </nav>
+            </div>
+            <div class="px-4 pt-4 pb-6">
+              <table class="ut">
+                <colgroup>
+                  <col style="width: 4%" /><col style="width: 18%" /><col style="width: 13%" /><col
+                    style="width: 9%"
+                  /><col style="width: 9%" /><col style="width: 32%" /><col style="width: 15%" />
+                </colgroup>
+                <thead>
+                  <tr class="head">
+                    <th class="first">#</th><th>User</th><th>Date</th><th>Worked</th><th>OT raw</th>
+                    <th>Reason</th><th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr class="row">
+                    <td class="first">1</td><td class="primary">Deepanshu Thakur</td>
+                    <td>Tue · May 12</td><td>9h 12m</td><td class="primary">47&nbsp;min</td>
+                    <td>Stayed back to finish dispatch challan for OBD&nbsp;8234567</td>
+                    <td></td>
+                  </tr>
+                  <tr class="row">
+                    <td class="first">2</td><td class="primary">Bankim</td>
+                    <td>Mon · May 11</td><td>8h 34m</td><td class="primary">32&nbsp;min</td>
+                    <td>Helping with stock count</td><td></td>
+                  </tr>
+                  <tr class="row">
+                    <td class="first">3</td><td class="primary">Chandresh Kolgha</td>
+                    <td>Wed · May 13</td><td>10h 5m</td><td class="primary">1h 18m</td>
+                    <td>Tinting backlog cleared after evening rush — last 4 challans punched</td>
+                    <td></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Backdrop -->
+          <div class="absolute inset-0 bg-black/40"></div>
+
+          <!-- Static modal -->
+          <div class="absolute inset-0 flex items-center justify-center p-6">
+            <div class="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+              <h3 class="text-[16px] font-semibold text-gray-900 mb-4">Approve OT claim</h3>
+              <dl class="space-y-1.5 mb-4 text-[13px]">
+                <div class="flex items-center justify-between gap-3">
+                  <dt class="text-gray-500">User</dt>
+                  <dd class="text-gray-900 font-medium">Deepanshu Thakur</dd>
+                </div>
+                <div class="flex items-center justify-between gap-3">
+                  <dt class="text-gray-500">Date</dt>
+                  <dd class="text-gray-900 font-medium">Tuesday, May 12</dd>
+                </div>
+                <div class="flex items-center justify-between gap-3">
+                  <dt class="text-gray-500">Raw OT</dt>
+                  <dd class="text-gray-900 font-medium tabular-nums">47 minutes</dd>
+                </div>
+              </dl>
+              <div class="bg-gray-50 border border-gray-200 rounded-md p-3 mb-4">
+                <p class="text-[13px] italic text-gray-700 leading-snug">
+                  "Stayed back to finish dispatch challan for OBD 8234567"
+                </p>
+              </div>
+              <label
+                for="adjustApprove1"
+                class="block text-[12px] font-medium text-gray-700 mb-1"
+                >Credit (optional override)</label
+              >
+              <div class="relative mb-2">
+                <input
+                  id="adjustApprove1"
+                  type="number"
+                  value="47"
+                  min="0"
+                  class="w-full h-10 border border-gray-300 rounded-md px-3 pr-12 text-[14px] tabular-nums text-gray-900 focus:border-teal-500 focus:ring-2 focus:ring-teal-100 focus:outline-none"
+                />
+                <span
+                  class="absolute right-3 top-1/2 -translate-y-1/2 text-[12px] text-gray-400"
+                  >min</span
+                >
+              </div>
+              <p class="text-[11px] text-gray-500 leading-snug mb-5">
+                Adjusting below 47 min reduces credit but does not refund the monthly grace
+                counter.
+              </p>
+              <div class="flex justify-end items-center gap-2">
+                <button
+                  type="button"
+                  class="h-9 px-4 text-[13px] text-gray-500 hover:text-gray-900"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  class="h-9 px-4 bg-teal-600 hover:bg-teal-700 text-white text-[13px] font-semibold rounded-md"
+                >
+                  Confirm approve
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── State 4 — REJECT MODAL OPEN ─────────────────────────────────── -->
+      <div class="mb-10">
+        <div class="flex items-center gap-3 mb-2">
+          <span class="frame-label">State 4</span>
+          <span class="text-[12px] text-gray-700">Reject modal open (static preview)</span>
+        </div>
+        <div
+          class="desktop-frame relative bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm"
+        >
+          <div class="opacity-50 pointer-events-none">
+            <div class="h-[52px] flex items-center justify-between px-4 border-b border-gray-200">
+              <div class="flex items-center">
+                <span class="text-[14px] font-semibold text-gray-900">OT Pending Queue</span>
+                <span class="text-[11px] text-gray-400 ml-3">
+                  <span class="text-gray-900 font-semibold">7</span> Total ·
+                  <span class="text-gray-900 font-semibold">4</span> This week ·
+                  <span class="text-gray-900 font-semibold">3</span> Older
+                </span>
+              </div>
+              <div class="flex items-center gap-2">
+                <span
+                  class="text-[11px] font-medium text-gray-400"
+                  style="font-variant-numeric: tabular-nums; letter-spacing: 0.5px"
+                  >18:42</span
+                >
+              </div>
+            </div>
+            <!-- Sub-nav -->
+            <div class="bg-white border-b border-gray-200">
+              <nav class="flex items-end gap-1 px-4 h-[44px]">
+                <a
+                  href="#"
+                  class="px-3 py-2.5 text-[13px] font-medium text-gray-500 hover:text-gray-900"
+                  >Dashboard</a
+                >
+                <a
+                  href="#"
+                  class="px-3 py-2.5 text-[13px] font-semibold text-teal-600 border-b-2 border-teal-600 -mb-px inline-flex items-center gap-1.5"
+                >
+                  OT Pending
+                  <span
+                    class="bg-teal-50 text-teal-700 text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
+                    >5</span
+                  >
+                </a>
+                <a
+                  href="#"
+                  class="px-3 py-2.5 text-[13px] font-medium text-gray-500 hover:text-gray-900"
+                  >Settings</a
+                >
+                <a
+                  href="#"
+                  class="px-3 py-2.5 text-[13px] font-medium text-gray-500 hover:text-gray-900"
+                  >OT Audit</a
+                >
+              </nav>
+            </div>
+            <div class="px-4 pt-4 pb-6">
+              <table class="ut">
+                <colgroup>
+                  <col style="width: 4%" /><col style="width: 18%" /><col style="width: 13%" /><col
+                    style="width: 9%"
+                  /><col style="width: 9%" /><col style="width: 32%" /><col style="width: 15%" />
+                </colgroup>
+                <thead>
+                  <tr class="head">
+                    <th class="first">#</th><th>User</th><th>Date</th><th>Worked</th><th>OT raw</th>
+                    <th>Reason</th><th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr class="row">
+                    <td class="first">1</td><td class="primary">Deepanshu Thakur</td>
+                    <td>Tue · May 12</td><td>9h 12m</td><td class="primary">47&nbsp;min</td>
+                    <td>Stayed back to finish dispatch challan for OBD&nbsp;8234567</td>
+                    <td></td>
+                  </tr>
+                  <tr class="row">
+                    <td class="first">2</td><td class="primary">Bankim</td>
+                    <td>Mon · May 11</td><td>8h 34m</td><td class="primary">32&nbsp;min</td>
+                    <td>Helping with stock count</td><td></td>
+                  </tr>
+                  <tr class="row">
+                    <td class="first">3</td><td class="primary">Chandresh Kolgha</td>
+                    <td>Wed · May 13</td><td>10h 5m</td><td class="primary">1h 18m</td>
+                    <td>Tinting backlog cleared after evening rush — last 4 challans punched</td>
+                    <td></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="absolute inset-0 bg-black/40"></div>
+
+          <div class="absolute inset-0 flex items-center justify-center p-6">
+            <div class="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+              <h3 class="text-[16px] font-semibold text-gray-900 mb-4">Reject OT claim</h3>
+              <dl class="space-y-1.5 mb-4 text-[13px]">
+                <div class="flex items-center justify-between gap-3">
+                  <dt class="text-gray-500">User</dt>
+                  <dd class="text-gray-900 font-medium">Bankim</dd>
+                </div>
+                <div class="flex items-center justify-between gap-3">
+                  <dt class="text-gray-500">Date</dt>
+                  <dd class="text-gray-900 font-medium">Monday, May 11</dd>
+                </div>
+              </dl>
+              <div class="bg-gray-50 border border-gray-200 rounded-md p-3 mb-4">
+                <p class="text-[13px] italic text-gray-700 leading-snug">
+                  "Helping with stock count"
+                </p>
+              </div>
+              <div
+                class="bg-amber-50 border border-amber-200 rounded-md p-3 mb-4 flex items-start gap-2"
+              >
+                <span class="text-amber-600 text-[14px] leading-none mt-px" aria-hidden>⚠</span>
+                <p class="text-[12px] text-amber-800 leading-snug">
+                  Rejected days still consume this user's monthly grace (Q4 policy).
+                </p>
+              </div>
+              <label
+                for="rejectNote1"
+                class="block text-[12px] font-medium text-gray-700 mb-1"
+                >Note (optional, visible in audit only)</label
+              >
+              <textarea
+                id="rejectNote1"
+                rows="3"
+                placeholder="Why this OT isn't being credited"
+                class="w-full border border-gray-300 rounded-md p-3 text-[13px] text-gray-900 placeholder-gray-400 focus:border-teal-500 focus:ring-2 focus:ring-teal-100 focus:outline-none resize-none mb-5"
+              ></textarea>
+              <div class="flex justify-end items-center gap-2">
+                <button
+                  type="button"
+                  class="h-9 px-4 text-[13px] text-gray-500 hover:text-gray-900"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  class="h-9 px-4 bg-red-600 hover:bg-red-700 text-white text-[13px] font-semibold rounded-md"
+                >
+                  Confirm reject
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── State 5 — ERROR STATES ──────────────────────────────────────── -->
+      <div class="mb-12">
+        <div class="flex items-center gap-3 mb-2">
+          <span class="frame-label">State 5</span>
+          <span class="text-[12px] text-gray-700">Error chips</span>
+        </div>
+        <div class="desktop-frame bg-white border border-gray-200 rounded-lg p-4 shadow-sm space-y-2">
+          <div class="bg-amber-50 border border-amber-200 rounded-md px-3 py-2 flex items-start gap-2">
+            <span
+              class="text-[10px] font-semibold uppercase tracking-wider text-amber-700 bg-amber-100 border border-amber-200 rounded px-1.5 py-0.5 mt-0.5 tabular-nums"
+              >422</span
+            >
+            <p class="text-[12.5px] text-amber-800 leading-snug">
+              Cannot approve — current trigger time is past check-out clock. Lower
+              <span class="font-mono">otTriggerTime</span> or reject this claim.
+            </p>
+          </div>
+          <div class="bg-amber-50 border border-amber-200 rounded-md px-3 py-2 flex items-start gap-2">
+            <span
+              class="text-[10px] font-semibold uppercase tracking-wider text-amber-700 bg-amber-100 border border-amber-200 rounded px-1.5 py-0.5 mt-0.5 tabular-nums"
+              >409</span
+            >
+            <p class="text-[12.5px] text-amber-800 leading-snug">
+              Already actioned by another admin — refreshing list.
+            </p>
+          </div>
+          <div class="bg-red-50 border border-red-200 rounded-md px-3 py-2 flex items-start gap-2">
+            <span
+              class="text-[10px] font-semibold uppercase tracking-wider text-red-700 bg-red-100 border border-red-200 rounded px-1.5 py-0.5 mt-0.5 tabular-nums"
+              >500</span
+            >
+            <p class="text-[12.5px] text-red-800 leading-snug">
+              Couldn't load.
+              <button class="underline font-medium hover:text-red-900">Tap to retry.</button>
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ──────────────────────────────────────────────────────────────────── -->
+    <!-- MOBILE                                                               -->
+    <!-- ──────────────────────────────────────────────────────────────────── -->
+    <section class="max-w-[1320px] mx-auto px-8 pt-4 pb-12">
+      <h2 class="text-[14px] font-semibold text-gray-900 mb-1">Mobile — 480&#8201;px</h2>
+      <p class="text-[12px] text-gray-500 mb-6">
+        Card-collapsed layout — the 7-column fixed table doesn't fit usefully under 1100&#8201;px,
+        so admin on mobile sees one card per claim with the same data points.
+      </p>
+
+      <div class="flex items-start gap-6 flex-wrap">
+        <!-- ── Mobile State 1 — POPULATED ──────────────────────────────── -->
+        <div>
+          <div class="flex items-center gap-3 mb-2">
+            <span class="frame-label">State 1</span>
+            <span class="text-[12px] text-gray-700">Populated</span>
+          </div>
+          <div class="mobile-frame bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
+            <div class="h-[52px] flex items-center justify-between px-4 border-b border-gray-200">
+              <div class="flex flex-col leading-tight">
+                <span class="text-[13px] font-semibold text-gray-900">OT Pending</span>
+                <span class="text-[10px] text-gray-400">
+                  <span class="text-gray-900 font-semibold">7</span> · 4 wk · 3 older
+                </span>
+              </div>
+              <span
+                class="text-[11px] font-medium text-gray-400"
+                style="font-variant-numeric: tabular-nums; letter-spacing: 0.5px"
+                >18:42</span
+              >
+            </div>
+            <!-- Sub-nav -->
+            <div class="bg-white border-b border-gray-200">
+              <nav class="flex items-end gap-1 px-4 h-[44px] overflow-x-auto scrollbar-hide">
+                <a
+                  href="#"
+                  class="shrink-0 px-3 py-2.5 text-[13px] font-medium text-gray-500 hover:text-gray-900"
+                  >Dashboard</a
+                >
+                <a
+                  href="#"
+                  class="shrink-0 px-3 py-2.5 text-[13px] font-semibold text-teal-600 border-b-2 border-teal-600 -mb-px inline-flex items-center gap-1.5"
+                >
+                  OT Pending
+                  <span
+                    class="bg-teal-50 text-teal-700 text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
+                    >5</span
+                  >
+                </a>
+                <a
+                  href="#"
+                  class="shrink-0 px-3 py-2.5 text-[13px] font-medium text-gray-500 hover:text-gray-900"
+                  >Settings</a
+                >
+                <a
+                  href="#"
+                  class="shrink-0 px-3 py-2.5 text-[13px] font-medium text-gray-500 hover:text-gray-900"
+                  >OT Audit</a
+                >
+              </nav>
+            </div>
+
+            <div class="p-3 space-y-2">
+              <!-- Card 1 -->
+              <div class="border border-gray-200 rounded-lg p-3">
+                <div class="flex items-start justify-between gap-2 mb-1">
+                  <div class="min-w-0">
+                    <p class="text-[13px] font-semibold text-gray-900 truncate">
+                      Deepanshu Thakur
+                    </p>
+                    <p class="text-[10.5px] text-gray-500 tabular-nums">
+                      Tue · May 12 · Worked 9h 12m
+                    </p>
+                  </div>
+                  <span
+                    class="text-[11px] font-semibold text-gray-900 tabular-nums shrink-0 bg-gray-50 border border-gray-200 rounded px-1.5 py-0.5"
+                    >+47 min</span
+                  >
+                </div>
+                <p class="text-[11.5px] text-gray-600 leading-snug mb-2 line-clamp-2">
+                  "Stayed back to finish dispatch challan for OBD 8234567"
+                </p>
+                <div class="flex gap-1.5">
+                  <button
+                    onclick="openLive('approve')"
+                    class="flex-1 h-9 bg-teal-600 hover:bg-teal-700 text-white text-[12px] font-semibold rounded-md"
+                  >
+                    Approve
+                  </button>
+                  <button
+                    onclick="openLive('reject')"
+                    class="flex-1 h-9 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 text-[12px] font-semibold rounded-md"
+                  >
+                    Reject
+                  </button>
+                </div>
+              </div>
+
+              <!-- Card 2 -->
+              <div class="border border-gray-200 rounded-lg p-3">
+                <div class="flex items-start justify-between gap-2 mb-1">
+                  <div class="min-w-0">
+                    <p class="text-[13px] font-semibold text-gray-900 truncate">Bankim</p>
+                    <p class="text-[10.5px] text-gray-500 tabular-nums">
+                      Mon · May 11 · Worked 8h 34m
+                    </p>
+                  </div>
+                  <span
+                    class="text-[11px] font-semibold text-gray-900 tabular-nums shrink-0 bg-gray-50 border border-gray-200 rounded px-1.5 py-0.5"
+                    >+32 min</span
+                  >
+                </div>
+                <p class="text-[11.5px] text-gray-600 leading-snug mb-2 line-clamp-2">
+                  "Helping with stock count"
+                </p>
+                <div class="flex gap-1.5">
+                  <button
+                    onclick="openLive('approve')"
+                    class="flex-1 h-9 bg-teal-600 hover:bg-teal-700 text-white text-[12px] font-semibold rounded-md"
+                  >
+                    Approve
+                  </button>
+                  <button
+                    onclick="openLive('reject')"
+                    class="flex-1 h-9 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 text-[12px] font-semibold rounded-md"
+                  >
+                    Reject
+                  </button>
+                </div>
+              </div>
+
+              <!-- Card 3 -->
+              <div class="border border-gray-200 rounded-lg p-3">
+                <div class="flex items-start justify-between gap-2 mb-1">
+                  <div class="min-w-0">
+                    <p class="text-[13px] font-semibold text-gray-900 truncate">
+                      Chandresh Kolgha
+                    </p>
+                    <p class="text-[10.5px] text-gray-500 tabular-nums">
+                      Wed · May 13 · Worked 10h 5m
+                    </p>
+                  </div>
+                  <span
+                    class="text-[11px] font-semibold text-gray-900 tabular-nums shrink-0 bg-gray-50 border border-gray-200 rounded px-1.5 py-0.5"
+                    >+1h 18m</span
+                  >
+                </div>
+                <p class="text-[11.5px] text-gray-600 leading-snug mb-2 line-clamp-2">
+                  "Tinting backlog cleared after evening rush — last 4 challans punched"
+                </p>
+                <div class="flex gap-1.5">
+                  <button
+                    onclick="openLive('approve')"
+                    class="flex-1 h-9 bg-teal-600 hover:bg-teal-700 text-white text-[12px] font-semibold rounded-md"
+                  >
+                    Approve
+                  </button>
+                  <button
+                    onclick="openLive('reject')"
+                    class="flex-1 h-9 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 text-[12px] font-semibold rounded-md"
+                  >
+                    Reject
+                  </button>
+                </div>
+              </div>
+
+              <!-- Card 4 -->
+              <div class="border border-gray-200 rounded-lg p-3">
+                <div class="flex items-start justify-between gap-2 mb-1">
+                  <div class="min-w-0">
+                    <p class="text-[13px] font-semibold text-gray-900 truncate">Deepak Vasava</p>
+                    <p class="text-[10.5px] text-gray-500 tabular-nums">
+                      Tue · May 12 · Worked 9h 47m
+                    </p>
+                  </div>
+                  <span
+                    class="text-[11px] font-semibold text-gray-900 tabular-nums shrink-0 bg-gray-50 border border-gray-200 rounded px-1.5 py-0.5"
+                    >+55 min</span
+                  >
+                </div>
+                <p class="text-[11.5px] text-gray-600 leading-snug mb-2 line-clamp-2">
+                  "Manual mix for urgent IGT order — site shade match required two retries"
+                </p>
+                <div class="flex gap-1.5">
+                  <button
+                    onclick="openLive('approve')"
+                    class="flex-1 h-9 bg-teal-600 hover:bg-teal-700 text-white text-[12px] font-semibold rounded-md"
+                  >
+                    Approve
+                  </button>
+                  <button
+                    onclick="openLive('reject')"
+                    class="flex-1 h-9 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 text-[12px] font-semibold rounded-md"
+                  >
+                    Reject
+                  </button>
+                </div>
+              </div>
+
+              <p class="text-[10.5px] text-gray-400 pt-1">5 pending claims · oldest first</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Mobile State 2 — EMPTY ──────────────────────────────────── -->
+        <div>
+          <div class="flex items-center gap-3 mb-2">
+            <span class="frame-label">State 2</span>
+            <span class="text-[12px] text-gray-700">Empty</span>
+          </div>
+          <div class="mobile-frame bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
+            <div class="h-[52px] flex items-center justify-between px-4 border-b border-gray-200">
+              <div class="flex flex-col leading-tight">
+                <span class="text-[13px] font-semibold text-gray-900">OT Pending</span>
+                <span class="text-[10px] text-gray-400">
+                  <span class="text-gray-900 font-semibold">0</span> · 0 wk · 0 older
+                </span>
+              </div>
+              <span
+                class="text-[11px] font-medium text-gray-400"
+                style="font-variant-numeric: tabular-nums; letter-spacing: 0.5px"
+                >18:42</span
+              >
+            </div>
+
+            <!-- Sub-nav -->
+            <div class="bg-white border-b border-gray-200">
+              <nav class="flex items-end gap-1 px-4 h-[44px] overflow-x-auto scrollbar-hide">
+                <a
+                  href="#"
+                  class="shrink-0 px-3 py-2.5 text-[13px] font-medium text-gray-500 hover:text-gray-900"
+                  >Dashboard</a
+                >
+                <a
+                  href="#"
+                  class="shrink-0 px-3 py-2.5 text-[13px] font-semibold text-teal-600 border-b-2 border-teal-600 -mb-px inline-flex items-center gap-1.5"
+                >
+                  OT Pending
+                  <span
+                    class="bg-teal-50 text-teal-700 text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
+                    >5</span
+                  >
+                </a>
+                <a
+                  href="#"
+                  class="shrink-0 px-3 py-2.5 text-[13px] font-medium text-gray-500 hover:text-gray-900"
+                  >Settings</a
+                >
+                <a
+                  href="#"
+                  class="shrink-0 px-3 py-2.5 text-[13px] font-medium text-gray-500 hover:text-gray-900"
+                  >OT Audit</a
+                >
+              </nav>
+            </div>
+
+            <div class="p-3">
+              <div class="bg-white border border-gray-200 rounded-lg p-8 text-center">
+                <div class="text-4xl mb-3" aria-hidden>👍</div>
+                <p class="text-[14px] font-semibold text-gray-900 mb-1">Nothing pending</p>
+                <p class="text-[12px] text-gray-500 leading-snug">
+                  All caught up — no OT claims awaiting decision.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Mobile State 3 — APPROVE MODAL ──────────────────────────── -->
+        <div>
+          <div class="flex items-center gap-3 mb-2">
+            <span class="frame-label">State 3</span>
+            <span class="text-[12px] text-gray-700">Approve modal</span>
+          </div>
+          <div
+            class="mobile-frame relative bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm"
+            style="min-height: 600px"
+          >
+            <div class="opacity-50 pointer-events-none">
+              <div class="h-[52px] flex items-center justify-between px-4 border-b border-gray-200">
+                <div class="flex flex-col leading-tight">
+                  <span class="text-[13px] font-semibold text-gray-900">OT Pending</span>
+                  <span class="text-[10px] text-gray-400">
+                    <span class="text-gray-900 font-semibold">7</span> · 4 wk · 3 older
+                  </span>
+                </div>
+                <span
+                  class="text-[11px] font-medium text-gray-400"
+                  style="font-variant-numeric: tabular-nums; letter-spacing: 0.5px"
+                  >18:42</span
+                >
+              </div>
+              <!-- Sub-nav -->
+              <div class="bg-white border-b border-gray-200">
+                <nav class="flex items-end gap-1 px-4 h-[44px] overflow-x-auto scrollbar-hide">
+                  <a
+                    href="#"
+                    class="shrink-0 px-3 py-2.5 text-[13px] font-medium text-gray-500 hover:text-gray-900"
+                    >Dashboard</a
+                  >
+                  <a
+                    href="#"
+                    class="shrink-0 px-3 py-2.5 text-[13px] font-semibold text-teal-600 border-b-2 border-teal-600 -mb-px inline-flex items-center gap-1.5"
+                  >
+                    OT Pending
+                    <span
+                      class="bg-teal-50 text-teal-700 text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
+                      >5</span
+                    >
+                  </a>
+                  <a
+                    href="#"
+                    class="shrink-0 px-3 py-2.5 text-[13px] font-medium text-gray-500 hover:text-gray-900"
+                    >Settings</a
+                  >
+                  <a
+                    href="#"
+                    class="shrink-0 px-3 py-2.5 text-[13px] font-medium text-gray-500 hover:text-gray-900"
+                    >OT Audit</a
+                  >
+                </nav>
+              </div>
+              <div class="p-3 space-y-2">
+                <div class="border border-gray-200 rounded-lg p-3 h-[110px]"></div>
+                <div class="border border-gray-200 rounded-lg p-3 h-[110px]"></div>
+              </div>
+            </div>
+            <div class="absolute inset-0 bg-black/40"></div>
+            <div class="absolute inset-0 flex items-center justify-center p-4">
+              <div class="bg-white rounded-xl shadow-xl w-full p-5">
+                <h3 class="text-[15px] font-semibold text-gray-900 mb-3">Approve OT claim</h3>
+                <dl class="space-y-1 mb-3 text-[12.5px]">
+                  <div class="flex justify-between gap-2">
+                    <dt class="text-gray-500">User</dt>
+                    <dd class="text-gray-900 font-medium">Deepanshu Thakur</dd>
+                  </div>
+                  <div class="flex justify-between gap-2">
+                    <dt class="text-gray-500">Date</dt>
+                    <dd class="text-gray-900 font-medium">Tue, May 12</dd>
+                  </div>
+                  <div class="flex justify-between gap-2">
+                    <dt class="text-gray-500">Raw OT</dt>
+                    <dd class="text-gray-900 font-medium tabular-nums">47 min</dd>
+                  </div>
+                </dl>
+                <div class="bg-gray-50 border border-gray-200 rounded-md p-3 mb-3">
+                  <p class="text-[12px] italic text-gray-700 leading-snug">
+                    "Stayed back to finish dispatch challan for OBD 8234567"
+                  </p>
+                </div>
+                <label class="block text-[11px] font-medium text-gray-700 mb-1"
+                  >Credit (optional override)</label
+                >
+                <div class="relative mb-2">
+                  <input
+                    type="number"
+                    value="47"
+                    class="w-full h-10 border border-gray-300 rounded-md px-3 pr-12 text-[14px] tabular-nums text-gray-900 focus:border-teal-500 focus:ring-2 focus:ring-teal-100 focus:outline-none"
+                  />
+                  <span
+                    class="absolute right-3 top-1/2 -translate-y-1/2 text-[12px] text-gray-400"
+                    >min</span
+                  >
+                </div>
+                <p class="text-[10.5px] text-gray-500 leading-snug mb-4">
+                  Adjusting below 47 min reduces credit but does not refund the monthly grace
+                  counter.
+                </p>
+                <div class="flex flex-col gap-2">
+                  <button
+                    class="h-11 bg-teal-600 hover:bg-teal-700 text-white text-[14px] font-semibold rounded-md"
+                  >
+                    Confirm approve
+                  </button>
+                  <button
+                    class="h-9 text-[13px] text-gray-500 hover:text-gray-900"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Mobile State 4 — REJECT MODAL ───────────────────────────── -->
+        <div>
+          <div class="flex items-center gap-3 mb-2">
+            <span class="frame-label">State 4</span>
+            <span class="text-[12px] text-gray-700">Reject modal</span>
+          </div>
+          <div
+            class="mobile-frame relative bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm"
+            style="min-height: 600px"
+          >
+            <div class="opacity-50 pointer-events-none">
+              <div class="h-[52px] flex items-center justify-between px-4 border-b border-gray-200">
+                <div class="flex flex-col leading-tight">
+                  <span class="text-[13px] font-semibold text-gray-900">OT Pending</span>
+                  <span class="text-[10px] text-gray-400">
+                    <span class="text-gray-900 font-semibold">7</span> · 4 wk · 3 older
+                  </span>
+                </div>
+                <span
+                  class="text-[11px] font-medium text-gray-400"
+                  style="font-variant-numeric: tabular-nums; letter-spacing: 0.5px"
+                  >18:42</span
+                >
+              </div>
+              <!-- Sub-nav -->
+              <div class="bg-white border-b border-gray-200">
+                <nav class="flex items-end gap-1 px-4 h-[44px] overflow-x-auto scrollbar-hide">
+                  <a
+                    href="#"
+                    class="shrink-0 px-3 py-2.5 text-[13px] font-medium text-gray-500 hover:text-gray-900"
+                    >Dashboard</a
+                  >
+                  <a
+                    href="#"
+                    class="shrink-0 px-3 py-2.5 text-[13px] font-semibold text-teal-600 border-b-2 border-teal-600 -mb-px inline-flex items-center gap-1.5"
+                  >
+                    OT Pending
+                    <span
+                      class="bg-teal-50 text-teal-700 text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
+                      >5</span
+                    >
+                  </a>
+                  <a
+                    href="#"
+                    class="shrink-0 px-3 py-2.5 text-[13px] font-medium text-gray-500 hover:text-gray-900"
+                    >Settings</a
+                  >
+                  <a
+                    href="#"
+                    class="shrink-0 px-3 py-2.5 text-[13px] font-medium text-gray-500 hover:text-gray-900"
+                    >OT Audit</a
+                  >
+                </nav>
+              </div>
+              <div class="p-3 space-y-2">
+                <div class="border border-gray-200 rounded-lg p-3 h-[110px]"></div>
+                <div class="border border-gray-200 rounded-lg p-3 h-[110px]"></div>
+              </div>
+            </div>
+            <div class="absolute inset-0 bg-black/40"></div>
+            <div class="absolute inset-0 flex items-center justify-center p-4">
+              <div class="bg-white rounded-xl shadow-xl w-full p-5">
+                <h3 class="text-[15px] font-semibold text-gray-900 mb-3">Reject OT claim</h3>
+                <dl class="space-y-1 mb-3 text-[12.5px]">
+                  <div class="flex justify-between gap-2">
+                    <dt class="text-gray-500">User</dt>
+                    <dd class="text-gray-900 font-medium">Bankim</dd>
+                  </div>
+                  <div class="flex justify-between gap-2">
+                    <dt class="text-gray-500">Date</dt>
+                    <dd class="text-gray-900 font-medium">Mon, May 11</dd>
+                  </div>
+                </dl>
+                <div class="bg-gray-50 border border-gray-200 rounded-md p-3 mb-3">
+                  <p class="text-[12px] italic text-gray-700 leading-snug">
+                    "Helping with stock count"
+                  </p>
+                </div>
+                <div
+                  class="bg-amber-50 border border-amber-200 rounded-md p-2.5 mb-3 flex items-start gap-2"
+                >
+                  <span class="text-amber-600 text-[13px] leading-none mt-px" aria-hidden>⚠</span>
+                  <p class="text-[11px] text-amber-800 leading-snug">
+                    Rejected days still consume this user's monthly grace (Q4 policy).
+                  </p>
+                </div>
+                <label class="block text-[11px] font-medium text-gray-700 mb-1"
+                  >Note (optional, audit only)</label
+                >
+                <textarea
+                  rows="3"
+                  placeholder="Why this OT isn't being credited"
+                  class="w-full border border-gray-300 rounded-md p-2.5 text-[12.5px] text-gray-900 placeholder-gray-400 focus:border-teal-500 focus:ring-2 focus:ring-teal-100 focus:outline-none resize-none mb-4"
+                ></textarea>
+                <div class="flex flex-col gap-2">
+                  <button
+                    class="h-11 bg-red-600 hover:bg-red-700 text-white text-[14px] font-semibold rounded-md"
+                  >
+                    Confirm reject
+                  </button>
+                  <button
+                    class="h-9 text-[13px] text-gray-500 hover:text-gray-900"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Mobile State 5 — ERROR CHIPS ────────────────────────────── -->
+        <div>
+          <div class="flex items-center gap-3 mb-2">
+            <span class="frame-label">State 5</span>
+            <span class="text-[12px] text-gray-700">Error chips</span>
+          </div>
+          <div class="mobile-frame bg-white border border-gray-200 rounded-lg p-3 shadow-sm space-y-2">
+            <div class="bg-amber-50 border border-amber-200 rounded-md px-3 py-2 flex items-start gap-2">
+              <span
+                class="text-[10px] font-semibold uppercase tracking-wider text-amber-700 bg-amber-100 border border-amber-200 rounded px-1.5 py-0.5 mt-0.5 tabular-nums shrink-0"
+                >422</span
+              >
+              <p class="text-[11.5px] text-amber-800 leading-snug">
+                Cannot approve — current trigger time is past check-out clock. Lower
+                <span class="font-mono">otTriggerTime</span> or reject this claim.
+              </p>
+            </div>
+            <div class="bg-amber-50 border border-amber-200 rounded-md px-3 py-2 flex items-start gap-2">
+              <span
+                class="text-[10px] font-semibold uppercase tracking-wider text-amber-700 bg-amber-100 border border-amber-200 rounded px-1.5 py-0.5 mt-0.5 tabular-nums shrink-0"
+                >409</span
+              >
+              <p class="text-[11.5px] text-amber-800 leading-snug">
+                Already actioned by another admin — refreshing list.
+              </p>
+            </div>
+            <div class="bg-red-50 border border-red-200 rounded-md px-3 py-2 flex items-start gap-2">
+              <span
+                class="text-[10px] font-semibold uppercase tracking-wider text-red-700 bg-red-100 border border-red-200 rounded px-1.5 py-0.5 mt-0.5 tabular-nums shrink-0"
+                >500</span
+              >
+              <p class="text-[11.5px] text-red-800 leading-snug">
+                Couldn't load.
+                <button class="underline font-medium hover:text-red-900">Tap to retry.</button>
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ──────────────────────────────────────────────────────────────────── -->
+    <!-- LIVE INTERACTIVE MODALS (page-level, fixed overlay)                  -->
+    <!-- ──────────────────────────────────────────────────────────────────── -->
+    <div
+      id="liveApprove"
+      class="hidden fixed inset-0 z-50 bg-black/40 items-center justify-center p-4"
+    >
+      <div class="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+        <h3 class="text-[16px] font-semibold text-gray-900 mb-4">Approve OT claim</h3>
+        <dl class="space-y-1.5 mb-4 text-[13px]">
+          <div class="flex items-center justify-between gap-3">
+            <dt class="text-gray-500">User</dt>
+            <dd class="text-gray-900 font-medium">Deepanshu Thakur</dd>
+          </div>
+          <div class="flex items-center justify-between gap-3">
+            <dt class="text-gray-500">Date</dt>
+            <dd class="text-gray-900 font-medium">Tuesday, May 12</dd>
+          </div>
+          <div class="flex items-center justify-between gap-3">
+            <dt class="text-gray-500">Raw OT</dt>
+            <dd class="text-gray-900 font-medium tabular-nums">47 minutes</dd>
+          </div>
+        </dl>
+        <div class="bg-gray-50 border border-gray-200 rounded-md p-3 mb-4">
+          <p class="text-[13px] italic text-gray-700 leading-snug">
+            "Stayed back to finish dispatch challan for OBD 8234567"
+          </p>
+        </div>
+        <label class="block text-[12px] font-medium text-gray-700 mb-1"
+          >Credit (optional override)</label
+        >
+        <div class="relative mb-2">
+          <input
+            type="number"
+            value="47"
+            class="w-full h-10 border border-gray-300 rounded-md px-3 pr-12 text-[14px] tabular-nums text-gray-900 focus:border-teal-500 focus:ring-2 focus:ring-teal-100 focus:outline-none"
+          />
+          <span class="absolute right-3 top-1/2 -translate-y-1/2 text-[12px] text-gray-400"
+            >min</span
+          >
+        </div>
+        <p class="text-[11px] text-gray-500 leading-snug mb-5">
+          Adjusting below 47 min reduces credit but does not refund the monthly grace counter.
+        </p>
+        <div class="flex justify-end items-center gap-2">
+          <button
+            type="button"
+            onclick="closeLive('approve')"
+            class="h-9 px-4 text-[13px] text-gray-500 hover:text-gray-900"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onclick="closeLive('approve')"
+            class="h-9 px-4 bg-teal-600 hover:bg-teal-700 text-white text-[13px] font-semibold rounded-md"
+          >
+            Confirm approve
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div
+      id="liveReject"
+      class="hidden fixed inset-0 z-50 bg-black/40 items-center justify-center p-4"
+    >
+      <div class="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+        <h3 class="text-[16px] font-semibold text-gray-900 mb-4">Reject OT claim</h3>
+        <dl class="space-y-1.5 mb-4 text-[13px]">
+          <div class="flex items-center justify-between gap-3">
+            <dt class="text-gray-500">User</dt>
+            <dd class="text-gray-900 font-medium">Bankim</dd>
+          </div>
+          <div class="flex items-center justify-between gap-3">
+            <dt class="text-gray-500">Date</dt>
+            <dd class="text-gray-900 font-medium">Monday, May 11</dd>
+          </div>
+        </dl>
+        <div class="bg-gray-50 border border-gray-200 rounded-md p-3 mb-4">
+          <p class="text-[13px] italic text-gray-700 leading-snug">"Helping with stock count"</p>
+        </div>
+        <div class="bg-amber-50 border border-amber-200 rounded-md p-3 mb-4 flex items-start gap-2">
+          <span class="text-amber-600 text-[14px] leading-none mt-px" aria-hidden>⚠</span>
+          <p class="text-[12px] text-amber-800 leading-snug">
+            Rejected days still consume this user's monthly grace (Q4 policy).
+          </p>
+        </div>
+        <label class="block text-[12px] font-medium text-gray-700 mb-1"
+          >Note (optional, visible in audit only)</label
+        >
+        <textarea
+          rows="3"
+          placeholder="Why this OT isn't being credited"
+          class="w-full border border-gray-300 rounded-md p-3 text-[13px] text-gray-900 placeholder-gray-400 focus:border-teal-500 focus:ring-2 focus:ring-teal-100 focus:outline-none resize-none mb-5"
+        ></textarea>
+        <div class="flex justify-end items-center gap-2">
+          <button
+            type="button"
+            onclick="closeLive('reject')"
+            class="h-9 px-4 text-[13px] text-gray-500 hover:text-gray-900"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onclick="closeLive('reject')"
+            class="h-9 px-4 bg-red-600 hover:bg-red-700 text-white text-[13px] font-semibold rounded-md"
+          >
+            Confirm reject
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      function openLive(kind) {
+        const id = kind === "approve" ? "liveApprove" : "liveReject";
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.classList.remove("hidden");
+        el.classList.add("flex");
+      }
+      function closeLive(kind) {
+        const id = kind === "approve" ? "liveApprove" : "liveReject";
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.classList.add("hidden");
+        el.classList.remove("flex");
+      }
+      // Close on backdrop click
+      ["liveApprove", "liveReject"].forEach((id) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.addEventListener("click", (e) => {
+          if (e.target === el) closeLive(id === "liveApprove" ? "approve" : "reject");
+        });
+      });
+      // Close on Esc
+      document.addEventListener("keydown", (e) => {
+        if (e.key !== "Escape") return;
+        ["liveApprove", "liveReject"].forEach((id) => {
+          const el = document.getElementById(id);
+          if (el && !el.classList.contains("hidden")) {
+            closeLive(id === "liveApprove" ? "approve" : "reject");
+          }
+        });
+      });
+    </script>
+  </body>
+</html>

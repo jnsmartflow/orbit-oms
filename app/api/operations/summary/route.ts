@@ -18,16 +18,16 @@ export async function GET(): Promise<NextResponse> {
 
   // ── IMPORT ──────────────────────────────────────────────────────────────────
   const totalToday = await prisma.orders.count({
-    where: { createdAt: { gte: todayStart, lte: todayEnd } },
+    where: { createdAt: { gte: todayStart, lte: todayEnd }, isRemoved: false },
   });
   const pendingSupport = await prisma.orders.count({
-    where: { workflowStage: "pending_support" },
+    where: { workflowStage: "pending_support", isRemoved: false },
   });
   const onHold = await prisma.orders.count({
-    where: { dispatchStatus: "hold" },
+    where: { dispatchStatus: "hold", isRemoved: false },
   });
   const dispatched = await prisma.orders.count({
-    where: { workflowStage: "dispatched" },
+    where: { workflowStage: "dispatched", isRemoved: false },
   });
 
   // ── TINTING ─────────────────────────────────────────────────────────────────
@@ -73,6 +73,7 @@ export async function GET(): Promise<NextResponse> {
         in: ["pending_support", "submitted", "tinting", "tint_done", "ready"],
       },
       id: { notIn: assignedIds.length > 0 ? assignedIds : [-1] },
+      isRemoved: false,
     },
   });
   const picking = await prisma.pick_assignments.count({
@@ -84,7 +85,7 @@ export async function GET(): Promise<NextResponse> {
 
   // ── ALERTS ──────────────────────────────────────────────────────────────────
   const overdueOrders = await prisma.orders.findMany({
-    where: { originalSlotId: { not: null } },
+    where: { originalSlotId: { not: null }, isRemoved: false },
     select: { slotId: true, originalSlotId: true },
   });
   const overdueCount = overdueOrders.filter(
@@ -113,6 +114,7 @@ export async function GET(): Promise<NextResponse> {
           where: {
             slotId: { in: closedSlotIds },
             workflowStage: { in: ["pending_support", "submitted"] },
+            isRemoved: false,
           },
         })
       : 0;

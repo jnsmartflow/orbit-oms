@@ -7,8 +7,17 @@ import { checkAnyPermission } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
+// Phase 4f — body extended to capture the final per-SKU progress snapshot.
+// Validation mirrors /api/tint/operator/pause exactly: relaxed range
+// 0 ≤ doneQty ≤ unitQty per line, coverage required for every tinting line.
+const progressItemSchema = z.object({
+  skuId:   z.number().int().positive(),
+  doneQty: z.number().int().min(0),
+});
+
 const bodySchema = z.object({
-  orderId: z.number().int().positive(),
+  orderId:  z.number().int().positive(),
+  progress: z.array(progressItemSchema),
 });
 
 
@@ -27,13 +36,13 @@ export async function POST(req: Request): Promise<NextResponse> {
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }
 
-  const { orderId } = parsed.data;
+  const { orderId, progress } = parsed.data;
   const userId = parseInt(session!.user.id, 10);
   const isOpsOrAdmin = ["operations", "admin"].includes(session!.user.role ?? "");
 
   try {
     // 1. Load order — verify stage
-    const order = await prisma.orders.findUnique({ where: { id: orderId } })
+    const order = await prisma.orders.findFirst({ where: { id: orderId, isRemoved: false } })
     if (!order) {
       return NextResponse.json({ error: "Order not found" }, { status: 404 })
     }
@@ -53,10 +62,12 @@ export async function POST(req: Request): Promise<NextResponse> {
       return NextResponse.json({ error: "No active assignment found for this order" }, { status: 403 })
     }
 
-    // TI completion gate — all isTinting lines must have at least one TI entry
+    // TI completion gate — all isTinting lines must have at least one TI entry.
+    // Phase 4f — also pulls unitQty so the progress array can be range-checked
+    // below in the same pass (no extra query).
     const isTintingRawLines = await prisma.import_raw_line_items.findMany({
       where: { obdNumber: order.obdNumber, isTinting: true, lineStatus: "active" },
-      select: { id: true, skuCodeRaw: true, skuDescriptionRaw: true },
+      select: { id: true, skuCodeRaw: true, skuDescriptionRaw: true, unitQty: true },
     });
     if (isTintingRawLines.length > 0) {
       const [entriesA, entriesB] = await Promise.all([
@@ -85,10 +96,65 @@ export async function POST(req: Request): Promise<NextResponse> {
       }
     }
 
-    // 3. Update tint_assignments
+    // Phase 4f — validate the progress array against the tinting lines.
+    // Mirrors the pause-route pattern (Phase 4a lines 149-187): coverage
+    // required for every tinting line, range check 0 ≤ doneQty ≤ unitQty.
+    const progressMap = new Map<number, number>();
+    for (const p of progress) progressMap.set(p.skuId, p.doneQty);
+    const missingProgress = isTintingRawLines.filter((l) => !progressMap.has(l.id));
+    if (missingProgress.length > 0) {
+      return NextResponse.json(
+        {
+          error:         "Progress must cover every tinting line",
+          missingSkuIds: missingProgress.map((l) => l.id),
+        },
+        { status: 400 },
+      );
+    }
+    for (const line of isTintingRawLines) {
+      const done = progressMap.get(line.id)!;
+      if (done < 0 || done > line.unitQty) {
+        return NextResponse.json(
+          {
+            error: `Invalid doneQty for line ${line.id}: 0..${line.unitQty} allowed, got ${done}`,
+          },
+          { status: 400 },
+        );
+      }
+    }
+
+    // Phase 4f — finalise tinting-time math. Mirrors the pause-route elapsed
+    // calc: the final run starts at lastPausedAt (if any) or startedAt. Since
+    // we're transitioning from tinting_in_progress (not paused), lastPausedAt
+    // is normally null here; the ?? falls through to startedAt.
+    const now = new Date();
+    const baseline = activeAssignment.lastPausedAt && activeAssignment.startedAt
+      && activeAssignment.lastPausedAt.getTime() > activeAssignment.startedAt.getTime()
+      ? activeAssignment.lastPausedAt
+      : activeAssignment.startedAt;
+    const finalRunMinutes = baseline
+      ? Math.max(0, Math.floor((now.getTime() - baseline.getTime()) / 60000))
+      : 0;
+    const newAccumulated = activeAssignment.accumulatedMinutes + finalRunMinutes;
+
+    // Final progress snapshot — same jsonb shape as pause-route writes.
+    const progressSnapshot = {
+      items:      progress.map((p) => ({ skuId: p.skuId, doneQty: p.doneQty })),
+      capturedAt: now.toISOString(),
+    };
+
+    // 3. Update tint_assignments.
+    // On done, accumulatedMinutes is finalised as the canonical total
+    // tinting minutes (including all paused intervals). currentProgress
+    // is overwritten with the final per-SKU snapshot.
     await prisma.tint_assignments.update({
       where: { id: activeAssignment.id },
-      data:  { status: "tinting_done", completedAt: new Date() },
+      data:  {
+        status:             "tinting_done",
+        completedAt:        now,
+        accumulatedMinutes: newAccumulated,
+        currentProgress:    progressSnapshot,
+      },
     })
 
     // 4. Update order stage + assign dispatch slot based on completion time

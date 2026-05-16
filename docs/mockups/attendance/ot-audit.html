@@ -1,0 +1,1209 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OT Audit — UI mockup</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ["Inter", "ui-sans-serif", "system-ui", "sans-serif"],
+              mono: ["JetBrains Mono", "SF Mono", "ui-monospace", "monospace"],
+            },
+          },
+        },
+      };
+    </script>
+
+    <style>
+      :root {
+        font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+        font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+      }
+      body { font-family: "Inter", ui-sans-serif, system-ui, sans-serif; }
+
+      .scrollbar-hide::-webkit-scrollbar { display: none; }
+      .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+
+      .frame-label {
+        font-size: 10px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: #6b7280;
+      }
+      .desktop-frame { width: 1200px; max-width: 100%; }
+      .mobile-frame  { width: 480px; }
+
+      /* Fixed-table per UI §28 */
+      table.ut {
+        width: 100%;
+        border-collapse: collapse;
+        table-layout: fixed;
+        font-feature-settings: "tnum";
+      }
+      table.ut th {
+        font-size: 10px;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: #9ca3af;
+        text-align: left;
+        padding: 0 14px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      table.ut th.first { text-align: center; padding: 0 4px 0 10px; }
+      table.ut th.right { text-align: right; }
+      table.ut tr.head {
+        height: 32px;
+        background: #f9fafb;
+        border-bottom: 1px solid #ebebeb;
+      }
+      table.ut tr.row {
+        height: 36px;
+        border-bottom: 1px solid #f0f0f0;
+      }
+      table.ut tr.row:hover { background: rgba(249, 250, 251, 0.6); }
+      table.ut td {
+        font-size: 11px;
+        font-weight: 400;
+        color: #4b5563;
+        text-align: left;
+        padding: 0 14px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        font-variant-numeric: tabular-nums;
+      }
+      table.ut td.first { text-align: center; padding: 0 4px 0 10px; color: #9ca3af; }
+      table.ut td.primary { font-weight: 500; color: #111827; }
+      table.ut td.right { text-align: right; }
+      table.ut td.muted { color: #9ca3af; }
+
+      /* Inner expand-panel table — slightly looser */
+      table.inner {
+        width: 100%;
+        border-collapse: collapse;
+        font-feature-settings: "tnum";
+      }
+      table.inner th {
+        font-size: 10px;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: #9ca3af;
+        text-align: left;
+        padding: 6px 10px;
+        background: #ffffff;
+        border-bottom: 1px solid #e5e7eb;
+        white-space: nowrap;
+      }
+      table.inner td {
+        font-size: 11.5px;
+        color: #374151;
+        padding: 8px 10px;
+        border-bottom: 1px solid #f3f4f6;
+        font-variant-numeric: tabular-nums;
+      }
+      table.inner td.primary { color: #111827; font-weight: 500; }
+      table.inner td.muted { color: #9ca3af; }
+      table.inner tr:last-child td { border-bottom: none; }
+
+      input[type="number"]::-webkit-inner-spin-button,
+      input[type="number"]::-webkit-outer-spin-button {
+        -webkit-appearance: none;
+        margin: 0;
+      }
+      input[type="number"] { -moz-appearance: textfield; }
+    </style>
+  </head>
+
+  <body class="bg-gray-100 text-gray-900 min-h-screen pb-24">
+    <!-- ── Page header ────────────────────────────────────────────────── -->
+    <div class="bg-white border-b border-gray-200">
+      <div class="max-w-[1320px] mx-auto px-8 py-6">
+        <div class="flex items-end justify-between gap-6 flex-wrap">
+          <div>
+            <p class="text-[11px] font-semibold uppercase tracking-wider text-teal-700 mb-1">
+              UI mockup · v1
+            </p>
+            <h1 class="text-[24px] font-semibold text-gray-900">OT Audit</h1>
+            <p class="text-[13px] text-gray-500 mt-1">
+              Static design exploration for
+              <span class="font-mono text-gray-700">/admin/attendance/ot-audit</span>.
+              Desktop (1200&#8201;px) above, mobile (480&#8201;px) below. 5 states.
+              Try the demo buttons on the right.
+            </p>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onclick="toggleExpand('demo-1', true)"
+              class="h-9 px-3 bg-teal-600 hover:bg-teal-700 text-white text-[12px] font-semibold rounded-md inline-flex items-center gap-1.5 shadow-sm"
+            >
+              ▾ Try expand row
+            </button>
+            <button
+              type="button"
+              onclick="openLive('monthpicker')"
+              class="h-9 px-3 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 text-[12px] font-semibold rounded-md inline-flex items-center gap-1.5"
+            >
+              ▶ Try month picker
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ──────────────────────────────────────────────────────────────── -->
+    <!-- DESKTOP                                                          -->
+    <!-- ──────────────────────────────────────────────────────────────── -->
+    <section class="max-w-[1320px] mx-auto px-8 pt-8">
+      <h2 class="text-[14px] font-semibold text-gray-900 mb-1">
+        Desktop — 1200&#8201;px
+      </h2>
+      <p class="text-[12px] text-gray-500 mb-6">
+        Body uses max-w-6xl so the 10-column user table has room to breathe.
+      </p>
+
+      <!-- ── State 1 — POPULATED ─────────────────────────────────────── -->
+      <div class="mb-10">
+        <div class="flex items-center gap-3 mb-2">
+          <span class="frame-label">State 1</span>
+          <span class="text-[12px] text-gray-700">Populated · current month with activity</span>
+        </div>
+        <div class="desktop-frame bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
+          <!-- chrome: header -->
+          <div class="h-[52px] flex items-center justify-between px-4 border-b border-gray-200">
+            <div class="flex items-center min-w-0">
+              <span class="text-[14px] font-semibold text-gray-900 shrink-0">OT Audit</span>
+              <span class="text-[11px] text-gray-400 ml-3 truncate">
+                <span class="text-gray-900 font-semibold">1,847</span> Total ·
+                <span class="text-gray-900 font-semibold">1,205</span> Auto ·
+                <span class="text-gray-900 font-semibold">320</span> Grace ·
+                <span class="text-gray-900 font-semibold">247</span> Approved ·
+                <span class="text-amber-700 font-semibold">75</span> Pending ·
+                <span class="text-gray-900 font-semibold">0</span> Rejected
+              </span>
+            </div>
+            <div class="flex items-center gap-2 shrink-0">
+              <span
+                class="text-[11px] font-medium text-gray-400"
+                style="font-variant-numeric: tabular-nums; letter-spacing: 0.5px"
+                >18:42</span
+              >
+              <div class="w-px h-4 bg-gray-200"></div>
+              <button
+                type="button"
+                onclick="openLive('monthpicker')"
+                class="bg-gray-50 hover:bg-gray-100 rounded-[5px] px-2.5 py-1 text-[11px] text-gray-700 font-medium inline-flex items-center gap-1"
+              >
+                May 2026
+                <span class="text-[8px] text-gray-400">▾</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- sub-nav -->
+          <div class="bg-white border-b border-gray-200">
+            <nav class="flex items-end gap-1 px-4 h-[44px] overflow-x-auto scrollbar-hide">
+              <a href="#" class="shrink-0 px-3 py-2.5 text-[13px] font-medium text-gray-500 hover:text-gray-900">Dashboard</a>
+              <a href="#" class="shrink-0 px-3 py-2.5 text-[13px] font-medium text-gray-500 hover:text-gray-900 inline-flex items-center gap-1.5">
+                OT Pending
+                <span class="bg-teal-50 text-teal-700 text-[10px] font-semibold px-1.5 py-0.5 rounded-full tabular-nums">5</span>
+              </a>
+              <a href="#" class="shrink-0 px-3 py-2.5 text-[13px] font-medium text-gray-500 hover:text-gray-900">Settings</a>
+              <a href="#" class="shrink-0 px-3 py-2.5 text-[13px] font-semibold text-teal-600 border-b-2 border-teal-600 -mb-px">OT Audit</a>
+            </nav>
+          </div>
+
+          <!-- body -->
+          <div class="bg-gray-50">
+            <div class="max-w-6xl mx-auto p-6">
+              <!-- Top summary strip — 6 tiles -->
+              <div class="bg-white border border-gray-200 rounded-xl p-5 mb-4">
+                <div class="grid grid-cols-6 gap-4">
+                  <Tile
+                    ><div>
+                      <p class="text-[10px] uppercase tracking-wider text-gray-400 mb-1">Total OT credited</p>
+                      <p class="text-[22px] font-semibold text-gray-900 tabular-nums leading-none">1,847 min</p>
+                      <p class="text-[11px] text-gray-500 mt-1 tabular-nums">≈ 30h 47m</p>
+                    </div></Tile
+                  >
+                  <div class="border-l border-gray-100 pl-4">
+                    <p class="text-[10px] uppercase tracking-wider text-gray-400 mb-1">Auto credited</p>
+                    <p class="text-[22px] font-semibold text-gray-900 tabular-nums leading-none">1,205 min</p>
+                    <p class="text-[11px] text-gray-400 mt-1">straight credit</p>
+                  </div>
+                  <div class="border-l border-gray-100 pl-4">
+                    <p class="text-[10px] uppercase tracking-wider text-gray-400 mb-1">Grace credited</p>
+                    <p class="text-[22px] font-semibold text-gray-900 tabular-nums leading-none">320 min</p>
+                    <p class="text-[11px] text-gray-400 mt-1">5 grace days used</p>
+                  </div>
+                  <div class="border-l border-gray-100 pl-4">
+                    <p class="text-[10px] uppercase tracking-wider text-gray-400 mb-1">Admin approved</p>
+                    <p class="text-[22px] font-semibold text-gray-900 tabular-nums leading-none">247 min</p>
+                    <p class="text-[11px] text-gray-400 mt-1">3 claims</p>
+                  </div>
+                  <div class="border-l border-gray-100 pl-4">
+                    <p class="text-[10px] uppercase tracking-wider text-gray-400 mb-1">Pending</p>
+                    <p class="text-[22px] font-semibold text-amber-600 tabular-nums leading-none">75 min</p>
+                    <p class="text-[11px] text-amber-700 mt-1">1 claim awaiting</p>
+                  </div>
+                  <div class="border-l border-gray-100 pl-4">
+                    <p class="text-[10px] uppercase tracking-wider text-gray-400 mb-1">Rejected</p>
+                    <p class="text-[22px] font-semibold text-gray-900 tabular-nums leading-none">0 min</p>
+                    <p class="text-[11px] text-gray-400 mt-1">no rejections</p>
+                  </div>
+                </div>
+              </div>
+
+              <!-- User table -->
+              <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
+                <table class="ut">
+                  <colgroup>
+                    <col style="width: 4%" />
+                    <col style="width: 22%" />
+                    <col style="width: 10%" />
+                    <col style="width: 11%" />
+                    <col style="width: 9%" />
+                    <col style="width: 9%" />
+                    <col style="width: 11%" />
+                    <col style="width: 9%" />
+                    <col style="width: 9%" />
+                    <col style="width: 6%" />
+                  </colgroup>
+                  <thead>
+                    <tr class="head">
+                      <th class="first">#</th>
+                      <th>User</th>
+                      <th class="right">Days w/ OT</th>
+                      <th class="right">Total OT</th>
+                      <th class="right">Auto</th>
+                      <th class="right">Grace</th>
+                      <th class="right">Approved</th>
+                      <th class="right">Pending</th>
+                      <th class="right">Rejected</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <!-- row 1: Deepanshu -->
+                    <tr class="row">
+                      <td class="first">1</td>
+                      <td class="primary">Deepanshu Thakur <span class="text-gray-400 font-normal">· Billing Operator</span></td>
+                      <td class="right">12</td>
+                      <td class="right primary">480 min</td>
+                      <td class="right">320</td>
+                      <td class="right">80</td>
+                      <td class="right">80</td>
+                      <td class="right muted">0</td>
+                      <td class="right muted">0</td>
+                      <td class="right">
+                        <button type="button" onclick="toggleExpand('demo-1', true)" class="text-gray-400 hover:text-gray-700 text-[12px]" aria-label="Expand">
+                          <span id="chev-demo-1">▸</span>
+                        </button>
+                      </td>
+                    </tr>
+                    <tr id="expand-demo-1" class="hidden">
+                      <td colspan="10" style="padding: 0">
+                        <ExpandPanel name="Deepanshu Thakur" />
+                      </td>
+                    </tr>
+                    <!-- row 2: Bankim -->
+                    <tr class="row">
+                      <td class="first">2</td>
+                      <td class="primary">Bankim <span class="text-gray-400 font-normal">· Billing Operator</span></td>
+                      <td class="right">8</td>
+                      <td class="right primary">320 min</td>
+                      <td class="right">240</td>
+                      <td class="right muted">0</td>
+                      <td class="right">80</td>
+                      <td class="right muted">0</td>
+                      <td class="right muted">0</td>
+                      <td class="right">
+                        <button type="button" onclick="toggleExpand('demo-2', true)" class="text-gray-400 hover:text-gray-700 text-[12px]" aria-label="Expand">
+                          <span id="chev-demo-2">▸</span>
+                        </button>
+                      </td>
+                    </tr>
+                    <tr id="expand-demo-2" class="hidden">
+                      <td colspan="10" style="padding: 0">
+                        <ExpandPanel name="Bankim" />
+                      </td>
+                    </tr>
+                    <!-- row 3: Dhruv -->
+                    <tr class="row">
+                      <td class="first">3</td>
+                      <td class="primary">Dhruv <span class="text-gray-400 font-normal">· Ops Admin</span></td>
+                      <td class="right">5</td>
+                      <td class="right primary">295 min</td>
+                      <td class="right">215</td>
+                      <td class="right">80</td>
+                      <td class="right muted">0</td>
+                      <td class="right muted">0</td>
+                      <td class="right muted">0</td>
+                      <td class="right">
+                        <button type="button" onclick="toggleExpand('demo-3', true)" class="text-gray-400 hover:text-gray-700 text-[12px]"><span id="chev-demo-3">▸</span></button>
+                      </td>
+                    </tr>
+                    <tr id="expand-demo-3" class="hidden"><td colspan="10" style="padding: 0"><ExpandPanel name="Dhruv" /></td></tr>
+                    <!-- row 4: Chandresh -->
+                    <tr class="row">
+                      <td class="first">4</td>
+                      <td class="primary">Chandresh Kolgha <span class="text-gray-400 font-normal">· Tint Manager</span></td>
+                      <td class="right">4</td>
+                      <td class="right primary">187 min</td>
+                      <td class="right">130</td>
+                      <td class="right muted">0</td>
+                      <td class="right">57</td>
+                      <td class="right muted">0</td>
+                      <td class="right muted">0</td>
+                      <td class="right">
+                        <button type="button" onclick="toggleExpand('demo-4', true)" class="text-gray-400 hover:text-gray-700 text-[12px]"><span id="chev-demo-4">▸</span></button>
+                      </td>
+                    </tr>
+                    <tr id="expand-demo-4" class="hidden"><td colspan="10" style="padding: 0"><ExpandPanel name="Chandresh Kolgha" /></td></tr>
+                    <!-- row 5: Deepak -->
+                    <tr class="row">
+                      <td class="first">5</td>
+                      <td class="primary">Deepak Vasava <span class="text-gray-400 font-normal">· Tint Operator</span></td>
+                      <td class="right">3</td>
+                      <td class="right primary">165 min</td>
+                      <td class="right">115</td>
+                      <td class="right">50</td>
+                      <td class="right muted">0</td>
+                      <td class="right muted">0</td>
+                      <td class="right muted">0</td>
+                      <td class="right">
+                        <button type="button" onclick="toggleExpand('demo-5', true)" class="text-gray-400 hover:text-gray-700 text-[12px]"><span id="chev-demo-5">▸</span></button>
+                      </td>
+                    </tr>
+                    <tr id="expand-demo-5" class="hidden"><td colspan="10" style="padding: 0"><ExpandPanel name="Deepak Vasava" /></td></tr>
+                    <!-- row 6: Chandrasing -->
+                    <tr class="row">
+                      <td class="first">6</td>
+                      <td class="primary">Chandrasing Valvi <span class="text-gray-400 font-normal">· Tint Operator</span></td>
+                      <td class="right">2</td>
+                      <td class="right primary">105 min</td>
+                      <td class="right">105</td>
+                      <td class="right muted">0</td>
+                      <td class="right muted">0</td>
+                      <td class="right muted">0</td>
+                      <td class="right muted">0</td>
+                      <td class="right">
+                        <button type="button" onclick="toggleExpand('demo-6', true)" class="text-gray-400 hover:text-gray-700 text-[12px]"><span id="chev-demo-6">▸</span></button>
+                      </td>
+                    </tr>
+                    <tr id="expand-demo-6" class="hidden"><td colspan="10" style="padding: 0"><ExpandPanel name="Chandrasing Valvi" /></td></tr>
+                    <!-- row 7: Kuldeep — pending highlight -->
+                    <tr class="row" style="background: rgba(251, 191, 36, 0.06); box-shadow: inset 3px 0 0 #f59e0b;">
+                      <td class="first">7</td>
+                      <td class="primary">Kuldeep <span class="text-gray-400 font-normal">· Ops Admin</span></td>
+                      <td class="right">1</td>
+                      <td class="right primary">75 min</td>
+                      <td class="right muted">0</td>
+                      <td class="right muted">0</td>
+                      <td class="right muted">0</td>
+                      <td class="right" style="color: #b45309; font-weight: 500;">75</td>
+                      <td class="right muted">0</td>
+                      <td class="right">
+                        <button type="button" onclick="toggleExpand('demo-7', true)" class="text-gray-400 hover:text-gray-700 text-[12px]"><span id="chev-demo-7">▸</span></button>
+                      </td>
+                    </tr>
+                    <tr id="expand-demo-7" class="hidden"><td colspan="10" style="padding: 0"><ExpandPanel name="Kuldeep" /></td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <p class="text-[11px] text-gray-400 mt-3 tabular-nums">7 users with OT activity in May 2026</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── State 2 — EXPANDED USER ROW (static) ─────────────────────── -->
+      <div class="mb-10">
+        <div class="flex items-center gap-3 mb-2">
+          <span class="frame-label">State 2</span>
+          <span class="text-[12px] text-gray-700">Expanded user row · day-by-day breakdown</span>
+        </div>
+        <div class="desktop-frame bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
+          <!-- abbreviated chrome -->
+          <div class="h-[52px] flex items-center justify-between px-4 border-b border-gray-200">
+            <div class="flex items-center min-w-0">
+              <span class="text-[14px] font-semibold text-gray-900 shrink-0">OT Audit</span>
+              <span class="text-[11px] text-gray-400 ml-3 truncate">
+                <span class="text-gray-900 font-semibold">1,847</span> Total ·
+                <span class="text-gray-900 font-semibold">1,205</span> Auto ·
+                <span class="text-gray-900 font-semibold">320</span> Grace ·
+                <span class="text-gray-900 font-semibold">247</span> Approved ·
+                <span class="text-amber-700 font-semibold">75</span> Pending ·
+                <span class="text-gray-900 font-semibold">0</span> Rejected
+              </span>
+            </div>
+            <div class="flex items-center gap-2 shrink-0">
+              <span class="text-[11px] font-medium text-gray-400" style="font-variant-numeric: tabular-nums; letter-spacing: 0.5px">18:42</span>
+              <div class="w-px h-4 bg-gray-200"></div>
+              <button class="bg-gray-50 rounded-[5px] px-2.5 py-1 text-[11px] text-gray-700 font-medium">May 2026 <span class="text-[8px] text-gray-400">▾</span></button>
+            </div>
+          </div>
+          <div class="bg-white border-b border-gray-200">
+            <nav class="flex items-end gap-1 px-4 h-[44px]">
+              <a href="#" class="shrink-0 px-3 py-2.5 text-[13px] font-medium text-gray-500">Dashboard</a>
+              <a href="#" class="shrink-0 px-3 py-2.5 text-[13px] font-medium text-gray-500 inline-flex items-center gap-1.5">OT Pending <span class="bg-teal-50 text-teal-700 text-[10px] font-semibold px-1.5 py-0.5 rounded-full tabular-nums">5</span></a>
+              <a href="#" class="shrink-0 px-3 py-2.5 text-[13px] font-medium text-gray-500">Settings</a>
+              <a href="#" class="shrink-0 px-3 py-2.5 text-[13px] font-semibold text-teal-600 border-b-2 border-teal-600 -mb-px">OT Audit</a>
+            </nav>
+          </div>
+          <div class="bg-gray-50">
+            <div class="max-w-6xl mx-auto p-6">
+              <!-- Compact summary -->
+              <div class="bg-white border border-gray-200 rounded-xl px-5 py-3 mb-4 text-[12px] text-gray-500 italic">
+                Summary tiles unchanged — collapsed for visual focus on the expanded row below.
+              </div>
+              <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
+                <table class="ut">
+                  <colgroup>
+                    <col style="width: 4%" /><col style="width: 22%" /><col style="width: 10%" /><col style="width: 11%" />
+                    <col style="width: 9%" /><col style="width: 9%" /><col style="width: 11%" /><col style="width: 9%" />
+                    <col style="width: 9%" /><col style="width: 6%" />
+                  </colgroup>
+                  <thead>
+                    <tr class="head">
+                      <th class="first">#</th><th>User</th><th class="right">Days w/ OT</th><th class="right">Total OT</th>
+                      <th class="right">Auto</th><th class="right">Grace</th><th class="right">Approved</th>
+                      <th class="right">Pending</th><th class="right">Rejected</th><th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr class="row">
+                      <td class="first">1</td>
+                      <td class="primary">Deepanshu Thakur <span class="text-gray-400 font-normal">· Billing Operator</span></td>
+                      <td class="right">12</td>
+                      <td class="right primary">480 min</td>
+                      <td class="right">320</td>
+                      <td class="right">80</td>
+                      <td class="right">80</td>
+                      <td class="right muted">0</td>
+                      <td class="right muted">0</td>
+                      <td class="right"><span class="text-gray-700 text-[12px]">▾</span></td>
+                    </tr>
+                    <!-- Expand panel — bg-gray-50 + border-l-2 border-teal-600 -->
+                    <tr>
+                      <td colspan="10" style="padding: 0">
+                        <div style="background: #f9fafb; border-left: 2px solid #0d9488; padding: 16px 20px;">
+                          <p class="text-[12px] font-semibold text-gray-900 mb-3">
+                            Day-by-day breakdown — Deepanshu Thakur
+                          </p>
+                          <div class="bg-white border border-gray-200 rounded-md overflow-hidden">
+                            <table class="inner">
+                              <thead>
+                                <tr>
+                                  <th style="width: 12%">Date</th>
+                                  <th style="width: 12%">Check-out</th>
+                                  <th style="width: 11%">Worked</th>
+                                  <th style="width: 10%">OT raw</th>
+                                  <th style="width: 11%">Credited</th>
+                                  <th style="width: 16%">Outcome</th>
+                                  <th>Note</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                <tr>
+                                  <td class="primary">May 12</td>
+                                  <td>7:47 PM</td>
+                                  <td>9h 17m</td>
+                                  <td>47 min</td>
+                                  <td class="primary">47 min</td>
+                                  <td><Chip kind="auto">AUTO</Chip></td>
+                                  <td class="muted">—</td>
+                                </tr>
+                                <tr>
+                                  <td class="primary">May 11</td>
+                                  <td>8:12 PM</td>
+                                  <td>9h 42m</td>
+                                  <td>72 min</td>
+                                  <td class="primary">72 min</td>
+                                  <td><Chip kind="auto">AUTO</Chip></td>
+                                  <td class="muted">—</td>
+                                </tr>
+                                <tr>
+                                  <td class="primary">May 10</td>
+                                  <td>7:31 PM</td>
+                                  <td>9h 01m</td>
+                                  <td>31 min</td>
+                                  <td class="primary">31 min</td>
+                                  <td>
+                                    <span class="inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded bg-gray-100 text-gray-700">
+                                      AUTO_GRACE
+                                    </span>
+                                  </td>
+                                  <td>Grace day 1 of 4</td>
+                                </tr>
+                                <tr>
+                                  <td class="primary">May 8</td>
+                                  <td>7:15 PM</td>
+                                  <td>8h 45m</td>
+                                  <td>15 min</td>
+                                  <td class="muted">0 min</td>
+                                  <td>
+                                    <span class="inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">
+                                      CONFIRMED_UNDER_95
+                                    </span>
+                                  </td>
+                                  <td>Less than 95 min — confirmed by user</td>
+                                </tr>
+                                <tr>
+                                  <td class="primary">May 6</td>
+                                  <td>9:45 PM</td>
+                                  <td>11h 15m</td>
+                                  <td>165 min</td>
+                                  <td class="primary">165 min</td>
+                                  <td>
+                                    <span class="inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded bg-gray-100 text-gray-700">
+                                      ADMIN_APPROVE
+                                    </span>
+                                  </td>
+                                  <td>Approved by Jaymeen Solanki — covered dispatch backlog</td>
+                                </tr>
+                                <tr>
+                                  <td class="primary">May 3</td>
+                                  <td>8:30 PM</td>
+                                  <td>10h 00m</td>
+                                  <td>60 min</td>
+                                  <td class="muted">0 min</td>
+                                  <td>
+                                    <span class="inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded bg-red-50 text-red-700">
+                                      ADMIN_REJECT
+                                    </span>
+                                  </td>
+                                  <td>Rejected by Jaymeen Solanki — non-essential</td>
+                                </tr>
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                    <!-- next user rows continue -->
+                    <tr class="row">
+                      <td class="first">2</td>
+                      <td class="primary">Bankim <span class="text-gray-400 font-normal">· Billing Operator</span></td>
+                      <td class="right">8</td><td class="right primary">320 min</td>
+                      <td class="right">240</td><td class="right muted">0</td><td class="right">80</td>
+                      <td class="right muted">0</td><td class="right muted">0</td>
+                      <td class="right"><span class="text-gray-400 text-[12px]">▸</span></td>
+                    </tr>
+                    <tr class="row">
+                      <td class="first">3</td>
+                      <td class="primary">Dhruv <span class="text-gray-400 font-normal">· Ops Admin</span></td>
+                      <td class="right">5</td><td class="right primary">295 min</td>
+                      <td class="right">215</td><td class="right">80</td><td class="right muted">0</td>
+                      <td class="right muted">0</td><td class="right muted">0</td>
+                      <td class="right"><span class="text-gray-400 text-[12px]">▸</span></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── State 3 — EMPTY MONTH ───────────────────────────────────── -->
+      <div class="mb-10">
+        <div class="flex items-center gap-3 mb-2">
+          <span class="frame-label">State 3</span>
+          <span class="text-[12px] text-gray-700">Empty · no activity this month</span>
+        </div>
+        <div class="desktop-frame bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
+          <div class="h-[52px] flex items-center justify-between px-4 border-b border-gray-200">
+            <div class="flex items-center min-w-0">
+              <span class="text-[14px] font-semibold text-gray-900 shrink-0">OT Audit</span>
+              <span class="text-[11px] text-gray-400 ml-3 truncate">
+                <span class="text-gray-900 font-semibold">0</span> Total · 0 Auto · 0 Grace · 0 Approved · 0 Pending · 0 Rejected
+              </span>
+            </div>
+            <div class="flex items-center gap-2 shrink-0">
+              <span class="text-[11px] font-medium text-gray-400" style="font-variant-numeric: tabular-nums; letter-spacing: 0.5px">18:42</span>
+              <div class="w-px h-4 bg-gray-200"></div>
+              <button class="bg-gray-50 rounded-[5px] px-2.5 py-1 text-[11px] text-gray-700 font-medium">May 2026 <span class="text-[8px] text-gray-400">▾</span></button>
+            </div>
+          </div>
+          <div class="bg-white border-b border-gray-200">
+            <nav class="flex items-end gap-1 px-4 h-[44px]">
+              <a href="#" class="shrink-0 px-3 py-2.5 text-[13px] font-medium text-gray-500">Dashboard</a>
+              <a href="#" class="shrink-0 px-3 py-2.5 text-[13px] font-medium text-gray-500 inline-flex items-center gap-1.5">OT Pending <span class="bg-teal-50 text-teal-700 text-[10px] font-semibold px-1.5 py-0.5 rounded-full tabular-nums">5</span></a>
+              <a href="#" class="shrink-0 px-3 py-2.5 text-[13px] font-medium text-gray-500">Settings</a>
+              <a href="#" class="shrink-0 px-3 py-2.5 text-[13px] font-semibold text-teal-600 border-b-2 border-teal-600 -mb-px">OT Audit</a>
+            </nav>
+          </div>
+          <div class="bg-gray-50">
+            <div class="max-w-6xl mx-auto p-6">
+              <div class="bg-white border border-gray-200 rounded-xl p-5 mb-4">
+                <div class="grid grid-cols-6 gap-4">
+                  <div><p class="text-[10px] uppercase tracking-wider text-gray-400 mb-1">Total OT credited</p><p class="text-[22px] font-semibold text-gray-300 tabular-nums leading-none">0 min</p></div>
+                  <div class="border-l border-gray-100 pl-4"><p class="text-[10px] uppercase tracking-wider text-gray-400 mb-1">Auto</p><p class="text-[22px] font-semibold text-gray-300 tabular-nums leading-none">0</p></div>
+                  <div class="border-l border-gray-100 pl-4"><p class="text-[10px] uppercase tracking-wider text-gray-400 mb-1">Grace</p><p class="text-[22px] font-semibold text-gray-300 tabular-nums leading-none">0</p></div>
+                  <div class="border-l border-gray-100 pl-4"><p class="text-[10px] uppercase tracking-wider text-gray-400 mb-1">Approved</p><p class="text-[22px] font-semibold text-gray-300 tabular-nums leading-none">0</p></div>
+                  <div class="border-l border-gray-100 pl-4"><p class="text-[10px] uppercase tracking-wider text-gray-400 mb-1">Pending</p><p class="text-[22px] font-semibold text-gray-300 tabular-nums leading-none">0</p></div>
+                  <div class="border-l border-gray-100 pl-4"><p class="text-[10px] uppercase tracking-wider text-gray-400 mb-1">Rejected</p><p class="text-[22px] font-semibold text-gray-300 tabular-nums leading-none">0</p></div>
+                </div>
+              </div>
+              <div class="bg-white border border-gray-200 rounded-lg p-12 text-center">
+                <div class="text-4xl mb-3" aria-hidden>📅</div>
+                <p class="text-[14px] font-semibold text-gray-900 mb-1">No OT activity in May 2026</p>
+                <p class="text-[12px] text-gray-500">Nothing was credited, claimed, or actioned this month.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── State 4 — FUTURE MONTH ──────────────────────────────────── -->
+      <div class="mb-10">
+        <div class="flex items-center gap-3 mb-2">
+          <span class="frame-label">State 4</span>
+          <span class="text-[12px] text-gray-700">Future month selected</span>
+        </div>
+        <div class="desktop-frame bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
+          <div class="h-[52px] flex items-center justify-between px-4 border-b border-gray-200">
+            <div class="flex items-center min-w-0">
+              <span class="text-[14px] font-semibold text-gray-900 shrink-0">OT Audit</span>
+              <span class="text-[11px] text-gray-400 ml-3 truncate">June 2026 · no data possible</span>
+            </div>
+            <div class="flex items-center gap-2 shrink-0">
+              <span class="text-[11px] font-medium text-gray-400" style="font-variant-numeric: tabular-nums; letter-spacing: 0.5px">18:42</span>
+              <div class="w-px h-4 bg-gray-200"></div>
+              <button class="bg-gray-50 rounded-[5px] px-2.5 py-1 text-[11px] text-gray-700 font-medium">June 2026 <span class="text-[8px] text-gray-400">▾</span></button>
+            </div>
+          </div>
+          <div class="bg-white border-b border-gray-200">
+            <nav class="flex items-end gap-1 px-4 h-[44px]">
+              <a href="#" class="shrink-0 px-3 py-2.5 text-[13px] font-medium text-gray-500">Dashboard</a>
+              <a href="#" class="shrink-0 px-3 py-2.5 text-[13px] font-medium text-gray-500 inline-flex items-center gap-1.5">OT Pending <span class="bg-teal-50 text-teal-700 text-[10px] font-semibold px-1.5 py-0.5 rounded-full tabular-nums">5</span></a>
+              <a href="#" class="shrink-0 px-3 py-2.5 text-[13px] font-medium text-gray-500">Settings</a>
+              <a href="#" class="shrink-0 px-3 py-2.5 text-[13px] font-semibold text-teal-600 border-b-2 border-teal-600 -mb-px">OT Audit</a>
+            </nav>
+          </div>
+          <div class="bg-gray-50">
+            <div class="max-w-6xl mx-auto p-6">
+              <div class="bg-white border border-gray-200 rounded-lg p-12 text-center">
+                <div class="text-4xl mb-3" aria-hidden>📈</div>
+                <p class="text-[14px] font-semibold text-gray-900 mb-1">Future month selected</p>
+                <p class="text-[12px] text-gray-500">OT audit only shows past and current months.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── State 5 — MONTH PICKER OPEN ─────────────────────────────── -->
+      <div class="mb-12">
+        <div class="flex items-center gap-3 mb-2">
+          <span class="frame-label">State 5</span>
+          <span class="text-[12px] text-gray-700">Month picker open</span>
+        </div>
+        <div class="desktop-frame relative bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm" style="min-height: 540px">
+          <!-- Header stays full-opacity since the picker anchors to it -->
+          <div class="h-[52px] flex items-center justify-between px-4 border-b border-gray-200 relative z-10 bg-white">
+            <div class="flex items-center min-w-0">
+              <span class="text-[14px] font-semibold text-gray-900 shrink-0">OT Audit</span>
+              <span class="text-[11px] text-gray-400 ml-3 truncate">
+                <span class="text-gray-900 font-semibold">1,847</span> Total ·
+                <span class="text-gray-900 font-semibold">1,205</span> Auto ·
+                <span class="text-gray-900 font-semibold">320</span> Grace ·
+                <span class="text-gray-900 font-semibold">247</span> Approved ·
+                <span class="text-amber-700 font-semibold">75</span> Pending ·
+                <span class="text-gray-900 font-semibold">0</span> Rejected
+              </span>
+            </div>
+            <div class="flex items-center gap-2 shrink-0 relative">
+              <span class="text-[11px] font-medium text-gray-400" style="font-variant-numeric: tabular-nums; letter-spacing: 0.5px">18:42</span>
+              <div class="w-px h-4 bg-gray-200"></div>
+              <button class="bg-gray-100 rounded-[5px] px-2.5 py-1 text-[11px] text-gray-900 font-semibold inline-flex items-center gap-1 border border-gray-300">
+                May 2026 <span class="text-[8px] text-gray-500">▾</span>
+              </button>
+              <!-- Picker dropdown anchored below -->
+              <div class="absolute top-full right-0 mt-1 z-30 bg-white shadow-lg rounded-md p-2 w-64 border border-gray-200">
+                <div class="flex items-center justify-between px-2 py-1 mb-1">
+                  <button class="text-[12px] text-gray-600 hover:text-gray-900 px-1">‹</button>
+                  <span class="text-[12px] font-semibold text-gray-900 tabular-nums">2026</span>
+                  <button class="text-[12px] text-gray-300 cursor-not-allowed px-1" disabled>›</button>
+                </div>
+                <div class="grid grid-cols-3 gap-1">
+                  <MonthBtn>Jan</MonthBtn>
+                  <MonthBtn>Feb</MonthBtn>
+                  <MonthBtn>Mar</MonthBtn>
+                  <MonthBtn>Apr</MonthBtn>
+                  <button class="text-[12px] py-1.5 rounded bg-gray-900 text-white font-semibold">May</button>
+                  <button class="text-[12px] py-1.5 rounded text-gray-300 cursor-not-allowed" disabled>Jun</button>
+                  <button class="text-[12px] py-1.5 rounded text-gray-300 cursor-not-allowed" disabled>Jul</button>
+                  <button class="text-[12px] py-1.5 rounded text-gray-300 cursor-not-allowed" disabled>Aug</button>
+                  <button class="text-[12px] py-1.5 rounded text-gray-300 cursor-not-allowed" disabled>Sep</button>
+                  <button class="text-[12px] py-1.5 rounded text-gray-300 cursor-not-allowed" disabled>Oct</button>
+                  <button class="text-[12px] py-1.5 rounded text-gray-300 cursor-not-allowed" disabled>Nov</button>
+                  <button class="text-[12px] py-1.5 rounded text-gray-300 cursor-not-allowed" disabled>Dec</button>
+                </div>
+                <p class="text-[10px] text-gray-400 mt-2 text-center leading-snug">Months older than 24 months ago are disabled.</p>
+              </div>
+            </div>
+          </div>
+          <div class="bg-white border-b border-gray-200 opacity-50">
+            <nav class="flex items-end gap-1 px-4 h-[44px]">
+              <a href="#" class="shrink-0 px-3 py-2.5 text-[13px] font-medium text-gray-500">Dashboard</a>
+              <a href="#" class="shrink-0 px-3 py-2.5 text-[13px] font-medium text-gray-500 inline-flex items-center gap-1.5">OT Pending <span class="bg-teal-50 text-teal-700 text-[10px] font-semibold px-1.5 py-0.5 rounded-full tabular-nums">5</span></a>
+              <a href="#" class="shrink-0 px-3 py-2.5 text-[13px] font-medium text-gray-500">Settings</a>
+              <a href="#" class="shrink-0 px-3 py-2.5 text-[13px] font-semibold text-teal-600 border-b-2 border-teal-600 -mb-px">OT Audit</a>
+            </nav>
+          </div>
+          <div class="relative">
+            <div class="bg-gray-50 opacity-50 pointer-events-none">
+              <div class="max-w-6xl mx-auto p-6 space-y-4">
+                <div class="bg-white border border-gray-200 rounded-xl h-24"></div>
+                <div class="bg-white border border-gray-200 rounded-lg h-40"></div>
+              </div>
+            </div>
+            <div class="absolute inset-0 bg-black/10 pointer-events-none"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ──────────────────────────────────────────────────────────────── -->
+    <!-- MOBILE                                                           -->
+    <!-- ──────────────────────────────────────────────────────────────── -->
+    <section class="max-w-[1320px] mx-auto px-8 pt-4 pb-12">
+      <h2 class="text-[14px] font-semibold text-gray-900 mb-1">Mobile — 480&#8201;px</h2>
+      <p class="text-[12px] text-gray-500 mb-6">
+        10-column user table collapses to per-user cards. Stat tiles wrap into 2 columns.
+      </p>
+
+      <div class="flex items-start gap-6 flex-wrap">
+        <!-- ── Mobile State 1 — POPULATED ──────────────────────────────── -->
+        <div>
+          <div class="flex items-center gap-3 mb-2">
+            <span class="frame-label">State 1</span>
+            <span class="text-[12px] text-gray-700">Populated</span>
+          </div>
+          <div class="mobile-frame bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
+            <div class="h-[52px] flex items-center justify-between px-4 border-b border-gray-200">
+              <div class="flex flex-col leading-tight min-w-0">
+                <span class="text-[13px] font-semibold text-gray-900">OT Audit</span>
+                <span class="text-[10px] text-gray-400 truncate">1,847 min · 75 pending</span>
+              </div>
+              <button class="bg-gray-50 rounded-[5px] px-2.5 py-1 text-[11px] text-gray-700 font-medium shrink-0">May 2026 <span class="text-[8px] text-gray-400">▾</span></button>
+            </div>
+            <div class="bg-white border-b border-gray-200">
+              <nav class="flex items-end gap-1 px-4 h-[44px] overflow-x-auto scrollbar-hide">
+                <a href="#" class="shrink-0 px-3 py-2.5 text-[13px] font-medium text-gray-500">Dashboard</a>
+                <a href="#" class="shrink-0 px-3 py-2.5 text-[13px] font-medium text-gray-500 inline-flex items-center gap-1.5">OT Pending <span class="bg-teal-50 text-teal-700 text-[10px] font-semibold px-1.5 py-0.5 rounded-full tabular-nums">5</span></a>
+                <a href="#" class="shrink-0 px-3 py-2.5 text-[13px] font-medium text-gray-500">Settings</a>
+                <a href="#" class="shrink-0 px-3 py-2.5 text-[13px] font-semibold text-teal-600 border-b-2 border-teal-600 -mb-px">OT Audit</a>
+              </nav>
+            </div>
+            <div class="bg-gray-50 p-4 space-y-3">
+              <!-- Stat tiles 2-col -->
+              <div class="bg-white border border-gray-200 rounded-xl p-4">
+                <div class="grid grid-cols-2 gap-3">
+                  <div><p class="text-[10px] uppercase tracking-wider text-gray-400">Total</p><p class="text-[18px] font-semibold text-gray-900 tabular-nums">1,847 min</p></div>
+                  <div><p class="text-[10px] uppercase tracking-wider text-gray-400">Auto</p><p class="text-[18px] font-semibold text-gray-900 tabular-nums">1,205</p></div>
+                  <div><p class="text-[10px] uppercase tracking-wider text-gray-400">Grace</p><p class="text-[18px] font-semibold text-gray-900 tabular-nums">320</p></div>
+                  <div><p class="text-[10px] uppercase tracking-wider text-gray-400">Approved</p><p class="text-[18px] font-semibold text-gray-900 tabular-nums">247</p></div>
+                  <div><p class="text-[10px] uppercase tracking-wider text-gray-400">Pending</p><p class="text-[18px] font-semibold text-amber-600 tabular-nums">75</p></div>
+                  <div><p class="text-[10px] uppercase tracking-wider text-gray-400">Rejected</p><p class="text-[18px] font-semibold text-gray-900 tabular-nums">0</p></div>
+                </div>
+              </div>
+              <!-- User cards -->
+              <UserCard name="Deepanshu Thakur" role="Billing Operator" days="12" total="480 min" auto="320" grace="80" approved="80" pending="0" rejected="0"/>
+              <UserCard name="Bankim" role="Billing Operator" days="8" total="320 min" auto="240" grace="0" approved="80" pending="0" rejected="0"/>
+              <UserCard name="Dhruv" role="Ops Admin" days="5" total="295 min" auto="215" grace="80" approved="0" pending="0" rejected="0"/>
+              <UserCard name="Chandresh Kolgha" role="Tint Manager" days="4" total="187 min" auto="130" grace="0" approved="57" pending="0" rejected="0"/>
+              <UserCard name="Deepak Vasava" role="Tint Operator" days="3" total="165 min" auto="115" grace="50" approved="0" pending="0" rejected="0"/>
+              <UserCard name="Chandrasing Valvi" role="Tint Operator" days="2" total="105 min" auto="105" grace="0" approved="0" pending="0" rejected="0"/>
+              <!-- Kuldeep — pending highlight -->
+              <div class="border border-amber-300 rounded-lg p-3 bg-amber-50/30" style="border-left: 3px solid #f59e0b;">
+                <div class="flex items-start justify-between gap-2 mb-2">
+                  <div class="min-w-0">
+                    <p class="text-[13px] font-semibold text-gray-900 truncate">Kuldeep</p>
+                    <p class="text-[10.5px] text-gray-500">Ops Admin · 1 day</p>
+                  </div>
+                  <span class="text-[12px] font-semibold text-gray-900 tabular-nums shrink-0 bg-white border border-amber-300 rounded px-1.5 py-0.5">75 min</span>
+                </div>
+                <div class="grid grid-cols-5 gap-1 text-[10px] text-center">
+                  <div><p class="text-gray-400 mb-0.5">Auto</p><p class="text-gray-300 tabular-nums">0</p></div>
+                  <div><p class="text-gray-400 mb-0.5">Grace</p><p class="text-gray-300 tabular-nums">0</p></div>
+                  <div><p class="text-gray-400 mb-0.5">Apprv</p><p class="text-gray-300 tabular-nums">0</p></div>
+                  <div><p class="text-amber-700 mb-0.5 font-semibold">Pend</p><p class="text-amber-700 tabular-nums font-semibold">75</p></div>
+                  <div><p class="text-gray-400 mb-0.5">Rej</p><p class="text-gray-300 tabular-nums">0</p></div>
+                </div>
+              </div>
+              <p class="text-[10.5px] text-gray-400 pt-1 tabular-nums">7 users with OT activity in May 2026</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Mobile State 2 — EXPANDED ──────────────────────────────── -->
+        <div>
+          <div class="flex items-center gap-3 mb-2">
+            <span class="frame-label">State 2</span>
+            <span class="text-[12px] text-gray-700">Expanded user · day-by-day</span>
+          </div>
+          <div class="mobile-frame bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
+            <div class="h-[52px] flex items-center justify-between px-4 border-b border-gray-200">
+              <span class="text-[13px] font-semibold text-gray-900">OT Audit</span>
+              <button class="bg-gray-50 rounded-[5px] px-2.5 py-1 text-[11px] text-gray-700 font-medium shrink-0">May 2026 ▾</button>
+            </div>
+            <div class="bg-white border-b border-gray-200">
+              <nav class="flex items-end gap-1 px-4 h-[44px] overflow-x-auto scrollbar-hide">
+                <a href="#" class="shrink-0 px-3 py-2.5 text-[13px] font-medium text-gray-500">Dashboard</a>
+                <a href="#" class="shrink-0 px-3 py-2.5 text-[13px] font-medium text-gray-500">OT Pending</a>
+                <a href="#" class="shrink-0 px-3 py-2.5 text-[13px] font-medium text-gray-500">Settings</a>
+                <a href="#" class="shrink-0 px-3 py-2.5 text-[13px] font-semibold text-teal-600 border-b-2 border-teal-600 -mb-px">OT Audit</a>
+              </nav>
+            </div>
+            <div class="bg-gray-50 p-4 space-y-3">
+              <!-- Expanded card -->
+              <div class="border border-gray-200 rounded-lg bg-white overflow-hidden">
+                <div class="p-3 border-b border-gray-100">
+                  <div class="flex items-start justify-between gap-2">
+                    <div class="min-w-0">
+                      <p class="text-[13px] font-semibold text-gray-900 truncate">Deepanshu Thakur</p>
+                      <p class="text-[10.5px] text-gray-500">Billing Operator · 12 days</p>
+                    </div>
+                    <span class="text-[12px] font-semibold text-gray-900 tabular-nums bg-gray-50 border border-gray-200 rounded px-1.5 py-0.5 shrink-0">480 min</span>
+                  </div>
+                </div>
+                <!-- Day-by-day expand -->
+                <div style="background: #f9fafb; border-left: 2px solid #0d9488; padding: 12px;">
+                  <p class="text-[11px] font-semibold text-gray-900 mb-2">Day-by-day breakdown</p>
+                  <div class="space-y-2">
+                    <DayRow date="May 12" raw="47" credited="47" outcome="AUTO"/>
+                    <DayRow date="May 11" raw="72" credited="72" outcome="AUTO"/>
+                    <DayRow date="May 10" raw="31" credited="31" outcome="AUTO_GRACE" note="Grace day 1 of 4"/>
+                    <DayRow date="May 8"  raw="15" credited="0" outcome="CONFIRMED_UNDER_95" note="< 95 min"/>
+                    <DayRow date="May 6"  raw="165" credited="165" outcome="ADMIN_APPROVE" note="Jaymeen S. — dispatch backlog"/>
+                    <DayRow date="May 3"  raw="60" credited="0" outcome="ADMIN_REJECT" reject note="Jaymeen S. — non-essential"/>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Mobile State 3 — EMPTY ────────────────────────────────── -->
+        <div>
+          <div class="flex items-center gap-3 mb-2">
+            <span class="frame-label">State 3</span>
+            <span class="text-[12px] text-gray-700">Empty</span>
+          </div>
+          <div class="mobile-frame bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
+            <div class="h-[52px] flex items-center justify-between px-4 border-b border-gray-200">
+              <span class="text-[13px] font-semibold text-gray-900">OT Audit</span>
+              <button class="bg-gray-50 rounded-[5px] px-2.5 py-1 text-[11px] text-gray-700 font-medium shrink-0">May 2026 ▾</button>
+            </div>
+            <div class="bg-white border-b border-gray-200">
+              <nav class="flex items-end gap-1 px-4 h-[44px]">
+                <a href="#" class="shrink-0 px-3 py-2.5 text-[13px] font-medium text-gray-500">Dashboard</a>
+                <a href="#" class="shrink-0 px-3 py-2.5 text-[13px] font-medium text-gray-500">OT Pending</a>
+                <a href="#" class="shrink-0 px-3 py-2.5 text-[13px] font-medium text-gray-500">Settings</a>
+                <a href="#" class="shrink-0 px-3 py-2.5 text-[13px] font-semibold text-teal-600 border-b-2 border-teal-600 -mb-px">OT Audit</a>
+              </nav>
+            </div>
+            <div class="bg-gray-50 p-4">
+              <div class="bg-white border border-gray-200 rounded-lg p-8 text-center">
+                <div class="text-3xl mb-3" aria-hidden>📅</div>
+                <p class="text-[13px] font-semibold text-gray-900 mb-1">No OT activity in May 2026</p>
+                <p class="text-[11px] text-gray-500 leading-snug">Nothing was credited, claimed, or actioned this month.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Mobile State 4 — FUTURE ───────────────────────────────── -->
+        <div>
+          <div class="flex items-center gap-3 mb-2">
+            <span class="frame-label">State 4</span>
+            <span class="text-[12px] text-gray-700">Future month</span>
+          </div>
+          <div class="mobile-frame bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
+            <div class="h-[52px] flex items-center justify-between px-4 border-b border-gray-200">
+              <span class="text-[13px] font-semibold text-gray-900">OT Audit</span>
+              <button class="bg-gray-50 rounded-[5px] px-2.5 py-1 text-[11px] text-gray-700 font-medium shrink-0">June 2026 ▾</button>
+            </div>
+            <div class="bg-white border-b border-gray-200">
+              <nav class="flex items-end gap-1 px-4 h-[44px]">
+                <a href="#" class="shrink-0 px-3 py-2.5 text-[13px] font-medium text-gray-500">Dashboard</a>
+                <a href="#" class="shrink-0 px-3 py-2.5 text-[13px] font-medium text-gray-500">OT Pending</a>
+                <a href="#" class="shrink-0 px-3 py-2.5 text-[13px] font-medium text-gray-500">Settings</a>
+                <a href="#" class="shrink-0 px-3 py-2.5 text-[13px] font-semibold text-teal-600 border-b-2 border-teal-600 -mb-px">OT Audit</a>
+              </nav>
+            </div>
+            <div class="bg-gray-50 p-4">
+              <div class="bg-white border border-gray-200 rounded-lg p-8 text-center">
+                <div class="text-3xl mb-3" aria-hidden>📈</div>
+                <p class="text-[13px] font-semibold text-gray-900 mb-1">Future month selected</p>
+                <p class="text-[11px] text-gray-500 leading-snug">OT audit only shows past and current months.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Mobile State 5 — MONTH PICKER ─────────────────────────── -->
+        <div>
+          <div class="flex items-center gap-3 mb-2">
+            <span class="frame-label">State 5</span>
+            <span class="text-[12px] text-gray-700">Month picker open</span>
+          </div>
+          <div class="mobile-frame relative bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm" style="min-height: 480px">
+            <div class="h-[52px] flex items-center justify-between px-4 border-b border-gray-200 relative z-10 bg-white">
+              <span class="text-[13px] font-semibold text-gray-900">OT Audit</span>
+              <div class="relative">
+                <button class="bg-gray-100 rounded-[5px] px-2.5 py-1 text-[11px] text-gray-900 font-semibold border border-gray-300">May 2026 ▾</button>
+                <div class="absolute top-full right-0 mt-1 z-30 bg-white shadow-lg rounded-md p-2 w-60 border border-gray-200">
+                  <div class="flex items-center justify-between px-2 py-1 mb-1">
+                    <button class="text-[12px] text-gray-600 hover:text-gray-900 px-1">‹</button>
+                    <span class="text-[12px] font-semibold text-gray-900 tabular-nums">2026</span>
+                    <button class="text-[12px] text-gray-300 cursor-not-allowed px-1" disabled>›</button>
+                  </div>
+                  <div class="grid grid-cols-3 gap-1">
+                    <button class="text-[12px] py-1.5 rounded text-gray-700 hover:bg-gray-50">Jan</button>
+                    <button class="text-[12px] py-1.5 rounded text-gray-700 hover:bg-gray-50">Feb</button>
+                    <button class="text-[12px] py-1.5 rounded text-gray-700 hover:bg-gray-50">Mar</button>
+                    <button class="text-[12px] py-1.5 rounded text-gray-700 hover:bg-gray-50">Apr</button>
+                    <button class="text-[12px] py-1.5 rounded bg-gray-900 text-white font-semibold">May</button>
+                    <button class="text-[12px] py-1.5 rounded text-gray-300 cursor-not-allowed" disabled>Jun</button>
+                    <button class="text-[12px] py-1.5 rounded text-gray-300 cursor-not-allowed" disabled>Jul</button>
+                    <button class="text-[12px] py-1.5 rounded text-gray-300 cursor-not-allowed" disabled>Aug</button>
+                    <button class="text-[12px] py-1.5 rounded text-gray-300 cursor-not-allowed" disabled>Sep</button>
+                    <button class="text-[12px] py-1.5 rounded text-gray-300 cursor-not-allowed" disabled>Oct</button>
+                    <button class="text-[12px] py-1.5 rounded text-gray-300 cursor-not-allowed" disabled>Nov</button>
+                    <button class="text-[12px] py-1.5 rounded text-gray-300 cursor-not-allowed" disabled>Dec</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="bg-white border-b border-gray-200 opacity-50">
+              <nav class="flex items-end gap-1 px-4 h-[44px]">
+                <a href="#" class="shrink-0 px-3 py-2.5 text-[13px] font-medium text-gray-500">Dashboard</a>
+                <a href="#" class="shrink-0 px-3 py-2.5 text-[13px] font-medium text-gray-500">OT Pending</a>
+                <a href="#" class="shrink-0 px-3 py-2.5 text-[13px] font-medium text-gray-500">Settings</a>
+                <a href="#" class="shrink-0 px-3 py-2.5 text-[13px] font-semibold text-teal-600 border-b-2 border-teal-600 -mb-px">OT Audit</a>
+              </nav>
+            </div>
+            <div class="relative">
+              <div class="bg-gray-50 opacity-50 pointer-events-none p-4 space-y-3">
+                <div class="bg-white border border-gray-200 rounded-xl h-20"></div>
+                <div class="bg-white border border-gray-200 rounded-xl h-20"></div>
+              </div>
+              <div class="absolute inset-0 bg-black/10 pointer-events-none"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ──────────────────────────────────────────────────────────────── -->
+    <!-- LIVE OVERLAY — month picker (page-level fixed)                   -->
+    <!-- ──────────────────────────────────────────────────────────────── -->
+    <div
+      id="liveMonthpicker"
+      class="hidden fixed inset-0 z-50 bg-black/30 flex items-start justify-end p-6"
+      onclick="closeLive('monthpicker')"
+    >
+      <div class="bg-white shadow-xl rounded-md p-3 w-72 border border-gray-200" onclick="event.stopPropagation()">
+        <div class="flex items-center justify-between px-2 py-1 mb-2">
+          <button class="text-[13px] text-gray-600 hover:text-gray-900 px-1">‹</button>
+          <span class="text-[13px] font-semibold text-gray-900 tabular-nums">2026</span>
+          <button class="text-[13px] text-gray-300 cursor-not-allowed px-1" disabled>›</button>
+        </div>
+        <div class="grid grid-cols-3 gap-1.5">
+          <button onclick="closeLive('monthpicker')" class="text-[12.5px] py-2 rounded text-gray-700 hover:bg-gray-50">Jan</button>
+          <button onclick="closeLive('monthpicker')" class="text-[12.5px] py-2 rounded text-gray-700 hover:bg-gray-50">Feb</button>
+          <button onclick="closeLive('monthpicker')" class="text-[12.5px] py-2 rounded text-gray-700 hover:bg-gray-50">Mar</button>
+          <button onclick="closeLive('monthpicker')" class="text-[12.5px] py-2 rounded text-gray-700 hover:bg-gray-50">Apr</button>
+          <button onclick="closeLive('monthpicker')" class="text-[12.5px] py-2 rounded bg-gray-900 text-white font-semibold">May</button>
+          <button class="text-[12.5px] py-2 rounded text-gray-300 cursor-not-allowed" disabled>Jun</button>
+          <button class="text-[12.5px] py-2 rounded text-gray-300 cursor-not-allowed" disabled>Jul</button>
+          <button class="text-[12.5px] py-2 rounded text-gray-300 cursor-not-allowed" disabled>Aug</button>
+          <button class="text-[12.5px] py-2 rounded text-gray-300 cursor-not-allowed" disabled>Sep</button>
+          <button class="text-[12.5px] py-2 rounded text-gray-300 cursor-not-allowed" disabled>Oct</button>
+          <button class="text-[12.5px] py-2 rounded text-gray-300 cursor-not-allowed" disabled>Nov</button>
+          <button class="text-[12.5px] py-2 rounded text-gray-300 cursor-not-allowed" disabled>Dec</button>
+        </div>
+        <p class="text-[10px] text-gray-400 mt-2 text-center leading-snug">
+          Months older than 24 months ago are disabled.
+        </p>
+      </div>
+    </div>
+
+    <!-- ────────────────────────────────────────────────────────────────── -->
+    <!-- Replace JSX-like placeholders with actual HTML via DOMContentLoaded -->
+    <!-- (custom tags above are syntactic shorthand for inline panels)     -->
+    <!-- ────────────────────────────────────────────────────────────────── -->
+    <script>
+      // ── Inline panel template (used in State 1 expand rows + mobile) ─
+      const expandPanelHtml = (name) => `
+        <div style="background:#f9fafb; border-left:2px solid #0d9488; padding:16px 20px;">
+          <p class="text-[12px] font-semibold text-gray-900 mb-3">Day-by-day breakdown — ${name}</p>
+          <div class="bg-white border border-gray-200 rounded-md overflow-hidden">
+            <table class="inner">
+              <thead><tr>
+                <th style="width:12%">Date</th>
+                <th style="width:12%">Check-out</th>
+                <th style="width:11%">Worked</th>
+                <th style="width:10%">OT raw</th>
+                <th style="width:11%">Credited</th>
+                <th style="width:16%">Outcome</th>
+                <th>Note</th>
+              </tr></thead>
+              <tbody>
+                <tr><td class="primary">May 12</td><td>7:47 PM</td><td>9h 17m</td><td>47 min</td><td class="primary">47 min</td><td><span class="inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded bg-gray-100 text-gray-700">AUTO</span></td><td class="muted">—</td></tr>
+                <tr><td class="primary">May 11</td><td>8:12 PM</td><td>9h 42m</td><td>72 min</td><td class="primary">72 min</td><td><span class="inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded bg-gray-100 text-gray-700">AUTO</span></td><td class="muted">—</td></tr>
+                <tr><td class="primary">May 10</td><td>7:31 PM</td><td>9h 01m</td><td>31 min</td><td class="primary">31 min</td><td><span class="inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded bg-gray-100 text-gray-700">AUTO_GRACE</span></td><td>Grace day 1 of 4</td></tr>
+                <tr><td class="primary">May 8</td><td>7:15 PM</td><td>8h 45m</td><td>15 min</td><td class="muted">0 min</td><td><span class="inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">CONFIRMED_UNDER_95</span></td><td>Less than 95 min — confirmed by user</td></tr>
+                <tr><td class="primary">May 6</td><td>9:45 PM</td><td>11h 15m</td><td>165 min</td><td class="primary">165 min</td><td><span class="inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded bg-gray-100 text-gray-700">ADMIN_APPROVE</span></td><td>Approved by Jaymeen Solanki</td></tr>
+                <tr><td class="primary">May 3</td><td>8:30 PM</td><td>10h 00m</td><td>60 min</td><td class="muted">0 min</td><td><span class="inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded bg-red-50 text-red-700">ADMIN_REJECT</span></td><td>Rejected by Jaymeen Solanki</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>`;
+
+      // ── User card template (mobile) ─
+      const userCardHtml = (u) => `
+        <div class="border border-gray-200 rounded-lg p-3 bg-white">
+          <div class="flex items-start justify-between gap-2 mb-2">
+            <div class="min-w-0">
+              <p class="text-[13px] font-semibold text-gray-900 truncate">${u.name}</p>
+              <p class="text-[10.5px] text-gray-500">${u.role} · ${u.days} day${u.days === "1" ? "" : "s"}</p>
+            </div>
+            <span class="text-[12px] font-semibold text-gray-900 tabular-nums shrink-0 bg-gray-50 border border-gray-200 rounded px-1.5 py-0.5">${u.total}</span>
+          </div>
+          <div class="grid grid-cols-5 gap-1 text-[10px] text-center">
+            <div><p class="text-gray-400 mb-0.5">Auto</p><p class="${u.auto !== "0" ? "text-gray-700" : "text-gray-300"} tabular-nums">${u.auto}</p></div>
+            <div><p class="text-gray-400 mb-0.5">Grace</p><p class="${u.grace !== "0" ? "text-gray-700" : "text-gray-300"} tabular-nums">${u.grace}</p></div>
+            <div><p class="text-gray-400 mb-0.5">Apprv</p><p class="${u.approved !== "0" ? "text-gray-700" : "text-gray-300"} tabular-nums">${u.approved}</p></div>
+            <div><p class="text-gray-400 mb-0.5">Pend</p><p class="${u.pending !== "0" ? "text-amber-700 font-semibold" : "text-gray-300"} tabular-nums">${u.pending}</p></div>
+            <div><p class="text-gray-400 mb-0.5">Rej</p><p class="${u.rejected !== "0" ? "text-red-600" : "text-gray-300"} tabular-nums">${u.rejected}</p></div>
+          </div>
+        </div>`;
+
+      // ── Day row template (mobile expand panel) ─
+      const dayRowHtml = (d) => {
+        const chipPalette = d.outcome === "ADMIN_REJECT"
+          ? "bg-red-50 text-red-700"
+          : d.outcome === "CONFIRMED_UNDER_95"
+            ? "bg-gray-100 text-gray-500"
+            : "bg-gray-100 text-gray-700";
+        return `
+          <div class="border border-gray-200 rounded bg-white p-2 text-[11px]">
+            <div class="flex items-center justify-between mb-1">
+              <span class="font-semibold text-gray-900 tabular-nums">${d.date}</span>
+              <span class="inline-block text-[9px] font-semibold px-1.5 py-0.5 rounded ${chipPalette}">${d.outcome}</span>
+            </div>
+            <div class="flex items-center justify-between text-gray-500 tabular-nums text-[10.5px]">
+              <span>Raw ${d.raw}m → Credited <span class="text-gray-900 font-medium">${d.credited}m</span></span>
+            </div>
+            ${d.note ? `<p class="text-[10.5px] text-gray-500 mt-1 leading-snug italic">${d.note}</p>` : ""}
+          </div>`;
+      };
+
+      // ── Replace placeholder custom tags with real HTML on load ─
+      document.addEventListener("DOMContentLoaded", () => {
+        // Expand panels in State 1 (desktop)
+        document.querySelectorAll("ExpandPanel").forEach((node) => {
+          const name = node.getAttribute("name") ?? "User";
+          const wrapper = document.createElement("div");
+          wrapper.innerHTML = expandPanelHtml(name);
+          node.replaceWith(wrapper.firstElementChild);
+        });
+        // User cards (mobile)
+        document.querySelectorAll("UserCard").forEach((node) => {
+          const u = {
+            name: node.getAttribute("name") ?? "",
+            role: node.getAttribute("role") ?? "",
+            days: node.getAttribute("days") ?? "0",
+            total: node.getAttribute("total") ?? "0 min",
+            auto: node.getAttribute("auto") ?? "0",
+            grace: node.getAttribute("grace") ?? "0",
+            approved: node.getAttribute("approved") ?? "0",
+            pending: node.getAttribute("pending") ?? "0",
+            rejected: node.getAttribute("rejected") ?? "0",
+          };
+          const wrapper = document.createElement("div");
+          wrapper.innerHTML = userCardHtml(u);
+          node.replaceWith(wrapper.firstElementChild);
+        });
+        // Day rows (mobile expand)
+        document.querySelectorAll("DayRow").forEach((node) => {
+          const d = {
+            date: node.getAttribute("date") ?? "",
+            raw: node.getAttribute("raw") ?? "0",
+            credited: node.getAttribute("credited") ?? "0",
+            outcome: node.getAttribute("outcome") ?? "AUTO",
+            note: node.getAttribute("note") ?? "",
+          };
+          const wrapper = document.createElement("div");
+          wrapper.innerHTML = dayRowHtml(d);
+          node.replaceWith(wrapper.firstElementChild);
+        });
+        // Tile/Chip/MonthBtn placeholders are inert — strip them so the
+        // children render directly.
+        ["Tile", "Chip", "MonthBtn"].forEach((tag) => {
+          document.querySelectorAll(tag).forEach((node) => {
+            const frag = document.createDocumentFragment();
+            while (node.firstChild) frag.appendChild(node.firstChild);
+            node.replaceWith(frag);
+          });
+        });
+      });
+
+      // ── Expand toggle ─
+      function toggleExpand(id, scrollTo) {
+        const row = document.getElementById(`expand-${id}`);
+        const chev = document.getElementById(`chev-${id}`);
+        if (!row) return;
+        const open = !row.classList.contains("hidden");
+        if (open) {
+          row.classList.add("hidden");
+          if (chev) chev.textContent = "▸";
+        } else {
+          row.classList.remove("hidden");
+          if (chev) chev.textContent = "▾";
+          if (scrollTo) row.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+      }
+
+      // ── Live month picker overlay ─
+      function openLive(kind) {
+        const id = "liveMonthpicker";
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.classList.remove("hidden");
+      }
+      function closeLive(kind) {
+        const el = document.getElementById("liveMonthpicker");
+        if (!el) return;
+        el.classList.add("hidden");
+      }
+      document.addEventListener("keydown", (e) => {
+        if (e.key !== "Escape") return;
+        const el = document.getElementById("liveMonthpicker");
+        if (el && !el.classList.contains("hidden")) closeLive("monthpicker");
+      });
+    </script>
+  </body>
+</html>

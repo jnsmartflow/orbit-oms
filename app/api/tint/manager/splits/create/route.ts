@@ -77,7 +77,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   const managerId = parseInt(session!.user.id, 10);
 
   // ── STEP 1: Load and validate the order ────────────────────────────────────
-  const order = await prisma.orders.findUnique({ where: { id: orderId } });
+  const order = await prisma.orders.findFirst({ where: { id: orderId, isRemoved: false } });
   if (!order) {
     return NextResponse.json({ error: "Order not found" }, { status: 404 });
   }

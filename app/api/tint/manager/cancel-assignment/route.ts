@@ -25,7 +25,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   try {
     await prisma.$transaction(async (tx) => {
       // 1. Verify order exists and is in tint_assigned stage
-      const order = await tx.orders.findUnique({ where: { id: orderId } });
+      const order = await tx.orders.findFirst({ where: { id: orderId, isRemoved: false } });
       if (!order) throw new Error("Order not found");
       if (order.workflowStage !== "tint_assigned") {
         throw new Error("Order is not in assigned stage");

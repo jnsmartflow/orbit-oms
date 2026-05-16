@@ -31,8 +31,8 @@ export async function getSlotNameAtEndOfDay(
   if (log) return log.toStage;
 
   // Fall back to originalSlotId
-  const order = await prisma.orders.findUnique({
-    where: { id: orderId },
+  const order = await prisma.orders.findFirst({
+    where: { id: orderId, isRemoved: false },
     select: {
       originalSlot: { select: { name: true } },
     },
@@ -82,7 +82,7 @@ export async function getSlotNamesAtEndOfDay(
 
   if (missingIds.length > 0) {
     const orders = await prisma.orders.findMany({
-      where: { id: { in: missingIds } },
+      where: { id: { in: missingIds }, isRemoved: false },
       select: {
         id: true,
         originalSlot: { select: { name: true } },

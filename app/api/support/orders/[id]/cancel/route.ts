@@ -33,8 +33,8 @@ export async function POST(
   const reason = body.reason.trim();
   const logNote = `Cancelled: ${reason}${body.note ? " — " + body.note : ""}`;
 
-  const order = await prisma.orders.findUnique({
-    where: { id: orderId },
+  const order = await prisma.orders.findFirst({
+    where: { id: orderId, isRemoved: false },
     include: {
       splits: { where: { status: { not: "cancelled" } } },
     },

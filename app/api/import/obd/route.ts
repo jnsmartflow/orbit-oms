@@ -507,9 +507,11 @@ async function handlePreview(req: Request, session: Session): Promise<NextRespon
   const allCustomerCodes = headerRows.map((r) => toStr(r["ShipToCustomerId"])).filter(Boolean);
 
   const [existingOrders, existingCustomers] = await Promise.all([
+    // NO isRemoved filter — must see soft-removed orders so we can mark a
+    // re-imported OBD as "previously_removed" and skip it (no auto-restore).
     prisma.orders.findMany({
       where:  { obdNumber: { in: allObdNumbers } },
-      select: { obdNumber: true },
+      select: { obdNumber: true, isRemoved: true },
     }),
     prisma.delivery_point_master.findMany({
       where:  { customerCode: { in: allCustomerCodes } },
@@ -518,6 +520,7 @@ async function handlePreview(req: Request, session: Session): Promise<NextRespon
   ]);
 
   const existingObdSet  = new Set(existingOrders.map((o) => o.obdNumber));
+  const removedObdSet   = new Set(existingOrders.filter((o) => o.isRemoved).map((o) => o.obdNumber));
   const existingCustSet = new Set(existingCustomers.map((c) => c.customerCode));
 
   // ── STEP C — Validate line items (1 bulk query, skipped if no line file) ──
@@ -588,7 +591,7 @@ async function handlePreview(req: Request, session: Session): Promise<NextRespon
     emailDate:          Date | null;
     totalUnitQty:       number | null;
     grossWeight:        number | null;
-    rowStatus:          "valid" | "duplicate" | "error" | "warning";
+    rowStatus:          "valid" | "duplicate" | "previously_removed" | "error" | "warning";
     rowError:           string | null;
     lines:              LineInterim[];
   }
@@ -606,10 +609,14 @@ async function handlePreview(req: Request, session: Session): Promise<NextRespon
     const emailTime         = parseTimeCell(hr["OBD Email Time"]);
     const invoiceDate       = parseDateCell(hr["InvoiceDate"]);
 
-    let rowStatus: "valid" | "duplicate" | "error" | "warning" = "valid";
+    let rowStatus: "valid" | "duplicate" | "previously_removed" | "error" | "warning" = "valid";
     let rowError:  string | null = null;
 
-    if (existingObdSet.has(obdNumber)) {
+    if (removedObdSet.has(obdNumber)) {
+      // Re-import of an OBD that was previously soft-removed by TM/Admin.
+      // Skip silently — do NOT auto-restore. Admin must explicitly restore.
+      rowStatus = "previously_removed";
+    } else if (existingObdSet.has(obdNumber)) {
       rowStatus = "duplicate";
     } else if (shipToId && !existingCustSet.has(shipToId)) {
       rowStatus = "warning";
@@ -788,10 +795,11 @@ async function handlePreview(req: Request, session: Session): Promise<NextRespon
   });
 
   // ── STEP F — Build summary counts and return ─────────────────────────────
-  const validObds     = previewObds.filter((o) => o.rowStatus === "valid").length;
-  const duplicateObds = previewObds.filter((o) => o.rowStatus === "duplicate").length;
-  const errorObds     = previewObds.filter((o) => o.rowStatus === "error").length;
-  const warningObds   = previewObds.filter((o) => o.rowStatus === "warning").length;
+  const validObds              = previewObds.filter((o) => o.rowStatus === "valid").length;
+  const duplicateObds          = previewObds.filter((o) => o.rowStatus === "duplicate").length;
+  const previouslyRemovedObds  = previewObds.filter((o) => o.rowStatus === "previously_removed").length;
+  const errorObds              = previewObds.filter((o) => o.rowStatus === "error").length;
+  const warningObds            = previewObds.filter((o) => o.rowStatus === "warning").length;
   const allLines      = previewObds.flatMap((o) => o.lines);
   const validLines    = allLines.filter((l) => l.rowStatus === "valid").length;
   const errorLines    = allLines.filter((l) => l.rowStatus === "error").length;
@@ -800,12 +808,13 @@ async function handlePreview(req: Request, session: Session): Promise<NextRespon
     batchId,
     batchRef,
     summary: {
-      totalObds:     previewObds.length,
+      totalObds:             previewObds.length,
       validObds,
       duplicateObds,
+      previouslyRemovedObds,
       errorObds,
       warningObds,
-      totalLines:    allLines.length,
+      totalLines:            allLines.length,
       validLines,
       errorLines,
     },
@@ -845,7 +854,9 @@ async function handleConfirm(req: Request, session: Session): Promise<NextRespon
     where: {
       id:        { in: confirmedObdIds },
       batchId,
-      rowStatus: { not: "duplicate" },
+      // Whitelist insertable rowStatuses. Excludes "duplicate" and the new
+      // "previously_removed" (re-imported soft-removed OBDs — admin restore required).
+      rowStatus: { in: ["valid", "warning"] },
     },
     include: {
       rawLineItems: {
@@ -2284,9 +2295,11 @@ async function handleAutoImport(req: Request): Promise<NextResponse> {
   const allCustomerCodes = headerRows.map((r) => toStr(r["ShipToCustomerId"])).filter(Boolean);
 
   const [existingOrders, existingCustomers] = await Promise.all([
+    // NO isRemoved filter — must see soft-removed orders so we can mark a
+    // re-imported OBD as "previously_removed" and skip it (no auto-restore).
     prisma.orders.findMany({
       where:  { obdNumber: { in: allObdNumbers } },
-      select: { obdNumber: true },
+      select: { obdNumber: true, isRemoved: true },
     }),
     prisma.delivery_point_master.findMany({
       where:  { customerCode: { in: allCustomerCodes } },
@@ -2295,6 +2308,7 @@ async function handleAutoImport(req: Request): Promise<NextResponse> {
   ]);
 
   const existingObdSet  = new Set(existingOrders.map((o) => o.obdNumber));
+  const removedObdSet   = new Set(existingOrders.filter((o) => o.isRemoved).map((o) => o.obdNumber));
   const existingCustSet = new Set(existingCustomers.map((c) => c.customerCode));
 
   // ── STEP C — Validate line items (1 bulk query) ───────────────────────────
@@ -2360,7 +2374,7 @@ async function handleAutoImport(req: Request): Promise<NextResponse> {
     emailDate:          Date | null;
     totalUnitQty:       number | null;
     grossWeight:        number | null;
-    rowStatus:          "valid" | "duplicate" | "error" | "warning";
+    rowStatus:          "valid" | "duplicate" | "previously_removed" | "error" | "warning";
     rowError:           string | null;
     lines:              AutoLineInterim[];
   }
@@ -2381,7 +2395,7 @@ async function handleAutoImport(req: Request): Promise<NextResponse> {
     const emailTime          = parseTimeCell(hr["OBD Email Time"]);
     const invoiceDate        = parseDateCell(hr["InvoiceDate"]);
 
-    let rowStatus: "valid" | "duplicate" | "error" | "warning" = "valid";
+    let rowStatus: "valid" | "duplicate" | "previously_removed" | "error" | "warning" = "valid";
     let rowError:  string | null = null;
 
     if (shipToId && !existingCustSet.has(shipToId)) {
@@ -2563,7 +2577,9 @@ async function handleAutoImport(req: Request): Promise<NextResponse> {
     where: {
       id:        { in: validSummaryIds },
       batchId,
-      rowStatus: { not: "duplicate" },
+      // Whitelist insertable rowStatuses. Excludes "duplicate" and the new
+      // "previously_removed" (re-imported soft-removed OBDs — admin restore required).
+      rowStatus: { in: ["valid", "warning"] },
     },
     include: {
       rawLineItems: {

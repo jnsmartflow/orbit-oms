@@ -70,6 +70,13 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const orders = await prisma.orders.findMany({
       where: {
         obdNumber: { in: obdNumbers },
+        // Refined Phase 2c filter (Phase 2e): show live orders OR removed
+        // orders whose challan is voided (the audit surface for Chandresh).
+        // Removed orders without a voided challan stay hidden.
+        OR: [
+          { isRemoved: false },
+          { isRemoved: true, challan: { isVoided: true } },
+        ],
         ...(orderDateFilter && { orderDateTime: orderDateFilter }),
         ...(routeParam && {
           customer: {
@@ -98,7 +105,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
           },
         },
         challan: {
-          select: { challanNumber: true },
+          select: { challanNumber: true, isVoided: true },
         },
       },
       orderBy: { orderDateTime: "asc" },
@@ -121,6 +128,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         route:              routeName,
         slot:               o.dispatchSlot          ?? null,
         challanNumber:      o.challan?.challanNumber ?? null,
+        // Phase 2e — drives the left-panel "Voided" pill + faded row styling.
+        isVoided:           o.challan?.isVoided     ?? false,
       };
     });
 

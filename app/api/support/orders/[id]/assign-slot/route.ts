@@ -29,8 +29,8 @@ export async function POST(
     return NextResponse.json({ error: "Slot not found" }, { status: 404 });
   }
 
-  const order = await prisma.orders.findUnique({
-    where: { id: orderId },
+  const order = await prisma.orders.findFirst({
+    where: { id: orderId, isRemoved: false },
     include: { slot: { select: { name: true } } },
   });
   if (!order) {

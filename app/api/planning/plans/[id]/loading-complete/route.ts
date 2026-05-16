@@ -21,7 +21,11 @@ export async function POST(
   const plan = await prisma.dispatch_plans.findUnique({
     where: { id: planId },
     include: {
+      // Defense-in-depth: skip dispatch_plan_orders rows whose parent order
+      // was soft-removed so the loop below doesn't issue per-row findFirst
+      // calls for them. Per-row check below also enforces isRemoved.
       orders: {
+        where:  { order: { isRemoved: false } },
         select: { orderId: true },
       },
     },
@@ -37,8 +41,8 @@ export async function POST(
 
   // Mark all orders in this plan as dispatched
   for (const planOrder of plan.orders) {
-    const order = await prisma.orders.findUnique({
-      where: { id: planOrder.orderId },
+    const order = await prisma.orders.findFirst({
+      where: { id: planOrder.orderId, isRemoved: false },
       include: {
         splits: {
           where: { status: { not: "cancelled" } },

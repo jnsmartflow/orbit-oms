@@ -70,7 +70,8 @@ export async function GET(req: Request): Promise<NextResponse> {
   }
 
   // ── Build where clause ───────────────────────────────────────────────────
-  const where: Prisma.ordersWhereInput = {};
+  // isRemoved: false excludes soft-removed orders from the support board.
+  const where: Prisma.ordersWhereInput = { isRemoved: false };
 
   if (section === "slot") {
     if (!isHistoryView) {

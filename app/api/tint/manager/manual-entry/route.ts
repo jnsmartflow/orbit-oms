@@ -104,8 +104,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  const order = await prisma.orders.findUnique({
-    where: { id: orderId },
+  const order = await prisma.orders.findFirst({
+    where: { id: orderId, isRemoved: false },
   });
 
   if (!order) {
@@ -241,8 +241,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     // Wrapped in try/catch: failure here does NOT roll back the manual pull.
     // Steps A-E already succeeded; a missing challan can be created later.
     try {
-      const existingChallan = await prisma.delivery_challans.findUnique({
-        where: { orderId: order.id },
+      // isVoided: false — a voided challan shouldn't block recreation. Manual
+       // entry flow may legitimately re-issue a challan after a void.
+      const existingChallan = await prisma.delivery_challans.findFirst({
+        where: { orderId: order.id, isVoided: false },
         select: { id: true },
       });
 

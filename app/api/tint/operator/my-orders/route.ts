@@ -29,10 +29,13 @@ export async function GET(): Promise<NextResponse> {
     prisma.orders.findMany({
       where: {
         workflowStage: { in: ["tint_assigned", "tinting_in_progress"] },
+        isRemoved:     false,
         tintAssignments: {
           some: {
             ...(isOpsOrAdmin ? {} : { assignedToId: userId }),
-            status: { not: "done" },
+            // Phase 3e — exclude skipped assignments. Skipped rows are kept
+            // for audit but must not surface as live work in the operator queue.
+            status: { notIn: ["done", "skipped"] },
           },
         },
       },
@@ -43,8 +46,37 @@ export async function GET(): Promise<NextResponse> {
           },
         },
         tintAssignments: {
-          where:   isOpsOrAdmin ? { status: { not: "done" } } : { assignedToId: userId },
-          select:  { id: true, status: true, startedAt: true, tiSubmitted: true, operatorSequence: true },
+          where:   isOpsOrAdmin
+            ? { status: { notIn: ["done", "skipped"] } }
+            : { assignedToId: userId, status: { notIn: ["done", "skipped"] } },
+          select:  {
+            id:               true,
+            status:           true,
+            startedAt:        true,
+            tiSubmitted:      true,
+            operatorSequence: true,
+            // Phase 4c — surface pause-related fields for the 3-section queue.
+            // currentProgress is jsonb (passed through as-is).
+            pauseCount:       true,
+            lastPausedAt:     true,
+            currentProgress:  true,
+            // Phase 4f — needed by the MarkDoneConfirmModal "Total tinting time"
+            // line. Finalised on done as the canonical total minutes.
+            accumulatedMinutes: true,
+            // Phase 4d — latest open pause event (resumedAt: null). At most
+            // one row exists per assignment in this state. Explicit select
+            // omits the BigInt id, so no serialization risk.
+            pauseEvents: {
+              where:   { resumedAt: null },
+              orderBy: { pausedAt: "desc" },
+              take:    1,
+              select: {
+                pausedAt:    true,
+                pauseReason: true,
+                pauseRemark: true,
+              },
+            },
+          },
           orderBy: { createdAt: "desc" },
           take:    1,
         },
@@ -65,6 +97,7 @@ export async function GET(): Promise<NextResponse> {
       where: {
         ...(isOpsOrAdmin ? {} : { assignedToId: userId }),
         status: { in: ["tint_assigned", "tinting_in_progress"] },
+        order:  { isRemoved: false },
       },
       include: {
         order: {
@@ -100,6 +133,7 @@ export async function GET(): Promise<NextResponse> {
         ...(isOpsOrAdmin ? {} : { assignedToId: userId }),
         status:       "tinting_done",
         completedAt:  { gte: startOfToday },
+        order:        { isRemoved: false },
       },
       include: {
         order: {
@@ -117,6 +151,7 @@ export async function GET(): Promise<NextResponse> {
         ...(isOpsOrAdmin ? {} : { assignedToId: userId }),
         status:       { in: ["tinting_done", "pending_support", "dispatch_confirmation", "dispatched"] },
         completedAt:  { gte: startOfToday },
+        order:        { isRemoved: false },
       },
       include: {
         order: {
@@ -232,6 +267,15 @@ export async function GET(): Promise<NextResponse> {
     deliveryTypeName:   (o.customer as any)?.area?.deliveryType?.name ?? null,
     tiCoveredLines:     coverageMap.get(`order:${o.id}`)?.size ?? 0,
     totalTintingLines:  (lineItemsByObd[o.obdNumber] ?? []).filter(li => li.isTinting).length,
+    // Phase 4d — flatten the latest open pause event onto each assignment.
+    // Destructure-and-omit the pauseEvents array itself so the client
+    // payload stays narrow (and matches the OperatorOrder.tintAssignments
+    // shape declared in tint-operator-content.tsx).
+    tintAssignments: o.tintAssignments.map(({ pauseEvents, ...t }) => ({
+      ...t,
+      lastPauseReason: pauseEvents[0]?.pauseReason ?? null,
+      lastPauseRemark: pauseEvents[0]?.pauseRemark ?? null,
+    })),
   }));
 
   const splitsWithCustomer = assignedSplits.map(s => ({

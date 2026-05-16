@@ -28,8 +28,8 @@ export async function POST(req: Request): Promise<NextResponse> {
   let skipped = 0;
 
   for (const orderId of orderIds) {
-    const order = await prisma.orders.findUnique({
-      where: { id: orderId },
+    const order = await prisma.orders.findFirst({
+      where: { id: orderId, isRemoved: false },
       include: {
         splits: { where: { status: { not: "cancelled" } } },
       },

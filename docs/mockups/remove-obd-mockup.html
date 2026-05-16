@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Remove OBD — Mockup</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; background: #f9fafb; color: #111827; }
+  .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+  .section { max-width: 1280px; margin: 0 auto; padding: 32px 24px; }
+  .section h2 { font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #6b7280; margin-bottom: 12px; }
+  .surface-label { font-size: 11px; color: #9ca3af; margin-bottom: 8px; }
+
+  /* Kanban card */
+  .kcard { background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px 12px; position: relative; }
+  .kcard:hover { border-color: #d1d5db; }
+  .obd-mono { font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #374151; font-weight: 500; }
+  .age-pill { display: inline-flex; align-items: center; padding: 1px 6px; background: #fef3c7; color: #92400e; border-radius: 4px; font-size: 10px; font-weight: 500; }
+  .dot { width: 6px; height: 6px; border-radius: 999px; display: inline-block; }
+
+  /* 3-dot button on card */
+  .kebab { position: absolute; top: 8px; right: 8px; width: 22px; height: 22px; border-radius: 4px; display: inline-flex; align-items: center; justify-content: center; color: #9ca3af; }
+  .kebab:hover { background: #f3f4f6; color: #4b5563; }
+
+  /* Menu popover */
+  .menu { position: absolute; top: 32px; right: 8px; background: white; border: 1px solid #e5e7eb; border-radius: 8px; box-shadow: 0 10px 25px -10px rgba(0,0,0,0.15); padding: 4px; width: 180px; z-index: 10; }
+  .menu-item { display: flex; align-items: center; gap: 8px; padding: 7px 9px; font-size: 12px; color: #374151; border-radius: 4px; cursor: pointer; }
+  .menu-item:hover { background: #f9fafb; }
+  .menu-item.danger { color: #b91c1c; }
+  .menu-item.danger:hover { background: #fef2f2; }
+
+  /* Fixed table — TM Table view */
+  .tm-table { width: 100%; border-collapse: collapse; table-layout: fixed; background: white; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; }
+  .tm-table thead th { font-size: 10px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; color: #9ca3af; height: 32px; background: #f9fafb; border-bottom: 1px solid #ebebeb; text-align: left; padding-left: 14px; padding-right: 14px; }
+  .tm-table tbody td { font-size: 11px; height: 36px; padding-left: 14px; padding-right: 14px; border-bottom: 1px solid #f0f0f0; color: #4b5563; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tm-table tbody tr:hover { background: #f9fafb; }
+  .tm-table tbody tr:first-child td { border-top: 4px solid transparent; }
+  .tm-table tbody tr:last-child td { border-bottom: 4px solid transparent; }
+  .tm-table td.center, .tm-table th.center { text-align: center; padding-left: 10px; padding-right: 4px; }
+  .tm-table td.right, .tm-table th.right { text-align: center; padding-right: 12px; }
+  .primary { color: #111827; font-weight: 500; }
+  .muted { color: #9ca3af; }
+
+  /* Modal */
+  .scrim { position: fixed; inset: 0; background: rgba(0,0,0,0.40); display: flex; align-items: center; justify-content: center; z-index: 50; }
+  .modal { width: 460px; background: white; border-radius: 12px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); padding: 22px; }
+  .modal h3 { font-size: 16px; font-weight: 600; color: #111827; }
+  .field-label { font-size: 11px; font-weight: 500; color: #6b7280; text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 6px; display: block; }
+  .field { width: 100%; height: 38px; padding: 0 12px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 13px; color: #111827; background: white; }
+  .field:focus { outline: none; border-color: #14b8a6; box-shadow: 0 0 0 3px rgba(20,184,166,0.10); }
+  .field-textarea { width: 100%; min-height: 76px; padding: 9px 12px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 13px; color: #111827; resize: vertical; font-family: inherit; }
+  .field-textarea:focus { outline: none; border-color: #14b8a6; box-shadow: 0 0 0 3px rgba(20,184,166,0.10); }
+  .warn-box { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 10px 12px; font-size: 12px; color: #991b1b; display: flex; gap: 9px; align-items: flex-start; }
+  .btn-cancel { height: 36px; padding: 0 14px; background: white; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 13px; color: #4b5563; }
+  .btn-cancel:hover { background: #f9fafb; }
+  .btn-danger { height: 36px; padding: 0 14px; background: #111827; color: white; border-radius: 8px; font-size: 13px; font-weight: 500; }
+  .btn-danger:hover { background: #1f2937; }
+  .btn-danger:disabled { background: #d1d5db; cursor: not-allowed; }
+  .char-hint { font-size: 11px; color: #9ca3af; margin-top: 4px; }
+  .req { color: #dc2626; margin-left: 2px; }
+</style>
+</head>
+<body>
+
+<div class="section">
+  <div style="display: flex; align-items: baseline; gap: 16px; margin-bottom: 8px;">
+    <h1 style="font-size: 20px; font-weight: 600;">Remove OBD — feature mockup</h1>
+    <span style="font-size: 12px; color: #6b7280;">3 surfaces · TM only · pending stage only</span>
+  </div>
+  <p style="font-size: 13px; color: #6b7280; max-width: 720px; margin-bottom: 28px;">
+    Surfaces shown: (1) Kanban card 3-dot menu, (2) Table view row 3-dot menu (primary), (3) Remove confirmation modal.
+  </p>
+</div>
+
+<!-- ============ SURFACE 1 — KANBAN CARD with 3-dot menu open ============ -->
+<div class="section">
+  <h2>1 · Kanban card — 3-dot menu open</h2>
+  <p class="surface-label">Shown when card is in <span class="mono">Pending</span> column. 3-dot icon appears top-right. Menu opens on click. "Remove OBD" only appears for users with TM canDelete or Admin role.</p>
+
+  <div style="display: grid; grid-template-columns: 280px 280px; gap: 16px;">
+    <!-- Card with menu OPEN -->
+    <div class="kcard" style="height: 132px;">
+      <button class="kebab" title="More">
+        <!-- 3-dot vertical -->
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
+      </button>
+
+      <div style="display: flex; align-items: center; gap: 8px; padding-right: 24px;">
+        <span class="obd-mono">8094567890</span>
+        <span class="muted" style="font-size: 11px;">·</span>
+        <span style="font-size: 11px; color: #6b7280;">15 May, 09:42</span>
+        <span class="age-pill">2d</span>
+      </div>
+
+      <div style="margin-top: 8px;">
+        <div style="font-size: 12.5px; font-weight: 600; color: #111827;">Shree Rang Sarovar</div>
+        <div style="font-size: 11px; color: #6b7280; margin-top: 1px;">Surat · Retail Offtake</div>
+      </div>
+
+      <div style="margin-top: 10px; display: flex; align-items: center; gap: 10px;">
+        <span style="font-size: 11px; color: #6b7280;">P3</span>
+        <span class="muted" style="font-size: 11px;">·</span>
+        <span style="font-size: 11px; color: #6b7280;">6 art</span>
+        <span class="muted" style="font-size: 11px;">·</span>
+        <span style="font-size: 11px; color: #6b7280;">42L</span>
+      </div>
+
+      <!-- Open menu -->
+      <div class="menu">
+        <div class="menu-item">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5h6m-3-2v4M5 9h14l-1 11a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 9z"/></svg>
+          Re-assign…
+        </div>
+        <div class="menu-item">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l3 2"/></svg>
+          View history
+        </div>
+        <div style="height: 1px; background: #f3f4f6; margin: 4px 0;"></div>
+        <div class="menu-item danger">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M10 11v6M14 11v6"/></svg>
+          Remove OBD…
+        </div>
+      </div>
+    </div>
+
+    <!-- Reference: normal card (menu closed) -->
+    <div class="kcard" style="height: 132px; opacity: 0.85;">
+      <button class="kebab" title="More">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
+      </button>
+      <div style="display: flex; align-items: center; gap: 8px; padding-right: 24px;">
+        <span class="obd-mono">8094567891</span>
+        <span class="muted" style="font-size: 11px;">·</span>
+        <span style="font-size: 11px; color: #6b7280;">15 May, 10:02</span>
+      </div>
+      <div style="margin-top: 8px;">
+        <div style="font-size: 12.5px; font-weight: 600; color: #111827;">Asopalav Decor</div>
+        <div style="font-size: 11px; color: #6b7280; margin-top: 1px;">Athwa · Decorative Projects</div>
+      </div>
+      <div style="margin-top: 10px; display: flex; align-items: center; gap: 10px;">
+        <span style="font-size: 11px; color: #6b7280;">P3</span>
+        <span class="muted" style="font-size: 11px;">·</span>
+        <span style="font-size: 11px; color: #6b7280;">3 art</span>
+        <span class="muted" style="font-size: 11px;">·</span>
+        <span style="font-size: 11px; color: #6b7280;">28L</span>
+      </div>
+    </div>
+  </div>
+
+  <p style="font-size: 12px; color: #6b7280; margin-top: 14px; max-width: 760px;">
+    <strong>Spec notes:</strong> 3-dot only visible if the user has permission to use any menu item. "Remove OBD…" entry only shown for cards where <span class="mono">workflowStage = 'pending_tint_assignment'</span>. Hidden on Assigned, In Progress, Completed cards (the API blocks it too — UI matches).
+  </p>
+</div>
+
+<!-- ============ SURFACE 2 — TABLE VIEW with 3-dot menu open on a row ============ -->
+<div class="section">
+  <h2>2 · Table view — row 3-dot menu (primary use)</h2>
+  <p class="surface-label">Chandresh's primary view. 3-dot on the rightmost <span class="mono">ACTIONS</span> column. Same menu structure as Kanban. Column widths: 4/13/10/18/7/9/6/15/10/8.</p>
+
+  <table class="tm-table">
+    <colgroup>
+      <col style="width:4%"><col style="width:13%"><col style="width:10%"><col style="width:18%">
+      <col style="width:7%"><col style="width:9%"><col style="width:6%"><col style="width:15%">
+      <col style="width:10%"><col style="width:8%">
+    </colgroup>
+    <thead>
+      <tr>
+        <th class="center">#</th>
+        <th>OBD</th>
+        <th>Date</th>
+        <th>Customer / Site</th>
+        <th>SMU</th>
+        <th>Priority</th>
+        <th>Art</th>
+        <th>Operator</th>
+        <th>Stage</th>
+        <th class="right">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="center muted">1</td>
+        <td class="mono primary">8094567890</td>
+        <td>15 May 09:42</td>
+        <td class="primary">Shree Rang Sarovar</td>
+        <td>Retail</td>
+        <td>P3</td>
+        <td>6</td>
+        <td class="muted">—</td>
+        <td><span style="display:inline-flex; align-items:center; gap:5px; font-size:11px; color:#6b7280;"><span class="dot" style="background:#9ca3af;"></span>Pending</span></td>
+        <td class="right" style="position: relative;">
+          <button class="kebab" style="position: static;" title="More">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
+          </button>
+          <!-- popover -->
+          <div class="menu" style="top: 32px; right: 12px; text-align: left;">
+            <div class="menu-item">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5h6m-3-2v4M5 9h14l-1 11a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 9z"/></svg>
+              Assign…
+            </div>
+            <div class="menu-item">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l3 2"/></svg>
+              View history
+            </div>
+            <div style="height: 1px; background: #f3f4f6; margin: 4px 0;"></div>
+            <div class="menu-item danger">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M10 11v6M14 11v6"/></svg>
+              Remove OBD…
+            </div>
+          </div>
+        </td>
+      </tr>
+      <tr>
+        <td class="center muted">2</td>
+        <td class="mono primary">8094567891</td>
+        <td>15 May 10:02</td>
+        <td class="primary">Asopalav Decor</td>
+        <td>Deco Proj</td>
+        <td>P3</td>
+        <td>3</td>
+        <td><span style="display:inline-flex; align-items:center; gap:6px;"><span style="width:18px; height:18px; border-radius:999px; background:#0d9488; color:white; font-size:9px; font-weight:600; display:inline-flex; align-items:center; justify-content:center;">DV</span><span style="font-size:11px; color:#4b5563;">Deepak</span></span></td>
+        <td><span style="display:inline-flex; align-items:center; gap:5px; font-size:11px; color:#6b7280;"><span class="dot" style="background:#0d9488;"></span>Assigned</span></td>
+        <td class="right">
+          <button class="kebab" style="position: static;" title="More">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
+          </button>
+        </td>
+      </tr>
+      <tr>
+        <td class="center muted">3</td>
+        <td class="mono primary">8094567892</td>
+        <td>15 May 10:14</td>
+        <td class="primary">Patel Construction</td>
+        <td>Retail</td>
+        <td>P2</td>
+        <td>4</td>
+        <td><span style="display:inline-flex; align-items:center; gap:6px;"><span style="width:18px; height:18px; border-radius:999px; background:#0d9488; color:white; font-size:9px; font-weight:600; display:inline-flex; align-items:center; justify-content:center;">CV</span><span style="font-size:11px; color:#4b5563;">Chandrasing</span></span></td>
+        <td><span style="display:inline-flex; align-items:center; gap:5px; font-size:11px; color:#92400e;"><span class="dot" style="background:#f59e0b;"></span>In Progress</span></td>
+        <td class="right">
+          <button class="kebab" style="position: static;" title="More">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
+          </button>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p style="font-size: 12px; color: #6b7280; margin-top: 14px; max-width: 760px;">
+    <strong>Spec notes:</strong> On row 2 (Assigned) and row 3 (In Progress), "Remove OBD…" is <em>not</em> in the menu — only "Re-assign…" / "View history". The API also enforces stage check. UI hides the option proactively.
+  </p>
+</div>
+
+<!-- ============ SURFACE 3 — REMOVE MODAL ============ -->
+<div class="section">
+  <h2>3 · Remove OBD modal</h2>
+  <p class="surface-label">Opens after click. Reason required (dropdown). Remark required (free-text, 1–500 chars). Challan-void warning shown only if the OBD has a linked active challan.</p>
+
+  <div style="position: relative; height: 480px; background: #e5e7eb; border-radius: 12px; overflow: hidden;">
+    <!-- Dimmed page background -->
+    <div style="position:absolute; inset:0; background: rgba(0,0,0,0.40);"></div>
+
+    <!-- Modal -->
+    <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);">
+      <div class="modal">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px;">
+          <h3>Remove OBD</h3>
+          <button style="width: 28px; height: 28px; border-radius: 6px; color: #9ca3af; display: inline-flex; align-items: center; justify-content: center;" title="Close">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg>
+          </button>
+        </div>
+
+        <!-- OBD summary -->
+        <div style="background: #f9fafb; border: 1px solid #f0f0f0; border-radius: 8px; padding: 10px 12px; margin-bottom: 14px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="mono primary" style="font-size: 12px;">8094567890</span>
+            <span class="muted" style="font-size: 11px;">·</span>
+            <span style="font-size: 11px; color: #6b7280;">15 May, 09:42</span>
+          </div>
+          <div style="font-size: 12px; color: #111827; margin-top: 4px; font-weight: 500;">Shree Rang Sarovar</div>
+          <div style="font-size: 11px; color: #6b7280; margin-top: 2px;">Surat · Retail Offtake · 6 articles · 42L</div>
+        </div>
+
+        <!-- Reason -->
+        <div style="margin-bottom: 12px;">
+          <label class="field-label">Reason<span class="req">*</span></label>
+          <select class="field">
+            <option value="" disabled selected>Select a reason…</option>
+            <option>Customer cancelled</option>
+            <option>Wrong order</option>
+          </select>
+        </div>
+
+        <!-- Remark -->
+        <div style="margin-bottom: 12px;">
+          <label class="field-label">Remark<span class="req">*</span></label>
+          <textarea class="field-textarea" placeholder="Write a short note explaining why…"></textarea>
+          <div class="char-hint">0 / 500</div>
+        </div>
+
+        <!-- Warning -->
+        <div class="warn-box" style="margin-bottom: 16px;">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink: 0; margin-top: 1px;"><path d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
+          <div>
+            <div style="font-weight: 500; margin-bottom: 2px;">Linked challan will be voided.</div>
+            <div style="color: #b91c1c;">Challan <span class="mono">CHN-2026-00342</span> will be marked voided. Print &amp; PDF disabled. Number stays reserved.</div>
+          </div>
+        </div>
+
+        <!-- Buttons -->
+        <div style="display: flex; gap: 8px; justify-content: flex-end;">
+          <button class="btn-cancel">Cancel</button>
+          <button class="btn-danger" disabled>Remove OBD</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p style="font-size: 12px; color: #6b7280; margin-top: 14px; max-width: 760px;">
+    <strong>Spec notes:</strong>
+  </p>
+  <ul style="font-size: 12px; color: #6b7280; max-width: 760px; padding-left: 20px; line-height: 1.7;">
+    <li>Confirm button uses <span class="mono">bg-gray-900</span> per <strong>UI §13 modal pattern</strong> (modal CTAs are never teal). Disabled until both fields valid.</li>
+    <li>Reason dropdown values: <span class="mono">CUSTOMER_CANCELLED</span> / <span class="mono">WRONG_ORDER</span> (matches the 2 enum values locked in the design doc).</li>
+    <li>Remark mandatory, 1–500 chars (trimmed). Char counter updates live; turns amber at 450+, red at 500.</li>
+    <li>Red warning box only appears when the OBD has a linked active challan. If no challan, the box is hidden — modal is shorter.</li>
+    <li>After submit: toast "OBD 8094567890 removed", board refreshes, card disappears from the column.</li>
+    <li>On error from API (409 stage mismatch / 403 permission / network): toast with the API error message, modal stays open, fields preserved.</li>
+  </ul>
+</div>
+
+</body>
+</html>

@@ -7,7 +7,7 @@ import {
   AlertCircle, Layers,
   Eye, Plus, MoreHorizontal, UserPlus, RefreshCw, X, Scissors,
   Truck, ChevronDown, ChevronUp, LayoutGrid, Table as TableIcon,
-  RotateCcw,
+  RotateCcw, Trash2, History, SkipForward, Pause,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -16,6 +16,10 @@ import { SplitBuilderModal } from "@/components/tint/split-builder-modal";
 import type { SplitBuilderModalProps } from "@/components/tint/split-builder-modal";
 import { ManualTintEntryModal } from "@/components/tint/manual-tint-entry-modal";
 import { ManualTintRevertModal } from "@/components/tint/manual-tint-revert-modal";
+import { RemoveObdModal } from "@/components/tint/RemoveObdModal";
+import { SkipHistoryModal } from "@/components/tint/SkipHistoryModal";
+import { PauseHistoryModal } from "@/components/tint/PauseHistoryModal";
+import { humaniseReason } from "@/lib/tint/pause-reasons";
 import { TintTableView } from "@/components/tint/tint-table-view";
 import { CustomerMissingSheet } from "@/components/shared/customer-missing-sheet";
 import { OrderDetailPanel } from "@/components/shared/order-detail-panel";
@@ -33,6 +37,10 @@ interface TintAssignmentInfo {
   startedAt:   string | null;
   completedAt: string | null;
   updatedAt:   string;
+  // Phase 4-smoke-2 — needed by the table's ElapsedBadge so paused +
+  // resumed cycles fold prior run deltas into the displayed total.
+  // Already pulled by /api/tint/manager/orders via implicit include.
+  accumulatedMinutes: number;
 }
 
 export interface TintOrder {
@@ -108,6 +116,31 @@ export interface TintOrder {
       };
     }[];
   }[];
+  // Linked delivery challan (Phase 2d.1) — null when no challan exists.
+  // Drives the Remove OBD modal's challan-void pre-warning.
+  challan?: { challanNumber: string; isVoided: boolean } | null;
+  // Phase 3d — skip summary. Present when the order has been skipped >=1 time.
+  // Wired by Phase 3e payload. Until then, this is undefined / null and the
+  // returned-card UI degrades cleanly to a normal Pending card.
+  skipSummary?: {
+    count:          number;
+    lastSkippedAt:  string;
+    lastSkippedBy:  string;
+    lastReason:     string;
+    lastTinterType: string | null;
+    lastColours:    string[];
+  } | null;
+  // Phase 4e — pause summary. Mirrors skipSummary. Non-null when the order
+  // has been paused >=1 time (currentlyPaused may still be false if the
+  // operator has since resumed every event).
+  pauseSummary?: {
+    count:                number;
+    currentlyPaused:      boolean;
+    lastPausedAt:         string;
+    lastPausedBy:         string;
+    lastReason:           string;
+    lastProgressSnapshot: { items?: Array<{ skuId: number; doneQty: number }> } | null;
+  } | null;
 }
 
 export interface SplitCard {
@@ -474,9 +507,17 @@ interface KanbanCardProps {
   onViewDetail:       () => void;
   onCustomerMissing?: () => void;
   onRequestRevert:    () => void;
+  /** When true, render "Remove OBD…" in the pending-stage 3-dot menu. */
+  canRemove:          boolean;
+  /** Fires when the user clicks "Remove OBD…" — parent opens the modal. */
+  onRequestRemove:    () => void;
+  /** Phase 3d — fires when the user opens skip history (pill / link / menu). */
+  onOpenSkipHistory:  () => void;
+  /** Phase 4e — fires when the user opens pause history (pill / link / menu). */
+  onOpenPauseHistory: () => void;
 }
 
-function KanbanCard({ order, stage, onAssign, onCreateSplit, onRefresh, onMoveUp, onMoveDown, onViewDetail, onCustomerMissing, onRequestRevert }: KanbanCardProps) {
+function KanbanCard({ order, stage, onAssign, onCreateSplit, onRefresh, onMoveUp, onMoveDown, onViewDetail, onCustomerMissing, onRequestRevert, canRemove, onRequestRemove, onOpenSkipHistory, onOpenPauseHistory }: KanbanCardProps) {
   const [menuOpen,     setMenuOpen]     = useState(false);
   const [popoverOpen,  setPopoverOpen]  = useState(false);
   const [popoverPos,   setPopoverPos]   = useState<{ top: number; right: number } | null>(null);
@@ -562,12 +603,23 @@ function KanbanCard({ order, stage, onAssign, onCreateSplit, onRefresh, onMoveUp
     }
   }
 
+  // Phase 3d — returned-state styling when the order has been skipped.
+  // skipSummary is wired by Phase 3e payload; until then it's null/undefined
+  // and the card renders normally.
+  const isReturned = !!(order.skipSummary && order.skipSummary.count >= 1);
+  // Phase 4e — paused-state styling. Independent of isReturned; the two
+  // layers coexist on a card that was skipped 1× then later paused. Left
+  // border stays a single 3px amber rule (same colour both layers use).
+  const isPausedCard  = !!(order.pauseSummary && order.pauseSummary.currentlyPaused);
+  const hasPauseAudit = !!(order.pauseSummary && order.pauseSummary.count >= 1);
+
   return (
     <>
     <div
       className={cn(
         "bg-white border border-gray-200 rounded-lg overflow-hidden cursor-pointer",
         "hover:border-gray-300 transition-all duration-150",
+        (isReturned || isPausedCard) && "border-l-[3px] border-l-amber-500",
       )}
     >
       <div className="px-3.5 pt-3 pb-3">
@@ -648,6 +700,41 @@ function KanbanCard({ order, stage, onAssign, onCreateSplit, onRefresh, onMoveUp
                   className="absolute right-0 top-8 z-50 bg-white border border-gray-200 rounded-xl shadow-lg py-1 min-w-[130px] max-w-[150px]"
                   onClick={(e) => e.stopPropagation()}
                 >
+                  {/* Phase 3d — View skip history. Stage-agnostic; gated on
+                      skipSummary present. Renders at top of menu with a
+                      divider below it when more items follow. */}
+                  {order.skipSummary && order.skipSummary.count >= 1 && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => { setMenuOpen(false); onOpenSkipHistory(); }}
+                        className="w-full flex items-center gap-2.5 px-3.5 py-2 text-[12px] text-gray-700 hover:bg-gray-50 transition-colors whitespace-nowrap"
+                      >
+                        <History size={12} className="text-gray-400 flex-shrink-0" />
+                        View skip history
+                      </button>
+                      <div className="mx-3 border-t border-gray-100" />
+                    </>
+                  )}
+
+                  {/* Phase 4e — View pause history. Same conditions as skip:
+                      stage-agnostic, gated on pauseSummary present (count >= 1).
+                      Historical pauses still deserve a view path even after
+                      every event was resumed (currentlyPaused === false). */}
+                  {hasPauseAudit && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => { setMenuOpen(false); onOpenPauseHistory(); }}
+                        className="w-full flex items-center gap-2.5 px-3.5 py-2 text-[12px] text-gray-700 hover:bg-gray-50 transition-colors whitespace-nowrap"
+                      >
+                        <History size={12} className="text-gray-400 flex-shrink-0" />
+                        View pause history
+                      </button>
+                      <div className="mx-3 border-t border-gray-100" />
+                    </>
+                  )}
+
                   {order.workflowStage === "pending_tint_assignment" && (
                     <>
                       {!hasSplits && (
@@ -681,6 +768,19 @@ function KanbanCard({ order, stage, onAssign, onCreateSplit, onRefresh, onMoveUp
                           >
                             <RotateCcw size={12} className="text-red-400 flex-shrink-0" />
                             Remove from Tint
+                          </button>
+                        </>
+                      )}
+                      {canRemove && (
+                        <>
+                          <div className="mx-3 border-t border-gray-100" />
+                          <button
+                            type="button"
+                            onClick={() => { setMenuOpen(false); onRequestRemove(); }}
+                            className="w-full flex items-center gap-2.5 px-3.5 py-2 text-[12px] text-red-600 hover:bg-red-50 transition-colors whitespace-nowrap"
+                          >
+                            <Trash2 size={12} className="text-red-400 flex-shrink-0" />
+                            Remove OBD…
                           </button>
                         </>
                       )}
@@ -756,6 +856,34 @@ function KanbanCard({ order, stage, onAssign, onCreateSplit, onRefresh, onMoveUp
           </div>
         </div>
 
+        {/* Phase 3d/4e — Status pill row. Renders Skipped + PAUSED pills
+            inline. A card that was skipped 1× then paused shows both. */}
+        {(isReturned || isPausedCard) && (
+          <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
+            {isReturned && order.skipSummary && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onOpenSkipHistory(); }}
+                className="inline-flex items-center bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-semibold uppercase tracking-wide px-1.5 py-[1px] rounded cursor-pointer hover:bg-amber-100"
+                title="View skip history"
+              >
+                Skipped {order.skipSummary.count}×
+              </button>
+            )}
+            {isPausedCard && order.pauseSummary && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onOpenPauseHistory(); }}
+                className="inline-flex items-center gap-1 bg-amber-700 text-white text-[10px] font-semibold uppercase tracking-wide px-1.5 py-[1px] rounded cursor-pointer hover:bg-amber-800"
+                title="View pause history"
+              >
+                <Pause size={9} fill="currentColor" />
+                Paused{order.pauseSummary.count > 1 ? ` ${order.pauseSummary.count}×` : ""}
+              </button>
+            )}
+          </div>
+        )}
+
         {/* 2. Customer name */}
         <div className="flex items-center gap-1.5 mb-1">
           <p className="text-[13.5px] font-bold text-gray-900 leading-snug truncate">{customerName}</p>
@@ -822,6 +950,97 @@ function KanbanCard({ order, stage, onAssign, onCreateSplit, onRefresh, onMoveUp
             </div>
           ))}
         </div>
+
+        {/* Phase 3d — Last skip summary + View full history link, only when returned. */}
+        {isReturned && order.skipSummary && (() => {
+          const s = order.skipSummary;
+          const reasonHuman =
+            s.lastReason === "TINTER_FINISHED"   ? "Tinter finished"   :
+            s.lastReason === "MACHINE_BREAKDOWN" ? "Machine breakdown" :
+            s.lastReason === "MATERIAL_SHORTAGE" ? "Material shortage" :
+            s.lastReason === "OTHER"             ? "Other"             :
+            s.lastReason;
+          const shortDate = (() => {
+            const d = new Date(s.lastSkippedAt);
+            if (isNaN(d.getTime())) return "—";
+            return d.toLocaleDateString("en-GB", {
+              day: "2-digit", month: "short", timeZone: "Asia/Kolkata",
+            }) + ", " + d.toLocaleTimeString("en-GB", {
+              hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata",
+            });
+          })();
+          // Belt-and-braces: colour-chip line only renders when BOTH tinterType
+          // is non-null AND colours array non-empty.
+          const showColours = s.lastTinterType !== null && s.lastColours.length > 0;
+          return (
+            <>
+              <div className="bg-amber-50 border border-amber-200 rounded-md px-2 py-1.5 mt-2">
+                <div className="text-[10.5px] font-semibold text-amber-800">
+                  Last skip · {shortDate}
+                </div>
+                <div className="text-[10.5px] text-amber-700">
+                  {s.lastSkippedBy} · {reasonHuman}
+                  {s.lastTinterType ? ` · ${s.lastTinterType}` : ""}
+                  {showColours ? ` · ${s.lastColours.join(", ")}` : ""}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onOpenSkipHistory(); }}
+                className="text-[10.5px] text-amber-700 underline hover:text-amber-900 mt-1 inline-block cursor-pointer"
+              >
+                View full history →
+              </button>
+            </>
+          );
+        })()}
+
+        {/* Phase 4e — Pause summary block. Coexists with the skip block above
+            (independent visual layer). Only renders for currently-paused
+            cards; historical-only audit is visible via kebab/PAUSED pill. */}
+        {isPausedCard && order.pauseSummary && (() => {
+          const p = order.pauseSummary;
+          const shortDate = (() => {
+            const d = new Date(p.lastPausedAt);
+            if (isNaN(d.getTime())) return "—";
+            return d.toLocaleDateString("en-GB", {
+              day: "2-digit", month: "short", timeZone: "Asia/Kolkata",
+            }) + ", " + d.toLocaleTimeString("en-GB", {
+              hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata",
+            });
+          })();
+          // Total assigned = sum of unitQty across tinting lines (whole-OBD jobs).
+          const totalAssigned = (order.lineItems ?? [])
+            .filter((l) => l.isTinting)
+            .reduce((s, l) => s + l.unitQty, 0);
+          const totalDone = (p.lastProgressSnapshot?.items ?? [])
+            .reduce((s, i) => s + i.doneQty, 0);
+          const hasProgress = !!p.lastProgressSnapshot && totalAssigned > 0;
+          return (
+            <>
+              <div className="bg-amber-50 border border-amber-200 rounded-md px-2 py-1.5 mt-2">
+                <div className="text-[10.5px] font-semibold text-amber-800">
+                  Last paused: {shortDate} by {p.lastPausedBy}
+                </div>
+                <div className="text-[10.5px] text-amber-700">
+                  Reason: {humaniseReason(p.lastReason)}
+                </div>
+                {hasProgress && (
+                  <div className="text-[10.5px] text-amber-700">
+                    Progress: {totalDone} of {totalAssigned} tins done
+                  </div>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onOpenPauseHistory(); }}
+                className="text-[10.5px] text-amber-700 underline hover:text-amber-900 mt-1 inline-block cursor-pointer"
+              >
+                View full pause history →
+              </button>
+            </>
+          );
+        })()}
 
         {/* 5. Bottom section — per stage */}
         {isPending && (
@@ -1618,6 +1837,37 @@ export function TintManagerContent() {
   const canImportOBDs = ["admin", "dispatcher", "support", "billing_operator", "tint_manager"]
     .includes(session?.user?.role ?? "");
 
+  // Role-based gate for the "Remove OBD…" menu item (server enforces canDelete
+  // via /api/tint/manager/orders/[id]/remove for the precise check).
+  const canRemoveObd = (() => {
+    const primary = session?.user?.role ?? "";
+    const all     = session?.user?.roles ?? (primary ? [primary] : []);
+    if (primary === "admin") return true;
+    return all.includes("tint_manager");
+  })();
+
+  // State for the Remove OBD modal — single instance mounted at end of return.
+  // Hoisted here so both Kanban cards and the Table view trigger the same modal.
+  const [removeModalOrder, setRemoveModalOrder] = useState<TintOrder | null>(null);
+
+  // Phase 3d — Skip History modal. Single instance; all 5 entry points
+  // (Kanban pill, Kanban "View full history" link, Kanban kebab item,
+  // Table OBD badge, Table kebab item) feed the same state.
+  const [skipHistoryFor, setSkipHistoryFor] = useState<{
+    orderId:      number;
+    obdNumber:    string;
+    customerName: string | null;
+  } | null>(null);
+
+  // Phase 4e — Pause History modal. Mirror of skipHistoryFor; same 5 entry
+  // points (Kanban PAUSED pill, "View full pause history" link, kebab item,
+  // Table OBD-cell badge, Table kebab item) feed this single state.
+  const [pauseHistoryFor, setPauseHistoryFor] = useState<{
+    orderId:      number;
+    obdNumber:    string;
+    customerName: string | null;
+  } | null>(null);
+
   const { mode: skuDisplayMode } = useSkuDisplayMode();
 
   const [orders,               setOrders]               = useState<TintOrder[]>([]);
@@ -2380,12 +2630,13 @@ export function TintManagerContent() {
                       customer:           a.order.customer ?? null,
                       querySnapshot:      a.order.querySnapshot ?? null,
                       tintAssignments: [{
-                        id:          a.id,
-                        status:      "tinting_done",
-                        assignedTo:  a.assignedTo,
-                        startedAt:   null,
-                        completedAt: a.completedAt,
-                        updatedAt:   a.completedAt ?? "",
+                        id:                 a.id,
+                        status:             "tinting_done",
+                        assignedTo:         a.assignedTo,
+                        startedAt:          null,
+                        completedAt:        a.completedAt,
+                        updatedAt:          a.completedAt ?? "",
+                        accumulatedMinutes: 0,
                       }],
                       lineItems:      [],
                       existingSplits: [],
@@ -2445,6 +2696,20 @@ export function TintManagerContent() {
                             setRevertOrderId(item.data.id);
                             setRevertObdNumber(item.data.obdNumber);
                           }}
+                          canRemove={canRemoveObd}
+                          onRequestRemove={() => setRemoveModalOrder(item.data)}
+                          onOpenSkipHistory={() => setSkipHistoryFor({
+                            orderId:      item.data.id,
+                            obdNumber:    item.data.obdNumber,
+                            customerName: item.data.customer?.customerName
+                                            ?? item.data.shipToCustomerName,
+                          })}
+                          onOpenPauseHistory={() => setPauseHistoryFor({
+                            orderId:      item.data.id,
+                            obdNumber:    item.data.obdNumber,
+                            customerName: item.data.customer?.customerName
+                                            ?? item.data.shipToCustomerName,
+                          })}
                         />
                       ) : (
                         <SplitKanbanCard
@@ -2532,6 +2797,14 @@ export function TintManagerContent() {
           onReassignSplit={(split) => openSplitReassign(split)}
           onCancelSplit={(split) => { void handleCancelSplit(split.id); }}
           onCustomerMissing={(order) => { setMissingSheetOrder(order); setMissingSheetOpen(true); }}
+          canRemove={canRemoveObd}
+          onRequestRemove={(order) => setRemoveModalOrder(order)}
+          onOpenSkipHistory={(orderId, obdNumber, customerName) =>
+            setSkipHistoryFor({ orderId, obdNumber, customerName })
+          }
+          onOpenPauseHistory={(orderId, obdNumber, customerName) =>
+            setPauseHistoryFor({ orderId, obdNumber, customerName })
+          }
         />
       )}
 
@@ -2826,6 +3099,60 @@ export function TintManagerContent() {
           void fetchOrders();
         }}
       />
+
+      {/* ── Remove OBD Modal (Phase 2d) ──────────────────────────────────── */}
+      {/* Single instance — both Kanban cards and Table rows set removeModalOrder.
+          challan is plumbed through from the orders payload (Phase 2d.1) so the
+          modal's challan-void pre-warning renders correctly for OBDs with a
+          linked active challan. */}
+      {removeModalOrder && (
+        <RemoveObdModal
+          open={true}
+          onClose={() => setRemoveModalOrder(null)}
+          onRemoved={() => {
+            setRemoveModalOrder(null);
+            void fetchOrders();
+          }}
+          order={{
+            id:                 removeModalOrder.id,
+            obdNumber:          removeModalOrder.obdNumber,
+            orderDateTime:      removeModalOrder.orderDateTime,
+            shipToCustomerName: removeModalOrder.customer?.customerName
+                                  ?? removeModalOrder.shipToCustomerName,
+            smu:                removeModalOrder.smu,
+            articleTag:         removeModalOrder.querySnapshot?.articleTag ?? null,
+            totalVolume:        removeModalOrder.querySnapshot?.totalVolume ?? null,
+            challan:            removeModalOrder.challan ?? null,
+          }}
+        />
+      )}
+
+      {/* ── Skip History Modal (Phase 3d) ────────────────────────────────── */}
+      {/* Single instance fed by all 5 entry points: Kanban pill, Kanban link,
+          Kanban kebab item, Table OBD-cell badge, Table kebab item. */}
+      {skipHistoryFor && (
+        <SkipHistoryModal
+          open
+          orderId={skipHistoryFor.orderId}
+          obdNumber={skipHistoryFor.obdNumber}
+          customerName={skipHistoryFor.customerName}
+          onClose={() => setSkipHistoryFor(null)}
+        />
+      )}
+
+      {/* ── Pause History Modal (Phase 4e) ───────────────────────────────── */}
+      {/* Single instance fed by all 5 entry points: Kanban PAUSED pill,
+          "View full pause history" link, Kanban kebab item, Table OBD-cell
+          badge, Table kebab item. */}
+      {pauseHistoryFor && (
+        <PauseHistoryModal
+          open
+          orderId={pauseHistoryFor.orderId}
+          obdNumber={pauseHistoryFor.obdNumber}
+          customerName={pauseHistoryFor.customerName}
+          onClose={() => setPauseHistoryFor(null)}
+        />
+      )}
 
     </div>
   );

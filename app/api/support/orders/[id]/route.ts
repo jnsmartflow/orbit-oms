@@ -26,8 +26,8 @@ export async function GET(
     return NextResponse.json({ error: "Invalid order ID" }, { status: 400 });
   }
 
-  const order = await prisma.orders.findUnique({
-    where: { id },
+  const order = await prisma.orders.findFirst({
+    where: { id, isRemoved: false },
     include: {
       customer:      { include: { area: true } },
       querySnapshot: true,
@@ -113,7 +113,7 @@ export async function PATCH(
   const userId = parseInt(session!.user.id, 10);
 
   // ── Load current order ────────────────────────────────────────────────────
-  const order = await prisma.orders.findUnique({ where: { id } });
+  const order = await prisma.orders.findFirst({ where: { id, isRemoved: false } });
   if (!order) {
     return NextResponse.json({ error: "Order not found" }, { status: 404 });
   }

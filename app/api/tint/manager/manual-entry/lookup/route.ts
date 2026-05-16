@@ -30,8 +30,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     return err("BAD_REQUEST", "Missing 'obd' query parameter", 400);
   }
 
-  const order = await prisma.orders.findUnique({
-    where: { obdNumber: obd },
+  const order = await prisma.orders.findFirst({
+    where: { obdNumber: obd, isRemoved: false },
     include: {
       customer: { select: { customerName: true } },
     },

@@ -70,6 +70,7 @@ export async function GET(req: Request): Promise<NextResponse> {
   const rawOrders = await prisma.orders.findMany({
     where: {
       workflowStage: "dispatch_confirmation",
+      isRemoved: false,
       obdEmailDate: {
         lte: new Date(date + "T23:59:59"),
       },

@@ -23,8 +23,8 @@ export async function POST(
     return NextResponse.json({ error: "picked must be a boolean" }, { status: 400 });
   }
 
-  const order = await prisma.orders.findUnique({
-    where: { id: orderId },
+  const order = await prisma.orders.findFirst({
+    where: { id: orderId, isRemoved: false },
     include: {
       splits: {
         where: { status: { not: "cancelled" } },

@@ -33,13 +33,26 @@ export async function GET(
 
   try {
     // ── 1. Verify order exists ────────────────────────────────────────────────
-    const order = await prisma.orders.findUnique({
-      where: { id: orderId },
+    // Refined Phase 2c filter (Phase 2e): allow loading a voided challan that
+    // belongs to a soft-removed order — Chandresh needs to inspect it.
+    // findFirst (not findUnique) because the OR clause isn't valid on findUnique.
+    const order = await prisma.orders.findFirst({
+      where: {
+        id: orderId,
+        OR: [
+          { isRemoved: false },
+          { isRemoved: true, challan: { isVoided: true } },
+        ],
+      },
       select: {
         id:               true,
         obdNumber:        true,
         dispatchSlot:     true,
         shipToCustomerId: true,
+        // Void-state metadata for the right-panel banner ("Voided by …").
+        isRemoved:        true,
+        removedAt:        true,
+        removedBy:        { select: { name: true } },
       },
     });
 
@@ -50,6 +63,8 @@ export async function GET(
     // ── 2. Lookup challan — must already exist ────────────────────────────────
     // Challans are now auto-created at import time — no lazy creation needed.
     // If no challan exists, the order's SMU wasn't eligible for a challan.
+    // NO isVoided filter — voided challans must still be viewable so the UI
+    // can render the VOIDED banner. Voided state surfaces via the select.
     const challan = await prisma.delivery_challans.findUnique({
       where: { orderId },
     });
@@ -279,6 +294,11 @@ export async function GET(
         printedBy:     challan.printedBy    ?? null,
         createdAt:     challan.createdAt.toISOString(),
         updatedAt:     challan.updatedAt.toISOString(),
+        // Phase 2e — void state for the banner + watermark + button disable.
+        isVoided:      challan.isVoided,
+        voidReason:    challan.voidReason ?? null,
+        voidRemark:    challan.voidRemark ?? null,
+        voidedAt:      challan.voidedAt?.toISOString() ?? null,
       },
 
       systemConfig: {
@@ -299,6 +319,10 @@ export async function GET(
         obdEmailDate: rawSummary?.obdEmailDate?.toISOString() ?? null,
         warehouse:    rawSummary?.warehouse                   ?? null,
         grossWeight:  rawSummary?.grossWeight                 ?? null,
+        // Phase 2e — removal metadata for "Voided by X · timestamp" line.
+        isRemoved:    order.isRemoved,
+        removedAt:    order.removedAt?.toISOString() ?? null,
+        removedBy:    order.removedBy ? { name: order.removedBy.name } : null,
 
         billTo: {
           name:         rawSummary?.billToCustomerName        ?? "",
@@ -391,10 +415,12 @@ export async function PATCH(
   const { transporter, vehicleNo, formulas, printedAt, printedBy } = body;
 
   try {
-    // ── 1. Confirm the challan row exists ─────────────────────────────────────
+    // ── 1. Confirm the challan row exists + check void state ──────────────────
+    // Voided challans are read-only (UI shows banner). Reject write attempts
+    // with 409 — caller must restore the order first to un-void the challan.
     const challan = await prisma.delivery_challans.findUnique({
       where:  { orderId },
-      select: { id: true, orderId: true },
+      select: { id: true, orderId: true, isVoided: true },
     });
 
     if (!challan) {
@@ -403,14 +429,20 @@ export async function PATCH(
         { status: 404 },
       );
     }
+    if (challan.isVoided) {
+      return NextResponse.json(
+        { ok: false, error: "Cannot modify a voided challan" },
+        { status: 409 },
+      );
+    }
 
     // ── 2. Validate formula rawLineItemIds — isTinting = true only ────────────
     if (formulas && formulas.length > 0) {
       const requestedIds = formulas.map((f) => f.rawLineItemId);
 
       // Fetch the order's obdNumber so we can filter by it
-      const orderRow = await prisma.orders.findUnique({
-        where:  { id: orderId },
+      const orderRow = await prisma.orders.findFirst({
+        where:  { id: orderId, isRemoved: false },
         select: { obdNumber: true },
       });
 

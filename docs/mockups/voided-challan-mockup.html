@@ -1,0 +1,424 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Voided Challan — Mockup</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; background: #f3f4f6; color: #111827; margin: 0; }
+  .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+  .section { max-width: 1280px; margin: 0 auto; padding: 28px 24px; }
+  .section h2 { font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #6b7280; margin-bottom: 12px; }
+  .surface-label { font-size: 11px; color: #9ca3af; margin-bottom: 8px; }
+
+  /* Page chrome — mimic /tint/manager/challans split view */
+  .page-shell { display: grid; grid-template-columns: 320px 1fr; background: white; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden; }
+  .left-panel { background: white; border-right: 1px solid #e5e7eb; padding: 12px 0; }
+  .left-row { padding: 10px 14px; border-bottom: 1px solid #f0f0f0; cursor: pointer; }
+  .left-row:hover { background: #fafafa; }
+  .left-row.selected { background: #f9fafb; border-left: 3px solid #6b7280; padding-left: 11px; }
+  .left-row.voided { opacity: 0.65; }
+  .left-row.voided .obd-cell { text-decoration: line-through; }
+
+  .right-panel { background: #f9fafb; padding: 0; min-height: 720px; }
+  .action-bar { display: flex; align-items: center; justify-content: space-between; padding: 12px 18px; background: white; border-bottom: 1px solid #e5e7eb; }
+  .action-bar-left { display: flex; align-items: center; gap: 10px; font-size: 12px; color: #9ca3af; }
+  .action-bar-right { display: flex; align-items: center; gap: 8px; }
+  .btn-print { height: 32px; padding: 0 14px; background: #111827; color: white; border-radius: 6px; font-size: 12px; font-weight: 500; display: inline-flex; align-items: center; gap: 6px; }
+  .btn-print:hover { background: #1f2937; }
+  .btn-print:disabled, .btn-print.is-disabled { background: #d1d5db; color: #6b7280; cursor: not-allowed; }
+  .btn-edit { height: 32px; padding: 0 14px; background: white; border: 1px solid #e5e7eb; color: #4b5563; border-radius: 6px; font-size: 12px; font-weight: 500; display: inline-flex; align-items: center; gap: 6px; }
+  .btn-edit:hover { background: #f9fafb; }
+  .btn-edit.is-disabled { background: #f3f4f6; color: #9ca3af; cursor: not-allowed; }
+
+  /* Void banner */
+  .void-banner { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; margin: 14px 18px 0 18px; padding: 12px 14px; display: flex; gap: 12px; align-items: flex-start; }
+  .void-banner svg { flex-shrink: 0; color: #b91c1c; margin-top: 1px; }
+  .void-banner-title { font-size: 12.5px; font-weight: 600; color: #991b1b; margin-bottom: 4px; }
+  .void-banner-body { font-size: 11.5px; color: #b91c1c; line-height: 1.55; }
+  .void-banner-meta { font-size: 11px; color: #b91c1c; margin-top: 6px; opacity: 0.85; }
+
+  /* The challan document */
+  .doc-wrap { padding: 18px; position: relative; }
+  .doc { background: white; padding: 32px 36px; border: 1px solid #e5e7eb; max-width: 760px; margin: 0 auto; position: relative; overflow: hidden; }
+
+  .doc-header { display: grid; grid-template-columns: 1fr 1fr 1fr; align-items: center; padding-bottom: 12px; border-bottom: 1px solid #e5e7eb; }
+  .doc-logo { font-size: 18px; font-weight: 700; color: #111827; letter-spacing: -0.01em; }
+  .doc-logo-sub { font-size: 9px; color: #6b7280; margin-top: 2px; letter-spacing: 0.08em; text-transform: uppercase; }
+  .doc-title { text-align: center; font-size: 14px; font-weight: 600; letter-spacing: 0.16em; color: #111827; }
+  .doc-meta { text-align: right; }
+  .doc-meta-num { font-family: ui-monospace, Menlo, monospace; font-size: 13px; font-weight: 600; color: #111827; }
+  .doc-meta-date { font-size: 10px; color: #9ca3af; margin-top: 1px; }
+
+  .doc-addr { background: #374151; color: white; padding: 9px 14px; font-size: 10.5px; letter-spacing: 0.02em; margin-top: 10px; }
+
+  .doc-meta-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 18px; margin-top: 12px; }
+  .doc-meta-cell { font-size: 10px; }
+  .doc-meta-label { color: #9ca3af; font-size: 9px; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 3px; }
+  .doc-meta-val { color: #374151; font-weight: 500; }
+
+  .doc-parties { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 14px; }
+  .doc-party-head { background: #f9fafb; font-size: 10px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.06em; padding: 5px 9px; }
+  .doc-party-body { border: 1px solid #f0f0f0; padding: 9px; }
+  .doc-party-name { font-size: 12px; font-weight: 600; color: #111827; }
+  .doc-party-addr { font-size: 10.5px; color: #6b7280; margin-top: 3px; line-height: 1.55; }
+
+  .doc-s5 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 18px; margin-top: 12px; padding: 9px 0; border-top: 1px solid #f0f0f0; border-bottom: 1px solid #f0f0f0; }
+  .doc-s5-label { font-size: 9px; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em; }
+  .doc-s5-name { font-size: 11px; color: #374151; margin-top: 3px; }
+  .doc-s5-phone { font-size: 10px; color: #6b7280; margin-top: 1px; font-family: ui-monospace, Menlo, monospace; }
+
+  .doc-table { margin-top: 12px; width: 100%; border-collapse: collapse; table-layout: fixed; }
+  .doc-table thead th { font-size: 9px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em; height: 28px; background: #f9fafb; border-bottom: 1px solid #e5e7eb; text-align: left; padding: 0 8px; }
+  .doc-table tbody td { font-size: 10.5px; height: 32px; padding: 0 8px; border-bottom: 1px solid #f0f0f0; color: #374151; }
+  .doc-table .right { text-align: right; }
+  .doc-totals td { font-weight: 600; border-top: 2px solid #111827; }
+
+  .doc-footer { margin-top: 18px; padding-top: 10px; border-top: 1px solid #e5e7eb; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 18px; font-size: 10px; color: #6b7280; }
+  .doc-bottom { margin-top: 14px; padding-top: 8px; border-top: 1px solid #f0f0f0; font-size: 9px; color: #9ca3af; text-align: center; }
+
+  /* === Voided watermark === */
+  .void-mark {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) rotate(-22deg);
+    font-size: 120px;
+    font-weight: 900;
+    letter-spacing: 0.08em;
+    color: rgba(220, 38, 38, 0.16);
+    border: 8px solid rgba(220, 38, 38, 0.20);
+    padding: 12px 36px;
+    border-radius: 8px;
+    pointer-events: none;
+    user-select: none;
+    white-space: nowrap;
+    z-index: 5;
+  }
+
+  /* Reference normal panel scaled down */
+  .ref { transform: scale(0.7); transform-origin: top left; height: 600px; overflow: hidden; }
+  .ref-wrap { background: #f9fafb; border: 1px dashed #d1d5db; border-radius: 12px; padding: 12px; overflow: hidden; }
+  .ref-label { font-size: 11px; color: #9ca3af; margin-bottom: 8px; }
+
+</style>
+</head>
+<body>
+
+<div class="section">
+  <div style="display: flex; align-items: baseline; gap: 16px; margin-bottom: 8px;">
+    <h1 style="font-size: 20px; font-weight: 600;">Voided Challan — feature mockup</h1>
+    <span style="font-size: 12px; color: #6b7280;">When the linked OBD is removed, the challan goes into Voided state</span>
+  </div>
+  <p style="font-size: 13px; color: #6b7280; max-width: 760px; margin-bottom: 28px;">
+    What changes vs the normal challan view: red banner at top of the document area · diagonal VOIDED watermark across the document · Print + Edit buttons disabled · left-panel row shown faded with strikethrough OBD.
+  </p>
+</div>
+
+<!-- ============ SURFACE 1 — VOIDED CHALLAN VIEW (full page) ============ -->
+<div class="section">
+  <h2>1 · Voided challan — full page view</h2>
+  <p class="surface-label">Path: <span class="mono">/tint/manager/challans</span> → user clicks a voided challan row in the left panel</p>
+
+  <div class="page-shell">
+    <!-- LEFT PANEL -->
+    <div class="left-panel">
+      <div style="padding: 0 14px 8px 14px; font-size: 10px; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em;">15 May 2026 · 3 challans</div>
+
+      <!-- Normal row -->
+      <div class="left-row">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span class="mono obd-cell" style="font-size: 11px; color: #111827; font-weight: 500;">8094567891</span>
+          <span style="font-size: 9px; padding: 1px 5px; background: #f3f4f6; color: #6b7280; border-radius: 3px; font-family: ui-monospace, Menlo, monospace;">CHN-2026-00341</span>
+        </div>
+        <div style="font-size: 11.5px; color: #374151; margin-top: 4px;">Asopalav Decor</div>
+        <div style="font-size: 10.5px; color: #9ca3af; margin-top: 2px; display: flex; align-items: center; gap: 4px;">
+          <span style="width: 5px; height: 5px; border-radius: 999px; background: #6b7280; display: inline-block;"></span>
+          Deco · Athwa · 3 art
+        </div>
+      </div>
+
+      <!-- Voided row (SELECTED) -->
+      <div class="left-row selected voided">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span class="mono obd-cell" style="font-size: 11px; color: #111827; font-weight: 500;">8094567890</span>
+          <span style="font-size: 9px; padding: 1px 5px; background: #fef2f2; color: #b91c1c; border-radius: 3px; font-family: ui-monospace, Menlo, monospace;">CHN-2026-00342</span>
+          <span style="font-size: 9px; padding: 1px 5px; background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; border-radius: 3px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;">Voided</span>
+        </div>
+        <div style="font-size: 11.5px; color: #374151; margin-top: 4px;">Shree Rang Sarovar</div>
+        <div style="font-size: 10.5px; color: #9ca3af; margin-top: 2px; display: flex; align-items: center; gap: 4px;">
+          <span style="width: 5px; height: 5px; border-radius: 999px; background: #6b7280; display: inline-block;"></span>
+          Retail · Surat · 6 art
+        </div>
+      </div>
+
+      <!-- Normal row -->
+      <div class="left-row">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span class="mono obd-cell" style="font-size: 11px; color: #111827; font-weight: 500;">8094567892</span>
+          <span style="font-size: 9px; padding: 1px 5px; background: #f3f4f6; color: #6b7280; border-radius: 3px; font-family: ui-monospace, Menlo, monospace;">CHN-2026-00343</span>
+        </div>
+        <div style="font-size: 11.5px; color: #374151; margin-top: 4px;">Patel Construction</div>
+        <div style="font-size: 10.5px; color: #9ca3af; margin-top: 2px; display: flex; align-items: center; gap: 4px;">
+          <span style="width: 5px; height: 5px; border-radius: 999px; background: #6b7280; display: inline-block;"></span>
+          Retail · Adajan · 4 art
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT PANEL -->
+    <div class="right-panel">
+
+      <!-- Action bar -->
+      <div class="action-bar">
+        <div class="action-bar-left">
+          <span class="mono" style="font-size: 12.5px; color: #111827; font-weight: 600;">CHN-2026-00342</span>
+          <span class="mono" style="color: #d1d5db;">·</span>
+          <span class="mono" style="color: #6b7280;">8094567890</span>
+          <span style="color: #d1d5db;">·</span>
+          <span style="color: #9ca3af;">Shree Rang Sarovar</span>
+        </div>
+        <div class="action-bar-right">
+          <button class="btn-edit is-disabled" disabled title="Cannot edit a voided challan">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            Edit
+          </button>
+          <button class="btn-print is-disabled" disabled title="Cannot print a voided challan">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+            Print
+          </button>
+        </div>
+      </div>
+
+      <!-- VOID BANNER -->
+      <div class="void-banner">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+        <div style="flex: 1;">
+          <div class="void-banner-title">This challan is voided. Print and edit are disabled.</div>
+          <div class="void-banner-body"><strong>Reason:</strong> Customer cancelled &nbsp;·&nbsp; <strong>Remark:</strong> Customer called at 10:15 to cancel, please void</div>
+          <div class="void-banner-meta">Voided by Smart Flow · 15 May 2026, 10:18 IST · Linked OBD <span class="mono">8094567890</span> removed</div>
+        </div>
+      </div>
+
+      <!-- DOCUMENT -->
+      <div class="doc-wrap">
+        <div class="doc">
+
+          <!-- Watermark -->
+          <div class="void-mark">VOIDED</div>
+
+          <!-- Header -->
+          <div class="doc-header">
+            <div>
+              <div class="doc-logo">JSW <span style="color: #6b7280;">DULUX</span></div>
+              <div class="doc-logo-sub">Surat depot</div>
+            </div>
+            <div class="doc-title">DELIVERY CHALLAN</div>
+            <div class="doc-meta">
+              <div class="doc-meta-num">CHN-2026-00342</div>
+              <div class="doc-meta-date">15 May 2026</div>
+            </div>
+          </div>
+
+          <!-- Address bar -->
+          <div class="doc-addr">JSW Dulux Limited · Plot 4-5, Sachin GIDC Phase 1, Sachin, Surat 394230, Gujarat · GSTIN 24AAFCK1234A1ZX</div>
+
+          <!-- Meta row -->
+          <div class="doc-meta-row">
+            <div class="doc-meta-cell">
+              <div class="doc-meta-label">SMU</div>
+              <div class="doc-meta-val">Retail Offtake</div>
+            </div>
+            <div class="doc-meta-cell">
+              <div class="doc-meta-label">OBD No.</div>
+              <div class="doc-meta-val mono">8094567890</div>
+            </div>
+            <div class="doc-meta-cell">
+              <div class="doc-meta-label">Warehouse</div>
+              <div class="doc-meta-val">Warehouse A</div>
+            </div>
+          </div>
+
+          <!-- Parties -->
+          <div class="doc-parties">
+            <div>
+              <div class="doc-party-head">Bill To</div>
+              <div class="doc-party-body">
+                <div class="doc-party-name">Shree Rang Sarovar</div>
+                <div class="doc-party-addr">102, Avadh Square, Vesu Main Road, Surat 395007</div>
+              </div>
+            </div>
+            <div>
+              <div class="doc-party-head">Ship To</div>
+              <div class="doc-party-body">
+                <div class="doc-party-name">Shree Rang Sarovar — Site</div>
+                <div class="doc-party-addr">Plot 14, Sarovar Heights, Adajan, Surat 395009</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- S5 -->
+          <div class="doc-s5">
+            <div>
+              <div class="doc-s5-label">Customer</div>
+              <div class="doc-s5-name">Hitesh Patel</div>
+              <div class="doc-s5-phone">+91 98250 12345</div>
+            </div>
+            <div>
+              <div class="doc-s5-label">Sales Officer</div>
+              <div class="doc-s5-name">Vipul Joshi</div>
+              <div class="doc-s5-phone">+91 90990 33344</div>
+            </div>
+            <div>
+              <div class="doc-s5-label">Site / Receiver</div>
+              <div class="doc-s5-name">Ramesh (Supervisor)</div>
+              <div class="doc-s5-phone">+91 99099 88776</div>
+            </div>
+          </div>
+
+          <!-- Table -->
+          <table class="doc-table">
+            <colgroup>
+              <col style="width:5%"><col style="width:13%"><col style="width:35%"><col style="width:15%">
+              <col style="width:8%"><col style="width:12%"><col style="width:12%">
+            </colgroup>
+            <thead>
+              <tr>
+                <th style="text-align:center;">#</th>
+                <th>SKU</th>
+                <th>Description</th>
+                <th>Pack</th>
+                <th class="right">Qty</th>
+                <th class="right">Vol (L)</th>
+                <th class="right">Weight (kg)</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td style="text-align:center;">1</td><td class="mono">5388421</td><td>LUXURIO PU MATT WHITE BASE</td><td>20L</td><td class="right">2</td><td class="right">40.0</td><td class="right">53.2</td></tr>
+              <tr><td style="text-align:center;">2</td><td class="mono">5388422</td><td>LUXURIO PU MATT DEEP BASE</td><td>4L</td><td class="right">1</td><td class="right">4.0</td><td class="right">5.3</td></tr>
+              <tr><td style="text-align:center;">3</td><td class="mono">5388423</td><td>LUXURIO PU MATT CLEAR BASE</td><td>1L</td><td class="right">3</td><td class="right">3.0</td><td class="right">4.1</td></tr>
+              <tr><td>&nbsp;</td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+              <tr><td>&nbsp;</td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+              <tr><td>&nbsp;</td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+              <tr><td>&nbsp;</td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+              <tr><td>&nbsp;</td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+              <tr class="doc-totals">
+                <td colspan="4" style="text-align:right; padding-right: 12px;">Total</td>
+                <td class="right">6</td>
+                <td class="right">47.0</td>
+                <td class="right">62.6</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <!-- Footer -->
+          <div class="doc-footer">
+            <div>
+              <div style="font-size: 9px; text-transform: uppercase; color: #9ca3af; letter-spacing: 0.05em; margin-bottom: 4px;">Terms</div>
+              Goods once delivered will not be taken back. Subject to Surat jurisdiction.
+            </div>
+            <div>
+              <div style="font-size: 9px; text-transform: uppercase; color: #9ca3af; letter-spacing: 0.05em; margin-bottom: 4px;">Transport</div>
+              Vehicle: GJ05XX1234 · Driver: Raju Singh
+            </div>
+            <div style="text-align: right;">
+              <div style="font-size: 9px; text-transform: uppercase; color: #9ca3af; letter-spacing: 0.05em; margin-bottom: 4px;">Receiver signature</div>
+              <div style="height: 32px;"></div>
+              <div style="border-top: 1px solid #d1d5db; padding-top: 4px;">Name &amp; Date</div>
+            </div>
+          </div>
+          <div class="doc-bottom">
+            Regd. Office: Geetanjali Building, Plot No. 5, Western Express Highway, Goregaon East, Mumbai 400063 · www.akzonobel.co.in · JSW Dulux Limited (formerly Akzo Nobel India Limited)
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p style="font-size: 12px; color: #6b7280; margin-top: 14px; max-width: 760px;">
+    <strong>Spec notes:</strong>
+  </p>
+  <ul style="font-size: 12px; color: #6b7280; max-width: 760px; padding-left: 20px; line-height: 1.7;">
+    <li><strong>Watermark:</strong> Diagonal <span class="mono">-22°</span>, font-weight 900, large red text with light red fill <span class="mono">rgba(220,38,38,0.16)</span> and a red border box. <span class="mono">pointer-events: none</span> so it doesn't intercept clicks. Lives <strong>inside</strong> <span class="mono">.doc</span> with <span class="mono">overflow: hidden</span> so it stays clipped to the document.</li>
+    <li><strong>Watermark hidden in print.</strong> Per spec ("Print & PDF disabled") the print path is blocked at the button. But also wrap the watermark element with <span class="mono">@media print { .void-mark { display: none } }</span> as a belt-and-braces measure in case anyone screenshots or saves PDF via browser.</li>
+    <li><strong>Print button:</strong> disabled, gray bg, tooltip "Cannot print a voided challan". The handler that calls <span class="mono">window.print()</span> must also short-circuit if <span class="mono">isVoided === true</span>.</li>
+    <li><strong>Edit button:</strong> same disabled treatment. Server-side, the formula POST handler (Phase 2c, ~line 395) already 409s on voided challans — UI mirrors that.</li>
+    <li><strong>Red banner:</strong> Shows reason (human label, not enum code), remark, who-and-when, plus a note that the linked OBD was removed. Banner uses <span class="mono">bg-red-50 / border-red-200 / text-red-900</span>. Lives between action bar and document.</li>
+    <li><strong>Left panel voided row:</strong> faded (0.65 opacity), OBD strikethrough, "Voided" pill in red, challan number badge tinted red too. Still clickable so user can inspect.</li>
+    <li><strong>Voided rows in panel:</strong> stay in the list. Not hidden. Chandresh needs to see what got voided when reviewing a day.</li>
+  </ul>
+</div>
+
+<!-- ============ SURFACE 2 — REFERENCE: normal challan for comparison ============ -->
+<div class="section">
+  <h2>2 · Reference — normal (non-voided) challan</h2>
+  <p class="surface-label">Scaled-down preview, kept for visual diff vs the voided state above.</p>
+
+  <div class="ref-wrap">
+    <div class="ref">
+      <div class="page-shell" style="width: 1200px;">
+        <div class="left-panel">
+          <div style="padding: 10px 14px; font-size: 10px; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em;">15 May 2026 · 3 challans</div>
+          <div class="left-row selected">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span class="mono" style="font-size: 11px; color: #111827; font-weight: 500;">8094567891</span>
+              <span style="font-size: 9px; padding: 1px 5px; background: #f3f4f6; color: #6b7280; border-radius: 3px; font-family: ui-monospace, Menlo, monospace;">CHN-2026-00341</span>
+            </div>
+            <div style="font-size: 11.5px; color: #374151; margin-top: 4px;">Asopalav Decor</div>
+            <div style="font-size: 10.5px; color: #9ca3af; margin-top: 2px;">Deco · Athwa · 3 art</div>
+          </div>
+        </div>
+        <div class="right-panel">
+          <div class="action-bar">
+            <div class="action-bar-left">
+              <span class="mono" style="font-size: 12.5px; color: #111827; font-weight: 600;">CHN-2026-00341</span>
+              <span style="color: #d1d5db;">·</span>
+              <span class="mono" style="color: #6b7280;">8094567891</span>
+              <span style="color: #d1d5db;">·</span>
+              <span style="color: #9ca3af;">Asopalav Decor</span>
+            </div>
+            <div class="action-bar-right">
+              <button class="btn-edit">Edit</button>
+              <button class="btn-print">Print</button>
+            </div>
+          </div>
+          <div class="doc-wrap">
+            <div class="doc">
+              <div class="doc-header">
+                <div>
+                  <div class="doc-logo">JSW <span style="color: #6b7280;">DULUX</span></div>
+                  <div class="doc-logo-sub">Surat depot</div>
+                </div>
+                <div class="doc-title">DELIVERY CHALLAN</div>
+                <div class="doc-meta">
+                  <div class="doc-meta-num">CHN-2026-00341</div>
+                  <div class="doc-meta-date">15 May 2026</div>
+                </div>
+              </div>
+              <div class="doc-addr">JSW Dulux Limited · Plot 4-5, Sachin GIDC Phase 1, Sachin, Surat 394230, Gujarat · GSTIN 24AAFCK1234A1ZX</div>
+              <div class="doc-meta-row">
+                <div class="doc-meta-cell"><div class="doc-meta-label">SMU</div><div class="doc-meta-val">Decorative Projects</div></div>
+                <div class="doc-meta-cell"><div class="doc-meta-label">OBD No.</div><div class="doc-meta-val mono">8094567891</div></div>
+                <div class="doc-meta-cell"><div class="doc-meta-label">Warehouse</div><div class="doc-meta-val">Warehouse A</div></div>
+              </div>
+              <div class="doc-parties">
+                <div>
+                  <div class="doc-party-head">Bill To</div>
+                  <div class="doc-party-body"><div class="doc-party-name">Asopalav Decor</div><div class="doc-party-addr">Shop 5, Athwa Lines, Surat 395007</div></div>
+                </div>
+                <div>
+                  <div class="doc-party-head">Ship To</div>
+                  <div class="doc-party-body"><div class="doc-party-name">Asopalav Decor — Site</div><div class="doc-party-addr">Plot 11, Athwa, Surat 395007</div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

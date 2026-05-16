@@ -1,0 +1,834 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Attendance admin — redesign mockup</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ["Inter", "ui-sans-serif", "system-ui", "sans-serif"],
+            },
+            colors: {
+              brand: "#0F6E56", // user-specified — flagged in summary as differing from teal-700 #0f766e
+            },
+          },
+        },
+      };
+    </script>
+
+    <style>
+      :root {
+        font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+        font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+      }
+      body { font-family: "Inter", ui-sans-serif, system-ui, sans-serif; }
+
+      /* Fixed-table standard — UI §28 */
+      table.ut {
+        width: 100%;
+        border-collapse: collapse;
+        table-layout: fixed;
+        font-feature-settings: "tnum";
+      }
+      table.ut th {
+        font-size: 10px;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: #9ca3af;
+        text-align: left;
+        padding: 0 14px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      table.ut th.first { text-align: center; padding: 0 4px 0 10px; }
+      table.ut th.right { text-align: right; }
+      table.ut tr.head {
+        height: 32px;
+        background: #f9fafb;
+        border-bottom: 1px solid #ebebeb;
+      }
+      table.ut tr.row { height: 36px; border-bottom: 1px solid #f0f0f0; }
+      table.ut tr.row:hover { background: rgba(249, 250, 251, 0.6); }
+      table.ut td {
+        font-size: 11px;
+        font-weight: 400;
+        color: #4b5563;
+        text-align: left;
+        padding: 0 14px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        font-variant-numeric: tabular-nums;
+      }
+      table.ut td.first { text-align: center; padding: 0 4px 0 10px; color: #9ca3af; }
+      table.ut td.primary { font-weight: 500; color: #111827; }
+      table.ut td.right { text-align: right; }
+      table.ut td.muted { color: #9ca3af; }
+
+      /* Horizontal-scroll pills strip on mobile */
+      .scrollbar-hide::-webkit-scrollbar { display: none; }
+      .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+  </head>
+
+  <body class="bg-gray-50 min-h-screen pb-16">
+    <!-- ── Mockup metadata header ───────────────────────────────────────── -->
+    <div class="max-w-7xl mx-auto px-6 pt-10 pb-2">
+      <p class="text-[11px] font-semibold uppercase tracking-wider text-gray-500 mb-1">
+        UI mockup · v1
+      </p>
+      <h1 class="text-[24px] font-semibold text-gray-900">
+        Attendance admin — redesign
+      </h1>
+      <p class="text-sm text-gray-500 mt-1 max-w-3xl">
+        Two-strip header on every page. Active workflow tab (Dashboard / OT
+        Pending) sits inline with the title; non-workflow views (Audit /
+        Settings) live under Reports. One-teal rule: the active segment pill on
+        Strip 2 is the single brand-accented element per page (Pages 1 + 2
+        only — Pages 3 + 4 carry no teal at all by design).
+      </p>
+    </div>
+
+    <!-- ────────────────────────────────────────────────────────────────── -->
+    <!-- PAGE 1 — Dashboard                                                 -->
+    <!-- ────────────────────────────────────────────────────────────────── -->
+    <div class="max-w-7xl mx-auto px-6">
+      <div class="text-xs uppercase tracking-wider text-gray-500 mb-2 mt-8">
+        Page 1 — Dashboard · /admin/attendance
+      </div>
+      <div class="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
+        <!-- Strip 1 — 56px title row -->
+        <div class="h-14 flex items-center justify-between px-6 border-b border-gray-200">
+          <div class="flex items-center gap-4">
+            <span class="font-semibold text-base text-gray-900">Attendance</span>
+            <!-- Pill switcher -->
+            <div class="inline-flex items-center bg-gray-100 rounded-md p-0.5">
+              <button class="px-3 py-1 text-xs font-medium text-gray-900 bg-white rounded shadow-sm">Dashboard</button>
+              <button class="px-3 py-1 text-xs text-gray-600 inline-flex items-center gap-1.5">
+                OT Pending
+                <span class="bg-red-50 text-red-700 text-[10px] font-medium px-1.5 rounded-full">3</span>
+              </button>
+            </div>
+          </div>
+          <div class="flex items-center gap-3">
+            <button class="inline-flex items-center border border-gray-200 rounded-md px-3 py-1.5 text-xs text-gray-900 bg-white hover:bg-gray-50">
+              Reports
+              <span class="text-[9px] text-gray-400 ml-1">▾</span>
+            </button>
+            <span class="text-xs text-gray-400 tabular-nums">13:53</span>
+          </div>
+        </div>
+
+        <!-- Strip 2 — 48px filter row -->
+        <div class="h-12 flex items-center justify-between px-6 border-b border-gray-200">
+          <div class="inline-flex items-center gap-1.5">
+            <button class="inline-flex items-center px-3 py-1 text-xs font-medium rounded-md text-white" style="background:#0F6E56">All <span class="opacity-80 ml-1">· 17</span></button>
+            <button class="inline-flex items-center px-3 py-1 text-xs text-gray-600 hover:bg-gray-50 rounded-md">Present <span class="text-gray-400 ml-1">· 0</span></button>
+            <button class="inline-flex items-center px-3 py-1 text-xs text-gray-600 hover:bg-gray-50 rounded-md">Late <span class="text-gray-400 ml-1">· 0</span></button>
+            <button class="inline-flex items-center px-3 py-1 text-xs text-gray-600 hover:bg-gray-50 rounded-md">Absent <span class="text-gray-400 ml-1">· 15</span></button>
+            <button class="inline-flex items-center px-3 py-1 text-xs text-gray-600 hover:bg-gray-50 rounded-md">Flags <span class="text-gray-400 ml-1">· 1</span></button>
+          </div>
+          <div class="inline-flex items-center border border-gray-200 rounded-md bg-white text-xs">
+            <button class="px-2 py-1 text-gray-500 hover:bg-gray-50">‹</button>
+            <span class="px-2 py-1 font-medium text-gray-900 border-x border-gray-200">Today · 14 May</span>
+            <button class="px-2 py-1 text-gray-300 cursor-not-allowed">›</button>
+          </div>
+        </div>
+
+        <!-- Body — roster table + sticky detail panel -->
+        <div class="flex gap-4 p-4 bg-gray-50">
+          <div class="flex-1 min-w-0">
+            <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
+              <table class="ut">
+                <colgroup>
+                  <col style="width:4%" /><col style="width:20%" /><col style="width:14%" />
+                  <col style="width:9%" /><col style="width:9%" /><col style="width:9%" />
+                  <col style="width:9%" /><col style="width:14%" /><col style="width:12%" />
+                </colgroup>
+                <thead>
+                  <tr class="head">
+                    <th class="first">#</th>
+                    <th>User</th>
+                    <th>Role</th>
+                    <th class="right">In</th>
+                    <th class="right">Out</th>
+                    <th class="right">Worked</th>
+                    <th class="right">OT</th>
+                    <th>Status</th>
+                    <th>Flags</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr class="row">
+                    <td class="first">1</td>
+                    <td class="primary">Ajay Vansiya</td>
+                    <td>Dispatcher</td>
+                    <td class="right muted">—</td><td class="right muted">—</td>
+                    <td class="right muted">—</td><td class="right muted">—</td>
+                    <td><span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-red-50 text-red-700">Absent</span></td>
+                    <td class="muted">—</td>
+                  </tr>
+                  <tr class="row">
+                    <td class="first">2</td>
+                    <td class="primary">Bankim</td>
+                    <td>Billing Operator</td>
+                    <td class="right muted">—</td><td class="right muted">—</td>
+                    <td class="right muted">—</td><td class="right muted">—</td>
+                    <td><span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-red-50 text-red-700">Absent</span></td>
+                    <td class="muted">—</td>
+                  </tr>
+                  <tr class="row">
+                    <td class="first">3</td>
+                    <td class="primary">Chandresh Kolgha</td>
+                    <td>Tint Manager</td>
+                    <td class="right muted">—</td><td class="right muted">—</td>
+                    <td class="right muted">—</td><td class="right muted">—</td>
+                    <td><span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-red-50 text-red-700">Absent</span></td>
+                    <td class="muted">—</td>
+                  </tr>
+                  <tr class="row">
+                    <td class="first">4</td>
+                    <td class="primary">Deepak Vasava</td>
+                    <td>Tint Operator</td>
+                    <td class="right muted">—</td><td class="right muted">—</td>
+                    <td class="right muted">—</td><td class="right muted">—</td>
+                    <td><span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-red-50 text-red-700">Absent</span></td>
+                    <td class="muted">—</td>
+                  </tr>
+                  <tr class="row">
+                    <td class="first">5</td>
+                    <td class="primary">Deepanshu Thakur</td>
+                    <td>Billing Operator</td>
+                    <td class="right muted">—</td><td class="right muted">—</td>
+                    <td class="right muted">—</td><td class="right muted">—</td>
+                    <td><span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-red-50 text-red-700">Absent</span></td>
+                    <td class="muted">—</td>
+                  </tr>
+                  <tr class="row">
+                    <td class="first">6</td>
+                    <td class="primary">Dhruv</td>
+                    <td>Ops Admin</td>
+                    <td class="right muted">—</td><td class="right muted">—</td>
+                    <td class="right muted">—</td><td class="right muted">—</td>
+                    <td><span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-red-50 text-red-700">Absent</span></td>
+                    <td class="muted">—</td>
+                  </tr>
+                  <tr class="row">
+                    <td class="first">7</td>
+                    <td class="primary">Harsh</td>
+                    <td>Admin</td>
+                    <td class="right">1:42 am</td>
+                    <td class="right">2:14 am</td>
+                    <td class="right">20m</td>
+                    <td class="right muted">—</td>
+                    <td><span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-amber-50 text-amber-700">Half day</span></td>
+                    <td><span class="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold bg-red-50 text-red-700 border border-red-200">GEO</span></td>
+                  </tr>
+                  <tr class="row">
+                    <td class="first">8</td>
+                    <td class="primary">Kuldeep</td>
+                    <td>Ops Admin</td>
+                    <td class="right muted">—</td><td class="right muted">—</td>
+                    <td class="right muted">—</td><td class="right muted">—</td>
+                    <td><span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-red-50 text-red-700">Absent</span></td>
+                    <td class="muted">—</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <aside class="w-[340px] shrink-0">
+            <div class="bg-white border border-gray-200 rounded-lg p-6 text-center text-[12px] text-gray-400 sticky top-4">
+              Select a user from the table to see details
+            </div>
+          </aside>
+        </div>
+      </div>
+    </div>
+
+    <!-- ────────────────────────────────────────────────────────────────── -->
+    <!-- PAGE 2 — OT Pending                                                -->
+    <!-- ────────────────────────────────────────────────────────────────── -->
+    <div class="max-w-7xl mx-auto px-6">
+      <div class="text-xs uppercase tracking-wider text-gray-500 mb-2 mt-8">
+        Page 2 — OT Pending · /admin/attendance/ot-pending
+      </div>
+      <div class="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
+        <!-- Strip 1 -->
+        <div class="h-14 flex items-center justify-between px-6 border-b border-gray-200">
+          <div class="flex items-center gap-4">
+            <span class="font-semibold text-base text-gray-900">Attendance</span>
+            <div class="inline-flex items-center bg-gray-100 rounded-md p-0.5">
+              <button class="px-3 py-1 text-xs text-gray-600">Dashboard</button>
+              <button class="px-3 py-1 text-xs font-medium text-gray-900 bg-white rounded shadow-sm inline-flex items-center gap-1.5">
+                OT Pending
+                <span class="bg-red-50 text-red-700 text-[10px] font-medium px-1.5 rounded-full">3</span>
+              </button>
+            </div>
+          </div>
+          <div class="flex items-center gap-3">
+            <button class="inline-flex items-center border border-gray-200 rounded-md px-3 py-1.5 text-xs text-gray-900 bg-white hover:bg-gray-50">
+              Reports
+              <span class="text-[9px] text-gray-400 ml-1">▾</span>
+            </button>
+            <span class="text-xs text-gray-400 tabular-nums">13:53</span>
+          </div>
+        </div>
+
+        <!-- Strip 2 -->
+        <div class="h-12 flex items-center justify-between px-6 border-b border-gray-200">
+          <div class="inline-flex items-center gap-1.5">
+            <button class="inline-flex items-center px-3 py-1 text-xs font-medium rounded-md text-white" style="background:#0F6E56">Today <span class="opacity-80 ml-1">· 3</span></button>
+            <button class="inline-flex items-center px-3 py-1 text-xs text-gray-600 hover:bg-gray-50 rounded-md">This week <span class="text-gray-400 ml-1">· 8</span></button>
+            <button class="inline-flex items-center px-3 py-1 text-xs text-gray-600 hover:bg-gray-50 rounded-md">Older <span class="text-gray-400 ml-1">· 12</span></button>
+          </div>
+          <button class="inline-flex items-center border border-gray-200 rounded-md px-3 py-1.5 text-xs text-gray-900 bg-white hover:bg-gray-50">
+            May 2026
+            <span class="text-[9px] text-gray-400 ml-1">▾</span>
+          </button>
+        </div>
+
+        <!-- Body -->
+        <div class="p-4 bg-gray-50">
+          <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
+            <table class="ut">
+              <colgroup>
+                <col style="width:4%" /><col style="width:18%" /><col style="width:13%" />
+                <col style="width:11%" /><col style="width:11%" /><col style="width:21%" />
+                <col style="width:10%" /><col style="width:12%" />
+              </colgroup>
+              <thead>
+                <tr class="head">
+                  <th class="first">#</th>
+                  <th>User</th>
+                  <th>Role</th>
+                  <th>Date</th>
+                  <th class="right">OT hrs</th>
+                  <th>Reason</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr class="row">
+                  <td class="first">1</td>
+                  <td class="primary">Chandresh Kolgha</td>
+                  <td>Tint Manager</td>
+                  <td>14 May 2026</td>
+                  <td class="right primary">2.5 hrs</td>
+                  <td>Stayed to finish urgent backlog</td>
+                  <td><span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-amber-50 text-amber-700">Pending</span></td>
+                  <td>
+                    <span class="inline-flex gap-1.5">
+                      <button class="border border-gray-200 hover:border-gray-300 hover:bg-gray-50 text-gray-700 text-[10px] font-medium px-2 py-0.5 rounded">Approve</button>
+                      <button class="border border-gray-200 hover:border-gray-300 hover:bg-gray-50 text-gray-700 text-[10px] font-medium px-2 py-0.5 rounded">Reject</button>
+                    </span>
+                  </td>
+                </tr>
+                <tr class="row">
+                  <td class="first">2</td>
+                  <td class="primary">Deepak Vasava</td>
+                  <td>Tint Operator</td>
+                  <td>14 May 2026</td>
+                  <td class="right primary">1.0 hr</td>
+                  <td>Late delivery from supplier</td>
+                  <td><span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-amber-50 text-amber-700">Pending</span></td>
+                  <td>
+                    <span class="inline-flex gap-1.5">
+                      <button class="border border-gray-200 hover:border-gray-300 hover:bg-gray-50 text-gray-700 text-[10px] font-medium px-2 py-0.5 rounded">Approve</button>
+                      <button class="border border-gray-200 hover:border-gray-300 hover:bg-gray-50 text-gray-700 text-[10px] font-medium px-2 py-0.5 rounded">Reject</button>
+                    </span>
+                  </td>
+                </tr>
+                <tr class="row">
+                  <td class="first">3</td>
+                  <td class="primary">Bankim</td>
+                  <td>Billing Operator</td>
+                  <td>13 May 2026</td>
+                  <td class="right primary">2.0 hrs</td>
+                  <td>Month-end invoicing rush</td>
+                  <td><span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-amber-50 text-amber-700">Pending</span></td>
+                  <td>
+                    <span class="inline-flex gap-1.5">
+                      <button class="border border-gray-200 hover:border-gray-300 hover:bg-gray-50 text-gray-700 text-[10px] font-medium px-2 py-0.5 rounded">Approve</button>
+                      <button class="border border-gray-200 hover:border-gray-300 hover:bg-gray-50 text-gray-700 text-[10px] font-medium px-2 py-0.5 rounded">Reject</button>
+                    </span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ────────────────────────────────────────────────────────────────── -->
+    <!-- PAGE 3 — OT Audit                                                  -->
+    <!-- ────────────────────────────────────────────────────────────────── -->
+    <div class="max-w-7xl mx-auto px-6">
+      <div class="text-xs uppercase tracking-wider text-gray-500 mb-2 mt-8">
+        Page 3 — OT Audit · /admin/attendance/ot-audit
+      </div>
+      <div class="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
+        <!-- Strip 1 — switcher both inactive, Reports highlighted -->
+        <div class="h-14 flex items-center justify-between px-6 border-b border-gray-200">
+          <div class="flex items-center gap-4">
+            <span class="font-semibold text-base text-gray-900">Attendance</span>
+            <div class="inline-flex items-center bg-gray-100 rounded-md p-0.5">
+              <button class="px-3 py-1 text-xs text-gray-600">Dashboard</button>
+              <button class="px-3 py-1 text-xs text-gray-600 inline-flex items-center gap-1.5">
+                OT Pending
+                <span class="bg-red-50 text-red-700 text-[10px] font-medium px-1.5 rounded-full">3</span>
+              </button>
+            </div>
+          </div>
+          <div class="flex items-center gap-3">
+            <button class="inline-flex items-center border border-gray-300 rounded-md px-3 py-1.5 text-xs text-gray-900 bg-gray-50">
+              Reports
+              <span class="text-[9px] text-gray-500 ml-1">▾</span>
+            </button>
+            <span class="text-xs text-gray-400 tabular-nums">13:53</span>
+          </div>
+        </div>
+
+        <!-- Strip 2 — context summary + month picker -->
+        <div class="h-12 flex items-center justify-between px-6 border-b border-gray-200">
+          <p class="text-xs text-gray-600">
+            Showing: <span class="font-medium text-gray-900">OT Audit</span> ·
+            12 users · 48 OT hrs · 0 pending
+          </p>
+          <button class="inline-flex items-center border border-gray-200 rounded-md px-3 py-1.5 text-xs text-gray-900 bg-white hover:bg-gray-50">
+            May 2026
+            <span class="text-[9px] text-gray-400 ml-1">▾</span>
+          </button>
+        </div>
+
+        <!-- Body -->
+        <div class="p-4 bg-gray-50">
+          <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
+            <table class="ut">
+              <colgroup>
+                <col style="width:4%" /><col style="width:22%" /><col style="width:14%" />
+                <col style="width:11%" /><col style="width:12%" /><col style="width:11%" />
+                <col style="width:11%" /><col style="width:15%" />
+              </colgroup>
+              <thead>
+                <tr class="head">
+                  <th class="first">#</th>
+                  <th>User</th>
+                  <th>Role</th>
+                  <th class="right">Days w/ OT</th>
+                  <th class="right">Total OT</th>
+                  <th class="right">Approved</th>
+                  <th class="right">Pending</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr class="row">
+                  <td class="first">1</td>
+                  <td class="primary">Chandresh Kolgha</td>
+                  <td>Tint Manager</td>
+                  <td class="right">8</td>
+                  <td class="right primary">12.5 hrs</td>
+                  <td class="right">12.5</td>
+                  <td class="right muted">0</td>
+                  <td><span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-700">Active</span></td>
+                </tr>
+                <tr class="row">
+                  <td class="first">2</td>
+                  <td class="primary">Deepak Vasava</td>
+                  <td>Tint Operator</td>
+                  <td class="right">6</td>
+                  <td class="right primary">9.0 hrs</td>
+                  <td class="right">9.0</td>
+                  <td class="right muted">0</td>
+                  <td><span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-700">Active</span></td>
+                </tr>
+                <!-- Row 3: expanded -->
+                <tr class="row" style="background: #fafafa;">
+                  <td class="first">3</td>
+                  <td class="primary">Deepanshu Thakur</td>
+                  <td>Billing Operator</td>
+                  <td class="right">5</td>
+                  <td class="right primary">7.5 hrs</td>
+                  <td class="right">7.5</td>
+                  <td class="right muted">0</td>
+                  <td>
+                    <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-700">Active</span>
+                    <span class="ml-1 text-[10px] text-gray-400">▾</span>
+                  </td>
+                </tr>
+                <tr>
+                  <td colspan="8" style="padding:0; background:#fafafa; border-bottom:1px solid #f0f0f0;">
+                    <div style="padding: 12px 28px 16px;">
+                      <p class="text-[11px] font-semibold text-gray-900 mb-2">Day-by-day breakdown — Deepanshu Thakur</p>
+                      <div class="bg-white border border-gray-200 rounded-md overflow-hidden">
+                        <table style="width:100%; border-collapse:collapse;">
+                          <thead>
+                            <tr style="background:#f9fafb;">
+                              <th style="font-size:10px; font-weight:500; text-transform:uppercase; letter-spacing:0.05em; color:#9ca3af; text-align:left; padding:6px 12px; width:18%">Date</th>
+                              <th style="font-size:10px; font-weight:500; text-transform:uppercase; letter-spacing:0.05em; color:#9ca3af; text-align:left; padding:6px 12px; width:18%">Clock-out</th>
+                              <th style="font-size:10px; font-weight:500; text-transform:uppercase; letter-spacing:0.05em; color:#9ca3af; text-align:right; padding:6px 12px; width:14%">OT hrs</th>
+                              <th style="font-size:10px; font-weight:500; text-transform:uppercase; letter-spacing:0.05em; color:#9ca3af; text-align:left; padding:6px 12px;">Status</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr style="border-top:1px solid #f3f4f6;">
+                              <td style="font-size:11.5px; padding:8px 12px; color:#111827; font-weight:500; font-variant-numeric:tabular-nums;">14 May 2026</td>
+                              <td style="font-size:11.5px; padding:8px 12px; color:#374151; font-variant-numeric:tabular-nums;">7:20 pm</td>
+                              <td style="font-size:11.5px; padding:8px 12px; color:#111827; font-weight:500; text-align:right; font-variant-numeric:tabular-nums;">1.5 hrs</td>
+                              <td style="padding:8px 12px;"><span class="inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded bg-gray-100 text-gray-700">Auto credited</span></td>
+                            </tr>
+                            <tr style="border-top:1px solid #f3f4f6;">
+                              <td style="font-size:11.5px; padding:8px 12px; color:#111827; font-weight:500; font-variant-numeric:tabular-nums;">12 May 2026</td>
+                              <td style="font-size:11.5px; padding:8px 12px; color:#374151; font-variant-numeric:tabular-nums;">8:15 pm</td>
+                              <td style="font-size:11.5px; padding:8px 12px; color:#111827; font-weight:500; text-align:right; font-variant-numeric:tabular-nums;">2.5 hrs</td>
+                              <td style="padding:8px 12px;"><span class="inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded bg-gray-100 text-gray-700">Approved</span></td>
+                            </tr>
+                            <tr style="border-top:1px solid #f3f4f6;">
+                              <td style="font-size:11.5px; padding:8px 12px; color:#111827; font-weight:500; font-variant-numeric:tabular-nums;">8 May 2026</td>
+                              <td style="font-size:11.5px; padding:8px 12px; color:#374151; font-variant-numeric:tabular-nums;">7:45 pm</td>
+                              <td style="font-size:11.5px; padding:8px 12px; color:#111827; font-weight:500; text-align:right; font-variant-numeric:tabular-nums;">1.0 hr</td>
+                              <td style="padding:8px 12px;"><span class="inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded bg-gray-100 text-gray-700">Auto credited</span></td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+                <!-- Remaining rows -->
+                <tr class="row">
+                  <td class="first">4</td>
+                  <td class="primary">Bankim</td>
+                  <td>Billing Operator</td>
+                  <td class="right">4</td>
+                  <td class="right primary">6.0 hrs</td>
+                  <td class="right">6.0</td>
+                  <td class="right muted">0</td>
+                  <td><span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-700">Active</span></td>
+                </tr>
+                <tr class="row">
+                  <td class="first">5</td>
+                  <td class="primary">Chandrasing Valvi</td>
+                  <td>Tint Operator</td>
+                  <td class="right">3</td>
+                  <td class="right primary">5.5 hrs</td>
+                  <td class="right">5.5</td>
+                  <td class="right muted">0</td>
+                  <td><span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-700">Active</span></td>
+                </tr>
+                <tr class="row">
+                  <td class="first">6</td>
+                  <td class="primary">Dhruv</td>
+                  <td>Ops Admin</td>
+                  <td class="right">2</td>
+                  <td class="right primary">3.0 hrs</td>
+                  <td class="right">3.0</td>
+                  <td class="right muted">0</td>
+                  <td><span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-700">Active</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ────────────────────────────────────────────────────────────────── -->
+    <!-- PAGE 4 — Settings                                                  -->
+    <!-- ────────────────────────────────────────────────────────────────── -->
+    <div class="max-w-7xl mx-auto px-6">
+      <div class="text-xs uppercase tracking-wider text-gray-500 mb-2 mt-8">
+        Page 4 — Settings · /admin/attendance/settings
+      </div>
+      <div class="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
+        <!-- Strip 1 — switcher hidden, title carries breadcrumb -->
+        <div class="h-14 flex items-center justify-between px-6 border-b border-gray-200">
+          <div class="flex items-center gap-2">
+            <span class="font-semibold text-base text-gray-500">Attendance</span>
+            <span class="text-gray-300">·</span>
+            <span class="font-semibold text-base text-gray-900">Settings</span>
+          </div>
+          <div class="flex items-center gap-3">
+            <button class="inline-flex items-center border border-gray-200 rounded-md px-3 py-1.5 text-xs text-gray-900 bg-white hover:bg-gray-50">
+              Reports
+              <span class="text-[9px] text-gray-400 ml-1">▾</span>
+            </button>
+            <span class="text-xs text-gray-400 tabular-nums">13:53</span>
+          </div>
+        </div>
+
+        <!-- Strip 2 — dirty state + save -->
+        <div class="h-12 flex items-center justify-between px-6 border-b border-gray-200">
+          <p class="text-xs text-amber-700 tabular-nums">6 fields changed</p>
+          <div class="flex items-center gap-3">
+            <button class="text-xs text-gray-600 hover:text-gray-900">Discard</button>
+            <button class="bg-gray-900 hover:bg-gray-800 text-white text-xs font-medium px-3 py-1.5 rounded-md">Save changes</button>
+          </div>
+        </div>
+
+        <!-- Body — 6 section cards -->
+        <div class="bg-gray-50 p-6">
+          <div class="max-w-3xl mx-auto space-y-4">
+            <!-- 1. Working hours -->
+            <section class="bg-white border border-gray-200 rounded-xl p-5">
+              <header class="mb-4">
+                <h3 class="text-sm font-medium text-gray-900">Working hours</h3>
+                <p class="text-xs text-gray-500 mt-0.5">Sets shift bookends used for late + half-day calcs.</p>
+              </header>
+              <div class="grid grid-cols-3 gap-3">
+                <div>
+                  <label class="block text-[11px] font-medium text-gray-700 mb-1">Start time</label>
+                  <input type="time" value="09:00" class="w-full border border-gray-300 rounded-md px-3 py-2 text-[13px] text-gray-900 tabular-nums focus:border-gray-900 focus:outline-none" />
+                </div>
+                <div>
+                  <label class="block text-[11px] font-medium text-gray-700 mb-1">End time</label>
+                  <input type="time" value="18:00" class="w-full border border-gray-300 rounded-md px-3 py-2 text-[13px] text-gray-900 tabular-nums focus:border-gray-900 focus:outline-none" />
+                </div>
+                <div>
+                  <label class="block text-[11px] font-medium text-gray-700 mb-1">Break (min)</label>
+                  <input type="number" value="60" class="w-full border border-gray-300 rounded-md px-3 py-2 text-[13px] text-gray-900 text-right tabular-nums focus:border-gray-900 focus:outline-none" />
+                </div>
+              </div>
+            </section>
+
+            <!-- 2. Late threshold -->
+            <section class="bg-white border border-gray-200 rounded-xl p-5">
+              <header class="mb-4">
+                <h3 class="text-sm font-medium text-gray-900">Late threshold</h3>
+                <p class="text-xs text-gray-500 mt-0.5">Grace window after Start time before LATE is recorded.</p>
+              </header>
+              <div class="max-w-[220px]">
+                <label class="block text-[11px] font-medium text-gray-700 mb-1">Grace minutes</label>
+                <div class="relative">
+                  <input type="number" value="10" class="w-full border border-gray-300 rounded-md px-3 py-2 pr-12 text-[13px] text-gray-900 text-right tabular-nums focus:border-gray-900 focus:outline-none" />
+                  <span class="absolute right-3 top-1/2 -translate-y-1/2 text-[12px] text-gray-400 pointer-events-none">min</span>
+                </div>
+              </div>
+            </section>
+
+            <!-- 3. Check-in requirements -->
+            <section class="bg-white border border-gray-200 rounded-xl p-5">
+              <header class="mb-4">
+                <h3 class="text-sm font-medium text-gray-900">Check-in requirements</h3>
+                <p class="text-xs text-gray-500 mt-0.5">What each user must capture at check-in / check-out.</p>
+              </header>
+              <div class="flex items-center justify-between py-2 border-b border-gray-100">
+                <span class="text-[13px] text-gray-900 font-medium">Require photo</span>
+                <button type="button" role="switch" aria-checked="true" class="relative inline-flex h-5 w-9 shrink-0 rounded-full bg-gray-900">
+                  <span class="absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow translate-x-4"></span>
+                </button>
+              </div>
+              <div class="flex items-center justify-between py-2">
+                <span class="text-[13px] text-gray-900 font-medium">Require GPS</span>
+                <button type="button" role="switch" aria-checked="true" class="relative inline-flex h-5 w-9 shrink-0 rounded-full bg-gray-900">
+                  <span class="absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow translate-x-4"></span>
+                </button>
+              </div>
+            </section>
+
+            <!-- 4. OT prompt -->
+            <section class="bg-white border border-gray-200 rounded-xl p-5">
+              <header class="mb-4">
+                <h3 class="text-sm font-medium text-gray-900">OT prompt</h3>
+                <p class="text-xs text-gray-500 mt-0.5">User-facing prompt on check-out past trigger time.</p>
+              </header>
+              <div class="flex items-center justify-between py-2 mb-3 border-b border-gray-100">
+                <span class="text-[13px] text-gray-900 font-medium">Enabled</span>
+                <button type="button" role="switch" aria-checked="true" class="relative inline-flex h-5 w-9 shrink-0 rounded-full bg-gray-900">
+                  <span class="absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow translate-x-4"></span>
+                </button>
+              </div>
+              <div class="max-w-[220px]">
+                <label class="block text-[11px] font-medium text-gray-700 mb-1">Threshold (hours)</label>
+                <div class="relative">
+                  <input type="number" step="0.1" value="0.5" class="w-full border border-gray-300 rounded-md px-3 py-2 pr-12 text-[13px] text-gray-900 text-right tabular-nums focus:border-gray-900 focus:outline-none" />
+                  <span class="absolute right-3 top-1/2 -translate-y-1/2 text-[12px] text-gray-400 pointer-events-none">hrs</span>
+                </div>
+              </div>
+            </section>
+
+            <!-- 5. Notifications -->
+            <section class="bg-white border border-gray-200 rounded-xl p-5">
+              <header class="mb-4">
+                <h3 class="text-sm font-medium text-gray-900">Notifications</h3>
+                <p class="text-xs text-gray-500 mt-0.5">Where summary digests and alerts get posted.</p>
+              </header>
+              <div>
+                <label class="block text-[11px] font-medium text-gray-700 mb-1">Slack webhook URL</label>
+                <input type="text" value="https://hooks.slack.com/services/T0XXXX/B0YYYY/zZzZ..." class="w-full border border-gray-300 rounded-md px-3 py-2 text-[12.5px] text-gray-900 font-mono focus:border-gray-900 focus:outline-none" />
+              </div>
+            </section>
+
+            <!-- 6. Holidays -->
+            <section class="bg-white border border-gray-200 rounded-xl p-5">
+              <header class="mb-4">
+                <h3 class="text-sm font-medium text-gray-900">Holidays</h3>
+                <p class="text-xs text-gray-500 mt-0.5">Days that count as HOLIDAY instead of ABSENT.</p>
+              </header>
+              <div class="space-y-2 mb-3">
+                <div class="flex items-center justify-between px-3 py-2 border border-gray-200 rounded-md text-[13px]">
+                  <div class="flex items-center gap-3">
+                    <span class="text-gray-900 font-medium tabular-nums w-[100px]">26 Jan 2026</span>
+                    <span class="text-gray-700">Republic Day</span>
+                  </div>
+                  <button class="text-gray-400 hover:text-gray-700 text-[12px]">Remove</button>
+                </div>
+                <div class="flex items-center justify-between px-3 py-2 border border-gray-200 rounded-md text-[13px]">
+                  <div class="flex items-center gap-3">
+                    <span class="text-gray-900 font-medium tabular-nums w-[100px]">15 Aug 2026</span>
+                    <span class="text-gray-700">Independence Day</span>
+                  </div>
+                  <button class="text-gray-400 hover:text-gray-700 text-[12px]">Remove</button>
+                </div>
+                <div class="flex items-center justify-between px-3 py-2 border border-gray-200 rounded-md text-[13px]">
+                  <div class="flex items-center gap-3">
+                    <span class="text-gray-900 font-medium tabular-nums w-[100px]">2 Oct 2026</span>
+                    <span class="text-gray-700">Gandhi Jayanti</span>
+                  </div>
+                  <button class="text-gray-400 hover:text-gray-700 text-[12px]">Remove</button>
+                </div>
+              </div>
+              <button class="text-xs text-gray-700 hover:text-gray-900 border border-dashed border-gray-300 hover:border-gray-400 rounded-md px-3 py-2 w-full">+ Add holiday</button>
+            </section>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ────────────────────────────────────────────────────────────────── -->
+    <!-- MOBILE VIEW (380px)                                                -->
+    <!-- ────────────────────────────────────────────────────────────────── -->
+    <div class="max-w-7xl mx-auto px-6">
+      <div class="text-xs uppercase tracking-wider text-gray-500 mb-2 mt-12">
+        Mobile view (380px width) · Dashboard
+      </div>
+      <div class="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden" style="width: 380px;">
+        <!-- Strip 1 collapses: top row has title + Reports + clock, switcher on its own row -->
+        <div class="border-b border-gray-200">
+          <div class="h-12 flex items-center justify-between px-4">
+            <span class="font-semibold text-[15px] text-gray-900">Attendance</span>
+            <div class="flex items-center gap-2">
+              <button class="inline-flex items-center border border-gray-200 rounded-md px-2 py-1 text-[11px] text-gray-900 bg-white">
+                Reports
+                <span class="text-[8px] text-gray-400 ml-1">▾</span>
+              </button>
+              <span class="text-[11px] text-gray-400 tabular-nums">13:53</span>
+            </div>
+          </div>
+          <div class="px-4 pb-2">
+            <div class="inline-flex items-center bg-gray-100 rounded-md p-0.5">
+              <button class="px-3 py-1 text-[11px] font-medium text-gray-900 bg-white rounded shadow-sm">Dashboard</button>
+              <button class="px-3 py-1 text-[11px] text-gray-600 inline-flex items-center gap-1.5">
+                OT Pending
+                <span class="bg-red-50 text-red-700 text-[9px] font-medium px-1.5 rounded-full">3</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Strip 2 with horizontal-scroll pills + date -->
+        <div class="border-b border-gray-200 px-4 py-2 flex items-center justify-between gap-3">
+          <div class="inline-flex items-center gap-1 overflow-x-auto scrollbar-hide flex-1 min-w-0">
+            <button class="shrink-0 inline-flex items-center px-2.5 py-1 text-[11px] font-medium rounded-md text-white" style="background:#0F6E56">All · 17</button>
+            <button class="shrink-0 inline-flex items-center px-2.5 py-1 text-[11px] text-gray-600 hover:bg-gray-50 rounded-md">Present · 0</button>
+            <button class="shrink-0 inline-flex items-center px-2.5 py-1 text-[11px] text-gray-600 hover:bg-gray-50 rounded-md">Late · 0</button>
+            <button class="shrink-0 inline-flex items-center px-2.5 py-1 text-[11px] text-gray-600 hover:bg-gray-50 rounded-md">Absent · 15</button>
+            <button class="shrink-0 inline-flex items-center px-2.5 py-1 text-[11px] text-gray-600 hover:bg-gray-50 rounded-md">Flags · 1</button>
+          </div>
+          <button class="shrink-0 inline-flex items-center border border-gray-200 rounded-md px-2 py-1 text-[10px] text-gray-900 bg-white">
+            14 May
+            <span class="text-[8px] text-gray-400 ml-1">▾</span>
+          </button>
+        </div>
+
+        <!-- Body — card list (table doesn't fit at 380px) -->
+        <div class="bg-gray-50 p-3 space-y-2">
+          <!-- Harsh (the only non-absent) at top -->
+          <div class="bg-white border border-gray-200 rounded-lg p-3">
+            <div class="flex items-start justify-between gap-2 mb-1">
+              <div class="min-w-0">
+                <p class="text-[13px] font-semibold text-gray-900 truncate">Harsh</p>
+                <p class="text-[11px] text-gray-500">Admin</p>
+              </div>
+              <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-amber-50 text-amber-700 shrink-0">Half day</span>
+            </div>
+            <div class="flex items-center justify-between text-[11px] text-gray-600 tabular-nums">
+              <span>1:42 am → 2:14 am</span>
+              <span class="text-gray-900 font-medium">20m</span>
+            </div>
+            <div class="mt-2 flex gap-1">
+              <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold bg-red-50 text-red-700 border border-red-200">GEO</span>
+            </div>
+          </div>
+          <!-- Absent rows (compact) -->
+          <div class="bg-white border border-gray-200 rounded-lg p-3 flex items-center justify-between">
+            <div class="min-w-0">
+              <p class="text-[13px] font-semibold text-gray-900 truncate">Ajay Vansiya</p>
+              <p class="text-[11px] text-gray-500">Dispatcher</p>
+            </div>
+            <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-red-50 text-red-700">Absent</span>
+          </div>
+          <div class="bg-white border border-gray-200 rounded-lg p-3 flex items-center justify-between">
+            <div class="min-w-0">
+              <p class="text-[13px] font-semibold text-gray-900 truncate">Bankim</p>
+              <p class="text-[11px] text-gray-500">Billing Operator</p>
+            </div>
+            <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-red-50 text-red-700">Absent</span>
+          </div>
+          <div class="bg-white border border-gray-200 rounded-lg p-3 flex items-center justify-between">
+            <div class="min-w-0">
+              <p class="text-[13px] font-semibold text-gray-900 truncate">Chandresh Kolgha</p>
+              <p class="text-[11px] text-gray-500">Tint Manager</p>
+            </div>
+            <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-red-50 text-red-700">Absent</span>
+          </div>
+          <div class="bg-white border border-gray-200 rounded-lg p-3 flex items-center justify-between">
+            <div class="min-w-0">
+              <p class="text-[13px] font-semibold text-gray-900 truncate">Deepak Vasava</p>
+              <p class="text-[11px] text-gray-500">Tint Operator</p>
+            </div>
+            <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-red-50 text-red-700">Absent</span>
+          </div>
+          <div class="bg-white border border-gray-200 rounded-lg p-3 flex items-center justify-between">
+            <div class="min-w-0">
+              <p class="text-[13px] font-semibold text-gray-900 truncate">Deepanshu Thakur</p>
+              <p class="text-[11px] text-gray-500">Billing Operator</p>
+            </div>
+            <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-red-50 text-red-700">Absent</span>
+          </div>
+          <div class="bg-white border border-gray-200 rounded-lg p-3 flex items-center justify-between">
+            <div class="min-w-0">
+              <p class="text-[13px] font-semibold text-gray-900 truncate">Dhruv</p>
+              <p class="text-[11px] text-gray-500">Ops Admin</p>
+            </div>
+            <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-red-50 text-red-700">Absent</span>
+          </div>
+          <div class="bg-white border border-gray-200 rounded-lg p-3 flex items-center justify-between">
+            <div class="min-w-0">
+              <p class="text-[13px] font-semibold text-gray-900 truncate">Kuldeep</p>
+              <p class="text-[11px] text-gray-500">Ops Admin</p>
+            </div>
+            <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-red-50 text-red-700">Absent</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

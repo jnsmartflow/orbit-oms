@@ -26,8 +26,8 @@ export default async function AdminDashboard() {
     prisma.delivery_point_master.count({ where: { isActive: true } }),
     prisma.transporter_master.count({ where: { isActive: true } }),
     prisma.sales_officer_group.count({ where: { isActive: true } }),
-    prisma.orders.count({ where: { createdAt: { gte: todayStart } } }),
-    prisma.orders.count({ where: { workflowStage: "pending_support" } }),
+    prisma.orders.count({ where: { createdAt: { gte: todayStart }, isRemoved: false } }),
+    prisma.orders.count({ where: { workflowStage: "pending_support", isRemoved: false } }),
     prisma.users.findMany({
       take: 8,
       orderBy: { createdAt: "desc" },

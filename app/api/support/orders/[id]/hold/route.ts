@@ -20,8 +20,8 @@ export async function POST(
 
   const { note } = (await req.json().catch(() => ({}))) as { note?: string };
 
-  const order = await prisma.orders.findUnique({
-    where: { id: orderId },
+  const order = await prisma.orders.findFirst({
+    where: { id: orderId, isRemoved: false },
     include: {
       splits: { where: { status: { not: "cancelled" } } },
     },

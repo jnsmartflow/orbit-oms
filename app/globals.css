@@ -321,6 +321,12 @@
     box-shadow: none !important;
   }
 
+  /* Phase 2e — Voided watermark must never leak ink on a printed/PDF challan.
+     Belt-and-braces with Tailwind's print:hidden on the element itself. */
+  #challan-print-area .challan-void-mark {
+    display: none !important;
+  }
+
   /* ── S1 Header ───────────────────────────────────────────────────────────── */
   #challan-print-area .ch-header { background: #fff !important; border-bottom: 3px solid #000 !important; }
   #challan-print-area .ch-header img { filter: grayscale(100%) brightness(0) !important; height: 34px !important; width: auto !important; }

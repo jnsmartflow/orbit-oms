@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Loader2, Printer, Edit2, Save, X, FileText } from "lucide-react";
+import { Loader2, Printer, Edit2, Save, X, FileText, Ban } from "lucide-react";
 import {
   ChallanDocument,
   type ChallanApiResponse,
@@ -20,6 +20,30 @@ interface ChallanListItem {
   route:              string | null;
   slot:               string | null;
   challanNumber:      string | null;
+  /** Phase 2e — drives left-panel voided styling. */
+  isVoided:           boolean;
+}
+
+// Reason enum → human label for the void-banner body.
+function reasonLabel(reason: string | null): string {
+  if (!reason) return "—";
+  if (reason === "CUSTOMER_CANCELLED") return "Customer cancelled";
+  if (reason === "WRONG_ORDER")        return "Wrong order";
+  return reason;
+}
+
+// IST date+time for the void-banner meta line ("15 May 2026, 10:18 IST").
+function formatIstDateTime(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "—";
+  const dateStr = d.toLocaleDateString("en-GB", {
+    day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata",
+  });
+  const timeStr = d.toLocaleTimeString("en-GB", {
+    hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata",
+  });
+  return `${dateStr}, ${timeStr} IST`;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -223,6 +247,9 @@ export function ChallanContent() {
   // ── Print ─────────────────────────────────────────────────────────────────────
   const handlePrint = useCallback(async () => {
     if (isPrinting) return;
+    // Phase 2e — belt-and-braces: refuse to print a voided challan even if the
+    // disabled button is bypassed (e.g. a stale ref or focus-injected click).
+    if (challanData?.challan.isVoided) return;
     setIsPrinting(true);
 
     if (isDirty) {
@@ -349,6 +376,7 @@ export function ChallanContent() {
             ) : (
               items.map((item) => {
                 const isSelected = item.orderId === selectedOrderId;
+                const isVoided   = item.isVoided;
 
                 return (
                   <div
@@ -361,26 +389,46 @@ export function ChallanContent() {
                       background: isSelected ? "#f0fdfa" : undefined,
                       cursor: "pointer",
                       transition: "background 0.1s",
+                      // Phase 2e — fade voided rows so they read as inactive but still
+                      // clickable. Selected teal styling still wins.
+                      opacity: isVoided ? 0.65 : 1,
                     }}
                     onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.background = "#f9fafb"; }}
                     onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.background = ""; }}
                   >
-                    {/* Line 1: OBD number + challan badge */}
+                    {/* Line 1: OBD number + challan badge (+ Voided pill if voided) */}
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 3 }}>
-                      <span style={{
-                        fontFamily: "'SF Mono', ui-monospace, monospace",
-                        fontSize: 11, fontWeight: 600,
-                        color: isSelected ? "#0d9488" : "#374151",
-                      }}>
-                        {item.obdNumber}
-                      </span>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                        <span style={{
+                          fontFamily: "'SF Mono', ui-monospace, monospace",
+                          fontSize: 11, fontWeight: 600,
+                          color: isSelected ? "#0d9488" : "#374151",
+                          // Strikethrough only the OBD number when voided.
+                          textDecoration: isVoided ? "line-through" : undefined,
+                        }}>
+                          {item.obdNumber}
+                        </span>
+                        {isVoided && (
+                          <span
+                            className="text-[9px] font-semibold uppercase tracking-wide px-1.5 py-[1px] rounded border bg-red-50 text-red-700 border-red-200"
+                          >
+                            Voided
+                          </span>
+                        )}
+                      </div>
                       {item.challanNumber && (
                         <span style={{
                           fontFamily: "'SF Mono', ui-monospace, monospace",
                           fontSize: 9, fontWeight: 600, padding: "1px 6px", borderRadius: 4,
-                          color: isSelected ? "#0d9488" : "#6b7280",
-                          background: isSelected ? "#f0fdfa" : "#f9fafb",
-                          border: `1px solid ${isSelected ? "#99f6e4" : "#e5e7eb"}`,
+                          color: isVoided
+                            ? "#b91c1c"
+                            : (isSelected ? "#0d9488" : "#6b7280"),
+                          background: isVoided
+                            ? "#fef2f2"
+                            : (isSelected ? "#f0fdfa" : "#f9fafb"),
+                          border: `1px solid ${
+                            isVoided ? "#fecaca" : (isSelected ? "#99f6e4" : "#e5e7eb")
+                          }`,
                         }}>
                           {item.challanNumber}
                         </span>
@@ -527,15 +575,19 @@ export function ChallanContent() {
                     </button>
                   </>
                 ) : (
-                  /* Edit button — outline */
+                  /* Edit button — outline (disabled when voided per Phase 2e) */
                   <button
                     type="button"
-                    onClick={() => setIsEditing(true)}
+                    onClick={() => { if (!challanData.challan.isVoided) setIsEditing(true); }}
+                    disabled={challanData.challan.isVoided}
+                    title={challanData.challan.isVoided ? "Cannot edit a voided challan" : undefined}
                     style={{
                       height: 32, padding: "0 12px",
                       border: "1px solid #e5e7eb", borderRadius: 6,
-                      fontSize: 12, fontWeight: 600, color: "#6b7280",
-                      background: "#fff", cursor: "pointer",
+                      fontSize: 12, fontWeight: 600,
+                      color: challanData.challan.isVoided ? "#9ca3af" : "#6b7280",
+                      background: challanData.challan.isVoided ? "#f3f4f6" : "#fff",
+                      cursor: challanData.challan.isVoided ? "not-allowed" : "pointer",
                       display: "flex", alignItems: "center", gap: 5,
                     }}
                   >
@@ -543,16 +595,19 @@ export function ChallanContent() {
                   </button>
                 )}
 
-                {/* Print — dark */}
+                {/* Print — dark (disabled when voided per Phase 2e) */}
                 <button
                   type="button"
                   onClick={() => void handlePrint()}
-                  disabled={isPrinting || detailLoading}
+                  disabled={isPrinting || detailLoading || challanData.challan.isVoided}
+                  title={challanData.challan.isVoided ? "Cannot print a voided challan" : undefined}
                   style={{
                     height: 32, padding: "0 12px",
                     border: "none", borderRadius: 6,
-                    fontSize: 12, fontWeight: 600, color: "#fff",
-                    background: "#111827", cursor: "pointer",
+                    fontSize: 12, fontWeight: 600,
+                    color: challanData.challan.isVoided ? "#6b7280" : "#fff",
+                    background: challanData.challan.isVoided ? "#d1d5db" : "#111827",
+                    cursor: challanData.challan.isVoided ? "not-allowed" : "pointer",
                     display: "flex", alignItems: "center", gap: 5,
                     opacity: isPrinting ? 0.6 : 1,
                   }}
@@ -561,6 +616,30 @@ export function ChallanContent() {
                   {isPrinting ? "Printing…" : "Print"}
                 </button>
               </div>
+
+              {/* ── Phase 2e — Void banner ─────────────────────────────────── */}
+              {challanData.challan.isVoided && (
+                <div className="mx-[18px] mt-[14px] flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 px-3.5 py-3">
+                  <Ban className="text-red-700 mt-[1px] flex-shrink-0" size={18} />
+                  <div className="flex-1">
+                    <div className="text-[12.5px] font-semibold text-red-900 mb-1">
+                      This challan is voided. Print and edit are disabled.
+                    </div>
+                    <div className="text-[11.5px] text-red-800 leading-relaxed">
+                      <strong>Reason:</strong> {reasonLabel(challanData.challan.voidReason)}
+                      {" · "}
+                      <strong>Remark:</strong> {challanData.challan.voidRemark ?? "—"}
+                    </div>
+                    <div className="text-[11px] text-red-700 mt-1.5 opacity-90">
+                      Voided by {challanData.order.removedBy?.name ?? "—"}
+                      {" · "}
+                      {formatIstDateTime(challanData.order.removedAt ?? challanData.challan.voidedAt)}
+                      {" · "}
+                      Linked OBD <span className="font-mono">{challanData.order.obdNumber}</span> removed
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Challan document — scrollable */}
               <div style={{ flex: 1, overflowY: "auto", padding: 16 }}>
@@ -573,6 +652,7 @@ export function ChallanContent() {
                   onFormulaChange={handleFormulaChange}
                   onTransporterChange={handleTransporterChange}
                   onVehicleNoChange={handleVehicleNoChange}
+                  isVoided={challanData.challan.isVoided}
                 />
               </div>
             </>

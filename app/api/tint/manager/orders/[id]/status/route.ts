@@ -48,7 +48,7 @@ export async function PATCH(
   }
 
   try {
-    const order = await prisma.orders.findUnique({ where: { id: orderId } });
+    const order = await prisma.orders.findFirst({ where: { id: orderId, isRemoved: false } });
     if (!order) {
       return NextResponse.json({ error: "Order not found" }, { status: 404 });
     }

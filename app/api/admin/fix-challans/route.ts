@@ -16,6 +16,7 @@ export async function POST(): Promise<NextResponse> {
     where: {
       workflowStage: { notIn: ["cancelled"] },
       challan: null, // no delivery_challans record
+      isRemoved: false,
     },
     select: {
       id: true,

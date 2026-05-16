@@ -39,8 +39,8 @@ export async function POST(
   }
 
   // Get order weight/volume to subtract
-  const order = await prisma.orders.findUnique({
-    where: { id: body.orderId },
+  const order = await prisma.orders.findFirst({
+    where: { id: body.orderId, isRemoved: false },
     include: { querySnapshot: true },
   });
 

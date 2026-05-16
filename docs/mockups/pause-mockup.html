@@ -1,0 +1,1155 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Operator Pause / Resume — Mockup REV 2</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; background: #f9fafb; color: #111827; margin: 0; }
+  .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+  .section { max-width: 1280px; margin: 0 auto; padding: 28px 24px; }
+  .section h2 { font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #6b7280; margin-bottom: 12px; }
+  .surface-label { font-size: 11px; color: #9ca3af; margin-bottom: 8px; }
+  .req { color: #dc2626; margin-left: 2px; }
+
+  /* Operator shell */
+  .op-shell { background: white; border: 1px solid #e5e7eb; border-radius: 12px; }
+  .obd-mono { font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #6b7280; font-weight: 500; }
+
+  /* Section header inside operator shell */
+  .op-section-header { display: flex; align-items: center; gap: 9px; padding: 14px 18px 8px 18px; }
+  .op-section-title { font-size: 12px; font-weight: 600; color: #111827; text-transform: uppercase; letter-spacing: 0.04em; }
+  .op-section-count { font-size: 11px; color: #9ca3af; }
+
+  /* Current job card */
+  .current-card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 16px 18px; background: white; margin: 0 18px 12px 18px; }
+  .badge-ready { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; background: #dbeafe; color: #1e40af; border-radius: 5px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+  .badge-in-progress { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; background: #d1fae5; color: #065f46; border-radius: 5px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+  .badge-paused { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; background: #b45309; color: white; border-radius: 4px; font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+
+  /* Paused card */
+  .paused-card { border: 1px solid #fde68a; border-radius: 10px; padding: 14px 16px; background: #fffbeb; margin: 0 18px 10px 18px; position: relative; }
+  .pause-summary { font-size: 10.5px; color: #92400e; margin-top: 8px; background: #fef3c7; border: 1px solid #fde68a; border-radius: 5px; padding: 6px 9px; }
+
+  /* Up Next preview row */
+  .upnext-row { display: flex; align-items: center; gap: 12px; padding: 8px 18px; margin: 0 18px 4px 18px; border-bottom: 1px dashed #f3f4f6; }
+  .upnext-row:last-child { border-bottom: none; margin-bottom: 14px; }
+  .upnext-pos { font-size: 10px; font-weight: 600; color: #9ca3af; background: #f3f4f6; padding: 2px 7px; border-radius: 4px; min-width: 28px; text-align: center; }
+  .upnext-meta { font-size: 11.5px; color: #6b7280; flex: 1; }
+  .upnext-meta strong { color: #374151; font-weight: 500; }
+
+  /* CTA buttons (operator) */
+  .cta-save { height: 36px; padding: 0 14px; background: white; border: 1px solid #e5e7eb; color: #4b5563; border-radius: 7px; font-size: 12.5px; font-weight: 500; display: inline-flex; align-items: center; gap: 6px; }
+  .cta-save:hover { background: #f9fafb; }
+  .cta-primary { height: 36px; padding: 0 14px; background: #111827; color: white; border-radius: 7px; font-size: 12.5px; font-weight: 500; display: inline-flex; align-items: center; gap: 6px; }
+  .cta-primary:hover { background: #1f2937; }
+  .cta-pause { height: 36px; padding: 0 14px; background: #d97706; color: white; border-radius: 7px; font-size: 12.5px; font-weight: 500; display: inline-flex; align-items: center; gap: 6px; }
+  .cta-pause:hover { background: #b45309; }
+  .cta-skip { height: 36px; padding: 0 14px; background: white; border: 1px solid #e5e7eb; color: #b91c1c; border-radius: 7px; font-size: 12.5px; font-weight: 500; display: inline-flex; align-items: center; gap: 6px; }
+  .cta-skip:hover { background: #fef2f2; border-color: #fecaca; }
+  .cta-resume-disabled { height: 34px; padding: 0 12px; background: #e5e7eb; color: #9ca3af; border-radius: 6px; font-size: 12px; font-weight: 500; display: inline-flex; align-items: center; gap: 5px; cursor: not-allowed; }
+  .cta-resume-enabled { height: 34px; padding: 0 12px; background: #111827; color: white; border-radius: 6px; font-size: 12px; font-weight: 500; display: inline-flex; align-items: center; gap: 5px; }
+  .cta-resume-enabled:hover { background: #1f2937; }
+  .cta-progress { height: 34px; padding: 0 12px; background: white; border: 1px solid #fde68a; color: #b45309; border-radius: 6px; font-size: 12px; font-weight: 500; display: inline-flex; align-items: center; gap: 5px; }
+  .cta-progress:hover { background: #fffbeb; }
+
+  /* Empty state */
+  .empty-current { border: 1px dashed #e5e7eb; border-radius: 10px; padding: 32px 18px; margin: 0 18px 12px 18px; text-align: center; }
+  .empty-icon { width: 36px; height: 36px; border-radius: 999px; background: #f3f4f6; display: inline-flex; align-items: center; justify-content: center; color: #9ca3af; margin-bottom: 10px; }
+  .empty-title { font-size: 13px; font-weight: 600; color: #6b7280; }
+  .empty-sub { font-size: 11.5px; color: #9ca3af; margin-top: 4px; max-width: 360px; margin-left: auto; margin-right: auto; line-height: 1.5; }
+  .empty-upnext { padding: 14px 18px; font-size: 11.5px; color: #9ca3af; font-style: italic; margin: 0 18px 14px 18px; border: 1px dashed #f3f4f6; border-radius: 8px; text-align: center; }
+
+  /* Tooltip */
+  .tooltip { position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%); background: #111827; color: white; padding: 8px 12px; border-radius: 6px; font-size: 11.5px; line-height: 1.4; max-width: 240px; box-shadow: 0 4px 12px rgba(0,0,0,0.18); z-index: 20; white-space: nowrap; }
+  .tooltip::after { content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%); border: 5px solid transparent; border-top-color: #111827; }
+
+  /* SKU rows in current card */
+  .sku-line { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
+  .pig-chip-sm { width: 26px; height: 26px; border-radius: 6px; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 600; color: white; font-family: ui-monospace, Menlo, monospace; letter-spacing: 0.04em; }
+  .pig-chip-lg { width: 28px; height: 28px; border-radius: 7px; border: 1px solid #e5e7eb; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 600; color: white; font-family: ui-monospace, Menlo, monospace; letter-spacing: 0.04em; }
+
+  /* Modal */
+  .scrim { position: fixed; inset: 0; background: rgba(0,0,0,0.40); display: flex; align-items: center; justify-content: center; z-index: 50; }
+  .modal { width: 540px; background: white; border-radius: 12px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); padding: 22px; max-height: 90vh; overflow-y: auto; }
+  .modal h3 { font-size: 16px; font-weight: 600; color: #111827; }
+  .modal-sub { font-size: 11.5px; color: #6b7280; margin-top: 2px; }
+  .field-label { font-size: 11px; font-weight: 500; color: #6b7280; text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 6px; display: block; }
+  .field-textarea { width: 100%; min-height: 64px; padding: 9px 12px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 13px; color: #111827; resize: vertical; font-family: inherit; }
+  .field-textarea:focus { outline: none; border-color: #14b8a6; box-shadow: 0 0 0 3px rgba(20,184,166,0.10); }
+
+  /* Radio rows in modal */
+  .radio-row { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border: 1px solid #f0f0f0; border-radius: 8px; margin-bottom: 6px; cursor: pointer; }
+  .radio-row:hover { background: #f9fafb; }
+  .radio-row.selected { background: #fffbeb; border-color: #fde68a; }
+  .radio-circle { width: 14px; height: 14px; border-radius: 999px; border: 2px solid #d1d5db; flex-shrink: 0; }
+  .radio-row.selected .radio-circle { border-color: #d97706; background: #d97706; box-shadow: inset 0 0 0 3px white; }
+  .radio-label { font-size: 13px; color: #111827; }
+
+  /* Per-SKU progress rows in modal */
+  .sku-row { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border: 1px solid #f0f0f0; border-radius: 8px; margin-bottom: 6px; background: white; }
+  .sku-meta-block { flex: 1; min-width: 0; }
+  .sku-meta-line1 { font-size: 12px; color: #111827; font-weight: 500; }
+  .sku-meta-line2 { font-size: 11px; color: #6b7280; }
+  .sku-stepper { display: inline-flex; align-items: center; border: 1px solid #e5e7eb; border-radius: 7px; overflow: hidden; flex-shrink: 0; }
+  .qty-btn { width: 28px; height: 32px; background: white; color: #4b5563; font-size: 14px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; }
+  .qty-btn:hover { background: #f3f4f6; }
+  .qty-input { width: 50px; height: 32px; text-align: center; border-left: 1px solid #e5e7eb; border-right: 1px solid #e5e7eb; background: white; font-size: 13px; font-family: ui-monospace, Menlo, monospace; color: #111827; }
+
+  /* Modal buttons */
+  .btn-cancel { height: 36px; padding: 0 14px; background: white; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 13px; color: #4b5563; }
+  .btn-cancel:hover { background: #f9fafb; }
+  .btn-pause-confirm { height: 36px; padding: 0 14px; background: #d97706; color: white; border-radius: 8px; font-size: 13px; font-weight: 500; }
+  .btn-pause-confirm:hover { background: #b45309; }
+
+  /* Transition preview panels */
+  .trans-pair { display: grid; grid-template-columns: 1fr 64px 1fr; gap: 14px; align-items: stretch; margin-bottom: 22px; }
+  .trans-panel { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 10px; padding: 14px 16px; }
+  .trans-label { font-size: 10px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 10px; }
+  .trans-arrow { display: flex; align-items: center; justify-content: center; flex-direction: column; }
+  .trans-arrow-svg { font-size: 22px; color: #9ca3af; }
+  .trans-arrow-label { font-size: 10px; color: #6b7280; margin-top: 4px; text-align: center; line-height: 1.3; }
+  .trans-section-h { font-size: 9.5px; font-weight: 600; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 8px; margin-bottom: 4px; }
+  .trans-section-h:first-child { margin-top: 0; }
+  .mini-card { background: white; border: 1px solid #e5e7eb; border-radius: 6px; padding: 6px 9px; margin-bottom: 4px; }
+  .mini-card.paused { background: #fffbeb; border-color: #fde68a; }
+  .mini-card.current { border: 1px solid #c7d2fe; background: #eef2ff; }
+  .mini-card.current-tinting { border: 1px solid #a7f3d0; background: #ecfdf5; }
+  .mini-row { font-size: 10.5px; color: #374151; line-height: 1.4; }
+  .mini-row .mono { font-size: 10.5px; color: #111827; font-weight: 500; }
+  .mini-status { font-size: 9px; color: #6b7280; }
+  .mini-empty { font-size: 10.5px; color: #9ca3af; font-style: italic; padding: 4px 0; }
+
+  /* TM Kanban */
+  .kcard { background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px 12px; position: relative; }
+  .kcard.paused-kcard { border-left: 4px solid #f59e0b; padding-left: 11px; background: #fffbeb; border-color: #fde68a; }
+  .age-pill { display: inline-flex; align-items: center; padding: 1px 6px; background: #fef3c7; color: #92400e; border-radius: 4px; font-size: 10px; font-weight: 500; }
+  .pause-pill-kanban { display: inline-flex; align-items: center; gap: 4px; padding: 1px 7px; background: #b45309; color: white; border-radius: 4px; font-size: 9.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+  .pause-summary-kanban { font-size: 10.5px; color: #92400e; margin-top: 6px; background: #fef3c7; border: 1px solid #fde68a; border-radius: 5px; padding: 5px 8px; }
+  .view-history-link { font-size: 10.5px; color: #b45309; text-decoration: underline; cursor: pointer; margin-top: 5px; display: inline-block; }
+  .view-history-link:hover { color: #92400e; }
+  .kebab { position: absolute; top: 8px; right: 8px; width: 22px; height: 22px; border-radius: 4px; display: inline-flex; align-items: center; justify-content: center; color: #9ca3af; }
+  .kebab:hover { background: #f3f4f6; color: #4b5563; }
+
+  /* TM Table */
+  .tm-table { width: 100%; border-collapse: collapse; table-layout: fixed; background: white; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; }
+  .tm-table thead th { font-size: 10px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; color: #9ca3af; height: 32px; background: #f9fafb; border-bottom: 1px solid #ebebeb; text-align: left; padding-left: 14px; padding-right: 14px; }
+  .tm-table tbody td { font-size: 11px; height: 44px; padding-left: 14px; padding-right: 14px; border-bottom: 1px solid #f0f0f0; color: #4b5563; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
+  .tm-table tbody tr:hover { background: #f9fafb; }
+  .tm-table td.center, .tm-table th.center { text-align: center; padding-left: 10px; padding-right: 4px; }
+  .primary { color: #111827; font-weight: 500; }
+  .muted { color: #9ca3af; }
+  .table-pause-badge { display: inline-flex; align-items: center; gap: 3px; padding: 1px 6px; background: #fef3c7; color: #92400e; border: 1px solid #fde68a; border-radius: 3px; font-size: 9.5px; font-weight: 600; margin-top: 2px; }
+
+  /* History modal events */
+  .event-card { border: 1px solid #f0f0f0; border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; background: white; }
+  .event-card.active { border-left: 3px solid #f59e0b; padding-left: 11px; background: #fffbeb; }
+  .event-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  .event-num { font-size: 10px; font-weight: 600; color: #92400e; text-transform: uppercase; letter-spacing: 0.05em; background: #fef3c7; padding: 2px 8px; border-radius: 4px; }
+  .event-time { font-size: 11px; color: #6b7280; }
+  .event-row { display: flex; gap: 8px; align-items: baseline; font-size: 12px; margin-bottom: 4px; }
+  .event-label { font-size: 10px; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.04em; min-width: 110px; }
+  .event-val { color: #374151; }
+  .resume-line { font-size: 11.5px; color: #6b7280; border-top: 1px dashed #e5e7eb; padding-top: 8px; margin-top: 10px; }
+  .active-line { font-size: 11.5px; color: #b45309; font-weight: 600; border-top: 1px dashed #fde68a; padding-top: 8px; margin-top: 10px; }
+  .snapshot-row { display: flex; align-items: center; gap: 7px; font-size: 11px; color: #374151; margin-top: 4px; }
+  .snapshot-pig { width: 10px; height: 10px; border-radius: 999px; flex-shrink: 0; }
+</style>
+</head>
+<body>
+
+<div class="section">
+  <div style="display: flex; align-items: baseline; gap: 16px; margin-bottom: 8px;">
+    <h1 style="font-size: 20px; font-weight: 600;">Operator Pause / Resume — feature mockup (REV 2)</h1>
+    <span style="font-size: 12px; color: #6b7280;">7 surfaces · CURRENT is single-slot · TM dictates priority · UP NEXT is read-only</span>
+  </div>
+  <p style="font-size: 13px; color: #6b7280; max-width: 760px; margin-bottom: 28px;">
+    Locked decision: TM decides priority. The operator works the sequence top-to-bottom. The CURRENT slot always holds exactly one card (or is empty). Paused jobs sit on an amber shelf and Resume is gated — only available when CURRENT is empty. UP NEXT is read-only preview, no buttons.
+  </p>
+</div>
+
+<!-- ============ SURFACE 1A — CURRENT in tint_assigned ============ -->
+<div class="section">
+  <h2>1A · Operator queue — CURRENT in tint_assigned state</h2>
+  <p class="surface-label">Operator has been assigned a fresh job that hasn't been started yet. Action footer: Save TI · Start · Skip. No Pause button (job hasn't started).</p>
+
+  <div class="op-shell">
+    <!-- Header row -->
+    <div style="display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid #f3f4f6;">
+      <div style="display: flex; align-items: baseline; gap: 14px;">
+        <span style="font-size: 16px; font-weight: 600;">My Jobs</span>
+        <span style="font-size: 11.5px; color: #9ca3af;">1 ready · 2 paused · 5 up next</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 12px; color: #9ca3af; font-size: 11.5px;">
+        <span class="mono" style="background: #f3f4f6; padding: 3px 7px; border-radius: 4px;">11:24</span>
+      </div>
+    </div>
+
+    <!-- CURRENT (1) -->
+    <div class="op-section-header">
+      <span class="op-section-title">Current</span>
+      <span class="op-section-count">(1)</span>
+    </div>
+    <div class="current-card">
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span class="mono primary" style="font-size: 13px;">8000123456</span>
+          <span class="muted">·</span>
+          <span style="font-size: 13px; color: #111827; font-weight: 600;">Patel Construction</span>
+          <span style="font-size: 11px; color: #6b7280;">· Assigned by Chandresh</span>
+        </div>
+        <span class="badge-ready">
+          <span style="width: 6px; height: 6px; background: #1e40af; border-radius: 999px;"></span>
+          Ready to start
+        </span>
+      </div>
+
+      <div style="background: #f9fafb; border: 1px solid #f0f0f0; border-radius: 8px; padding: 10px 14px; margin-bottom: 14px;">
+        <div style="font-size: 9.5px; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 6px;">SKUs to tint</div>
+        <div class="sku-line">
+          <div class="pig-chip-sm" style="background: #757575;">WHT</div>
+          <div style="flex: 1;">
+            <div style="font-size: 12px; color: #111827; font-weight: 500;">WS Max BW 4L · <span class="mono" style="font-size: 11px; color: #6b7280;">5388421</span></div>
+            <div style="font-size: 11px; color: #6b7280;">Assigned: 12 tins</div>
+          </div>
+        </div>
+        <div class="sku-line">
+          <div class="pig-chip-sm" style="background: #b8860b;">YOX</div>
+          <div style="flex: 1;">
+            <div style="font-size: 12px; color: #111827; font-weight: 500;">Apex Ultima YOX 10L · <span class="mono" style="font-size: 11px; color: #6b7280;">5388422</span></div>
+            <div style="font-size: 11px; color: #6b7280;">Assigned: 8 tins</div>
+          </div>
+        </div>
+        <div class="sku-line">
+          <div class="pig-chip-sm" style="background: #1565c0;">TBL</div>
+          <div style="flex: 1;">
+            <div style="font-size: 12px; color: #111827; font-weight: 500;">Apex Ultima TBL 10L · <span class="mono" style="font-size: 11px; color: #6b7280;">5388423</span></div>
+            <div style="font-size: 11px; color: #6b7280;">Assigned: 6 tins</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="display: flex; align-items: center; justify-content: space-between;">
+        <span style="font-size: 11.5px; color: #6b7280;">3 tinting lines · 26 tins total</span>
+        <div style="display: flex; gap: 8px;">
+          <button class="cta-save">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+            Save TI
+          </button>
+          <button class="cta-primary">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            Start
+          </button>
+          <button class="cta-skip">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/></svg>
+            Skip
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- PAUSED (2) -->
+    <div class="op-section-header">
+      <span class="op-section-title">Paused</span>
+      <span class="op-section-count">(2)</span>
+    </div>
+    <!-- Paused card 1 — with visible tooltip on disabled Resume -->
+    <div class="paused-card">
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span class="mono primary" style="font-size: 12.5px;">8000123450</span>
+          <span class="muted">·</span>
+          <span style="font-size: 12px; color: #374151; font-weight: 600;">Asopalav Decor</span>
+          <span style="font-size: 11px; color: #9ca3af;">· Paused 1×</span>
+        </div>
+        <span class="badge-paused">
+          <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+          Paused
+        </span>
+      </div>
+
+      <div class="pause-summary">
+        <div style="font-weight: 600;">Lunch break · 30 min ago</div>
+        <div style="margin-top: 2px;">Progress: 5 of 12 tins done</div>
+      </div>
+
+      <div style="display: flex; align-items: center; justify-content: space-between; padding-top: 10px; margin-top: 10px; border-top: 1px solid #fde68a;">
+        <span style="font-size: 11.5px; color: #92400e;">Frozen at 24 min elapsed</span>
+        <div style="display: flex; gap: 8px;">
+          <button class="cta-progress">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>
+            View Progress
+          </button>
+          <div style="position: relative;">
+            <div class="tooltip">
+              Finish or pause your current job<br />before resuming this one.
+            </div>
+            <button class="cta-resume-disabled">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              Resume
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Paused card 2 — disabled Resume, no visible tooltip -->
+    <div class="paused-card">
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span class="mono primary" style="font-size: 12.5px;">8000123451</span>
+          <span class="muted">·</span>
+          <span style="font-size: 12px; color: #374151; font-weight: 600;">Shree Rang Sarovar</span>
+          <span style="font-size: 11px; color: #9ca3af;">· Paused 2×</span>
+        </div>
+        <span class="badge-paused">
+          <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+          Paused 2×
+        </span>
+      </div>
+
+      <div class="pause-summary">
+        <div style="font-weight: 600;">Material shortage · 2h 16m ago</div>
+        <div style="margin-top: 2px;">Progress: 18 of 30 tins done</div>
+      </div>
+
+      <div style="display: flex; align-items: center; justify-content: space-between; padding-top: 10px; margin-top: 10px; border-top: 1px solid #fde68a;">
+        <span style="font-size: 11.5px; color: #92400e;">Waiting on COB tinter restock</span>
+        <div style="display: flex; gap: 8px;">
+          <button class="cta-progress">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>
+            View Progress
+          </button>
+          <button class="cta-resume-disabled">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            Resume
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- UP NEXT (5) -->
+    <div class="op-section-header">
+      <span class="op-section-title">Up Next</span>
+      <span class="op-section-count">(5)</span>
+    </div>
+    <div class="upnext-row">
+      <span class="upnext-pos">#2</span>
+      <span class="upnext-meta"><span class="mono primary">8000123457</span> · <strong>Mehta Builders</strong> · 3 SKUs</span>
+    </div>
+    <div class="upnext-row">
+      <span class="upnext-pos">#3</span>
+      <span class="upnext-meta"><span class="mono primary">8000123458</span> · <strong>Surat Plywood Mart</strong> · 2 SKUs</span>
+    </div>
+    <div class="upnext-row">
+      <span class="upnext-pos">#4</span>
+      <span class="upnext-meta"><span class="mono primary">8000123459</span> · <strong>Krishna Hardware</strong> · 4 SKUs</span>
+    </div>
+    <div class="upnext-row">
+      <span class="upnext-pos">#5</span>
+      <span class="upnext-meta"><span class="mono primary">8000123460</span> · <strong>Galaxy Paints</strong> · 1 SKU</span>
+    </div>
+    <div class="upnext-row">
+      <span class="upnext-pos">#6</span>
+      <span class="upnext-meta"><span class="mono primary">8000123461</span> · <strong>Bhavik Enterprises</strong> · 2 SKUs</span>
+    </div>
+  </div>
+
+  <p style="font-size: 12px; color: #6b7280; margin-top: 14px; max-width: 760px;">
+    <strong>Spec notes:</strong> CURRENT card has neutral gray border (NOT amber — amber is reserved for paused). "Ready to start" badge in blue. UP NEXT rows are read-only previews: smaller padding, dashed dividers, no buttons. The operator cannot skip ahead. Resume on both paused cards is disabled because CURRENT has work to do.
+  </p>
+</div>
+
+<!-- ============ SURFACE 1B — CURRENT in tinting_in_progress ============ -->
+<div class="section">
+  <h2>1B · Operator queue — CURRENT in tinting_in_progress state</h2>
+  <p class="surface-label">Operator has started CURRENT and is mid-tinting. Action footer: Save TI · Mark Done · Pause. No Skip button (past the skip point).</p>
+
+  <div class="op-shell">
+    <!-- Header row -->
+    <div style="display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid #f3f4f6;">
+      <div style="display: flex; align-items: baseline; gap: 14px;">
+        <span style="font-size: 16px; font-weight: 600;">My Jobs</span>
+        <span style="font-size: 11.5px; color: #9ca3af;">1 in progress · 2 paused · 5 up next</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 12px; color: #9ca3af; font-size: 11.5px;">
+        <span class="mono" style="background: #f3f4f6; padding: 3px 7px; border-radius: 4px;">11:48</span>
+      </div>
+    </div>
+
+    <!-- CURRENT (1) — in progress -->
+    <div class="op-section-header">
+      <span class="op-section-title">Current</span>
+      <span class="op-section-count">(1)</span>
+    </div>
+    <div class="current-card">
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span class="mono primary" style="font-size: 13px;">8000123456</span>
+          <span class="muted">·</span>
+          <span style="font-size: 13px; color: #111827; font-weight: 600;">Patel Construction</span>
+          <span class="mono" style="font-size: 12px; color: #374151; background: #f3f4f6; padding: 2px 8px; border-radius: 5px; margin-left: 8px;">Elapsed: 0h 24m</span>
+        </div>
+        <span class="badge-in-progress">
+          <span style="width: 6px; height: 6px; background: #065f46; border-radius: 999px;"></span>
+          In progress
+        </span>
+      </div>
+
+      <div style="background: #f9fafb; border: 1px solid #f0f0f0; border-radius: 8px; padding: 10px 14px; margin-bottom: 14px;">
+        <div style="font-size: 9.5px; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 6px;">Progress</div>
+        <div class="sku-line">
+          <div class="pig-chip-sm" style="background: #757575;">WHT</div>
+          <div style="flex: 1;">
+            <div style="font-size: 12px; color: #111827; font-weight: 500;">WS Max BW 4L · <span class="mono" style="font-size: 11px; color: #6b7280;">5388421</span></div>
+            <div style="font-size: 11px; color: #6b7280;">5 of 12 tins · <span style="color: #b45309;">7 remaining</span></div>
+          </div>
+        </div>
+        <div class="sku-line">
+          <div class="pig-chip-sm" style="background: #b8860b;">YOX</div>
+          <div style="flex: 1;">
+            <div style="font-size: 12px; color: #111827; font-weight: 500;">Apex Ultima YOX 10L · <span class="mono" style="font-size: 11px; color: #6b7280;">5388422</span></div>
+            <div style="font-size: 11px; color: #6b7280;">3 of 8 tins · <span style="color: #b45309;">5 remaining</span></div>
+          </div>
+        </div>
+        <div class="sku-line">
+          <div class="pig-chip-sm" style="background: #1565c0;">TBL</div>
+          <div style="flex: 1;">
+            <div style="font-size: 12px; color: #111827; font-weight: 500;">Apex Ultima TBL 10L · <span class="mono" style="font-size: 11px; color: #6b7280;">5388423</span></div>
+            <div style="font-size: 11px; color: #6b7280;">0 of 6 tins · <span style="color: #b45309;">6 remaining</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div style="display: flex; align-items: center; justify-content: space-between;">
+        <span style="font-size: 11.5px; color: #6b7280;">8 of 26 tins done · 31% complete</span>
+        <div style="display: flex; gap: 8px;">
+          <button class="cta-save">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+            Save TI
+          </button>
+          <button class="cta-primary">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+            Mark Done
+          </button>
+          <button class="cta-pause">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+            Pause
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- PAUSED (2) — identical to 1A -->
+    <div class="op-section-header">
+      <span class="op-section-title">Paused</span>
+      <span class="op-section-count">(2)</span>
+    </div>
+    <div class="paused-card">
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span class="mono primary" style="font-size: 12.5px;">8000123450</span>
+          <span class="muted">·</span>
+          <span style="font-size: 12px; color: #374151; font-weight: 600;">Asopalav Decor</span>
+          <span style="font-size: 11px; color: #9ca3af;">· Paused 1×</span>
+        </div>
+        <span class="badge-paused">
+          <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+          Paused
+        </span>
+      </div>
+      <div class="pause-summary">
+        <div style="font-weight: 600;">Lunch break · 1h 12m ago</div>
+        <div style="margin-top: 2px;">Progress: 5 of 12 tins done</div>
+      </div>
+      <div style="display: flex; align-items: center; justify-content: space-between; padding-top: 10px; margin-top: 10px; border-top: 1px solid #fde68a;">
+        <span style="font-size: 11.5px; color: #92400e;">Frozen at 24 min elapsed</span>
+        <div style="display: flex; gap: 8px;">
+          <button class="cta-progress">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>
+            View Progress
+          </button>
+          <button class="cta-resume-disabled">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            Resume
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="paused-card">
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span class="mono primary" style="font-size: 12.5px;">8000123451</span>
+          <span class="muted">·</span>
+          <span style="font-size: 12px; color: #374151; font-weight: 600;">Shree Rang Sarovar</span>
+          <span style="font-size: 11px; color: #9ca3af;">· Paused 2×</span>
+        </div>
+        <span class="badge-paused">
+          <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+          Paused 2×
+        </span>
+      </div>
+      <div class="pause-summary">
+        <div style="font-weight: 600;">Material shortage · 2h 58m ago</div>
+        <div style="margin-top: 2px;">Progress: 18 of 30 tins done</div>
+      </div>
+      <div style="display: flex; align-items: center; justify-content: space-between; padding-top: 10px; margin-top: 10px; border-top: 1px solid #fde68a;">
+        <span style="font-size: 11.5px; color: #92400e;">Waiting on COB tinter restock</span>
+        <div style="display: flex; gap: 8px;">
+          <button class="cta-progress">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>
+            View Progress
+          </button>
+          <button class="cta-resume-disabled">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            Resume
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- UP NEXT (5) -->
+    <div class="op-section-header">
+      <span class="op-section-title">Up Next</span>
+      <span class="op-section-count">(5)</span>
+    </div>
+    <div class="upnext-row">
+      <span class="upnext-pos">#2</span>
+      <span class="upnext-meta"><span class="mono primary">8000123457</span> · <strong>Mehta Builders</strong> · 3 SKUs</span>
+    </div>
+    <div class="upnext-row">
+      <span class="upnext-pos">#3</span>
+      <span class="upnext-meta"><span class="mono primary">8000123458</span> · <strong>Surat Plywood Mart</strong> · 2 SKUs</span>
+    </div>
+    <div class="upnext-row">
+      <span class="upnext-pos">#4</span>
+      <span class="upnext-meta"><span class="mono primary">8000123459</span> · <strong>Krishna Hardware</strong> · 4 SKUs</span>
+    </div>
+    <div class="upnext-row">
+      <span class="upnext-pos">#5</span>
+      <span class="upnext-meta"><span class="mono primary">8000123460</span> · <strong>Galaxy Paints</strong> · 1 SKU</span>
+    </div>
+    <div class="upnext-row">
+      <span class="upnext-pos">#6</span>
+      <span class="upnext-meta"><span class="mono primary">8000123461</span> · <strong>Bhavik Enterprises</strong> · 2 SKUs</span>
+    </div>
+  </div>
+
+  <p style="font-size: 12px; color: #6b7280; margin-top: 14px; max-width: 760px;">
+    <strong>Spec notes:</strong> "In progress" badge is green. Pause CTA is amber-600 (different semantic from primary CTAs). Skip is hidden — the job is past the skip point (skip is for tint_assigned, not tinting_in_progress). Resume on paused cards remains disabled because CURRENT is actively tinting.
+  </p>
+</div>
+
+<!-- ============ SURFACE 1C — CURRENT empty, Resume enabled ============ -->
+<div class="section">
+  <h2>1C · Operator queue — CURRENT empty, Resume enabled</h2>
+  <p class="surface-label">Rare state: no fresh assignments, the only available work is on the paused shelf. Resume becomes the primary action.</p>
+
+  <div class="op-shell">
+    <!-- Header row -->
+    <div style="display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid #f3f4f6;">
+      <div style="display: flex; align-items: baseline; gap: 14px;">
+        <span style="font-size: 16px; font-weight: 600;">My Jobs</span>
+        <span style="font-size: 11.5px; color: #9ca3af;">0 active · 2 paused · 0 up next</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 12px; color: #9ca3af; font-size: 11.5px;">
+        <span class="mono" style="background: #f3f4f6; padding: 3px 7px; border-radius: 4px;">14:32</span>
+      </div>
+    </div>
+
+    <!-- CURRENT (0) — empty state -->
+    <div class="op-section-header">
+      <span class="op-section-title">Current</span>
+      <span class="op-section-count">(0)</span>
+    </div>
+    <div class="empty-current">
+      <div class="empty-icon">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="2" width="6" height="4" rx="1"/><path d="M9 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-3"/><polyline points="9 14 11 16 15 12"/></svg>
+      </div>
+      <div class="empty-title">No active job</div>
+      <div class="empty-sub">All assigned jobs are paused or complete. Resume a paused job to continue.</div>
+    </div>
+
+    <!-- PAUSED (2) — Resume ENABLED -->
+    <div class="op-section-header">
+      <span class="op-section-title">Paused</span>
+      <span class="op-section-count">(2)</span>
+    </div>
+    <div class="paused-card">
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span class="mono primary" style="font-size: 12.5px;">8000123450</span>
+          <span class="muted">·</span>
+          <span style="font-size: 12px; color: #374151; font-weight: 600;">Asopalav Decor</span>
+          <span style="font-size: 11px; color: #9ca3af;">· Paused 1×</span>
+        </div>
+        <span class="badge-paused">
+          <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+          Paused
+        </span>
+      </div>
+      <div class="pause-summary">
+        <div style="font-weight: 600;">Lunch break · 3h 08m ago</div>
+        <div style="margin-top: 2px;">Progress: 5 of 12 tins done</div>
+      </div>
+      <div style="display: flex; align-items: center; justify-content: space-between; padding-top: 10px; margin-top: 10px; border-top: 1px solid #fde68a;">
+        <span style="font-size: 11.5px; color: #92400e;">Frozen at 24 min elapsed</span>
+        <div style="display: flex; gap: 8px;">
+          <button class="cta-progress">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>
+            View Progress
+          </button>
+          <button class="cta-resume-enabled">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            Resume
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="paused-card">
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span class="mono primary" style="font-size: 12.5px;">8000123451</span>
+          <span class="muted">·</span>
+          <span style="font-size: 12px; color: #374151; font-weight: 600;">Shree Rang Sarovar</span>
+          <span style="font-size: 11px; color: #9ca3af;">· Paused 2×</span>
+        </div>
+        <span class="badge-paused">
+          <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+          Paused 2×
+        </span>
+      </div>
+      <div class="pause-summary">
+        <div style="font-weight: 600;">Material shortage · 4h 54m ago</div>
+        <div style="margin-top: 2px;">Progress: 18 of 30 tins done</div>
+      </div>
+      <div style="display: flex; align-items: center; justify-content: space-between; padding-top: 10px; margin-top: 10px; border-top: 1px solid #fde68a;">
+        <span style="font-size: 11.5px; color: #92400e;">Waiting on COB tinter restock</span>
+        <div style="display: flex; gap: 8px;">
+          <button class="cta-progress">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>
+            View Progress
+          </button>
+          <button class="cta-resume-enabled">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            Resume
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- UP NEXT (0) -->
+    <div class="op-section-header">
+      <span class="op-section-title">Up Next</span>
+      <span class="op-section-count">(0)</span>
+    </div>
+    <div class="empty-upnext">
+      Nothing queued. Check with Chandresh for new assignments.
+    </div>
+  </div>
+
+  <p style="font-size: 12px; color: #6b7280; margin-top: 14px; max-width: 760px;">
+    <strong>Spec notes:</strong> Empty CURRENT shows a dashed-border placeholder with icon + copy. Resume buttons flip from gray (disabled) to bg-gray-900 white text (enabled). No tooltips needed because the action is unblocked.
+  </p>
+</div>
+
+<!-- ============ SURFACE 2 — PauseJobModal ============ -->
+<div class="section">
+  <h2>2 · Pause Job modal</h2>
+  <p class="surface-label">Modal on top of dimmed Surface 1B background. Reason + remark + per-SKU progress capture.</p>
+
+  <div style="position: relative; height: 880px; background: #e5e7eb; border-radius: 12px; overflow: hidden;">
+    <div style="position:absolute; inset:0; background: rgba(0,0,0,0.40);"></div>
+
+    <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);">
+      <div class="modal">
+        <!-- Header -->
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+          <h3>Pause Job — OBD <span class="mono" style="font-size: 14px;">8000123456</span></h3>
+          <button style="width: 28px; height: 28px; border-radius: 6px; color: #9ca3af; display: inline-flex; align-items: center; justify-content: center;" title="Close">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg>
+          </button>
+        </div>
+        <div class="modal-sub" style="margin-bottom: 16px;">Patel Construction · 3 SKUs · Tinting started 0h 24m ago</div>
+
+        <!-- Block 1: Reason -->
+        <div style="margin-bottom: 16px;">
+          <label class="field-label">Why are you pausing?<span class="req">*</span></label>
+          <div class="radio-row">
+            <span class="radio-circle"></span>
+            <span class="radio-label">Lunch break</span>
+          </div>
+          <div class="radio-row selected">
+            <span class="radio-circle"></span>
+            <span class="radio-label">End of shift</span>
+          </div>
+          <div class="radio-row">
+            <span class="radio-circle"></span>
+            <span class="radio-label">Machine breakdown</span>
+          </div>
+          <div class="radio-row">
+            <span class="radio-circle"></span>
+            <span class="radio-label">Material shortage</span>
+          </div>
+          <div class="radio-row">
+            <span class="radio-circle"></span>
+            <span class="radio-label">Urgent priority job</span>
+          </div>
+        </div>
+
+        <!-- Block 2: Remark -->
+        <div style="margin-bottom: 16px;">
+          <label class="field-label">Remark <span style="font-weight: 400; text-transform: none; letter-spacing: 0; color: #9ca3af;">— optional</span></label>
+          <textarea class="field-textarea" placeholder="Add any context for the Tint Manager…">Cutting it close to clock-out, will pick up tomorrow morning.</textarea>
+          <div style="display: flex; justify-content: flex-end; margin-top: 4px;">
+            <span style="font-size: 11px; color: #9ca3af;">58 / 500</span>
+          </div>
+        </div>
+
+        <!-- Block 3: Per-SKU progress -->
+        <div style="margin-bottom: 16px;">
+          <label class="field-label">Capture progress<span class="req">*</span> <span style="font-weight: 400; text-transform: none; letter-spacing: 0; color: #9ca3af;">— whole tins only</span></label>
+
+          <div class="sku-row">
+            <div class="pig-chip-lg" style="background: #757575; border-color: #616161;">WHT</div>
+            <div class="sku-meta-block">
+              <div class="sku-meta-line1">WS Max BW 4L · <span class="mono" style="font-size: 11px; color: #6b7280;">5388421</span></div>
+              <div class="sku-meta-line2">Assigned: 12 tins · Done so far:</div>
+            </div>
+            <div class="sku-stepper">
+              <button class="qty-btn">−</button>
+              <input class="qty-input" value="5" />
+              <button class="qty-btn">+</button>
+            </div>
+          </div>
+
+          <div class="sku-row">
+            <div class="pig-chip-lg" style="background: #b8860b; border-color: #8d6e1f;">YOX</div>
+            <div class="sku-meta-block">
+              <div class="sku-meta-line1">Apex Ultima YOX 10L · <span class="mono" style="font-size: 11px; color: #6b7280;">5388422</span></div>
+              <div class="sku-meta-line2">Assigned: 8 tins · Done so far:</div>
+            </div>
+            <div class="sku-stepper">
+              <button class="qty-btn">−</button>
+              <input class="qty-input" value="3" />
+              <button class="qty-btn">+</button>
+            </div>
+          </div>
+
+          <!-- Row with red validation -->
+          <div class="sku-row" style="border-color: #fecaca;">
+            <div class="pig-chip-lg" style="background: #1565c0; border-color: #0d47a1;">TBL</div>
+            <div class="sku-meta-block">
+              <div class="sku-meta-line1">Apex Ultima TBL 10L · <span class="mono" style="font-size: 11px; color: #6b7280;">5388423</span></div>
+              <div class="sku-meta-line2" style="color: #dc2626;">Cannot exceed assigned quantity (6)</div>
+            </div>
+            <div class="sku-stepper" style="border-color: #dc2626;">
+              <button class="qty-btn">−</button>
+              <input class="qty-input" value="7" style="color: #dc2626;" />
+              <button class="qty-btn">+</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Footer -->
+        <div style="font-size: 11.5px; color: #6b7280; font-style: italic; margin-bottom: 10px; line-height: 1.5;">
+          Pausing frees up your current slot. The next job in your queue will appear automatically.
+        </div>
+        <div style="display: flex; gap: 8px; justify-content: flex-end;">
+          <button class="btn-cancel">Cancel</button>
+          <button class="btn-pause-confirm">Pause Job</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p style="font-size: 12px; color: #6b7280; margin-top: 14px; max-width: 760px;">
+    <strong>Spec notes:</strong> 5 fixed reasons, no "Other". Validation on the third SKU row demonstrates the over-cap error state (red border + red message + red qty text). Helper text emphasises the auto-sequence behaviour shown in Surface 3.
+  </p>
+</div>
+
+<!-- ============ SURFACE 3 — Auto-sequence transition preview ============ -->
+<div class="section">
+  <h2>3 · Auto-sequence transition preview</h2>
+  <p class="surface-label">Two side-by-side mini-mockups per transition. Shows how CURRENT, PAUSED, and UP NEXT shift automatically when the operator pauses or resumes.</p>
+
+  <!-- Pair 1: Pause transition -->
+  <div class="trans-pair">
+    <div class="trans-panel">
+      <div class="trans-label">Before pause</div>
+
+      <div class="trans-section-h">Current</div>
+      <div class="mini-card current-tinting">
+        <div class="mini-row"><span class="mono">8000123456</span> · <strong>Patel Construction</strong></div>
+        <div class="mini-status">Tinting · 0h 24m elapsed</div>
+      </div>
+
+      <div class="trans-section-h">Paused (0)</div>
+      <div class="mini-empty">— none —</div>
+
+      <div class="trans-section-h">Up Next</div>
+      <div class="mini-card">
+        <div class="mini-row"><strong>#1</strong> <span class="mono">8000123457</span> · Mehta Builders</div>
+      </div>
+      <div class="mini-card">
+        <div class="mini-row"><strong>#2</strong> <span class="mono">8000123458</span> · Surat Plywood Mart</div>
+      </div>
+    </div>
+
+    <div class="trans-arrow">
+      <span class="trans-arrow-svg">→</span>
+      <span class="trans-arrow-label">Operator pauses<br />Job A</span>
+    </div>
+
+    <div class="trans-panel">
+      <div class="trans-label">After pause</div>
+
+      <div class="trans-section-h">Current</div>
+      <div class="mini-card current">
+        <div class="mini-row"><span class="mono">8000123457</span> · <strong>Mehta Builders</strong></div>
+        <div class="mini-status">Ready to start</div>
+      </div>
+
+      <div class="trans-section-h">Paused (1)</div>
+      <div class="mini-card paused">
+        <div class="mini-row"><span class="mono">8000123456</span> · Patel Construction</div>
+        <div class="mini-status">Paused · End of shift</div>
+      </div>
+
+      <div class="trans-section-h">Up Next</div>
+      <div class="mini-card">
+        <div class="mini-row"><strong>#1</strong> <span class="mono">8000123458</span> · Surat Plywood Mart</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pair 2: Resume transition (with displacement) -->
+  <div class="trans-pair">
+    <div class="trans-panel">
+      <div class="trans-label">Before resume</div>
+
+      <div class="trans-section-h">Current</div>
+      <div class="mini-card current">
+        <div class="mini-row"><span class="mono">8000123457</span> · <strong>Mehta Builders</strong></div>
+        <div class="mini-status">Ready to start</div>
+      </div>
+
+      <div class="trans-section-h">Paused (1)</div>
+      <div class="mini-card paused">
+        <div class="mini-row"><span class="mono">8000123456</span> · Patel Construction</div>
+        <div class="mini-status">Paused · End of shift</div>
+      </div>
+
+      <div class="trans-section-h">Up Next</div>
+      <div class="mini-card">
+        <div class="mini-row"><strong>#1</strong> <span class="mono">8000123458</span> · Surat Plywood Mart</div>
+      </div>
+    </div>
+
+    <div class="trans-arrow">
+      <span class="trans-arrow-svg">→</span>
+      <span class="trans-arrow-label">Operator resumes<br />Job A</span>
+    </div>
+
+    <div class="trans-panel">
+      <div class="trans-label">After resume</div>
+
+      <div class="trans-section-h">Current</div>
+      <div class="mini-card current-tinting">
+        <div class="mini-row"><span class="mono">8000123456</span> · <strong>Patel Construction</strong></div>
+        <div class="mini-status">Tinting · timer restarted</div>
+      </div>
+
+      <div class="trans-section-h">Paused (0)</div>
+      <div class="mini-empty">— none —</div>
+
+      <div class="trans-section-h">Up Next</div>
+      <div class="mini-card">
+        <div class="mini-row"><strong>#1</strong> <span class="mono">8000123457</span> · Mehta Builders</div>
+        <div class="mini-status">Bumped from current</div>
+      </div>
+      <div class="mini-card">
+        <div class="mini-row"><strong>#2</strong> <span class="mono">8000123458</span> · Surat Plywood Mart</div>
+      </div>
+    </div>
+  </div>
+
+  <p style="font-size: 12px; color: #6b7280; margin-top: 14px; max-width: 760px;">
+    <strong>Spec notes:</strong> Mini-cards use color hints to indicate status (blue for assigned, green for tinting, amber for paused). Resume displaces the current ready-to-start job back into UP NEXT at position #1 — the operator doesn't lose their place in the original queue.
+  </p>
+</div>
+
+<!-- ============ SURFACE 4 — TM Kanban: paused-state card ============ -->
+<div class="section">
+  <h2>4 · TM screens — paused-state Kanban card + table slice</h2>
+  <p class="surface-label">Unchanged from REV 1. Paused job stays in TM's In Progress column with amber-left treatment.</p>
+
+  <div style="display: grid; grid-template-columns: 320px 1fr; gap: 20px;">
+    <!-- Left: Kanban -->
+    <div>
+      <div style="font-size: 11px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">Kanban — In Progress column</div>
+
+      <!-- Normal card (truncated, faded) -->
+      <div class="kcard" style="opacity: 0.55; margin-bottom: 10px;">
+        <button class="kebab">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
+        </button>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span class="mono primary" style="font-size: 11px;">8094567891</span>
+          <span class="muted" style="font-size: 11px;">·</span>
+          <span style="font-size: 11px; color: #6b7280;">15 May, 09:42</span>
+        </div>
+        <div style="font-size: 12.5px; font-weight: 600; color: #111827; margin-top: 6px;">Asopalav Decor</div>
+        <div style="font-size: 11px; color: #6b7280; margin-top: 1px;">Tinting — 0h 32m</div>
+      </div>
+
+      <!-- The paused card (focus) -->
+      <div class="kcard paused-kcard" style="margin-bottom: 10px;">
+        <button class="kebab">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
+        </button>
+        <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+          <span class="mono primary" style="font-size: 11px;">8000123456</span>
+          <span class="muted" style="font-size: 11px;">·</span>
+          <span style="font-size: 11px; color: #6b7280;">16 May, 09:00</span>
+          <span class="age-pill">today</span>
+          <span class="pause-pill-kanban" style="margin-left: 2px;">
+            <svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+            Paused 2×
+          </span>
+        </div>
+        <div style="font-size: 12.5px; font-weight: 600; color: #111827; margin-top: 6px;">Patel Construction</div>
+        <div style="font-size: 11px; color: #6b7280; margin-top: 1px;">Decorative Projects · 4 SKUs · 30 tins</div>
+
+        <div class="pause-summary-kanban">
+          <div style="font-weight: 600; margin-bottom: 1px;">Last paused: 11:24 AM by Deepak Vasava</div>
+          <div>Reason: Material shortage</div>
+          <div>Progress: 18 of 30 tins done</div>
+        </div>
+
+        <a class="view-history-link">View full pause history →</a>
+      </div>
+
+      <!-- Normal card (truncated, faded) -->
+      <div class="kcard" style="opacity: 0.55;">
+        <button class="kebab">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
+        </button>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span class="mono primary" style="font-size: 11px;">8094567893</span>
+          <span class="muted" style="font-size: 11px;">·</span>
+          <span style="font-size: 11px; color: #6b7280;">16 May, 10:14</span>
+        </div>
+        <div style="font-size: 12.5px; font-weight: 600; color: #111827; margin-top: 6px;">Mehta Builders</div>
+        <div style="font-size: 11px; color: #6b7280; margin-top: 1px;">Tinting — 0h 8m</div>
+      </div>
+    </div>
+
+    <!-- Right: Table view slice -->
+    <div>
+      <div style="font-size: 11px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">Table view — In Progress section</div>
+      <table class="tm-table">
+        <colgroup>
+          <col style="width:4%"><col style="width:13%"><col style="width:10%"><col style="width:18%">
+          <col style="width:7%"><col style="width:9%"><col style="width:6%"><col style="width:15%">
+          <col style="width:10%"><col style="width:8%">
+        </colgroup>
+        <thead>
+          <tr>
+            <th class="center">#</th>
+            <th>OBD</th>
+            <th>Date</th>
+            <th>Customer / Site</th>
+            <th>SMU</th>
+            <th>Priority</th>
+            <th>Art</th>
+            <th>Operator</th>
+            <th>Stage</th>
+            <th class="center">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="center muted">1</td>
+            <td>
+              <div class="mono primary">8000123456</div>
+              <div class="table-pause-badge">
+                <svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+                Paused 2×
+              </div>
+            </td>
+            <td>16 May 09:00</td>
+            <td class="primary">Patel Construction</td>
+            <td>Deco Proj</td>
+            <td>P2</td>
+            <td>30</td>
+            <td>Deepak Vasava</td>
+            <td>
+              <span style="display:inline-flex; align-items:center; gap:5px; font-size:11px; color:#b45309;">
+                <span style="width: 6px; height: 6px; border-radius: 999px; background: #f59e0b; display: inline-block;"></span>
+                Paused
+              </span>
+            </td>
+            <td class="center">
+              <button class="kebab" style="position: static;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
+              </button>
+            </td>
+          </tr>
+          <tr>
+            <td class="center muted">2</td>
+            <td><div class="mono primary">8094567891</div></td>
+            <td>15 May 09:42</td>
+            <td class="primary">Asopalav Decor</td>
+            <td>Deco</td>
+            <td>P3</td>
+            <td>3</td>
+            <td>Chandrasing Valvi</td>
+            <td>
+              <span style="display:inline-flex; align-items:center; gap:5px; font-size:11px; color:#1e40af;">
+                <span style="width: 6px; height: 6px; border-radius: 999px; background: #2563eb; display: inline-block;"></span>
+                Tinting
+              </span>
+            </td>
+            <td class="center">
+              <button class="kebab" style="position: static;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
+              </button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div style="margin-top: 14px; font-size: 11.5px; color: #6b7280;">
+        <strong style="color: #374151;">Kebab menu items</strong> on paused row:
+        Re-assign · Mark as resumed · <span style="color: #b45309;">View pause history</span> · Cancel
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ SURFACE 5 — PauseHistoryModal ============ -->
+<div class="section">
+  <h2>5 · Pause History modal</h2>
+  <p class="surface-label">Unchanged from REV 1. Chronological pause/resume events for an order. Oldest first.</p>
+
+  <div style="position: relative; height: 720px; background: #e5e7eb; border-radius: 12px; overflow: hidden;">
+    <div style="position:absolute; inset:0; background: rgba(0,0,0,0.40);"></div>
+
+    <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);">
+      <div class="modal" style="width: 580px;">
+        <!-- Header -->
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+          <h3>Pause History — OBD <span class="mono" style="font-size: 14px;">8000123456</span></h3>
+          <button style="width: 28px; height: 28px; border-radius: 6px; color: #9ca3af; display: inline-flex; align-items: center; justify-content: center;" title="Close">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg>
+          </button>
+        </div>
+
+        <!-- Order summary -->
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid #f3f4f6;">
+          <span class="mono primary" style="font-size: 12px;">8000123456</span>
+          <span class="muted" style="font-size: 11px;">·</span>
+          <span style="font-size: 12px; color: #111827; font-weight: 500;">Patel Construction</span>
+          <span class="muted" style="font-size: 11px;">·</span>
+          <span style="font-size: 11px; color: #6b7280;">2 pause events</span>
+        </div>
+
+        <!-- Event 1 — pause + resume completed -->
+        <div class="event-card">
+          <div class="event-header">
+            <span class="event-num">Pause #1</span>
+            <span class="event-time">16 May 2026 · 11:24 AM</span>
+          </div>
+          <div class="event-row">
+            <span class="event-label">Paused by</span>
+            <span class="event-val">Deepak Vasava</span>
+          </div>
+          <div class="event-row">
+            <span class="event-label">Reason</span>
+            <span class="event-val">Lunch break</span>
+          </div>
+          <div class="event-row">
+            <span class="event-label">Remark</span>
+            <span class="event-val">"Stepping out, back by 12"</span>
+          </div>
+          <div class="event-row">
+            <span class="event-label">Elapsed before pause</span>
+            <span class="event-val">24 min</span>
+          </div>
+          <div class="event-row" style="align-items: flex-start;">
+            <span class="event-label" style="margin-top: 3px;">Progress snapshot</span>
+            <div class="event-val">
+              <div class="snapshot-row">
+                <span class="snapshot-pig" style="background: #757575;"></span>
+                <span class="mono" style="font-size: 11px; color: #6b7280;">WS Max BW 4L</span>
+                <span>· 5 of 12 tins</span>
+              </div>
+              <div class="snapshot-row">
+                <span class="snapshot-pig" style="background: #b8860b;"></span>
+                <span class="mono" style="font-size: 11px; color: #6b7280;">Apex Ultima 10L</span>
+                <span>· 0 of 8 tins</span>
+              </div>
+            </div>
+          </div>
+          <div class="resume-line">
+            ── Resumed: 16 May 2026 · 12:08 PM by Deepak Vasava
+            <span class="muted">(44 min paused)</span>
+          </div>
+        </div>
+
+        <!-- Event 2 — currently paused -->
+        <div class="event-card active">
+          <div class="event-header">
+            <span class="event-num">Pause #2</span>
+            <span class="event-time">16 May 2026 · 02:15 PM</span>
+          </div>
+          <div class="event-row">
+            <span class="event-label">Paused by</span>
+            <span class="event-val">Deepak Vasava</span>
+          </div>
+          <div class="event-row">
+            <span class="event-label">Reason</span>
+            <span class="event-val">Material shortage</span>
+          </div>
+          <div class="event-row">
+            <span class="event-label">Remark</span>
+            <span class="event-val">"Out of yellow tinter, waiting for restock"</span>
+          </div>
+          <div class="event-row">
+            <span class="event-label">Elapsed before pause</span>
+            <span class="event-val">38 min</span>
+          </div>
+          <div class="event-row" style="align-items: flex-start;">
+            <span class="event-label" style="margin-top: 3px;">Progress snapshot</span>
+            <div class="event-val">
+              <div class="snapshot-row">
+                <span class="snapshot-pig" style="background: #757575;"></span>
+                <span class="mono" style="font-size: 11px; color: #6b7280;">WS Max BW 4L</span>
+                <span>· 9 of 12 tins</span>
+              </div>
+              <div class="snapshot-row">
+                <span class="snapshot-pig" style="background: #b8860b;"></span>
+                <span class="mono" style="font-size: 11px; color: #6b7280;">Apex Ultima 10L</span>
+                <span>· 4 of 8 tins</span>
+              </div>
+            </div>
+          </div>
+          <div class="active-line">
+            ⏸ Currently paused — no resume yet
+          </div>
+        </div>
+
+        <!-- Footer -->
+        <div style="display: flex; justify-content: flex-end; margin-top: 8px;">
+          <button class="btn-cancel">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

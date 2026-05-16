@@ -70,7 +70,7 @@ export async function POST(req: Request): Promise<NextResponse> {
 
   try {
     // 1. Load order — verify stage
-    const order = await prisma.orders.findUnique({ where: { id: orderId } })
+    const order = await prisma.orders.findFirst({ where: { id: orderId, isRemoved: false } })
     if (!order) {
       return NextResponse.json({ error: "Order not found" }, { status: 404 })
     }

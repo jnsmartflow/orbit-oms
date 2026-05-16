@@ -37,7 +37,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   try {
     await prisma.$transaction(async (tx) => {
       // 1. Verify order is a tint order in an assignable stage
-      const order = await tx.orders.findUnique({ where: { id: orderId } });
+      const order = await tx.orders.findFirst({ where: { id: orderId, isRemoved: false } });
       if (!order) throw new Error("Order not found");
       if (order.orderType !== "tint") throw new Error("Order is not a tint order");
 
@@ -128,6 +128,7 @@ export async function POST(req: Request): Promise<NextResponse> {
       const maxSeq = await tx.orders.aggregate({
         where: {
           workflowStage: "tint_assigned",
+          isRemoved: false,
           tintAssignments: {
             some: {
               assignedToId,

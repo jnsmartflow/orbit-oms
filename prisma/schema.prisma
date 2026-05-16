@@ -164,6 +164,12 @@ model users {
   attendanceOtGraceCounters    attendance_ot_grace[] @relation("AttendanceOtGraceUser")
   attendanceOtAudits           attendance_ot_audit[] @relation("AttendanceOtAuditUser")
   attendanceOtAuditsPerformed  attendance_ot_audit[] @relation("AttendanceOtAuditPerformer")
+  // TM Remove OBD / Operator Skip / Pause back-relations
+  ordersRemoved                orders[]              @relation("OrderRemovedBy")
+  ordersRestored               orders[]              @relation("OrderRestoredBy")
+  tintSkipsAsActor             tint_skip_events[]    @relation("SkipActor")
+  tintPausesAsOp               tint_pause_events[]   @relation("PauseOperator")
+  tintPauseResumes             tint_pause_events[]   @relation("PauseResumer")
 }
 
 model status_master {
@@ -623,6 +629,19 @@ model orders {
   pickListItems        pick_list_items[]
   changeQueue          dispatch_change_queue[]
   pickAssignment       pick_assignments?
+  // TM Remove OBD (Feature 1)
+  isRemoved            Boolean                   @default(false)
+  removalReason        String?
+  removalRemark        String?
+  removedAt            DateTime?                 @db.Timestamptz(6)
+  removedById          Int?
+  removedBy            users?                    @relation("OrderRemovedBy", fields: [removedById], references: [id])
+  restoredAt           DateTime?                 @db.Timestamptz(6)
+  restoredById         Int?
+  restoredBy           users?                    @relation("OrderRestoredBy", fields: [restoredById], references: [id])
+  // Operator Skip / Pause back-relations (Features 2 & 3)
+  skipEvents           tint_skip_events[]
+  pauseEvents          tint_pause_events[]
 }
 
 model order_splits {
@@ -710,6 +729,18 @@ model tint_assignments {
   operatorSequence    Int                      @default(0)
   tinterIssueEntries  tinter_issue_entries[]
   tinterIssueEntriesB tinter_issue_entries_b[]
+  // Operator Skip (Feature 2)
+  skippedAt           DateTime?                @db.Timestamptz(6)
+  skipEventId         BigInt?
+  skipEvent           tint_skip_events?        @relation("AssignmentSkipEvent", fields: [skipEventId], references: [id])
+  skipEventsTriggered tint_skip_events[]       @relation("AssignmentSkipEvents")
+  // Operator Pause/Resume (Feature 3)
+  pauseCount          Int                      @default(0)
+  lastPausedAt        DateTime?                @db.Timestamptz(6)
+  // On done, this field is finalised as the total tinting minutes including all paused intervals.
+  accumulatedMinutes  Int                      @default(0)
+  currentProgress     Json?
+  pauseEvents         tint_pause_events[]
 }
 
 model tint_logs {
@@ -752,6 +783,52 @@ model manual_tint_entries {
   @@index([orderId])
   @@index([createdAt(sort: Desc)])
   @@index([action])
+}
+
+// ─────────────────────────────────────────────
+// TINT SKIP / PAUSE EVENTS (Features 2 & 3)
+// ─────────────────────────────────────────────
+
+model tint_skip_events {
+  id                BigInt             @id @default(autoincrement())
+  orderId           Int
+  order             orders             @relation(fields: [orderId], references: [id])
+  assignmentId      Int
+  assignment        tint_assignments   @relation("AssignmentSkipEvents", fields: [assignmentId], references: [id])
+  skippedById       Int
+  skippedBy         users              @relation("SkipActor", fields: [skippedById], references: [id])
+  skippedAt         DateTime           @default(now()) @db.Timestamptz(6)
+  reason            String
+  tinterType        String?
+  outOfStockColours String[]
+  remark            String?
+  createdAt         DateTime           @default(now()) @db.Timestamptz(6)
+  assignmentLinked  tint_assignments[] @relation("AssignmentSkipEvent")
+
+  @@index([orderId])
+  @@index([skippedAt(sort: Desc)])
+}
+
+model tint_pause_events {
+  id                    BigInt           @id @default(autoincrement())
+  orderId               Int
+  order                 orders           @relation(fields: [orderId], references: [id])
+  assignmentId          Int
+  assignment            tint_assignments @relation(fields: [assignmentId], references: [id])
+  operatorId            Int
+  operator              users            @relation("PauseOperator", fields: [operatorId], references: [id])
+  pausedAt              DateTime         @default(now()) @db.Timestamptz(6)
+  pauseReason           String
+  tinterType            String?
+  outOfStockColours     String[]
+  pauseRemark           String?
+  progressSnapshot      Json
+  elapsedMinutesAtPause Int
+  resumedAt             DateTime?        @db.Timestamptz(6)
+  resumedById           Int?
+  resumedBy             users?           @relation("PauseResumer", fields: [resumedById], references: [id])
+  resumeRemark          String?
+  createdAt             DateTime         @default(now()) @db.Timestamptz(6)
 }
 
 // ─────────────────────────────────────────────
@@ -947,6 +1024,11 @@ model delivery_challans {
   createdAt     DateTime                    @default(now())
   updatedAt     DateTime                    @updatedAt
   formulas      delivery_challan_formulas[]
+  // TM Remove OBD — void fields (Feature 1)
+  isVoided      Boolean                     @default(false)
+  voidReason    String?
+  voidRemark    String?
+  voidedAt      DateTime?                   @db.Timestamptz(6)
 }
 
 model delivery_challan_formulas {

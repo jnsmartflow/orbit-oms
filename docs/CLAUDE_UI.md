@@ -1,22 +1,22 @@
-# CLAUDE_UI.md — Orbit OMS UI Design System
+# CLAUDE_UI.md — OrbitOMS UI Design System
 # v5.2 · Lives in: orbit-oms/docs/
-# Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md · April 2026
-# Single source of truth for visual styling across all screens.
+# Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md
+
+Single source of truth for visual styling across all screens.
 
 ---
 
 ## 1. Design philosophy
 
 - **Neutral first.** White bg, gray borders, minimal colour. Colour is reserved for semantic meaning and brand actions.
-- **Teal is the brand.** `teal-600` (#0d9488) is the single brand accent. CTAs, focus rings, active nav, sidebar accent, logo, avatars, active slot segment, login dot. Nowhere else.
-- **Old indigo theme (#1a237e) fully deprecated.**
+- **Teal is the brand.** `teal-600` (#0d9488) is the single brand accent. CTAs, focus rings, active nav, sidebar accent, logo, avatars, active slot segment, login dot.
 - **Three colour roles:**
   - Teal = brand action (CTAs, focus, toggles ON, nav active, avatars, logo, active slot segment)
   - Gray = structure (borders, text hierarchy, slot pills, filter chips, page bg, clock, search, shortcuts, date stepper)
   - Semantic = status only (green=done, red=urgent/error/blocker, amber=waiting/timing)
 - **Minimal chrome.** Header + controls in 2 rows max. No stat cards unless requested.
-- **Smart Title Case for display.** All DB text rendered with `smartTitleCase()`. See §19.
-- **Universal header on ALL boards.** See §6.
+- **Smart Title Case for display.** All DB text rendered with `smartTitleCase()` (§19).
+- **Universal header on ALL boards** (§6).
 
 ---
 
@@ -31,13 +31,15 @@
 | Brand text | `teal-700` | #0f766e | Active nav text, active tab text |
 
 ### Logo mark — Orbit symbol
-```svg
-White (on teal bg): circle r=7 stroke, circle r=2.2 fill centre, circle r=2 fill at cx=18 (orbiting dot)
-Teal (on white bg): Same shapes, stroke/fill="#0d9488"
+
+```
+White (on teal bg): circle r=7 stroke, circle r=2.2 fill centre, circle r=2 fill at cx=18
+Teal (on white bg): same shapes, stroke/fill="#0d9488"
 ViewBox: 0 0 22 22. Size: 22×22 (sidebar) or 18×18 (mobile).
 ```
 
 ### Brand rules
+
 - ONE primary CTA per screen — teal-600
 - Focus ring: `focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10`
 - IosToggle ON: `bg-teal-600`
@@ -85,6 +87,15 @@ Dot: `w-[5px] h-[5px] rounded-full flex-shrink-0`.
 
 ### Tinter type dots
 TINTER = `bg-blue-600`. ACOTONE = `bg-orange-500`. Same 5px pattern.
+
+### Attendance status chips
+| Status | Colour |
+|---|---|
+| PRESENT | emerald |
+| LATE / HALF_DAY | amber |
+| INCOMPLETE / ABSENT | red |
+| HOLIDAY / ON_LEAVE | blue |
+| NOT_IN_YET / EXEMPT | gray |
 
 ---
 
@@ -142,7 +153,7 @@ RIGHT: [rightExtra] | Filter ▾ | ‹ Date stepper ›
 Container: `inline-flex bg-gray-100 rounded-[7px] p-[3px] gap-[2px]`
 Inactive: `text-gray-500`, hover `bg-white/60`
 Active: `bg-teal-600 text-white font-medium`
-Click active → deselects (show all). No "All" button. 4 slots max: Morning, Afternoon, Evening, Night. Filter out Next Day Morning.
+Click active → deselects. No "All" button. 4 slots max.
 
 ### Filter button + dropdown
 Inactive: `border border-gray-200 text-gray-500`
@@ -150,8 +161,8 @@ Active: `border-gray-900 text-gray-900` + count badge `bg-gray-900 text-white`
 Panel: `bg-white border-gray-200 rounded-lg shadow-lg p-3 w-[260px]`
 Active chip: `bg-gray-900 text-white`. Inactive chip: `bg-white text-gray-500 border-gray-200`.
 
-### Date stepper
-`‹ Today · 04 Apr ›` inline-flex. Right arrow disabled when viewing today.
+### Date control
+Click-to-open calendar popover. Format `‹ Today · 04 Apr ›` in trigger. Right arrow disabled when viewing today. Calendar lets users jump to any past date in one click. Boards passing `showDatePicker={false}` (Tint Manager, Tint Operator, TI Report, Shade Master) hide the date control entirely.
 
 ### Colour rule (critical)
 **ONE teal element: active slot segment.** Everything else gray. No slot = no teal in Row 2.
@@ -166,7 +177,7 @@ Active nav: `bg-teal-50 text-teal-700 font-semibold border-l-2 border-teal-600`.
 Inactive: `text-gray-500 hover:bg-gray-50 hover:text-gray-900`.
 User avatar: `bg-teal-600 hover:bg-teal-700`.
 
-Behaviour spec: see `CLAUDE_CORE.md §13`.
+Behaviour spec: `CLAUDE_CORE.md §11`.
 
 ---
 
@@ -190,8 +201,8 @@ Error: `border-red-300 ring-2 ring-red-500/6`
 Primary CTA: `bg-teal-600 hover:bg-teal-700 text-white h-[38px] rounded-lg`
 Secondary: `bg-white border border-gray-200 hover:bg-gray-50 text-gray-600 h-7 rounded-md`
 Modal save: `bg-gray-900 hover:bg-gray-800 text-white` (NOT teal)
-Tint Operator save CTAs: `bg-gray-900 text-white` (gray-900, not teal)
-Tint Operator workflow CTAs: `bg-green-600 text-white` (start, done)
+Tint Operator save CTAs: `bg-gray-900 text-white`
+Tint Operator workflow CTAs: `bg-green-600 text-white`
 
 ---
 
@@ -204,6 +215,8 @@ ON: `bg-teal-600`. OFF: `bg-gray-300`. Sizes: 36×20px compact, 46×26px large.
 ## 12. Login page
 
 Page bg `bg-[#f9fafb]`, max-w-[340px]. Orbit logo + wordmark. No "Sign in" heading. Card `rounded-xl`. WebkitBoxShadow autofill override. Tagline: "One system. Zero chaos."
+
+Login field accepts email OR 10-digit mobile. Label "Email or Mobile Number". Input `type="text"` (not `email` — browser blocks digit-only). `autoComplete="username"`. Field `id`/`name` remains `email` (auth contract).
 
 ---
 
@@ -219,13 +232,7 @@ Used in TI Report. Presets: Today/Yesterday/This Week/This Month with `bg-teal-6
 
 ---
 
-## 15-18. Interactions, screen notes, palette sweep, deprecated
-
-Palette sweep complete (v41). All indigo/slate replaced.
-
----
-
-## 19. Smart Title Case
+## 15. Smart Title Case
 
 Apply `smartTitleCase()` from `lib/mail-orders/utils.ts` to all DB text for display.
 
@@ -237,15 +244,15 @@ Do NOT apply to: codes, badges, column headers.
 
 ---
 
-## 20. Lock column (Mail Orders)
+## 16. Mail Orders — lock column
 
 Unlocked: LockOpen 14px `text-gray-300 hover:text-gray-400`
 Locked: Lock 14px `text-red-500 bg-red-50 rounded p-1`
-Auto-locks on OD, CI, Bill Tomorrow (word-boundary regex). Persisted to DB via `isLocked` on `mo_orders`.
+Auto-locks on OD, CI, Bill Tomorrow (word-boundary regex). Persisted via `isLocked` on `mo_orders`.
 
 ---
 
-## 21. Code column (Mail Orders)
+## 17. Mail Orders — code column
 
 Exact: mono badge `text-gray-800 bg-gray-50 border-gray-200`. Click copies, teal flash 1.5s. Pencil on hover.
 Multiple: `text-amber-700 bg-amber-50 border-amber-200` "N found". Click → picker popover.
@@ -253,30 +260,14 @@ Unmatched: `text-gray-400` "Search". Click → search popover (320px, typeahead)
 
 ---
 
-## 22. Delivery type dot normalization
+## 18. Mail Orders — customer column
 
-Always `.toUpperCase()` before matching. Colours in §3.
-
----
-
-## 23. Customer column (Mail Orders)
-
-Line 1: [delivery dot] Customer Name (`text-[12.5px] font-semibold`). Split suffix "(A)"/"(B)".
+Line 1: [delivery dot] Customer Name (`text-[12.5px] font-semibold`). Split suffix removed from UI display (preserved in email text only).
 Line 2: `text-[10px] text-gray-400` — Volume (mono, green/amber) · Area · Route.
 
 ---
 
-## 24. Universal header quick reference
-
-1. Use `<UniversalHeader />` — never custom
-2. Title accepts ReactNode (for toggles)
-3. Active slot = only teal. Everything else neutral.
-4. 4 slots max. No "All" button.
-5. Add features via props, never parallel headers.
-
----
-
-## 25. Mail Order table column widths
+## 19. Mail Orders — table column widths
 
 Parent: `Time(68) | SO Name(120) | Customer(208) | Lines(68) | Dispatch(80) | Remarks(120) | Code(90) | SKU(82) | SO No.(110) | Lock(46) | Status(80) | Punched By(100)`
 
@@ -284,59 +275,53 @@ Expanded: `# (38) | Raw Text (30%) | SKU Code (130) | Description (30%) | Pk (48
 
 ---
 
-## 26. Lines cell (Mail Orders)
+## 20. Mail Orders — lines cell
 
 Match count only: `{matched}/{total}`. Green if all matched, amber if not. Volume, split, warning moved out.
 
 ---
 
-## 27-31. Split pair, batch copy, view original, split banner, line sort
+## 21. Mail Orders — split + batch copy
 
-- **Split pairs:** purple-400 left border, "✂ A/B" badge, "(A)"/"(B)" suffix
+- **Split pairs:** purple-400 left border, "✂ Bill X-Y" badge. Display label rule: `splitLabel "A"→Bill 1`, `B→Bill 2`. Compound for sub-splits of parser-level bills: parent `Bill 2` + splitLabel `A` → `Bill 2-1`. DB `splitLabel` column unchanged. Helper: `getSplitDisplayLabel(order)` in `lib/mail-orders/utils.ts`.
 - **Batch copy:** `BATCH_COPY_LIMIT=14`. Progressive button "📋 1-14 (1/2)"
 - **View Original:** toggle fetches both split halves. OriginalLinesTable with Group A/B pills
 - **Line sort:** productName alphabetical → packSize DESC (>5 lines only)
 
 ---
 
-## 32. Signal badges (Mail Orders remarks)
+## 22. Mail Orders — signal badges
 
-Shared builder: `getOrderSignals()` in `lib/mail-orders/utils.ts`. Single source of truth for Table View + Review View. Never build signal logic inline.
+Shared builder: `getOrderSignals()` in `lib/mail-orders/utils.ts`. Single source of truth for Table View + Review View.
 
 | Type | Style | Triggers |
 |---|---|---|
 | blocker | `bg-red-50 text-red-700 border-red-200` | OD, CI, Bounce |
 | attention | `bg-amber-50 text-amber-700 border-amber-200` | Bill Tomorrow, Cross {CODE}, → Ship-to, Urgent, ⚠ Split |
 | info | `bg-gray-50 text-gray-500 border-gray-200` | 7 Days, Extension, DPL, Challan, Truck |
-| split | `bg-purple-50 text-purple-600 border-purple-200` | ✂ A/B |
-| bill | `bg-blue-50 text-blue-700 border-blue-200` | Bill N (multiple captured, dedupe, sort ascending) |
+| split | `bg-purple-50 text-purple-600 border-purple-200` | ✂ Bill X-Y |
+| bill | `bg-blue-50 text-blue-700 border-blue-200` | Bill N |
 
 Badge: `text-[9px] font-medium px-1.5 py-0.5 rounded border`. Flex wrap gap-0.5. Hover for full text.
 
-Helper: `getBillLabel()` returns `"Bill N"` or `""` — used in email template and reply customer-name suffix.
+Helper `getBillLabel()` returns `"Bill N"` or `""` — used in email template and reply customer-name suffix. `getOrderSignals` does NOT emit parent Bill N blue badge when `splitLabel` is set (purple ✂ badge already carries the info).
 
 ---
 
-## 33. Expanded footer (Mail Orders)
+## 23. Mail Orders — expanded footer
 
 4 columns: `DELIVERY REMARKS | BILL REMARKS | ORDER NOTES | RECEIVED`
 ORDER NOTES remark type badges: billing(amber), delivery(blue), contact(gray), instruction(gray), cross(purple), customer(teal), unknown(amber).
 
 ---
 
-## 34. Bill sort order
+## 24. Mail Orders — bill sort order
 
 `receivedAt` ASC (earliest first) → bill number ASC → split label (A before B). No dispatch weight.
 
 ---
 
-## 35-38. (Reserved — formerly Focus Mode; deprecated April 2026)
-
-Focus Mode view was discarded. Review View replaced it. Section numbers kept to preserve cross-references from older prompts. See §41-44 for current Review View spec and §43 for the current found/not-found toggle.
-
----
-
-## 39. View toggle (Table / Review)
+## 25. Mail Orders — view toggle (Table / Review)
 
 Rendered inside UniversalHeader title (ReactNode).
 
@@ -350,9 +335,23 @@ Two-button variant: `Table | Review`.
 
 ---
 
-## 40. Fixed table layout standard — ALL data tables
+## 26. Mail Orders — table row states
 
-All data tables use `table-layout: fixed` with `<colgroup>` percentage widths. This is the only approved pattern. Never auto-layout. Never pixel-width columns.
+Normal pending: white. Focused: amber left border + bg-amber-50/70. Locked: red left border. Punched: teal left border + bg-teal-50/40 + opacity-75.
+
+Punched orders separated to bottom per slot when slot selected. Collapsible "N punched ▸/▾" divider. `T` toggles globally.
+
+---
+
+## 27. Mail Orders — description toggle
+
+In Review View SKU table header column, tiny `[long]` / `[short]` button. State `descMode: "long" | "short"` persisted to `localStorage` key `mo-review-desc-mode`. Default `"long"`. Long = `skuDescription` from SAP master. Short = `productName · baseColour`. Falls back to short when `skuDescription` is null.
+
+---
+
+## 28. Fixed table layout standard — ALL data tables
+
+All data tables use `table-layout: fixed` with `<colgroup>` percentage widths. Only approved pattern.
 
 ### Pattern
 ```tsx
@@ -368,11 +367,11 @@ All data tables use `table-layout: fixed` with `<colgroup>` percentage widths. T
 ```
 
 ### Rules
-- Always `table-layout: fixed` — predictable widths
-- Always `<colgroup>` — widths defined once
-- Always percentage widths — responsive, derived from fr-unit technique (4fr = 4%)
-- Never pixel widths on columns — percentages only. Pixels allowed for cell padding and row height.
-- Cell overflow: `white-space: nowrap; overflow: hidden; text-overflow: ellipsis` on all `<td>` and `<th>`.
+- Always `table-layout: fixed`
+- Always `<colgroup>`
+- Always percentage widths
+- Pixel widths only for cell padding and row height
+- Cell overflow: `white-space: nowrap; overflow: hidden; text-overflow: ellipsis` on all `<td>` and `<th>`
 
 ### Standard row sizing
 | Element | Value |
@@ -390,30 +389,27 @@ All data tables use `table-layout: fixed` with `<colgroup>` percentage widths. T
 | Row hover | `bg-gray-50` (#f9fafb) |
 
 ### Standard header typography
-```
-font-size: 10px; font-weight: 500; text-transform: uppercase;
-letter-spacing: 0.05em; color: #9ca3af (gray-400);
-```
+`font-size: 10px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; color: #9ca3af`
 
 ### Standard data typography
-```
-Primary: 11px, font-weight 500, #111827 (gray-900) — customer/product names
-Secondary: 11px, #4b5563 (gray-600) — data values
-Muted: 11px, #9ca3af (gray-400) — timestamps, line numbers, volumes
-Mono: 11px, "SF Mono"/ui-monospace/Menlo — SKU codes, material numbers
-```
+- Primary: 11px, font-weight 500, #111827 — customer/product names
+- Secondary: 11px, #4b5563 — data values
+- Muted: 11px, #9ca3af — timestamps, line numbers, volumes
+- Mono: 11px, "SF Mono"/ui-monospace/Menlo — SKU codes, material numbers
 
 ### Applies to
-- Review View SKU table (review-view.tsx) — 9 columns: 4/24/11/26/5.5/5.5/5.5/12/6.5%
-- Mail Orders expanded table — 8 columns: # (38px) then percentages
-- TM table view — 9 columns: #/OBD/SMU/Site Name/Priority/Articles/Volume/Operator/Time/Actions: 4/13/10/18/7/9/6/15/10/8%
+- Review View SKU table: 4/24/11/26/5.5/5.5/5.5/12/6.5%
+- Mail Orders expanded table
+- TM table view: 4/13/10/18/7/9/6/15/10/8%
+- Challan line items: 5/13/35/15/8/12/12%
+- Admin attendance roster
 - Any future data table in any module
 
 ---
 
-## 41. Review View — layout
+## 29. Review View — layout
 
-Component: `review-view.tsx`. Third view mode on `/mail-orders`.
+Component: `review-view.tsx`. Master-detail third mode on `/mail-orders`.
 Split panel: 320px left (order list) + flex-1 right (detail + table + footer).
 
 ### Left panel (320px)
@@ -422,30 +418,37 @@ Split panel: 320px left (order list) + flex-1 right (detail + table + footer).
 - States: selected (`bg-teal-50 border-l-teal-600`), flagged (`border-l-amber-600`), punched (`opacity-40`), default (`border-l-transparent`)
 - Line 1: delivery dot (5px) + customer name (13px semibold) + time (11px muted, right-aligned, tabular-nums)
 - Line 2: SO name (11px muted)
-- Badges: Bill N (blue) only. No blockers in left panel.
-- Sort: `receivedAt ASC → bill number ASC → split label ASC`
+- Punched orders: third line `✓ {Name} {HH:MM}` (text-gray-400)
+- Badges: Bill N (blue) + split (purple) only
+- Sort: `receivedAt ASC → bill number ASC → split label ASC`. Punched section sort DESC (most recent first).
 - Punched divider: "▸ N punched", 10px text, bg-gray-50, collapsible
 
 ### Right panel — detail header
-**Row 1** (`px-5 pt-3 pb-[7px]`): delivery dot (6px) → customer name (17px bold tracking-tight) → code chip (exact/multiple/unmatched) → match chip (green/amber) → dispatch badge → signal badges (all 5 types) → Order No. input group + Punch button.
+**Row 1** (`px-5 pt-3 pb-[7px]`): delivery dot (6px) → customer name (17px bold tracking-tight) → code chip → match chip → dispatch badge → signal badges → Order No. input group + Punch button.
 
-**Row 2** (`px-5 pb-2.5`): meta (SO name · time · area · del type · volume · lines, 11px muted, dot-separated) → 3 icon-only action buttons (28×28, Copy/Reply/Flag, title tooltip).
+**Row 2** (`px-5 pb-2.5`): on punched orders, prepended `✓ {name} {HH:MM}` as first meta item (gray-400). Then meta (SO name · time · area · del type · volume · lines, 11px muted, dot-separated) → 4 icon-only action buttons (28×28, Copy/Reply/Flag/Printer, title tooltip).
 
 ### Right panel — SKU table
-Fixed layout per §40. Columns: # / Raw Text / SKU Code / Description / Pk / Qty / Vol / Status / Toggle.
+Fixed layout per §28. Columns: # / Raw Text / SKU Code / Description / Pk / Qty / Vol / Status / Toggle.
 
 ### Right panel — remarks footer
 `bg-gray-50`, `border-top: 1px solid gray-200`, padding 8px 20px.
 4 sections: Delivery / Bill / Notes / Received (60px fixed).
 Labels 9px uppercase gray-400. Values 11px gray-600.
-Notes section shows remark type badges (contact/instruction/cross/customer/unknown).
 
 ### Right panel — nav footer
 36px height, border-top gray-200. ← Prev / "N of M" / Next → (26px buttons). Keyboard hints text (9px muted).
 
+### Active line highlight
+Background: `#fefce8` (yellow-50). First cell left border: `3px solid #eab308` (yellow-500). No outline.
+`activeLineIndex` resets to 0 on order change.
+
+### Manual split banner
+Amber banner between detail header and SKU table when `!splitLabel && (totalVol > 1500 || lines > 20)`. Shows Group A/B line-count + volume preview. Split button posts to `/api/mail-orders/{id}/split`. Dismiss is local state (resets on focus change).
+
 ---
 
-## 42. Review View — SKU table row states
+## 30. Review View — SKU table row states
 
 **Normal:** raw text #374151, SKU mono #6b7280, product bold #111827 + base #6b7280, qty bold #374151.
 
@@ -457,7 +460,7 @@ Notes section shows remark type badges (contact/instruction/cross/customer/unkno
 
 ---
 
-## 43. Review View — toggle and reason dropdown
+## 31. Review View — toggle and reason dropdown
 
 **Toggle:** 28×14px, border-radius 7px. ON `bg-green-600`. OFF `bg-gray-300`. Knob: 10×10px white, `box-shadow: 0 1px 2px rgba(0,0,0,0.08)`, transition left 0.12s.
 
@@ -467,36 +470,43 @@ API expects snake_case reason values — never display labels.
 
 ---
 
-## 44. Review View — active line highlight
+## 32. Review View — print
 
-Background: `#fefce8` (yellow-50). First cell left border: `3px solid #eab308` (yellow-500). No outline.
-`activeLineIndex` resets to 0 on order change.
+4th icon-only action button (Printer, 28×28) in Row 2 action cluster. Calls `window.print()`. Print CSS scopes everything under `#mo-print-area`. Nav footer, action buttons, SkuToggle hidden via `.mo-print-hide` class. Print: A4 landscape, table-layout auto, overflow visible, 10px base / 9px headers (prevents truncation). Print footer: `OrbitOMS · JSW Dulux Surat Depot · Printed {IST date time}`. All rules scoped under `#mo-print-area` to avoid leaking into challan print.
 
 ---
 
-## 45. Delivery Challan — split view
+## 33. Delivery Challan — split view
 
 Left panel (320px): same pattern as Mail Orders Review View. Compact 3-line rows: OBD mono + challan badge / customer name / SMU dot + route + articles. Selected: `bg-teal-50 + border-l-teal-600`. No search in panel — handled by UniversalHeader.
 
 Right panel: action bar (challan ID mono + OBD + customer gray-400 | Edit outline + Print dark) + challan document on #f9fafb background.
 
-UniversalHeader: no segments. Filter groups: SMU (Retail Offtake / Decorative Projects) + Route. Date stepper. Search.
+UniversalHeader: no segments. Filter groups: SMU + Route. Date stepper. Search.
 
 ---
 
-## 46. Delivery Challan — document (B&W print)
+## 34. Delivery Challan — document (B&W print)
 
 **Palette (document only):** #111827, #374151, #6b7280, #9ca3af, #d1d5db, #e5e7eb, #f0f0f0, #f9fafb, #fff. **NO teal. NO blue.**
 
-**Logo:** CSS filter `grayscale(100%) brightness(0)` for pure black print.
+**Logo:** `/jsw-dulux-logo.png` (800×193, 101 KB, transparent PNG-24). Height 34px on web AND print. Container `paddingRight: 24px`. **Web view: NO inline filter (full colour).** **Print view: `filter: grayscale(100%) brightness(0) !important` via `@media print`.**
 
-**Structure:** Header (logo grayscale + DELIVERY CHALLAN centred + challan no.) → dark address bar (#374151, only dark section) → SMU/OBD/Warehouse fields → Bill To / Ship To (with #f9fafb sub-headers, billToAddress lookup via billToCustomerId) → Customer/SO/Receiver → Line items table → Footer (terms + transport + signatures) → bottom bar (regd office + GSTIN).
+**Header layout:** Logo left · "DELIVERY CHALLAN" centred · Challan number + OBD date right column (`minWidth: 165`). Right column shows two stacked values: bold mono challan number, then small light date subtitle `DD MMM YYYY` (e.g. `29 Apr 2026`). Labels "CHALLAN NO." and "CHALLAN DATE" removed. Date source: `import_raw_summary.obdEmailDate`. Helper `formatObdDate(iso)` uses UTC getters.
 
-**Table:** `table-layout: fixed` with `<colgroup>`: 5/13/30/22/8/10/12%. Header 28px #f9fafb. Data rows 32px. Blank rows to minimum 8. Totals row with 2px top border.
+**Structure:** Header → dark address bar (#374151, only dark section) → SMU/OBD/Warehouse fields → Bill To / Ship To (with #f9fafb sub-headers, billToAddress lookup via billToCustomerId) → Customer/SO/Receiver (S5) → Line items table → Footer (terms + transport + signatures) → bottom bar.
+
+**S5 contact rendering:** When a contact resolves, name renders on line 1 (`fontSize 11, color #374151, marginTop 3`), phone on line 2 (`fontSize 10, color #6b7280, marginTop 1, fontFamily SF Mono`). If no contact, fallback `<div height:20>` preserves row height. Blank columns are valid output.
+
+**Bottom bar:** `Regd. Office: <addr> · www.akzonobel.co.in · JSW Dulux Limited (formerly Akzo Nobel India Limited)`. Entity name hardcoded in `challan-document.tsx`.
+
+**Table:** `table-layout: fixed` with `<colgroup>`: 5/13/35/15/8/12/12%. Header 28px #f9fafb. Data rows 32px. Blank rows to minimum 8. Totals row with 2px top border.
+
+**Print CSS:** `@page` rules MUST be top-level in `globals.css` — cannot nest in `@media print`. Use `visibility: hidden` on body + `visibility: visible` on print area (not `display: none`).
 
 ---
 
-## 47. TM table — §40 compliance
+## 35. TM table — §28 compliance
 
 Columns: # / OBD / SMU / Site Name / Priority / Articles / Volume / Operator-Action / Time / Actions.
 Widths: 4/13/10/18/7/9/6/15/10/8%.
@@ -517,9 +527,9 @@ Column header pills (all 4 kanban columns): neutral `bg-gray-100 text-gray-700 b
 
 ---
 
-## 48. Tint Operator v4 — layout
+## 36. Tint Operator v4 — layout
 
-See `CLAUDE_TINT.md §3` for business behaviour. Visual spec here.
+Business behaviour: `CLAUDE_TINT.md §3`.
 
 **Layout:**
 - Row 1: UniversalHeader — title "My Jobs", stats (queue/active/done), clock, search
@@ -528,25 +538,25 @@ See `CLAUDE_TINT.md §3` for business behaviour. Visual spec here.
 - Main: 320px SKU left panel + flex TI form right. Mobile: left hidden below md.
 
 **Colour budget (entire screen):**
-- Teal: sidebar + job pill segment ONLY (navigation/identity)
+- Teal: sidebar + job pill segment ONLY
 - Gray-900: save CTAs + TINTER/ACOTONE toggle + selected card border
 - Green-600: workflow CTAs (start, done)
-- Amber: pending status accents (left border, coverage text, progress bar <25%)
-- Pigment colours: shade grid cells ONLY (visual centrepiece)
+- Amber: pending status accents
+- Pigment colours: shade grid cells ONLY
 - Everything else: white, gray-50, gray-100, gray-200, gray-400
 
-**Left panel card states (final):**
+**Left panel card states:**
 - Selected: `bg-gray-100 border-l-[3px] border-l-gray-900`
 - Unselected (all statuses): `bg-white border-gray-200 hover:bg-gray-50` — status via ✓ checkmark or Pending badge only, no coloured left borders
 
 **CTA rules:**
-- Save actions (Save TI, Update TI Entry): `bg-gray-900 text-white`
-- Workflow actions (Save TI & Start, Start Job, Mark as Done): `bg-green-600 text-white`
-- No teal on any CTA button. Buttons use natural width, `whitespace-nowrap`, `flex-shrink-0`. Never truncate.
+- Save (Save TI, Update TI Entry): `bg-gray-900 text-white`
+- Workflow (Save TI & Start, Start Job, Mark as Done): `bg-green-600 text-white`
+- No teal on any CTA button. Buttons use natural width, `whitespace-nowrap`, `flex-shrink-0`.
 
 ---
 
-## 49. Pigment shade cells (Tint Operator)
+## 37. Pigment shade cells (Tint Operator)
 
 Each shade input has tinted background + 3px top border in actual pigment colour. `border-radius: 0 0 6px 6px` (flat top, rounded bottom). Filled cells (value > 0): deeper background + darker border.
 
@@ -573,9 +583,101 @@ Colour constants at top of `tint-operator-content.tsx`: `TINTER_SHADE_COLORS` an
 Naming: two-letter colour + strength number (2=strong, 1=standard).
 YE2/YE1=yellows, XY1=amber, XR1=deep red, WH1=white, RE2/RE1=reds, OR1=orange, NO2/NO1=blacks, MA1=magenta-violet, GR1=green, BU2/BU1=blues.
 
+Toggle: "+ Show all 13" expands to full grid. "− Show active only" collapses back.
+
 ---
 
-## 50. Outlook email safety (mail order slot summary)
+## 38. Place Order — top bar
+
+Sticky 52px top bar. Layout: Logo+wordmark (left) · Customer pill (centre, `px-2.5 py-1`, `max-w-full min-w-0 truncate` on name) · Send button + cart counter (right). Wrapper around `<CustomerSearch>` must NOT have `overflow-hidden` (clips dropdown).
+
+Page title: "Purchase Order (PO)" (in sidebar nav + top bar).
+
+---
+
+## 39. Place Order — speed dial
+
+9-tile fixed grid (operator-curated). Tiles in order:
+1. GLOSS · 2 SATIN · 3 PROMISE ENAMEL · 4 WS · 5 VT GLO · 6 WOODCARE · 7 STAINER · 8 PRIMER · 9 AQUATECH
+
+Config: `lib/place-order/quick-tiles-config.ts`. Each tile: `{ position, type: "family", label, parentLabel, familyName }`.
+
+Two render modes:
+- **Browse mode** (`activeState.kind === "idle"`): full 9-tile grid
+- **Work mode** (sub-product active): compact horizontal pill strip (~40px tall). Active pill gets teal-bordered visual + ▸ marker.
+
+Digit shortcuts 1-9 always trigger their tile. No Tab cycle.
+
+---
+
+## 40. Place Order — variant grid card
+
+Layout: subproduct tabs (top) · pack header row · base × pack matrix. Card never scrolls internally.
+
+**Pack header:** single-line, 10.5px. Format `{pack} · {containerLabel}` where containerLabel is `box 12 | box 6 | box 4 | drum | bag` or null. Container label is mono gray-400. Helper: `packContainerLabel()` in `lib/place-order/pack.ts`.
+
+**Pack columns:** explicit 80px width via `style={{ width: "80px" }}` on each `<col>` in colgroup (with `table-layout: fixed`).
+
+**Pagination:** `VARIANT_GRID_PAGE_SIZE = 15`, `VARIANT_GRID_PAGINATION_THRESHOLD = 17`. Sub-products with `bases.length > 17` paginate at 15 per page. Page dots in card header (mouse). `Shift+PageDown`/`Shift+PageUp` (keyboard). Unshifted `PageDown`/`PageUp` cycle sub-products within family. Page state in parent, resets to 0 on subProductName/activeSubProduct change.
+
+**Cell sizing:** 56×32, font 13px (fixed pixels).
+
+---
+
+## 41. Place Order — variant cell
+
+Cell stores **UNITS** in `cart.packQtys[pack]`. Typing digits writes units directly.
+
+**Keyboard inside cell:**
+- 0-9 → write units (replaces value)
+- `+` or `=` → `qty + boxSize` (one box up)
+- `-` or `_` → `Math.max(0, qty - boxSize)` (one box down)
+- All four `e.preventDefault()`. Native key-repeat handles hold-to-repeat.
+- Arrow keys, Tab, Enter, Esc, PageUp/Down preserved
+
+**Hover/focus +/− buttons:** 2 absolute `<button>` elements inside wrapper. Width 16px, height 14px. Position: `+` top-right (`right-[1px] top-[1px]`), `−` bottom-right (`right-[1px] bottom-[1px]`). Style: `text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-[2px] text-[11px] leading-none`. Visibility: `opacity-0` default, `opacity-100` on `group-hover` OR `[.group:focus-within_&]`. `tabIndex={-1}`. `onMouseDown={(e) => e.preventDefault()}` (keeps focus on input).
+
+**Empty vs NA cells:** distinguishable visually (NA cells have different bg + cursor).
+
+---
+
+## 42. Place Order — cart panel
+
+340px right column. Card list grouped by product/base. Pack chips per line.
+
+**Chip format:** primary `×{units}` in `text-gray-700 font-mono font-semibold`. Conditional secondary `· {units / step} box` in `text-gray-400 font-normal ml-1` when `step > 1 && units > 0 && units % step === 0`. Examples: `×12 · 1 box` (clean), `×13` (non-clean), `×5` (step=1 drum, no suffix).
+
+**Volume total formula:** `sum += units * packToLitres(pack)`. Do NOT multiply by `packStep` (that would double-count under unit semantics).
+
+**Recently used:** shown only in browse state (`activeState.kind === "idle"`). Conditional on `touchedAt?: number` field on `CartLine` (set to `Date.now()` on every setQty path).
+
+---
+
+## 43. Place Order — page layout
+
+Fixed-height, no vertical scroll anywhere. Root `h-screen overflow-hidden flex flex-col`. Top bar `flex-shrink-0`. Content `flex-1 overflow-hidden`. No internal scroll on variant grid card.
+
+Viewport guard: `< 1024px` width redirects to `/order` mobile page on mount and resize.
+
+---
+
+## 44. Attendance — mobile PWA patterns
+
+Full-screen, no sidebar. 480px max column, centred on tablet/desktop.
+
+**Bottom nav (end users):** Today + History tabs. No Profile tab.
+
+**Status chips:** per §3 colour map.
+
+**Photo preview:** 240×320 face frame guide overlay during capture. Compressed client-side to 640px Q70 JPEG via `lib/attendance/photo.ts` canvas helper.
+
+**Admin photo viewer:** lazy fetch signed URL (5min expiry) from `GET /api/admin/attendance/photo?recordId=N`. Never expose Supabase Storage bucket publicly.
+
+**PWA manifest:** start_url `/attendance`. Icons: orbit logo on teal-600 bg, 192/512px PNG + apple-touch-icon. Source SVG at `public/icon-source.svg`. Generator `scripts/generate-icons.mjs` (@resvg/resvg-js, idempotent).
+
+---
+
+## 45. Outlook email safety (mail order slot summary)
 
 Non-negotiable for OWA paste survival:
 - Zero `<div>`, zero `<p>`, zero margin
@@ -589,49 +691,8 @@ Non-negotiable for OWA paste survival:
 
 **Rule:** All email additions must be plain text. No `<span>` styling for content. Use `zwsp()` to break iOS auto-link detection, `fmtTime()` for IST.
 
-Sign-off: "Billing Team" (not Desk/Department). Phone hardcoded `+91 7435065023`.
+Sign-off: "Billing Team". Phone hardcoded `+91 7435065023`.
 
 ---
 
-## 51. No-scroll page layout (place-order v5)
-
-- Page locked to viewport height: `<main>` is `h-[calc(100vh-52px)]` and inner `<section>` is `overflow-hidden`. The page does not vertical-scroll under any state.
-- Variant grid card never scrolls internally.
-- Cell sizing: **56×36px** (was 72×44px in v4), `rounded-[5px]`, font 13.5px/600. NA cell uses em-dash at the same dimensions.
-- Base name cell: `px-4 py-1.5`, font 12.5px/600. Base column locked to 160px fixed width; pack columns flow via `table-layout:fixed` with empty `<col />` for even distribution.
-- Pack header: title 11.5px/600 + suffix 10.5px mono gray-400 from `packContainerLabel()` — `"box 12"` / `"box 6"` / `"box 4"` for cartonable packs, `"drum"` for 10L/20L/30L, `"bag"` for 40KG, no suffix for unknown packs (separator dot also suppressed). Decoupled from `packStep` (math vs. UI text are independent concerns).
-- Row stride ≈ 40px (cell 36 + row padding 4).
-- Card header (panel): `px-4 py-2.5`, title 14px/bold, monogram 28×28px (10.5px font). Meta line 10.5px gray-400.
-- Hint footer: `px-4 py-1.5`, 10px text. Replaced by **PaginationFooter** when paginated: `bg-teal-50/40 border-t border-teal-100`, includes `Shift+PgDn / Shift+PgUp` kbd glyph, right-aligned "Showing bases X–Y of Z · Page N of M" in teal-700 weight 500.
-
-### Speed dial dual mode
-
-- **Full 9-tile grid** when no sub-product is active: tile 98px × 78px, white bg, gray-200 border. Hover lifts (-1px translate) + teal-600 border + teal-50 bg. Active: teal-600 border + teal-50 bg + teal halo (no lift).
-- **Compact pill strip** when a sub-product is active: `inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11.5px]`. Active pill: `bg-teal-50 border border-teal-600 text-teal-700 font-semibold` + `▸` marker. Inactive: `bg-white border border-gray-200 text-gray-600 font-medium hover:border-teal-600 hover:text-teal-600`. Number prefix font-mono 10px gray-400 (teal-600 when active). Strip total height ~40px including the "Quick:" label prefix.
-
-### Pagination treatment (variant grid)
-
-Renders only when `bases.length > 15`. Page size = 13.
-
-- **Card-header indicator** (right side, before the × close button): `flex items-center gap-2 mr-3`. Prev `‹` 16px gray-400 (hover teal-600, disabled at page 0). Page dots: active = `w-[22px] h-[7px] bg-teal-600 rounded-[4px]`, inactive = `w-[7px] h-[7px] bg-gray-300 rounded-full hover:bg-gray-400`, transition 150ms. Next `›` 16px gray-600 (hover teal-600, disabled at last page). Trailing label `1 of 3` in 10px font-mono gray-400.
-- **Footer banner**: `px-4 py-1.5 bg-teal-50/40 border-t border-teal-100`. Hints: `[` / `]` page, ↓↑←→ nav, 0–9 qty. Right-aligned status `Showing bases X–Y of Z · Page N of M` in teal-700 font-medium.
-
-### Customer pill (top bar)
-
-`ml-4 inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-teal-50 border border-teal-200`. Dot 1.5px teal-600, name 12px font-medium teal-800, code 10px mono teal-600, × button teal-400 hover:teal-700 14px leading-none. Padding-based sizing (no fixed height) — centers vertically inside the 52px top bar via parent flex.
-
-### State-driven panel visibility
-
-RecentlyUsed and LastOrderRecall are hidden when `activeState.kind !== 'idle'`. BrowseAllFamilies stays visible (collapsed `<details>` summary has negligible idle height).
-
-### Cell + cart units semantics (post 2026-05-12 flip)
-
-- **Cell** shows only the unit number — no in-cell `"N box"` hint. Cell remains 56×32px (wrapper `relative w-[56px] h-[32px] mx-auto group`; input fills via `absolute inset-0 w-full h-full`).
-- **Cart panel chip** carries the box translation: `×N · M box` format when `units > 0` AND `step > 1` AND `units % step === 0`. Primary `×N` span: `font-mono font-semibold text-gray-700`. Secondary `· M box` span: `font-normal text-gray-400 ml-1`. Otherwise just `×N` (non-clean multiple or step=1 drum/bag).
-- **Pack column header** uses `packContainerLabel()` for the suffix (see pack header bullet above).
-- **+/− cell buttons** stack vertically on the right edge: shared `right-[1px] w-[16px] h-[14px] rounded-[2px] text-[11px] leading-none text-gray-400 hover:text-gray-700 hover:bg-gray-100 z-[3]`. `+` at `top-[1px]`, `−` at `bottom-[1px]`. Visibility: `opacity-0 group-hover:opacity-100 [.group:focus-within_&]:opacity-100` (arbitrary-variant fallback for Tailwind <3.2). Neutral grey — no teal (one-teal-element rule preserved). `onMouseDown preventDefault` retains input focus on click; `tabIndex={-1}` excludes the buttons from the Tab cycle.
-- **Volume total** in cart panel is `Σ units × packToLitres(pack)` — the pre-flip code's `× packStep` factor was removed (it was the boxes→units multiplier).
-
----
-
-*UI v5.3 · Units semantics for /place-order · No-scroll grid · Pagination · Compact speed dial · Fixed table standard · Review View · Challan B&W · Tint Operator v4 · Signal badges · May 2026*
+*UI v5.2 · Fixed table standard · Review View · Challan B&W · Tint Operator v4 · Signal badges · Place Order · Attendance*

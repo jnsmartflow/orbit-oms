@@ -48,6 +48,7 @@ export async function GET(req: Request): Promise<NextResponse> {
       where: {
         obdEmailDate: { gte: dateStart, lte: dateEnd },
         workflowStage: { notIn: ["dispatched", "cancelled"] },
+        isRemoved: false,
       },
       select: {
         id: true,
@@ -113,6 +114,7 @@ export async function GET(req: Request): Promise<NextResponse> {
           slotId: slot.id,
           workflowStage: { in: ["pending_support", "tinting_done"] },
           dispatchStatus: null,
+          isRemoved: false,
         },
       });
 
@@ -120,6 +122,7 @@ export async function GET(req: Request): Promise<NextResponse> {
         where: {
           slotId: slot.id,
           dispatchStatus: "dispatch",
+          isRemoved: false,
         },
       });
 
@@ -127,6 +130,7 @@ export async function GET(req: Request): Promise<NextResponse> {
         where: {
           slotId: slot.id,
           workflowStage: { in: ["tinting_in_progress", "tint_assigned"] },
+          isRemoved: false,
         },
       });
 
@@ -150,7 +154,7 @@ export async function GET(req: Request): Promise<NextResponse> {
 
   // Global hold count (across all slots)
   const holdCount = await prisma.orders.count({
-    where: { dispatchStatus: "hold" },
+    where: { dispatchStatus: "hold", isRemoved: false },
   });
 
   return NextResponse.json({

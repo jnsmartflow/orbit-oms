@@ -8,6 +8,86 @@ import { buildSkuDisplay } from "@/types/sku-display";
 
 export const dynamic = "force-dynamic";
 
+// Phase 3e — derives the wire-shape skipSummary for a single order. Returns
+// null when no skip events exist. Keeps the wire contract narrow: only the
+// fields the UI needs (count + last event), nothing else from the include.
+type SkipSummary = {
+  count:          number;
+  lastSkippedAt:  string;
+  lastSkippedBy:  string;
+  lastReason:     string;
+  lastTinterType: string | null;
+  lastColours:    string[];
+};
+function buildSkipSummary(o: {
+  _count?:     { skipEvents?: number };
+  skipEvents?: Array<{
+    skippedAt:         Date | string;
+    reason:            string;
+    tinterType:        string | null;
+    outOfStockColours: string[];
+    skippedBy:         { name: string | null } | null;
+  }>;
+}): SkipSummary | null {
+  const count = o._count?.skipEvents ?? 0;
+  if (count === 0) return null;
+  const last = o.skipEvents?.[0];
+  if (!last) return null;
+  return {
+    count,
+    lastSkippedAt:  last.skippedAt instanceof Date
+                      ? last.skippedAt.toISOString()
+                      : String(last.skippedAt),
+    lastSkippedBy:  last.skippedBy?.name ?? "—",
+    lastReason:     last.reason,
+    lastTinterType: last.tinterType ?? null,
+    lastColours:    Array.isArray(last.outOfStockColours)
+                      ? last.outOfStockColours
+                      : [],
+  };
+}
+
+// Phase 4e — mirror of buildSkipSummary for the pause feature. Adds
+// currentlyPaused (the active-state flag) derived from tintAssignments —
+// the Set A/B include already pulls every non-done assignment with its
+// status field. tint_pause_events.id is BigInt but we use explicit select
+// on the pauseEvents include, so no BigInt leaks here.
+type PauseSummary = {
+  count:                number;
+  currentlyPaused:      boolean;
+  lastPausedAt:         string;
+  lastPausedBy:         string;
+  lastReason:           string;
+  lastProgressSnapshot: { items?: Array<{ skuId: number; doneQty: number }> } | null;
+};
+function buildPauseSummary(o: {
+  _count?:         { pauseEvents?: number };
+  pauseEvents?:    Array<{
+    pausedAt:         Date | string;
+    pauseReason:      string;
+    progressSnapshot: unknown;
+    operator:         { name: string | null } | null;
+  }>;
+  tintAssignments?: Array<{ status: string }>;
+}): PauseSummary | null {
+  const count = o._count?.pauseEvents ?? 0;
+  if (count === 0) return null;
+  const last  = o.pauseEvents?.[0];
+  if (!last) return null;
+  const currentlyPaused = (o.tintAssignments ?? []).some((a) => a.status === "paused");
+  return {
+    count,
+    currentlyPaused,
+    lastPausedAt:         last.pausedAt instanceof Date
+                            ? last.pausedAt.toISOString()
+                            : String(last.pausedAt),
+    lastPausedBy:         last.operator?.name ?? "—",
+    lastReason:           last.pauseReason,
+    lastProgressSnapshot: (last.progressSnapshot as
+      { items?: Array<{ skuId: number; doneQty: number }> } | null) ?? null,
+  };
+}
+
 export async function GET(): Promise<NextResponse> {
   const session = await auth();
   requireRole(session, [ROLES.TINT_MANAGER, ROLES.ADMIN, ROLES.OPERATIONS]);
@@ -28,6 +108,7 @@ export async function GET(): Promise<NextResponse> {
         where: {
           orderType:     "tint",
           workflowStage: { in: ["pending_tint_assignment", "tint_assigned", "tinting_in_progress"] },
+          isRemoved:     false,
         },
         orderBy: [{ sequenceOrder: "asc" }],
         include: {
@@ -77,6 +158,38 @@ export async function GET(): Promise<NextResponse> {
               },
             },
           },
+          // Surface linked-challan info to the client so the Remove OBD modal
+          // can render the challan-void pre-warning. NO isVoided filter — we
+          // want the actual voided state to display.
+          challan: {
+            select: { challanNumber: true, isVoided: true },
+          },
+          // Phase 3e — skip summary include + count. Most-recent event only;
+          // the rest of the history is fetched on-demand by the SkipHistoryModal.
+          skipEvents: {
+            orderBy: { skippedAt: "desc" },
+            take:    1,
+            select: {
+              skippedAt:         true,
+              reason:            true,
+              tinterType:        true,
+              outOfStockColours: true,
+              skippedBy:         { select: { name: true } },
+            },
+          },
+          // Phase 4e — pause summary include + count. Mirror of skipEvents.
+          // Explicit select omits the BigInt id; safe to serialise.
+          pauseEvents: {
+            orderBy: { pausedAt: "desc" },
+            take:    1,
+            select: {
+              pausedAt:         true,
+              pauseReason:      true,
+              progressSnapshot: true,
+              operator:         { select: { name: true } },
+            },
+          },
+          _count: { select: { skipEvents: true, pauseEvents: true } },
         },
       }),
 
@@ -85,6 +198,7 @@ export async function GET(): Promise<NextResponse> {
         where: {
           orderType:     "tint",
           workflowStage: "pending_support",
+          isRemoved:     false,
           tintAssignments: {
             some: {
               status:      "tinting_done",
@@ -116,13 +230,44 @@ export async function GET(): Promise<NextResponse> {
             orderBy: { completedAt: "desc" },
             take:    1,
           },
+          // Surface linked-challan info (Phase 2d.1) — matches Set A.
+          challan: {
+            select: { challanNumber: true, isVoided: true },
+          },
+          // Phase 3e — same skip-summary include as Set A.
+          skipEvents: {
+            orderBy: { skippedAt: "desc" },
+            take:    1,
+            select: {
+              skippedAt:         true,
+              reason:            true,
+              tinterType:        true,
+              outOfStockColours: true,
+              skippedBy:         { select: { name: true } },
+            },
+          },
+          // Phase 4e — same pause-summary include as Set A.
+          pauseEvents: {
+            orderBy: { pausedAt: "desc" },
+            take:    1,
+            select: {
+              pausedAt:         true,
+              pauseReason:      true,
+              progressSnapshot: true,
+              operator:         { select: { name: true } },
+            },
+          },
+          _count: { select: { skipEvents: true, pauseEvents: true } },
         },
         orderBy: { createdAt: "asc" },
       }),
 
       // Set C — active splits (Assigned + In Progress columns)
       prisma.order_splits.findMany({
-        where:   { status: { in: ["tint_assigned", "tinting_in_progress"] } },
+        where:   {
+          status: { in: ["tint_assigned", "tinting_in_progress"] },
+          order:  { isRemoved: false },
+        },
         orderBy: [{ sequenceOrder: "asc" }],
         include: {
           order: {
@@ -163,6 +308,7 @@ export async function GET(): Promise<NextResponse> {
         where: {
           status:      "tinting_done",
           completedAt: { gte: startOfToday },
+          order:       { isRemoved: false },
         },
         include: {
           order: {
@@ -204,6 +350,7 @@ export async function GET(): Promise<NextResponse> {
         where: {
           status:      "tinting_done",
           completedAt: { gte: startOfToday },
+          order:       { isRemoved: false },
         },
         include: {
           order: {
@@ -375,8 +522,37 @@ export async function GET(): Promise<NextResponse> {
         })),
       }));
 
+      // Phase 3e — build the wire-shape skip summary BEFORE spreading raw o,
+      // then strip the raw include + count fields so they don't leak.
+      const skipSummary = buildSkipSummary(o as {
+        _count?:     { skipEvents?: number };
+        skipEvents?: Array<{
+          skippedAt:         Date | string;
+          reason:            string;
+          tinterType:        string | null;
+          outOfStockColours: string[];
+          skippedBy:         { name: string | null } | null;
+        }>;
+      });
+      // Phase 4e — same pattern for pauseSummary. tintAssignments is also
+      // passed in for the currentlyPaused derivation.
+      const pauseSummary = buildPauseSummary(o as {
+        _count?:      { pauseEvents?: number };
+        pauseEvents?: Array<{
+          pausedAt:         Date | string;
+          pauseReason:      string;
+          progressSnapshot: unknown;
+          operator:         { name: string | null } | null;
+        }>;
+        tintAssignments?: Array<{ status: string }>;
+      });
       return {
         ...o,
+        // 3e bug fix — tint_assignments.skipEventId is BigInt (Phase 1 addition).
+        // The default `include: { tintAssignments: { ... } }` pulls every scalar
+        // including skipEventId, which BigInt-poisons JSON.stringify. Destructure
+        // it off each row at the map level.
+        tintAssignments:  o.tintAssignments.map(({ skipEventId: _skipEventId, ...t }) => t),
         splits:           enrichedSplits,
         smu:              smuMap.get(o.obdNumber) ?? null,
         obdEmailDate:     obdDateMap.get(o.obdNumber)?.date ?? null,
@@ -392,6 +568,13 @@ export async function GET(): Promise<NextResponse> {
         originalSlotId:   o.originalSlotId ?? null,
         originalSlotName: o.originalSlotId ? (slotNameMap.get(o.originalSlotId) ?? null) : null,
         deliveryTypeName: (o as any).customer?.area?.deliveryType?.name ?? null,
+        // Phase 3e/4e — strip raw include fields, emit the mapped summaries.
+        // JSON.stringify drops undefined fields.
+        skipEvents:       undefined,
+        pauseEvents:      undefined,
+        _count:           undefined,
+        skipSummary,
+        pauseSummary,
       };
     });
 
@@ -438,7 +621,9 @@ export async function GET(): Promise<NextResponse> {
       deliveryTypeName: (s.order as any).customer?.area?.deliveryType?.name ?? null,
     }));
 
-    const completedAssignmentsWithSmu = completedAssignments.map((a) => ({
+    // 3e bug fix — destructure skipEventId (BigInt) off each tint_assignments
+    // row at the map level. Same reasoning as the orders mapping above.
+    const completedAssignmentsWithSmu = completedAssignments.map(({ skipEventId: _skipEventId, ...a }) => ({
       ...a,
       smu:              smuMap.get(a.order.obdNumber) ?? null,
       obdEmailDate:     obdDateMap.get(a.order.obdNumber)?.date ?? null,

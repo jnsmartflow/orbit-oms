@@ -1,0 +1,553 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Operator Skip — Mockup</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; background: #f9fafb; color: #111827; margin: 0; }
+  .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+  .section { max-width: 1280px; margin: 0 auto; padding: 28px 24px; }
+  .section h2 { font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #6b7280; margin-bottom: 12px; }
+  .surface-label { font-size: 11px; color: #9ca3af; margin-bottom: 8px; }
+  .req { color: #dc2626; margin-left: 2px; }
+
+  /* Operator card */
+  .op-shell { background: white; border: 1px solid #e5e7eb; border-radius: 12px; padding: 18px; }
+  .pill-active { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; background: #0d9488; color: white; border-radius: 999px; font-size: 12px; font-weight: 500; }
+  .pill-active-num { background: rgba(255,255,255,0.25); padding: 1px 6px; border-radius: 6px; font-size: 11px; }
+  .badge-assigned { display: inline-flex; align-items: center; padding: 3px 8px; background: #fef3c7; color: #92400e; border-radius: 4px; font-size: 11px; font-weight: 500; }
+  .obd-mono { font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #6b7280; font-weight: 500; }
+
+  /* CTA buttons (operator) */
+  .cta-save { height: 38px; padding: 0 16px; background: #111827; color: white; border-radius: 8px; font-size: 13px; font-weight: 500; display: inline-flex; align-items: center; gap: 7px; }
+  .cta-save:hover { background: #1f2937; }
+  .cta-start { height: 38px; padding: 0 16px; background: #16a34a; color: white; border-radius: 8px; font-size: 13px; font-weight: 500; display: inline-flex; align-items: center; gap: 7px; }
+  .cta-start:hover { background: #15803d; }
+  .cta-skip { height: 38px; padding: 0 16px; background: white; border: 1px solid #e5e7eb; color: #b91c1c; border-radius: 8px; font-size: 13px; font-weight: 500; display: inline-flex; align-items: center; gap: 7px; }
+  .cta-skip:hover { background: #fef2f2; border-color: #fecaca; }
+
+  /* Modal */
+  .scrim { position: fixed; inset: 0; background: rgba(0,0,0,0.40); display: flex; align-items: center; justify-content: center; z-index: 50; }
+  .modal { width: 520px; background: white; border-radius: 12px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); padding: 22px; max-height: 90vh; overflow-y: auto; }
+  .modal h3 { font-size: 16px; font-weight: 600; color: #111827; }
+  .field-label { font-size: 11px; font-weight: 500; color: #6b7280; text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 6px; display: block; }
+  .field { width: 100%; height: 38px; padding: 0 12px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 13px; color: #111827; background: white; }
+  .field:focus { outline: none; border-color: #14b8a6; box-shadow: 0 0 0 3px rgba(20,184,166,0.10); }
+  .field-textarea { width: 100%; min-height: 64px; padding: 9px 12px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 13px; color: #111827; resize: vertical; font-family: inherit; }
+  .field-textarea:focus { outline: none; border-color: #14b8a6; box-shadow: 0 0 0 3px rgba(20,184,166,0.10); }
+
+  /* Tinter type toggle inside modal */
+  .toggle-group { display: inline-flex; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; }
+  .toggle-btn { height: 34px; padding: 0 14px; font-size: 12px; font-weight: 500; background: white; color: #6b7280; border: none; }
+  .toggle-btn.active { background: #111827; color: white; }
+  .toggle-btn:hover:not(.active) { background: #f9fafb; color: #111827; }
+
+  /* Shade chip (multi-select colour) */
+  .shade-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+  .shade-chip { position: relative; padding: 6px 4px 4px; border: 1px solid #e5e7eb; border-radius: 5px; text-align: center; cursor: pointer; background: white; border-top-width: 3px; transition: all 0.1s; }
+  .shade-chip:hover { background: #f9fafb; }
+  .shade-chip-code { font-size: 9px; font-weight: 600; color: #374151; letter-spacing: 0.04em; }
+  .shade-chip.selected { background: #f9fafb; border-color: #111827; }
+  .shade-chip.selected .shade-chip-code { color: #111827; }
+  .shade-check { position: absolute; top: 2px; right: 2px; width: 12px; height: 12px; background: #111827; color: white; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; font-size: 9px; }
+
+  /* TINTER pigment colours (top border + faint bg fill when selected) */
+  .pig-YOX { border-top-color: #b8860b; } .pig-YOX.selected { background: #fdf6e3; }
+  .pig-LFY { border-top-color: #cccc00; } .pig-LFY.selected { background: #fcfae0; }
+  .pig-GRN { border-top-color: #2e7d32; } .pig-GRN.selected { background: #e8f5e9; }
+  .pig-TBL { border-top-color: #1565c0; } .pig-TBL.selected { background: #e3f2fd; }
+  .pig-WHT { border-top-color: #757575; } .pig-WHT.selected { background: #f5f5f5; }
+  .pig-MAG { border-top-color: #c2185b; } .pig-MAG.selected { background: #fce4ec; }
+  .pig-FFR { border-top-color: #d32f2f; } .pig-FFR.selected { background: #ffebee; }
+  .pig-BLK { border-top-color: #37474f; } .pig-BLK.selected { background: #eceff1; }
+  .pig-OXR { border-top-color: #8d3c1a; } .pig-OXR.selected { background: #fbe9e7; }
+  .pig-HEY { border-top-color: #c9a800; } .pig-HEY.selected { background: #fdf6e3; }
+  .pig-HER { border-top-color: #e53935; } .pig-HER.selected { background: #ffebee; }
+  .pig-COB { border-top-color: #283593; } .pig-COB.selected { background: #e8eaf6; }
+  .pig-COG { border-top-color: #00695c; } .pig-COG.selected { background: #e0f2f1; }
+
+  /* ACOTONE pigment colours */
+  .pig-YE2 { border-top-color: #d97706; } .pig-YE2.selected { background: #fef3c7; }
+  .pig-YE1 { border-top-color: #eab308; } .pig-YE1.selected { background: #fef9c3; }
+  .pig-XY1 { border-top-color: #ea580c; } .pig-XY1.selected { background: #ffedd5; }
+  .pig-XR1 { border-top-color: #b91c1c; } .pig-XR1.selected { background: #fee2e2; }
+  .pig-WH1 { border-top-color: #6b7280; } .pig-WH1.selected { background: #f3f4f6; }
+  .pig-RE2 { border-top-color: #dc2626; } .pig-RE2.selected { background: #fee2e2; }
+  .pig-RE1 { border-top-color: #ef4444; } .pig-RE1.selected { background: #fee2e2; }
+  .pig-OR1 { border-top-color: #f97316; } .pig-OR1.selected { background: #ffedd5; }
+  .pig-NO2 { border-top-color: #1f2937; } .pig-NO2.selected { background: #f3f4f6; }
+  .pig-NO1 { border-top-color: #374151; } .pig-NO1.selected { background: #f3f4f6; }
+  .pig-MA1 { border-top-color: #9333ea; } .pig-MA1.selected { background: #f3e8ff; }
+  .pig-GR1 { border-top-color: #16a34a; } .pig-GR1.selected { background: #dcfce7; }
+  .pig-BU2 { border-top-color: #1d4ed8; } .pig-BU2.selected { background: #dbeafe; }
+  .pig-BU1 { border-top-color: #3b82f6; } .pig-BU1.selected { background: #dbeafe; }
+
+  /* Buttons */
+  .btn-cancel { height: 36px; padding: 0 14px; background: white; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 13px; color: #4b5563; }
+  .btn-cancel:hover { background: #f9fafb; }
+  .btn-confirm { height: 36px; padding: 0 14px; background: #111827; color: white; border-radius: 8px; font-size: 13px; font-weight: 500; }
+  .btn-confirm:hover { background: #1f2937; }
+  .btn-confirm:disabled { background: #d1d5db; cursor: not-allowed; }
+
+  /* TM Kanban card (returned) */
+  .kcard { background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px 12px; position: relative; }
+  .kcard.returned { border-left: 3px solid #f59e0b; padding-left: 11px; }
+  .age-pill { display: inline-flex; align-items: center; padding: 1px 6px; background: #fef3c7; color: #92400e; border-radius: 4px; font-size: 10px; font-weight: 500; }
+  .skip-pill { display: inline-flex; align-items: center; gap: 4px; padding: 1px 7px; background: #fffbeb; color: #b45309; border: 1px solid #fde68a; border-radius: 4px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+  .skip-summary { font-size: 10.5px; color: #b45309; margin-top: 5px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 5px; padding: 5px 7px; }
+  .view-history-link { font-size: 10.5px; color: #b45309; text-decoration: underline; cursor: pointer; margin-top: 4px; display: inline-block; }
+  .view-history-link:hover { color: #92400e; }
+
+  /* Fixed table for TM */
+  .tm-table { width: 100%; border-collapse: collapse; table-layout: fixed; background: white; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; }
+  .tm-table thead th { font-size: 10px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; color: #9ca3af; height: 32px; background: #f9fafb; border-bottom: 1px solid #ebebeb; text-align: left; padding-left: 14px; padding-right: 14px; }
+  .tm-table tbody td { font-size: 11px; height: 44px; padding-left: 14px; padding-right: 14px; border-bottom: 1px solid #f0f0f0; color: #4b5563; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
+  .tm-table tbody tr:hover { background: #f9fafb; }
+  .tm-table td.center, .tm-table th.center { text-align: center; padding-left: 10px; padding-right: 4px; }
+  .primary { color: #111827; font-weight: 500; }
+  .muted { color: #9ca3af; }
+  .table-skip-badge { display: inline-flex; align-items: center; gap: 3px; padding: 1px 6px; background: #fffbeb; color: #b45309; border: 1px solid #fde68a; border-radius: 3px; font-size: 9.5px; font-weight: 600; margin-top: 2px; }
+
+  /* History modal list */
+  .event-card { border: 1px solid #f0f0f0; border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; background: white; }
+  .event-card.most-recent { border-left: 3px solid #f59e0b; padding-left: 11px; }
+  .event-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  .event-num { font-size: 10px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em; background: #f3f4f6; padding: 2px 8px; border-radius: 4px; }
+  .event-time { font-size: 11px; color: #6b7280; }
+  .event-row { display: flex; gap: 8px; align-items: baseline; font-size: 12px; margin-bottom: 4px; }
+  .event-label { font-size: 10px; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.04em; min-width: 75px; }
+  .event-val { color: #374151; }
+  .colour-chip { display: inline-block; padding: 1px 6px; margin-right: 4px; font-size: 10px; font-family: ui-monospace, Menlo, monospace; background: #f3f4f6; color: #374151; border-radius: 3px; border-top: 2px solid #b8860b; }
+
+</style>
+</head>
+<body>
+
+<div class="section">
+  <div style="display: flex; align-items: baseline; gap: 16px; margin-bottom: 8px;">
+    <h1 style="font-size: 20px; font-weight: 600;">Operator Skip — feature mockup</h1>
+    <span style="font-size: 12px; color: #6b7280;">4 surfaces · Skip top job in operator queue → returns to TM pool</span>
+  </div>
+  <p style="font-size: 13px; color: #6b7280; max-width: 760px; margin-bottom: 28px;">
+    Skip is only available on the operator's TOP job (current pill). Reason picker + optional remark. If reason is "Tinter finished", operator must also pick tinter type and one or more out-of-stock colours. Skipped job returns to TM Pending with an amber "RETURNED — SKIPPED" badge and full skip history.
+  </p>
+</div>
+
+<!-- ============ SURFACE 1 — OPERATOR PAGE with Skip button on top job ============ -->
+<div class="section">
+  <h2>1 · Operator page — Skip button on the top job</h2>
+  <p class="surface-label">Skip lives in the action footer alongside Save TI / Save TI &amp; Start. Only shown when the current pill job is the operator's top assigned job (NOT in-progress, NOT a future job).</p>
+
+  <!-- Mini operator screen header -->
+  <div class="op-shell" style="padding: 0;">
+    <!-- Row 1: header -->
+    <div style="display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid #f3f4f6;">
+      <div style="display: flex; align-items: baseline; gap: 14px;">
+        <span style="font-size: 16px; font-weight: 600;">My Jobs</span>
+        <span style="font-size: 11.5px; color: #9ca3af;">1 in queue · 0 active · 0 done today</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 12px; color: #9ca3af; font-size: 11.5px;">
+        <span class="mono" style="background: #f3f4f6; padding: 3px 7px; border-radius: 4px;">09:55</span>
+        <span style="background: #f9fafb; padding: 3px 9px; border: 1px solid #e5e7eb; border-radius: 5px;">Search…</span>
+      </div>
+    </div>
+
+    <!-- Row 2: pill -->
+    <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px 18px; border-bottom: 1px solid #f3f4f6;">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <span class="pill-active">
+          <span class="pill-active-num">#1</span>
+          Swapna Sangini
+          <span class="mono" style="opacity: 0.8;">9107008764</span>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-left: 4px;"><polyline points="6 9 12 15 18 9"/></svg>
+        </span>
+        <span class="badge-assigned">Assigned</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 14px;">
+        <span style="font-size: 11px; color: #9ca3af;">0 / 1</span>
+      </div>
+    </div>
+
+    <!-- Bill To / Ship To -->
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; padding: 14px 18px 18px 18px;">
+      <div style="border: 1px solid #f0f0f0; border-radius: 8px; padding: 10px 14px;">
+        <div style="font-size: 10px; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.04em;">Bill To (Customer)</div>
+        <div style="font-size: 13px; color: #111827; font-weight: 600; margin-top: 4px;">Shreenathji Colour &amp; Hardware</div>
+        <div class="mono" style="font-size: 11px; color: #9ca3af; margin-top: 2px;">3252244</div>
+      </div>
+      <div style="border: 1px solid #f0f0f0; border-radius: 8px; padding: 10px 14px;">
+        <div style="font-size: 10px; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.04em;">Ship To (Site)</div>
+        <div style="font-size: 13px; color: #111827; font-weight: 600; margin-top: 4px;">Swapna Sangini</div>
+        <div style="font-size: 11px; color: #9ca3af; margin-top: 2px; display: flex; align-items: center; gap: 5px;">
+          <span style="width: 6px; height: 6px; background: #0d9488; border-radius: 999px;"></span>
+          Local · Vesu · Ghod Dod
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer with CTAs -->
+    <div style="display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-top: 1px solid #f3f4f6; background: #f9fafb;">
+      <div style="font-size: 11.5px; color: #6b7280;">Line 1 of 1 · 0 of 1 line covered</div>
+      <div style="display: flex; gap: 8px;">
+        <button class="cta-skip">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/></svg>
+          Skip
+        </button>
+        <button class="cta-save">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+          Save TI
+        </button>
+        <button class="cta-start">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          Save TI &amp; Start
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <p style="font-size: 12px; color: #6b7280; margin-top: 14px; max-width: 760px;">
+    <strong>Spec notes:</strong>
+  </p>
+  <ul style="font-size: 12px; color: #6b7280; max-width: 760px; padding-left: 20px; line-height: 1.7;">
+    <li><strong>Skip button placement:</strong> leftmost in the action cluster (secondary action). Red text on white (NOT red bg) — destructive intent without screaming.</li>
+    <li><strong>Visibility rule:</strong> Skip button only renders if (a) selected job is the operator's top job in queue, AND (b) job.status === 'assigned' AND startedAt === null. Hidden on in-progress jobs (Pause is the action for that — Phase 4). Hidden on future jobs.</li>
+    <li><strong>API enforces all three checks again</strong> — UI is a UX hint, server is the truth.</li>
+  </ul>
+</div>
+
+<!-- ============ SURFACE 2 — SKIP MODAL (with TINTER_FINISHED selected) ============ -->
+<div class="section">
+  <h2>2 · Skip Job modal — TINTER_FINISHED selected (full form)</h2>
+  <p class="surface-label">Shows the modal with the heaviest case selected (tinter finished → tinter type + colours required). Other reasons hide the tinter+colours block entirely.</p>
+
+  <div style="position: relative; height: 720px; background: #e5e7eb; border-radius: 12px; overflow: hidden;">
+    <div style="position:absolute; inset:0; background: rgba(0,0,0,0.40);"></div>
+
+    <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);">
+      <div class="modal">
+        <!-- Header -->
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px;">
+          <h3>Skip Job</h3>
+          <button style="width: 28px; height: 28px; border-radius: 6px; color: #9ca3af; display: inline-flex; align-items: center; justify-content: center;" title="Close">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg>
+          </button>
+        </div>
+
+        <!-- Job summary -->
+        <div style="background: #f9fafb; border: 1px solid #f0f0f0; border-radius: 8px; padding: 10px 12px; margin-bottom: 14px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="mono primary" style="font-size: 12px;">9107008764</span>
+            <span class="muted" style="font-size: 11px;">·</span>
+            <span style="font-size: 11px; color: #6b7280;">Top of your queue</span>
+          </div>
+          <div style="font-size: 12px; color: #111827; margin-top: 4px; font-weight: 500;">Swapna Sangini</div>
+          <div style="font-size: 11px; color: #6b7280; margin-top: 2px;">Decorative Projects · 7 qty · 140L</div>
+        </div>
+
+        <!-- Reason -->
+        <div style="margin-bottom: 14px;">
+          <label class="field-label">Reason<span class="req">*</span></label>
+          <select class="field">
+            <option>Tinter finished</option>
+            <option>Machine breakdown</option>
+            <option>Material shortage</option>
+            <option>Other</option>
+          </select>
+        </div>
+
+        <!-- Conditional block: tinter type -->
+        <div style="margin-bottom: 14px;">
+          <label class="field-label">Tinter type<span class="req">*</span></label>
+          <div class="toggle-group">
+            <button class="toggle-btn active">TINTER</button>
+            <button class="toggle-btn">ACOTONE</button>
+          </div>
+        </div>
+
+        <!-- Conditional block: colour multi-select (TINTER, 13 shades) -->
+        <div style="margin-bottom: 14px;">
+          <label class="field-label">Out-of-stock colours<span class="req">*</span> <span style="font-weight: 400; text-transform: none; letter-spacing: 0; color: #9ca3af;">— pick one or more</span></label>
+          <div class="shade-grid">
+            <div class="shade-chip pig-YOX selected"><span class="shade-check">✓</span><div class="shade-chip-code">YOX</div></div>
+            <div class="shade-chip pig-LFY"><div class="shade-chip-code">LFY</div></div>
+            <div class="shade-chip pig-GRN"><div class="shade-chip-code">GRN</div></div>
+            <div class="shade-chip pig-TBL selected"><span class="shade-check">✓</span><div class="shade-chip-code">TBL</div></div>
+            <div class="shade-chip pig-WHT"><div class="shade-chip-code">WHT</div></div>
+            <div class="shade-chip pig-MAG"><div class="shade-chip-code">MAG</div></div>
+            <div class="shade-chip pig-FFR"><div class="shade-chip-code">FFR</div></div>
+            <div class="shade-chip pig-BLK"><div class="shade-chip-code">BLK</div></div>
+            <div class="shade-chip pig-OXR"><div class="shade-chip-code">OXR</div></div>
+            <div class="shade-chip pig-HEY"><div class="shade-chip-code">HEY</div></div>
+            <div class="shade-chip pig-HER selected"><span class="shade-check">✓</span><div class="shade-chip-code">HER</div></div>
+            <div class="shade-chip pig-COB"><div class="shade-chip-code">COB</div></div>
+            <div class="shade-chip pig-COG"><div class="shade-chip-code">COG</div></div>
+          </div>
+          <div style="font-size: 11px; color: #9ca3af; margin-top: 6px;">3 selected</div>
+        </div>
+
+        <!-- Optional remark -->
+        <div style="margin-bottom: 16px;">
+          <label class="field-label">Remark <span style="font-weight: 400; text-transform: none; letter-spacing: 0; color: #9ca3af;">— optional</span></label>
+          <textarea class="field-textarea" placeholder="Anything else worth noting…"></textarea>
+        </div>
+
+        <!-- Info box -->
+        <div style="background: #fffbeb; border: 1px solid #fde68a; color: #92400e; border-radius: 8px; padding: 10px 12px; margin-bottom: 16px; font-size: 11.5px; display: flex; gap: 9px; align-items: flex-start;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink: 0; margin-top: 1px;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          <div>This job will return to the Tint Manager. They can re-assign it to you or another operator once the issue is resolved.</div>
+        </div>
+
+        <!-- Buttons -->
+        <div style="display: flex; gap: 8px; justify-content: flex-end;">
+          <button class="btn-cancel">Cancel</button>
+          <button class="btn-confirm">Skip Job</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p style="font-size: 12px; color: #6b7280; margin-top: 14px; max-width: 760px;">
+    <strong>Spec notes:</strong>
+  </p>
+  <ul style="font-size: 12px; color: #6b7280; max-width: 760px; padding-left: 20px; line-height: 1.7;">
+    <li><strong>Conditional fields:</strong> Tinter type + colours only appear when reason = "Tinter finished". For other reasons the modal collapses to: reason + remark + info box.</li>
+    <li><strong>Tinter type toggle:</strong> matches the TINTER/ACOTONE toggle on the operator's TI form (UI §49) — gray-900 active. Switching the toggle re-renders the colour grid below.</li>
+    <li><strong>Colour grid:</strong> uses the exact pigment colours from <span class="mono">TINTER_SHADE_COLORS</span> / <span class="mono">ACOTONE_SHADE_COLORS</span> already in <span class="mono">tint-operator-content.tsx</span>. 7-column grid for TINTER (2 rows: 7 + 6), 7-col for ACOTONE (2 rows: 7 + 7). Multi-select — click to toggle.</li>
+    <li><strong>Validation gates Skip Job button</strong> being clickable: reason required; if tinter finished then type required + ≥1 colour required. Remark always optional.</li>
+    <li><strong>Confirm button:</strong> <span class="mono">bg-gray-900</span> per UI §13 modal pattern.</li>
+    <li><strong>API call:</strong> POST <span class="mono">/api/tint/operator/skip</span> with <span class="mono">{ assignmentId, reason, tinterType?, outOfStockColours?, remark? }</span> per 3a contract.</li>
+  </ul>
+</div>
+
+<!-- ============ SURFACE 3 — TM RETURNED CARD (Kanban + Table) ============ -->
+<div class="section">
+  <h2>3 · TM screens — returned card &amp; table row</h2>
+  <p class="surface-label">After a skip, OBD reappears in TM Pending column / Pending section with an amber left border and skip badges.</p>
+
+  <div style="display: grid; grid-template-columns: 320px 1fr; gap: 20px;">
+    <!-- Left: Kanban returned card -->
+    <div>
+      <div style="font-size: 11px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">Kanban — Pending column</div>
+      <div class="kcard returned">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span class="mono primary" style="font-size: 11px;">9107008764</span>
+          <span class="muted" style="font-size: 11px;">·</span>
+          <span style="font-size: 11px; color: #6b7280;">14 May, 05:30</span>
+          <span class="age-pill">1d</span>
+        </div>
+
+        <div style="margin-top: 8px;">
+          <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+            <span class="skip-pill">
+              <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor"><path d="M5 17l9-9-5 3V2L0 12l9 10V12l5 5z" transform="rotate(180 12 12)"/></svg>
+              Returned — Skipped 2×
+            </span>
+          </div>
+          <div style="font-size: 12.5px; font-weight: 600; color: #111827; margin-top: 5px;">Swapna Sangini</div>
+          <div style="font-size: 11px; color: #6b7280; margin-top: 1px;">Decorative Projects · 7 qty · 140L</div>
+        </div>
+
+        <!-- Last skip summary -->
+        <div class="skip-summary">
+          <div style="font-weight: 600; margin-bottom: 1px;">Last skip · 14 May, 11:24</div>
+          <div>Deepak · Tinter finished · TINTER · YOX, TBL, HER</div>
+        </div>
+
+        <a class="view-history-link">View full history →</a>
+
+        <div style="margin-top: 8px; display: flex; align-items: center; gap: 8px;">
+          <button style="font-size: 11px; padding: 4px 10px; background: #111827; color: white; border-radius: 5px; font-weight: 500;">Re-assign</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: Table row -->
+    <div>
+      <div style="font-size: 11px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">Table view — Pending section</div>
+      <table class="tm-table">
+        <colgroup>
+          <col style="width:4%"><col style="width:13%"><col style="width:10%"><col style="width:18%">
+          <col style="width:7%"><col style="width:9%"><col style="width:6%"><col style="width:15%">
+          <col style="width:10%"><col style="width:8%">
+        </colgroup>
+        <thead>
+          <tr>
+            <th class="center">#</th>
+            <th>OBD</th>
+            <th>Date</th>
+            <th>Customer / Site</th>
+            <th>SMU</th>
+            <th>Priority</th>
+            <th>Art</th>
+            <th>Operator</th>
+            <th>Stage</th>
+            <th class="center">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="center muted">1</td>
+            <td>
+              <div class="mono primary">9107008764</div>
+              <div class="table-skip-badge">
+                <svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor"><path d="M5 17l9-9-5 3V2L0 12l9 10V12l5 5z" transform="rotate(180 12 12)"/></svg>
+                Skipped 2×
+              </div>
+            </td>
+            <td>14 May 05:30</td>
+            <td class="primary">Swapna Sangini</td>
+            <td>Deco Proj</td>
+            <td>P3</td>
+            <td>7</td>
+            <td class="muted">— (returned)</td>
+            <td>
+              <span style="display:inline-flex; align-items:center; gap:5px; font-size:11px; color:#b45309;">
+                <span style="width: 6px; height: 6px; border-radius: 999px; background: #f59e0b; display: inline-block;"></span>
+                Returned
+              </span>
+            </td>
+            <td class="center">
+              <button style="width: 22px; height: 22px; border-radius: 4px; color: #9ca3af; display: inline-flex; align-items: center; justify-content: center;" title="More">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
+              </button>
+            </td>
+          </tr>
+          <tr>
+            <td class="center muted">2</td>
+            <td><div class="mono primary">8094567891</div></td>
+            <td>15 May 09:42</td>
+            <td class="primary">Asopalav Decor</td>
+            <td>Deco</td>
+            <td>P3</td>
+            <td>3</td>
+            <td class="muted">—</td>
+            <td>
+              <span style="display:inline-flex; align-items:center; gap:5px; font-size:11px; color:#6b7280;">
+                <span style="width: 6px; height: 6px; border-radius: 999px; background: #9ca3af; display: inline-block;"></span>
+                Pending
+              </span>
+            </td>
+            <td class="center">
+              <button style="width: 22px; height: 22px; border-radius: 4px; color: #9ca3af; display: inline-flex; align-items: center; justify-content: center;" title="More">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
+              </button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <p style="font-size: 12px; color: #6b7280; margin-top: 14px; max-width: 760px;">
+    <strong>Spec notes:</strong>
+  </p>
+  <ul style="font-size: 12px; color: #6b7280; max-width: 760px; padding-left: 20px; line-height: 1.7;">
+    <li><strong>Kanban card:</strong> amber-3px left border (border-l-amber-500). "RETURNED — SKIPPED Nx" pill at the top in amber. Last skip summary in a tinted amber box (operator · reason · type · colour codes). "View full history →" link below opens the history modal.</li>
+    <li><strong>Skip count:</strong> "2×" means the order has been skipped 2 times total (over its lifetime, by any operator). Counts persist across reassignments.</li>
+    <li><strong>Table view:</strong> small amber "Skipped 2×" badge under the OBD in the OBD column. Stage column shows "Returned" instead of "Pending" so it's distinguishable from never-assigned. Operator column shows "— (returned)" to indicate the previously-assigned operator is no longer linked.</li>
+    <li><strong>Card sort:</strong> returned cards sort like other pending cards by sequenceOrder. No special floating to top — spec doesn't ask for it. Can be added later if Chandresh wants.</li>
+  </ul>
+</div>
+
+<!-- ============ SURFACE 4 — SKIP HISTORY MODAL ============ -->
+<div class="section">
+  <h2>4 · Skip History modal</h2>
+  <p class="surface-label">Opens from "View full history →" on the returned card or from the TM 3-dot menu. Chronological newest-first.</p>
+
+  <div style="position: relative; height: 720px; background: #e5e7eb; border-radius: 12px; overflow: hidden;">
+    <div style="position:absolute; inset:0; background: rgba(0,0,0,0.40);"></div>
+
+    <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);">
+      <div class="modal" style="width: 560px;">
+        <!-- Header -->
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+          <h3>Skip History</h3>
+          <button style="width: 28px; height: 28px; border-radius: 6px; color: #9ca3af; display: inline-flex; align-items: center; justify-content: center;" title="Close">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg>
+          </button>
+        </div>
+
+        <!-- Order summary -->
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid #f3f4f6;">
+          <span class="mono primary" style="font-size: 12px;">9107008764</span>
+          <span class="muted" style="font-size: 11px;">·</span>
+          <span style="font-size: 12px; color: #111827; font-weight: 500;">Swapna Sangini</span>
+          <span class="muted" style="font-size: 11px;">·</span>
+          <span style="font-size: 11px; color: #6b7280;">2 skip events</span>
+        </div>
+
+        <!-- Event 2 (most recent, on top) -->
+        <div class="event-card most-recent">
+          <div class="event-header">
+            <span class="event-num">Skip #2 · most recent</span>
+            <span class="event-time">14 May 2026 · 11:24 IST</span>
+          </div>
+          <div class="event-row">
+            <span class="event-label">Operator</span>
+            <span class="event-val">Deepak Vasava</span>
+          </div>
+          <div class="event-row">
+            <span class="event-label">Reason</span>
+            <span class="event-val">Tinter finished</span>
+          </div>
+          <div class="event-row">
+            <span class="event-label">Tinter type</span>
+            <span class="event-val">TINTER</span>
+          </div>
+          <div class="event-row" style="align-items: flex-start;">
+            <span class="event-label">Colours</span>
+            <span class="event-val">
+              <span class="colour-chip" style="border-top-color: #b8860b;">YOX</span>
+              <span class="colour-chip" style="border-top-color: #1565c0;">TBL</span>
+              <span class="colour-chip" style="border-top-color: #e53935;">HER</span>
+            </span>
+          </div>
+          <div class="event-row">
+            <span class="event-label">Remark</span>
+            <span class="event-val muted" style="font-style: italic;">—</span>
+          </div>
+        </div>
+
+        <!-- Event 1 (older) -->
+        <div class="event-card">
+          <div class="event-header">
+            <span class="event-num">Skip #1</span>
+            <span class="event-time">13 May 2026 · 16:08 IST</span>
+          </div>
+          <div class="event-row">
+            <span class="event-label">Operator</span>
+            <span class="event-val">Chandrasing Valvi</span>
+          </div>
+          <div class="event-row">
+            <span class="event-label">Reason</span>
+            <span class="event-val">Machine breakdown</span>
+          </div>
+          <div class="event-row">
+            <span class="event-label">Remark</span>
+            <span class="event-val">Tinter machine showing E04 error code — service engineer called</span>
+          </div>
+        </div>
+
+        <!-- Footer -->
+        <div style="display: flex; justify-content: flex-end; margin-top: 8px;">
+          <button class="btn-cancel">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p style="font-size: 12px; color: #6b7280; margin-top: 14px; max-width: 760px;">
+    <strong>Spec notes:</strong>
+  </p>
+  <ul style="font-size: 12px; color: #6b7280; max-width: 760px; padding-left: 20px; line-height: 1.7;">
+    <li><strong>Order:</strong> newest-first. Most recent skip gets an amber left border + "most recent" tag.</li>
+    <li><strong>Per-event fields:</strong> Operator name, reason (human label), tinter type (only if TINTER_FINISHED), colours (only if TINTER_FINISHED — chips coloured by pigment top border), remark (em-dash if empty).</li>
+    <li><strong>API:</strong> GET <span class="mono">/api/tint/manager/orders/[id]/skip-history</span> → events sorted desc by skippedAt (already done in 3a).</li>
+    <li><strong>Permission:</strong> Same as TM page access — Admin OR canView on tint_manager (already enforced server-side in 3a).</li>
+    <li><strong>Empty state:</strong> if total = 0, show "No skip events for this OBD" in muted italic. (Shouldn't happen since this modal is only reachable from a returned card.)</li>
+  </ul>
+</div>
+
+</body>
+</html>

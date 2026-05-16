@@ -24,6 +24,11 @@ interface ChallanRow {
   printedBy:     number | null;
   createdAt:     string;
   updatedAt:     string;
+  // Phase 2e — voided state. Drives banner, watermark, button disable.
+  isVoided:      boolean;
+  voidReason:    string | null;
+  voidRemark:    string | null;
+  voidedAt:      string | null;
 }
 
 interface SystemConfig {
@@ -89,6 +94,10 @@ interface OrderData {
   shipTo:       ShipTo;
   lineItems:    LineItem[];
   totals:       Totals | null;
+  // Phase 2e — removal metadata, surfaces on the voided-challan banner.
+  isRemoved:    boolean;
+  removedAt:    string | null;
+  removedBy:    { name: string } | null;
 }
 
 export interface ChallanApiResponse {
@@ -106,6 +115,8 @@ export interface ChallanDocumentProps {
   onFormulaChange:     (rawLineItemId: number, value: string) => void;
   onTransporterChange: (value: string) => void;
   onVehicleNoChange:   (value: string) => void;
+  /** Phase 2e — when true, renders the diagonal VOIDED watermark over the document. */
+  isVoided?:           boolean;
 }
 
 // ── Shared style constant ──────────────────────────────────────────────────────
@@ -146,6 +157,7 @@ export function ChallanDocument({
   onFormulaChange,
   onTransporterChange,
   onVehicleNoChange,
+  isVoided = false,
 }: ChallanDocumentProps) {
   const { challan, systemConfig, order } = data;
   const { billTo, shipTo, lineItems, totals } = order;
@@ -171,10 +183,23 @@ export function ChallanDocument({
           minHeight:              "100vh",
           border:                 "1px solid #d1d5db",
           overflow:               "hidden",
+          position:               "relative", /* anchor for VOIDED watermark */
           WebkitPrintColorAdjust: "exact",
           printColorAdjust:       "exact",
         } as React.CSSProperties}
       >
+
+        {/* ── Phase 2e — VOIDED watermark (screen-only) ───────────────────── */}
+        {/* print:hidden + .challan-void-mark double-suppression. The card
+            should never appear on a printed or PDF-saved page. */}
+        {isVoided && (
+          <div
+            aria-hidden="true"
+            className="challan-void-mark pointer-events-none select-none absolute top-1/2 left-1/2 z-[5] -translate-x-1/2 -translate-y-1/2 -rotate-[22deg] whitespace-nowrap font-black tracking-[0.08em] text-[120px] leading-none text-red-600/15 border-[8px] border-red-600/20 px-9 py-3 rounded-lg print:hidden"
+          >
+            VOIDED
+          </div>
+        )}
 
         {/* ── S1 HEADER — 3-column: Logo | Title | Challan No. ──────────── */}
         <div style={{
