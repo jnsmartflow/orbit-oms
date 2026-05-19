@@ -42,6 +42,13 @@ export const viewport: Viewport = {
   viewportFit: "cover",
   width: "device-width",
   initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  // Tells Chromium 108+ to shrink the layout viewport when the soft keyboard
+  // opens, instead of overlaying it. Pairs with the visualViewport-driven
+  // --vvh CSS variable in /order so <main> bottom aligns with the keyboard
+  // top on Android. iOS Safari already shrinks visualViewport natively.
+  interactiveWidget: "resizes-content",
 };
 
 export default function RootLayout({

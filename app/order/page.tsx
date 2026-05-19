@@ -264,6 +264,34 @@ export default function OrderPage(): React.JSX.Element {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  // Keyboard-aware viewport sizing. Android Chrome does not shrink the layout
+  // viewport when the soft keyboard opens — it overlays it, hiding anything
+  // below the focused input (search results in our case). We mirror iOS
+  // Safari's behaviour by tracking visualViewport.height and writing it to
+  // a --vvh CSS variable that <main> consumes as its explicit height. iOS
+  // Safari already returns the keyboard-shrunk height from visualViewport,
+  // so the same code path works on both platforms without breaking iOS.
+  //
+  // The handler writes directly to documentElement.style — no React state —
+  // to avoid a render storm on every visualViewport.resize tick (iOS fires
+  // it per frame while the keyboard slides in).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const vv = window.visualViewport;
+    function update(): void {
+      const h = vv ? vv.height : window.innerHeight;
+      document.documentElement.style.setProperty("--vvh", `${h}px`);
+    }
+    update();   // sync write so --vvh has a value before first paint
+    if (!vv) return;
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
+    return () => {
+      vv.removeEventListener("resize", update);
+      vv.removeEventListener("scroll", update);
+    };
+  }, []);
+
   // Mount auto-focus on the customer search input — desktop only. Mobile
   // users do not get the keyboard popped on load. matchMedia is read inside
   // the effect so SSR doesn't see `window`.
@@ -815,7 +843,10 @@ export default function OrderPage(): React.JSX.Element {
   // ── Render ────────────────────────────────────────────────────────────
 
   return (
-    <main className="min-h-screen bg-[#f2f2f7] pb-12">
+    <main
+      className="bg-[#f2f2f7] pb-12 overflow-y-auto"
+      style={{ height: "var(--vvh, 100vh)" }}
+    >
 
       {/* Unified sticky header — three mutually exclusive states:
           STATE 1: !selectedCust                       → "Place Order" branding

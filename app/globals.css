@@ -4,6 +4,12 @@
   margin: 10mm;
 }
 
+/* --vvh fallback — /order's <main> consumes var(--vvh, 100vh) for keyboard-
+   aware sizing. The visualViewport useEffect overwrites this on mount, but
+   before JS runs (SSR first paint, or on browsers without visualViewport)
+   we want full viewport height so the page does not collapse to zero. */
+html { --vvh: 100vh; }
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
