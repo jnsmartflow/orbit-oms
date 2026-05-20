@@ -67,6 +67,8 @@ export interface MoOrder {
   customerArea?: string | null;
   customerDeliveryType?: string | null;
   customerRoute?: string | null;
+  shipToArea?: string | null;          // Area of ship-to override customer (null otherwise)
+  shipToDeliveryType?: string | null;  // Delivery type of ship-to override customer (null otherwise)
   splitFromId?: number | null;
   splitLabel?: string | null;
   isLocked?: boolean;

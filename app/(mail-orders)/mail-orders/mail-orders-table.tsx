@@ -5,6 +5,7 @@ import { Check, Copy, ChevronDown, Pencil, Search, Lock, LockOpen } from "lucide
 import { formatTime, smartTitleCase, getLineVolume, getOrderVolume, formatVolume, BATCH_COPY_LIMIT, SPLIT_VOLUME_THRESHOLD, SPLIT_LINE_THRESHOLD, SORT_DISPLAY_THRESHOLD, SAP_PASTE_SORT, splitLinesByCategory, sortLinesForPicker, isOdCiFlagged, cleanSubject, getOrderSignals, getSplitDisplayLabel } from "@/lib/mail-orders/utils";
 import { searchCustomers, saveLineStatus } from "@/lib/mail-orders/api";
 import type { MoOrder, MoOrderLine, CustomerSearchResult, LineStatus } from "@/lib/mail-orders/types";
+import { SignalPill } from "@/components/mail-orders/signal-pill";
 import { LINE_STATUS_REASONS } from "@/lib/mail-orders/types";
 import { ResolveLinePanel } from "./resolve-line-panel";
 import { LineStatusPanel } from "./line-status-panel";
@@ -854,15 +855,6 @@ function OrderRow({
           : undefined;
   const needsBorderCompensation = effectiveFlagged || isFocused || isPunched || isSplit;
 
-  // Remarks — signal badges (3-tier: blocker / attention / info)
-  const signalStyles: Record<string, string> = {
-    blocker:   'bg-red-50 text-red-700 border-red-200',
-    attention: 'bg-amber-50 text-amber-700 border-amber-200',
-    info:      'bg-gray-50 text-gray-500 border-gray-200',
-    split:     'bg-purple-50 text-purple-600 border-purple-200',
-    bill:      'bg-blue-50 text-blue-700 border-blue-200',
-  };
-
   const totalVol = getOrderVolume(order.lines);
   const volStr = formatVolume(totalVol);
 
@@ -1011,15 +1003,7 @@ function OrderRow({
           {signals.length > 0 ? (
             <div className="flex flex-wrap gap-0.5">
               {signals.map((s, i) => (
-                <span
-                  key={i}
-                  className={`relative text-[9px] font-medium px-1.5 py-0.5 rounded border ${signalStyles[s.type] ?? signalStyles.info}`}
-                >
-                  {s.dot && (
-                    <span className={`absolute -top-[3px] -right-[3px] w-[5px] h-[5px] rounded-full ${s.dot}`} />
-                  )}
-                  {s.label}
-                </span>
+                <SignalPill key={`${s.label}-${i}`} signal={s} />
               ))}
             </div>
           ) : (

@@ -710,7 +710,8 @@ export function getOrderFlags(order: MoOrder): string[] {
 
 export interface OrderSignal {
   label: string;
-  type: "blocker" | "attention" | "info" | "split" | "bill";
+  type: "blocker" | "attention" | "info" | "split" | "bill" | "status" | "truck-order";
+  card: "bill" | "ship";
   dot?: string;
 }
 
@@ -724,59 +725,160 @@ export function getOrderSignals(
 
   // ── BLOCKER (red) ──
   if (/\b(od|overdue)\b/.test(combined))
-    result.push({ label: "OD", type: "blocker" });
+    result.push({ label: "OD", type: "blocker", card: "bill" });
   if (/\b(ci|credit\s*(hold|block|issue))\b/.test(combined))
-    result.push({ label: "CI", type: "blocker" });
+    result.push({ label: "CI", type: "blocker", card: "bill" });
   if (/\bbounce\b/.test(combined))
-    result.push({ label: "Bounce", type: "blocker" });
+    result.push({ label: "Bounce", type: "blocker", card: "bill" });
 
   // ── ATTENTION (amber) ──
   if (/bill\s*tomorrow/.test(combined))
-    result.push({ label: "Bill Tomorrow", type: "attention" });
+    result.push({ label: "Bill Tomorrow", type: "attention", card: "bill" });
   if (/cross\s*billing/.test(combined)) {
     const code = combined.match(/cross\s*billing\s*(\w+)/);
-    result.push({ label: code ? `Cross ${code[1].toUpperCase()}` : "Cross", type: "attention" });
+    result.push({ label: code ? `Cross ${code[1].toUpperCase()}` : "Cross", type: "attention", card: "bill" });
   }
-  if (order.shipToOverride)
-    result.push({ label: "\u2192 Ship-to", type: "attention" });
   if (order.dispatchPriority === "Urgent")
-    result.push({ label: "Urgent", type: "attention" });
+    result.push({ label: "Urgent", type: "attention", card: "ship" });
 
   // ── INFO (gray) ──
   if (/7\s*days/.test(combined))
-    result.push({ label: "7 Days", type: "info" });
+    result.push({ label: "7 Days", type: "info", card: "bill" });
   if (/\bextension\b/.test(combined) && !/bill\s*tomorrow/.test(combined))
-    result.push({ label: "Extension", type: "info" });
+    result.push({ label: "Extension", type: "info", card: "bill" });
   // Only show parent Bill N badges when the order is NOT a split.
   // Split orders show their bill info via the "✂ Bill X-Y" purple badge.
   if (!order.splitLabel) {
     const billMatches = Array.from(combined.matchAll(/\bbill\s+(\d+)\b/g));
     const billNums = Array.from(new Set(billMatches.map(m => parseInt(m[1], 10)))).sort((a, b) => a - b);
     for (const n of billNums) {
-      result.push({ label: `Bill ${n}`, type: "bill" });
+      result.push({ label: `Bill ${n}`, type: "bill", card: "bill" });
     }
   }
   if (/dpl/.test(combined))
-    result.push({ label: "DPL", type: "info" });
+    result.push({ label: "DPL", type: "info", card: "bill" });
   if (/challan\s*attachment/.test(combined))
-    result.push({ label: "Challan", type: "info" });
+    result.push({ label: "Challan", type: "info", card: "ship" });
   if (/\btruck\b/i.test([order.subject, order.billRemarks, order.remarks].filter(Boolean).join(" ")))
-    result.push({ label: "Truck", type: "info" });
+    result.push({ label: "Truck Order", type: "truck-order", card: "bill" });
 
   // ── SPLIT (purple) ──
   if (order.splitLabel) {
     const splitDisplay = getSplitDisplayLabel(order);
-    result.push({ label: `\u2702 ${splitDisplay}`, type: "split" });
+    result.push({ label: `\u2702 ${splitDisplay}`, type: "split", card: "bill" });
   }
   const totalVol = getOrderVolume(order.lines);
   if (!order.splitLabel && !opts?.isPunched &&
       (totalVol > SPLIT_VOLUME_THRESHOLD || order.totalLines > SPLIT_LINE_THRESHOLD))
-    result.push({ label: "\u26A0 Split", type: "split", dot: "bg-amber-400" });
+    result.push({ label: "\u26A0 Split", type: "split", card: "bill", dot: "bg-amber-400" });
+
+  if (order.dispatchStatus) {
+    const label = order.dispatchStatus === "Hold" ? "Hold" : order.dispatchStatus;
+    result.push({ label, type: "status", card: "ship" });
+  }
 
   return result;
 }
 
 // ── Reply template builder ─────────────────────────────────────────────────
+
+export interface ParsedDeliveryRemarks {
+  shipToName: string | null;
+  shipToCode: string | null;
+  deliveryInstruction: string | null;
+}
+
+/**
+ * Splits the deliveryRemarks string into ship-to identity (name + code) and
+ * remaining instruction text.
+ *
+ *   shipToOverride=false → identity nulls, deliveryInstruction = remarks
+ *   shipToOverride=true  → parse "[→ Name (Code)]" suffix if present;
+ *                          leftover splits on first " — " / " / " / " - "
+ *                          into name (left) and instruction (right). No
+ *                          separator = leftover is the operator-typed name.
+ *
+ * Examples:
+ *
+ *   splitDeliveryRemarks(null, false)
+ *     → { shipToName: null, shipToCode: null, deliveryInstruction: null }
+ *
+ *   splitDeliveryRemarks("Leave at gate by 6pm", false)
+ *     → { shipToName: null, shipToCode: null,
+ *         deliveryInstruction: "Leave at gate by 6pm" }
+ *
+ *   splitDeliveryRemarks(
+ *     "Shree Rang Bhandar — leave at gate by 6pm [→ Shree Rang Bhandar (447636)]",
+ *     true,
+ *   )
+ *     → { shipToName: "Shree Rang Bhandar", shipToCode: "447636",
+ *         deliveryInstruction: "leave at gate by 6pm" }
+ *
+ *   splitDeliveryRemarks("Site A / urgent delivery [→ Site A (123456)]", true)
+ *     → { shipToName: "Site A", shipToCode: "123456",
+ *         deliveryInstruction: "urgent delivery" }
+ *
+ *   splitDeliveryRemarks("Mahesh Patel godown", true)
+ *     → { shipToName: "Mahesh Patel godown", shipToCode: null,
+ *         deliveryInstruction: null }
+ *
+ *   splitDeliveryRemarks("[→ Ramesh Traders (998877)]", true)
+ *     → { shipToName: "Ramesh Traders", shipToCode: "998877",
+ *         deliveryInstruction: null }
+ */
+export function splitDeliveryRemarks(
+  deliveryRemarks: string | null | undefined,
+  shipToOverride: boolean,
+): ParsedDeliveryRemarks {
+  const text = (deliveryRemarks ?? "").trim();
+
+  if (!text) {
+    return { shipToName: null, shipToCode: null, deliveryInstruction: null };
+  }
+
+  if (!shipToOverride) {
+    return { shipToName: null, shipToCode: null, deliveryInstruction: text };
+  }
+
+  const suffixRegex = /\s*\[→\s*([^()\[\]]+?)\s*\((\d+)\)\s*\]\s*$/;
+  const match = text.match(suffixRegex);
+
+  if (!match) {
+    // shipToOverride=true but no auto-appended suffix — operator typed
+    // a free-text destination, no separable instruction text.
+    return { shipToName: text, shipToCode: null, deliveryInstruction: null };
+  }
+
+  const suffixName = match[1].trim();
+  const suffixCode = match[2].trim();
+  const leftover = text.replace(suffixRegex, "").trim();
+
+  if (!leftover) {
+    return {
+      shipToName: suffixName || null,
+      shipToCode: suffixCode || null,
+      deliveryInstruction: null,
+    };
+  }
+
+  const sepRegex = /\s+(?:[—–]|-|\/)\s+/;
+  const sep = leftover.match(sepRegex);
+  if (sep && sep.index !== undefined) {
+    const name = leftover.slice(0, sep.index).trim();
+    const instr = leftover.slice(sep.index + sep[0].length).trim();
+    return {
+      shipToName: name || suffixName || null,
+      shipToCode: suffixCode || null,
+      deliveryInstruction: instr || null,
+    };
+  }
+
+  return {
+    shipToName: leftover,
+    shipToCode: suffixCode || null,
+    deliveryInstruction: null,
+  };
+}
 
 export function buildReplyTemplate(
   soName: string,

@@ -17,11 +17,16 @@ import {
   getBillLabel,
   getSplitDisplayLabel,
   splitLinesByCategory,
+  splitDeliveryRemarks,
   SPLIT_VOLUME_THRESHOLD,
   SPLIT_LINE_THRESHOLD,
   formatVolume,
 } from "@/lib/mail-orders/utils";
 import { searchCustomers, saveLineStatus, searchSkus, resolveLine } from "@/lib/mail-orders/api";
+import { BillToCard } from "@/components/mail-orders/bill-to-card";
+import { ShipToCard } from "@/components/mail-orders/ship-to-card";
+import { MetaRibbon } from "@/components/mail-orders/meta-ribbon";
+import { InstructionsStrip } from "@/components/mail-orders/instructions-strip";
 
 interface ReviewViewProps {
   orders: MoOrder[];           // filtered orders (by slot, search, filters)
@@ -203,30 +208,6 @@ function ReasonDropdown({
           );
         });
       })()}
-    </div>
-  );
-}
-
-// ── Remark Section ─────────────────────────────────────────────────────────
-
-function RemarkSection({ label, value, isEmpty }: { label: string; value: string; isEmpty?: boolean }) {
-  return (
-    <div style={{ flex: 1, minWidth: 0 }}>
-      <div style={{
-        fontSize: 9, fontWeight: 600, color: "#9ca3af",
-        textTransform: "uppercase", letterSpacing: "0.04em",
-        marginBottom: 1,
-      }}>
-        {label}
-      </div>
-      <div style={{
-        fontSize: 11, color: isEmpty ? "#d1d5db" : "#4b5563",
-        lineHeight: 1.3,
-        whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-        fontStyle: isEmpty ? "italic" : "normal",
-      }}>
-        {value}
-      </div>
     </div>
   );
 }
@@ -432,7 +413,6 @@ export function ReviewView({
   // ── Local state ─────────────────────────────────────────────────
   const [soInput, setSoInput] = useState("");
   const [editingSoNumber, setEditingSoNumber] = useState(false);
-  const [codeFlash, setCodeFlash] = useState(false);
   const [replyCopied, setReplyCopied] = useState(false);
   const [codePopoverOpen, setCodePopoverOpen] = useState(false);
 
@@ -584,12 +564,6 @@ export function ReviewView({
   }, [orders, recentlyPunchedIds]);
 
   // ── Handlers ─────────────────────────────────────────────────────
-  function handleCopyCode() {
-    if (!selectedOrder?.customerCode) return;
-    navigator.clipboard.writeText(selectedOrder.customerCode);
-    setCodeFlash(true);
-    setTimeout(() => setCodeFlash(false), 1500);
-  }
 
   async function handlePunchClick() {
     if (!selectedOrder) return;
@@ -1003,382 +977,340 @@ export function ReviewView({
   function renderDetailHeader(order: MoOrder) {
     const isPunched = order.status === "punched" && !!order.soNumber;
     const signals = getOrderSignals(order, { isPunched });
-    const signalStyles: Record<string, string> = {
-      blocker:   'bg-red-50 text-red-700 border-red-200',
-      attention: 'bg-amber-50 text-amber-700 border-amber-200',
-      info:      'bg-gray-50 text-gray-500 border-gray-200',
-      split:     'bg-purple-50 text-purple-600 border-purple-200',
-      bill:      'bg-blue-50 text-blue-700 border-blue-200',
-    };
     const isFlagged = !!order.isLocked || isOdCiFlagged(order);
     const showInputMode = !isPunched || editingSoNumber;
     const punchReady = soInput.length === 10;
 
-    const status = order.customerMatchStatus ?? "unmatched";
-    const matchCount = order.matchedLines;
-    const totalCount = order.totalLines;
-    const allMatched = matchCount === totalCount;
+    // Ship-to identity + delivery instruction parsing
+    const parsed = splitDeliveryRemarks(order.deliveryRemarks, order.shipToOverride ?? false);
+    const billToName = smartTitleCase(order.customerName ?? cleanSubject(order.subject));
+    const shipToName = order.shipToOverride
+      ? smartTitleCase(parsed.shipToName ?? order.deliveryRemarks?.trim() ?? order.customerName ?? "")
+      : billToName;
+    const shipToCode = order.shipToOverride ? parsed.shipToCode : (order.customerCode ?? null);
+    const shipToArea = order.shipToOverride ? (order.shipToArea ?? null) : (order.customerArea ?? null);
+    const shipToDeliveryType = order.shipToOverride ? (order.shipToDeliveryType ?? null) : (order.customerDeliveryType ?? null);
 
-    // Meta items (only those with values)
-    const metaParts: { key: string; el: React.ReactNode }[] = [];
-    metaParts.push({ key: "so", el: <>{smartTitleCase(cleanSubject(order.soName))}</> });
-    metaParts.push({ key: "time", el: <span className="tabular-nums">{formatTime(order.receivedAt)}</span> });
-    if (order.customerArea) metaParts.push({ key: "area", el: <>{smartTitleCase(order.customerArea)}</> });
-    if (order.customerDeliveryType) metaParts.push({ key: "dtype", el: <>{order.customerDeliveryType}</> });
+    // Signal routing
+    const billSignals = signals.filter((s) => s.card === "bill");
+    const shipSignals = signals.filter((s) => s.card === "ship");
+
+    // Instructions strip: collapse typed remarks into a single notes string
+    const notesText = (order.remarks_list ?? [])
+      .filter((r) => r.remarkType !== "delivery" && r.remarkType !== "billing")
+      .map((r) => r.rawText)
+      .filter((t) => t && t.trim().length > 0)
+      .join(" · ");
+    const notesString = notesText.length > 0 ? notesText : null;
+
+    // MetaRibbon pre-formatted strings
+    const receivedAtFormatted = formatTime(order.receivedAt);
+    const punchedAtFormatted = order.punchedAt ? formatTime(order.punchedAt) : null;
+    const punchedByName = order.punchedBy?.name ? smartTitleCase(order.punchedBy.name) : null;
     const vol = Math.round(getOrderVolume(order.lines));
-    if (vol > 0) metaParts.push({ key: "vol", el: <span className="tabular-nums">{vol}L</span> });
-    metaParts.push({ key: "lines", el: <>{order.totalLines} lines</> });
+    const volumeString = vol > 0 ? `${vol}L` : "";
+    const soNameFormatted = smartTitleCase(cleanSubject(order.soName));
 
-    if (order.status === "punched" && order.punchedBy?.name && order.punchedAt) {
-      metaParts.unshift({
-        key: "punched",
-        el: (
-          <>
-            ✓ {smartTitleCase(order.punchedBy.name)}
-            {" "}
-            <span className="tabular-nums">{formatTime(order.punchedAt)}</span>
-          </>
-        ),
-      });
-    }
+    // Picker integration: multi / unmatched orders get a clickable chip trigger
+    const matchStatus = order.customerMatchStatus ?? null;
+    const needsPicker = matchStatus === "multiple" || matchStatus === "unmatched";
+    const chipFallbackLabel = matchStatus === "multiple"
+      ? `${multiCandidates.length} found ▾`
+      : matchStatus === "unmatched"
+        ? "Search…"
+        : undefined;
+    const onCodeClickHandler = needsPicker
+      ? () => setCodePopoverOpen((prev) => !prev)
+      : undefined;
 
-    return (
-      <div className="flex-shrink-0 border-b border-gray-200">
-        {/* ── Row 1 ── */}
-        <div data-tutorial="detail-header" className="flex items-center justify-between gap-3 px-5 pt-3 pb-[7px]">
-          {/* LEFT */}
-          <div className="flex items-center gap-2 min-w-0 flex-wrap">
-            {/* Delivery dot */}
-            <span className={`w-[6px] h-[6px] rounded-full flex-shrink-0 ${getDeliveryDotClass(order.customerDeliveryType)}`} />
-
-            {/* Customer name */}
-            <span className="text-[17px] font-bold tracking-tight text-gray-900 truncate">
-              {smartTitleCase(order.customerName ?? cleanSubject(order.subject))}
-            </span>
-
-            {/* Code chip — 3 states */}
-            {status === "exact" && order.customerCode && (
-              <span
-                onClick={handleCopyCode}
-                className={`font-mono text-[11px] font-medium px-[7px] py-[2px] border rounded cursor-pointer transition-all flex-shrink-0 ${
-                  codeFlash
-                    ? "bg-teal-50 border-teal-200 text-teal-700"
-                    : "bg-gray-50 border-gray-200 text-gray-800 hover:border-teal-200 hover:bg-teal-50 hover:text-teal-700"
-                }`}
-              >
-                {order.customerCode}
-              </span>
-            )}
-            {status === "multiple" && (
-              <div className="relative flex-shrink-0">
-                <span
-                  onClick={() => setCodePopoverOpen(prev => !prev)}
-                  className="text-[11px] font-semibold px-[7px] py-[2px] bg-amber-50 border border-amber-200 rounded text-amber-700 cursor-pointer inline-flex items-center gap-1 hover:bg-amber-100"
-                >
-                  {multiCandidates.length} found ▾
-                </span>
-                {codePopoverOpen && (
-                  <div ref={popoverRef} className="absolute left-0 top-full mt-1 z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-2 w-[280px] max-h-[280px] overflow-y-auto">
-                    {multiCandidates.map((c) => (
-                      <div
-                        key={c.code}
-                        onClick={() => handlePickCandidate({ customerCode: c.code, customerName: c.name, area: c.area, deliveryType: c.deliveryType, route: c.route }, false)}
-                        className="flex items-start gap-2 px-2 py-1.5 rounded hover:bg-gray-50 cursor-pointer"
-                      >
-                        <span className="font-mono text-[11px] text-gray-800 flex-shrink-0">{c.code}</span>
-                        <div className="min-w-0">
-                          <div className="text-[11px] text-gray-600 truncate">{smartTitleCase(c.name)}</div>
-                          {(c.area || c.route) && (
-                            <div className="text-[10px] text-gray-400 truncate">
-                              {[c.area, c.route].filter(Boolean).join(" \u00b7 ")}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                    <div className="border-t border-gray-100 mt-1.5 pt-1.5">
-                      <input
-                        ref={custSearchInputRef}
-                        type="text"
-                        placeholder="Or search by name..."
-                        value={custSearchQuery}
-                        onChange={(e) => setCustSearchQuery(e.target.value)}
-                        className="text-[11px] h-[28px] px-2 border border-gray-200 rounded-md w-full focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10 focus:outline-none"
-                      />
-                      {custSearching && <p className="text-[11px] text-gray-400 px-1 py-1.5">Searching...</p>}
-                      {!custSearching && custSearched && custSearchResults.length === 0 && (
-                        <p className="text-[11px] text-gray-400 px-1 py-1.5">No customers found</p>
-                      )}
-                      {!custSearching && custSearchResults.map((c) => (
-                        <div
-                          key={c.customerCode}
-                          onClick={() => handlePickCandidate(c, true)}
-                          className="flex items-start gap-2 px-2 py-1 rounded hover:bg-gray-50 cursor-pointer"
-                        >
-                          <span className="font-mono text-[11px] text-gray-800 flex-shrink-0">{c.customerCode}</span>
-                          <div className="min-w-0">
-                            <div className="text-[11px] text-gray-600 truncate">{smartTitleCase(c.customerName)}</div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-            {status === "unmatched" && (
-              <div className="relative flex-shrink-0">
-                <span className="inline-flex items-center h-[24px] border-[1.5px] border-amber-200 rounded bg-amber-50 overflow-hidden">
-                  <Search size={10} className="text-amber-600 ml-1.5" />
-                  <input
-                    ref={custSearchInputRef}
-                    type="text"
-                    placeholder="Search customer..."
-                    value={custSearchQuery}
-                    onChange={(e) => setCustSearchQuery(e.target.value)}
-                    onFocus={() => setCodePopoverOpen(true)}
-                    className="border-none outline-none bg-transparent text-[11px] text-gray-900 px-1.5 w-[130px] placeholder:text-amber-600 placeholder:font-normal"
-                  />
-                </span>
-                {codePopoverOpen && (
-                  <div ref={popoverRef} className="absolute left-0 top-full mt-1 z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-2 w-[280px] max-h-[240px] overflow-y-auto">
-                    {custSearching && <p className="text-[11px] text-gray-400 px-1 py-2">Searching...</p>}
-                    {!custSearching && custSearched && custSearchResults.length === 0 && (
-                      <p className="text-[11px] text-gray-400 px-1 py-2">No customers found</p>
-                    )}
-                    {!custSearching && custSearchResults.map((c) => (
-                      <div
-                        key={c.customerCode}
-                        onClick={() => handlePickCandidate(c, true)}
-                        className="flex items-start gap-2 px-2 py-1.5 rounded hover:bg-gray-50 cursor-pointer"
-                      >
-                        <span className="font-mono text-[11px] text-gray-800 flex-shrink-0">{c.customerCode}</span>
-                        <div className="min-w-0">
-                          <div className="text-[11px] text-gray-600 truncate">{smartTitleCase(c.customerName)}</div>
-                          {(c.area || c.route) && (
-                            <div className="text-[10px] text-gray-400 truncate">
-                              {[c.area, c.route].filter(Boolean).join(" \u00b7 ")}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Match chip */}
-            <span className={`text-[10px] font-semibold px-1.5 py-[2px] rounded-[3px] flex-shrink-0 border ${
-              allMatched
-                ? "bg-green-50 text-green-700 border-green-200"
-                : "bg-amber-50 text-amber-700 border-amber-200"
-            }`}>
-              {matchCount}/{totalCount}
-            </span>
-
-            {/* Dispatch badge */}
-            {order.dispatchStatus && (
-              <span className={`text-[10px] font-semibold px-2 py-[2px] rounded flex-shrink-0 border ${
-                order.dispatchStatus === "Hold"
-                  ? "bg-red-50 text-red-700 border-red-200"
-                  : "bg-green-50 text-green-700 border-green-200"
-              }`}>
-                {order.dispatchStatus}
-              </span>
-            )}
-
-            {/* Signal badges */}
-            {signals.map((s, i) => (
-              <span
-                key={`sig-${i}`}
-                className={`relative text-[9px] font-medium px-1.5 py-0.5 rounded border flex-shrink-0 ${signalStyles[s.type] ?? signalStyles.info}`}
-              >
-                {s.dot && (
-                  <span className={`absolute -top-[3px] -right-[3px] w-[5px] h-[5px] rounded-full ${s.dot}`} />
-                )}
-                {s.label}
-              </span>
-            ))}
-          </div>
-
-          {/* RIGHT — Order No. input or Punched state */}
-          <div data-tutorial="so-input" className="flex items-center gap-1.5 flex-shrink-0">
-            {showInputMode ? (
-              <>
-                <div className="flex items-center border-[1.5px] border-gray-200 rounded-md overflow-hidden focus-within:border-teal-500 focus-within:shadow-[0_0_0_3px_rgba(13,148,136,0.08)]">
-                  <span className="text-[10px] font-medium text-gray-400 pl-2 whitespace-nowrap">Order No.</span>
-                  <input
-                    type="text"
-                    value={soInput}
-                    onChange={(e) => setSoInput(e.target.value.replace(/\D/g, "").slice(0, 10))}
-                    onKeyDown={handleSoKeyDown}
-                    placeholder="Enter number"
-                    maxLength={10}
-                    className="w-[120px] h-[30px] border-none outline-none bg-transparent font-mono text-[14px] font-medium text-gray-900 px-2 placeholder:text-gray-300 placeholder:font-normal placeholder:text-[12px]"
-                  />
+    const multiPopoverContent = (
+      <div ref={popoverRef} className="bg-white border border-gray-200 rounded-lg shadow-lg p-2 w-[280px] max-h-[280px] overflow-y-auto">
+        {multiCandidates.map((c) => (
+          <div
+            key={c.code}
+            onClick={() => handlePickCandidate({ customerCode: c.code, customerName: c.name, area: c.area, deliveryType: c.deliveryType, route: c.route }, false)}
+            className="flex items-start gap-2 px-2 py-1.5 rounded hover:bg-gray-50 cursor-pointer"
+          >
+            <span className="font-mono text-[11px] text-gray-800 flex-shrink-0">{c.code}</span>
+            <div className="min-w-0">
+              <div className="text-[11px] text-gray-600 truncate">{smartTitleCase(c.name)}</div>
+              {(c.area || c.route) && (
+                <div className="text-[10px] text-gray-400 truncate">
+                  {[c.area, c.route].filter(Boolean).join(" · ")}
                 </div>
-                <button
-                  onClick={handlePunchClick}
-                  disabled={!punchReady}
-                  className={`h-[32px] px-3.5 rounded-md text-[12px] font-semibold whitespace-nowrap transition-all ${
-                    punchReady
-                      ? "bg-teal-600 text-white hover:bg-teal-700 cursor-pointer"
-                      : "bg-gray-100 text-gray-300 cursor-default"
-                  }`}
-                >
-                  Punch
-                </button>
-              </>
-            ) : (
-              <>
-                <Check size={14} className="text-green-600" />
-                <span className="font-mono text-[14px] font-medium text-gray-900">{order.soNumber}</span>
-                <button
-                  onClick={() => { setEditingSoNumber(true); setSoInput(""); }}
-                  className="w-[18px] h-[18px] rounded border border-gray-200 bg-white cursor-pointer flex items-center justify-center text-gray-400 hover:bg-gray-50 hover:text-gray-600 hover:border-gray-300"
-                  title="Edit SO number"
-                >
-                  <Pencil size={10} />
-                </button>
-                <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-green-50 text-green-700 border border-green-200">
-                  Punched
-                </span>
-              </>
-            )}
+              )}
+            </div>
           </div>
-        </div>
-
-        {/* ── Row 2 ── */}
-        <div className="flex items-center justify-between px-5 pb-2.5">
-          {/* LEFT — Meta */}
-          <div className="flex items-center gap-[5px] flex-wrap text-[11px] text-gray-400 min-w-0">
-            {metaParts.map((p, i) => (
-              <span key={p.key} className="inline-flex items-center gap-[5px]">
-                {i > 0 && <span className="text-gray-300">·</span>}
-                {p.el}
-              </span>
-            ))}
-          </div>
-
-          {/* RIGHT — Compact icon action buttons */}
-          <div className="mo-print-hide" style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
-            {/* Copy */}
-            <button
-              onClick={handleCopyClick}
-              title="Copy · Ctrl+C"
-              style={{
-                width: 28, height: 28, borderRadius: 6,
-                border: "1px solid #e5e7eb", background: "#fff",
-                cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
-                color: "#9ca3af", transition: "all 0.12s",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = "#f9fafb";
-                e.currentTarget.style.borderColor = "#d1d5db";
-                e.currentTarget.style.color = "#6b7280";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = "#fff";
-                e.currentTarget.style.borderColor = "#e5e7eb";
-                e.currentTarget.style.color = "#9ca3af";
-              }}
+        ))}
+        <div className="border-t border-gray-100 mt-1.5 pt-1.5">
+          <input
+            ref={custSearchInputRef}
+            type="text"
+            placeholder="Or search by name..."
+            value={custSearchQuery}
+            onChange={(e) => setCustSearchQuery(e.target.value)}
+            className="text-[11px] h-[28px] px-2 border border-gray-200 rounded-md w-full focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10 focus:outline-none"
+          />
+          {custSearching && <p className="text-[11px] text-gray-400 px-1 py-1.5">Searching...</p>}
+          {!custSearching && custSearched && custSearchResults.length === 0 && (
+            <p className="text-[11px] text-gray-400 px-1 py-1.5">No customers found</p>
+          )}
+          {!custSearching && custSearchResults.map((c) => (
+            <div
+              key={c.customerCode}
+              onClick={() => handlePickCandidate(c, true)}
+              className="flex items-start gap-2 px-2 py-1 rounded hover:bg-gray-50 cursor-pointer"
             >
-              <Copy size={14} />
-            </button>
-
-            {/* Reply */}
-            <button
-              onClick={handleReplyClick}
-              disabled={!isPunched}
-              title="Reply · R"
-              style={{
-                width: 28, height: 28, borderRadius: 6,
-                border: "1px solid",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                transition: "all 0.12s",
-                ...(isPunched
-                  ? {
-                      borderColor: replyCopied ? "#5eead4" : "#99f6e4",
-                      background: replyCopied ? "#ccfbf1" : "#fff",
-                      color: "#0f766e",
-                      cursor: "pointer",
-                    }
-                  : {
-                      borderColor: "#e5e7eb",
-                      background: "#fff",
-                      color: "#d1d5db",
-                      opacity: 0.5,
-                      pointerEvents: "none" as const,
-                    }),
-              }}
-              onMouseEnter={(e) => { if (isPunched) e.currentTarget.style.background = "#f0fdfa"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = isPunched && replyCopied ? "#ccfbf1" : "#fff"; }}
-            >
-              <Mail size={14} />
-            </button>
-
-            {/* Flag */}
-            <button
-              onClick={() => onFlag(order.id)}
-              title="Flag · F"
-              style={{
-                width: 28, height: 28, borderRadius: 6,
-                border: "1px solid",
-                cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
-                transition: "all 0.12s",
-                ...(isFlagged
-                  ? { borderColor: "#fde68a", background: "#fffbeb", color: "#b45309" }
-                  : { borderColor: "#e5e7eb", background: "#fff", color: "#9ca3af" }),
-              }}
-              onMouseEnter={(e) => {
-                if (isFlagged) {
-                  e.currentTarget.style.background = "#fef3c7";
-                } else {
-                  e.currentTarget.style.background = "#f9fafb";
-                  e.currentTarget.style.borderColor = "#d1d5db";
-                  e.currentTarget.style.color = "#6b7280";
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (isFlagged) {
-                  e.currentTarget.style.background = "#fffbeb";
-                } else {
-                  e.currentTarget.style.background = "#fff";
-                  e.currentTarget.style.borderColor = "#e5e7eb";
-                  e.currentTarget.style.color = "#9ca3af";
-                }
-              }}
-            >
-              <Flag size={14} />
-            </button>
-
-            {/* Print */}
-            <button
-              onClick={handlePrintClick}
-              title="Print order"
-              style={{
-                width: 28, height: 28, borderRadius: 6,
-                border: "1px solid #e5e7eb", background: "#fff",
-                cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
-                color: "#9ca3af", transition: "all 0.12s",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = "#f9fafb";
-                e.currentTarget.style.borderColor = "#d1d5db";
-                e.currentTarget.style.color = "#6b7280";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = "#fff";
-                e.currentTarget.style.borderColor = "#e5e7eb";
-                e.currentTarget.style.color = "#9ca3af";
-              }}
-            >
-              <Printer size={14} />
-            </button>
-          </div>
+              <span className="font-mono text-[11px] text-gray-800 flex-shrink-0">{c.customerCode}</span>
+              <div className="min-w-0">
+                <div className="text-[11px] text-gray-600 truncate">{smartTitleCase(c.customerName)}</div>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
+    );
+
+    const unmatchedPopoverContent = (
+      <div ref={popoverRef} className="bg-white border border-gray-200 rounded-lg shadow-lg p-2 w-[280px] max-h-[240px] overflow-y-auto">
+        <input
+          ref={custSearchInputRef}
+          type="text"
+          placeholder="Search customer..."
+          value={custSearchQuery}
+          onChange={(e) => setCustSearchQuery(e.target.value)}
+          autoFocus
+          className="text-[11px] h-[28px] px-2 border border-amber-200 rounded-md w-full mb-1.5 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10 focus:outline-none"
+        />
+        {custSearching && <p className="text-[11px] text-gray-400 px-1 py-2">Searching...</p>}
+        {!custSearching && custSearched && custSearchResults.length === 0 && (
+          <p className="text-[11px] text-gray-400 px-1 py-2">No customers found</p>
+        )}
+        {!custSearching && custSearchResults.map((c) => (
+          <div
+            key={c.customerCode}
+            onClick={() => handlePickCandidate(c, true)}
+            className="flex items-start gap-2 px-2 py-1.5 rounded hover:bg-gray-50 cursor-pointer"
+          >
+            <span className="font-mono text-[11px] text-gray-800 flex-shrink-0">{c.customerCode}</span>
+            <div className="min-w-0">
+              <div className="text-[11px] text-gray-600 truncate">{smartTitleCase(c.customerName)}</div>
+              {(c.area || c.route) && (
+                <div className="text-[10px] text-gray-400 truncate">
+                  {[c.area, c.route].filter(Boolean).join(" · ")}
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+
+    const popoverContent = needsPicker && codePopoverOpen
+      ? (matchStatus === "multiple" ? multiPopoverContent : unmatchedPopoverContent)
+      : undefined;
+
+    const soNumberSlot = showInputMode ? (
+      <>
+        <div className="flex items-center border-[1.5px] border-gray-200 rounded-md overflow-hidden focus-within:border-teal-500 focus-within:shadow-[0_0_0_3px_rgba(13,148,136,0.08)]">
+          <span className="text-[10px] font-medium text-gray-400 pl-2 whitespace-nowrap">Order No.</span>
+          <input
+            type="text"
+            value={soInput}
+            onChange={(e) => setSoInput(e.target.value.replace(/\D/g, "").slice(0, 10))}
+            onKeyDown={handleSoKeyDown}
+            placeholder="Enter number"
+            maxLength={10}
+            className="w-[120px] h-[30px] border-none outline-none bg-transparent font-mono text-[14px] font-medium text-gray-900 px-2 placeholder:text-gray-300 placeholder:font-normal placeholder:text-[12px]"
+          />
+        </div>
+        <button
+          onClick={handlePunchClick}
+          disabled={!punchReady}
+          className={`h-[32px] px-3.5 rounded-md text-[12px] font-semibold whitespace-nowrap transition-all ${
+            punchReady
+              ? "bg-teal-600 text-white hover:bg-teal-700 cursor-pointer"
+              : "bg-gray-100 text-gray-300 cursor-default"
+          }`}
+        >
+          Punch
+        </button>
+      </>
+    ) : (
+      <>
+        <Check size={14} className="text-green-600" />
+        <span className="font-mono text-[14px] font-medium text-gray-900">{order.soNumber}</span>
+        <button
+          onClick={() => { setEditingSoNumber(true); setSoInput(""); }}
+          className="w-[18px] h-[18px] rounded border border-gray-200 bg-white cursor-pointer flex items-center justify-center text-gray-400 hover:bg-gray-50 hover:text-gray-600 hover:border-gray-300"
+          title="Edit SO number"
+        >
+          <Pencil size={10} />
+        </button>
+        <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-green-50 text-green-700 border border-green-200">
+          Punched
+        </span>
+      </>
+    );
+
+    const actionsSlot = (
+      <div className="mo-print-hide" style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+        <button
+          onClick={handleCopyClick}
+          title="Copy · Ctrl+C"
+          style={{
+            width: 28, height: 28, borderRadius: 6,
+            border: "1px solid #e5e7eb", background: "#fff",
+            cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+            color: "#9ca3af", transition: "all 0.12s",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = "#f9fafb";
+            e.currentTarget.style.borderColor = "#d1d5db";
+            e.currentTarget.style.color = "#6b7280";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = "#fff";
+            e.currentTarget.style.borderColor = "#e5e7eb";
+            e.currentTarget.style.color = "#9ca3af";
+          }}
+        >
+          <Copy size={14} />
+        </button>
+        <button
+          onClick={handleReplyClick}
+          disabled={!isPunched}
+          title="Reply · R"
+          style={{
+            width: 28, height: 28, borderRadius: 6,
+            border: "1px solid",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            transition: "all 0.12s",
+            ...(isPunched
+              ? {
+                  borderColor: replyCopied ? "#5eead4" : "#99f6e4",
+                  background: replyCopied ? "#ccfbf1" : "#fff",
+                  color: "#0f766e",
+                  cursor: "pointer",
+                }
+              : {
+                  borderColor: "#e5e7eb",
+                  background: "#fff",
+                  color: "#d1d5db",
+                  opacity: 0.5,
+                  pointerEvents: "none" as const,
+                }),
+          }}
+          onMouseEnter={(e) => { if (isPunched) e.currentTarget.style.background = "#f0fdfa"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = isPunched && replyCopied ? "#ccfbf1" : "#fff"; }}
+        >
+          <Mail size={14} />
+        </button>
+        <button
+          onClick={() => onFlag(order.id)}
+          title="Flag · F"
+          style={{
+            width: 28, height: 28, borderRadius: 6,
+            border: "1px solid",
+            cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+            transition: "all 0.12s",
+            ...(isFlagged
+              ? { borderColor: "#fde68a", background: "#fffbeb", color: "#b45309" }
+              : { borderColor: "#e5e7eb", background: "#fff", color: "#9ca3af" }),
+          }}
+          onMouseEnter={(e) => {
+            if (isFlagged) {
+              e.currentTarget.style.background = "#fef3c7";
+            } else {
+              e.currentTarget.style.background = "#f9fafb";
+              e.currentTarget.style.borderColor = "#d1d5db";
+              e.currentTarget.style.color = "#6b7280";
+            }
+          }}
+          onMouseLeave={(e) => {
+            if (isFlagged) {
+              e.currentTarget.style.background = "#fffbeb";
+            } else {
+              e.currentTarget.style.background = "#fff";
+              e.currentTarget.style.borderColor = "#e5e7eb";
+              e.currentTarget.style.color = "#9ca3af";
+            }
+          }}
+        >
+          <Flag size={14} />
+        </button>
+        <button
+          onClick={handlePrintClick}
+          title="Print order"
+          style={{
+            width: 28, height: 28, borderRadius: 6,
+            border: "1px solid #e5e7eb", background: "#fff",
+            cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+            color: "#9ca3af", transition: "all 0.12s",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = "#f9fafb";
+            e.currentTarget.style.borderColor = "#d1d5db";
+            e.currentTarget.style.color = "#6b7280";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = "#fff";
+            e.currentTarget.style.borderColor = "#e5e7eb";
+            e.currentTarget.style.color = "#9ca3af";
+          }}
+        >
+          <Printer size={14} />
+        </button>
+      </div>
+    );
+
+    return (
+      <>
+        <div data-tutorial="detail-header" className="flex-shrink-0 grid grid-cols-2 gap-3 px-4 pt-3 pb-2">
+          <BillToCard
+            customerName={billToName}
+            customerCode={order.customerCode}
+            customerArea={order.customerArea ?? null}
+            customerDeliveryType={order.customerDeliveryType ?? null}
+            customerMatchStatus={order.customerMatchStatus ?? null}
+            signals={billSignals}
+            onCodeClick={onCodeClickHandler}
+            popoverSlot={popoverContent}
+            chipFallbackLabel={chipFallbackLabel}
+          />
+          <ShipToCard
+            shipToName={shipToName}
+            shipToCode={shipToCode}
+            shipToArea={shipToArea}
+            shipToDeliveryType={shipToDeliveryType}
+            isOverride={order.shipToOverride ?? false}
+            signals={shipSignals}
+          />
+        </div>
+
+        <div data-tutorial="so-input" className="flex-shrink-0">
+          <MetaRibbon
+            soName={soNameFormatted}
+            receivedAt={receivedAtFormatted}
+            volume={volumeString}
+            matchedLines={order.matchedLines}
+            totalLines={order.totalLines}
+            punchedByName={punchedByName}
+            punchedAt={punchedAtFormatted}
+            actionsSlot={actionsSlot}
+            soNumberSlot={soNumberSlot}
+            punchButtonSlot={null}
+          />
+        </div>
+
+        <div className="flex-shrink-0">
+          <InstructionsStrip
+            delivery={parsed.deliveryInstruction}
+            bill={order.billRemarks || null}
+            notes={notesString}
+          />
+        </div>
+      </>
     );
   }
 
@@ -1729,7 +1661,7 @@ export function ReviewView({
       </div>
 
       {/* RIGHT PANEL */}
-      <div id="mo-print-area" className="flex-1 flex flex-col overflow-hidden">
+      <div id="mo-print-area" className="flex-1 flex flex-col overflow-hidden bg-gray-50">
         {selectedOrder ? (
           <>
             {renderDetailHeader(selectedOrder)}
@@ -1769,83 +1701,8 @@ export function ReviewView({
               </div>
             )}
 
-            {renderSkuTable(selectedOrder)}
-
-            {/* ── Remarks Footer ── */}
-            <div style={{
-              flexShrink: 0,
-              borderTop: "1px solid #e5e7eb",
-              padding: "8px 20px",
-              display: "flex",
-              gap: 20,
-              background: "#f9fafb",
-            }}>
-              <RemarkSection
-                label="Delivery"
-                value={selectedOrder.deliveryRemarks || "—"}
-                isEmpty={!selectedOrder.deliveryRemarks}
-              />
-              <RemarkSection
-                label="Bill"
-                value={selectedOrder.billRemarks || "—"}
-                isEmpty={!selectedOrder.billRemarks}
-              />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{
-                  fontSize: 9, fontWeight: 600, color: "#9ca3af",
-                  textTransform: "uppercase", letterSpacing: "0.04em",
-                  marginBottom: 1,
-                }}>
-                  Notes
-                </div>
-                {(() => {
-                  const filteredRemarks = (selectedOrder.remarks_list ?? []).filter(
-                    r => r.remarkType !== "delivery" && r.remarkType !== "billing"
-                  );
-                  if (filteredRemarks.length === 0) {
-                    return <div style={{ fontSize: 11, color: "#d1d5db", fontStyle: "italic" }}>—</div>;
-                  }
-                  const typeStyles: Record<string, { bg: string; color: string; border: string }> = {
-                    contact:     { bg: "#f9fafb", color: "#4b5563", border: "#e5e7eb" },
-                    instruction: { bg: "#f9fafb", color: "#6b7280", border: "#e5e7eb" },
-                    cross:       { bg: "#faf5ff", color: "#9333ea", border: "#e9d5ff" },
-                    customer:    { bg: "#f0fdfa", color: "#0d9488", border: "#ccfbf1" },
-                    unknown:     { bg: "#fffbeb", color: "#b45309", border: "#fde68a" },
-                  };
-                  return (
-                    <div>
-                      {filteredRemarks.map((r) => {
-                        const ts = typeStyles[r.remarkType] ?? typeStyles.unknown;
-                        return (
-                          <div key={r.id} style={{ display: "flex", alignItems: "flex-start", gap: 4, marginBottom: 2 }}>
-                            <span style={{
-                              fontSize: 9, fontWeight: 500, padding: "0 4px",
-                              borderRadius: 3, border: `1px solid ${ts.border}`,
-                              background: ts.bg, color: ts.color,
-                              textTransform: "capitalize", flexShrink: 0,
-                            }}>
-                              {r.remarkType}
-                            </span>
-                            <span style={{ fontSize: 11, color: "#4b5563" }}>{r.rawText}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  );
-                })()}
-              </div>
-              <div style={{ width: 60, flex: "none" }}>
-                <div style={{
-                  fontSize: 9, fontWeight: 600, color: "#9ca3af",
-                  textTransform: "uppercase", letterSpacing: "0.04em",
-                  marginBottom: 1,
-                }}>
-                  Received
-                </div>
-                <div style={{ fontSize: 11, color: "#4b5563", fontVariantNumeric: "tabular-nums" }}>
-                  {formatTime(selectedOrder.receivedAt)}
-                </div>
-              </div>
+            <div className="bg-white border border-gray-200 rounded-lg mx-4 mt-3 mb-3 flex flex-col flex-1 min-h-0 overflow-hidden">
+              {renderSkuTable(selectedOrder)}
             </div>
 
             {/* ── Nav Footer ── */}
