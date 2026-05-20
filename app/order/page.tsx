@@ -396,11 +396,13 @@ export default function OrderPage(): React.JSX.Element {
       if (trimmed.length < 2) {
         return { ...b, searchQuery: q, mode: "search", suggestionPage: 0, highlightedIndex: -1 };
       }
-      const matched = getProductSuggestions(q);
+      // Always flip to multi-select once the query has 2+ chars — even on
+      // zero matches — so the render gate can show the empty-state row.
+      // Render distinguishes by suggestions.length.
       return {
         ...b,
         searchQuery:     q,
-        mode:            matched.length >= 1 ? "multi-select" : "search",
+        mode:            "multi-select",
         suggestionPage:  0,
         highlightedIndex: -1,
       };
@@ -1664,8 +1666,19 @@ const BillCard = forwardRef<BillCardHandle, BillCardProps>(function BillCard({
 
       {/* Multi-select suggestions — paginated, with pinned Selected section.
           unselectedSuggestions / totalPages / currentPage are hoisted to the
-          BillCard top so the search input's onKeyDown can pass them in. */}
-      {inMultiSel && suggestions.length > 0 && (() => {
+          BillCard top so the search input's onKeyDown can pass them in.
+          Empty-state row renders inside the same container so it inherits
+          the border. */}
+      {inMultiSel && bill.searchQuery.trim().length >= 2 && (() => {
+        if (suggestions.length === 0) {
+          return (
+            <div className="border-b border-[#f0f0f0]">
+              <div className="flex items-center min-h-[48px] px-[14px] py-3 bg-gray-50 text-[16px] text-gray-500 italic">
+                No products match &ldquo;{bill.searchQuery.trim()}&rdquo;
+              </div>
+            </div>
+          );
+        }
         const pageItems   = unselectedSuggestions.slice(
           currentPage * SUGGESTION_PAGE_SIZE,
           (currentPage + 1) * SUGGESTION_PAGE_SIZE,
