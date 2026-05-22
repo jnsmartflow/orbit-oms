@@ -78,8 +78,11 @@ export async function POST(req: Request): Promise<NextResponse> {
   // ── 1. Load assignment + parent order ──────────────────────────────────────
   // tint_assignments.skipEventId is BigInt; we use { select } so it doesn't
   // leak into intermediate state (and we never echo it in the response).
-  const asg = await prisma.tint_assignments.findUnique({
-    where: { id: assignmentId },
+  const asg = await prisma.tint_assignments.findFirst({
+    where: {
+      id:     assignmentId,
+      status: { in: ["assigned", "tinting_in_progress", "paused"] },
+    },
     select: {
       id:                 true,
       orderId:            true,

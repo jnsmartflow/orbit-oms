@@ -51,8 +51,11 @@ export async function POST(req: Request): Promise<NextResponse> {
   const { assignmentId } = parsed.data;
 
   // ── 1. Load assignment + parent order ──────────────────────────────────────
-  const asg = await prisma.tint_assignments.findUnique({
-    where: { id: assignmentId },
+  const asg = await prisma.tint_assignments.findFirst({
+    where: {
+      id:     assignmentId,
+      status: { in: ["assigned", "tinting_in_progress", "paused"] },
+    },
     select: {
       id:           true,
       orderId:      true,

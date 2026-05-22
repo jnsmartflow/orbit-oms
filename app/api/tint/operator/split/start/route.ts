@@ -42,7 +42,7 @@ export async function POST(req: Request): Promise<NextResponse> {
     where: {
       id: Number(splitId),
       ...(isOpsOrAdmin ? {} : { assignedToId: Number(session!.user.id) }),
-      status: { not: "cancelled" },
+      status: { in: ["tint_assigned", "tinting_in_progress"] },
     },
     select: { tiSubmitted: true },
   });

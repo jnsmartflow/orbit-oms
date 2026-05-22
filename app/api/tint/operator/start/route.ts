@@ -36,7 +36,7 @@ export async function POST(req: Request): Promise<NextResponse> {
     where: {
       orderId,
       ...(isOpsOrAdmin ? {} : { assignedToId: userId }),
-      status: { not: "cancelled" },
+      status: { in: ["assigned", "tinting_in_progress", "paused"] },
     },
     select: { tiSubmitted: true },
   });
@@ -83,7 +83,7 @@ export async function POST(req: Request): Promise<NextResponse> {
       where: {
         orderId,
         ...(isOpsOrAdmin ? {} : { assignedToId: userId }),
-        status: { not: "cancelled" },
+        status: { in: ["assigned", "tinting_in_progress", "paused"] },
       },
     })
     if (!activeAssignment) {

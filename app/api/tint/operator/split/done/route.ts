@@ -47,7 +47,12 @@ export async function POST(req: Request): Promise<NextResponse> {
   try {
     await prisma.$transaction(async (tx) => {
       // 1. Load split — verify ownership and stage
-      const split = await tx.order_splits.findUnique({ where: { id: splitId } });
+      const split = await tx.order_splits.findFirst({
+        where: {
+          id:     splitId,
+          status: { in: ["tint_assigned", "tinting_in_progress"] },
+        },
+      });
       if (!split) throw new Error("Split not found");
       if (!isOpsOrAdmin && split.assignedToId !== userId) throw new NotAssignedError();
       if (split.status !== "tinting_in_progress") throw new WrongStageError();
