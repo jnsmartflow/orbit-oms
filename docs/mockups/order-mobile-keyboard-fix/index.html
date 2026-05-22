@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>/order — Android keyboard fix · 4-screen mockup</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    /* Phone frame uses 390px (iPhone 12 width). Frame border is 8px gray-300,
+       so the inner usable area is 390px - 16px = 374px. We render the phone's
+       internal viewport at full 390px and let the border sit outside via
+       box-sizing: content-box on the wrapper. */
+    body { font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; }
+    .phone-frame {
+      width: 390px;
+      box-sizing: content-box;
+      border: 8px solid #d1d5db;
+      border-radius: 28px;
+      overflow: hidden;
+      box-shadow: 0 12px 28px rgba(0,0,0,0.18), 0 4px 8px rgba(0,0,0,0.08);
+      background: #f2f2f7;
+    }
+    .phone-screen {
+      width: 390px;
+      height: 760px;
+      position: relative;
+      overflow: hidden;
+      background: #f2f2f7;
+    }
+    /* Browser chrome — Android Chrome address bar */
+    .chrome-bar {
+      height: 36px;
+      background: #f1f3f4;
+      border-bottom: 1px solid #e5e7eb;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 12px;
+      font-size: 12px;
+      color: #4b5563;
+    }
+    .chrome-bar .url {
+      flex: 1;
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 999px;
+      height: 22px;
+      display: flex;
+      align-items: center;
+      padding: 0 10px;
+      font-size: 11px;
+      color: #6b7280;
+    }
+    /* Sticky customer header — replica of STATE 2 from /order */
+    .cust-header {
+      background: #fff;
+      border-bottom: 1px solid #e5e7eb;
+      padding: 12px 14px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    /* Keyboard mock — gray block with rough key outlines + autofill strip */
+    .kbd {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: #1f2937;
+      height: 290px;
+      display: flex;
+      flex-direction: column;
+    }
+    .kbd-autofill {
+      background: #374151;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 0 14px;
+      border-bottom: 1px solid #111827;
+    }
+    .kbd-autofill-chip {
+      width: 22px;
+      height: 22px;
+      border-radius: 6px;
+      background: #4b5563;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #d1d5db;
+      font-size: 11px;
+    }
+    .kbd-rows {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-evenly;
+      padding: 6px 4px 10px 4px;
+      gap: 5px;
+    }
+    .kbd-row {
+      display: flex;
+      gap: 4px;
+      justify-content: center;
+    }
+    .kbd-key {
+      flex: 1;
+      max-width: 34px;
+      height: 38px;
+      background: #4b5563;
+      border-radius: 5px;
+      color: #f3f4f6;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      box-shadow: 0 1px 0 rgba(0,0,0,0.4);
+    }
+    .kbd-key.wide  { max-width: 52px; }
+    .kbd-key.space { max-width: 180px; flex: 2; }
+    .kbd-key.dark  { background: #374151; }
+    /* Faint fade hint suggesting more rows scroll under the keyboard */
+    .scroll-hint {
+      position: absolute;
+      left: 0;
+      right: 0;
+      height: 18px;
+      background: linear-gradient(to bottom, rgba(242,242,247,0) 0%, rgba(242,242,247,0.95) 100%);
+      pointer-events: none;
+    }
+    .checkbox {
+      width: 20px;
+      height: 20px;
+      border: 1.5px solid #d1d5db;
+      border-radius: 4px;
+      background: #fff;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .checkbox.checked {
+      background: #0d9488;
+      border-color: #0d9488;
+    }
+    .frame-label {
+      font-size: 13px;
+      font-weight: 600;
+      color: #374151;
+      margin-bottom: 10px;
+      text-align: center;
+    }
+    .frame-sub {
+      font-size: 11px;
+      color: #6b7280;
+      margin-bottom: 14px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body class="bg-gray-100 p-8">
+
+  <header class="max-w-[1800px] mx-auto mb-8">
+    <h1 class="text-xl font-bold text-gray-900">/order — Android keyboard fix · 4-screen mockup</h1>
+    <p class="text-sm text-gray-600 mt-1">
+      Visual approval for the keyboard-aware layout. Search input + results stay above the keyboard;
+      zero-match queries render a neutral empty-state row. Neutral palette throughout; one teal element per screen
+      (the <span class="font-semibold text-teal-600">Change</span> link in the customer header).
+    </p>
+  </header>
+
+  <div class="max-w-[1800px] mx-auto grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-x-8 gap-y-12 justify-items-center">
+
+    <!-- ════════════════════════════════════════════════════════
+         SCREEN 1 — Empty state, search not focused, no keyboard
+         ════════════════════════════════════════════════════════ -->
+    <div>
+      <div class="frame-label">1. Empty</div>
+      <div class="frame-sub">No focus, no keyboard, clean baseline</div>
+      <div class="phone-frame">
+        <div class="phone-screen">
+          <!-- Browser chrome -->
+          <div class="chrome-bar">
+            <div class="url">
+              <span>🔒</span>
+              <span class="ml-1.5">orbitoms.in/order</span>
+            </div>
+            <div class="w-5 h-5 rounded-full bg-gray-300"></div>
+          </div>
+
+          <!-- Sticky customer header (STATE 2 — customer locked, browsing) -->
+          <div class="cust-header">
+            <div class="flex-1 min-w-0">
+              <div class="text-[16px] font-semibold text-gray-900 leading-tight truncate">MOHAN COLOUR CO</div>
+              <div class="text-[12px] font-medium text-gray-500 leading-tight truncate">102425</div>
+            </div>
+            <button class="text-teal-600 text-[13px] font-medium px-[10px] py-[6px]">Change</button>
+          </div>
+
+          <!-- Products section -->
+          <div class="mx-[14px] mt-5">
+            <p class="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-2 pl-0.5">Products</p>
+            <div class="bg-white rounded-[14px] shadow-sm border border-gray-100">
+              <!-- Bill header -->
+              <div class="flex items-center justify-between px-[14px] py-[10px] bg-[#fafafa] border-b border-[#f0f0f0] rounded-t-[14px]">
+                <span class="text-[12px] font-semibold uppercase tracking-[0.07em] text-gray-600">Bill 1</span>
+                <span class="text-gray-300 text-xl leading-none">×</span>
+              </div>
+              <!-- Empty state -->
+              <div class="px-[14px] py-3 text-[13px] text-gray-300 italic border-b border-[#f0f0f0]">
+                No products added
+              </div>
+              <!-- Search row -->
+              <div class="flex items-center gap-2 px-[14px] py-[10px]">
+                <svg class="w-4 h-4 text-gray-300 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                <input
+                  type="text"
+                  placeholder="Search products…"
+                  class="flex-1 text-[16px] text-gray-900 bg-transparent border-none outline-none placeholder:text-gray-300 placeholder:text-[14px]"
+                  disabled
+                />
+              </div>
+            </div>
+          </div>
+
+          <!-- Hint footer to show page is short + clean -->
+          <div class="absolute bottom-6 left-0 right-0 text-center text-[11px] text-gray-300 italic">
+            Tap search to begin · keyboard not open
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════════════════════════════════════════════════════════
+         SCREEN 2 — Search focused, "ws 90" typed, 3 results visible above keyboard
+         ════════════════════════════════════════════════════════ -->
+    <div>
+      <div class="frame-label">2. Search active</div>
+      <div class="frame-sub">Keyboard open · 3 results above keyboard line</div>
+      <div class="phone-frame">
+        <div class="phone-screen">
+          <!-- Browser chrome -->
+          <div class="chrome-bar">
+            <div class="url">
+              <span>🔒</span>
+              <span class="ml-1.5">orbitoms.in/order</span>
+            </div>
+            <div class="w-5 h-5 rounded-full bg-gray-300"></div>
+          </div>
+
+          <!-- Customer header -->
+          <div class="cust-header">
+            <div class="flex-1 min-w-0">
+              <div class="text-[16px] font-semibold text-gray-900 leading-tight truncate">MOHAN COLOUR CO</div>
+              <div class="text-[12px] font-medium text-gray-500 leading-tight truncate">102425</div>
+            </div>
+            <button class="text-teal-600 text-[13px] font-medium px-[10px] py-[6px]">Change</button>
+          </div>
+
+          <!-- Products -->
+          <div class="mx-[14px] mt-5">
+            <p class="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-2 pl-0.5">Products</p>
+            <div class="bg-white rounded-[14px] shadow-sm border border-gray-100">
+              <!-- Bill header -->
+              <div class="flex items-center justify-between px-[14px] py-[10px] bg-[#fafafa] border-b border-[#f0f0f0] rounded-t-[14px]">
+                <span class="text-[12px] font-semibold uppercase tracking-[0.07em] text-gray-600">Bill 1</span>
+                <span class="text-gray-300 text-xl leading-none">×</span>
+              </div>
+              <!-- Empty state row -->
+              <div class="px-[14px] py-3 text-[13px] text-gray-300 italic border-b border-[#f0f0f0]">
+                No products added
+              </div>
+              <!-- Search row (focused) -->
+              <div class="flex items-center gap-2 px-[14px] py-[10px] border-b border-[#f0f0f0]">
+                <svg class="w-4 h-4 text-gray-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                <input
+                  type="text"
+                  value="ws 90"
+                  class="flex-1 text-[16px] text-gray-900 bg-transparent border-none outline-none"
+                  readonly
+                />
+                <button class="bg-[#e5e5ea] rounded-full w-[17px] h-[17px] flex items-center justify-center text-[11px] text-gray-500 leading-none">×</button>
+              </div>
+
+              <!-- Result rows — 48px+ each, checkbox left, neutral palette -->
+              <div>
+                <!-- Row 1 -->
+                <div class="flex items-center gap-[10px] px-[13px] py-[14px] border-b border-[#f0f0f0]" style="min-height:56px;">
+                  <div class="checkbox"></div>
+                  <div class="flex-1 min-w-0">
+                    <p class="text-[14px] font-medium text-gray-900 truncate">WS Hi-Sheen — 90</p>
+                    <p class="text-[11px] text-gray-400 mt-0.5">WS</p>
+                  </div>
+                </div>
+                <!-- Row 2 -->
+                <div class="flex items-center gap-[10px] px-[13px] py-[14px] border-b border-[#f0f0f0]" style="min-height:56px;">
+                  <div class="checkbox"></div>
+                  <div class="flex-1 min-w-0">
+                    <p class="text-[14px] font-medium text-gray-900 truncate">WS Max — 90</p>
+                    <p class="text-[11px] text-gray-400 mt-0.5">WS</p>
+                  </div>
+                </div>
+                <!-- Row 3 -->
+                <div class="flex items-center gap-[10px] px-[13px] py-[14px] border-b border-[#f0f0f0]" style="min-height:56px;">
+                  <div class="checkbox"></div>
+                  <div class="flex-1 min-w-0">
+                    <p class="text-[14px] font-medium text-gray-900 truncate">WS Powerflexx — 90</p>
+                    <p class="text-[11px] text-gray-400 mt-0.5">WS</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Scroll-hint fade just above keyboard, suggesting more rows are below -->
+          <div class="scroll-hint" style="bottom: 290px;"></div>
+
+          <!-- Keyboard mock -->
+          <div class="kbd">
+            <div class="kbd-autofill">
+              <div class="kbd-autofill-chip">🔑</div>
+              <div class="kbd-autofill-chip">💳</div>
+              <div class="kbd-autofill-chip">📌</div>
+              <div class="flex-1 text-[10px] text-gray-400 truncate">orbitoms.in suggestions…</div>
+            </div>
+            <div class="kbd-rows">
+              <div class="kbd-row">
+                <div class="kbd-key">q</div><div class="kbd-key">w</div><div class="kbd-key">e</div><div class="kbd-key">r</div><div class="kbd-key">t</div><div class="kbd-key">y</div><div class="kbd-key">u</div><div class="kbd-key">i</div><div class="kbd-key">o</div><div class="kbd-key">p</div>
+              </div>
+              <div class="kbd-row">
+                <div class="kbd-key">a</div><div class="kbd-key">s</div><div class="kbd-key">d</div><div class="kbd-key">f</div><div class="kbd-key">g</div><div class="kbd-key">h</div><div class="kbd-key">j</div><div class="kbd-key">k</div><div class="kbd-key">l</div>
+              </div>
+              <div class="kbd-row">
+                <div class="kbd-key wide dark">⇧</div><div class="kbd-key">z</div><div class="kbd-key">x</div><div class="kbd-key">c</div><div class="kbd-key">v</div><div class="kbd-key">b</div><div class="kbd-key">n</div><div class="kbd-key">m</div><div class="kbd-key wide dark">⌫</div>
+              </div>
+              <div class="kbd-row">
+                <div class="kbd-key wide dark">?123</div><div class="kbd-key dark">,</div><div class="kbd-key space">space</div><div class="kbd-key dark">.</div><div class="kbd-key wide dark">↵</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════════════════════════════════════════════════════════
+         SCREEN 3 — Empty results state, "xyz" typed, neutral empty row
+         ════════════════════════════════════════════════════════ -->
+    <div>
+      <div class="frame-label">3. No matches</div>
+      <div class="frame-sub">Zero-match feedback · gray-500 on gray-50</div>
+      <div class="phone-frame">
+        <div class="phone-screen">
+          <!-- Browser chrome -->
+          <div class="chrome-bar">
+            <div class="url">
+              <span>🔒</span>
+              <span class="ml-1.5">orbitoms.in/order</span>
+            </div>
+            <div class="w-5 h-5 rounded-full bg-gray-300"></div>
+          </div>
+
+          <!-- Customer header -->
+          <div class="cust-header">
+            <div class="flex-1 min-w-0">
+              <div class="text-[16px] font-semibold text-gray-900 leading-tight truncate">MOHAN COLOUR CO</div>
+              <div class="text-[12px] font-medium text-gray-500 leading-tight truncate">102425</div>
+            </div>
+            <button class="text-teal-600 text-[13px] font-medium px-[10px] py-[6px]">Change</button>
+          </div>
+
+          <!-- Products -->
+          <div class="mx-[14px] mt-5">
+            <p class="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-2 pl-0.5">Products</p>
+            <div class="bg-white rounded-[14px] shadow-sm border border-gray-100">
+              <div class="flex items-center justify-between px-[14px] py-[10px] bg-[#fafafa] border-b border-[#f0f0f0] rounded-t-[14px]">
+                <span class="text-[12px] font-semibold uppercase tracking-[0.07em] text-gray-600">Bill 1</span>
+                <span class="text-gray-300 text-xl leading-none">×</span>
+              </div>
+              <div class="px-[14px] py-3 text-[13px] text-gray-300 italic border-b border-[#f0f0f0]">
+                No products added
+              </div>
+              <!-- Search row -->
+              <div class="flex items-center gap-2 px-[14px] py-[10px] border-b border-[#f0f0f0]">
+                <svg class="w-4 h-4 text-gray-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                <input
+                  type="text"
+                  value="xyz"
+                  class="flex-1 text-[16px] text-gray-900 bg-transparent border-none outline-none"
+                  readonly
+                />
+                <button class="bg-[#e5e5ea] rounded-full w-[17px] h-[17px] flex items-center justify-center text-[11px] text-gray-500 leading-none">×</button>
+              </div>
+
+              <!-- Empty-results row -->
+              <div class="bg-gray-50 px-[14px] py-[18px] flex items-center justify-center" style="min-height:56px;">
+                <p class="text-[13px] text-gray-500">
+                  No products match <span class="font-medium text-gray-700">'xyz'</span>
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Keyboard mock -->
+          <div class="kbd">
+            <div class="kbd-autofill">
+              <div class="kbd-autofill-chip">🔑</div>
+              <div class="kbd-autofill-chip">💳</div>
+              <div class="kbd-autofill-chip">📌</div>
+              <div class="flex-1 text-[10px] text-gray-400 truncate">orbitoms.in suggestions…</div>
+            </div>
+            <div class="kbd-rows">
+              <div class="kbd-row">
+                <div class="kbd-key">q</div><div class="kbd-key">w</div><div class="kbd-key">e</div><div class="kbd-key">r</div><div class="kbd-key">t</div><div class="kbd-key">y</div><div class="kbd-key">u</div><div class="kbd-key">i</div><div class="kbd-key">o</div><div class="kbd-key">p</div>
+              </div>
+              <div class="kbd-row">
+                <div class="kbd-key">a</div><div class="kbd-key">s</div><div class="kbd-key">d</div><div class="kbd-key">f</div><div class="kbd-key">g</div><div class="kbd-key">h</div><div class="kbd-key">j</div><div class="kbd-key">k</div><div class="kbd-key">l</div>
+              </div>
+              <div class="kbd-row">
+                <div class="kbd-key wide dark">⇧</div><div class="kbd-key">z</div><div class="kbd-key">x</div><div class="kbd-key">c</div><div class="kbd-key">v</div><div class="kbd-key">b</div><div class="kbd-key">n</div><div class="kbd-key">m</div><div class="kbd-key wide dark">⌫</div>
+              </div>
+              <div class="kbd-row">
+                <div class="kbd-key wide dark">?123</div><div class="kbd-key dark">,</div><div class="kbd-key space">space</div><div class="kbd-key dark">.</div><div class="kbd-key wide dark">↵</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════════════════════════════════════════════════════════
+         SCREEN 4 — One product selected, keyboard still open
+         ════════════════════════════════════════════════════════ -->
+    <div>
+      <div class="frame-label">4. One selected</div>
+      <div class="frame-sub">After tap · keyboard stays · ready for next</div>
+      <div class="phone-frame">
+        <div class="phone-screen">
+          <!-- Browser chrome -->
+          <div class="chrome-bar">
+            <div class="url">
+              <span>🔒</span>
+              <span class="ml-1.5">orbitoms.in/order</span>
+            </div>
+            <div class="w-5 h-5 rounded-full bg-gray-300"></div>
+          </div>
+
+          <!-- Customer header -->
+          <div class="cust-header">
+            <div class="flex-1 min-w-0">
+              <div class="text-[16px] font-semibold text-gray-900 leading-tight truncate">MOHAN COLOUR CO</div>
+              <div class="text-[12px] font-medium text-gray-500 leading-tight truncate">102425</div>
+            </div>
+            <button class="text-teal-600 text-[13px] font-medium px-[10px] py-[6px]">Change</button>
+          </div>
+
+          <!-- Products -->
+          <div class="mx-[14px] mt-5">
+            <p class="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-2 pl-0.5">Products</p>
+            <div class="bg-white rounded-[14px] shadow-sm border border-gray-100">
+              <!-- Bill header with selected count -->
+              <div class="flex items-center justify-between px-[14px] py-[10px] bg-[#fafafa] border-b border-[#f0f0f0] rounded-t-[14px]">
+                <div class="flex items-center gap-1.5">
+                  <span class="text-[12px] font-semibold uppercase tracking-[0.07em] text-gray-600">Bill 1</span>
+                  <span class="text-gray-500 text-[12px] font-medium">· 1 selected</span>
+                </div>
+                <span class="text-gray-300 text-xl leading-none">×</span>
+              </div>
+
+              <!-- Selected row (checked) -->
+              <div class="flex items-center gap-[10px] px-[13px] py-[14px] border-b border-[#f0f0f0]" style="min-height:56px;">
+                <div class="checkbox checked">
+                  <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </div>
+                <div class="flex-1 min-w-0">
+                  <p class="text-[14px] font-medium text-gray-900 truncate">WS Hi-Sheen — 90</p>
+                  <p class="text-[11px] text-gray-400 mt-0.5">WS</p>
+                </div>
+                <span class="text-gray-300 text-[18px] leading-none px-1">×</span>
+              </div>
+
+              <!-- Search row, cleared, ready for next -->
+              <div class="flex items-center gap-2 px-[14px] py-[10px]">
+                <svg class="w-4 h-4 text-gray-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                <input
+                  type="text"
+                  placeholder="Search next product…"
+                  class="flex-1 text-[16px] text-gray-900 bg-transparent border-none outline-none placeholder:text-gray-300 placeholder:text-[14px]"
+                  readonly
+                />
+                <!-- Insertion caret hint -->
+                <div class="w-[2px] h-[18px] bg-gray-700 animate-pulse"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Keyboard mock (still up) -->
+          <div class="kbd">
+            <div class="kbd-autofill">
+              <div class="kbd-autofill-chip">🔑</div>
+              <div class="kbd-autofill-chip">💳</div>
+              <div class="kbd-autofill-chip">📌</div>
+              <div class="flex-1 text-[10px] text-gray-400 truncate">orbitoms.in suggestions…</div>
+            </div>
+            <div class="kbd-rows">
+              <div class="kbd-row">
+                <div class="kbd-key">q</div><div class="kbd-key">w</div><div class="kbd-key">e</div><div class="kbd-key">r</div><div class="kbd-key">t</div><div class="kbd-key">y</div><div class="kbd-key">u</div><div class="kbd-key">i</div><div class="kbd-key">o</div><div class="kbd-key">p</div>
+              </div>
+              <div class="kbd-row">
+                <div class="kbd-key">a</div><div class="kbd-key">s</div><div class="kbd-key">d</div><div class="kbd-key">f</div><div class="kbd-key">g</div><div class="kbd-key">h</div><div class="kbd-key">j</div><div class="kbd-key">k</div><div class="kbd-key">l</div>
+              </div>
+              <div class="kbd-row">
+                <div class="kbd-key wide dark">⇧</div><div class="kbd-key">z</div><div class="kbd-key">x</div><div class="kbd-key">c</div><div class="kbd-key">v</div><div class="kbd-key">b</div><div class="kbd-key">n</div><div class="kbd-key">m</div><div class="kbd-key wide dark">⌫</div>
+              </div>
+              <div class="kbd-row">
+                <div class="kbd-key wide dark">?123</div><div class="kbd-key dark">,</div><div class="kbd-key space">space</div><div class="kbd-key dark">.</div><div class="kbd-key wide dark">↵</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <footer class="max-w-[1800px] mx-auto mt-12 text-center text-[12px] text-gray-500">
+    Mockup · /order Android keyboard fix · 390px (iPhone 12 width) · Neutral palette + one teal element per screen
+  </footer>
+
+</body>
+</html>

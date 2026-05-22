@@ -1,0 +1,876 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Review View — A3 Redesign v3 (final tag distribution)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body {
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      background: #f9fafb;
+      font-feature-settings: "tnum";
+    }
+    .tabular { font-variant-numeric: tabular-nums; }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      height: 18px;
+      padding: 0 7px;
+      font-size: 10.5px;
+      font-weight: 600;
+      border-radius: 4px;
+      border: 1px solid;
+      white-space: nowrap;
+      letter-spacing: 0.01em;
+    }
+    .pill-icon-only {
+      padding: 0 5px;
+      gap: 0;
+    }
+    .pill-blocker { background:#fef2f2; border-color:#fecaca; color:#b91c1c; }
+    .pill-attention { background:#fffbeb; border-color:#fde68a; color:#b45309; }
+    .pill-info { background:#f9fafb; border-color:#e5e7eb; color:#6b7280; }
+    .pill-bill { background:#eff6ff; border-color:#bfdbfe; color:#1d4ed8; }
+    .pill-split { background:#faf5ff; border-color:#e9d5ff; color:#7e22ce; }
+    .pill-dispatch-go { background:#f0fdf4; border-color:#bbf7d0; color:#15803d; }
+    .pill-dispatch-hold { background:#fef2f2; border-color:#fecaca; color:#b91c1c; }
+    .pill-match-exact { background:#f9fafb; border-color:#e5e7eb; color:#6b7280; }
+    .pill-match-partial { background:#fffbeb; border-color:#fde68a; color:#b45309; }
+    .pill-match-unmatched { background:#fef2f2; border-color:#fecaca; color:#b91c1c; }
+    .pill-captured { background:#fffbeb; border-color:#fde68a; color:#b45309; }
+    .pill-truck-order { background:#f5f3ff; border-color:#ddd6fe; color:#6d28d9; }
+    .card {
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      background: #ffffff;
+      padding: 10px 12px;
+      position: relative;
+    }
+    .card-shipto-different {
+      position: relative;
+      padding-left: 14px;
+    }
+    .card-shipto-different::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 8px;
+      bottom: 8px;
+      width: 3px;
+      background: #f59e0b;
+      border-radius: 2px;
+    }
+    .row-active { background: #fefce8; }
+    .row-active-cell-first { border-left: 3px solid #eab308; }
+    .toggle {
+      position: relative;
+      width: 28px;
+      height: 14px;
+      border-radius: 7px;
+      cursor: pointer;
+      transition: background 0.12s;
+      display: inline-block;
+    }
+    .toggle.on { background: #16a34a; }
+    .toggle.off { background: #d1d5db; }
+    .toggle-knob {
+      position: absolute;
+      top: 2px;
+      width: 10px;
+      height: 10px;
+      background: white;
+      border-radius: 50%;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+      transition: left 0.12s;
+    }
+    .toggle.on .toggle-knob { left: 16px; }
+    .toggle.off .toggle-knob { left: 2px; }
+    .btn-punch {
+      height: 28px;
+      padding: 0 14px;
+      background: #0d9488;
+      color: white;
+      font-size: 12px;
+      font-weight: 600;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+    }
+    .btn-punch:hover { background: #0f766e; }
+    .btn-icon {
+      width: 28px;
+      height: 28px;
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      background: white;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: #6b7280;
+      cursor: pointer;
+    }
+    .btn-icon:hover { background: #f9fafb; color: #111827; }
+    .so-input {
+      height: 28px;
+      width: 130px;
+      padding: 0 10px;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      font-size: 12px;
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", monospace;
+      color: #111827;
+      background: white;
+    }
+    .so-input:focus {
+      outline: none;
+      border-color: #14b8a6;
+      box-shadow: 0 0 0 2px rgba(20,184,166,0.10);
+    }
+    .label-tiny {
+      font-size: 9.5px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #9ca3af;
+    }
+    .mockup-wrap {
+      max-width: 1240px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+    .mockup-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #111827;
+      margin-bottom: 8px;
+      letter-spacing: 0.01em;
+    }
+    .mockup-caption {
+      font-size: 11.5px;
+      color: #6b7280;
+      margin-bottom: 14px;
+    }
+    .panel {
+      background: white;
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.02);
+    }
+    .del-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      display: inline-block; flex-shrink: 0;
+    }
+    .del-local { background: #2563eb; }
+    .code-chip {
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", monospace;
+      font-size: 11px;
+      padding: 1px 6px;
+      border-radius: 4px;
+      background: #f3f4f6;
+      color: #374151;
+      border: 1px solid #e5e7eb;
+    }
+    .code-chip-partial { background:#fffbeb; color:#b45309; border-color:#fde68a; }
+    .code-chip-unmatched { background:#fef2f2; color:#b91c1c; border-color:#fecaca; }
+    table.sku {
+      width: 100%;
+      table-layout: fixed;
+      border-collapse: collapse;
+      font-size: 11.5px;
+    }
+    table.sku th {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #9ca3af;
+      text-align: left;
+      padding: 9px 10px;
+      background: #fafafa;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    table.sku td {
+      padding: 9px 10px;
+      border-bottom: 1px solid #f5f5f5;
+      vertical-align: middle;
+      color: #374151;
+    }
+    table.sku tr:hover:not(.row-active) { background: #fafafa; }
+    .mono { font-family: ui-monospace, SFMono-Regular, "SF Mono", monospace; }
+    .truncate-cell {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .punched-stamp {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 11px;
+      color: #15803d;
+      font-weight: 500;
+    }
+    /* Instructions strip */
+    .inst-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 4px 18px;
+      font-size: 11.5px;
+      line-height: 1.45;
+      color: #374151;
+    }
+    .inst-dot {
+      flex-shrink: 0;
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      margin-top: 6px;
+    }
+    .inst-dot-delivery { background: #f59e0b; }
+    .inst-dot-bill { background: #2563eb; }
+    .inst-dot-notes { background: #9ca3af; }
+    .inst-label {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #9ca3af;
+      width: 64px;
+      flex-shrink: 0;
+      padding-top: 2px;
+    }
+    .inst-text { flex: 1; color: #374151; padding-top: 1px; }
+    .inst-block {
+      background: #fafafa;
+      border-top: 1px solid #f0f0f0;
+      padding: 6px 0 8px 0;
+    }
+    /* Tag row inside card */
+    .tag-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-top: 8px;
+    }
+    /* Tag legend block */
+    .legend-card {
+      background: white;
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+      padding: 18px 22px;
+      margin-bottom: 28px;
+    }
+    .legend-card h2 {
+      font-size: 13px;
+      font-weight: 600;
+      color: #111827;
+      margin-bottom: 12px;
+    }
+    .legend-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+    .legend-col h3 {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #6b7280;
+      margin-bottom: 8px;
+      padding-bottom: 4px;
+      border-bottom: 1px solid #f3f4f6;
+    }
+    .legend-tag-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 11px;
+      color: #6b7280;
+      margin-bottom: 6px;
+    }
+    .legend-tag-row .pill {
+      flex-shrink: 0;
+    }
+  </style>
+</head>
+<body>
+
+<div class="mockup-wrap">
+
+  <h1 style="font-size:18px; font-weight:700; color:#111827; margin-bottom:6px;">
+    Review View — Right Panel Redesign (A3 · v3 · final tag distribution)
+  </h1>
+  <p style="font-size:12px; color:#6b7280; margin-bottom:20px;">
+    Bill-to card owns billing tags + bill remarks · Ship-to card owns delivery tags + delivery remarks ·
+    meta ribbon stripped to identity/counters/action only · instructions strip below meta ribbon
+    with 3-category dot prefix (delivery / bill / notes) — conditional. Dummy data: Mangalam
+    Hardware &amp; Paints / 788639 / 7 lines.
+  </p>
+
+  <!-- ─────────────────────────────────────────────────────────────────
+       LEGEND — where each tag lives
+       ───────────────────────────────────────────────────────────────── -->
+  <div class="legend-card">
+    <h2>Tag distribution legend</h2>
+    <div class="legend-grid">
+      <div class="legend-col">
+        <h3>Bill-to card</h3>
+        <div class="legend-tag-row"><span class="pill pill-blocker">OD</span><span>overdue payment</span></div>
+        <div class="legend-tag-row"><span class="pill pill-blocker">CI</span><span>credit issue</span></div>
+        <div class="legend-tag-row"><span class="pill pill-blocker">Bounce</span><span>cheque bounce history</span></div>
+        <div class="legend-tag-row"><span class="pill pill-bill">Bill 2</span><span>bill numbering (Bill 1 / 2 / N)</span></div>
+        <div class="legend-tag-row"><span class="pill pill-attention">Bill Tmrw</span><span>bill tomorrow</span></div>
+        <div class="legend-tag-row"><span class="pill pill-attention">Cross BRC</span><span>cross-billing</span></div>
+        <div class="legend-tag-row"><span class="pill pill-split">✂ Bill 1-2</span><span>confirmed bill split</span></div>
+        <div class="legend-tag-row"><span class="pill pill-split">⚠ Split</span><span>volume warning — may split</span></div>
+        <div class="legend-tag-row"><span class="pill pill-info">7 Days</span><span>7-day payment terms</span></div>
+        <div class="legend-tag-row"><span class="pill pill-info">Extension</span><span>credit extension granted</span></div>
+        <div class="legend-tag-row"><span class="pill pill-info">DPL</span><span>delivery point list flag</span></div>
+        <div class="legend-tag-row">
+          <span class="pill pill-truck-order pill-icon-only" title="Truck Order">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+          </span>
+          <span>truck order — punch when material received</span>
+        </div>
+      </div>
+      <div class="legend-col">
+        <h3>Ship-to card</h3>
+        <div class="legend-tag-row"><span class="pill pill-dispatch-go">Dispatch</span><span>dispatch go-ahead</span></div>
+        <div class="legend-tag-row"><span class="pill pill-dispatch-hold">Hold</span><span>dispatch hold</span></div>
+        <div class="legend-tag-row"><span class="pill pill-attention">Urgent</span><span>delivery priority</span></div>
+        <div class="legend-tag-row"><span class="pill pill-info">Challan</span><span>special challan needed</span></div>
+        <div class="legend-tag-row"><span class="pill pill-attention">Slot ovr</span><span>slot override (verify spec)</span></div>
+        <div class="legend-tag-row"><span class="pill pill-captured">⚑ captured</span><span>ship-to from email remark</span></div>
+        <div class="legend-tag-row">
+          <span style="display:inline-block; width:18px; height:14px; background:#fffdf7; border:1px solid #e5e7eb; border-left:3px solid #f59e0b; border-radius:2px; flex-shrink:0;"></span>
+          <span>amber left-edge bar — ship-to ≠ bill-to</span>
+        </div>
+
+        <h3 style="margin-top:14px;">Meta ribbon (below cards)</h3>
+        <div class="legend-tag-row"><span class="pill pill-dispatch-go" style="height:16px; padding:0 5px; font-size:10px;">✓ 7/7</span><span>line-match summary</span></div>
+        <div class="legend-tag-row"><span style="font-size:11px; color:#374151;">SO name · time · vol · lines · punched-by</span></div>
+
+        <h3 style="margin-top:14px;">Instructions strip (conditional)</h3>
+        <div class="legend-tag-row"><span class="inst-dot inst-dot-delivery" style="margin-top:0;"></span><span>delivery instructions</span></div>
+        <div class="legend-tag-row"><span class="inst-dot inst-dot-bill" style="margin-top:0;"></span><span>bill instructions</span></div>
+        <div class="legend-tag-row"><span class="inst-dot inst-dot-notes" style="margin-top:0;"></span><span>free-text notes</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─────────────────────────────────────────────────────────────────
+       VARIATION 1 — DENSE: Bill-to blockers + ship-to override + Truck Order
+       + all three remark categories present.
+       ───────────────────────────────────────────────────────────────── -->
+
+  <div class="mockup-title">1. Dense state — blockers on Bill-to, ship-to override, Truck Order, all 3 remark types</div>
+  <div class="mockup-caption">
+    Worst-case-density. Bill-to flagged OD + Bill 2 + 7 Days + Truck Order ·
+    Ship-to overridden to Shree Rang Bhandar (amber bar + captured) +
+    Hold + Urgent · instructions strip below shows delivery + bill + notes.
+  </div>
+
+  <div class="panel" style="margin-bottom:40px;">
+
+    <div style="padding:14px 18px 10px 18px; display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
+
+      <!-- BILL-TO CARD with all bill-class tags -->
+      <div class="card">
+        <div style="margin-bottom:4px;">
+          <span class="label-tiny">Bill to</span>
+        </div>
+        <div style="display:flex; align-items:baseline; gap:6px; margin-bottom:3px;">
+          <span class="del-dot del-local" style="margin-right:2px;"></span>
+          <span style="font-size:14.5px; font-weight:700; color:#111827; letter-spacing:-0.01em;">
+            Mangalam Hardware &amp; Paints
+          </span>
+        </div>
+        <div style="display:flex; align-items:center; gap:8px; font-size:11.5px; color:#6b7280;">
+          <span class="code-chip mono">788639</span>
+          <span>·</span>
+          <span>Mota Varachha</span>
+        </div>
+        <div class="tag-row">
+          <span class="pill pill-blocker">OD</span>
+          <span class="pill pill-bill">Bill 2</span>
+          <span class="pill pill-info">7 Days</span>
+          <span class="pill pill-truck-order pill-icon-only" title="Truck Order">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+          </span>
+        </div>
+      </div>
+
+      <!-- SHIP-TO CARD (different, amber bar) -->
+      <div class="card card-shipto-different">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
+          <span style="display:inline-flex; align-items:center; gap:6px;">
+            <span class="label-tiny">Ship to</span>
+            <span class="pill pill-captured" style="height:16px; padding:0 5px; font-size:9.5px;">⚑ captured</span>
+          </span>
+        </div>
+        <div style="display:flex; align-items:baseline; gap:6px; margin-bottom:3px;">
+          <span class="del-dot del-local" style="margin-right:2px;"></span>
+          <span style="font-size:14.5px; font-weight:700; color:#111827; letter-spacing:-0.01em;">
+            Shree Rang Bhandar
+          </span>
+        </div>
+        <div style="display:flex; align-items:center; gap:8px; font-size:11.5px; color:#6b7280;">
+          <span class="code-chip mono">447636</span>
+          <span>·</span>
+          <span>Parle Point</span>
+          <span>·</span>
+          <span style="font-size:11px;">LOCAL</span>
+        </div>
+        <div class="tag-row">
+          <span class="pill pill-dispatch-hold">Hold</span>
+          <span class="pill pill-attention">Urgent</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- META RIBBON — stripped down -->
+    <div style="padding:8px 18px 10px 18px; display:flex; align-items:center; justify-content:space-between; gap:12px; border-top:1px solid #f3f4f6;">
+      <div style="display:flex; align-items:center; gap:8px; font-size:11.5px; color:#6b7280; flex-wrap:wrap;">
+        <span style="color:#374151; font-weight:500;">(jsw) Pravesh Chitre</span>
+        <span style="color:#d1d5db;">·</span>
+        <span class="tabular">09:36</span>
+        <span style="color:#d1d5db;">·</span>
+        <span class="tabular">152L</span>
+        <span style="color:#d1d5db;">·</span>
+        <span class="tabular">7 lines</span>
+        <span style="color:#d1d5db;">·</span>
+        <span class="pill pill-dispatch-go" style="height:16px; padding:0 5px; font-size:10px;">✓ 7/7</span>
+      </div>
+      <div style="display:flex; align-items:center; gap:6px;">
+        <button class="btn-icon" title="Copy SKU codes (Ctrl+C)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        </button>
+        <button class="btn-icon" title="Reply (R)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg>
+        </button>
+        <button class="btn-icon" title="Flag (F)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
+        </button>
+        <span style="width:1px; height:20px; background:#e5e7eb; margin:0 4px;"></span>
+        <input class="so-input mono" placeholder="SO Number" />
+        <button class="btn-punch">Punch</button>
+      </div>
+    </div>
+
+    <!-- INSTRUCTIONS STRIP — 3-category dot prefix -->
+    <div class="inst-block">
+      <div class="inst-row">
+        <span class="inst-dot inst-dot-delivery"></span>
+        <span class="inst-label">delivery</span>
+        <span class="inst-text">deliver at godown side — leave with watchman, call before 6pm</span>
+      </div>
+      <div class="inst-row">
+        <span class="inst-dot inst-dot-bill"></span>
+        <span class="inst-label">bill</span>
+        <span class="inst-text">split GLOSS lines into separate bill — customer requested</span>
+      </div>
+      <div class="inst-row">
+        <span class="inst-dot inst-dot-notes"></span>
+        <span class="inst-label">notes</span>
+        <span class="inst-text">spoke to Mahesh — confirm dispatch on 5 May</span>
+      </div>
+    </div>
+
+    <!-- SKU TABLE -->
+    <table class="sku">
+      <colgroup>
+        <col style="width:4%"><col style="width:22%"><col style="width:11%"><col style="width:31%">
+        <col style="width:5%"><col style="width:5%"><col style="width:6%"><col style="width:11%"><col style="width:5%">
+      </colgroup>
+      <thead>
+        <tr><th>#</th><th>Raw text</th><th>SKU code</th><th>Description</th>
+        <th style="text-align:right;">Pk</th><th style="text-align:right;">Qty</th><th style="text-align:right;">Vol</th><th>Status</th><th></th></tr>
+      </thead>
+      <tbody>
+        <tr class="row-active">
+          <td class="row-active-cell-first" style="color:#9ca3af;">1</td>
+          <td class="truncate-cell">GLOSS 93</td>
+          <td class="mono" style="color:#6b7280;">5867122</td>
+          <td><span style="font-weight:600; color:#111827;">DN GLOSS 93</span> <span style="color:#6b7280;">BASE 0.925L</span></td>
+          <td style="text-align:right;">1</td><td style="text-align:right; font-weight:600;">6</td><td style="text-align:right;" class="tabular">6L</td><td></td>
+          <td><span class="toggle on"><span class="toggle-knob"></span></span></td>
+        </tr>
+        <tr>
+          <td style="color:#9ca3af;">2</td><td class="truncate-cell">GLOSS 93</td>
+          <td class="mono" style="color:#6b7280;">5867123</td>
+          <td><span style="font-weight:600; color:#111827;">DN GLOSS 93</span> <span style="color:#6b7280;">BASE 3.7L</span></td>
+          <td style="text-align:right;">4</td><td style="text-align:right; font-weight:600;">4</td><td style="text-align:right;" class="tabular">16L</td><td></td>
+          <td><span class="toggle on"><span class="toggle-knob"></span></span></td>
+        </tr>
+        <tr>
+          <td style="color:#9ca3af;">3</td><td class="truncate-cell">OIL SATIN 93</td>
+          <td class="mono" style="color:#6b7280;">5867118</td>
+          <td><span style="font-weight:600; color:#111827;">DN SAT FIN 93</span> <span style="color:#6b7280;">BASE 0.925L</span></td>
+          <td style="text-align:right;">1</td><td style="text-align:right; font-weight:600;">6</td><td style="text-align:right;" class="tabular">6L</td><td></td>
+          <td><span class="toggle on"><span class="toggle-knob"></span></span></td>
+        </tr>
+        <tr>
+          <td style="color:#9ca3af;">4</td><td class="truncate-cell">GLOSS 92</td>
+          <td class="mono" style="color:#6b7280;">IN28209273</td>
+          <td><span style="font-weight:600; color:#111827;">DN GLOSS INTERMEDIATE</span> <span style="color:#6b7280;">BASE NEW 500ML</span></td>
+          <td style="text-align:right;">500…</td><td style="text-align:right; font-weight:600;">24</td><td style="text-align:right;" class="tabular">12L</td><td></td>
+          <td><span class="toggle on"><span class="toggle-knob"></span></span></td>
+        </tr>
+        <tr>
+          <td style="color:#9ca3af;">5</td><td class="truncate-cell">WEATHERSHIELD PROTECT DUSTPROOF 90</td>
+          <td class="mono" style="color:#6b7280;">5880415</td>
+          <td><span style="font-weight:600; color:#111827;">DN WS PROTECT DUSTPROOF 90</span> <span style="color:#6b7280;">BASE 1LTR</span></td>
+          <td style="text-align:right;">1</td><td style="text-align:right; font-weight:600;">6</td><td style="text-align:right;" class="tabular">6L</td><td></td>
+          <td><span class="toggle on"><span class="toggle-knob"></span></span></td>
+        </tr>
+        <tr>
+          <td style="color:#9ca3af;">6</td><td class="truncate-cell">WEATHERSHIELD PROTECT DUSTPROOF 93</td>
+          <td class="mono" style="color:#6b7280;">5880417</td>
+          <td><span style="font-weight:600; color:#111827;">DN WS PROTECT DUSTPROOF 93</span> <span style="color:#6b7280;">BASE 0.9LTR</span></td>
+          <td style="text-align:right;">1</td><td style="text-align:right; font-weight:600;">6</td><td style="text-align:right;" class="tabular">6L</td><td></td>
+          <td><span class="toggle on"><span class="toggle-knob"></span></span></td>
+        </tr>
+        <tr>
+          <td style="color:#9ca3af;">7</td><td class="truncate-cell">Promise Freedom primer 93</td>
+          <td class="mono" style="color:#6b7280;">9055678</td>
+          <td><span style="font-weight:600; color:#111827;">Promise Freedom 2in1 Primer Int&amp;Ext</span> <span style="color:#6b7280;">20L</span></td>
+          <td style="text-align:right;">20</td><td style="text-align:right; font-weight:600;">5</td><td style="text-align:right;" class="tabular">100L</td><td></td>
+          <td><span class="toggle on"><span class="toggle-knob"></span></span></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div style="display:flex; align-items:center; justify-content:center; gap:14px; padding:10px 18px; border-top:1px solid #e5e7eb; background:#fafafa;">
+      <button style="height:26px; padding:0 10px; font-size:11px; border:1px solid #e5e7eb; background:white; border-radius:5px; color:#6b7280;">← Prev</button>
+      <span style="font-size:11px; color:#9ca3af;">5 of 10</span>
+      <button style="height:26px; padding:0 10px; font-size:11px; border:1px solid #e5e7eb; background:white; border-radius:5px; color:#6b7280;">Next →</button>
+      <span style="font-size:10px; color:#d1d5db; margin-left:14px;">↑↓ navigate · Ctrl+C copy · Ctrl+V paste SO</span>
+    </div>
+  </div>
+
+
+  <!-- ─────────────────────────────────────────────────────────────────
+       VARIATION 2 — CLEAN ORDER (most common ~80% case)
+       ───────────────────────────────────────────────────────────────── -->
+
+  <div class="mockup-title">2. Clean order — no ship-to override, no blockers, no remarks</div>
+  <div class="mockup-caption">
+    Most common ~80% case. Ship-to mirrors Bill-to with italic "Ships to billing address" tagline.
+    No tags inside either card. No instructions strip. SKU table flush against meta ribbon.
+  </div>
+
+  <div class="panel" style="margin-bottom:40px;">
+
+    <div style="padding:14px 18px 10px 18px; display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
+
+      <div class="card">
+        <div style="margin-bottom:4px;"><span class="label-tiny">Bill to</span></div>
+        <div style="display:flex; align-items:baseline; gap:6px; margin-bottom:3px;">
+          <span class="del-dot del-local" style="margin-right:2px;"></span>
+          <span style="font-size:14.5px; font-weight:700; color:#111827; letter-spacing:-0.01em;">
+            Mangalam Hardware &amp; Paints
+          </span>
+        </div>
+        <div style="display:flex; align-items:center; gap:8px; font-size:11.5px; color:#6b7280;">
+          <span class="code-chip mono">788639</span>
+          <span>·</span>
+          <span>Mota Varachha</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
+          <span class="label-tiny">Ship to</span>
+          <span class="pill pill-dispatch-go">Dispatch</span>
+        </div>
+        <div style="display:flex; align-items:baseline; gap:6px; margin-bottom:3px;">
+          <span class="del-dot del-local" style="margin-right:2px;"></span>
+          <span style="font-size:14.5px; font-weight:700; color:#111827; letter-spacing:-0.01em;">
+            Mangalam Hardware &amp; Paints
+          </span>
+        </div>
+        <div style="display:flex; align-items:center; gap:8px; font-size:11.5px; color:#6b7280;">
+          <span style="font-size:10.5px; color:#9ca3af; font-style:italic;">Ships to billing address</span>
+          <span>·</span>
+          <span>Mota Varachha</span>
+          <span>·</span>
+          <span style="font-size:11px;">LOCAL</span>
+        </div>
+      </div>
+    </div>
+
+    <div style="padding:8px 18px 10px 18px; display:flex; align-items:center; justify-content:space-between; gap:12px; border-top:1px solid #f3f4f6;">
+      <div style="display:flex; align-items:center; gap:8px; font-size:11.5px; color:#6b7280; flex-wrap:wrap;">
+        <span style="color:#374151; font-weight:500;">(jsw) Pravesh Chitre</span>
+        <span style="color:#d1d5db;">·</span>
+        <span class="tabular">09:36</span>
+        <span style="color:#d1d5db;">·</span>
+        <span class="tabular">152L</span>
+        <span style="color:#d1d5db;">·</span>
+        <span class="tabular">7 lines</span>
+        <span style="color:#d1d5db;">·</span>
+        <span class="pill pill-dispatch-go" style="height:16px; padding:0 5px; font-size:10px;">✓ 7/7</span>
+      </div>
+      <div style="display:flex; align-items:center; gap:6px;">
+        <button class="btn-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+        <button class="btn-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg></button>
+        <button class="btn-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg></button>
+        <span style="width:1px; height:20px; background:#e5e7eb; margin:0 4px;"></span>
+        <input class="so-input mono" placeholder="SO Number" />
+        <button class="btn-punch">Punch</button>
+      </div>
+    </div>
+
+    <table class="sku">
+      <colgroup>
+        <col style="width:4%"><col style="width:22%"><col style="width:11%"><col style="width:31%">
+        <col style="width:5%"><col style="width:5%"><col style="width:6%"><col style="width:11%"><col style="width:5%">
+      </colgroup>
+      <thead><tr><th>#</th><th>Raw text</th><th>SKU code</th><th>Description</th>
+        <th style="text-align:right;">Pk</th><th style="text-align:right;">Qty</th><th style="text-align:right;">Vol</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+        <tr class="row-active">
+          <td class="row-active-cell-first" style="color:#9ca3af;">1</td><td>GLOSS 93</td>
+          <td class="mono" style="color:#6b7280;">5867122</td>
+          <td><span style="font-weight:600; color:#111827;">DN GLOSS 93</span> <span style="color:#6b7280;">BASE 0.925L</span></td>
+          <td style="text-align:right;">1</td><td style="text-align:right; font-weight:600;">6</td><td style="text-align:right;" class="tabular">6L</td><td></td>
+          <td><span class="toggle on"><span class="toggle-knob"></span></span></td>
+        </tr>
+        <tr>
+          <td style="color:#9ca3af;">2</td><td>GLOSS 93</td>
+          <td class="mono" style="color:#6b7280;">5867123</td>
+          <td><span style="font-weight:600; color:#111827;">DN GLOSS 93</span> <span style="color:#6b7280;">BASE 3.7L</span></td>
+          <td style="text-align:right;">4</td><td style="text-align:right; font-weight:600;">4</td><td style="text-align:right;" class="tabular">16L</td><td></td>
+          <td><span class="toggle on"><span class="toggle-knob"></span></span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+
+  <!-- ─────────────────────────────────────────────────────────────────
+       VARIATION 3 — TRUCK ORDER + DELIVERY REMARK ONLY
+       ───────────────────────────────────────────────────────────────── -->
+
+  <div class="mockup-title">3. Truck Order + delivery instruction — billing waits, dispatch knows where</div>
+  <div class="mockup-caption">
+    Truck Order pill in Bill-to (icon-only violet) signals billing operator to wait
+    until material arrives. Delivery instruction "deliver at godown" surfaces in
+    instructions strip. No ship-to override, no other flags.
+  </div>
+
+  <div class="panel" style="margin-bottom:40px;">
+
+    <div style="padding:14px 18px 10px 18px; display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
+      <div class="card">
+        <div style="margin-bottom:4px;"><span class="label-tiny">Bill to</span></div>
+        <div style="display:flex; align-items:baseline; gap:6px; margin-bottom:3px;">
+          <span class="del-dot del-local" style="margin-right:2px;"></span>
+          <span style="font-size:14.5px; font-weight:700; color:#111827; letter-spacing:-0.01em;">
+            Mangalam Hardware &amp; Paints
+          </span>
+        </div>
+        <div style="display:flex; align-items:center; gap:8px; font-size:11.5px; color:#6b7280;">
+          <span class="code-chip mono">788639</span>
+          <span>·</span>
+          <span>Mota Varachha</span>
+        </div>
+        <div class="tag-row">
+          <span class="pill pill-truck-order pill-icon-only" title="Truck Order — punch when material received">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+          </span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
+          <span class="label-tiny">Ship to</span>
+          <span class="pill pill-dispatch-go">Dispatch</span>
+        </div>
+        <div style="display:flex; align-items:baseline; gap:6px; margin-bottom:3px;">
+          <span class="del-dot del-local" style="margin-right:2px;"></span>
+          <span style="font-size:14.5px; font-weight:700; color:#111827; letter-spacing:-0.01em;">
+            Mangalam Hardware &amp; Paints
+          </span>
+        </div>
+        <div style="display:flex; align-items:center; gap:8px; font-size:11.5px; color:#6b7280;">
+          <span style="font-size:10.5px; color:#9ca3af; font-style:italic;">Ships to billing address</span>
+          <span>·</span>
+          <span>Mota Varachha</span>
+          <span>·</span>
+          <span style="font-size:11px;">LOCAL</span>
+        </div>
+      </div>
+    </div>
+
+    <div style="padding:8px 18px 10px 18px; display:flex; align-items:center; justify-content:space-between; gap:12px; border-top:1px solid #f3f4f6;">
+      <div style="display:flex; align-items:center; gap:8px; font-size:11.5px; color:#6b7280; flex-wrap:wrap;">
+        <span style="color:#374151; font-weight:500;">(jsw) Pravesh Chitre</span>
+        <span style="color:#d1d5db;">·</span>
+        <span class="tabular">09:36</span>
+        <span style="color:#d1d5db;">·</span>
+        <span class="tabular">152L</span>
+        <span style="color:#d1d5db;">·</span>
+        <span class="tabular">7 lines</span>
+        <span style="color:#d1d5db;">·</span>
+        <span class="pill pill-dispatch-go" style="height:16px; padding:0 5px; font-size:10px;">✓ 7/7</span>
+      </div>
+      <div style="display:flex; align-items:center; gap:6px;">
+        <button class="btn-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+        <button class="btn-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg></button>
+        <button class="btn-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg></button>
+        <span style="width:1px; height:20px; background:#e5e7eb; margin:0 4px;"></span>
+        <input class="so-input mono" placeholder="SO Number" />
+        <button class="btn-punch">Punch</button>
+      </div>
+    </div>
+
+    <div class="inst-block">
+      <div class="inst-row">
+        <span class="inst-dot inst-dot-delivery"></span>
+        <span class="inst-label">delivery</span>
+        <span class="inst-text">deliver at godown side</span>
+      </div>
+    </div>
+
+    <table class="sku">
+      <colgroup>
+        <col style="width:4%"><col style="width:22%"><col style="width:11%"><col style="width:31%">
+        <col style="width:5%"><col style="width:5%"><col style="width:6%"><col style="width:11%"><col style="width:5%">
+      </colgroup>
+      <thead><tr><th>#</th><th>Raw text</th><th>SKU code</th><th>Description</th>
+        <th style="text-align:right;">Pk</th><th style="text-align:right;">Qty</th><th style="text-align:right;">Vol</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+        <tr class="row-active">
+          <td class="row-active-cell-first" style="color:#9ca3af;">1</td><td>GLOSS 93</td>
+          <td class="mono" style="color:#6b7280;">5867122</td>
+          <td><span style="font-weight:600; color:#111827;">DN GLOSS 93</span> <span style="color:#6b7280;">BASE 0.925L</span></td>
+          <td style="text-align:right;">1</td><td style="text-align:right; font-weight:600;">6</td><td style="text-align:right;" class="tabular">6L</td><td></td>
+          <td><span class="toggle on"><span class="toggle-knob"></span></span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+
+  <!-- ─────────────────────────────────────────────────────────────────
+       VARIATION 4 — PUNCHED ORDER (mirrors screenshot final state)
+       ───────────────────────────────────────────────────────────────── -->
+
+  <div class="mockup-title">4. Punched — SO 1045619478 stamp, meta gains "punched by · time"</div>
+  <div class="mockup-caption">
+    Mirrors screenshot's punched state. SO input collapses to ✓ + SO number mono +
+    green Punched pill. Meta ribbon adds "punched by Bankim · 10:22".
+    Cards keep their tags but feel calm.
+  </div>
+
+  <div class="panel" style="margin-bottom:40px; opacity:0.97;">
+
+    <div style="padding:14px 18px 10px 18px; display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
+      <div class="card">
+        <div style="margin-bottom:4px;"><span class="label-tiny">Bill to</span></div>
+        <div style="display:flex; align-items:baseline; gap:6px; margin-bottom:3px;">
+          <span class="del-dot del-local" style="margin-right:2px;"></span>
+          <span style="font-size:14.5px; font-weight:700; color:#111827; letter-spacing:-0.01em;">
+            Mangalam Hardware &amp; Paints
+          </span>
+        </div>
+        <div style="display:flex; align-items:center; gap:8px; font-size:11.5px; color:#6b7280;">
+          <span class="code-chip mono">788639</span>
+          <span>·</span>
+          <span>Mota Varachha</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
+          <span class="label-tiny">Ship to</span>
+          <span class="pill pill-dispatch-go">Dispatch</span>
+        </div>
+        <div style="display:flex; align-items:baseline; gap:6px; margin-bottom:3px;">
+          <span class="del-dot del-local" style="margin-right:2px;"></span>
+          <span style="font-size:14.5px; font-weight:700; color:#111827; letter-spacing:-0.01em;">
+            Mangalam Hardware &amp; Paints
+          </span>
+        </div>
+        <div style="display:flex; align-items:center; gap:8px; font-size:11.5px; color:#6b7280;">
+          <span style="font-size:10.5px; color:#9ca3af; font-style:italic;">Ships to billing address</span>
+          <span>·</span>
+          <span>Mota Varachha</span>
+          <span>·</span>
+          <span style="font-size:11px;">LOCAL</span>
+        </div>
+      </div>
+    </div>
+
+    <div style="padding:8px 18px 10px 18px; display:flex; align-items:center; justify-content:space-between; gap:12px; border-top:1px solid #f3f4f6;">
+      <div style="display:flex; align-items:center; gap:8px; font-size:11.5px; color:#6b7280; flex-wrap:wrap;">
+        <span style="color:#374151; font-weight:500;">(jsw) Pravesh Chitre</span>
+        <span style="color:#d1d5db;">·</span>
+        <span class="tabular">09:36</span>
+        <span style="color:#d1d5db;">·</span>
+        <span class="tabular">152L</span>
+        <span style="color:#d1d5db;">·</span>
+        <span class="tabular">7 lines</span>
+        <span style="color:#d1d5db;">·</span>
+        <span class="pill pill-dispatch-go" style="height:16px; padding:0 5px; font-size:10px;">✓ 7/7</span>
+        <span style="color:#d1d5db;">·</span>
+        <span style="color:#9ca3af;">punched by Bankim · 10:22</span>
+      </div>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <button class="btn-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+        <button class="btn-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg></button>
+        <span style="width:1px; height:20px; background:#e5e7eb; margin:0 4px;"></span>
+        <span class="punched-stamp">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+          <span class="mono">1045619478</span>
+        </span>
+        <span class="pill pill-dispatch-go">Punched</span>
+      </div>
+    </div>
+
+    <table class="sku">
+      <colgroup>
+        <col style="width:4%"><col style="width:22%"><col style="width:11%"><col style="width:31%">
+        <col style="width:5%"><col style="width:5%"><col style="width:6%"><col style="width:11%"><col style="width:5%">
+      </colgroup>
+      <thead><tr><th>#</th><th>Raw text</th><th>SKU code</th><th>Description</th>
+        <th style="text-align:right;">Pk</th><th style="text-align:right;">Qty</th><th style="text-align:right;">Vol</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+        <tr>
+          <td style="color:#9ca3af;">1</td><td>GLOSS 93</td>
+          <td class="mono" style="color:#6b7280;">5867122</td>
+          <td><span style="font-weight:600; color:#111827;">DN GLOSS 93</span> <span style="color:#6b7280;">BASE 0.925L</span></td>
+          <td style="text-align:right;">1</td><td style="text-align:right; font-weight:600;">6</td><td style="text-align:right;" class="tabular">6L</td><td></td>
+          <td><span class="toggle on"><span class="toggle-knob"></span></span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+
+  <!-- DESIGN NOTES -->
+  <div style="background:white; border:1px solid #e5e7eb; border-radius:10px; padding:18px 22px; margin-top:24px;">
+    <h2 style="font-size:13px; font-weight:600; color:#111827; margin-bottom:10px;">Design notes</h2>
+    <ul style="font-size:11.5px; color:#374151; line-height:1.65; padding-left:18px; list-style:disc;">
+      <li><strong>Bill-to card tags:</strong> OD, CI, Bounce (blocker-red) · Bill 1/2/N (blue) · Bill Tomorrow, Cross XYZ (amber) · ✂ Bill X-Y, ⚠ Split (purple) · 7 Days, Extension, DPL (gray) · Truck Order (violet icon-only pill).</li>
+      <li><strong>Ship-to card tags:</strong> Dispatch / Hold · Urgent · Challan · Slot override · ⚑ captured (when ship-to ≠ bill-to).</li>
+      <li><strong>Truck Order pill:</strong> violet (<code>bg-violet-50 / border-violet-200 / text-violet-700</code>), icon-only with truck SVG. Distinct from blocker-red, info-gray, attention-amber, bill-blue. Operator learns the convention.</li>
+      <li><strong>Match status colour</strong> rides on the code chip: gray (exact), amber (multiple), red (unmatched). Stays attached to what it modifies.</li>
+      <li><strong>Lines match chip</strong> ("✓ 7/7" or "⚠ 5/7") lives in meta ribbon next to line count.</li>
+      <li><strong>Ship-to amber bar:</strong> 3px left edge, only when <code>shipToOverride=true</code>. Reuses left-rail selected-row idiom for visual consistency.</li>
+      <li><strong>Instructions strip:</strong> conditional. Three categories, dot-prefixed (amber=delivery, blue=bill, gray=notes). Only renders rows that have content. Strip collapses entirely when no remarks.</li>
+      <li><strong>Footer remarks bar removed</strong> — every piece of info now above the SKU table.</li>
+      <li><strong>Keyboard shortcuts</strong> all preserved: ↑↓ navigate, Space toggle, Ctrl+C copy, Ctrl+V paste SO, /-focus search, Q/W navigate orders. No new key handlers.</li>
+    </ul>
+  </div>
+
+</div>
+
+</body>
+</html>
