@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import {
   ClipboardList, Layers, User, Zap, Upload,
   Truck, Warehouse, Users, Package, MapPin, FileText, Palette, BarChart2, LayoutDashboard, Mail,
+  FlaskConical,
 } from "lucide-react";
 import { useRoleSidebar } from "./role-sidebar-provider";
 import type { NavItemConfig } from "@/lib/permissions";
@@ -52,6 +53,7 @@ const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   routes_areas:        MapPin,
   vehicles:            Truck,
   delivery_challans:   FileText,
+  sampling_library:    FlaskConical,
   shade_master:        Palette,
   ti_report:           BarChart2,
   mail_orders:         Mail,

@@ -35,6 +35,7 @@ const PAGE_NAV_MAP: NavItemConfig[] = [
   { pageKey: "mail_orders",        label: "Mail Orders",       href: "/mail-orders" },
   { pageKey: "delivery_challans",  label: "Delivery Challans", href: "/tint/manager/challan" },
   { pageKey: "shade_master",       label: "Shade Master",      href: "/tint/manager/shades" },
+  { pageKey: "sampling_library",   label: "Sampling Library",  href: "/tint/sampling-library" },
   { pageKey: "ti_report",          label: "TI Report",         href: "/tint/manager/ti-report" },
   { pageKey: "attendance",         label: "Attendance",        href: "/attendance" },
   { pageKey: "attendance_admin",   label: "Attendance",        href: "/admin/attendance" },
@@ -121,6 +122,7 @@ export type PageKey =
   | "mail_orders"
   | "delivery_challans"
   | "shade_master"
+  | "sampling_library"
   | "ti_report"
   | "attendance"
   | "attendance_admin";
@@ -163,7 +165,7 @@ const ALL_PAGE_KEYS: PageKey[] = [
   "customers", "skus", "routes_areas", "vehicles",
   "import_obd", "support_queue", "planning_board", "tint_manager", "tint_operator",
   "dispatcher", "warehouse", "place_order", "mail_orders",
-  "delivery_challans", "shade_master", "ti_report",
+  "delivery_challans", "shade_master", "sampling_library", "ti_report",
 ];
 
 // ── Functions ─────────────────────────────────────────────────────────────────

@@ -170,6 +170,9 @@ model users {
   tintSkipsAsActor             tint_skip_events[]    @relation("SkipActor")
   tintPausesAsOp               tint_pause_events[]   @relation("PauseOperator")
   tintPauseResumes             tint_pause_events[]   @relation("PauseResumer")
+  // Sampling Library back-relations
+  samplingRegisterCreated      sampling_register[]   @relation("SamplingRegisterCreatedBy")
+  samplingUsageEntries         sampling_usage_log[]  @relation("SamplingUsageOperator")
 }
 
 model status_master {
@@ -349,15 +352,16 @@ model sub_area_master {
 // ─────────────────────────────────────────────
 
 model sales_officer_master {
-  id             Int                     @id @default(autoincrement())
-  name           String
-  employeeCode   String
-  email          String?                 @unique
-  phone          String?
-  isActive       Boolean                 @default(true)
-  createdAt      DateTime                @default(now())
-  deliveryPoints delivery_point_master[]
-  groups         sales_officer_group[]
+  id                      Int                     @id @default(autoincrement())
+  name                    String
+  employeeCode            String
+  email                   String?                 @unique
+  phone                   String?
+  isActive                Boolean                 @default(true)
+  createdAt               DateTime                @default(now())
+  deliveryPoints          delivery_point_master[]
+  groups                  sales_officer_group[]
+  samplingRegisterEntries sampling_register[]
 }
 
 model sales_officer_group {
@@ -441,6 +445,8 @@ model delivery_point_master {
   contacts                delivery_point_contacts[]
   // Phase 2 back-relation
   orders                  orders[]
+  // Sampling Library back-relation
+  samplingRegisterEntries sampling_register[]
 }
 
 model delivery_point_contacts {
@@ -1131,6 +1137,117 @@ model shade_master {
 
   @@unique([shipToCustomerId, shadeName, skuCode, packCode, tinterType], name: "shade_master_unique")
   @@map("shade_master")
+}
+
+// ─────────────────────────────────────────────
+// SAMPLING LIBRARY (Phase 1 — read + search)
+// ─────────────────────────────────────────────
+
+model sampling_register {
+  samplingNo     Int                    @id
+  shadeName      String
+  tinterType     TinterType
+  siteId         Int?
+  siteNameRaw    String?
+  salesOfficerId Int?
+  dealerName     String?
+  notes          String?
+  isActive       Boolean                @default(true)
+  needsReview    Boolean                @default(false)
+  createdById    Int
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @default(now()) @updatedAt
+
+  site         delivery_point_master? @relation(fields: [siteId], references: [id])
+  salesOfficer sales_officer_master?  @relation(fields: [salesOfficerId], references: [id])
+  createdBy    users                  @relation("SamplingRegisterCreatedBy", fields: [createdById], references: [id])
+  recipes      sampling_recipes[]
+  usageLog     sampling_usage_log[]
+
+  @@index([tinterType, isActive])
+  @@index([needsReview])
+  @@index([siteId])
+  @@index([salesOfficerId])
+  @@index([shadeName])
+}
+
+model sampling_recipes {
+  id          Int       @id @default(autoincrement())
+  samplingNo  Int
+  skuCode     String
+  productName String?
+  packCode    PackCode
+  tinQty      Decimal   @default(0)
+  // 13 TINTER pigment columns
+  YOX         Decimal   @default(0)
+  LFY         Decimal   @default(0)
+  GRN         Decimal   @default(0)
+  TBL         Decimal   @default(0)
+  WHT         Decimal   @default(0)
+  MAG         Decimal   @default(0)
+  FFR         Decimal   @default(0)
+  BLK         Decimal   @default(0)
+  OXR         Decimal   @default(0)
+  HEY         Decimal   @default(0)
+  HER         Decimal   @default(0)
+  COB         Decimal   @default(0)
+  COG         Decimal   @default(0)
+  // 14 ACOTONE pigment columns
+  YE2         Decimal   @default(0)
+  YE1         Decimal   @default(0)
+  XY1         Decimal   @default(0)
+  XR1         Decimal   @default(0)
+  WH1         Decimal   @default(0)
+  RE2         Decimal   @default(0)
+  RE1         Decimal   @default(0)
+  OR1         Decimal   @default(0)
+  NO2         Decimal   @default(0)
+  NO1         Decimal   @default(0)
+  MA1         Decimal   @default(0)
+  GR1         Decimal   @default(0)
+  BU2         Decimal   @default(0)
+  BU1         Decimal   @default(0)
+  isPrimary   Boolean   @default(false)
+  usageCount  Int       @default(0)
+  firstUsedAt DateTime?
+  lastUsedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @default(now()) @updatedAt
+
+  sampling sampling_register @relation(fields: [samplingNo], references: [samplingNo])
+  usageLog sampling_usage_log[]
+
+  @@unique([samplingNo, skuCode, packCode])
+  @@index([samplingNo])
+  @@index([skuCode, packCode])
+  @@index([lastUsedAt(sort: Desc)])
+  @@index([samplingNo, isPrimary])
+}
+
+model sampling_usage_log {
+  id              Int       @id @default(autoincrement())
+  samplingNo      Int
+  recipeId        Int?
+  usageDate       DateTime? @db.Date
+  operatorId      Int?
+  operatorNameRaw String?
+  tinQty          Decimal   @default(0)
+  dealerNameRaw   String?
+  siteNameRaw     String?
+  skuCodeRaw      String?
+  packCode        PackCode?
+  deliveryNumber  String?   @db.Text
+  sourceRowIndex  Int?
+  createdAt       DateTime  @default(now())
+
+  sampling sampling_register  @relation(fields: [samplingNo], references: [samplingNo], onDelete: Cascade)
+  recipe   sampling_recipes?  @relation(fields: [recipeId], references: [id], onDelete: SetNull)
+  operator users?             @relation("SamplingUsageOperator", fields: [operatorId], references: [id])
+
+  @@index([samplingNo])
+  @@index([samplingNo, usageDate(sort: Desc)])
+  @@index([operatorId, usageDate])
+  @@index([siteNameRaw])
 }
 
 // ─────────────────────────────────────────────

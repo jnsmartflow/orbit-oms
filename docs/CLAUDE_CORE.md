@@ -155,9 +155,9 @@ Primary role drives login redirect and href overrides. Additional rows add nav i
 
 ---
 
-## 7. Database schema — v27.2
+## 7. Database schema — v27.3
 
-Versions in order: v21 base → v22 (mo_*) → v23 (orders dispatch) → v24 (customer match) → v25 (split) → v26 (mo_order_remarks) → v26.1 (isLocked) → v26.2 (mo_line_status) → v26.3 (carton + piecesPerCarton) → v26.4 (mo_learned_customers) → v26.5 (orders.orderDateTime) → v26.6 (user_roles + manual_tint_entries + users.phone + mo_sku_lookup.refDescription) → v27.0 (attendance foundation) → v27.1 (attendance settings hardening) → v27.2 (OT workflow on attendance_records + attendance_summary + attendance_settings + 2026-05-13 place-order v2 tables).
+Versions in order: v21 base → v22 (mo_*) → v23 (orders dispatch) → v24 (customer match) → v25 (split) → v26 (mo_order_remarks) → v26.1 (isLocked) → v26.2 (mo_line_status) → v26.3 (carton + piecesPerCarton) → v26.4 (mo_learned_customers) → v26.5 (orders.orderDateTime) → v26.6 (user_roles + manual_tint_entries + users.phone + mo_sku_lookup.refDescription) → v27.0 (attendance foundation) → v27.1 (attendance settings hardening) → v27.2 (OT workflow on attendance_records + attendance_summary + attendance_settings + 2026-05-13 place-order v2 tables) → v27.3 (sampling_usage_log.deliveryNumber — Phase 3 delivery no backfill).
 
 ### 7.1 Setup / Master
 

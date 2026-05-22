@@ -1,0 +1,1075 @@
+SAMPLING LIBRARY — NORMALISATION AUDIT
+Entity: SKU codes
+Generated: 2026-05-22T06:36:12.000Z
+Source rows scanned: sampling_recipes=4052, sampling_usage_log=10619
+
+=== HIGH ===
+"in28109481"
+  → "IN28109481"  (distance=0, band=HIGH)
+  Found in:
+    sampling_recipes.skuCode: 3 rows (samplingNo examples: 87, 132784, 134481)
+    sampling_usage_log.skuCodeRaw: 7 rows (id examples: 118, 119, 120, 2148, 6413, ...)
+
+"in28209081"
+  → "IN28209081"  (distance=0, band=HIGH)
+  Found in:
+    sampling_recipes.skuCode: 2 rows (samplingNo examples: 134100, 134101)
+    sampling_usage_log.skuCodeRaw: 6 rows (id examples: 5405, 5406, 5407, 5408, 5409, ...)
+
+"in28089471"
+  → "IN28089471"  (distance=0, band=HIGH)
+  Found in:
+    sampling_recipes.skuCode: 2 rows (samplingNo examples: 134258, 1323048)
+    sampling_usage_log.skuCodeRaw: 2 rows (id examples: 5789, 8718)
+
+"in28209281"
+  → "IN28209281"  (distance=0, band=HIGH)
+  Found in:
+    sampling_recipes.skuCode: 1 row (samplingNo examples: 132499)
+    sampling_usage_log.skuCodeRaw: 1 row (id examples: 1493)
+
+"in28109471"
+  → "IN28109471"  (distance=0, band=HIGH)
+  Found in:
+    sampling_recipes.skuCode: 1 row (samplingNo examples: 134481)
+    sampling_usage_log.skuCodeRaw: 1 row (id examples: 6430)
+
+
+=== MEDIUM ===
+"5844390"
+  → "5880390"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 165 rows (samplingNo examples: 14, 38, 73, 76, 84, ...)
+    sampling_usage_log.skuCodeRaw: 673 rows (id examples: 15, 59, 92, 96, 111, ...)
+
+"5844389"
+  → "5880389"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 185 rows (samplingNo examples: 12, 13, 15, 18, 22, ...)
+    sampling_usage_log.skuCodeRaw: 515 rows (id examples: 13, 14, 16, 17, 18, ...)
+
+"5811510"
+  → "5841511"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 122 rows (samplingNo examples: 133560, 133564, 10995, 11109, 13111, ...)
+    sampling_usage_log.skuCodeRaw: 519 rows (id examples: 1053, 1054, 1055, 1056, 1057, ...)
+
+"IN45109481"
+  → "IN28109481"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 164 rows (samplingNo examples: 123, 133563, 528, 132415, 132421, ...)
+    sampling_usage_log.skuCodeRaw: 459 rows (id examples: 212, 213, 214, 868, 1205, ...)
+
+"IN45109081"
+  → "IN55009081"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 126 rows (samplingNo examples: 133555, 435, 510, 529, 646, ...)
+    sampling_usage_log.skuCodeRaw: 466 rows (id examples: 770, 850, 869, 995, 1022, ...)
+
+"IN44709481"
+  → "IN30709481"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 71 rows (samplingNo examples: 112, 119, 140, 145, 163, ...)
+    sampling_usage_log.skuCodeRaw: 349 rows (id examples: 177, 178, 179, 193, 194, ...)
+
+"IN86409081"
+  → "IN83009081"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 73 rows (samplingNo examples: 148, 246, 265, 133567, 319, ...)
+    sampling_usage_log.skuCodeRaw: 180 rows (id examples: 263, 453, 454, 455, 456, ...)
+
+"5811508"
+  → "5841502"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 59 rows (samplingNo examples: 32, 132795, 132796, 132911, 132942, ...)
+    sampling_usage_log.skuCodeRaw: 167 rows (id examples: 42, 43, 44, 2208, 2219, ...)
+
+"5811513"
+  → "5841511"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 47 rows (samplingNo examples: 133547, 132910, 132912, 133047, 133052, ...)
+    sampling_usage_log.skuCodeRaw: 171 rows (id examples: 2376, 2378, 2386, 2387, 2631, ...)
+
+"IN46269281"
+  → "IN46359281"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 37 rows (samplingNo examples: 132444, 10995, 11109, 132478, 132493, ...)
+    sampling_usage_log.skuCodeRaw: 133 rows (id examples: 1031, 1032, 1033, 1034, 1035, ...)
+
+"IN44709081"
+  → "IN30709081"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 33 rows (samplingNo examples: 26, 113, 352, 370, 503, ...)
+    sampling_usage_log.skuCodeRaw: 123 rows (id examples: 32, 33, 180, 181, 182, ...)
+
+"IN84409081"
+  → "IN83009081"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 38 rows (samplingNo examples: 107, 156, 359, 402, 578, ...)
+    sampling_usage_log.skuCodeRaw: 113 rows (id examples: 157, 158, 159, 161, 162, ...)
+
+"5818104"
+  → "5818264"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 47 rows (samplingNo examples: 20, 21, 33, 147, 278, ...)
+    sampling_usage_log.skuCodeRaw: 100 rows (id examples: 24, 25, 26, 27, 28, ...)
+
+"IN74009281"
+  → "IN77009081"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 19 rows (samplingNo examples: 132456, 132801, 133007, 133149, 133239, ...)
+    sampling_usage_log.skuCodeRaw: 101 rows (id examples: 1358, 1359, 1360, 1361, 1362, ...)
+
+"IN46359081"
+  → "IN46359281"  (distance=1, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 40 rows (samplingNo examples: 132594, 132661, 132678, 132679, 133596, ...)
+    sampling_usage_log.skuCodeRaw: 74 rows (id examples: 1699, 1831, 1869, 1870, 1871, ...)
+
+"IN36409081"
+  → "IN30709081"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 33 rows (samplingNo examples: 133558, 133570, 133587, 133592, 132544, ...)
+    sampling_usage_log.skuCodeRaw: 55 rows (id examples: 1617, 1780, 2049, 2082, 2097, ...)
+
+"IN46359481"
+  → "IN46359281"  (distance=1, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 26 rows (samplingNo examples: 77, 132459, 132460, 132510, 132597, ...)
+    sampling_usage_log.skuCodeRaw: 59 rows (id examples: 97, 1378, 1379, 1535, 1536, ...)
+
+"5948215"
+  → "5948210"  (distance=1, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 22 rows (samplingNo examples: 100, 395, 588, 611, 134009, ...)
+    sampling_usage_log.skuCodeRaw: 49 rows (id examples: 142, 706, 943, 968, 969, ...)
+
+"IN83509281"
+  → "IN83009081"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 14 rows (samplingNo examples: 132416, 10422, 132693, 132751, 132820, ...)
+    sampling_usage_log.skuCodeRaw: 52 rows (id examples: 1030, 1273, 1960, 2070, 2071, ...)
+
+"5888573"
+  → "5838873"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 23 rows (samplingNo examples: 144, 168, 316, 432, 437, ...)
+    sampling_usage_log.skuCodeRaw: 39 rows (id examples: 259, 296, 565, 766, 767, ...)
+
+"5888571"
+  → "5883561"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 24 rows (samplingNo examples: 47, 160, 161, 472, 520, ...)
+    sampling_usage_log.skuCodeRaw: 36 rows (id examples: 72, 282, 283, 799, 859, ...)
+
+"5844392"
+  → "5880392"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 11 rows (samplingNo examples: 50, 132930, 133194, 133221, 133363, ...)
+    sampling_usage_log.skuCodeRaw: 45 rows (id examples: 76, 2423, 2994, 3029, 3030, ...)
+
+"IN83509081"
+  → "IN83009081"  (distance=1, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 12 rows (samplingNo examples: 10421, 132692, 133193, 133251, 133541, ...)
+    sampling_usage_log.skuCodeRaw: 38 rows (id examples: 1029, 1959, 2990, 2991, 2992, ...)
+
+"IN36409481"
+  → "IN30709481"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 20 rows (samplingNo examples: 132404, 133588, 132470, 132621, 132639, ...)
+    sampling_usage_log.skuCodeRaw: 30 rows (id examples: 1255, 1256, 1403, 1756, 1781, ...)
+
+"IN36409023"
+  → "IN36409523"  (distance=1, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 23 rows (samplingNo examples: 132480, 132484, 132501, 132549, 132552, ...)
+    sampling_usage_log.skuCodeRaw: 23 rows (id examples: 1446, 1450, 1495, 1622, 1624, ...)
+
+"5901075"
+  → "5921075"  (distance=1, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 7 rows (samplingNo examples: 133239, 133927, 133964, 134072, 134073, ...)
+    sampling_usage_log.skuCodeRaw: 39 rows (id examples: 3072, 3073, 4952, 4953, 4954, ...)
+
+"5888572"
+  → "5883562"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 16 rows (samplingNo examples: 84, 325, 364, 664, 666, ...)
+    sampling_usage_log.skuCodeRaw: 27 rows (id examples: 113, 593, 654, 655, 656, ...)
+
+"IN83509481"
+  → "IN83009081"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 7 rows (samplingNo examples: 132510, 132518, 132710, 132746, 1323510, ...)
+    sampling_usage_log.skuCodeRaw: 33 rows (id examples: 1537, 1538, 1573, 1574, 1977, ...)
+
+"IN36409472"
+  → "IN30709472"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 19 rows (samplingNo examples: 132420, 132454, 132455, 132483, 132485, ...)
+    sampling_usage_log.skuCodeRaw: 19 rows (id examples: 1277, 1356, 1357, 1449, 1451, ...)
+
+"5948175"
+  → "5948785"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 11 rows (samplingNo examples: 9, 10, 619, 642, 643, ...)
+    sampling_usage_log.skuCodeRaw: 15 rows (id examples: 7, 8, 9, 10, 11, ...)
+
+"IN36409581"
+  → "IN36409523"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 8 rows (samplingNo examples: 133571, 132521, 132531, 132627, 133477, ...)
+    sampling_usage_log.skuCodeRaw: 18 rows (id examples: 1577, 1578, 1579, 1601, 1764, ...)
+
+"IN36409082"
+  → "IN30709082"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 11 rows (samplingNo examples: 133557, 132449, 132331, 132490, 132658, ...)
+    sampling_usage_log.skuCodeRaw: 14 rows (id examples: 1248, 1351, 1480, 1481, 1482, ...)
+
+"IN46359482"
+  → "IN46359582"  (distance=1, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 11 rows (samplingNo examples: 132687, 132770, 133488, 133518, 133718, ...)
+    sampling_usage_log.skuCodeRaw: 12 rows (id examples: 1952, 2113, 3742, 3847, 4430, ...)
+
+"IN46359581"
+  → "IN46359582"  (distance=1, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 9 rows (samplingNo examples: 133569, 133368, 134184, 134444, 134570, ...)
+    sampling_usage_log.skuCodeRaw: 13 rows (id examples: 3412, 4065, 5652, 5653, 6311, ...)
+
+"IN46359082"
+  → "IN46350082"  (distance=1, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 10 rows (samplingNo examples: 134428, 134431, 134456, 134569, 134711, ...)
+    sampling_usage_log.skuCodeRaw: 12 rows (id examples: 6277, 6281, 6282, 6346, 6347, ...)
+
+"5948208"
+  → "5948207"  (distance=1, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 10 rows (samplingNo examples: 66, 69, 94, 96, 309, ...)
+    sampling_usage_log.skuCodeRaw: 10 rows (id examples: 84, 87, 135, 136, 548, ...)
+
+"IN46359471"
+  → "IN46359271"  (distance=1, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 9 rows (samplingNo examples: 132436, 133280, 133821, 133852, 134175, ...)
+    sampling_usage_log.skuCodeRaw: 10 rows (id examples: 1324, 3194, 3195, 4652, 4754, ...)
+
+"IN36408123"
+  → "IN36409523"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 9 rows (samplingNo examples: 132451, 132453, 132479, 132548, 1322325, ...)
+    sampling_usage_log.skuCodeRaw: 9 rows (id examples: 1353, 1355, 1445, 1621, 8510, ...)
+
+"IN74009081"
+  → "IN77009081"  (distance=1, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 3 rows (samplingNo examples: 1323349, 1323444, 1323483)
+    sampling_usage_log.skuCodeRaw: 12 rows (id examples: 8775, 8776, 8777, 8778, 8779, ...)
+
+"IN46359023"
+  → "IN46359223"  (distance=1, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 7 rows (samplingNo examples: 132467, 132513, 132515, 134714, 1328279, ...)
+    sampling_usage_log.skuCodeRaw: 7 rows (id examples: 1386, 1568, 1570, 7108, 9317, ...)
+
+"IN23359281"
+  → "IN29319281"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 4 rows (samplingNo examples: 132667, 1323689, 1328464, 1328665)
+    sampling_usage_log.skuCodeRaw: 10 rows (id examples: 1842, 8939, 8940, 8941, 8942, ...)
+
+"IN27309671"
+  → "IN27309677"  (distance=1, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 2 rows (samplingNo examples: 1328485, 1328486)
+    sampling_usage_log.skuCodeRaw: 12 rows (id examples: 9789, 9790, 9791, 9792, 9793, ...)
+
+"5554801"
+  → "5554821"  (distance=1, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 5 rows (samplingNo examples: 133553, 132441, 132481, 133601, 133681, ...)
+    sampling_usage_log.skuCodeRaw: 8 rows (id examples: 1337, 1338, 1339, 1447, 4025, ...)
+
+"in86409081"
+  → "IN83009081"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 3 rows (samplingNo examples: 44, 134251, 135419)
+    sampling_usage_log.skuCodeRaw: 9 rows (id examples: 69, 70, 71, 5775, 8411, ...)
+
+"IN36409471"
+  → "IN36409871"  (distance=1, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 6 rows (samplingNo examples: 132468, 1322896, 1328240, 1328241, 1328242, ...)
+    sampling_usage_log.skuCodeRaw: 6 rows (id examples: 1389, 8643, 9210, 9211, 9212, ...)
+
+"IN27309081"
+  → "IN77009081"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 6 rows (samplingNo examples: 132495, 132538, 1323326, 1328294, 1328843, ...)
+    sampling_usage_log.skuCodeRaw: 6 rows (id examples: 1490, 1609, 8773, 9379, 10289, ...)
+
+"5901074"
+  → "5921074"  (distance=1, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 4 rows (samplingNo examples: 134457, 134561, 134563, 134564)
+    sampling_usage_log.skuCodeRaw: 8 rows (id examples: 6348, 6349, 6662, 6663, 6664, ...)
+
+"5948214"
+  → "5948210"  (distance=1, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 5 rows (samplingNo examples: 179, 134596, 135225, 135232, 135375, ...)
+    sampling_usage_log.skuCodeRaw: 6 rows (id examples: 313, 6731, 8135, 8145, 8313, ...)
+
+"5818105"
+  → "5818035"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 2 rows (samplingNo examples: 134007, 1328846)
+    sampling_usage_log.skuCodeRaw: 9 rows (id examples: 5158, 5159, 5160, 5161, 5162, ...)
+
+"IN27309082"
+  → "IN27909082"  (distance=1, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 5 rows (samplingNo examples: 132538, 132668, 132708, 1328295, 1328899, ...)
+    sampling_usage_log.skuCodeRaw: 5 rows (id examples: 1608, 1843, 1976, 9380, 10400, ...)
+
+"IN36409071"
+  → "IN36409871"  (distance=1, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 5 rows (samplingNo examples: 132600, 132601, 133689, 133690, 133756, ...)
+    sampling_usage_log.skuCodeRaw: 5 rows (id examples: 1711, 1713, 4317, 4318, 4495, ...)
+
+"IN76209081"
+  → "IN77009081"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 3 rows (samplingNo examples: 132739, 132825, 1323923)
+    sampling_usage_log.skuCodeRaw: 7 rows (id examples: 2040, 2041, 2042, 2341, 9081, ...)
+
+"IN45100081"
+  → "IN84500081"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 4 rows (samplingNo examples: 132785, 133875, 1328359, 1328372)
+    sampling_usage_log.skuCodeRaw: 6 rows (id examples: 2159, 4799, 4800, 9566, 9567, ...)
+
+"5853019"
+  → "5853013"  (distance=1, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 4 rows (samplingNo examples: 133522, 133704, 133712, 135438)
+    sampling_usage_log.skuCodeRaw: 6 rows (id examples: 3851, 4359, 4360, 4398, 8442, ...)
+
+"IN36409582"
+  → "IN36409523"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 3 rows (samplingNo examples: 133571, 132521, 1328612)
+    sampling_usage_log.skuCodeRaw: 6 rows (id examples: 1580, 4067, 4068, 4071, 4072, ...)
+
+"5880418"
+  → "5880415"  (distance=1, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 4 rows (samplingNo examples: 315, 398, 446, 447)
+    sampling_usage_log.skuCodeRaw: 4 rows (id examples: 564, 710, 782, 783)
+
+"IN36409781"
+  → "IN36409871"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 3 rows (samplingNo examples: 132405, 132689, 132790)
+    sampling_usage_log.skuCodeRaw: 5 rows (id examples: 1257, 1954, 1955, 1956, 2174, ...)
+
+"IN27309023"
+  → "IN27309077"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 4 rows (samplingNo examples: 132417, 132418, 132419, 132540)
+    sampling_usage_log.skuCodeRaw: 4 rows (id examples: 1274, 1275, 1276, 1613)
+
+"IN46359472"
+  → "IN46359772"  (distance=1, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 4 rows (samplingNo examples: 132463, 132464, 134220, 1328364)
+    sampling_usage_log.skuCodeRaw: 4 rows (id examples: 1382, 1383, 5741, 9572)
+
+"IN46359423"
+  → "IN46359223"  (distance=1, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 4 rows (samplingNo examples: 132516, 134350, 134715, 1323998)
+    sampling_usage_log.skuCodeRaw: 4 rows (id examples: 1571, 6015, 7109, 9184)
+
+"IN36409072"
+  → "IN36409871"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 4 rows (samplingNo examples: 132600, 132601, 132713, 1328228)
+    sampling_usage_log.skuCodeRaw: 4 rows (id examples: 1710, 1712, 1989, 9195)
+
+"IN36408171"
+  → "IN36409871"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 4 rows (samplingNo examples: 132717, 133536, 1328227, 1328237)
+    sampling_usage_log.skuCodeRaw: 4 rows (id examples: 1994, 3882, 9194, 9208)
+
+"5811515"
+  → "5841515"  (distance=1, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 3 rows (samplingNo examples: 93, 133053, 135427)
+    sampling_usage_log.skuCodeRaw: 4 rows (id examples: 134, 2663, 8430, 8431)
+
+"IN74009481"
+  → "IN77009081"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 3 rows (samplingNo examples: 132696, 134109, 1323675)
+    sampling_usage_log.skuCodeRaw: 4 rows (id examples: 1964, 5448, 5449, 8934)
+
+"in84409081"
+  → "IN83009081"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 3 rows (samplingNo examples: 148, 134829, 134861)
+    sampling_usage_log.skuCodeRaw: 3 rows (id examples: 264, 7345, 7428)
+
+"IN36409881"
+  → "IN36409871"  (distance=1, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 3 rows (samplingNo examples: 132471, 132472, 1328412)
+    sampling_usage_log.skuCodeRaw: 3 rows (id examples: 1404, 1405, 9660)
+
+"IN46359571"
+  → "IN46359271"  (distance=1, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 3 rows (samplingNo examples: 134419, 1328247, 1328248)
+    sampling_usage_log.skuCodeRaw: 3 rows (id examples: 6260, 9216, 9217)
+
+"IN46359681"
+  → "IN46359281"  (distance=1, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 1 row (samplingNo examples: 134424)
+    sampling_usage_log.skuCodeRaw: 5 rows (id examples: 6268, 6269, 6270, 6271, 6272, ...)
+
+"5948233"
+  → "5948223"  (distance=1, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 1 row (samplingNo examples: 134151)
+    sampling_usage_log.skuCodeRaw: 4 rows (id examples: 5568, 5569, 5570, 5571)
+
+"5948212"
+  → "5948210"  (distance=1, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 2 rows (samplingNo examples: 67, 68)
+    sampling_usage_log.skuCodeRaw: 2 rows (id examples: 85, 86)
+
+"5948187"
+  → "5948787"  (distance=1, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 2 rows (samplingNo examples: 294, 644)
+    sampling_usage_log.skuCodeRaw: 2 rows (id examples: 538, 993)
+
+"5811509"
+  → "5841502"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 1 row (samplingNo examples: 237)
+    sampling_usage_log.skuCodeRaw: 3 rows (id examples: 439, 440, 441)
+
+"5948237"
+  → "5948227"  (distance=1, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 1 row (samplingNo examples: 357)
+    sampling_usage_log.skuCodeRaw: 3 rows (id examples: 644, 645, 646)
+
+"5948213"
+  → "5948210"  (distance=1, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 2 rows (samplingNo examples: 652, 134009)
+    sampling_usage_log.skuCodeRaw: 2 rows (id examples: 999, 5172)
+
+"IN36409572"
+  → "IN30709572"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 2 rows (samplingNo examples: 132452, 2131976)
+    sampling_usage_log.skuCodeRaw: 2 rows (id examples: 1354, 10612)
+
+"5853024"
+  → "5853020"  (distance=1, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 2 rows (samplingNo examples: 133215, 133401)
+    sampling_usage_log.skuCodeRaw: 2 rows (id examples: 3014, 3507)
+
+"in45109481"
+  → "IN28109481"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 2 rows (samplingNo examples: 133707, 1328298)
+    sampling_usage_log.skuCodeRaw: 2 rows (id examples: 4369, 9386)
+
+"5867123"
+  → "5963123"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 1 row (samplingNo examples: 134481)
+    sampling_usage_log.skuCodeRaw: 3 rows (id examples: 6445, 6447, 6448)
+
+"IN46269781"
+  → "IN46359781"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 2 rows (samplingNo examples: 1322780, 1328622)
+    sampling_usage_log.skuCodeRaw: 2 rows (id examples: 8607, 10025)
+
+"IN86400081"
+  → "IN82000081"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 1 row (samplingNo examples: 1323721)
+    sampling_usage_log.skuCodeRaw: 3 rows (id examples: 8956, 8957, 8958)
+
+"IN86309223"
+  → "IN46359223"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 2 rows (samplingNo examples: 1328877, 1328881)
+    sampling_usage_log.skuCodeRaw: 2 rows (id examples: 10350, 10354)
+
+"IN86309272"
+  → "IN46309872"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 2 rows (samplingNo examples: 1328887, 1328888)
+    sampling_usage_log.skuCodeRaw: 2 rows (id examples: 10360, 10361)
+
+"5948367"
+  → "5948787"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 1 row (samplingNo examples: 211)
+    sampling_usage_log.skuCodeRaw: 2 rows (id examples: 381, 382)
+
+"IN36409681"
+  → "IN36409871"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 1 row (samplingNo examples: 133559)
+    sampling_usage_log.skuCodeRaw: 2 rows (id examples: 4031, 4032)
+
+"IN27309281"
+  → "IN28209281"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 1 row (samplingNo examples: 132539)
+    sampling_usage_log.skuCodeRaw: 2 rows (id examples: 1610, 1611)
+
+"5811514"
+  → "5841514"  (distance=1, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 1 row (samplingNo examples: 132797)
+    sampling_usage_log.skuCodeRaw: 2 rows (id examples: 2232, 2233)
+
+"IN36809081"
+  → "IN30709081"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 1 row (samplingNo examples: 134895)
+    sampling_usage_log.skuCodeRaw: 2 rows (id examples: 7494, 7495)
+
+"IN86309081"
+  → "IN83009081"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 1 row (samplingNo examples: 1328276)
+    sampling_usage_log.skuCodeRaw: 2 rows (id examples: 9310, 9312)
+
+"5948226"
+  → "5948221"  (distance=1, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 1 row (samplingNo examples: 254)
+    sampling_usage_log.skuCodeRaw: 1 row (id examples: 468)
+
+"5554800"
+  → "5554810"  (distance=1, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 1 row (samplingNo examples: 133551)
+    sampling_usage_log.skuCodeRaw: 1 row (id examples: 4023)
+
+"5554799"
+  → "5834799"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 1 row (samplingNo examples: 133552)
+    sampling_usage_log.skuCodeRaw: 1 row (id examples: 4024)
+
+"5948366"
+  → "5908366"  (distance=1, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 1 row (samplingNo examples: 351)
+    sampling_usage_log.skuCodeRaw: 1 row (id examples: 641)
+
+"IN23879081"
+  → "IN28079081"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 1 row (samplingNo examples: 132406)
+    sampling_usage_log.skuCodeRaw: 1 row (id examples: 1258)
+
+"in46359081"
+  → "IN46359281"  (distance=1, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 1 row (samplingNo examples: 132461)
+    sampling_usage_log.skuCodeRaw: 1 row (id examples: 1380)
+
+"IN27309071"
+  → "IN27309077"  (distance=1, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 1 row (samplingNo examples: 132540)
+    sampling_usage_log.skuCodeRaw: 1 row (id examples: 1612)
+
+"IN27309271"
+  → "IN27309277"  (distance=1, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 1 row (samplingNo examples: 132541)
+    sampling_usage_log.skuCodeRaw: 1 row (id examples: 1614)
+
+"IN76209272"
+  → "IN28209272"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 1 row (samplingNo examples: 132613)
+    sampling_usage_log.skuCodeRaw: 1 row (id examples: 1738)
+
+"IN84309872"
+  → "IN46309872"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 1 row (samplingNo examples: 132662)
+    sampling_usage_log.skuCodeRaw: 1 row (id examples: 1832)
+
+"5747278"
+  → "5749278"  (distance=1, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 1 row (samplingNo examples: 132749)
+    sampling_usage_log.skuCodeRaw: 1 row (id examples: 2068)
+
+"IN76209281"
+  → "IN28209281"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 1 row (samplingNo examples: 132824)
+    sampling_usage_log.skuCodeRaw: 1 row (id examples: 2340)
+
+"IN36409882"
+  → "IN36409871"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 1 row (samplingNo examples: 133494)
+    sampling_usage_log.skuCodeRaw: 1 row (id examples: 3753)
+
+"in46359482"
+  → "IN46359582"  (distance=1, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 1 row (samplingNo examples: 133682)
+    sampling_usage_log.skuCodeRaw: 1 row (id examples: 4308)
+
+"5818103"
+  → "5818033"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 1 row (samplingNo examples: 133759)
+    sampling_usage_log.skuCodeRaw: 1 row (id examples: 4496)
+
+"5880408"
+  → "5880401"  (distance=1, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 1 row (samplingNo examples: 133933)
+    sampling_usage_log.skuCodeRaw: 1 row (id examples: 4974)
+
+"5811516"
+  → "5841511"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 1 row (samplingNo examples: 134151)
+    sampling_usage_log.skuCodeRaw: 1 row (id examples: 5567)
+
+"in46359471"
+  → "IN46359271"  (distance=1, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 1 row (samplingNo examples: 134207)
+    sampling_usage_log.skuCodeRaw: 1 row (id examples: 5722)
+
+"5948209"
+  → "5948207"  (distance=1, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 1 row (samplingNo examples: 134962)
+    sampling_usage_log.skuCodeRaw: 1 row (id examples: 7687)
+
+"5880419"
+  → "5880415"  (distance=1, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 1 row (samplingNo examples: 135027)
+    sampling_usage_log.skuCodeRaw: 1 row (id examples: 7812)
+
+"IN44700081"
+  → "IN30700081"  (distance=2, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 1 row (samplingNo examples: 135040)
+    sampling_usage_log.skuCodeRaw: 1 row (id examples: 7829)
+
+"5948239"
+  → "5948230"  (distance=1, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 1 row (samplingNo examples: 135201)
+    sampling_usage_log.skuCodeRaw: 1 row (id examples: 8091)
+
+"IN84400081"
+  → "IN84500081"  (distance=1, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 1 row (samplingNo examples: 1322199)
+    sampling_usage_log.skuCodeRaw: 1 row (id examples: 8504)
+
+"IN46359572"
+  → "IN46359582"  (distance=1, band=MEDIUM)
+  Found in:
+    sampling_recipes.skuCode: 1 row (samplingNo examples: 1328365)
+    sampling_usage_log.skuCodeRaw: 1 row (id examples: 9573)
+
+
+=== LOW ===
+"IN45109281"
+  → "IN28109481"  (distance=3, band=LOW)
+  Found in:
+    sampling_recipes.skuCode: 174 rows (samplingNo examples: 122, 132435, 132445, 11109, 11152, ...)
+    sampling_usage_log.skuCodeRaw: 589 rows (id examples: 208, 209, 210, 211, 1064, ...)
+
+"IN44709281"
+  → "IN28209281"  (distance=3, band=LOW)
+  Found in:
+    sampling_recipes.skuCode: 138 rows (samplingNo examples: 48, 110, 111, 120, 121, ...)
+    sampling_usage_log.skuCodeRaw: 586 rows (id examples: 73, 170, 171, 172, 173, ...)
+
+"5844391"
+  → "5749291"  (distance=3, band=LOW)
+  Found in:
+    sampling_recipes.skuCode: 170 rows (samplingNo examples: 1, 49, 78, 91, 127, ...)
+    sampling_usage_log.skuCodeRaw: 528 rows (id examples: 1, 74, 75, 99, 128, ...)
+
+"IN36819281"
+  → "IN29319281"  (distance=3, band=LOW)
+  Found in:
+    sampling_recipes.skuCode: 42 rows (samplingNo examples: 74, 162, 284, 268, 270, ...)
+    sampling_usage_log.skuCodeRaw: 151 rows (id examples: 93, 94, 284, 285, 492, ...)
+
+"IN36819081"
+  → "IN28129081"  (distance=3, band=LOW)
+  Found in:
+    sampling_recipes.skuCode: 40 rows (samplingNo examples: 64, 65, 75, 105, 131, ...)
+    sampling_usage_log.skuCodeRaw: 124 rows (id examples: 80, 81, 82, 83, 95, ...)
+
+"IN36819481"
+  → "IN28109481"  (distance=3, band=LOW)
+  Found in:
+    sampling_recipes.skuCode: 33 rows (samplingNo examples: 63, 103, 104, 154, 187, ...)
+    sampling_usage_log.skuCodeRaw: 102 rows (id examples: 78, 79, 145, 146, 147, ...)
+
+"IN84409281"
+  → "IN83009081"  (distance=3, band=LOW)
+  Found in:
+    sampling_recipes.skuCode: 42 rows (samplingNo examples: 157, 158, 375, 392, 132530, ...)
+    sampling_usage_log.skuCodeRaw: 92 rows (id examples: 279, 280, 678, 700, 1600, ...)
+
+"IN46269081"
+  → "IN28209081"  (distance=3, band=LOW)
+  Found in:
+    sampling_recipes.skuCode: 29 rows (samplingNo examples: 132492, 132585, 132747, 132771, 132776, ...)
+    sampling_usage_log.skuCodeRaw: 100 rows (id examples: 1485, 1486, 1695, 2057, 2058, ...)
+
+"IN84409481"
+  → "IN83009081"  (distance=3, band=LOW)
+  Found in:
+    sampling_recipes.skuCode: 35 rows (samplingNo examples: 72, 292, 297, 238, 256, ...)
+    sampling_usage_log.skuCodeRaw: 61 rows (id examples: 91, 442, 469, 535, 536, ...)
+
+"5811485"
+  → "5841681"  (distance=3, band=LOW)
+  Found in:
+    sampling_recipes.skuCode: 23 rows (samplingNo examples: 8, 19, 31, 80, 81, ...)
+    sampling_usage_log.skuCodeRaw: 51 rows (id examples: 4, 5, 6, 20, 21, ...)
+
+"5818102"
+  → "5838882"  (distance=3, band=LOW)
+  Found in:
+    sampling_recipes.skuCode: 16 rows (samplingNo examples: 85, 329, 330, 337, 403, ...)
+    sampling_usage_log.skuCodeRaw: 42 rows (id examples: 114, 601, 602, 619, 620, ...)
+
+"IN76519281"
+  → "IN29319281"  (distance=3, band=LOW)
+  Found in:
+    sampling_recipes.skuCode: 10 rows (samplingNo examples: 132428, 132785, 1322172, 1323709, 1323986, ...)
+    sampling_usage_log.skuCodeRaw: 44 rows (id examples: 1315, 1316, 1317, 1318, 2149, ...)
+
+"IN46269481"
+  → "IN46359281"  (distance=3, band=LOW)
+  Found in:
+    sampling_recipes.skuCode: 10 rows (samplingNo examples: 132438, 132477, 132528, 132657, 132742, ...)
+    sampling_usage_log.skuCodeRaw: 31 rows (id examples: 1325, 1326, 1327, 1328, 1329, ...)
+
+"IN45109781"
+  → "IN28109481"  (distance=3, band=LOW)
+  Found in:
+    sampling_recipes.skuCode: 11 rows (samplingNo examples: 132790, 132799, 132930, 133194, 1322954, ...)
+    sampling_usage_log.skuCodeRaw: 29 rows (id examples: 2173, 2236, 2237, 2415, 2416, ...)
+
+"IN23359081"
+  → "IN83009081"  (distance=3, band=LOW)
+  Found in:
+    sampling_recipes.skuCode: 15 rows (samplingNo examples: 132577, 133071, 133152, 133153, 133636, ...)
+    sampling_usage_log.skuCodeRaw: 24 rows (id examples: 1681, 2681, 2909, 2911, 4206, ...)
+
+"IN76519081"
+  → "IN77009081"  (distance=3, band=LOW)
+  Found in:
+    sampling_recipes.skuCode: 7 rows (samplingNo examples: 132745, 132767, 132787, 1322932, 1323561, ...)
+    sampling_usage_log.skuCodeRaw: 28 rows (id examples: 2052, 2105, 2106, 2164, 2165, ...)
+
+"IN45109681"
+  → "IN28109481"  (distance=3, band=LOW)
+  Found in:
+    sampling_recipes.skuCode: 8 rows (samplingNo examples: 132574, 1322187, 1322883, 1323202, 1323760, ...)
+    sampling_usage_log.skuCodeRaw: 25 rows (id examples: 1675, 8499, 8500, 8501, 8502, ...)
+
+"IN86409281"
+  → "IN83009081"  (distance=3, band=LOW)
+  Found in:
+    sampling_recipes.skuCode: 13 rows (samplingNo examples: 29, 209, 210, 433, 133313, ...)
+    sampling_usage_log.skuCodeRaw: 16 rows (id examples: 39, 379, 380, 768, 3245, ...)
+
+"IN27359081"
+  → "IN77009081"  (distance=3, band=LOW)
+  Found in:
+    sampling_recipes.skuCode: 12 rows (samplingNo examples: 132579, 132581, 132666, 132706, 1323987, ...)
+    sampling_usage_log.skuCodeRaw: 14 rows (id examples: 1683, 1684, 1840, 1841, 1973, ...)
+
+"IN36408181"
+  → "IN36409871"  (distance=3, band=LOW)
+  Found in:
+    sampling_recipes.skuCode: 9 rows (samplingNo examples: 132403, 132545, 132682, 132762, 133641, ...)
+    sampling_usage_log.skuCodeRaw: 16 rows (id examples: 1253, 1254, 1618, 1883, 2095, ...)
+
+"IN84409581"
+  → "IN83009081"  (distance=3, band=LOW)
+  Found in:
+    sampling_recipes.skuCode: 6 rows (samplingNo examples: 617, 133572, 133585, 132917, 133292, ...)
+    sampling_usage_log.skuCodeRaw: 16 rows (id examples: 973, 2393, 3212, 4075, 4076, ...)
+
+"IN76209581"
+  → "IN77009081"  (distance=3, band=LOW)
+  Found in:
+    sampling_recipes.skuCode: 4 rows (samplingNo examples: 132764, 1322382, 1322641, 1328339)
+    sampling_usage_log.skuCodeRaw: 13 rows (id examples: 2099, 2100, 8542, 8543, 8544, ...)
+
+"IN44709681"
+  → "IN30709081"  (distance=3, band=LOW)
+  Found in:
+    sampling_recipes.skuCode: 3 rows (samplingNo examples: 133542, 134378, 1322339)
+    sampling_usage_log.skuCodeRaw: 14 rows (id examples: 3889, 3890, 3891, 3892, 3893, ...)
+
+"IN76519481"
+  → "IN77009081"  (distance=4, band=LOW)
+  Found in:
+    sampling_recipes.skuCode: 5 rows (samplingNo examples: 132429, 132430, 132769, 1328397, 1328835, ...)
+    sampling_usage_log.skuCodeRaw: 11 rows (id examples: 1319, 1320, 1321, 1322, 2107, ...)
+
+"IN36819781"
+  → "IN46359781"  (distance=3, band=LOW)
+  Found in:
+    sampling_recipes.skuCode: 5 rows (samplingNo examples: 354, 609, 134358, 134640, 134849, ...)
+    sampling_usage_log.skuCodeRaw: 8 rows (id examples: 643, 964, 965, 6031, 6032, ...)
+
+"IN36409482"
+  → "IN30709082"  (distance=3, band=LOW)
+  Found in:
+    sampling_recipes.skuCode: 6 rows (samplingNo examples: 132675, 132697, 132700, 132759, 132994, ...)
+    sampling_usage_log.skuCodeRaw: 6 rows (id examples: 1861, 1965, 1969, 2091, 2551, ...)
+
+"IN44709781"
+  → "IN30709081"  (distance=3, band=LOW)
+  Found in:
+    sampling_recipes.skuCode: 4 rows (samplingNo examples: 132407, 132307, 133070, 1328433)
+    sampling_usage_log.skuCodeRaw: 7 rows (id examples: 1237, 1259, 1260, 1261, 1262, ...)
+
+"in84409281"
+  → "IN83009081"  (distance=3, band=LOW)
+  Found in:
+    sampling_recipes.skuCode: 2 rows (samplingNo examples: 134406, 135447)
+    sampling_usage_log.skuCodeRaw: 9 rows (id examples: 6223, 6224, 6226, 6227, 6228, ...)
+
+"IN36408182"
+  → "IN46508082"  (distance=3, band=LOW)
+  Found in:
+    sampling_recipes.skuCode: 5 rows (samplingNo examples: 133556, 132414, 132699, 132717, 1328383, ...)
+    sampling_usage_log.skuCodeRaw: 5 rows (id examples: 1271, 1968, 1993, 4028, 9628, ...)
+
+"IN46269581"
+  → "IN46359582"  (distance=3, band=LOW)
+  Found in:
+    sampling_recipes.skuCode: 2 rows (samplingNo examples: 132797, 1328315)
+    sampling_usage_log.skuCodeRaw: 8 rows (id examples: 2225, 2226, 2227, 2228, 2229, ...)
+
+"IN86309023"
+  → "IN87109003"  (distance=3, band=LOW)
+  Found in:
+    sampling_recipes.skuCode: 5 rows (samplingNo examples: 1328875, 1328876, 1328878, 1328879, 1328880, ...)
+    sampling_usage_log.skuCodeRaw: 5 rows (id examples: 10348, 10349, 10351, 10352, 10353, ...)
+
+"IN76519581"
+  → "IN28919581"  (distance=3, band=LOW)
+  Found in:
+    sampling_recipes.skuCode: 3 rows (samplingNo examples: 132578, 1323957, 1328751)
+    sampling_usage_log.skuCodeRaw: 6 rows (id examples: 1682, 9113, 9114, 9115, 9118, ...)
+
+"IN84309059"
+  → "IN83009072"  (distance=4, band=LOW)
+  Found in:
+    sampling_recipes.skuCode: 3 rows (samplingNo examples: 132374, 132473, 132810)
+    sampling_usage_log.skuCodeRaw: 5 rows (id examples: 1249, 1406, 1407, 1408, 2291, ...)
+
+"5948179"
+  → "5838879"  (distance=3, band=LOW)
+  Found in:
+    sampling_recipes.skuCode: 3 rows (samplingNo examples: 618, 135149, 135301)
+    sampling_usage_log.skuCodeRaw: 4 rows (id examples: 974, 8011, 8251, 8252)
+
+"IN36819581"
+  → "IN28919581"  (distance=3, band=LOW)
+  Found in:
+    sampling_recipes.skuCode: 3 rows (samplingNo examples: 159, 343, 133951)
+    sampling_usage_log.skuCodeRaw: 3 rows (id examples: 281, 628, 5032)
+
+"IN36819681"
+  → "IN28109481"  (distance=4, band=LOW)
+  Found in:
+    sampling_recipes.skuCode: 2 rows (samplingNo examples: 221, 134156)
+    sampling_usage_log.skuCodeRaw: 4 rows (id examples: 412, 5583, 5584, 5585)
+
+"IN84309881"
+  → "IN83009081"  (distance=3, band=LOW)
+  Found in:
+    sampling_recipes.skuCode: 2 rows (samplingNo examples: 132624, 1322174)
+    sampling_usage_log.skuCodeRaw: 4 rows (id examples: 1759, 8496, 8497, 8498)
+
+"IN84309259"
+  → "IN87109025"  (distance=4, band=LOW)
+  Found in:
+    sampling_recipes.skuCode: 2 rows (samplingNo examples: 1322173, 1322850)
+    sampling_usage_log.skuCodeRaw: 4 rows (id examples: 8493, 8494, 8495, 8634)
+
+"in44709281"
+  → "IN28209281"  (distance=3, band=LOW)
+  Found in:
+    sampling_recipes.skuCode: 2 rows (samplingNo examples: 133020, 133942)
+    sampling_usage_log.skuCodeRaw: 3 rows (id examples: 2592, 2594, 5014)
+
+"IN46269681"
+  → "IN46359281"  (distance=3, band=LOW)
+  Found in:
+    sampling_recipes.skuCode: 1 row (samplingNo examples: 133053)
+    sampling_usage_log.skuCodeRaw: 4 rows (id examples: 2659, 2660, 2661, 2662)
+
+"IN76209481"
+  → "IN77009081"  (distance=3, band=LOW)
+  Found in:
+    sampling_recipes.skuCode: 2 rows (samplingNo examples: 1323325, 1323686)
+    sampling_usage_log.skuCodeRaw: 3 rows (id examples: 8770, 8771, 8937)
+
+"IN43109981"
+  → "IN83009081"  (distance=3, band=LOW)
+  Found in:
+    sampling_recipes.skuCode: 2 rows (samplingNo examples: 1323673, 1328347)
+    sampling_usage_log.skuCodeRaw: 3 rows (id examples: 8932, 8933, 9504)
+
+"IN76209582"
+  → "IN28209282"  (distance=3, band=LOW)
+  Found in:
+    sampling_recipes.skuCode: 2 rows (samplingNo examples: 1323924, 1323957)
+    sampling_usage_log.skuCodeRaw: 3 rows (id examples: 9084, 9085, 9117)
+
+"IN74009223"
+  → "IN27909223"  (distance=3, band=LOW)
+  Found in:
+    sampling_recipes.skuCode: 2 rows (samplingNo examples: 132525, 132526)
+    sampling_usage_log.skuCodeRaw: 2 rows (id examples: 1590, 1591)
+
+"IN46419081"
+  → "IN46359281"  (distance=3, band=LOW)
+  Found in:
+    sampling_recipes.skuCode: 1 row (samplingNo examples: 132554)
+    sampling_usage_log.skuCodeRaw: 3 rows (id examples: 1626, 1627, 1628)
+
+"IN84309681"
+  → "IN83009081"  (distance=3, band=LOW)
+  Found in:
+    sampling_recipes.skuCode: 1 row (samplingNo examples: 132690)
+    sampling_usage_log.skuCodeRaw: 2 rows (id examples: 1957, 1958)
+
+"5955816"
+  → "5579816"  (distance=3, band=LOW)
+  Found in:
+    sampling_recipes.skuCode: 1 row (samplingNo examples: 86)
+    sampling_usage_log.skuCodeRaw: 1 row (id examples: 115)
+
+"IN84309272"
+  → "IN83009072"  (distance=3, band=LOW)
+  Found in:
+    sampling_recipes.skuCode: 1 row (samplingNo examples: 132502)
+    sampling_usage_log.skuCodeRaw: 1 row (id examples: 1496)
+
+"IN44709223"
+  → "IN27909223"  (distance=3, band=LOW)
+  Found in:
+    sampling_recipes.skuCode: 1 row (samplingNo examples: 132503)
+    sampling_usage_log.skuCodeRaw: 1 row (id examples: 1497)
+
+"IN74009023"
+  → "IN79029003"  (distance=3, band=LOW)
+  Found in:
+    sampling_recipes.skuCode: 1 row (samplingNo examples: 132504)
+    sampling_usage_log.skuCodeRaw: 1 row (id examples: 1498)
+
+"IN84309472"
+  → "IN83009072"  (distance=3, band=LOW)
+  Found in:
+    sampling_recipes.skuCode: 1 row (samplingNo examples: 132506)
+    sampling_usage_log.skuCodeRaw: 1 row (id examples: 1500)
+
+"IN84309471"
+  → "IN83009071"  (distance=3, band=LOW)
+  Found in:
+    sampling_recipes.skuCode: 1 row (samplingNo examples: 132573)
+    sampling_usage_log.skuCodeRaw: 1 row (id examples: 1674)
+
+"IN84309581"
+  → "IN83009081"  (distance=3, band=LOW)
+  Found in:
+    sampling_recipes.skuCode: 1 row (samplingNo examples: 132719)
+    sampling_usage_log.skuCodeRaw: 1 row (id examples: 1996)
+
+"IN84309481"
+  → "IN83009081"  (distance=3, band=LOW)
+  Found in:
+    sampling_recipes.skuCode: 1 row (samplingNo examples: 132786)
+    sampling_usage_log.skuCodeRaw: 1 row (id examples: 2163)
+
+"in36409482"
+  → "IN30709082"  (distance=3, band=LOW)
+  Found in:
+    sampling_recipes.skuCode: 1 row (samplingNo examples: 133485)
+    sampling_usage_log.skuCodeRaw: 1 row (id examples: 3727)
+
+"IN23350081"
+  → "IN28301081"  (distance=3, band=LOW)
+  Found in:
+    sampling_recipes.skuCode: 1 row (samplingNo examples: 133660)
+    sampling_usage_log.skuCodeRaw: 1 row (id examples: 4256)
+
+"in36819281"
+  → "IN29319281"  (distance=3, band=LOW)
+  Found in:
+    sampling_recipes.skuCode: 1 row (samplingNo examples: 134549)
+    sampling_usage_log.skuCodeRaw: 1 row (id examples: 6642)
+
+"IN76209571"
+  → "IN77009071"  (distance=3, band=LOW)
+  Found in:
+    sampling_recipes.skuCode: 1 row (samplingNo examples: 1323957)
+    sampling_usage_log.skuCodeRaw: 1 row (id examples: 9116)
+
+"IN86309082"
+  → "IN83009072"  (distance=3, band=LOW)
+  Found in:
+    sampling_recipes.skuCode: 1 row (samplingNo examples: 1328276)
+    sampling_usage_log.skuCodeRaw: 1 row (id examples: 9311)
+
+
+=== UNRESOLVED ===
+(none)
+
+=== SUMMARY ===
+HIGH: 5 variants affecting 26 database rows
+MEDIUM: 112 variants affecting 6787 database rows
+LOW: 59 variants affecting 3749 database rows
+UNRESOLVED: 0 variants affecting 0 database rows
