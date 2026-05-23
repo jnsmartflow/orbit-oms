@@ -315,7 +315,8 @@ async function main(): Promise<void> {
 
     const samplingNo = toIntOrNull(row[cm.samplingNo!]);
     if (samplingNo == null) continue;
-    if (!existingParentSet.has(samplingNo)) {
+    // Phase 4: existingParentSet holds string samplingNos (TEXT column).
+    if (!existingParentSet.has(samplingNo.toString())) {
       skippedNoParent += 1;
       continue;
     }
@@ -573,7 +574,7 @@ async function main(): Promise<void> {
   for (const plan of plansArr) {
     try {
       await prisma.sampling_register.update({
-        where: { samplingNo: plan.samplingNo },
+        where: { samplingNo: plan.samplingNo.toString() },
         data: {
           createdAt:   plan.earliestAt ?? undefined,
           siteId:      plan.siteId,
@@ -601,7 +602,7 @@ async function main(): Promise<void> {
         const recipeId = u.recipeKey ? recipesByKey.get(u.recipeKey) ?? null : null;
         await prisma.sampling_usage_log.create({
           data: {
-            samplingNo:      u.samplingNo,
+            samplingNo:      u.samplingNo.toString(),
             recipeId,
             usageDate:       u.usageDate,
             operatorId:      null,

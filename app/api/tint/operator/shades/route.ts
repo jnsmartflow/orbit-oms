@@ -1,3 +1,9 @@
+// DEPRECATED (Phase 4, step 11): no longer called from the operator UI. The
+// Save-shade toggle was removed; every TI submit now writes to the Sampling
+// Library via /api/tint/operator/tinter-issue (+ /tinter-issue-b) using the
+// resolve-3-scenarios helper. This file stays in place per spec §4.4 in case
+// downstream code or scripts still reference it; do not extend it.
+
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { hasRole, ROLES } from "@/lib/rbac";

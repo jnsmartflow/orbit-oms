@@ -447,6 +447,7 @@ model delivery_point_master {
   orders                  orders[]
   // Sampling Library back-relation
   samplingRegisterEntries sampling_register[]
+  samplingUsageLogEntries sampling_usage_log[]
 }
 
 model delivery_point_contacts {
@@ -1002,14 +1003,18 @@ model tinter_issue_entries {
   tinterType       TinterType @default(TINTER)
   packCode         PackCode?
   rawLineItemId    Int?
+  samplingNo       String?
+  shadeName        String?
   createdAt        DateTime   @default(now())
 
-  order          orders                 @relation(fields: [orderId], references: [id])
-  split          order_splits?          @relation(fields: [splitId], references: [id])
-  tintAssignment tint_assignments?      @relation(fields: [tintAssignmentId], references: [id])
-  submittedBy    users                  @relation(fields: [submittedById], references: [id])
-  rawLineItem    import_raw_line_items? @relation(fields: [rawLineItemId], references: [id])
+  order             orders                 @relation(fields: [orderId], references: [id])
+  split             order_splits?          @relation(fields: [splitId], references: [id])
+  tintAssignment    tint_assignments?      @relation(fields: [tintAssignmentId], references: [id])
+  submittedBy       users                  @relation(fields: [submittedById], references: [id])
+  rawLineItem       import_raw_line_items? @relation(fields: [rawLineItemId], references: [id])
+  sampling_register sampling_register?     @relation("TinterIssueSampling", fields: [samplingNo], references: [samplingNo], onDelete: SetNull)
 
+  @@index([samplingNo])
   @@map("tinter_issue_entries")
 }
 
@@ -1078,14 +1083,18 @@ model tinter_issue_entries_b {
   tinterType       TinterType @default(ACOTONE)
   packCode         PackCode?
   rawLineItemId    Int?
+  samplingNo       String?
+  shadeName        String?
   createdAt        DateTime   @default(now())
 
-  order          orders                 @relation(fields: [orderId], references: [id])
-  split          order_splits?          @relation(fields: [splitId], references: [id])
-  tintAssignment tint_assignments?      @relation(fields: [tintAssignmentId], references: [id])
-  submittedBy    users                  @relation(fields: [submittedById], references: [id])
-  rawLineItem    import_raw_line_items? @relation(fields: [rawLineItemId], references: [id])
+  order             orders                 @relation(fields: [orderId], references: [id])
+  split             order_splits?          @relation(fields: [splitId], references: [id])
+  tintAssignment   tint_assignments?      @relation(fields: [tintAssignmentId], references: [id])
+  submittedBy       users                  @relation(fields: [submittedById], references: [id])
+  rawLineItem       import_raw_line_items? @relation(fields: [rawLineItemId], references: [id])
+  sampling_register sampling_register?     @relation("TinterIssueBSampling", fields: [samplingNo], references: [samplingNo], onDelete: SetNull)
 
+  @@index([samplingNo])
   @@map("tinter_issue_entries_b")
 }
 
@@ -1144,7 +1153,7 @@ model shade_master {
 // ─────────────────────────────────────────────
 
 model sampling_register {
-  samplingNo     Int                    @id
+  samplingNo     String                 @id
   shadeName      String
   tinterType     TinterType
   siteId         Int?
@@ -1158,11 +1167,13 @@ model sampling_register {
   createdAt      DateTime               @default(now())
   updatedAt      DateTime               @default(now()) @updatedAt
 
-  site         delivery_point_master? @relation(fields: [siteId], references: [id])
-  salesOfficer sales_officer_master?  @relation(fields: [salesOfficerId], references: [id])
-  createdBy    users                  @relation("SamplingRegisterCreatedBy", fields: [createdById], references: [id])
-  recipes      sampling_recipes[]
-  usageLog     sampling_usage_log[]
+  site                   delivery_point_master?   @relation(fields: [siteId], references: [id])
+  salesOfficer           sales_officer_master?    @relation(fields: [salesOfficerId], references: [id])
+  createdBy              users                    @relation("SamplingRegisterCreatedBy", fields: [createdById], references: [id])
+  recipes                sampling_recipes[]
+  usageLog               sampling_usage_log[]
+  tinter_issue_entries   tinter_issue_entries[]   @relation("TinterIssueSampling")
+  tinter_issue_entries_b tinter_issue_entries_b[] @relation("TinterIssueBSampling")
 
   @@index([tinterType, isActive])
   @@index([needsReview])
@@ -1173,7 +1184,7 @@ model sampling_register {
 
 model sampling_recipes {
   id          Int       @id @default(autoincrement())
-  samplingNo  Int
+  samplingNo  String
   skuCode     String
   productName String?
   packCode    PackCode
@@ -1226,13 +1237,14 @@ model sampling_recipes {
 
 model sampling_usage_log {
   id              Int       @id @default(autoincrement())
-  samplingNo      Int
+  samplingNo      String
   recipeId        Int?
   usageDate       DateTime? @db.Date
   operatorId      Int?
   operatorNameRaw String?
   tinQty          Decimal   @default(0)
   dealerNameRaw   String?
+  siteId          Int?
   siteNameRaw     String?
   skuCodeRaw      String?
   packCode        PackCode?
@@ -1240,14 +1252,16 @@ model sampling_usage_log {
   sourceRowIndex  Int?
   createdAt       DateTime  @default(now())
 
-  sampling sampling_register  @relation(fields: [samplingNo], references: [samplingNo], onDelete: Cascade)
-  recipe   sampling_recipes?  @relation(fields: [recipeId], references: [id], onDelete: SetNull)
-  operator users?             @relation("SamplingUsageOperator", fields: [operatorId], references: [id])
+  sampling sampling_register      @relation(fields: [samplingNo], references: [samplingNo], onDelete: Cascade)
+  recipe   sampling_recipes?      @relation(fields: [recipeId], references: [id], onDelete: SetNull)
+  operator users?                 @relation("SamplingUsageOperator", fields: [operatorId], references: [id])
+  site     delivery_point_master? @relation(fields: [siteId], references: [id])
 
   @@index([samplingNo])
   @@index([samplingNo, usageDate(sort: Desc)])
   @@index([operatorId, usageDate])
   @@index([siteNameRaw])
+  @@index([siteId], map: "idx_sampling_usage_log_site")
 }
 
 // ─────────────────────────────────────────────

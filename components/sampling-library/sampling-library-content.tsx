@@ -14,11 +14,14 @@ import { SamplingLibraryDetailPane } from "./sampling-library-detail-pane";
 
 // ── State ───────────────────────────────────────────────────────────────────
 
-function readSelectedSamplingNo(sp: URLSearchParams): number | null {
+// Phase 4: samplingNo is a string key ("26-0001" or legacy "313584"). Whitelist
+// matches the API route validation in app/api/sampling-library/[samplingNo]/*.
+function readSelectedSamplingNo(sp: URLSearchParams): string | null {
   const raw = sp.get("samplingNo");
-  if (!raw || !/^\d+$/.test(raw)) return null;
-  const n = parseInt(raw, 10);
-  return Number.isFinite(n) ? n : null;
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  if (!/^[A-Za-z0-9-]+$/.test(trimmed)) return null;
+  return trimmed;
 }
 
 function readState(sp: URLSearchParams): SamplingFilterState {
@@ -108,9 +111,9 @@ export function SamplingLibraryContent() {
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
   }, [router, pathname, sp]);
 
-  const selectSamplingNo = useCallback((samplingNo: number) => {
+  const selectSamplingNo = useCallback((samplingNo: string) => {
     const next = new URLSearchParams(sp.toString());
-    next.set("samplingNo", String(samplingNo));
+    next.set("samplingNo", samplingNo);
     const qs = next.toString();
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
   }, [router, pathname, sp]);
@@ -176,7 +179,7 @@ export function SamplingLibraryContent() {
         activeFilters={activeFilters}
         onFilterChange={handleFilterChange}
         showDatePicker={false}
-        searchPlaceholder="Search sampling no., shade name…"
+        searchPlaceholder="Search sampling no., shade, site, code…"
         searchValue={state.search}
         onSearchChange={(v) => updateUrl({ search: v })}
         rightExtra={

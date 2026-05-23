@@ -16,7 +16,7 @@ import { smartTitleCase } from "@/lib/mail-orders/utils";
 // ── API response types ─────────────────────────────────────────────────────
 
 interface DetailResponse {
-  samplingNo:       number;
+  samplingNo:       string;
   shadeName:        string;
   tinterType:       "TINTER" | "ACOTONE";
   siteId:           number | null;
@@ -97,7 +97,7 @@ interface Variant {
 }
 
 interface VariantsResponse {
-  samplingNo: number;
+  samplingNo: string;
   variants:   Variant[];
   total:      number;
 }
@@ -160,7 +160,7 @@ const PIGMENT_ORDER_27 = [
 // ── Component ──────────────────────────────────────────────────────────────
 
 export interface SamplingLibraryDetailPaneProps {
-  samplingNo: number | null;
+  samplingNo: string | null;
 }
 
 export function SamplingLibraryDetailPane({

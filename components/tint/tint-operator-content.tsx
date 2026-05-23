@@ -8,8 +8,19 @@ import { cn } from "@/lib/utils";
 import { useSkuDisplayMode } from "@/lib/hooks/use-sku-display-mode";
 import { pickSkuDisplay, type SkuDisplay } from "@/types/sku-display";
 import { SkuDisplayToggle } from "@/components/tint/sku-display-toggle";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+// Phase 4 — Sampling Library suggestion card replaces the legacy shade_master
+// suggestion strip + "All shades…" popover. Step 11 retired the save-as-shade
+// toggle; /suggest + /tinter-issue now handle the full Library write path.
+import { SuggestionCard } from "@/components/tint/operator/suggestion-card";
+import {
+  SaveSamplingPopup,
+  type SaveSamplingResult,
+} from "@/components/tint/operator/save-sampling-popup";
+import type {
+  SuggestResponse,
+  SuggestExactMatch,
+  SuggestReferenceItem,
+} from "@/app/api/sampling-library/_lib/suggest";
 import { Button } from "@/components/ui/button";
 import { TINTER_SHADE_COLORS, ACOTONE_SHADE_COLORS } from "@/lib/tint/shade-colors";
 import { humaniseReason } from "@/lib/tint/pause-reasons";
@@ -59,6 +70,9 @@ interface OperatorSplit {
     routeName:          string | null;
     deliveryTypeName:   string | null;
     dispatchSlot:       string | null;
+    // Phase 4 — orders.customerId FK to delivery_point_master.id; the
+    // numeric site key needed by the /api/sampling-library/suggest endpoint.
+    customerId:         number | null;
     customer: {
       customerName: string;
       area: { name: string };
@@ -80,6 +94,8 @@ interface OperatorOrder {
   areaName:           string | null;
   routeName:          string | null;
   deliveryTypeName:   string | null;
+  // Phase 4 — see comment in OperatorSplit.order.customerId.
+  customerId:         number | null;
   customer: {
     customerName: string;
     area:         { name: string };
@@ -121,24 +137,6 @@ interface OperatorOrder {
   }[];
 }
 
-interface ShadeMasterRecord {
-  id:                number;
-  shadeName:         string;
-  shipToCustomerId:  string;
-  shipToCustomerName: string;
-  tinterType:        "TINTER" | "ACOTONE";
-  packCode:          string | null;
-  skuCode:           string | null;
-  baseSku:           string;
-  tinQty:            number;
-  YOX: number; LFY: number; GRN: number; TBL: number; WHT: number;
-  MAG: number; FFR: number; BLK: number; OXR: number; HEY: number;
-  HER: number; COB: number; COG: number;
-  YE2: number; YE1: number; XY1: number; XR1: number; WH1: number;
-  RE2: number; RE1: number; OR1: number; NO2: number; NO1: number;
-  MA1: number; GR1: number; BU2: number; BU1: number;
-}
-
 interface TintingLine {
   rawLineItemId:     number;
   skuCodeRaw:        string;
@@ -158,20 +156,15 @@ interface TIFormEntry {
   packCode:            string | null;
   tinQty:              number;
   shadeValues:         Record<string, number>;
-  suggestions:         ShadeSuggestion[];
-  suggestionsLoading:  boolean;
-  suggestionsExpanded: boolean;
-  saveAsShade:         boolean;
   shadeName:           string;
-  shadeNameError:      string;
   flashActive:         boolean;
   selectedShadeName:   string | null;
-  selectedShadeId:     number | null;
   showAllColumns:      boolean;
-}
-
-interface ShadeSuggestion extends ShadeMasterRecord {
-  lastUsedAt: string | null;
+  // Phase 4 — Sampling Library linkage. Set when operator clicks a
+  // SuggestionCard row (existing samplingNo) OR when a fresh shade is
+  // saved (allocated samplingNo from the TI POST response). null on the
+  // legacy save-as-shade path until step 11 retires that.
+  samplingNo:          string | null;
 }
 
 interface TIEntryRecord {
@@ -182,6 +175,10 @@ interface TIEntryRecord {
   tinQty:        number;
   packCode:      string | null;
   shadeValues:   Record<string, number>;
+  // Phase 4 (step 13) — Sampling Library linkage round-tripped via the GET
+  // endpoint so the "Linked sampling" card survives page reload.
+  samplingNo:    string | null;
+  shadeName:     string | null;
   createdAt:     string;
 }
 
@@ -203,6 +200,10 @@ interface Job {
   tintAssignmentId:   number | null;
   shipToCustomerId:   string;
   shipToCustomerName: string | null;
+  // Phase 4 — numeric FK to delivery_point_master.id; sourced from
+  // orders.customerId. Required by the suggest endpoint (which doesn't
+  // accept the SAP-code shipToCustomerId string).
+  siteId:             number | null;
   billToCustomerId:   string | null;
   billToCustomerName: string | null;
   areaName:           string | null;
@@ -319,15 +320,10 @@ function defaultTIFormEntry(): TIFormEntry {
     packCode:            null,
     tinQty:              0,
     shadeValues:         {},
-    suggestions:         [],
-    suggestionsLoading:  false,
-    suggestionsExpanded: false,
-    saveAsShade:         false,
+    samplingNo:          null,
     shadeName:           "",
-    shadeNameError:      "",
     flashActive:         false,
     selectedShadeName:   null,
-    selectedShadeId:     null,
     showAllColumns:      true,
   };
 }
@@ -429,20 +425,21 @@ export function TintOperatorContent() {
   // ── TI form state ────────────────────────────────────────────────────────
   const [tinterType,         setTinterType]         = useState<"TINTER" | "ACOTONE">("TINTER");
   const [tiEntries,          setTiEntries]          = useState<TIFormEntry[]>(() => [defaultTIFormEntry()]);
-  const [allSavedShades,     setAllSavedShades]     = useState<ShadeMasterRecord[]>([]);
-  const [allShadesLoading,   setAllShadesLoading]   = useState(false);
-  const [allShadesComboOpen, setAllShadesComboOpen] = useState<string | null>(null);
-  const [allShadesSearch,    setAllShadesSearch]    = useState("");
+  // Phase 4 — per-entry Sampling Library suggest data (keyed by entry.id).
+  // suggestDataByEntry[entryId] === null means "fetch in flight"; undefined
+  // means "no fetch attempted yet"; a SuggestResponse means "loaded".
+  const [suggestDataByEntry,    setSuggestDataByEntry]    = useState<Record<string, SuggestResponse | null>>({});
+  const [suggestLoadingByEntry, setSuggestLoadingByEntry] = useState<Record<string, boolean>>({});
+  // Per-entry version counter so stale fetches (SKU changed mid-fetch) get
+  // discarded on response. Increment on every kick-off.
+  const suggestVersionRef = useRef<Record<string, number>>({});
   const [tiActionLoading,    setTiActionLoading]    = useState(false);
-  const [conflictDialog,     setConflictDialog]     = useState<{
-    existingId:   number;
-    shadeName:    string;
-    entryId:      string;
-    job:          Job;
-    remainingIds: string[];
-  } | null>(null);
   const [tiSuccessToast,      setTiSuccessToast]      = useState(false);
   const [tiUpdateToast,       setTiUpdateToast]       = useState(false);
+  // Phase 4 (step 12) — Save TI confirmation popup state. Non-null when a
+  // Scenario 1 (new sampling) or Scenario 2 (new variant) save just landed;
+  // null when no popup is showing or the save was Scenario 3 (silent update).
+  const [samplingPopup,       setSamplingPopup]       = useState<SaveSamplingResult | null>(null);
   const [tiIncompleteWarning, setTiIncompleteWarning] = useState<{
     rawLineItemId:     number;
     skuCodeRaw:        string;
@@ -509,6 +506,7 @@ export function TintOperatorContent() {
       type RawEntry = Record<string, unknown> & {
         id: number; rawLineItemId: number | null; baseSku: string;
         tinQty: unknown; packCode: string | null; createdAt: string;
+        samplingNo?: string | null; shadeName?: string | null;
       };
       const rawA = resA.ok ? (await resA.json()) as { entries: RawEntry[] } : null;
       const rawB = resB.ok ? (await resB.json()) as { entries: RawEntry[] } : null;
@@ -522,7 +520,7 @@ export function TintOperatorContent() {
         if (e.rawLineItemId == null) continue;
         const sv: Record<string, number> = {};
         for (const col of TINTER_COLS) sv[col] = Number(e[col] ?? 0);
-        const rec: TIEntryRecord = { id: e.id, table: "TINTER", rawLineItemId: e.rawLineItemId, baseSku: e.baseSku, tinQty: Number(e.tinQty), packCode: e.packCode, shadeValues: sv, createdAt: e.createdAt };
+        const rec: TIEntryRecord = { id: e.id, table: "TINTER", rawLineItemId: e.rawLineItemId, baseSku: e.baseSku, tinQty: Number(e.tinQty), packCode: e.packCode, shadeValues: sv, samplingNo: e.samplingNo ?? null, shadeName: e.shadeName ?? null, createdAt: e.createdAt };
         const ex = map.get(e.rawLineItemId);
         if (!ex || new Date(e.createdAt) > new Date(ex.createdAt)) map.set(e.rawLineItemId, rec);
       }
@@ -530,7 +528,7 @@ export function TintOperatorContent() {
         if (e.rawLineItemId == null) continue;
         const sv: Record<string, number> = {};
         for (const col of ACOTONE_COLS) sv[col] = Number(e[col] ?? 0);
-        const rec: TIEntryRecord = { id: e.id, table: "ACOTONE", rawLineItemId: e.rawLineItemId, baseSku: e.baseSku, tinQty: Number(e.tinQty), packCode: e.packCode, shadeValues: sv, createdAt: e.createdAt };
+        const rec: TIEntryRecord = { id: e.id, table: "ACOTONE", rawLineItemId: e.rawLineItemId, baseSku: e.baseSku, tinQty: Number(e.tinQty), packCode: e.packCode, shadeValues: sv, samplingNo: e.samplingNo ?? null, shadeName: e.shadeName ?? null, createdAt: e.createdAt };
         const ex = map.get(e.rawLineItemId);
         if (!ex || new Date(e.createdAt) > new Date(ex.createdAt)) map.set(e.rawLineItemId, rec);
       }
@@ -631,6 +629,7 @@ export function TintOperatorContent() {
         tintAssignmentId:  null,
         shipToCustomerId:  s.order.shipToCustomerId,
         shipToCustomerName: s.order.shipToCustomerName,
+        siteId:             s.order.customerId ?? null,
         billToCustomerId:   s.order.billToCustomerId ?? null,
         billToCustomerName: s.order.billToCustomerName ?? null,
         areaName:           s.order.areaName ?? null,
@@ -669,6 +668,7 @@ export function TintOperatorContent() {
         tintAssignmentId:  o.tintAssignments[0]?.id ?? null,
         shipToCustomerId:  o.shipToCustomerId,
         shipToCustomerName: o.shipToCustomerName,
+        siteId:             o.customerId ?? null,
         billToCustomerId:   o.billToCustomerId ?? null,
         billToCustomerName: o.billToCustomerName ?? null,
         areaName:           o.areaName ?? null,
@@ -759,13 +759,12 @@ export function TintOperatorContent() {
   useEffect(() => {
     setTinterType("TINTER");
     setTiEntries([defaultTIFormEntry()]);
-    setAllSavedShades([]);
-    setAllShadesLoading(false);
-    setAllShadesComboOpen(null);
-    setAllShadesSearch("");
-    setConflictDialog(null);
+    setSuggestDataByEntry({});
+    setSuggestLoadingByEntry({});
+    suggestVersionRef.current = {};
     setTiSuccessToast(false);
     setTiUpdateToast(false);
+    setSamplingPopup(null);
     setTiIncompleteWarning(null);
     setExistingTIEntries(new Map());
     setEditingEntryId(null);
@@ -773,17 +772,9 @@ export function TintOperatorContent() {
     autoSelectDoneRef.current = false;
   }, [selectedJobId, selectedJobType]);
 
-  // Load all saved shades when job or tinterType changes
-  useEffect(() => {
-    if (!selectedJob?.shipToCustomerId) { setAllSavedShades([]); return; }
-    setAllShadesLoading(true);
-    fetch(`/api/tint/operator/shades?shipToCustomerId=${encodeURIComponent(selectedJob.shipToCustomerId)}&tinterType=${tinterType}`)
-      .then(r => r.ok ? r.json() : null)
-      .then((d: { data: ShadeMasterRecord[] } | null) => { if (d) setAllSavedShades(d.data); })
-      .catch(() => {})
-      .finally(() => setAllShadesLoading(false));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedJob?.shipToCustomerId, tinterType]);
+  // (Phase 4) The legacy preload of /api/tint/operator/shades is gone —
+  // SuggestionCard fetches per-entry from /api/sampling-library/suggest
+  // via fetchSuggestForEntry(), called from handleSkuSelect below.
 
   // Load existing TI entries when job changes
   useEffect(() => {
@@ -806,16 +797,64 @@ export function TintOperatorContent() {
   const completedCount  = completedOrders.length + completedSplits.length;
   // (volumeDone, remainingVolume, sortedSplits, sortedOrders removed — no longer displayed)
 
+  // Phase 4 — site history badge. Pull siteHistorySummary from any entry's
+  // loaded suggest data; all entries on the same job share the same site
+  // so the first available answer is the canonical one. null until at
+  // least one suggest call returns.
+  const siteHistorySummary = useMemo(() => {
+    for (const e of tiEntries) {
+      const d = suggestDataByEntry[e.id];
+      if (d?.siteHistorySummary) return d.siteHistorySummary;
+    }
+    return null;
+  }, [tiEntries, suggestDataByEntry]);
+
   // ── TI form functions ─────────────────────────────────────────────────────
 
   function handleTinterTypeChange(type: "TINTER" | "ACOTONE") {
     setTinterType(type);
     setTiEntries(prev => prev.map(e => ({
       ...e,
-      shadeValues: {}, suggestions: [], suggestionsLoading: false,
-      selectedShadeName: null, selectedShadeId: null, showAllColumns: true,
+      shadeValues: {},
+      selectedShadeName: null, showAllColumns: true,
+      samplingNo: null,
+      shadeName: "",
     })));
-    setAllSavedShades([]);
+    // Phase 4 — clear per-entry suggest state so the suggest endpoint
+    // refetches against the new tinterType (siteHistorySummary is shared
+    // across types but exact-match filters by recipe.packCode + skuCode
+    // which is tinterType-bucketed in practice).
+    setSuggestDataByEntry({});
+    setSuggestLoadingByEntry({});
+    suggestVersionRef.current = {};
+  }
+
+  // ── Phase 4: Sampling Library suggest fetch (per-entry) ──────────────────
+  //
+  // Called from handleSkuSelect when the operator picks a new SKU line on
+  // an entry. Skips when siteId or skuCode or packCode is missing. Race-
+  // safe via suggestVersionRef counter — late responses for a stale
+  // (entryId × SKU × pack) tuple are discarded.
+  function fetchSuggestForEntry(entryId: string, skuCode: string, packCode: string, siteId: number): void {
+    const myVersion = (suggestVersionRef.current[entryId] ?? 0) + 1;
+    suggestVersionRef.current[entryId] = myVersion;
+    setSuggestLoadingByEntry(prev => ({ ...prev, [entryId]: true }));
+    setSuggestDataByEntry(prev => ({ ...prev, [entryId]: null }));
+    const url =
+      `/api/sampling-library/suggest?siteId=${siteId}` +
+      `&skuCode=${encodeURIComponent(skuCode)}` +
+      `&packCode=${encodeURIComponent(packCode)}`;
+    fetch(url)
+      .then(r => r.ok ? r.json() as Promise<SuggestResponse> : null)
+      .then(data => {
+        if (suggestVersionRef.current[entryId] !== myVersion) return; // stale
+        setSuggestDataByEntry(prev => ({ ...prev, [entryId]: data }));
+      })
+      .catch(() => { /* render-nothing on failure per spec */ })
+      .finally(() => {
+        if (suggestVersionRef.current[entryId] !== myVersion) return;
+        setSuggestLoadingByEntry(prev => ({ ...prev, [entryId]: false }));
+      });
   }
 
   function handleSkuSelect(entryId: string, rawLineItemId: number) {
@@ -833,13 +872,13 @@ export function TintOperatorContent() {
       packCode:           line.packCode,
       tinQty:             existing ? existing.tinQty : line.unitQty,
       shadeValues:        existing ? existing.shadeValues : {},
-      suggestions:        [],
-      suggestionsLoading: !existing && !!line.packCode,
-      suggestionsExpanded: false,
       flashActive:        !!existing,
-      selectedShadeName:  null,
-      selectedShadeId:    null,
+      // Phase 4 (step 13): show "Linked sampling" card on edit re-open by
+      // surfacing the saved selectedShadeName too. Cleared on new entries.
+      selectedShadeName:  existing ? (existing.shadeName ?? null) : null,
       showAllColumns:     existing ? false : true,
+      samplingNo:         existing ? existing.samplingNo : null,
+      shadeName:          existing ? (existing.shadeName ?? "") : "",
     }));
 
     if (existing) {
@@ -851,133 +890,129 @@ export function TintOperatorContent() {
       return;
     }
 
-    // No existing entry — new entry mode
+    // Phase 4 — kick off suggest fetch for this (entry, SKU, pack, site).
     setEditingEntryId(null);
-    if (!line.packCode) return;
-    const url = `/api/tint/operator/shades?shipToCustomerId=${encodeURIComponent(selectedJob.shipToCustomerId)}&tinterType=${tinterType}&skuCode=${encodeURIComponent(line.skuCodeRaw)}&packCode=${encodeURIComponent(line.packCode)}`;
-    fetch(url)
-      .then(r => r.ok ? r.json() : null)
-      .then((d: { data: ShadeSuggestion[] } | null) => {
-        setTiEntries(prev => prev.map(e => e.id !== entryId ? e : {
-          ...e, suggestions: d?.data ?? [], suggestionsLoading: false,
-        }));
-      })
-      .catch(() => {
-        setTiEntries(prev => prev.map(e => e.id !== entryId ? e : { ...e, suggestionsLoading: false }));
-      });
+    if (!line.packCode || selectedJob.siteId == null) return;
+    fetchSuggestForEntry(entryId, line.skuCodeRaw, line.packCode, selectedJob.siteId);
   }
 
-  function applyShadeToEntry(entryId: string, shade: ShadeMasterRecord) {
+  // ── Phase 4: apply a SuggestionCard pick to an entry ─────────────────────
+  function applySuggestionToEntry(entryId: string, card: SuggestExactMatch | SuggestReferenceItem): void {
     const cols = tinterType === "TINTER" ? SHADES : ACOTONE_SHADES;
     const shadeValues: Record<string, number> = {};
     for (const col of cols) {
-      shadeValues[col.code] = Number(shade[col.code as keyof ShadeMasterRecord]) || 0;
+      shadeValues[col.code] = Number(card.pigments[col.code] ?? 0);
     }
-
-    // Auto-match SKU line if the shade has a skuCode
-    const matchedLine = shade.skuCode
-      ? (tintingLines.find(l => l.skuCodeRaw === shade.skuCode) ?? null)
-      : null;
-
-    setTiEntries(prev => prev.map(e => {
-      if (e.id !== entryId) return e;
-      return {
-        ...e,
-        tinQty:            matchedLine ? matchedLine.unitQty : shade.tinQty,
-        shadeValues,
-        flashActive:       true,
-        selectedShadeName: shade.shadeName,
-        selectedShadeId:   shade.id,
-        showAllColumns:    false,
-        ...(matchedLine ? {
-          rawLineItemId:     matchedLine.rawLineItemId,
-          skuCodeRaw:        matchedLine.skuCodeRaw,
-          skuDescriptionRaw: matchedLine.skuDescriptionRaw ?? "",
-          unitQty:           matchedLine.unitQty,
-          packCode:          matchedLine.packCode,
-          suggestions:       [],
-          suggestionsLoading: false,
-        } : {}),
-      };
+    setTiEntries(prev => prev.map(e => e.id !== entryId ? e : {
+      ...e,
+      shadeValues,
+      samplingNo:        card.samplingNo,
+      shadeName:         card.shadeName,
+      selectedShadeName: card.shadeName,
+      flashActive:       true,
+      showAllColumns:    false,
     }));
     setTimeout(() => {
       setTiEntries(prev => prev.map(e => e.id !== entryId ? e : { ...e, flashActive: false }));
     }, 1500);
   }
 
-  function buildShadeBody(entry: TIFormEntry, job: Job): Record<string, unknown> {
-    const cols = tinterType === "TINTER" ? SHADES : ACOTONE_SHADES;
-    const body: Record<string, unknown> = {
-      shadeName:          entry.shadeName.trim(),
-      shipToCustomerId:   job.shipToCustomerId,
-      shipToCustomerName: job.shipToCustomerName ?? job.customerName,
-      tinterType,
-      packCode:           entry.packCode || null,
-      skuCode:            entry.skuCodeRaw || null,
-      baseSku:            entry.skuCodeRaw,
-      tinQty:             entry.tinQty,
-    };
-    for (const col of cols) {
-      body[col.code] = entry.shadeValues[col.code] ?? 0;
-    }
-    return body;
-  }
-
-  async function saveShadesThenSubmitTI(job: Job, entryIds: string[], andStart: boolean = true) {
-    for (const entryId of entryIds) {
-      const entry = tiEntries.find(e => e.id === entryId);
-      if (!entry?.saveAsShade) continue;
-      const shadeRes = await fetch("/api/tint/operator/shades", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(buildShadeBody(entry, job)),
-      });
-      if (shadeRes.status === 409) {
-        const data = (await shadeRes.json()) as { existingId: number; shadeName: string };
-        setConflictDialog({
-          existingId:   data.existingId,
-          shadeName:    data.shadeName,
-          entryId,
-          job,
-          remainingIds: entryIds.slice(entryIds.indexOf(entryId) + 1),
-        });
-        setTiActionLoading(false);
-        return;
-      }
-      if (!shadeRes.ok) throw new Error("Failed to save shade formula");
-    }
-    // All shades saved — submit TI
+  // Phase 4 (step 11): unconditional Sampling Library write — payload always
+  // carries samplingNo (null for fresh shades) + shadeName. The server's
+  // resolve-3-scenarios helper handles new-sampling / new-variant / existing-
+  // variant routing in one call. No client-side /shades POST anymore.
+  async function saveShadesThenSubmitTI(job: Job, _entryIds: string[], andStart: boolean = true) {
     const cols    = tinterType === "TINTER" ? SHADES : ACOTONE_SHADES;
     const entries = tiEntries.filter(e => e.skuCodeRaw && e.tinQty > 0);
-    if (tinterType === "TINTER") {
-      const res = await fetch("/api/tint/operator/tinter-issue", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          orderId:          job.orderId,
-          splitId:          job.type === "split" ? job.id : undefined,
-          tintAssignmentId: job.type === "order" ? job.tintAssignmentId : undefined,
-          entries: entries.map(e => ({
-            rawLineItemId: e.rawLineItemId || undefined,
-            baseSku: e.skuCodeRaw, tinQty: e.tinQty, packCode: e.packCode || null,
-            ...Object.fromEntries(cols.map(c => [c.code, e.shadeValues[c.code] ?? 0])),
-          })),
-        }),
-      });
-      if (!res.ok) { const err = (await res.json()) as { error?: string }; throw new Error(err.error ?? "Failed to submit TI"); }
-    } else {
-      const res = await fetch("/api/tint/operator/tinter-issue-b", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          splitId:          job.type === "split" ? job.id : undefined,
-          tintAssignmentId: job.type === "order" ? job.tintAssignmentId : undefined,
-          entries: entries.map(e => ({
-            rawLineItemId: e.rawLineItemId || undefined,
-            baseSku: e.skuCodeRaw, tinQty: e.tinQty, packCode: e.packCode || null,
-            ...Object.fromEntries(cols.map(c => [c.code, e.shadeValues[c.code] ?? 0])),
-          })),
-        }),
-      });
-      if (!res.ok) { const err = (await res.json()) as { error?: string }; throw new Error(err.error ?? "Failed to submit TI"); }
+    const endpoint = tinterType === "TINTER"
+      ? "/api/tint/operator/tinter-issue"
+      : "/api/tint/operator/tinter-issue-b";
+    const payload = {
+      ...(tinterType === "TINTER" ? { orderId: job.orderId } : {}),
+      splitId:          job.type === "split" ? job.id : undefined,
+      tintAssignmentId: job.type === "order" ? job.tintAssignmentId : undefined,
+      entries: entries.map(e => ({
+        rawLineItemId: e.rawLineItemId || undefined,
+        baseSku: e.skuCodeRaw, tinQty: e.tinQty, packCode: e.packCode || null,
+        samplingNo:    e.samplingNo,
+        shadeName:     e.shadeName.trim() || null,
+        ...Object.fromEntries(cols.map(c => [c.code, e.shadeValues[c.code] ?? 0])),
+      })),
+    };
+    const res = await fetch(endpoint, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const err = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(err.error ?? "Failed to submit TI");
     }
+    // Response shape (per spec §4.2): { success, entries: [{ tiEntryId,
+    // allocatedSamplingNo, isNewSampling, isNewVariant }] }. Both TINTER and
+    // ACOTONE POST handlers iterate the request payload's entries sequentially
+    // and push onto results in-order, so response.entries[i] corresponds
+    // positionally to entries[i] above — safe to use index for packCode/etc.
+    const data = (await res.json().catch(() => null)) as {
+      success?: number;
+      entries?: Array<{
+        tiEntryId:           number;
+        allocatedSamplingNo: string;
+        isNewSampling:       boolean;
+        isNewVariant:        boolean;
+      }>;
+    } | null;
+    const respEntries = data?.entries ?? [];
+
+    // Write allocated samplingNo back to form state for the brief window before
+    // loadExistingTIEntries refetches and the auto-select effect repopulates.
+    // Step 13 will extend the TI GET endpoint to round-trip samplingNo so the
+    // value survives the reload; popup correctness here doesn't depend on it
+    // — the popup reads `firstNew`/`firstVariant` directly off respEntries.
+    setTiEntries(prev => {
+      const filteredIdxByEntryId = new Map<string, number>();
+      let k = 0;
+      for (const e of prev) {
+        if (e.skuCodeRaw && e.tinQty > 0) filteredIdxByEntryId.set(e.id, k++);
+      }
+      return prev.map(e => {
+        const i = filteredIdxByEntryId.get(e.id);
+        if (i === undefined) return e;
+        const r = respEntries[i];
+        if (!r) return e;
+        // Surface selectedShadeName too so the Applied shade bar pill appears
+        // immediately after a fresh-shade save (step 13c). For picker-clicked
+        // entries selectedShadeName is already set; this fills the gap for
+        // hand-typed shade names where applySuggestionToEntry never ran.
+        const nextSelected = e.selectedShadeName ?? (e.shadeName.trim() || null);
+        return {
+          ...e,
+          samplingNo:        r.allocatedSamplingNo,
+          selectedShadeName: nextSelected,
+        };
+      });
+    });
+
+    // First Scenario 1 wins the popup; otherwise first Scenario 2; else silent.
+    const firstNew = respEntries.find(r => r.isNewSampling);
+    const firstVariant = !firstNew
+      ? respEntries.find(r => r.isNewVariant)
+      : undefined;
+    if (firstNew) {
+      const idx = respEntries.indexOf(firstNew);
+      setSamplingPopup({
+        scenario:   "new_sampling",
+        samplingNo: firstNew.allocatedSamplingNo,
+        packCode:   entries[idx]?.packCode ?? null,
+      });
+    } else if (firstVariant) {
+      const idx = respEntries.indexOf(firstVariant);
+      setSamplingPopup({
+        scenario:   "new_variant",
+        samplingNo: firstVariant.allocatedSamplingNo,
+        packCode:   entries[idx]?.packCode ?? null,
+      });
+    }
+
     await fetchOrders();
     await loadExistingTIEntries(job);
     // existingTIEntries update triggers the auto-select effect which repopulates the form
@@ -994,47 +1029,19 @@ export function TintOperatorContent() {
     for (const e of tiEntries) {
       if (!e.skuCodeRaw) { setError("Select a SKU line for all entries"); return; }
       if (e.tinQty <= 0) { setError("Tin Qty must be greater than 0 for all entries"); return; }
-    }
-    for (const e of tiEntries) {
-      if (e.saveAsShade && !e.shadeName.trim()) {
-        setTiEntries(prev => prev.map(en => en.id === e.id ? { ...en, shadeNameError: "Shade name is required" } : en));
+      // Phase 4 (step 11): unconditional Sampling Library write. Without a
+      // picked suggestion (samplingNo) the operator must type a fresh name.
+      if (!e.samplingNo && !e.shadeName.trim()) {
+        setError("Enter a shade name or pick a suggestion above");
         return;
       }
     }
     setTiActionLoading(true);
     setError(null);
     try {
-      const saveIds = tiEntries.filter(e => e.saveAsShade).map(e => e.id);
-      await saveShadesThenSubmitTI(job, saveIds, andStart);
+      await saveShadesThenSubmitTI(job, [], andStart);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to submit TI");
-    } finally {
-      setTiActionLoading(false);
-    }
-  }
-
-  async function handleConflictOverwrite() {
-    if (!conflictDialog) return;
-    const { existingId, job, entryId, remainingIds } = conflictDialog;
-    setConflictDialog(null);
-    setTiActionLoading(true);
-    setError(null);
-    try {
-      const entry = tiEntries.find(e => e.id === entryId);
-      if (entry) {
-        const res = await fetch(`/api/tint/operator/shades/${existingId}`, {
-          method: "PUT", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(buildShadeBody(entry, job)),
-        });
-        if (!res.ok) throw new Error("Failed to overwrite shade formula");
-      }
-      if (remainingIds[0] === "__EDIT__") {
-        await doPatchEntry(job);
-      } else {
-        await saveShadesThenSubmitTI(job, remainingIds);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to overwrite shade");
     } finally {
       setTiActionLoading(false);
     }
@@ -1058,12 +1065,13 @@ export function TintOperatorContent() {
           packCode:           line.packCode,
           tinQty:             existing.tinQty,
           shadeValues:        existing.shadeValues,
-          suggestions:        [],
-          suggestionsLoading: false,
-          suggestionsExpanded: false,
           flashActive:        true,
-          selectedShadeName:  null,
-          selectedShadeId:    null,
+          // Phase 4 (step 13): hydrate Sampling Library linkage from the
+          // saved record (round-tripped via the GET endpoint), so the
+          // "Linked sampling" card renders after page reload.
+          samplingNo:         existing.samplingNo,
+          shadeName:          existing.shadeName ?? "",
+          selectedShadeName:  existing.shadeName ?? null,
           showAllColumns:     false,
         }, ...prev.slice(1)];
       });
@@ -1094,6 +1102,13 @@ export function TintOperatorContent() {
         tinQty:        entry.tinQty,
         packCode:      entry.packCode || null,
         rawLineItemId: entry.rawLineItemId ?? undefined,
+        // Phase 4 (step 11): always send samplingNo + shadeName so the PATCH
+        // endpoint can correctly route Scenario 3 mid-edit (same samplingNo →
+        // update existing recipe's pigments) vs operator switching to a
+        // different suggestion mid-edit (new samplingNo → rewrite TI row,
+        // don't clobber the old shade's recipe).
+        samplingNo:    entry.samplingNo,
+        shadeName:     entry.shadeName.trim() || null,
         ...Object.fromEntries(cols.map(c => [c.code, entry.shadeValues[c.code] ?? 0])),
       }),
     });
@@ -1112,26 +1127,13 @@ export function TintOperatorContent() {
     if (!entry || !editingEntryId) return;
     if (!entry.skuCodeRaw) { setError("Select a SKU line for entry 1"); return; }
     if (entry.tinQty <= 0) { setError("Tin Qty must be greater than 0 for entry 1"); return; }
-    if (entry.saveAsShade && !entry.shadeName.trim()) {
-      setTiEntries(prev => prev.map((en, i) => i === 0 ? { ...en, shadeNameError: "Shade name is required" } : en));
+    if (!entry.samplingNo && !entry.shadeName.trim()) {
+      setError("Enter a shade name or pick a suggestion above");
       return;
     }
     setTiActionLoading(true);
     setError(null);
     try {
-      if (entry.saveAsShade) {
-        const shadeRes = await fetch("/api/tint/operator/shades", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(buildShadeBody(entry, job)),
-        });
-        if (shadeRes.status === 409) {
-          const data = (await shadeRes.json()) as { existingId: number; shadeName: string };
-          setConflictDialog({ existingId: data.existingId, shadeName: data.shadeName, entryId: entry.id, job, remainingIds: ["__EDIT__"] });
-          setTiActionLoading(false);
-          return;
-        }
-        if (!shadeRes.ok) throw new Error("Failed to save shade formula");
-      }
       await doPatchEntry(job);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update entry");
@@ -1574,7 +1576,25 @@ export function TintOperatorContent() {
           </div>
           <div className="bg-gray-50 border border-gray-200 rounded-lg px-3.5 py-3">
             <div className="text-[9px] font-semibold uppercase tracking-[.4px] text-gray-400 mb-1">Ship to (site)</div>
-            <div className="text-[13px] font-semibold text-gray-900">{selectedJob.customerName}</div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="text-[13px] font-semibold text-gray-900">{selectedJob.customerName}</div>
+              {/* Phase 4 (step 16b) — site history badge. Violet for fresh
+                  sites, emerald for sites with prior TIs. Distinct from the
+                  amber cluster (Pending TI / MISSING / customer-missing
+                  strip) and from the purple Split / green Done cousins. */}
+              {siteHistorySummary && (
+                <span className={cn(
+                  "inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] font-medium",
+                  siteHistorySummary.isNewSite
+                    ? "bg-violet-50 text-violet-700 border-violet-200"
+                    : "bg-emerald-50 text-emerald-700 border-emerald-200",
+                )}>
+                  {siteHistorySummary.isNewSite
+                    ? "New site"
+                    : `Repeat site · ${siteHistorySummary.totalTIs} ${siteHistorySummary.totalTIs === 1 ? "TI" : "TIs"}`}
+                </span>
+              )}
+            </div>
             <div className="flex items-center gap-1.5 text-[11px] text-gray-400 mt-0.5">
               {selectedJob.deliveryTypeName && <span className={cn("w-[5px] h-[5px] rounded-full flex-shrink-0", deliveryDotClass(selectedJob.deliveryTypeName))} />}
               {[selectedJob.deliveryTypeName, selectedJob.areaName, selectedJob.routeName].filter(Boolean).join(" · ")}
@@ -1826,80 +1846,68 @@ export function TintOperatorContent() {
                         </div>
                       )}
 
-                      {/* Horizontal suggestion strip */}
-                      {entry.skuCodeRaw && (entry.suggestionsLoading || entry.suggestions.length > 0) && (
-                        <div className="flex gap-2 overflow-x-auto pb-1 mb-3">
-                          {entry.suggestionsLoading && (
-                            <div className="flex-shrink-0 border border-gray-200 rounded-lg px-3.5 py-2 min-w-[140px] bg-gray-50">
-                              <span className="text-[11px] text-gray-400">Loading…</span>
-                            </div>
-                          )}
-                          {entry.suggestions.map(sug => (
-                            <div key={sug.id}
-                              onClick={() => applyShadeToEntry(entryId, sug)}
-                              className={cn(
-                                "flex-shrink-0 border rounded-lg px-3.5 py-2 cursor-pointer min-w-[140px] transition-colors",
-                                entry.selectedShadeId === sug.id
-                                  ? "border-teal-600 bg-teal-50"
-                                  : "border-gray-200 bg-white hover:border-teal-600"
-                              )}>
-                              <div className="text-[12px] font-semibold text-gray-900">{sug.shadeName}</div>
-                              <div className="text-[10px] text-gray-400">
-                                {PACK_CODES.find(p => p.value === sug.packCode)?.label ?? sug.packCode ?? "—"} · {sug.lastUsedAt ? new Date(sug.lastUsedAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short" }) : "New"}
-                              </div>
-                            </div>
-                          ))}
-                          {/* All shades card */}
-                          <Popover open={allShadesComboOpen === entryId} onOpenChange={(open) => {
-                            if (!open) { setAllShadesComboOpen(null); setAllShadesSearch(""); }
-                          }}>
-                            <PopoverTrigger
-                              onClick={() => setAllShadesComboOpen(entryId)}
-                              className="flex-shrink-0 border border-gray-200 rounded-lg px-3.5 py-2 cursor-pointer min-w-[100px] flex items-center justify-center hover:border-gray-300">
-                              <span className="text-[11px] font-medium text-gray-500">{allShadesLoading ? "Loading…" : "All shades…"}</span>
-                            </PopoverTrigger>
-                            <PopoverContent align="start" className="w-72 p-0">
-                              <div style={{ padding: 8 }}>
-                                <input type="text" placeholder="Search shades…" value={allShadesSearch}
-                                  onChange={e => setAllShadesSearch(e.target.value)}
-                                  className="w-full h-[30px] border border-gray-200 rounded-md px-2 text-[11.5px] focus:border-gray-900 focus:outline-none" />
-                              </div>
-                              <div style={{ maxHeight: 200, overflowY: "auto" }}>
-                                {allSavedShades
-                                  .filter(s => !allShadesSearch || s.shadeName.toLowerCase().includes(allShadesSearch.toLowerCase()))
-                                  .map(shade => (
-                                    <div key={shade.id}
-                                      onClick={() => { applyShadeToEntry(entryId, shade); setAllShadesComboOpen(null); setAllShadesSearch(""); }}
-                                      className="px-3 py-[7px] cursor-pointer text-[12px] font-medium text-gray-900 border-t border-gray-100 hover:bg-gray-50">
-                                      <span className="font-semibold">{shade.shadeName}</span>
-                                      <span className="text-gray-400 text-[11px]"> · {PACK_CODES.find(p => p.value === shade.packCode)?.label ?? shade.packCode ?? "—"}</span>
-                                    </div>
-                                  ))}
-                              </div>
-                            </PopoverContent>
-                          </Popover>
+                      {/* Phase 4 — Sampling Library suggestion card. Renders
+                          only when an SKU + pack are picked AND siteId is
+                          known. SuggestionCard handles its own loading +
+                          empty states. Picker stays visible after a
+                          samplingNo is bound — the binding shows in the
+                          Applied shade bar pill below, not by collapsing
+                          the picker (step 13c pivot). */}
+                      {entry.skuCodeRaw && entry.packCode && selectedJob?.siteId != null && (
+                        <div className="mb-3">
+                          <SuggestionCard
+                            data={suggestDataByEntry[entryId] ?? null}
+                            isLoading={!!suggestLoadingByEntry[entryId]}
+                            onApplyRecipe={(card) => applySuggestionToEntry(entryId, card)}
+                          />
                         </div>
                       )}
+
+                      {/* Phase 4 (step 11) — always-visible shade name input.
+                          Auto-fills when operator clicks a suggestion above;
+                          hand-typed otherwise (new sampling on save). */}
+                      <div className="mb-3 px-3.5 py-2 bg-white border border-gray-200 rounded-lg flex items-center gap-2">
+                        <label className="text-[9.5px] font-bold uppercase tracking-[.4px] text-gray-400 flex-shrink-0">Shade name</label>
+                        <input type="text" placeholder="e.g. Ivory White" value={entry.shadeName}
+                          onChange={e => setTiEntries(prev => prev.map(en => en.id === entryId ? { ...en, shadeName: e.target.value } : en))}
+                          className="flex-1 h-[32px] border rounded-md text-[12px] px-2.5 font-medium text-gray-900 border-gray-200 focus:border-gray-900 focus:outline-none" />
+                        {!entry.samplingNo && (
+                          <span className="text-[10px] text-gray-400 italic flex-shrink-0">
+                            (auto-fills when you pick a suggestion)
+                          </span>
+                        )}
+                      </div>
 
                       {/* Form card */}
                       <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
 
-                        {/* Applied shade bar (pinned top) */}
+                        {/* Applied shade bar (pinned top). Step 13c: when a
+                            samplingNo is bound, the pill leads with the
+                            mono-formatted number so the operator can see the
+                            Sampling Library link without reopening the popup. */}
                         {entry.selectedShadeName !== null && (
                           <div className="flex items-center justify-between px-3.5 py-2 bg-gray-50 border-b border-gray-200">
                             <span className="inline-flex items-center gap-1.5 bg-gray-100 border border-gray-300 rounded-full px-2.5 py-0.5 text-[11px] font-semibold text-gray-900">
                               <Palette size={11} />
+                              {entry.samplingNo && (
+                                <>
+                                  <span className="font-mono font-medium text-gray-700">
+                                    #{entry.samplingNo}
+                                  </span>
+                                  <span className="text-gray-300 mx-1.5">·</span>
+                                </>
+                              )}
                               {entry.selectedShadeName}
                             </span>
                             <button type="button"
-                              onClick={() => setTiEntries(prev => prev.map(en => en.id === entryId ? { ...en, selectedShadeName: null, selectedShadeId: null, shadeValues: {}, showAllColumns: true } : en))}
+                              onClick={() => setTiEntries(prev => prev.map(en => en.id === entryId ? { ...en, selectedShadeName: null, samplingNo: null, shadeName: "", shadeValues: {}, showAllColumns: true } : en))}
                               className="text-[10px] font-bold text-red-600 bg-transparent border-none cursor-pointer">
                               Clear ×
                             </button>
                           </div>
                         )}
 
-                        {/* Compact qty row: Tin Qty + Pack Size + Save shade toggle */}
+                        {/* Compact qty row: Tin Qty + Pack Size */}
                         <div className="px-3.5 py-2.5 flex items-end gap-3 border-b border-gray-200">
                           <div className="flex flex-col gap-0.5" style={{ width: 80 }}>
                             <span className="text-[9.5px] font-bold uppercase tracking-[.4px] text-gray-400">Tin Qty</span>
@@ -1914,28 +1922,7 @@ export function TintOperatorContent() {
                             </div>
                           </div>
                           <div className="flex-1" />
-                          {entry.skuCodeRaw && (
-                            <div className="flex items-center gap-2 pb-1">
-                              <button type="button" role="switch" aria-checked={entry.saveAsShade}
-                                onClick={() => setTiEntries(prev => prev.map(en => en.id === entryId ? { ...en, saveAsShade: !en.saveAsShade, shadeNameError: "" } : en))}
-                                className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${entry.saveAsShade ? "bg-teal-600" : "bg-gray-300"}`}>
-                                <span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${entry.saveAsShade ? "translate-x-4" : "translate-x-0"}`} />
-                              </button>
-                              <span className="text-[11px] font-semibold text-gray-600">Save shade</span>
-                            </div>
-                          )}
                         </div>
-
-                        {/* Shade name input (when save toggle ON) */}
-                        {entry.saveAsShade && (
-                          <div className="px-3.5 py-2 border-b border-gray-200 flex items-center gap-2">
-                            <label className="text-[9.5px] font-bold uppercase tracking-[.4px] text-gray-400 flex-shrink-0">Shade name</label>
-                            <input type="text" placeholder="e.g. Ivory White" value={entry.shadeName}
-                              onChange={e => setTiEntries(prev => prev.map(en => en.id === entryId ? { ...en, shadeName: e.target.value, shadeNameError: "" } : en))}
-                              className={`flex-1 h-[32px] border rounded-md text-[12px] px-2.5 font-medium text-gray-900 focus:border-gray-900 focus:outline-none ${entry.shadeNameError ? "border-red-300" : "border-gray-200"}`} />
-                            {entry.shadeNameError && <span className="text-[11px] text-red-600">{entry.shadeNameError}</span>}
-                          </div>
-                        )}
 
                         {/* Shade Grid */}
                         <div className="px-3.5 py-3">
@@ -2279,24 +2266,11 @@ export function TintOperatorContent() {
       </div>
     </div>
 
-    {/* Conflict Dialog */}
-    <Dialog open={!!conflictDialog} onOpenChange={(open: boolean) => { if (!open) setConflictDialog(null); }}>
-      <DialogContent showCloseButton={false}>
-        <DialogHeader>
-          <DialogTitle>Shade already exists</DialogTitle>
-          <DialogDescription>
-            A shade named &quot;{conflictDialog?.shadeName}&quot; already exists for this customer with this SKU and pack size. Overwrite it?
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => setConflictDialog(null)} className="border border-gray-200 text-gray-600 hover:bg-gray-50">Cancel</Button>
-          <Button onClick={handleConflictOverwrite} disabled={tiActionLoading} className="bg-gray-900 text-white hover:bg-gray-800">
-            {tiActionLoading && <Loader2 className={cn("animate-spin mr-1")} size={13} />}
-            Overwrite
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    {/* Phase 4 (step 12) — Save TI confirmation popup. Renders when a new
+        sampling or new variant was allocated by the last Save TI POST. The
+        component returns null when samplingPopup is null, so mounting here
+        unconditionally is safe. */}
+    <SaveSamplingPopup result={samplingPopup} onClose={() => setSamplingPopup(null)} />
 
     {/* Phase 3c — Skip Job modal. Single instance; gated on skipModalJob state. */}
     {skipModalJob && (

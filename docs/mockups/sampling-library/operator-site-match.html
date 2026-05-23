@@ -1,0 +1,598 @@
+<!--
+  ──────────────────────────────────────────────────────────────────────
+  Tint Operator — Sampling Library Phase 4 design mockup
+  Date: 2026-05-22
+  Two scenarios stacked vertically:
+    1) Repeat site — exact match found → "Used here before" suggestion card
+    2) New site    — no match          → "Similar shades" horizontal cards
+  Read-only HTML, no JS, no React. Open directly in Chrome.
+  Visual reference: docs/mockups/sampling-library/sampling-library-LOCKED.html
+  ──────────────────────────────────────────────────────────────────────
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tint Operator — Site Match (Phase 4 mockup)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:             #F8FAFC;
+    --surface:        #FFFFFF;
+    --surface-2:      #F1F5F9;
+    --surface-3:      #E5E7EB;
+    --border:         #E5E7EB;
+    --border-strong:  #D1D5DB;
+    --text:           #111827;
+    --text-2:         #4B5563;
+    --text-3:         #9CA3AF;
+    --text-4:         #D1D5DB;
+    --accent:         #0F766E;
+    --accent-soft:    #CCFBF1;
+    --accent-dark:    #134E4A;
+    --amber:          #B45309;
+    --amber-soft:     #FEF3C7;
+    --green:          #047857;
+    --green-soft:     #D1FAE5;
+    --tinter:         #1D4ED8;
+    --tinter-soft:    #DBEAFE;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: var(--bg); color: var(--text); font-family: 'Inter', -apple-system, sans-serif; font-size: 13px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+
+  /* ── Scenario wrapper ─────────────────────────────────────────── */
+  .scenario { min-height: 95vh; background: var(--bg); border-bottom: 1px dashed var(--border-strong); }
+  .scenario-label { font-size: 10.5px; font-weight: 700; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.08em; padding: 12px 20px 6px; background: var(--surface-2); border-bottom: 1px solid var(--border); }
+  .scenario-label strong { color: var(--text); }
+
+  /* ── Top header (52px) ────────────────────────────────────────── */
+  .topbar { height: 52px; display: flex; align-items: center; gap: 18px; padding: 0 20px; background: var(--surface); border-bottom: 1px solid var(--border); }
+  .topbar .brand { font-size: 14px; font-weight: 700; letter-spacing: -0.01em; color: var(--text); }
+  .topbar .stats { display: flex; gap: 14px; margin-left: 14px; padding-left: 14px; border-left: 1px solid var(--border-strong); font-size: 11.5px; color: var(--text-2); }
+  .topbar .stats strong { color: var(--text); font-weight: 600; }
+  .topbar .right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+  .search { position: relative; }
+  .search input { width: 220px; height: 30px; background: var(--surface-2); border: 1px solid transparent; border-radius: 6px; padding: 0 10px 0 30px; font-size: 12px; font-family: inherit; outline: none; color: var(--text); }
+  .search svg { position: absolute; left: 9px; top: 50%; transform: translateY(-50%); width: 13px; height: 13px; color: var(--text-3); }
+  .clock { font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: var(--text-2); padding: 4px 10px; background: var(--surface-2); border-radius: 5px; }
+  .user-pill { display: flex; align-items: center; gap: 7px; padding: 4px 11px; background: var(--surface-2); border-radius: 999px; font-size: 11.5px; font-weight: 500; color: var(--text); }
+  .avatar { width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: white; font-size: 9.5px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
+
+  /* ── Frame: icon sidebar + main ───────────────────────────────── */
+  .frame { display: flex; height: calc(95vh - 52px - 26px); /* minus topbar + scenario label */ }
+  .sidebar { width: 64px; background: var(--surface); border-right: 1px solid var(--border); padding: 14px 0; display: flex; flex-direction: column; align-items: center; gap: 14px; border-left: 3px solid var(--accent); }
+  .sidebar .icon { width: 36px; height: 36px; border-radius: 9px; display: inline-flex; align-items: center; justify-content: center; color: var(--text-3); }
+  .sidebar .icon.active { background: var(--accent-soft); color: var(--accent-dark); }
+  .sidebar .icon svg { width: 18px; height: 18px; }
+
+  .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+
+  /* ── Job tabs row ─────────────────────────────────────────────── */
+  .job-tabs { height: 44px; background: var(--surface); border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; padding: 0 18px; overflow-x: auto; }
+  .job-tab { display: inline-flex; align-items: center; gap: 8px; height: 30px; padding: 0 14px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; font-size: 11.5px; color: var(--text-2); cursor: pointer; white-space: nowrap; }
+  .job-tab.active { background: var(--surface); border-color: var(--text); color: var(--text); font-weight: 600; }
+  .job-tab .num { font-family: 'JetBrains Mono', monospace; font-weight: 700; color: var(--text); }
+  .job-tab .status-pill { display: inline-flex; align-items: center; gap: 4px; padding: 1px 7px; border-radius: 999px; font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; background: var(--amber-soft); color: var(--amber); }
+  .job-tab .timer { font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: var(--text-2); }
+  .job-tab .toggle { display: inline-flex; background: var(--surface-3); border-radius: 999px; padding: 1px; }
+  .job-tab .toggle span { padding: 1px 6px; font-size: 9.5px; font-weight: 700; border-radius: 999px; color: var(--text-3); }
+  .job-tab .toggle span.on { background: white; color: var(--text); }
+  .job-tab .progress { font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: var(--text-2); }
+
+  /* ── Customer cards (Bill To + Ship To) ───────────────────────── */
+  .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 12px 18px; background: var(--bg); border-bottom: 1px solid var(--border); }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 9px; padding: 11px 14px; }
+  .card .label { font-size: 9.5px; font-weight: 700; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px; display: flex; align-items: center; gap: 6px; }
+  .card .name  { font-size: 14px; font-weight: 600; color: var(--text); }
+  .card .sub   { font-size: 11.5px; color: var(--text-2); margin-top: 2px; }
+  .card .pill  { display: inline-flex; align-items: center; gap: 4px; padding: 1px 7px; border-radius: 999px; font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+  .pill.repeat   { background: var(--surface-3); color: var(--text-2); border: 1px solid var(--border-strong); }
+  .pill.new-site { background: var(--surface-2); color: var(--text-2); border: 1px solid var(--border); }
+
+  /* ── Split: lines pane + recipe pane ──────────────────────────── */
+  .split { flex: 1; display: flex; min-height: 0; }
+  .lines-pane { width: 280px; background: var(--surface); border-right: 1px solid var(--border); overflow-y: auto; }
+  .lines-pane h4 { font-size: 9.5px; font-weight: 700; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.08em; padding: 10px 14px 6px; }
+  .line-row { padding: 9px 14px; border-bottom: 1px solid var(--border); cursor: pointer; }
+  .line-row.selected { background: var(--surface-2); border-left: 3px solid var(--text); padding-left: 11px; }
+  .line-sku  { font-family: 'JetBrains Mono', monospace; font-size: 11.5px; font-weight: 600; color: var(--text); }
+  .line-desc { font-size: 11px; color: var(--text-2); margin-top: 2px; }
+  .line-meta { font-size: 10.5px; color: var(--text-3); margin-top: 2px; }
+  .line-row.done  { opacity: 0.6; }
+  .line-row .done-pill { display: inline-block; font-size: 8.5px; font-weight: 700; color: var(--green); background: var(--green-soft); padding: 1px 5px; border-radius: 3px; margin-top: 4px; text-transform: uppercase; letter-spacing: 0.04em; }
+
+  .recipe-pane { flex: 1; overflow-y: auto; padding: 14px 18px 80px; background: var(--bg); }
+
+  /* ── SKU header bar ───────────────────────────────────────────── */
+  .sku-header { background: var(--surface); border: 1px solid var(--border); border-radius: 9px; padding: 11px 14px; display: flex; align-items: center; gap: 14px; margin-bottom: 12px; }
+  .sku-header .sku-code { font-family: 'JetBrains Mono', monospace; font-size: 13.5px; font-weight: 700; color: var(--text); }
+  .sku-header .sku-desc { font-size: 11.5px; color: var(--text-2); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sku-header .field { display: flex; flex-direction: column; gap: 2px; }
+  .sku-header .field-label { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-3); }
+  .sku-header .field-value { font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600; color: var(--text); padding: 4px 10px; background: var(--surface-2); border-radius: 6px; min-width: 56px; text-align: center; }
+  .sku-header .toggle-row { display: inline-flex; background: var(--surface-2); border-radius: 7px; padding: 2px; }
+  .sku-header .toggle-row span { font-size: 10.5px; font-weight: 600; padding: 4px 11px; border-radius: 5px; color: var(--text-3); cursor: pointer; }
+  .sku-header .toggle-row span.on { background: var(--surface); color: var(--text); }
+
+  /* ── Suggestion card — Used here before ───────────────────────── */
+  .suggestion {
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-left: 4px solid var(--text);
+    border-radius: 10px;
+    padding: 14px 16px;
+    margin-bottom: 14px;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 18px;
+    align-items: center;
+  }
+  .suggestion .sno-block { display: flex; flex-direction: column; gap: 4px; padding-right: 18px; border-right: 1px solid var(--border); }
+  .suggestion .sno { font-family: 'JetBrains Mono', monospace; font-size: 22px; font-weight: 600; color: var(--text); letter-spacing: -0.01em; line-height: 1; }
+  .suggestion .sno-type { font-family: 'JetBrains Mono', monospace; font-size: 9.5px; font-weight: 700; color: var(--tinter); text-transform: uppercase; letter-spacing: 0.06em; }
+  .suggestion .body { min-width: 0; }
+  .suggestion .body .shade-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .suggestion .body .shade-name { font-size: 14px; font-weight: 600; color: var(--text); }
+  .suggestion .body .pill-active { display: inline-flex; align-items: center; font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; background: var(--green-soft); color: var(--green); padding: 1px 7px; border-radius: 4px; }
+  .suggestion .pigment-row { display: flex; gap: 6px; margin: 6px 0 8px; flex-wrap: wrap; }
+  .pigment-mini { background: var(--surface); border: 1px solid var(--border-strong); border-radius: 6px; padding: 5px 0 4px; width: 60px; text-align: center; }
+  .pigment-mini .code { font-family: 'JetBrains Mono', monospace; font-size: 9px; font-weight: 700; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.04em; line-height: 1; }
+  .pigment-mini .val  { font-family: 'JetBrains Mono', monospace; font-size: 14px; font-weight: 600; color: var(--text); margin-top: 2px; line-height: 1; }
+  .suggestion .meta-line { font-size: 11px; color: var(--text-2); }
+  .suggestion .meta-line strong { color: var(--text); font-weight: 600; }
+  .suggestion .actions { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+  .btn-primary-dark { background: var(--text); color: white; height: 36px; padding: 0 16px; font-size: 12px; font-weight: 600; border: none; border-radius: 7px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+  .btn-primary-dark:hover { background: #1F2937; }
+  .link-secondary { font-size: 11px; color: var(--text-2); cursor: pointer; }
+  .link-secondary:hover { color: var(--text); text-decoration: underline; }
+
+  /* ── Scenario 2 — info strip + similar shades scroll ──────────── */
+  .info-strip { background: var(--surface); border: 1px solid var(--border); border-radius: 9px; padding: 10px 14px; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; color: var(--text-2); font-size: 12px; }
+  .info-strip svg { width: 14px; height: 14px; color: var(--text-3); flex-shrink: 0; }
+  .similar-section { margin-bottom: 14px; }
+  .similar-section .title { font-size: 9.5px; font-weight: 700; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 7px; padding-left: 2px; }
+  .similar-row { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 6px; }
+  .similar-card { flex-shrink: 0; width: 180px; background: var(--surface); border: 1px solid var(--border-strong); border-radius: 9px; padding: 10px 12px; cursor: pointer; }
+  .similar-card:hover { border-color: var(--text-2); }
+  .similar-card .sno  { font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 700; color: var(--text); }
+  .similar-card .shade-name { font-size: 11.5px; font-weight: 500; color: var(--text); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .similar-card .pigments { display: flex; gap: 4px; margin-top: 7px; flex-wrap: wrap; }
+  .similar-card .pigments .chip { font-family: 'JetBrains Mono', monospace; font-size: 9.5px; padding: 2px 5px; background: var(--surface-2); border-radius: 3px; color: var(--text-2); }
+  .similar-card .pigments .chip strong { color: var(--text); font-weight: 700; }
+  .similar-card .used-foot { font-size: 10px; color: var(--text-3); margin-top: 7px; }
+
+  /* ── Main pigment chips grid (empty state) ────────────────────── */
+  .pigments-section { background: var(--surface); border: 1px solid var(--border); border-radius: 9px; padding: 14px; }
+  .pigments-section .title { font-size: 9.5px; font-weight: 700; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 10px; }
+  .pigments-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(86px, 1fr)); gap: 8px; }
+  .pigment-cell { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 9px 8px 8px; text-align: center; }
+  .pigment-cell .code { font-family: 'JetBrains Mono', monospace; font-size: 10.5px; font-weight: 700; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.04em; line-height: 1; }
+  .pigment-cell .val  { font-family: 'JetBrains Mono', monospace; font-size: 18px; font-weight: 500; color: var(--text-4); margin-top: 5px; line-height: 1; }
+  .pigment-cell.empty { background: var(--surface); }
+  .pigment-cell.filled .val { color: var(--text); font-weight: 600; }
+
+  /* ── Footer ───────────────────────────────────────────────────── */
+  .footer { position: sticky; bottom: 0; height: 56px; background: var(--surface); border-top: 1px solid var(--border); display: flex; align-items: center; gap: 10px; padding: 0 18px; margin-top: -56px; }
+  .footer .pager { display: inline-flex; gap: 2px; }
+  .footer .pager button { width: 30px; height: 30px; border: 1px solid var(--border); background: var(--surface); border-radius: 6px; color: var(--text-2); cursor: pointer; font-size: 13px; line-height: 1; }
+  .footer .timer-block { display: inline-flex; align-items: center; gap: 6px; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: var(--text-2); padding: 4px 10px; background: var(--surface-2); border-radius: 6px; }
+  .footer .actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+  .footer .btn { height: 34px; padding: 0 14px; font-size: 12px; font-weight: 600; border-radius: 7px; cursor: pointer; border: 1px solid transparent; }
+  .footer .btn.ghost   { background: var(--surface); color: var(--text); border-color: var(--border-strong); }
+  .footer .btn.primary { background: var(--text); color: white; }
+  .footer .btn.pause   { background: var(--amber-soft); color: var(--amber); }
+
+  /* Small icon helpers */
+  .icon-svg { width: 12px; height: 12px; vertical-align: -2px; }
+  .pin-svg  { width: 11px; height: 11px; color: var(--text-3); vertical-align: -1px; margin-right: 3px; }
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     SCENARIO 1 — Repeat site, exact match found
+     ══════════════════════════════════════════════════════════════════ -->
+<div class="scenario">
+  <div class="scenario-label">Scenario 1 — <strong>Repeat site</strong> · Petronet Lng Limited 3 has used this shade 6 times before</div>
+
+  <!-- Top header -->
+  <div class="topbar">
+    <div class="brand">OrbitOMS · Tint Operator</div>
+    <div class="stats">
+      <span><strong>3</strong> in queue</span>
+      <span><strong>1</strong> active</span>
+      <span><strong>2</strong> done today</span>
+    </div>
+    <div class="right">
+      <div class="search">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+        <input placeholder="Search OBD or shade…">
+      </div>
+      <div class="clock">22 May 2026 · 14:32</div>
+      <div class="user-pill"><div class="avatar">HR</div>Harsh</div>
+    </div>
+  </div>
+
+  <div class="frame">
+    <!-- Icon sidebar -->
+    <aside class="sidebar">
+      <div class="icon active" title="Tint Operator">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+      </div>
+      <div class="icon" title="Sampling Library">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M10 2v7.31"/><path d="M14 9.3V1.99"/><path d="M8.5 2h7"/><path d="M14 9.3a6.5 6.5 0 1 1-4-.07"/></svg>
+      </div>
+      <div class="icon" title="Shade Master">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="13.5" cy="6.5" r=".5"/><circle cx="17.5" cy="10.5" r=".5"/><circle cx="8.5" cy="7.5" r=".5"/><circle cx="6.5" cy="12.5" r=".5"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/></svg>
+      </div>
+    </aside>
+
+    <div class="main">
+      <!-- Job tabs row -->
+      <div class="job-tabs">
+        <div class="job-tab active">
+          <span class="num">#1</span>
+          <span>PETRONET LNG LIMITED 3</span>
+          <span class="status-pill">In Progress</span>
+          <span class="timer">⏱ 12:08</span>
+          <span class="toggle"><span class="on">Final</span><span>Generic</span></span>
+          <span class="progress">2 / 5</span>
+        </div>
+        <div class="job-tab"><span class="num">#2</span><span>BAJRANG STRUCTURES</span></div>
+        <div class="job-tab"><span class="num">#3</span><span>SHREENATHJI BLDG</span></div>
+      </div>
+
+      <!-- Bill / Ship cards -->
+      <div class="cards">
+        <div class="card">
+          <div class="label">Bill To</div>
+          <div class="name">Petronet LNG Ltd 3</div>
+          <div class="sub">SAP: 102359 · GST 24AABCP1928J1Z2</div>
+        </div>
+        <div class="card">
+          <div class="label">
+            Ship To
+            <span class="pill repeat">
+              <svg class="icon-svg" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>
+              Repeat site · 6 TIs
+            </span>
+          </div>
+          <div class="name">Petronet Lng Limited 3 — GPH Piplod</div>
+          <div class="sub"><svg class="pin-svg" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>Plot 142, GIDC Phase IV · Surat 395003</div>
+        </div>
+      </div>
+
+      <!-- Lines + recipe split -->
+      <div class="split">
+        <aside class="lines-pane">
+          <h4>Tinting Lines · 5</h4>
+          <div class="line-row done">
+            <div class="line-sku">5880380</div>
+            <div class="line-desc">PS WS UltraClean Acc Base 10L</div>
+            <div class="done-pill">Done</div>
+          </div>
+          <div class="line-row done">
+            <div class="line-sku">5880381</div>
+            <div class="line-desc">PS WS UltraClean Acc Base 18L</div>
+            <div class="done-pill">Done</div>
+          </div>
+          <div class="line-row selected">
+            <div class="line-sku">5880384</div>
+            <div class="line-desc">PS WS UltraClean Accent Base 20L</div>
+            <div class="line-meta">SPL SHADE 90 GAVAN LIGHT · 3 tins</div>
+          </div>
+          <div class="line-row">
+            <div class="line-sku">5880388</div>
+            <div class="line-desc">PS WS UltraClean Acc Base 4L</div>
+            <div class="line-meta">SPL SHADE 90 GAVAN LIGHT · 5 tins</div>
+          </div>
+          <div class="line-row">
+            <div class="line-sku">5880400</div>
+            <div class="line-desc">PS WS UltraClean Acc Base 1L</div>
+            <div class="line-meta">SPL SHADE 90 GAVAN LIGHT · 2 tins</div>
+          </div>
+        </aside>
+
+        <main class="recipe-pane">
+          <!-- SKU header bar -->
+          <div class="sku-header">
+            <div class="sku-code">5880384</div>
+            <div class="sku-desc">PS WS UltraClean Accent Base 20L</div>
+            <div class="field">
+              <div class="field-label">Tin Qty</div>
+              <div class="field-value">3</div>
+            </div>
+            <div class="field">
+              <div class="field-label">Pack</div>
+              <div class="field-value">20 LT</div>
+            </div>
+            <div class="toggle-row">
+              <span class="on">Tinter</span>
+              <span>Acotone</span>
+            </div>
+          </div>
+
+          <!-- ★ NEW: Used here before suggestion card -->
+          <div class="suggestion">
+            <div class="sno-block">
+              <div class="sno">#135202</div>
+              <div class="sno-type">Tinter</div>
+            </div>
+            <div class="body">
+              <div class="shade-row">
+                <div class="shade-name">SPL SHADE 90 GAVAN LIGHT</div>
+                <span class="pill-active">Active</span>
+              </div>
+              <div class="pigment-row">
+                <div class="pigment-mini"><div class="code">YOX</div><div class="val">400</div></div>
+                <div class="pigment-mini"><div class="code">BLK</div><div class="val">70</div></div>
+                <div class="pigment-mini"><div class="code">OXR</div><div class="val">30</div></div>
+              </div>
+              <div class="meta-line">Used <strong>6 times</strong> at this site · last <strong>02 Mar 26</strong></div>
+            </div>
+            <div class="actions">
+              <button class="btn-primary-dark">
+                Use this recipe
+                <svg fill="none" stroke="currentColor" stroke-width="2.4" viewBox="0 0 24 24" style="width:13px;height:13px;"><path d="M5 12h14"/><path d="M12 5l7 7-7 7"/></svg>
+              </button>
+              <div class="link-secondary">View 5 more samplings used here →</div>
+            </div>
+          </div>
+
+          <!-- Pigment chips grid (empty state — operator hasn't clicked Use yet) -->
+          <div class="pigments-section">
+            <div class="title">Recipe pigments · 13 columns · empty</div>
+            <div class="pigments-grid">
+              <div class="pigment-cell"><div class="code">YOX</div><div class="val">—</div></div>
+              <div class="pigment-cell"><div class="code">LFY</div><div class="val">—</div></div>
+              <div class="pigment-cell"><div class="code">GRN</div><div class="val">—</div></div>
+              <div class="pigment-cell"><div class="code">TBL</div><div class="val">—</div></div>
+              <div class="pigment-cell"><div class="code">WHT</div><div class="val">—</div></div>
+              <div class="pigment-cell"><div class="code">MAG</div><div class="val">—</div></div>
+              <div class="pigment-cell"><div class="code">FFR</div><div class="val">—</div></div>
+              <div class="pigment-cell"><div class="code">BLK</div><div class="val">—</div></div>
+              <div class="pigment-cell"><div class="code">OXR</div><div class="val">—</div></div>
+              <div class="pigment-cell"><div class="code">HEY</div><div class="val">—</div></div>
+              <div class="pigment-cell"><div class="code">HER</div><div class="val">—</div></div>
+              <div class="pigment-cell"><div class="code">COB</div><div class="val">—</div></div>
+              <div class="pigment-cell"><div class="code">COG</div><div class="val">—</div></div>
+            </div>
+          </div>
+        </main>
+      </div>
+
+      <!-- Footer -->
+      <div class="footer">
+        <div class="pager">
+          <button>‹</button>
+          <button>›</button>
+        </div>
+        <div class="timer-block">⏱ 00:12:08</div>
+        <div class="actions">
+          <button class="btn ghost">Add TI Entry</button>
+          <button class="btn pause">Pause</button>
+          <button class="btn primary">Mark as Done</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════════════
+     SCENARIO 2 — New site, no exact match
+     ══════════════════════════════════════════════════════════════════ -->
+<div class="scenario">
+  <div class="scenario-label">Scenario 2 — <strong>New site</strong> · Brand New Construction Co has no recorded usage of this shade</div>
+
+  <!-- Top header -->
+  <div class="topbar">
+    <div class="brand">OrbitOMS · Tint Operator</div>
+    <div class="stats">
+      <span><strong>3</strong> in queue</span>
+      <span><strong>1</strong> active</span>
+      <span><strong>2</strong> done today</span>
+    </div>
+    <div class="right">
+      <div class="search">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+        <input placeholder="Search OBD or shade…">
+      </div>
+      <div class="clock">22 May 2026 · 14:32</div>
+      <div class="user-pill"><div class="avatar">HR</div>Harsh</div>
+    </div>
+  </div>
+
+  <div class="frame">
+    <aside class="sidebar">
+      <div class="icon active" title="Tint Operator">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+      </div>
+      <div class="icon" title="Sampling Library">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M10 2v7.31"/><path d="M14 9.3V1.99"/><path d="M8.5 2h7"/><path d="M14 9.3a6.5 6.5 0 1 1-4-.07"/></svg>
+      </div>
+      <div class="icon" title="Shade Master">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="13.5" cy="6.5" r=".5"/><circle cx="17.5" cy="10.5" r=".5"/><circle cx="8.5" cy="7.5" r=".5"/><circle cx="6.5" cy="12.5" r=".5"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/></svg>
+      </div>
+    </aside>
+
+    <div class="main">
+      <div class="job-tabs">
+        <div class="job-tab active">
+          <span class="num">#2</span>
+          <span>BRAND NEW CONSTRUCTION CO</span>
+          <span class="status-pill">In Progress</span>
+          <span class="timer">⏱ 02:41</span>
+          <span class="toggle"><span class="on">Final</span><span>Generic</span></span>
+          <span class="progress">1 / 4</span>
+        </div>
+        <div class="job-tab"><span class="num">#1</span><span>PETRONET LNG LIMITED 3</span></div>
+        <div class="job-tab"><span class="num">#3</span><span>SHREENATHJI BLDG</span></div>
+      </div>
+
+      <div class="cards">
+        <div class="card">
+          <div class="label">Bill To</div>
+          <div class="name">Brand New Construction Co</div>
+          <div class="sub">SAP: 119804 · GST 24AAFCB4012K1ZK · first delivery</div>
+        </div>
+        <div class="card">
+          <div class="label">
+            Ship To
+            <span class="pill new-site">
+              <svg class="icon-svg" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              New site
+            </span>
+          </div>
+          <div class="name">Brand New Construction Co — Tower B Phase 1</div>
+          <div class="sub"><svg class="pin-svg" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>Block C, Pal Hazira Road · Surat 395007</div>
+        </div>
+      </div>
+
+      <div class="split">
+        <aside class="lines-pane">
+          <h4>Tinting Lines · 4</h4>
+          <div class="line-row done">
+            <div class="line-sku">5948220</div>
+            <div class="line-desc">PS WS UltraClean Acc Base 10L</div>
+            <div class="done-pill">Done</div>
+          </div>
+          <div class="line-row selected">
+            <div class="line-sku">5948223</div>
+            <div class="line-desc">PS WS UltraClean Acc Base 140L</div>
+            <div class="line-meta">SPL CUSTOM TEAL · 2 tins</div>
+          </div>
+          <div class="line-row">
+            <div class="line-sku">5948225</div>
+            <div class="line-desc">PS WS UltraClean Acc Base 20L</div>
+            <div class="line-meta">SPL CUSTOM TEAL · 4 tins</div>
+          </div>
+          <div class="line-row">
+            <div class="line-sku">5948228</div>
+            <div class="line-desc">PS WS UltraClean Acc Base 4L</div>
+            <div class="line-meta">SPL CUSTOM TEAL · 6 tins</div>
+          </div>
+        </aside>
+
+        <main class="recipe-pane">
+          <div class="sku-header">
+            <div class="sku-code">5948223</div>
+            <div class="sku-desc">PS WS UltraClean Acc Base 140L</div>
+            <div class="field">
+              <div class="field-label">Tin Qty</div>
+              <div class="field-value">2</div>
+            </div>
+            <div class="field">
+              <div class="field-label">Pack</div>
+              <div class="field-value">140 L</div>
+            </div>
+            <div class="toggle-row">
+              <span class="on">Tinter</span>
+              <span>Acotone</span>
+            </div>
+          </div>
+
+          <!-- ★ NEW: Info strip + Similar shades scroll -->
+          <div class="info-strip">
+            <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+            <span>First time at this site for this shade. Pick a similar shade below, or enter recipe manually.</span>
+          </div>
+
+          <div class="similar-section">
+            <div class="title">Similar shades · 5</div>
+            <div class="similar-row">
+              <div class="similar-card">
+                <div class="sno">#134117</div>
+                <div class="shade-name">SPL TEAL DARK 12/088</div>
+                <div class="pigments">
+                  <span class="chip">YOX <strong>120</strong></span>
+                  <span class="chip">TBL <strong>40</strong></span>
+                  <span class="chip">WHT <strong>800</strong></span>
+                </div>
+                <div class="used-foot">Used 4 times</div>
+              </div>
+              <div class="similar-card">
+                <div class="sno">#133980</div>
+                <div class="shade-name">SPL OCEAN TEAL 25/14</div>
+                <div class="pigments">
+                  <span class="chip">YOX <strong>95</strong></span>
+                  <span class="chip">TBL <strong>55</strong></span>
+                  <span class="chip">WHT <strong>720</strong></span>
+                </div>
+                <div class="used-foot">Used 2 times</div>
+              </div>
+              <div class="similar-card">
+                <div class="sno">#132445</div>
+                <div class="shade-name">CUSTOM TEAL LIGHT</div>
+                <div class="pigments">
+                  <span class="chip">YOX <strong>80</strong></span>
+                  <span class="chip">TBL <strong>22</strong></span>
+                  <span class="chip">WHT <strong>900</strong></span>
+                </div>
+                <div class="used-foot">Used 2 times</div>
+              </div>
+              <div class="similar-card">
+                <div class="sno">#131008</div>
+                <div class="shade-name">SPL JADE TEAL</div>
+                <div class="pigments">
+                  <span class="chip">YOX <strong>140</strong></span>
+                  <span class="chip">TBL <strong>30</strong></span>
+                  <span class="chip">WHT <strong>660</strong></span>
+                </div>
+                <div class="used-foot">Used 1 time</div>
+              </div>
+              <div class="similar-card">
+                <div class="sno">#129472</div>
+                <div class="shade-name">TEAL MIST</div>
+                <div class="pigments">
+                  <span class="chip">YOX <strong>60</strong></span>
+                  <span class="chip">TBL <strong>18</strong></span>
+                  <span class="chip">WHT <strong>950</strong></span>
+                </div>
+                <div class="used-foot">Used 1 time</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="pigments-section">
+            <div class="title">Recipe pigments · 13 columns · empty</div>
+            <div class="pigments-grid">
+              <div class="pigment-cell"><div class="code">YOX</div><div class="val">—</div></div>
+              <div class="pigment-cell"><div class="code">LFY</div><div class="val">—</div></div>
+              <div class="pigment-cell"><div class="code">GRN</div><div class="val">—</div></div>
+              <div class="pigment-cell"><div class="code">TBL</div><div class="val">—</div></div>
+              <div class="pigment-cell"><div class="code">WHT</div><div class="val">—</div></div>
+              <div class="pigment-cell"><div class="code">MAG</div><div class="val">—</div></div>
+              <div class="pigment-cell"><div class="code">FFR</div><div class="val">—</div></div>
+              <div class="pigment-cell"><div class="code">BLK</div><div class="val">—</div></div>
+              <div class="pigment-cell"><div class="code">OXR</div><div class="val">—</div></div>
+              <div class="pigment-cell"><div class="code">HEY</div><div class="val">—</div></div>
+              <div class="pigment-cell"><div class="code">HER</div><div class="val">—</div></div>
+              <div class="pigment-cell"><div class="code">COB</div><div class="val">—</div></div>
+              <div class="pigment-cell"><div class="code">COG</div><div class="val">—</div></div>
+            </div>
+          </div>
+        </main>
+      </div>
+
+      <div class="footer">
+        <div class="pager">
+          <button>‹</button>
+          <button>›</button>
+        </div>
+        <div class="timer-block">⏱ 00:02:41</div>
+        <div class="actions">
+          <button class="btn ghost">Add TI Entry</button>
+          <button class="btn pause">Pause</button>
+          <button class="btn primary">Mark as Done</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

@@ -2,9 +2,26 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { hasRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
-import { PackCode } from "@prisma/client";
+import { PackCode, Prisma } from "@prisma/client";
+import {
+  getIstYearPrefix,
+  resolveSamplingForEntry,
+} from "../_lib/sampling-resolution";
 
 export const dynamic = "force-dynamic";
+
+const TINTER_PIGMENT_CODES = [
+  "YOX", "LFY", "GRN", "TBL", "WHT", "MAG", "FFR", "BLK", "OXR", "HEY",
+  "HER", "COB", "COG",
+] as const;
+type TinterPigment = (typeof TINTER_PIGMENT_CODES)[number];
+
+interface EntryResult {
+  tiEntryId:           number;
+  allocatedSamplingNo: string;
+  isNewSampling:       boolean;
+  isNewVariant:        boolean;
+}
 
 export async function POST(req: Request): Promise<NextResponse> {
   const session = await auth();
@@ -19,51 +36,42 @@ export async function POST(req: Request): Promise<NextResponse> {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const {
-    splitId,
-    tintAssignmentId,
-    entries,
-  } = body as {
-    splitId?: unknown;
+  const { splitId, tintAssignmentId, entries } = body as {
+    splitId?:          unknown;
     tintAssignmentId?: unknown;
-    entries?: unknown;
+    entries?:          unknown;
   };
 
-  // Validate mutual exclusivity of splitId / tintAssignmentId
   const hasSplit      = splitId !== undefined && splitId !== null;
   const hasAssignment = tintAssignmentId !== undefined && tintAssignmentId !== null;
 
   if (!hasSplit && !hasAssignment) {
-    return NextResponse.json(
-      { error: "Either splitId or tintAssignmentId is required" },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: "Either splitId or tintAssignmentId is required" }, { status: 400 });
   }
   if (hasSplit && hasAssignment) {
-    return NextResponse.json(
-      { error: "Provide either splitId or tintAssignmentId, not both" },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: "Provide either splitId or tintAssignmentId, not both" }, { status: 400 });
   }
-
-  // Validate entries
   if (!Array.isArray(entries) || entries.length === 0) {
-    return NextResponse.json(
-      { error: "At least one entry is required" },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: "At least one entry is required" }, { status: 400 });
   }
 
-  for (const entry of entries as Array<Record<string, unknown>>) {
-    if (!entry.baseSku || typeof entry.baseSku !== "string" || entry.baseSku.trim() === "") {
+  // ── Pre-flight validation (no DB writes yet) ──────────────────────────────
+  const typedEntries = entries as Array<Record<string, unknown>>;
+  for (let i = 0; i < typedEntries.length; i++) {
+    const entry = typedEntries[i];
+    if (typeof entry.baseSku !== "string" || entry.baseSku.trim() === "") {
+      return NextResponse.json({ error: `entry[${i}]: baseSku is required` }, { status: 400 });
+    }
+    if (!entry.packCode || typeof entry.packCode !== "string" || !(entry.packCode in PackCode)) {
+      return NextResponse.json({ error: `entry[${i}]: packCode is required and must be a valid PackCode enum value` }, { status: 400 });
+    }
+    const sn = typeof entry.samplingNo === "string" && entry.samplingNo.trim() !== "" ? entry.samplingNo.trim() : null;
+    const shn = typeof entry.shadeName === "string" && entry.shadeName.trim() !== "" ? entry.shadeName.trim() : null;
+    if (sn === null && shn === null) {
       return NextResponse.json(
-        { error: "baseSku is required for all entries" },
+        { error: `entry[${i}]: pick an existing sampling number or enter a new shade name` },
         { status: 400 },
       );
-    }
-    if (entry.packCode !== undefined && entry.packCode !== null &&
-        !(entry.packCode as string in PackCode)) {
-      return NextResponse.json({ error: "Invalid packCode in entry" }, { status: 400 });
     }
   }
 
@@ -71,71 +79,107 @@ export async function POST(req: Request): Promise<NextResponse> {
   const isOpsOrAdmin = ["operations", "admin"].includes(session!.user.role ?? "");
 
   try {
-    // Step 1 — Validate the target row exists and belongs to this operator; derive orderId
+    // Step 1 — resolve orderId from split or assignment (ownership-gated)
     let orderId: number;
-
     if (hasSplit) {
       const split = await prisma.order_splits.findFirst({
         where: { id: Number(splitId), ...(isOpsOrAdmin ? {} : { assignedToId: userId }) },
       });
-      if (!split) {
-        return NextResponse.json(
-          { error: "Split not found or not assigned to you" },
-          { status: 404 },
-        );
-      }
+      if (!split) return NextResponse.json({ error: "Split not found or not assigned to you" }, { status: 404 });
       orderId = split.orderId;
     } else {
       const assignment = await prisma.tint_assignments.findFirst({
         where: { id: Number(tintAssignmentId), ...(isOpsOrAdmin ? {} : { assignedToId: userId }) },
       });
-      if (!assignment) {
-        return NextResponse.json(
-          { error: "Assignment not found or not assigned to you" },
-          { status: 404 },
-        );
-      }
+      if (!assignment) return NextResponse.json({ error: "Assignment not found or not assigned to you" }, { status: 404 });
       orderId = assignment.orderId;
     }
 
-    // Step 2 — Insert all entries into tinter_issue_entries
-    const typedEntries = entries as Array<{
-      baseSku: string;
-      tinQty?: unknown;
-      packCode?: unknown;
-      rawLineItemId?: unknown;
-      YOX?: unknown; LFY?: unknown; GRN?: unknown; TBL?: unknown; WHT?: unknown;
-      MAG?: unknown; FFR?: unknown; BLK?: unknown; OXR?: unknown; HEY?: unknown;
-      HER?: unknown; COB?: unknown; COG?: unknown;
-    }>;
-
-    await prisma.tinter_issue_entries.createMany({
-      data: typedEntries.map((entry) => ({
-        orderId,
-        splitId:          hasSplit ? Number(splitId) : null,
-        tintAssignmentId: hasAssignment ? Number(tintAssignmentId) : null,
-        rawLineItemId:    entry.rawLineItemId !== undefined && entry.rawLineItemId !== null ? Number(entry.rawLineItemId) : null,
-        submittedById:    userId,
-        baseSku:          entry.baseSku.trim(),
-        tinQty:           Number(entry.tinQty ?? 0),
-        packCode:         (entry.packCode ?? null) as PackCode | null,
-        YOX: Number(entry.YOX ?? 0),
-        LFY: Number(entry.LFY ?? 0),
-        GRN: Number(entry.GRN ?? 0),
-        TBL: Number(entry.TBL ?? 0),
-        WHT: Number(entry.WHT ?? 0),
-        MAG: Number(entry.MAG ?? 0),
-        FFR: Number(entry.FFR ?? 0),
-        BLK: Number(entry.BLK ?? 0),
-        OXR: Number(entry.OXR ?? 0),
-        HEY: Number(entry.HEY ?? 0),
-        HER: Number(entry.HER ?? 0),
-        COB: Number(entry.COB ?? 0),
-        COG: Number(entry.COG ?? 0),
-      })),
+    // Step 2 — load order for siteId + obdNumber
+    const order = await prisma.orders.findUnique({
+      where:  { id: orderId },
+      select: { obdNumber: true, customerId: true },
     });
+    const siteId = order?.customerId ?? null;
 
-    // Step 3 — Set tiSubmitted = true on the parent row
+    // Step 3 — best-effort dealer name lookup (only used when allocating new
+    // sampling rows in Scenario 1).
+    let dealerNameRaw: string | null = null;
+    if (order?.obdNumber) {
+      const summary = await prisma.import_raw_summary.findFirst({
+        where:  { obdNumber: order.obdNumber },
+        select: { billToCustomerName: true },
+      });
+      dealerNameRaw = summary?.billToCustomerName ?? null;
+    }
+
+    const yearPrefix = getIstYearPrefix();
+    const results: EntryResult[] = [];
+
+    // Step 4 — per-entry routing + writes (sequential)
+    for (const entry of typedEntries) {
+      const baseSku  = (entry.baseSku as string).trim();
+      const packCode = entry.packCode as PackCode;
+      const tinQty   = Number(entry.tinQty ?? 0);
+      const rawLineItemId = entry.rawLineItemId != null ? Number(entry.rawLineItemId) : null;
+
+      const bodySamplingNo = typeof entry.samplingNo === "string" && entry.samplingNo.trim() !== ""
+        ? entry.samplingNo.trim() : null;
+      const bodyShadeName = typeof entry.shadeName === "string" && entry.shadeName.trim() !== ""
+        ? entry.shadeName.trim() : null;
+
+      const pigments = {} as Record<TinterPigment, number>;
+      for (const code of TINTER_PIGMENT_CODES) {
+        pigments[code] = Number(entry[code] ?? 0);
+      }
+
+      let resolution;
+      try {
+        resolution = await resolveSamplingForEntry({
+          tinterType: "TINTER",
+          bodySamplingNo,
+          bodyShadeName,
+          baseSku,
+          packCode,
+          userId,
+          siteId,
+          dealerName: dealerNameRaw,
+          yearPrefix,
+          pigments,
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.startsWith("Sampling number ") && msg.endsWith(" not found")) {
+          return NextResponse.json({ error: msg }, { status: 400 });
+        }
+        throw err;
+      }
+
+      const ti = await prisma.tinter_issue_entries.create({
+        data: {
+          orderId,
+          splitId:          hasSplit ? Number(splitId) : null,
+          tintAssignmentId: hasAssignment ? Number(tintAssignmentId) : null,
+          rawLineItemId,
+          submittedById:    userId,
+          baseSku,
+          tinQty:           new Prisma.Decimal(tinQty),
+          packCode,
+          samplingNo:       resolution.resolvedSamplingNo,
+          shadeName:        resolution.resolvedShadeName,
+          ...pigments,
+        },
+      });
+
+      results.push({
+        tiEntryId:           ti.id,
+        allocatedSamplingNo: resolution.resolvedSamplingNo,
+        isNewSampling:       resolution.isNewSampling,
+        isNewVariant:        resolution.isNewVariant,
+      });
+    }
+
+    // Step 5 — mark parent submitted
     if (hasSplit) {
       await prisma.order_splits.update({
         where: { id: Number(splitId) },
@@ -148,10 +192,12 @@ export async function POST(req: Request): Promise<NextResponse> {
       });
     }
 
-    // Step 4 — Return response
-    return NextResponse.json({ success: typedEntries.length }, { status: 200 });
+    return NextResponse.json({ success: results.length, entries: results }, { status: 200 });
   } catch (err) {
     console.error("[tinter-issue POST]", err);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Internal server error" },
+      { status: 500 },
+    );
   }
 }

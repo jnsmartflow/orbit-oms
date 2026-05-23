@@ -8,6 +8,10 @@ import {
   isValidPackCode,
   isValidTinterType,
 } from "./_lib/validate";
+import {
+  allocateNextSamplingNo,
+  getIstYearPrefix,
+} from "../tint/operator/_lib/sampling-resolution";
 
 export const dynamic = "force-dynamic";
 
@@ -75,8 +79,9 @@ export async function GET(req: Request): Promise<NextResponse> {
   const salesOfficerId  = parsePositiveInt(searchParams.get("salesOfficerId"));
 
   // ── Search ────────────────────────────────────────────────────────────────
+  // Phase 4: samplingNo is now a TEXT column ("26-0001" or legacy "313584"),
+  // so we ILIKE-match it the same way as shadeName instead of an integer eq.
   const search = searchParams.get("search")?.trim() ?? "";
-  const isNumericSearch = search.length > 0 && /^\d+$/.test(search);
 
   // ── Build dynamic WHERE clause via Prisma.sql fragments ───────────────────
   // Every user-supplied value is passed as a ${param} so Prisma binds it; no
@@ -104,12 +109,25 @@ export async function GET(req: Request): Promise<NextResponse> {
   }
   if (search) {
     const like = `%${search}%`;
-    if (isNumericSearch) {
-      const searchInt = parseInt(search, 10);
-      conds.push(Prisma.sql`(sr."samplingNo" = ${searchInt} OR sr."shadeName" ILIKE ${like})`);
-    } else {
-      conds.push(Prisma.sql`sr."shadeName" ILIKE ${like}`);
-    }
+    // Phase 4 (step 16a): also match by usage_log siteNameRaw and by the
+    // joined delivery_point_master customerCode / customerName. EXISTS keeps
+    // the parent row de-duped no matter how many usage rows match. The LEFT
+    // JOIN is so siteId=null rows still surface via siteNameRaw.
+    conds.push(Prisma.sql`(
+      sr."samplingNo" ILIKE ${like}
+      OR sr."shadeName"  ILIKE ${like}
+      OR EXISTS (
+        SELECT 1
+          FROM sampling_usage_log ul
+          LEFT JOIN delivery_point_master dpm ON dpm.id = ul."siteId"
+         WHERE ul."samplingNo" = sr."samplingNo"
+           AND (
+             ul."siteNameRaw"   ILIKE ${like}
+             OR dpm."customerCode" ILIKE ${like}
+             OR dpm."customerName" ILIKE ${like}
+           )
+      )
+    )`);
   }
   const whereClause = conds.length > 0
     ? Prisma.sql`WHERE ${Prisma.join(conds, " AND ")}`
@@ -120,7 +138,7 @@ export async function GET(req: Request): Promise<NextResponse> {
   try {
     // ── Main query: paginated list with lastUsedAt joined in ──────────────
     interface RawRow {
-      samplingNo:     number;
+      samplingNo:     string;
       shadeName:      string;
       tinterType:     TinterType;
       siteId:         number | null;
@@ -196,7 +214,7 @@ export async function GET(req: Request): Promise<NextResponse> {
 
     const siteMap        = new Map(sites.map((s) => [s.id, s.customerName]));
     const soMap          = new Map(sos.map((s) => [s.id, s.name]));
-    const recipeCountMap = new Map(recipeCounts.map((r) => [r.samplingNo, r._count._all]));
+    const recipeCountMap = new Map(recipeCounts.map((r) => [r.samplingNo, r._count?._all ?? 0]));
 
     const items = rawRows.map((r) => ({
       samplingNo:       r.samplingNo,
@@ -344,30 +362,46 @@ export async function POST(req: Request): Promise<NextResponse> {
     };
   }
 
-  // ── Allocate next samplingNo ──────────────────────────────────────────────
-  const maxAgg = await prisma.sampling_register.aggregate({ _max: { samplingNo: true } });
-  const nextSamplingNo = (maxAgg._max.samplingNo ?? 0) + 1;
-
-  // ── Create parent ─────────────────────────────────────────────────────────
-  let parent: { samplingNo: number; shadeName: string; tinterType: TinterType };
-  try {
-    parent = await prisma.sampling_register.create({
-      data: {
-        samplingNo: nextSamplingNo,
-        shadeName,
-        tinterType,
-        siteId,
-        salesOfficerId,
-        dealerName,
-        notes,
-        createdById,
-      },
-      select: { samplingNo: true, shadeName: true, tinterType: true },
-    });
-  } catch (err) {
-    console.error("[sampling-library/create-parent]", err);
-    return NextResponse.json({ error: "Failed to create sampling" }, { status: 500 });
+  // ── Allocate next samplingNo (race-safe via next_sampling_no()) ───────────
+  // Phase 4: samplingNo is a string in "YY-NNNN" format, allocated by the
+  // Postgres helper. P2002 retry mirrors createBatchWithRetry in import/obd.
+  let parent: { samplingNo: string; shadeName: string; tinterType: TinterType };
+  const yearPrefix = getIstYearPrefix();
+  let lastErr: unknown = null;
+  let created = false;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const samplingNo = await allocateNextSamplingNo(yearPrefix);
+    try {
+      parent = await prisma.sampling_register.create({
+        data: {
+          samplingNo,
+          shadeName,
+          tinterType,
+          siteId,
+          salesOfficerId,
+          dealerName,
+          notes,
+          createdById,
+        },
+        select: { samplingNo: true, shadeName: true, tinterType: true },
+      });
+      created = true;
+      break;
+    } catch (err) {
+      lastErr = err;
+      const isP2002 =
+        err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002";
+      if (!isP2002 || attempt === 2) {
+        console.error("[sampling-library/create-parent]", err);
+        return NextResponse.json({ error: "Failed to create sampling" }, { status: 500 });
+      }
+    }
   }
+  if (!created) {
+    console.error("[sampling-library/create-parent] exhausted retries", lastErr);
+    return NextResponse.json({ error: "Failed to allocate sampling number" }, { status: 500 });
+  }
+  parent = parent!;
 
   // ── Optionally create first variant ───────────────────────────────────────
   let recipeCount = 0;

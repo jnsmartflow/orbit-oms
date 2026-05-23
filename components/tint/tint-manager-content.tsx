@@ -1924,6 +1924,16 @@ export function TintManagerContent() {
 
   const [missingSheetOpen,  setMissingSheetOpen]  = useState(false);
   const [missingSheetOrder, setMissingSheetOrder] = useState<TintOrder | null>(null);
+  // Phase 4 (step 13d) — when TM clicks Assign on a missing-customer order,
+  // we redirect to CustomerMissingSheet first and remember the intent so we
+  // can chain to Assign automatically once the customer is resolved. Ref
+  // disambiguates close-via-onResolved (success) vs close-via-Cancel.
+  const [pendingAssignOrderId, setPendingAssignOrderId] = useState<number | null>(null);
+  const sheetResolvedRef = useRef(false);
+  // Phase 4 (step 13e) — amber warning strip text shown inside the sheet.
+  // Set only when the sheet was opened via the Assign-click interceptor;
+  // direct row-icon and badge-popover entry points leave it undefined.
+  const [missingSheetWarning, setMissingSheetWarning] = useState<string | undefined>(undefined);
 
   const [pullModalOpen, setPullModalOpen] = useState(false);
 
@@ -2230,6 +2240,18 @@ export function TintManagerContent() {
   }
 
   function openAssignModal(order: TintOrder) {
+    // Phase 4 (step 13d) interceptor: missing-customer orders must resolve
+    // their master-data row before they can be assigned. Redirect to the
+    // CustomerMissingSheet and remember the intent — a useEffect watches the
+    // orders state and re-fires openAssignModal once the flag flips false.
+    if (order.customerMissing) {
+      setPendingAssignOrderId(order.id);
+      sheetResolvedRef.current = false;
+      setMissingSheetWarning("Resolve customer details first before assigning.");
+      setMissingSheetOrder(order);
+      setMissingSheetOpen(true);
+      return;
+    }
     const currentOpId = order.tintAssignments[0]?.assignedTo.id;
     setSelectedOrder(order);
     setAssignedToId(currentOpId ? String(currentOpId) : "");
@@ -2237,6 +2259,21 @@ export function TintManagerContent() {
     setAssignError(null);
     setAssignModalOpen(true);
   }
+
+  // Phase 4 (step 13d): chain interceptor → Assign modal after the missing
+  // customer is resolved. Fires when orders list refreshes (which happens via
+  // the sheet's onResolved callback) and the pending order's customerMissing
+  // flag has flipped to false. If the order is gone from the list (rare),
+  // silently clear the pending id.
+  useEffect(() => {
+    if (pendingAssignOrderId == null) return;
+    const fresh = orders.find((o) => o.id === pendingAssignOrderId);
+    if (!fresh) { setPendingAssignOrderId(null); return; }
+    if (fresh.customerMissing) return;     // still missing — wait
+    setPendingAssignOrderId(null);
+    openAssignModal(fresh);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orders, pendingAssignOrderId]);
 
   function openSplitReassign(split: SplitCard) {
     setSelectedSplitForReassign(split);
@@ -3063,10 +3100,26 @@ export function TintManagerContent() {
       {/* ── Customer Missing Sheet ─────────────────────────────────────────── */}
       <CustomerMissingSheet
         open={missingSheetOpen}
-        onOpenChange={setMissingSheetOpen}
+        warningMessage={missingSheetWarning}
+        onOpenChange={(next) => {
+          // Step 13e: cancel detection just clears Assign-chain intent — the
+          // amber strip inside the sheet already conveyed the message, and
+          // the orange ⓘ icon on the row is the persistent reminder.
+          if (!next && !sheetResolvedRef.current && pendingAssignOrderId != null) {
+            setPendingAssignOrderId(null);
+          }
+          if (!next) setMissingSheetWarning(undefined);
+          setMissingSheetOpen(next);
+        }}
         shipToCustomerId={missingSheetOrder?.shipToCustomerId}
         shipToCustomerName={missingSheetOrder?.shipToCustomerName}
-        onResolved={() => { setMissingSheetOpen(false); void fetchOrders(); void fetchMissingCustomers(); }}
+        onResolved={() => {
+          sheetResolvedRef.current = true;
+          setMissingSheetWarning(undefined);
+          setMissingSheetOpen(false);
+          void fetchOrders();
+          void fetchMissingCustomers();
+        }}
       />
 
       {/* ── Order Detail Panel ────────────────────────────────────────────── */}

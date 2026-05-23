@@ -151,7 +151,30 @@
       "Bash(git restore *)",
       "Bash(git revert *)",
       "PowerShell($out = npx tsc --noEmit 2>&1; Write-Output \"ExitCode: $LASTEXITCODE\"; Write-Output \"Output: $out\")",
-      "PowerShell($out = npx tsc --noEmit 2>&1 | Out-String; Write-Output \"ExitCode: $LASTEXITCODE\"; if \\($out.Trim\\(\\).Length -gt 0\\) { Write-Output \"--- Output ---\"; Write-Output $out })"
+      "PowerShell($out = npx tsc --noEmit 2>&1 | Out-String; Write-Output \"ExitCode: $LASTEXITCODE\"; if \\($out.Trim\\(\\).Length -gt 0\\) { Write-Output \"--- Output ---\"; Write-Output $out })",
+      "PowerShell($out = npx prisma generate 2>&1 | Out-String; Write-Output \"ExitCode: $LASTEXITCODE\"; Write-Output $out)",
+      "Bash(git rm *)",
+      "Bash(git --no-pager diff --stat HEAD)",
+      "Bash(not exist *)",
+      "Bash(dir docs\\\\plans\\\\sampling-register)",
+      "Bash(tasklist /FI \"IMAGENAME eq node.exe\")",
+      "PowerShell(Stop-Process *)",
+      "Bash(node_modules/.bin/tsx --version)",
+      "Bash(npx --no-install tsx --version)",
+      "PowerShell($env:CLASSIFY=\"1\"; npx ts-node --compiler-options '{\"module\":\"CommonJS\"}' scripts/classify-sampling-excel.ts)",
+      "Bash(CLASSIFY=1 npx ts-node *)",
+      "PowerShell($env:CLASSIFY=\"1\"; npx tsx scripts/classify-sampling-excel.ts)",
+      "Bash(npx tsx *)",
+      "PowerShell($env:IMPORT_MODE=\"dry\"; npx tsx scripts/import-sampling-library.ts)",
+      "PowerShell($env:IMPORT_MODE=\"commit\"; npx tsx scripts/import-sampling-library.ts)",
+      "Bash(git --no-pager diff --cached --stat)",
+      "Bash(git --no-pager log --oneline -3)",
+      "Bash(grep -n \"^  samplingNo: string$\" node_modules/.prisma/client/index.d.ts)",
+      "Bash(grep -nA2 \"sampling_registerPayload<ExtArgs\" node_modules/.prisma/client/index.d.ts)",
+      "Bash(grep -nE \"parseInt\\\\\\(params.samplingNo|\\\\\\\\^\\\\\\\\\\\\\\\\d\\\\\\\\+\\\\\\\\\\\\$\" app/api/sampling-library/\\\\[samplingNo\\\\]/variants/route.ts app/api/sampling-library/\\\\[samplingNo\\\\]/usage-log/route.ts)",
+      "Bash(rm \"app/dev/suggestion-card-preview/page.tsx\")",
+      "Bash(rmdir \"app/dev/suggestion-card-preview\")",
+      "Bash(rmdir \"app/dev\")"
     ]
   }
 }

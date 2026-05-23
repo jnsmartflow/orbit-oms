@@ -40,6 +40,10 @@ export async function GET(
       baseSku:      true,
       tinQty:       true,
       packCode:     true,
+      // Phase 4 (step 13) — round-trip Sampling Library linkage so the
+      // operator screen's "Linked sampling" card survives reload.
+      samplingNo:   true,
+      shadeName:    true,
       YE2:          true,
       YE1:          true,
       XY1:          true,
@@ -110,6 +114,7 @@ export async function PATCH(
 
   const {
     baseSku, tinQty, packCode: packCodeRaw, rawLineItemId,
+    samplingNo: samplingNoRaw, shadeName: shadeNameRaw,
     YE2, YE1, XY1, XR1, WH1, RE2, RE1, OR1, NO2, NO1, MA1, GR1, BU2, BU1,
   } = body as Record<string, unknown>;
 
@@ -120,18 +125,83 @@ export async function PATCH(
     return NextResponse.json({ error: "Invalid packCode" }, { status: 400 });
   }
 
+  // Phase 4: samplingNo + shadeName accepted; behaviour:
+  //   - samplingNo provided & matches current → Scenario 3 mid-edit (update
+  //     sampling_recipes variant pigments, last-saved-wins).
+  //   - samplingNo provided & differs → rewrite TI row only; do NOT touch
+  //     sampling_recipes on either old or new.
+  //   - samplingNo omitted → leave TI row's samplingNo unchanged.
+  let nextSamplingNo: string | null | undefined = undefined;
+  if (samplingNoRaw !== undefined) {
+    if (samplingNoRaw === null) {
+      nextSamplingNo = null;
+    } else if (typeof samplingNoRaw === "string" && samplingNoRaw.trim() !== "") {
+      const candidate = samplingNoRaw.trim();
+      const parent = await prisma.sampling_register.findUnique({
+        where:  { samplingNo: candidate },
+        select: { samplingNo: true },
+      });
+      if (!parent) {
+        return NextResponse.json({ error: `Sampling number ${candidate} not found` }, { status: 400 });
+      }
+      nextSamplingNo = candidate;
+    } else {
+      return NextResponse.json({ error: "Invalid samplingNo" }, { status: 400 });
+    }
+  }
+
+  let nextShadeName: string | null | undefined = undefined;
+  if (shadeNameRaw !== undefined) {
+    if (shadeNameRaw === null) {
+      nextShadeName = null;
+    } else if (typeof shadeNameRaw === "string") {
+      const trimmed = shadeNameRaw.trim();
+      nextShadeName = trimmed === "" ? null : trimmed;
+    } else {
+      return NextResponse.json({ error: "Invalid shadeName" }, { status: 400 });
+    }
+  }
+
+  const finalSamplingNo = nextSamplingNo !== undefined ? nextSamplingNo : entry.samplingNo;
+  const finalPackCode   = (packCodeRaw ?? entry.packCode) as PackCode | null;
+  const finalBaseSku    = String(baseSku).trim();
+  const pigments = {
+    YE2: Number(YE2 ?? 0), YE1: Number(YE1 ?? 0), XY1: Number(XY1 ?? 0),
+    XR1: Number(XR1 ?? 0), WH1: Number(WH1 ?? 0), RE2: Number(RE2 ?? 0),
+    RE1: Number(RE1 ?? 0), OR1: Number(OR1 ?? 0), NO2: Number(NO2 ?? 0),
+    NO1: Number(NO1 ?? 0), MA1: Number(MA1 ?? 0), GR1: Number(GR1 ?? 0),
+    BU2: Number(BU2 ?? 0), BU1: Number(BU1 ?? 0),
+  };
+
+  // Scenario 3 mid-edit: same samplingNo + valid packCode → update the
+  // matching sampling_recipes variant's pigment values.
+  if (
+    finalSamplingNo !== null
+    && finalSamplingNo === entry.samplingNo
+    && finalPackCode !== null
+  ) {
+    const variant = await prisma.sampling_recipes.findUnique({
+      where:  { samplingNo_skuCode_packCode: { samplingNo: finalSamplingNo, skuCode: finalBaseSku, packCode: finalPackCode } },
+      select: { id: true },
+    });
+    if (variant) {
+      await prisma.sampling_recipes.update({
+        where: { id: variant.id },
+        data:  pigments,
+      });
+    }
+  }
+
   const updated = await prisma.tinter_issue_entries_b.update({
     where: { id: entryId },
     data: {
-      baseSku:       String(baseSku).trim(),
+      baseSku:       finalBaseSku,
       tinQty:        Number(tinQty ?? 0),
-      packCode:      (packCodeRaw ?? null) as PackCode | null,
+      packCode:      finalPackCode,
       rawLineItemId: rawLineItemId != null ? Number(rawLineItemId) : entry.rawLineItemId,
-      YE2: Number(YE2 ?? 0), YE1: Number(YE1 ?? 0), XY1: Number(XY1 ?? 0),
-      XR1: Number(XR1 ?? 0), WH1: Number(WH1 ?? 0), RE2: Number(RE2 ?? 0),
-      RE1: Number(RE1 ?? 0), OR1: Number(OR1 ?? 0), NO2: Number(NO2 ?? 0),
-      NO1: Number(NO1 ?? 0), MA1: Number(MA1 ?? 0), GR1: Number(GR1 ?? 0),
-      BU2: Number(BU2 ?? 0), BU1: Number(BU1 ?? 0),
+      ...(nextSamplingNo !== undefined ? { samplingNo: nextSamplingNo } : {}),
+      ...(nextShadeName  !== undefined ? { shadeName:  nextShadeName  } : {}),
+      ...pigments,
     },
   });
 

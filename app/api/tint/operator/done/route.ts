@@ -4,6 +4,10 @@ import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { checkAnyPermission } from "@/lib/permissions";
+import {
+  getIstUsageDate,
+  writeUsageLogsForAssignment,
+} from "../_lib/usage-log-writer";
 
 export const dynamic = "force-dynamic";
 
@@ -200,7 +204,25 @@ export async function POST(req: Request): Promise<NextResponse> {
       },
     })
 
-    return NextResponse.json({ success: true })
+    // 7. Phase 4 — write sampling_usage_log rows for every TI under this
+    //    assignment (TINTER + ACOTONE) + bump sampling_recipes.usageCount.
+    //    Failures here MUST NOT fail Mark Done — the helper per-rows the
+    //    try/catch and only returns counters. Mark Done's primary state
+    //    transitions are already committed above.
+    const usageLogResult = await writeUsageLogsForAssignment({
+      tintAssignmentId:   activeAssignment.id,
+      obdNumber:          order.obdNumber,
+      shipToCustomerName: order.shipToCustomerName,
+      operatorId:         userId,
+      usageDate:          getIstUsageDate(),
+    });
+
+    return NextResponse.json({
+      success: true,
+      usageLogRows:    usageLogResult.written,
+      usageLogSkipped: usageLogResult.skipped, // intentional skips (samplingNo=null)
+      usageLogFailed:  usageLogResult.failed,  // unexpected per-row throws
+    })
   } catch (err) {
     console.error("done error:", err)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })

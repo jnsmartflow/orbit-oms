@@ -12,7 +12,7 @@ export interface UsageSummaryRow {
 }
 
 export interface SamplingDetail {
-  samplingNo:       number;
+  samplingNo:       string;
   shadeName:        string;
   tinterType:       TinterType;
   siteId:           number | null;
@@ -50,7 +50,7 @@ export interface SamplingDetail {
  * (CORE §3 — no prisma.$transaction).
  */
 export async function buildSamplingDetail(
-  samplingNo: number,
+  samplingNo: string,
 ): Promise<SamplingDetail | null> {
   const row = await prisma.sampling_register.findUnique({
     where: { samplingNo },
@@ -186,9 +186,9 @@ export async function buildSamplingDetail(
       siteCode:     master?.customerCode ?? null,
       dealer:       g.dealerNameRaw,
       so,
-      firstUseDate: g._min.usageDate ? g._min.usageDate.toISOString() : null,
-      lastUseDate:  g._max.usageDate ? g._max.usageDate.toISOString() : null,
-      uses:         g._count._all,
+      firstUseDate: g._min?.usageDate ? g._min.usageDate.toISOString() : null,
+      lastUseDate:  g._max?.usageDate ? g._max.usageDate.toISOString() : null,
+      uses:         g._count?._all ?? 0,
     };
   });
 
@@ -232,12 +232,12 @@ export async function buildSamplingDetail(
     createdBy:        { id: row.createdBy.id, name: row.createdBy.name },
     createdAt:        row.createdAt.toISOString(),
     updatedAt:        row.updatedAt.toISOString(),
-    recipeCount:      agg._count._all,
+    recipeCount:      agg._count?._all ?? 0,
     primaryRecipe:    primaryRecipe
       ? { skuCode: primaryRecipe.skuCode, packCode: primaryRecipe.packCode }
       : null,
-    lastUsedAt:       agg._max.lastUsedAt ? agg._max.lastUsedAt.toISOString() : null,
-    totalUsageCount:  agg._sum.usageCount ?? 0,
+    lastUsedAt:       agg._max?.lastUsedAt ? agg._max.lastUsedAt.toISOString() : null,
+    totalUsageCount:  agg._sum?.usageCount ?? 0,
     dealersTotal,
     sitesTotal,
     primaryDealer,

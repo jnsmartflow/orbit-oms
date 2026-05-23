@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { X, Loader2 } from "lucide-react";
+import { X, Loader2, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -28,6 +28,11 @@ interface CustomerMissingSheetProps {
   shipToCustomerId:   string | null | undefined;
   shipToCustomerName: string | null | undefined;
   onResolved:         () => void;
+  // Phase 4 (step 13e): when the sheet was opened from a flow that has a
+  // follow-up intent (e.g. TM Assign click on a missing-customer order),
+  // pass a warning string to render as an amber info strip above the tabs.
+  // Direct-icon-click entry points pass undefined → no strip.
+  warningMessage?:    string;
 }
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -121,6 +126,7 @@ export function CustomerMissingSheet({
   shipToCustomerId,
   shipToCustomerName,
   onResolved,
+  warningMessage,
 }: CustomerMissingSheetProps) {
   // ── Dropdown data ──────────────────────────────────────────────────────────
   const [areas,         setAreas]         = useState<AreaFull[]>([]);
@@ -1094,6 +1100,14 @@ export function CustomerMissingSheet({
             </button>
           </div>
         </div>
+
+        {/* ── Warning strip (caller-driven, amber) ──────────────────────── */}
+        {warningMessage && (
+          <div className="flex-shrink-0 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 mx-6 mt-4 flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-amber-700 flex-shrink-0" />
+            <p className="text-[13px] text-amber-700 font-medium">{warningMessage}</p>
+          </div>
+        )}
 
         {/* ── Tab strip ───────────────────────────────────────────────────── */}
         <div className="flex-shrink-0 border-b border-gray-200 bg-white flex items-stretch">

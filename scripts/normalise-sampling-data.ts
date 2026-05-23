@@ -41,7 +41,7 @@ interface Location {
   source:  Source;
   column:  string;
   count:   number;
-  samples: number[];
+  samples: (number | string)[];
 }
 
 interface Variant {
@@ -60,7 +60,9 @@ interface MasterEntry {
 
 interface ScanRow {
   raw:      string | null;
-  sampleId: number;
+  // Phase 4: sampling_register.samplingNo flipped Int → String, so this audit
+  // identifier holds either a usage-log id (number) or a samplingNo (string).
+  sampleId: number | string;
 }
 
 interface ScanSource {

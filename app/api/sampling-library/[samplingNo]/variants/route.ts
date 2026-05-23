@@ -21,10 +21,11 @@ export async function GET(
   req: Request,
   { params }: { params: { samplingNo: string } },
 ): Promise<NextResponse> {
-  if (!/^\d+$/.test(params.samplingNo)) {
+  // Phase 4: samplingNo is a String key (e.g. "26-0001" or legacy "313584").
+  const samplingNo = params.samplingNo.trim();
+  if (!/^[A-Za-z0-9-]+$/.test(samplingNo)) {
     return NextResponse.json({ error: "Invalid samplingNo" }, { status: 400 });
   }
-  const samplingNo = parseInt(params.samplingNo, 10);
 
   const session = await auth();
   if (!session?.user) {
@@ -107,10 +108,11 @@ export async function POST(
   req: Request,
   { params }: { params: { samplingNo: string } },
 ): Promise<NextResponse> {
-  if (!/^\d+$/.test(params.samplingNo)) {
+  // Phase 4: samplingNo is a String key (e.g. "26-0001" or legacy "313584").
+  const samplingNo = params.samplingNo.trim();
+  if (!/^[A-Za-z0-9-]+$/.test(samplingNo)) {
     return NextResponse.json({ error: "Invalid samplingNo" }, { status: 400 });
   }
-  const samplingNo = parseInt(params.samplingNo, 10);
 
   const session = await auth();
   if (!session?.user) {

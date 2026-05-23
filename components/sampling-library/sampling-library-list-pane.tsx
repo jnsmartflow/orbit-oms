@@ -18,7 +18,7 @@ export interface SamplingFilterState {
 }
 
 interface ListItem {
-  samplingNo:       number;
+  samplingNo:       string;
   shadeName:        string;
   tinterType:       "TINTER" | "ACOTONE";
   siteName:         string | null;
@@ -42,8 +42,8 @@ interface ListResponse {
 
 export interface SamplingLibraryListPaneProps {
   filters:            SamplingFilterState;
-  selectedSamplingNo: number | null;
-  onSelect:           (samplingNo: number) => void;
+  selectedSamplingNo: string | null;
+  onSelect:           (samplingNo: string) => void;
 }
 
 const PAGE_SIZE = 50;
@@ -243,7 +243,7 @@ function ListCard({
 }: {
   item:       ListItem;
   isSelected: boolean;
-  onSelect:   (samplingNo: number) => void;
+  onSelect:   (samplingNo: string) => void;
 }) {
   return (
     <button

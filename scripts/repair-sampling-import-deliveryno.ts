@@ -1,5 +1,10 @@
 // scripts/repair-sampling-import-deliveryno.ts
 //
+// DEPRECATED: Phase 4 flipped sampling_register.samplingNo Int → String. This
+// one-shot repair script operates on legacy numeric samplingNos only; the
+// alignment Maps stay numeric and DB-side samplingNos are coerced with
+// Number() at the boundary. Do not extend this script for new data.
+//
 // Backfills sampling_usage_log.deliveryNumber from the source Excel using
 // the same (samplingNo, sourceRowIndex) alignment pattern as REPAIR-1a in
 // scripts/repair-sampling-import.ts.
@@ -179,9 +184,11 @@ async function loadAndPlan(): Promise<PlanResult> {
   const dbBySnoCount = new Map<number, number>();
   const dbByKey     = new Map<string, { id: number; deliveryNumber: string | null }>();
   for (const r of dbRows) {
-    dbBySnoCount.set(r.samplingNo, (dbBySnoCount.get(r.samplingNo) ?? 0) + 1);
+    // Phase 4: DB samplingNo is TEXT; legacy rows are numeric so coerce.
+    const dbSno = Number(r.samplingNo);
+    dbBySnoCount.set(dbSno, (dbBySnoCount.get(dbSno) ?? 0) + 1);
     if (r.sourceRowIndex != null) {
-      dbByKey.set(`${r.samplingNo}|${r.sourceRowIndex}`, {
+      dbByKey.set(`${dbSno}|${r.sourceRowIndex}`, {
         id:             r.id,
         deliveryNumber: r.deliveryNumber,
       });

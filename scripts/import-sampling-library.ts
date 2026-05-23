@@ -1,5 +1,12 @@
 // scripts/import-sampling-library.ts
 //
+// DEPRECATED: Phase 4 flipped sampling_register.samplingNo from Int → String
+// (format "YY-NNNN", legacy 6-digit accepted). This one-shot importer
+// still treats Excel samplingNo cells as numbers internally and coerces
+// to string at every DB boundary (.toString()) so writes succeed against
+// the new schema. Do not extend this script for new data — use the
+// /api/sampling-library POST endpoint, which uses next_sampling_no().
+//
 // Sampling Library importer — reads Tinting_data_Tracker_N_REVIEWED.xlsx,
 // filters to Action=IMPORT rows, groups by samplingNo, and writes parents
 // (sampling_register) + child recipes (sampling_recipes).
@@ -278,7 +285,7 @@ async function main(): Promise<void> {
   const totalRecipes = parents.reduce((s, p) => s + p.recipes.length, 0);
 
   // ── DB validation: check for existing samplingNo collisions ───────────────
-  const samplingNos = parents.map((p) => p.samplingNo);
+  const samplingNos = parents.map((p) => p.samplingNo.toString());
   const existing = samplingNos.length > 0
     ? await prisma.sampling_register.findMany({
         where:  { samplingNo: { in: samplingNos } },
@@ -440,7 +447,7 @@ async function main(): Promise<void> {
     try {
       await prisma.sampling_register.create({
         data: {
-          samplingNo:     p.samplingNo,
+          samplingNo:     p.samplingNo.toString(),
           shadeName:      p.shadeName,
           tinterType:     p.tinterType,
           siteId:         null,
@@ -472,7 +479,7 @@ async function main(): Promise<void> {
     for (const r of p.recipes) {
       try {
         const data: Prisma.sampling_recipesUncheckedCreateInput = {
-          samplingNo:  p.samplingNo,
+          samplingNo:  p.samplingNo.toString(),
           skuCode:     r.skuCode,
           productName: r.productName || null,
           packCode:    r.packCode as Prisma.sampling_recipesUncheckedCreateInput["packCode"],
@@ -530,7 +537,7 @@ async function main(): Promise<void> {
   console.log("Spot-check (random 5 sampling nos):");
   for (const s of samples) {
     const parent = await prisma.sampling_register.findUnique({
-      where:   { samplingNo: s.samplingNo },
+      where:   { samplingNo: s.samplingNo.toString() },
       include: { recipes: { select: { id: true } } },
     });
     if (parent) {
