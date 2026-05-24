@@ -1589,9 +1589,7 @@ export function TintOperatorContent() {
                     ? "bg-violet-50 text-violet-700 border-violet-200"
                     : "bg-emerald-50 text-emerald-700 border-emerald-200",
                 )}>
-                  {siteHistorySummary.isNewSite
-                    ? "New site"
-                    : `Repeat site · ${siteHistorySummary.totalTIs} ${siteHistorySummary.totalTIs === 1 ? "TI" : "TIs"}`}
+                  {siteHistorySummary.isNewSite ? "New site" : "Repeat site"}
                 </span>
               )}
             </div>
@@ -1859,6 +1857,7 @@ export function TintOperatorContent() {
                             data={suggestDataByEntry[entryId] ?? null}
                             isLoading={!!suggestLoadingByEntry[entryId]}
                             onApplyRecipe={(card) => applySuggestionToEntry(entryId, card)}
+                            siteName={selectedJob?.customerName}
                           />
                         </div>
                       )}

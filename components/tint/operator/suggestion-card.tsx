@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import type {
   SuggestResponse,
   SuggestExactMatch,
@@ -10,6 +11,10 @@ export interface SuggestionCardProps {
   data:          SuggestResponse | null;
   isLoading:     boolean;
   onApplyRecipe: (card: SuggestExactMatch | SuggestReferenceItem) => void;
+  // Phase 4 (step 16d): site name used to prefill the search box when the
+  // operator clicks "View all N →" to jump to the Sampling Library list.
+  // Undefined → link is hidden regardless of how many shades are at the site.
+  siteName?:     string;
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -68,10 +73,10 @@ function CompactSuggestionCard({
   showSkuPack: boolean;
   onClick:     () => void;
 }) {
-  const usageLabel = card.usageCountAtThisSite === 1 ? "use" : "uses";
-  const usageMeta = showSkuPack
-    ? `${card.usageCountAtThisSite} ${usageLabel}`
-    : `${card.usageCountAtThisSite} ${usageLabel} · ${formatDayMonth(card.lastUsedAt)}`;
+  // Step 16c: recency badge replaces usage count. Cards are ranked by
+  // lastUsedAt DESC server-side, so "Last DD MMM" both labels the top card
+  // and signals data freshness. Uniform across exact + reference cards.
+  const usageMeta = `Last ${formatDayMonth(card.lastUsedAt)}`;
   return (
     <button
       type="button"
@@ -119,6 +124,7 @@ export function SuggestionCard({
   data,
   isLoading,
   onApplyRecipe,
+  siteName,
 }: SuggestionCardProps) {
   if (isLoading || data === null) {
     return <SuggestionSkeleton />;
@@ -128,6 +134,16 @@ export function SuggestionCard({
     // Spec §5.1B empty state — render nothing.
     return null;
   }
+  // Step 16d: "View all N →" bridge to /tint/sampling-library. Shows only
+  // when the picker's caps (3 exact + 5 reference) have hidden at least one
+  // sampling at this site. `distinctSamplingNos` is already on the response
+  // (siteHistorySummary) — no new query, just a render-time comparison.
+  const totalAtSite      = data.siteHistorySummary.distinctSamplingNos;
+  const shownInPicker    = exactMatches.length + referenceList.length;
+  const hasHiddenAtSite  = siteName !== undefined && totalAtSite > shownInPicker;
+  const libraryHref      = hasHiddenAtSite
+    ? `/tint/sampling-library?search=${encodeURIComponent(siteName!)}`
+    : null;
   return (
     <div className="flex flex-col">
       {exactMatches.length > 0 && (
@@ -151,6 +167,17 @@ export function SuggestionCard({
         <section className="mb-5">
           <p className="text-[11px] font-medium tracking-wide text-gray-500 mb-2.5">
             Other shades at this site · {referenceList.length} found
+            {libraryHref && (
+              <>
+                {" · "}
+                <Link
+                  href={libraryHref}
+                  className="text-gray-600 hover:text-gray-900 hover:underline"
+                >
+                  View all {totalAtSite} →
+                </Link>
+              </>
+            )}
           </p>
           <div className="grid grid-cols-3 gap-2">
             {referenceList.map((card) => (

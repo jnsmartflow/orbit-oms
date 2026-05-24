@@ -223,20 +223,20 @@ export async function buildSuggestPayload(
     });
   }
 
-  // 4) Sort + cap.
+  // 4) Sort + cap. Step 16c: recency-first ranking — most-recent use wins,
+  // usage count breaks ties on identical dates. Surfaces current depot
+  // practice; old high-count shades stop dominating when habits shift.
   exactMatches.sort((a, b) => {
-    if (b.usageCountAtThisSite !== a.usageCountAtThisSite) {
-      return b.usageCountAtThisSite - a.usageCountAtThisSite;
-    }
-    return b.lastUsedAt.localeCompare(a.lastUsedAt);
+    const dateCmp = b.lastUsedAt.localeCompare(a.lastUsedAt);
+    if (dateCmp !== 0) return dateCmp;
+    return b.usageCountAtThisSite - a.usageCountAtThisSite;
   });
   const exactCapped = exactMatches.slice(0, 3);
 
   referenceList.sort((a, b) => {
-    if (b.usageCountAtThisSite !== a.usageCountAtThisSite) {
-      return b.usageCountAtThisSite - a.usageCountAtThisSite;
-    }
-    return b.lastUsedAt.localeCompare(a.lastUsedAt);
+    const dateCmp = b.lastUsedAt.localeCompare(a.lastUsedAt);
+    if (dateCmp !== 0) return dateCmp;
+    return b.usageCountAtThisSite - a.usageCountAtThisSite;
   });
   const referenceCapped = referenceList.slice(0, 5);
 
