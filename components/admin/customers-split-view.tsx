@@ -12,10 +12,16 @@ import {
 } from "@/components/ui/dialog";
 
 import type {
-  SubAreaOption, RouteOption, DeliveryTypeOption,
+  SubAreaOption, SalesOfficerOption, RouteOption, DeliveryTypeOption,
   SOGroupOption, ContactRoleOption, CustomerTypeOption, PremisesTypeOption,
   ContactDraft, CustomerFull,
+  SalesOfficerLink, DismissalToggle,
 } from "@/components/admin/customer-sheet";
+import { SO_ROLE_ORDER } from "@/components/admin/customer-sheet";
+import { ContactCard } from "@/components/admin/contact-card";
+import { SalesOfficersList } from "@/components/admin/sales-officers-list";
+import { AutoContactDeleteDialog } from "@/components/admin/auto-contact-delete-dialog";
+import { resolveLinkedSO } from "@/lib/customers/resolve-linked-so";
 
 // ── Local types ────────────────────────────────────────────────────────────────
 export interface AreaWithType { id: number; name: string; deliveryType: { id: number; name: string } | null; primaryRoute: { id: number; name: string } | null }
@@ -32,8 +38,6 @@ interface CustomerListRow {
   isKeyCustomer:     boolean;
   isActive:          boolean;
 }
-
-interface SalesOfficerOption { id: number; name: string }
 
 export interface CustomersSplitViewProps {
   initialCustomers: CustomerListRow[];
@@ -82,6 +86,9 @@ type FormState = {
   workingHoursEnd:        string;
   noDeliveryDays:         string[];
   contacts:               ContactDraft[];
+  // Phase 3b — multi-SO + auto-contact dismissal
+  salesOfficers:          SalesOfficerLink[];
+  dismissalsToToggle:     DismissalToggle[];
 };
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -105,6 +112,7 @@ const EMPTY_FORM: FormState = {
   customerRating: "", latitude: "", longitude: "",
   isKeyCustomer: false, isKeySite: false, acceptsPartialDelivery: true, isActive: true,
   workingHoursStart: "", workingHoursEnd: "", noDeliveryDays: [], contacts: [],
+  salesOfficers: [], dismissalsToToggle: [],
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -133,19 +141,25 @@ function formFromCustomer(c: CustomerFull): FormState {
     workingHoursEnd:        c.workingHoursEnd   ?? "",
     noDeliveryDays:         c.noDeliveryDays,
     contacts: c.contacts.map((ct) => ({
-      _key:          `${ct.id}`,
-      id:            ct.id,
-      name:          ct.name,
-      phone:         ct.phone ?? "",
-      email:         ct.email ?? "",
-      isPrimary:     ct.isPrimary,
-      contactRoleId: ct.contactRoleId?.toString() ?? "",
+      _key:                 `${ct.id}`,
+      id:                   ct.id,
+      name:                 ct.name,
+      phone:                ct.phone ?? "",
+      email:                ct.email ?? "",
+      isPrimary:            ct.isPrimary,
+      contactRoleId:        ct.contactRoleId?.toString() ?? "",
+      linkedSalesOfficerId: ct.linkedSalesOfficerId ?? null,
     })),
+    salesOfficers: (c.salesOfficerLinks ?? []).map((link) => ({
+      salesOfficerId: link.salesOfficerId,
+      role:           link.role,
+    })),
+    dismissalsToToggle: [],
   };
 }
 
 function newContact(): ContactDraft {
-  return { _key: `${Date.now()}-${Math.random()}`, name: "", phone: "", email: "", isPrimary: false, contactRoleId: "" };
+  return { _key: `${Date.now()}-${Math.random()}`, name: "", phone: "", email: "", isPrimary: false, contactRoleId: "", linkedSalesOfficerId: null };
 }
 
 function getInitials(name: string): string {
@@ -216,6 +230,7 @@ export function CustomersSplitView({
   const [savedForm, setSavedForm]       = useState<FormState | null>(null);
   const [fieldErrors, setFieldErrors]   = useState<Record<string, string>>({});
   const [saving, setSaving]             = useState(false);
+  const [deleteAutoTarget, setDeleteAutoTarget] = useState<ContactDraft | null>(null);
 
   // ── Dirty state ─────────────────────────────────────────────────────────────
   const dirty = savedForm
@@ -382,6 +397,52 @@ export function CustomersSplitView({
     }));
   }
 
+  // Manual contact → immediate remove. Auto contact → open dismissal modal.
+  function handleContactRemove(contact: ContactDraft) {
+    if (contact.linkedSalesOfficerId == null) {
+      removeContact(contact._key);
+    } else {
+      setDeleteAutoTarget(contact);
+    }
+  }
+
+  // Modal confirmed → flip dismissal flag in form state, drop the contact locally.
+  function confirmAutoDelete() {
+    const target = deleteAutoTarget;
+    if (!target || target.linkedSalesOfficerId == null) {
+      setDeleteAutoTarget(null);
+      return;
+    }
+    const soId = target.linkedSalesOfficerId;
+    setForm((prev) => {
+      const nextDismissals = [
+        ...prev.dismissalsToToggle.filter((d) => d.salesOfficerId !== soId),
+        { salesOfficerId: soId, dismissed: true },
+      ];
+      return {
+        ...prev,
+        contacts: prev.contacts.filter((c) => c._key !== target._key),
+        dismissalsToToggle: nextDismissals,
+      };
+    });
+    setDeleteAutoTarget(null);
+  }
+
+  // Auto contacts first (Primary → Backup → Junior), then manual contacts
+  // (Primary contact first, then by original id ASC).
+  const sortedContacts = useMemo(() => {
+    return [...form.contacts].sort((a, b) => {
+      const aLink = a.linkedSalesOfficerId != null ? form.salesOfficers.find((s) => s.salesOfficerId === a.linkedSalesOfficerId) : null;
+      const bLink = b.linkedSalesOfficerId != null ? form.salesOfficers.find((s) => s.salesOfficerId === b.linkedSalesOfficerId) : null;
+      const aGroup = aLink ? 0 : 1;
+      const bGroup = bLink ? 0 : 1;
+      if (aGroup !== bGroup) return aGroup - bGroup;
+      if (aLink && bLink) return SO_ROLE_ORDER[aLink.role] - SO_ROLE_ORDER[bLink.role];
+      if (a.isPrimary !== b.isPrimary) return a.isPrimary ? -1 : 1;
+      return (a.id ?? 0) - (b.id ?? 0);
+    });
+  }, [form.contacts, form.salesOfficers]);
+
   // ── Validation ──────────────────────────────────────────────────────────────
   function validate(): boolean {
     const errs: Record<string, string> = {};
@@ -431,6 +492,9 @@ export function CustomersSplitView({
         email:         c.email || null,
         contactRoleId: contactRoleId ? parseInt(contactRoleId, 10) : null,
       })),
+      // Phase 3b — multi-SO + dismissal payload.
+      salesOfficers:      form.salesOfficers,
+      dismissalsToToggle: form.dismissalsToToggle,
     };
 
     try {
@@ -1087,34 +1151,30 @@ export function CustomersSplitView({
                 {/* ── Sales & classification ───────────────────────────────── */}
                 <div ref={(el) => { sectionRefs.current["sec-sales"] = el; }} id="sec-sales" className="bg-white border border-[#e5e7eb] rounded-xl p-[18px_20px] scroll-mt-3">
                   <SectionHead icon={<BarChart2 className="w-[13px] h-[13px]" />} title="Sales & classification" />
-                  <div className="grid grid-cols-2 gap-3 mb-3">
-                    <div>
-                      <FieldLabel>Sales officer group</FieldLabel>
-                      <Select value={form.salesOfficerGroupId || "none"} onValueChange={(v) => setField("salesOfficerGroupId", !v || v === "none" ? "" : v)}>
-                        <SelectTrigger className="h-[34px] text-[12.5px] border-[#e5e7eb]"><SelectValue>{(v: any) => !v || v === "none" ? "None" : (soGroups.find((g) => g.id.toString() === v)?.name ?? v)}</SelectValue></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">None</SelectItem>
-                          {soGroups.map((g) => <SelectItem key={g.id} value={g.id.toString()}>{g.name}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                      {selectedSOGroup ? (
-                        <p className={hintCls}>SO: <span className="text-[#1565c0] font-medium">{selectedSOGroup.salesOfficer.name}</span></p>
-                      ) : (
-                        <p className={hintCls}>SO is derived from the group</p>
-                      )}
-                    </div>
-                    <div>
-                      <FieldLabel>Sales officer (direct)</FieldLabel>
-                      <Select value={form.salesOfficerId || "none"} onValueChange={(v) => setField("salesOfficerId", !v || v === "none" ? "" : v)}>
-                        <SelectTrigger className="h-[34px] text-[12.5px] border-[#e5e7eb]"><SelectValue>{(v: any) => !v || v === "none" ? "None" : (salesOfficers.find((so) => so.id.toString() === v)?.name ?? v)}</SelectValue></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">None</SelectItem>
-                          {salesOfficers.map((so) => <SelectItem key={so.id} value={so.id.toString()}>{so.name}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </div>
+                  <div className="mb-4">
+                    <FieldLabel>Sales officer group</FieldLabel>
+                    <Select value={form.salesOfficerGroupId || "none"} onValueChange={(v) => setField("salesOfficerGroupId", !v || v === "none" ? "" : v)}>
+                      <SelectTrigger className="h-[34px] text-[12.5px] border-[#e5e7eb]"><SelectValue>{(v: any) => !v || v === "none" ? "None" : (soGroups.find((g) => g.id.toString() === v)?.name ?? v)}</SelectValue></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">None</SelectItem>
+                        {soGroups.map((g) => <SelectItem key={g.id} value={g.id.toString()}>{g.name}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                    {selectedSOGroup ? (
+                      <p className={hintCls}>SO: <span className="text-[#1565c0] font-medium">{selectedSOGroup.salesOfficer.name}</span></p>
+                    ) : (
+                      <p className={hintCls}>Portfolio group · classification tag only (no longer drives SO).</p>
+                    )}
                   </div>
-                  <div className="grid grid-cols-2 gap-3 mb-3">
+
+                  <SalesOfficersList
+                    value={form.salesOfficers}
+                    onChange={(next) => setForm((prev) => ({ ...prev, salesOfficers: next }))}
+                    options={salesOfficers}
+                    disabled={!canEdit}
+                  />
+
+                  <div className="grid grid-cols-2 gap-3 mb-3 mt-4">
                     <div>
                       <FieldLabel>Customer type</FieldLabel>
                       <Select value={form.customerTypeId || "none"} onValueChange={(v) => setField("customerTypeId", !v || v === "none" ? "" : v)}>
@@ -1219,46 +1279,19 @@ export function CustomersSplitView({
                   <SectionHead icon={<Mail className="w-[13px] h-[13px]" />} title="Contacts" />
                   {fieldErrors.contacts && <p className="text-[11px] text-red-600 mb-2">{fieldErrors.contacts}</p>}
                   <div className="flex flex-col gap-2 mb-2">
-                    {form.contacts.map((contact) => (
-                      <div key={contact._key} className="bg-gray-50 border border-[#e5e7eb] rounded-lg p-[11px_13px] relative">
-                        <div className="flex gap-2.5 items-start">
-                          <div className="w-[30px] h-[30px] rounded-full bg-teal-50 flex items-center justify-center text-[10px] font-semibold text-teal-700 flex-shrink-0 mt-0.5 font-mono">
-                            {getInitials(contact.name) || "?"}
-                          </div>
-                          <div className="flex-1 min-w-0 flex flex-col gap-1.5">
-                            <div className="grid grid-cols-2 gap-2">
-                              <input type="text" className={inputCls} placeholder="Contact name" value={contact.name} onChange={(e) => updateContact(contact._key, "name", e.target.value)} />
-                              <Select value={contact.contactRoleId || "none"} onValueChange={(v) => updateContact(contact._key, "contactRoleId", !v || v === "none" ? "" : v)}>
-                                <SelectTrigger className="h-[34px] text-[12.5px] border-[#e5e7eb]"><SelectValue>{(v: any) => !v || v === "none" ? "Role (optional)" : (contactRoles.find((r) => r.id.toString() === v)?.name ?? v)}</SelectValue></SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="none">No role</SelectItem>
-                                  {contactRoles.map((r) => <SelectItem key={r.id} value={r.id.toString()}>{r.name}</SelectItem>)}
-                                </SelectContent>
-                              </Select>
-                            </div>
-                            <div className="grid grid-cols-2 gap-2">
-                              <input type="text" className={inputCls} placeholder="Phone" value={contact.phone} onChange={(e) => updateContact(contact._key, "phone", e.target.value)} />
-                              <input type="email" className={inputCls} placeholder="Email" value={contact.email} onChange={(e) => updateContact(contact._key, "email", e.target.value)} />
-                            </div>
-                          </div>
-                          <button type="button" onClick={() => removeContact(contact._key)} className="w-[22px] h-[22px] rounded flex items-center justify-center text-[#9ca3af] hover:bg-[#fee2e2] hover:text-[#b91c1c] transition-all flex-shrink-0">×</button>
-                        </div>
-                        <div className="flex items-center gap-2 mt-2 pl-[38px]">
-                          <div
-                            onClick={() => setPrimary(contact._key)}
-                            className={`w-[13px] h-[13px] rounded-[3px] border flex items-center justify-center cursor-pointer flex-shrink-0 transition-all ${contact.isPrimary ? "bg-teal-600 border-teal-600" : "bg-white border-gray-300"}`}
-                          >
-                            {contact.isPrimary && <div className="w-[7px] h-[4px] border-l-[1.5px] border-b-[1.5px] border-white -rotate-45 -translate-y-[1px]" />}
-                          </div>
-                          <span className="text-[11.5px] text-gray-500 cursor-pointer" onClick={() => setPrimary(contact._key)}>Primary contact</span>
-                          {contact.isPrimary && <span className="text-[10px] font-semibold px-1.5 py-px rounded-full bg-[#e8f5e9] text-[#2e7d32] border border-[#a5d6a7]">Primary</span>}
-                          {contact.contactRoleId && (
-                            <span className="text-[10px] font-semibold px-1.5 py-px rounded-full bg-teal-50 text-teal-700 border border-teal-200">
-                              {contactRoles.find((r) => r.id.toString() === contact.contactRoleId)?.name}
-                            </span>
-                          )}
-                        </div>
-                      </div>
+                    {sortedContacts.map((contact) => (
+                      <ContactCard
+                        key={contact._key}
+                        contact={contact}
+                        contactRoles={contactRoles}
+                        linkedSO={resolveLinkedSO(contact, form.salesOfficers, salesOfficers)}
+                        onUpdate={(field, value) => updateContact(contact._key, field, value)}
+                        onSetPrimary={() => {
+                          if (contact.isPrimary) updateContact(contact._key, "isPrimary", false);
+                          else setPrimary(contact._key);
+                        }}
+                        onRemove={() => handleContactRemove(contact)}
+                      />
                     ))}
                   </div>
                   <button
@@ -1322,6 +1355,13 @@ export function CustomersSplitView({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AutoContactDeleteDialog
+        open={deleteAutoTarget !== null}
+        contactName={deleteAutoTarget?.name ?? ""}
+        onConfirm={confirmAutoDelete}
+        onCancel={() => setDeleteAutoTarget(null)}
+      />
     </div>
   );
 }

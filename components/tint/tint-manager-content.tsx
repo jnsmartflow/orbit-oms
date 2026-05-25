@@ -73,6 +73,10 @@ export interface TintOrder {
     salesOfficerGroup:  {
       salesOfficer: { name: string };
     } | null;
+    // Phase 5 — Primary SO link (0-or-1 element array from server include).
+    salesOfficerLinks?: Array<{
+      salesOfficer: { id: number; name: string; phone: string | null };
+    }>;
   } | null;
   querySnapshot: {
     totalVolume: number;
@@ -187,6 +191,10 @@ export interface SplitCard {
       salesOfficerGroup:  {
         salesOfficer: { name: string };
       } | null;
+      // Phase 5 — Primary SO link.
+      salesOfficerLinks?: Array<{
+        salesOfficer: { id: number; name: string; phone: string | null };
+      }>;
     } | null;
   };
 }
@@ -214,6 +222,10 @@ export interface CompletedAssignment {
       customerName:      string;
       area:              { name: string };
       salesOfficerGroup: { salesOfficer: { name: string } } | null;
+      // Phase 5 — Primary SO link.
+      salesOfficerLinks?: Array<{
+        salesOfficer: { id: number; name: string; phone: string | null };
+      }>;
     } | null;
     querySnapshot: {
       totalVolume:  number;
@@ -226,6 +238,27 @@ export interface CompletedAssignment {
 interface Operator {
   id:   number;
   name: string | null;
+}
+
+// Phase 5 — DRY cascade read used by every TM card.
+// 1. Primary SO link (customer_sales_officers, filtered to PRIMARY +
+//    non-dismissed by the server include).
+// 2. salesOfficerGroup.salesOfficer (legacy fallback).
+// 3. "—" sentinel.
+function getDisplaySalesOfficerName(
+  customer:
+    | {
+        salesOfficerLinks?: Array<{ salesOfficer: { name: string } }>;
+        salesOfficerGroup?: { salesOfficer: { name: string } } | null;
+      }
+    | null
+    | undefined,
+): string {
+  return (
+    customer?.salesOfficerLinks?.[0]?.salesOfficer?.name ??
+    customer?.salesOfficerGroup?.salesOfficer?.name ??
+    "—"
+  );
 }
 
 interface SlotSummaryItem {
@@ -547,7 +580,7 @@ function KanbanCard({ order, stage, onAssign, onCreateSplit, onRefresh, onMoveUp
     ? `${order.querySnapshot.totalVolume} L`
     : "—";
   const smu             = order.smu ?? "—";
-  const salesOfficerName = order.customer?.salesOfficerGroup?.salesOfficer?.name ?? "—";
+  const salesOfficerName = getDisplaySalesOfficerName(order.customer);
   const operatorName    = assignment?.assignedTo.name ?? "—";
   const operatorInitials = operatorName === "—"
     ? "?"
@@ -1505,7 +1538,7 @@ function SplitKanbanCard({
   }, []);
 
   const customerName     = split.order.customer?.customerName ?? "—";
-  const salesOfficerName = split.order.customer?.salesOfficerGroup?.salesOfficer?.name ?? "—";
+  const salesOfficerName = getDisplaySalesOfficerName(split.order.customer);
   const volume           = split.totalVolume != null ? `${split.totalVolume.toFixed(1)} L` : "—";
   const smu              = split.smu ?? "—";
   const operatorName     = split.assignedTo.name ?? "—";

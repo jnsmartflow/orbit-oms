@@ -187,6 +187,14 @@ export async function GET(
                   salesOfficer: { select: { name: true, phone: true } },
                 },
               },
+              // Phase 5 — Primary SO link, top cascade source for S5 SO column.
+              salesOfficerLinks: {
+                where:  { role: "PRIMARY", contactDismissed: false },
+                take:   1,
+                select: {
+                  salesOfficer: { select: { name: true, phone: true } },
+                },
+              },
               contacts: {
                 select: {
                   name:        true,
@@ -218,6 +226,14 @@ export async function GET(
             },
           },
           salesOfficerGroup: {
+            select: {
+              salesOfficer: { select: { name: true, phone: true } },
+            },
+          },
+          // Phase 5 — Primary SO link, top cascade source for S5 SO column.
+          salesOfficerLinks: {
+            where:  { role: "PRIMARY", contactDismissed: false },
+            take:   1,
             select: {
               salesOfficer: { select: { name: true, phone: true } },
             },
@@ -268,16 +284,36 @@ export async function GET(
     })();
 
     const resolvedSalesOfficer = (() => {
+      // Phase 5 cascade — locked order (CLAUDE_TINT.md §5.5 reflects the
+      // pre-Phase-5 order; context-file refresh tracked separately).
+      // Frozen-record rule: existing printed challans don't re-render, but
+      // re-opens DO re-resolve, so the displayed SO matches current
+      // customer-master state on every GET.
+      //
+      // 1. Primary SO from customer_sales_officers (Phase 1 table). NEW.
+      //    contactDismissed=true rows are filtered out by the include's
+      //    where clause — falls through to source #2 in that case.
+      const fromPrimary = resolvedShipTo?.salesOfficerLinks?.[0]?.salesOfficer;
+      if (fromPrimary) {
+        return { name: fromPrimary.name, phone: fromPrimary.phone ?? null };
+      }
+      // 2. salesOfficerGroup.salesOfficer (legacy fallback for historical
+      //    customers without a Primary SO link yet; Phase 7 backfill will
+      //    populate most of these).
       const fromGroup = resolvedShipTo?.salesOfficerGroup?.salesOfficer;
       if (fromGroup) {
         return { name: fromGroup.name, phone: fromGroup.phone ?? null };
       }
+      // 3. Ship-To contact with contactRole.name === "Sales Officer". Rare
+      //    manual override; usually redundant post-Phase 3b since the
+      //    auto-contact would have matched source #1.
       const fromContact = resolvedShipTo?.contacts.find(
         (c) => c.contactRole?.name === "Sales Officer",
       );
       if (fromContact) {
         return { name: fromContact.name, phone: fromContact.phone ?? null };
       }
+      // 4. null.
       return null;
     })();
 

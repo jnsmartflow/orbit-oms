@@ -4,15 +4,34 @@ import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { checkPermission } from "@/lib/permissions";
+import {
+  validateIncomingSalesOfficers,
+  applyDismissalToggles,
+  reconcileCustomerSalesOfficers,
+  syncSalesOfficerContacts,
+  enforcePrimaryContactRule,
+  SoSyncValidationError,
+} from "@/lib/customers/so-sync";
 
 export const dynamic = 'force-dynamic';
 
 const contactSchema = z.object({
-  name:          z.string().min(1).max(100),
-  phone:         z.string().max(30).optional().nullable(),
-  email:         z.string().max(200).optional().nullable(),
-  isPrimary:     z.boolean().default(false),
-  contactRoleId: z.number().int().positive().optional().nullable(),
+  name:                 z.string().min(1).max(100),
+  phone:                z.string().max(30).optional().nullable(),
+  email:                z.string().max(200).optional().nullable(),
+  isPrimary:            z.boolean().default(false),
+  contactRoleId:        z.number().int().positive().optional().nullable(),
+  linkedSalesOfficerId: z.number().int().positive().optional().nullable(),
+});
+
+const salesOfficerLinkSchema = z.object({
+  salesOfficerId: z.number().int().positive(),
+  role:           z.enum(["PRIMARY", "BACKUP", "JUNIOR"]),
+});
+
+const dismissalToggleSchema = z.object({
+  salesOfficerId: z.number().int().positive(),
+  dismissed:      z.boolean(),
 });
 
 const createSchema = z.object({
@@ -39,6 +58,9 @@ const createSchema = z.object({
   workingHoursEnd:        z.string().max(10).optional().nullable(),
   noDeliveryDays:         z.array(z.string()).default([]),
   contacts:               z.array(contactSchema).default([]),
+  // Phase 2 multi-SO sync
+  salesOfficers:          z.array(salesOfficerLinkSchema).optional().default([]),
+  dismissalsToToggle:     z.array(dismissalToggleSchema).optional().default([]),
 });
 
 const listInclude = {
@@ -58,6 +80,13 @@ const fullInclude = {
   premisesType:          { select: { id: true, name: true } },
   salesOfficerGroup:     { select: { id: true, name: true } },
   contacts:             { orderBy: [{ isPrimary: "desc" as const }, { id: "asc" as const }] },
+  // Phase 2 — multi-SO links with nested SO master fields
+  salesOfficerLinks: {
+    orderBy: { createdAt: "asc" as const },
+    include: {
+      salesOfficer: { select: { id: true, name: true, phone: true } },
+    },
+  },
 };
 
 export async function GET(req: Request) {
@@ -128,29 +157,60 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: parsed.error.flatten().fieldErrors }, { status: 400 });
   }
 
-  const { contacts, ...data } = parsed.data;
+  const { contacts, salesOfficers, dismissalsToToggle, ...data } = parsed.data;
   const customerCode = data.customerCode.trim().toUpperCase();
+
+  // Stage B — validate FIRST, before any DB writes.
+  // A validation failure here leaves the DB untouched.
+  try {
+    await validateIncomingSalesOfficers(salesOfficers, prisma);
+  } catch (err) {
+    if (err instanceof SoSyncValidationError) {
+      return NextResponse.json({ error: err.message, field: err.field }, { status: err.status });
+    }
+    throw err;
+  }
 
   const existing = await prisma.delivery_point_master.findUnique({ where: { customerCode } });
   if (existing) {
     return NextResponse.json({ error: "Customer code already exists." }, { status: 409 });
   }
 
+  // Strip contact-level linkedSalesOfficerId from the nested-create payload.
+  // Stage D owns that field; on initial create there are no SO links yet,
+  // so any value here would be stale/spurious.
+  const contactsForCreate = contacts.map(({ linkedSalesOfficerId: _ignored, ...rest }) => rest);
+
+  // Stage A — existing customer + contacts save (pre-existing $transaction wrapper
+  // kept verbatim per CORE §3 landmine policy).
   const customer = await prisma.$transaction(async (tx) => {
     return tx.delivery_point_master.create({
       data: {
         ...data,
         customerCode,
-        ...(contacts.length > 0 && { contacts: { create: contacts } }),
+        ...(contactsForCreate.length > 0 && { contacts: { create: contactsForCreate } }),
       },
       include: fullInclude,
     });
   });
 
+  // Stages F → C → D → E — multi-SO + Contacts sync.
+  await applyDismissalToggles(customer.id, dismissalsToToggle, prisma);
+  await reconcileCustomerSalesOfficers(customer.id, salesOfficers, prisma);
+  await syncSalesOfficerContacts(customer.id, prisma);
+  await enforcePrimaryContactRule(customer.id, prisma);
+
+  // customerMissing backfill (Finding 2 — preserved untouched).
   await prisma.orders.updateMany({
     where: { shipToCustomerId: customerCode, customerId: null },
     data:  { customerMissing: false, customerId: customer.id },
   });
 
-  return NextResponse.json(customer, { status: 201 });
+  // Re-fetch so the response reflects synced SO links + refreshed contacts.
+  const finalCustomer = await prisma.delivery_point_master.findUnique({
+    where: { id: customer.id },
+    include: fullInclude,
+  });
+
+  return NextResponse.json(finalCustomer, { status: 201 });
 }

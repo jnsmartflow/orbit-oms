@@ -138,6 +138,23 @@ interface CreateNewSamplingArgs {
 }
 
 async function createNewSamplingWithRetry(args: CreateNewSamplingArgs): Promise<string> {
+  // Phase 6 — stamp the customer's current Primary SO onto the new register
+  // row at creation time. Frozen-record semantics: never refreshed after.
+  // Filter mirrors Phase 5 challan cascade source #1 (role=PRIMARY +
+  // contactDismissed=false). Resolves to null when: orphan sampling (no
+  // siteId), customer has no Primary SO link, or the Primary link is
+  // dismissed. In all null cases _lib/detail.ts falls back to the legacy
+  // cascade for display — frozen-record rule preserved.
+  // Hoisted above the retry loop: lookup is independent of samplingNo.
+  let primarySalesOfficerId: number | null = null;
+  if (args.siteId !== null) {
+    const primaryLink = await prisma.customer_sales_officers.findFirst({
+      where:  { customerId: args.siteId, role: "PRIMARY", contactDismissed: false },
+      select: { salesOfficerId: true },
+    });
+    primarySalesOfficerId = primaryLink?.salesOfficerId ?? null;
+  }
+
   let lastErr: unknown = null;
   for (let attempt = 0; attempt < 3; attempt++) {
     const samplingNo = await allocateNextSamplingNo(args.yearPrefix);
@@ -145,13 +162,14 @@ async function createNewSamplingWithRetry(args: CreateNewSamplingArgs): Promise<
       await prisma.sampling_register.create({
         data: {
           samplingNo,
-          shadeName:   args.shadeName,
-          tinterType:  args.tinterType,
-          createdById: args.userId,
-          siteId:      args.siteId,
-          dealerName:  args.dealerName,
-          isActive:    true,
-          needsReview: false,
+          shadeName:      args.shadeName,
+          tinterType:     args.tinterType,
+          createdById:    args.userId,
+          siteId:         args.siteId,
+          salesOfficerId: primarySalesOfficerId,
+          dealerName:     args.dealerName,
+          isActive:       true,
+          needsReview:    false,
         },
       });
       // Sequential — recipe insert AFTER parent succeeds. Partial-state

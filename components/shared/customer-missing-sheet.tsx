@@ -1,13 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { X, Loader2, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import type {
@@ -18,7 +17,13 @@ import type {
   SOGroupOption,
   ContactRoleOption,
   ContactDraft,
+  SalesOfficerLink,
+  DismissalToggle,
 } from "@/components/admin/customer-sheet";
+import { SO_ROLE_ORDER, SALES_OFFICER_CONTACT_ROLE_ID } from "@/components/admin/customer-sheet";
+import { ContactCard } from "@/components/admin/contact-card";
+import { SalesOfficersList } from "@/components/admin/sales-officers-list";
+import { resolveLinkedSO } from "@/lib/customers/resolve-linked-so";
 
 // ── Props ──────────────────────────────────────────────────────────────────────
 
@@ -60,12 +65,13 @@ type Tab = typeof TABS[number];
 
 function newContact(): ContactDraft {
   return {
-    _key:          `${Date.now()}-${Math.random()}`,
-    name:          "",
-    phone:         "",
-    email:         "",
-    isPrimary:     false,
-    contactRoleId: "",
+    _key:                 `${Date.now()}-${Math.random()}`,
+    name:                 "",
+    phone:                "",
+    email:                "",
+    isPrimary:            false,
+    contactRoleId:        "",
+    linkedSalesOfficerId: null,
   };
 }
 
@@ -94,6 +100,10 @@ function emptyForm(initialCode?: string, initialName?: string) {
     workingHoursEnd:         "",
     noDeliveryDays:          [] as string[],
     contacts:                [] as ContactDraft[],
+    // Phase 4 — multi-SO links + dismissal accumulator. Sheet is create-only,
+    // so dismissalsToToggle stays empty for the entire session.
+    salesOfficers:           [] as SalesOfficerLink[],
+    dismissalsToToggle:      [] as DismissalToggle[],
   };
 }
 
@@ -190,7 +200,7 @@ export function CustomerMissingSheet({
     form.customerName.trim(),
     form.areaId,
     form.address.trim(),
-    form.salesOfficerId,
+    form.salesOfficers.length > 0 ? "yes" : "",
     form.dispatchDeliveryTypeId,
     form.salesOfficerGroupId,
     form.customerRating,
@@ -238,6 +248,71 @@ export function CustomerMissingSheet({
       contacts: prev.contacts.map((c) => ({ ...c, isPrimary: c._key === key })),
     }));
   }
+
+  // Phase 4 — eager-sync glue for the multi-SO picker.
+  // When the SO list changes:
+  //   - Added SO  → synthesize a draft auto-contact in form.contacts (with
+  //                 linkedSalesOfficerId set), so the Contacts tab shows it
+  //                 immediately.
+  //   - Removed SO → drop the matching draft auto-contact.
+  //   - Role change → no contact-array change; ContactCard's badge derives
+  //                   live from form.salesOfficers via resolveLinkedSO.
+  // dismissalsToToggle is unused here (sheet is create-only — no persisted
+  // links exist to dismiss).
+  function handleSalesOfficersChange(next: SalesOfficerLink[]) {
+    setForm((prev) => {
+      const prevIds = new Set(prev.salesOfficers.map((s) => s.salesOfficerId));
+      const nextIds = new Set(next.map((s) => s.salesOfficerId));
+      const added   = next.filter((s) => !prevIds.has(s.salesOfficerId));
+      const removedIds = prev.salesOfficers
+        .filter((s) => !nextIds.has(s.salesOfficerId))
+        .map((s) => s.salesOfficerId);
+
+      let nextContacts = prev.contacts;
+
+      if (removedIds.length > 0) {
+        const removedSet = new Set(removedIds);
+        nextContacts = nextContacts.filter(
+          (c) => c.linkedSalesOfficerId == null || !removedSet.has(c.linkedSalesOfficerId),
+        );
+      }
+
+      if (added.length > 0) {
+        const drafts: ContactDraft[] = [];
+        for (const entry of added) {
+          const master = salesOfficers.find((o) => o.id === entry.salesOfficerId);
+          if (!master) continue;
+          drafts.push({
+            _key:                 `auto-${entry.salesOfficerId}-${Date.now()}-${Math.random()}`,
+            name:                 master.name,
+            phone:                master.phone ?? "",
+            email:                "",
+            isPrimary:            false,
+            contactRoleId:        SALES_OFFICER_CONTACT_ROLE_ID.toString(),
+            linkedSalesOfficerId: entry.salesOfficerId,
+          });
+        }
+        nextContacts = [...nextContacts, ...drafts];
+      }
+
+      return { ...prev, salesOfficers: next, contacts: nextContacts };
+    });
+  }
+
+  // Auto contacts first (Primary → Backup → Junior), then manual contacts
+  // (Primary contact first, then by insertion order via _key).
+  const sortedContacts = useMemo(() => {
+    return [...form.contacts].sort((a, b) => {
+      const aLink = a.linkedSalesOfficerId != null ? form.salesOfficers.find((s) => s.salesOfficerId === a.linkedSalesOfficerId) : null;
+      const bLink = b.linkedSalesOfficerId != null ? form.salesOfficers.find((s) => s.salesOfficerId === b.linkedSalesOfficerId) : null;
+      const aGroup = aLink ? 0 : 1;
+      const bGroup = bLink ? 0 : 1;
+      if (aGroup !== bGroup) return aGroup - bGroup;
+      if (aLink && bLink) return SO_ROLE_ORDER[aLink.role] - SO_ROLE_ORDER[bLink.role];
+      if (a.isPrimary !== b.isPrimary) return a.isPrimary ? -1 : 1;
+      return a._key.localeCompare(b._key);
+    });
+  }, [form.contacts, form.salesOfficers]);
 
   // ── Validation ────────────────────────────────────────────────────────────
   function validate(): Tab | null {
@@ -298,6 +373,12 @@ export function CustomerMissingSheet({
         email:         c.email || null,
         contactRoleId: contactRoleId ? parseInt(contactRoleId, 10) : null,
       })),
+      // Phase 4 — multi-SO payload (Phase 2 backend accepts both fields).
+      // Draft auto-contacts already live in contacts[] above via eager sync;
+      // Stage A creates them, Stage D's findFirst refresh-updates them rather
+      // than duplicating.
+      salesOfficers:      form.salesOfficers,
+      dismissalsToToggle: form.dismissalsToToggle,
     };
 
     try {
@@ -460,22 +541,6 @@ export function CustomerMissingSheet({
           </div>
         </div>
 
-        <div className="space-y-1.5">
-          <Label htmlFor="cm-bi-so">Sales Officer</Label>
-          <Select
-            value={form.salesOfficerId}
-            onValueChange={(v) => setField("salesOfficerId", !v || v === "none" ? "" : v)}
-          >
-            <SelectTrigger id="cm-bi-so"><SelectValue placeholder="None" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="none">None</SelectItem>
-              {salesOfficers.map((so) => (
-                <SelectItem key={so.id} value={so.id.toString()}>{so.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-1.5">
             <Label htmlFor="cm-bi-lat">Latitude</Label>
@@ -529,7 +594,7 @@ export function CustomerMissingSheet({
               Sales Officer: <span className="font-medium text-gray-700">{selectedSOGroup.salesOfficer.name}</span>
             </p>
           ) : (
-            <p className="text-xs text-gray-400">Customer&apos;s portfolio group. SO is derived from the group.</p>
+            <p className="text-xs text-gray-400">Portfolio group · classification tag only (no longer drives SO).</p>
           )}
         </div>
 
@@ -641,82 +706,8 @@ export function CustomerMissingSheet({
         </div>
       </div>
 
-      <div className="oa-sheet-divider" />
-
-      {/* ── Section 6: Contacts ───────────────────────────────────────────── */}
-      <div>
-        <div className="flex items-center justify-between mb-3">
-          <p className="oa-form-section" style={{ marginBottom: 0, borderBottom: "none" }}>Contacts</p>
-          <Button type="button" size="sm" variant="outline" className="oa-btn-ghost" onClick={addContact}>
-            + Add Contact
-          </Button>
-        </div>
-        {fieldErrors.contacts && <p className="text-xs text-destructive mb-2">{fieldErrors.contacts}</p>}
-        {form.contacts.length === 0 && <p className="text-sm text-gray-400">No contacts added.</p>}
-        <div className="flex flex-col gap-3">
-          {form.contacts.map((contact) => (
-            <div key={contact._key} className="rounded-md border p-3 bg-gray-50 space-y-2">
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <Select
-                    value={contact.contactRoleId}
-                    onValueChange={(v) => updateContact(contact._key, "contactRoleId", !v || v === "none" ? "" : v)}
-                  >
-                    <SelectTrigger className="h-9 text-sm">
-                      <SelectValue placeholder="Role (optional)" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">No role</SelectItem>
-                      {contactRoles.map((r) => (
-                        <SelectItem key={r.id} value={r.id.toString()}>{r.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <Input
-                  placeholder="Name *"
-                  value={contact.name}
-                  onChange={(e) => updateContact(contact._key, "name", e.target.value)}
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <Input
-                  placeholder="Phone"
-                  value={contact.phone}
-                  onChange={(e) => updateContact(contact._key, "phone", e.target.value)}
-                />
-                <Input
-                  placeholder="Email"
-                  type="email"
-                  value={contact.email}
-                  onChange={(e) => updateContact(contact._key, "email", e.target.value)}
-                />
-              </div>
-              <div className="flex items-center justify-between">
-                <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
-                  <Checkbox
-                    checked={contact.isPrimary}
-                    onCheckedChange={(checked) => {
-                      if (checked) setPrimary(contact._key);
-                      else updateContact(contact._key, "isPrimary", false);
-                    }}
-                  />
-                  Primary contact
-                </label>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  className="text-destructive hover:text-destructive"
-                  onClick={() => removeContact(contact._key)}
-                >
-                  Remove
-                </Button>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
+      {/* Sales Officers + Contacts intentionally NOT mirrored in Basic Info.
+          Use the dedicated "Sales & classification" and "Contacts" tabs. */}
 
     </div>
   );
@@ -836,26 +827,16 @@ export function CustomerMissingSheet({
     </div>
   );
 
-  // 4. Sales & classification — mirrors customer-sheet.tsx Location (SO) + Section 3 (Classification)
+  // 4. Sales & classification — multi-SO picker + classification fields
   const salesContent = (
     <div className="space-y-4">
       <p className="oa-form-section">Sales &amp; Classification</p>
 
-      <div className="space-y-1.5">
-        <Label htmlFor="cm-so">Sales Officer</Label>
-        <Select
-          value={form.salesOfficerId}
-          onValueChange={(v) => setField("salesOfficerId", !v || v === "none" ? "" : v)}
-        >
-          <SelectTrigger id="cm-so"><SelectValue placeholder="None" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="none">None</SelectItem>
-            {salesOfficers.map((so) => (
-              <SelectItem key={so.id} value={so.id.toString()}>{so.name}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+      <SalesOfficersList
+        value={form.salesOfficers}
+        onChange={handleSalesOfficersChange}
+        options={salesOfficers}
+      />
 
       <div className="oa-sheet-divider" />
 
@@ -991,7 +972,10 @@ export function CustomerMissingSheet({
     </div>
   );
 
-  // 7. Contacts — mirrors customer-sheet.tsx Section 6
+  // 7. Contacts — sorted ContactCard list (auto first, then manual).
+  // Auto contacts are draft drafts synthesized from form.salesOfficers via
+  // handleSalesOfficersChange — their ✕ is disabled in this sheet (the SO
+  // list owns add/remove during create).
   const contactsContent = (
     <div>
       <div className="flex items-center justify-between mb-3">
@@ -1003,66 +987,20 @@ export function CustomerMissingSheet({
       {fieldErrors.contacts && <p className="text-xs text-destructive mb-2">{fieldErrors.contacts}</p>}
       {form.contacts.length === 0 && <p className="text-sm text-gray-400">No contacts added.</p>}
       <div className="flex flex-col gap-3">
-        {form.contacts.map((contact) => (
-          <div key={contact._key} className="rounded-md border p-3 bg-gray-50 space-y-2">
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <Select
-                  value={contact.contactRoleId}
-                  onValueChange={(v) => updateContact(contact._key, "contactRoleId", !v || v === "none" ? "" : v)}
-                >
-                  <SelectTrigger className="h-9 text-sm">
-                    <SelectValue placeholder="Role (optional)" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">No role</SelectItem>
-                    {contactRoles.map((r) => (
-                      <SelectItem key={r.id} value={r.id.toString()}>{r.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <Input
-                placeholder="Name *"
-                value={contact.name}
-                onChange={(e) => updateContact(contact._key, "name", e.target.value)}
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <Input
-                placeholder="Phone"
-                value={contact.phone}
-                onChange={(e) => updateContact(contact._key, "phone", e.target.value)}
-              />
-              <Input
-                placeholder="Email"
-                type="email"
-                value={contact.email}
-                onChange={(e) => updateContact(contact._key, "email", e.target.value)}
-              />
-            </div>
-            <div className="flex items-center justify-between">
-              <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
-                <Checkbox
-                  checked={contact.isPrimary}
-                  onCheckedChange={(checked) => {
-                    if (checked) setPrimary(contact._key);
-                    else updateContact(contact._key, "isPrimary", false);
-                  }}
-                />
-                Primary contact
-              </label>
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                className="text-destructive hover:text-destructive"
-                onClick={() => removeContact(contact._key)}
-              >
-                Remove
-              </Button>
-            </div>
-          </div>
+        {sortedContacts.map((contact) => (
+          <ContactCard
+            key={contact._key}
+            contact={contact}
+            contactRoles={contactRoles}
+            linkedSO={resolveLinkedSO(contact, form.salesOfficers, salesOfficers)}
+            onUpdate={(field, value) => updateContact(contact._key, field, value)}
+            onSetPrimary={() => {
+              if (contact.isPrimary) updateContact(contact._key, "isPrimary", false);
+              else setPrimary(contact._key);
+            }}
+            onRemove={() => removeContact(contact._key)}
+            autoRemoveBehavior="disabled"
+          />
         ))}
       </div>
     </div>

@@ -52,6 +52,12 @@ enum PackCode {
   L_40    @map("40L")
 }
 
+enum CustomerSalesOfficerRole {
+  PRIMARY
+  BACKUP
+  JUNIOR
+}
+
 // ─────────────────────────────────────────────
 // PHASE 1 — Config / Status
 // ─────────────────────────────────────────────
@@ -352,16 +358,18 @@ model sub_area_master {
 // ─────────────────────────────────────────────
 
 model sales_officer_master {
-  id                      Int                     @id @default(autoincrement())
+  id                      Int                       @id @default(autoincrement())
   name                    String
   employeeCode            String
-  email                   String?                 @unique
+  email                   String?                   @unique
   phone                   String?
-  isActive                Boolean                 @default(true)
-  createdAt               DateTime                @default(now())
+  isActive                Boolean                   @default(true)
+  createdAt               DateTime                  @default(now())
   deliveryPoints          delivery_point_master[]
   groups                  sales_officer_group[]
   samplingRegisterEntries sampling_register[]
+  customerLinks           customer_sales_officers[] @relation("CustomerSOLinks")
+  contactLinks            delivery_point_contacts[] @relation("ContactSOLinks")
 }
 
 model sales_officer_group {
@@ -448,19 +456,41 @@ model delivery_point_master {
   // Sampling Library back-relation
   samplingRegisterEntries sampling_register[]
   samplingUsageLogEntries sampling_usage_log[]
+  // Phase 1 multi-SO back-relation
+  salesOfficerLinks       customer_sales_officers[]
 }
 
 model delivery_point_contacts {
-  id              Int                   @id @default(autoincrement())
-  deliveryPointId Int
-  deliveryPoint   delivery_point_master @relation(fields: [deliveryPointId], references: [id])
-  name            String
-  phone           String?
-  email           String?
-  isPrimary       Boolean               @default(false)
-  contactRoleId   Int?
-  contactRole     contact_role_master?  @relation(fields: [contactRoleId], references: [id])
-  createdAt       DateTime              @default(now())
+  id                   Int                   @id @default(autoincrement())
+  deliveryPointId      Int
+  deliveryPoint        delivery_point_master @relation(fields: [deliveryPointId], references: [id])
+  name                 String
+  phone                String?
+  email                String?
+  isPrimary            Boolean               @default(false)
+  contactRoleId        Int?
+  contactRole          contact_role_master?  @relation(fields: [contactRoleId], references: [id])
+  linkedSalesOfficerId Int?
+  linkedSalesOfficer   sales_officer_master? @relation("ContactSOLinks", fields: [linkedSalesOfficerId], references: [id])
+  createdAt            DateTime              @default(now())
+}
+
+model customer_sales_officers {
+  id               Int                      @id @default(autoincrement())
+  customerId       Int
+  customer         delivery_point_master    @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  salesOfficerId   Int
+  salesOfficer     sales_officer_master     @relation("CustomerSOLinks", fields: [salesOfficerId], references: [id])
+  role             CustomerSalesOfficerRole @default(PRIMARY)
+  contactDismissed Boolean                  @default(false)
+  createdAt        DateTime                 @default(now())
+  updatedAt        DateTime                 @updatedAt
+
+  @@unique([customerId, salesOfficerId])
+  @@index([salesOfficerId])
+  @@index([customerId, role])
+  // Partial UNIQUE INDEX (customerId) WHERE role = 'PRIMARY'
+  // exists in Supabase only — Prisma cannot model partial indexes.
 }
 
 // ─────────────────────────────────────────────

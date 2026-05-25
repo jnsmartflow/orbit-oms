@@ -4,16 +4,35 @@ import { requireRole, ROLES } from "@/lib/rbac";
 import { checkPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
+import {
+  validateIncomingSalesOfficers,
+  applyDismissalToggles,
+  reconcileCustomerSalesOfficers,
+  syncSalesOfficerContacts,
+  enforcePrimaryContactRule,
+  SoSyncValidationError,
+} from "@/lib/customers/so-sync";
 
 export const dynamic = 'force-dynamic';
 
 const contactUpsertSchema = z.object({
-  id:            z.number().int().positive().optional(),
-  name:          z.string().min(1).max(100),
-  phone:         z.string().max(30).optional().nullable(),
-  email:         z.string().max(200).optional().nullable(),
-  isPrimary:     z.boolean().default(false),
-  contactRoleId: z.number().int().positive().optional().nullable(),
+  id:                   z.number().int().positive().optional(),
+  name:                 z.string().min(1).max(100),
+  phone:                z.string().max(30).optional().nullable(),
+  email:                z.string().max(200).optional().nullable(),
+  isPrimary:            z.boolean().default(false),
+  contactRoleId:        z.number().int().positive().optional().nullable(),
+  linkedSalesOfficerId: z.number().int().positive().optional().nullable(),
+});
+
+const salesOfficerLinkSchema = z.object({
+  salesOfficerId: z.number().int().positive(),
+  role:           z.enum(["PRIMARY", "BACKUP", "JUNIOR"]),
+});
+
+const dismissalToggleSchema = z.object({
+  salesOfficerId: z.number().int().positive(),
+  dismissed:      z.boolean(),
 });
 
 const patchSchema = z.object({
@@ -40,6 +59,9 @@ const patchSchema = z.object({
   workingHoursEnd:        z.string().max(10).optional().nullable(),
   noDeliveryDays:         z.array(z.string()).optional(),
   contacts:               z.array(contactUpsertSchema).optional(),
+  // Phase 2 multi-SO sync
+  salesOfficers:          z.array(salesOfficerLinkSchema).optional(),
+  dismissalsToToggle:     z.array(dismissalToggleSchema).optional(),
 });
 
 const fullInclude = {
@@ -52,6 +74,13 @@ const fullInclude = {
   premisesType:          { select: { id: true, name: true } },
   salesOfficerGroup:     { select: { id: true, name: true } },
   contacts:             { orderBy: [{ isPrimary: "desc" as const }, { id: "asc" as const }] },
+  // Phase 2 — multi-SO links with nested SO master fields
+  salesOfficerLinks: {
+    orderBy: { createdAt: "asc" as const },
+    include: {
+      salesOfficer: { select: { id: true, name: true, phone: true } },
+    },
+  },
 };
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
@@ -94,7 +123,21 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     return NextResponse.json({ error: parsed.error.flatten().fieldErrors }, { status: 400 });
   }
 
-  const { contacts, customerCode, ...rest } = parsed.data;
+  const { contacts, salesOfficers, dismissalsToToggle, customerCode, ...rest } = parsed.data;
+
+  // Stage B — validate FIRST, before any DB writes.
+  // Skip when salesOfficers is undefined (true PATCH semantics: caller is
+  // not touching the SO links). When provided as [], it means "remove all".
+  if (salesOfficers !== undefined) {
+    try {
+      await validateIncomingSalesOfficers(salesOfficers, prisma);
+    } catch (err) {
+      if (err instanceof SoSyncValidationError) {
+        return NextResponse.json({ error: err.message, field: err.field }, { status: err.status });
+      }
+      throw err;
+    }
+  }
 
   try {
     if (customerCode) {
@@ -107,6 +150,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       }
     }
 
+    // Stage A — existing customer + contacts save (unchanged).
     await prisma.delivery_point_master.update({
       where: { id },
       data: {
@@ -123,7 +167,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
             ? { deliveryPointId: id, NOT: { id: { in: incomingIds } } }
             : { deliveryPointId: id },
       });
-      for (const { id: contactId, ...contactData } of contacts) {
+      for (const { id: contactId, linkedSalesOfficerId: _ignored, ...contactData } of contacts) {
         if (contactId) {
           await prisma.delivery_point_contacts.update({
             where: { id: contactId },
@@ -137,19 +181,34 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       }
     }
 
-    const customer = await prisma.delivery_point_master.findUnique({
+    // Stages F → C → D → E — multi-SO + Contacts sync.
+    // Stage F runs regardless of whether salesOfficers is provided
+    // (dismissal flags are independent of the SO list).
+    // Stage C only runs when salesOfficers is explicitly provided
+    // (undefined = "don't touch SO links"; [] = "remove all").
+    // Stages D + E run unconditionally so dismissal-only requests
+    // still refresh contacts + Primary state.
+    await applyDismissalToggles(id, dismissalsToToggle ?? [], prisma);
+    if (salesOfficers !== undefined) {
+      await reconcileCustomerSalesOfficers(id, salesOfficers, prisma);
+    }
+    await syncSalesOfficerContacts(id, prisma);
+    await enforcePrimaryContactRule(id, prisma);
+
+    // customerMissing backfill (Finding 2 — preserved untouched).
+    const fetched = await prisma.delivery_point_master.findUnique({
       where: { id },
       include: fullInclude,
     });
 
-    if (customer?.customerCode) {
+    if (fetched?.customerCode) {
       await prisma.orders.updateMany({
-        where: { shipToCustomerId: customer.customerCode, customerId: null },
-        data:  { customerMissing: false, customerId: customer.id },
+        where: { shipToCustomerId: fetched.customerCode, customerId: null },
+        data:  { customerMissing: false, customerId: fetched.id },
       });
     }
 
-    return NextResponse.json(customer);
+    return NextResponse.json(fetched);
   } catch (err) {
     console.error("PATCH /api/admin/customers/[id] error:", err);
     return NextResponse.json({ error: "Failed to save customer." }, { status: 500 });

@@ -1,0 +1,620 @@
+<!--
+  ──────────────────────────────────────────────────────────────────────
+  Customer Master — Multi-SO Auto-Sync Design Mockup
+  Phase 3a of 8 — Static HTML preview. Open directly in Chrome.
+
+  Two examples stacked vertically + static confirm-modal preview
+  + annotation panel. No JS, no React, no interactivity.
+
+  Visual reference: components/admin/customer-sheet.tsx (UI v5.2)
+  ──────────────────────────────────────────────────────────────────────
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Customer Master — Multi-SO Mockup</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  html, body { font-family: 'Inter', -apple-system, sans-serif; }
+  .mono { font-family: 'JetBrains Mono', monospace; }
+  /* Subtle scrollbar match */
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-thumb { background: #d4d4d8; border-radius: 4px; }
+</style>
+</head>
+<body class="bg-[#f9fafb] text-gray-900 antialiased">
+
+<!-- ────────────────────────────────────────────────────────────────── -->
+<!-- Page sticky header                                                 -->
+<!-- ────────────────────────────────────────────────────────────────── -->
+<header class="sticky top-0 z-30 bg-white border-b border-gray-200 shadow-sm">
+  <div class="max-w-[1400px] mx-auto px-6 py-3 flex items-center gap-3">
+    <div class="w-8 h-8 rounded-md bg-teal-600 text-white flex items-center justify-center text-[14px] font-bold">O</div>
+    <div class="flex-1">
+      <h1 class="text-[15px] font-semibold text-gray-900 leading-tight">Customer Master — Multi-SO Auto-Sync Design</h1>
+      <p class="text-[11px] text-gray-500 leading-tight">Phase 3a mockup · Two examples + static confirm dialog · UI v5.2</p>
+    </div>
+    <span class="text-[10px] font-medium text-teal-700 bg-teal-50 border border-teal-200 px-2.5 py-1 rounded-full">PREVIEW</span>
+  </div>
+</header>
+
+<main class="max-w-[1400px] mx-auto px-6 py-8 space-y-12">
+
+  <!-- ──────────────────────────────────────────────────────────────── -->
+  <!-- EXAMPLE 1 — Customer with 3 SOs                                  -->
+  <!-- ──────────────────────────────────────────────────────────────── -->
+  <section>
+    <div class="mb-4 flex items-baseline gap-3">
+      <span class="text-[10px] font-bold tracking-wider text-gray-400 uppercase">Example 1</span>
+      <h2 class="text-[14px] font-semibold text-gray-900">Customer with 3 SOs — Ajay (Primary), Ravi (Backup), Lakhan (Junior)</h2>
+    </div>
+
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+
+      <!-- Sheet header strip -->
+      <div class="px-6 py-3 border-b border-gray-200 bg-white flex items-center justify-between">
+        <div>
+          <div class="text-[14px] font-semibold text-gray-900">Edit Customer</div>
+          <div class="text-[11.5px] text-gray-500 mt-0.5">C001 · Ambika Paints</div>
+        </div>
+        <button class="w-7 h-7 rounded-md flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-100" aria-label="Close">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        </button>
+      </div>
+
+      <!-- Two-column body: Sales & Classification | Contacts -->
+      <div class="grid grid-cols-2 divide-x divide-gray-200">
+
+        <!-- ── LEFT: Sales & Classification ────────────────────────── -->
+        <div class="p-6 space-y-5">
+          <div>
+            <p class="text-[10px] font-bold tracking-wider text-gray-500 uppercase mb-1 pb-2 border-b border-gray-100">Sales &amp; Classification</p>
+          </div>
+
+          <!-- Sales Officer Group -->
+          <div class="space-y-1.5">
+            <label class="text-[11px] font-medium text-gray-500">Sales Officer Group</label>
+            <button type="button" class="w-full h-[38px] px-3 text-[13px] border border-gray-200 rounded-lg bg-white text-gray-900 flex items-center justify-between hover:border-gray-300">
+              <span>Varacha North Portfolio</span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-gray-400"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+            <p class="text-[11px] text-gray-400">Portfolio group · classification tag only (no longer drives SO).</p>
+          </div>
+
+          <!-- ── NEW: Sales Officers list block ──────────────────── -->
+          <div class="space-y-2 pt-2">
+            <div class="flex items-baseline justify-between">
+              <label class="text-[11px] font-medium text-gray-500 tracking-wider uppercase">Sales Officers</label>
+              <span class="text-[10px] text-gray-400">Exactly one PRIMARY · 0–N total</span>
+            </div>
+
+            <div class="rounded-lg border border-gray-200 divide-y divide-gray-100 bg-white">
+              <!-- SO row 1 — Ajay (PRIMARY) -->
+              <div class="p-3 flex items-center gap-2.5">
+                <button type="button" class="flex-1 h-[34px] px-2.5 text-[13px] border border-gray-200 rounded-md bg-white text-gray-900 flex items-center justify-between hover:border-gray-300">
+                  <span class="flex items-center gap-2">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-gray-400"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                    Ajay Vansiya <span class="text-gray-400 text-[11px]">· 9824012345</span>
+                  </span>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-gray-400"><path d="m6 9 6 6 6-6"/></svg>
+                </button>
+                <!-- Role pill dropdown -->
+                <div class="inline-flex">
+                  <button class="h-[28px] px-3 rounded-l-md border border-teal-300 bg-teal-50 text-teal-700 text-[11px] font-semibold">Primary</button>
+                  <button class="h-[28px] px-3 -ml-px border border-gray-200 bg-white text-gray-400 text-[11px] font-medium hover:bg-gray-50">Backup</button>
+                  <button class="h-[28px] px-3 -ml-px rounded-r-md border border-gray-200 bg-white text-gray-400 text-[11px] font-medium hover:bg-gray-50">Junior</button>
+                </div>
+                <button class="w-7 h-7 rounded-md flex items-center justify-center text-gray-300 hover:text-red-600 hover:bg-red-50" aria-label="Remove">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                </button>
+              </div>
+
+              <!-- SO row 2 — Ravi (BACKUP) -->
+              <div class="p-3 flex items-center gap-2.5">
+                <button type="button" class="flex-1 h-[34px] px-2.5 text-[13px] border border-gray-200 rounded-md bg-white text-gray-900 flex items-center justify-between hover:border-gray-300">
+                  <span class="flex items-center gap-2">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-gray-400"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                    Ravi Patel <span class="text-gray-400 text-[11px]">· 9824023456</span>
+                  </span>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-gray-400"><path d="m6 9 6 6 6-6"/></svg>
+                </button>
+                <div class="inline-flex">
+                  <button class="h-[28px] px-3 rounded-l-md border border-gray-200 bg-white text-gray-400 text-[11px] font-medium hover:bg-gray-50">Primary</button>
+                  <button class="h-[28px] px-3 -ml-px border border-blue-300 bg-blue-50 text-blue-700 text-[11px] font-semibold">Backup</button>
+                  <button class="h-[28px] px-3 -ml-px rounded-r-md border border-gray-200 bg-white text-gray-400 text-[11px] font-medium hover:bg-gray-50">Junior</button>
+                </div>
+                <button class="w-7 h-7 rounded-md flex items-center justify-center text-gray-300 hover:text-red-600 hover:bg-red-50" aria-label="Remove">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                </button>
+              </div>
+
+              <!-- SO row 3 — Lakhan (JUNIOR) -->
+              <div class="p-3 flex items-center gap-2.5">
+                <button type="button" class="flex-1 h-[34px] px-2.5 text-[13px] border border-gray-200 rounded-md bg-white text-gray-900 flex items-center justify-between hover:border-gray-300">
+                  <span class="flex items-center gap-2">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-gray-400"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                    Lakhan Mehta <span class="text-gray-400 text-[11px]">· (no phone on file)</span>
+                  </span>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-gray-400"><path d="m6 9 6 6 6-6"/></svg>
+                </button>
+                <div class="inline-flex">
+                  <button class="h-[28px] px-3 rounded-l-md border border-gray-200 bg-white text-gray-400 text-[11px] font-medium hover:bg-gray-50">Primary</button>
+                  <button class="h-[28px] px-3 -ml-px border border-gray-200 bg-white text-gray-400 text-[11px] font-medium hover:bg-gray-50">Backup</button>
+                  <button class="h-[28px] px-3 -ml-px rounded-r-md border border-amber-300 bg-amber-50 text-amber-700 text-[11px] font-semibold">Junior</button>
+                </div>
+                <button class="w-7 h-7 rounded-md flex items-center justify-center text-gray-300 hover:text-red-600 hover:bg-red-50" aria-label="Remove">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                </button>
+              </div>
+            </div>
+
+            <!-- Add SO button -->
+            <button type="button" class="w-full h-[36px] mt-1 text-[12px] font-medium text-gray-500 hover:text-teal-700 hover:bg-teal-50 border border-dashed border-gray-300 hover:border-teal-300 rounded-lg flex items-center justify-center gap-2">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+              Add Sales Officer
+            </button>
+
+            <!-- Behaviour note -->
+            <div class="mt-2 px-3 py-2 rounded-md bg-amber-50 border border-amber-200 text-[11px] text-amber-800 leading-relaxed">
+              <strong>Auto-flip:</strong> Setting a second row to <em>Primary</em> automatically demotes the current Primary to <em>Backup</em>. The DB partial-unique index <span class="mono text-[10.5px]">(customerId) WHERE role='PRIMARY'</span> guarantees only one Primary exists per customer.
+            </div>
+          </div>
+
+          <hr class="border-gray-100">
+
+          <!-- Existing fields below — customer type, premises type, rating -->
+          <div class="grid grid-cols-2 gap-4">
+            <div class="space-y-1.5">
+              <label class="text-[11px] font-medium text-gray-500">Customer Type</label>
+              <button type="button" class="w-full h-[38px] px-3 text-[13px] border border-gray-200 rounded-lg bg-white text-gray-900 flex items-center justify-between hover:border-gray-300">
+                <span>Dealer</span>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-gray-400"><path d="m6 9 6 6 6-6"/></svg>
+              </button>
+            </div>
+            <div class="space-y-1.5">
+              <label class="text-[11px] font-medium text-gray-500">Premises Type</label>
+              <button type="button" class="w-full h-[38px] px-3 text-[13px] border border-gray-200 rounded-lg bg-white text-gray-900 flex items-center justify-between hover:border-gray-300">
+                <span>Retail Shop</span>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-gray-400"><path d="m6 9 6 6 6-6"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <div class="space-y-2">
+            <label class="text-[11px] font-medium text-gray-500">Customer Rating (A / B / C)</label>
+            <div class="flex items-center gap-2">
+              <button type="button" class="px-4 py-1.5 text-[13px] font-medium rounded-md border bg-green-100 text-green-800 border-green-300">A</button>
+              <button type="button" class="px-4 py-1.5 text-[13px] font-medium rounded-md border bg-white text-gray-600 border-gray-200 hover:bg-gray-50">B</button>
+              <button type="button" class="px-4 py-1.5 text-[13px] font-medium rounded-md border bg-white text-gray-600 border-gray-200 hover:bg-gray-50">C</button>
+              <button type="button" class="text-[11px] text-gray-400 underline ml-1">clear</button>
+            </div>
+            <p class="text-[11px] text-gray-400">A = High-value · B = Regular · C = Low-frequency. Set by Admin only.</p>
+          </div>
+        </div>
+
+        <!-- ── RIGHT: Contacts ──────────────────────────────────────── -->
+        <div class="p-6 space-y-4">
+          <div class="flex items-center justify-between mb-1 pb-2 border-b border-gray-100">
+            <p class="text-[10px] font-bold tracking-wider text-gray-500 uppercase">Contacts</p>
+            <button class="h-[28px] px-3 text-[11px] font-medium text-gray-600 border border-gray-200 rounded-md hover:bg-gray-50 flex items-center gap-1.5">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+              Add Contact
+            </button>
+          </div>
+
+          <!-- ── AUTO CONTACT 1 — Primary SO ───────────────────────── -->
+          <div class="rounded-lg border border-gray-200 p-3 bg-white space-y-2">
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-full bg-teal-100 text-teal-700 flex items-center justify-center text-[13px] font-bold flex-shrink-0">A</div>
+              <div class="flex-1 grid grid-cols-2 gap-2">
+                <input class="h-[32px] px-2.5 text-[12.5px] border border-gray-200 rounded-md bg-gray-50 text-gray-700 cursor-not-allowed" value="Ajay Vansiya" readonly>
+                <input class="h-[32px] px-2.5 text-[12.5px] border border-gray-200 rounded-md bg-gray-50 text-gray-700 cursor-not-allowed mono" value="9824012345" readonly>
+              </div>
+              <button class="w-7 h-7 rounded-md flex items-center justify-center text-gray-300 hover:text-red-600 hover:bg-red-50" title="Delete this auto-contact? It won't come back unless you re-add the SO above." aria-label="Remove">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+              </button>
+            </div>
+            <div class="flex items-center gap-2 pl-11">
+              <input class="flex-1 h-[32px] px-2.5 text-[12.5px] border border-gray-200 rounded-md bg-white text-gray-900 placeholder:text-gray-300" placeholder="Email (optional — operator can add)">
+              <span class="text-[11px] font-medium text-gray-600 bg-gray-100 border border-gray-200 rounded px-2 py-0.5">Sales Officer</span>
+            </div>
+            <div class="flex items-center justify-between pl-11">
+              <span class="inline-flex items-center gap-1.5 text-[10.5px] font-semibold text-teal-700 bg-teal-50 border border-teal-200 px-2 py-0.5 rounded-full">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                Auto · Primary SO
+              </span>
+              <label class="flex items-center gap-2 text-[12px] text-gray-700 cursor-pointer select-none">
+                <input type="checkbox" class="accent-teal-600 w-3.5 h-3.5" checked>
+                Primary contact
+              </label>
+            </div>
+          </div>
+
+          <!-- ── AUTO CONTACT 2 — Backup SO ────────────────────────── -->
+          <div class="rounded-lg border border-gray-200 p-3 bg-white space-y-2">
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-full bg-blue-50 text-blue-700 flex items-center justify-center text-[13px] font-bold flex-shrink-0">R</div>
+              <div class="flex-1 grid grid-cols-2 gap-2">
+                <input class="h-[32px] px-2.5 text-[12.5px] border border-gray-200 rounded-md bg-gray-50 text-gray-700 cursor-not-allowed" value="Ravi Patel" readonly>
+                <input class="h-[32px] px-2.5 text-[12.5px] border border-gray-200 rounded-md bg-gray-50 text-gray-700 cursor-not-allowed mono" value="9824023456" readonly>
+              </div>
+              <button class="w-7 h-7 rounded-md flex items-center justify-center text-gray-300 hover:text-red-600 hover:bg-red-50" title="Delete this auto-contact? It won't come back unless you re-add the SO above." aria-label="Remove">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+              </button>
+            </div>
+            <div class="flex items-center gap-2 pl-11">
+              <input class="flex-1 h-[32px] px-2.5 text-[12.5px] border border-gray-200 rounded-md bg-white text-gray-900 placeholder:text-gray-300" value="ravi.p@example.com">
+              <span class="text-[11px] font-medium text-gray-600 bg-gray-100 border border-gray-200 rounded px-2 py-0.5">Sales Officer</span>
+            </div>
+            <div class="flex items-center justify-between pl-11">
+              <span class="inline-flex items-center gap-1.5 text-[10.5px] font-semibold text-teal-700 bg-teal-50 border border-teal-200 px-2 py-0.5 rounded-full">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                Auto · Backup SO
+              </span>
+              <label class="flex items-center gap-2 text-[12px] text-gray-400 cursor-not-allowed select-none">
+                <input type="checkbox" class="accent-teal-600 w-3.5 h-3.5" disabled>
+                Primary contact
+              </label>
+            </div>
+          </div>
+
+          <!-- ── AUTO CONTACT 3 — Junior SO ────────────────────────── -->
+          <div class="rounded-lg border border-gray-200 p-3 bg-white space-y-2">
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-full bg-amber-50 text-amber-700 flex items-center justify-center text-[13px] font-bold flex-shrink-0">L</div>
+              <div class="flex-1 grid grid-cols-2 gap-2">
+                <input class="h-[32px] px-2.5 text-[12.5px] border border-gray-200 rounded-md bg-gray-50 text-gray-700 cursor-not-allowed" value="Lakhan Mehta" readonly>
+                <input class="h-[32px] px-2.5 text-[12.5px] border border-gray-200 rounded-md bg-gray-50 text-gray-400 cursor-not-allowed mono italic" value="—" readonly>
+              </div>
+              <button class="w-7 h-7 rounded-md flex items-center justify-center text-gray-300 hover:text-red-600 hover:bg-red-50" title="Delete this auto-contact? It won't come back unless you re-add the SO above." aria-label="Remove">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+              </button>
+            </div>
+            <div class="flex items-center gap-2 pl-11">
+              <input class="flex-1 h-[32px] px-2.5 text-[12.5px] border border-gray-200 rounded-md bg-white text-gray-900 placeholder:text-gray-300" placeholder="Email (optional — operator can add)">
+              <span class="text-[11px] font-medium text-gray-600 bg-gray-100 border border-gray-200 rounded px-2 py-0.5">Sales Officer</span>
+            </div>
+            <div class="flex items-center justify-between pl-11">
+              <span class="inline-flex items-center gap-1.5 text-[10.5px] font-semibold text-teal-700 bg-teal-50 border border-teal-200 px-2 py-0.5 rounded-full">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                Auto · Junior SO
+              </span>
+              <label class="flex items-center gap-2 text-[12px] text-gray-400 cursor-not-allowed select-none">
+                <input type="checkbox" class="accent-teal-600 w-3.5 h-3.5" disabled>
+                Primary contact
+              </label>
+            </div>
+          </div>
+
+          <!-- ── Divider ──────────────────────────────────────────── -->
+          <div class="flex items-center gap-2 pt-2">
+            <div class="flex-1 h-px bg-gray-100"></div>
+            <span class="text-[10px] font-semibold tracking-wider text-gray-400 uppercase">Manual Contacts</span>
+            <div class="flex-1 h-px bg-gray-100"></div>
+          </div>
+
+          <!-- ── MANUAL CONTACT 1 — Vishal (Owner) ─────────────────── -->
+          <div class="rounded-lg border border-gray-200 p-3 bg-white space-y-2">
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-full bg-gray-100 text-gray-700 flex items-center justify-center text-[13px] font-bold flex-shrink-0">V</div>
+              <div class="flex-1 grid grid-cols-2 gap-2">
+                <input class="h-[32px] px-2.5 text-[12.5px] border border-gray-200 rounded-md bg-white text-gray-900" value="Vishal Shah">
+                <input class="h-[32px] px-2.5 text-[12.5px] border border-gray-200 rounded-md bg-white text-gray-900 mono" value="9925011223">
+              </div>
+              <button class="w-7 h-7 rounded-md flex items-center justify-center text-gray-300 hover:text-red-600 hover:bg-red-50" aria-label="Remove">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+              </button>
+            </div>
+            <div class="flex items-center gap-2 pl-11">
+              <input class="flex-1 h-[32px] px-2.5 text-[12.5px] border border-gray-200 rounded-md bg-white text-gray-900" value="vishal@ambika.in">
+              <button class="text-[11px] font-medium text-gray-600 bg-white border border-gray-200 rounded px-2 py-0.5 hover:bg-gray-50">Owner ▾</button>
+            </div>
+            <div class="flex items-center justify-end pl-11">
+              <label class="flex items-center gap-2 text-[12px] text-gray-700 cursor-pointer select-none">
+                <input type="checkbox" class="accent-teal-600 w-3.5 h-3.5">
+                Primary contact
+              </label>
+            </div>
+          </div>
+
+          <!-- ── MANUAL CONTACT 2 — Suresh (Site Engineer) ─────────── -->
+          <div class="rounded-lg border border-gray-200 p-3 bg-white space-y-2">
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-full bg-gray-100 text-gray-700 flex items-center justify-center text-[13px] font-bold flex-shrink-0">S</div>
+              <div class="flex-1 grid grid-cols-2 gap-2">
+                <input class="h-[32px] px-2.5 text-[12.5px] border border-gray-200 rounded-md bg-white text-gray-900" value="Suresh K">
+                <input class="h-[32px] px-2.5 text-[12.5px] border border-gray-200 rounded-md bg-white text-gray-900 mono" value="9824099887">
+              </div>
+              <button class="w-7 h-7 rounded-md flex items-center justify-center text-gray-300 hover:text-red-600 hover:bg-red-50" aria-label="Remove">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+              </button>
+            </div>
+            <div class="flex items-center gap-2 pl-11">
+              <input class="flex-1 h-[32px] px-2.5 text-[12.5px] border border-gray-200 rounded-md bg-white text-gray-900 placeholder:text-gray-300" placeholder="Email">
+              <button class="text-[11px] font-medium text-gray-600 bg-white border border-gray-200 rounded px-2 py-0.5 hover:bg-gray-50">Site Engineer ▾</button>
+            </div>
+            <div class="flex items-center justify-end pl-11">
+              <label class="flex items-center gap-2 text-[12px] text-gray-700 cursor-pointer select-none">
+                <input type="checkbox" class="accent-teal-600 w-3.5 h-3.5">
+                Primary contact
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bottom action bar -->
+      <div class="px-6 py-4 border-t border-gray-200 bg-white flex gap-3 justify-end">
+        <button class="h-10 px-5 text-[13px] font-medium border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50">Cancel</button>
+        <button class="h-10 px-6 text-[13px] font-semibold bg-teal-600 hover:bg-teal-700 text-white rounded-lg">Save Changes</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ──────────────────────────────────────────────────────────────── -->
+  <!-- Divider                                                          -->
+  <!-- ──────────────────────────────────────────────────────────────── -->
+  <div class="flex items-center gap-3">
+    <div class="flex-1 h-px bg-gray-300"></div>
+    <span class="text-[10px] font-bold tracking-widest text-gray-400 uppercase">·  ·  ·</span>
+    <div class="flex-1 h-px bg-gray-300"></div>
+  </div>
+
+  <!-- ──────────────────────────────────────────────────────────────── -->
+  <!-- EXAMPLE 2 — Customer with 1 SO                                   -->
+  <!-- ──────────────────────────────────────────────────────────────── -->
+  <section>
+    <div class="mb-4 flex items-baseline gap-3">
+      <span class="text-[10px] font-bold tracking-wider text-gray-400 uppercase">Example 2</span>
+      <h2 class="text-[14px] font-semibold text-gray-900">Customer with 1 SO — only Ajay (Primary)</h2>
+    </div>
+
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+
+      <div class="px-6 py-3 border-b border-gray-200 bg-white flex items-center justify-between">
+        <div>
+          <div class="text-[14px] font-semibold text-gray-900">Edit Customer</div>
+          <div class="text-[11.5px] text-gray-500 mt-0.5">C002 · Shree Lakshmi Hardware</div>
+        </div>
+        <button class="w-7 h-7 rounded-md flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-100" aria-label="Close">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        </button>
+      </div>
+
+      <div class="grid grid-cols-2 divide-x divide-gray-200">
+
+        <!-- LEFT — Sales & Classification -->
+        <div class="p-6 space-y-5">
+          <p class="text-[10px] font-bold tracking-wider text-gray-500 uppercase mb-1 pb-2 border-b border-gray-100">Sales &amp; Classification</p>
+
+          <div class="space-y-1.5">
+            <label class="text-[11px] font-medium text-gray-500">Sales Officer Group</label>
+            <button type="button" class="w-full h-[38px] px-3 text-[13px] border border-gray-200 rounded-lg bg-white text-gray-400 flex items-center justify-between hover:border-gray-300">
+              <span>None</span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-gray-400"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+            <p class="text-[11px] text-gray-400">Portfolio group · classification tag only (no longer drives SO).</p>
+          </div>
+
+          <div class="space-y-2 pt-2">
+            <div class="flex items-baseline justify-between">
+              <label class="text-[11px] font-medium text-gray-500 tracking-wider uppercase">Sales Officers</label>
+              <span class="text-[10px] text-gray-400">Exactly one PRIMARY · 0–N total</span>
+            </div>
+
+            <div class="rounded-lg border border-gray-200 divide-y divide-gray-100 bg-white">
+              <div class="p-3 flex items-center gap-2.5">
+                <button type="button" class="flex-1 h-[34px] px-2.5 text-[13px] border border-gray-200 rounded-md bg-white text-gray-900 flex items-center justify-between hover:border-gray-300">
+                  <span class="flex items-center gap-2">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-gray-400"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                    Ajay Vansiya <span class="text-gray-400 text-[11px]">· 9824012345</span>
+                  </span>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-gray-400"><path d="m6 9 6 6 6-6"/></svg>
+                </button>
+                <div class="inline-flex">
+                  <button class="h-[28px] px-3 rounded-l-md border border-teal-300 bg-teal-50 text-teal-700 text-[11px] font-semibold">Primary</button>
+                  <button class="h-[28px] px-3 -ml-px border border-gray-200 bg-white text-gray-400 text-[11px] font-medium hover:bg-gray-50">Backup</button>
+                  <button class="h-[28px] px-3 -ml-px rounded-r-md border border-gray-200 bg-white text-gray-400 text-[11px] font-medium hover:bg-gray-50">Junior</button>
+                </div>
+                <button class="w-7 h-7 rounded-md flex items-center justify-center text-gray-300 hover:text-red-600 hover:bg-red-50" aria-label="Remove">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                </button>
+              </div>
+            </div>
+
+            <button type="button" class="w-full h-[36px] mt-1 text-[12px] font-medium text-gray-500 hover:text-teal-700 hover:bg-teal-50 border border-dashed border-gray-300 hover:border-teal-300 rounded-lg flex items-center justify-center gap-2">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+              Add Sales Officer
+            </button>
+
+            <!-- Empty-state demo helper -->
+            <div class="mt-2 px-3 py-2 rounded-md bg-gray-50 border border-gray-200 text-[11px] text-gray-500 leading-relaxed">
+              <strong>Empty state:</strong> when the list has zero SOs, the panel renders <em class="text-gray-400">"No sales officers assigned"</em> above the dashed + Add button.
+            </div>
+          </div>
+
+          <hr class="border-gray-100">
+
+          <div class="grid grid-cols-2 gap-4">
+            <div class="space-y-1.5">
+              <label class="text-[11px] font-medium text-gray-500">Customer Type</label>
+              <button type="button" class="w-full h-[38px] px-3 text-[13px] border border-gray-200 rounded-lg bg-white text-gray-900 flex items-center justify-between hover:border-gray-300">
+                <span>Dealer</span>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-gray-400"><path d="m6 9 6 6 6-6"/></svg>
+              </button>
+            </div>
+            <div class="space-y-1.5">
+              <label class="text-[11px] font-medium text-gray-500">Premises Type</label>
+              <button type="button" class="w-full h-[38px] px-3 text-[13px] border border-gray-200 rounded-lg bg-white text-gray-400 flex items-center justify-between hover:border-gray-300">
+                <span>Select…</span>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-gray-400"><path d="m6 9 6 6 6-6"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <div class="space-y-2">
+            <label class="text-[11px] font-medium text-gray-500">Customer Rating (A / B / C)</label>
+            <div class="flex items-center gap-2">
+              <button type="button" class="px-4 py-1.5 text-[13px] font-medium rounded-md border bg-white text-gray-600 border-gray-200 hover:bg-gray-50">A</button>
+              <button type="button" class="px-4 py-1.5 text-[13px] font-medium rounded-md border bg-amber-100 text-amber-800 border-amber-300">B</button>
+              <button type="button" class="px-4 py-1.5 text-[13px] font-medium rounded-md border bg-white text-gray-600 border-gray-200 hover:bg-gray-50">C</button>
+              <button type="button" class="text-[11px] text-gray-400 underline ml-1">clear</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- RIGHT — Contacts -->
+        <div class="p-6 space-y-4">
+          <div class="flex items-center justify-between mb-1 pb-2 border-b border-gray-100">
+            <p class="text-[10px] font-bold tracking-wider text-gray-500 uppercase">Contacts</p>
+            <button class="h-[28px] px-3 text-[11px] font-medium text-gray-600 border border-gray-200 rounded-md hover:bg-gray-50 flex items-center gap-1.5">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+              Add Contact
+            </button>
+          </div>
+
+          <!-- Single auto contact — Ajay (Primary) -->
+          <div class="rounded-lg border border-gray-200 p-3 bg-white space-y-2">
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-full bg-teal-100 text-teal-700 flex items-center justify-center text-[13px] font-bold flex-shrink-0">A</div>
+              <div class="flex-1 grid grid-cols-2 gap-2">
+                <input class="h-[32px] px-2.5 text-[12.5px] border border-gray-200 rounded-md bg-gray-50 text-gray-700 cursor-not-allowed" value="Ajay Vansiya" readonly>
+                <input class="h-[32px] px-2.5 text-[12.5px] border border-gray-200 rounded-md bg-gray-50 text-gray-700 cursor-not-allowed mono" value="9824012345" readonly>
+              </div>
+              <button class="w-7 h-7 rounded-md flex items-center justify-center text-gray-300 hover:text-red-600 hover:bg-red-50" title="Delete this auto-contact? It won't come back unless you re-add the SO above." aria-label="Remove">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+              </button>
+            </div>
+            <div class="flex items-center gap-2 pl-11">
+              <input class="flex-1 h-[32px] px-2.5 text-[12.5px] border border-gray-200 rounded-md bg-white text-gray-900 placeholder:text-gray-300" placeholder="Email (optional — operator can add)">
+              <span class="text-[11px] font-medium text-gray-600 bg-gray-100 border border-gray-200 rounded px-2 py-0.5">Sales Officer</span>
+            </div>
+            <div class="flex items-center justify-between pl-11">
+              <span class="inline-flex items-center gap-1.5 text-[10.5px] font-semibold text-teal-700 bg-teal-50 border border-teal-200 px-2 py-0.5 rounded-full">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                Auto · Primary SO
+              </span>
+              <label class="flex items-center gap-2 text-[12px] text-gray-700 cursor-pointer select-none">
+                <input type="checkbox" class="accent-teal-600 w-3.5 h-3.5" checked>
+                Primary contact
+              </label>
+            </div>
+          </div>
+
+          <!-- Empty manual section — just the divider and a hint -->
+          <div class="flex items-center gap-2 pt-2">
+            <div class="flex-1 h-px bg-gray-100"></div>
+            <span class="text-[10px] font-semibold tracking-wider text-gray-400 uppercase">Manual Contacts</span>
+            <div class="flex-1 h-px bg-gray-100"></div>
+          </div>
+
+          <p class="text-[12px] text-gray-400 italic text-center py-3">No manual contacts added.</p>
+        </div>
+      </div>
+
+      <div class="px-6 py-4 border-t border-gray-200 bg-white flex gap-3 justify-end">
+        <button class="h-10 px-5 text-[13px] font-medium border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50">Cancel</button>
+        <button class="h-10 px-6 text-[13px] font-semibold bg-teal-600 hover:bg-teal-700 text-white rounded-lg">Save Changes</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ──────────────────────────────────────────────────────────────── -->
+  <!-- Divider                                                          -->
+  <!-- ──────────────────────────────────────────────────────────────── -->
+  <div class="flex items-center gap-3">
+    <div class="flex-1 h-px bg-gray-300"></div>
+    <span class="text-[10px] font-bold tracking-widest text-gray-400 uppercase">·  ·  ·</span>
+    <div class="flex-1 h-px bg-gray-300"></div>
+  </div>
+
+  <!-- ──────────────────────────────────────────────────────────────── -->
+  <!-- Static confirmation modal preview                                -->
+  <!-- ──────────────────────────────────────────────────────────────── -->
+  <section>
+    <div class="mb-4 flex items-baseline gap-3">
+      <span class="text-[10px] font-bold tracking-wider text-gray-400 uppercase">Modal preview</span>
+      <h2 class="text-[14px] font-semibold text-gray-900">Delete auto-contact confirmation modal — design</h2>
+    </div>
+
+    <div class="bg-gray-900/10 rounded-xl border border-gray-300 border-dashed p-12 flex items-center justify-center">
+      <!-- Modal panel -->
+      <div class="bg-white rounded-lg shadow-xl w-[420px] overflow-hidden">
+        <div class="px-5 py-4 border-b border-gray-100 flex items-start gap-3">
+          <div class="w-9 h-9 rounded-full bg-amber-50 text-amber-700 flex items-center justify-center flex-shrink-0">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>
+          </div>
+          <div class="flex-1">
+            <h3 class="text-[14px] font-semibold text-gray-900">Delete auto-contact?</h3>
+            <p class="text-[12.5px] text-gray-600 mt-1.5 leading-relaxed">
+              <strong>Ravi Patel</strong> was auto-created from the linked Sales Officer.
+              Deleting this contact also marks the SO link as <em>dismissed</em> — it won't come back unless you re-add Ravi above.
+            </p>
+          </div>
+        </div>
+        <div class="px-5 py-2.5 bg-gray-50 border-b border-gray-100">
+          <div class="text-[11px] text-gray-500 flex items-center gap-2">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+            Sets <span class="mono text-[10.5px]">customer_sales_officers.contactDismissed = true</span>
+          </div>
+        </div>
+        <div class="px-5 py-3.5 flex gap-2.5 justify-end">
+          <button class="h-9 px-4 text-[12.5px] font-medium border border-gray-200 text-gray-700 rounded-md hover:bg-gray-50">Cancel</button>
+          <button class="h-9 px-4 text-[12.5px] font-semibold bg-gray-900 hover:bg-gray-800 text-white rounded-md">Delete contact</button>
+        </div>
+      </div>
+    </div>
+    <p class="text-[11px] text-gray-500 italic text-center mt-3">Static preview only. In production this modal overlays the form with <span class="mono">bg-black/40</span> backdrop.</p>
+  </section>
+
+  <!-- ──────────────────────────────────────────────────────────────── -->
+  <!-- Annotations panel                                                -->
+  <!-- ──────────────────────────────────────────────────────────────── -->
+  <section class="bg-white rounded-xl border border-gray-200 p-6">
+    <div class="mb-4 flex items-baseline gap-3">
+      <span class="text-[10px] font-bold tracking-wider text-gray-400 uppercase">Notes</span>
+      <h2 class="text-[14px] font-semibold text-gray-900">Behaviour annotations</h2>
+    </div>
+    <ul class="space-y-3 text-[12.5px] text-gray-700">
+      <li class="flex gap-3">
+        <span class="mono text-[10.5px] text-teal-700 bg-teal-50 border border-teal-200 px-1.5 py-0.5 rounded h-fit mt-0.5">1</span>
+        <div><strong class="text-gray-900">Primary SO auto-flips on conflict.</strong> Setting a 2nd SO row to <em>Primary</em> demotes the current Primary to <em>Backup</em> client-side, then sends one PATCH. The DB partial-unique index is the final guardrail.</div>
+      </li>
+      <li class="flex gap-3">
+        <span class="mono text-[10.5px] text-teal-700 bg-teal-50 border border-teal-200 px-1.5 py-0.5 rounded h-fit mt-0.5">2</span>
+        <div><strong class="text-gray-900">Auto-contact ✕ shows confirm dialog.</strong> Hover tooltip on the ✕ button reads <em>"Delete this auto-contact? It won't come back unless you re-add the SO above."</em> Click opens the modal shown above.</div>
+      </li>
+      <li class="flex gap-3">
+        <span class="mono text-[10.5px] text-teal-700 bg-teal-50 border border-teal-200 px-1.5 py-0.5 rounded h-fit mt-0.5">3</span>
+        <div><strong class="text-gray-900">Greyed inputs are read-only.</strong> Name + phone on auto-contacts come from <span class="mono text-[11px]">sales_officer_master</span> and refresh on every save. To change them, edit the SO master record (Admin → Sales Officers).</div>
+      </li>
+      <li class="flex gap-3">
+        <span class="mono text-[10.5px] text-teal-700 bg-teal-50 border border-teal-200 px-1.5 py-0.5 rounded h-fit mt-0.5">4</span>
+        <div><strong class="text-gray-900">Email field stays editable on auto-contacts.</strong> Operators often have a site-specific email for an SO. Stage D sync touches only <span class="mono text-[11px]">name + phone</span>; email, isPrimary, and any operator-changed contactRoleId are preserved.</div>
+      </li>
+      <li class="flex gap-3">
+        <span class="mono text-[10.5px] text-teal-700 bg-teal-50 border border-teal-200 px-1.5 py-0.5 rounded h-fit mt-0.5">5</span>
+        <div><strong class="text-gray-900">Manual contacts unaffected by sync.</strong> Contacts with <span class="mono text-[11px]">linkedSalesOfficerId = NULL</span> render with a gray avatar, white inputs, and no link badge. Stage D ignores them entirely. Stage E may flip <em>Primary contact</em> off if a Primary SO claims it.</div>
+      </li>
+    </ul>
+
+    <div class="mt-5 pt-5 border-t border-gray-100 text-[11px] text-gray-400 leading-relaxed space-y-1">
+      <p><strong class="text-gray-500">Avatar colour cue:</strong> <span class="text-teal-700">teal</span> = Primary SO · <span class="text-blue-700">blue</span> = Backup SO · <span class="text-amber-700">amber</span> = Junior SO · <span class="text-gray-700">gray</span> = manual contact.</p>
+      <p><strong class="text-gray-500">Sort order:</strong> auto-contacts first (Primary → Backup → Junior), divider, then manual contacts (operator-chosen order, isPrimary DESC then id ASC).</p>
+      <p><strong class="text-gray-500">No JS in this mockup:</strong> all dropdowns, buttons, and pills are static. The role pill-group renders all three states (Primary/Backup/Junior) with the active one highlighted; clicking does nothing.</p>
+    </div>
+  </section>
+
+</main>
+
+<footer class="max-w-[1400px] mx-auto px-6 py-8 text-center text-[10.5px] text-gray-400">
+  Customer Master — Multi-SO Auto-Sync · Phase 3a static mockup · OrbitOMS
+</footer>
+
+</body>
+</html>

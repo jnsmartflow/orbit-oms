@@ -36,7 +36,7 @@ export default async function TintManagerCustomersPage() {
       }),
       prisma.sub_area_master.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true, areaId: true } }),
       prisma.sales_officer_master.findMany({
-        where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true },
+        where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true, phone: true },
       }),
       prisma.route_master.findMany({
         where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true },

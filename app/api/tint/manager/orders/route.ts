@@ -121,6 +121,15 @@ export async function GET(): Promise<NextResponse> {
                   salesOfficer: { select: { name: true } },
                 },
               },
+              // Phase 5 — Primary SO from customer_sales_officers (overrides
+              // salesOfficerGroup.salesOfficer at the card render site).
+              salesOfficerLinks: {
+                where:  { role: "PRIMARY", contactDismissed: false },
+                take:   1,
+                select: {
+                  salesOfficer: { select: { id: true, name: true, phone: true } },
+                },
+              },
             },
           },
           querySnapshot: {
@@ -216,6 +225,14 @@ export async function GET(): Promise<NextResponse> {
                   salesOfficer: { select: { name: true } },
                 },
               },
+              // Phase 5 — Primary SO from customer_sales_officers.
+              salesOfficerLinks: {
+                where:  { role: "PRIMARY", contactDismissed: false },
+                take:   1,
+                select: {
+                  salesOfficer: { select: { id: true, name: true, phone: true } },
+                },
+              },
             },
           },
           querySnapshot: {
@@ -281,6 +298,14 @@ export async function GET(): Promise<NextResponse> {
                       salesOfficer: { select: { name: true } },
                     },
                   },
+                  // Phase 5 — Primary SO from customer_sales_officers.
+                  salesOfficerLinks: {
+                    where:  { role: "PRIMARY", contactDismissed: false },
+                    take:   1,
+                    select: {
+                      salesOfficer: { select: { id: true, name: true, phone: true } },
+                    },
+                  },
                 },
               },
             },
@@ -322,6 +347,14 @@ export async function GET(): Promise<NextResponse> {
                       salesOfficer: { select: { name: true } },
                     },
                   },
+                  // Phase 5 — Primary SO from customer_sales_officers.
+                  salesOfficerLinks: {
+                    where:  { role: "PRIMARY", contactDismissed: false },
+                    take:   1,
+                    select: {
+                      salesOfficer: { select: { id: true, name: true, phone: true } },
+                    },
+                  },
                 },
               },
             },
@@ -361,6 +394,14 @@ export async function GET(): Promise<NextResponse> {
                   area:              { select: { name: true, deliveryType: { select: { name: true } } } },
                   salesOfficerGroup: {
                     include: { salesOfficer: { select: { name: true } } },
+                  },
+                  // Phase 5 — Primary SO from customer_sales_officers.
+                  salesOfficerLinks: {
+                    where:  { role: "PRIMARY", contactDismissed: false },
+                    take:   1,
+                    select: {
+                      salesOfficer: { select: { id: true, name: true, phone: true } },
+                    },
                   },
                 },
               },
