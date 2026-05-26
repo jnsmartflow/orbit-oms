@@ -1,11 +1,13 @@
 # CLAUDE_TINT.md — Tint Module
-# v1.1 · Schema v27.2
+# v1.2 · Schema v27.4
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
-Covers Tint Manager, Tint Operator, Manual Tint Entry, Delivery Challans, Shade Master, TI Report.
+Covers Tint Manager, Tint Operator (incl. skip, pause/resume, partial done), Manual Tint Entry, Delivery Challans (incl. void), Shade Master (legacy), TI Report, Remove OBD.
 
 Users: Chandresh Kolgha (tint_manager), Deepak Vasava + Chandrasing Valvi (tint_operator).
+
+Sampling Library is a SEPARATE module — see `CLAUDE_SAMPLING_LIBRARY.md`.
 
 ---
 
@@ -16,10 +18,16 @@ Primary user: Chandresh.
 **Key files:**
 - `components/tint/tint-manager-content.tsx`
 - `components/tint/tint-table-view.tsx`
+- `components/tint/PauseHistoryModal.tsx`
+- `components/tint/SkipHistoryModal.tsx`
+- `components/tint/RemoveObdModal.tsx`
 - `app/api/tint/manager/orders/route.ts`
 - `app/api/tint/manager/missing-customers/route.ts`
 - `app/api/tint/manager/reorder/route.ts`
 - `app/api/tint/manager/assign/route.ts`
+- `app/api/tint/manager/orders/[id]/remove/route.ts`
+- `app/api/tint/manager/orders/[id]/pause-history/route.ts`
+- `app/api/tint/manager/orders/[id]/skip-history/route.ts`
 
 ### 1.1 Header (UniversalHeader, two-row)
 
@@ -27,22 +35,21 @@ Primary user: Chandresh.
 
 **Row 2:** Operator workload pills (leftExtra) · missing-customer badge (rightExtra) · View toggle · Filter dropdown.
 
-**No slot segments, no date stepper.** Slots are dispatch windows, irrelevant to tinting. TM is always a live view.
+**No slot segments, no date stepper.** Always live view.
 
 ### 1.2 Operator workload pills
 
-- "Unassigned · N" pill (red-ish): count of orders in Pending column (no operator yet)
-- One pill per operator from `/api/tint/manager/operators`: count = assigned + in-progress combined (orders + activeSplits)
-- Tap pill to filter all 4 columns to that operator's work. Tap again to deselect.
-- Operator filter lives in pills only — not in Filter dropdown.
+- "Unassigned · N" pill: count of orders in Pending column
+- One pill per operator from `/api/tint/manager/operators`: count = assigned + in-progress combined
+- Tap to filter all 4 columns; tap again to deselect
 
 ### 1.3 Missing customer badge (rightExtra)
 
-Amber pill showing "N missing" when count > 0. Covers both tint and non-tint orders for SMU = "Retail Offtake" / "Decorative Projects".
+Amber pill "N missing" when count > 0. Both tint and non-tint orders for SMU = "Retail Offtake" / "Decorative Projects".
 
-Popover lists orders with: OBD, type badge (Tint/Non-Tint), customer name, SMU. Click opens `CustomerMissingSheet`. Re-fetches on resolve. Badge disappears when all resolved.
+Click opens `CustomerMissingSheet`. Re-fetches on resolve.
 
-Endpoint: `GET /api/tint/manager/missing-customers` → `{ count, orders[] }`. Excludes terminal workflow stages.
+Endpoint: `GET /api/tint/manager/missing-customers`.
 
 ### 1.4 Delivery type filter
 
@@ -52,56 +59,46 @@ Values must match DB exact casing: `Local`, `Upcountry`, `IGT`, `Cross Depot`.
 
 Pending | Assigned | In Progress | Completed.
 
-Column count pills: all neutral `bg-gray-100 text-gray-700 border-gray-200`. No semantic colours on column headers.
-
-Empty state: compact "No orders" italic. No icon, no subtitle.
+Column pills: all neutral `bg-gray-100`. No semantic colours on column headers.
 
 ### 1.6 Card / row content
 
-Every card shows:
-- OBD (mono) · orderDateTime (via `formatOrderDateTime()` helper)
-- Age badge (`CLAUDE_UI.md §35`) when 1+ days old
+Every card:
+- OBD (mono) · orderDateTime
+- Age badge when 1+ days old
 - Customer / Site name
-- SMU
-- Priority
-- Articles, Volume
+- SMU, Priority, Articles, Volume
 - Operator avatar (22×22px)
-- Re-assign action (in Assigned rows)
+- Re-assign action (Assigned rows)
 - Dispatch status badge inline next to site name
+- **Paused pill (stage-agnostic):** amber `⏸ Paused (N/3)`
+- **Skipped pill (pending stage):** gray `↩ Skipped {N}×`
 
 Card sort: `sequenceOrder ASC → priorityLevel ASC → date ASC`.
 
 ### 1.7 Table view
 
-`<table>` with `table-layout: fixed` per `CLAUDE_UI.md §35`.
+`<table>` with `table-layout: fixed` per `CLAUDE_UI.md §33`. 9 columns, widths 4/13/10/18/7/9/6/15/10/8%.
 
-- 9 columns: # / OBD / SMU / Site Name / Priority / Articles / Volume / Operator-Action / Time / Actions
-- Widths: 4/13/10/18/7/9/6/15/10/8%
-- First column `#`: 1-based serial counter per section
-- "Customer" renamed to "Site Name"
-- Slot column removed
-- Dispatch status badge inline in CustomerCell (Dispatch/Hold/Waiting)
-- Re-assign action added to Assigned section rows
-- Roomy spacing: 10px vertical, 14px horizontal cell padding
-- Four stacked sections: Pending / Assigned / In Progress / Completed. `mb-4` between.
+First column `#`: 1-based serial counter per section. "Customer" renamed to "Site Name". Slot column removed. Re-assign action in Assigned rows. Roomy spacing (10px vertical, 14px horizontal padding).
 
-### 1.8 Sequence order — single source of truth
+Pause + Skip pills + kebab items same as kanban cards.
 
-Operator screen reads `sequenceOrder` from `orders`/`order_splits` (NOT `operatorSequence` from `tint_assignments`).
+### 1.8 Sequence order — single source
 
-**Per-operator reorder:** Move up/down only swaps within same operator's assigned orders. API: `/api/tint/manager/reorder` — finds target order's operator, filters list to that operator, swaps.
+Operator reads `sequenceOrder` (NOT `operatorSequence`).
 
-**Assignment queue position:** New assignments get `sequenceOrder = MAX + 1` for that operator's existing queue (FIFO).
+**Per-operator reorder:** Move up/down only swaps within same operator. API: `/api/tint/manager/reorder` finds target order's operator, filters list, swaps.
+
+**New assignments** get `sequenceOrder = MAX + 1` (FIFO).
 
 ### 1.9 Customer missing flow
 
-- `customerMissing` boolean on `orders` table
-- Badge in header Row 2 rightExtra (amber pill) for SMUs "Retail Offtake" / "Decorative Projects"
-- Click opens `CustomerMissingSheet`
+`customerMissing` boolean on `orders`. Badge in header Row 2 rightExtra for SMU = "Retail Offtake" / "Decorative Projects". Click opens `CustomerMissingSheet`.
 
-### 1.10 API
+### 1.10 API data
 
-`GET /api/tint/manager/orders` returns slot/deliveryType data, slotSummary, orderDateTime on all order/split/assignment payloads.
+`GET /api/tint/manager/orders` returns slot/deliveryType, slotSummary, orderDateTime on all payloads. Also: `pauseCount`, `lastPausedAt`, `currentProgress` (from `tint_assignments`).
 
 ---
 
@@ -109,11 +106,11 @@ Operator screen reads `sequenceOrder` from `orders`/`order_splits` (NOT `operato
 
 See `CLAUDE_CORE.md §9`.
 
-- At import: `orderType === "tint"` → `slotId = null`, `originalSlotId = null`.
-- At completion (whole order, `/api/tint/operator/done`): sets `slotId` + `originalSlotId` on order using `resolveSlot()` thresholds on current IST time.
+- At import: `orderType === "tint"` → `slotId = null`, `originalSlotId = null`
+- At completion (whole order, `/api/tint/operator/done`): sets `slotId` + `originalSlotId` on order using `resolveSlot()` thresholds on current IST time
 - At split completion (`/api/tint/operator/split/done`): sets slot on **parent** order. Latest completion wins.
-- No buffer before cutoff — completion at 10:25 → Morning slot.
-- `applyMailOrderEnrichment()` skips slot recalculation for tint orders.
+- No buffer before cutoff
+- `applyMailOrderEnrichment()` skips slot recalculation for tint orders
 
 ---
 
@@ -123,111 +120,312 @@ Primary users: Deepak, Chandrasing.
 
 **Key files:**
 - `components/tint/tint-operator-content.tsx`
+- `components/tint/PauseJobModal.tsx`
+- `components/tint/SkipJobModal.tsx`
+- `components/tint/MarkDoneConfirmModal.tsx`
+- `components/tint/ResumeBlockedTooltip.tsx`
 - `app/api/tint/operator/my-orders/route.ts`
 - `app/api/tint/operator/done/route.ts`
-- `app/api/tint/operator/split/done/route.ts`
-- `app/api/tint/operator/orders/route.ts`
-- `app/api/tint/operator/action/route.ts`
+- `app/api/tint/operator/start/route.ts`
+- `app/api/tint/operator/pause/route.ts`
+- `app/api/tint/operator/resume/route.ts`
+- `app/api/tint/operator/skip/route.ts`
 
-Visual spec: `CLAUDE_UI.md §36-37`.
+Visual spec: `CLAUDE_UI.md §34-38`.
 
 ### 3.1 Layout
 
-3-level hierarchy:
-- **Row 1** — UniversalHeader: title "My Jobs", stats (queue/active/done counts), clock, search
-- **Row 2** — Job filter as teal-600 segment pill (leftExtra). Click opens 400px dropdown with scoreboard + queue cards. Progress bar (rightExtra): amber <25%, teal 25-75%, green >75%.
-- **Below Row 2** — Bill To / Ship To as equal-width cards (`grid-cols-2`). Full customer names.
-- **Main** — 320px SKU left panel + flex TI form right. Mobile: left panel hidden below md.
+- Row 1: UniversalHeader title "My Jobs", stats (queue/active/done/paused)
+- Row 2: Job filter as teal-600 segment pill (leftExtra). Click opens 400px dropdown with **3 sections: CURRENT / PAUSED / UP NEXT**. Progress bar (rightExtra)
+- Below Row 2: Bill To / Ship To equal-width cards (`grid-cols-2`)
+- Main: 320px SKU left panel + flex TI form right
 
-### 3.2 Job queue sequence enforcement
+### 3.2 Job queue sequence
 
-TM controls job sequence via assignment order. Operator CANNOT start a future job — only "Save TI" is available for non-current jobs.
+TM controls sequence. Operator CANNOT start a future job — only "Save TI" available for non-current jobs.
 
-- **Current job** = first assigned in queue with no other job `in_progress`, OR the job that is `tinting_in_progress`
-- **Future jobs:** show "Save TI" only (gray-900). After TI saved: "TI saved — waiting in queue" status text, no action buttons.
+- **Current job** = first assigned in queue (no other job in_progress) OR the job that is `tinting_in_progress`
+- **Future jobs:** show "Save TI" only. After TI saved: "TI saved — waiting in queue".
 
 ### 3.3 CTA button rules
 
-- Save actions (Save TI, Update TI Entry): `bg-gray-900 text-white`
-- Workflow actions (Save TI & Start, Start Job, Mark as Done): `bg-green-600 text-white`
-- **No teal on any CTA button.** Teal exists only in sidebar + job pill.
-- `handleSubmitTI(andStart: boolean)` — supports save-only mode
-- Buttons use natural width, `whitespace-nowrap`, `flex-shrink-0`.
+- Save (Save TI, Update TI Entry): `bg-gray-900 text-white`
+- Workflow (Save TI & Start, Start Job, Mark as Done): `bg-green-600 text-white`
+- **Pause: `bg-amber-600 text-white`**
+- **Skip: passive ghost `bg-gray-100 text-gray-700`**
+- No teal on any CTA. Buttons use natural width, `whitespace-nowrap`, `flex-shrink-0`.
 
 ### 3.4 Left panel card states
 
-- Selected: `bg-gray-100 border-l-[3px] border-l-gray-900` — no coloured borders
-- Unselected (all statuses): `bg-white border-gray-200 hover:bg-gray-50` — status via ✓ checkmark or Pending badge only
+- Selected: `bg-gray-100 border-l-[3px] border-l-gray-900`
+- Unselected: `bg-white border-gray-200 hover:bg-gray-50`
 
-### 3.5 Pigment-coloured shade cells
+### 3.5 Pigment shade cells
 
-See `CLAUDE_UI.md §37` for full colour table.
-
-- Each shade input has tinted bg + 3px top border in actual pigment colour
-- `border-radius: 0 0 6px 6px` (flat top, rounded bottom)
-- Filled cells (value > 0): deeper bg + darker border
-
-Toggle: "+ Show all 13" expands to full grid. "− Show active only" collapses back.
+Visual spec `CLAUDE_UI.md §35`. Tinted bg + 3px top border in pigment colour. Filled cells get deeper bg + darker border.
 
 ### 3.6 Post-save form behaviour
 
-After successful Save TI or Update TI Entry:
-- Do NOT reset `tiEntries` to `defaultTIFormEntry()`
-- Instead: `fetchOrders` → `loadExistingTIEntries` → the `selectedLineIdx` effect repopulates form from updated `existingTIEntries` map
-- `existingTIEntries` must create **new Map reference** on update (not mutate in place) to trigger React re-render
+After Save TI or Update TI Entry:
+- Do NOT reset `tiEntries`
+- `fetchOrders` → `loadExistingTIEntries` → `selectedLineIdx` effect repopulates form
+- `existingTIEntries` must create NEW Map reference on update (not mutate)
 - `selectedLineIdx` effect depends on: `selectedLineIdx`, `selectedJob?.id`, `existingTIEntries`
-- After saving NEW entry: auto-advance to next uncovered line if any
+- After NEW entry save: auto-advance to next uncovered line
 
-### 3.7 Auto-load existing TI entry on line selection
+### 3.7 Auto-load existing TI entry
 
-When operator clicks a line card (or line auto-selected on load):
-- Line HAS existing entry → form populated with saved values, "ACTIVE SHADE VALUES" mode, `editingEntryId` set, `tinterType` set
-- Line has NO entry → fresh empty form, full shade grid, `editingEntryId` null
+When operator clicks a line:
+- Line HAS entry → form populated, "ACTIVE SHADE VALUES" mode, `editingEntryId` set, `tinterType` set
+- Line has NO entry → fresh empty form, `editingEntryId` null
 
-### 3.8 Timer calculation
+### 3.8 Timer (shared helper)
 
-- Elapsed timer: `Math.max(0, now.getTime() - new Date(startedAt).getTime())`
-- Guard against negative values — always use `Math.max(0, diff)`
-- Reads from job that is `tinting_in_progress`
-- Prisma DateTime comes as ISO string with Z suffix — parsed correctly by `new Date()`
-- `setInterval` ticks every 1000ms with immediate first tick
-- Displays in both Row 2 (next to pill) and footer
+Helper: `lib/tint/elapsed-time.ts` → `computeElapsedMs({ status, startedAt, accumulatedMinutes, nowMs })`.
 
-### 3.9 Multi-line Save TI + Start flow
+Three branches:
+- `running` → `accumulated × 60000 + (now − startedAt)`
+- `paused` → `accumulated × 60000` (frozen)
+- otherwise → null
 
-Current job (assigned, not in progress): ALWAYS shows `[Save TI]` + `[Save TI & Start]` regardless of how many lines are covered.
+Both operator card (1s tick) and table view (60s tick) delegate to this helper. `TintAssignmentInfo` TS interface gained `accumulatedMinutes`.
 
-- "Save TI" — saves current line only, auto-advances to next uncovered line
+Bug pattern to remember: after resume, server resets `startedAt = now`, so a UI that reads `startedAt` alone drops elapsed back to 0. Always use the helper.
+
+### 3.9 Multi-line Save TI + Start
+
+Current job ALWAYS shows `[Save TI]` + `[Save TI & Start]` regardless of how many lines covered.
+
+- "Save TI" — saves current line, auto-advances to next uncovered
 - "Save TI & Start" — saves current line AND starts job timer
 
-### 3.10 API data
+### 3.10 Removed elements
 
-`GET /api/tint/operator/my-orders` returns per order/split: `billToCustomerId`, `billToCustomerName`, `areaName`, `routeName`, `deliveryTypeName`. Top-level: `totalAssignedToday`, `totalDoneToday`.
+- Old 240px left panel job queue cards
+- Old bottom sheet queue overlay
+- "+ Add Another Entry" button
+- Base SKU dropdown for first entry
+- Entry header when single entry
+- Purple TINT badge from TI header
+
+### 3.11 API data
+
+`GET /api/tint/operator/my-orders` returns per order/split: `billToCustomerId`, `billToCustomerName`, `areaName`, `routeName`, `deliveryTypeName`. Top-level: `totalAssignedToday`, `totalDoneToday`. Per assignment: `pauseCount`, `lastPausedAt`, `currentProgress`, `accumulatedMinutes`.
 
 ---
 
-## 4. Manual Tint Entry
+## 4. Operator Skip Job
+
+Soft-removes a top assigned job from operator's queue back into TM pool.
+
+### Locked behaviour
+
+- Available **only on top/first job** in queue
+- Skipped → back to TM pool as fresh pending assignment
+- 4 reasons: `TINTER_FINISHED`, `MACHINE_BREAKDOWN`, `MATERIAL_SHORTAGE`, `OTHER`
+- "Tinter finished" requires: manual tinter-type pick + multi-select of out-of-stock colours
+- Free-text remark always **optional**
+- No daily skip limit
+- TM can reassign to **same operator** who skipped
+- TM card shows **full skip history**
+- Full audit log
+
+### API
+
+| Method | Path | Auth | Purpose |
+|---|---|---|---|
+| POST | `/api/tint/operator/skip` | Operator (owner) | Skip top assigned job |
+| GET | `/api/tint/manager/orders/[id]/skip-history` | TM/Admin | Full skip history modal |
+
+**Skip logic (sequential awaits):**
+1. Assert ownership + top-of-queue + status='assigned'
+2. If TINTER_FINISHED → assert tinterType + colours[] non-empty
+3. Insert `tint_skip_events` row
+4. Update assignment: status='skipped', skippedAt, skipEventId
+5. Insert `order_status_logs` `OPERATOR_SKIP`
+6. Re-queue: clear operator FK, set sequenceOrder=null → returns to TM pool
+
+### Schema
+
+`tint_skip_events` (v27.3) + `tint_assignments` gets `skippedAt`, `skipEventId` (BIGINT FK).
+
+---
+
+## 5. Operator Pause / Resume
+
+Pauses an in-progress job mid-tinting with per-SKU progress snapshot.
+
+### Locked behaviour
+
+- **Whole-OBD only.** Splits rejected with 400.
+- **Concurrent cap:** 1 in-progress + max 3 paused per operator
+- **Per-job cap:** max 3 pauses on the same job
+- **Resume blocked** if operator has another job in-progress (server + client both enforce)
+- Paused jobs persist overnight (no expiry)
+- TM cannot reassign a paused job (operator owns until resume/done)
+- 5 reasons: `lunch_break`, `shift_end`, `machine_breakdown`, `material_shortage`, `urgent_priority` (no "Other")
+- Remark optional, 500-char counter
+- Per-SKU progress: whole int, `0 ≤ doneQty ≤ assignedQty`, every SKU present
+
+### API
+
+| Method | Path | Auth | Purpose |
+|---|---|---|---|
+| POST | `/api/tint/operator/pause` | Operator (owner) | Pause in-progress whole-OBD |
+| POST | `/api/tint/operator/resume` | Operator (owner) | Resume paused job |
+| GET | `/api/tint/manager/orders/[id]/pause-history` | TM/Admin | Chronological list, oldest first |
+
+**Pause logic:**
+1. Assert ownership + status='tinting_in_progress' + startedAt non-null
+2. Reject splitId !== null (400)
+3. Enforce per-job cap (≤3) + concurrent cap (≤4 total paused for operator)
+4. Validate per-SKU coverage + range
+5. Compute `elapsedMinutesAtPause` = floor((now - startedAt) / 60000) + accumulatedMinutes
+6. Insert `tint_pause_events` row
+7. Update assignment: status='paused', accumulatedMinutes=elapsedMinutesAtPause, pauseCount++, lastPausedAt=now, currentProgress=snapshot
+8. Audit log `OPERATOR_PAUSE`
+
+**Resume logic:**
+1. Assert ownership + status='paused' + operator has 0 in-progress (server-side double-check)
+2. Find latest open `tint_pause_events` row → set resumedAt, resumedById, resumeRemark
+3. Update assignment: status='tinting_in_progress', **startedAt = now** (canonical fact: server resets this)
+4. Audit log `OPERATOR_RESUME`
+
+**Pause history DTO** translates internal field names: `pauseReason` → `reason`, `operator` → `pausedBy`, etc.
+
+### Schema
+
+`tint_pause_events` (v27.3) + `tint_assignments` gets `pauseCount`, `lastPausedAt`, `currentProgress JSONB`, `accumulatedMinutes INT`.
+
+### Rounding behaviour
+
+`accumulatedMinutes` is `Int @default(0)`. Sub-minute precision is lost across pause boundaries. Worst case ~30 sec per pause × 3 max pauses = ~90 sec drift. Depot-acceptable.
+
+### Coexistence with Skip
+
+A card skipped 1× then paused renders amber-500 left border, both pills inline in a status-pill row, two stacked summary blocks, two kebab items. No conflicts.
+
+### UP NEXT rows are clickable
+
+Mockup spec said locked previews. Implementation kept them clickable to preserve the "prep TI for upcoming jobs" workflow. Visually styled per spec (compact, muted, no buttons).
+
+---
+
+## 6. Mark Done refactor (partial qty support)
+
+`POST /api/tint/operator/done` body now accepts:
+
+```ts
+{ progress: [{ skuId, doneQty }] }
+```
+
+- Validates coverage + range (`0 ≤ doneQty ≤ unitQty`)
+- Folds final run delta into `accumulatedMinutes` (canonical "total tinting time" on done)
+- Writes `currentProgress` snapshot
+
+### MarkDoneConfirmModal (visual: `CLAUDE_UI.md §38`)
+
+- Per-SKU steppers pre-filled with `assignedQty`
+- "Total tinting time" summary line
+- Two-stage confirm: `[Cancel] [Confirm Done]` → if any SKU short → amber banner "Short by N tins. Continue?" → `[Back] [Yes, mark done]`
+
+### accumulatedMinutes semantics
+
+Schema comment: *"On done, this field is finalised as the total tinting minutes including all paused intervals."*
+
+Pause route increments per pause. Done route folds final delta. Always exposed on `my-orders` payload for the modal.
+
+### TI-completion gate preserved
+
+Client-side preflight using `existingTIEntries` shows per-line warning before modal opens. Server still re-checks defensively.
+
+### Splits keep the legacy path
+
+Mark Done on splits branches to `/api/tint/operator/split/done` (untouched). The new validation only applies to whole-OBD orders.
+
+---
+
+## 7. Manual Tint Entry
 
 Chandresh's manual override when auto-classification misses a tint requirement.
 
 **Use cases:**
-1. Sample requests / custom shades where the SKU description doesn't trigger any tint keyword
-2. Late additions — dealer calls after import and asks for a custom shade on what was originally a stock-colour order
+1. Sample requests / custom shades where SKU description doesn't trigger any tint keyword
+2. Late additions — dealer calls after import and asks for custom shade on stock-colour order
 
-**UI:** Modal on Tint Manager screen. Operator types OBD number, picks which lines need tinting, submits with reason.
+**UI:** Modal on Tint Manager. Operator types OBD number, picks lines, submits with reason.
 
 **Schema:**
 ```
 manual_tint_entries
-  id, orderId (FK → orders), lineIds (JSON array of import_raw_line_items.id),
+  id, orderId (FK → orders), lineIds (JSON array),
   reason TEXT, createdBy (FK → users), createdAt
 ```
 
-**Behaviour:** Additive only — does not modify or replace auto-classification at import time. Adds the OBD to the tint workflow with the chosen lines flagged as tinting.
+**Behaviour:** Additive only — does not modify auto-classification at import. Adds OBD to tint workflow with chosen lines flagged.
 
 ---
 
-## 5. Delivery Challan — /tint/manager/challans
+## 8. Remove OBD (TM soft-delete)
+
+Soft-delete OBD with audit trail. Voids linked challan.
+
+### Locked behaviour
+
+- Soft delete only (no hard delete)
+- Removable by: users with TM-delete-right OR Admin
+- Removable **only at `pending_tint_assignment` stage** — blocked after assignment (returns 409)
+- 2 predefined reasons: `CUSTOMER_CANCELLED`, `WRONG_ORDER`
+- Free-text remark **mandatory**
+- Linked challan **voided** (number kept, marked cancelled, print/PDF disabled, watermark shown)
+- Re-import of removed OBD: **skipped silently** (no auto-restore) — returns `skipped: previously_removed` in preview UI
+- Admin can **restore** via `/admin/removed-orders` page
+- Removed OBDs **hidden everywhere** in normal screens (per CORE §3 soft-delete reads rule)
+
+### API
+
+| Method | Path | Auth | Purpose |
+|---|---|---|---|
+| POST | `/api/tint/manager/orders/[id]/remove` | TM-delete or Admin | Soft-remove + void challan |
+| POST | `/api/admin/removed-orders/[id]/restore` | Admin | Restore OBD, unvoid challan |
+| GET | `/api/admin/removed-orders` | Admin | List all removed (paginated) |
+
+**Remove logic (sequential awaits):**
+1. Load order → assert exists, `isRemoved=false`
+2. Assert `workflowStage === 'pending_tint_assignment'` → else 409
+3. Update order with removal fields (`isRemoved=true`, `removalReason`, `removalRemark`, `removedAt`, `removedById`)
+4. Find linked challan → update with void fields
+5. Insert `order_status_logs` entry `OBD_REMOVED`
+
+### Read-API rule (CORE §3)
+
+Every list endpoint adds `where: { isRemoved: false }` default. Every challan read adds `where: { isVoided: false }` default.
+
+**Exceptions** (must include voided/removed):
+- Challan sequence-numbering — would collide with previously-issued (now voided) numbers
+- Admin `/removed-orders` list — explicitly filters `isRemoved: true`
+- Admin restore endpoint — must see soft-removed to restore them
+- `lib/import-upsert/state.ts` — internal to import flow
+- `lib/slot-cascade.ts`, `lib/day-boundary.ts` — disabled per landmines
+- Challan list/detail uses `OR: [{ isRemoved: false }, { isRemoved: true, challan: { isVoided: true } }]` so voided-challan rows on removed orders surface for audit
+
+### UI
+
+- TM Kanban card → 3-dot menu → "Remove OBD" → `RemoveObdModal`
+- TM Table view → same 3-dot menu in row (primary use)
+- Modal: reason radios + mandatory remark + warning about challan void
+- Voided challan: diagonal red watermark + disabled Print/PDF + red banner with reason/remark/who/when
+- `/admin/removed-orders` — table with Restore action
+
+### Schema
+
+`orders` v27.3: `isRemoved BOOLEAN DEFAULT false`, `removalReason TEXT`, `removalRemark TEXT`, `removedAt TIMESTAMPTZ`, `removedById INT`, `restoredAt`, `restoredById`.
+
+`delivery_challans` v27.3: `isVoided BOOLEAN DEFAULT false`, `voidReason TEXT`, `voidRemark TEXT`, `voidedAt TIMESTAMPTZ`.
+
+---
+
+## 9. Delivery Challan — /tint/manager/challans
 
 TM screen.
 
@@ -237,114 +435,111 @@ TM screen.
 - `app/api/tint/manager/challans/route.ts`
 - `app/api/tint/manager/challans/[orderId]/route.ts`
 
-### 5.1 Auto-creation
+### 9.1 Auto-creation
 
-At import time (not lazily on click) for orders with SMU = "Retail Offtake" or "Decorative Projects". Sequence based on `orderDateTime` within batch. Number format: `CHN-{YEAR}-{5-digit seq}`. Created regardless of customer master status.
+At import time (not lazily on click) for orders with SMU = "Retail Offtake" or "Decorative Projects". Sequence based on `orderDateTime`. Number format: `CHN-{YEAR}-{5-digit seq}`. Created regardless of customer master status.
 
-### 5.2 SMU filter
+### 9.2 SMU filter
 
-Only "Retail Offtake" and "Decorative Projects" appear. Other SMU values excluded.
+Only "Retail Offtake" and "Decorative Projects". Other SMU values excluded.
 
 Sort: `orderBy: { orderDateTime: "asc" }`.
 
-### 5.3 Layout — split view
+### 9.3 Layout — split view
 
-See `CLAUDE_UI.md §33`.
+See `CLAUDE_UI.md §31`.
 
-- 320px left panel: compact 3-line rows. Selected: `bg-teal-50 + border-l-teal-600`. No search in panel.
-- Right panel: action bar (challan ID mono + OBD + customer gray-400 | Edit outline + Print dark) + challan document on `#f9fafb` bg.
+- 320px left panel: compact 3-line rows. Selected: `bg-teal-50 + border-l-teal-600`
+- Right panel: action bar + challan document on `#f9fafb` bg
 - UniversalHeader: no segments. Filter groups: SMU + Route. Date stepper. Search.
 
-### 5.4 Document — B&W print
+### 9.4 Voided challan rendering
 
-See `CLAUDE_UI.md §34` for full visual spec.
+When `delivery_challans.isVoided === true`:
+- Diagonal red `VOIDED` watermark across document body
+- Print + PDF actions disabled
+- Red banner: `VOIDED · {voidReason} · {voidRemark} · by {name} on {DD MMM YYYY HH:MM}`
+- Document still rendered (audit trail)
 
-- Grayscale only palette. **No teal. No blue.**
-- Logo: `/jsw-dulux-logo.png` (800×193 PNG-24). Height 34px. Container `paddingRight: 24px`.
-  - Web view: NO inline filter (full colour)
-  - Print view: `filter: grayscale(100%) brightness(0) !important` via `@media print`
-- Header: Logo · "DELIVERY CHALLAN" centred · Challan number + OBD date right column (`minWidth: 165`)
-- Right column shows challan number (bold mono) stacked over OBD date (`DD MMM YYYY` light). Labels "CHALLAN NO." / "CHALLAN DATE" removed.
-- Address bar (#374151) is the only dark section
-- Bill To includes address (lookup via `billToCustomerId` from `delivery_point_master`)
-- Footer entity: `JSW Dulux Limited (formerly Akzo Nobel India Limited)`. Hardcoded in `challan-document.tsx`.
+### 9.5 Document — B&W print
 
-### 5.5 S5 contact resolution
+See `CLAUDE_UI.md §32`.
+
+- Grayscale only. NO teal. NO blue.
+- Logo `/jsw-dulux-logo.png` 34px. Web: full colour. Print: grayscale filter via `@media print`.
+- Header: Logo · "DELIVERY CHALLAN" · Challan number + OBD date right column (`minWidth: 165`)
+- Right column: bold mono challan number stacked over light `DD MMM YYYY`. Labels removed.
+- Address bar (#374151) only dark section
+- Bill To includes address (lookup via `billToCustomerId`)
+- Footer entity: `JSW Dulux Limited (formerly Akzo Nobel India Limited)`
+
+### 9.6 S5 contact resolution
 
 Three columns: CUSTOMER (Bill To) / SALES OFFICER / SITE-RECEIVER (Ship To). Each uses a cascade.
 
-**Bill-To contact cascade (CUSTOMER column):**
+**Bill-To (CUSTOMER):**
 1. `isPrimary === true`
-2. `contactRole.name ∈ {Owner, Manager, Proprietor, Partner, Director}`
+2. `contactRole.name ∈ OWNER_ROLES` (Owner, Manager, Proprietor, Partner, Director)
 3. First contact in array
 4. null
 
-**Ship-To site contact cascade (SITE / RECEIVER column):**
+**Ship-To site (SITE/RECEIVER):**
 1. `isPrimary === true AND contactRole.name ≠ "Sales Officer"`
-2. `contactRole.name ∈ {Site Engineer, Contractor, Supervisor}`
+2. `contactRole.name ∈ SITE_ROLES` (Site Engineer, Contractor, Supervisor)
 3. First contact with role ≠ "Sales Officer"
 4. null
 
-**Sales Officer cascade (SALES OFFICER column):**
+**Sales Officer:**
 1. `delivery_point_master.salesOfficerGroupId → sales_officer_group.salesOfficer`
 2. Contact on Ship-To where `contactRole.name === "Sales Officer"`
 3. null
 
-Constants: `OWNER_ROLES`, `SITE_ROLES` arrays in `challans/[orderId]/route.ts`. Future role additions edit those arrays.
+Constants `OWNER_ROLES`, `SITE_ROLES` arrays in `challans/[orderId]/route.ts`.
 
-`isPrimary` is always selected on all three `delivery_point_contacts` join blocks (billToPoint, shipToPoint, codesAreIdentical duplicate fetch).
+### 9.7 S5 phone rendering
 
-### 5.6 S5 phone rendering
+Name line 1 (11px #374151). Phone line 2 (10px #6b7280, SF Mono). Fallback `<div height:20>` preserves row height. Blank columns are valid output.
 
-When a contact resolves:
-- Name: line 1, `fontSize 11, color #374151, marginTop 3`
-- Phone: line 2, `fontSize 10, color #6b7280, marginTop 1, fontFamily SF Mono`
+### 9.8 Print CSS
 
-When no contact: fallback `<div height:20>` preserves row height. Blank S5 columns are valid output.
+`@page` rules MUST be top-level in `globals.css`. Use `visibility: hidden` on body + `visibility: visible` on print area.
 
-### 5.7 Print CSS
+### 9.9 Fini display
 
-`@page` rules MUST be top-level in `globals.css` — cannot nest in `@media print`.
-
-Use `visibility: hidden` on body + `visibility: visible` on print area (not `display: none`).
-
-### 5.8 Table
-
-`table-layout: fixed` + `<colgroup>` 5/13/35/15/8/12/12%. Header 28px `#f9fafb`. Data rows 32px. Blank rows to minimum 8. Totals row 2px top border.
-
-### 5.9 Fini display
-
-Challan document is **Fini-always**. No toggle. SKU codes and descriptions on the printed document always come from `mo_sku_lookup.material` / `description`. See `CLAUDE_MAIL_ORDERS.md §16`.
+Challan document is **Fini-always**. No toggle. See `CLAUDE_MAIL_ORDERS.md §16`.
 
 ---
 
-## 6. Shade Master — /tint/manager/shades, /tint/shades
+## 10. Shade Master — /tint/manager/shades
+
+DEPRECATED. Sampling Library Phase 4 shipped 2026-05-25 — operator screen no longer reads `shade_master`. Page still exists for now (historical data viewing); table scheduled for deletion after retention window. All new shade saves write to `sampling_register` + `sampling_recipes` + `sampling_usage_log` (`CLAUDE_SAMPLING_LIBRARY.md`).
 
 - 2-row UniversalHeader
-- `IosToggle`, type filter (TINTER/ACOTONE), pack filter, pagination
+- IosToggle, type filter (TINTER/ACOTONE), pack filter, pagination
 - Columns: # | Shade Name | Customer ID | Type | SKU Code | Pack | Status | Active | Added By | Added At
 
 ---
 
-## 7. TI Report — /ti-report, /tint/manager/ti-report
+## 11. TI Report — /tint/manager/ti-report
 
-- `DateRangePicker` with presets (leftExtra in UniversalHeader)
-- No Summary tab
+- `DateRangePicker` with presets (leftExtra)
 - Inline shade expand
 - Download Excel button
-- Filter dropdown: operator + type
+- Filter: operator + type
 - Columns: chevron | Date | OBD No. | Dealer | Site | Base | Pack | Tins | Operator | Time
 
 ---
 
-## 8. Permissions
+## 12. Permissions
 
 Three TM page keys in `lib/permissions.ts`:
 - `delivery_challans`
 - `shade_master`
 - `ti_report`
 
-All three added to `PAGE_NAV_MAP`, `PageKey` type, `ALL_PAGE_KEYS`.
+`sampling_library` page key is shared with operators — see `CLAUDE_SAMPLING_LIBRARY.md`.
+
+`removed_orders` page key is admin-only.
 
 `role_permissions` SQL:
 ```sql
@@ -356,23 +551,34 @@ VALUES
 ON CONFLICT ("roleSlug", "pageKey") DO NOTHING;
 ```
 
-Layout `app/(tint)/tint/manager/layout.tsx` uses `buildNavItems()` only — never manually append Delivery Challans / Shade Master / TI Report. Role passed from `session.user.role` (not hardcoded).
+Layout uses `buildNavItems()` only.
 
 ---
 
-## 9. Landmines
+## 13. Landmines
 
-- **TM reorder API** (`/api/tint/manager/reorder/route.ts` ~line 429) uses `prisma.$transaction` — violates `CORE §3`, left as-is for simple two-update swap. Formula upserts are idempotent so partial-failure semantics are acceptable.
-- **`operatorSequence` field** on `tint_assignments` and `order_splits` — unused. Sort by `sequenceOrder` only.
+- **TM reorder API** (~line 429) uses `prisma.$transaction` — violates CORE §3, left as-is for simple two-update swap.
+- **`operatorSequence` field** on `tint_assignments`/`order_splits` — unused. Sort by `sequenceOrder` only.
 - **`SlotSummaryItem` interface** in `tint-manager-content.tsx` — defined but unused.
-- **CustomerMissingSheet** styling doesn't match admin customer split-view form (cosmetic).
-- **Shade Master `isActive` filter** — `/api/admin/shades` filter param unverified in production.
-- **Challan lazy creation** — `[orderId]` detail API may still auto-create challans on click. Verify before relying on import-time-only creation.
-- **Challan print CSS** — old class names (`ch-header`, `tint-yes`) may persist in `globals.css` `@media print` rules.
-- **`lib/slot-cascade.ts`** — disabled. If ever re-enabled, must skip tint orders.
-- **Customer master gaps:** SHREE RANG SAROVAR (102359) and similar Bill-To customers missing any contact → challan S5 CUSTOMER column blanks.
-- **SKU master gap:** when SAP ships an OBD with an unknown SKU (e.g. `5888558` DP M900 Gloss Enamel Brilliant White 20L), the line lands but enrichment is null. Add via Shade Master or SKU master.
+- **CustomerMissingSheet** styling doesn't match admin customer split-view (cosmetic).
+- **Shade Master `isActive` filter** — unverified in production.
+- **Challan lazy creation** — `[orderId]` detail API may still auto-create on click. Verify.
+- **Challan print CSS** — old class names (`ch-header`, `tint-yes`) may persist in `@media print`.
+- **`lib/slot-cascade.ts`** — disabled. If re-enabled, must skip tint orders.
+- **Customer master gaps:** Bill-To customers missing contacts → challan S5 CUSTOMER blanks.
+- **SKU master gap:** unknown SKUs (e.g. `5888558` DP M900 Gloss Enamel BW 20L) land but enrichment is null. Add via SKU master.
+- **Splits never get pause/resume.** Server rejects `splitId !== null` with 400. Acceptable for v1. Revisit if depot reality changes.
+- **Pause kebab on Table is pending-stage only.** In Progress and Completed Today sections have no kebab columns. Pause **badge** works everywhere; kebab entry is pending-only. Four other entry points cover the gap.
+- **Static `title=` tooltip on Resume (mobile).** `components/ui/tooltip.tsx` uses hover events. Touch devices won't fire (non-issue today — depot is desktop). If mobile app ever built, touch fallback needed.
+- **Partial-qty done not surfaced anywhere.** `currentProgress` is stored on done but no TM screen reads it. "Short by N tins" badge not built. Decision: deferred. Open question: does challan auto-fill from assigned qty? If yes, partial-done could print wrong qty. Needs verification before partial-done is considered production-safe.
+- **`shade_master` deprecated 2026-05-25.** Sampling Library Phase 4 shipped. Operator screen no longer reads `shade_master`. Table still exists with historical data, scheduled for deletion after retention window. Do not write to it.
+- **Challan PATCH `prisma.$transaction` landmine**
+  `app/api/tint/manager/challans/[orderId]/route.ts:527`
+  The formula-save path is wrapped in `$transaction`.
+  Do not extend this block — add new logic outside it
+  or refactor to sequential awaits as a separate task.
+  Pre-existing as of May 2026.
 
 ---
 
-*Tint v1.1 · Schema v27.2*
+*Tint v1.2 · Schema v27.4*

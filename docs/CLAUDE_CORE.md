@@ -1,5 +1,5 @@
 # CLAUDE_CORE.md — OrbitOMS Core
-# v73 · Schema v27.2 · Lives in: orbit-oms/docs/
+# v74 · Schema v27.4 · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_UI.md
 
 ---
@@ -11,9 +11,10 @@ Depot-level order management for a paint distribution company (JSW Dulux, former
 - **OBD pipeline:** SAP XLS import → tinting → support review → dispatch planning → warehouse picking → vehicle dispatch
 - **Mail order pipeline:** Forwarded email parsing → SKU enrichment → SAP punching → SO number capture → dispatch data flows back to OBD
 
-Plus two standalone modules:
-- **Place Order** (`/place-order`) — depot phone-order entry, mailto-based submit
+Plus three standalone modules:
+- **Place Order** (`/place-order`) — depot phone-order entry; **`/order`** public mobile equivalent
 - **Attendance** (`/attendance`) — check-in/out PWA with OT workflow
+- **Sampling Library** (`/tint/sampling-library`) — digital paper register, shade recipes + usage history
 
 Internal tool. Role-based access. Scale: ~100-200 OBDs/day, ~150+ mail orders/day, ~25-35 dispatch plans/day. Live at https://orbitoms.in.
 
@@ -62,6 +63,8 @@ Never introduce new libraries without being asked.
 - `page.tsx` pattern: bare `<ComponentName />`, no wrapper div, no title.
 - Fixed table standard (`CLAUDE_UI.md §40`) for ALL data tables.
 - Sidebar role: always `session.user.role` — never hardcoded.
+- **Soft-delete reads:** every `orders` list/find adds `where: { isRemoved: false }`. Every `delivery_challans` list adds `where: { isVoided: false }` — EXCEPT challan sequence-number allocation, which MUST include voided rows to avoid collision.
+- **Voided challan audit surface:** challan list/detail uses `OR: [{ isRemoved: false }, { isRemoved: true, challan: { isVoided: true } }]` so Chandresh still sees voided-challan rows for removed OBDs.
 
 ---
 
@@ -82,7 +85,7 @@ Never introduce new libraries without being asked.
 | Tool | Location | Schedule | Purpose |
 |---|---|---|---|
 | `Parse-MailOrders-v6_5.ps1` | `C:\Users\HP\OneDrive\VS Code\mail-orders\` | continuous | Forwarded email parser. Outlook COM. Dedup via `processed_ids_fw.json`. |
-| `Auto-Import.ps1` v2.0 | `F:\VS Code\OBD-Import Tool v2\` | Task Scheduler every 10 min, 8AM–8PM | SAP OBD fetch. HMAC-signed ingest. Tally-based pagination, yesterday recovery, lazy session reuse. |
+| `Auto-Import.ps1` v2.0 | `F:\VS Code\OBD-Import Tool v2\` | PAUSED | SAP OBD fetch. HMAC-signed ingest. Tally-based pagination, yesterday recovery, lazy session reuse. **Paused as of 2026-05-14**; manual SAP upload is the active path. |
 | `Watch-Import-V2.ps1` | `F:\VS Code\OBD-Import Tool v2\` | manual | Cycle summary watcher. Supports `-Today` and `-Date YYYY-MM-DD` modes. |
 
 **Auto-Import v2 state files** (in `Master\`): `yesterday-recovery-state.txt`, `pending-upload.txt`, `last-spec-call.txt`, `last-noise-call.txt`, `obd-tally-<date>.txt`, `session-cookie.txt` (4-hour cache), `daily-state.txt`. ExecutionTimeLimit on `2_Auto_Import` scheduler task is `PT5M`. Repetition interval `PT10M`, `StopAtDurationEnd=false`.
@@ -131,7 +134,18 @@ Primary role drives login redirect and href overrides. Additional rows add nav i
 
 **Login identifiers:** `users` has `phone TEXT` with `CHECK (phone IS NULL OR phone ~ '^[0-9]{10}$')` and partial unique index `WHERE phone IS NOT NULL`. NextAuth credentials provider accepts email OR 10-digit phone — `/^\d{10}$/` regex routes the lookup. Field `id`/`name` stays `email` (auth contract). Strict 10-digit only — no `+91`, dashes, or spaces.
 
-**Permissions:** `lib/permissions.ts` has `PAGE_NAV_MAP`, `PageKey` type, `ALL_PAGE_KEYS`. Grant via `role_permissions` rows. TM page keys: `delivery_challans`, `shade_master`, `ti_report`. Place Order key: `place_order`. Attendance key: `attendance`.
+**Permissions:** `lib/permissions.ts` has `PAGE_NAV_MAP`, `PageKey` type, `ALL_PAGE_KEYS`. Grant via `role_permissions` rows. Current page keys:
+
+| Page key | Granted to |
+|---|---|
+| `import_obd` | admin, dispatcher, support, billing_operator, tint_manager (canImport gated separately) |
+| `delivery_challans` | tint_manager (view + edit), admin |
+| `shade_master` | tint_manager (view + edit), admin |
+| `ti_report` | tint_manager (view + export), admin |
+| `sampling_library` | tint_manager (view + edit), tint_operator (view), admin |
+| `place_order` | admin, billing_operator, tint_manager, support, dispatcher |
+| `attendance` | all roles gated per rollout stage |
+| `removed_orders` | admin only |
 
 **Sidebar:** Layout files pass `session.user.role as RoleSidebarRole` (not hardcoded). Nav items come from `buildNavItems()` in `lib/permissions.ts` only — no manual appending.
 
@@ -155,36 +169,27 @@ Primary role drives login redirect and href overrides. Additional rows add nav i
 
 ---
 
-## 7. Database schema — v27.3
+## 7. Database schema — v27.4
 
-Versions in order: v21 base → v22 (mo_*) → v23 (orders dispatch) → v24 (customer match) → v25 (split) → v26 (mo_order_remarks) → v26.1 (isLocked) → v26.2 (mo_line_status) → v26.3 (carton + piecesPerCarton) → v26.4 (mo_learned_customers) → v26.5 (orders.orderDateTime) → v26.6 (user_roles + manual_tint_entries + users.phone + mo_sku_lookup.refDescription) → v27.0 (attendance foundation) → v27.1 (attendance settings hardening) → v27.2 (OT workflow on attendance_records + attendance_summary + attendance_settings + 2026-05-13 place-order v2 tables) → v27.3 (sampling_usage_log.deliveryNumber — Phase 3 delivery no backfill).
+Versions: v21 base → v22 (mo_*) → v23 (orders dispatch) → v24 (customer match) → v25 (split) → v26 (mo_order_remarks) → v26.1 (isLocked) → v26.2 (mo_line_status) → v26.3 (carton + piecesPerCarton) → v26.4 (mo_learned_customers) → v26.5 (orders.orderDateTime) → v26.6 (user_roles + manual_tint_entries + users.phone + mo_sku_lookup.refDescription) → v27.0 (attendance foundation) → v27.1 (attendance settings hardening) → v27.2 (OT workflow + 2026-05-13 place-order v2 tables) → **v27.3** (sampling_register + sampling_recipes + sampling_usage_log; orders.isRemoved + delivery_challans.isVoided; tint_skip_events + tint_pause_events; tint_assignments + import_raw_line_items netWeight/totalWeight) → **v27.4** (sampling_usage_log.deliveryNumber backfill + tinter_issue_entries.samplingNo/shadeName).
 
 ### 7.1 Setup / Master
 
 ```
 status_master              UNIFIED. Domains: dispatch|tinting|pick_list|import|workflow|priority
-system_config              Key-value. Keys: day_boundary_time, last_cleanup_date,
-                           history_days_visible, slot_cascade_grace_minutes, last_cascade_check
+system_config              Key-value
 role_master                Roles 1-14 (see §5)
 role_permissions           (roleSlug, pageKey, canView, canImport, canExport, canEdit, canDelete)
 user_roles                 Multi-role assignment (§5)
 users                      Depot staff. bcryptjs 10 rounds. roleId FK. phone TEXT (nullable, 10-digit).
-                           attendance columns: attendanceConsentAt, attendanceConsentVersion,
-                           attendanceExempt BOOLEAN, attendanceTestUser BOOLEAN.
+                           Attendance columns: attendanceConsentAt, attendanceConsentVersion,
+                           attendanceExempt, attendanceTestUser.
 
-product_category           Emulsion, Primer, Tinter, Enamel, Texture, Putty
-product_name               WS, Aquatech, Weathercoat... FK → product_category
-base_colour                White Base, Deep Base, Clear, N/A
-sku_master                 SKU + colour combo. FKs: productCategoryId, productNameId, baseColourId.
-                           grossWeightPerUnit does NOT exist.
-
-transporter_master         Transporter companies
-vehicle_master             capacityKg, vehicleType, isActive, driverName, driverPhone
-
-delivery_type_master       Local | Upcountry | IGT | Cross (exact casing stored)
-slot_master                id 1 Morning(10:30), 2 Afternoon(12:30), 3 Evening(15:30),
-                           4 Night(18:00), 5 Next Day Morning. Slot 5 never assigned.
-delivery_type_slot_config  EXISTS but UNUSED
+product_category, product_name, base_colour, sku_master
+transporter_master, vehicle_master
+delivery_type_master       Local | Upcountry | IGT | Cross
+slot_master                Slots 1-5
+delivery_type_slot_config  UNUSED
 route_master, area_master, area_route_map, sub_area_master
 sales_officer_master, sales_officer_group
 contact_role_master
@@ -194,120 +199,161 @@ delivery_point_master      Ship-to. primaryRouteId, deliveryTypeOverride, salesO
 delivery_point_contacts    contactRoleId FK, isPrimary BOOLEAN
 ```
 
-### 7.2 Import
+### 7.2 Import (full detail → `CLAUDE_IMPORT.md`)
 
 ```
 import_batches             One per import session
 import_raw_summary         One per OBD. smuNumber, soNumber, obdEmailDate, obdEmailTime
-import_raw_line_items      Per line. lineId = row index. batchCode always NULL.
-                           lineStatus TEXT default 'active', removedAt, removedReason
+import_raw_line_items      Per line. lineId, skuCodeRaw, batchCode, netWeight, totalWeight
+                           lineStatus 'active'|'removed_by_import', removedAt, removedReason
 import_enriched_line_items Lines joined with sku_master
-import_obd_query_summary   Per-OBD totals: weight, qty, volume, hasTinting, totalArticle
-import_shadow_log          INSERT-ONLY shadow log for SAP brain cutover
+import_obd_query_summary   Per-OBD totals
+import_shadow_log          INSERT-ONLY shadow log
 ```
-
-Volume always in LITRES (L). Never display m³.
 
 ### 7.3 Orders + Tinting
 
 ```
-orders                     Parent. workflowStage = overall status.
-                           slotId FK, originalSlotId, dispatchSlotDeadline
-                           orderDateTime TIMESTAMPTZ — true order time
-                           smu TEXT, customerMissing BOOLEAN
-                           isPicked, pickedAt, pickedById
-                           soNumber (indexed, from SAP "SONum")
-                           remarks, shipToOverride, slotToOverride
-                           sequenceOrder INT (single source for operator queue sort)
-                           orderType — 'tint' gets slotId=null at import
+orders                     workflowStage, slotId, originalSlotId, dispatchSlotDeadline,
+                           orderDateTime, smu, customerMissing, isPicked, pickedAt, pickedById,
+                           soNumber, remarks, shipToOverride, slotToOverride, sequenceOrder,
+                           orderType.
 
-order_splits               Per tint batch/split. dispatchStatus drives planning.
-                           isPicked, pickedAt, pickedById, sequenceOrder
-split_line_items           Per line assigned to a split.
-                           lineStatus, removedAt, removedReason, lastSeenInBatchId
-split_status_logs          INSERT-ONLY audit per split
-tint_assignments           Per whole-OBD assignment (non-split flow).
-                           operatorSequence field exists but UNUSED (use sequenceOrder)
-tint_logs                  INSERT-ONLY. orderId + optional splitId.
-order_status_logs          INSERT-ONLY. changeType: slot_cascade, day_boundary_slot_reset (both DISABLED).
-tinter_issue_entries       INSERT-ONLY. Per base batch TI entry.
-tinter_issue_entries_b     Bucket-level TI entries (b variant)
-shade_master               Saved shade combinations per customer + SKU
-manual_tint_entries        Manual override pulling non-tint OBD into tint workflow.
-                           orderId FK, lineIds JSON, reason TEXT, createdBy, createdAt.
+                           SOFT-DELETE columns (v27.3):
+                           isRemoved BOOLEAN DEFAULT false NOT NULL
+                           removalReason TEXT (CUSTOMER_CANCELLED | WRONG_ORDER)
+                           removalRemark TEXT (mandatory free text)
+                           removedAt TIMESTAMPTZ, removedById, restoredAt, restoredById
+
+order_splits               Per tint batch/split
+split_line_items           Per line
+split_status_logs          INSERT-ONLY audit
+
+tint_assignments           Per whole-OBD tint assignment.
+                           operatorSequence UNUSED — sort by sequenceOrder.
+                           v27.3 columns: skippedAt, skipEventId (FK BIGINT);
+                                          pauseCount INT, lastPausedAt, currentProgress JSONB,
+                                          accumulatedMinutes INT (canonical "total tinting time"
+                                          on done — pause route increments per pause; done route
+                                          folds final delta).
+                           Status enum: assigned | tinting_in_progress | paused | skipped | done.
+
+tint_skip_events           v27.3. id BIGSERIAL. orderId, assignmentId (FK),
+                           skippedById, skippedAt, reason TEXT,
+                           tinterType TEXT?, outOfStockColours TEXT[],
+                           remark TEXT?, createdAt.
+
+tint_pause_events          v27.3. id BIGSERIAL. orderId, assignmentId,
+                           pausedById, pausedAt, pauseReason TEXT,
+                           progressAtPause JSONB, elapsedMinutesAtPause INT,
+                           pauseRemark TEXT?, resumedAt, resumedById, resumeRemark.
+
+tint_logs, order_status_logs   INSERT-ONLY. order_status_logs gets OBD_REMOVED,
+                               OPERATOR_SKIP, OPERATOR_PAUSE, OPERATOR_RESUME events.
+tinter_issue_entries       Per base batch TI entry.
+                           v27.4: samplingNo TEXT?, shadeName TEXT? — wires TI to sampling library.
+tinter_issue_entries_b     Bucket-level TI entries.
+                           v27.4: samplingNo TEXT?, shadeName TEXT?.
+shade_master               DEPRECATED. Sampling Library is the live source of truth for new
+                           shades. Table still exists with historical data; scheduled for
+                           deletion after a retention window. Do not write to it.
+manual_tint_entries        Manual override: orderId FK, lineIds JSON, reason, createdBy, createdAt.
 ```
 
 ### 7.4 Dispatch + Warehouse
 
 ```
-dispatch_plans             One plan = vehicle + slot + trip. UNIQUE (planDate, slotId, vehicleId, tripNumber)
-dispatch_plan_orders       Orders in plan. ORDER-LEVEL (not split). clearedAt TIMESTAMPTZ.
-                           Table name is dispatch_plan_orders, NOT dispatch_plan_splits.
-pick_assignments           Picker assignments. orderId FK unique per active. clearedAt.
-pick_lists                 One pick list per plan
-pick_list_items            Line items to pick
-dispatch_change_queue      Notifications when support holds/cancels in-plan order
-
-dispatch_plan_vehicles was DROPPED (vehicleId on dispatch_plans).
+dispatch_plans             UNIQUE (planDate, slotId, vehicleId, tripNumber)
+dispatch_plan_orders       Order-level. clearedAt TIMESTAMPTZ.
+pick_assignments           Picker assignments. orderId FK unique per active.
+pick_lists, pick_list_items
+dispatch_change_queue
 ```
 
 ### 7.5 Delivery Challan
 
 ```
-delivery_challans          One per eligible order. Auto-created at import time for SMU = Retail Offtake
-                           or Decorative Projects. Number: CHN-{YEAR}-{5-digit seq}. Sequence by orderDateTime.
+delivery_challans          One per eligible order (Retail Offtake / Decorative Projects).
+                           Number: CHN-{YEAR}-{5-digit seq}.
+
+                           VOID columns (v27.3):
+                           isVoided BOOLEAN DEFAULT false NOT NULL
+                           voidReason TEXT (mirrors order removal reason)
+                           voidRemark TEXT, voidedAt TIMESTAMPTZ
+
 delivery_challan_formulas  Per-line tinting formula
 ```
 
-### 7.6 Mail Orders (mo_* prefix)
+### 7.6 Mail Orders (mo_*)
 
 ```
 mo_orders                  Per parsed email
 mo_order_lines             Per product line. isCarton, cartonCount.
 mo_order_remarks           billing|delivery|contact|instruction|cross|customer|area|unknown
 mo_line_status             SKU found/not-found tracking
-mo_product_keywords        ~1,076 rows. Must NOT contain base colour words.
+mo_product_keywords        ~1,076 rows
 mo_base_keywords           ~267 rows
-mo_sku_lookup              ~1,599 rows. material UNIQUE. piecesPerCarton.
-                           refMaterial (Generic/master code), refDescription.
+mo_sku_lookup              ~1,599 rows. material UNIQUE. refMaterial, refDescription.
 mo_customer_keywords       Auto-grows on operator picks
-mo_learned_customers       Operator correction log with guard rules (hitCount≥3, ≥2 operators)
+mo_learned_customers       Operator correction log with guard rules
 ```
 
-See `CLAUDE_MAIL_ORDERS.md` for full column lists.
+Full detail in `CLAUDE_MAIL_ORDERS.md`.
 
 ### 7.7 Place Order (v2 tables)
 
 ```
-mo_order_form_index_v2     481+ rows. family, product, baseColour, displayName, searchTokens,
-                           tinterType, productType, sortOrder, isActive, section, subgroup.
-                           UNIQUE (family, product, baseColour).
-mo_sku_lookup_v2           1,642 rows. Parallel to mo_sku_lookup, clean v2 names.
-                           material UNIQUE.
-mo_order_form_index        Legacy. Untouched. Not used by /place-order.
+mo_order_form_index_v2     481+ rows. family, product, baseColour, displayName,
+                           searchTokens, tinterType, productType, sortOrder,
+                           isActive, section, subgroup. UNIQUE (family, product, baseColour).
+mo_sku_lookup_v2           1,642 rows. Parallel clean-name version. material UNIQUE.
 ```
 
-`product` and `baseColour` columns in v2 carry bucket + variant info, not strictly product + colour. See `CLAUDE_PLACE_ORDER.md`.
+Full detail in `CLAUDE_PLACE_ORDER.md`.
 
 ### 7.8 Attendance + OT
 
 ```
-attendance_records         Per CHECK_IN | CHECK_OUT event. userId, type, eventAt, attendanceDate,
-                           latitude/longitude (DECIMAL 10,7), accuracyMeters, isOutsideGeofence,
-                           photoPath, deviceInfo, ipAddress.
+attendance_records         Per CHECK_IN | CHECK_OUT event.
                            OT columns: otClaimed, otClaimReason, otTotalLessThan95,
-                           otApprovalStatus, otApprovedById, otApprovedAt, otApprovedAdjustedMinutes.
+                           otApprovalStatus, otApprovedById, otApprovedAt,
+                           otApprovedAdjustedMinutes.
 
-attendance_summary         One per (userId, attendanceDate) UNIQUE. firstCheckInAt, lastCheckOutAt,
-                           totalWorkedMinutes, otClaimedMinutes, status, hasMissingCheckout, sessionsCount.
+attendance_summary         One per (userId, attendanceDate). totalWorkedMinutes,
+                           otClaimedMinutes, status, hasMissingCheckout, sessionsCount.
 
 attendance_settings        GLOBAL row. rolloutStage, otPromptEnabled, otRequiresApproval,
-                           dpdpConsentVersion, geofenceLatitude, geofenceLongitude, geofenceRadiusMeters,
-                           lateGraceMinutes, halfDayThresholdMinutes, photoRetentionDays.
-                           OT columns: otCutoffHourIST, otAutoApproveThresholdMinutes.
+                           dpdpConsentVersion, geofenceLatitude/Longitude/RadiusMeters,
+                           lateGraceMinutes, halfDayThresholdMinutes, photoRetentionDays,
+                           otCutoffHourIST, otAutoApproveThresholdMinutes,
+                           otMonthlyGraceLimit, depotWorkingMinutes,
+                           workStartTime, workEndTime, checkInWindowStart, checkInWindowEnd,
+                           requirePhoto, requireLocation, photoMaxWidthPx, photoJpegQuality.
 ```
 
-See `CLAUDE_ATTENDANCE.md` for full detail.
+Full detail in `CLAUDE_ATTENDANCE.md`.
+
+### 7.9 Sampling Library
+
+```
+sampling_register          samplingNo TEXT PK. shadeName, tinterType (TINTER|ACOTONE),
+                           siteId FK?, siteNameRaw, salesOfficerId, dealerName, notes,
+                           isActive, needsReview, createdById, createdAt, updatedAt.
+
+sampling_recipes           id PK. samplingNo FK CASCADE, skuCode, productName,
+                           packCode (PackCode enum), tinQty, 13 TINTER + 14 ACOTONE
+                           pigment columns (all Decimal default 0), isPrimary, usageCount,
+                           firstUsedAt, lastUsedAt, createdAt, updatedAt.
+                           UNIQUE (samplingNo, skuCode, packCode).
+
+sampling_usage_log         id PK. samplingNo FK CASCADE, recipeId FK SET NULL,
+                           usageDate DATE?, operatorId FK?, operatorNameRaw, tinQty,
+                           dealerNameRaw, siteId FK?, siteNameRaw, skuCodeRaw,
+                           packCode?, deliveryNumber TEXT? (v27.4), sourceRowIndex,
+                           createdAt.
+```
+
+Full detail in `CLAUDE_SAMPLING_LIBRARY.md`.
 
 ---
 
@@ -315,22 +361,22 @@ See `CLAUDE_ATTENDANCE.md` for full detail.
 
 - **Volume unit:** Always litres. Never cubic metres.
 - **Customer types:** Bill To = dealer (always in master). Ship To = site (may be new).
-- **Cross billing ≠ ship-to override.** Cross billing is informational (another depot). Ship-to is different delivery address.
-- **Dispatch Hold:** Punch order but don't dispatch. Billing blocks (OD/CI/bounce/extension): cannot punch at all.
+- **Cross billing ≠ ship-to override.** Cross billing is informational; ship-to is different delivery address.
+- **Dispatch Hold:** Punch order but don't dispatch. Billing blocks: cannot punch at all.
 - **OD/CI detection:** word-boundary regex `\bOD\b`, `\bCI\b`. `.includes()` false-positives on "Plywood".
 - **Tinting eligibility:** SMU-gated. Only "Decorative Projects" or "Retail Offtake" get tinted.
 - **Stainer vs tinter by pack:** 50/100/200ML = universal stainer. 1L = machine tinter / Acotone.
 - **Warehouse zone sort:** putty (deepest) → oil → wood → water → stainer (nearest dispatch). Pack size ASC.
-- **Challan eligibility:** SMU = "Retail Offtake" or "Decorative Projects" only. Auto-created at import time.
+- **Challan eligibility:** SMU = "Retail Offtake" or "Decorative Projects". Auto-created at import.
 - **UTC→IST for mail order timestamps:** `AssumeUniversal` + `ConvertTimeFromUtc`. Never `.ToUniversalTime()`.
-- **Keyword length sorting is critical for enrichment** — shorter generic keywords override longer specific ones without DESC sort.
+- **Keyword length sorting is critical** — shorter generic keywords override longer specific ones without DESC sort.
 - **Bill To = dealer / Ship To = site** terminology applies on challans and mail orders.
 
 ---
 
 ## 9. Slot assignment
 
-Simple time-based thresholds, IST.
+Time-based thresholds, IST.
 
 | Time (IST) | Slot |
 |---|---|
@@ -341,11 +387,11 @@ Simple time-based thresholds, IST.
 
 **Non-tint orders:** slot assigned at import via `resolveSlot()` on `orderDateTime`.
 
-**Tint orders (`orderType === "tint"`):** `slotId = null` at import. Slot assigned at tinting completion based on IST completion time. Split orders: slot set on parent when last split completes (latest completion wins).
+**Tint orders (`orderType === "tint"`):** `slotId = null` at import. Slot assigned at tinting completion based on IST time. Splits: parent slot set when last split completes.
 
-**Slot cascade and day-boundary reset are DISABLED.** Files `lib/slot-cascade.ts` and `lib/day-boundary.ts` exist but are not called from any API route.
+**Slot cascade and day-boundary reset are DISABLED.** Files `lib/slot-cascade.ts` and `lib/day-boundary.ts` exist but are not called.
 
-**`applyMailOrderEnrichment()`:** On SAP import, checks `mo_orders` for matching `soNumber`. If found, applies `dispatchStatus`, `priorityLevel`, `remarks`, overrides, and sets `orderDateTime` from `mo_orders.receivedAt`. Skips slot recalculation for tint orders. One soNumber can map to multiple OBDs (1:N via `updateMany`).
+**`applyMailOrderEnrichment()`:** On SAP import, checks `mo_orders` for matching `soNumber`. If found, applies `dispatchStatus`, `priorityLevel`, `remarks`, overrides, and sets `orderDateTime` from `mo_orders.receivedAt`. Skips slot recalc for tint orders. One soNumber can map to many OBDs (`updateMany`).
 
 ---
 
@@ -353,29 +399,15 @@ Simple time-based thresholds, IST.
 
 Component: `components/universal-header.tsx`. Used by ALL boards.
 
-**Row 1 (52px sticky, z-30):** Title (ReactNode, accepts toggles) · Stats (11px gray-400) · Clock IST HH:MM · ⌨ Shortcuts · Download · Search (180→260px).
+**Row 1 (52px sticky, z-30):** Title (ReactNode) · Stats (11px gray-400) · Clock IST HH:MM · ⌨ Shortcuts · Download · Search (180→260px).
 
 **Row 2 (40px sticky top-[52px], z-30):** Segmented control + leftExtra · rightExtra · Filter ▾ · Date stepper (calendar popover).
 
-**Color rule:** ONE teal element = active slot segment. Everything else gray.
+**Color rule:** ONE teal element = active slot segment. Everything else gray. *Per-screen exemption:* Sampling Library uses teal on multiple elements intentionally (`CLAUDE_UI.md §22`).
 
-**Slot segments:** 4 only (Morning, Afternoon, Evening, Night). Filter out Next Day Morning. No "All" button.
+**Slot segments:** 4 only. Filter out Next Day Morning. No "All" button.
 
-Per-board wiring:
-
-| Board | Segments | Filters | Date | Extras |
-|---|---|---|---|---|
-| Support | Slots (4) | View, Status, Del Type, Priority | Stepper | Search |
-| Tint Manager | Operator pills | Del Type, Priority, Type | **None** | View toggle, missing-customer badge |
-| Planning | Slots (4) | Del Type, Dispatch | Stepper | — |
-| Warehouse | Slots (4) | Del Type, Pick Status | Stepper | — |
-| Mail Orders | Slots (4) | Status, Match, Dispatch, Lock | Stepper | Column toggle, Table/Review toggle in title |
-| Tint Operator | Job pill (teal, dropdown) | — | None | Progress bar (rightExtra) |
-| TI Report | Date presets | Tinter Type, Operator | None | Date range (leftExtra), Download |
-| Shade Master | — | Tinter Type, Status | None | — |
-| Delivery Challan | — | SMU, Route | Stepper | Search |
-
-Full visual spec in `CLAUDE_UI.md §6`.
+Per-board wiring summary in `CLAUDE_UI.md §6`.
 
 ---
 
@@ -390,7 +422,7 @@ Full visual spec in `CLAUDE_UI.md §6`.
 
 Files: `components/shared/role-sidebar-provider.tsx`, `role-sidebar.tsx`, `role-layout-client.tsx`.
 
-`/place-order` uses the same sidebar (no longer full-bleed). `/attendance` uses no sidebar (full-screen PWA layout).
+`/place-order` uses the same sidebar. `/attendance` uses no sidebar (full-screen PWA layout). `/order` uses no sidebar (public mobile).
 
 ---
 
@@ -399,7 +431,7 @@ Files: `components/shared/role-sidebar-provider.tsx`, `role-sidebar.tsx`, `role-
 Full detail in domain files. Cross-reference only here.
 
 ### Admin
-Route `/admin`. admin, ops_admin. Screens: customer, SKU, route/area, user, system config, import, attendance (read-only Phase 1).
+`/admin`. admin, ops_admin. Customer / SKU / route / area / user / system config / import / attendance dashboard / **removed-orders** (admin-only restore page).
 
 ### Mail Orders
 `/mail-orders`. billing_operator, tint_manager, admin. → `CLAUDE_MAIL_ORDERS.md`
@@ -407,51 +439,60 @@ Route `/admin`. admin, ops_admin. Screens: customer, SKU, route/area, user, syst
 ### Tint Manager / Operator / Challans / Shades / TI Report
 `/tint/*`. → `CLAUDE_TINT.md`
 
+### Sampling Library
+`/tint/sampling-library`. tint_manager, tint_operator (read), admin. → `CLAUDE_SAMPLING_LIBRARY.md`
+
 ### Attendance
-`/attendance` (end-user PWA), `/admin/attendance` (admin dashboard). → `CLAUDE_ATTENDANCE.md`
+`/attendance` (end-user PWA), `/admin/attendance` (admin dashboard + ot-pending + settings + ot-audit). → `CLAUDE_ATTENDANCE.md`
 
 ### Place Order
-`/place-order`. Label "Purchase Order (PO)". admin, billing_operator, tint_manager, support, dispatcher. → `CLAUDE_PLACE_ORDER.md`
+`/place-order` (desktop, label "Purchase Order (PO)"). `/order` (public mobile). → `CLAUDE_PLACE_ORDER.md`
+
+### Import
+`/admin/import`. → `CLAUDE_IMPORT.md`
 
 ### Support
-`/support`. support, admin, operations. Columns: checkbox | OBD/DATE | CUSTOMER | ROUTE/TYPE | VOL(L) | AGE | DISPATCH | PRIORITY | SLOT. Features: history view, slot sections, bulk actions, date picker, OrderDetailPanel.
+`/support`. support, admin, operations. Columns: checkbox | OBD/DATE | CUSTOMER | ROUTE/TYPE | VOL(L) | AGE | DISPATCH | PRIORITY | SLOT. History view, slot sections, bulk actions, date picker, OrderDetailPanel.
 
 ### Dispatch Planning
-`/planning`. dispatcher, admin, operations. Planning at ORDER level (not split level). All splits of one OBD go to same vehicle.
+`/planning`. dispatcher, admin, operations. Planning at ORDER level. All splits of one OBD go to same vehicle.
 
 ### Warehouse
-`/warehouse`. floor_supervisor, picker, admin, operations. 300px left (unassigned) / flex right (pickers). Assignment at order level. Duplicate camelCase+snake_case pick columns on orders and order_splits — use camelCase via Prisma.
+`/warehouse`. floor_supervisor, picker, admin, operations. 300px left (unassigned) / flex right (pickers).
 
 ### Operations View
-`/operations/support|tinting|tint-operator|dispatch|warehouse`. operations, ops_admin, admin. Each sub-route renders the existing board component.
+`/operations/support|tinting|tint-operator|dispatch|warehouse`. operations, ops_admin, admin.
 
 ### Public
-- `/order` — public mobile order form for Sales Officers. No login. Generates mailto to `surat.order@outlook.com`.
+- `/order` — public mobile order form. No login. Generates mailto.
 - `/demo` — animated tutorial. Rewrites to `/order-demo.html`.
-- `/login`, `/not-ready`, `/unauthorized` — auth pages.
+- `/login`, `/not-ready`, `/unauthorized`.
 
-`middleware.ts` public paths: `/login`, `/unauthorized`, `/not-ready`, `/api/auth`, `/api/health`, `/order`, `/api/order`, `/demo`, `/order-demo.html`, `/api/cron/*` (bearer auth, not session).
+`middleware.ts` public paths: `/login`, `/unauthorized`, `/not-ready`, `/api/auth`, `/api/health`, `/order`, `/api/order`, `/demo`, `/order-demo.html`, `/api/cron/*` (bearer auth).
 
 ---
 
 ## 13. Landmines
 
-These exist in code but are intentionally disabled, broken, or stale. Do not "fix" without explicit instruction.
+Existing in code but intentionally disabled, broken, or stale. Do not "fix" without explicit instruction.
 
-- **`lib/slot-cascade.ts`, `lib/day-boundary.ts`** — files present but never called. If ever re-enabled, must skip tint orders.
+- **`lib/slot-cascade.ts`, `lib/day-boundary.ts`** — present but never called. If re-enabled, must skip tint orders.
 - **`operatorSequence` field** on `tint_assignments`/`order_splits` — exists in schema, no longer used for sorting. Sort by `sequenceOrder` only.
 - **`delivery_type_slot_config` table** — exists but not consumed anywhere.
 - **`SlotSummaryItem` interface** in `tint-manager-content.tsx` — defined but unused.
-- **Duplicate pick columns** on `orders` and `order_splits` (camelCase + snake_case). Use camelCase via Prisma. Snake_case copies are legacy.
-- **TM reorder API** (`/api/tint/manager/reorder/route.ts` line ~429) uses `prisma.$transaction` — violates §3, left as-is for simple two-update swap.
+- **Duplicate pick columns** on `orders` and `order_splits` (camelCase + snake_case). Use camelCase via Prisma.
+- **TM reorder API** (`/api/tint/manager/reorder/route.ts` ~line 429) uses `prisma.$transaction` — violates §3, left as-is for simple two-update swap.
 - **One-time backfill endpoints** (keep for emergency):
   - `POST /api/admin/fix-slots` — backfills `orderDateTime` + recalculates slotId
-  - `POST /api/admin/fix-challans` — creates missing delivery_challans for eligible SMU orders
+  - `POST /api/admin/fix-challans` — creates missing delivery_challans
   - `POST /api/mail-orders/backfill-customers` — marked TEMPORARY
 - **`enrich-v2.ts`** — duplicate `SkuEntry` type, not imported anywhere.
-- **`CATEGORY_KEYWORDS` constant** in `enrich.ts` — dead code, can be removed.
+- **`CATEGORY_KEYWORDS` constant** in `enrich.ts` — dead code.
 - **GEN SKUs** — 8 deleted: `5860311, 5984151, 5967877, 5955808, 5955810, 5955818, 5955826, 5911947`. If new GEN SKUs appear in imports, delete them.
+- **Challan sequence allocation must include voided rows** — opposite of every other challan read. Don't filter `isVoided: false` in sequence-numbering queries.
+- **Auto-Import paused** — only manual SAP upload runs since 2026-05-14. If resumed, audit cross-source orphan policy first (see `CLAUDE_IMPORT.md §15`).
+- **`shade_master` deprecated.** Sampling Library Phase 4 shipped. All new shade saves write to `sampling_register` + `sampling_recipes` + `sampling_usage_log`. `shade_master` table still exists with historical data but is no longer read or written by the live operator workflow. Scheduled for deletion after a retention window. Do not write to it.
 
 ---
 
-*CORE v73 · Schema v27.2 · OrbitOMS*
+*CORE v74 · Schema v27.4 · OrbitOMS*
