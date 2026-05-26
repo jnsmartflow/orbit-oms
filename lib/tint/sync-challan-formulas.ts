@@ -22,15 +22,10 @@ interface TiRow {
 }
 
 function buildFormulaText(
-  shadeName:  string | null,
-  samplingNo: string | null,
+  shadeName: string | null,
 ): string | null {
   const shade = shadeName?.trim() ? shadeName.trim() : null;
-  const samp  = samplingNo?.trim() ? samplingNo.trim() : null;
-  if (shade && samp) return `${shade} · S/N ${samp}`;
-  if (shade)         return shade;
-  if (samp)          return `S/N ${samp}`;
-  return null;
+  return shade;
 }
 
 export async function syncChallanFormulasFromTi(
@@ -142,7 +137,7 @@ export async function syncChallanFormulasFromTi(
       continue;
     }
 
-    const formulaText = buildFormulaText(latestTiRow.shadeName, latestTiRow.samplingNo);
+    const formulaText = buildFormulaText(latestTiRow.shadeName);
     if (formulaText === null) {
       result.skippedNoText++;
       continue;
