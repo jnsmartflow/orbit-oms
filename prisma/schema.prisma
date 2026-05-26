@@ -1073,13 +1073,16 @@ model delivery_challans {
 }
 
 model delivery_challan_formulas {
-  id            Int                   @id @default(autoincrement())
-  challanId     Int
-  challan       delivery_challans     @relation(fields: [challanId], references: [id])
-  rawLineItemId Int
-  rawLineItem   import_raw_line_items @relation(fields: [rawLineItemId], references: [id])
-  formula       String
-  updatedAt     DateTime              @updatedAt
+  id                   Int                   @id @default(autoincrement())
+  challanId            Int
+  challan              delivery_challans     @relation(fields: [challanId], references: [id])
+  rawLineItemId        Int
+  rawLineItem          import_raw_line_items @relation(fields: [rawLineItemId], references: [id])
+  formula              String
+  isManuallyOverridden Boolean               @default(false)
+  autoFilledAt         DateTime?
+  sourceTiEntryId      Int?
+  updatedAt            DateTime              @updatedAt
 
   @@unique([challanId, rawLineItemId])
 }

@@ -541,11 +541,19 @@ export async function PATCH(
                 rawLineItemId: item.rawLineItemId,
               },
             },
-            update: { formula: item.formula },
+            update: {
+              formula:              item.formula,
+              isManuallyOverridden: true,
+              autoFilledAt:         null,
+              sourceTiEntryId:      null,
+            },
             create: {
-              challanId:     challan.id,
-              rawLineItemId: item.rawLineItemId,
-              formula:       item.formula,
+              challanId:            challan.id,
+              rawLineItemId:        item.rawLineItemId,
+              formula:              item.formula,
+              isManuallyOverridden: true,
+              autoFilledAt:         null,
+              sourceTiEntryId:      null,
             },
           });
         }

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { hasRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
+import { syncChallanFormulasFromTi } from "@/lib/tint/sync-challan-formulas";
 import { PackCode, Prisma } from "@prisma/client";
 import {
   getIstYearPrefix,
@@ -192,7 +193,19 @@ export async function POST(req: Request): Promise<NextResponse> {
       });
     }
 
-    return NextResponse.json({ success: results.length, entries: results }, { status: 200 });
+    // Auto-fill delivery challan formula column from latest TI shade data.
+    // Failure here must not block the TI submit response — it is opportunistic.
+    let formulaSync: Awaited<ReturnType<typeof syncChallanFormulasFromTi>> | null = null;
+    try {
+      formulaSync = await syncChallanFormulasFromTi(orderId);
+    } catch (err) {
+      console.error("[tinter-issue] syncChallanFormulasFromTi failed", {
+        orderId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    return NextResponse.json({ success: results.length, entries: results, formulaSync }, { status: 200 });
   } catch (err) {
     console.error("[tinter-issue POST]", err);
     return NextResponse.json(
