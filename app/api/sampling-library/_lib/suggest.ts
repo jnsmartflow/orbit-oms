@@ -16,7 +16,7 @@ export interface SuggestExactMatch {
   shadeName:            string;
   recipeId:             number;
   skuCode:              string;
-  packCode:             PackCode;
+  packCode:             PackCode | null;
   pigments:             Record<string, number>;
   activePigments:       ActivePigment[];
   usageCountAtThisSite: number;
@@ -30,7 +30,7 @@ export interface SuggestReferenceItem {
   shadeName:            string;
   recipeId:             number;
   skuCode:              string;
-  packCode:             PackCode;
+  packCode:             PackCode | null;
   pigments:             Record<string, number>;
   activePigments:       ActivePigment[];
   usageCountAtThisSite: number;
@@ -112,7 +112,7 @@ export async function buildSuggestPayload(
   interface VariantAcc {
     recipeId:   number;
     skuCode:    string;
-    packCode:   PackCode;
+    packCode:   PackCode | null;
     isPrimary:  boolean;
     pigmentRow: Record<PigmentCode, Prisma.Decimal | null>;
     totalUsageCount: number; // sampling_recipes.usageCount

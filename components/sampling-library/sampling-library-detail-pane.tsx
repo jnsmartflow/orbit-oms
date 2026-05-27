@@ -84,7 +84,7 @@ interface Variant {
   id:             number;
   skuCode:        string;
   productName:    string | null;
-  packCode:       string;
+  packCode:       string | null;
   tinQty:         number;
   pigments:       Record<string, number>;
   activePigments: string[];
@@ -104,7 +104,8 @@ interface VariantsResponse {
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-function packCodeToLabel(code: string): string {
+function packCodeToLabel(code: string | null | undefined): string {
+  if (!code) return "—";
   if (code === "ml_500") return "500 ML";
   const m = code.match(/^L_(\d+)(?:_(\d+))?$/);
   if (!m) return code;
@@ -261,7 +262,7 @@ export function SamplingLibraryDetailPane({
   // the tab's pigment cards read the canonical recipe of the group. SKUS
   // USED table at the bottom still iterates the flat `variants` array.
   type PackGroup = {
-    packCode:        string;
+    packCode:        string | null;
     rows:            Variant[];
     canonicalRecipe: Variant;
     totalUsageCount: number;
@@ -270,7 +271,7 @@ export function SamplingLibraryDetailPane({
 
   const packGroups = useMemo<PackGroup[]>(() => {
     if (variants.length === 0) return [];
-    const byPack = new Map<string, Variant[]>();
+    const byPack = new Map<string | null, Variant[]>();
     for (const v of variants) {
       const existing = byPack.get(v.packCode);
       if (existing) existing.push(v);

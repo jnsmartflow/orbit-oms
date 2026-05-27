@@ -29,7 +29,7 @@ export interface SamplingDetail {
   createdAt:        string;
   updatedAt:        string;
   recipeCount:      number;
-  primaryRecipe:    { skuCode: string; packCode: PackCode } | null;
+  primaryRecipe:    { skuCode: string; packCode: PackCode | null } | null;
   lastUsedAt:       string | null;
   totalUsageCount:  number;
   // Aggregates over sampling_usage_log for the multi-dealer/site meta strip

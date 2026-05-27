@@ -27,7 +27,8 @@ function formatDayMonth(iso: string): string {
   return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
 }
 
-function packCodeToLabel(code: string): string {
+function packCodeToLabel(code: string | null | undefined): string {
+  if (!code) return "—";
   if (code === "ml_500") return "500 ML";
   const m = code.match(/^L_(\d+)(?:_(\d+))?$/);
   if (!m) return code;

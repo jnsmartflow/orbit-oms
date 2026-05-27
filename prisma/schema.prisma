@@ -1220,7 +1220,7 @@ model sampling_recipes {
   samplingNo  String
   skuCode     String
   productName String?
-  packCode    PackCode
+  packCode    PackCode?
   tinQty      Decimal   @default(0)
   // 13 TINTER pigment columns
   YOX         Decimal   @default(0)
