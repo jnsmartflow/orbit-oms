@@ -72,6 +72,7 @@ export interface MoOrder {
   splitFromId?: number | null;
   splitLabel?: string | null;
   isLocked?: boolean;
+  notes: string | null;
   status: OrderStatus;
   punchedById: number | null;
   punchedAt: string | null;

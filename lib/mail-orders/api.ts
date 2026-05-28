@@ -117,6 +117,18 @@ export async function toggleLock(
   if (!res.ok) throw new Error("Failed to toggle lock");
 }
 
+export async function saveNotes(
+  orderId: number,
+  notes: string | null,
+): Promise<void> {
+  const res = await fetch(`/api/mail-orders/${orderId}/note`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ notes }),
+  });
+  if (!res.ok) throw new Error("Failed to save notes");
+}
+
 export async function fetchSlotCutoffs(): Promise<SlotCutoffs> {
   const res = await fetch("/api/system-config/slot-cutoffs");
   if (!res.ok) throw new Error(`Failed to fetch slot cutoffs: ${res.status}`);

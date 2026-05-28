@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useRef } from "react";
-import { Check, Pencil, Copy, Mail, Flag, Search, Printer } from "lucide-react";
+import { Check, Pencil, Copy, Mail, Flag, Search, Printer, StickyNote } from "lucide-react";
 import type { MoOrder, MoOrderLine, CustomerSearchResult } from "@/lib/mail-orders/types";
 import type { SlotCutoffs } from "@/lib/mail-orders/utils";
 import {
@@ -22,7 +22,7 @@ import {
   SPLIT_LINE_THRESHOLD,
   formatVolume,
 } from "@/lib/mail-orders/utils";
-import { searchCustomers, saveLineStatus, searchSkus, resolveLine } from "@/lib/mail-orders/api";
+import { searchCustomers, saveLineStatus, searchSkus, resolveLine, saveNotes } from "@/lib/mail-orders/api";
 import { BillToCard } from "@/components/mail-orders/bill-to-card";
 import { ShipToCard } from "@/components/mail-orders/ship-to-card";
 import { MetaRibbon } from "@/components/mail-orders/meta-ribbon";
@@ -442,6 +442,12 @@ export function ReviewView({
   const [splitDismissed, setSplitDismissed] = useState(false);
   const [splitting, setSplitting] = useState(false);
 
+  // Notes modal — keyed by orderId so the dot/fill survives order navigation
+  const [notesModalOpen, setNotesModalOpen] = useState(false);
+  const [notesDraft, setNotesDraft] = useState("");
+  const [notesSaving, setNotesSaving] = useState(false);
+  const [notesOverrides, setNotesOverrides] = useState<Map<number, string | null>>(new Map());
+
   // ── Selected order ──────────────────────────────────────────────
   const selectedOrder = useMemo(() => {
     if (focusedId === null) return null;
@@ -463,6 +469,8 @@ export function ReviewView({
     setActiveLineIndex(0);
     setSplitDismissed(false);
     setSplitting(false);
+    setNotesModalOpen(false);
+    setNotesDraft("");
   }, [focusedId]);
 
   // Persist desc mode to localStorage
@@ -612,6 +620,37 @@ export function ReviewView({
   function handlePrintClick() {
     if (!selectedOrder) return;
     window.print();
+  }
+
+  function getEffectiveNotes(orderId: number, fallback: string | null): string | null {
+    if (notesOverrides.has(orderId)) return notesOverrides.get(orderId) ?? null;
+    return fallback;
+  }
+
+  function handleNotesOpen() {
+    if (!selectedOrder) return;
+    const current = getEffectiveNotes(selectedOrder.id, selectedOrder.notes ?? null);
+    setNotesDraft(current ?? "");
+    setNotesModalOpen(true);
+  }
+
+  async function handleNotesSave() {
+    if (!selectedOrder || notesSaving) return;
+    const trimmed = notesDraft.trim();
+    const value: string | null = trimmed.length > 0 ? trimmed : null;
+    setNotesSaving(true);
+    try {
+      await saveNotes(selectedOrder.id, value);
+      setNotesOverrides(prev => {
+        const next = new Map(prev);
+        next.set(selectedOrder.id, value);
+        return next;
+      });
+      setNotesModalOpen(false);
+    } catch (err) {
+      console.error("[review-view] saveNotes failed:", err);
+    }
+    setNotesSaving(false);
   }
 
   async function handleSplitClick() {
@@ -1261,6 +1300,52 @@ export function ReviewView({
         >
           <Printer size={14} />
         </button>
+        {(() => {
+          const effective = getEffectiveNotes(order.id, order.notes ?? null);
+          const hasNotes = !!effective && effective.length > 0;
+          return (
+            <div style={{ position: "relative", display: "inline-flex" }}>
+              <button
+                onClick={handleNotesOpen}
+                title={hasNotes ? "Notes (saved)" : "Notes"}
+                style={{
+                  width: 28, height: 28, borderRadius: 6,
+                  border: "1px solid",
+                  cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+                  transition: "all 0.12s",
+                  ...(hasNotes
+                    ? { borderColor: "#d1d5db", background: "#fff", color: "#374151" }
+                    : { borderColor: "#e5e7eb", background: "#fff", color: "#9ca3af" }),
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "#f9fafb";
+                  e.currentTarget.style.borderColor = "#d1d5db";
+                  if (!hasNotes) e.currentTarget.style.color = "#6b7280";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "#fff";
+                  e.currentTarget.style.borderColor = hasNotes ? "#d1d5db" : "#e5e7eb";
+                  e.currentTarget.style.color = hasNotes ? "#374151" : "#9ca3af";
+                }}
+              >
+                <StickyNote size={14} />
+              </button>
+              {hasNotes && (
+                <span
+                  style={{
+                    position: "absolute",
+                    top: -2, right: -2,
+                    width: 8, height: 8,
+                    borderRadius: "50%",
+                    background: "#0d9488",
+                    border: "1.5px solid #fff",
+                    pointerEvents: "none",
+                  }}
+                />
+              )}
+            </div>
+          );
+        })()}
       </div>
     );
 
@@ -1776,6 +1861,133 @@ export function ReviewView({
                 />
               );
             })()}
+
+            {/* ── Notes Modal ── */}
+            {notesModalOpen && (
+              <>
+                <div
+                  onClick={() => { if (!notesSaving) setNotesModalOpen(false); }}
+                  style={{
+                    position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 49,
+                  }}
+                />
+                <div
+                  role="dialog"
+                  aria-label="Notes"
+                  style={{
+                    position: "fixed",
+                    top: "50%", left: "50%", transform: "translate(-50%, -50%)",
+                    width: 440,
+                    background: "#fff",
+                    border: "1px solid #e5e7eb",
+                    borderRadius: 8,
+                    boxShadow: "0 8px 32px rgba(0,0,0,0.15)",
+                    zIndex: 50,
+                    display: "flex", flexDirection: "column",
+                    overflow: "hidden",
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape" && !notesSaving) {
+                      e.stopPropagation();
+                      setNotesModalOpen(false);
+                    }
+                  }}
+                >
+                  {/* Header */}
+                  <div style={{
+                    padding: "12px 16px",
+                    borderBottom: "1px solid #e5e7eb",
+                    display: "flex", justifyContent: "space-between", alignItems: "center",
+                    gap: 12,
+                  }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: "#111827" }}>Notes</div>
+                    <button
+                      onClick={() => { if (!notesSaving) setNotesModalOpen(false); }}
+                      disabled={notesSaving}
+                      aria-label="Close"
+                      style={{
+                        width: 24, height: 24, borderRadius: 4, border: "1px solid #e5e7eb",
+                        background: "#fff", cursor: notesSaving ? "default" : "pointer",
+                        fontSize: 14, color: "#9ca3af",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        flexShrink: 0,
+                      }}
+                    >
+                      ×
+                    </button>
+                  </div>
+
+                  {/* Body */}
+                  <div style={{ padding: "14px 16px 12px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
+                    <label
+                      htmlFor="mo-notes-textarea"
+                      style={{
+                        fontSize: 10, fontWeight: 500, color: "#9ca3af",
+                        textTransform: "uppercase", letterSpacing: "0.05em",
+                      }}
+                    >
+                      Notes for this order
+                    </label>
+                    <textarea
+                      id="mo-notes-textarea"
+                      autoFocus
+                      value={notesDraft}
+                      onChange={(e) => setNotesDraft(e.target.value)}
+                      placeholder="Add a note for this order…"
+                      rows={4}
+                      maxLength={5000}
+                      className="focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10"
+                      style={{
+                        width: "100%",
+                        minHeight: 96,
+                        resize: "vertical",
+                        border: "1px solid #e5e7eb",
+                        borderRadius: 6,
+                        padding: "8px 10px",
+                        fontSize: 12,
+                        lineHeight: 1.5,
+                        color: "#111827",
+                        outline: "none",
+                        fontFamily: "inherit",
+                      }}
+                    />
+                  </div>
+
+                  {/* Footer */}
+                  <div style={{
+                    padding: "10px 16px 14px 16px",
+                    display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 8,
+                  }}>
+                    <button
+                      onClick={() => setNotesModalOpen(false)}
+                      disabled={notesSaving}
+                      style={{
+                        height: 30, padding: "0 12px", borderRadius: 6,
+                        fontSize: 12, fontWeight: 500,
+                        border: "1px solid #e5e7eb", background: "#fff", color: "#6b7280",
+                        cursor: notesSaving ? "default" : "pointer",
+                      }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleNotesSave}
+                      disabled={notesSaving}
+                      style={{
+                        height: 30, padding: "0 14px", borderRadius: 6,
+                        fontSize: 12, fontWeight: 600,
+                        border: "1px solid #111827",
+                        background: notesSaving ? "#374151" : "#111827",
+                        color: "#fff",
+                        cursor: notesSaving ? "wait" : "pointer",
+                      }}
+                    >
+                      {notesSaving ? "Saving…" : "Save"}
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
 
             {/* ── Print Footer (only visible when printing) ── */}
             <div className="mo-print-footer">

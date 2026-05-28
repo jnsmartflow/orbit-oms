@@ -1329,6 +1329,7 @@ model mo_orders {
   splitFromId         Int?
   splitLabel          String?
   isLocked            Boolean            @default(false)
+  notes               String?
   createdAt           DateTime           @default(now())
   lines               mo_order_lines[]
   remarks_list        mo_order_remarks[]
