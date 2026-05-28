@@ -13,6 +13,7 @@ export const ROLES = {
   FLOOR_SUPERVISOR: "floor_supervisor",
   PICKER: "picker",
   BILLING_OPERATOR: "billing_operator",
+  OPERATION_MANAGER: "operation_manager",
 } as const;
 
 // ── Login redirect map ────────────────────────────────────────────────────────
@@ -30,6 +31,7 @@ export const ROLE_REDIRECTS: Record<string, string> = {
   picker: "/warehouse/picker",
   billing_operator: "/mail-orders",
   ops_admin: "/admin/attendance",
+  operation_manager: "/tint/manager",
 };
 
 // ── Guards ─────────────────────────────────────────────────────────────────────

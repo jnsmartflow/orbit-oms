@@ -24,7 +24,8 @@ export type RoleSidebarRole =
   | "warehouse"
   | "operations"
   | "ops_admin"
-  | "billing_operator";
+  | "billing_operator"
+  | "operation_manager";
 
 export interface RoleSidebarProps {
   role:         RoleSidebarRole;
@@ -72,6 +73,7 @@ const ROLE_LABELS: Record<RoleSidebarRole, string> = {
   operations:     "Operations",
   ops_admin:      "Operations Admin",
   billing_operator: "Billing Operator",
+  operation_manager: "Operation Manager",
 };
 
 // ── Component ─────────────────────────────────────────────────────────────────
