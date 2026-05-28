@@ -61,6 +61,12 @@ const ROLE_HREF_OVERRIDES: Record<string, Record<string, string>> = {
     routes_areas: "/dispatcher/routes",
     vehicles:     "/dispatcher/vehicles",
   },
+  operation_manager: {
+    customers:    "/tint/manager/customers",
+    skus:         "/tint/manager/skus",
+    routes_areas: "/tint/manager/routes",
+    vehicles:     "/tint/manager/vehicles",
+  },
 };
 
 export function buildNavItems(

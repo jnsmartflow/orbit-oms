@@ -10,7 +10,7 @@ export const metadata = {
 
 export default async function ChallanPage() {
   const session = await auth();
-  requireRole(session, [ROLES.TINT_MANAGER, ROLES.ADMIN]);
+  requireRole(session, [ROLES.TINT_MANAGER, ROLES.ADMIN, ROLES.OPERATION_MANAGER]);
 
   return <ChallanContent />;
 }

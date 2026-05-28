@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 
 export default async function TIReportPage() {
   const session = await auth();
-  requireRole(session, [ROLES.TINT_MANAGER, ROLES.ADMIN, ROLES.OPERATIONS]);
+  requireRole(session, [ROLES.TINT_MANAGER, ROLES.ADMIN, ROLES.OPERATIONS, ROLES.OPERATION_MANAGER]);
 
   return <TIReportContent />;
 }
