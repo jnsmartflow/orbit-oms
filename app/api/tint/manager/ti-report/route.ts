@@ -15,7 +15,7 @@ function n(v: { toString(): string } | null | undefined): number {
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const session = await auth();
-  requireRole(session, [ROLES.TINT_MANAGER, ROLES.ADMIN, ROLES.OPERATIONS]);
+  requireRole(session, [ROLES.TINT_MANAGER, ROLES.ADMIN, ROLES.OPERATIONS, ROLES.OPERATION_MANAGER]);
   if (session!.user.role !== "admin" && session!.user.role !== ROLES.OPERATIONS) {
     const allowed = await checkPermission(session!.user.role, "tint_manager", "canView");
     if (!allowed) return NextResponse.json({ error: "Permission denied" }, { status: 403 });

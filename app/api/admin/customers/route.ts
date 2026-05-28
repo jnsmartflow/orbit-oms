@@ -91,7 +91,7 @@ const fullInclude = {
 
 export async function GET(req: Request) {
   const session = await auth();
-  requireRole(session, [ROLES.ADMIN, ROLES.DISPATCHER, ROLES.SUPPORT, ROLES.TINT_MANAGER, ROLES.TINT_OPERATOR, ROLES.FLOOR_SUPERVISOR]);
+  requireRole(session, [ROLES.ADMIN, ROLES.DISPATCHER, ROLES.SUPPORT, ROLES.TINT_MANAGER, ROLES.TINT_OPERATOR, ROLES.FLOOR_SUPERVISOR, ROLES.OPERATION_MANAGER]);
   if (session!.user.role !== "admin") {
     const allowed = await checkPermission(session!.user.role, "customers", "canView");
     if (!allowed) return NextResponse.json({ error: "Permission denied" }, { status: 403 });
@@ -146,7 +146,7 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   const session = await auth();
-  requireRole(session, [ROLES.ADMIN, ROLES.DISPATCHER, ROLES.SUPPORT, ROLES.TINT_MANAGER, ROLES.TINT_OPERATOR, ROLES.FLOOR_SUPERVISOR]);
+  requireRole(session, [ROLES.ADMIN, ROLES.DISPATCHER, ROLES.SUPPORT, ROLES.TINT_MANAGER, ROLES.TINT_OPERATOR, ROLES.FLOOR_SUPERVISOR, ROLES.OPERATION_MANAGER]);
   if (session!.user.role !== "admin") {
     const allowed = await checkPermission(session!.user.role, "customers", "canEdit");
     if (!allowed) return NextResponse.json({ error: "Permission denied" }, { status: 403 });

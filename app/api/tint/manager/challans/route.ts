@@ -10,7 +10,7 @@ const CHALLAN_SMU_VALUES = ["Retail Offtake", "Decorative Projects"] as const;
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const session = await auth();
-  requireRole(session, [ROLES.TINT_MANAGER, ROLES.ADMIN, ROLES.OPERATIONS]);
+  requireRole(session, [ROLES.TINT_MANAGER, ROLES.ADMIN, ROLES.OPERATIONS, ROLES.OPERATION_MANAGER]);
 
   const { searchParams } = new URL(req.url);
   const dateParam   = searchParams.get("date");    // ISO date string  e.g. "2026-03-21"
