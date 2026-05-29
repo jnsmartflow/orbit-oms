@@ -2,11 +2,20 @@
 
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { Search, Send } from "lucide-react";
+import type { RawPack } from "@/lib/place-order/pack-buckets";
+import { formatPack, packToMl, packStep } from "@/lib/place-order/pack";
 
 // Public mobile order form for Sales Officers. Picker UI for customer
 // and per-bill SKU/pack qty selection, builds a mailto: link to the
 // depot's order inbox. Reachable at /order (whitelisted in middleware).
 // Customer + SKU data fetched from /api/order/data on mount.
+//
+// 2026-05-29 — feed cutover to v2. /api/order/data now reads
+// mo_order_form_index_v2 + mo_sku_lookup_v2 (same as desktop). The
+// Product shape carries the v2 row id (cart dedup key) and packs as
+// RawPack[] = {packCode, unit} so KG packs render correctly. Pack
+// formatting + step lookup are imported from lib/place-order/pack so
+// /order and /place-order stay in lockstep.
 
 const ORDER_TO = "surat.order@outlook.com";
 
@@ -42,71 +51,58 @@ declare global {
 
 // ── Types ────────────────────────────────────────────────────────────────
 
-type Customer = { name: string; code: string };
+type Customer = { name: string; code: string; area: string | null };
 type Product = {
+  id:           number;          // v2 row id — cart-line dedup key
   family:       string;
-  subProduct:   string;          // catalog key
+  subProduct:   string;          // catalog key (legacy display dimension; survives in v2)
+  product:      string | null;   // v2 real product name; falls back to subProduct
   baseColour:   string | null;   // null for PLAIN rows; named base/colour for variants
   displayName:  string;          // shown in suggestion + active-product UI
   searchTokens: string;          // pre-built lowercase token blob for filtering
   tinterType:   string | null;
   productType:  string;          // BASE_VARIANT | COLOUR | PLAIN; informational only
-  packs:        string[];
+  packs:        RawPack[];       // v2: {packCode, unit} — unit-aware (KG / L / ML)
 };
-type PackQty  = { pack: string; qty: number };
+type PackQty  = { pack: string; qty: number };   // pack is the FORMATTED label ("1L", "25KG")
 type BillLine = {
+  productId:   number;           // v2 row id — survives (subProduct, baseColour) collisions
   displayName: string;           // shown in the added-lines list
-  subProduct:  string;           // email-line product text (with baseColour appended when set)
+  subProduct:  string;           // fallback for email if `product` is null
+  product:     string | null;    // preferred email-line product text
   baseColour:  string | null;
   packs:       PackQty[];
 };
 
 // ── Pack label helpers ──────────────────────────────────────────────────
 //
-// packCode in mo_sku_lookup is a bare numeric string. Conventions:
-// - Values ≥ 50  → millilitres (e.g. "50"   → "50ML",  "200"   → "200ML")
-// - Values < 1   → also millilitres, decimalised litres (e.g. "0.5" → "500ML")
-// - Values 1..40 → litres                              (e.g. "1"   → "1L",   "4" → "4L")
-// Used for both display (pack counter rows, added-lines list) and email
-// output. Sort by ML-equivalent so 50ML/100ML/200ML come before 1L.
+// formatPack / packToMl / packStep are imported from lib/place-order/pack
+// so /order shares the unit-aware (KG / GM / ML / L) implementation with
+// /place-order. sortPacksForDisplay below mirrors the desktop sort: KG
+// anchored last, otherwise by ML magnitude. Defensive — the API already
+// pre-sorts in the same order.
 
-function formatPack(pack: string): string {
-  const num = parseFloat(pack);
-  if (Number.isNaN(num)) return pack;
-  if (num >= 50)         return `${num}ML`;
-  if (num < 1)           return `${Math.round(num * 1000)}ML`;
-  return `${num}L`;
+function sortPacksForDisplay(packs: RawPack[]): RawPack[] {
+  return [...packs].sort((a, b) => {
+    const aKg = (a.unit ?? "").toUpperCase() === "KG";
+    const bKg = (b.unit ?? "").toUpperCase() === "KG";
+    if (aKg !== bKg) return aKg ? 1 : -1;
+    return packToMl(a.packCode, a.unit) - packToMl(b.packCode, b.unit);
+  });
 }
 
-function packToMl(pack: string): number {
-  const num = parseFloat(pack);
-  if (Number.isNaN(num)) return Number.MAX_SAFE_INTEGER;
-  if (num >= 50)         return num;          // already millilitres
-  return num * 1000;                          // litres or sub-1L decimals → ML
-}
-
-function sortPacksForDisplay(packs: string[]): string[] {
-  return [...packs].sort((a, b) => packToMl(a) - packToMl(b));
-}
-
-// Step multiple per pack for the +/− stepper. Aligns increments with the
-// natural ordering unit (carton/drum) so SO doesn't tap 12× to reach a
-// 100ML carton. Manual entry is rounded down to the nearest multiple on
-// blur. Anything not in this map (rare/odd packs) steps by 1.
-const PACK_STEP: Record<string, number> = {
-  "50ML":  12,
-  "100ML": 12,
-  "200ML": 12,
-  "500ML": 12,
-  "1L":    6,
-  "4L":    4,
-  "10L":   2,
-  "20L":   1,
-  "30L":   1,
-  "40KG":  1,
-};
-function packStep(packLabel: string): number {
-  return PACK_STEP[packLabel] ?? 1;
+// Display label for a product row. v2 collapses all variants of a product
+// onto a single displayName ("WS Max", "2K PU Gloss") with baseColour as
+// the discriminator — without appending it the user sees 6+ look-alike
+// rows. Mirrors the legacy convention "{displayName} — {baseColour}".
+// Skips append when displayName already contains the base (case-
+// insensitive) so manually-named rows don't double-up.
+function productLabel(p: { displayName: string; baseColour: string | null }): string {
+  if (!p.baseColour) return p.displayName;
+  if (p.displayName.toUpperCase().includes(p.baseColour.toUpperCase())) {
+    return p.displayName;
+  }
+  return `${p.displayName} — ${p.baseColour}`;
 }
 
 // After a toggle-and-advance (Enter on an unselected item), return the new
@@ -124,8 +120,11 @@ function findNextUnselectedAfterAdd(
   addedAtOldIdx: number,
 ): number {
   if (oldItems.length === 0) return -1;
+  // v2 dedup: match by row id. Two v2 rows may share (subProduct,
+  // baseColour) but differ in `product` / `uiGroup` — id guarantees
+  // they don't collapse onto the same selection.
   const isSel = (p: Product): boolean =>
-    newSelected.some((s) => s.subProduct === p.subProduct && s.baseColour === p.baseColour);
+    newSelected.some((s) => s.id === p.id);
   for (let offset = 1; offset <= oldItems.length; offset++) {
     const oldIdx = (addedAtOldIdx + offset) % oldItems.length;
     if (!isSel(oldItems[oldIdx])) {
@@ -431,18 +430,14 @@ export default function OrderPage(): React.JSX.Element {
   }
 
   // Toggle a product in the multi-select basket. Add if absent, remove if
-  // present. Keyed by (subProduct, baseColour) since same subProduct can
-  // appear with different baseColour as separate index rows.
+  // present. v2 keys by row id so two rows sharing (subProduct,
+  // baseColour) but differing by `product` stay distinct.
   function toggleProductSelection(billId: number, product: Product): void {
     setBills((prev) => prev.map((b) => {
       if (b.id !== billId || b.mode !== "multi-select") return b;
-      const exists = b.selectedProducts.some(
-        (p) => p.subProduct === product.subProduct && p.baseColour === product.baseColour,
-      );
+      const exists = b.selectedProducts.some((p) => p.id === product.id);
       const nextSelected = exists
-        ? b.selectedProducts.filter(
-            (p) => !(p.subProduct === product.subProduct && p.baseColour === product.baseColour),
-          )
+        ? b.selectedProducts.filter((p) => p.id !== product.id)
         : [...b.selectedProducts, product];
       return { ...b, selectedProducts: nextSelected, highlightedIndex: -1 };
     }));
@@ -487,22 +482,26 @@ export default function OrderPage(): React.JSX.Element {
 
       if (!skip) {
         const current = b.activeProduct;
-        const packs = current.packs
-          .filter((p) => (b.packQtys[p] ?? 0) > 0)
-          .map((p) => ({ pack: p, qty: b.packQtys[p] }));
+        // packQtys is keyed by FORMATTED label ("1L", "25KG"). Walk the
+        // current product's RawPacks, derive each label, harvest qty.
+        const packs: PackQty[] = current.packs
+          .map((rp) => ({ pack: formatPack(rp.packCode, rp.unit), qty: 0 }))
+          .map((p) => ({ pack: p.pack, qty: b.packQtys[p.pack] ?? 0 }))
+          .filter((p) => p.qty > 0);
         if (packs.length > 0) {
-          // Dedup composite key: (subProduct, baseColour).
-          const filtered = lines.filter(
-            (l) => !(l.subProduct === current.subProduct && l.baseColour === (current.baseColour ?? null)),
-          );
+          // v2 dedup: by productId. Two v2 rows can share (subProduct,
+          // baseColour) but differ by id — id keeps them apart in cart.
+          const filtered = lines.filter((l) => l.productId !== current.id);
           const newLine: BillLine = {
+            productId:   current.id,
             displayName: current.displayName,
             subProduct:  current.subProduct,
+            product:     current.product ?? null,
             baseColour:  current.baseColour ?? null,
             packs,
           };
           lines  = [...filtered, newLine];
-          recent = [...recent, `${newLine.subProduct}|||${newLine.baseColour ?? ""}`];
+          recent = [...recent, `id:${newLine.productId}`];
         }
       }
 
@@ -595,7 +594,9 @@ export default function OrderPage(): React.JSX.Element {
   function stepPack(billId: number, pack: string, delta: number): void {
     setBills((prev) => prev.map((b) => {
       if (b.id !== billId) return b;
-      const step = packStep(formatPack(pack));
+      // `pack` is already the formatted label ("1L", "25KG") — packStep
+      // looks up the carton/drum step directly. Unknown labels fall to 1.
+      const step = packStep(pack);
       const cur  = b.packQtys[pack] ?? 0;
       const next = Math.max(0, cur + delta * step);
       return { ...b, packQtys: { ...b.packQtys, [pack]: next } };
@@ -661,8 +662,7 @@ export default function OrderPage(): React.JSX.Element {
         const hasHighlight = b.highlightedIndex >= 0;
         const highlighted  = hasHighlight ? items[b.highlightedIndex] : null;
         const isHighlightedSelected = highlighted
-          ? b.selectedProducts.some((p) =>
-              p.subProduct === highlighted.subProduct && p.baseColour === highlighted.baseColour)
+          ? b.selectedProducts.some((p) => p.id === highlighted.id)
           : false;
 
         // Priority 1: empty basket + 1 result → fast path. Works with or
@@ -777,8 +777,14 @@ export default function OrderPage(): React.JSX.Element {
     const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
     return products
       .filter((p) => {
-        const tokens = p.searchTokens.toLowerCase();
-        return words.every((w) => tokens.includes(w));
+        // What-you-see-is-what-you-can-search. searchTokens carries the
+        // SAP/parser aliases; productLabel carries the on-screen text
+        // (displayName + baseColour). Concatenating both means a query
+        // like "MAX 95" — where "95" only exists in baseColour — still
+        // matches. Empty-searchTokens rows stay findable because
+        // productLabel always contributes displayName at minimum.
+        const haystack = `${p.searchTokens ?? ""} ${productLabel(p)}`.toLowerCase();
+        return words.every((w) => haystack.includes(w));
       })
       // Cap at 50 so the multi-select pagination has items to paginate
       // across. SUGGESTION_PAGE_SIZE (6) drives the per-page split — searches
@@ -807,14 +813,16 @@ export default function OrderPage(): React.JSX.Element {
       lines.push("");
       if (activeBills.length > 1) lines.push("Bill " + b.id);
       b.lines.forEach((l) => {
-        const packStr     = l.packs.map((p) => `${formatPack(p.pack)}*${p.qty}`).join(", ");
-        // Email format: "{subProduct} [{baseColour}] {packs}" — SAP-friendly,
-        // matches the shape the parser already handles. baseColour is
-        // appended only for colour-variant rows. Display in the UI uses
-        // l.displayName. Pack labels are formatted (e.g. "1L", "200ML").
-        const productText = l.baseColour
-          ? `${l.subProduct} ${l.baseColour}`
-          : l.subProduct;
+        // l.packs[i].pack is already the formatted label ("1L", "25KG") —
+        // no re-format here. Pack text matches the legacy depot format
+        // byte-for-byte.
+        const packStr = l.packs.map((p) => `${p.pack}*${p.qty}`).join(", ");
+        // v2 email format: "{product ?? subProduct} [{baseColour}] {packs}".
+        // Prefer v2 `product` (real product name) when set; fall back to
+        // legacy `subProduct` for unmigrated rows. baseColour appended for
+        // variants. SAP-friendly layout unchanged.
+        const head = l.product ?? l.subProduct;
+        const productText = l.baseColour ? `${head} ${l.baseColour}` : head;
         lines.push(`${productText} ${packStr}`);
       });
     });
@@ -869,7 +877,7 @@ export default function OrderPage(): React.JSX.Element {
               </div>
               <div className="min-w-0">
                 <div className="text-[16px] font-semibold text-gray-900 leading-tight truncate">
-                  Place Order
+                  Purchase Order
                 </div>
                 <div className="text-[11px] font-medium text-gray-500 leading-tight truncate">
                   JSW Dulux · Surat Depot
@@ -914,8 +922,9 @@ export default function OrderPage(): React.JSX.Element {
             const idx         = activeBill.pickerIndex;
             const total       = queue.length;
             const isLast      = idx >= total - 1;
-            const currentName = activeBill.activeProduct.displayName;
-            const nextName    = isLast ? null : queue[idx + 1]?.displayName;
+            const currentName = productLabel(activeBill.activeProduct);
+            const nextItem    = isLast ? null : queue[idx + 1] ?? null;
+            const nextName    = nextItem ? productLabel(nextItem) : null;
 
             return (
               <>
@@ -1022,7 +1031,10 @@ export default function OrderPage(): React.JSX.Element {
                         <div className="w-1.5 h-1.5 rounded-full bg-teal-600 shrink-0" />
                         <div className="flex-1 min-w-0">
                           <p className="text-[14px] text-gray-900 truncate">{c.name}</p>
-                          <p className="text-[12px] text-gray-400 font-mono mt-0.5">{c.code}</p>
+                          <p className="text-[12px] text-gray-400 font-mono mt-0.5 truncate">
+                            {c.code}
+                            {c.area && <span className="font-sans"> · {c.area}</span>}
+                          </p>
                         </div>
                       </button>
                     );
@@ -1119,7 +1131,10 @@ export default function OrderPage(): React.JSX.Element {
                   <div className="w-1.5 h-1.5 rounded-full bg-teal-600 shrink-0" />
                   <div className="flex-1 min-w-0">
                     <p className="text-[14px] text-gray-900 truncate">{c.name}</p>
-                    <p className="text-[12px] text-gray-400 font-mono mt-0.5">{c.code}</p>
+                    <p className="text-[12px] text-gray-400 font-mono mt-0.5 truncate">
+                      {c.code}
+                      {c.area && <span className="font-sans"> · {c.area}</span>}
+                    </p>
                   </div>
                 </button>
               ))}
@@ -1365,9 +1380,7 @@ const BillCard = forwardRef<BillCardHandle, BillCardProps>(function BillCard({
   // Hoisted from the multi-select IIFE so the search input's onKeyDown can
   // pass the live unselectedSuggestions list to the parent's keyboard handler.
   const unselectedSuggestions = inMultiSel
-    ? suggestions.filter((p) => !bill.selectedProducts.some(
-        (s) => s.subProduct === p.subProduct && s.baseColour === p.baseColour,
-      ))
+    ? suggestions.filter((p) => !bill.selectedProducts.some((s) => s.id === p.id))
     : [];
   const totalPages  = Math.max(1, Math.ceil(unselectedSuggestions.length / SUGGESTION_PAGE_SIZE));
   const currentPage = Math.min(bill.suggestionPage, totalPages - 1);
@@ -1473,8 +1486,11 @@ const BillCard = forwardRef<BillCardHandle, BillCardProps>(function BillCard({
   //   - / ↓       → onStepPack(pack, -1) — same, descending.
   // Other keys fall through to native input behaviour (typing, selection).
   function handlePackKeyDown(e: React.KeyboardEvent<HTMLInputElement>, i: number): void {
-    const pack = sortedPacks[i];
-    if (!pack) return;
+    const rawPack = sortedPacks[i];
+    if (!rawPack) return;
+    // v2: convert RawPack → formatted label so onStepPack / onSetPack
+    // receive the same key shape packQtys is indexed by.
+    const label = formatPack(rawPack.packCode, rawPack.unit);
 
     if (e.altKey && e.key === "Enter") {
       e.preventDefault();
@@ -1502,13 +1518,13 @@ const BillCard = forwardRef<BillCardHandle, BillCardProps>(function BillCard({
 
     if (e.key === "+" || e.key === "ArrowUp") {
       e.preventDefault();
-      onStepPack(pack, +1);
+      onStepPack(label, +1);
       return;
     }
 
     if (e.key === "-" || e.key === "ArrowDown") {
       e.preventDefault();
-      onStepPack(pack, -1);
+      onStepPack(label, -1);
       return;
     }
   }
@@ -1573,7 +1589,7 @@ const BillCard = forwardRef<BillCardHandle, BillCardProps>(function BillCard({
       {bill.lines.length > 0 ? (
         <div className="border-b border-[#f0f0f0]">
           {bill.lines.map((line, idx) => {
-            const lineKey  = `${line.subProduct}|||${line.baseColour ?? ""}`;
+            const lineKey  = `id:${line.productId}`;
             const isRecent = bill.recentlyAddedKeys.includes(lineKey);
             return (
               <div
@@ -1584,9 +1600,9 @@ const BillCard = forwardRef<BillCardHandle, BillCardProps>(function BillCard({
               >
                 <div className="w-[6px] h-[6px] rounded-full bg-teal-600 shrink-0" />
                 <div className="flex-1 min-w-0">
-                  <p className="text-[13px] font-medium text-gray-900 truncate">{line.displayName}</p>
+                  <p className="text-[13px] font-medium text-gray-900 truncate">{productLabel(line)}</p>
                   <p className="text-[11px] text-teal-600 font-mono mt-0.5">
-                    {line.packs.map((p) => `${formatPack(p.pack)}*${p.qty}`).join(", ")}
+                    {line.packs.map((p) => `${p.pack}*${p.qty}`).join(", ")}
                   </p>
                 </div>
                 <button
@@ -1705,7 +1721,7 @@ const BillCard = forwardRef<BillCardHandle, BillCardProps>(function BillCard({
                   >
                     <div className="w-[7px] h-[7px] rounded-full bg-teal-100 border-2 border-teal-600 shrink-0" />
                     <div className="flex-1 min-w-0">
-                      <p className="text-[14px] font-medium text-gray-900 truncate">{p.displayName}</p>
+                      <p className="text-[14px] font-medium text-gray-900 truncate">{productLabel(p)}</p>
                       <p className="text-[11px] text-gray-400 mt-0.5">{p.family}</p>
                     </div>
                     <span className="text-gray-300 text-[17px] shrink-0 leading-none">›</span>
@@ -1724,7 +1740,7 @@ const BillCard = forwardRef<BillCardHandle, BillCardProps>(function BillCard({
                     </div>
                     {bill.selectedProducts.map((product) => (
                       <div
-                        key={`sel-${product.subProduct}|||${product.baseColour ?? ""}`}
+                        key={`sel-${product.id}`}
                         onClick={() => onToggleProduct(product)}
                         className="flex items-center gap-[10px] px-[13px] py-[10px] border-b border-[#f0f0f0] bg-teal-50/30 cursor-pointer active:bg-teal-50/60"
                       >
@@ -1734,7 +1750,7 @@ const BillCard = forwardRef<BillCardHandle, BillCardProps>(function BillCard({
                           </svg>
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-[13px] font-medium text-gray-900 truncate">{product.displayName}</p>
+                          <p className="text-[13px] font-medium text-gray-900 truncate">{productLabel(product)}</p>
                           <p className="text-[11px] text-gray-400 mt-0.5">{product.family}</p>
                         </div>
                         <span
@@ -1785,7 +1801,7 @@ const BillCard = forwardRef<BillCardHandle, BillCardProps>(function BillCard({
                     return (
                       <div
                         id={`sugg-${bill.id}-${globalIdx}`}
-                        key={`res-${p.subProduct}|||${p.baseColour ?? ""}`}
+                        key={`res-${p.id}`}
                         onClick={() => onToggleProduct(p)}
                         className={`flex items-center gap-[10px] px-[13px] py-[11px] border-b border-[#f0f0f0] cursor-pointer ${
                           isHighlighted ? "bg-teal-50 outline-none" : "active:bg-teal-50"
@@ -1793,7 +1809,7 @@ const BillCard = forwardRef<BillCardHandle, BillCardProps>(function BillCard({
                       >
                         <div className="w-5 h-5 rounded-[6px] border-2 bg-white border-gray-300 flex items-center justify-center shrink-0" />
                         <div className="flex-1 min-w-0">
-                          <p className="text-[14px] font-medium text-gray-900 truncate">{p.displayName}</p>
+                          <p className="text-[14px] font-medium text-gray-900 truncate">{productLabel(p)}</p>
                           <p className="text-[11px] text-gray-400 mt-0.5">{p.family}</p>
                         </div>
                       </div>
@@ -1857,14 +1873,16 @@ const BillCard = forwardRef<BillCardHandle, BillCardProps>(function BillCard({
               buttons are tabIndex={-1} so Tab walks input → input. Single-
               pack products get a larger, more finger-friendly row. */}
           <div className={sortedPacks.length === 1 ? "py-[8px]" : ""}>
-          {sortedPacks.map((pack, i) => {
-            const qty   = bill.packQtys[pack] ?? 0;
-            const label = formatPack(pack);
+          {sortedPacks.map((rawPack, i) => {
+            // v2 RawPack → formatted label ("1L", "25KG"). packQtys is
+            // keyed by label so render, lookup, and step all share one key.
+            const label = formatPack(rawPack.packCode, rawPack.unit);
+            const qty   = bill.packQtys[label] ?? 0;
             const step  = packStep(label);
             const onlyPack = sortedPacks.length === 1;
             return (
               <div
-                key={pack}
+                key={label}
                 data-pack-row
                 className={`flex items-center gap-3 px-[14px] ${
                   onlyPack ? "py-[18px]" : "py-[10px]"
@@ -1880,7 +1898,7 @@ const BillCard = forwardRef<BillCardHandle, BillCardProps>(function BillCard({
                   <button
                     type="button"
                     tabIndex={-1}
-                    onClick={() => onStepPack(pack, -1)}
+                    onClick={() => onStepPack(label, -1)}
                     className={`w-9 h-9 flex items-center justify-center text-[20px] font-light bg-transparent border-none ${
                       qty === 0 ? "text-gray-300" : "text-teal-600"
                     }`}
@@ -1895,7 +1913,7 @@ const BillCard = forwardRef<BillCardHandle, BillCardProps>(function BillCard({
                     pattern="[0-9]*"
                     min={0}
                     value={qty}
-                    onChange={(e) => onSetPack(pack, e.target.value)}
+                    onChange={(e) => onSetPack(label, e.target.value)}
                     onFocus={(e) => {
                       e.target.select();
                       // Scroll focused row above the keyboard on iOS.
@@ -1916,7 +1934,7 @@ const BillCard = forwardRef<BillCardHandle, BillCardProps>(function BillCard({
                   <button
                     type="button"
                     tabIndex={-1}
-                    onClick={() => onStepPack(pack, 1)}
+                    onClick={() => onStepPack(label, 1)}
                     className="w-9 h-9 flex items-center justify-center text-[20px] font-light text-teal-600 bg-transparent border-none"
                     aria-label={`Increase ${label}`}
                   >
