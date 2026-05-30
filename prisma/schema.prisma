@@ -1411,6 +1411,7 @@ model mo_sku_lookup_v2 {
   materialType    String?
   piecesPerCarton Int?
   createdAt       DateTime @default(now())
+  isPrimary       Boolean  @default(true)
 
   @@map("mo_sku_lookup_v2")
 }

@@ -56,6 +56,7 @@ export async function GET(): Promise<NextResponse> {
     });
 
     const skuRows = await prisma.mo_sku_lookup_v2.findMany({
+      where:  { isPrimary: true },
       select: { product: true, baseColour: true, packCode: true, unit: true },
     });
 
