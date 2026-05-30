@@ -215,6 +215,10 @@ export async function POST(req: Request): Promise<NextResponse> {
       shipToCustomerName: order.shipToCustomerName,
       operatorId:         userId,
       usageDate:          getIstUsageDate(),
+      // Resolved ship-to delivery-point id (orders.customerId →
+      // delivery_point_master.id) so the log row carries siteId. Nullable;
+      // the writer falls back to sampling_register.siteId when null.
+      siteId:             order.customerId,
     });
 
     return NextResponse.json({

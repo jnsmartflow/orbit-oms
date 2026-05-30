@@ -26,9 +26,11 @@ interface UsageLogArgs {
   shipToCustomerName: string | null;
   operatorId:         number;
   usageDate:          Date;
-  // siteId is NOT a column on sampling_usage_log — the schema stores only
-  // siteNameRaw (denormalised string) on the log row. Site linkage flows
-  // through sampling_register.siteId via the samplingNo FK.
+  // The order's resolved ship-to delivery-point id (orders.customerId →
+  // delivery_point_master.id). Written to sampling_usage_log.siteId so the
+  // site-based /suggest query can match these rows. Optional/nullable: when
+  // the order's ship-to is unresolved we fall back to sampling_register.siteId.
+  siteId?:            number | null;
 }
 
 export interface UsageLogResult {
@@ -46,7 +48,7 @@ export interface UsageLogResult {
 export async function writeUsageLogsForAssignment(
   args: UsageLogArgs,
 ): Promise<UsageLogResult> {
-  const { tintAssignmentId, obdNumber, shipToCustomerName, operatorId, usageDate } = args;
+  const { tintAssignmentId, obdNumber, shipToCustomerName, operatorId, usageDate, siteId } = args;
 
   // ── Fetch TINTER + ACOTONE TI rows for this assignment ───────────────────
   const tinterRows = await prisma.tinter_issue_entries.findMany({
@@ -100,6 +102,19 @@ export async function writeUsageLogsForAssignment(
         }
       }
 
+      // Resolve siteId. Prefer the order's resolved ship-to delivery-point id
+      // (passed from the call site). When that is null/undefined, fall back to
+      // the parent sampling_register.siteId for this samplingNo so the row
+      // still matches the site-based /suggest query.
+      let resolvedSiteId: number | null = siteId ?? null;
+      if (resolvedSiteId === null) {
+        const register = await prisma.sampling_register.findUnique({
+          where:  { samplingNo: row.samplingNo },
+          select: { siteId: true },
+        });
+        resolvedSiteId = register?.siteId ?? null;
+      }
+
       await prisma.sampling_usage_log.create({
         data: {
           samplingNo:      row.samplingNo,
@@ -109,6 +124,7 @@ export async function writeUsageLogsForAssignment(
           operatorNameRaw: null,
           tinQty:          row.tinQty,
           dealerNameRaw,
+          siteId:          resolvedSiteId,
           siteNameRaw:     shipToCustomerName,
           skuCodeRaw:      row.baseSku,
           packCode:        row.packCode,
