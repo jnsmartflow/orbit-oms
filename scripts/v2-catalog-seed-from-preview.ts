@@ -199,7 +199,55 @@ type PreviewRow = {
 
 // Post-transform shape — adds mobileFamily, the single "PROMISE" tag
 // (or pass-through family) that drives /order's flat-search section.
-type TransformedRow = PreviewRow & { mobileFamily: string };
+// `product` carries the SAP-clean stock product name once the name-map
+// fill (step 7.6) runs; NULL until then (Path A default).
+type TransformedRow = PreviewRow & { mobileFamily: string; product: string | null };
+
+// ── Name-map fill inputs (broken-row fix, 2026-05-31) ───────────────────
+// Rule 1: subProduct → SAP-clean stock product. These families' menu
+// subProduct names diverge from mo_sku_lookup_v2.product, so the
+// /api/order/data pack join (product ?? subProduct) misses. baseColour is
+// left as-is; bases with no matching pack stay empty (acceptable).
+const CONFIRMED_SUBPRODUCT_MAP: Record<string, string> = {
+  "MAX":               "WS MAX",
+  "POWERFLEXX":        "WS POWERFLEXX",
+  "RAINPROOF":         "WS PROTECT RAINPROOF",
+  "PROTECT":           "WS PROTECT",
+  "PROTECT DUSTPROOF": "WS PROTECT DUSTPROOF",
+  "PU STAINER":        "GVA",
+  "MACHINE TINTER":    "MACHINE STAINER",
+};
+
+// Rule 2: HIGH-confidence rows from the reviewed draft map, matched by
+// natural key (family, subProduct, baseColour) — NOT menuId (ids
+// regenerate on reseed).
+const NAME_MAP_CSV = path.join(
+  "docs", "prompts", "drafts", "v2-name-map-broken-2026-05-31.csv",
+);
+
+// Minimal CSV line parser (handles "" escapes inside quoted fields).
+function parseCsvLine(line: string): string[] {
+  const out: string[] = [];
+  let cur = "";
+  let inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQ) {
+      if (ch === '"') {
+        if (line[i + 1] === '"') { cur += '"'; i++; }
+        else inQ = false;
+      } else cur += ch;
+    } else if (ch === '"') {
+      inQ = true;
+    } else if (ch === ",") {
+      out.push(cur); cur = "";
+    } else {
+      cur += ch;
+    }
+  }
+  out.push(cur);
+  return out;
+}
 
 type PreviewJson = {
   summary: {
@@ -292,6 +340,7 @@ async function main(): Promise<void> {
   //         Non-Promise families pass through unchanged.
   const tagged: TransformedRow[] = flat.map((r) => ({
     ...r,
+    product: null,
     mobileFamily: (PROMISE_FAMILIES.has(r.family) || isPromiseName(r.subProduct))
       ? PROMISE_UMBRELLA
       : r.family,
@@ -519,6 +568,57 @@ async function main(): Promise<void> {
   console.log(`Promise mobile de-dupe: ${promiseMobileCollapses.length} collapse(s), ` +
               `dropped ${promiseDroppedRows.size} row(s) from /order view`);
 
+  // ── 7.6. Product name-map fill (broken-row fix) ─────────────────────
+  // Populate `product` (SAP-clean stock name) so /api/order/data's pack
+  // join resolves. Applied per row in order:
+  //   Rule 1: CONFIRMED_SUBPRODUCT_MAP by subProduct (baseColour untouched).
+  //   Rule 2: else HIGH-confidence rows from the reviewed draft CSV,
+  //           matched by natural key (family, subProduct, baseColour);
+  //           when baseColourChanged=Y, baseColour is repaired too.
+  //   Else:   product stays NULL (deferred oddballs).
+  // No other field is altered. Header indices in the CSV:
+  //   0 menuId,1 family,2 subProduct,3 menuBaseColour,4 displayName,
+  //   5 proposedStockProduct,6 proposedBaseColour,7 baseColourChanged,
+  //   8 packsUnlocked,9 packList,10 sampleMaterials,11 confidence,12 reviewReason
+  type CsvHigh = { proposedStockProduct: string; proposedBaseColour: string; baseColourChanged: string };
+  const csvHigh = new Map<string, CsvHigh>();
+  {
+    const csvRaw   = await fs.readFile(NAME_MAP_CSV, "utf8");
+    const csvLines = csvRaw.split(/\r?\n/).filter((l) => l.length > 0);
+    for (let i = 1; i < csvLines.length; i++) {
+      const c = parseCsvLine(csvLines[i]);
+      if (c.length < 12) continue;
+      if (c[11] !== "HIGH") continue;
+      const key = `${c[1]}|||${c[2]}|||${c[3]}`;
+      csvHigh.set(key, {
+        proposedStockProduct: c[5],
+        proposedBaseColour:   c[6],
+        baseColourChanged:    c[7],
+      });
+    }
+  }
+  let filledRule1 = 0;
+  let filledRule2 = 0;
+  for (const r of deduped) {
+    const sp = r.subProduct.trim().toUpperCase();
+    const confirmed = CONFIRMED_SUBPRODUCT_MAP[sp];
+    if (confirmed) {
+      r.product = confirmed;
+      filledRule1++;
+      continue;
+    }
+    const hit = csvHigh.get(`${r.family}|||${r.subProduct}|||${r.baseColour ?? ""}`);
+    if (hit && hit.proposedStockProduct) {
+      r.product = hit.proposedStockProduct;
+      if (hit.baseColourChanged === "Y" && hit.proposedBaseColour) {
+        r.baseColour = hit.proposedBaseColour;
+      }
+      filledRule2++;
+    }
+  }
+  console.log(`Product name-map fill: rule1(subProduct)=${filledRule1}, ` +
+              `rule2(CSV HIGH)=${filledRule2}, total=${filledRule1 + filledRule2}`);
+
   // ── 8. DRY-RUN exit — print summary instead of touching the DB ──────
   if (DRY_RUN) {
     console.log("");
@@ -628,6 +728,63 @@ async function main(): Promise<void> {
       console.log(`    searchTokens: ${s.searchTokens}`);
     }
 
+    // ── 8b. Name-map verification (read-only) ─────────────────────────
+    // Replicate the app/api/order/data pack join over the final (deduped)
+    // set with `product` filled, and report A–E. Reads mo_sku_lookup_v2
+    // (isPrimary) — no writes. "before" = product NULL (current live
+    // behaviour, join falls back to subProduct); "after" = product filled.
+    const skuV2 = await prisma.mo_sku_lookup_v2.findMany({
+      where:  { isPrimary: true },
+      select: { product: true, baseColour: true, packCode: true, unit: true },
+    });
+    const vPackMap = new Map<string, number>();
+    const vSeen    = new Set<string>();
+    const vAdd = (key: string, packCode: string, unit: string | null): void => {
+      const d = `${key}|||${packCode}|${unit ?? ""}`;
+      if (vSeen.has(d)) return;
+      vSeen.add(d);
+      vPackMap.set(key, (vPackMap.get(key) ?? 0) + 1);
+    };
+    for (const s of skuV2) {
+      if (!s.product || !s.packCode) continue;
+      vAdd(s.product, String(s.packCode), s.unit ?? null);
+      if (s.baseColour) vAdd(`${s.product}|||${s.baseColour}`, String(s.packCode), s.unit ?? null);
+    }
+    const afterKey  = (r: TransformedRow): string => {
+      const j = r.product ?? r.subProduct;
+      return r.baseColour ? `${j}|||${r.baseColour}` : j;
+    };
+    const beforeKey = (r: TransformedRow): string =>
+      r.baseColour ? `${r.subProduct}|||${r.baseColour}` : r.subProduct;
+    const afterPacks  = (r: TransformedRow): number => vPackMap.get(afterKey(r))  ?? 0;
+    const beforePacks = (r: TransformedRow): number => vPackMap.get(beforeKey(r)) ?? 0;
+
+    const productSet  = deduped.filter((r) => r.product != null).length;
+    const zeroAfter   = deduped.filter((r) => afterPacks(r) === 0);
+    const regressions = deduped.filter((r) => beforePacks(r) >= 1 && afterPacks(r) === 0);
+
+    console.log("");
+    console.log("════════════ NAME-MAP VERIFICATION (A–E) ════════════");
+    console.log(`A. Total rows produced            : ${deduped.length}`);
+    console.log(`B. Rows with product set          : ${productSet}`);
+    console.log(`C. Rows hydrating to ZERO packs   : ${zeroAfter.length}`);
+    for (const r of zeroAfter) {
+      console.log(`     ${r.family} | ${r.subProduct} | ${r.baseColour ?? "null"}`);
+    }
+    const spot = (sp: string, base: string | null): void => {
+      const row = deduped.find((r) => r.subProduct === sp && (r.baseColour ?? null) === base);
+      console.log(`     ${sp} | ${base ?? "null"} -> product=${row?.product ?? "(none)"} ` +
+                  `packs=${row ? afterPacks(row) : "ROW NOT FOUND"}`);
+    };
+    console.log(`D. Spot-checks (expect packs > 0):`);
+    spot("MACHINE TINTER", "OXR");
+    spot("PU STAINER", "YELLOW OXIDE");
+    spot("PROTECT", "BRILLIANT WHITE");
+    console.log(`E. Regressions (had packs before, zero after): ${regressions.length}`);
+    for (const r of regressions) {
+      console.log(`     REGRESSION ${r.family} | ${r.subProduct} | ${r.baseColour ?? "null"}`);
+    }
+
     console.log("");
     console.log("DRY_RUN exit — no DB ops performed.");
     /* eslint-enable no-console */
@@ -648,6 +805,7 @@ async function main(): Promise<void> {
     const data  = slice.map((r) => ({
       family:       r.family,
       subProduct:   r.subProduct,
+      product:      r.product ?? null,
       baseColour:   r.baseColour,
       displayName:  r.displayName,
       searchTokens: r.searchTokens,
