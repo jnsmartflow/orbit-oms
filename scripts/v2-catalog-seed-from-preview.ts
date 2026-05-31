@@ -218,36 +218,32 @@ const CONFIRMED_SUBPRODUCT_MAP: Record<string, string> = {
   "MACHINE TINTER":    "MACHINE STAINER",
 };
 
-// Rule 2: HIGH-confidence rows from the reviewed draft map, matched by
-// natural key (family, subProduct, baseColour) — NOT menuId (ids
-// regenerate on reseed).
-const NAME_MAP_CSV = path.join(
-  "docs", "prompts", "drafts", "v2-name-map-broken-2026-05-31.csv",
-);
-
-// Minimal CSV line parser (handles "" escapes inside quoted fields).
-function parseCsvLine(line: string): string[] {
-  const out: string[] = [];
-  let cur = "";
-  let inQ = false;
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-    if (inQ) {
-      if (ch === '"') {
-        if (line[i + 1] === '"') { cur += '"'; i++; }
-        else inQ = false;
-      } else cur += ch;
-    } else if (ch === '"') {
-      inQ = true;
-    } else if (ch === ",") {
-      out.push(cur); cur = "";
-    } else {
-      cur += ch;
-    }
-  }
-  out.push(cur);
-  return out;
-}
+// Rule 2: HIGH-confidence rows from the reviewed name-map draft
+// (docs/prompts/drafts/v2-name-map-broken-2026-05-31.csv, 2026-05-31),
+// inlined here so the seed carries no runtime file dependency. Keyed by
+// natural key `${family}|||${subProduct}|||${baseColour ?? ""}`. All 17
+// HIGH rows had baseColourChanged=N, so only `product` is set; the
+// optional `baseColour` field is kept for future entries that repair a
+// base spelling.
+const HIGH_PRODUCT_MAP: Record<string, { product: string; baseColour?: string }> = {
+  "2K PU|||GLOSS|||93 BASE CLR":                 { product: "BASE" },
+  "AQUATECH|||PU COAT|||":                       { product: "AQUATECH PU COAT" },
+  "AQUATECH|||DAMP PROTECT BASECOAT|||BASECOAT": { product: "ETERNA" },
+  "STAINER|||ACOTONE TINTER|||NO1":              { product: "ACOTONE" },
+  "STAINER|||ACOTONE TINTER|||XY1":              { product: "ACOTONE" },
+  "STAINER|||ACOTONE TINTER|||NO2":              { product: "ACOTONE" },
+  "STAINER|||ACOTONE TINTER|||GR1":              { product: "ACOTONE" },
+  "STAINER|||ACOTONE TINTER|||BU1":              { product: "ACOTONE" },
+  "STAINER|||ACOTONE TINTER|||RE1":              { product: "ACOTONE" },
+  "STAINER|||ACOTONE TINTER|||OR1":              { product: "ACOTONE" },
+  "STAINER|||ACOTONE TINTER|||BU2":              { product: "ACOTONE" },
+  "STAINER|||ACOTONE TINTER|||RE2":              { product: "ACOTONE" },
+  "STAINER|||ACOTONE TINTER|||YE1":              { product: "ACOTONE" },
+  "STAINER|||ACOTONE TINTER|||YE2":              { product: "ACOTONE" },
+  "STAINER|||ACOTONE TINTER|||XR1":              { product: "ACOTONE" },
+  "STAINER|||ACOTONE TINTER|||WH1":              { product: "ACOTONE" },
+  "STAINER|||ACOTONE TINTER|||MA1":              { product: "ACOTONE" },
+};
 
 type PreviewJson = {
   summary: {
@@ -572,31 +568,11 @@ async function main(): Promise<void> {
   // Populate `product` (SAP-clean stock name) so /api/order/data's pack
   // join resolves. Applied per row in order:
   //   Rule 1: CONFIRMED_SUBPRODUCT_MAP by subProduct (baseColour untouched).
-  //   Rule 2: else HIGH-confidence rows from the reviewed draft CSV,
-  //           matched by natural key (family, subProduct, baseColour);
-  //           when baseColourChanged=Y, baseColour is repaired too.
+  //   Rule 2: else HIGH_PRODUCT_MAP by natural key (family, subProduct,
+  //           baseColour) — inlined from the reviewed draft; when a future
+  //           entry carries baseColour, the base spelling is repaired too.
   //   Else:   product stays NULL (deferred oddballs).
-  // No other field is altered. Header indices in the CSV:
-  //   0 menuId,1 family,2 subProduct,3 menuBaseColour,4 displayName,
-  //   5 proposedStockProduct,6 proposedBaseColour,7 baseColourChanged,
-  //   8 packsUnlocked,9 packList,10 sampleMaterials,11 confidence,12 reviewReason
-  type CsvHigh = { proposedStockProduct: string; proposedBaseColour: string; baseColourChanged: string };
-  const csvHigh = new Map<string, CsvHigh>();
-  {
-    const csvRaw   = await fs.readFile(NAME_MAP_CSV, "utf8");
-    const csvLines = csvRaw.split(/\r?\n/).filter((l) => l.length > 0);
-    for (let i = 1; i < csvLines.length; i++) {
-      const c = parseCsvLine(csvLines[i]);
-      if (c.length < 12) continue;
-      if (c[11] !== "HIGH") continue;
-      const key = `${c[1]}|||${c[2]}|||${c[3]}`;
-      csvHigh.set(key, {
-        proposedStockProduct: c[5],
-        proposedBaseColour:   c[6],
-        baseColourChanged:    c[7],
-      });
-    }
-  }
+  // No other field is altered.
   let filledRule1 = 0;
   let filledRule2 = 0;
   for (const r of deduped) {
@@ -607,17 +583,15 @@ async function main(): Promise<void> {
       filledRule1++;
       continue;
     }
-    const hit = csvHigh.get(`${r.family}|||${r.subProduct}|||${r.baseColour ?? ""}`);
-    if (hit && hit.proposedStockProduct) {
-      r.product = hit.proposedStockProduct;
-      if (hit.baseColourChanged === "Y" && hit.proposedBaseColour) {
-        r.baseColour = hit.proposedBaseColour;
-      }
+    const hit = HIGH_PRODUCT_MAP[`${r.family}|||${r.subProduct}|||${r.baseColour ?? ""}`];
+    if (hit) {
+      r.product = hit.product;
+      if (hit.baseColour) r.baseColour = hit.baseColour;
       filledRule2++;
     }
   }
   console.log(`Product name-map fill: rule1(subProduct)=${filledRule1}, ` +
-              `rule2(CSV HIGH)=${filledRule2}, total=${filledRule1 + filledRule2}`);
+              `rule2(inline HIGH)=${filledRule2}, total=${filledRule1 + filledRule2}`);
 
   // ── 8. DRY-RUN exit — print summary instead of touching the DB ──────
   if (DRY_RUN) {
