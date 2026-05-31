@@ -107,6 +107,7 @@ const FAMILY_TO_SECTION: Record<string, string> = {
   "PROMISE EXTERIOR": "EXTERIORS",
   "FLOOR PLUS":       "EXTERIORS",   // moved from UTILITY (May 11 CSV review)
   "SMOOTHOVER":       "EXTERIORS",   // moved from UTILITY (May 11 CSV review)
+  "WS":               "EXTERIORS",   // post-grouping family (MAX/PROTECT/DUSTPROOF/RAINPROOF/POWERFLEXX) — step 7.7
   // ENAMELS
   "GLOSS":            "ENAMELS",
   "SATIN":            "ENAMELS",
@@ -164,6 +165,7 @@ const FAMILY_TO_SUBGROUP: Record<string, string> = {
   "SMOOTHOVER":       "Prep – putty",
   "METALLIC":         "Specialty exterior",
   "TEXTURE":          "Specialty exterior",
+  "WS":               "WS (Weather Shield)",   // post-grouping family — step 7.7
   // ENAMELS
   "GLOSS":            "Enamel finish (gloss)",
   "SATIN":            "Enamel finish (satin)",
@@ -201,7 +203,9 @@ type PreviewRow = {
 // (or pass-through family) that drives /order's flat-search section.
 // `product` carries the SAP-clean stock product name once the name-map
 // fill (step 7.6) runs; NULL until then (Path A default).
-type TransformedRow = PreviewRow & { mobileFamily: string; product: string | null };
+// `uiGroup` carries the within-family tab label (set by the grouping
+// transform, step 7.7); NULL for families with no sub-grouping.
+type TransformedRow = PreviewRow & { mobileFamily: string; product: string | null; uiGroup: string | null };
 
 // ── Name-map fill inputs (broken-row fix, 2026-05-31) ───────────────────
 // Rule 1: subProduct → SAP-clean stock product. These families' menu
@@ -337,6 +341,7 @@ async function main(): Promise<void> {
   const tagged: TransformedRow[] = flat.map((r) => ({
     ...r,
     product: null,
+    uiGroup: null,
     mobileFamily: (PROMISE_FAMILIES.has(r.family) || isPromiseName(r.subProduct))
       ? PROMISE_UMBRELLA
       : r.family,
@@ -593,6 +598,124 @@ async function main(): Promise<void> {
   console.log(`Product name-map fill: rule1(subProduct)=${filledRule1}, ` +
               `rule2(inline HIGH)=${filledRule2}, total=${filledRule1 + filledRule2}`);
 
+  // ── 7.7. Durable grouping transform (approved map 2026-05-31) ───────
+  // Applied ON TOP of the flat output. Promise dedup, Phase-1 product fill,
+  // and searchTokens are all preserved. Changes ONLY family / subProduct /
+  // uiGroup — EXCEPT the few "restructured" rows (ROOF COAT fold + the two
+  // rescued DUSTPROOF rows) which are set to EXACTLY match the known-good
+  // backup mo_order_form_index_v2_bak_20260530 (incl. product/baseColour),
+  // reproducing its representation. Encoded inline (no CSV read at runtime),
+  // mirroring the Phase-1 inline pattern. Source: docs/prompts/drafts/
+  // grouping-restore-map-2026-05-31.csv (approved).
+  //
+  // Snapshot pre-grouping join identity for the dry-run pack-regression check.
+  const preGroupKey = new Map<TransformedRow, string>();
+  for (const r of deduped) preGroupKey.set(r, `${r.product ?? r.subProduct}|||${r.baseColour ?? ""}`);
+
+  const WS_CONSOLIDATE = new Set<string>(["MAX", "POWERFLEXX", "PROTECT", "RAINPROOF"]);
+  const SATIN_UI: Record<string, string> = {
+    "SATIN STAY BRIGHT": "SATIN STAY BRIGHT (WB)",
+    "SUPER SATIN":       "SUPER SATIN (Oil)",
+  };
+  const STAINER_UI: Record<string, string> = {
+    "UNIVERSAL STAINER": "UNIVERSAL STAINER",
+    "MACHINE TINTER":    "MACHINE STAINER",
+    "ACOTONE TINTER":    "ACOTONE",
+    "PU STAINER":        "GVA / PU",
+    "HP COLORANT":       "HP",
+  };
+  const PRIMER_UI: Record<string, string> = {
+    "WOOD PRIMER":               "WOOD",
+    "RED OXIDE METAL PRIMER":    "METAL",
+    "ZINC YELLOW METAL PRIMER":  "METAL",
+    "EPOXY PRIMER":              "METAL",
+    "QUICK DRYING PRIMER":       "METAL",
+    "CEMENT PRIMER WB":          "CEMENT",
+    "CEMENT PRIMER SB":          "CEMENT",
+    "INTERIOR ACRYLIC PRIMER":   "ACRYLIC",
+    "EXTERIOR ACRYLIC PRIMER":   "ACRYLIC",
+    "ALKALI BLOC PRIMER":        "ALKALI BLOC",
+    "2IN1 INTERIOR-EXTERIOR PRIMER": "PROMISE",  // approved decision
+    "PROMISE PRIMER":            "PROMISE",
+  };
+  const AQUA_UI: Record<string, string> = {
+    "CRACKFILLER":           "PREP",
+    "PRETREATMENT COAT":     "PREP",
+    "WRP":                   "ADDITIVES",
+    "TG COTTON WOOL":        "ADDITIVES",
+    "LW PLUS":               "ADDITIVES",
+    "RP LATEX":              "ADDITIVES",
+    "FLEXIBLE COAT":         "BASECOAT",
+    "IBC ADVANCE":           "BASECOAT",
+    "INTERIOR WBC":          "BASECOAT",  // approved decision
+    "DAMP PROTECT BASECOAT": "BASECOAT",  // approved decision (backup had TOPCOAT)
+    "PU COAT":               "TOPCOAT",
+    "WATERBLOCK 2K":         "TOPCOAT",
+    "DAMP PROTECT 2IN1":     "TOPCOAT",
+  };
+  const glossBase = (base: string | null): boolean => {
+    const b = (base ?? "").trim().toUpperCase();
+    return b === "BRILLIANT WHITE" || /\bBASE$/.test(b);
+  };
+  // Restructured rows — match the backup EXACTLY. Keyed by PRE-grouping
+  // `${family}|${subProduct}|${baseColour ?? ""}`.
+  const RESTRUCTURED: Record<string, { family: string; subProduct: string; baseColour: string | null; product: string; uiGroup: string }> = {
+    "AQUATECH|ROOF COAT|BRILLIANT WHITE": { family: "AQUATECH", subProduct: "TOPCOAT", baseColour: null, product: "ROOF COAT WHITE",     uiGroup: "TOPCOAT" },
+    "AQUATECH|ROOF COAT|GREY":            { family: "AQUATECH", subProduct: "TOPCOAT", baseColour: null, product: "ROOF COAT GREY",      uiGroup: "TOPCOAT" },
+    "AQUATECH|ROOF COAT|TERACOTTA":       { family: "AQUATECH", subProduct: "TOPCOAT", baseColour: null, product: "ROOF COAT TERACOTTA", uiGroup: "TOPCOAT" },
+    "PROTECT|PROTECT DUSTPROOF|ROX":         { family: "WS", subProduct: "PROTECT", baseColour: "ROX",         product: "WS PROTECT", uiGroup: "PROTECT" },
+    "PROTECT|PROTECT DUSTPROOF|YELLOW BASE": { family: "WS", subProduct: "PROTECT", baseColour: "YELLOW BASE", product: "WS PROTECT", uiGroup: "PROTECT" },
+  };
+
+  // Native FLOOR PLUS keys (subProduct|baseColour) — used to drop the
+  // AQUATECH FLOOR PLUS duplicates rather than collide with these on move.
+  const nativeFloorPlus = new Set<string>(
+    deduped.filter((r) => r.family === "FLOOR PLUS").map((r) => `${r.subProduct}|${r.baseColour ?? ""}`),
+  );
+  const floorPlusDropped = new Set<TransformedRow>();
+
+  let wsCount = 0, floorPlusMoved = 0, floorPlusDroppedCount = 0, uiAssigned = 0, restructuredCount = 0;
+  for (const r of deduped) {
+    const preKey = `${r.family}|${r.subProduct}|${r.baseColour ?? ""}`;
+    const rs = RESTRUCTURED[preKey];
+    if (rs) {
+      r.family = rs.family; r.subProduct = rs.subProduct; r.baseColour = rs.baseColour;
+      r.product = rs.product; r.uiGroup = rs.uiGroup;
+      restructuredCount++;
+      continue;
+    }
+    const sub = r.subProduct.trim().toUpperCase();
+    // WS consolidation
+    if (WS_CONSOLIDATE.has(r.family)) {
+      if (r.family === "PROTECT" && sub === "PROTECT DUSTPROOF") r.subProduct = "DUSTPROOF";
+      r.family  = "WS";
+      r.uiGroup = r.subProduct;   // tabs = MAX / PROTECT / DUSTPROOF / RAINPROOF / POWERFLEXX
+      wsCount++;
+      continue;
+    }
+    // FLOOR PLUS extraction from AQUATECH — drop rows that duplicate a
+    // native FLOOR PLUS row on (subProduct, baseColour); move the rest.
+    if (r.family === "AQUATECH" && sub === "FLOOR PLUS") {
+      if (nativeFloorPlus.has(`${r.subProduct}|${r.baseColour ?? ""}`)) {
+        floorPlusDropped.add(r);
+        floorPlusDroppedCount++;
+        continue;
+      }
+      r.family = "FLOOR PLUS";
+      floorPlusMoved++;
+      continue;
+    }
+    // uiGroup assignment (subProduct UNCHANGED → pack join key preserved)
+    if (r.family === "GLOSS")    { r.uiGroup = glossBase(r.baseColour) ? "BASE" : "COLOUR"; uiAssigned++; continue; }
+    if (r.family === "SATIN"   && SATIN_UI[sub])   { r.uiGroup = SATIN_UI[sub];   uiAssigned++; continue; }
+    if (r.family === "STAINER" && STAINER_UI[sub]) { r.uiGroup = STAINER_UI[sub]; uiAssigned++; continue; }
+    if (r.family === "PRIMER"  && PRIMER_UI[sub])  { r.uiGroup = PRIMER_UI[sub];  uiAssigned++; continue; }
+    if (r.family === "AQUATECH" && AQUA_UI[sub])   { r.uiGroup = AQUA_UI[sub];    uiAssigned++; continue; }
+  }
+  if (floorPlusDropped.size > 0) deduped = deduped.filter((r) => !floorPlusDropped.has(r));
+  console.log(`Grouping transform: WS consolidated=${wsCount}, FLOOR PLUS moved=${floorPlusMoved}, ` +
+              `FLOOR PLUS dropped(dup)=${floorPlusDroppedCount}, uiGroup assigned=${uiAssigned}, restructured=${restructuredCount}`);
+
   // ── 8. DRY-RUN exit — print summary instead of touching the DB ──────
   if (DRY_RUN) {
     console.log("");
@@ -759,6 +882,84 @@ async function main(): Promise<void> {
       console.log(`     REGRESSION ${r.family} | ${r.subProduct} | ${r.baseColour ?? "null"}`);
     }
 
+    // ── 8c. GROUPING verification (approved map, A–E) ─────────────────
+    console.log("");
+    console.log("════════════ GROUPING VERIFICATION (A–E) ════════════");
+
+    // A. total + non-null duplicate keys (Postgres treats NULL baseColour
+    //    as DISTINCT in the unique index, so NULL-base rows can repeat).
+    const dupSeen = new Map<string, number>();
+    let nullBaseRows = 0;
+    for (const r of deduped) {
+      if (r.baseColour == null || r.baseColour === "") { nullBaseRows++; continue; }
+      const k = `${r.family}|||${r.subProduct}|||${r.baseColour}`;
+      dupSeen.set(k, (dupSeen.get(k) ?? 0) + 1);
+    }
+    const dups = Array.from(dupSeen.entries()).filter(([, c]) => c > 1);
+    console.log(`A. Total rows: ${deduped.length}  |  non-null (family,subProduct,baseColour) duplicates: ${dups.length}` +
+                `  |  NULL-baseColour rows (allowed-distinct): ${nullBaseRows}`);
+    for (const [k, c] of dups) console.log(`     CLASH ${k} x${c}`);
+
+    // B. per-family grouping
+    const grp = (fam: string, by: "uiGroup" | "subProduct"): string => {
+      const m = new Map<string, number>();
+      for (const r of deduped) if (r.family === fam) {
+        const key = by === "uiGroup" ? (r.uiGroup ?? "∅") : r.subProduct;
+        m.set(key, (m.get(key) ?? 0) + 1);
+      }
+      return Array.from(m.entries()).sort((a, b) => a[0].localeCompare(b[0])).map(([k, v]) => `${k}(${v})`).join(", ");
+    };
+    console.log("B. Per-family grouping:");
+    console.log(`   WS         [${deduped.filter((r) => r.family === "WS").length}] subProducts: ${grp("WS", "subProduct")}`);
+    console.log(`   GLOSS      uiGroups: ${grp("GLOSS", "uiGroup")}`);
+    console.log(`   AQUATECH   uiGroups: ${grp("AQUATECH", "uiGroup")}`);
+    console.log(`   PRIMER     uiGroups: ${grp("PRIMER", "uiGroup")}`);
+    console.log(`   STAINER    uiGroups: ${grp("STAINER", "uiGroup")}`);
+    console.log(`   SATIN      uiGroups: ${grp("SATIN", "uiGroup")}`);
+    console.log(`   FLOOR PLUS [${deduped.filter((r) => r.family === "FLOOR PLUS").length}] (family)`);
+
+    // C. pack regression — pre-grouping vs post-grouping join key.
+    const keyOf = (product: string | null, sub: string, base: string | null): string => {
+      const j = product ?? sub;
+      return base ? `${j}|||${base}` : j;
+    };
+    let lost = 0; const lostList: string[] = [];
+    for (const r of deduped) {
+      const before = vPackMap.get(preGroupKey.get(r)!) ?? 0;
+      const after  = vPackMap.get(keyOf(r.product, r.subProduct, r.baseColour)) ?? 0;
+      if (before >= 1 && after === 0) { lost++; lostList.push(`${r.family} | ${r.subProduct} | ${r.baseColour ?? "null"} (had ${before})`); }
+    }
+    console.log(`C. Pack regression (had packs before grouping, 0 after): ${lost}`);
+    for (const x of lostList) console.log(`     LOST ${x}`);
+    console.log(`   ROOF COAT rows:`);
+    for (const r of deduped.filter((r) => (r.product ?? "").startsWith("ROOF COAT"))) {
+      console.log(`     product=${r.product} base=${r.baseColour ?? "null"} ui=${r.uiGroup} packs=${vPackMap.get(keyOf(r.product, r.subProduct, r.baseColour)) ?? 0}`);
+    }
+    console.log(`   WS sample (MAX/DUSTPROOF + rescued):`);
+    for (const r of deduped.filter((r) => r.family === "WS" && (["ROX", "YELLOW BASE"].includes(r.baseColour ?? "") || (r.subProduct === "DUSTPROOF")))) {
+      console.log(`     sub=${r.subProduct} base=${r.baseColour ?? "null"} prod=${r.product ?? "∅"} ui=${r.uiGroup} packs=${vPackMap.get(keyOf(r.product, r.subProduct, r.baseColour)) ?? 0}`);
+    }
+
+    // D. preserved fields
+    const prodSet = deduped.filter((r) => r.product != null).length;
+    console.log(`D. product set on ${prodSet} rows (≥92 expected).`);
+    console.log(`   DISTEMPER / ACRYLIC DISTEMPER searchTokens (must NOT contain SMARTCHOICE):`);
+    for (const r of deduped.filter((r) => r.family === "DISTEMPER" && r.subProduct === "ACRYLIC DISTEMPER")) {
+      console.log(`     base=${r.baseColour ?? "null"} hasSMARTCHOICE=${/smartchoice/i.test(r.searchTokens)} | "${r.searchTokens}"`);
+    }
+
+    // E. the 4 decisions
+    const find = (pred: (r: TransformedRow) => boolean): TransformedRow | undefined => deduped.find(pred);
+    const dpb  = find((r) => r.family === "AQUATECH" && r.subProduct.toUpperCase() === "DAMP PROTECT BASECOAT");
+    const iwbc = find((r) => r.subProduct.toUpperCase() === "INTERIOR WBC");
+    const p2   = find((r) => r.subProduct.toUpperCase() === "2IN1 INTERIOR-EXTERIOR PRIMER");
+    const hp   = deduped.filter((r) => r.subProduct.toUpperCase() === "HP COLORANT");
+    console.log("E. Decisions:");
+    console.log(`   Damp Protect Basecoat → uiGroup=${dpb?.uiGroup ?? "(missing)"} (expect BASECOAT)`);
+    console.log(`   Interior WBC          → uiGroup=${iwbc?.uiGroup ?? "(missing)"} (expect BASECOAT)`);
+    console.log(`   2in1 Int-Ext Primer   → uiGroup=${p2?.uiGroup ?? "(missing)"} (expect PROMISE)`);
+    console.log(`   HP Colorant           → ${hp.length} row(s), uiGroup=${hp[0]?.uiGroup ?? "(missing)"} (expect 1 row, HP — not split)`);
+
     console.log("");
     console.log("DRY_RUN exit — no DB ops performed.");
     /* eslint-enable no-console */
@@ -780,6 +981,7 @@ async function main(): Promise<void> {
       family:       r.family,
       subProduct:   r.subProduct,
       product:      r.product ?? null,
+      uiGroup:      r.uiGroup ?? null,
       baseColour:   r.baseColour,
       displayName:  r.displayName,
       searchTokens: r.searchTokens,
