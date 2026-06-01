@@ -106,6 +106,9 @@ const SET_FALSE = new Set<string>([
   "IN84500072", "IN84500072-PROMISE_INTERIOR",
   // 94 BASE 3.6L alternate — hide so only the real 4L (5948221) shows.
   "IN46359471",
+  // 94/95 BASE leftover fractional twins still rendering on mobile (each has
+  // a primary standard-bucket sibling that stays): 94 0.9L, 95 0.9L/3.6L/18L.
+  "IN46359423", "IN46359572", "IN46359571", "IN46359581",
 ]);
 
 // Shape of one row to be inserted into mo_sku_lookup_v2.
