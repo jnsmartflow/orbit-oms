@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import type { Bill, CartLine, Customer } from "../types";
 import { formatPack, packStep, packToKg, packToLitres, parsePackKey, sortPacks } from "@/lib/place-order/pack";
 import type { EmailDispatch, EmailMarker } from "@/lib/place-order/email";
+import { getBaseAliasDisplay } from "@/lib/place-order/base-aliases";
 
 // Cart panel — right pane (340px) per v4 mockup. Renders ONLY the active
 // bill's lines, grouped by sub-product. Multi-bill workflow preserved
@@ -218,6 +219,7 @@ export default function CartPanel({
                       ?? line.displayName
                       ?? line.product
                       ?? line.subProduct;
+                    const baseAlias = getBaseAliasDisplay(line.product, line.baseColour);
                     return sortPacks(
                       Object.keys(line.packQtys).filter((p) => (line.packQtys[p] ?? 0) > 0),
                     ).map((packCompositeKey) => {
@@ -238,7 +240,7 @@ export default function CartPanel({
                           }`}
                         >
                           <span className="text-gray-800">
-                            {baseLabel} · {packLabel}
+                            {baseLabel}{baseAlias && <span className="font-normal text-gray-400"> · {baseAlias}</span>} · {packLabel}
                           </span>
                           <div className="flex items-center gap-2">
                             <span className="font-mono font-semibold text-gray-700">

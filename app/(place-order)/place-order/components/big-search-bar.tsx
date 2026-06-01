@@ -8,6 +8,7 @@ import { Search } from "lucide-react";
 import type { Product } from "../types";
 import { searchProducts, type SearchResult } from "@/lib/place-order/queries";
 import { monogramFor } from "@/lib/place-order/monogram";
+import { getBaseAliasDisplay } from "@/lib/place-order/base-aliases";
 
 // Primary input on /place-order. Live search over the v2 catalog with a
 // debounced result list (10 max) and arrow-key navigation. The native
@@ -185,6 +186,18 @@ const BigSearchBar = forwardRef<HTMLInputElement, BigSearchBarProps>(
                     rowKey         = `subbase-${result.family}-${result.subProductName}-${result.baseColour}`;
                     break;
                 }
+                // Subtle base alias (display-only). The sub-product-base
+                // result carries no `product`, so resolve it from the
+                // products list by (subProduct, baseColour).
+                let baseAlias: string | null = null;
+                if (result.type === "sub-product-base") {
+                  const m = products.find(
+                    (pp) =>
+                      pp.subProduct === result.subProductName &&
+                      (pp.baseColour ?? "") === (result.baseColour ?? ""),
+                  );
+                  baseAlias = m ? getBaseAliasDisplay(m.product, m.baseColour) : null;
+                }
                 const monogram = monogramFor(monogramSource);
                 const isLast   = idx === results.length - 1;
 
@@ -217,7 +230,7 @@ const BigSearchBar = forwardRef<HTMLInputElement, BigSearchBarProps>(
                           isActive ? "font-semibold text-gray-900" : "font-medium text-gray-700"
                         }`}
                       >
-                        {label}
+                        {label}{baseAlias && <span className="font-normal text-gray-400"> · {baseAlias}</span>}
                       </span>
                       <span className="block text-[10.5px] text-gray-400 truncate">
                         {breadcrumb}

@@ -13,6 +13,7 @@ import {
   type RawPack,
 } from "@/lib/place-order/pack-buckets";
 import VariantCell, { type CellNavDirection, type VariantCellHandle } from "./variant-cell";
+import { getBaseAliasDisplay } from "@/lib/place-order/base-aliases";
 
 // Base × pack qty matrix. `products` is one row per baseColour for the
 // active sub-product. Pack columns are the union of all packs across
@@ -247,6 +248,7 @@ export default function VariantGrid({
             ?? product.displayName
             ?? product.product
             ?? product.subProduct;
+          const baseAlias = getBaseAliasDisplay(product.product, product.baseColour);
           const isLastRow = rowIdx === products.length - 1;
           return (
             <tr
@@ -262,7 +264,7 @@ export default function VariantGrid({
               className={`group/row ${isLastRow ? "" : "border-b border-gray-200"} hover:bg-amber-50/30 focus-within:bg-amber-50/70`}
             >
               <td className="px-3 py-2 border-l-[3px] border-l-transparent group-focus-within/row:border-l-amber-500">
-                <div className="text-[12px] font-semibold text-gray-900 group-focus-within/row:font-bold">{baseLabel}</div>
+                <div className="text-[12px] font-semibold text-gray-900 group-focus-within/row:font-bold">{baseLabel}{baseAlias && <span className="font-normal text-gray-400"> · {baseAlias}</span>}</div>
               </td>
               {columns.map((bucket, colIdx) => {
                 const cell         = cellMatrix[rowIdx][colIdx];
