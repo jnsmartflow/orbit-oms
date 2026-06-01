@@ -38,6 +38,54 @@ const prisma = new PrismaClient({
 
 const BATCH_SIZE = 100;
 
+// ── WS Max durable cleanup (2026-06-01) ─────────────────────────────────
+// mo_sku_lookup_v2 regenerates from legacy on every reseed, so these
+// removals + the isPrimary flags MUST live here (CORE durable-source rule),
+// not as DB-only edits. Match on the TRANSLATED v2 baseColour so it aligns
+// with the menu's base names.
+const EXCLUDE_BASE_WSMAX = new Set<string>([
+  "PASTEL BASE", "YELLOW BASE", "YELLOW OXIDE", "ROX", "RED OXIDE",
+]);
+const EXCLUDE_MATERIALS = new Set<string>(["IN46350082"]);
+
+// Durable isPrimary home. The table default is `true` and the seed re-inserts
+// every row, so the May-30 dedup (130 twins → false) + the 94 BASE 3.6L
+// alternate (IN46359471) are re-applied on each reseed from this set.
+// Snapshot of the live isPrimary=false set (130) captured 2026-06-01, plus
+// IN46359471. Entries that belong to excluded rows are harmless (never inserted).
+const SET_FALSE = new Set<string>([
+  "5554795", "5554798", "5554802", "5554803", "5554804", "5554805", "5554816",
+  "5577377-PROMISE", "5577380-PROMISE", "5577383-PROMISE", "5577386-PROMISE",
+  "5580410-PROMISE", "5580412-PROMISE", "5769799", "5771981", "5771985",
+  "5771989", "5771990", "5771991", "5771992", "5771993", "5771994", "5771995",
+  "5771996", "5771998", "5772002", "5772004", "5772006", "5772007", "5772008",
+  "5772017", "5772018", "5772019", "5802250", "5834786", "5834787", "5834798",
+  "5834799", "5834800", "5834802", "5834804", "5834827", "5838853-PROMISE",
+  "5838854-PROMISE", "5838855-PROMISE", "5838857-PROMISE", "5838858-PROMISE",
+  "5838859-PROMISE", "5838860-PROMISE", "5838861-PROMISE", "5838862-PROMISE",
+  "5838863-PROMISE", "5838865-PROMISE", "5838872-PROMISE", "5838873-PROMISE",
+  "5838874-PROMISE", "5838875-PROMISE", "5838876-PROMISE", "5838877-PROMISE",
+  "5838878-PROMISE", "5838879-PROMISE", "5838880-PROMISE", "5838881-PROMISE",
+  "5838882-PROMISE", "5838883-PROMISE", "5838885-PROMISE", "5838886-PROMISE",
+  "5838887-PROMISE", "5851766", "5853599", "5853599-PROMISE", "5853600-PROMISE",
+  "5853604-PROMISE", "5853606", "5853606-PROMISE", "5853607-PROMISE",
+  "5867110-PROMISE", "5867111-PROMISE", "5867112-PROMISE", "5867113-PROMISE",
+  "5867117-PROMISE", "5867141-PROMISE", "5867142-PROMISE", "5867143-PROMISE",
+  "5915413", "5994750-PROMISE_INTERIOR", "5994751-PROMISE_INTERIOR",
+  "5994752-PROMISE_INTERIOR", "5994753-PROMISE_INTERIOR", "IN23820023",
+  "IN23820081", "IN23820082", "IN23829023", "IN23829071", "IN23829223",
+  "IN28085071", "IN28085072", "IN28085081", "IN28085082", "IN30700023",
+  "IN30709223", "IN32076823", "IN32316823", "IN32600072", "IN46309872",
+  "IN46350049", "IN46350071", "IN46350072", "IN46350082", "IN46359071",
+  "IN46359072", "IN46359223", "IN46359271", "IN46359281", "IN46359282",
+  "IN46359582", "IN46359671", "IN46359771", "IN46359772", "IN46359781",
+  "IN46359782", "IN46359871", "IN46359881", "IN46359882", "IN55009071",
+  "IN55009072", "IN84500023-PROMISE", "IN84500023-PROMISE_INTERIOR",
+  "IN84500072", "IN84500072-PROMISE_INTERIOR",
+  // 94 BASE 3.6L alternate — hide so only the real 4L (5948221) shows.
+  "IN46359471",
+]);
+
 // Shape of one row to be inserted into mo_sku_lookup_v2.
 type V2Row = {
   material:        string;
@@ -52,6 +100,7 @@ type V2Row = {
   paintType:       string | null;
   materialType:    string | null;
   piecesPerCarton: number | null;
+  isPrimary:       boolean;
 };
 
 function familySuffix(family: string): string {
@@ -83,6 +132,8 @@ async function main(): Promise<void> {
   // ── 2. Translate each legacy row via mapLegacyToNew ─────────────────
   let skippedNull = 0;
   let crossListed = 0;  // source rows producing >1 v2 row
+  let excludedByBase = 0;      // WS Max removed bases
+  let excludedByMaterial = 0;  // stray material removals
   const v2Rows: V2Row[] = [];
 
   for (const legacy of legacyRows) {
@@ -105,6 +156,14 @@ async function main(): Promise<void> {
           ? legacy.material
           : `${legacy.material}-${familySuffix(newRow.family)}`;
       const baseColour = newRow.baseColour ?? legacy.baseColour;
+
+      // ── WS Max durable exclusions (2026-06-01) ──────────────────────
+      if (EXCLUDE_MATERIALS.has(material)) { excludedByMaterial++; continue; }
+      if (
+        newRow.subProduct === "WS MAX" &&
+        EXCLUDE_BASE_WSMAX.has((baseColour ?? "").trim().toUpperCase())
+      ) { excludedByBase++; continue; }
+
       v2Rows.push({
         material,
         description:     legacy.description,
@@ -118,13 +177,17 @@ async function main(): Promise<void> {
         paintType:       legacy.paintType,
         materialType:    legacy.materialType,
         piecesPerCarton: legacy.piecesPerCarton,
+        isPrimary:       SET_FALSE.has(material) ? false : true,
       });
     }
   }
 
   console.log(`Skipped (mapLegacyToNew → null)         : ${skippedNull}`);
   console.log(`Source rows expanded into multiple v2  : ${crossListed}`);
+  console.log(`Excluded — WS Max removed bases         : ${excludedByBase}`);
+  console.log(`Excluded — stray material list          : ${excludedByMaterial}`);
   console.log(`v2 rows after translation              : ${v2Rows.length}`);
+  console.log(`isPrimary=false rows (SET_FALSE applied): ${v2Rows.filter((r) => !r.isPrimary).length}`);
 
   // ── 3. Dedup on (material, category, product, baseColour, packCode) ─
   // Defensive — the suffix scheme makes material globally unique per

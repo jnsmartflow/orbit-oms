@@ -598,6 +598,22 @@ async function main(): Promise<void> {
   console.log(`Product name-map fill: rule1(subProduct)=${filledRule1}, ` +
               `rule2(inline HIGH)=${filledRule2}, total=${filledRule1 + filledRule2}`);
 
+  // ── 7.65. WS Max base removal (durable; approved 2026-06-01) ────────
+  // Drop 5 WS Max menu bases entirely, PRE-grouping (rows are still
+  // family=MAX here). Count-safe: taxonomy-preview.json still has 512 rows
+  // so the EXPECTED_TOTAL_NEW_ROWS=512 guard (step 2) is unaffected — this
+  // only trims the final inserted set. The matching stock rows are excluded
+  // in v2-sku-seed-from-legacy.ts.
+  const MENU_REMOVE_WSMAX = new Set<string>([
+    "PASTEL BASE", "YELLOW BASE", "YELLOW OXIDE", "ROX", "RED OXIDE",
+  ]);
+  const beforeMenuRemove = deduped.length;
+  deduped = deduped.filter((r) => !(
+    r.family === "MAX" && r.subProduct === "MAX" &&
+    MENU_REMOVE_WSMAX.has((r.baseColour ?? "").trim().toUpperCase())
+  ));
+  console.log(`WS Max base removal: dropped ${beforeMenuRemove - deduped.length} menu row(s)`);
+
   // ── 7.7. Durable grouping transform (approved map 2026-05-31) ───────
   // Applied ON TOP of the flat output. Promise dedup, Phase-1 product fill,
   // and searchTokens are all preserved. Changes ONLY family / subProduct /
