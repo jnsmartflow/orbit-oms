@@ -23,6 +23,8 @@
 //
 // Idempotent on re-run: deleteMany({}) on empty table is a no-op.
 
+import { promises as fs } from "node:fs";
+import path from "node:path";
 import { PrismaClient } from "@prisma/client";
 import { mapLegacyToNew, type LegacyKey } from "@/lib/mail-orders/taxonomy-mapping";
 import nameOverridesJson from "./data/sku-name-overrides.json";
@@ -111,6 +113,69 @@ const SET_FALSE = new Set<string>([
   "IN46359423", "IN46359572", "IN46359571", "IN46359581",
 ]);
 
+// ── CSV-as-source for the 3 WS targets (2026-06-01) ─────────────────────
+// The reviewed CSVs in docs/SKU/review/ are the authoritative PRODUCT
+// MEMBERSHIP + KEEP/HIDE for these products. Keyed on `material` (unique);
+// baseColour / packCode / unit / description / category still come from the
+// legacy→v2 translation (authoritative) — so the multi-base collision
+// listings auto-collapse and the "Brillant White" typo is irrelevant. A
+// material a CSV references but legacy never produces cannot be built —
+// collected + reported (rule 5), never fabricated.
+const CSV_TARGETS: Array<{ file: string; product: string }> = [
+  { file: path.join("docs", "SKU", "review", "ws-Protect_Dustproof-review.csv"), product: "WS PROTECT DUSTPROOF" },
+  { file: path.join("docs", "SKU", "review", "ws-Protect_Rainproof-review.csv"), product: "WS PROTECT RAINPROOF" },
+  { file: path.join("docs", "SKU", "review", "ws-PowerFlexx-review.csv"),        product: "WS POWERFLEXX" },
+];
+
+// Group-B leftovers — DELETE (exclude, never regenerate). The wrong plain
+// "WS PROTECT" product is removed entirely: 13 of its materials fold into the
+// Dustproof CSV (→ hidden), 10 colours are re-homed via the Dustproof CSV
+// (→ KEEP), and these 9 are dropped here → 0 "WS PROTECT" rows remain.
+const PROTECT_DELETE = new Set<string>([
+  "IN36209274", "IN36209474", "IN36309723", "IN36309771", "IN36209772",
+  "IN36309881", "IN36309672", "IN36309671", "IN36309682",
+]);
+
+// Powerflexx leftover present only in live (no CSV row) — drop it.
+const POWERFLEXX_DROP = new Set<string>(["IN76109271"]);
+
+// KEEP materials with NO legacy source — build the v2 row from the CSV
+// instead of skipping (rule: KEEP-only; HIDE-missing stay absent).
+const BUILD_FROM_CSV = new Set<string>([
+  "IN36409923", // Dustproof 99 BASE 1L
+  "IN36409971", // Dustproof 99 BASE 4L
+  "5880419",    // Dustproof 95 BASE 1L
+  "5769796",    // Powerflexx 93 BASE 4L
+]);
+
+// CSV columns: 0 Base · 1 Pack(on screen) · 2 SAP size · 3 material ·
+// 4 on-screen · 5 Decision · 6 Notes · 7 isPrimary · 8 SKU Description.
+// `pack` (nominal, every row) drives sibling lookup for build-from-CSV;
+// base/desc are captured from the KEEP row (the authoritative shown row).
+type CsvProductEntry = {
+  product: string; isPrimary: boolean; products: Set<string>;
+  pack: string; base: string; desc: string;
+};
+
+async function loadCsvProductMap(): Promise<Map<string, CsvProductEntry>> {
+  const map = new Map<string, CsvProductEntry>();
+  for (const t of CSV_TARGETS) {
+    const raw = await fs.readFile(t.file, "utf8");
+    for (const line of raw.split(/\r?\n/).slice(1)) {
+      if (!line.trim()) continue;
+      const c = line.split(",");
+      const material = (c[3] ?? "").trim();        // SAP code column
+      if (!material) continue;
+      const keep = (c[5] ?? "").trim().toUpperCase() === "KEEP";  // Decision column
+      let e = map.get(material);
+      if (!e) { e = { product: t.product, isPrimary: false, products: new Set(), pack: (c[1] ?? "").trim(), base: (c[0] ?? "").trim(), desc: (c[8] ?? "").trim() }; map.set(material, e); }
+      e.products.add(t.product);
+      if (keep) { e.isPrimary = true; e.base = (c[0] ?? "").trim(); e.pack = (c[1] ?? "").trim(); e.desc = (c[8] ?? "").trim(); }
+    }
+  }
+  return map;
+}
+
 // Shape of one row to be inserted into mo_sku_lookup_v2.
 type V2Row = {
   material:        string;
@@ -154,12 +219,18 @@ async function main(): Promise<void> {
   });
   console.log(`Legacy SKU rows read: ${legacyRows.length}`);
 
+  // CSV-as-source product membership for the 3 WS targets.
+  const csvProduct = await loadCsvProductMap();
+  console.log(`CSV product map: ${csvProduct.size} distinct materials across 3 target CSVs`);
+
   // ── 2. Translate each legacy row via mapLegacyToNew ─────────────────
   let skippedNull = 0;
   let crossListed = 0;  // source rows producing >1 v2 row
   let excludedByBase = 0;      // WS Max removed bases
-  let excludedByMaterial = 0;  // stray material removals
+  let excludedByMaterial = 0;  // stray material removals (EXCLUDE_MATERIALS + PROTECT_DELETE)
   let overridden = 0;          // rows whose names came from NAME_OVERRIDES
+  let csvAssigned = 0;         // rows whose product came from a target CSV
+  const seenMaterials = new Set<string>();  // every material legacy produced (for rule-5 report)
   const v2Rows: V2Row[] = [];
 
   for (const legacy of legacyRows) {
@@ -181,17 +252,25 @@ async function main(): Promise<void> {
         i === 0
           ? legacy.material
           : `${legacy.material}-${familySuffix(newRow.family)}`;
+      seenMaterials.add(material);
 
       // ── Name override (May-13 renames) — applied BEFORE exclusions so
       //    both the exclusions and the inserted rows use the LIVE names. ──
       const ov = NAME_OVERRIDES[material];
       if (ov) overridden++;
       const category   = ov ? ov.category   : newRow.family;
-      const product    = ov ? ov.product    : newRow.subProduct;
+      const ovProduct  = ov ? ov.product    : newRow.subProduct;
       const baseColour = ov ? ov.baseColour : (newRow.baseColour ?? legacy.baseColour);
 
-      // ── WS Max durable exclusions (post-override keys, 2026-06-01) ──
-      if (EXCLUDE_MATERIALS.has(material)) { excludedByMaterial++; continue; }
+      // ── CSV-as-source: product membership for the 3 WS targets wins over
+      //    the override product. baseColour/category stay from legacy/override.
+      const csv = csvProduct.get(material);
+      const product = csv ? csv.product : ovProduct;
+      if (csv) csvAssigned++;
+
+      // ── Exclusions (post-override keys, 2026-06-01) ──
+      //   EXCLUDE_MATERIALS + PROTECT_DELETE (9 group-B) + POWERFLEXX_DROP (IN76109271).
+      if (EXCLUDE_MATERIALS.has(material) || PROTECT_DELETE.has(material) || POWERFLEXX_DROP.has(material)) { excludedByMaterial++; continue; }
       if (
         product === "WS MAX" &&
         EXCLUDE_BASE_WSMAX.has((baseColour ?? "").trim().toUpperCase())
@@ -210,10 +289,45 @@ async function main(): Promise<void> {
         paintType:       legacy.paintType,
         materialType:    legacy.materialType,
         piecesPerCarton: legacy.piecesPerCarton,
-        isPrimary:       SET_FALSE.has(material) ? false : true,
+        // CSV KEEP/HIDE wins for target rows; else the existing SET_FALSE rule.
+        isPrimary:       csv ? csv.isPrimary : (SET_FALSE.has(material) ? false : true),
       });
     }
   }
+
+  // ── 2b. Build-from-CSV: KEEP materials with NO legacy source ────────
+  // Construct the v2 row from CSV fields; copy packCode/unit/category from a
+  // sibling of the SAME product + SAME nominal pack so it buckets correctly
+  // (exact-match: we copy a real sibling's packCode verbatim — no rounding).
+  // KEEP-only — HIDE-missing materials stay absent.
+  type BuiltInfo = { material: string; product: string; baseColour: string; packCode: string; unit: string | null; category: string; sibling: string };
+  const builtMaterials = new Set<string>();
+  const builtRows: BuiltInfo[] = [];
+  for (const m of Array.from(BUILD_FROM_CSV)) {
+    if (seenMaterials.has(m)) continue;             // produced by legacy after all
+    const e = csvProduct.get(m);
+    if (!e || !e.isPrimary) continue;               // build only CSV KEEP materials
+    const sibling = v2Rows.find((r) => r.product === e.product && csvProduct.get(r.material)?.pack === e.pack);
+    if (!sibling) { console.log(`[build] NO SIBLING for ${m} (${e.product} pack "${e.pack}") — cannot build`); continue; }
+    v2Rows.push({
+      material:        m,
+      description:     e.desc,
+      category:        sibling.category,
+      product:         e.product,
+      baseColour:      e.base,
+      packCode:        sibling.packCode,
+      unit:            sibling.unit,
+      refMaterial:     null,
+      refDescription:  null,
+      paintType:       null,
+      materialType:    null,
+      piecesPerCarton: null,
+      isPrimary:       true,
+    });
+    builtMaterials.add(m);
+    builtRows.push({ material: m, product: e.product, baseColour: e.base, packCode: sibling.packCode, unit: sibling.unit, category: sibling.category, sibling: sibling.material });
+  }
+  console.log(`Built-from-CSV rows (KEEP, no legacy)   : ${builtRows.length}`);
 
   console.log(`Skipped (mapLegacyToNew → null)         : ${skippedNull}`);
   console.log(`Source rows expanded into multiple v2  : ${crossListed}`);
@@ -222,6 +336,16 @@ async function main(): Promise<void> {
   console.log(`Excluded — stray material list          : ${excludedByMaterial}`);
   console.log(`v2 rows after translation              : ${v2Rows.length}`);
   console.log(`isPrimary=false rows (SET_FALSE applied): ${v2Rows.filter((r) => !r.isPrimary).length}`);
+  console.log(`CSV-assigned rows (product from CSV)    : ${csvAssigned}`);
+
+  // Rule 5: CSV materials with no legacy source AND not built-from-CSV.
+  // HIDE-missing are expected (already absent = hidden); KEEP-missing should be 0
+  // after build-from-CSV.
+  const csvMissing     = Array.from(csvProduct.keys()).filter((m) => !seenMaterials.has(m) && !builtMaterials.has(m) && !PROTECT_DELETE.has(m) && !POWERFLEXX_DROP.has(m));
+  const csvMissingKeep = csvMissing.filter((m) => csvProduct.get(m)!.isPrimary);
+  const csvMultiProduct = Array.from(csvProduct.entries()).filter(([, e]) => e.products.size > 1);
+  console.log(`CSV materials with NO legacy source     : ${csvMissing.length} (KEEP=${csvMissingKeep.length}, HIDE=${csvMissing.length - csvMissingKeep.length})`);
+  console.log(`CSV materials in >1 target CSV          : ${csvMultiProduct.length}`);
 
   // ── 3. Dedup on (material, category, product, baseColour, packCode) ─
   // Defensive — the suffix scheme makes material globally unique per
@@ -265,6 +389,43 @@ async function main(): Promise<void> {
     console.log(`WS MAX bases kept (${wsBases.length}): ${wsBases.join(", ")}`);
     console.log(`IN46359471 (94 BASE 3.6L)     : ${flip ? `present, isPrimary=${flip.isPrimary}` : "ABSENT"} (expect: present, false)`);
     console.log(`IN46350082 (BW 10L stray)     : ${stray ? "STILL PRESENT (unexpected!)" : "excluded ✓"}`);
+
+    // ── WS RESTRUCTURE REHEARSAL (before vs after) ──────────────────
+    const liveRows = await prisma.mo_sku_lookup_v2.findMany({ select: { product: true, isPrimary: true, material: true } });
+    const agg = (rows: { product: string; isPrimary: boolean }[], prod: string) => {
+      const r = rows.filter((x) => x.product === prod);
+      return { n: r.length, pri: r.filter((x) => x.isPrimary).length };
+    };
+    const TARGETS = ["WS PROTECT DUSTPROOF", "WS PROTECT RAINPROOF", "WS POWERFLEXX"];
+    console.log("");
+    console.log("════════════ WS RESTRUCTURE REHEARSAL (before → after) ════════════");
+    for (const t of TARGETS) {
+      const b = agg(liveRows, t); const a = agg(deduped, t);
+      console.log(`  ${t.padEnd(22)} before n=${b.n} (pri ${b.pri}/hid ${b.n - b.pri})  ->  after n=${a.n} (pri ${a.pri}/hid ${a.n - a.pri})`);
+    }
+    console.log(`  ${"WS PROTECT (plain WRONG)".padEnd(22)} before n=${agg(liveRows, "WS PROTECT").n}  ->  after n=${agg(deduped, "WS PROTECT").n}  (expect 0)`);
+    console.log(`  ${"WS PROTECT CLEAR".padEnd(22)} before n=${agg(liveRows, "WS PROTECT CLEAR").n}  ->  after n=${agg(deduped, "WS PROTECT CLEAR").n}  (untouched)`);
+    const COLOURS = ["5819365", "5819366", "5819257", "5819358", "5819369", "5819370", "5819361", "5819362", "5819373", "5819374"];
+    const colourRows = deduped.filter((r) => COLOURS.includes(r.material));
+    const colourOk = colourRows.filter((r) => r.product === "WS PROTECT DUSTPROOF" && r.isPrimary).length;
+    console.log(`  Re-homed colours → DUSTPROOF primary: ${colourOk}/10 (present ${colourRows.length}/10)`);
+    const bPresent = deduped.filter((r) => PROTECT_DELETE.has(r.material)).length;
+    console.log(`  Group-B (9 deletes) present after: ${bPresent} (expect 0)`);
+    const pf = deduped.find((r) => r.material === "IN76109271");
+    console.log(`  IN76109271 (Powerflexx, only-in-live): ${pf ? `PRESENT product=${pf.product} isPrimary=${pf.isPrimary}` : "DROPPED"}`);
+    console.log(`  Rule-5 CSV materials with no legacy source: ${csvMissing.length} (KEEP=${csvMissingKeep.length}, expect KEEP=0)`);
+    if (csvMissingKeep.length) console.log(`     KEEP-but-missing: ${csvMissingKeep.join(", ")}`);
+    console.log(`  Built-from-CSV (${builtRows.length}):`);
+    for (const b of builtRows) console.log(`     ${b.material} -> ${b.product} | ${b.baseColour} | packCode=${b.packCode}${b.unit ?? ""} | cat=${b.category} | sibling=${b.sibling}`);
+    const has = (mat: string) => { const r = deduped.find((x) => x.material === mat); return r ? `present (product=${r.product}, base=${r.baseColour}, primary=${r.isPrimary})` : "ABSENT"; };
+    const vred = deduped.filter((r) => r.product === "WS PROTECT DUSTPROOF" && r.baseColour === "99 BASE");
+    console.log(`  99 BASE (Vibrant Red) under DUSTPROOF: ${vred.length} rows, primary ${vred.filter((r) => r.isPrimary).length}`);
+    console.log(`  5880419 (Dustproof 95 BASE 1L): ${has("5880419")}`);
+    console.log(`  5769796 (Powerflexx 93 BASE 4L): ${has("5769796")}`);
+    const maxB = agg(liveRows, "WS MAX"); const maxA = agg(deduped, "WS MAX");
+    console.log(`  Total rows: before ${liveRows.length}  ->  after ${deduped.length}`);
+    console.log(`  WS MAX: before n=${maxB.n}  ->  after n=${maxA.n}  (expect steady)`);
+
     console.log("");
     console.log("DRY_RUN=1 — NO wipe, NO insert performed.");
     return;
