@@ -25,6 +25,7 @@
 
 import { PrismaClient } from "@prisma/client";
 import { mapLegacyToNew, type LegacyKey } from "@/lib/mail-orders/taxonomy-mapping";
+import nameOverridesJson from "./data/sku-name-overrides.json";
 
 // DATABASE_URL (transaction pooler, port 6543) — depot network blocks direct port 5432 connections per CLAUDE_CORE.md §3.
 const databaseUrl = process.env.DATABASE_URL ?? process.env.DIRECT_URL;
@@ -47,10 +48,27 @@ const DRY_RUN    = process.env.DRY_RUN === "1";
 // removals + the isPrimary flags MUST live here (CORE durable-source rule),
 // not as DB-only edits. Match on the TRANSLATED v2 baseColour so it aligns
 // with the menu's base names.
+// Post-override base set (see NAME_OVERRIDES). The 4 removed WS Max bases as
+// they appear in the LIVE names; "YELLOW BASE" is intentionally absent — its
+// single legacy row is corrected to "YELLOW OXIDE" by the override, so the
+// YELLOW OXIDE entry covers it.
 const EXCLUDE_BASE_WSMAX = new Set<string>([
-  "PASTEL BASE", "YELLOW BASE", "YELLOW OXIDE", "ROX", "RED OXIDE",
+  "PASTEL BASE", "YELLOW OXIDE", "ROX", "RED OXIDE",
 ]);
 const EXCLUDE_MATERIALS = new Set<string>(["IN46350082"]);
+
+// ── Per-material name override (May-13 renames, baked durable 2026-06-01) ─
+// mapLegacyToNew emits the flat pre-May-13 names (e.g. MAX, PROTECT, GLOSS);
+// the live catalogue's correct names (WS MAX, GVA, ROOF COAT WHITE, …) were
+// set by manual SQL never put in the seed. This snapshot (411 materials,
+// keyed on the stable SAP `material`) reproduces the live names EXACTLY on
+// every reseed, so a wipe-and-reseed no longer breaks the pack join. Keyed
+// on material because some recipe names split into several live products
+// (PROTECT → WS PROTECT / WS PROTECT DUSTPROOF / WS PROTECT CLEAR).
+const NAME_OVERRIDES = nameOverridesJson as Record<
+  string,
+  { product: string; category: string; baseColour: string }
+>;
 
 // Durable isPrimary home. The table default is `true` and the seed re-inserts
 // every row, so the May-30 dedup (130 twins → false) + the 94 BASE 3.6L
@@ -138,6 +156,7 @@ async function main(): Promise<void> {
   let crossListed = 0;  // source rows producing >1 v2 row
   let excludedByBase = 0;      // WS Max removed bases
   let excludedByMaterial = 0;  // stray material removals
+  let overridden = 0;          // rows whose names came from NAME_OVERRIDES
   const v2Rows: V2Row[] = [];
 
   for (const legacy of legacyRows) {
@@ -159,20 +178,27 @@ async function main(): Promise<void> {
         i === 0
           ? legacy.material
           : `${legacy.material}-${familySuffix(newRow.family)}`;
-      const baseColour = newRow.baseColour ?? legacy.baseColour;
 
-      // ── WS Max durable exclusions (2026-06-01) ──────────────────────
+      // ── Name override (May-13 renames) — applied BEFORE exclusions so
+      //    both the exclusions and the inserted rows use the LIVE names. ──
+      const ov = NAME_OVERRIDES[material];
+      if (ov) overridden++;
+      const category   = ov ? ov.category   : newRow.family;
+      const product    = ov ? ov.product    : newRow.subProduct;
+      const baseColour = ov ? ov.baseColour : (newRow.baseColour ?? legacy.baseColour);
+
+      // ── WS Max durable exclusions (post-override keys, 2026-06-01) ──
       if (EXCLUDE_MATERIALS.has(material)) { excludedByMaterial++; continue; }
       if (
-        newRow.subProduct === "WS MAX" &&
+        product === "WS MAX" &&
         EXCLUDE_BASE_WSMAX.has((baseColour ?? "").trim().toUpperCase())
       ) { excludedByBase++; continue; }
 
       v2Rows.push({
         material,
         description:     legacy.description,
-        category:        newRow.family,
-        product:         newRow.subProduct,
+        category,
+        product,
         baseColour,
         packCode:        legacy.packCode,
         unit:            legacy.unit,
@@ -188,6 +214,7 @@ async function main(): Promise<void> {
 
   console.log(`Skipped (mapLegacyToNew → null)         : ${skippedNull}`);
   console.log(`Source rows expanded into multiple v2  : ${crossListed}`);
+  console.log(`Name-override rows (live names applied) : ${overridden}`);
   console.log(`Excluded — WS Max removed bases         : ${excludedByBase}`);
   console.log(`Excluded — stray material list          : ${excludedByMaterial}`);
   console.log(`v2 rows after translation              : ${v2Rows.length}`);
