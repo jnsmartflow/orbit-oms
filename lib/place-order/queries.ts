@@ -120,7 +120,7 @@ export function searchProducts(products: Product[], query: string): SearchResult
   // "{N} SKUs" / "1 SKU" without recomputing.
   const families    = new Map<string, { section: string; subProducts: Set<string>; skuCount: number }>();
   const subProducts = new Map<string, { family: string; section: string; subProductName: string; skuCount: number }>();
-  const subBases    = new Map<string, { family: string; section: string; subProductName: string; baseColour: string; skuCount: number }>();
+  const subBases    = new Map<string, { family: string; section: string; subProductName: string; baseColour: string; skuCount: number; searchTokens: string }>();
 
   for (const p of products) {
     let fa = families.get(p.family);
@@ -149,10 +149,14 @@ export function searchProducts(products: Product[], query: string): SearchResult
           subProductName: p.subProduct,
           baseColour:     p.baseColour,
           skuCount:       0,
+          searchTokens:   "",
         };
         subBases.set(subBaseKey, sb);
       }
       sb.skuCount += p.packs.length;
+      // Accumulate per-row searchTokens so baked aliases (e.g. WS Max
+      // "accent"/"rox") are matchable on desktop — same source as mobile.
+      if (p.searchTokens) sb.searchTokens = sb.searchTokens ? `${sb.searchTokens} ${p.searchTokens}` : p.searchTokens;
     }
   }
 
@@ -196,7 +200,7 @@ export function searchProducts(products: Product[], query: string): SearchResult
   // queries that match a base get a +50 bonus (operator was specific
   // about colour).
   for (const entry of Array.from(subBases.values())) {
-    const haystack = `${entry.family} ${entry.subProductName} ${entry.baseColour}`.toLowerCase();
+    const haystack = `${entry.family} ${entry.subProductName} ${entry.baseColour} ${entry.searchTokens}`.toLowerCase();
     const baseLow  = entry.baseColour.toLowerCase();
     const score    = scoreAllTokens(tokens, haystack);
     if (score === 0) continue;

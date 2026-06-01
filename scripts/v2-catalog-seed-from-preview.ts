@@ -30,6 +30,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { PrismaClient } from "@prisma/client";
+import { BASE_ALIASES } from "@/lib/place-order/base-aliases";
 
 // DATABASE_URL (transaction pooler, port 6543) — depot network blocks direct port 5432 connections per CLAUDE_CORE.md §3.
 const databaseUrl = process.env.DATABASE_URL ?? process.env.DIRECT_URL;
@@ -731,6 +732,27 @@ async function main(): Promise<void> {
   if (floorPlusDropped.size > 0) deduped = deduped.filter((r) => !floorPlusDropped.has(r));
   console.log(`Grouping transform: WS consolidated=${wsCount}, FLOOR PLUS moved=${floorPlusMoved}, ` +
               `FLOOR PLUS dropped(dup)=${floorPlusDroppedCount}, uiGroup assigned=${uiAssigned}, restructured=${restructuredCount}`);
+
+  // ── 7.8. Base-alias search words (WS Max) ───────────────────────────
+  // Bake the friendly base-alias words from lib/place-order/base-aliases.ts
+  // into searchTokens so "accent"/"deep"/"rox" etc. find the row on BOTH
+  // mobile (haystack already includes searchTokens) and desktop (queries.ts
+  // now includes searchTokens). DISPLAY-ONLY fields (baseColour, displayName)
+  // and the order email are untouched. Only WS MAX base rows with a mapped
+  // alias are affected (90/92/94/95/96/97/98; 93 + Brilliant White have none).
+  let aliasTokenRows = 0;
+  for (const r of deduped) {
+    if (r.product !== "WS MAX" || !r.baseColour) continue;
+    const alias = BASE_ALIASES["WS MAX"]?.[r.baseColour];
+    if (!alias || alias.search.length === 0) continue;
+    const before = r.searchTokens;
+    r.searchTokens = mergeSearchTokens(r.searchTokens, alias.search.join(", "));
+    if (r.searchTokens !== before) {
+      aliasTokenRows++;
+      if (DRY_RUN) console.log(`  [alias] ${r.baseColour}: "${before}" -> "${r.searchTokens}"`);
+    }
+  }
+  console.log(`Base-alias search words appended: ${aliasTokenRows} WS Max row(s)`);
 
   // ── 8. DRY-RUN exit — print summary instead of touching the DB ──────
   if (DRY_RUN) {
