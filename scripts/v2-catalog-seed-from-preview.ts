@@ -51,7 +51,7 @@ const DRY_RUN      = process.env.DRY_RUN === "1";
 // Locked expectations from the May 6 preview run. If the JSON drifts from
 // these the script refuses to seed — better to fail loudly than to ship
 // surprise data into v2.
-const EXPECTED_TOTAL_NEW_ROWS    = 512;
+const EXPECTED_TOTAL_NEW_ROWS    = 518;  // 512 + 6 Dustproof rows (99 BASE + 5 colours) added 2026-06-01
 const EXPECTED_WARNINGS          = 0;
 
 // ── PROMISE transform constants ────────────────────────────────────────
@@ -630,6 +630,14 @@ async function main(): Promise<void> {
   for (const r of deduped) preGroupKey.set(r, `${r.product ?? r.subProduct}|||${r.baseColour ?? ""}`);
 
   const WS_CONSOLIDATE = new Set<string>(["MAX", "POWERFLEXX", "PROTECT", "RAINPROOF"]);
+  // Desktop tab label per WS sub-product (uiGroup ?? subProduct drives the tab).
+  // Plain "PROTECT" is intentionally absent — those rows are dropped in 7.75.
+  const WS_TAB_LABEL: Record<string, string> = {
+    "MAX":        "Max",
+    "POWERFLEXX": "Powerflexx",
+    "DUSTPROOF":  "Protect Dustproof",
+    "RAINPROOF":  "Protect Rainproof",
+  };
   const SATIN_UI: Record<string, string> = {
     "SATIN STAY BRIGHT": "SATIN STAY BRIGHT (WB)",
     "SUPER SATIN":       "SUPER SATIN (Oil)",
@@ -706,7 +714,7 @@ async function main(): Promise<void> {
     if (WS_CONSOLIDATE.has(r.family)) {
       if (r.family === "PROTECT" && sub === "PROTECT DUSTPROOF") r.subProduct = "DUSTPROOF";
       r.family  = "WS";
-      r.uiGroup = r.subProduct;   // tabs = MAX / PROTECT / DUSTPROOF / RAINPROOF / POWERFLEXX
+      r.uiGroup = WS_TAB_LABEL[r.subProduct] ?? r.subProduct;   // desktop tab label
       wsCount++;
       continue;
     }
@@ -732,6 +740,15 @@ async function main(): Promise<void> {
   if (floorPlusDropped.size > 0) deduped = deduped.filter((r) => !floorPlusDropped.has(r));
   console.log(`Grouping transform: WS consolidated=${wsCount}, FLOOR PLUS moved=${floorPlusMoved}, ` +
               `FLOOR PLUS dropped(dup)=${floorPlusDroppedCount}, uiGroup assigned=${uiAssigned}, restructured=${restructuredCount}`);
+
+  // ── 7.75. Drop the wrong plain "WS PROTECT" sub-product ─────────────
+  // Post-grouping (subProduct is final here): removes all WS/subProduct=PROTECT
+  // rows — the 16 plain Protect bases AND the 2 RESTRUCTURED rescues (ROX /
+  // YELLOW BASE). All hydrate to 0 packs now that the SKU side removed product
+  // "WS PROTECT", so the tab is dropped. subProduct="DUSTPROOF" is untouched.
+  const beforeProtectDrop = deduped.length;
+  deduped = deduped.filter((r) => !(r.family === "WS" && r.subProduct === "PROTECT"));
+  console.log(`WS plain-PROTECT drop: removed ${beforeProtectDrop - deduped.length} menu row(s)`);
 
   // ── 7.8. Base-alias search words (WS Max) ───────────────────────────
   // Bake the friendly base-alias words from lib/place-order/base-aliases.ts
