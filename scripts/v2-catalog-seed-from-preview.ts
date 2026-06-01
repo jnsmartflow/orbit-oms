@@ -51,7 +51,7 @@ const DRY_RUN      = process.env.DRY_RUN === "1";
 // Locked expectations from the May 6 preview run. If the JSON drifts from
 // these the script refuses to seed — better to fail loudly than to ship
 // surprise data into v2.
-const EXPECTED_TOTAL_NEW_ROWS    = 518;  // 512 + 6 Dustproof rows (99 BASE + 5 colours) added 2026-06-01
+const EXPECTED_TOTAL_NEW_ROWS    = 521;  // 518 + 3 Dustproof base-gap rows (90 BASE + 96 BASE + BRILLIANT WHITE) added 2026-06-01
 const EXPECTED_WARNINGS          = 0;
 
 // ── PROMISE transform constants ────────────────────────────────────────
@@ -750,26 +750,28 @@ async function main(): Promise<void> {
   deduped = deduped.filter((r) => !(r.family === "WS" && r.subProduct === "PROTECT"));
   console.log(`WS plain-PROTECT drop: removed ${beforeProtectDrop - deduped.length} menu row(s)`);
 
-  // ── 7.8. Base-alias search words (WS Max) ───────────────────────────
+  // ── 7.8. Base-alias search words (any product in BASE_ALIASES) ──────
   // Bake the friendly base-alias words from lib/place-order/base-aliases.ts
-  // into searchTokens so "accent"/"deep"/"rox" etc. find the row on BOTH
-  // mobile (haystack already includes searchTokens) and desktop (queries.ts
-  // now includes searchTokens). DISPLAY-ONLY fields (baseColour, displayName)
-  // and the order email are untouched. Only WS MAX base rows with a mapped
-  // alias are affected (90/92/94/95/96/97/98; 93 + Brilliant White have none).
+  // into searchTokens so "accent"/"deep"/"rox"/"vibrant red" etc. find the
+  // row on BOTH mobile (haystack already includes searchTokens) and desktop
+  // (queries.ts now includes searchTokens). DISPLAY-ONLY fields (baseColour,
+  // displayName) and the order email are untouched. Applies to every row
+  // whose `product` has a BASE_ALIASES block (WS MAX + WS PROTECT DUSTPROOF /
+  // RAINPROOF / POWERFLEXX); bases with no mapped alias (93, Brilliant White,
+  // colours) are skipped.
   let aliasTokenRows = 0;
   for (const r of deduped) {
-    if (r.product !== "WS MAX" || !r.baseColour) continue;
-    const alias = BASE_ALIASES["WS MAX"]?.[r.baseColour];
+    if (!r.product || !r.baseColour) continue;
+    const alias = BASE_ALIASES[r.product]?.[r.baseColour];
     if (!alias || alias.search.length === 0) continue;
     const before = r.searchTokens;
     r.searchTokens = mergeSearchTokens(r.searchTokens, alias.search.join(", "));
     if (r.searchTokens !== before) {
       aliasTokenRows++;
-      if (DRY_RUN) console.log(`  [alias] ${r.baseColour}: "${before}" -> "${r.searchTokens}"`);
+      if (DRY_RUN) console.log(`  [alias] ${r.product} ${r.baseColour}: "${before}" -> "${r.searchTokens}"`);
     }
   }
-  console.log(`Base-alias search words appended: ${aliasTokenRows} WS Max row(s)`);
+  console.log(`Base-alias search words appended: ${aliasTokenRows} row(s)`);
 
   // ── 8. DRY-RUN exit — print summary instead of touching the DB ──────
   if (DRY_RUN) {

@@ -27,6 +27,36 @@ export const BASE_ALIASES: Record<string, Record<string, BaseAlias>> = {
     "97 BASE": { display: "ROX",            search: ["rox", "red oxide", "red oxide base"] },
     "98 BASE": { display: "Vibrant Yellow", search: ["vibrant yellow", "vibrant yellow base"] },
   },
+  "WS PROTECT DUSTPROOF": {
+    "90 BASE": { display: "White",          search: ["white", "white base"] },
+    "92 BASE": { display: "Intermediate",   search: ["intermediate", "intermediate base"] },
+    "94 BASE": { display: "Accent",         search: ["accent", "accent base"] },
+    "95 BASE": { display: "Deep",           search: ["deep", "deep base"] },
+    "96 BASE": { display: "YOX",            search: ["yox", "yellow oxide", "yellow oxide base"] },
+    "97 BASE": { display: "ROX",            search: ["rox", "red oxide", "red oxide base"] },
+    "98 BASE": { display: "Vibrant Yellow", search: ["vibrant yellow", "vibrant yellow base"] },
+    "99 BASE": { display: "Vibrant Red",    search: ["vibrant red", "vibrant red base"] },
+  },
+  "WS PROTECT RAINPROOF": {
+    "90 BASE": { display: "White",          search: ["white", "white base"] },
+    "92 BASE": { display: "Intermediate",   search: ["intermediate", "intermediate base"] },
+    "94 BASE": { display: "Accent",         search: ["accent", "accent base"] },
+    "95 BASE": { display: "Deep",           search: ["deep", "deep base"] },
+    "96 BASE": { display: "YOX",            search: ["yox", "yellow oxide", "yellow oxide base"] },
+    "97 BASE": { display: "ROX",            search: ["rox", "red oxide", "red oxide base"] },
+    "98 BASE": { display: "Vibrant Yellow", search: ["vibrant yellow", "vibrant yellow base"] },
+    "99 BASE": { display: "Vibrant Red",    search: ["vibrant red", "vibrant red base"] },
+  },
+  "WS POWERFLEXX": {
+    "90 BASE": { display: "White",          search: ["white", "white base"] },
+    "92 BASE": { display: "Intermediate",   search: ["intermediate", "intermediate base"] },
+    "94 BASE": { display: "Accent",         search: ["accent", "accent base"] },
+    "95 BASE": { display: "Deep",           search: ["deep", "deep base"] },
+    "96 BASE": { display: "YOX",            search: ["yox", "yellow oxide", "yellow oxide base"] },
+    "97 BASE": { display: "ROX",            search: ["rox", "red oxide", "red oxide base"] },
+    "98 BASE": { display: "Vibrant Yellow", search: ["vibrant yellow", "vibrant yellow base"] },
+    "99 BASE": { display: "Vibrant Red",    search: ["vibrant red", "vibrant red base"] },
+  },
 };
 
 /**

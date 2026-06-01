@@ -4,7 +4,7 @@
   "summary": {
     "totalLegacyTriples": 560,
     "totalLegacySkuCount": 1599,
-    "totalNewRows": 518,
+    "totalNewRows": 521,
     "crossListedExtraRows": 68,
     "suppressedPlainRows": 19,
     "skippedTriples": 82,
@@ -2148,6 +2148,42 @@
         "sortOrder": 1312,
         "isActive": true,
         "skuCount": 3
+      },
+      {
+        "family": "PROTECT",
+        "subProduct": "PROTECT DUSTPROOF",
+        "displayName": "WS Protect Dustproof",
+        "searchTokens": "WS DUSTPROOF, DUSTPROOF, WS PROTECT DUSTPROOF, PROTECT DUSTPROOF",
+        "baseColour": "BRILLIANT WHITE",
+        "productType": "BASE_VARIANT",
+        "tinterType": null,
+        "sortOrder": 1309,
+        "isActive": true,
+        "skuCount": 2
+      },
+      {
+        "family": "PROTECT",
+        "subProduct": "PROTECT DUSTPROOF",
+        "displayName": "WS Protect Dustproof",
+        "searchTokens": "WS DUSTPROOF, DUSTPROOF, WS PROTECT DUSTPROOF, PROTECT DUSTPROOF",
+        "baseColour": "90 BASE",
+        "productType": "BASE_VARIANT",
+        "tinterType": null,
+        "sortOrder": 1310,
+        "isActive": true,
+        "skuCount": 2
+      },
+      {
+        "family": "PROTECT",
+        "subProduct": "PROTECT DUSTPROOF",
+        "displayName": "WS Protect Dustproof",
+        "searchTokens": "WS DUSTPROOF, DUSTPROOF, WS PROTECT DUSTPROOF, PROTECT DUSTPROOF",
+        "baseColour": "96 BASE",
+        "productType": "BASE_VARIANT",
+        "tinterType": null,
+        "sortOrder": 1316,
+        "isActive": true,
+        "skuCount": 2
       },
       {
         "family": "PROTECT",
