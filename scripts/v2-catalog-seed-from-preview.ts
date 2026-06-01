@@ -773,6 +773,33 @@ async function main(): Promise<void> {
   }
   console.log(`Base-alias search words appended: ${aliasTokenRows} row(s)`);
 
+  // ── 7.85. WS / HISHEEN search-token tweaks (2026-06-01) ─────────────
+  // (a) Dustproof gains a WEAK "RAINPROOF" sibling token so a "rainproof"
+  //     query also surfaces Dustproof. The scorers' sub-product-name prefix
+  //     boost keeps Rainproof (subProduct RAINPROOF) ranked above Dustproof
+  //     (token-only match), so order stays Rainproof-first → Dustproof.
+  //     Rainproof KEEPS its "PROTECT RAINPROOF" token — "protect" ranking
+  //     (Dustproof → Rainproof → Damp) falls out of scoring, no surgery.
+  // (b) HISHEEN drops any "protect"-bearing token (the stray
+  //     "PROTECT DUSTPROOF HI-SHEEN" that caused 4 junk "protect" matches);
+  //     HISHEEN is a sheen variant, not a protect product.
+  let dustproofSiblingTokens = 0;
+  let hisheenProtectStripped = 0;
+  for (const r of deduped) {
+    if (r.family === "WS" && r.subProduct === "DUSTPROOF") {
+      const before = r.searchTokens;
+      r.searchTokens = mergeSearchTokens(r.searchTokens, "RAINPROOF");
+      if (r.searchTokens !== before) dustproofSiblingTokens++;
+    }
+    if (r.family === "HISHEEN") {
+      const cleaned = r.searchTokens
+        .split(",").map((t) => t.trim()).filter((t) => t.length > 0 && !/protect/i.test(t))
+        .join(", ");
+      if (cleaned !== r.searchTokens) { r.searchTokens = cleaned; hisheenProtectStripped++; }
+    }
+  }
+  console.log(`WS/HISHEEN token tweaks: Dustproof +RAINPROOF=${dustproofSiblingTokens}, HISHEEN protect-stripped=${hisheenProtectStripped}`);
+
   // ── 8. DRY-RUN exit — print summary instead of touching the DB ──────
   if (DRY_RUN) {
     console.log("");

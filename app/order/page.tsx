@@ -5,6 +5,7 @@ import { Search, Send } from "lucide-react";
 import type { RawPack } from "@/lib/place-order/pack-buckets";
 import { formatPack, packToMl, packStep } from "@/lib/place-order/pack";
 import { getBaseAliasDisplay } from "@/lib/place-order/base-aliases";
+import { rankProductsForQuery } from "@/lib/place-order/mobile-search";
 
 // Public mobile order form for Sales Officers. Picker UI for customer
 // and per-bill SKU/pack qty selection, builds a mailto: link to the
@@ -786,23 +787,13 @@ export default function OrderPage(): React.JSX.Element {
 
   function getProductSuggestions(query: string): Product[] {
     if (query.trim().length < 2) return [];
-    const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
-    return products
-      .filter((p) => {
-        // What-you-see-is-what-you-can-search. searchTokens carries the
-        // SAP/parser aliases; productLabel carries the on-screen text
-        // (displayName + baseColour). Concatenating both means a query
-        // like "MAX 95" — where "95" only exists in baseColour — still
-        // matches. Empty-searchTokens rows stay findable because
-        // productLabel always contributes displayName at minimum.
-        const haystack = `${p.searchTokens ?? ""} ${productLabel(p)}`.toLowerCase();
-        return words.every((w) => haystack.includes(w));
-      })
-      // Cap at 50 so the multi-select pagination has items to paginate
-      // across. SUGGESTION_PAGE_SIZE (6) drives the per-page split — searches
-      // like "gloss" with 30+ colour variants now produce ~5 swipeable pages
-      // instead of a single capped slice that hid the Set Quantities bar.
-      .slice(0, 50);
+    // rankProductsForQuery applies the SAME what-you-see-is-what-you-can-search
+    // AND-filter (a word must appear in searchTokens + displayName + baseColour)
+    // the boolean filter used to, but now scores + STABLE-sorts the matches so
+    // result SETS are unchanged from before — only the order improves (e.g.
+    // "rainproof" → Rainproof first, "ws" → Dustproof first). Cap at 50 so the
+    // multi-select pagination (SUGGESTION_PAGE_SIZE 6) has items to page across.
+    return rankProductsForQuery(products, query).slice(0, 50);
   }
 
   // ── Email build ───────────────────────────────────────────────────────

@@ -27,6 +27,29 @@ const SCORE_PREFIX_OF_HAYSTACK = 100;   // token at position 0 (e.g. "gl" agains
 const SCORE_WORD_BOUNDARY       = 20;   // token at start of a word inside the haystack
 const SCORE_SUBSTRING_INNER     =  5;   // token found inside a word
 const SCORE_MULTI_TOKEN_BASE    = 50;   // bonus when 2+ tokens are typed AND a base-colour got hit
+const SCORE_SUBPRODUCT_PREFIX   = 30;   // a query token is a prefix of the sub-product name (e.g. "rainproof" → RAINPROOF)
+const SCORE_TOKEN_START         = 40;   // a query word BEGINS a comma-token ("protect dustproof") — above a mid-token word-boundary ("damp protect")
+const SCORE_WS_DUSTPROOF_TIEBREAK = 2;  // nudges WS Dustproof above tied WS siblings (e.g. "ws")
+
+// True when any query word begins a comma-delimited searchToken. Ranks the WS
+// Protect line (tokens "PROTECT DUSTPROOF" / "PROTECT RAINPROOF" begin with
+// "protect") above Damp Protect, whose subProduct "DAMP PROTECT 2IN1" only
+// matches "protect" at a mid-name word-boundary.
+function startsAnyToken(searchTokens: string, tokens: string[]): boolean {
+  const toks = searchTokens.split(",").map((t) => t.trim().toLowerCase()).filter(Boolean);
+  return tokens.some((w) => toks.some((t) => t.startsWith(w)));
+}
+
+// Sub-product-name prefix boost: rewards a query that targets a sub-product by
+// name ("rainproof" → RAINPROOF) so it outranks rows that match only via a
+// sibling searchToken (e.g. Dustproof carrying a weak "RAINPROOF" token).
+function subProductPrefixBonus(tokens: string[], subProductName: string): number {
+  const s = subProductName.toLowerCase();
+  return tokens.some((t) => s.startsWith(t)) ? SCORE_SUBPRODUCT_PREFIX : 0;
+}
+function wsDustproofTiebreak(family: string, subProductName: string): number {
+  return family === "WS" && subProductName === "DUSTPROOF" ? SCORE_WS_DUSTPROOF_TIEBREAK : 0;
+}
 
 export function filterByFamily(products: Product[], familyName: string): Product[] {
   return products.filter((p) => p.family === familyName);
@@ -109,7 +132,7 @@ function scoreAllTokens(tokens: string[], haystack: string): number {
   return total;
 }
 
-export function searchProducts(products: Product[], query: string): SearchResult[] {
+export function searchProducts(products: Product[], query: string, limit: number = SEARCH_RESULT_LIMIT): SearchResult[] {
   const q = query.trim().toLowerCase();
   if (q.length < 2) return [];
   const tokens = q.split(/\s+/).filter(Boolean);
@@ -184,8 +207,11 @@ export function searchProducts(products: Product[], query: string): SearchResult
     const haystack = `${entry.family} ${entry.subProductName}`.toLowerCase();
     const score    = scoreAllTokens(tokens, haystack);
     if (score === 0) continue;
+    const total = score
+      + subProductPrefixBonus(tokens, entry.subProductName)
+      + wsDustproofTiebreak(entry.family, entry.subProductName);
     scored.push({
-      score,
+      score: total,
       result: {
         type:           "sub-product",
         subProductName: entry.subProductName,
@@ -204,7 +230,10 @@ export function searchProducts(products: Product[], query: string): SearchResult
     const baseLow  = entry.baseColour.toLowerCase();
     const score    = scoreAllTokens(tokens, haystack);
     if (score === 0) continue;
-    let total = score;
+    let total = score
+      + subProductPrefixBonus(tokens, entry.subProductName)
+      + (startsAnyToken(entry.searchTokens, tokens) ? SCORE_TOKEN_START : 0)
+      + wsDustproofTiebreak(entry.family, entry.subProductName);
     if (tokens.length >= 2 && tokens.some((t) => baseLow.includes(t))) {
       total += SCORE_MULTI_TOKEN_BASE;
     }
@@ -249,5 +278,5 @@ export function searchProducts(products: Product[], query: string): SearchResult
   }
 
   const deduped = Array.from(seen.values()).sort((a, b) => b.score - a.score);
-  return deduped.slice(0, SEARCH_RESULT_LIMIT).map((s) => s.result);
+  return deduped.slice(0, limit).map((s) => s.result);
 }
