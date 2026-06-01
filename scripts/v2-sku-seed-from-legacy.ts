@@ -37,6 +37,10 @@ const prisma = new PrismaClient({
 });
 
 const BATCH_SIZE = 100;
+// Mirror v2-catalog-seed-from-preview.ts: DRY_RUN=1 computes everything and
+// prints a projected summary, then returns BEFORE the unconditional wipe —
+// no deletes, no inserts.
+const DRY_RUN    = process.env.DRY_RUN === "1";
 
 // ── WS Max durable cleanup (2026-06-01) ─────────────────────────────────
 // mo_sku_lookup_v2 regenerates from legacy on every reseed, so these
@@ -207,6 +211,34 @@ async function main(): Promise<void> {
     deduped.push(row);
   }
   console.log(`v2 rows after dedup                    : ${deduped.length} (dropped ${dropped})`);
+
+  // ── 3.5. DRY-RUN exit — projected summary, NO wipe / NO insert ──────
+  // Mirrors the MENU seed (v2-catalog-seed-from-preview.ts): everything is
+  // computed above; here we print the projection and RETURN *before* the
+  // unconditional wipe + insert below. DRY_RUN=1 → zero DB writes.
+  if (DRY_RUN) {
+    const falseCount = deduped.filter((r) => !r.isPrimary).length;
+    const wsMax      = deduped.filter((r) => r.product === "WS MAX");
+    const wsBases    = Array.from(new Set(wsMax.map((r) => r.baseColour))).sort();
+    const flip       = deduped.find((r) => r.material === "IN46359471");
+    const stray      = deduped.find((r) => r.material === "IN46350082");
+    console.log("");
+    console.log("════════════════ SKU DRY-RUN SUMMARY ════════════════");
+    console.log(`Legacy rows read              : ${legacyRows.length}`);
+    console.log(`Skipped (mapLegacyToNew null) : ${skippedNull}`);
+    console.log(`Excluded — WS Max bases       : ${excludedByBase}`);
+    console.log(`Excluded — stray material     : ${excludedByMaterial} (IN46350082)`);
+    console.log(`Excluded — total              : ${excludedByBase + excludedByMaterial}`);
+    console.log(`Rows that WOULD be inserted   : ${deduped.length}`);
+    console.log(`isPrimary=false (projected)   : ${falseCount}`);
+    console.log("");
+    console.log(`WS MAX bases kept (${wsBases.length}): ${wsBases.join(", ")}`);
+    console.log(`IN46359471 (94 BASE 3.6L)     : ${flip ? `present, isPrimary=${flip.isPrimary}` : "ABSENT"} (expect: present, false)`);
+    console.log(`IN46350082 (BW 10L stray)     : ${stray ? "STILL PRESENT (unexpected!)" : "excluded ✓"}`);
+    console.log("");
+    console.log("DRY_RUN=1 — NO wipe, NO insert performed.");
+    return;
+  }
 
   // ── 4. Wipe v2 SKU table ────────────────────────────────────────────
   const wipeResult = await prisma.mo_sku_lookup_v2.deleteMany({});
