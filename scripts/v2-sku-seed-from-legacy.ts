@@ -422,6 +422,22 @@ async function main(): Promise<void> {
     console.log(`  99 BASE (Vibrant Red) under DUSTPROOF: ${vred.length} rows, primary ${vred.filter((r) => r.isPrimary).length}`);
     console.log(`  5880419 (Dustproof 95 BASE 1L): ${has("5880419")}`);
     console.log(`  5769796 (Powerflexx 93 BASE 4L): ${has("5769796")}`);
+
+    // Dustproof per-base primary breakdown + the 4 rescued 93-Base SKUs.
+    const dp = deduped.filter((r) => r.product === "WS PROTECT DUSTPROOF");
+    const byBase = new Map<string, { n: number; pri: number }>();
+    for (const r of dp) {
+      const e = byBase.get(r.baseColour) ?? { n: 0, pri: 0 };
+      e.n++; if (r.isPrimary) e.pri++; byBase.set(r.baseColour, e);
+    }
+    console.log(`  DUSTPROOF per-base (base: primary/total):`);
+    for (const b of Array.from(byBase.keys()).sort()) {
+      const e = byBase.get(b)!;
+      console.log(`     ${b.padEnd(20)} ${e.pri}/${e.n}`);
+    }
+    const RESCUE93 = ["5880417", "5880390", "5880393", "5880392"];
+    console.log(`  Rescued 93-Base SKUs:`);
+    for (const m of RESCUE93) console.log(`     ${m}: ${has(m)}`);
     const maxB = agg(liveRows, "WS MAX"); const maxA = agg(deduped, "WS MAX");
     console.log(`  Total rows: before ${liveRows.length}  ->  after ${deduped.length}`);
     console.log(`  WS MAX: before n=${maxB.n}  ->  after n=${maxA.n}  (expect steady)`);

@@ -51,7 +51,7 @@ const DRY_RUN      = process.env.DRY_RUN === "1";
 // Locked expectations from the May 6 preview run. If the JSON drifts from
 // these the script refuses to seed — better to fail loudly than to ship
 // surprise data into v2.
-const EXPECTED_TOTAL_NEW_ROWS    = 521;  // 518 + 3 Dustproof base-gap rows (90 BASE + 96 BASE + BRILLIANT WHITE) added 2026-06-01
+const EXPECTED_TOTAL_NEW_ROWS    = 522;  // 521 + 1 Dustproof 93 BASE row (4 rescued misfiled SKUs) added 2026-06-01
 const EXPECTED_WARNINGS          = 0;
 
 // ── PROMISE transform constants ────────────────────────────────────────
