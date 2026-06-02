@@ -74,6 +74,22 @@ export const BASE_ALIASES: Record<string, Record<string, BaseAlias>> = {
     "92 BASE": { display: "Intermediate",   search: ["intermediate", "intermediate base"] },
     "94 BASE": { display: "Accent",         search: ["accent", "accent base"] },
   },
+  // Satin (oil + WB share the same tint bases). Product join-key set in the
+  // catalog seed's CONFIRMED_SUBPRODUCT_MAP so these render + bake into tokens.
+  "SUPER SATIN": {
+    "90 BASE": { display: "White",          search: ["white", "white base"] },
+    "92 BASE": { display: "Intermediate",   search: ["intermediate", "intermediate base"] },
+    "94 BASE": { display: "Accent",         search: ["accent", "accent base"] },
+    "96 BASE": { display: "YOX",            search: ["yox", "yellow oxide", "yellow oxide base"] },
+    "97 BASE": { display: "ROX",            search: ["rox", "red oxide", "red oxide base"] },
+  },
+  "SATIN STAY BRIGHT": {
+    "90 BASE": { display: "White",          search: ["white", "white base"] },
+    "92 BASE": { display: "Intermediate",   search: ["intermediate", "intermediate base"] },
+    "94 BASE": { display: "Accent",         search: ["accent", "accent base"] },
+    "96 BASE": { display: "YOX",            search: ["yox", "yellow oxide", "yellow oxide base"] },
+    "97 BASE": { display: "ROX",            search: ["rox", "red oxide", "red oxide base"] },
+  },
 };
 
 /**

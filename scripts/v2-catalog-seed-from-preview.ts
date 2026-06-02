@@ -51,7 +51,7 @@ const DRY_RUN      = process.env.DRY_RUN === "1";
 // Locked expectations from the May 6 preview run. If the JSON drifts from
 // these the script refuses to seed — better to fail loudly than to ship
 // surprise data into v2.
-const EXPECTED_TOTAL_NEW_ROWS    = 531;  // 522 + 9 PU ENAMEL rows (new ENAMELS family, 2026-06-02)
+const EXPECTED_TOTAL_NEW_ROWS    = 530;  // 522 + 9 PU ENAMEL − 1 orphaned Satin Stay Bright 97 BASE (2026-06-02)
 const EXPECTED_WARNINGS          = 0;
 
 // ── PROMISE transform constants ────────────────────────────────────────
@@ -226,6 +226,11 @@ const CONFIRMED_SUBPRODUCT_MAP: Record<string, string> = {
   "HISHEEN":           "WS PROTECT HI-SHEEN",
   "PU STAINER":        "GVA",
   "MACHINE TINTER":    "MACHINE STAINER",
+  // Satin: identity join-key so base aliases render (product must be non-null,
+  // like WS) and §7.8 bakes the alias search words. Stock product already
+  // equals these, so the pack join is unchanged.
+  "SUPER SATIN":       "SUPER SATIN",
+  "SATIN STAY BRIGHT": "SATIN STAY BRIGHT",
 };
 
 // Rule 2: HIGH-confidence rows from the reviewed name-map draft
@@ -645,8 +650,8 @@ async function main(): Promise<void> {
     "HI-SHEEN":   "Protect Hi-Sheen",
   };
   const SATIN_UI: Record<string, string> = {
-    "SATIN STAY BRIGHT": "SATIN STAY BRIGHT (WB)",
-    "SUPER SATIN":       "SUPER SATIN (Oil)",
+    "SATIN STAY BRIGHT": "Satin Stay Bright",
+    "SUPER SATIN":       "Satin Finish",
   };
   const STAINER_UI: Record<string, string> = {
     "UNIVERSAL STAINER": "UNIVERSAL STAINER",

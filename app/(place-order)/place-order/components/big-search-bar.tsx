@@ -9,6 +9,7 @@ import type { Product } from "../types";
 import { searchProducts, type SearchResult } from "@/lib/place-order/queries";
 import { monogramFor } from "@/lib/place-order/monogram";
 import { getBaseAliasDisplay } from "@/lib/place-order/base-aliases";
+import { getSubProductDescriptor } from "@/lib/place-order/sub-product-descriptors";
 
 // Primary input on /place-order. Live search over the v2 catalog with a
 // debounced result list (10 max) and arrow-key navigation. The native
@@ -198,6 +199,12 @@ const BigSearchBar = forwardRef<HTMLInputElement, BigSearchBarProps>(
                   );
                   baseAlias = m ? getBaseAliasDisplay(m.product, m.baseColour) : null;
                 }
+                // Light secondary descriptor (e.g. "Super Satin · Oil Base") for
+                // sub-product / sub-product-base results that have one.
+                const descriptor =
+                  result.type === "sub-product" || result.type === "sub-product-base"
+                    ? getSubProductDescriptor(result.family, result.subProductName)
+                    : null;
                 const monogram = monogramFor(monogramSource);
                 const isLast   = idx === results.length - 1;
 
@@ -232,6 +239,9 @@ const BigSearchBar = forwardRef<HTMLInputElement, BigSearchBarProps>(
                       >
                         {label}{baseAlias && <span className="font-normal text-gray-400"> · {baseAlias}</span>}
                       </span>
+                      {descriptor && (
+                        <span className="block text-[10.5px] text-gray-400 truncate">{descriptor}</span>
+                      )}
                       <span className="block text-[10.5px] text-gray-400 truncate">
                         {breadcrumb}
                       </span>

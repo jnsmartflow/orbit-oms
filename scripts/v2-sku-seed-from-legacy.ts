@@ -372,6 +372,26 @@ async function main(): Promise<void> {
   }
   console.log(`Built GLOSS BW alternates (no legacy, hidden): ${glossAltBuilt}`);
 
+  // ── 2d. SATIN re-key collision guard (2026-06-02) ───────────────────
+  // IN28809772 (97 BASE) + 5867120 (93 BASE) move STAY BRIGHT → SUPER SATIN
+  // via NAME_OVERRIDES above. If a moved SKU lands on a (baseColour, pack) an
+  // existing SUPER SATIN primary already holds, keep the live primary and
+  // demote the moved SKU. Scoped to these 2 materials only.
+  const SATIN_REKEYS = ["IN28809772", "5867120"];
+  for (const m of SATIN_REKEYS) {
+    const moved = v2Rows.find((r) => r.material === m);
+    if (!moved || !moved.isPrimary) continue;
+    const clash = v2Rows.find((r) =>
+      r.material !== m && r.product === moved.product && r.baseColour === moved.baseColour &&
+      formatPack(r.packCode, r.unit) === formatPack(moved.packCode, moved.unit) && r.isPrimary);
+    if (clash) {
+      moved.isPrimary = false;
+      console.log(`[satin-rekey] ${m} collides with primary ${clash.material} at ${moved.product}/${moved.baseColour}/${formatPack(moved.packCode, moved.unit)} → ${m} set non-primary`);
+    } else {
+      console.log(`[satin-rekey] ${m} -> ${moved.product}/${moved.baseColour}/${formatPack(moved.packCode, moved.unit)} (no collision, stays primary)`);
+    }
+  }
+
   console.log(`Skipped (mapLegacyToNew → null)         : ${skippedNull}`);
   console.log(`Source rows expanded into multiple v2  : ${crossListed}`);
   console.log(`Name-override rows (live names applied) : ${overridden}`);
@@ -439,7 +459,7 @@ async function main(): Promise<void> {
       const r = rows.filter((x) => x.product === prod);
       return { n: r.length, pri: r.filter((x) => x.isPrimary).length };
     };
-    const TARGETS = ["WS PROTECT DUSTPROOF", "WS PROTECT RAINPROOF", "WS POWERFLEXX", "WS PROTECT HI-SHEEN", "GLOSS", "PU ENAMEL"];
+    const TARGETS = ["WS PROTECT DUSTPROOF", "WS PROTECT RAINPROOF", "WS POWERFLEXX", "WS PROTECT HI-SHEEN", "GLOSS", "PU ENAMEL", "SUPER SATIN", "SATIN STAY BRIGHT"];
     console.log("");
     console.log("════════════ WS RESTRUCTURE REHEARSAL (before → after) ════════════");
     for (const t of TARGETS) {

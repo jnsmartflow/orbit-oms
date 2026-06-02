@@ -11,6 +11,7 @@ import VariantGrid, {
 } from "./variant-grid";
 import { KBD_CLASS } from "./_shared";
 import { monogramFor } from "@/lib/place-order/monogram";
+import { getSubProductDescriptor } from "@/lib/place-order/sub-product-descriptors";
 
 // Single-sub-product view — header above a variant grid, no tab bar.
 // Used when the page lands directly on a specific sub-product:
@@ -96,6 +97,9 @@ export default function SubProductDirect({
         </span>
         <div className="flex-1 min-w-0">
           <div className="text-[13px] font-bold text-gray-900 truncate">{subProductName}</div>
+          {getSubProductDescriptor(family, subProductName) && (
+            <div className="text-[11px] text-gray-400 truncate">{getSubProductDescriptor(family, subProductName)}</div>
+          )}
           <div className="text-[10px] text-gray-400 truncate">{breadcrumb}</div>
         </div>
         {isPaginated && (
