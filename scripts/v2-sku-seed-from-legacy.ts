@@ -146,6 +146,11 @@ const PROTECT_DELETE = new Set<string>([
 // Powerflexx leftover present only in live (no CSV row) — drop it.
 const POWERFLEXX_DROP = new Set<string>(["IN76109271"]);
 
+// Promise review (2026-06-03): REMOVE ×2 + DELETE ×1 per the marked CSV
+// (5883561 "comes in 20L too"; 5838876 "wrong map, is 90 BASE"; IN86309472
+// "duplicate"). Dropped entirely from v2.
+const PROMISE_REMOVE = new Set<string>(["5883561", "5838876", "IN86309472"]);
+
 // KEEP materials with NO legacy source — build the v2 row from the CSV
 // instead of skipping (rule: KEEP-only; HIDE-missing stay absent).
 const BUILD_FROM_CSV = new Set<string>([
@@ -277,7 +282,7 @@ async function main(): Promise<void> {
 
       // ── Exclusions (post-override keys, 2026-06-01) ──
       //   EXCLUDE_MATERIALS + PROTECT_DELETE (9 group-B) + POWERFLEXX_DROP (IN76109271).
-      if (EXCLUDE_MATERIALS.has(material) || PROTECT_DELETE.has(material) || POWERFLEXX_DROP.has(material)) { excludedByMaterial++; continue; }
+      if (EXCLUDE_MATERIALS.has(material) || PROTECT_DELETE.has(material) || POWERFLEXX_DROP.has(material) || PROMISE_REMOVE.has(material)) { excludedByMaterial++; continue; }
       if (
         product === "WS MAX" &&
         EXCLUDE_BASE_WSMAX.has((baseColour ?? "").trim().toUpperCase())
@@ -392,6 +397,39 @@ async function main(): Promise<void> {
     }
   }
 
+  // ── 2e. PROMISE build-from-CSV (2026-06-03) ─────────────────────────
+  // The promise-review.csv adds ~85 alternate Promise SKUs absent from legacy
+  // (hidden, isPrimary=false). They carry a PROMISE override (product=tab,
+  // baseColour) but legacy never produces them. Build each by copying
+  // packCode/unit/category from a same-(product,baseColour) primary sibling
+  // already in v2Rows; pack matched via the CSV's on-screen pack label.
+  const promiseCsvRaw = await fs.readFile(path.join("docs", "SKU", "review", "promise-review.csv"), "utf8");
+  const promisePack = new Map<string, string>();   // material -> pack label
+  for (const line of promiseCsvRaw.split(/\r?\n/).slice(1)) {
+    if (!line.trim()) continue;
+    const c = line.split(",");
+    const mat = (c[3] ?? "").trim();
+    if (mat) promisePack.set(mat, (c[1] ?? "").trim());
+  }
+  let promiseBuilt = 0, promiseNoSibling = 0;
+  for (const [mat, ov] of Object.entries(NAME_OVERRIDES)) {
+    if (ov.category !== "PROMISE") continue;
+    if (seenMaterials.has(mat) || PROMISE_REMOVE.has(mat)) continue;   // produced by legacy / removed
+    const wantPack = promisePack.get(mat);
+    const sibling = v2Rows.find((r) =>
+      r.product === ov.product && r.baseColour === ov.baseColour &&
+      (!wantPack || formatPack(r.packCode, r.unit) === wantPack));
+    if (!sibling) { promiseNoSibling++; console.log(`[promise-build] NO SIBLING ${mat} (${ov.product}/${ov.baseColour}/${wantPack ?? "?"})`); continue; }
+    v2Rows.push({
+      material: mat, description: sibling.description, category: "PROMISE",
+      product: ov.product, baseColour: ov.baseColour, packCode: sibling.packCode, unit: sibling.unit,
+      refMaterial: null, refDescription: null, paintType: null, materialType: null, piecesPerCarton: null,
+      isPrimary: false,
+    });
+    promiseBuilt++;
+  }
+  console.log(`Built PROMISE alternates (no legacy, hidden): ${promiseBuilt} (no-sibling: ${promiseNoSibling})`);
+
   console.log(`Skipped (mapLegacyToNew → null)         : ${skippedNull}`);
   console.log(`Source rows expanded into multiple v2  : ${crossListed}`);
   console.log(`Name-override rows (live names applied) : ${overridden}`);
@@ -459,7 +497,7 @@ async function main(): Promise<void> {
       const r = rows.filter((x) => x.product === prod);
       return { n: r.length, pri: r.filter((x) => x.isPrimary).length };
     };
-    const TARGETS = ["WS PROTECT DUSTPROOF", "WS PROTECT RAINPROOF", "WS POWERFLEXX", "WS PROTECT HI-SHEEN", "GLOSS", "PU ENAMEL", "SUPER SATIN", "SATIN STAY BRIGHT"];
+    const TARGETS = ["WS PROTECT DUSTPROOF", "WS PROTECT RAINPROOF", "WS POWERFLEXX", "WS PROTECT HI-SHEEN", "GLOSS", "PU ENAMEL", "SUPER SATIN", "SATIN STAY BRIGHT", "PROMISE INTERIOR", "PROMISE SHEEN INTERIOR", "PROMISE EXTERIOR", "PROMISE SHEEN EXTERIOR", "PROMISE PRIMER", "PROMISE SMARTCHOICE"];
     console.log("");
     console.log("════════════ WS RESTRUCTURE REHEARSAL (before → after) ════════════");
     for (const t of TARGETS) {

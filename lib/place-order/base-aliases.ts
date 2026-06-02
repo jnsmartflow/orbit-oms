@@ -90,6 +90,41 @@ export const BASE_ALIASES: Record<string, Record<string, BaseAlias>> = {
     "96 BASE": { display: "YOX",            search: ["yox", "yellow oxide", "yellow oxide base"] },
     "97 BASE": { display: "ROX",            search: ["rox", "red oxide", "red oxide base"] },
   },
+  // ── Promise family (6 tabs) ──────────────────────────────────────────────
+  // Emulsion tabs: numbered-base aliases (whichever present). SmartChoice/Primer
+  // tabs: the row's baseColour is the VARIANT; the alias carries the light
+  // qualifier ("Br White" / "Int & Ext"); variants with no qualifier are omitted.
+  "PROMISE INTERIOR": {
+    "90 BASE": { display: "White",          search: ["white", "white base"] },
+    "92 BASE": { display: "Intermediate",   search: ["intermediate", "intermediate base"] },
+    "94 BASE": { display: "Accent",         search: ["accent", "accent base"] },
+    "96 BASE": { display: "YOX",            search: ["yox", "yellow oxide", "yellow oxide base"] },
+    "97 BASE": { display: "ROX",            search: ["rox", "red oxide", "red oxide base"] },
+  },
+  "PROMISE SHEEN INTERIOR": {
+    "90 BASE": { display: "White",          search: ["white", "white base"] },
+    "92 BASE": { display: "Intermediate",   search: ["intermediate", "intermediate base"] },
+    "94 BASE": { display: "Accent",         search: ["accent", "accent base"] },
+  },
+  "PROMISE EXTERIOR": {
+    "90 BASE": { display: "White",          search: ["white", "white base"] },
+    "92 BASE": { display: "Intermediate",   search: ["intermediate", "intermediate base"] },
+    "94 BASE": { display: "Accent",         search: ["accent", "accent base"] },
+    "96 BASE": { display: "YOX",            search: ["yox", "yellow oxide", "yellow oxide base"] },
+  },
+  "PROMISE SHEEN EXTERIOR": {
+    "90 BASE": { display: "White",          search: ["white", "white base"] },
+    "92 BASE": { display: "Intermediate",   search: ["intermediate", "intermediate base"] },
+    "94 BASE": { display: "Accent",         search: ["accent", "accent base"] },
+  },
+  "PROMISE SMARTCHOICE": {
+    "Interior":  { display: "Br White", search: ["br white", "brilliant white", "white"] },
+    "Exterior":  { display: "Br White", search: ["br white", "brilliant white", "white"] },
+  },
+  "PROMISE PRIMER": {
+    "2in1 Primer":         { display: "Int & Ext", search: ["int & ext", "interior exterior", "int ext"] },
+    "Freedom 2in1 Primer": { display: "Int & Ext", search: ["int & ext", "interior exterior", "int ext"] },
+  },
 };
 
 /**

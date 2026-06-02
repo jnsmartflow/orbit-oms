@@ -5,7 +5,7 @@ import { Search, Send } from "lucide-react";
 import type { RawPack } from "@/lib/place-order/pack-buckets";
 import { formatPack, packToMl, packStep } from "@/lib/place-order/pack";
 import { getBaseAliasDisplay } from "@/lib/place-order/base-aliases";
-import { getSubProductDescriptor } from "@/lib/place-order/sub-product-descriptors";
+import { getSecondLine, isVariantQualifierTab } from "@/lib/place-order/sub-product-descriptors";
 import { rankProductsForQuery } from "@/lib/place-order/mobile-search";
 
 // Public mobile order form for Sales Officers. Picker UI for customer
@@ -113,8 +113,11 @@ function productLabel(p: { displayName: string; baseColour: string | null }): st
 // productLabel's string (search haystack at getProductSuggestions stays
 // verbatim) and NOT in the email body. Returns null when the row has no alias.
 function aliasSuffix(
-  p: { product: string | null; baseColour: string | null },
+  p: { product: string | null; baseColour: string | null; family?: string; subProduct?: string },
 ): React.JSX.Element | null {
+  // Variant-qualifier tabs (Promise SmartChoice / Primer) carry their qualifier
+  // on the light second line instead — keep the headline clean.
+  if (isVariantQualifierTab(p.family, p.subProduct)) return null;
   const a = getBaseAliasDisplay(p.product, p.baseColour);
   return a ? <span className="font-normal text-gray-400"> · {a}</span> : null;
 }
@@ -946,9 +949,9 @@ export default function OrderPage(): React.JSX.Element {
                   <div className="text-[17px] font-semibold text-gray-900 leading-tight truncate">
                     {currentName}{aliasSuffix(activeBill.activeProduct)}
                   </div>
-                  {getSubProductDescriptor(activeBill.activeProduct.family, activeBill.activeProduct.subProduct) && (
+                  {getSecondLine(activeBill.activeProduct.family, activeBill.activeProduct.subProduct, getBaseAliasDisplay(activeBill.activeProduct.product, activeBill.activeProduct.baseColour)) && (
                     <div className="text-[13px] text-gray-400 leading-tight truncate mt-0.5">
-                      {getSubProductDescriptor(activeBill.activeProduct.family, activeBill.activeProduct.subProduct)}
+                      {getSecondLine(activeBill.activeProduct.family, activeBill.activeProduct.subProduct, getBaseAliasDisplay(activeBill.activeProduct.product, activeBill.activeProduct.baseColour))}
                     </div>
                   )}
                 </div>
@@ -1731,7 +1734,7 @@ const BillCard = forwardRef<BillCardHandle, BillCardProps>(function BillCard({
                     <div className="w-[7px] h-[7px] rounded-full bg-teal-100 border-2 border-teal-600 shrink-0" />
                     <div className="flex-1 min-w-0">
                       <p className="text-[14px] font-medium text-gray-900 truncate">{productLabel(p)}{aliasSuffix(p)}</p>
-                      <p className="text-[11px] text-gray-400 mt-0.5">{getSubProductDescriptor(p.family, p.subProduct) ?? p.family}</p>
+                      <p className="text-[11px] text-gray-400 mt-0.5">{getSecondLine(p.family, p.subProduct, getBaseAliasDisplay(p.product, p.baseColour)) ?? p.family}</p>
                     </div>
                     <span className="text-gray-300 text-[17px] shrink-0 leading-none">›</span>
                   </button>
@@ -1760,7 +1763,7 @@ const BillCard = forwardRef<BillCardHandle, BillCardProps>(function BillCard({
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-[13px] font-medium text-gray-900 truncate">{productLabel(product)}{aliasSuffix(product)}</p>
-                          <p className="text-[11px] text-gray-400 mt-0.5">{getSubProductDescriptor(product.family, product.subProduct) ?? product.family}</p>
+                          <p className="text-[11px] text-gray-400 mt-0.5">{getSecondLine(product.family, product.subProduct, getBaseAliasDisplay(product.product, product.baseColour)) ?? product.family}</p>
                         </div>
                         <span
                           className="text-gray-300 text-[18px] leading-none shrink-0 px-1"
@@ -1819,7 +1822,7 @@ const BillCard = forwardRef<BillCardHandle, BillCardProps>(function BillCard({
                         <div className="w-5 h-5 rounded-[6px] border-2 bg-white border-gray-300 flex items-center justify-center shrink-0" />
                         <div className="flex-1 min-w-0">
                           <p className="text-[14px] font-medium text-gray-900 truncate">{productLabel(p)}{aliasSuffix(p)}</p>
-                          <p className="text-[11px] text-gray-400 mt-0.5">{getSubProductDescriptor(p.family, p.subProduct) ?? p.family}</p>
+                          <p className="text-[11px] text-gray-400 mt-0.5">{getSecondLine(p.family, p.subProduct, getBaseAliasDisplay(p.product, p.baseColour)) ?? p.family}</p>
                         </div>
                       </div>
                     );

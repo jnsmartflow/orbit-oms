@@ -19,6 +19,7 @@ const SECTION_ORDER = [
   "EXTERIORS",
   "ENAMELS",
   "WOODCARE",
+  "PROMISE",
   "MULTI-USE",
 ] as const;
 

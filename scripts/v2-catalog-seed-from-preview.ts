@@ -51,7 +51,7 @@ const DRY_RUN      = process.env.DRY_RUN === "1";
 // Locked expectations from the May 6 preview run. If the JSON drifts from
 // these the script refuses to seed — better to fail loudly than to ship
 // surprise data into v2.
-const EXPECTED_TOTAL_NEW_ROWS    = 530;  // 522 + 9 PU ENAMEL − 1 orphaned Satin Stay Bright 97 BASE (2026-06-02)
+const EXPECTED_TOTAL_NEW_ROWS    = 478;  // 530 − 52 net (Promise consolidated into one PROMISE family, 6 tabs; 2026-06-03)
 const EXPECTED_WARNINGS          = 0;
 
 // ── PROMISE transform constants ────────────────────────────────────────
@@ -64,6 +64,18 @@ const PROMISE_SPECIFICS = new Set<string>([
   "PROMISE INTERIOR", "PROMISE EXTERIOR", "PROMISE ENAMEL",
 ]);
 const PROMISE_FAMILIES  = new Set<string>([PROMISE_UMBRELLA, ...Array.from(PROMISE_SPECIFICS)]);
+// 2026-06-03: the new single PROMISE family authors these 6 clean tabs directly in
+// the preview (no umbrella, no cross-listing). They must bypass the legacy phantom-
+// reassignment (step 3), which would otherwise re-file e.g. "PROMISE PRIMER" → PRIMER.
+const PROMISE_TABS = new Set<string>([
+  "PROMISE INTERIOR", "PROMISE SHEEN INTERIOR", "PROMISE EXTERIOR",
+  "PROMISE SHEEN EXTERIOR", "PROMISE PRIMER", "PROMISE SMARTCHOICE",
+]);
+const PROMISE_TAB_LABEL: Record<string, string> = {
+  "PROMISE INTERIOR": "Interior", "PROMISE SHEEN INTERIOR": "Sheen Interior",
+  "PROMISE EXTERIOR": "Exterior", "PROMISE SHEEN EXTERIOR": "Sheen Exterior",
+  "PROMISE PRIMER": "Primer", "PROMISE SMARTCHOICE": "SmartChoice",
+};
 
 // Names that should also surface under the PROMISE section on mobile /order
 // even when the row's desktop family is something else — e.g. Promise primers
@@ -129,8 +141,8 @@ const FAMILY_TO_SECTION: Record<string, string> = {
   "DISTEMPER":        "UTILITY",
   "PUTTY":            "UTILITY",
   "STAINER":          "UTILITY",
-  // MULTI-USE
-  "PROMISE":          "MULTI-USE",
+  // PROMISE (own section — one family head, 6 tabs, surfaced via speed-dial)
+  "PROMISE":          "PROMISE",
 };
 
 // Family → subgroup mapping for /place-order within-section visual clusters.
@@ -184,8 +196,8 @@ const FAMILY_TO_SUBGROUP: Record<string, string> = {
   "MELAMINE":         "Sadolin Standard Woodcare",
   "WOOD FILLER":      "Wood finishing",
   "WOOD STAIN":       "Wood finishing",
-  // MULTI-USE
-  "PROMISE":          "Promise umbrella",
+  // PROMISE
+  "PROMISE":          "Promise",
 };
 
 // Shape of one row inside taxonomy-preview.json's newRowsByFamily arrays.
@@ -231,6 +243,14 @@ const CONFIRMED_SUBPRODUCT_MAP: Record<string, string> = {
   // equals these, so the pack join is unchanged.
   "SUPER SATIN":       "SUPER SATIN",
   "SATIN STAY BRIGHT": "SATIN STAY BRIGHT",
+  // Promise 6 tabs — identity join-key so base aliases render + §7.8 bakes tokens
+  // (stock product, set via overrides, equals these).
+  "PROMISE INTERIOR":       "PROMISE INTERIOR",
+  "PROMISE SHEEN INTERIOR": "PROMISE SHEEN INTERIOR",
+  "PROMISE EXTERIOR":       "PROMISE EXTERIOR",
+  "PROMISE SHEEN EXTERIOR": "PROMISE SHEEN EXTERIOR",
+  "PROMISE PRIMER":         "PROMISE PRIMER",
+  "PROMISE SMARTCHOICE":    "PROMISE SMARTCHOICE",
 };
 
 // Rule 2: HIGH-confidence rows from the reviewed name-map draft
@@ -408,6 +428,7 @@ async function main(): Promise<void> {
   const unhandledPhantoms:    TransformedRow[] = [];
   for (const r of collapsed) {
     if (r.family !== PROMISE_UMBRELLA) continue;
+    if (PROMISE_TABS.has(r.subProduct)) continue;  // clean new PROMISE family — keep as-is
     const sp = r.subProduct.toUpperCase();
     let assigned: string | null = null;
     if      (sp.includes("PRIMER"))    assigned = "PRIMER";
@@ -749,6 +770,8 @@ async function main(): Promise<void> {
     // PU ENAMEL: standalone ENAMELS family, BASE/COLOUR split by the same rule
     // as GLOSS; subProduct stays "PU ENAMEL" (the stock pack-join key).
     if (r.family === "PU ENAMEL") { r.uiGroup = glossBase(r.baseColour) ? "BASE" : "COLOUR"; uiAssigned++; continue; }
+    // PROMISE: one family, 6 tabs (uiGroup short label; subProduct = tab = pack-join key).
+    if (r.family === "PROMISE" && PROMISE_TAB_LABEL[r.subProduct]) { r.uiGroup = PROMISE_TAB_LABEL[r.subProduct]; uiAssigned++; continue; }
     if (r.family === "SATIN"   && SATIN_UI[sub])   { r.uiGroup = SATIN_UI[sub];   uiAssigned++; continue; }
     if (r.family === "STAINER" && STAINER_UI[sub]) { r.uiGroup = STAINER_UI[sub]; uiAssigned++; continue; }
     if (r.family === "PRIMER"  && PRIMER_UI[sub])  { r.uiGroup = PRIMER_UI[sub];  uiAssigned++; continue; }

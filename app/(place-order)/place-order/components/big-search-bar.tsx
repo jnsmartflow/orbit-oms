@@ -9,7 +9,7 @@ import type { Product } from "../types";
 import { searchProducts, type SearchResult } from "@/lib/place-order/queries";
 import { monogramFor } from "@/lib/place-order/monogram";
 import { getBaseAliasDisplay } from "@/lib/place-order/base-aliases";
-import { getSubProductDescriptor } from "@/lib/place-order/sub-product-descriptors";
+import { getSecondLine, isVariantQualifierTab } from "@/lib/place-order/sub-product-descriptors";
 
 // Primary input on /place-order. Live search over the v2 catalog with a
 // debounced result list (10 max) and arrow-key navigation. The native
@@ -199,12 +199,14 @@ const BigSearchBar = forwardRef<HTMLInputElement, BigSearchBarProps>(
                   );
                   baseAlias = m ? getBaseAliasDisplay(m.product, m.baseColour) : null;
                 }
-                // Light secondary descriptor (e.g. "Super Satin · Oil Base") for
-                // sub-product / sub-product-base results that have one.
+                // Light secondary line. For variant-qualifier tabs (Promise
+                // SmartChoice / Primer) it folds the per-variant qualifier in
+                // ("SmartChoice · Br White") and the line-1 alias is suppressed.
                 const descriptor =
                   result.type === "sub-product" || result.type === "sub-product-base"
-                    ? getSubProductDescriptor(result.family, result.subProductName)
+                    ? getSecondLine(result.family, result.subProductName, baseAlias)
                     : null;
+                const suppressLineAlias = isVariantQualifierTab(result.family, (result as { subProductName?: string }).subProductName);
                 const monogram = monogramFor(monogramSource);
                 const isLast   = idx === results.length - 1;
 
@@ -237,7 +239,7 @@ const BigSearchBar = forwardRef<HTMLInputElement, BigSearchBarProps>(
                           isActive ? "font-semibold text-gray-900" : "font-medium text-gray-700"
                         }`}
                       >
-                        {label}{baseAlias && <span className="font-normal text-gray-400"> · {baseAlias}</span>}
+                        {label}{baseAlias && !suppressLineAlias && <span className="font-normal text-gray-400"> · {baseAlias}</span>}
                       </span>
                       {descriptor && (
                         <span className="block text-[10.5px] text-gray-400 truncate">{descriptor}</span>
