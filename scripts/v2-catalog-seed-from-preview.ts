@@ -219,6 +219,7 @@ const CONFIRMED_SUBPRODUCT_MAP: Record<string, string> = {
   "RAINPROOF":         "WS PROTECT RAINPROOF",
   "PROTECT":           "WS PROTECT",
   "PROTECT DUSTPROOF": "WS PROTECT DUSTPROOF",
+  "HISHEEN":           "WS PROTECT HI-SHEEN",
   "PU STAINER":        "GVA",
   "MACHINE TINTER":    "MACHINE STAINER",
 };
@@ -629,7 +630,7 @@ async function main(): Promise<void> {
   const preGroupKey = new Map<TransformedRow, string>();
   for (const r of deduped) preGroupKey.set(r, `${r.product ?? r.subProduct}|||${r.baseColour ?? ""}`);
 
-  const WS_CONSOLIDATE = new Set<string>(["MAX", "POWERFLEXX", "PROTECT", "RAINPROOF"]);
+  const WS_CONSOLIDATE = new Set<string>(["MAX", "POWERFLEXX", "PROTECT", "RAINPROOF", "HISHEEN"]);
   // Desktop tab label per WS sub-product (uiGroup ?? subProduct drives the tab).
   // Plain "PROTECT" is intentionally absent — those rows are dropped in 7.75.
   const WS_TAB_LABEL: Record<string, string> = {
@@ -637,6 +638,7 @@ async function main(): Promise<void> {
     "POWERFLEXX": "Powerflexx",
     "DUSTPROOF":  "Protect Dustproof",
     "RAINPROOF":  "Protect Rainproof",
+    "HI-SHEEN":   "Protect Hi-Sheen",
   };
   const SATIN_UI: Record<string, string> = {
     "SATIN STAY BRIGHT": "SATIN STAY BRIGHT (WB)",
@@ -713,6 +715,7 @@ async function main(): Promise<void> {
     // WS consolidation
     if (WS_CONSOLIDATE.has(r.family)) {
       if (r.family === "PROTECT" && sub === "PROTECT DUSTPROOF") r.subProduct = "DUSTPROOF";
+      if (r.family === "HISHEEN" && sub === "HISHEEN")           r.subProduct = "HI-SHEEN";
       r.family  = "WS";
       r.uiGroup = WS_TAB_LABEL[r.subProduct] ?? r.subProduct;   // desktop tab label
       wsCount++;
@@ -773,32 +776,25 @@ async function main(): Promise<void> {
   }
   console.log(`Base-alias search words appended: ${aliasTokenRows} row(s)`);
 
-  // ── 7.85. WS / HISHEEN search-token tweaks (2026-06-01) ─────────────
+  // ── 7.85. WS search-token tweaks (2026-06-01) ───────────────────────
   // (a) Dustproof gains a WEAK "RAINPROOF" sibling token so a "rainproof"
   //     query also surfaces Dustproof. The scorers' sub-product-name prefix
   //     boost keeps Rainproof (subProduct RAINPROOF) ranked above Dustproof
   //     (token-only match), so order stays Rainproof-first → Dustproof.
   //     Rainproof KEEPS its "PROTECT RAINPROOF" token — "protect" ranking
   //     (Dustproof → Rainproof → Damp) falls out of scoring, no surgery.
-  // (b) HISHEEN drops any "protect"-bearing token (the stray
-  //     "PROTECT DUSTPROOF HI-SHEEN" that caused 4 junk "protect" matches);
-  //     HISHEEN is a sheen variant, not a protect product.
+  // (HISHEEN protect-strip removed 2026-06-02: Hi-Sheen is now a WS Protect
+  //  sibling — its "PROTECT HI-SHEEN" / "WS PROTECT HI-SHEEN" tokens are
+  //  legitimate, and by this point the rows are family=WS anyway.)
   let dustproofSiblingTokens = 0;
-  let hisheenProtectStripped = 0;
   for (const r of deduped) {
     if (r.family === "WS" && r.subProduct === "DUSTPROOF") {
       const before = r.searchTokens;
       r.searchTokens = mergeSearchTokens(r.searchTokens, "RAINPROOF");
       if (r.searchTokens !== before) dustproofSiblingTokens++;
     }
-    if (r.family === "HISHEEN") {
-      const cleaned = r.searchTokens
-        .split(",").map((t) => t.trim()).filter((t) => t.length > 0 && !/protect/i.test(t))
-        .join(", ");
-      if (cleaned !== r.searchTokens) { r.searchTokens = cleaned; hisheenProtectStripped++; }
-    }
   }
-  console.log(`WS/HISHEEN token tweaks: Dustproof +RAINPROOF=${dustproofSiblingTokens}, HISHEEN protect-stripped=${hisheenProtectStripped}`);
+  console.log(`WS token tweaks: Dustproof +RAINPROOF=${dustproofSiblingTokens}`);
 
   // ── 8. DRY-RUN exit — print summary instead of touching the DB ──────
   if (DRY_RUN) {

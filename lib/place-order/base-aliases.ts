@@ -57,6 +57,13 @@ export const BASE_ALIASES: Record<string, Record<string, BaseAlias>> = {
     "98 BASE": { display: "Vibrant Yellow", search: ["vibrant yellow", "vibrant yellow base"] },
     "99 BASE": { display: "Vibrant Red",    search: ["vibrant red", "vibrant red base"] },
   },
+  // WS Protect Hi-Sheen ships only the lighter bases (BrWhite / 90 / 92 / 93).
+  // Only 90 + 92 carry a friendly alias — BW and 93 get none, same as the
+  // Dustproof block above.
+  "WS PROTECT HI-SHEEN": {
+    "90 BASE": { display: "White",          search: ["white", "white base"] },
+    "92 BASE": { display: "Intermediate",   search: ["intermediate", "intermediate base"] },
+  },
 };
 
 /**
