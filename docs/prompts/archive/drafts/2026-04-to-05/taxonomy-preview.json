@@ -4,7 +4,7 @@
   "summary": {
     "totalLegacyTriples": 560,
     "totalLegacySkuCount": 1599,
-    "totalNewRows": 522,
+    "totalNewRows": 531,
     "crossListedExtraRows": 68,
     "suppressedPlainRows": 19,
     "skippedTriples": 82,
@@ -767,7 +767,7 @@
         "baseColour": "BLAZING WHITE",
         "productType": "BASE_VARIANT",
         "tinterType": null,
-        "sortOrder": 809,
+        "sortOrder": 830,
         "isActive": true,
         "skuCount": 5
       },
@@ -779,7 +779,7 @@
         "baseColour": "CLASSIC WHITE",
         "productType": "BASE_VARIANT",
         "tinterType": null,
-        "sortOrder": 809,
+        "sortOrder": 831,
         "isActive": true,
         "skuCount": 5
       },
@@ -791,7 +791,7 @@
         "baseColour": "GREEN BASE",
         "productType": "BASE_VARIANT",
         "tinterType": null,
-        "sortOrder": 809,
+        "sortOrder": 832,
         "isActive": true,
         "skuCount": 5
       },
@@ -803,7 +803,7 @@
         "baseColour": "OFF WHITE",
         "productType": "BASE_VARIANT",
         "tinterType": null,
-        "sortOrder": 809,
+        "sortOrder": 849,
         "isActive": true,
         "skuCount": 3
       },
@@ -815,7 +815,7 @@
         "baseColour": "ROYAL IVORY",
         "productType": "COLOUR",
         "tinterType": null,
-        "sortOrder": 820,
+        "sortOrder": 838,
         "isActive": true,
         "skuCount": 4
       },
@@ -827,7 +827,7 @@
         "baseColour": "DA GREY",
         "productType": "COLOUR",
         "tinterType": null,
-        "sortOrder": 822,
+        "sortOrder": 835,
         "isActive": true,
         "skuCount": 4
       },
@@ -839,7 +839,7 @@
         "baseColour": "TRUCK BROWN",
         "productType": "COLOUR",
         "tinterType": null,
-        "sortOrder": 825,
+        "sortOrder": 833,
         "isActive": true,
         "skuCount": 5
       },
@@ -851,7 +851,7 @@
         "baseColour": "SAND STONE",
         "productType": "COLOUR",
         "tinterType": null,
-        "sortOrder": 827,
+        "sortOrder": 839,
         "isActive": true,
         "skuCount": 4
       },
@@ -863,7 +863,7 @@
         "baseColour": "OPALINE GREEN",
         "productType": "COLOUR",
         "tinterType": null,
-        "sortOrder": 829,
+        "sortOrder": 852,
         "isActive": true,
         "skuCount": 1
       },
@@ -875,7 +875,7 @@
         "baseColour": "LEAF BROWN",
         "productType": "COLOUR",
         "tinterType": null,
-        "sortOrder": 832,
+        "sortOrder": 845,
         "isActive": true,
         "skuCount": 3
       },
@@ -887,7 +887,7 @@
         "baseColour": "PALE CREAM",
         "productType": "COLOUR",
         "tinterType": null,
-        "sortOrder": 832,
+        "sortOrder": 850,
         "isActive": true,
         "skuCount": 3
       },
@@ -899,7 +899,7 @@
         "baseColour": "GOLDEN BROWN",
         "productType": "COLOUR",
         "tinterType": null,
-        "sortOrder": 835,
+        "sortOrder": 822,
         "isActive": true,
         "skuCount": 7
       },
@@ -911,7 +911,7 @@
         "baseColour": "GOLDEN BROWN",
         "productType": "COLOUR",
         "tinterType": null,
-        "sortOrder": 835,
+        "sortOrder": 822,
         "isActive": true,
         "skuCount": 4
       },
@@ -923,7 +923,7 @@
         "baseColour": "PO RED",
         "productType": "COLOUR",
         "tinterType": null,
-        "sortOrder": 836,
+        "sortOrder": 829,
         "isActive": true,
         "skuCount": 6
       },
@@ -935,7 +935,7 @@
         "baseColour": "SMOKE GREY",
         "productType": "COLOUR",
         "tinterType": null,
-        "sortOrder": 836,
+        "sortOrder": 823,
         "isActive": true,
         "skuCount": 7
       },
@@ -947,7 +947,7 @@
         "baseColour": "SMOKE GREY",
         "productType": "COLOUR",
         "tinterType": null,
-        "sortOrder": 836,
+        "sortOrder": 823,
         "isActive": true,
         "skuCount": 4
       },
@@ -959,7 +959,7 @@
         "baseColour": "DARK BROWN",
         "productType": "COLOUR",
         "tinterType": null,
-        "sortOrder": 840,
+        "sortOrder": 821,
         "isActive": true,
         "skuCount": 7
       },
@@ -971,7 +971,7 @@
         "baseColour": "DARK BROWN",
         "productType": "COLOUR",
         "tinterType": null,
-        "sortOrder": 840,
+        "sortOrder": 821,
         "isActive": true,
         "skuCount": 4
       },
@@ -983,7 +983,7 @@
         "baseColour": "SKY BLUE",
         "productType": "COLOUR",
         "tinterType": null,
-        "sortOrder": 843,
+        "sortOrder": 841,
         "isActive": true,
         "skuCount": 4
       },
@@ -995,7 +995,7 @@
         "baseColour": "LIGHT GREY",
         "productType": "COLOUR",
         "tinterType": null,
-        "sortOrder": 845,
+        "sortOrder": 846,
         "isActive": true,
         "skuCount": 3
       },
@@ -1007,7 +1007,7 @@
         "baseColour": "OXFORD BLUE",
         "productType": "COLOUR",
         "tinterType": null,
-        "sortOrder": 846,
+        "sortOrder": 827,
         "isActive": true,
         "skuCount": 6
       },
@@ -1019,7 +1019,7 @@
         "baseColour": "AQUAMARINE",
         "productType": "COLOUR",
         "tinterType": null,
-        "sortOrder": 850,
+        "sortOrder": 842,
         "isActive": true,
         "skuCount": 3
       },
@@ -1031,7 +1031,7 @@
         "baseColour": "MIDDLE BUFF",
         "productType": "COLOUR",
         "tinterType": null,
-        "sortOrder": 854,
+        "sortOrder": 848,
         "isActive": true,
         "skuCount": 3
       },
@@ -1043,7 +1043,7 @@
         "baseColour": "CHERRY",
         "productType": "COLOUR",
         "tinterType": null,
-        "sortOrder": 861,
+        "sortOrder": 843,
         "isActive": true,
         "skuCount": 3
       },
@@ -1055,7 +1055,7 @@
         "baseColour": "DEEP GREEN",
         "productType": "COLOUR",
         "tinterType": null,
-        "sortOrder": 869,
+        "sortOrder": 844,
         "isActive": true,
         "skuCount": 3
       },
@@ -1067,7 +1067,7 @@
         "baseColour": "WILD PURPLE",
         "productType": "COLOUR",
         "tinterType": null,
-        "sortOrder": 870,
+        "sortOrder": 834,
         "isActive": true,
         "skuCount": 5
       },
@@ -1079,7 +1079,7 @@
         "baseColour": "CASCADE GREEN",
         "productType": "COLOUR",
         "tinterType": null,
-        "sortOrder": 875,
+        "sortOrder": 851,
         "isActive": true,
         "skuCount": 2
       },
@@ -1091,7 +1091,7 @@
         "baseColour": "SIGNAL RED",
         "productType": "COLOUR",
         "tinterType": null,
-        "sortOrder": 875,
+        "sortOrder": 840,
         "isActive": true,
         "skuCount": 4
       },
@@ -1103,7 +1103,7 @@
         "baseColour": "GOLDEN YELLOW",
         "productType": "COLOUR",
         "tinterType": null,
-        "sortOrder": 879,
+        "sortOrder": 825,
         "isActive": true,
         "skuCount": 6
       },
@@ -1115,7 +1115,7 @@
         "baseColour": "MINT GREEN",
         "productType": "COLOUR",
         "tinterType": null,
-        "sortOrder": 879,
+        "sortOrder": 826,
         "isActive": true,
         "skuCount": 6
       },
@@ -1127,7 +1127,7 @@
         "baseColour": "DEEP ORANGE",
         "productType": "COLOUR",
         "tinterType": null,
-        "sortOrder": 882,
+        "sortOrder": 837,
         "isActive": true,
         "skuCount": 4
       },
@@ -1139,7 +1139,7 @@
         "baseColour": "MAHOGANY",
         "productType": "COLOUR",
         "tinterType": null,
-        "sortOrder": 884,
+        "sortOrder": 847,
         "isActive": true,
         "skuCount": 3
       },
@@ -1151,7 +1151,7 @@
         "baseColour": "BUS GREEN",
         "productType": "COLOUR",
         "tinterType": null,
-        "sortOrder": 887,
+        "sortOrder": 824,
         "isActive": true,
         "skuCount": 6
       },
@@ -1163,7 +1163,7 @@
         "baseColour": "DAWN",
         "productType": "COLOUR",
         "tinterType": null,
-        "sortOrder": 888,
+        "sortOrder": 836,
         "isActive": true,
         "skuCount": 4
       },
@@ -1175,7 +1175,7 @@
         "baseColour": "PHIROZA",
         "productType": "COLOUR",
         "tinterType": null,
-        "sortOrder": 889,
+        "sortOrder": 828,
         "isActive": true,
         "skuCount": 1
       },
@@ -1187,7 +1187,7 @@
         "baseColour": "PHIROZA",
         "productType": "COLOUR",
         "tinterType": null,
-        "sortOrder": 889,
+        "sortOrder": 828,
         "isActive": true,
         "skuCount": 6
       },
@@ -1199,7 +1199,7 @@
         "baseColour": "PHIROZA",
         "productType": "COLOUR",
         "tinterType": null,
-        "sortOrder": 889,
+        "sortOrder": 828,
         "isActive": true,
         "skuCount": 3
       },
@@ -1211,7 +1211,7 @@
         "baseColour": "BLACK",
         "productType": "COLOUR",
         "tinterType": null,
-        "sortOrder": 899,
+        "sortOrder": 820,
         "isActive": true,
         "skuCount": 7
       },
@@ -1223,7 +1223,7 @@
         "baseColour": "BLACK",
         "productType": "COLOUR",
         "tinterType": null,
-        "sortOrder": 899,
+        "sortOrder": 820,
         "isActive": true,
         "skuCount": 4
       }
@@ -6342,6 +6342,116 @@
         "sortOrder": 3400,
         "isActive": true,
         "skuCount": 1
+      }
+    ],
+    "PU ENAMEL": [
+      {
+        "family": "PU ENAMEL",
+        "subProduct": "PU ENAMEL",
+        "displayName": "PU Enamel",
+        "searchTokens": "PU ENAMEL, POLYURETHANE ENAMEL, PU ENML, DN PU ENAMEL, PU",
+        "baseColour": "BRILLIANT WHITE",
+        "productType": "BASE_VARIANT",
+        "tinterType": null,
+        "sortOrder": 800,
+        "isActive": true,
+        "skuCount": 4
+      },
+      {
+        "family": "PU ENAMEL",
+        "subProduct": "PU ENAMEL",
+        "displayName": "PU Enamel",
+        "searchTokens": "PU ENAMEL, POLYURETHANE ENAMEL, PU ENML, DN PU ENAMEL, PU",
+        "baseColour": "90 BASE",
+        "productType": "BASE_VARIANT",
+        "tinterType": null,
+        "sortOrder": 801,
+        "isActive": true,
+        "skuCount": 2
+      },
+      {
+        "family": "PU ENAMEL",
+        "subProduct": "PU ENAMEL",
+        "displayName": "PU Enamel",
+        "searchTokens": "PU ENAMEL, POLYURETHANE ENAMEL, PU ENML, DN PU ENAMEL, PU",
+        "baseColour": "92 BASE",
+        "productType": "BASE_VARIANT",
+        "tinterType": null,
+        "sortOrder": 802,
+        "isActive": true,
+        "skuCount": 2
+      },
+      {
+        "family": "PU ENAMEL",
+        "subProduct": "PU ENAMEL",
+        "displayName": "PU Enamel",
+        "searchTokens": "PU ENAMEL, POLYURETHANE ENAMEL, PU ENML, DN PU ENAMEL, PU",
+        "baseColour": "94 BASE",
+        "productType": "BASE_VARIANT",
+        "tinterType": null,
+        "sortOrder": 803,
+        "isActive": true,
+        "skuCount": 2
+      },
+      {
+        "family": "PU ENAMEL",
+        "subProduct": "PU ENAMEL",
+        "displayName": "PU Enamel",
+        "searchTokens": "PU ENAMEL, POLYURETHANE ENAMEL, PU ENML, DN PU ENAMEL, PU",
+        "baseColour": "BLACK",
+        "productType": "COLOUR",
+        "tinterType": null,
+        "sortOrder": 820,
+        "isActive": true,
+        "skuCount": 4
+      },
+      {
+        "family": "PU ENAMEL",
+        "subProduct": "PU ENAMEL",
+        "displayName": "PU Enamel",
+        "searchTokens": "PU ENAMEL, POLYURETHANE ENAMEL, PU ENML, DN PU ENAMEL, PU",
+        "baseColour": "DARK BROWN",
+        "productType": "COLOUR",
+        "tinterType": null,
+        "sortOrder": 821,
+        "isActive": true,
+        "skuCount": 4
+      },
+      {
+        "family": "PU ENAMEL",
+        "subProduct": "PU ENAMEL",
+        "displayName": "PU Enamel",
+        "searchTokens": "PU ENAMEL, POLYURETHANE ENAMEL, PU ENML, DN PU ENAMEL, PU",
+        "baseColour": "GOLDEN BROWN",
+        "productType": "COLOUR",
+        "tinterType": null,
+        "sortOrder": 822,
+        "isActive": true,
+        "skuCount": 4
+      },
+      {
+        "family": "PU ENAMEL",
+        "subProduct": "PU ENAMEL",
+        "displayName": "PU Enamel",
+        "searchTokens": "PU ENAMEL, POLYURETHANE ENAMEL, PU ENML, DN PU ENAMEL, PU",
+        "baseColour": "PHIROZA",
+        "productType": "COLOUR",
+        "tinterType": null,
+        "sortOrder": 823,
+        "isActive": true,
+        "skuCount": 4
+      },
+      {
+        "family": "PU ENAMEL",
+        "subProduct": "PU ENAMEL",
+        "displayName": "PU Enamel",
+        "searchTokens": "PU ENAMEL, POLYURETHANE ENAMEL, PU ENML, DN PU ENAMEL, PU",
+        "baseColour": "SMOKE GREY",
+        "productType": "COLOUR",
+        "tinterType": null,
+        "sortOrder": 824,
+        "isActive": true,
+        "skuCount": 4
       }
     ]
   },

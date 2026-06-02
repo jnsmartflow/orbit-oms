@@ -51,7 +51,7 @@ const DRY_RUN      = process.env.DRY_RUN === "1";
 // Locked expectations from the May 6 preview run. If the JSON drifts from
 // these the script refuses to seed — better to fail loudly than to ship
 // surprise data into v2.
-const EXPECTED_TOTAL_NEW_ROWS    = 522;  // 521 + 1 Dustproof 93 BASE row (4 rescued misfiled SKUs) added 2026-06-01
+const EXPECTED_TOTAL_NEW_ROWS    = 531;  // 522 + 9 PU ENAMEL rows (new ENAMELS family, 2026-06-02)
 const EXPECTED_WARNINGS          = 0;
 
 // ── PROMISE transform constants ────────────────────────────────────────
@@ -111,6 +111,7 @@ const FAMILY_TO_SECTION: Record<string, string> = {
   "WS":               "EXTERIORS",   // post-grouping family (MAX/PROTECT/DUSTPROOF/RAINPROOF/POWERFLEXX) — step 7.7
   // ENAMELS
   "GLOSS":            "ENAMELS",
+  "PU ENAMEL":        "ENAMELS",
   "SATIN":            "ENAMELS",
   "LUSTRE":           "ENAMELS",
   "PROMISE ENAMEL":   "ENAMELS",
@@ -167,8 +168,11 @@ const FAMILY_TO_SUBGROUP: Record<string, string> = {
   "METALLIC":         "Specialty exterior",
   "TEXTURE":          "Specialty exterior",
   "WS":               "WS (Weather Shield)",   // post-grouping family — step 7.7
-  // ENAMELS
+  // ENAMELS — PU ENAMEL is a standalone family; its subgroup is its own family
+  // name (step-5 validation requires every family to map to a subgroup; a
+  // standalone family row-breaks on its own rather than sharing a label).
   "GLOSS":            "Enamel finish (gloss)",
+  "PU ENAMEL":        "PU ENAMEL",
   "SATIN":            "Enamel finish (satin)",
   "PROMISE ENAMEL":   "Promise (use-case enamel)",
   "LUSTRE":           "Enamel finish (lustre)",
@@ -734,7 +738,12 @@ async function main(): Promise<void> {
       continue;
     }
     // uiGroup assignment (subProduct UNCHANGED → pack join key preserved)
-    if (r.family === "GLOSS")    { r.uiGroup = glossBase(r.baseColour) ? "BASE" : "COLOUR"; uiAssigned++; continue; }
+    // GLOSS: BASE/COLOUR split — GREEN BASE moves to COLOUR (locked 2026-06-02)
+    // despite ending in "BASE", so it groups with the named colours.
+    if (r.family === "GLOSS")    { r.uiGroup = (glossBase(r.baseColour) && (r.baseColour ?? "").toUpperCase() !== "GREEN BASE") ? "BASE" : "COLOUR"; uiAssigned++; continue; }
+    // PU ENAMEL: standalone ENAMELS family, BASE/COLOUR split by the same rule
+    // as GLOSS; subProduct stays "PU ENAMEL" (the stock pack-join key).
+    if (r.family === "PU ENAMEL") { r.uiGroup = glossBase(r.baseColour) ? "BASE" : "COLOUR"; uiAssigned++; continue; }
     if (r.family === "SATIN"   && SATIN_UI[sub])   { r.uiGroup = SATIN_UI[sub];   uiAssigned++; continue; }
     if (r.family === "STAINER" && STAINER_UI[sub]) { r.uiGroup = STAINER_UI[sub]; uiAssigned++; continue; }
     if (r.family === "PRIMER"  && PRIMER_UI[sub])  { r.uiGroup = PRIMER_UI[sub];  uiAssigned++; continue; }

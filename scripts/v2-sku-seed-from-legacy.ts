@@ -27,6 +27,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { PrismaClient } from "@prisma/client";
 import { mapLegacyToNew, type LegacyKey } from "@/lib/mail-orders/taxonomy-mapping";
+import { formatPack } from "@/lib/place-order/pack";
 import nameOverridesJson from "./data/sku-name-overrides.json";
 
 // DATABASE_URL (transaction pooler, port 6543) — depot network blocks direct port 5432 connections per CLAUDE_CORE.md §3.
@@ -83,7 +84,7 @@ const SET_FALSE = new Set<string>([
   "5580410-PROMISE", "5580412-PROMISE", "5769799", "5771981", "5771985",
   "5771989", "5771990", "5771991", "5771992", "5771993", "5771994", "5771995",
   "5771996", "5771998", "5772002", "5772004", "5772006", "5772007", "5772008",
-  "5772017", "5772018", "5772019", "5802250", "5834786", "5834787", "5834798",
+  "5772017", "5772018", "5772019", "5834786", "5834787", "5834798",
   "5834799", "5834800", "5834802", "5834804", "5834827", "5838853-PROMISE",
   "5838854-PROMISE", "5838855-PROMISE", "5838857-PROMISE", "5838858-PROMISE",
   "5838859-PROMISE", "5838860-PROMISE", "5838861-PROMISE", "5838862-PROMISE",
@@ -111,6 +112,12 @@ const SET_FALSE = new Set<string>([
   // 94/95 BASE leftover fractional twins still rendering on mobile (each has
   // a primary standard-bucket sibling that stays): 94 0.9L, 95 0.9L/3.6L/18L.
   "IN46359423", "IN46359572", "IN46359571", "IN46359581",
+  // GLOSS / PU-Enamel review (2026-06-02): the BW→90 BASE reclassified 20L
+  // (IN28009081) stays hidden. NOTE: 5802250 was REMOVED from the snapshot above
+  // — its old isPrimary=false was a GLOSS-context dedup vs IN28301072 (DN GLOSS
+  // BRILLIANT WHITE 1L), which stays in GLOSS; within its new PU ENAMEL home
+  // 5802250 is the only Brilliant White 1L, so it must remain primary.
+  "IN28009081",
 ]);
 
 // ── CSV-as-source for the 3 WS targets (2026-06-01) ─────────────────────
@@ -329,6 +336,42 @@ async function main(): Promise<void> {
   }
   console.log(`Built-from-CSV rows (KEEP, no legacy)   : ${builtRows.length}`);
 
+  // ── 2c. Build the 5 alternate Brilliant White GLOSS SKUs (IN28401 series) ──
+  // KEEP per the gloss/PU review but ABSENT from legacy AND v2. Built the same
+  // way WS built its no-legacy alternates: copy packCode/unit/category from the
+  // primary Brilliant White sibling (IN28301 series) of the SAME nominal pack;
+  // product=GLOSS, baseColour="BRILLIANT WHITE", isPrimary=false (hidden alt).
+  const GLOSS_BW_ALT: Array<{ material: string; pack: string; description: string }> = [
+    { material: "IN28401073", pack: "500ML", description: "DN GLOSS BRILLIANT WHITE 500ML" },
+    { material: "IN28401072", pack: "1L",    description: "DN GLOSS BRILLIANT WHITE 1L" },
+    { material: "IN28401071", pack: "4L",    description: "DN GLOSS BRILLIANT WHITE 4L" },
+    { material: "IN28401082", pack: "10L",   description: "DN GLOSS BRILLIANT WHITE 10L" },
+    { material: "IN28401081", pack: "20L",   description: "DN GLOSS BRILLIANT WHITE 20L" },
+  ];
+  let glossAltBuilt = 0;
+  for (const alt of GLOSS_BW_ALT) {
+    if (seenMaterials.has(alt.material)) continue;          // produced after all → skip
+    const sibling = v2Rows.find((r) => r.product === "GLOSS" && r.baseColour === "BRILLIANT WHITE" && formatPack(r.packCode, r.unit) === alt.pack);
+    if (!sibling) { console.log(`[gloss-alt] NO SIBLING for ${alt.material} (GLOSS BRILLIANT WHITE ${alt.pack}) — cannot build`); continue; }
+    v2Rows.push({
+      material:        alt.material,
+      description:     alt.description,
+      category:        sibling.category,
+      product:         "GLOSS",
+      baseColour:      "BRILLIANT WHITE",
+      packCode:        sibling.packCode,
+      unit:            sibling.unit,
+      refMaterial:     null,
+      refDescription:  null,
+      paintType:       null,
+      materialType:    null,
+      piecesPerCarton: null,
+      isPrimary:       false,
+    });
+    glossAltBuilt++;
+  }
+  console.log(`Built GLOSS BW alternates (no legacy, hidden): ${glossAltBuilt}`);
+
   console.log(`Skipped (mapLegacyToNew → null)         : ${skippedNull}`);
   console.log(`Source rows expanded into multiple v2  : ${crossListed}`);
   console.log(`Name-override rows (live names applied) : ${overridden}`);
@@ -396,7 +439,7 @@ async function main(): Promise<void> {
       const r = rows.filter((x) => x.product === prod);
       return { n: r.length, pri: r.filter((x) => x.isPrimary).length };
     };
-    const TARGETS = ["WS PROTECT DUSTPROOF", "WS PROTECT RAINPROOF", "WS POWERFLEXX", "WS PROTECT HI-SHEEN"];
+    const TARGETS = ["WS PROTECT DUSTPROOF", "WS PROTECT RAINPROOF", "WS POWERFLEXX", "WS PROTECT HI-SHEEN", "GLOSS", "PU ENAMEL"];
     console.log("");
     console.log("════════════ WS RESTRUCTURE REHEARSAL (before → after) ════════════");
     for (const t of TARGETS) {

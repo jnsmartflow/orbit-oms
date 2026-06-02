@@ -64,6 +64,16 @@ export const BASE_ALIASES: Record<string, Record<string, BaseAlias>> = {
     "90 BASE": { display: "White",          search: ["white", "white base"] },
     "92 BASE": { display: "Intermediate",   search: ["intermediate", "intermediate base"] },
   },
+  // PU Enamel ships only 90 / 92 / 94 tint bases (+ Brilliant White, no alias).
+  // NOTE: PU Enamel menu rows join stock via subProduct (product=null, like
+  // GLOSS), so this block is currently dormant — neither the catalog seed's
+  // §7.8 token-baking nor the frontend's getBaseAliasDisplay (both keyed on a
+  // non-null `product`) consult it yet. Kept for parity / a future product-key.
+  "PU ENAMEL": {
+    "90 BASE": { display: "White",          search: ["white", "white base"] },
+    "92 BASE": { display: "Intermediate",   search: ["intermediate", "intermediate base"] },
+    "94 BASE": { display: "Accent",         search: ["accent", "accent base"] },
+  },
 };
 
 /**

@@ -56,6 +56,7 @@ export const FAMILY_BASE: Record<string, number> = {
   "WOOD FILLER":      700,
   // ENAMELS (Round 2)
   "GLOSS":            800,
+  "PU ENAMEL":        850,
   "SATIN":            900,
   "LUSTRE":          1000,
   // EXTERIORS (Round 3)
@@ -100,6 +101,7 @@ export const SUB_PRODUCT_ORDER: Record<string, string[]> = {
   "WOOD STAIN":       ["WOOD STAIN"],
   "WOOD FILLER":      ["WOOD FILLER"],
   "GLOSS":            ["GLOSS"],
+  "PU ENAMEL":        ["PU ENAMEL"],
   "SATIN":            ["SUPER SATIN", "SATIN STAY BRIGHT"],
   "LUSTRE":           ["LUSTRE"],
   "MAX":              ["MAX"],
@@ -280,6 +282,7 @@ const ALIASES: Record<string, string> = {
   "WOOD FILLER/WOOD FILLER":  "WOOD FILLER, WOODFILLER",
   // ENAMELS
   "GLOSS/GLOSS":              "GLOSS, DULUX GLOSS, GLOSS ENAMEL, ENAMEL GLOSS, GLOSS PREMIUM",
+  "PU ENAMEL/PU ENAMEL":      "PU ENAMEL, POLYURETHANE ENAMEL, PU ENML, DN PU ENAMEL, PU",
   "SATIN/SUPER SATIN":        "SUPER SATIN, SATIN FINISH, OIL SATIN, SAT FIN, SUPER SB PU SATIN",
   "SATIN/SATIN STAY BRIGHT":  "WB SATIN, WB PU SATIN, SATIN STAY BRIGHT, STAY BRIGHT SATIN, STAY BRIGHT WB PU SATIN",
   "LUSTRE/LUSTRE":            "LUSTRE, LUSTRE FINISH, DULUX LUSTRE",
@@ -437,6 +440,7 @@ const DISPLAY_LABEL: Record<string, string> = {
   "STAINER/MACHINE TINTER":   "Machine Tinter (Dealer)",
   "STAINER/HP COLORANT":      "HP Colorant",
   "SMOOTHOVER/SMOOTHOVER":    "Smoothover",
+  "PU ENAMEL/PU ENAMEL":      "PU Enamel",
 };
 
 function displayFor(family: string, subProduct: string): string {

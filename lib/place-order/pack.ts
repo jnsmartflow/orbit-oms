@@ -99,7 +99,7 @@ export function sortPacks(keys: string[]): string[] {
 // drum/bag steps where they apply.
 const PACK_STEP_MAP: Record<string, number> = {
   "50ML":  12,
-  "100ML": 12,
+  "100ML": 24,   // 2026-06-02 — 100ML carton is 24 (global; also Stainer + Wood Stain)
   "200ML": 12,
   "500ML": 12,
   "1L":    6,
@@ -127,7 +127,7 @@ export function packStep(packLabel: string): number {
 // suffix in that case (header renders just the pack label).
 const PACK_CONTAINER_MAP: Record<string, string> = {
   "50ML":  "box 12",
-  "100ML": "box 12",
+  "100ML": "box 24",
   "200ML": "box 12",
   "500ML": "box 12",
   "1L":    "box 6",
