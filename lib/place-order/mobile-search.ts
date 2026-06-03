@@ -11,6 +11,8 @@
 //
 // Pure (no React, no fetch) so it is shared by the route and unit/sim harnesses.
 
+import { isVariantQualifierTab } from "@/lib/place-order/sub-product-descriptors";
+
 const SCORE_PREFIX_OF_HAYSTACK   = 100;
 const SCORE_WORD_BOUNDARY        =  20;
 const SCORE_SUBSTRING_INNER      =   5;
@@ -72,8 +74,17 @@ export function rankProductsForQuery<T extends Rankable>(products: T[], query: s
     }
     if (!matched) continue;
 
+    // Colour-base bonus — SKIP for variant-qualifier tabs (SmartChoice / Primer):
+    // their baseColour is a product/variant label ("Interior", "Int Primer", …),
+    // not a colour, so a generic "int"/"ext"/"interior" token must not earn a
+    // colour match (it used to flip "promise int" → SmartChoice above the
+    // emulsion). Real-colour bases on every other family are unaffected.
     const baseLow = (p.baseColour ?? "").toLowerCase();
-    if (words.length >= 2 && words.some((w) => baseLow.includes(w))) total += SCORE_MULTI_TOKEN_BASE;
+    if (
+      words.length >= 2 &&
+      !isVariantQualifierTab(p.family, p.subProduct) &&
+      words.some((w) => baseLow.includes(w))
+    ) total += SCORE_MULTI_TOKEN_BASE;
 
     const subLow = (p.subProduct ?? "").toLowerCase();
     if (words.some((w) => subLow.startsWith(w))) total += SCORE_SUBPRODUCT_PREFIX;

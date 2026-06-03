@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import type { RawPack } from "@/lib/place-order/pack-buckets";
-import { packToMl } from "@/lib/place-order/pack";
+import { packToMl, formatPack } from "@/lib/place-order/pack";
 
 // Endpoint serving customer + product data to the desktop Place Order page
 // at /place-order. The live endpoint /api/order/data continues to serve the
@@ -124,14 +124,17 @@ export async function GET(): Promise<NextResponse> {
     // - Key B = product|||colour  — used by index rows with a baseColour
     //                               (specific packs for that colour variant)
     //
-    // Phase 3.5 (2026-05-13): values now carry (packCode, unit) so
-    // KG vs L distinction survives the join. Dedup is per
-    // (packCode, unit) — two SKUs of the same packCode but different
-    // units (e.g. 1 L vs 1 KG) both make it through.
+    // Phase 3.5 (2026-05-13): values carry (packCode, unit) so KG vs L
+    // distinction survives the join.
+    // 2026-06-03: dedup on the RENDERED display size (formatPack) instead of
+    // the raw (packCode, unit). A litre pack stored as both "L" and "LT", or a
+    // fractional/junk packCode, used to render the same size as two columns;
+    // keying on formatPack collapses them while still keeping KG vs L distinct
+    // (e.g. "1L" vs "1KG" render differently → both survive).
     const packMap = new Map<string, RawPack[]>();
     const seenComposite = new Set<string>();
     const addToPackMap = (key: string, pack: RawPack): void => {
-      const dedup = `${key}|||${pack.packCode}|${pack.unit ?? ""}`;
+      const dedup = `${key}|||${formatPack(pack.packCode, pack.unit)}`;
       if (seenComposite.has(dedup)) return;
       seenComposite.add(dedup);
       let bucket = packMap.get(key);

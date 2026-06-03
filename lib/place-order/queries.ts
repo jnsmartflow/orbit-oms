@@ -8,6 +8,7 @@
 // so it's trivial to test and reuse.
 
 import type { Product } from "@/app/(place-order)/place-order/types";
+import { isVariantQualifierTab } from "@/lib/place-order/sub-product-descriptors";
 
 export type SearchResult =
   | { type: "family";           family: string; section: string; subProductCount: number; skuCount: number }
@@ -234,7 +235,14 @@ export function searchProducts(products: Product[], query: string, limit: number
       + subProductPrefixBonus(tokens, entry.subProductName)
       + (startsAnyToken(entry.searchTokens, tokens) ? SCORE_TOKEN_START : 0)
       + wsDustproofTiebreak(entry.family, entry.subProductName);
-    if (tokens.length >= 2 && tokens.some((t) => baseLow.includes(t))) {
+    // Colour-base bonus — SKIP for variant-qualifier tabs (SmartChoice / Primer):
+    // their baseColour is a product/variant label, not a colour, so generic
+    // int/ext tokens must not earn a colour match. Mirrors mobile-search.ts.
+    if (
+      tokens.length >= 2 &&
+      !isVariantQualifierTab(entry.family, entry.subProductName) &&
+      tokens.some((t) => baseLow.includes(t))
+    ) {
       total += SCORE_MULTI_TOKEN_BASE;
     }
     scored.push({

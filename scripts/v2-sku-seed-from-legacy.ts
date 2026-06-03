@@ -27,7 +27,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { PrismaClient } from "@prisma/client";
 import { mapLegacyToNew, type LegacyKey } from "@/lib/mail-orders/taxonomy-mapping";
-import { formatPack } from "@/lib/place-order/pack";
+import { formatPack, packToMl } from "@/lib/place-order/pack";
 import nameOverridesJson from "./data/sku-name-overrides.json";
 
 // DATABASE_URL (transaction pooler, port 6543) — depot network blocks direct port 5432 connections per CLAUDE_CORE.md §3.
@@ -209,6 +209,47 @@ function familySuffix(family: string): string {
   return family.replace(/\s+/g, "_");
 }
 
+// ── Root-cause pack/unit normalization (2026-06-03) ─────────────────────
+// Three independent legacy-data defects that the route's old packCode|unit
+// dedup let leak through as duplicate / alien / stray pack columns. Fixed
+// here in the durable source so a wipe-and-reseed keeps them fixed.
+//
+// 1. Catalog-wide litre unit token "LT"/"LTR" → "L". formatPack/packToMl render
+//    "L" and "LT" identically, so on-screen display is unchanged; this collapses
+//    the L-vs-LT split that made one nominal size appear as two pack columns
+//    (e.g. Promise Exterior 94 BASE "two 1L", 98 BASE "two 20L"). KG/GM/ML/PC
+//    untouched.
+function normalizeUnit(unit: string | null): string | null {
+  if (unit == null) return unit;
+  const u = unit.trim().toUpperCase();
+  return u === "LT" || u === "LTR" ? "L" : unit;
+}
+
+// 2. Mis-keyed packCode 22 → 20 for Promise litre rows (RULE, not a material list).
+//    Some legacy Promise emulsion SKUs carry a "22" fill code where the real pack
+//    is the 20L standard (promise-review.csv: "IT IS 20l STANDARD NOT 22L"). The
+//    rule catches every such row (5882951, 5883496, 5883497, …) regardless of base.
+//    The 22KG distemper bag (unit KG, non-Promise) is left untouched.
+// 3. Promise 93-BASE fractional litre fills → nominal pack, per the CSV
+//    "Pack (on screen)" column (0.925→1, 3.7→4, 9.25→10, 18.5→20). Gated to
+//    Promise rows so no non-Promise SKU with a genuine fractional pack is touched.
+//    Affects 93 BASE across all four emulsion tabs. description left as the true fill.
+const PROMISE_FRACTIONAL_TO_NOMINAL: Record<string, string> = {
+  "0.925": "1", "3.7": "4", "9.25": "10", "18.5": "20",
+};
+function normalizePackCode(
+  packCode: string, unit: string | null, category: string, product: string,
+): string {
+  const isPromise = category === "PROMISE" || product.toUpperCase().startsWith("PROMISE");
+  const u = (unit ?? "").trim().toUpperCase();
+  const isLitre = u === "" || u === "L" || u === "LT" || u === "LTR";
+  if (isPromise && isLitre && packCode === "22") return "20";
+  if (isPromise && isLitre && PROMISE_FRACTIONAL_TO_NOMINAL[packCode]) {
+    return PROMISE_FRACTIONAL_TO_NOMINAL[packCode];
+  }
+  return packCode;
+}
+
 async function main(): Promise<void> {
   /* eslint-disable no-console */
 
@@ -242,6 +283,10 @@ async function main(): Promise<void> {
   let excludedByMaterial = 0;  // stray material removals (EXCLUDE_MATERIALS + PROTECT_DELETE)
   let overridden = 0;          // rows whose names came from NAME_OVERRIDES
   let csvAssigned = 0;         // rows whose product came from a target CSV
+  let droppedUmbrella = 0;     // Promise "-PROMISE" umbrella cross-list stock dupes dropped
+  let unitsNormalized = 0;     // litre unit "LT"/"LTR" → "L"
+  let fractionalNormalized = 0;// Promise fractional packCode → nominal
+  let miskeyedFixed = 0;       // packCode 22 → 20
   const seenMaterials = new Set<string>();  // every material legacy produced (for rule-5 report)
   const v2Rows: V2Row[] = [];
 
@@ -266,6 +311,15 @@ async function main(): Promise<void> {
           : `${legacy.material}-${familySuffix(newRow.family)}`;
       seenMaterials.add(material);
 
+      // ── Drop the umbrella "<mat>-PROMISE" stock dupes (2026-06-03) ──
+      // Promise is one consolidated family now; the cross-list row under the
+      // "PROMISE" umbrella duplicates the dedicated-family row (same product/
+      // base/pack) and is the only reason removed junk resurfaces (e.g. the
+      // bare 5883561/5838876 are removed but their -PROMISE twins escaped).
+      // seenMaterials already holds this material, so the PROMISE build
+      // (step 2e) will NOT re-create it as a hidden alternate.
+      if (newRow.family === "PROMISE") { droppedUmbrella++; continue; }
+
       // ── Name override (May-13 renames) — applied BEFORE exclusions so
       //    both the exclusions and the inserted rows use the LIVE names. ──
       const ov = NAME_OVERRIDES[material];
@@ -288,14 +342,22 @@ async function main(): Promise<void> {
         EXCLUDE_BASE_WSMAX.has((baseColour ?? "").trim().toUpperCase())
       ) { excludedByBase++; continue; }
 
+      // ── Root-cause pack/unit normalization (2026-06-03) ──
+      const normUnit = normalizeUnit(legacy.unit);
+      const normPack = normalizePackCode(legacy.packCode, legacy.unit, category, product);
+      if (normUnit !== legacy.unit) unitsNormalized++;
+      if (normPack !== legacy.packCode) {
+        if (legacy.packCode === "22") miskeyedFixed++; else fractionalNormalized++;
+      }
+
       v2Rows.push({
         material,
         description:     legacy.description,
         category,
         product,
         baseColour,
-        packCode:        legacy.packCode,
-        unit:            legacy.unit,
+        packCode:        normPack,
+        unit:            normUnit,
         refMaterial:     legacy.refMaterial,
         refDescription:  legacy.refDescription,
         paintType:       legacy.paintType,
@@ -542,6 +604,48 @@ async function main(): Promise<void> {
     const maxB = agg(liveRows, "WS MAX"); const maxA = agg(deduped, "WS MAX");
     console.log(`  Total rows: before ${liveRows.length}  ->  after ${deduped.length}`);
     console.log(`  WS MAX: before n=${maxB.n}  ->  after n=${maxA.n}  (expect steady)`);
+
+    // ── PROMISE root-cause rehearsal (2026-06-03) ──────────────────────
+    // Simulate the route's NEW display-size dedup (formatPack), the same key
+    // both /api/order/data and /api/place-order/data now use.
+    const routePacks = (prod: string, base: string): string[] => {
+      const rows = deduped.filter((r) => r.product === prod && r.baseColour === base);
+      const seenSz = new Set<string>();
+      const out: Array<{ lbl: string; ml: number }> = [];
+      for (const r of rows) {
+        const lbl = formatPack(r.packCode, r.unit);
+        if (seenSz.has(lbl)) continue;
+        seenSz.add(lbl);
+        out.push({ lbl, ml: packToMl(r.packCode, r.unit) });
+      }
+      return out.sort((a, b) => a.ml - b.ml).map((x) => x.lbl);
+    };
+    console.log("");
+    console.log("════════════ PROMISE ROOT-CAUSE FIXES (DRY-RUN) ════════════");
+    console.log(`  Units "LT"/"LTR" → "L" normalized (catalog-wide): ${unitsNormalized}`);
+    console.log(`  Promise fractional → nominal pack (0.925/3.7/9.25/18.5): ${fractionalNormalized}`);
+    console.log(`  Mis-keyed 22 → 20 (Promise litre rule): ${miskeyedFixed}`);
+    console.log(`  Umbrella -PROMISE stock dupes dropped: ${droppedUmbrella}`);
+    const promiseSuffix = deduped.filter((r) => r.material.endsWith("-PROMISE")).length;
+    const has61 = deduped.some((r) => r.material === "5883561-PROMISE");
+    const has76 = deduped.some((r) => r.material === "5838876-PROMISE");
+    console.log(`  Remaining "-PROMISE" stock rows: ${promiseSuffix} (5883561-PROMISE: ${has61}, 5838876-PROMISE: ${has76}) [expect 0 / false / false]`);
+    console.log(`  Stock rows after fixes: ${deduped.length} (was 1712 live)`);
+    console.log(`  93 BASE across 4 emulsion tabs (expect 1L, 4L, 10L, 20L):`);
+    for (const p of ["PROMISE INTERIOR", "PROMISE SHEEN INTERIOR", "PROMISE EXTERIOR", "PROMISE SHEEN EXTERIOR"]) {
+      console.log(`     ${p.padEnd(24)} ${routePacks(p, "93 BASE").join(", ")}`);
+    }
+    console.log(`  Focus bases — route display-size dedup (expect one column per size, no dup/alien/22L):`);
+    const FOCUS: Array<[string, string]> = [
+      ["PROMISE INTERIOR", "92 BASE"], ["PROMISE INTERIOR", "93 BASE"],
+      ["PROMISE EXTERIOR", "BRILLIANT WHITE"], ["PROMISE EXTERIOR", "93 BASE"],
+      ["PROMISE EXTERIOR", "94 BASE"], ["PROMISE EXTERIOR", "96 BASE"], ["PROMISE EXTERIOR", "98 BASE"],
+    ];
+    for (const [p, b] of FOCUS) console.log(`     ${`${p} | ${b}`.padEnd(34)} ${routePacks(p, b).join(", ")}`);
+    console.log(`  Other-family spot-check (display-size dedup; expect clean standard sets, nothing real lost):`);
+    for (const [p, b] of [["WS MAX", "90 BASE"], ["GLOSS", "BRILLIANT WHITE"], ["SUPER SATIN", "BRILLIANT WHITE"]] as Array<[string, string]>) {
+      console.log(`     ${`${p} | ${b}`.padEnd(34)} ${routePacks(p, b).join(", ")}`);
+    }
 
     console.log("");
     console.log("DRY_RUN=1 — NO wipe, NO insert performed.");

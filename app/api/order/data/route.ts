@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import type { RawPack } from "@/lib/place-order/pack-buckets";
-import { packToMl } from "@/lib/place-order/pack";
+import { packToMl, formatPack } from "@/lib/place-order/pack";
 
 // Public, unauthenticated endpoint serving customer + product data to the
 // Sales Officer order form at /order. Whitelisted in middleware via the
@@ -80,12 +80,13 @@ export async function GET(): Promise<NextResponse> {
     // ── Pack map: dual-keyed for base products + colour variants ──────
     //   Key A = product            (index rows with baseColour=null)
     //   Key B = product|||colour   (index rows with a baseColour)
-    // Dedup is per (packCode, unit) so 1L and 1KG of the same product
-    // both survive the join.
+    // 2026-06-03: dedup on the RENDERED display size (formatPack) so a litre
+    // pack stored as both "L" and "LT", or a fractional/junk packCode, can't
+    // double a column. KG vs L stay distinct ("1L" vs "1KG" render differently).
     const packMap = new Map<string, RawPack[]>();
     const seenComposite = new Set<string>();
     const addToPackMap = (key: string, pack: RawPack): void => {
-      const dedup = `${key}|||${pack.packCode}|${pack.unit ?? ""}`;
+      const dedup = `${key}|||${formatPack(pack.packCode, pack.unit)}`;
       if (seenComposite.has(dedup)) return;
       seenComposite.add(dedup);
       let bucket = packMap.get(key);
