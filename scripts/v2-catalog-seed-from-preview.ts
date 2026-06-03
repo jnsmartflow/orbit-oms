@@ -51,7 +51,7 @@ const DRY_RUN      = process.env.DRY_RUN === "1";
 // Locked expectations from the May 6 preview run. If the JSON drifts from
 // these the script refuses to seed — better to fail loudly than to ship
 // surprise data into v2.
-const EXPECTED_TOTAL_NEW_ROWS    = 478;  // 530 − 52 net (Promise consolidated into one PROMISE family, 6 tabs; 2026-06-03)
+const EXPECTED_TOTAL_NEW_ROWS    = 474;  // 478 − 4 net (AQUATECH rebuilt to 20 products + WATERPROOF PUTTY moved from PUTTY family into AQUATECH; 2026-06-04)
 const EXPECTED_WARNINGS          = 0;
 
 // ── PROMISE transform constants ────────────────────────────────────────
@@ -266,8 +266,11 @@ const CONFIRMED_SUBPRODUCT_MAP: Record<string, string> = {
 // base spelling.
 const HIGH_PRODUCT_MAP: Record<string, { product: string; baseColour?: string }> = {
   "2K PU|||GLOSS|||93 BASE CLR":                 { product: "BASE" },
-  "AQUATECH|||PU COAT|||":                       { product: "AQUATECH PU COAT" },
-  "AQUATECH|||DAMP PROTECT BASECOAT|||BASECOAT": { product: "ETERNA" },
+  // AQUATECH PU COAT + DAMP PROTECT BASECOAT hacks removed 2026-06-04: the
+  // rebuilt AQUATECH menu rows now carry the exact stock product name as
+  // subProduct (AQUATECH PU COAT / DAMP PROTECT BASECOAT), so the route's
+  // (product ?? subProduct) join hydrates directly. The old DAMP PROTECT
+  // BASECOAT → ETERNA mapping (which mis-joined to VT Eterna) is gone.
   "STAINER|||ACOTONE TINTER|||NO1":              { product: "ACOTONE" },
   "STAINER|||ACOTONE TINTER|||XY1":              { product: "ACOTONE" },
   "STAINER|||ACOTONE TINTER|||NO2":              { product: "ACOTONE" },
@@ -699,20 +702,34 @@ async function main(): Promise<void> {
     "2IN1 INTERIOR-EXTERIOR PRIMER": "PROMISE",  // approved decision
     "PROMISE PRIMER":            "PROMISE",
   };
+  // AQUATECH rebuilt 2026-06-04 to 20 products / 4 tabs. Keyed by the EXACT
+  // stock product name (= subProduct in the rebuilt preview rows), so uiGroup
+  // assigns cleanly and the (product ?? subProduct) join hydrates each row.
   const AQUA_UI: Record<string, string> = {
-    "CRACKFILLER":           "PREP",
-    "PRETREATMENT COAT":     "PREP",
-    "WRP":                   "ADDITIVES",
-    "TG COTTON WOOL":        "ADDITIVES",
-    "LW PLUS":               "ADDITIVES",
-    "RP LATEX":              "ADDITIVES",
-    "FLEXIBLE COAT":         "BASECOAT",
-    "IBC ADVANCE":           "BASECOAT",
-    "INTERIOR WBC":          "BASECOAT",  // approved decision
-    "DAMP PROTECT BASECOAT": "BASECOAT",  // approved decision (backup had TOPCOAT)
-    "PU COAT":               "TOPCOAT",
-    "WATERBLOCK 2K":         "TOPCOAT",
-    "DAMP PROTECT 2IN1":     "TOPCOAT",
+    // Ext / Int Coat
+    "DAMP PROTECT BASECOAT": "Ext / Int Coat",
+    "DAMP PROTECT 2IN1":     "Ext / Int Coat",
+    "FBC ADVANCE":           "Ext / Int Coat",
+    "FBC NEO":               "Ext / Int Coat",
+    "INTERIOR BASECOAT":     "Ext / Int Coat",
+    "IBC ADVANCE":           "Ext / Int Coat",
+    "ROOF COAT WHITE":       "Ext / Int Coat",
+    "ROOF COAT GREY":        "Ext / Int Coat",
+    "ROOF COAT TERACOTTA":   "Ext / Int Coat",
+    "AQUATECH PU COAT":      "Ext / Int Coat",
+    // Crack Filler
+    "CRACKFILLER 5MM":       "Crack Filler",
+    "CRACKFILLER 10MM":      "Crack Filler",
+    "CRACKFILLER 20MM":      "Crack Filler",
+    // Additives
+    "WRP":                   "Additives",
+    "LW PLUS":               "Additives",
+    "RP LATEX":              "Additives",
+    "PRETREATMENT COAT":     "Additives",
+    "TG COTTON WOOL":        "Additives",
+    "WATERBLOCK 2K":         "Additives",
+    // Putty
+    "WATERPROOF PUTTY":      "Putty",
   };
   // VELVET TOUCH: one family (merged VT GLO + VT ETERNA, 2026-06-03), 6 tabs.
   // uiGroup = short tab label; subProduct stays the pack-join key (unchanged).
@@ -729,9 +746,9 @@ async function main(): Promise<void> {
   // Restructured rows — match the backup EXACTLY. Keyed by PRE-grouping
   // `${family}|${subProduct}|${baseColour ?? ""}`.
   const RESTRUCTURED: Record<string, { family: string; subProduct: string; baseColour: string | null; product: string; uiGroup: string }> = {
-    "AQUATECH|ROOF COAT|BRILLIANT WHITE": { family: "AQUATECH", subProduct: "TOPCOAT", baseColour: null, product: "ROOF COAT WHITE",     uiGroup: "TOPCOAT" },
-    "AQUATECH|ROOF COAT|GREY":            { family: "AQUATECH", subProduct: "TOPCOAT", baseColour: null, product: "ROOF COAT GREY",      uiGroup: "TOPCOAT" },
-    "AQUATECH|ROOF COAT|TERACOTTA":       { family: "AQUATECH", subProduct: "TOPCOAT", baseColour: null, product: "ROOF COAT TERACOTTA", uiGroup: "TOPCOAT" },
+    // AQUATECH ROOF COAT restructure removed 2026-06-04: the rebuilt preview
+    // now ships ROOF COAT WHITE/GREY/TERACOTTA as discrete subProducts (blank
+    // baseColour), so no pre-grouping rewrite is needed.
     "PROTECT|PROTECT DUSTPROOF|ROX":         { family: "WS", subProduct: "PROTECT", baseColour: "ROX",         product: "WS PROTECT", uiGroup: "PROTECT" },
     "PROTECT|PROTECT DUSTPROOF|YELLOW BASE": { family: "WS", subProduct: "PROTECT", baseColour: "YELLOW BASE", product: "WS PROTECT", uiGroup: "PROTECT" },
   };
@@ -1011,6 +1028,24 @@ async function main(): Promise<void> {
     for (const r of regressions) {
       console.log(`     REGRESSION ${r.family} | ${r.subProduct} | ${r.baseColour ?? "null"}`);
     }
+
+    // ── 8b-aqua. AQUATECH rebuild verification (2026-06-04, dry-run only) ──
+    // Uses vPackMap (built from live mo_sku_lookup_v2 isPrimary) above. Every
+    // rebuilt AQUATECH row carries the exact stock product name as subProduct
+    // (product stays null), so afterKey() = subProduct and must hydrate.
+    const aqua = deduped
+      .filter((r) => r.family === "AQUATECH")
+      .sort((a, b) => a.sortOrder - b.sortOrder);
+    console.log("");
+    console.log(`════════════ AQUATECH REBUILD (${aqua.length} rows) ════════════`);
+    for (const r of aqua) {
+      console.log(`  sort=${r.sortOrder} tab="${r.uiGroup ?? "(none)"}" ` +
+                  `sub="${r.subProduct}" join="${r.product ?? r.subProduct}" packs=${afterPacks(r)}`);
+    }
+    const aquaTabs = Array.from(new Set(aqua.map((r) => r.uiGroup ?? "(none)")));
+    console.log(`  tabs in sortOrder sequence : ${JSON.stringify(aquaTabs)}`);
+    console.log(`  rows hydrating 0 packs     : ${aqua.filter((r) => afterPacks(r) === 0).length}`);
+    console.log(`  rows resolving to ETERNA   : ${aqua.filter((r) => (r.product ?? r.subProduct) === "ETERNA").length}`);
 
     // ── 8c. GROUPING verification (approved map, A–E) ─────────────────
     console.log("");

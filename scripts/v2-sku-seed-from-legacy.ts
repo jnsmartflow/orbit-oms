@@ -118,6 +118,11 @@ const SET_FALSE = new Set<string>([
   // BRILLIANT WHITE 1L), which stays in GLOSS; within its new PU ENAMEL home
   // 5802250 is the only Brilliant White 1L, so it must remain primary.
   "IN28009081",
+  // New Interior WBC (2026-06-04): unified to product "INTERIOR BASECOAT"
+  // (same as old 5688020-23) via sku-name-overrides.json. Old WBC stays
+  // primary; these NEW packs are hidden until promoted, so the route shows
+  // one Interior Basecoat pack set.
+  "9075187", "9075189", "9075190", "9075191",
 ]);
 
 // ── CSV-as-source for the 3 WS targets (2026-06-01) ─────────────────────
@@ -646,6 +651,36 @@ async function main(): Promise<void> {
     for (const [p, b] of [["WS MAX", "90 BASE"], ["GLOSS", "BRILLIANT WHITE"], ["SUPER SATIN", "BRILLIANT WHITE"]] as Array<[string, string]>) {
       console.log(`     ${`${p} | ${b}`.padEnd(34)} ${routePacks(p, b).join(", ")}`);
     }
+
+    // ── AQUATECH rebuild stock verification (2026-06-04) ──
+    const aquaStock = deduped.filter((r) => r.category === "AQUATECH");
+    console.log("");
+    console.log("════════════ AQUATECH STOCK REBUILD ════════════");
+    console.log(`  AQUATECH category SKUs (after): ${aquaStock.length} (expect 63)`);
+    const byProd = new Map<string, { n: number; pri: number }>();
+    for (const r of aquaStock) {
+      const e = byProd.get(r.product) ?? { n: 0, pri: 0 };
+      e.n++; if (r.isPrimary) e.pri++; byProd.set(r.product, e);
+    }
+    console.log(`  AQUATECH per-product (product: primary/total), ${byProd.size} products:`);
+    for (const p of Array.from(byProd.keys()).sort()) {
+      const e = byProd.get(p)!;
+      console.log(`     ${p.padEnd(26)} ${e.pri}/${e.n}`);
+    }
+    const wp = deduped.find((r) => r.material === "5576088");
+    console.log(`  5576088 Waterproof Putty: ${wp ? `product="${wp.product}" category="${wp.category}" pri=${wp.isPrimary}` : "ABSENT"} (expect category AQUATECH)`);
+    const puCoat = deduped.filter((r) => r.material === "5748677" || r.material === "5748708");
+    console.log(`  PU Coat present: ${puCoat.length}/2 -> ${JSON.stringify(puCoat.map((r) => `${r.material}:${r.product}`))}`);
+    const ibOld = deduped.filter((r) => ["5688020", "5688021", "5688022", "5688023"].includes(r.material));
+    const ibNew = deduped.filter((r) => ["9075187", "9075189", "9075190", "9075191"].includes(r.material));
+    console.log(`  Interior Basecoat OLD (5688020-23): product(s)=${JSON.stringify(Array.from(new Set(ibOld.map((r) => r.product))))} primary=${ibOld.filter((r) => r.isPrimary).length}/${ibOld.length}`);
+    console.log(`  Interior Basecoat NEW (9075187/89/90/91): product(s)=${JSON.stringify(Array.from(new Set(ibNew.map((r) => r.product))))} primary=${ibNew.filter((r) => r.isPrimary).length}/${ibNew.length} (expect 0/4)`);
+    const eternaAfter = deduped.filter((r) => r.product === "ETERNA").length;
+    const eternaLive  = liveRows.filter((r) => r.product === "ETERNA").length;
+    console.log(`  ETERNA product SKUs: before ${eternaLive} -> after ${eternaAfter} (expect unchanged)`);
+    const wpInPutty = deduped.filter((r) => r.category === "PUTTY").length;
+    const wpInPuttyLive = "(n/a — live lacks category in this select)";
+    console.log(`  PUTTY category SKUs (after): ${wpInPutty} ${wpInPuttyLive}`);
 
     console.log("");
     console.log("DRY_RUN=1 — NO wipe, NO insert performed.");

@@ -756,9 +756,12 @@ export function mapLegacyToNew(legacy: LegacyKey): NewRow[] | null {
   // ── UTILITY (Round 4C) ────────────────────────────────────────────────
 
   if (cat === "AQUATECH") {
-    if (prod === "WATERPROOF PUTTY") return [row("PUTTY", "WATERPROOF PUTTY", bc)];
-    // All other AQUATECH products preserved under AQUATECH family with
-    // their existing product name as the sub-product.
+    // WATERPROOF PUTTY now stays in family AQUATECH (2026-06-04) — it is an
+    // Aquatech product and lives under the Aquatech "Putty" tab. Previously
+    // re-homed to family PUTTY; that split is removed so 5576088 seeds under
+    // AQUATECH and the rebuilt AQUATECH menu row hydrates.
+    // All AQUATECH products preserved under AQUATECH family with their
+    // existing product name as the sub-product.
     return [row("AQUATECH", legacy.product.trim().toUpperCase(), bc)];
   }
 
