@@ -65,6 +65,7 @@ type Product = {
   searchTokens: string;          // pre-built lowercase token blob for filtering
   tinterType:   string | null;
   productType:  string;          // BASE_VARIANT | COLOUR | PLAIN; informational only
+  sortOrder:    number;          // family tab order — used by keyword-family promotion
   packs:        RawPack[];       // v2: {packCode, unit} — unit-aware (KG / L / ML)
 };
 type PackQty  = { pack: string; qty: number };   // pack is the FORMATTED label ("1L", "25KG")

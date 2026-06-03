@@ -12,6 +12,7 @@
 // Pure (no React, no fetch) so it is shared by the route and unit/sim harnesses.
 
 import { isVariantQualifierTab } from "@/lib/place-order/sub-product-descriptors";
+import { getFamilyDefaultForQuery } from "@/lib/place-order/keyword-family-map";
 
 const SCORE_PREFIX_OF_HAYSTACK   = 100;
 const SCORE_WORD_BOUNDARY        =  20;
@@ -38,6 +39,7 @@ type Rankable = {
   baseColour:   string | null;
   displayName:  string;
   searchTokens: string;
+  sortOrder:    number;
 };
 
 function scoreToken(token: string, haystack: string): number {
@@ -98,5 +100,17 @@ export function rankProductsForQuery<T extends Rankable>(products: T[], query: s
 
   // Score DESC; ties keep the input order (catalog/sortOrder) — stable.
   scored.sort((a, b) => (b.total - a.total) || (a.i - b.i));
+
+  // Keyword-family promotion (whole-query match only, e.g. "VT"/"VELVET TOUCH"):
+  // float the mapped family's matched rows to the top in natural tab order
+  // (sortOrder asc); every other match stays BELOW in its normal ranked order.
+  // Promote-only — nothing is dropped. No-op when the query maps to no family.
+  const family = getFamilyDefaultForQuery(query);
+  if (family) {
+    const inFamily = scored.filter((s) => s.p.family === family)
+      .sort((a, b) => a.p.sortOrder - b.p.sortOrder);
+    const rest = scored.filter((s) => s.p.family !== family);
+    return [...inFamily, ...rest].map((s) => s.p);
+  }
   return scored.map((s) => s.p);
 }

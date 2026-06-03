@@ -37,6 +37,7 @@ export type Product = {
   searchTokens: string;        // pre-built lowercase token blob for filtering
   tinterType:   string | null;
   productType:  string;        // "PLAIN" | "BASE_VARIANT" | "COLOUR" — informational
+  sortOrder:    number;        // family tab order — used by keyword-family search promotion
   // Phase 3.5 (2026-05-13): packs now carry unit alongside packCode so
   // KG SKUs (5 KG, 25 KG) survive into bucket placement, cart key, and
   // email rendering. formatPack(packCode, unit) renders the label;

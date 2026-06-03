@@ -177,6 +177,7 @@ export async function GET(): Promise<NextResponse> {
         searchTokens: row.searchTokens,
         tinterType:   row.tinterType ?? null,
         productType:  row.productType ?? "PLAIN",
+        sortOrder:    row.sortOrder,
         packs:        sortRawPacks(packMap.get(packKey) ?? []),
       };
     });

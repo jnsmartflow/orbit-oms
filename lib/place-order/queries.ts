@@ -9,6 +9,7 @@
 
 import type { Product } from "@/app/(place-order)/place-order/types";
 import { isVariantQualifierTab } from "@/lib/place-order/sub-product-descriptors";
+import { getFamilyDefaultForQuery } from "@/lib/place-order/keyword-family-map";
 
 export type SearchResult =
   | { type: "family";           family: string; section: string; subProductCount: number; skuCount: number }
@@ -142,26 +143,30 @@ export function searchProducts(products: Product[], query: string, limit: number
   // Aggregate per-family, per-sub-product, per-(sub-product, base) once
   // across the catalog. Tracks counts so result rows can render
   // "{N} SKUs" / "1 SKU" without recomputing.
-  const families    = new Map<string, { section: string; subProducts: Set<string>; skuCount: number }>();
-  const subProducts = new Map<string, { family: string; section: string; subProductName: string; skuCount: number }>();
-  const subBases    = new Map<string, { family: string; section: string; subProductName: string; baseColour: string; skuCount: number; searchTokens: string }>();
+  // Each entry tracks the MIN sortOrder of its rows so keyword-family promotion
+  // can order the promoted family by natural tab order (sortOrder asc).
+  const families    = new Map<string, { section: string; subProducts: Set<string>; skuCount: number; sortOrder: number }>();
+  const subProducts = new Map<string, { family: string; section: string; subProductName: string; skuCount: number; sortOrder: number }>();
+  const subBases    = new Map<string, { family: string; section: string; subProductName: string; baseColour: string; skuCount: number; searchTokens: string; sortOrder: number }>();
 
   for (const p of products) {
     let fa = families.get(p.family);
     if (!fa) {
-      fa = { section: p.section, subProducts: new Set(), skuCount: 0 };
+      fa = { section: p.section, subProducts: new Set(), skuCount: 0, sortOrder: p.sortOrder };
       families.set(p.family, fa);
     }
     fa.subProducts.add(p.subProduct);
     fa.skuCount += p.packs.length;
+    fa.sortOrder = Math.min(fa.sortOrder, p.sortOrder);
 
     const subKey = `${p.family}|||${p.subProduct}`;
     let sp = subProducts.get(subKey);
     if (!sp) {
-      sp = { family: p.family, section: p.section, subProductName: p.subProduct, skuCount: 0 };
+      sp = { family: p.family, section: p.section, subProductName: p.subProduct, skuCount: 0, sortOrder: p.sortOrder };
       subProducts.set(subKey, sp);
     }
     sp.skuCount += p.packs.length;
+    sp.sortOrder = Math.min(sp.sortOrder, p.sortOrder);
 
     if (p.baseColour) {
       const subBaseKey = `${p.family}|||${p.subProduct}|||${p.baseColour}`;
@@ -174,17 +179,19 @@ export function searchProducts(products: Product[], query: string, limit: number
           baseColour:     p.baseColour,
           skuCount:       0,
           searchTokens:   "",
+          sortOrder:      p.sortOrder,
         };
         subBases.set(subBaseKey, sb);
       }
       sb.skuCount += p.packs.length;
+      sb.sortOrder = Math.min(sb.sortOrder, p.sortOrder);
       // Accumulate per-row searchTokens so baked aliases (e.g. WS Max
       // "accent"/"rox") are matchable on desktop — same source as mobile.
       if (p.searchTokens) sb.searchTokens = sb.searchTokens ? `${sb.searchTokens} ${p.searchTokens}` : p.searchTokens;
     }
   }
 
-  const scored: Array<{ result: SearchResult; score: number }> = [];
+  const scored: Array<{ result: SearchResult; score: number; sortOrder: number }> = [];
 
   // Family-level matches — haystack = lower-cased family name only.
   for (const [familyName, entry] of Array.from(families.entries())) {
@@ -193,6 +200,7 @@ export function searchProducts(products: Product[], query: string, limit: number
     if (score === 0) continue;
     scored.push({
       score,
+      sortOrder: entry.sortOrder,
       result: {
         type:            "family",
         family:          familyName,
@@ -213,6 +221,7 @@ export function searchProducts(products: Product[], query: string, limit: number
       + wsDustproofTiebreak(entry.family, entry.subProductName);
     scored.push({
       score: total,
+      sortOrder: entry.sortOrder,
       result: {
         type:           "sub-product",
         subProductName: entry.subProductName,
@@ -247,6 +256,7 @@ export function searchProducts(products: Product[], query: string, limit: number
     }
     scored.push({
       score: total,
+      sortOrder: entry.sortOrder,
       result: {
         type:           "sub-product-base",
         subProductName: entry.subProductName,
@@ -276,7 +286,7 @@ export function searchProducts(products: Product[], query: string, limit: number
       case "sub-product-base": return `B|${r.subProductName}|${r.baseColour}`;
     }
   };
-  const seen = new Map<string, { result: SearchResult; score: number }>();
+  const seen = new Map<string, { result: SearchResult; score: number; sortOrder: number }>();
   for (const s of scored) {
     const key      = dedupeKey(s.result);
     const existing = seen.get(key);
@@ -286,5 +296,17 @@ export function searchProducts(products: Product[], query: string, limit: number
   }
 
   const deduped = Array.from(seen.values()).sort((a, b) => b.score - a.score);
+
+  // Keyword-family promotion (whole-query match only, e.g. "VT"/"VELVET TOUCH"):
+  // float the mapped family's matched results to the top in natural tab order
+  // (sortOrder asc); everything else stays BELOW in normal ranked order.
+  // Promote-only — nothing dropped. Mirrors mobile-search.ts. No-op otherwise.
+  const family = getFamilyDefaultForQuery(query);
+  if (family) {
+    const inFamily = deduped.filter((s) => s.result.family === family)
+      .sort((a, b) => a.sortOrder - b.sortOrder);
+    const rest = deduped.filter((s) => s.result.family !== family);
+    return [...inFamily, ...rest].slice(0, limit).map((s) => s.result);
+  }
   return deduped.slice(0, limit).map((s) => s.result);
 }
