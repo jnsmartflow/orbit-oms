@@ -107,8 +107,7 @@ const PROMISE_FUNCTIONAL_PRIORITY = new Set<string>(["PRIMER", "DISTEMPER"]);
 // emulsions on the depot floor).
 const FAMILY_TO_SECTION: Record<string, string> = {
   // INTERIORS
-  "VT GLO":           "INTERIORS",
-  "VT ETERNA":        "INTERIORS",
+  "VELVET TOUCH":     "INTERIORS",
   "VT SPECIALTY":     "INTERIORS",
   "SUPERCLEAN":       "INTERIORS",
   "SUPERCOVER":       "INTERIORS",
@@ -167,8 +166,7 @@ const FAMILY_TO_SUBGROUP: Record<string, string> = {
   "PUTTY":            "Prep – putty",
   // INTERIORS
   "PROMISE INTERIOR": "Promise (use-case interior)",
-  "VT GLO":           "VT (Dulux Velvet Touch)",
-  "VT ETERNA":        "VT (Dulux Velvet Touch)",
+  "VELVET TOUCH":     "VT (Dulux Velvet Touch)",
   "VT SPECIALTY":     "VT (Dulux Velvet Touch)",
   "SUPERCLEAN":       "Mass-market emulsion",
   "SUPERCOVER":       "Mass-market emulsion",
@@ -716,6 +714,14 @@ async function main(): Promise<void> {
     "WATERBLOCK 2K":         "TOPCOAT",
     "DAMP PROTECT 2IN1":     "TOPCOAT",
   };
+  // VELVET TOUCH: one family (merged VT GLO + VT ETERNA, 2026-06-03), 6 tabs.
+  // uiGroup = short tab label; subProduct stays the pack-join key (unchanged).
+  // ETERNA BASECOAT kept for completeness (0 rows today → renders no tab).
+  const VELVET_TOUCH_UI: Record<string, string> = {
+    "PEARL GLO": "Pearl", "PLATINUM GLO": "Platinum", "DIAMOND GLO": "Diamond",
+    "ETERNA": "Eterna", "ETERNA MATT": "Eterna Matt", "ETERNA HI-SHEEN": "Eterna Hi-Sheen",
+    "ETERNA BASECOAT": "Eterna Basecoat",
+  };
   const glossBase = (base: string | null): boolean => {
     const b = (base ?? "").trim().toUpperCase();
     return b === "BRILLIANT WHITE" || /\bBASE$/.test(b);
@@ -778,6 +784,7 @@ async function main(): Promise<void> {
     if (r.family === "PU ENAMEL") { r.uiGroup = glossBase(r.baseColour) ? "BASE" : "COLOUR"; uiAssigned++; continue; }
     // PROMISE: one family, 6 tabs (uiGroup short label; subProduct = tab = pack-join key).
     if (r.family === "PROMISE" && PROMISE_TAB_LABEL[r.subProduct]) { r.uiGroup = PROMISE_TAB_LABEL[r.subProduct]; uiAssigned++; continue; }
+    if (r.family === "VELVET TOUCH" && VELVET_TOUCH_UI[sub]) { r.uiGroup = VELVET_TOUCH_UI[sub]; uiAssigned++; continue; }
     if (r.family === "SATIN"   && SATIN_UI[sub])   { r.uiGroup = SATIN_UI[sub];   uiAssigned++; continue; }
     if (r.family === "STAINER" && STAINER_UI[sub]) { r.uiGroup = STAINER_UI[sub]; uiAssigned++; continue; }
     if (r.family === "PRIMER"  && PRIMER_UI[sub])  { r.uiGroup = PRIMER_UI[sub];  uiAssigned++; continue; }

@@ -71,8 +71,7 @@ export const FAMILY_BASE: Record<string, number> = {
   // INTERIORS (Round 4A)
   "SUPERCOVER":      1900,
   "SUPERCLEAN":      2000,
-  "VT GLO":          2100,
-  "VT ETERNA":       2200,
+  "VELVET TOUCH":    2100,
   "VT SPECIALTY":    2300,
   // PROMISE family (umbrella) + dedicated tops (Rounds 2/3/4B)
   "PROMISE":         2400,
@@ -114,8 +113,7 @@ export const SUB_PRODUCT_ORDER: Record<string, string[]> = {
   "METALLIC":         ["METALLIC"],
   "SUPERCOVER":       ["SUPERCOVER", "SUPERCOVER SHEEN", "SUPERCOVER ULTRA"],
   "SUPERCLEAN":       ["SUPERCLEAN", "SUPERCLEAN 3IN1"],
-  "VT GLO":           ["PEARL GLO", "PLATINUM GLO", "DIAMOND GLO"],
-  "VT ETERNA":        ["ETERNA", "ETERNA MATT", "ETERNA HI-SHEEN", "ETERNA BASECOAT"],
+  "VELVET TOUCH":     ["PEARL GLO", "PLATINUM GLO", "DIAMOND GLO", "ETERNA", "ETERNA MATT", "ETERNA HI-SHEEN", "ETERNA BASECOAT"],
   "VT SPECIALTY":     ["VAF", "VT FIN", "LUXURY FINISHES", "VT CONCRETE FINISH", "VT METALLICS", "AMBIANCE", "VT CLEAR COAT", "VT MARBLE", "VELVETINO"],
   "PROMISE":          ["PROMISE ENAMEL", "PROMISE INTERIOR", "PROMISE SHEEN INTERIOR", "PROMISE EXTERIOR", "PROMISE SHEEN EXTERIOR", "PROMISE PRIMER", "PROMISE SMARTCHOICE"],
   "PROMISE ENAMEL":   ["PROMISE ENAMEL"],
@@ -307,13 +305,13 @@ const ALIASES: Record<string, string> = {
   "SUPERCOVER/SUPERCOVER ULTRA":      "SUPERCOVER ULTRA, SUPER COVER ULTRA, SC ULTRA, ULTRA",
   "SUPERCLEAN/SUPERCLEAN":            "SUPERCLEAN, SUPER CLEAN, SCN, SUPERCLEAN NEW, DULUX SUPERCLEAN",
   "SUPERCLEAN/SUPERCLEAN 3IN1":       "3IN1, 3-IN-1, SCN 3IN1, SUPERCLEAN 3IN1, 3IN1 MR, MARK RESISTANT, 3IN1 MARK RESISTANT, SCN 3IN1 MR",
-  "VT GLO/PEARL GLO":                 "PEARL GLO, PEARL GLOW, VT PEARL, PEARL, DULUX PEARL GLO, VT, VELVET TOUCH, DULUX VT",
-  "VT GLO/PLATINUM GLO":              "PLATINUM GLO, PLATINUM GLOW, VT PLATINUM, PLATINUM",
-  "VT GLO/DIAMOND GLO":               "DIAMOND GLO, DIAMOND GLOW, VT DIAMOND, DIAMOND",
-  "VT ETERNA/ETERNA":                 "ETERNA, VT ETERNA, ETERNA SHEEN",
-  "VT ETERNA/ETERNA MATT":            "ETERNA MATT, VT ETERNA MATT, ETERNA MAT",
-  "VT ETERNA/ETERNA HI-SHEEN":        "ETERNA HI-SHEEN, ETERNA HISHEEN, ETERNA HI SHEEN",
-  "VT ETERNA/ETERNA BASECOAT":        "ETERNA BASECOAT, ETERNA BASE COAT, VT ETERNA BASECOAT",
+  "VELVET TOUCH/PEARL GLO":           "PEARL GLO, PEARL GLOW, VT PEARL, PEARL, DULUX PEARL GLO, VT, VELVET TOUCH, DULUX VT",
+  "VELVET TOUCH/PLATINUM GLO":        "PLATINUM GLO, PLATINUM GLOW, VT PLATINUM, PLATINUM, VELVET TOUCH, VT",
+  "VELVET TOUCH/DIAMOND GLO":         "DIAMOND GLO, DIAMOND GLOW, VT DIAMOND, DIAMOND, VELVET TOUCH, VT",
+  "VELVET TOUCH/ETERNA":              "ETERNA, VT ETERNA, ETERNA SHEEN, VELVET TOUCH, VT",
+  "VELVET TOUCH/ETERNA MATT":         "ETERNA MATT, VT ETERNA MATT, ETERNA MAT, VELVET TOUCH, VT",
+  "VELVET TOUCH/ETERNA HI-SHEEN":     "ETERNA HI-SHEEN, ETERNA HISHEEN, ETERNA HI SHEEN, VELVET TOUCH, VT",
+  "VELVET TOUCH/ETERNA BASECOAT":     "ETERNA BASECOAT, ETERNA BASE COAT, VT ETERNA BASECOAT, VELVET TOUCH, VT",
   "VT SPECIALTY/VAF":                 "VAF, VAF METALLIC, VAF TRENDS, GLITTER SILVER, GLITTER GOLD",
   "VT SPECIALTY/VT FIN":              "VT FIN, FIN GOLD, FIN SILVER",
   "VT SPECIALTY/LUXURY FINISHES":     "LUXURY FINISHES, MARMORINO, CLAY, VT LUXURY",
@@ -417,13 +415,13 @@ const DISPLAY_LABEL: Record<string, string> = {
   "SUPERCOVER/SUPERCOVER ULTRA": "SuperCover Ultra",
   "SUPERCLEAN/SUPERCLEAN":    "SuperClean",
   "SUPERCLEAN/SUPERCLEAN 3IN1":"SuperClean 3in1",
-  "VT GLO/PEARL GLO":         "VT Pearl Glo",
-  "VT GLO/PLATINUM GLO":      "VT Platinum Glo",
-  "VT GLO/DIAMOND GLO":       "VT Diamond Glo",
-  "VT ETERNA/ETERNA":         "VT Eterna",
-  "VT ETERNA/ETERNA MATT":    "VT Eterna Matt",
-  "VT ETERNA/ETERNA HI-SHEEN":"VT Eterna Hi-Sheen",
-  "VT ETERNA/ETERNA BASECOAT":"VT Eterna Basecoat",
+  "VELVET TOUCH/PEARL GLO":         "Pearl Glo",
+  "VELVET TOUCH/PLATINUM GLO":      "Platinum Glo",
+  "VELVET TOUCH/DIAMOND GLO":       "Diamond Glo",
+  "VELVET TOUCH/ETERNA":            "Eterna",
+  "VELVET TOUCH/ETERNA MATT":       "Eterna Matt",
+  "VELVET TOUCH/ETERNA HI-SHEEN":   "Eterna Hi-Sheen",
+  "VELVET TOUCH/ETERNA BASECOAT":   "Eterna Basecoat",
   "FLOOR PLUS/FLOOR PLUS":    "Floor Plus",
   "DISTEMPER/ACRYLIC DISTEMPER": "Acrylic Distemper",
   "DISTEMPER/MAGIK":          "Magik (Distemper)",
@@ -735,13 +733,13 @@ export function mapLegacyToNew(legacy: LegacyKey): NewRow[] | null {
   }
 
   if (cat === "VT") {
-    if (prod === "PEARL GLO")        return [row("VT GLO", "PEARL GLO", bc)];
-    if (prod === "PLATINUM GLO")     return [row("VT GLO", "PLATINUM GLO", bc)];
-    if (prod === "DIAMOND GLO")      return [row("VT GLO", "DIAMOND GLO", bc)];
-    if (prod === "ETERNA")           return [row("VT ETERNA", "ETERNA", bc)];
-    if (prod === "ETERNA MATT")      return [row("VT ETERNA", "ETERNA MATT", bc)];
-    if (prod === "ETERNA HI-SHEEN")  return [row("VT ETERNA", "ETERNA HI-SHEEN", bc)];
-    if (prod === "ETERNA BASECOAT")  return [row("VT ETERNA", "ETERNA BASECOAT", bc)];
+    if (prod === "PEARL GLO")        return [row("VELVET TOUCH", "PEARL GLO", bc)];
+    if (prod === "PLATINUM GLO")     return [row("VELVET TOUCH", "PLATINUM GLO", bc)];
+    if (prod === "DIAMOND GLO")      return [row("VELVET TOUCH", "DIAMOND GLO", bc)];
+    if (prod === "ETERNA")           return [row("VELVET TOUCH", "ETERNA", bc)];
+    if (prod === "ETERNA MATT")      return [row("VELVET TOUCH", "ETERNA MATT", bc)];
+    if (prod === "ETERNA HI-SHEEN")  return [row("VELVET TOUCH", "ETERNA HI-SHEEN", bc)];
+    if (prod === "ETERNA BASECOAT")  return [row("VELVET TOUCH", "ETERNA BASECOAT", bc)];
     if (prod === "VAF")              return [row("VT SPECIALTY", "VAF", bc)];
     if (prod === "VT FIN")           return [row("VT SPECIALTY", "VT FIN", bc)];
     if (prod === "LUXURY FINISHES")  return [row("VT SPECIALTY", "LUXURY FINISHES", bc)];
