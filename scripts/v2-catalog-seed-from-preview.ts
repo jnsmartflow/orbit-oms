@@ -68,12 +68,17 @@ const PROMISE_FAMILIES  = new Set<string>([PROMISE_UMBRELLA, ...Array.from(PROMI
 // the preview (no umbrella, no cross-listing). They must bypass the legacy phantom-
 // reassignment (step 3), which would otherwise re-file e.g. "PROMISE PRIMER" → PRIMER.
 const PROMISE_TABS = new Set<string>([
+  "PROMISE ENAMEL",
   "PROMISE INTERIOR", "PROMISE SHEEN INTERIOR", "PROMISE EXTERIOR",
   "PROMISE SHEEN EXTERIOR", "PROMISE PRIMER", "PROMISE SMARTCHOICE",
 ]);
+// 7 tabs (2026-06-03): Promise Enamel folded in as a Promise sub-product. Order
+// (Enamels·Int·Ext·Sheen Int·Sheen Ext·SmartChoice·Primer) is driven by the
+// preview sortOrders; these are the short tab labels (uiGroup).
 const PROMISE_TAB_LABEL: Record<string, string> = {
-  "PROMISE INTERIOR": "Interior", "PROMISE SHEEN INTERIOR": "Sheen Interior",
-  "PROMISE EXTERIOR": "Exterior", "PROMISE SHEEN EXTERIOR": "Sheen Exterior",
+  "PROMISE ENAMEL": "Enamels",
+  "PROMISE INTERIOR": "Int", "PROMISE SHEEN INTERIOR": "Sheen Int",
+  "PROMISE EXTERIOR": "Ext", "PROMISE SHEEN EXTERIOR": "Sheen Ext",
   "PROMISE PRIMER": "Primer", "PROMISE SMARTCHOICE": "SmartChoice",
 };
 
@@ -243,8 +248,9 @@ const CONFIRMED_SUBPRODUCT_MAP: Record<string, string> = {
   // equals these, so the pack join is unchanged.
   "SUPER SATIN":       "SUPER SATIN",
   "SATIN STAY BRIGHT": "SATIN STAY BRIGHT",
-  // Promise 6 tabs — identity join-key so base aliases render + §7.8 bakes tokens
+  // Promise 7 tabs — identity join-key so base aliases render + §7.8 bakes tokens
   // (stock product, set via overrides, equals these).
+  "PROMISE ENAMEL":         "PROMISE ENAMEL",
   "PROMISE INTERIOR":       "PROMISE INTERIOR",
   "PROMISE SHEEN INTERIOR": "PROMISE SHEEN INTERIOR",
   "PROMISE EXTERIOR":       "PROMISE EXTERIOR",
