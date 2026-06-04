@@ -62,11 +62,16 @@ export default function VariantGrid({
   // (subset of STANDARD_COLUMNS). The grid no longer renders one
   // column per distinct packCode — operators see "1 L · 4 L · 10 L"
   // instead of "1L · 900ML · 3.6L · 4L · 9L · 10L".
+  // Active family for the tab — all rows of one sub-product share it. Threaded
+  // into the bucket helpers so family-scoped overrides (e.g. AQUATECH 25KG→20L)
+  // shape both the column set and per-cell placement.
+  const activeFamily = products[0]?.family ?? null;
+
   const columns = useMemo<BucketColumn[]>(() => {
     const allPacks: RawPack[] = [];
     for (const p of products) for (const pack of p.packs) allPacks.push(pack);
-    return bucketColumnsForTab(allPacks);
-  }, [products]);
+    return bucketColumnsForTab(allPacks, activeFamily);
+  }, [products, activeFamily]);
 
   interface CellInfo {
     selectedPack: RawPack | null;   // null = no SKU in this row for this bucket
@@ -81,7 +86,7 @@ export default function VariantGrid({
   const cellMatrix = useMemo<CellInfo[][]>(() => {
     return products.map((product) =>
       columns.map((bucket) => {
-        const matching = product.packs.filter((p) => packToBucket(p) === bucket);
+        const matching = product.packs.filter((p) => packToBucket(p, activeFamily) === bucket);
         if (matching.length === 0) return { selectedPack: null, hintLabel: null };
         const canonical =
           matching.find((p) => formatPack(p.packCode, p.unit) === bucket)
@@ -92,7 +97,7 @@ export default function VariantGrid({
         };
       }),
     );
-  }, [products, columns]);
+  }, [products, columns, activeFamily]);
 
   // 2D ref grid populated via ref callbacks below.
   const cellRefs = useRef<Array<Array<VariantCellHandle | null>>>([]);

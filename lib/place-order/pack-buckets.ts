@@ -49,12 +49,13 @@ const PACK_TO_BUCKET: Record<string, BucketColumn> = {
   // 200 ML
   "200ML":  "200ML",
 
-  // 500 ML — small catch-all swallows 0.2 LT, 0.5 KG, 500 GM
+  // 500 ML — small catch-all swallows 0.2 LT, 0.5 KG, 400/500 GM
   "250ML":  "500ML",
   "400ML":  "500ML",
   "500ML":  "500ML",
   "0.2L":   "500ML",
   "0.5KG":  "500ML",
+  "400GM":  "500ML",   // 2026-06-04 — Aquatech Crackfiller 5mm 400 GM
   "500GM":  "500ML",
 
   // 1 L — 900/925 ML round up; 1 KG / 2 KG live here per ops rule
@@ -67,11 +68,12 @@ const PACK_TO_BUCKET: Record<string, BucketColumn> = {
   "1KG":    "1L",
   "2KG":    "1L",
 
-  // 4 L — 3.6/3.7 + 5 L + 5 KG collapse here
+  // 4 L — 3.6/3.7 + 5 L + 3/5 KG collapse here
   "3.6L":   "4L",
   "3.7L":   "4L",
   "4L":     "4L",
   "5L":     "4L",
+  "3KG":    "4L",   // 2026-06-04 — Aquatech Waterblock 2K 3 KG
   "5KG":    "4L",
 
   // 10 L
@@ -83,6 +85,7 @@ const PACK_TO_BUCKET: Record<string, BucketColumn> = {
 
   // 20 L
   "15L":    "20L",
+  "15KG":   "20L",   // 2026-06-04 — Aquatech Waterblock 2K + VT Concrete Finish 15 KG
   "18L":    "20L",
   "18.5L":  "20L",
   "19L":    "20L",
@@ -100,6 +103,18 @@ const PACK_TO_BUCKET: Record<string, BucketColumn> = {
   "40KG":   "40KG",
 };
 
+// Family-scoped bucket overrides (2026-06-04). Checked BEFORE the global
+// PACK_TO_BUCKET so a single family can re-route a pack key without touching
+// the shared table or any other family. Keyed by family → lookupKey → bucket.
+//
+// AQUATECH: collapse 25 KG into the 20 L column (PU Coat 25 KG drum) so the
+// Aquatech tabs don't sprout a dedicated 25 KG column. Every OTHER family that
+// carries 25 KG (TEXTURE/Rustic, VT Concrete Finish) keeps the global
+// "25KG" → "25KG" own-column mapping untouched.
+const FAMILY_BUCKET_OVERRIDES: Record<string, Record<string, BucketColumn>> = {
+  AQUATECH: { "25KG": "20L" },
+};
+
 /** Normalises LT → L. Other units pass through (KG, ML, GM stay). */
 function normaliseUnit(unit: string | null | undefined): string {
   const u = (unit ?? "").toUpperCase();
@@ -113,21 +128,29 @@ function lookupKey(pack: RawPack): string {
 }
 
 /**
- * Map a raw SAP pack to its bucket column. Returns null for packs not
- * in the mapping table — caller should console.warn and skip.
+ * Map a raw SAP pack to its bucket column. When `family` is supplied and a
+ * FAMILY_BUCKET_OVERRIDES entry exists for (family, lookupKey), that wins;
+ * otherwise falls back to the global PACK_TO_BUCKET. Returns null for packs
+ * not in either table — caller should console.warn and skip.
  */
-export function packToBucket(pack: RawPack): BucketColumn | null {
-  return PACK_TO_BUCKET[lookupKey(pack)] ?? null;
+export function packToBucket(pack: RawPack, family?: string | null): BucketColumn | null {
+  const key = lookupKey(pack);
+  if (family) {
+    const override = FAMILY_BUCKET_OVERRIDES[family]?.[key];
+    if (override) return override;
+  }
+  return PACK_TO_BUCKET[key] ?? null;
 }
 
 /**
  * Bucket columns for a tab, ordered per STANDARD_COLUMNS. Excludes
- * columns that no SKU in the tab maps to.
+ * columns that no SKU in the tab maps to. `family` threads through to
+ * packToBucket so family-scoped overrides shape the column set.
  */
-export function bucketColumnsForTab(packs: RawPack[]): BucketColumn[] {
+export function bucketColumnsForTab(packs: RawPack[], family?: string | null): BucketColumn[] {
   const present = new Set<BucketColumn>();
   for (const p of packs) {
-    const b = packToBucket(p);
+    const b = packToBucket(p, family);
     if (b) present.add(b);
   }
   return STANDARD_COLUMNS.filter((c) => present.has(c));
