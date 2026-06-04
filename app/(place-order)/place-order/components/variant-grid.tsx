@@ -43,15 +43,17 @@ const BASE_COL_WIDTH_PX = 160;
 
 // Pagination — sub-products with more bases than the THRESHOLD render
 // across pages of PAGE_SIZE each (with the threshold > page-size buffer
-// avoiding 1-row trailing pages). Today GLOSS (38 bases) and WS PROTECT
-// (16 bases) paginate; all other 194 sub-products render single-page.
+// avoiding 1-row trailing pages). 2026-06-04: PAGE_SIZE 15→20 (threshold
+// kept at page-size+2 = 22) so denser tabs — e.g. the SADOLIN Gloss tab
+// (18 stacked brand rows) — render on a single page. GLOSS (38 bases)
+// still paginates (2 pages of 20).
 //
 // Sort note: pagination ships as a MECHANISM only. Which bases land on
 // which page is whatever catalog sortOrder returns today (alphabetical).
 // Popularity ranking (most-ordered first) is pending a separate
 // baseOrderRank migration on mo_order_form_index_v2.
-export const VARIANT_GRID_PAGE_SIZE             = 15;
-export const VARIANT_GRID_PAGINATION_THRESHOLD  = 17;
+export const VARIANT_GRID_PAGE_SIZE             = 20;
+export const VARIANT_GRID_PAGINATION_THRESHOLD  = 22;
 
 export default function VariantGrid({
   products, qtyAt, onSetQty, focusHintBase, onFocused, onEscape,

@@ -832,7 +832,7 @@ async function main(): Promise<void> {
       console.log(`     ${prod} ${base === "*" ? "" : `/ ${base}`} -> ${rs.length} rows [${rs.map((r) => `${r.material}:${r.packCode}${r.unit ?? ""}`).join(", ")}]`);
     };
     console.log("  Spot-checks:");
-    spot("2K PU GLOSS", "90 Base"); spot("HYDRO PU GLOSS", "Interior Clear"); spot("HYDRO PU DEAD MATT", "Interior Clear");
+    spot("2K PU GLOSS", "90 Base"); spot("HYDRO PU GLOSS", "Int Clear"); spot("HYDRO PU DEAD MATT", "Int Clear");
     spot("HYDRO PU SEALER", "Clear"); spot("LUXURIO MATT", "Clear"); spot("1K PU GLOSS", "Clear");
     spot("SYNTHETIC VARNISH", "Clear"); spot("NC CLEAR LACQUER", "Clear"); spot("WOOD FILLER", "*");
     // Hydro built vs pre-existing
