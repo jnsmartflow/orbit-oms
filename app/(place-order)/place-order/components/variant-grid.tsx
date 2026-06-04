@@ -33,6 +33,7 @@ export interface VariantGridProps {
   onNextSubProduct?: () => void;    // PageDown from cell → next tab (family/drilled-section only)
   onPrevSubProduct?: () => void;    // PageUp  from cell → previous tab
   onPageChange?:     (direction: -1 | 1) => void;   // `[` / `]` from cell → prev/next page (paginated sub-products only)
+  multiProductTab?:  boolean;       // tab stacks >1 distinct product (e.g. SADOLIN Gloss) → label rows by displayName (brand visible) instead of bare baseColour. Computed over the FULL tab upstream (pagination-safe).
 }
 
 // v5: base column is fixed-width pixel (was 32% in v4). Pack columns omit
@@ -54,7 +55,7 @@ export const VARIANT_GRID_PAGINATION_THRESHOLD  = 17;
 
 export default function VariantGrid({
   products, qtyAt, onSetQty, focusHintBase, onFocused, onEscape,
-  onNextSubProduct, onPrevSubProduct, onPageChange,
+  onNextSubProduct, onPrevSubProduct, onPageChange, multiProductTab = false,
 }: VariantGridProps): React.JSX.Element {
   // Phase 3.5 (2026-05-13): columns are bucket-based, not packCode-based.
   // bucketColumnsForTab walks every SKU in the tab and returns the
@@ -249,11 +250,13 @@ export default function VariantGrid({
           //   displayName — descriptive label (Aquatech Crackfiller 5mm)
           //   product     — filled-family last resort
           //   subProduct  — ultimate non-null fallback for unmigrated rows
-          const baseLabel =
-            product.baseColour
-            ?? product.displayName
-            ?? product.product
-            ?? product.subProduct;
+          // When the tab stacks >1 distinct product (e.g. SADOLIN Gloss =
+          // 2K PU Gloss + Luxurio Gloss + …), the bare baseColour ("90 Base")
+          // wouldn't say which brand — so label by displayName ("2K Pu Gloss
+          // - 90 Base"). Single-product tabs keep the bare-base label.
+          const baseLabel = multiProductTab
+            ? (product.displayName ?? product.baseColour ?? product.product ?? product.subProduct)
+            : (product.baseColour ?? product.displayName ?? product.product ?? product.subProduct);
           const baseAlias = getBaseAliasDisplay(product.product, product.baseColour);
           // Variant-qualifier tabs (Promise SmartChoice / Primer): the alias is the
           // per-variant qualifier (Br White / Int & Ext) — render it on a light

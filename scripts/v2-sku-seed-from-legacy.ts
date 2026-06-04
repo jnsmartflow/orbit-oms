@@ -193,6 +193,79 @@ async function loadCsvProductMap(): Promise<Map<string, CsvProductEntry>> {
   return map;
 }
 
+// ── CSV-as-source for the SADOLIN (woodcare) rebuild (2026-06-04) ───────
+// docs/SKU/review/sadolin-review-final-20260604.csv is the source of truth.
+// Each row carries a brand-scoped proposedProduct (e.g. "2K PU GLOSS",
+// "HYDRO PU SEALER", "1K PU GLOSS", "SYNTHETIC VARNISH") + proposedBase;
+// category is forced to "SADOLIN" (the stock-side family grouping — the menu
+// family is set separately in v2-catalog-seed-from-preview.ts; the menu↔stock
+// join is by product+baseColour, not category). 146 existing materials are
+// re-keyed in the main loop; the Hydro PU rows have no legacy source and are
+// built in step 2f. Data fixes (CSV `note` column) are encoded below.
+const SADOLIN_CSV      = path.join("docs", "SKU", "review", "sadolin-review-final-20260604.csv");
+const SADOLIN_CATEGORY = "SADOLIN";
+// material → {packCode, unit} hard fixes (CSV `note`): 500ML stored as unit L;
+// Wood Filler Walnut 1L that is really 1KG. The 3L thinner is left as 3L.
+const SADOLIN_PACK_FIX: Record<string, { packCode: string; unit: string }> = {
+  "IN20109673": { packCode: "500", unit: "ML" },  // 1K PU Gloss 500ML (was unit L)
+  "IN20109173": { packCode: "500", unit: "ML" },  // Synthetic Varnish 500ML (was unit L)
+  "IN35203203": { packCode: "1",   unit: "KG" },  // Wood Filler Walnut 1L → 1KG
+};
+// Duplicate White 1KG wood filler — keep IN35202003 primary, demote IN35203003.
+const SADOLIN_DEMOTE = new Set<string>(["IN35203003"]);
+
+type SadolinEntry = { product: string; baseColour: string; isPrimary: boolean; pack: string; description: string };
+
+// Minimal CSV field splitter that honours "double-quoted, comma-bearing" cells
+// (the sadolin CSV's searchTokens column contains commas).
+function splitCsvLine(line: string): string[] {
+  const out: string[] = [];
+  let cur = "";
+  let inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQ) {
+      if (ch === '"') { if (line[i + 1] === '"') { cur += '"'; i++; } else inQ = false; }
+      else cur += ch;
+    } else if (ch === '"') { inQ = true; }
+    else if (ch === ",") { out.push(cur); cur = ""; }
+    else cur += ch;
+  }
+  out.push(cur);
+  return out;
+}
+
+// Parse a display pack label ("1L","4L","500ML","1KG","500GM") → packCode+unit.
+function parsePackLabel(label: string): { packCode: string; unit: string } | null {
+  const m = label.trim().match(/^(\d+(?:\.\d+)?)\s*(ML|GM|KG|LTR|LT|L)$/i);
+  if (!m) return null;
+  let unit = m[2].toUpperCase();
+  if (unit === "LTR" || unit === "LT") unit = "L";
+  return { packCode: m[1], unit };
+}
+
+// Columns: 0 family · 1 tab · 2 tabSeq · 3 brandLine · 4 brandSeq ·
+// 5 proposedProduct · 6 proposedBase · 7 displayName · 8 searchTokens ·
+// 9 material · 10 description · 11 pack · 12 isPrimary · 13 hydration · 14 note.
+async function loadSadolinMap(): Promise<Map<string, SadolinEntry>> {
+  const map = new Map<string, SadolinEntry>();
+  const raw = await fs.readFile(SADOLIN_CSV, "utf8");
+  for (const line of raw.split(/\r?\n/).slice(1)) {
+    if (!line.trim()) continue;
+    const c = splitCsvLine(line);
+    const material = (c[9] ?? "").trim();
+    if (!material) continue;
+    map.set(material, {
+      product:     (c[5] ?? "").trim(),
+      baseColour:  (c[6] ?? "").trim(),
+      isPrimary:   (c[12] ?? "").trim().toUpperCase() === "TRUE",
+      pack:        (c[11] ?? "").trim(),
+      description: (c[10] ?? "").trim(),
+    });
+  }
+  return map;
+}
+
 // Shape of one row to be inserted into mo_sku_lookup_v2.
 type V2Row = {
   material:        string;
@@ -281,6 +354,10 @@ async function main(): Promise<void> {
   const csvProduct = await loadCsvProductMap();
   console.log(`CSV product map: ${csvProduct.size} distinct materials across 3 target CSVs`);
 
+  // CSV-as-source for the SADOLIN woodcare rebuild (154 rows).
+  const sadolin = await loadSadolinMap();
+  console.log(`SADOLIN CSV map: ${sadolin.size} materials (source of truth)`);
+
   // ── 2. Translate each legacy row via mapLegacyToNew ─────────────────
   let skippedNull = 0;
   let crossListed = 0;  // source rows producing >1 v2 row
@@ -292,6 +369,7 @@ async function main(): Promise<void> {
   let unitsNormalized = 0;     // litre unit "LT"/"LTR" → "L"
   let fractionalNormalized = 0;// Promise fractional packCode → nominal
   let miskeyedFixed = 0;       // packCode 22 → 20
+  let sadAssigned = 0;         // existing materials re-keyed by the SADOLIN CSV
   const seenMaterials = new Set<string>();  // every material legacy produced (for rule-5 report)
   const v2Rows: V2Row[] = [];
 
@@ -329,15 +407,27 @@ async function main(): Promise<void> {
       //    both the exclusions and the inserted rows use the LIVE names. ──
       const ov = NAME_OVERRIDES[material];
       if (ov) overridden++;
-      const category   = ov ? ov.category   : newRow.family;
-      const ovProduct  = ov ? ov.product    : newRow.subProduct;
-      const baseColour = ov ? ov.baseColour : (newRow.baseColour ?? legacy.baseColour);
 
-      // ── CSV-as-source: product membership for the 3 WS targets wins over
-      //    the override product. baseColour/category stay from legacy/override.
+      // ── SADOLIN CSV (2026-06-04) WINS over NAME_OVERRIDES + WS CSV for its
+      //    154 materials: brand-scoped product, proposedBase, category SADOLIN.
+      const sad = sadolin.get(material);
       const csv = csvProduct.get(material);
-      const product = csv ? csv.product : ovProduct;
+      if (sad) sadAssigned++;
       if (csv) csvAssigned++;
+
+      const category =
+        sad ? SADOLIN_CATEGORY
+        : ov ? ov.category
+        : newRow.family;
+      const product =
+        sad ? sad.product
+        : csv ? csv.product
+        : ov ? ov.product
+        : newRow.subProduct;
+      const baseColour =
+        sad ? sad.baseColour
+        : ov ? ov.baseColour
+        : (newRow.baseColour ?? legacy.baseColour);
 
       // ── Exclusions (post-override keys, 2026-06-01) ──
       //   EXCLUDE_MATERIALS + PROTECT_DELETE (9 group-B) + POWERFLEXX_DROP (IN76109271).
@@ -348,12 +438,15 @@ async function main(): Promise<void> {
       ) { excludedByBase++; continue; }
 
       // ── Root-cause pack/unit normalization (2026-06-03) ──
-      const normUnit = normalizeUnit(legacy.unit);
-      const normPack = normalizePackCode(legacy.packCode, legacy.unit, category, product);
+      let normUnit = normalizeUnit(legacy.unit);
+      let normPack = normalizePackCode(legacy.packCode, legacy.unit, category, product);
       if (normUnit !== legacy.unit) unitsNormalized++;
       if (normPack !== legacy.packCode) {
         if (legacy.packCode === "22") miskeyedFixed++; else fractionalNormalized++;
       }
+      // SADOLIN hard pack/unit fixes (CSV note column) win last.
+      const pf = SADOLIN_PACK_FIX[material];
+      if (pf) { normPack = pf.packCode; normUnit = pf.unit; }
 
       v2Rows.push({
         material,
@@ -368,8 +461,12 @@ async function main(): Promise<void> {
         paintType:       legacy.paintType,
         materialType:    legacy.materialType,
         piecesPerCarton: legacy.piecesPerCarton,
-        // CSV KEEP/HIDE wins for target rows; else the existing SET_FALSE rule.
-        isPrimary:       csv ? csv.isPrimary : (SET_FALSE.has(material) ? false : true),
+        // SADOLIN CSV isPrimary (with the White-1KG demote) wins; then WS CSV
+        // KEEP/HIDE; else the SET_FALSE rule.
+        isPrimary:
+          sad ? (SADOLIN_DEMOTE.has(material) ? false : sad.isPrimary)
+          : csv ? csv.isPrimary
+          : (SET_FALSE.has(material) ? false : true),
       });
     }
   }
@@ -496,6 +593,37 @@ async function main(): Promise<void> {
     promiseBuilt++;
   }
   console.log(`Built PROMISE alternates (no legacy, hidden): ${promiseBuilt} (no-sibling: ${promiseNoSibling})`);
+
+  // ── 2f. SADOLIN new-SKU build (Hydro PU — no legacy source) ─────────
+  // Any SADOLIN-CSV material the legacy translation did NOT produce is a new
+  // insert (today: the 8 Hydro PU rows). Built with full fields from the CSV
+  // (packCode/unit parsed from the display pack). Guarded by seenMaterials so a
+  // material legacy already produced is re-keyed in the loop, never doubled.
+  const sadolinBuilt: string[] = [];
+  const sadolinPreexisting: string[] = [];
+  for (const [mat, e] of Array.from(sadolin.entries())) {
+    if (seenMaterials.has(mat)) { sadolinPreexisting.push(mat); continue; }
+    const pk = parsePackLabel(e.pack);
+    if (!pk) { console.log(`[sadolin-build] bad pack "${e.pack}" for ${mat} — skipped`); continue; }
+    v2Rows.push({
+      material:        mat,
+      description:     e.description,
+      category:        SADOLIN_CATEGORY,
+      product:         e.product,
+      baseColour:      e.baseColour,
+      packCode:        pk.packCode,
+      unit:            pk.unit,
+      refMaterial:     null,
+      refDescription:  null,
+      paintType:       null,
+      materialType:    null,
+      piecesPerCarton: null,
+      isPrimary:       SADOLIN_DEMOTE.has(mat) ? false : e.isPrimary,
+    });
+    seenMaterials.add(mat);
+    sadolinBuilt.push(mat);
+  }
+  console.log(`SADOLIN: re-keyed ${sadAssigned} existing, built ${sadolinBuilt.length} new [${sadolinBuilt.join(", ")}], ${sadolinPreexisting.length} pre-existing`);
 
   console.log(`Skipped (mapLegacyToNew → null)         : ${skippedNull}`);
   console.log(`Source rows expanded into multiple v2  : ${crossListed}`);
@@ -681,6 +809,47 @@ async function main(): Promise<void> {
     const wpInPutty = deduped.filter((r) => r.category === "PUTTY").length;
     const wpInPuttyLive = "(n/a — live lacks category in this select)";
     console.log(`  PUTTY category SKUs (after): ${wpInPutty} ${wpInPuttyLive}`);
+
+    // ── SADOLIN rebuild verification (2026-06-04) ──
+    const sad = deduped.filter((r) => r.category === "SADOLIN");
+    console.log("");
+    console.log("════════════ SADOLIN STOCK REBUILD ════════════");
+    console.log(`  SADOLIN category SKUs (after): ${sad.length} (expect 154)`);
+    const sadByProd = new Map<string, { n: number; pri: number }>();
+    for (const r of sad) { const e = sadByProd.get(r.product) ?? { n: 0, pri: 0 }; e.n++; if (r.isPrimary) e.pri++; sadByProd.set(r.product, e); }
+    console.log(`  SADOLIN per-product (product: primary/total), ${sadByProd.size} products:`);
+    for (const p of Array.from(sadByProd.keys()).sort()) { const e = sadByProd.get(p)!; console.log(`     ${p.padEnd(26)} ${e.pri}/${e.n}`); }
+    // bare finish-label products must be GONE
+    const BARE = new Set(["GLOSS", "MATT", "SEALER", "BASE", "COLOUR"]);
+    const bareLeft = sad.filter((r) => BARE.has(r.product));
+    console.log(`  Sadolin rows on a bare GLOSS/MATT/SEALER/BASE/COLOUR product: ${bareLeft.length} (expect 0)`);
+    for (const r of bareLeft) console.log(`     LEFTOVER ${r.material} product="${r.product}"`);
+    // none may resolve to the enamel GLOSS family product
+    console.log(`  Any Sadolin row with product exactly "GLOSS" (enamel family): ${sad.filter((r) => r.product === "GLOSS").length} (expect 0)`);
+    // spot-checks
+    const spot = (prod: string, base: string) => {
+      const rs = sad.filter((r) => r.product === prod && (base === "*" || r.baseColour === base));
+      console.log(`     ${prod} ${base === "*" ? "" : `/ ${base}`} -> ${rs.length} rows [${rs.map((r) => `${r.material}:${r.packCode}${r.unit ?? ""}`).join(", ")}]`);
+    };
+    console.log("  Spot-checks:");
+    spot("2K PU GLOSS", "90 Base"); spot("HYDRO PU GLOSS", "Interior Clear"); spot("HYDRO PU DEAD MATT", "Interior Clear");
+    spot("HYDRO PU SEALER", "Clear"); spot("LUXURIO MATT", "Clear"); spot("1K PU GLOSS", "Clear");
+    spot("SYNTHETIC VARNISH", "Clear"); spot("NC CLEAR LACQUER", "Clear"); spot("WOOD FILLER", "*");
+    // Hydro built vs pre-existing
+    console.log(`  Hydro PU built (new inserts): ${sadolinBuilt.length} -> [${sadolinBuilt.join(", ")}]`);
+    console.log(`  Sadolin pre-existing (re-keyed from legacy): ${sadolinPreexisting.length}`);
+    // data fixes
+    const showFix = (m: string) => { const r = deduped.find((x) => x.material === m); console.log(`     ${m}: ${r ? `product="${r.product}" base="${r.baseColour}" ${r.packCode}${r.unit ?? ""} pri=${r.isPrimary}` : "ABSENT"}`); };
+    console.log("  Data fixes:");
+    showFix("IN20109673"); showFix("IN20109173"); showFix("IN35203203"); showFix("IN35202003"); showFix("IN35203003"); showFix("IN35521429");
+    // (product, baseColour, pack) collisions with >1 primary (CSV-driven; report only)
+    const collide = new Map<string, string[]>();
+    for (const r of sad) { if (!r.isPrimary) continue; const k = `${r.product}|${r.baseColour}|${r.packCode}${r.unit ?? ""}`; (collide.get(k) ?? collide.set(k, []).get(k)!).push(r.material); }
+    const dupPrimary = Array.from(collide.entries()).filter(([, m]) => m.length > 1);
+    console.log(`  (product,base,pack) with >1 primary (CSV-as-source; report only): ${dupPrimary.length}`);
+    for (const [k, m] of dupPrimary) console.log(`     ${k} -> ${JSON.stringify(m)}`);
+    // totals
+    console.log(`  TOTAL stock rows after rebuild: ${deduped.length} (expect 1535 = 1527 + 8 Hydro)`);
 
     console.log("");
     console.log("DRY_RUN=1 — NO wipe, NO insert performed.");

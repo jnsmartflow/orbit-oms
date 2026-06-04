@@ -51,7 +51,7 @@ const DRY_RUN      = process.env.DRY_RUN === "1";
 // Locked expectations from the May 6 preview run. If the JSON drifts from
 // these the script refuses to seed — better to fail loudly than to ship
 // surprise data into v2.
-const EXPECTED_TOTAL_NEW_ROWS    = 474;  // 478 − 4 net (AQUATECH rebuilt to 20 products + WATERPROOF PUTTY moved from PUTTY family into AQUATECH; 2026-06-04)
+const EXPECTED_TOTAL_NEW_ROWS    = 486;  // 474 − 51 + 63 (7 ex-Woodcare brand families removed; one SADOLIN family of 63 finish-tab rows added; 2026-06-04)
 const EXPECTED_WARNINGS          = 0;
 
 // ── PROMISE transform constants ────────────────────────────────────────
@@ -132,6 +132,10 @@ const FAMILY_TO_SECTION: Record<string, string> = {
   "LUSTRE":           "ENAMELS",
   "PROMISE ENAMEL":   "ENAMELS",
   // WOODCARE
+  // 2026-06-04: the 7 brand families below were merged into one SADOLIN family
+  // (finish tabs). Their keys are kept (harmless) but no JSON rows reference
+  // them anymore; SADOLIN is the live woodcare family.
+  "SADOLIN":          "WOODCARE",
   "LUXURIO":          "WOODCARE",
   "2K PU":            "WOODCARE",
   "PU PRIME":         "WOODCARE",
@@ -191,7 +195,9 @@ const FAMILY_TO_SUBGROUP: Record<string, string> = {
   "SATIN":            "Enamel finish (satin)",
   "PROMISE ENAMEL":   "Promise (use-case enamel)",
   "LUSTRE":           "Enamel finish (lustre)",
-  // WOODCARE
+  // WOODCARE — one SADOLIN family (finish tabs) as of 2026-06-04; legacy
+  // per-brand subgroups kept as harmless unused keys.
+  "SADOLIN":          "Sadolin",
   "LUXURIO":          "Sadolin Premium PU",
   "2K PU":            "Sadolin Premium PU",
   "PU PRIME":         "Sadolin Premium PU",
@@ -265,7 +271,9 @@ const CONFIRMED_SUBPRODUCT_MAP: Record<string, string> = {
 // optional `baseColour` field is kept for future entries that repair a
 // base spelling.
 const HIGH_PRODUCT_MAP: Record<string, { product: string; baseColour?: string }> = {
-  "2K PU|||GLOSS|||93 BASE CLR":                 { product: "BASE" },
+  // (2026-06-04) removed stale "2K PU|||GLOSS|||93 BASE CLR" → BASE hack: the
+  // 2K PU brand family no longer exists in the menu (folded into SADOLIN, where
+  // the join key is the brand-scoped subProduct).
   // AQUATECH PU COAT + DAMP PROTECT BASECOAT hacks removed 2026-06-04: the
   // rebuilt AQUATECH menu rows now carry the exact stock product name as
   // subProduct (AQUATECH PU COAT / DAMP PROTECT BASECOAT), so the route's
@@ -731,6 +739,43 @@ async function main(): Promise<void> {
     // Putty
     "WATERPROOF PUTTY":      "Putty",
   };
+  // SADOLIN: one family (merged 7 ex-Woodcare brands, 2026-06-04), 6 finish
+  // tabs. Keyed by the brand-scoped subProduct (= proposedProduct, uppercase);
+  // product→tab is 1:1. uiGroup = proposedTab; subProduct stays the pack-join
+  // key (matches the brand-scoped stock product from step 1).
+  const SADOLIN_UI: Record<string, string> = {
+    "1K PU GLOSS": "Gloss",
+    "2K PU GLOSS": "Gloss",
+    "HYDRO PU GLOSS": "Gloss",
+    "PU PRIME GLOSS": "Gloss",
+    "LUXURIO GLOSS": "Gloss",
+    "MELAMINE GLOSS": "Gloss",
+    "2K PU MATT": "Matt",
+    "HYDRO PU DEAD MATT": "Matt",
+    "HYDRO PU MATT": "Matt",
+    "PU PRIME MATT": "Matt",
+    "LUXURIO MATT": "Matt",
+    "MELAMINE MATT": "Matt",
+    "2K PU PRIMER SURFACER": "Sealer",
+    "2K PU SEALER": "Sealer",
+    "HYDRO PU SEALER": "Sealer",
+    "PU PRIME SEALER": "Sealer",
+    "LUXURIO SEALER": "Sealer",
+    "MELAMINE SEALER": "Sealer",
+    "NC SANDING SEALER": "Sealer",
+    "2K PU THINNER": "Thinner",
+    "PU PRIME THINNER": "Thinner",
+    "MELAMINE THINNER": "Thinner",
+    "NC NECOL THINNER": "Thinner",
+    "NC WOOD THINNER": "Thinner",
+    "NC CLEAR LACQUER": "Lacquer / Varnish",
+    "NC NECOL": "Lacquer / Varnish",
+    "NC NECOL CLEAR": "Lacquer / Varnish",
+    "NC OPAQUE": "Lacquer / Varnish",
+    "SYNTHETIC VARNISH": "Lacquer / Varnish",
+    "WOOD FILLER": "Filler / Stain",
+    "WOOD STAIN": "Filler / Stain",
+  };
   // VELVET TOUCH: one family (merged VT GLO + VT ETERNA, 2026-06-03), 6 tabs.
   // uiGroup = short tab label; subProduct stays the pack-join key (unchanged).
   // ETERNA BASECOAT kept for completeness (0 rows today → renders no tab).
@@ -806,6 +851,7 @@ async function main(): Promise<void> {
     if (r.family === "STAINER" && STAINER_UI[sub]) { r.uiGroup = STAINER_UI[sub]; uiAssigned++; continue; }
     if (r.family === "PRIMER"  && PRIMER_UI[sub])  { r.uiGroup = PRIMER_UI[sub];  uiAssigned++; continue; }
     if (r.family === "AQUATECH" && AQUA_UI[sub])   { r.uiGroup = AQUA_UI[sub];    uiAssigned++; continue; }
+    if (r.family === "SADOLIN"  && SADOLIN_UI[sub]) { r.uiGroup = SADOLIN_UI[sub]; uiAssigned++; continue; }
   }
   if (floorPlusDropped.size > 0) deduped = deduped.filter((r) => !floorPlusDropped.has(r));
   console.log(`Grouping transform: WS consolidated=${wsCount}, FLOOR PLUS moved=${floorPlusMoved}, ` +
@@ -1046,6 +1092,50 @@ async function main(): Promise<void> {
     console.log(`  tabs in sortOrder sequence : ${JSON.stringify(aquaTabs)}`);
     console.log(`  rows hydrating 0 packs     : ${aqua.filter((r) => afterPacks(r) === 0).length}`);
     console.log(`  rows resolving to ETERNA   : ${aqua.filter((r) => (r.product ?? r.subProduct) === "ETERNA").length}`);
+
+    // ── 8b-sadolin. SADOLIN menu verification (2026-06-04, dry-run only) ──
+    // Live stock is NOT reseeded for SADOLIN yet, so hydration is cross-checked
+    // against the sadolin CSV (= step-1 stock source of truth), NOT vPackMap.
+    const sadCsvRaw = await fs.readFile(
+      path.join("docs", "SKU", "review", "sadolin-review-final-20260604.csv"), "utf8");
+    const splitSad = (line: string): string[] => {
+      const out: string[] = []; let cur = ""; let inQ = false;
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (inQ) { if (ch === '"') { if (line[i + 1] === '"') { cur += '"'; i++; } else inQ = false; } else cur += ch; }
+        else if (ch === '"') inQ = true;
+        else if (ch === ",") { out.push(cur); cur = ""; } else cur += ch;
+      }
+      out.push(cur); return out;
+    };
+    const sadStockPairs = new Set<string>();   // product|||base from CSV (step-1 stock)
+    for (const line of sadCsvRaw.split(/\r?\n/).slice(1)) {
+      if (!line.trim()) continue;
+      const c = splitSad(line);
+      sadStockPairs.add(`${c[5].trim()}|||${c[6].trim()}`);
+    }
+    const sadRows = deduped.filter((r) => r.family === "SADOLIN").sort((a, b) => a.sortOrder - b.sortOrder);
+    console.log("");
+    console.log(`════════════ SADOLIN MENU (${sadRows.length} rows) ════════════`);
+    const sadTabSeq = Array.from(new Set(sadRows.map((r) => r.uiGroup ?? "(none)")));
+    console.log(`  tabs in sortOrder sequence : ${JSON.stringify(sadTabSeq)}`);
+    const perTab = new Map<string, number>();
+    for (const r of sadRows) perTab.set(r.uiGroup ?? "(none)", (perTab.get(r.uiGroup ?? "(none)") ?? 0) + 1);
+    console.log(`  per-tab counts             : ${JSON.stringify(Array.from(perTab.entries()))}`);
+    // hydration vs CSV stock (join key = product ?? subProduct, base = baseColour)
+    const noStock = sadRows.filter((r) => !sadStockPairs.has(`${r.product ?? r.subProduct}|||${r.baseColour ?? ""}`));
+    console.log(`  rows with NO matching CSV stock (product,base): ${noStock.length}`);
+    for (const r of noStock) console.log(`     MISS sub="${r.subProduct}" base="${r.baseColour ?? ""}"`);
+    const BARE = new Set(["GLOSS", "MATT", "SEALER", "BASE", "COLOUR"]);
+    console.log(`  rows on a bare GLOSS/MATT/SEALER/BASE/COLOUR join: ${sadRows.filter((r) => BARE.has(r.product ?? r.subProduct)).length}`);
+    console.log(`  rows with product set non-null (expect 0; join via subProduct): ${sadRows.filter((r) => r.product != null).length}`);
+    // brand order within first tab (Gloss)
+    const gloss = sadRows.filter((r) => r.uiGroup === "Gloss");
+    console.log(`  Gloss tab join keys in order: ${JSON.stringify(gloss.map((r) => r.subProduct))}`);
+    // old 7-brand families gone
+    const OLD = ["LUXURIO", "2K PU", "PU PRIME", "NC", "MELAMINE", "WOOD STAIN", "WOOD FILLER"];
+    const oldLeft = deduped.filter((r) => OLD.includes(r.family));
+    console.log(`  old 7-brand menu rows remaining: ${oldLeft.length} (expect 0)`);
 
     // ── 8c. GROUPING verification (approved map, A–E) ─────────────────
     console.log("");

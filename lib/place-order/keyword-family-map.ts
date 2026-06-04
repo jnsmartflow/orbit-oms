@@ -19,6 +19,8 @@ const KEYWORD_FAMILY: Record<string, string> = {
   "vt":           "VELVET TOUCH",
   "velvet touch": "VELVET TOUCH",
   "velvettouch":  "VELVET TOUCH",
+  "sadolin":      "SADOLIN",
+  "woodcare":     "SADOLIN",
 };
 
 function normalizeQuery(query: string): string {

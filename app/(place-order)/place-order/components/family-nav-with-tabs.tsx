@@ -104,6 +104,15 @@ export default function FamilyNavWithTabs({
     [products, activeSubProduct],
   );
 
+  // A tab that stacks >1 distinct product (join key = product ?? subProduct,
+  // e.g. SADOLIN Gloss = 2K PU GLOSS + LUXURIO GLOSS + …) labels its rows by
+  // displayName so the brand shows. Computed over the FULL tab (not the
+  // paginated slice) so a single-product page doesn't flip the label.
+  const tabHasMultipleProducts = useMemo(
+    () => new Set(filteredProducts.map((p) => p.product ?? p.subProduct)).size > 1,
+    [filteredProducts],
+  );
+
   const activeCartCount = useMemo(
     () => cartLines.filter((l) => products.some((p) => p.subProduct === l.subProduct)).length,
     [cartLines, products],
@@ -193,6 +202,7 @@ export default function FamilyNavWithTabs({
         onNextSubProduct={handleNextSubProduct}
         onPrevSubProduct={handlePrevSubProduct}
         onPageChange={handleCellPageChange}
+        multiProductTab={tabHasMultipleProducts}
       />
 
       {isPaginated ? (

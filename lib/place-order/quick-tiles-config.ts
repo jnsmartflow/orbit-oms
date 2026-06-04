@@ -20,7 +20,7 @@ export const QUICK_TILES_V1: ReadonlyArray<QuickTile> = [
   { position: 3, type: "family",      label: "PROMISE",        parentLabel: "PROMISE",   familyName:     "PROMISE"        },
   { position: 4, type: "family",      label: "WS",             parentLabel: "EXTERIORS", familyName:     "WS"             },
   { position: 5, type: "family",      label: "VELVET TOUCH",   parentLabel: "INTERIORS", familyName:     "VELVET TOUCH"   },
-  { position: 6, type: "section",     label: "WOODCARE",       parentLabel: null,        sectionName:    "WOODCARE"       },
+  { position: 6, type: "family",      label: "SADOLIN",        parentLabel: "WOODCARE",  familyName:     "SADOLIN"        },
   { position: 7, type: "family",      label: "STAINER",        parentLabel: "UTILITY",   familyName:     "STAINER"        },
   { position: 8, type: "family",      label: "PRIMER",         parentLabel: "UTILITY",   familyName:     "PRIMER"         },
   { position: 9, type: "family",      label: "AQUATECH",       parentLabel: "UTILITY",   familyName:     "AQUATECH"       },
