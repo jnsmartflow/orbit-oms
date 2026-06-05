@@ -1,8 +1,9 @@
 {
-  "name": "OrbitOMS",
-  "short_name": "OrbitOMS",
-  "description": "Depot Management Application",
-  "start_url": "/",
+  "name": "Orbit Purchase Order",
+  "short_name": "Orbit PO",
+  "description": "Place a depot order — JSW Dulux Surat Depot",
+  "start_url": "/po",
+  "scope": "/po",
   "display": "standalone",
   "background_color": "#f9fafb",
   "theme_color": "#0d9488",
