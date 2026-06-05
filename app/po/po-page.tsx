@@ -16,7 +16,7 @@ import { getSecondLine, isVariantQualifierTab } from "@/lib/place-order/sub-prod
 //     +/- by box step, 16px inputs — pack logic reused from
 //     lib/place-order/pack)
 //   - Done → commit a canonical CartLine into /po cart state, persist to
-//     the orbitoms_po_draft key, flash an "Added" toast, return to search
+//     the orbitoms_po_draft key, show a persistent "Added" banner, return to search
 //   - voice (Web Speech API, en-IN) wired onto the hero search; mic stays
 //     visible whenever search is active (fixes the /order picking quirk)
 //
@@ -377,9 +377,9 @@ export default function PoPage(): React.JSX.Element {
   const [marker,      setMarker]      = useState<Marker>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
 
-  // Brief "Added · {product}" confirmation toast.
-  const [toast, setToast] = useState<string | null>(null);
-  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Persistent "last added" confirmation banner. Set on every add, replaced
+  // by the newest, cleared only on a full reset (New order / change / Send).
+  const [lastAdded, setLastAdded] = useState<string | null>(null);
 
   // Voice input (Web Speech API).
   const [speechSupported, setSpeechSupported] = useState(false);
@@ -430,14 +430,13 @@ export default function PoPage(): React.JSX.Element {
     }
   }, []);
 
-  // Stop recognition + clear toast timer on unmount.
+  // Stop recognition on unmount.
   useEffect(() => {
     return () => {
       if (recognitionRef.current) {
         recognitionRef.current.stop();
         recognitionRef.current = null;
       }
-      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     };
   }, []);
 
@@ -571,6 +570,7 @@ export default function PoPage(): React.JSX.Element {
     setMultiSelect(false);
     setSelectedProducts([]);
     setMultiQtys({});
+    setLastAdded(null);
     clearPoDraft();
   }
 
@@ -680,9 +680,7 @@ export default function PoPage(): React.JSX.Element {
     setBills(nextBills);
     persist(nextBills, billCounter, activeBillId);
 
-    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    setToast(`Added ${newLines.length} ${newLines.length === 1 ? "product" : "products"}`);
-    toastTimerRef.current = setTimeout(() => setToast(null), 2200);
+    setLastAdded(`Added ${newLines.length} ${newLines.length === 1 ? "product" : "products"}`);
 
     // Clear selection, return to the search results (toggle left as-is).
     setSelectedProducts([]);
@@ -841,10 +839,8 @@ export default function PoPage(): React.JSX.Element {
     setBills(nextBills);
     persist(nextBills, billCounter, activeBillId);
 
-    // Toast.
-    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    setToast(`Added · ${productLabel(activeProduct)}`);
-    toastTimerRef.current = setTimeout(() => setToast(null), 2200);
+    // Persistent "last added" banner — product name only (no pack detail).
+    setLastAdded(`Added · ${productLabel(activeProduct)}`);
 
     // Return to search. Clear the query so the next hunt starts fresh.
     setMode("search");
@@ -1393,11 +1389,12 @@ export default function PoPage(): React.JSX.Element {
               </div>
             )}
 
-            {/* "Added" toast */}
-            {toast && mode === "search" && (
-              <div className="mx-4 mt-3 flex items-center gap-2 bg-teal-50 border border-teal-200 rounded-lg px-[13px] py-[9px] text-[13px] text-teal-700">
+            {/* Persistent amber "last added" banner (replaces on each add,
+                clears on full reset). */}
+            {lastAdded && mode === "search" && (
+              <div className="mx-4 mt-3 flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg px-[13px] py-[9px] text-[13px] text-amber-700">
                 <Check className="w-[15px] h-[15px] shrink-0" />
-                <span className="truncate">{toast}</span>
+                <span className="truncate">{lastAdded}</span>
               </div>
             )}
 
