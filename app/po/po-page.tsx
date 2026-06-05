@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Search, Mic, Check, ChevronLeft, ChevronDown, ChevronRight, Plus, Pencil, Send } from "lucide-react";
+import { Search, Mic, Check, ChevronLeft, ChevronDown, ChevronRight, Plus, Pencil, Send, RefreshCw } from "lucide-react";
 import type { RawPack } from "@/lib/place-order/pack-buckets";
 import type { Product, CartLine, Bill, Customer } from "@/app/(place-order)/place-order/types";
 import { rankProductsForQuery } from "@/lib/place-order/mobile-search";
@@ -277,9 +277,14 @@ export default function PoPage(): React.JSX.Element {
   const [listening,       setListening]       = useState(false);
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
 
-  const custInputRef  = useRef<HTMLInputElement | null>(null);
-  const heroInputRef  = useRef<HTMLInputElement | null>(null);
-  const packInputsRef = useRef<HTMLInputElement[]>([]);
+  // Reset confirm dialog — "new" (New order) or "change" (Switch customer).
+  const [confirmKind, setConfirmKind] = useState<null | "new" | "change">(null);
+
+  const custInputRef   = useRef<HTMLInputElement | null>(null);
+  const heroInputRef   = useRef<HTMLInputElement | null>(null);
+  const packInputsRef  = useRef<HTMLInputElement[]>([]);
+  const confirmBtnRef  = useRef<HTMLButtonElement | null>(null);
+  const cancelBtnRef   = useRef<HTMLButtonElement | null>(null);
 
   // ── Data ──────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -371,6 +376,35 @@ export default function PoPage(): React.JSX.Element {
     return () => cancelAnimationFrame(id);
   }, [mode, activeProduct]);
 
+  // Confirm dialog: focus the confirm button on open, trap Tab between the two
+  // buttons, Esc cancels. Accessible per the task spec.
+  useEffect(() => {
+    if (!confirmKind) return;
+    const t = requestAnimationFrame(() => confirmBtnRef.current?.focus());
+    function onKey(e: KeyboardEvent): void {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setConfirmKind(null);
+      } else if (e.key === "Tab") {
+        const first = cancelBtnRef.current;
+        const last  = confirmBtnRef.current;
+        if (!first || !last) return;
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => {
+      cancelAnimationFrame(t);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [confirmKind]);
+
   // ── Customer handlers (modelled on /order) ────────────────────────────────
   const custSuggestions = useMemo<Customer[]>(() => {
     if (custQuery.length < 2) return [];
@@ -425,6 +459,30 @@ export default function PoPage(): React.JSX.Element {
     setMarker(null);
     setPreviewOpen(false);
     clearPoDraft();
+  }
+
+  // ── New order / Change reset wiring ───────────────────────────────────────
+  // clearCustomer() above is the FULL reset (all bills/cart/ship/dispatch/
+  // marker/counters + removes the orbitoms_po_draft key + back to pick).
+
+  // Brand-bar "New order": confirm, then full reset. No-op on a truly blank
+  // slate (no customer, empty cart) — nothing to clear.
+  function onNewOrder(): void {
+    if (!selectedCust && !hasAnyLines) return;
+    setConfirmKind("new");
+  }
+
+  // Customer "Change": confirm first only when the cart has lines; otherwise
+  // go straight back to the customer picker (full reset).
+  function onChange(): void {
+    if (hasAnyLines) setConfirmKind("change");
+    else             clearCustomer();
+  }
+
+  // Confirm dialog primary action.
+  function confirmProceed(): void {
+    clearCustomer();
+    setConfirmKind(null);
   }
 
   // ── Review-screen handlers ────────────────────────────────────────────────
@@ -679,6 +737,14 @@ export default function PoPage(): React.JSX.Element {
   const multiBill  = bills.length > 1;
   const reviewBills = bills.filter((b) => b.lines.length > 0);
 
+  // Avatar initial for the customer block (first letter of name, uppercased).
+  const custInitial = (selectedCust?.name?.trim().charAt(0) ?? "").toUpperCase() || "?";
+
+  // Confirm-dialog copy, by intent.
+  const confirmCopy = confirmKind === "change"
+    ? { title: "Switch customer?", body: "This clears the current order.", cta: "Switch customer" }
+    : { title: "Start a new order?", body: "This clears the current order and starts fresh. It can’t be undone.", cta: "New order" };
+
   // Email — byte-identical to /order. Computed each render (like /order).
   const { subject: emailSubject, body: emailBody, valid: canSend } =
     buildEmailParts({ customer: selectedCust, bills, shipTo, dispatch, marker });
@@ -686,7 +752,9 @@ export default function PoPage(): React.JSX.Element {
   function handleSend(): void {
     if (!canSend) return;
     const url = `mailto:${ORDER_TO}?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(emailBody)}`;
-    window.location.href = url;
+    window.location.href = url;   // mailto: opens the mail app; page does not unload
+    // Full reset so the next order starts empty (back to customer-pick).
+    clearCustomer();
   }
 
   // §10 chips for a cart line: per pack "{label} ×{units}" + conditional
@@ -712,6 +780,27 @@ export default function PoPage(): React.JSX.Element {
       style={{ height: "var(--vvh, 100vh)" }}
     >
       <div className="max-w-[480px] mx-auto flex flex-col min-h-full">
+
+        {/* Brand bar — page-level chrome, pinned above everything (all states) */}
+        <header className="sticky top-0 z-40 bg-white border-b border-gray-200">
+          <div className="flex items-center justify-between px-4 py-[11px]">
+            <div className="min-w-0">
+              <div className="text-[15px] font-semibold text-gray-900 leading-tight truncate">
+                Purchase Order
+              </div>
+              <div className="text-[11px] text-gray-500 leading-tight truncate mt-px">
+                JSW Dulux · Surat Depot
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={onNewOrder}
+              className="flex items-center gap-1.5 text-teal-700 text-[13px] font-medium shrink-0 pl-3 active:opacity-70"
+            >
+              <RefreshCw className="w-[15px] h-[15px]" /> New order
+            </button>
+          </div>
+        </header>
 
         {!selectedCust ? (
           /* ── Pick a customer ───────────────────────────────────────────── */
@@ -771,7 +860,7 @@ export default function PoPage(): React.JSX.Element {
         ) : view === "review" ? (
           /* ── Review & send (mockup state 6) ────────────────────────────── */
           <>
-            <header className="sticky top-0 z-30 bg-white border-b border-gray-200">
+            <div className="bg-white border-b border-gray-200">
               <div className="flex items-center gap-2 px-4 py-[14px]">
                 <button
                   type="button"
@@ -783,7 +872,7 @@ export default function PoPage(): React.JSX.Element {
                   <span className="text-[15px] font-semibold text-gray-900">Review &amp; send</span>
                 </button>
               </div>
-            </header>
+            </div>
 
             {/* Bills + lines */}
             {reviewBills.map((b) => (
@@ -998,43 +1087,42 @@ export default function PoPage(): React.JSX.Element {
         ) : (
           /* ── Customer locked — build screen (header + bill strip + search/picking + cart bar) ── */
           <>
-            <header className="sticky top-0 z-30 bg-white border-b border-gray-200">
-              <div className="flex items-center justify-between px-4 py-[14px]">
-                {mode === "picking" ? (
-                  <button
-                    type="button"
-                    onClick={cancelPicking}
-                    className="flex items-center gap-2 min-w-0 text-left"
-                    aria-label="Back to search"
-                  >
-                    <ChevronLeft className="w-[18px] h-[18px] text-gray-500 shrink-0" />
-                    <span className="text-[15px] font-semibold text-gray-900 truncate">
-                      Back
-                    </span>
-                  </button>
-                ) : (
-                  <div className="min-w-0">
-                    <div className="text-[15px] font-semibold text-gray-900 leading-tight truncate">
-                      {selectedCust.name}
-                    </div>
-                    {selectedCust.code && (
-                      <div className="text-[12px] text-gray-500 leading-tight truncate mt-px">
-                        {selectedCust.code}
-                      </div>
-                    )}
-                  </div>
-                )}
-                {mode !== "picking" && (
-                  <button
-                    type="button"
-                    onClick={clearCustomer}
-                    className="text-teal-700 text-[13px] font-medium px-[10px] py-[6px] -mr-[6px] shrink-0"
-                  >
-                    Change
-                  </button>
-                )}
+            {mode === "picking" ? (
+              /* Picking sub-header — Back */
+              <div className="bg-white border-b border-gray-200 px-4 py-[14px]">
+                <button
+                  type="button"
+                  onClick={cancelPicking}
+                  className="flex items-center gap-2 min-w-0 text-left"
+                  aria-label="Back to search"
+                >
+                  <ChevronLeft className="w-[18px] h-[18px] text-gray-500 shrink-0" />
+                  <span className="text-[15px] font-semibold text-gray-900 truncate">Back</span>
+                </button>
               </div>
-            </header>
+            ) : (
+              /* Distinct customer block — tinted band + teal avatar */
+              <div className="bg-gray-50 border-b border-gray-200 px-4 py-[14px] flex items-center gap-3">
+                <div className="w-[42px] h-[42px] rounded-full bg-teal-600 text-white flex items-center justify-center text-[17px] font-semibold shrink-0">
+                  {custInitial}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[15px] font-bold text-gray-900 truncate">
+                    {selectedCust.name}
+                  </div>
+                  <div className="text-[12px] text-gray-500 mt-px truncate">
+                    {selectedCust.code}{selectedCust.area ? ` · ${selectedCust.area}` : ""}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={onChange}
+                  className="text-teal-700 text-[13px] font-medium shrink-0 pl-2"
+                >
+                  Change
+                </button>
+              </div>
+            )}
 
             {/* Bill strip — directly under the customer header (search mode) */}
             {mode === "search" && (
@@ -1333,6 +1421,48 @@ export default function PoPage(): React.JSX.Element {
               </div>
             )}
           </>
+        )}
+
+        {/* Reset confirm dialog — New order / Switch customer */}
+        {confirmKind && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-6"
+            onClick={() => setConfirmKind(null)}
+          >
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="po-confirm-title"
+              aria-describedby="po-confirm-body"
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-[340px] bg-white rounded-[14px] shadow-xl p-5"
+            >
+              <h2 id="po-confirm-title" className="text-[16px] font-semibold text-gray-900">
+                {confirmCopy.title}
+              </h2>
+              <p id="po-confirm-body" className="text-[13px] text-gray-500 mt-1.5 leading-snug">
+                {confirmCopy.body}
+              </p>
+              <div className="flex gap-2 mt-5">
+                <button
+                  ref={cancelBtnRef}
+                  type="button"
+                  onClick={() => setConfirmKind(null)}
+                  className="flex-1 h-[44px] rounded-[10px] border border-gray-200 bg-white text-gray-700 text-[14px] font-medium active:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  ref={confirmBtnRef}
+                  type="button"
+                  onClick={confirmProceed}
+                  className="flex-1 h-[44px] rounded-[10px] bg-teal-600 text-white text-[14px] font-semibold active:bg-teal-700"
+                >
+                  {confirmCopy.cta}
+                </button>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </main>
