@@ -781,8 +781,10 @@ export default function PoPage(): React.JSX.Element {
     >
       <div className="max-w-[480px] mx-auto flex flex-col min-h-full">
 
-        {/* Brand bar — page-level chrome, pinned above everything (all states) */}
-        <header className="sticky top-0 z-40 bg-white border-b border-gray-200">
+        {/* Brand bar — normal flow (scrolls away). The product search bar is the
+            single top-pinned element, so brand/customer/bill rows scroll up
+            above it. No sticky here → no stacked-sticky pixel fight. */}
+        <header className="bg-white border-b border-gray-200">
           <div className="flex items-center justify-between px-4 py-[11px]">
             <div className="min-w-0">
               <div className="text-[15px] font-semibold text-gray-900 leading-tight truncate">
@@ -1170,8 +1172,11 @@ export default function PoPage(): React.JSX.Element {
 
             {mode === "search" ? (
               <>
-                {/* Hero search bar */}
-                <div className="p-4">
+                {/* Hero search bar — the SINGLE top-pinned element. Pure CSS
+                    sticky (no JS viewport math — §22). Opaque page-bg so results
+                    don't show through; bottom border + soft shadow = elevation
+                    cue as results scroll underneath. */}
+                <div className="sticky top-0 z-30 bg-[#f9fafb] p-4 border-b border-gray-200 shadow-[0_2px_6px_rgba(0,0,0,0.04)]">
                   <div className={`flex items-center gap-3 border rounded-full px-[18px] py-[14px] transition-shadow ${
                     listening
                       ? "border-teal-600 shadow-[0_0_0_3px_rgba(13,148,136,0.10)]"
