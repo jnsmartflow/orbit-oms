@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Search, Mic, Check, ChevronLeft, Plus } from "lucide-react";
+import { Search, Mic, Check, ChevronLeft, ChevronDown, ChevronRight, Plus } from "lucide-react";
 import type { RawPack } from "@/lib/place-order/pack-buckets";
 import type { Product, CartLine, Bill, Customer } from "@/app/(place-order)/place-order/types";
 import { rankProductsForQuery } from "@/lib/place-order/mobile-search";
@@ -170,6 +170,9 @@ export default function PoPage(): React.JSX.Element {
   const [billCounter,  setBillCounter]  = useState(1);
   const [activeBillId, setActiveBillId] = useState(1);
 
+  // Page view: build screen vs the review/send shell (Phase 4 fills the body).
+  const [view, setView] = useState<"build" | "review">("build");
+
   // Brief "Added · {product}" confirmation toast.
   const [toast, setToast] = useState<string | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -303,6 +306,7 @@ export default function PoPage(): React.JSX.Element {
     setCustQuery("");
     setHeroQuery("");
     setMode("search");
+    setView("build");
     setActiveProduct(null);
     setPackQtys({});
     const freshBills: Bill[] = [{ id: 1, lines: [] }];
@@ -446,9 +450,42 @@ export default function PoPage(): React.JSX.Element {
     else           startListening();
   }
 
+  // ── Bill strip / review navigation ────────────────────────────────────────
+  function switchBill(id: number): void {
+    setActiveBillId(id);
+    persist(bills, billCounter, id);
+  }
+
+  function addBill(): void {
+    const id = billCounter + 1;
+    const nextBills: Bill[] = [...bills, { id, lines: [] }];
+    setBills(nextBills);
+    setBillCounter(id);
+    setActiveBillId(id);
+    persist(nextBills, id, id);
+  }
+
+  function openReview(): void {
+    if (listening) stopListening();
+    setMode("search");
+    setView("review");
+  }
+
+  function closeReview(): void {
+    setView("build");
+  }
+
   const hasAnyLines    = bills.some((b) => b.lines.length > 0);
   const sortedPacks    = activeProduct ? sortRawPacks(activeProduct.packs) : [];
   const heroPlaceholder = hasAnyLines ? "Search next product" : "Search products to add";
+
+  // Cart totals. Units total = sum of line units — NEVER × packStep
+  // (§10 cart totals / §22 landmine). Volume (Phase 4) would be
+  // units × packToLitres per pack, also never × packStep.
+  const billUnits  = (b: Bill): number =>
+    b.lines.reduce((s, l) => s + Object.values(l.packQtys).reduce((a, q) => a + q, 0), 0);
+  const totalUnits = bills.reduce((s, b) => s + billUnits(b), 0);
+  const multiBill  = bills.length > 1;
 
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
@@ -513,8 +550,31 @@ export default function PoPage(): React.JSX.Element {
               )}
             </div>
           </div>
+        ) : view === "review" ? (
+          /* ── Review & send shell (Phase 3 — body filled in Phase 4) ────── */
+          <>
+            <header className="sticky top-0 z-30 bg-white border-b border-gray-200">
+              <div className="flex items-center gap-2 px-4 py-[14px]">
+                <button
+                  type="button"
+                  onClick={closeReview}
+                  aria-label="Back to build"
+                  className="flex items-center gap-2 text-left"
+                >
+                  <ChevronDown className="w-[18px] h-[18px] text-gray-500 shrink-0" />
+                  <span className="text-[15px] font-semibold text-gray-900">Review &amp; send</span>
+                </button>
+              </div>
+            </header>
+            <div className="flex-1 flex flex-col items-center justify-center px-6 py-16 text-center">
+              <p className="text-[14px] text-gray-400">Review &amp; send — coming in Phase 4.</p>
+              <p className="text-[12px] text-gray-300 mt-1">
+                {multiBill ? `${bills.length} bills` : `Bill ${bills[0].id}`} · {totalUnits} {totalUnits === 1 ? "unit" : "units"}
+              </p>
+            </div>
+          </>
         ) : (
-          /* ── Customer locked — header + (search | picking) ─────────────── */
+          /* ── Customer locked — build screen (header + bill strip + search/picking + cart bar) ── */
           <>
             <header className="sticky top-0 z-30 bg-white border-b border-gray-200">
               <div className="flex items-center justify-between px-4 py-[14px]">
@@ -553,6 +613,42 @@ export default function PoPage(): React.JSX.Element {
                 )}
               </div>
             </header>
+
+            {/* Bill strip — directly under the customer header (search mode) */}
+            {mode === "search" && (
+              <div className="bg-white border-b border-gray-200 px-4 py-[9px] flex items-center justify-between">
+                <div className="flex items-center gap-2 min-w-0 overflow-x-auto">
+                  {bills.length === 1 ? (
+                    <span className="text-[13px] text-gray-500 shrink-0">Bill {bills[0].id}</span>
+                  ) : (
+                    bills.map((b) => {
+                      const active = b.id === activeBillId;
+                      return (
+                        <button
+                          key={b.id}
+                          type="button"
+                          onClick={() => switchBill(b.id)}
+                          className={
+                            active
+                              ? "shrink-0 text-[13px] font-semibold text-teal-700 bg-teal-50 border border-teal-200 rounded-full px-3 py-[3px]"
+                              : "shrink-0 text-[13px] text-gray-500 px-2 py-[3px]"
+                          }
+                        >
+                          Bill {b.id}
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={addBill}
+                  className="flex items-center gap-1 text-[13px] text-teal-700 font-medium shrink-0 pl-3"
+                >
+                  <Plus className="w-[14px] h-[14px]" /> Add bill
+                </button>
+              </div>
+            )}
 
             {/* "Added" toast */}
             {toast && mode === "search" && (
@@ -783,6 +879,36 @@ export default function PoPage(): React.JSX.Element {
                   </div>
                 </>
               )
+            )}
+
+            {/* Bottom cart bar — page-level sticky (§15.5 rule 4), search mode + has lines */}
+            {mode === "search" && hasAnyLines && (
+              <div className="sticky bottom-0 z-20 bg-teal-600 text-white px-[18px] py-[15px] flex items-center justify-between">
+                <div className="min-w-0">
+                  {multiBill ? (
+                    <>
+                      <div className="text-[14px] font-semibold truncate">
+                        {bills.length} bills · {totalUnits} {totalUnits === 1 ? "unit" : "units"}
+                      </div>
+                      <div className="text-[12px] text-teal-50 truncate mt-px">
+                        {bills.map((b) => `Bill ${b.id} · ${billUnits(b)}`).join("   ·   ")}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-[14px] font-semibold truncate">
+                      Bill {bills[0].id} · {bills[0].lines.length} {bills[0].lines.length === 1 ? "product" : "products"} · {totalUnits} {totalUnits === 1 ? "unit" : "units"}
+                    </div>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={openReview}
+                  className="flex items-center gap-1 text-[14px] font-semibold shrink-0 pl-3 active:opacity-80"
+                >
+                  Review &amp; send
+                  <ChevronRight className="w-[17px] h-[17px]" />
+                </button>
+              </div>
             )}
           </>
         )}
