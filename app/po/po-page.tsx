@@ -945,9 +945,6 @@ export default function PoPage(): React.JSX.Element {
   const multiBill  = bills.length > 1;
   const reviewBills = bills.filter((b) => b.lines.length > 0);
 
-  // Avatar initial for the customer block (first letter of name, uppercased).
-  const custInitial = (selectedCust?.name?.trim().charAt(0) ?? "").toUpperCase() || "?";
-
   // Confirm-dialog copy, by intent.
   const confirmCopy = confirmKind === "change"
     ? { title: "Switch customer?", body: "This clears the current order.", cta: "Switch customer" }
@@ -1023,59 +1020,59 @@ export default function PoPage(): React.JSX.Element {
         </header>
 
         {!selectedCust ? (
-          /* ── Pick a customer ───────────────────────────────────────────── */
-          <div className="px-4 pt-5">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-2 pl-0.5">
-              Customer
-            </p>
-            <div className="bg-white rounded-[14px] overflow-hidden shadow-sm border border-gray-100">
-              <div className="flex items-center gap-2.5 px-4 py-3">
-                <Search className="w-4 h-4 text-gray-300 shrink-0" />
-                <input
-                  ref={custInputRef}
-                  type="text"
-                  value={custQuery}
-                  onChange={(e) => setCustQuery(e.target.value)}
-                  placeholder={dataLoading ? "Loading customers…" : "Name or customer code…"}
-                  disabled={dataLoading}
-                  autoComplete="off"
-                  autoCorrect="off"
-                  spellCheck={false}
-                  className="flex-1 text-[16px] text-gray-900 bg-transparent border-none outline-none placeholder:text-gray-300"
-                />
-                {custQuery && (
-                  <button
-                    type="button"
-                    onClick={() => setCustQuery("")}
-                    className="text-gray-300 text-lg leading-none px-1"
-                    aria-label="Clear"
-                  >
-                    ×
-                  </button>
-                )}
-              </div>
-              {custSuggestions.length > 0 && (
-                <div className="border-t border-gray-100">
-                  {custSuggestions.map((c) => (
-                    <button
-                      key={c.code}
-                      type="button"
-                      onClick={() => selectCustomer(c)}
-                      className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left border-b border-gray-50 last:border-b-0 active:bg-gray-50"
-                    >
-                      <div className="w-1.5 h-1.5 rounded-full bg-teal-600 shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[14px] text-gray-900 truncate">{c.name}</p>
-                        <p className="text-[12px] text-gray-400 font-mono mt-0.5 truncate">
-                          {c.code}
-                          {c.area && <span className="font-sans"> · {c.area}</span>}
-                        </p>
-                      </div>
-                    </button>
-                  ))}
-                </div>
+          /* ── Pick a customer — single elevated search field, no chrome ───
+              No label / heading / logo / recent list. Generous top spacing
+              under the brand bar, whitespace below. */
+          <div className="px-4 pt-16">
+            <div
+              className="flex items-center gap-2.5 bg-white border border-gray-200 rounded-[16px] p-[19px]"
+              style={{ boxShadow: "0 8px 28px rgba(17,24,39,0.09)" }}
+            >
+              <Search className="w-5 h-5 text-gray-500 shrink-0" />
+              <input
+                ref={custInputRef}
+                type="text"
+                value={custQuery}
+                onChange={(e) => setCustQuery(e.target.value)}
+                placeholder={dataLoading ? "Loading customers…" : "Name or customer code…"}
+                disabled={dataLoading}
+                autoComplete="off"
+                autoCorrect="off"
+                spellCheck={false}
+                className="flex-1 text-[16px] text-gray-900 bg-transparent border-none outline-none placeholder:text-gray-400"
+              />
+              {custQuery && (
+                <button
+                  type="button"
+                  onClick={() => setCustQuery("")}
+                  className="text-gray-300 text-lg leading-none px-1 shrink-0"
+                  aria-label="Clear"
+                >
+                  ×
+                </button>
               )}
             </div>
+            {custSuggestions.length > 0 && (
+              <div className="mt-2 bg-white border border-gray-100 rounded-[16px] overflow-hidden shadow-sm">
+                {custSuggestions.map((c) => (
+                  <button
+                    key={c.code}
+                    type="button"
+                    onClick={() => selectCustomer(c)}
+                    className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left border-b border-gray-50 last:border-b-0 active:bg-gray-50"
+                  >
+                    <div className="w-1.5 h-1.5 rounded-full bg-teal-600 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[14px] text-gray-900 truncate">{c.name}</p>
+                      <p className="text-[12px] text-gray-400 font-mono mt-0.5 truncate">
+                        {c.code}
+                        {c.area && <span className="font-sans"> · {c.area}</span>}
+                      </p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         ) : view === "review" ? (
           /* ── Review & send (mockup state 6) ────────────────────────────── */
@@ -1321,11 +1318,9 @@ export default function PoPage(): React.JSX.Element {
                 </button>
               </div>
             ) : (
-              /* Distinct customer block — tinted band + teal avatar */
-              <div className="bg-gray-50 border-b border-gray-200 px-4 py-[14px] flex items-center gap-3">
-                <div className="w-[42px] h-[42px] rounded-full bg-teal-600 text-white flex items-center justify-center text-[17px] font-semibold shrink-0">
-                  {custInitial}
-                </div>
+              /* Distinct customer block — tinted band; name left-aligned to
+                 the brand bar's "Purchase Order" edge (no avatar). */
+              <div className="bg-gray-50 border-b border-gray-200 px-4 py-[14px] flex items-center">
                 <div className="flex-1 min-w-0">
                   <div className="text-[15px] font-bold text-gray-900 truncate">
                     {selectedCust.name}
