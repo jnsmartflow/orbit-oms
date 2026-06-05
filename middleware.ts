@@ -14,6 +14,7 @@ const PUBLIC_PATHS = [
   "/api/health",
   "/order",
   "/api/order",
+  "/po",              // new public mobile order page (Phase 1) — reuses /api/order/data (already public above)
   "/demo",            // rewrites to /order-demo.html (matcher catches the rewritten URL via the dot rule, but the original /demo arrives here first)
   "/order-demo.html", // explicit safety net — matcher already excludes paths with file extensions
 ];
