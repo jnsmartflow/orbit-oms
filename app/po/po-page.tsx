@@ -146,6 +146,7 @@ type PoDraft = {
   shipTo:       string;
   dispatch:     Dispatch;
   marker:       Marker;
+  multiSelect:  boolean;
   updatedAt:    number;
 };
 
@@ -176,6 +177,7 @@ function loadPoDraft(): Omit<PoDraft, "updatedAt"> | null {
                       ? parsed.dispatch : "Normal",
       marker:       parsed.marker === "Truck" || parsed.marker === "Cross Delivery" || parsed.marker === "DTS"
                       ? parsed.marker : null,
+      multiSelect:  typeof parsed.multiSelect === "boolean" ? parsed.multiSelect : false,
     };
   } catch {
     return null;
@@ -234,6 +236,105 @@ function aliasSuffix(
   return a ? <span className="font-normal text-gray-400"> · {a}</span> : null;
 }
 
+// Pack-quantity rows for one product. The single (exact) pack-row UI used by
+// BOTH the single picker and the multi-select set-quantities screen: pack
+// label + "per N" sub-label (left), −/16px input/+ stepper (right), dashed
+// underline at 0. `showBoxNote` adds the mockup's "{N} box" note under the
+// stepper (multi-qty screen only — single picker passes it false, staying
+// byte-identical). `registerInput` lets the single picker keep its
+// packInputsRef for desktop focus/scroll.
+function PackRows({
+  product, qtys, onStep, onSet, showBoxNote = false, registerInput,
+}: {
+  product:       Product;
+  qtys:          Record<string, number>;
+  onStep:        (key: string, label: string, delta: number) => void;
+  onSet:         (key: string, raw: string) => void;
+  showBoxNote?:  boolean;
+  registerInput?: (i: number, el: HTMLInputElement | null) => void;
+}): React.JSX.Element {
+  const sorted = sortRawPacks(product.packs);
+  if (sorted.length === 0) {
+    return (
+      <div className="px-4 py-4 text-[13px] text-gray-400 italic">
+        No packs available for this product.
+      </div>
+    );
+  }
+  return (
+    <>
+      {sorted.map((rp, i) => {
+        const key      = packKey(rp.packCode, rp.unit);
+        const label    = formatPack(rp.packCode, rp.unit);
+        const step     = packStep(label);
+        const qty      = qtys[key] ?? 0;
+        const onlyPack = sorted.length === 1;
+        const boxes    = step > 1 && qty > 0 && qty % step === 0 ? qty / step : null;
+        const stepper = (
+          <div className="flex items-center bg-gray-100 rounded-[9px] overflow-hidden shrink-0">
+            <button
+              type="button"
+              tabIndex={-1}
+              onClick={() => onStep(key, label, -1)}
+              className={`w-9 h-9 flex items-center justify-center text-[20px] font-light bg-transparent border-none ${qty === 0 ? "text-gray-300" : "text-teal-600"}`}
+              aria-label={`Decrease ${label}`}
+            >
+              −
+            </button>
+            <input
+              ref={registerInput ? (el) => registerInput(i, el) : undefined}
+              type="number"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              min={0}
+              value={qty}
+              onChange={(e) => onSet(key, e.target.value)}
+              onFocus={(e) => {
+                e.target.select();
+                requestAnimationFrame(() => {
+                  e.target.scrollIntoView({ block: "center", behavior: "smooth" });
+                });
+              }}
+              className={`w-10 text-center text-[16px] font-bold bg-transparent outline-none ${qty === 0 ? "border-b border-dashed border-gray-300" : "border-none"}`}
+              style={{ color: qty > 0 ? "#0d9488" : "#111827" }}
+            />
+            <button
+              type="button"
+              tabIndex={-1}
+              onClick={() => onStep(key, label, 1)}
+              className="w-9 h-9 flex items-center justify-center text-[20px] font-light text-teal-600 bg-transparent border-none"
+              aria-label={`Increase ${label}`}
+            >
+              +
+            </button>
+          </div>
+        );
+        return (
+          <div
+            key={key}
+            className={`flex items-center gap-3 px-4 ${onlyPack ? "py-[18px]" : "py-[12px]"} border-b border-gray-100 last:border-b-0 scroll-mt-[80px]`}
+          >
+            <div className="flex-1 min-w-0">
+              <p className={`${onlyPack ? "text-[16px]" : "text-[15px]"} font-medium text-gray-900`}>{label}</p>
+              {step > 1 && (
+                <p className="text-[10px] text-gray-400 mt-0.5">per {step}</p>
+              )}
+            </div>
+            {showBoxNote ? (
+              <div className="flex flex-col items-end gap-1 shrink-0">
+                {stepper}
+                {boxes != null && (
+                  <span className="text-[11px] text-teal-700 font-mono">{boxes} box</span>
+                )}
+              </div>
+            ) : stepper}
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
 export default function PoPage(): React.JSX.Element {
   const [customers,   setCustomers]   = useState<Customer[]>([]);
   const [products,    setProducts]    = useState<Product[]>([]);
@@ -246,7 +347,7 @@ export default function PoPage(): React.JSX.Element {
   const [heroQuery, setHeroQuery] = useState("");
 
   // Build-screen mode + the product currently being quantity-picked.
-  const [mode,          setMode]          = useState<"search" | "picking">("search");
+  const [mode,          setMode]          = useState<"search" | "picking" | "multiqty">("search");
   const [activeProduct, setActiveProduct] = useState<Product | null>(null);
   // Quantity entry — keyed by composite packKey("<packCode>|<unit>") so a 5 KG
   // and 5 L SKU never collide, and the CartLine is Phase-4 buildEmail-ready.
@@ -260,6 +361,14 @@ export default function PoPage(): React.JSX.Element {
 
   // Page view: build screen vs the review/send shell.
   const [view, setView] = useState<"build" | "review">("build");
+
+  // Multi-select (default OFF, persisted). When ON, tapping a result toggles
+  // selection instead of opening the single picker; "Set quantities" opens a
+  // screen with every selected product's pack rows at once.
+  const [multiSelect,      setMultiSelect]      = useState(false);
+  const [selectedProducts, setSelectedProducts] = useState<Product[]>([]);
+  // Per-product pack quantities for the multi-qty screen: productId → packKey → units.
+  const [multiQtys,        setMultiQtys]        = useState<Record<number, Record<string, number>>>({});
 
   // Review-screen order-level fields (reused from /order's value sets).
   const [shipTo,      setShipTo]      = useState("");
@@ -309,6 +418,7 @@ export default function PoPage(): React.JSX.Element {
       setShipTo(saved.shipTo);
       setDispatch(saved.dispatch);
       setMarker(saved.marker);
+      setMultiSelect(saved.multiSelect);
     }
   }, []);
 
@@ -422,7 +532,7 @@ export default function PoPage(): React.JSX.Element {
     if (!selectedCust) return null;
     return {
       customer:     selectedCust,
-      bills, billCounter, activeBillId, shipTo, dispatch, marker,
+      bills, billCounter, activeBillId, shipTo, dispatch, marker, multiSelect,
       ...overrides,
     };
   }
@@ -436,7 +546,7 @@ export default function PoPage(): React.JSX.Element {
     setSelectedCust(c);
     setCustQuery("");
     savePoDraft({
-      customer: c, bills, billCounter, activeBillId, shipTo, dispatch, marker,
+      customer: c, bills, billCounter, activeBillId, shipTo, dispatch, marker, multiSelect,
     });
   }
 
@@ -458,6 +568,9 @@ export default function PoPage(): React.JSX.Element {
     setDispatch("Normal");
     setMarker(null);
     setPreviewOpen(false);
+    setMultiSelect(false);
+    setSelectedProducts([]);
+    setMultiQtys({});
     clearPoDraft();
   }
 
@@ -483,6 +596,98 @@ export default function PoPage(): React.JSX.Element {
   function confirmProceed(): void {
     clearCustomer();
     setConfirmKind(null);
+  }
+
+  // ── Multi-select ──────────────────────────────────────────────────────────
+  function toggleMultiSelect(): void {
+    const next = !multiSelect;
+    setMultiSelect(next);
+    if (!next) {            // turning OFF clears any in-progress ticks
+      setSelectedProducts([]);
+      setMultiQtys({});
+    }
+    const s = snapshot({ multiSelect: next });
+    if (s) savePoDraft(s);
+  }
+
+  // Toggle a product in the selection (add/remove by id — mirrors /order's
+  // toggleProductSelection).
+  function toggleProductSelection(p: Product): void {
+    setSelectedProducts((prev) =>
+      prev.some((s) => s.id === p.id)
+        ? prev.filter((s) => s.id !== p.id)
+        : [...prev, p],
+    );
+  }
+
+  function openMultiQty(): void {
+    if (selectedProducts.length === 0) return;
+    if (listening) stopListening();
+    setMode("multiqty");
+  }
+
+  // Back from the multi-qty screen — preserve selection + typed quantities.
+  function closeMultiQty(): void {
+    setMode("search");
+  }
+
+  function stepMultiPack(productId: number, key: string, label: string, delta: number): void {
+    const step = packStep(label);
+    setMultiQtys((prev) => {
+      const cur = prev[productId] ?? {};
+      const nextQty = Math.max(0, (cur[key] ?? 0) + delta * step);
+      return { ...prev, [productId]: { ...cur, [key]: nextQty } };
+    });
+  }
+
+  function setMultiPackRaw(productId: number, key: string, raw: string): void {
+    const parsed = parseInt(raw, 10);
+    const qty = Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+    setMultiQtys((prev) => ({ ...prev, [productId]: { ...(prev[productId] ?? {}), [key]: qty } }));
+  }
+
+  // Commit ALL selected products (with qty > 0) as CartLines into the active
+  // bill at once — dedup by productId, same as the single add.
+  function commitMultiSelect(): void {
+    const newLines: CartLine[] = [];
+    for (const p of selectedProducts) {
+      const pq = multiQtys[p.id] ?? {};
+      const filtered: Record<string, number> = {};
+      for (const [k, v] of Object.entries(pq)) {
+        if (v > 0) filtered[k] = v;
+      }
+      if (Object.keys(filtered).length === 0) continue;   // skip products with no qty
+      newLines.push({
+        productId:   p.id,
+        family:      p.family,
+        subProduct:  p.subProduct,
+        product:     p.product ?? null,
+        uiGroup:     p.uiGroup ?? null,
+        displayName: p.displayName,
+        baseColour:  p.baseColour ?? null,
+        packQtys:    filtered,
+        touchedAt:   Date.now(),
+      });
+    }
+    if (newLines.length === 0) return;
+
+    const addedIds = new Set(newLines.map((l) => l.productId));
+    const nextBills = bills.map((b) => {
+      if (b.id !== activeBillId) return b;
+      const kept = b.lines.filter((l) => l.productId === undefined || !addedIds.has(l.productId));
+      return { ...b, lines: [...kept, ...newLines] };
+    });
+    setBills(nextBills);
+    persist(nextBills, billCounter, activeBillId);
+
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToast(`Added ${newLines.length} ${newLines.length === 1 ? "product" : "products"}`);
+    toastTimerRef.current = setTimeout(() => setToast(null), 2200);
+
+    // Clear selection, return to the search results (toggle left as-is).
+    setSelectedProducts([]);
+    setMultiQtys({});
+    setMode("search");
   }
 
   // ── Review-screen handlers ────────────────────────────────────────────────
@@ -725,8 +930,15 @@ export default function PoPage(): React.JSX.Element {
   }
 
   const hasAnyLines    = bills.some((b) => b.lines.length > 0);
-  const sortedPacks    = activeProduct ? sortRawPacks(activeProduct.packs) : [];
-  const heroPlaceholder = hasAnyLines ? "Search next product" : "Search products to add";
+  const heroPlaceholder = multiSelect
+    ? "Search & tap to select"
+    : (hasAnyLines ? "Search next product" : "Search products to add");
+
+  // Multi-select bottom-bar gating + "Add" enablement.
+  const showSelectBar = mode === "search" && multiSelect && selectedProducts.length >= 1;
+  const anyMultiQty   = selectedProducts.some(
+    (p) => Object.values(multiQtys[p.id] ?? {}).some((q) => q > 0),
+  );
 
   // Cart totals. Units total = sum of line units — NEVER × packStep
   // (§10 cart totals / §22 landmine). Volume (Phase 4) would be
@@ -1162,6 +1374,25 @@ export default function PoPage(): React.JSX.Element {
               </div>
             )}
 
+            {/* "Select multiple" toggle — between bill strip and search (default OFF) */}
+            {mode === "search" && (
+              <div className="bg-white border-b border-gray-200 px-4 py-[10px] flex items-center justify-between">
+                <span className="text-[14px] text-gray-700">Select multiple</span>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={multiSelect}
+                  aria-label="Select multiple products"
+                  onClick={toggleMultiSelect}
+                  className={`relative w-[46px] h-[26px] rounded-full transition-colors shrink-0 ${multiSelect ? "bg-teal-600" : "bg-gray-300"}`}
+                >
+                  <span
+                    className={`absolute top-[2px] left-[2px] w-[22px] h-[22px] rounded-full bg-white shadow transition-transform ${multiSelect ? "translate-x-[20px]" : ""}`}
+                  />
+                </button>
+              </div>
+            )}
+
             {/* "Added" toast */}
             {toast && mode === "search" && (
               <div className="mx-4 mt-3 flex items-center gap-2 bg-teal-50 border border-teal-200 rounded-lg px-[13px] py-[9px] text-[13px] text-teal-700">
@@ -1252,6 +1483,34 @@ export default function PoPage(): React.JSX.Element {
                           p.family, p.subProduct,
                           getBaseAliasDisplay(p.product, p.baseColour),
                         );
+                        // Multi-select ON → checkbox row that TOGGLES selection
+                        // (does not open the picker). OFF → single-add row.
+                        if (multiSelect) {
+                          const selected = selectedProducts.some((s) => s.id === p.id);
+                          return (
+                            <div
+                              key={p.id}
+                              onClick={() => toggleProductSelection(p)}
+                              className="flex items-center gap-3 py-[13px] px-1 border-b border-gray-100 last:border-b-0 cursor-pointer active:bg-gray-50"
+                            >
+                              <div className={`w-5 h-5 rounded-[6px] border-2 flex items-center justify-center shrink-0 ${selected ? "bg-teal-600 border-teal-600" : "bg-white border-gray-300"}`}>
+                                {selected && (
+                                  <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
+                                    <path d="M2 6l3 3 5-5" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                  </svg>
+                                )}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-[15px] text-gray-900 truncate">
+                                  {productLabel(p)}{aliasSuffix(p)}
+                                </p>
+                                {second && (
+                                  <p className="text-[12px] text-gray-400 truncate mt-0.5">{second}</p>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        }
                         return (
                           <button
                             key={p.id}
@@ -1282,6 +1541,59 @@ export default function PoPage(): React.JSX.Element {
                   </div>
                 )}
               </>
+            ) : mode === "multiqty" ? (
+              /* ── Multi-select: set quantities for ALL selected products ── */
+              <>
+                {/* sticky header (single top-pinned element on this screen) */}
+                <div className="sticky top-0 z-30 bg-white border-b border-gray-200 px-4 py-[13px] flex items-center gap-2.5 shadow-[0_2px_6px_rgba(0,0,0,0.04)]">
+                  <button type="button" onClick={closeMultiQty} aria-label="Back to results" className="shrink-0">
+                    <ChevronDown className="w-[18px] h-[18px] text-gray-500" />
+                  </button>
+                  <span className="text-[15px] font-semibold text-gray-900">Set quantities</span>
+                  <span className="text-[12px] text-gray-500 ml-auto">
+                    {selectedProducts.length} {selectedProducts.length === 1 ? "product" : "products"}
+                  </span>
+                </div>
+
+                {/* one section per selected product — full pack rows (reused) */}
+                {selectedProducts.map((p) => {
+                  const second = getSecondLine(
+                    p.family, p.subProduct,
+                    getBaseAliasDisplay(p.product, p.baseColour),
+                  );
+                  return (
+                    <div key={p.id} className="bg-white border-b border-gray-200 pt-[14px] pb-1">
+                      <div className="px-4">
+                        <div className="text-[15px] font-semibold text-gray-900">
+                          {productLabel(p)}{aliasSuffix(p)}
+                        </div>
+                        <div className="text-[11px] text-gray-400 mt-0.5 mb-1">{second ?? " "}</div>
+                      </div>
+                      <PackRows
+                        product={p}
+                        qtys={multiQtys[p.id] ?? {}}
+                        onStep={(key, label, delta) => stepMultiPack(p.id, key, label, delta)}
+                        onSet={(key, raw) => setMultiPackRaw(p.id, key, raw)}
+                        showBoxNote
+                      />
+                    </div>
+                  );
+                })}
+
+                {/* sticky "Add N products to Bill" */}
+                <div className="sticky bottom-0 z-20 bg-white border-t border-gray-200 px-4 py-3 mt-auto">
+                  <button
+                    type="button"
+                    onClick={commitMultiSelect}
+                    disabled={!anyMultiQty}
+                    className={`w-full h-[52px] rounded-[12px] text-[15px] font-semibold ${
+                      anyMultiQty ? "bg-teal-600 active:bg-teal-700 text-white" : "bg-gray-200 text-gray-400 cursor-not-allowed"
+                    }`}
+                  >
+                    Add {selectedProducts.length} {selectedProducts.length === 1 ? "product" : "products"} to Bill {activeBillId}
+                  </button>
+                </div>
+              </>
             ) : (
               /* ── Quantity picking (single product) ────────────────────── */
               activeProduct && (
@@ -1304,69 +1616,13 @@ export default function PoPage(): React.JSX.Element {
                   </div>
 
                   <div className="bg-white border-y border-gray-200">
-                    {sortedPacks.length === 0 ? (
-                      <div className="px-4 py-4 text-[13px] text-gray-400 italic">
-                        No packs available for this product.
-                      </div>
-                    ) : (
-                      sortedPacks.map((rp, i) => {
-                        const key      = packKey(rp.packCode, rp.unit);
-                        const label    = formatPack(rp.packCode, rp.unit);
-                        const step     = packStep(label);
-                        const qty      = packQtys[key] ?? 0;
-                        const onlyPack = sortedPacks.length === 1;
-                        return (
-                          <div
-                            key={key}
-                            className={`flex items-center gap-3 px-4 ${onlyPack ? "py-[18px]" : "py-[12px]"} border-b border-gray-100 last:border-b-0 scroll-mt-[80px]`}
-                          >
-                            <div className="flex-1 min-w-0">
-                              <p className={`${onlyPack ? "text-[16px]" : "text-[15px]"} font-medium text-gray-900`}>{label}</p>
-                              {step > 1 && (
-                                <p className="text-[10px] text-gray-400 mt-0.5">per {step}</p>
-                              )}
-                            </div>
-                            <div className="flex items-center bg-gray-100 rounded-[9px] overflow-hidden shrink-0">
-                              <button
-                                type="button"
-                                tabIndex={-1}
-                                onClick={() => stepPack(key, label, -1)}
-                                className={`w-9 h-9 flex items-center justify-center text-[20px] font-light bg-transparent border-none ${qty === 0 ? "text-gray-300" : "text-teal-600"}`}
-                                aria-label={`Decrease ${label}`}
-                              >
-                                −
-                              </button>
-                              <input
-                                ref={(el) => { if (el) packInputsRef.current[i] = el; }}
-                                type="number"
-                                inputMode="numeric"
-                                pattern="[0-9]*"
-                                min={0}
-                                value={qty}
-                                onChange={(e) => setPackRaw(key, e.target.value)}
-                                onFocus={(e) => {
-                                  e.target.select();
-                                  requestAnimationFrame(() => {
-                                    e.target.scrollIntoView({ block: "center", behavior: "smooth" });
-                                  });
-                                }}
-                                className={`w-10 text-center text-[16px] font-bold bg-transparent outline-none ${qty === 0 ? "border-b border-dashed border-gray-300" : "border-none"}`}
-                                style={{ color: qty > 0 ? "#0d9488" : "#111827" }}
-                              />
-                              <button
-                                type="button"
-                                tabIndex={-1}
-                                onClick={() => stepPack(key, label, 1)}
-                                className="w-9 h-9 flex items-center justify-center text-[20px] font-light text-teal-600 bg-transparent border-none"
-                                aria-label={`Increase ${label}`}
-                              >
-                                +
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })
-                    )}
+                    <PackRows
+                      product={activeProduct}
+                      qtys={packQtys}
+                      onStep={stepPack}
+                      onSet={setPackRaw}
+                      registerInput={(i, el) => { if (el) packInputsRef.current[i] = el; }}
+                    />
                   </div>
 
                   {/* Action bar — sits near the top of the qty card (not
@@ -1396,8 +1652,27 @@ export default function PoPage(): React.JSX.Element {
               )
             )}
 
-            {/* Bottom cart bar — page-level sticky (§15.5 rule 4), search mode + has lines */}
-            {mode === "search" && hasAnyLines && (
+            {/* Multi-select bottom bar — shown when >= 1 product is ticked
+                (takes priority over the cart bar; single bar at a time). */}
+            {showSelectBar && (
+              <div className="sticky bottom-0 z-20 bg-teal-600 text-white px-[18px] py-[15px] flex items-center justify-between">
+                <span className="text-[14px] font-semibold">
+                  {selectedProducts.length} selected
+                </span>
+                <button
+                  type="button"
+                  onClick={openMultiQty}
+                  className="flex items-center gap-1 text-[14px] font-semibold shrink-0 pl-3 active:opacity-80"
+                >
+                  Set quantities
+                  <ChevronRight className="w-[17px] h-[17px]" />
+                </button>
+              </div>
+            )}
+
+            {/* Bottom cart bar — page-level sticky (§15.5 rule 4), search mode +
+                has lines, and only when the select bar isn't showing. */}
+            {mode === "search" && !showSelectBar && hasAnyLines && (
               <div className="sticky bottom-0 z-20 bg-teal-600 text-white px-[18px] py-[15px] flex items-center justify-between">
                 <div className="min-w-0">
                   {multiBill ? (
