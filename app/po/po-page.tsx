@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Search, Mic, Check, ChevronLeft, ChevronDown, ChevronRight, Plus } from "lucide-react";
+import { Search, Mic, Check, ChevronLeft, ChevronDown, ChevronRight, Plus, Pencil, Send } from "lucide-react";
 import type { RawPack } from "@/lib/place-order/pack-buckets";
 import type { Product, CartLine, Bill, Customer } from "@/app/(place-order)/place-order/types";
 import { rankProductsForQuery } from "@/lib/place-order/mobile-search";
-import { formatPack, packToMl, packStep, packKey } from "@/lib/place-order/pack";
+import { formatPack, packToMl, packStep, packKey, parsePackKey } from "@/lib/place-order/pack";
 import { getBaseAliasDisplay } from "@/lib/place-order/base-aliases";
 import { getSecondLine, isVariantQualifierTab } from "@/lib/place-order/sub-product-descriptors";
 
@@ -52,17 +52,100 @@ declare global {
   }
 }
 
+// Order-level fields (mirror /order's value sets exactly — they feed the email).
+type Dispatch = "Normal" | "Hold" | "Urgent";
+type Marker   = "Truck" | "Cross Delivery" | "DTS" | null;
+
+// Email recipient — identical to /order.
+const ORDER_TO = "surat.order@outlook.com";
+
+// Sort pack entries KG-last, then by ML magnitude — the SAME comparator the
+// /api/order/data feed + /order use, so the per-line pack order in the email
+// matches /order byte-for-byte.
+function sortPackEntries<T extends { packCode: string; unit: string | null }>(entries: T[]): T[] {
+  return [...entries].sort((a, b) => {
+    const aKg = (a.unit ?? "").toUpperCase() === "KG";
+    const bKg = (b.unit ?? "").toUpperCase() === "KG";
+    if (aKg !== bKg) return aKg ? 1 : -1;
+    return packToMl(a.packCode, a.unit) - packToMl(b.packCode, b.unit);
+  });
+}
+
+// Email subject + body builder. MIRRORS app/order/page.tsx buildEmail()
+// byte-for-byte (field order Customer/Dispatch/Marker/Ship To; blank line +
+// "Bill {b.id}" only when >1 active bill; "{product ?? subProduct} {baseColour}
+// {label}*{units}, …"; em-dash subject). Display aliases (§12/§13) are NEVER
+// inserted — raw baseColour only, exactly like /order. cart.ts has no
+// cartToMailtoBody helper and /order builds inline, so this mirrors /order
+// (the authoritative byte-identical source) rather than lib/place-order/email.ts
+// (which numbers bills by index, diverging on non-contiguous bill ids).
+function buildEmailParts(args: {
+  customer: Customer | null;
+  bills:    Bill[];
+  shipTo:   string;
+  dispatch: Dispatch;
+  marker:   Marker;
+}): { subject: string; body: string; valid: boolean } {
+  const { customer, bills, shipTo, dispatch, marker } = args;
+  const name = customer?.name ?? "";
+  const code = customer?.code ?? "";
+  const lines: string[] = [];
+
+  if (name || code) {
+    const customerLine = name && code ? `${name} (${code})` : (name || code);
+    lines.push("Customer: " + customerLine);
+  }
+  if (dispatch !== "Normal") lines.push("Dispatch: " + dispatch);
+  if (marker)                lines.push("Marker: "   + marker);
+  if (shipTo.trim())         lines.push("Ship To: "  + shipTo.trim());
+
+  const activeBills = bills.filter((b) => b.lines.length > 0);
+  activeBills.forEach((b) => {
+    lines.push("");
+    if (activeBills.length > 1) lines.push("Bill " + b.id);
+    b.lines.forEach((l) => {
+      // CartLine.packQtys is keyed by composite "<packCode>|<unit>"; rebuild
+      // the formatted "{label}*{units}" list in the same order /order emits
+      // (the product's pack order = the KG-last/ML sort).
+      const entries = sortPackEntries(
+        Object.entries(l.packQtys)
+          .filter(([, q]) => q > 0)
+          .map(([k, q]) => {
+            const { packCode, unit } = parsePackKey(k);
+            return { packCode, unit, qty: q };
+          }),
+      );
+      const packStr = entries
+        .map((e) => `${formatPack(e.packCode, e.unit)}*${e.qty}`)
+        .join(", ");
+      const head = l.product ?? l.subProduct;
+      const productText = l.baseColour ? `${head} ${l.baseColour}` : head;
+      lines.push(`${productText} ${packStr}`);
+    });
+  });
+
+  const subject = "Order"
+    + (name ? ` — ${name}` : "")
+    + (code ? ` ${code}`    : "");
+  const valid = !!customer && activeBills.length > 0;
+
+  return { subject, body: lines.join("\n"), valid };
+}
+
 // ── Draft persistence — dedicated key, never /order's or desktop's ─────────
 const PO_DRAFT_KEY    = "orbitoms_po_draft";
 const PO_DRAFT_TTL_MS = 24 * 60 * 60 * 1000;   // 24h, matches desktop convention
 
-// Full order snapshot persisted under PO_DRAFT_KEY. Phase 2 stores customer +
-// bills (cart). Phase 4 will extend with shipTo / dispatch / marker.
+// Full order snapshot persisted under PO_DRAFT_KEY: customer + bills (cart) +
+// order-level review fields (shipTo / dispatch / marker).
 type PoDraft = {
   customer:     Customer;
   bills:        Bill[];
   billCounter:  number;
   activeBillId: number;
+  shipTo:       string;
+  dispatch:     Dispatch;
+  marker:       Marker;
   updatedAt:    number;
 };
 
@@ -88,6 +171,11 @@ function loadPoDraft(): Omit<PoDraft, "updatedAt"> | null {
                       : [{ id: 1, lines: [] }],
       billCounter:  typeof parsed.billCounter === "number" ? parsed.billCounter : 1,
       activeBillId: typeof parsed.activeBillId === "number" ? parsed.activeBillId : 1,
+      shipTo:       typeof parsed.shipTo === "string" ? parsed.shipTo : "",
+      dispatch:     parsed.dispatch === "Hold" || parsed.dispatch === "Urgent"
+                      ? parsed.dispatch : "Normal",
+      marker:       parsed.marker === "Truck" || parsed.marker === "Cross Delivery" || parsed.marker === "DTS"
+                      ? parsed.marker : null,
     };
   } catch {
     return null;
@@ -139,7 +227,7 @@ function productLabel(p: { displayName: string; baseColour: string | null }): st
 // Faint "· {alias}" suffix after the label. Suppressed for variant-qualifier
 // tabs (they carry the qualifier on the light second line instead).
 function aliasSuffix(
-  p: { product: string | null; baseColour: string | null; family?: string; subProduct?: string },
+  p: { product?: string | null; baseColour: string | null; family?: string; subProduct?: string },
 ): React.JSX.Element | null {
   if (isVariantQualifierTab(p.family, p.subProduct)) return null;
   const a = getBaseAliasDisplay(p.product, p.baseColour);
@@ -170,8 +258,15 @@ export default function PoPage(): React.JSX.Element {
   const [billCounter,  setBillCounter]  = useState(1);
   const [activeBillId, setActiveBillId] = useState(1);
 
-  // Page view: build screen vs the review/send shell (Phase 4 fills the body).
+  // Page view: build screen vs the review/send shell.
   const [view, setView] = useState<"build" | "review">("build");
+
+  // Review-screen order-level fields (reused from /order's value sets).
+  const [shipTo,      setShipTo]      = useState("");
+  const [shipFocused, setShipFocused] = useState(false);
+  const [dispatch,    setDispatch]    = useState<Dispatch>("Normal");
+  const [marker,      setMarker]      = useState<Marker>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   // Brief "Added · {product}" confirmation toast.
   const [toast, setToast] = useState<string | null>(null);
@@ -206,6 +301,9 @@ export default function PoPage(): React.JSX.Element {
       setBills(saved.bills);
       setBillCounter(saved.billCounter);
       setActiveBillId(saved.activeBillId);
+      setShipTo(saved.shipTo);
+      setDispatch(saved.dispatch);
+      setMarker(saved.marker);
     }
   }, []);
 
@@ -282,21 +380,29 @@ export default function PoPage(): React.JSX.Element {
       .slice(0, 5);
   }, [custQuery, customers]);
 
-  function persist(nextBills: Bill[], nextCounter: number, nextActiveId: number): void {
-    if (!selectedCust) return;
-    savePoDraft({
+  // Build a full snapshot from current state, with optional overrides for the
+  // value(s) being changed this tick (state setters haven't committed yet).
+  function snapshot(
+    overrides: Partial<Omit<PoDraft, "updatedAt" | "customer">> = {},
+  ): Omit<PoDraft, "updatedAt"> | null {
+    if (!selectedCust) return null;
+    return {
       customer:     selectedCust,
-      bills:        nextBills,
-      billCounter:  nextCounter,
-      activeBillId: nextActiveId,
-    });
+      bills, billCounter, activeBillId, shipTo, dispatch, marker,
+      ...overrides,
+    };
+  }
+
+  function persist(nextBills: Bill[], nextCounter: number, nextActiveId: number): void {
+    const s = snapshot({ bills: nextBills, billCounter: nextCounter, activeBillId: nextActiveId });
+    if (s) savePoDraft(s);
   }
 
   function selectCustomer(c: Customer): void {
     setSelectedCust(c);
     setCustQuery("");
     savePoDraft({
-      customer: c, bills, billCounter, activeBillId,
+      customer: c, bills, billCounter, activeBillId, shipTo, dispatch, marker,
     });
   }
 
@@ -313,7 +419,92 @@ export default function PoPage(): React.JSX.Element {
     setBills(freshBills);
     setBillCounter(1);
     setActiveBillId(1);
+    setShipTo("");
+    setShipFocused(false);
+    setDispatch("Normal");
+    setMarker(null);
+    setPreviewOpen(false);
     clearPoDraft();
+  }
+
+  // ── Review-screen handlers ────────────────────────────────────────────────
+  const shipSuggestions = useMemo<Customer[]>(() => {
+    if (shipTo.length < 2) return [];
+    const q = shipTo.toLowerCase();
+    return customers
+      .filter((c) => c.name.toLowerCase().includes(q) || c.code.includes(q))
+      .slice(0, 5);
+  }, [shipTo, customers]);
+
+  function changeShipTo(v: string): void {
+    setShipTo(v);
+    const s = snapshot({ shipTo: v });
+    if (s) savePoDraft(s);
+  }
+
+  function selectShipTo(c: Customer): void {
+    const v = `${c.name} (${c.code})`;
+    setShipTo(v);
+    setShipFocused(false);
+    const s = snapshot({ shipTo: v });
+    if (s) savePoDraft(s);
+  }
+
+  function chooseDispatch(d: Dispatch): void {
+    setDispatch(d);
+    const s = snapshot({ dispatch: d });
+    if (s) savePoDraft(s);
+  }
+
+  function chooseMarker(m: Marker): void {
+    setMarker(m);
+    const s = snapshot({ marker: m });
+    if (s) savePoDraft(s);
+  }
+
+  // Remove a single line from a bill (reuses /order's deleteLineFromBill shape).
+  function removeLine(billId: number, idx: number): void {
+    const nextBills = bills.map((b) =>
+      b.id === billId ? { ...b, lines: b.lines.filter((_, i) => i !== idx) } : b,
+    );
+    setBills(nextBills);
+    persist(nextBills, billCounter, activeBillId);
+  }
+
+  // Edit a line: re-open the picker pre-filled with its qtys (/order's
+  // edit = re-pick; commitLine then replaces it via productId dedup). The
+  // catalog row must still exist.
+  function editLine(billId: number, line: CartLine): void {
+    const p = products.find((pr) => pr.id === line.productId);
+    if (!p) return;
+    if (listening) stopListening();
+    setActiveBillId(billId);
+    persist(bills, billCounter, billId);
+    setActiveProduct(p);
+    setPackQtys({ ...line.packQtys });
+    packInputsRef.current = [];
+    setView("build");
+    setMode("picking");
+  }
+
+  // Bill header edit affordance — make this bill active + drop to build screen.
+  function editBill(billId: number): void {
+    setActiveBillId(billId);
+    persist(bills, billCounter, billId);
+    setView("build");
+    setMode("search");
+  }
+
+  // "+ Add another bill" from review — create + activate + go build it.
+  function addAnotherBill(): void {
+    const id = billCounter + 1;
+    const nextBills: Bill[] = [...bills, { id, lines: [] }];
+    setBills(nextBills);
+    setBillCounter(id);
+    setActiveBillId(id);
+    persist(nextBills, id, id);
+    setView("build");
+    setMode("search");
   }
 
   // ── Search → pick ─────────────────────────────────────────────────────────
@@ -486,6 +677,33 @@ export default function PoPage(): React.JSX.Element {
     b.lines.reduce((s, l) => s + Object.values(l.packQtys).reduce((a, q) => a + q, 0), 0);
   const totalUnits = bills.reduce((s, b) => s + billUnits(b), 0);
   const multiBill  = bills.length > 1;
+  const reviewBills = bills.filter((b) => b.lines.length > 0);
+
+  // Email — byte-identical to /order. Computed each render (like /order).
+  const { subject: emailSubject, body: emailBody, valid: canSend } =
+    buildEmailParts({ customer: selectedCust, bills, shipTo, dispatch, marker });
+
+  function handleSend(): void {
+    if (!canSend) return;
+    const url = `mailto:${ORDER_TO}?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(emailBody)}`;
+    window.location.href = url;
+  }
+
+  // §10 chips for a cart line: per pack "{label} ×{units}" + conditional
+  // " · {N} box" when step > 1 && units > 0 && units % step === 0.
+  function lineChips(line: CartLine): { label: string; units: number; boxes: number | null }[] {
+    const entries = sortPackEntries(
+      Object.entries(line.packQtys)
+        .filter(([, q]) => q > 0)
+        .map(([k, q]) => { const { packCode, unit } = parsePackKey(k); return { packCode, unit, qty: q }; }),
+    );
+    return entries.map((e) => {
+      const label = formatPack(e.packCode, e.unit);
+      const step  = packStep(label);
+      const boxes = step > 1 && e.qty > 0 && e.qty % step === 0 ? e.qty / step : null;
+      return { label, units: e.qty, boxes };
+    });
+  }
 
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
@@ -551,7 +769,7 @@ export default function PoPage(): React.JSX.Element {
             </div>
           </div>
         ) : view === "review" ? (
-          /* ── Review & send shell (Phase 3 — body filled in Phase 4) ────── */
+          /* ── Review & send (mockup state 6) ────────────────────────────── */
           <>
             <header className="sticky top-0 z-30 bg-white border-b border-gray-200">
               <div className="flex items-center gap-2 px-4 py-[14px]">
@@ -566,11 +784,215 @@ export default function PoPage(): React.JSX.Element {
                 </button>
               </div>
             </header>
-            <div className="flex-1 flex flex-col items-center justify-center px-6 py-16 text-center">
-              <p className="text-[14px] text-gray-400">Review &amp; send — coming in Phase 4.</p>
-              <p className="text-[12px] text-gray-300 mt-1">
-                {multiBill ? `${bills.length} bills` : `Bill ${bills[0].id}`} · {totalUnits} {totalUnits === 1 ? "unit" : "units"}
+
+            {/* Bills + lines */}
+            {reviewBills.map((b) => (
+              <div key={b.id} className="bg-white border-b border-gray-200 px-4 py-[13px]">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[12px] font-semibold text-gray-600">Bill {b.id}</span>
+                  <button
+                    type="button"
+                    onClick={() => editBill(b.id)}
+                    className="text-gray-400 active:text-gray-600 p-1 -mr-1"
+                    aria-label={`Edit Bill ${b.id}`}
+                  >
+                    <Pencil className="w-[15px] h-[15px]" />
+                  </button>
+                </div>
+                {b.lines.map((line, idx) => (
+                  <div
+                    key={`${line.productId}-${idx}`}
+                    className="flex items-start gap-2 py-[6px] border-b border-gray-50 last:border-b-0"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => editLine(b.id, line)}
+                      className="flex-1 min-w-0 text-left"
+                      aria-label="Edit quantities"
+                    >
+                      <p className="text-[14px] text-gray-900 truncate">
+                        {productLabel(line)}{aliasSuffix(line)}
+                      </p>
+                      <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
+                        {lineChips(line).map((c) => (
+                          <span key={c.label} className="text-[12px] text-teal-700">
+                            {c.label} <span className="font-mono">×{c.units}</span>
+                            {c.boxes != null && (
+                              <span className="text-gray-400 font-normal"> · {c.boxes} box</span>
+                            )}
+                          </span>
+                        ))}
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => removeLine(b.id, idx)}
+                      className="text-gray-300 text-[17px] leading-none shrink-0 px-1 active:text-gray-500"
+                      aria-label="Remove line"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ))}
+
+            {/* + Add another bill */}
+            <div className="bg-white border-b border-gray-200 px-4 py-[12px]">
+              <button
+                type="button"
+                onClick={addAnotherBill}
+                className="flex items-center gap-1 text-[13px] text-teal-700 font-medium"
+              >
+                <Plus className="w-[14px] h-[14px]" /> Add another bill
+              </button>
+            </div>
+
+            {/* Ship To */}
+            <div className="bg-white border-b border-gray-200 px-4 py-[13px]">
+              <p className="text-[11px] uppercase tracking-wide text-gray-400 mb-[7px]">Ship to</p>
+              <div className="flex items-center gap-2.5 border border-gray-200 rounded-lg px-3 py-[11px]">
+                <Search className="w-4 h-4 text-gray-300 shrink-0" />
+                <input
+                  type="text"
+                  value={shipTo}
+                  onChange={(e) => changeShipTo(e.target.value)}
+                  onFocus={() => setShipFocused(true)}
+                  onBlur={() => setTimeout(() => setShipFocused(false), 150)}
+                  placeholder="Same as billing"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  className="flex-1 text-[16px] text-gray-900 bg-transparent border-none outline-none placeholder:text-gray-400"
+                />
+                {shipTo && (
+                  <button
+                    type="button"
+                    onClick={() => changeShipTo("")}
+                    className="text-gray-300 text-lg leading-none px-1 shrink-0"
+                    aria-label="Clear"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+              {shipFocused && shipSuggestions.length > 0 && (
+                <div className="border border-gray-100 rounded-lg mt-1 overflow-hidden">
+                  {shipSuggestions.map((c) => (
+                    <button
+                      key={c.code}
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => selectShipTo(c)}
+                      className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left border-b border-gray-50 last:border-b-0 active:bg-gray-50"
+                    >
+                      <div className="w-1.5 h-1.5 rounded-full bg-teal-600 shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[14px] text-gray-900 truncate">{c.name}</p>
+                        <p className="text-[12px] text-gray-400 font-mono mt-0.5 truncate">
+                          {c.code}
+                          {c.area && <span className="font-sans"> · {c.area}</span>}
+                        </p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Dispatch */}
+            <div className="bg-white border-b border-gray-200 px-4 py-[13px]">
+              <p className="text-[11px] uppercase tracking-wide text-gray-400 mb-[7px]">Dispatch</p>
+              <div className="grid grid-cols-3 gap-2">
+                {([
+                  { label: "Normal", dot: "bg-teal-500",  on: "border-teal-500 bg-teal-50 text-teal-700" },
+                  { label: "Hold",   dot: "bg-red-400",   on: "border-red-300 bg-red-50 text-red-700" },
+                  { label: "Urgent", dot: "bg-amber-400", on: "border-amber-300 bg-amber-50 text-amber-700" },
+                ] as const).map((d) => {
+                  const on = dispatch === d.label;
+                  return (
+                    <button
+                      key={d.label}
+                      type="button"
+                      onClick={() => chooseDispatch(d.label)}
+                      className={`h-[42px] rounded-[10px] border text-[14px] flex items-center justify-center gap-1.5 ${
+                        on ? `${d.on} font-semibold` : "border-gray-200 bg-white text-gray-400 font-medium"
+                      }`}
+                    >
+                      <span className={`w-[7px] h-[7px] rounded-full ${d.dot}`} />
+                      {d.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Order Marker */}
+            <div className="bg-white border-b border-gray-200 px-4 py-[13px]">
+              <p className="text-[11px] uppercase tracking-wide text-gray-400 mb-[7px]">
+                Order marker <span className="text-gray-300 normal-case tracking-normal">· optional</span>
               </p>
+              <div className="grid grid-cols-3 gap-2">
+                {([
+                  { label: "🚛 Truck", value: "Truck" as const },
+                  { label: "🔄 Cross", value: "Cross Delivery" as const },
+                  { label: "📦 DTS",   value: "DTS" as const },
+                ]).map((m) => {
+                  const on = marker === m.value;
+                  return (
+                    <button
+                      key={m.value}
+                      type="button"
+                      onClick={() => chooseMarker(on ? null : m.value)}
+                      className={`h-[42px] rounded-[10px] border text-[13px] flex items-center justify-center ${
+                        on
+                          ? "border-indigo-300 bg-indigo-50 text-indigo-700 font-semibold"
+                          : "border-gray-200 bg-white text-gray-400 font-medium"
+                      }`}
+                    >
+                      {m.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Preview (collapsible) — exact email body that will send */}
+            <div className="bg-white border-b border-gray-200">
+              <button
+                type="button"
+                onClick={() => setPreviewOpen((o) => !o)}
+                className="w-full flex items-center justify-between px-4 py-[13px] text-left"
+              >
+                <span className="text-[14px] text-gray-600">Preview email</span>
+                <ChevronDown
+                  className={`w-[18px] h-[18px] text-gray-400 transition-transform ${previewOpen ? "rotate-180" : ""}`}
+                />
+              </button>
+              {previewOpen && (
+                <div className="px-4 pb-[14px]">
+                  <p className="text-[11px] text-gray-400 mb-1">To: {ORDER_TO}</p>
+                  <p className="text-[11px] text-gray-400 mb-2">Subject: {emailSubject}</p>
+                  <pre className="text-[12px] text-gray-900 font-mono whitespace-pre-wrap break-words bg-gray-50 border border-gray-100 rounded-lg p-3">
+{emailBody}
+                  </pre>
+                </div>
+              )}
+            </div>
+
+            {/* Send — page-level sticky bottom */}
+            <div className="sticky bottom-0 z-20 bg-white border-t border-gray-200 px-4 py-3 mt-auto">
+              <button
+                type="button"
+                onClick={handleSend}
+                disabled={!canSend}
+                className={`w-full h-[52px] rounded-[12px] text-[16px] font-semibold flex items-center justify-center gap-2 ${
+                  canSend ? "bg-teal-600 active:bg-teal-700 text-white" : "bg-gray-200 text-gray-400 cursor-not-allowed"
+                }`}
+              >
+                <Send className="w-[17px] h-[17px]" />
+                Send order
+              </button>
             </div>
           </>
         ) : (
