@@ -991,9 +991,19 @@ export default function PoPage(): React.JSX.Element {
 
         {/* Brand bar — normal flow (scrolls away). The product search bar is the
             single top-pinned element, so brand/customer/bill rows scroll up
-            above it. No sticky here → no stacked-sticky pixel fight. */}
-        <header className="bg-white border-b border-gray-200">
-          <div className="flex items-center justify-between px-4 py-[11px]">
+            above it. No sticky here → no stacked-sticky pixel fight.
+
+            Standalone safe-area: pad the (white) header top by the top inset so
+            the brand row clears the iOS notch / status bar (viewport-fit=cover
+            is set globally). max() with the existing 11px → 11px normally,
+            inset when present; the env() fallback is 0px so non-standalone /
+            non-notch contexts are unchanged. The bg-white header fills the inset
+            (no see-through strip). CSS env() only — no JS viewport math (§22). */}
+        <header
+          className="bg-white border-b border-gray-200"
+          style={{ paddingTop: "max(env(safe-area-inset-top, 0px), 11px)" }}
+        >
+          <div className="flex items-center justify-between px-4 pb-[11px]">
             <div className="min-w-0">
               <div className="text-[15px] font-semibold text-gray-900 leading-tight truncate">
                 Purchase Order

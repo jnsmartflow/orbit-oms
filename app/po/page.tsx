@@ -25,7 +25,11 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     title: "Orbit PO",
-    statusBarStyle: "black-translucent",
+    // "default" (not the global "black-translucent") so iOS RESERVES the status
+    // bar in standalone — content sits BELOW it instead of drawing underneath
+    // and overlapping the brand bar. Per-route override; app/layout.tsx stays
+    // "black-translucent" for every other route.
+    statusBarStyle: "default",
   },
   icons: {
     apple: { url: "/apple-touch-icon.png", sizes: "180x180" },
