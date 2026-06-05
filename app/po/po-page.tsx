@@ -450,10 +450,19 @@ export default function PoPage(): React.JSX.Element {
     };
   }, []);
 
-  // Keyboard-aware viewport sizing — carried over from /order verbatim in
-  // behaviour. Writes visualViewport.height into a --vvh CSS var (straight to
-  // documentElement.style, NOT React state — avoids a render storm on every
-  // resize tick). <main> consumes it as its explicit height.
+  // Keyboard-aware viewport sizing. Writes visualViewport.height into a --vvh
+  // CSS var (straight to documentElement.style, NOT React state — avoids a
+  // render storm). <main> consumes it as its explicit height.
+  //
+  // DIVERGES from /order on purpose (/order is a frozen backup): we listen to
+  // "resize" ONLY, not "scroll". The keyboard open/close fires "resize", so
+  // keyboard-aware sizing is preserved; but the per-scroll-tick rewrite churned
+  // <main>'s height under the sticky search and is the suspected cause of the
+  // search drifting on iPhone with the keyboard up. /po runs primarily as an
+  // installed PWA (standalone, no URL bar), so dropping the scroll-driven
+  // re-measure has no URL-bar downside here. Reversible single spot — restore
+  // the "scroll" listener if on-device testing shows the search still drifts.
+  // NO visualViewport positioning math (§22).
   useEffect(() => {
     if (typeof window === "undefined") return;
     const vv = window.visualViewport;
@@ -464,10 +473,8 @@ export default function PoPage(): React.JSX.Element {
     update();   // sync write so --vvh has a value before first paint
     if (!vv) return;
     vv.addEventListener("resize", update);
-    vv.addEventListener("scroll", update);
     return () => {
       vv.removeEventListener("resize", update);
-      vv.removeEventListener("scroll", update);
     };
   }, []);
 
