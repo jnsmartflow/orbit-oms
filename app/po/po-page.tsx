@@ -245,6 +245,7 @@ function aliasSuffix(
 // packInputsRef for desktop focus/scroll.
 function PackRows({
   product, qtys, onStep, onSet, showBoxNote = false, registerInput,
+  onQtyFocus, onQtyBlur,
 }: {
   product:       Product;
   qtys:          Record<string, number>;
@@ -252,6 +253,8 @@ function PackRows({
   onSet:         (key: string, raw: string) => void;
   showBoxNote?:  boolean;
   registerInput?: (i: number, el: HTMLInputElement | null) => void;
+  onQtyFocus?:   () => void;   // multi-qty only — track keyboard-up for the Add bar
+  onQtyBlur?:    () => void;
 }): React.JSX.Element {
   const sorted = sortRawPacks(product.packs);
   if (sorted.length === 0) {
@@ -290,11 +293,13 @@ function PackRows({
               value={qty}
               onChange={(e) => onSet(key, e.target.value)}
               onFocus={(e) => {
+                onQtyFocus?.();
                 e.target.select();
                 requestAnimationFrame(() => {
                   e.target.scrollIntoView({ block: "center", behavior: "smooth" });
                 });
               }}
+              onBlur={() => onQtyBlur?.()}
               className={`w-10 text-center text-[16px] font-bold bg-transparent outline-none ${qty === 0 ? "border-b border-dashed border-gray-300" : "border-none"}`}
               style={{ color: qty > 0 ? "#0d9488" : "#111827" }}
             />
@@ -369,6 +374,11 @@ export default function PoPage(): React.JSX.Element {
   const [selectedProducts, setSelectedProducts] = useState<Product[]>([]);
   // Per-product pack quantities for the multi-qty screen: productId → packKey → units.
   const [multiQtys,        setMultiQtys]        = useState<Record<number, Record<string, number>>>({});
+  // True while any multi-qty number input is focused (keyboard up). Mirrors the
+  // shipFocused pattern: gates the sticky "Add N products" bar so it can't float
+  // mid-screen under the iOS keyboard. Cleared on blur with the same ~150ms delay
+  // to avoid flicker when moving focus between qty inputs.
+  const [multiQtyFocused,  setMultiQtyFocused]  = useState(false);
 
   // Review-screen order-level fields (reused from /order's value sets).
   const [shipTo,      setShipTo]      = useState("");
@@ -1286,20 +1296,29 @@ export default function PoPage(): React.JSX.Element {
               )}
             </div>
 
-            {/* Send — page-level sticky bottom */}
-            <div className="sticky bottom-0 z-20 bg-white border-t border-gray-200 px-4 py-3 mt-auto">
-              <button
-                type="button"
-                onClick={handleSend}
-                disabled={!canSend}
-                className={`w-full h-[52px] rounded-[12px] text-[16px] font-semibold flex items-center justify-center gap-2 ${
-                  canSend ? "bg-teal-600 active:bg-teal-700 text-white" : "bg-gray-200 text-gray-400 cursor-not-allowed"
-                }`}
+            {/* Send — page-level sticky bottom. Hidden while Ship To is focused
+                so the iOS keyboard can't float it mid-screen (§22 — focus-driven,
+                no viewport math); re-pins on blur when the keyboard closes.
+                Bottom safe-area inset clears the home indicator; the bar's own
+                bg-white fills the inset strip. env()=0 on Android → no change. */}
+            {!shipFocused && (
+              <div
+                className="sticky bottom-0 z-20 bg-white border-t border-gray-200 px-4 py-3 mt-auto"
+                style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 12px)" }}
               >
-                <Send className="w-[17px] h-[17px]" />
-                Send order
-              </button>
-            </div>
+                <button
+                  type="button"
+                  onClick={handleSend}
+                  disabled={!canSend}
+                  className={`w-full h-[52px] rounded-[12px] text-[16px] font-semibold flex items-center justify-center gap-2 ${
+                    canSend ? "bg-teal-600 active:bg-teal-700 text-white" : "bg-gray-200 text-gray-400 cursor-not-allowed"
+                  }`}
+                >
+                  <Send className="w-[17px] h-[17px]" />
+                  Send order
+                </button>
+              </div>
+            )}
           </>
         ) : (
           /* ── Customer locked — build screen (header + bill strip + search/picking + cart bar) ── */
@@ -1577,24 +1596,35 @@ export default function PoPage(): React.JSX.Element {
                         onStep={(key, label, delta) => stepMultiPack(p.id, key, label, delta)}
                         onSet={(key, raw) => setMultiPackRaw(p.id, key, raw)}
                         showBoxNote
+                        onQtyFocus={() => setMultiQtyFocused(true)}
+                        onQtyBlur={() => setTimeout(() => setMultiQtyFocused(false), 150)}
                       />
                     </div>
                   );
                 })}
 
-                {/* sticky "Add N products to Bill" */}
-                <div className="sticky bottom-0 z-20 bg-white border-t border-gray-200 px-4 py-3 mt-auto">
-                  <button
-                    type="button"
-                    onClick={commitMultiSelect}
-                    disabled={!anyMultiQty}
-                    className={`w-full h-[52px] rounded-[12px] text-[15px] font-semibold ${
-                      anyMultiQty ? "bg-teal-600 active:bg-teal-700 text-white" : "bg-gray-200 text-gray-400 cursor-not-allowed"
-                    }`}
+                {/* sticky "Add N products to Bill". Hidden while any qty input is
+                    focused so the keyboard can't float it mid-screen (§22 —
+                    focus-driven, no viewport math); re-pins on blur. Bottom
+                    safe-area inset clears the home indicator; bg-white fills the
+                    inset strip. env()=0 on Android → no change. */}
+                {!multiQtyFocused && (
+                  <div
+                    className="sticky bottom-0 z-20 bg-white border-t border-gray-200 px-4 py-3 mt-auto"
+                    style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 12px)" }}
                   >
-                    Add {selectedProducts.length} {selectedProducts.length === 1 ? "product" : "products"} to Bill {activeBillId}
-                  </button>
-                </div>
+                    <button
+                      type="button"
+                      onClick={commitMultiSelect}
+                      disabled={!anyMultiQty}
+                      className={`w-full h-[52px] rounded-[12px] text-[15px] font-semibold ${
+                        anyMultiQty ? "bg-teal-600 active:bg-teal-700 text-white" : "bg-gray-200 text-gray-400 cursor-not-allowed"
+                      }`}
+                    >
+                      Add {selectedProducts.length} {selectedProducts.length === 1 ? "product" : "products"} to Bill {activeBillId}
+                    </button>
+                  </div>
+                )}
               </>
             ) : (
               /* ── Quantity picking (single product) ────────────────────── */
@@ -1657,7 +1687,10 @@ export default function PoPage(): React.JSX.Element {
             {/* Multi-select bottom bar — shown when >= 1 product is ticked
                 (takes priority over the cart bar; single bar at a time). */}
             {showSelectBar && (
-              <div className="sticky bottom-0 z-20 bg-teal-600 text-white px-[18px] py-[15px] flex items-center justify-between">
+              <div
+                className="sticky bottom-0 z-20 bg-teal-600 text-white px-[18px] py-[15px] flex items-center justify-between"
+                style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 15px)" }}
+              >
                 <span className="text-[14px] font-semibold">
                   {selectedProducts.length} selected
                 </span>
@@ -1675,7 +1708,10 @@ export default function PoPage(): React.JSX.Element {
             {/* Bottom cart bar — page-level sticky (§15.5 rule 4), search mode +
                 has lines, and only when the select bar isn't showing. */}
             {mode === "search" && !showSelectBar && hasAnyLines && (
-              <div className="sticky bottom-0 z-20 bg-teal-600 text-white px-[18px] py-[15px] flex items-center justify-between">
+              <div
+                className="sticky bottom-0 z-20 bg-teal-600 text-white px-[18px] py-[15px] flex items-center justify-between"
+                style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 15px)" }}
+              >
                 <div className="min-w-0">
                   {multiBill ? (
                     <>
