@@ -481,29 +481,37 @@ export default function PoPage(): React.JSX.Element {
 
   // Keyboard-aware viewport sizing. Writes visualViewport.height into a --vvh
   // CSS var (straight to documentElement.style, NOT React state — avoids a
-  // render storm). <main> consumes it as its explicit height.
+  // render storm). <main> consumes it as its explicit height, so on keyboard
+  // open <main> shrinks to the above-keyboard area and the bottom-pinned footer
+  // sits just above the keyboard (no gray void).
   //
-  // DIVERGES from /order on purpose (/order is a frozen backup): we listen to
-  // "resize" ONLY, not "scroll". The keyboard open/close fires "resize", so
-  // keyboard-aware sizing is preserved; but the per-scroll-tick rewrite churned
-  // <main>'s height under the sticky search and is the suspected cause of the
-  // search drifting on iPhone with the keyboard up. /po runs primarily as an
-  // installed PWA (standalone, no URL bar), so dropping the scroll-driven
-  // re-measure has no URL-bar downside here. Reversible single spot — restore
-  // the "scroll" listener if on-device testing shows the search still drifts.
-  // NO visualViewport positioning math (§22).
+  // Listen to BOTH "resize" AND "scroll" (mirrors /order). On iOS standalone PWA
+  // the keyboard does NOT fire a clean "resize" — its final geometry arrives via
+  // a visualViewport scroll/offset adjustment — so "resize" alone left --vvh at
+  // the full pre-keyboard height and the footer overshot below the keyboard.
+  //
+  // GUARD: only write when the measured height actually CHANGES (lastH). The
+  // earlier unguarded per-scroll-tick rewrite churned <main>'s height under the
+  // sticky search and drifted it on iPhone (commit eb3482b1); a pure scroll
+  // (no keyboard) leaves the height unchanged, so the guarded write is a no-op
+  // and the pinned search holds. Height-write only — NO positioning math (§22).
   useEffect(() => {
     if (typeof window === "undefined") return;
     const vv = window.visualViewport;
+    let lastH = -1;
     function update(): void {
       const h = vv ? vv.height : window.innerHeight;
+      if (h === lastH) return;   // unchanged height (e.g. plain scroll) → no churn
+      lastH = h;
       document.documentElement.style.setProperty("--vvh", `${h}px`);
     }
     update();   // sync write so --vvh has a value before first paint
     if (!vv) return;
     vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
     return () => {
       vv.removeEventListener("resize", update);
+      vv.removeEventListener("scroll", update);
     };
   }, []);
 
