@@ -275,6 +275,7 @@ function aliasSuffix(
 // packInputsRef for desktop focus/scroll.
 function PackRows({
   product, qtys, onStep, onSet, showBoxNote = false, registerInput,
+  onQtyFocus, onQtyBlur,
 }: {
   product:       Product;
   qtys:          Record<string, number>;
@@ -282,6 +283,8 @@ function PackRows({
   onSet:         (key: string, raw: string) => void;
   showBoxNote?:  boolean;
   registerInput?: (i: number, el: HTMLInputElement | null) => void;
+  onQtyFocus?:   () => void;   // multi-qty: track keyboard-up to hide the footer
+  onQtyBlur?:    () => void;
 }): React.JSX.Element {
   const sorted = sortRawPacks(product.packs);
   if (sorted.length === 0) {
@@ -321,12 +324,25 @@ function PackRows({
               onChange={(e) => onSet(key, e.target.value)}
               onFocus={(e) => {
                 e.target.select();
+                onQtyFocus?.();   // hide the footer pill (reflows the layout)
+                const el      = e.currentTarget;
+                const section = el.closest("[data-product-section]");
+                // Two rAFs: let the footer-hide reflow commit, THEN bring the
+                // WHOLE product section (name + every pack row) to the top of
+                // the visible area, immediately on tap. scrollIntoView only —
+                // no viewport offset math (§22). The single-product picker has
+                // no [data-product-section] ancestor → falls back to the input.
                 requestAnimationFrame(() => {
-                  // "nearest" keeps the focused row just above the keyboard
-                  // (NOT centered mid-viewport, which exposed an empty band).
-                  e.target.scrollIntoView({ block: "nearest", behavior: "smooth" });
+                  requestAnimationFrame(() => {
+                    if (section) {
+                      section.scrollIntoView({ block: "start", behavior: "auto" });
+                    } else {
+                      el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+                    }
+                  });
                 });
               }}
+              onBlur={() => onQtyBlur?.()}
               className={`w-10 text-center text-[16px] font-bold bg-transparent outline-none ${qty === 0 ? "border-b border-dashed border-gray-300" : "border-none"}`}
               style={{ color: qty > 0 ? "#0d9488" : "#111827" }}
             />
@@ -401,10 +417,16 @@ export default function PoPage(): React.JSX.Element {
   const [selectedProducts, setSelectedProducts] = useState<Product[]>([]);
   // Per-product pack quantities for the multi-qty screen: productId → packKey → units.
   const [multiQtys,        setMultiQtys]        = useState<Record<number, Record<string, number>>>({});
+  // True while any multi-qty number input is focused (keyboard up) — hides the
+  // "Add N products" footer pill so it can't cover the rows during entry.
+  const [qtyFocused,       setQtyFocused]       = useState(false);
 
   // Review-screen order-level fields (reused from /order's value sets).
   const [shipTo,      setShipTo]      = useState("");
   const [shipFocused, setShipFocused] = useState(false);
+  // True while the Notes input is focused — pairs with shipFocused to hide the
+  // "Send order" pill while either review field is being typed.
+  const [notesFocused, setNotesFocused] = useState(false);
   const [dispatch,    setDispatch]    = useState<Dispatch>("Normal");
   const [marker,      setMarker]      = useState<Marker>(null);
   // Cross-billing depot (set only when marker === "Cross Delivery") + its sheet.
@@ -620,6 +642,8 @@ export default function PoPage(): React.JSX.Element {
     setActiveBillId(1);
     setShipTo("");
     setShipFocused(false);
+    setNotesFocused(false);
+    setQtyFocused(false);
     setDispatch("Normal");
     setMarker(null);
     setCrossDepot(null);
@@ -1307,7 +1331,7 @@ export default function PoPage(): React.JSX.Element {
             </div>
 
             {/* Ship To */}
-            <div className="bg-white border-b border-gray-200 px-4 py-[13px]">
+            <div data-field-section className="bg-white border-b border-gray-200 px-4 py-[13px]">
               <p className="text-[11px] uppercase tracking-wide text-gray-400 mb-[7px]">Ship to</p>
               <div className="flex items-center gap-2.5 border border-gray-200 rounded-lg px-3 py-[11px]">
                 <Search className="w-4 h-4 text-gray-300 shrink-0" />
@@ -1316,13 +1340,16 @@ export default function PoPage(): React.JSX.Element {
                   value={shipTo}
                   onChange={(e) => changeShipTo(e.target.value)}
                   onFocus={(e) => {
-                    setShipFocused(true);   // still gates the suggestions dropdown
-                    const el = e.target;
-                    // Park the field just above the keyboard/footer so the pinned
-                    // "Send order" pill can't cover it (same as the qty inputs;
-                    // §22 — no viewport math).
+                    setShipFocused(true);   // hides Send pill + gates suggestions dropdown
+                    const el      = e.currentTarget;
+                    const section = el.closest("[data-field-section]");
+                    // Two rAFs: let the Send-pill hide reflow, THEN bring the
+                    // Ship To section to the top of the visible area. scrollIntoView
+                    // only — no viewport offset math (§22).
                     requestAnimationFrame(() => {
-                      el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+                      requestAnimationFrame(() => {
+                        (section ?? el).scrollIntoView({ block: "start", behavior: "auto" });
+                      });
                     });
                   }}
                   onBlur={() => setTimeout(() => setShipFocused(false), 150)}
@@ -1440,7 +1467,7 @@ export default function PoPage(): React.JSX.Element {
             </div>
 
             {/* Notes — optional free text + a "Quick add" preset menu. */}
-            <div className="bg-white border-b border-gray-200 px-4 py-[13px]">
+            <div data-field-section className="bg-white border-b border-gray-200 px-4 py-[13px]">
               <div className="flex items-center justify-between mb-[7px]">
                 <p className="text-[11px] uppercase tracking-wide text-gray-400">
                   Notes <span className="text-gray-300 normal-case tracking-normal">· optional</span>
@@ -1477,13 +1504,19 @@ export default function PoPage(): React.JSX.Element {
                 value={notes}
                 onChange={(e) => changeNotes(e.target.value)}
                 onFocus={(e) => {
-                  const el = e.target;
-                  // Park the Notes field above the keyboard/footer (same as the
-                  // qty inputs; §22 — no viewport math).
+                  setNotesFocused(true);   // hides the Send pill while typing
+                  const el      = e.currentTarget;
+                  const section = el.closest("[data-field-section]");
+                  // Two rAFs: let the Send-pill hide reflow, THEN bring the Notes
+                  // section to the top of the visible area. scrollIntoView only —
+                  // no viewport offset math (§22).
                   requestAnimationFrame(() => {
-                    el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+                    requestAnimationFrame(() => {
+                      (section ?? el).scrollIntoView({ block: "start", behavior: "auto" });
+                    });
                   });
                 }}
+                onBlur={() => setTimeout(() => setNotesFocused(false), 150)}
                 placeholder="Add a note…"
                 autoComplete="off"
                 autoCorrect="off"
@@ -1746,7 +1779,7 @@ export default function PoPage(): React.JSX.Element {
                     getBaseAliasDisplay(p.product, p.baseColour),
                   );
                   return (
-                    <div key={p.id} className="bg-white border-b border-gray-200 pt-[14px] pb-1">
+                    <div key={p.id} data-product-section className="bg-white border-b border-gray-200 pt-[14px] pb-1">
                       <div className="px-4">
                         <div className="text-[15px] font-semibold text-gray-900">
                           {productLabel(p)}{aliasSuffix(p)}
@@ -1759,6 +1792,8 @@ export default function PoPage(): React.JSX.Element {
                         onStep={(key, label, delta) => stepMultiPack(p.id, key, label, delta)}
                         onSet={(key, raw) => setMultiPackRaw(p.id, key, raw)}
                         showBoxNote
+                        onQtyFocus={() => setQtyFocused(true)}
+                        onQtyBlur={() => setTimeout(() => setQtyFocused(false), 150)}
                       />
                     </div>
                   );
@@ -1935,20 +1970,22 @@ export default function PoPage(): React.JSX.Element {
           indicator (env()=0 on Android → no change). */}
       {selectedCust && (
         view === "review"
-          // Send order — stays PINNED during Ship To / Notes entry. Those inputs
-          // scroll themselves above the keyboard/footer on focus (block:"nearest"),
-          // so the pill never covers them — no focus-hide needed (§22).
-          ? footerPill({ onClick: handleSend, disabled: !canSend, label: "Send order", icon: "send" })
-          // Multi-qty sub-screen — Add products. Stays PINNED during qty entry:
-          // the footer rides above the keyboard (flex-shrink-0 at <main> level)
-          // and never overlaps the inputs, so the old focus-hide is dropped — it
-          // only handed its height to the scroll area and grew the empty band.
+          // Send order — HIDDEN while Ship To OR Notes is focused (the field
+          // scrolls its section to the top; hiding the pill keeps it out of the
+          // way above the keyboard). Restored on blur.
+          ? ((shipFocused || notesFocused)
+              ? null
+              : footerPill({ onClick: handleSend, disabled: !canSend, label: "Send order", icon: "send" }))
+          // Multi-qty sub-screen — Add products. HIDDEN while a qty box is
+          // focused so it never covers the rows during entry; restored on blur.
           : mode === "multiqty"
-            ? footerPill({
-                onClick: commitMultiSelect,
-                disabled: !anyMultiQty,
-                label: `Add ${selectedProducts.length} ${selectedProducts.length === 1 ? "product" : "products"}`,
-              })
+            ? (qtyFocused
+                ? null
+                : footerPill({
+                    onClick: commitMultiSelect,
+                    disabled: !anyMultiQty,
+                    label: `Add ${selectedProducts.length} ${selectedProducts.length === 1 ? "product" : "products"}`,
+                  }))
             // Multi-select active with ≥1 ticked — Set quantities (with count).
             : (mode === "search" && showSelectBar)
               ? footerPill({ onClick: openMultiQty, label: `Set quantities (${selectedProducts.length})` })
