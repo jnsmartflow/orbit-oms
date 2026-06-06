@@ -503,6 +503,15 @@ export default function PoPage(): React.JSX.Element {
   const cancelBtnRef   = useRef<HTMLButtonElement | null>(null);
   // Pending focusout → setInputFocused(false) timer; a quick refocus cancels it.
   const blurTimerRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The currently-focused managed input (qty box / Ship To / Notes), tracked so
+  // the --vvh updater can re-scroll IT to the nearest edge when the viewport
+  // shrinks (keyboard opening) — corrects low picker cells like 20L. Null = none.
+  const focusedInputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
+  // Bridge to the --vvh updater's guarded measure (assigned inside its effect),
+  // so focusout can fire ONE delayed re-measure to snap <main> back to full
+  // height on keyboard close (kills the grey band) — no new per-tick listener.
+  const vvhUpdateRef   = useRef<(() => void) | null>(null);
+  const vvhResnapRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── Data ──────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -565,6 +574,11 @@ export default function PoPage(): React.JSX.Element {
         clearTimeout(blurTimerRef.current);
         blurTimerRef.current = null;
       }
+      if (vvhResnapRef.current) {   // a quick refocus cancels a pending close re-measure
+        clearTimeout(vvhResnapRef.current);
+        vvhResnapRef.current = null;
+      }
+      focusedInputRef.current = el;
       setInputFocused(true);
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
@@ -575,11 +589,21 @@ export default function PoPage(): React.JSX.Element {
     }
     function onFocusOut(e: FocusEvent): void {
       if (!isManagedInput(e.target)) return;
+      focusedInputRef.current = null;
       if (blurTimerRef.current) clearTimeout(blurTimerRef.current);
       blurTimerRef.current = setTimeout(() => {
         setInputFocused(false);
         blurTimerRef.current = null;
       }, 150);
+      // Snap <main> back to full height after the keyboard closes. iOS standalone
+      // PWA can drop the close "resize", leaving --vvh at the keyboard-open height
+      // (the grey band). ONE delayed re-measure through the SAME lastH-guarded
+      // path (vvhUpdateRef) reclaims the height — no new per-tick listener (§22).
+      if (vvhResnapRef.current) clearTimeout(vvhResnapRef.current);
+      vvhResnapRef.current = setTimeout(() => {
+        vvhUpdateRef.current?.();
+        vvhResnapRef.current = null;
+      }, 300);
     }
     document.addEventListener("focusin", onFocusIn);
     document.addEventListener("focusout", onFocusOut);
@@ -589,6 +613,10 @@ export default function PoPage(): React.JSX.Element {
       if (blurTimerRef.current) {
         clearTimeout(blurTimerRef.current);
         blurTimerRef.current = null;
+      }
+      if (vvhResnapRef.current) {
+        clearTimeout(vvhResnapRef.current);
+        vvhResnapRef.current = null;
       }
     };
   }, []);
@@ -634,16 +662,30 @@ export default function PoPage(): React.JSX.Element {
     function update(): void {
       const h = vv ? vv.height : window.innerHeight;
       if (h === lastH) return;   // unchanged height (e.g. plain scroll) → no churn
+      const shrank = lastH !== -1 && h < lastH;   // height dropped = keyboard opening
       lastH = h;
       document.documentElement.style.setProperty("--vvh", `${h}px`);
+      // Keyboard just opened: re-scroll the focused field to the NEAREST edge so it
+      // sits just above the keyboard. The focusin scroll (block:"start") ran against
+      // the taller pre-keyboard viewport and clamps for low rows (the picker's 20L);
+      // this correction fires AFTER the shrink. scrollIntoView only — no offset math
+      // (§22). Also hardens multiqty for tall products.
+      if (shrank && focusedInputRef.current) {
+        const el = focusedInputRef.current;
+        requestAnimationFrame(() => el.scrollIntoView({ block: "nearest", behavior: "auto" }));
+      }
     }
+    vvhUpdateRef.current = update;   // let focusout fire a guarded re-measure on close
     update();   // sync write so --vvh has a value before first paint
-    if (!vv) return;
+    if (!vv) {
+      return () => { vvhUpdateRef.current = null; };
+    }
     vv.addEventListener("resize", update);
     vv.addEventListener("scroll", update);
     return () => {
       vv.removeEventListener("resize", update);
       vv.removeEventListener("scroll", update);
+      vvhUpdateRef.current = null;
     };
   }, []);
 
@@ -1280,6 +1322,41 @@ export default function PoPage(): React.JSX.Element {
           {icon === "send" && <Send className="w-[17px] h-[17px]" />}
           {label}
           {icon === "arrow" && <ChevronRight className="w-[18px] h-[18px]" />}
+        </button>
+      </div>
+    );
+  }
+
+  // Single-product picker action bar — Cancel (ghost) + Add to Bill (teal,
+  // disabled at zero qty). Rendered in the SAME non-scrolling <main> footer slot
+  // as footerPill (a flex-shrink-0 sibling of the scroll area) so it rides --vvh
+  // above the keyboard, instead of sitting inside the min-h-full scroll content
+  // (the old inline bar left a grey band + parked scroll on close; §22). Hidden
+  // while a qty box is focused — see the footer block at the end of render.
+  function pickerFooter(): React.JSX.Element {
+    return (
+      <div
+        className="flex-shrink-0 bg-[#f9fafb] flex gap-2 px-4 pt-3"
+        style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 16px)" }}
+      >
+        <button
+          type="button"
+          onClick={cancelPicking}
+          className="px-[14px] py-[12px] text-gray-500 hover:text-gray-700 text-[14px] font-medium"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={commitLine}
+          disabled={!anyQty}
+          className={`flex-1 rounded-[10px] text-[15px] font-semibold px-4 py-[12px] ${
+            anyQty
+              ? "bg-teal-600 hover:bg-teal-700 text-white"
+              : "bg-gray-200 text-gray-400 cursor-not-allowed"
+          }`}
+        >
+          Add to Bill {activeBillId}
         </button>
       </div>
     );
@@ -2075,29 +2152,11 @@ export default function PoPage(): React.JSX.Element {
                     />
                   </div>
 
-                  {/* Action bar — sits near the top of the qty card (not
-                      sticky-bottom) so it never hides behind the soft keyboard. */}
-                  <div className="flex gap-2 px-4 py-3">
-                    <button
-                      type="button"
-                      onClick={cancelPicking}
-                      className="px-[14px] py-[12px] text-gray-500 hover:text-gray-700 text-[14px] font-medium"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="button"
-                      onClick={commitLine}
-                      disabled={!anyQty}
-                      className={`flex-1 rounded-[10px] text-[15px] font-semibold px-4 py-[12px] ${
-                        anyQty
-                          ? "bg-teal-600 hover:bg-teal-700 text-white"
-                          : "bg-gray-200 text-gray-400 cursor-not-allowed"
-                      }`}
-                    >
-                      Add to Bill {activeBillId}
-                    </button>
-                  </div>
+                  {/* Cancel / Add to Bill now lives in the non-scrolling <main>
+                      footer (pickerFooter) — keyboard-safe: it rides --vvh and
+                      hides while a qty box is focused. Pulling it out of this
+                      min-h-full scroll content is what kills the grey band /
+                      parked scroll the old inline bar caused (§22). See render end. */}
                 </>
               )
             )}
@@ -2270,13 +2329,18 @@ export default function PoPage(): React.JSX.Element {
                     disabled: !anyMultiQty,
                     label: `Add ${selectedProducts.length} ${selectedProducts.length === 1 ? "product" : "products"}`,
                   }))
-            // Multi-select active with ≥1 ticked — Set quantities (with count).
-            : (mode === "search" && showSelectBar)
-              ? footerPill({ onClick: openMultiQty, label: `Set quantities (${selectedProducts.length})` })
-              // Default build CTA — Review order when the active cart has lines.
-              : (mode === "search" && !showSelectBar && hasAnyLines)
-                ? footerPill({ onClick: openReview, label: "Review order" })
-                : null
+            // Single-product picker — Cancel / Add to Bill. Same keyboard-safe
+            // footer slot as the pills; HIDDEN while a qty box is focused so it
+            // never covers the pack rows, restored on blur.
+            : (mode === "picking" && activeProduct)
+              ? (inputFocused ? null : pickerFooter())
+              // Multi-select active with ≥1 ticked — Set quantities (with count).
+              : (mode === "search" && showSelectBar)
+                ? footerPill({ onClick: openMultiQty, label: `Set quantities (${selectedProducts.length})` })
+                // Default build CTA — Review order when the active cart has lines.
+                : (mode === "search" && !showSelectBar && hasAnyLines)
+                  ? footerPill({ onClick: openReview, label: "Review order" })
+                  : null
       )}
     </main>
   );
