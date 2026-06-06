@@ -1254,6 +1254,47 @@ export default function PoPage(): React.JSX.Element {
       className="bg-[#f9fafb] flex flex-col overflow-hidden"
       style={{ height: "var(--vvh, 100vh)" }}
     >
+      {/* Pinned teal Orbit brand bar — flex-shrink-0 TOP sibling of the scroll
+          area (mirrors footerPill, the shrink-0 sibling below it). It carries
+          the status-bar inset on a teal bg, so teal is continuous from the
+          status bar through the inset into the bar (no white gap). The ONE
+          teal-brand surface here; body content stays neutral. theme-color /
+          statusBarStyle unchanged. */}
+      <div
+        className="flex-shrink-0 bg-[#0d9488]"
+        style={{ paddingTop: "max(env(safe-area-inset-top, 0px), 11px)" }}
+      >
+        <div className="max-w-[480px] mx-auto px-4 pb-[11px] flex items-center justify-between gap-3">
+          <div className="min-w-0 flex items-center gap-2">
+            <svg viewBox="0 0 32 32" fill="none" className="w-[26px] h-[26px] shrink-0" aria-hidden="true">
+              <circle cx="16" cy="16" r="11" stroke="#fff" strokeWidth="2" />
+              <circle cx="16" cy="16" r="3.4" fill="#fff" />
+              <circle cx="27" cy="16" r="2.6" fill="#fff" />
+            </svg>
+            <div className="min-w-0">
+              <div className="text-[22px] font-extrabold text-white leading-none">Orbit</div>
+              {!selectedCust && (
+                <div
+                  className="text-[12px] leading-tight mt-0.5 truncate"
+                  style={{ color: "rgba(255,255,255,0.72)" }}
+                >
+                  Purchase Order · Surat Depot
+                </div>
+              )}
+            </div>
+          </div>
+          {selectedCust && (
+            <button
+              type="button"
+              onClick={onNewOrder}
+              className="flex items-center gap-1.5 text-white text-[13px] font-medium shrink-0 pl-3 active:opacity-70"
+            >
+              <RefreshCw className="w-[15px] h-[15px]" /> New order
+            </button>
+          )}
+        </div>
+      </div>
+
       {/* Scrollable content area (flex-1). The pinned product search + every
           sticky sub-header pin within THIS container; the primary CTA lives in a
           non-scrolling footer BELOW it (a place that "doesn't need lifting").
@@ -1281,41 +1322,19 @@ export default function PoPage(): React.JSX.Element {
             inset when present; the env() fallback is 0px so non-standalone /
             non-notch contexts are unchanged. The bg-white header fills the inset
             (no see-through strip). CSS env() only — no JS viewport math (§22). */}
-        <header
-          className="bg-white border-b border-gray-200"
-          style={{ paddingTop: "max(env(safe-area-inset-top, 0px), 11px)" }}
-        >
-          <div className="flex items-center justify-between px-4 pb-[11px]">
-            <div className="min-w-0">
-              {selectedCust ? (
-                <>
-                  <div className="text-[16px] font-bold text-gray-900 leading-tight truncate">
-                    {selectedCust.name}
-                  </div>
-                  <div className="text-[12px] text-gray-500 leading-tight truncate mt-px">
-                    {selectedCust.code}{selectedCust.area ? ` · ${selectedCust.area}` : ""}
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="text-[15px] font-semibold text-gray-900 leading-tight truncate">
-                    Purchase Order
-                  </div>
-                  <div className="text-[11px] text-gray-500 leading-tight truncate mt-px">
-                    JSW Dulux · Surat Depot
-                  </div>
-                </>
-              )}
+        {/* Customer identity — only once a customer is locked. The brand mark +
+            "New order" now live in the pinned teal bar above; on landing there's
+            no white header (search is the first thing in the scroll area). */}
+        {selectedCust && (
+          <header className="bg-white border-b border-gray-200 px-4 py-[13px]">
+            <div className="text-[16px] font-bold text-gray-900 leading-tight truncate">
+              {selectedCust.name}
             </div>
-            <button
-              type="button"
-              onClick={onNewOrder}
-              className="flex items-center gap-1.5 text-teal-700 text-[13px] font-medium shrink-0 pl-3 active:opacity-70"
-            >
-              <RefreshCw className="w-[15px] h-[15px]" /> New order
-            </button>
-          </div>
-        </header>
+            <div className="text-[12px] text-gray-500 leading-tight truncate mt-px">
+              {selectedCust.code}{selectedCust.area ? ` · ${selectedCust.area}` : ""}
+            </div>
+          </header>
+        )}
 
         {!selectedCust ? (
           /* ── Pick a customer — single elevated search field, no chrome ───

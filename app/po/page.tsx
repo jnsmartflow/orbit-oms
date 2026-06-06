@@ -24,7 +24,7 @@ export const metadata: Metadata = {
   manifest: "/po.webmanifest",
   appleWebApp: {
     capable: true,
-    title: "Orbit PO",
+    title: "Orbit",
     // "default" (not the global "black-translucent") so iOS RESERVES the status
     // bar in standalone — content sits BELOW it instead of drawing underneath
     // and overlapping the brand bar. Per-route override; app/layout.tsx stays
