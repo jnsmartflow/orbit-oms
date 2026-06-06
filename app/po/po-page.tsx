@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Search, Mic, Check, ChevronLeft, ChevronDown, ChevronRight, Plus, Pencil, Send, RefreshCw } from "lucide-react";
+import { Search, Mic, Check, ChevronLeft, ChevronDown, ChevronRight, Plus, Pencil, Copy, Send, RefreshCw } from "lucide-react";
 import type { RawPack } from "@/lib/place-order/pack-buckets";
 import type { Product, CartLine, Bill, Customer } from "@/app/(place-order)/place-order/types";
 import { rankProductsForQuery } from "@/lib/place-order/mobile-search";
@@ -1033,6 +1033,23 @@ export default function PoPage(): React.JSX.Element {
     persist(nextBills, id, id);
   }
 
+  // Review screen: append a NEW bill at the end whose lines are a DEEP COPY of
+  // `source`'s lines (new array + new line objects + new packQtys map — no
+  // shared refs, so editing the copy never mutates the source). Keeps the
+  // id === position+1 invariant (id = billCounter+1, same as addBill). Does NOT
+  // switch the active bill and does NOT navigate — stays on review. No cap.
+  function duplicateBill(source: Bill): void {
+    const id = billCounter + 1;
+    const copiedLines: CartLine[] = source.lines.map((l) => ({
+      ...l,
+      packQtys: { ...l.packQtys },
+    }));
+    const nextBills: Bill[] = [...bills, { id, lines: copiedLines }];
+    setBills(nextBills);
+    setBillCounter(id);
+    persist(nextBills, id, activeBillId);   // active bill unchanged
+  }
+
   // × on the active bill chip. Empty bill → delete immediately; bill with
   // products → open the confirm sheet. Never deletes the last remaining bill.
   function requestDeleteBill(index: number): void {
@@ -1304,14 +1321,25 @@ export default function PoPage(): React.JSX.Element {
               <div key={b.id} className="bg-white border-b border-gray-200 px-4 py-[13px]">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-[12px] font-semibold text-gray-600">Bill {b.id}</span>
-                  <button
-                    type="button"
-                    onClick={() => editBill(b.id)}
-                    className="text-gray-400 active:text-gray-600 p-1 -mr-1"
-                    aria-label={`Edit Bill ${b.id}`}
-                  >
-                    <Pencil className="w-[15px] h-[15px]" />
-                  </button>
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => duplicateBill(b)}
+                      className="flex items-center gap-1 text-[14px] text-gray-500 active:text-gray-700"
+                      aria-label={`Duplicate Bill ${b.id}`}
+                    >
+                      <Copy className="w-[15px] h-[15px]" />
+                      Duplicate
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => editBill(b.id)}
+                      className="text-gray-400 active:text-gray-600 p-1 -mr-1"
+                      aria-label={`Edit Bill ${b.id}`}
+                    >
+                      <Pencil className="w-[15px] h-[15px]" />
+                    </button>
+                  </div>
                 </div>
                 {b.lines.map((line, idx) => (
                   <div
