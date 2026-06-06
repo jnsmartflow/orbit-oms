@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Search, Mic, Check, ChevronLeft, ChevronDown, ChevronRight, Plus, Pencil, Copy, Send, RefreshCw } from "lucide-react";
+import { Search, Mic, Check, ChevronLeft, ChevronDown, ChevronRight, Plus, Pencil, Copy, Clock, Send, RefreshCw } from "lucide-react";
 import type { RawPack } from "@/lib/place-order/pack-buckets";
 import type { Product, CartLine, Bill, Customer } from "@/app/(place-order)/place-order/types";
 import { rankProductsForQuery } from "@/lib/place-order/mobile-search";
@@ -234,6 +234,65 @@ function clearPoDraft(): void {
   }
 }
 
+// ── Device-local recent customers — newest-first, deduped by code, cap 6 ────
+// Pure client/localStorage (real PWA): each entry holds EXACTLY the fields
+// selectCustomer() needs to re-start an order (name / code / area) + a stamp.
+const PO_RECENTS_KEY = "po_recent_customers";
+const PO_RECENTS_CAP = 6;
+
+type RecentCustomer = { name: string; code: string; area: string | null; ts: number };
+
+function getRecents(): RecentCustomer[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(PO_RECENTS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter(
+        (e): e is Partial<RecentCustomer> =>
+          !!e && typeof (e as RecentCustomer).name === "string"
+          && typeof (e as RecentCustomer).code === "string",
+      )
+      .map((e) => ({
+        name: e.name as string,
+        code: e.code as string,
+        area: typeof e.area === "string" ? e.area : null,
+        ts:   typeof e.ts === "number" ? e.ts : 0,
+      }))
+      .slice(0, PO_RECENTS_CAP);
+  } catch {
+    return [];
+  }
+}
+
+// Move this customer to the top (dedupe by code), persist, return the new list.
+function addRecent(c: Customer): RecentCustomer[] {
+  const entry: RecentCustomer = {
+    name: c.name, code: c.code, area: c.area ?? null, ts: Date.now(),
+  };
+  const next = [entry, ...getRecents().filter((e) => e.code !== entry.code)]
+    .slice(0, PO_RECENTS_CAP);
+  if (typeof window !== "undefined") {
+    try {
+      window.localStorage.setItem(PO_RECENTS_KEY, JSON.stringify(next));
+    } catch {
+      // Quota / private mode — recents are best-effort, drop silently.
+    }
+  }
+  return next;
+}
+
+function clearRecents(): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(PO_RECENTS_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
 // ── Display helpers (mirrors /order) ───────────────────────────────────────
 
 // Sort RawPacks for display: KG anchored last, otherwise by ML magnitude.
@@ -390,6 +449,11 @@ export default function PoPage(): React.JSX.Element {
 
   const [selectedCust, setSelectedCust] = useState<Customer | null>(null);
   const [custQuery,    setCustQuery]    = useState("");
+  // Device-local recent customers (landing only). Loaded from localStorage in a
+  // mount effect — NOT during render — so SSR/first paint render nothing (no
+  // hydration mismatch). recentsLoaded gates the section until that read runs.
+  const [recents,       setRecents]       = useState<RecentCustomer[]>([]);
+  const [recentsLoaded, setRecentsLoaded] = useState(false);
 
   // Hero product search.
   const [heroQuery, setHeroQuery] = useState("");
@@ -483,6 +547,12 @@ export default function PoPage(): React.JSX.Element {
       setNotes(saved.notes);
       setMultiSelect(saved.multiSelect);
     }
+  }, []);
+
+  // Load device-local recent customers on mount (client-only → no hydration mismatch).
+  useEffect(() => {
+    setRecents(getRecents());
+    setRecentsLoaded(true);
   }, []);
 
   // Detect SpeechRecognition support (client-only).
@@ -1117,6 +1187,9 @@ export default function PoPage(): React.JSX.Element {
   function handleSend(): void {
     if (!canSend) return;
     const url = `mailto:${ORDER_TO}?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(emailBody)}`;
+    // Record this customer in device-local recents BEFORE the reset — this is
+    // the ONLY place recents are written.
+    if (selectedCust) setRecents(addRecent(selectedCust));
     window.location.href = url;   // mailto: opens the mail app; page does not unload
     // Full reset so the next order starts empty (back to customer-pick).
     clearCustomer();
@@ -1297,6 +1370,59 @@ export default function PoPage(): React.JSX.Element {
                   </button>
                 ))}
               </div>
+            )}
+
+            {/* Recent customers — landing only, while the search is idle.
+                Loaded post-mount (recentsLoaded) so SSR/first paint render
+                nothing. Neutral greys — no second teal accent (CLAUDE_UI). */}
+            {recentsLoaded && custQuery.trim().length < 2 && (
+              recents.length > 0 ? (
+                <div className="mt-7">
+                  <div className="flex items-center justify-between px-1 mb-2">
+                    <span className="text-[12px] font-medium uppercase tracking-wider text-gray-400">
+                      Recent
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => { clearRecents(); setRecents([]); }}
+                      className="text-[13px] text-gray-400 active:text-gray-600"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                  <div className="bg-white border border-gray-100 rounded-[16px] overflow-hidden shadow-sm">
+                    {recents.map((r) => (
+                      <button
+                        key={r.code}
+                        type="button"
+                        onClick={() => selectCustomer({ name: r.name, code: r.code, area: r.area })}
+                        className="w-full flex items-center gap-3 px-4 py-3 text-left border-b border-gray-50 last:border-b-0 active:bg-gray-50"
+                      >
+                        <div className="w-[38px] h-[38px] rounded-[10px] bg-gray-100 flex items-center justify-center shrink-0">
+                          <Clock className="w-[18px] h-[18px] text-gray-400" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[16px] font-bold text-gray-900 truncate">{r.name}</p>
+                          <p className="text-[13px] text-gray-400 truncate mt-px">
+                            {r.code}{r.area ? ` · ${r.area}` : ""}
+                          </p>
+                        </div>
+                        <ChevronRight className="w-[18px] h-[18px] text-gray-300 shrink-0" />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-10 flex flex-col items-center text-center px-6">
+                  <div className="w-[44px] h-[44px] rounded-full bg-gray-100 flex items-center justify-center mb-3">
+                    <Clock className="w-[20px] h-[20px] text-gray-300" />
+                  </div>
+                  <p className="text-[14px] font-medium text-gray-500">No recent customers yet</p>
+                  <p className="text-[13px] text-gray-400 mt-1 leading-snug">
+                    Search a customer above to start an order. The ones you send to will show up here for next time.
+                  </p>
+                </div>
+              )
             )}
           </div>
         ) : view === "review" ? (
