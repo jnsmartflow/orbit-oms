@@ -1696,10 +1696,13 @@ export default function PoPage(): React.JSX.Element {
                       </div>
                     ) : (
                       suggestions.map((p) => {
+                        // Fallback to family (e.g. "VELVET TOUCH") when there's no
+                        // sub-product descriptor — mirrors /order. The {second && …}
+                        // guard still renders nothing when family is empty.
                         const second = getSecondLine(
                           p.family, p.subProduct,
                           getBaseAliasDisplay(p.product, p.baseColour),
-                        );
+                        ) ?? p.family;
                         // Multi-select ON → checkbox row that TOGGLES selection
                         // (does not open the picker). OFF → single-add row.
                         if (multiSelect) {
