@@ -406,6 +406,8 @@ export default function PoPage(): React.JSX.Element {
   const [bills,        setBills]        = useState<Bill[]>([{ id: 1, lines: [] }]);
   const [billCounter,  setBillCounter]  = useState(1);
   const [activeBillId, setActiveBillId] = useState(1);
+  // Array index of the bill awaiting a delete-confirm sheet (null = no sheet).
+  const [billToDelete, setBillToDelete] = useState<number | null>(null);
 
   // Page view: build screen vs the review/send shell.
   const [view, setView] = useState<"build" | "review">("build");
@@ -640,6 +642,7 @@ export default function PoPage(): React.JSX.Element {
     setBills(freshBills);
     setBillCounter(1);
     setActiveBillId(1);
+    setBillToDelete(null);
     setShipTo("");
     setShipFocused(false);
     setNotesFocused(false);
@@ -1028,6 +1031,35 @@ export default function PoPage(): React.JSX.Element {
     setBillCounter(id);
     setActiveBillId(id);
     persist(nextBills, id, id);
+  }
+
+  // × on the active bill chip. Empty bill → delete immediately; bill with
+  // products → open the confirm sheet. Never deletes the last remaining bill.
+  function requestDeleteBill(index: number): void {
+    if (bills.length <= 1) return;
+    const bill = bills[index];
+    if (!bill) return;
+    if (bill.lines.length >= 1) setBillToDelete(index);
+    else                        deleteBillAt(index);
+  }
+
+  // Remove the bill at `index`, renumber ids 1..n so labels stay sequential
+  // (no gaps) everywhere, and select the previous bill (Math.max(0, index-1)).
+  function deleteBillAt(index: number): void {
+    if (bills.length <= 1) return;
+    const renumbered: Bill[] = bills
+      .filter((_, i) => i !== index)
+      .map((b, i) => ({ ...b, id: i + 1 }));
+    const nextActiveId = renumbered[Math.max(0, index - 1)]?.id ?? 1;
+    setBills(renumbered);
+    setBillCounter(renumbered.length);
+    setActiveBillId(nextActiveId);
+    persist(renumbered, renumbered.length, nextActiveId);
+    setBillToDelete(null);
+  }
+
+  function cancelDeleteBill(): void {
+    setBillToDelete(null);
   }
 
   function openReview(): void {
@@ -1560,21 +1592,40 @@ export default function PoPage(): React.JSX.Element {
                       Bill {bills[0].id}
                     </span>
                   ) : (
-                    bills.map((b) => {
+                    bills.map((b, idx) => {
                       const active = b.id === activeBillId;
+                      if (!active) {
+                        return (
+                          <button
+                            key={b.id}
+                            type="button"
+                            onClick={() => switchBill(b.id)}
+                            className="shrink-0 text-[14px] text-gray-500 px-2 py-[3px]"
+                          >
+                            Bill {b.id}
+                          </button>
+                        );
+                      }
+                      // Selected pill: label + × (delete). The × only ever renders
+                      // here (active chip) and this branch only runs with 2+ bills,
+                      // so the last bill never shows a ×.
                       return (
-                        <button
+                        <div
                           key={b.id}
-                          type="button"
-                          onClick={() => switchBill(b.id)}
-                          className={
-                            active
-                              ? "shrink-0 text-[14px] font-semibold text-teal-700 bg-teal-50 border border-teal-200 rounded-full px-3 py-[3px]"
-                              : "shrink-0 text-[14px] text-gray-500 px-2 py-[3px]"
-                          }
+                          className="shrink-0 flex items-center gap-1 text-[14px] font-semibold text-teal-700 bg-teal-50 border border-teal-200 rounded-full pl-3 pr-1 py-[3px]"
                         >
-                          Bill {b.id}
-                        </button>
+                          <button type="button" onClick={() => switchBill(b.id)} className="leading-none">
+                            Bill {b.id}
+                          </button>
+                          <button
+                            type="button"
+                            aria-label={`Delete Bill ${b.id}`}
+                            onClick={() => requestDeleteBill(idx)}
+                            className="w-[19px] h-[19px] rounded-full bg-teal-600 text-white flex items-center justify-center shrink-0 active:bg-teal-700"
+                          >
+                            <span className="text-[13px] leading-none">×</span>
+                          </button>
+                        </div>
                       );
                     })
                   )}
@@ -1915,6 +1966,49 @@ export default function PoPage(): React.JSX.Element {
                     </button>
                   );
                 })}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Delete-bill confirm — bottom-sheet (same pattern as the Cross-depot
+            sheet). Only opens when the bill has ≥1 product; empty bills delete
+            immediately without it. */}
+        {billToDelete !== null && bills[billToDelete] && (
+          <div
+            className="fixed inset-0 z-50 flex items-end justify-center bg-black/40"
+            onClick={cancelDeleteBill}
+          >
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-label="Delete bill"
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-[480px] bg-white rounded-t-[18px] p-5"
+              style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 20px)" }}
+            >
+              <h2 className="text-[16px] font-semibold text-gray-900">
+                Delete Bill {billToDelete + 1}?
+              </h2>
+              <p className="text-[13px] text-gray-500 mt-1.5 leading-snug">
+                {bills[billToDelete].lines.length}{" "}
+                {bills[billToDelete].lines.length === 1 ? "product" : "products"} in this bill will be removed.
+              </p>
+              <div className="flex gap-2 mt-4">
+                <button
+                  type="button"
+                  onClick={cancelDeleteBill}
+                  className="flex-1 h-[44px] rounded-[10px] bg-gray-100 text-gray-700 text-[14px] font-medium active:bg-gray-200"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => deleteBillAt(billToDelete)}
+                  className="flex-1 h-[44px] rounded-[10px] bg-red-600 text-white text-[14px] font-semibold active:bg-red-700"
+                >
+                  Delete
+                </button>
               </div>
             </div>
           </div>
