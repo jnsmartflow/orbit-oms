@@ -334,7 +334,6 @@ function aliasSuffix(
 // packInputsRef for desktop focus/scroll.
 function PackRows({
   product, qtys, onStep, onSet, showBoxNote = false, registerInput,
-  onQtyFocus, onQtyBlur,
 }: {
   product:       Product;
   qtys:          Record<string, number>;
@@ -342,8 +341,6 @@ function PackRows({
   onSet:         (key: string, raw: string) => void;
   showBoxNote?:  boolean;
   registerInput?: (i: number, el: HTMLInputElement | null) => void;
-  onQtyFocus?:   () => void;   // multi-qty: track keyboard-up to hide the footer
-  onQtyBlur?:    () => void;
 }): React.JSX.Element {
   const sorted = sortRawPacks(product.packs);
   if (sorted.length === 0) {
@@ -381,27 +378,10 @@ function PackRows({
               min={0}
               value={qty}
               onChange={(e) => onSet(key, e.target.value)}
-              onFocus={(e) => {
-                e.target.select();
-                onQtyFocus?.();   // hide the footer pill (reflows the layout)
-                const el      = e.currentTarget;
-                const section = el.closest("[data-product-section]");
-                // Two rAFs: let the footer-hide reflow commit, THEN bring the
-                // WHOLE product section (name + every pack row) to the top of
-                // the visible area, immediately on tap. scrollIntoView only —
-                // no viewport offset math (§22). The single-product picker has
-                // no [data-product-section] ancestor → falls back to the input.
-                requestAnimationFrame(() => {
-                  requestAnimationFrame(() => {
-                    if (section) {
-                      section.scrollIntoView({ block: "start", behavior: "auto" });
-                    } else {
-                      el.scrollIntoView({ block: "nearest", behavior: "smooth" });
-                    }
-                  });
-                });
-              }}
-              onBlur={() => onQtyBlur?.()}
+              // Select-all on focus only. The keyboard-safe scroll-to-top + the
+              // footer-hide are handled centrally by the document focusin/focusout
+              // listener (covers the picker, multi-qty, and any future input).
+              onFocus={(e) => e.target.select()}
               className={`w-10 text-center text-[16px] font-bold bg-transparent outline-none ${qty === 0 ? "border-b border-dashed border-gray-300" : "border-none"}`}
               style={{ color: qty > 0 ? "#0d9488" : "#111827" }}
             />
@@ -483,16 +463,18 @@ export default function PoPage(): React.JSX.Element {
   const [selectedProducts, setSelectedProducts] = useState<Product[]>([]);
   // Per-product pack quantities for the multi-qty screen: productId → packKey → units.
   const [multiQtys,        setMultiQtys]        = useState<Record<number, Record<string, number>>>({});
-  // True while any multi-qty number input is focused (keyboard up) — hides the
-  // "Add N products" footer pill so it can't cover the rows during entry.
-  const [qtyFocused,       setQtyFocused]       = useState(false);
+
+  // SINGLE focus flag for every non-search input (qty boxes, Ship To, Notes, and
+  // any future field). Driven by the central document focusin/focusout listener
+  // (one mechanism — no per-input wiring). Gates the bottom footer pills so they
+  // can't cover the focused field while the keyboard is up.
+  const [inputFocused, setInputFocused] = useState(false);
 
   // Review-screen order-level fields (reused from /order's value sets).
   const [shipTo,      setShipTo]      = useState("");
+  // shipFocused ONLY gates the ship-to suggestions dropdown now (the footer-hide
+  // moved to the central inputFocused flag).
   const [shipFocused, setShipFocused] = useState(false);
-  // True while the Notes input is focused — pairs with shipFocused to hide the
-  // "Send order" pill while either review field is being typed.
-  const [notesFocused, setNotesFocused] = useState(false);
   const [dispatch,    setDispatch]    = useState<Dispatch>("Normal");
   const [marker,      setMarker]      = useState<Marker>(null);
   // Cross-billing depot (set only when marker === "Cross Delivery") + its sheet.
@@ -519,6 +501,8 @@ export default function PoPage(): React.JSX.Element {
   const packInputsRef  = useRef<HTMLInputElement[]>([]);
   const confirmBtnRef  = useRef<HTMLButtonElement | null>(null);
   const cancelBtnRef   = useRef<HTMLButtonElement | null>(null);
+  // Pending focusout → setInputFocused(false) timer; a quick refocus cancels it.
+  const blurTimerRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── Data ──────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -553,6 +537,60 @@ export default function PoPage(): React.JSX.Element {
   useEffect(() => {
     setRecents(getRecents());
     setRecentsLoaded(true);
+  }, []);
+
+  // Central focus mechanism — ONE place that keeps every non-search input above
+  // the keyboard (qty boxes, Ship To, Notes, and anything added later). On
+  // focusin of a managed <input>/<textarea>, flag inputFocused (which hides the
+  // bottom footer pill) and, on a DOUBLE rAF (let the pill-hide reflow commit
+  // first), scroll the field's section — or the field itself when it has none
+  // (e.g. the single-product picker qty input) — to the TOP of the scroll area
+  // so it rises above the keyboard (no blank band). focusout clears the flag
+  // after 150ms; a quick refocus cancels the timer. Search fields (custInputRef
+  // / heroInputRef) are excluded so the pinned hero search never gets yanked.
+  // scrollIntoView only — no viewport offset/translateY math (§22).
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    function isManagedInput(
+      t: EventTarget | null,
+    ): t is HTMLInputElement | HTMLTextAreaElement {
+      if (!(t instanceof HTMLInputElement) && !(t instanceof HTMLTextAreaElement)) return false;
+      if (t === custInputRef.current || t === heroInputRef.current) return false;
+      return true;
+    }
+    function onFocusIn(e: FocusEvent): void {
+      const el = e.target;
+      if (!isManagedInput(el)) return;
+      if (blurTimerRef.current) {
+        clearTimeout(blurTimerRef.current);
+        blurTimerRef.current = null;
+      }
+      setInputFocused(true);
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          const target = el.closest("[data-product-section],[data-field-section]") ?? el;
+          target.scrollIntoView({ block: "start", behavior: "auto" });
+        });
+      });
+    }
+    function onFocusOut(e: FocusEvent): void {
+      if (!isManagedInput(e.target)) return;
+      if (blurTimerRef.current) clearTimeout(blurTimerRef.current);
+      blurTimerRef.current = setTimeout(() => {
+        setInputFocused(false);
+        blurTimerRef.current = null;
+      }, 150);
+    }
+    document.addEventListener("focusin", onFocusIn);
+    document.addEventListener("focusout", onFocusOut);
+    return () => {
+      document.removeEventListener("focusin", onFocusIn);
+      document.removeEventListener("focusout", onFocusOut);
+      if (blurTimerRef.current) {
+        clearTimeout(blurTimerRef.current);
+        blurTimerRef.current = null;
+      }
+    };
   }, []);
 
   // Detect SpeechRecognition support (client-only).
@@ -715,8 +753,7 @@ export default function PoPage(): React.JSX.Element {
     setBillToDelete(null);
     setShipTo("");
     setShipFocused(false);
-    setNotesFocused(false);
-    setQtyFocused(false);
+    setInputFocused(false);
     setDispatch("Normal");
     setMarker(null);
     setCrossDepot(null);
@@ -1544,19 +1581,10 @@ export default function PoPage(): React.JSX.Element {
                   type="text"
                   value={shipTo}
                   onChange={(e) => changeShipTo(e.target.value)}
-                  onFocus={(e) => {
-                    setShipFocused(true);   // hides Send pill + gates suggestions dropdown
-                    const el      = e.currentTarget;
-                    const section = el.closest("[data-field-section]");
-                    // Two rAFs: let the Send-pill hide reflow, THEN bring the
-                    // Ship To section to the top of the visible area. scrollIntoView
-                    // only — no viewport offset math (§22).
-                    requestAnimationFrame(() => {
-                      requestAnimationFrame(() => {
-                        (section ?? el).scrollIntoView({ block: "start", behavior: "auto" });
-                      });
-                    });
-                  }}
+                  // setShipFocused ONLY gates the suggestions dropdown now. The
+                  // scroll-to-top + Send-pill hide are handled by the central
+                  // focusin/focusout listener (data-field-section is its target).
+                  onFocus={() => setShipFocused(true)}
                   onBlur={() => setTimeout(() => setShipFocused(false), 150)}
                   placeholder="Same as billing"
                   autoComplete="off"
@@ -1708,20 +1736,8 @@ export default function PoPage(): React.JSX.Element {
                 type="text"
                 value={notes}
                 onChange={(e) => changeNotes(e.target.value)}
-                onFocus={(e) => {
-                  setNotesFocused(true);   // hides the Send pill while typing
-                  const el      = e.currentTarget;
-                  const section = el.closest("[data-field-section]");
-                  // Two rAFs: let the Send-pill hide reflow, THEN bring the Notes
-                  // section to the top of the visible area. scrollIntoView only —
-                  // no viewport offset math (§22).
-                  requestAnimationFrame(() => {
-                    requestAnimationFrame(() => {
-                      (section ?? el).scrollIntoView({ block: "start", behavior: "auto" });
-                    });
-                  });
-                }}
-                onBlur={() => setTimeout(() => setNotesFocused(false), 150)}
+                // Scroll-to-top + Send-pill hide handled by the central
+                // focusin/focusout listener (data-field-section is its target).
                 placeholder="Add a note…"
                 autoComplete="off"
                 autoCorrect="off"
@@ -2019,8 +2035,6 @@ export default function PoPage(): React.JSX.Element {
                         onStep={(key, label, delta) => stepMultiPack(p.id, key, label, delta)}
                         onSet={(key, raw) => setMultiPackRaw(p.id, key, raw)}
                         showBoxNote
-                        onQtyFocus={() => setQtyFocused(true)}
-                        onQtyBlur={() => setTimeout(() => setQtyFocused(false), 150)}
                       />
                     </div>
                   );
@@ -2240,16 +2254,16 @@ export default function PoPage(): React.JSX.Element {
           indicator (env()=0 on Android → no change). */}
       {selectedCust && (
         view === "review"
-          // Send order — HIDDEN while Ship To OR Notes is focused (the field
-          // scrolls its section to the top; hiding the pill keeps it out of the
-          // way above the keyboard). Restored on blur.
-          ? ((shipFocused || notesFocused)
+          // Send order — HIDDEN while ANY non-search input is focused (central
+          // inputFocused; the field scrolls its section to the top, the hidden
+          // pill stays out of the way above the keyboard). Restored on blur.
+          ? (inputFocused
               ? null
               : footerPill({ onClick: handleSend, disabled: !canSend, label: "Send order", icon: "send" }))
           // Multi-qty sub-screen — Add products. HIDDEN while a qty box is
-          // focused so it never covers the rows during entry; restored on blur.
+          // focused (central inputFocused) so it never covers the rows.
           : mode === "multiqty"
-            ? (qtyFocused
+            ? (inputFocused
                 ? null
                 : footerPill({
                     onClick: commitMultiSelect,
