@@ -948,13 +948,9 @@ export default function PoPage(): React.JSX.Element {
     (p) => Object.values(multiQtys[p.id] ?? {}).some((q) => q > 0),
   );
 
-  // Cart totals. Units total = sum of line units — NEVER × packStep
-  // (§10 cart totals / §22 landmine). Volume (Phase 4) would be
-  // units × packToLitres per pack, also never × packStep.
-  const billUnits  = (b: Bill): number =>
-    b.lines.reduce((s, l) => s + Object.values(l.packQtys).reduce((a, q) => a + q, 0), 0);
-  const totalUnits = bills.reduce((s, b) => s + billUnits(b), 0);
-  const multiBill  = bills.length > 1;
+  // Bills carrying at least one line — drives the Review screen list.
+  // (The old build-screen summary used per-bill / total unit counts; the
+  // floating "Review order" CTA shows no counts, so those reducers are gone.)
   const reviewBills = bills.filter((b) => b.lines.length > 0);
 
   // Confirm-dialog copy, by intent.
@@ -1319,23 +1315,32 @@ export default function PoPage(): React.JSX.Element {
               )}
             </div>
 
-            {/* Send — page-level sticky bottom. Hidden while Ship To is focused
-                so the iOS keyboard can't float it mid-screen (§22 — focus-driven,
-                no viewport math); re-pins on blur when the keyboard closes.
-                Bottom safe-area inset clears the home indicator; the bar's own
-                bg-white fills the inset strip. env()=0 on Android → no change. */}
+            {/* Send — centered FLOATING button, SAME treatment as the build CTA,
+                ALWAYS pinned to the bottom via `mt-auto` + the `sticky bottom-0`
+                non-scrolling footer. Hidden while Ship To is focused so the iOS
+                keyboard can't float it mid-screen (§22 — focus-driven, no viewport
+                math); re-pins on blur when the keyboard closes. Footer is
+                `pointer-events-none` (button re-enables) so the form below stays
+                tappable under the pill. Bottom safe-area inset clears the home
+                indicator. env()=0 on Android → no change. */}
             {!shipFocused && (
               <div
-                className="sticky bottom-0 z-20 bg-white border-t border-gray-200 px-4 py-3 mt-auto"
-                style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 12px)" }}
+                className="sticky bottom-0 z-20 mt-auto pointer-events-none flex justify-center px-4 pt-3"
+                style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 16px)" }}
               >
                 <button
                   type="button"
                   onClick={handleSend}
                   disabled={!canSend}
-                  className={`w-full h-[52px] rounded-[12px] text-[16px] font-semibold flex items-center justify-center gap-2 ${
-                    canSend ? "bg-teal-600 active:bg-teal-700 text-white" : "bg-gray-200 text-gray-400 cursor-not-allowed"
+                  className={`pointer-events-auto flex items-center gap-2 rounded-full text-[15px] font-bold ${
+                    canSend
+                      ? "bg-teal-600 active:bg-teal-700 text-white active:opacity-90"
+                      : "bg-gray-200 text-gray-400 cursor-not-allowed"
                   }`}
+                  style={{
+                    padding: "15px 34px",
+                    boxShadow: canSend ? "0 8px 22px rgba(13,148,136,0.42)" : "none",
+                  }}
                 >
                   <Send className="w-[17px] h-[17px]" />
                   Send order
@@ -1715,36 +1720,30 @@ export default function PoPage(): React.JSX.Element {
               </div>
             )}
 
-            {/* Bottom cart bar — page-level sticky (§15.5 rule 4), search mode +
-                has lines, and only when the select bar isn't showing. */}
+            {/* Build CTA — centered FLOATING "Review order" button, ALWAYS pinned
+                to the bottom of the viewport. `mt-auto` pushes it down when the
+                order is short (no more mid-screen float under the search); the
+                `sticky bottom-0` non-scrolling footer keeps it pinned while the
+                results scroll underneath. The footer is `pointer-events-none` so
+                the transparent strips either side of the pill never swallow taps
+                on the results below; the button itself re-enables pointer events.
+                Bottom safe-area inset clears the home indicator (env()=0 → no
+                change on Android). Search mode + active bill has ≥1 product, and
+                only when the select bar isn't showing. Flex + the existing --vvh
+                var only — NO visualViewport math (§22). */}
             {mode === "search" && !showSelectBar && hasAnyLines && (
               <div
-                className="sticky bottom-0 z-20 bg-teal-600 text-white px-[18px] py-[15px] flex items-center justify-between"
-                style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 15px)" }}
+                className="sticky bottom-0 z-20 mt-auto pointer-events-none flex justify-center px-4 pt-3"
+                style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 16px)" }}
               >
-                <div className="min-w-0">
-                  {multiBill ? (
-                    <>
-                      <div className="text-[14px] font-semibold truncate">
-                        {bills.length} bills · {totalUnits} {totalUnits === 1 ? "unit" : "units"}
-                      </div>
-                      <div className="text-[12px] text-teal-50 truncate mt-px">
-                        {bills.map((b) => `Bill ${b.id} · ${billUnits(b)}`).join("   ·   ")}
-                      </div>
-                    </>
-                  ) : (
-                    <div className="text-[14px] font-semibold truncate">
-                      Bill {bills[0].id} · {bills[0].lines.length} {bills[0].lines.length === 1 ? "product" : "products"} · {totalUnits} {totalUnits === 1 ? "unit" : "units"}
-                    </div>
-                  )}
-                </div>
                 <button
                   type="button"
                   onClick={openReview}
-                  className="flex items-center gap-1 text-[14px] font-semibold shrink-0 pl-3 active:opacity-80"
+                  className="pointer-events-auto flex items-center gap-2 rounded-full bg-teal-600 active:bg-teal-700 text-white text-[15px] font-bold active:opacity-90"
+                  style={{ padding: "15px 34px", boxShadow: "0 8px 22px rgba(13,148,136,0.42)" }}
                 >
-                  Review &amp; send
-                  <ChevronRight className="w-[17px] h-[17px]" />
+                  Review order
+                  <ChevronRight className="w-[18px] h-[18px]" />
                 </button>
               </div>
             )}
