@@ -413,10 +413,6 @@ export default function PoPage(): React.JSX.Element {
   // Free-text order notes + the "Quick add" preset menu.
   const [notes,        setNotes]        = useState("");
   const [quickAddOpen, setQuickAddOpen] = useState(false);
-  // True while the Notes input is focused (keyboard up). Mirrors shipFocused —
-  // both gate the "Send order" footer pill on review so it can't cover the
-  // field. Cleared on blur with the same ~150ms delay to avoid flicker.
-  const [notesFocused, setNotesFocused] = useState(false);
 
   // Persistent "last added" confirmation banner. Set on every add, replaced
   // by the newest, cleared only on a full reset (New order / change / Send).
@@ -622,7 +618,6 @@ export default function PoPage(): React.JSX.Element {
     setCrossSheetOpen(false);
     setNotes("");
     setQuickAddOpen(false);
-    setNotesFocused(false);
     setMultiSelect(false);
     setSelectedProducts([]);
     setMultiQtys({});
@@ -1312,7 +1307,16 @@ export default function PoPage(): React.JSX.Element {
                   type="text"
                   value={shipTo}
                   onChange={(e) => changeShipTo(e.target.value)}
-                  onFocus={() => setShipFocused(true)}
+                  onFocus={(e) => {
+                    setShipFocused(true);   // still gates the suggestions dropdown
+                    const el = e.target;
+                    // Park the field just above the keyboard/footer so the pinned
+                    // "Send order" pill can't cover it (same as the qty inputs;
+                    // §22 — no viewport math).
+                    requestAnimationFrame(() => {
+                      el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+                    });
+                  }}
                   onBlur={() => setTimeout(() => setShipFocused(false), 150)}
                   placeholder="Same as billing"
                   autoComplete="off"
@@ -1464,8 +1468,14 @@ export default function PoPage(): React.JSX.Element {
                 type="text"
                 value={notes}
                 onChange={(e) => changeNotes(e.target.value)}
-                onFocus={() => setNotesFocused(true)}
-                onBlur={() => setTimeout(() => setNotesFocused(false), 150)}
+                onFocus={(e) => {
+                  const el = e.target;
+                  // Park the Notes field above the keyboard/footer (same as the
+                  // qty inputs; §22 — no viewport math).
+                  requestAnimationFrame(() => {
+                    el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+                  });
+                }}
                 placeholder="Add a note…"
                 autoComplete="off"
                 autoCorrect="off"
@@ -1917,11 +1927,10 @@ export default function PoPage(): React.JSX.Element {
           indicator (env()=0 on Android → no change). */}
       {selectedCust && (
         view === "review"
-          // Send order — hidden while Ship To OR Notes is focused so the pill
-          // can't cover the field above the keyboard (React focus only; §22).
-          ? (shipFocused || notesFocused
-              ? null
-              : footerPill({ onClick: handleSend, disabled: !canSend, label: "Send order", icon: "send" }))
+          // Send order — stays PINNED during Ship To / Notes entry. Those inputs
+          // scroll themselves above the keyboard/footer on focus (block:"nearest"),
+          // so the pill never covers them — no focus-hide needed (§22).
+          ? footerPill({ onClick: handleSend, disabled: !canSend, label: "Send order", icon: "send" })
           // Multi-qty sub-screen — Add products. Stays PINNED during qty entry:
           // the footer rides above the keyboard (flex-shrink-0 at <main> level)
           // and never overlaps the inputs, so the old focus-hide is dropped — it
