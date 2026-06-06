@@ -1070,10 +1070,17 @@ export default function PoPage(): React.JSX.Element {
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
     <main
-      className="bg-[#f9fafb] overflow-y-auto"
+      className="bg-[#f9fafb] flex flex-col overflow-hidden"
       style={{ height: "var(--vvh, 100vh)" }}
     >
-      <div className="max-w-[480px] mx-auto flex flex-col min-h-full">
+      {/* Scrollable content area (flex-1). The pinned product search + every
+          sticky sub-header pin within THIS container; the primary CTA lives in a
+          non-scrolling footer BELOW it (a place that "doesn't need lifting").
+          On keyboard-open the resize listener shrinks --vvh → <main> shrinks →
+          this scroll area shrinks while the footer rides up and stays pinned
+          above the keyboard. No sticky-bottom jank, no viewport math (§22). */}
+      <div className="flex-1 min-h-0 overflow-y-auto">
+        <div className="max-w-[480px] mx-auto flex flex-col min-h-full">
 
         {/* Merged header — normal flow (scrolls away). The product search bar is
             the single top-pinned element, so the header/bill rows scroll up
@@ -1456,38 +1463,9 @@ export default function PoPage(): React.JSX.Element {
               )}
             </div>
 
-            {/* Send — centered FLOATING button, SAME treatment as the build CTA,
-                ALWAYS pinned to the bottom via `mt-auto` + the `sticky bottom-0`
-                non-scrolling footer. Hidden while Ship To is focused so the iOS
-                keyboard can't float it mid-screen (§22 — focus-driven, no viewport
-                math); re-pins on blur when the keyboard closes. Footer is
-                `pointer-events-none` (button re-enables) so the form below stays
-                tappable under the pill. Bottom safe-area inset clears the home
-                indicator. env()=0 on Android → no change. */}
-            {!shipFocused && (
-              <div
-                className="sticky bottom-0 z-20 mt-auto pointer-events-none flex justify-center px-4 pt-3"
-                style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 16px)" }}
-              >
-                <button
-                  type="button"
-                  onClick={handleSend}
-                  disabled={!canSend}
-                  className={`pointer-events-auto flex items-center gap-2 rounded-full text-[15px] font-bold ${
-                    canSend
-                      ? "bg-teal-600 active:bg-teal-700 text-white active:opacity-90"
-                      : "bg-gray-200 text-gray-400 cursor-not-allowed"
-                  }`}
-                  style={{
-                    padding: "15px 34px",
-                    boxShadow: canSend ? "0 8px 22px rgba(13,148,136,0.42)" : "none",
-                  }}
-                >
-                  <Send className="w-[17px] h-[17px]" />
-                  Send order
-                </button>
-              </div>
-            )}
+            {/* The "Send order" CTA now lives in the non-scrolling footer at
+                <main> level (keyboard-safe — stays above the keyboard when Ship
+                To or Notes is focused; §22). See the bottom of render. */}
           </>
         ) : (
           /* ── Customer locked — build screen (header + bill strip + search/picking + cart bar) ── */
@@ -1861,33 +1839,8 @@ export default function PoPage(): React.JSX.Element {
               </div>
             )}
 
-            {/* Build CTA — centered FLOATING "Review order" button, ALWAYS pinned
-                to the bottom of the viewport. `mt-auto` pushes it down when the
-                order is short (no more mid-screen float under the search); the
-                `sticky bottom-0` non-scrolling footer keeps it pinned while the
-                results scroll underneath. The footer is `pointer-events-none` so
-                the transparent strips either side of the pill never swallow taps
-                on the results below; the button itself re-enables pointer events.
-                Bottom safe-area inset clears the home indicator (env()=0 → no
-                change on Android). Search mode + active bill has ≥1 product, and
-                only when the select bar isn't showing. Flex + the existing --vvh
-                var only — NO visualViewport math (§22). */}
-            {mode === "search" && !showSelectBar && hasAnyLines && (
-              <div
-                className="sticky bottom-0 z-20 mt-auto pointer-events-none flex justify-center px-4 pt-3"
-                style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 16px)" }}
-              >
-                <button
-                  type="button"
-                  onClick={openReview}
-                  className="pointer-events-auto flex items-center gap-2 rounded-full bg-teal-600 active:bg-teal-700 text-white text-[15px] font-bold active:opacity-90"
-                  style={{ padding: "15px 34px", boxShadow: "0 8px 22px rgba(13,148,136,0.42)" }}
-                >
-                  Review order
-                  <ChevronRight className="w-[18px] h-[18px]" />
-                </button>
-              </div>
-            )}
+            {/* The "Review order" CTA now lives in the non-scrolling footer at
+                <main> level (keyboard-safe, §22). See the bottom of render. */}
           </>
         )}
 
@@ -1982,7 +1935,57 @@ export default function PoPage(): React.JSX.Element {
             </div>
           </div>
         )}
+        </div>
       </div>
+
+      {/* Non-scrolling bottom footer — the primary CTA for the current screen.
+          It sits OUTSIDE the scroll area (flex-shrink-0), so when the keyboard
+          opens (--vvh shrinks <main>) the footer rides up with the viewport and
+          stays pinned above the keyboard — for BOTH Ship To and Notes focus —
+          with no sticky-bottom jank and no viewport math (§22). Centered
+          floating pill on a page-bg strip; safe-area inset clears the home
+          indicator (env()=0 on Android → no change). */}
+      {selectedCust && (
+        view === "review" ? (
+          <div
+            className="flex-shrink-0 bg-[#f9fafb] flex justify-center px-4 pt-3"
+            style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 16px)" }}
+          >
+            <button
+              type="button"
+              onClick={handleSend}
+              disabled={!canSend}
+              className={`flex items-center gap-2 rounded-full text-[15px] font-bold ${
+                canSend
+                  ? "bg-teal-600 active:bg-teal-700 text-white active:opacity-90"
+                  : "bg-gray-200 text-gray-400 cursor-not-allowed"
+              }`}
+              style={{
+                padding: "15px 34px",
+                boxShadow: canSend ? "0 8px 22px rgba(13,148,136,0.42)" : "none",
+              }}
+            >
+              <Send className="w-[17px] h-[17px]" />
+              Send order
+            </button>
+          </div>
+        ) : (view === "build" && mode === "search" && !showSelectBar && hasAnyLines) ? (
+          <div
+            className="flex-shrink-0 bg-[#f9fafb] flex justify-center px-4 pt-3"
+            style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 16px)" }}
+          >
+            <button
+              type="button"
+              onClick={openReview}
+              className="flex items-center gap-2 rounded-full bg-teal-600 active:bg-teal-700 text-white text-[15px] font-bold active:opacity-90"
+              style={{ padding: "15px 34px", boxShadow: "0 8px 22px rgba(13,148,136,0.42)" }}
+            >
+              Review order
+              <ChevronRight className="w-[18px] h-[18px]" />
+            </button>
+          </div>
+        ) : null
+      )}
     </main>
   );
 }
