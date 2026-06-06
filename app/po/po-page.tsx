@@ -595,18 +595,13 @@ export default function PoPage(): React.JSX.Element {
   // clearCustomer() above is the FULL reset (all bills/cart/ship/dispatch/
   // marker/counters + removes the orbitoms_po_draft key + back to pick).
 
-  // Brand-bar "New order": confirm, then full reset. No-op on a truly blank
-  // slate (no customer, empty cart) — nothing to clear.
+  // Header "New order": confirm, then full reset. No-op on a truly blank
+  // slate (no customer, empty cart) — nothing to clear. This is also the ONLY
+  // way to change customer now (the gray-50 locked block + "Change" button were
+  // folded into the merged header — changing customer = New order full reset).
   function onNewOrder(): void {
     if (!selectedCust && !hasAnyLines) return;
     setConfirmKind("new");
-  }
-
-  // Customer "Change": confirm first only when the cart has lines; otherwise
-  // go straight back to the customer picker (full reset).
-  function onChange(): void {
-    if (hasAnyLines) setConfirmKind("change");
-    else             clearCustomer();
   }
 
   // Confirm dialog primary action.
@@ -1003,12 +998,20 @@ export default function PoPage(): React.JSX.Element {
     >
       <div className="max-w-[480px] mx-auto flex flex-col min-h-full">
 
-        {/* Brand bar — normal flow (scrolls away). The product search bar is the
-            single top-pinned element, so brand/customer/bill rows scroll up
+        {/* Merged header — normal flow (scrolls away). The product search bar is
+            the single top-pinned element, so the header/bill rows scroll up
             above it. No sticky here → no stacked-sticky pixel fight.
 
+            Two states share ONE header (customer is the title once locked):
+              • no customer → "Purchase Order" / "JSW Dulux · Surat Depot"
+              • customer    → {name} / {code · area}  (the gray-50 locked block +
+                               "Change" button is folded in here; changing the
+                               customer = New order full reset)
+            The single "New order" button (right) is identical in both states and
+            vertically centred against the two-line title via items-center.
+
             Standalone safe-area: pad the (white) header top by the top inset so
-            the brand row clears the iOS notch / status bar (viewport-fit=cover
+            the title row clears the iOS notch / status bar (viewport-fit=cover
             is set globally). max() with the existing 11px → 11px normally,
             inset when present; the env() fallback is 0px so non-standalone /
             non-notch contexts are unchanged. The bg-white header fills the inset
@@ -1019,12 +1022,25 @@ export default function PoPage(): React.JSX.Element {
         >
           <div className="flex items-center justify-between px-4 pb-[11px]">
             <div className="min-w-0">
-              <div className="text-[15px] font-semibold text-gray-900 leading-tight truncate">
-                Purchase Order
-              </div>
-              <div className="text-[11px] text-gray-500 leading-tight truncate mt-px">
-                JSW Dulux · Surat Depot
-              </div>
+              {selectedCust ? (
+                <>
+                  <div className="text-[16px] font-bold text-gray-900 leading-tight truncate">
+                    {selectedCust.name}
+                  </div>
+                  <div className="text-[12px] text-gray-500 leading-tight truncate mt-px">
+                    {selectedCust.code}{selectedCust.area ? ` · ${selectedCust.area}` : ""}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="text-[15px] font-semibold text-gray-900 leading-tight truncate">
+                    Purchase Order
+                  </div>
+                  <div className="text-[11px] text-gray-500 leading-tight truncate mt-px">
+                    JSW Dulux · Surat Depot
+                  </div>
+                </>
+              )}
             </div>
             <button
               type="button"
@@ -1330,8 +1346,9 @@ export default function PoPage(): React.JSX.Element {
         ) : (
           /* ── Customer locked — build screen (header + bill strip + search/picking + cart bar) ── */
           <>
-            {mode === "picking" ? (
-              /* Picking sub-header — Back */
+            {/* Picking sub-header — Back. The customer identity now lives in the
+                merged header above (gray-50 locked block removed). */}
+            {mode === "picking" && (
               <div className="bg-white border-b border-gray-200 px-4 py-[14px]">
                 <button
                   type="button"
@@ -1343,34 +1360,19 @@ export default function PoPage(): React.JSX.Element {
                   <span className="text-[15px] font-semibold text-gray-900 truncate">Back</span>
                 </button>
               </div>
-            ) : (
-              /* Distinct customer block — tinted band; name left-aligned to
-                 the brand bar's "Purchase Order" edge (no avatar). */
-              <div className="bg-gray-50 border-b border-gray-200 px-4 py-[14px] flex items-center">
-                <div className="flex-1 min-w-0">
-                  <div className="text-[15px] font-bold text-gray-900 truncate">
-                    {selectedCust.name}
-                  </div>
-                  <div className="text-[12px] text-gray-500 mt-px truncate">
-                    {selectedCust.code}{selectedCust.area ? ` · ${selectedCust.area}` : ""}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={onChange}
-                  className="text-teal-700 text-[13px] font-medium shrink-0 pl-2"
-                >
-                  Change
-                </button>
-              </div>
             )}
 
-            {/* Bill strip — directly under the customer header (search mode) */}
+            {/* Bill + Multi — ONE row (search mode). Left: active bill(s) +
+                add-bill control (scroll-x when many bills). Right (pinned): the
+                existing "Select multiple" switch, relabelled "Multi". */}
             {mode === "search" && (
-              <div className="bg-white border-b border-gray-200 px-4 py-[9px] flex items-center justify-between">
+              <div className="bg-white border-b border-gray-200 px-4 py-[10px] flex items-center justify-between gap-3">
+                {/* Left: active bill(s) + add-bill */}
                 <div className="flex items-center gap-2 min-w-0 overflow-x-auto">
                   {bills.length === 1 ? (
-                    <span className="text-[13px] text-gray-500 shrink-0">Bill {bills[0].id}</span>
+                    <span className="shrink-0 text-[14px] font-semibold text-gray-700">
+                      Bill {bills[0].id}
+                    </span>
                   ) : (
                     bills.map((b) => {
                       const active = b.id === activeBillId;
@@ -1381,8 +1383,8 @@ export default function PoPage(): React.JSX.Element {
                           onClick={() => switchBill(b.id)}
                           className={
                             active
-                              ? "shrink-0 text-[13px] font-semibold text-teal-700 bg-teal-50 border border-teal-200 rounded-full px-3 py-[3px]"
-                              : "shrink-0 text-[13px] text-gray-500 px-2 py-[3px]"
+                              ? "shrink-0 text-[14px] font-semibold text-teal-700 bg-teal-50 border border-teal-200 rounded-full px-3 py-[3px]"
+                              : "shrink-0 text-[14px] text-gray-500 px-2 py-[3px]"
                           }
                         >
                           Bill {b.id}
@@ -1390,33 +1392,34 @@ export default function PoPage(): React.JSX.Element {
                       );
                     })
                   )}
+                  {/* Add-bill: "+ Add bill" with one bill, collapses to "+" at 2+ */}
+                  <button
+                    type="button"
+                    onClick={addBill}
+                    aria-label="Add bill"
+                    className="flex items-center gap-1 text-[14px] text-teal-700 font-medium shrink-0"
+                  >
+                    <Plus className="w-[16px] h-[16px]" />
+                    {bills.length === 1 && <span>Add bill</span>}
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={addBill}
-                  className="flex items-center gap-1 text-[13px] text-teal-700 font-medium shrink-0 pl-3"
-                >
-                  <Plus className="w-[14px] h-[14px]" /> Add bill
-                </button>
-              </div>
-            )}
 
-            {/* "Select multiple" toggle — between bill strip and search (default OFF) */}
-            {mode === "search" && (
-              <div className="bg-white border-b border-gray-200 px-4 py-[10px] flex items-center justify-between">
-                <span className="text-[14px] text-gray-700">Select multiple</span>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={multiSelect}
-                  aria-label="Select multiple products"
-                  onClick={toggleMultiSelect}
-                  className={`relative w-[46px] h-[26px] rounded-full transition-colors shrink-0 ${multiSelect ? "bg-teal-600" : "bg-gray-300"}`}
-                >
-                  <span
-                    className={`absolute top-[2px] left-[2px] w-[22px] h-[22px] rounded-full bg-white shadow transition-transform ${multiSelect ? "translate-x-[20px]" : ""}`}
-                  />
-                </button>
+                {/* Right (pinned): Multi switch — existing toggle, relabelled */}
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="text-[14px] text-gray-700">Multi</span>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={multiSelect}
+                    aria-label="Select multiple products"
+                    onClick={toggleMultiSelect}
+                    className={`relative w-[46px] h-[26px] rounded-full transition-colors shrink-0 ${multiSelect ? "bg-teal-600" : "bg-gray-300"}`}
+                  >
+                    <span
+                      className={`absolute top-[2px] left-[2px] w-[22px] h-[22px] rounded-full bg-white shadow transition-transform ${multiSelect ? "translate-x-[20px]" : ""}`}
+                    />
+                  </button>
+                </div>
               </div>
             )}
 
