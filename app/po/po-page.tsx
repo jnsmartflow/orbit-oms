@@ -382,7 +382,12 @@ function PackRows({
               // footer-hide are handled centrally by the document focusin/focusout
               // listener (covers the picker, multi-qty, and any future input).
               onFocus={(e) => e.target.select()}
-              className={`w-10 text-center text-[16px] font-bold bg-transparent outline-none ${qty === 0 ? "border-b border-dashed border-gray-300" : "border-none"}`}
+              // scroll-mb-[32px]: the shrink re-scroll (--vvh updater) targets this
+              // input with block:"nearest", which honors scroll-margin — so a
+              // clamped low cell (e.g. 20L) lands ~32px ABOVE the keyboard, not
+              // flush against it. Bottom-margin only; does NOT affect the focusin
+              // block:"start" scroll (that honors scroll-margin-TOP). §22-safe.
+              className={`w-10 text-center text-[16px] font-bold bg-transparent outline-none scroll-mb-[32px] ${qty === 0 ? "border-b border-dashed border-gray-300" : "border-none"}`}
               style={{ color: qty > 0 ? "#0d9488" : "#111827" }}
             />
             <button
@@ -2120,6 +2125,12 @@ export default function PoPage(): React.JSX.Element {
                 {/* The "Add N products" CTA lives in the non-scrolling footer at
                     <main> level (keyboard-safe; stays pinned above the keyboard
                     during qty entry). See bottom of render. */}
+
+                {/* Bottom scroll room — gives the LAST product's last qty row
+                    enough space below it for the scroll-mb-[32px] gap to be
+                    honored (without it the bottom cell clamps and lands flush
+                    against the keyboard). Pure spacer, picking/multiqty only. */}
+                <div aria-hidden className="h-[96px] shrink-0" />
               </>
             ) : (
               /* ── Quantity picking (single product) ────────────────────── */
@@ -2157,6 +2168,11 @@ export default function PoPage(): React.JSX.Element {
                       hides while a qty box is focused. Pulling it out of this
                       min-h-full scroll content is what kills the grey band /
                       parked scroll the old inline bar caused (§22). See render end. */}
+
+                  {/* Bottom scroll room — lets the LAST pack row (e.g. 20L) honor
+                      the scroll-mb-[32px] gap instead of clamping flush against
+                      the keyboard. Pure spacer. */}
+                  <div aria-hidden className="h-[96px] shrink-0" />
                 </>
               )
             )}
