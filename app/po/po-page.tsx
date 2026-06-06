@@ -52,9 +52,15 @@ declare global {
   }
 }
 
-// Order-level fields (mirror /order's value sets exactly — they feed the email).
-type Dispatch = "Normal" | "Hold" | "Urgent";
-type Marker   = "Truck" | "Cross Delivery" | "DTS" | null;
+// Order-level fields. /po's set DIVERGES from /order on purpose: "Hold" is
+// renamed "Call to SO" and a "Bounce" remark is added. These feed the email.
+type Dispatch = "Normal" | "Call to SO" | "Urgent";
+type Marker   = "Truck" | "Cross Delivery" | "Bounce" | "DTS" | null;
+
+// Cross-billing source depots (shown in the "Cross billing from?" sheet).
+const CROSS_DEPOTS = ["Dahisar", "Ahmedabad", "Rajkot", "Pune"] as const;
+// Notes "Quick add" presets — appended into the free-text notes field.
+const NOTE_PRESETS = ["Pls share DPL", "Pls send stickers"] as const;
 
 // Email recipient — identical to /order.
 const ORDER_TO = "surat.order@outlook.com";
@@ -80,13 +86,15 @@ function sortPackEntries<T extends { packCode: string; unit: string | null }>(en
 // (the authoritative byte-identical source) rather than lib/place-order/email.ts
 // (which numbers bills by index, diverging on non-contiguous bill ids).
 function buildEmailParts(args: {
-  customer: Customer | null;
-  bills:    Bill[];
-  shipTo:   string;
-  dispatch: Dispatch;
-  marker:   Marker;
+  customer:   Customer | null;
+  bills:      Bill[];
+  shipTo:     string;
+  dispatch:   Dispatch;
+  marker:     Marker;
+  crossDepot: string | null;
+  notes:      string;
 }): { subject: string; body: string; valid: boolean } {
-  const { customer, bills, shipTo, dispatch, marker } = args;
+  const { customer, bills, shipTo, dispatch, marker, crossDepot, notes } = args;
   const name = customer?.name ?? "";
   const code = customer?.code ?? "";
   const lines: string[] = [];
@@ -95,9 +103,26 @@ function buildEmailParts(args: {
     const customerLine = name && code ? `${name} (${code})` : (name || code);
     lines.push("Customer: " + customerLine);
   }
+  // Dispatch reflects the rename — "Dispatch: Call to SO" when chosen.
   if (dispatch !== "Normal") lines.push("Dispatch: " + dispatch);
-  if (marker)                lines.push("Marker: "   + marker);
-  if (shipTo.trim())         lines.push("Ship To: "  + shipTo.trim());
+  // Order-remark line for the selected marker (Order Remarks section).
+  if (marker) {
+    const remarkText =
+      marker === "Cross Delivery" ? `Cross billing from ${crossDepot ?? ""}`.trim()
+      : marker === "Truck"        ? "Truck order"
+      : marker === "Bounce"       ? "Bounce order"
+      : marker === "DTS"          ? "DTS order"
+      :                             "";
+    if (remarkText) lines.push("Remark: " + remarkText);
+  }
+  // Ship To ONLY when a real custom address is entered. Blank (= "Same as
+  // billing" default) is omitted entirely.
+  const shipToTrim = shipTo.trim();
+  if (shipToTrim && shipToTrim.toLowerCase() !== "same as billing") {
+    lines.push("Ship To: " + shipToTrim);
+  }
+  // Free-text note (Notes section) when non-empty.
+  if (notes.trim()) lines.push("Note: " + notes.trim());
 
   const activeBills = bills.filter((b) => b.lines.length > 0);
   activeBills.forEach((b) => {
@@ -146,6 +171,8 @@ type PoDraft = {
   shipTo:       string;
   dispatch:     Dispatch;
   marker:       Marker;
+  crossDepot:   string | null;
+  notes:        string;
   multiSelect:  boolean;
   updatedAt:    number;
 };
@@ -173,10 +200,13 @@ function loadPoDraft(): Omit<PoDraft, "updatedAt"> | null {
       billCounter:  typeof parsed.billCounter === "number" ? parsed.billCounter : 1,
       activeBillId: typeof parsed.activeBillId === "number" ? parsed.activeBillId : 1,
       shipTo:       typeof parsed.shipTo === "string" ? parsed.shipTo : "",
-      dispatch:     parsed.dispatch === "Hold" || parsed.dispatch === "Urgent"
+      dispatch:     parsed.dispatch === "Call to SO" || parsed.dispatch === "Urgent"
                       ? parsed.dispatch : "Normal",
-      marker:       parsed.marker === "Truck" || parsed.marker === "Cross Delivery" || parsed.marker === "DTS"
+      marker:       parsed.marker === "Truck" || parsed.marker === "Cross Delivery"
+                      || parsed.marker === "Bounce" || parsed.marker === "DTS"
                       ? parsed.marker : null,
+      crossDepot:   typeof parsed.crossDepot === "string" ? parsed.crossDepot : null,
+      notes:        typeof parsed.notes === "string" ? parsed.notes : "",
       multiSelect:  typeof parsed.multiSelect === "boolean" ? parsed.multiSelect : false,
     };
   } catch {
@@ -385,7 +415,13 @@ export default function PoPage(): React.JSX.Element {
   const [shipFocused, setShipFocused] = useState(false);
   const [dispatch,    setDispatch]    = useState<Dispatch>("Normal");
   const [marker,      setMarker]      = useState<Marker>(null);
-  const [previewOpen, setPreviewOpen] = useState(false);
+  // Cross-billing depot (set only when marker === "Cross Delivery") + its sheet.
+  const [crossDepot,     setCrossDepot]     = useState<string | null>(null);
+  const [crossSheetOpen, setCrossSheetOpen] = useState(false);
+  // Free-text order notes + the "Quick add" preset menu.
+  const [notes,        setNotes]        = useState("");
+  const [quickAddOpen, setQuickAddOpen] = useState(false);
+  const [previewOpen,  setPreviewOpen]  = useState(false);
 
   // Persistent "last added" confirmation banner. Set on every add, replaced
   // by the newest, cleared only on a full reset (New order / change / Send).
@@ -428,6 +464,8 @@ export default function PoPage(): React.JSX.Element {
       setShipTo(saved.shipTo);
       setDispatch(saved.dispatch);
       setMarker(saved.marker);
+      setCrossDepot(saved.crossDepot);
+      setNotes(saved.notes);
       setMultiSelect(saved.multiSelect);
     }
   }, []);
@@ -548,7 +586,8 @@ export default function PoPage(): React.JSX.Element {
     if (!selectedCust) return null;
     return {
       customer:     selectedCust,
-      bills, billCounter, activeBillId, shipTo, dispatch, marker, multiSelect,
+      bills, billCounter, activeBillId, shipTo, dispatch, marker,
+      crossDepot, notes, multiSelect,
       ...overrides,
     };
   }
@@ -562,7 +601,8 @@ export default function PoPage(): React.JSX.Element {
     setSelectedCust(c);
     setCustQuery("");
     savePoDraft({
-      customer: c, bills, billCounter, activeBillId, shipTo, dispatch, marker, multiSelect,
+      customer: c, bills, billCounter, activeBillId, shipTo, dispatch, marker,
+      crossDepot, notes, multiSelect,
     });
   }
 
@@ -583,6 +623,10 @@ export default function PoPage(): React.JSX.Element {
     setShipFocused(false);
     setDispatch("Normal");
     setMarker(null);
+    setCrossDepot(null);
+    setCrossSheetOpen(false);
+    setNotes("");
+    setQuickAddOpen(false);
     setPreviewOpen(false);
     setMultiSelect(false);
     setSelectedProducts([]);
@@ -729,9 +773,46 @@ export default function PoPage(): React.JSX.Element {
     if (s) savePoDraft(s);
   }
 
+  // Truck / Bounce / DTS (+ toggle-off). Any non-Cross pick clears crossDepot —
+  // switching remark always drops the cross depot. Cross is set via confirmCross.
   function chooseMarker(m: Marker): void {
     setMarker(m);
-    const s = snapshot({ marker: m });
+    setCrossDepot(null);
+    const s = snapshot({ marker: m, crossDepot: null });
+    if (s) savePoDraft(s);
+  }
+
+  // Cross billing — tapping "Cross" (or "change") opens the depot sheet. Opening
+  // does NOT commit Cross; only choosing a depot does, so dismissing without a
+  // pick cancels the Cross selection (Cross must always carry a depot).
+  function openCrossSheet(): void {
+    setCrossSheetOpen(true);
+  }
+  function confirmCross(depot: string): void {
+    setMarker("Cross Delivery");
+    setCrossDepot(depot);
+    setCrossSheetOpen(false);
+    const s = snapshot({ marker: "Cross Delivery", crossDepot: depot });
+    if (s) savePoDraft(s);
+  }
+  function cancelCrossSheet(): void {
+    // No state change — if Cross wasn't already confirmed it stays unselected;
+    // if it was (reopened via "change"), the prior depot is kept.
+    setCrossSheetOpen(false);
+  }
+
+  // Notes free-text + "Quick add" preset append (joined with ", " when the
+  // field already has content).
+  function changeNotes(v: string): void {
+    setNotes(v);
+    const s = snapshot({ notes: v });
+    if (s) savePoDraft(s);
+  }
+  function appendNotePreset(preset: string): void {
+    const base = notes.trim();
+    const next = base ? `${base}, ${preset}` : preset;
+    setNotes(next);
+    const s = snapshot({ notes: next });
     if (s) savePoDraft(s);
   }
 
@@ -960,7 +1041,7 @@ export default function PoPage(): React.JSX.Element {
 
   // Email — byte-identical to /order. Computed each render (like /order).
   const { subject: emailSubject, body: emailBody, valid: canSend } =
-    buildEmailParts({ customer: selectedCust, bills, shipTo, dispatch, marker });
+    buildEmailParts({ customer: selectedCust, bills, shipTo, dispatch, marker, crossDepot, notes });
 
   function handleSend(): void {
     if (!canSend) return;
@@ -1240,9 +1321,9 @@ export default function PoPage(): React.JSX.Element {
               <p className="text-[11px] uppercase tracking-wide text-gray-400 mb-[7px]">Dispatch</p>
               <div className="grid grid-cols-3 gap-2">
                 {([
-                  { label: "Normal", dot: "bg-teal-500",  on: "border-teal-500 bg-teal-50 text-teal-700" },
-                  { label: "Hold",   dot: "bg-red-400",   on: "border-red-300 bg-red-50 text-red-700" },
-                  { label: "Urgent", dot: "bg-amber-400", on: "border-amber-300 bg-amber-50 text-amber-700" },
+                  { label: "Normal",     dot: "bg-teal-500",  on: "border-teal-500 bg-teal-50 text-teal-700" },
+                  { label: "Call to SO", dot: "bg-red-400",   on: "border-red-300 bg-red-50 text-red-700" },
+                  { label: "Urgent",     dot: "bg-amber-400", on: "border-amber-300 bg-amber-50 text-amber-700" },
                 ] as const).map((d) => {
                   const on = dispatch === d.label;
                   return (
@@ -1250,11 +1331,11 @@ export default function PoPage(): React.JSX.Element {
                       key={d.label}
                       type="button"
                       onClick={() => chooseDispatch(d.label)}
-                      className={`h-[42px] rounded-[10px] border text-[14px] flex items-center justify-center gap-1.5 ${
+                      className={`h-[42px] rounded-[10px] border text-[13px] flex items-center justify-center gap-1.5 whitespace-nowrap ${
                         on ? `${d.on} font-semibold` : "border-gray-200 bg-white text-gray-400 font-medium"
                       }`}
                     >
-                      <span className={`w-[7px] h-[7px] rounded-full ${d.dot}`} />
+                      <span className={`w-[7px] h-[7px] rounded-full shrink-0 ${d.dot}`} />
                       {d.label}
                     </button>
                   );
@@ -1262,23 +1343,26 @@ export default function PoPage(): React.JSX.Element {
               </div>
             </div>
 
-            {/* Order Marker */}
+            {/* Order Remarks — four options in a 2×2 grid. Tapping "Cross" opens
+                the depot sheet (commits Cross only once a depot is chosen). */}
             <div className="bg-white border-b border-gray-200 px-4 py-[13px]">
               <p className="text-[11px] uppercase tracking-wide text-gray-400 mb-[7px]">
-                Order marker <span className="text-gray-300 normal-case tracking-normal">· optional</span>
+                Order remarks <span className="text-gray-300 normal-case tracking-normal">· optional</span>
               </p>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 gap-2">
                 {([
-                  { label: "🚛 Truck", value: "Truck" as const },
-                  { label: "🔄 Cross", value: "Cross Delivery" as const },
-                  { label: "📦 DTS",   value: "DTS" as const },
+                  { label: "🚛 Truck",  value: "Truck" as const },
+                  { label: "🔄 Cross",  value: "Cross Delivery" as const },
+                  { label: "↩️ Bounce", value: "Bounce" as const },
+                  { label: "📦 DTS",    value: "DTS" as const },
                 ]).map((m) => {
-                  const on = marker === m.value;
+                  const on      = marker === m.value;
+                  const isCross = m.value === "Cross Delivery";
                   return (
                     <button
                       key={m.value}
                       type="button"
-                      onClick={() => chooseMarker(on ? null : m.value)}
+                      onClick={() => (isCross ? openCrossSheet() : chooseMarker(on ? null : m.value))}
                       className={`h-[42px] rounded-[10px] border text-[13px] flex items-center justify-center ${
                         on
                           ? "border-indigo-300 bg-indigo-50 text-indigo-700 font-semibold"
@@ -1290,6 +1374,63 @@ export default function PoPage(): React.JSX.Element {
                   );
                 })}
               </div>
+              {marker === "Cross Delivery" && crossDepot && (
+                <p className="text-[12px] text-gray-500 mt-2">
+                  Cross billing from {crossDepot}{" · "}
+                  <button
+                    type="button"
+                    onClick={openCrossSheet}
+                    className="text-teal-700 font-medium active:opacity-70"
+                  >
+                    change
+                  </button>
+                </p>
+              )}
+            </div>
+
+            {/* Notes — optional free text + a "Quick add" preset menu. */}
+            <div className="bg-white border-b border-gray-200 px-4 py-[13px]">
+              <div className="flex items-center justify-between mb-[7px]">
+                <p className="text-[11px] uppercase tracking-wide text-gray-400">
+                  Notes <span className="text-gray-300 normal-case tracking-normal">· optional</span>
+                </p>
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setQuickAddOpen((o) => !o)}
+                    className="flex items-center gap-1 text-[12px] text-teal-700 font-medium active:opacity-70"
+                  >
+                    Quick add
+                    <ChevronDown
+                      className={`w-[14px] h-[14px] transition-transform ${quickAddOpen ? "rotate-180" : ""}`}
+                    />
+                  </button>
+                  {quickAddOpen && (
+                    <div className="absolute right-0 top-full mt-1 z-10 w-[190px] bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
+                      {NOTE_PRESETS.map((p) => (
+                        <button
+                          key={p}
+                          type="button"
+                          onClick={() => { appendNotePreset(p); setQuickAddOpen(false); }}
+                          className="w-full text-left px-3 py-2.5 text-[14px] text-gray-700 border-b border-gray-50 last:border-b-0 active:bg-gray-50"
+                        >
+                          {p}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <input
+                type="text"
+                value={notes}
+                onChange={(e) => changeNotes(e.target.value)}
+                placeholder="Add a note…"
+                autoComplete="off"
+                autoCorrect="off"
+                spellCheck={false}
+                className="w-full border border-gray-200 rounded-lg px-3 py-[11px] text-[16px] text-gray-900 bg-transparent outline-none placeholder:text-gray-400"
+              />
             </div>
 
             {/* Preview (collapsible) — exact email body that will send */}
@@ -1748,6 +1889,56 @@ export default function PoPage(): React.JSX.Element {
               </div>
             )}
           </>
+        )}
+
+        {/* Cross-billing depot bottom-sheet. Dismissing without a pick cancels
+            the Cross selection (cancelCrossSheet makes no state change, so Cross
+            is only ever committed by choosing a depot). */}
+        {crossSheetOpen && (
+          <div
+            className="fixed inset-0 z-50 flex items-end justify-center bg-black/40"
+            onClick={cancelCrossSheet}
+          >
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-label="Cross billing from"
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-[480px] bg-white rounded-t-[18px] p-5"
+              style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 20px)" }}
+            >
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-[16px] font-semibold text-gray-900">Cross billing from?</h2>
+                <button
+                  type="button"
+                  onClick={cancelCrossSheet}
+                  aria-label="Close"
+                  className="text-gray-400 text-[22px] leading-none px-1 active:text-gray-600"
+                >
+                  ×
+                </button>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {CROSS_DEPOTS.map((d) => {
+                  const on = crossDepot === d;
+                  return (
+                    <button
+                      key={d}
+                      type="button"
+                      onClick={() => confirmCross(d)}
+                      className={`h-[48px] rounded-[10px] border text-[15px] ${
+                        on
+                          ? "border-indigo-300 bg-indigo-50 text-indigo-700 font-semibold"
+                          : "border-gray-200 bg-white text-gray-700 font-medium active:bg-gray-50"
+                      }`}
+                    >
+                      {d}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
         )}
 
         {/* Reset confirm dialog — New order / Switch customer */}
