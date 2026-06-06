@@ -421,7 +421,10 @@ export default function PoPage(): React.JSX.Element {
   // Free-text order notes + the "Quick add" preset menu.
   const [notes,        setNotes]        = useState("");
   const [quickAddOpen, setQuickAddOpen] = useState(false);
-  const [previewOpen,  setPreviewOpen]  = useState(false);
+  // True while the Notes input is focused (keyboard up). Mirrors shipFocused —
+  // both gate the "Send order" footer pill on review so it can't cover the
+  // field. Cleared on blur with the same ~150ms delay to avoid flicker.
+  const [notesFocused, setNotesFocused] = useState(false);
 
   // Persistent "last added" confirmation banner. Set on every add, replaced
   // by the newest, cleared only on a full reset (New order / change / Send).
@@ -627,7 +630,7 @@ export default function PoPage(): React.JSX.Element {
     setCrossSheetOpen(false);
     setNotes("");
     setQuickAddOpen(false);
-    setPreviewOpen(false);
+    setNotesFocused(false);
     setMultiSelect(false);
     setSelectedProducts([]);
     setMultiQtys({});
@@ -1067,6 +1070,43 @@ export default function PoPage(): React.JSX.Element {
     });
   }
 
+  // One floating-pill UI for EVERY bottom CTA (Review order / Set quantities /
+  // Add products / Send order) — rendered into the non-scrolling <main> footer
+  // so it's keyboard-safe (§22). "send" icon sits left; "arrow" sits right.
+  function footerPill(opts: {
+    onClick:   () => void;
+    label:     string;
+    disabled?: boolean;
+    icon?:     "arrow" | "send";
+  }): React.JSX.Element {
+    const { onClick, label, disabled = false, icon = "arrow" } = opts;
+    return (
+      <div
+        className="flex-shrink-0 bg-[#f9fafb] flex justify-center px-4 pt-3"
+        style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 16px)" }}
+      >
+        <button
+          type="button"
+          onClick={onClick}
+          disabled={disabled}
+          className={`flex items-center gap-2 rounded-full text-[15px] font-bold ${
+            disabled
+              ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+              : "bg-teal-600 active:bg-teal-700 text-white active:opacity-90"
+          }`}
+          style={{
+            padding: "15px 34px",
+            boxShadow: disabled ? "none" : "0 8px 22px rgba(13,148,136,0.42)",
+          }}
+        >
+          {icon === "send" && <Send className="w-[17px] h-[17px]" />}
+          {label}
+          {icon === "arrow" && <ChevronRight className="w-[18px] h-[18px]" />}
+        </button>
+      </div>
+    );
+  }
+
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
     <main
@@ -1432,35 +1472,14 @@ export default function PoPage(): React.JSX.Element {
                 type="text"
                 value={notes}
                 onChange={(e) => changeNotes(e.target.value)}
+                onFocus={() => setNotesFocused(true)}
+                onBlur={() => setTimeout(() => setNotesFocused(false), 150)}
                 placeholder="Add a note…"
                 autoComplete="off"
                 autoCorrect="off"
                 spellCheck={false}
                 className="w-full border border-gray-200 rounded-lg px-3 py-[11px] text-[16px] text-gray-900 bg-transparent outline-none placeholder:text-gray-400"
               />
-            </div>
-
-            {/* Preview (collapsible) — exact email body that will send */}
-            <div className="bg-white border-b border-gray-200">
-              <button
-                type="button"
-                onClick={() => setPreviewOpen((o) => !o)}
-                className="w-full flex items-center justify-between px-4 py-[13px] text-left"
-              >
-                <span className="text-[14px] text-gray-600">Preview email</span>
-                <ChevronDown
-                  className={`w-[18px] h-[18px] text-gray-400 transition-transform ${previewOpen ? "rotate-180" : ""}`}
-                />
-              </button>
-              {previewOpen && (
-                <div className="px-4 pb-[14px]">
-                  <p className="text-[11px] text-gray-400 mb-1">To: {ORDER_TO}</p>
-                  <p className="text-[11px] text-gray-400 mb-2">Subject: {emailSubject}</p>
-                  <pre className="text-[12px] text-gray-900 font-mono whitespace-pre-wrap break-words bg-gray-50 border border-gray-100 rounded-lg p-3">
-{emailBody}
-                  </pre>
-                </div>
-              )}
             </div>
 
             {/* The "Send order" CTA now lives in the non-scrolling footer at
@@ -1737,28 +1756,9 @@ export default function PoPage(): React.JSX.Element {
                   );
                 })}
 
-                {/* sticky "Add N products to Bill". Hidden while any qty input is
-                    focused so the keyboard can't float it mid-screen (§22 —
-                    focus-driven, no viewport math); re-pins on blur. Bottom
-                    safe-area inset clears the home indicator; bg-white fills the
-                    inset strip. env()=0 on Android → no change. */}
-                {!multiQtyFocused && (
-                  <div
-                    className="sticky bottom-0 z-20 bg-white border-t border-gray-200 px-4 py-3 mt-auto"
-                    style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 12px)" }}
-                  >
-                    <button
-                      type="button"
-                      onClick={commitMultiSelect}
-                      disabled={!anyMultiQty}
-                      className={`w-full h-[52px] rounded-[12px] text-[15px] font-semibold ${
-                        anyMultiQty ? "bg-teal-600 active:bg-teal-700 text-white" : "bg-gray-200 text-gray-400 cursor-not-allowed"
-                      }`}
-                    >
-                      Add {selectedProducts.length} {selectedProducts.length === 1 ? "product" : "products"} to Bill {activeBillId}
-                    </button>
-                  </div>
-                )}
+                {/* The "Add N products" CTA now lives in the non-scrolling
+                    footer at <main> level (keyboard-safe; still hides while a qty
+                    input is focused, via multiQtyFocused). See bottom of render. */}
               </>
             ) : (
               /* ── Quantity picking (single product) ────────────────────── */
@@ -1818,29 +1818,9 @@ export default function PoPage(): React.JSX.Element {
               )
             )}
 
-            {/* Multi-select bottom bar — shown when >= 1 product is ticked
-                (takes priority over the cart bar; single bar at a time). */}
-            {showSelectBar && (
-              <div
-                className="sticky bottom-0 z-20 bg-teal-600 text-white px-[18px] py-[15px] flex items-center justify-between"
-                style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 15px)" }}
-              >
-                <span className="text-[14px] font-semibold">
-                  {selectedProducts.length} selected
-                </span>
-                <button
-                  type="button"
-                  onClick={openMultiQty}
-                  className="flex items-center gap-1 text-[14px] font-semibold shrink-0 pl-3 active:opacity-80"
-                >
-                  Set quantities
-                  <ChevronRight className="w-[17px] h-[17px]" />
-                </button>
-              </div>
-            )}
-
-            {/* The "Review order" CTA now lives in the non-scrolling footer at
-                <main> level (keyboard-safe, §22). See the bottom of render. */}
+            {/* The "Set quantities" (multi-select) and "Review order" CTAs now
+                live in the non-scrolling footer at <main> level (keyboard-safe,
+                one floating-pill UI; §22). See the bottom of render. */}
           </>
         )}
 
@@ -1946,45 +1926,28 @@ export default function PoPage(): React.JSX.Element {
           floating pill on a page-bg strip; safe-area inset clears the home
           indicator (env()=0 on Android → no change). */}
       {selectedCust && (
-        view === "review" ? (
-          <div
-            className="flex-shrink-0 bg-[#f9fafb] flex justify-center px-4 pt-3"
-            style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 16px)" }}
-          >
-            <button
-              type="button"
-              onClick={handleSend}
-              disabled={!canSend}
-              className={`flex items-center gap-2 rounded-full text-[15px] font-bold ${
-                canSend
-                  ? "bg-teal-600 active:bg-teal-700 text-white active:opacity-90"
-                  : "bg-gray-200 text-gray-400 cursor-not-allowed"
-              }`}
-              style={{
-                padding: "15px 34px",
-                boxShadow: canSend ? "0 8px 22px rgba(13,148,136,0.42)" : "none",
-              }}
-            >
-              <Send className="w-[17px] h-[17px]" />
-              Send order
-            </button>
-          </div>
-        ) : (view === "build" && mode === "search" && !showSelectBar && hasAnyLines) ? (
-          <div
-            className="flex-shrink-0 bg-[#f9fafb] flex justify-center px-4 pt-3"
-            style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 16px)" }}
-          >
-            <button
-              type="button"
-              onClick={openReview}
-              className="flex items-center gap-2 rounded-full bg-teal-600 active:bg-teal-700 text-white text-[15px] font-bold active:opacity-90"
-              style={{ padding: "15px 34px", boxShadow: "0 8px 22px rgba(13,148,136,0.42)" }}
-            >
-              Review order
-              <ChevronRight className="w-[18px] h-[18px]" />
-            </button>
-          </div>
-        ) : null
+        view === "review"
+          // Send order — hidden while Ship To OR Notes is focused so the pill
+          // can't cover the field above the keyboard (React focus only; §22).
+          ? (shipFocused || notesFocused
+              ? null
+              : footerPill({ onClick: handleSend, disabled: !canSend, label: "Send order", icon: "send" }))
+          // Multi-qty sub-screen — Add products, hidden while a qty input is focused.
+          : mode === "multiqty"
+            ? (multiQtyFocused
+                ? null
+                : footerPill({
+                    onClick: commitMultiSelect,
+                    disabled: !anyMultiQty,
+                    label: `Add ${selectedProducts.length} ${selectedProducts.length === 1 ? "product" : "products"}`,
+                  }))
+            // Multi-select active with ≥1 ticked — Set quantities (with count).
+            : (mode === "search" && showSelectBar)
+              ? footerPill({ onClick: openMultiQty, label: `Set quantities (${selectedProducts.length})` })
+              // Default build CTA — Review order when the active cart has lines.
+              : (mode === "search" && !showSelectBar && hasAnyLines)
+                ? footerPill({ onClick: openReview, label: "Review order" })
+                : null
       )}
     </main>
   );
