@@ -275,7 +275,6 @@ function aliasSuffix(
 // packInputsRef for desktop focus/scroll.
 function PackRows({
   product, qtys, onStep, onSet, showBoxNote = false, registerInput,
-  onQtyFocus, onQtyBlur,
 }: {
   product:       Product;
   qtys:          Record<string, number>;
@@ -283,8 +282,6 @@ function PackRows({
   onSet:         (key: string, raw: string) => void;
   showBoxNote?:  boolean;
   registerInput?: (i: number, el: HTMLInputElement | null) => void;
-  onQtyFocus?:   () => void;   // multi-qty only — track keyboard-up for the Add bar
-  onQtyBlur?:    () => void;
 }): React.JSX.Element {
   const sorted = sortRawPacks(product.packs);
   if (sorted.length === 0) {
@@ -323,13 +320,13 @@ function PackRows({
               value={qty}
               onChange={(e) => onSet(key, e.target.value)}
               onFocus={(e) => {
-                onQtyFocus?.();
                 e.target.select();
                 requestAnimationFrame(() => {
-                  e.target.scrollIntoView({ block: "center", behavior: "smooth" });
+                  // "nearest" keeps the focused row just above the keyboard
+                  // (NOT centered mid-viewport, which exposed an empty band).
+                  e.target.scrollIntoView({ block: "nearest", behavior: "smooth" });
                 });
               }}
-              onBlur={() => onQtyBlur?.()}
               className={`w-10 text-center text-[16px] font-bold bg-transparent outline-none ${qty === 0 ? "border-b border-dashed border-gray-300" : "border-none"}`}
               style={{ color: qty > 0 ? "#0d9488" : "#111827" }}
             />
@@ -404,11 +401,6 @@ export default function PoPage(): React.JSX.Element {
   const [selectedProducts, setSelectedProducts] = useState<Product[]>([]);
   // Per-product pack quantities for the multi-qty screen: productId → packKey → units.
   const [multiQtys,        setMultiQtys]        = useState<Record<number, Record<string, number>>>({});
-  // True while any multi-qty number input is focused (keyboard up). Mirrors the
-  // shipFocused pattern: gates the sticky "Add N products" bar so it can't float
-  // mid-screen under the iOS keyboard. Cleared on blur with the same ~150ms delay
-  // to avoid flicker when moving focus between qty inputs.
-  const [multiQtyFocused,  setMultiQtyFocused]  = useState(false);
 
   // Review-screen order-level fields (reused from /order's value sets).
   const [shipTo,      setShipTo]      = useState("");
@@ -1749,16 +1741,14 @@ export default function PoPage(): React.JSX.Element {
                         onStep={(key, label, delta) => stepMultiPack(p.id, key, label, delta)}
                         onSet={(key, raw) => setMultiPackRaw(p.id, key, raw)}
                         showBoxNote
-                        onQtyFocus={() => setMultiQtyFocused(true)}
-                        onQtyBlur={() => setTimeout(() => setMultiQtyFocused(false), 150)}
                       />
                     </div>
                   );
                 })}
 
-                {/* The "Add N products" CTA now lives in the non-scrolling
-                    footer at <main> level (keyboard-safe; still hides while a qty
-                    input is focused, via multiQtyFocused). See bottom of render. */}
+                {/* The "Add N products" CTA lives in the non-scrolling footer at
+                    <main> level (keyboard-safe; stays pinned above the keyboard
+                    during qty entry). See bottom of render. */}
               </>
             ) : (
               /* ── Quantity picking (single product) ────────────────────── */
@@ -1932,15 +1922,16 @@ export default function PoPage(): React.JSX.Element {
           ? (shipFocused || notesFocused
               ? null
               : footerPill({ onClick: handleSend, disabled: !canSend, label: "Send order", icon: "send" }))
-          // Multi-qty sub-screen — Add products, hidden while a qty input is focused.
+          // Multi-qty sub-screen — Add products. Stays PINNED during qty entry:
+          // the footer rides above the keyboard (flex-shrink-0 at <main> level)
+          // and never overlaps the inputs, so the old focus-hide is dropped — it
+          // only handed its height to the scroll area and grew the empty band.
           : mode === "multiqty"
-            ? (multiQtyFocused
-                ? null
-                : footerPill({
-                    onClick: commitMultiSelect,
-                    disabled: !anyMultiQty,
-                    label: `Add ${selectedProducts.length} ${selectedProducts.length === 1 ? "product" : "products"}`,
-                  }))
+            ? footerPill({
+                onClick: commitMultiSelect,
+                disabled: !anyMultiQty,
+                label: `Add ${selectedProducts.length} ${selectedProducts.length === 1 ? "product" : "products"}`,
+              })
             // Multi-select active with ≥1 ticked — Set quantities (with count).
             : (mode === "search" && showSelectBar)
               ? footerPill({ onClick: openMultiQty, label: `Set quantities (${selectedProducts.length})` })
