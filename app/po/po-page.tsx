@@ -475,6 +475,13 @@ export default function PoPage(): React.JSX.Element {
   // can't cover the focused field while the keyboard is up.
   const [inputFocused, setInputFocused] = useState(false);
 
+  // Whether the soft keyboard is ACTUALLY open — derived from the visualViewport
+  // height in the --vvh updater (debounced), NOT from input focus. Gates the
+  // floating footers so they hide while the keyboard is up and reappear on close,
+  // even when Android dismisses the keyboard WITHOUT blurring the input (the
+  // stuck-Add-button case), and so the search footer yields its space while typing.
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
+
   // Review-screen order-level fields (reused from /order's value sets).
   const [shipTo,      setShipTo]      = useState("");
   // shipFocused ONLY gates the ship-to suggestions dropdown now (the footer-hide
@@ -517,6 +524,8 @@ export default function PoPage(): React.JSX.Element {
   // height on keyboard close (kills the grey band) — no new per-tick listener.
   const vvhUpdateRef   = useRef<(() => void) | null>(null);
   const vvhResnapRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Debounce for the keyboardOpen flag (avoids flicker on the open/close ramp).
+  const kbDebounceRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── Data ──────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -664,12 +673,26 @@ export default function PoPage(): React.JSX.Element {
     if (typeof window === "undefined") return;
     const vv = window.visualViewport;
     let lastH = -1;
+    let fullH = vv ? vv.height : window.innerHeight;   // tallest (no-keyboard) height seen
     function update(): void {
       const h = vv ? vv.height : window.innerHeight;
+      if (h > fullH) fullH = h;   // grows on rotation / iOS URL-bar expand
       if (h === lastH) return;   // unchanged height (e.g. plain scroll) → no churn
       const shrank = lastH !== -1 && h < lastH;   // height dropped = keyboard opening
       lastH = h;
       document.documentElement.style.setProperty("--vvh", `${h}px`);
+      // "Keyboard actually open" derived from the REAL height drop (> ~120px below the
+      // full no-keyboard height — above iOS URL-bar-collapse noise), debounced ~100ms
+      // to avoid flicker on the open/close ramp. Height READ only — no offset math
+      // (§22). THIS (not input focus) gates the floating footers, so the Add button
+      // returns on keyboard close even if the input keeps focus (Android down-caret),
+      // and the search footer yields its space while the keyboard is up.
+      const kbOpen = (fullH - h) > 120;
+      if (kbDebounceRef.current) clearTimeout(kbDebounceRef.current);
+      kbDebounceRef.current = setTimeout(() => {
+        setKeyboardOpen(kbOpen);
+        kbDebounceRef.current = null;
+      }, 100);
       // Keyboard just opened: re-scroll the focused field to the NEAREST edge so it
       // sits just above the keyboard. The focusin scroll (block:"start") ran against
       // the taller pre-keyboard viewport and clamps for low rows (the picker's 20L);
@@ -683,7 +706,10 @@ export default function PoPage(): React.JSX.Element {
     vvhUpdateRef.current = update;   // let focusout fire a guarded re-measure on close
     update();   // sync write so --vvh has a value before first paint
     if (!vv) {
-      return () => { vvhUpdateRef.current = null; };
+      return () => {
+        vvhUpdateRef.current = null;
+        if (kbDebounceRef.current) { clearTimeout(kbDebounceRef.current); kbDebounceRef.current = null; }
+      };
     }
     vv.addEventListener("resize", update);
     vv.addEventListener("scroll", update);
@@ -691,6 +717,7 @@ export default function PoPage(): React.JSX.Element {
       vv.removeEventListener("resize", update);
       vv.removeEventListener("scroll", update);
       vvhUpdateRef.current = null;
+      if (kbDebounceRef.current) { clearTimeout(kbDebounceRef.current); kbDebounceRef.current = null; }
     };
   }, []);
 
@@ -2331,33 +2358,34 @@ export default function PoPage(): React.JSX.Element {
           indicator (env()=0 on Android → no change). */}
       {selectedCust && (
         view === "review"
-          // Send order — HIDDEN while ANY non-search input is focused (central
-          // inputFocused; the field scrolls its section to the top, the hidden
-          // pill stays out of the way above the keyboard). Restored on blur.
-          ? (inputFocused
+          // Send order — HIDDEN while the soft keyboard is ACTUALLY open (keyboardOpen,
+          // from viewport height). Returns on keyboard close even if Ship To / Notes
+          // keeps focus (Android down-caret).
+          ? (keyboardOpen
               ? null
               : footerPill({ onClick: handleSend, disabled: !canSend, label: "Send order", icon: "send" }))
-          // Multi-qty sub-screen — Add products. HIDDEN while a qty box is
-          // focused (central inputFocused) so it never covers the rows.
+          // Multi-qty sub-screen — Add products. HIDDEN while the keyboard is open so it
+          // never covers the rows; returns on keyboard close (focus may persist).
           : mode === "multiqty"
-            ? (inputFocused
+            ? (keyboardOpen
                 ? null
                 : footerPill({
                     onClick: commitMultiSelect,
                     disabled: !anyMultiQty,
                     label: `Add ${selectedProducts.length} ${selectedProducts.length === 1 ? "product" : "products"}`,
                   }))
-            // Single-product picker — Cancel / Add to Bill. Same keyboard-safe
-            // footer slot as the pills; HIDDEN while a qty box is focused so it
-            // never covers the pack rows, restored on blur.
+            // Single-product picker — Cancel / Add to Bill. HIDDEN while the keyboard is
+            // open; returns on close even if the qty box keeps focus.
             : (mode === "picking" && activeProduct)
-              ? (inputFocused ? null : pickerFooter())
-              // Multi-select active with ≥1 ticked — Set quantities (with count).
+              ? (keyboardOpen ? null : pickerFooter())
+              // Multi-select active with ≥1 ticked — Set quantities. HIDDEN while the
+              // keyboard is up (search typing) so results fill the space; back on close.
               : (mode === "search" && showSelectBar)
-                ? footerPill({ onClick: openMultiQty, label: `Set quantities (${selectedProducts.length})` })
-                // Default build CTA — Review order when the active cart has lines.
+                ? (keyboardOpen ? null : footerPill({ onClick: openMultiQty, label: `Set quantities (${selectedProducts.length})` }))
+                // Default build CTA — Review order when the cart has lines. Same keyboard
+                // gate: hidden while typing the product search, returns on close.
                 : (mode === "search" && !showSelectBar && hasAnyLines)
-                  ? footerPill({ onClick: openReview, label: "Review order" })
+                  ? (keyboardOpen ? null : footerPill({ onClick: openReview, label: "Review order" }))
                   : null
       )}
     </main>
