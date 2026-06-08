@@ -5,7 +5,7 @@ import { Search, Mic, Check, ChevronLeft, ChevronDown, ChevronRight, Plus, Penci
 import type { RawPack } from "@/lib/place-order/pack-buckets";
 import type { Product, CartLine, Bill, Customer } from "@/app/(place-order)/place-order/types";
 import { rankProductsForQuery } from "@/lib/place-order/mobile-search";
-import { formatPack, packToMl, packStep, packKey, parsePackKey } from "@/lib/place-order/pack";
+import { formatPack, packToMl, packStepForPack, packKey, parsePackKey } from "@/lib/place-order/pack";
 import { getBaseAliasDisplay } from "@/lib/place-order/base-aliases";
 import { getSecondLine, isVariantQualifierTab } from "@/lib/place-order/sub-product-descriptors";
 
@@ -355,7 +355,7 @@ function PackRows({
       {sorted.map((rp, i) => {
         const key      = packKey(rp.packCode, rp.unit);
         const label    = formatPack(rp.packCode, rp.unit);
-        const step     = packStep(label);
+        const step     = packStepForPack(rp.packCode, rp.unit);   // PC tools → box 25/12; paint via label-keyed packStep
         const qty      = qtys[key] ?? 0;
         const onlyPack = sorted.length === 1;
         const boxes    = step > 1 && qty > 0 && qty % step === 0 ? qty / step : null;
@@ -867,7 +867,8 @@ export default function PoPage(): React.JSX.Element {
   }
 
   function stepMultiPack(productId: number, key: string, label: string, delta: number): void {
-    const step = packStep(label);
+    const { packCode, unit } = parsePackKey(key);   // composite key carries packCode|unit
+    const step = packStepForPack(packCode, unit);
     setMultiQtys((prev) => {
       const cur = prev[productId] ?? {};
       const nextQty = Math.max(0, (cur[key] ?? 0) + delta * step);
@@ -1062,7 +1063,8 @@ export default function PoPage(): React.JSX.Element {
 
   // ── Quantity cell semantics (units; +/- by box step) ──────────────────────
   function stepPack(key: string, label: string, delta: number): void {
-    const step = packStep(label);
+    const { packCode, unit } = parsePackKey(key);   // composite key carries packCode|unit
+    const step = packStepForPack(packCode, unit);
     setPackQtys((prev) => {
       const cur = prev[key] ?? 0;
       return { ...prev, [key]: Math.max(0, cur + delta * step) };
@@ -1289,7 +1291,7 @@ export default function PoPage(): React.JSX.Element {
     );
     return entries.map((e) => {
       const label = formatPack(e.packCode, e.unit);
-      const step  = packStep(label);
+      const step  = packStepForPack(e.packCode, e.unit);
       const boxes = step > 1 && e.qty > 0 && e.qty % step === 0 ? e.qty / step : null;
       return { label, units: e.qty, boxes };
     });
@@ -2021,7 +2023,7 @@ export default function PoPage(): React.JSX.Element {
                         // Fallback to family (e.g. "VELVET TOUCH") when there's no
                         // sub-product descriptor — mirrors /order. The {second && …}
                         // guard still renders nothing when family is empty.
-                        const second = getSecondLine(
+                        const second = p.region ?? getSecondLine(
                           p.family, p.subProduct,
                           getBaseAliasDisplay(p.product, p.baseColour),
                         ) ?? p.family;
@@ -2099,7 +2101,7 @@ export default function PoPage(): React.JSX.Element {
 
                 {/* one section per selected product — full pack rows (reused) */}
                 {selectedProducts.map((p) => {
-                  const second = getSecondLine(
+                  const second = p.region ?? getSecondLine(
                     p.family, p.subProduct,
                     getBaseAliasDisplay(p.product, p.baseColour),
                   );
@@ -2140,12 +2142,12 @@ export default function PoPage(): React.JSX.Element {
                     <div className="text-[17px] font-semibold text-gray-900 leading-tight">
                       {productLabel(activeProduct)}{aliasSuffix(activeProduct)}
                     </div>
-                    {getSecondLine(
+                    {(activeProduct.region ?? getSecondLine(
                       activeProduct.family, activeProduct.subProduct,
                       getBaseAliasDisplay(activeProduct.product, activeProduct.baseColour),
-                    ) && (
+                    )) && (
                       <div className="text-[13px] text-gray-400 leading-tight mt-0.5">
-                        {getSecondLine(
+                        {activeProduct.region ?? getSecondLine(
                           activeProduct.family, activeProduct.subProduct,
                           getBaseAliasDisplay(activeProduct.product, activeProduct.baseColour),
                         )}
