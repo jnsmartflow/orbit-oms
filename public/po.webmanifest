@@ -5,6 +5,7 @@
   "start_url": "/po",
   "scope": "/po",
   "display": "standalone",
+  "display_override": ["standalone"],
   "background_color": "#f9fafb",
   "theme_color": "#0d9488",
   "orientation": "portrait",

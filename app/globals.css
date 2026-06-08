@@ -10,6 +10,12 @@
    we want full viewport height so the page does not collapse to zero. */
 html { --vvh: 100vh; }
 
+/* App-like scroll — kill Android pull-to-refresh + the rubber-band bounce at the
+   document root so the PWA feels native. overscroll-behavior only affects scroll
+   CHAINING at this element; inner scroll containers (e.g. /po's flex-1
+   overflow-y-auto scroll area) keep their own behaviour and scroll normally. */
+html, body { overscroll-behavior: none; }
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
