@@ -3492,9 +3492,9 @@
       {
         "family": "PRIMER",
         "subProduct": "WOOD PRIMER",
-        "displayName": "Wood Primer",
+        "displayName": "Wood Primer — White",
         "searchTokens": "WOOD PRIMER, DUWEL WOOD PRIMER, WHITE WOOD PRIMER, PINK WOOD PRIMER",
-        "baseColour": "BRILLIANT WHITE",
+        "baseColour": "White",
         "productType": "BASE_VARIANT",
         "tinterType": null,
         "sortOrder": 3060,
@@ -3504,7 +3504,7 @@
       {
         "family": "PRIMER",
         "subProduct": "WOOD PRIMER",
-        "displayName": "Wood Primer",
+        "displayName": "Wood Primer — Pink",
         "searchTokens": "WOOD PRIMER, DUWEL WOOD PRIMER, WHITE WOOD PRIMER, PINK WOOD PRIMER",
         "baseColour": "PINK",
         "productType": "COLOUR",
