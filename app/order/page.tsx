@@ -3,7 +3,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { Search, Send } from "lucide-react";
 import type { RawPack } from "@/lib/place-order/pack-buckets";
-import { formatPack, packToMl, packStep } from "@/lib/place-order/pack";
+import { formatPack, packToMl, packStepForPack } from "@/lib/place-order/pack";
 import { getBaseAliasDisplay } from "@/lib/place-order/base-aliases";
 import { getSecondLine, isVariantQualifierTab } from "@/lib/place-order/sub-product-descriptors";
 import { rankProductsForQuery } from "@/lib/place-order/mobile-search";
@@ -610,12 +610,14 @@ export default function OrderPage(): React.JSX.Element {
     else                             startListening(billId);
   }
 
-  function stepPack(billId: number, pack: string, delta: number): void {
+  function stepPack(billId: number, pack: string, delta: number, packCode: string, unit: string | null): void {
     setBills((prev) => prev.map((b) => {
       if (b.id !== billId) return b;
-      // `pack` is already the formatted label ("1L", "25KG") — packStep
-      // looks up the carton/drum step directly. Unknown labels fall to 1.
-      const step = packStep(pack);
+      // `pack` is the formatted label ("1L", "25KG") and keys packQtys. The
+      // step is keyed by (packCode, unit) via packStepForPack so tools (unit
+      // "PC") get the box step (rollers 25 / brushes 12); paint delegates to
+      // the label-keyed packStep — byte-identical. Unknown packs fall to 1.
+      const step = packStepForPack(packCode, unit);
       const cur  = b.packQtys[pack] ?? 0;
       const next = Math.max(0, cur + delta * step);
       return { ...b, packQtys: { ...b.packQtys, [pack]: next } };
@@ -1085,7 +1087,7 @@ export default function OrderPage(): React.JSX.Element {
                 onStartPicking={() => startPicking(b.id)}
                 onNextProduct={(skip) => nextProduct(b.id, skip)}
                 onGoToPage={(page) => goToPage(b.id, page)}
-                onStepPack={(pack, delta) => stepPack(b.id, pack, delta)}
+                onStepPack={(pack, delta, packCode, unit) => stepPack(b.id, pack, delta, packCode, unit)}
                 onSetPack={(pack, raw) => setPack(b.id, pack, raw)}
                 onSearchKeyDown={(e, items) => handleSearchKeyDown(e, b.id, items)}
                 onCancelPicking={() => cancelPicking(b.id)}
@@ -1368,7 +1370,7 @@ interface BillCardProps {
   onStartPicking:        () => void;
   onNextProduct:         (skip: boolean) => void;
   onGoToPage:            (page: number) => void;
-  onStepPack:            (pack: string, delta: number) => void;
+  onStepPack:            (pack: string, delta: number, packCode: string, unit: string | null) => void;
   onSetPack:             (pack: string, raw: string) => void;
   onSearchKeyDown:       (e: React.KeyboardEvent<HTMLInputElement>, items: Product[]) => void;
   onCancelPicking:       () => void;
@@ -1532,13 +1534,13 @@ const BillCard = forwardRef<BillCardHandle, BillCardProps>(function BillCard({
 
     if (e.key === "+" || e.key === "ArrowUp") {
       e.preventDefault();
-      onStepPack(label, +1);
+      onStepPack(label, +1, rawPack.packCode, rawPack.unit);
       return;
     }
 
     if (e.key === "-" || e.key === "ArrowDown") {
       e.preventDefault();
-      onStepPack(label, -1);
+      onStepPack(label, -1, rawPack.packCode, rawPack.unit);
       return;
     }
   }
@@ -1892,7 +1894,7 @@ const BillCard = forwardRef<BillCardHandle, BillCardProps>(function BillCard({
             // keyed by label so render, lookup, and step all share one key.
             const label = formatPack(rawPack.packCode, rawPack.unit);
             const qty   = bill.packQtys[label] ?? 0;
-            const step  = packStep(label);
+            const step  = packStepForPack(rawPack.packCode, rawPack.unit);
             const onlyPack = sortedPacks.length === 1;
             return (
               <div
@@ -1912,7 +1914,7 @@ const BillCard = forwardRef<BillCardHandle, BillCardProps>(function BillCard({
                   <button
                     type="button"
                     tabIndex={-1}
-                    onClick={() => onStepPack(label, -1)}
+                    onClick={() => onStepPack(label, -1, rawPack.packCode, rawPack.unit)}
                     className={`w-9 h-9 flex items-center justify-center text-[20px] font-light bg-transparent border-none ${
                       qty === 0 ? "text-gray-300" : "text-teal-600"
                     }`}
@@ -1948,7 +1950,7 @@ const BillCard = forwardRef<BillCardHandle, BillCardProps>(function BillCard({
                   <button
                     type="button"
                     tabIndex={-1}
-                    onClick={() => onStepPack(label, 1)}
+                    onClick={() => onStepPack(label, 1, rawPack.packCode, rawPack.unit)}
                     className="w-9 h-9 flex items-center justify-center text-[20px] font-light text-teal-600 bg-transparent border-none"
                     aria-label={`Increase ${label}`}
                   >
