@@ -100,7 +100,7 @@ const SET_FALSE = new Set<string>([
   "5994752-PROMISE_INTERIOR", "5994753-PROMISE_INTERIOR", "IN23820023",
   "IN23820081", "IN23820082", "IN23829023", "IN23829071", "IN23829223",
   "IN28085071", "IN28085072", "IN28085081", "IN28085082", "IN30700023",
-  "IN30709223", "IN32076823", "IN32316823", "IN32600072", "IN46309872",
+  "IN30709223", "IN32316823", "IN46309872",
   "IN46350049", "IN46350071", "IN46350072", "IN46350082", "IN46359071",
   "IN46359072", "IN46359223", "IN46359271", "IN46359281", "IN46359282",
   "IN46359582", "IN46359671", "IN46359771", "IN46359772", "IN46359781",
@@ -128,6 +128,18 @@ const SET_FALSE = new Set<string>([
   // so it rendered with no packs). Keep the 3 stock SKUs (Yellow/Red/Green) but
   // mark them non-primary so they drop off the mobile route without deleting them.
   "IN68011072", "IN68011172", "IN68011372",
+  // PRIMER review (2026-06-08): hidden alternates per primer-review-final.csv.
+  //  - Red Oxide merge: the 2 IP DUWEL packs demoted; the 5 ex-ROM packs
+  //    (re-keyed to RED OXIDE METAL PRIMER via sku-name-overrides.json) are the
+  //    visible set.
+  //  - Cement SB 20L: the IP/ICI DUWEL brand twins hidden (DN stays primary).
+  //  - Alkali 1L + Cement-WB 1L: the CSV picks the OPPOSITE 1L twin as primary
+  //    vs the old live state, so IN32600072 + IN32076823 were REMOVED from this
+  //    set above and their siblings (IN32600023 / IN32076872) are hidden here.
+  //  - Interior Acrylic 1L: IN32316823 stays hidden (kept above, CSV agrees).
+  "IN34010071", "IN34010082",
+  "IN34020081", "IN34120081",
+  "IN32600023", "IN32076872",
 ]);
 
 // ── CSV-as-source for the 3 WS targets (2026-06-01) ─────────────────────

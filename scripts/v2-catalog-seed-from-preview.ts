@@ -51,7 +51,7 @@ const DRY_RUN      = process.env.DRY_RUN === "1";
 // Locked expectations from the May 6 preview run. If the JSON drifts from
 // these the script refuses to seed — better to fail loudly than to ship
 // surprise data into v2.
-const EXPECTED_TOTAL_NEW_ROWS    = 485;  // 474 − 51 + 63 − 1 (7 ex-Woodcare brand families removed; one SADOLIN family of 63 finish-tab rows added 2026-06-04; HP COLORANT menu row removed 2026-06-08)
+const EXPECTED_TOTAL_NEW_ROWS    = 481;  // 474 − 51 + 63 − 1 − 4 (7 ex-Woodcare brand families removed; one SADOLIN family of 63 finish-tab rows added 2026-06-04; HP COLORANT menu row removed 2026-06-08; PRIMER preview rebuilt to a clean flat 11-row set, −4 raw rows 2026-06-08)
 const EXPECTED_WARNINGS          = 0;
 
 // ── PROMISE transform constants ────────────────────────────────────────
@@ -696,20 +696,9 @@ async function main(): Promise<void> {
     "PU STAINER":        "GVA / PU",
     "HP COLORANT":       "HP",
   };
-  const PRIMER_UI: Record<string, string> = {
-    "WOOD PRIMER":               "WOOD",
-    "RED OXIDE METAL PRIMER":    "METAL",
-    "ZINC YELLOW METAL PRIMER":  "METAL",
-    "EPOXY PRIMER":              "METAL",
-    "QUICK DRYING PRIMER":       "METAL",
-    "CEMENT PRIMER WB":          "CEMENT",
-    "CEMENT PRIMER SB":          "CEMENT",
-    "INTERIOR ACRYLIC PRIMER":   "ACRYLIC",
-    "EXTERIOR ACRYLIC PRIMER":   "ACRYLIC",
-    "ALKALI BLOC PRIMER":        "ALKALI BLOC",
-    "2IN1 INTERIOR-EXTERIOR PRIMER": "PROMISE",  // approved decision
-    "PROMISE PRIMER":            "PROMISE",
-  };
+  // PRIMER renders as ONE FLAT LIST (2026-06-08): every PRIMER row gets a single
+  // shared uiGroup ("Primers") in the assign loop below — one tab, no per-product
+  // tab-switching (was WOOD / METAL / CEMENT / ACRYLIC / ALKALI BLOC tabs).
   // AQUATECH rebuilt 2026-06-04 to 20 products / 4 tabs. Keyed by the EXACT
   // stock product name (= subProduct in the rebuilt preview rows), so uiGroup
   // assigns cleanly and the (product ?? subProduct) join hydrates each row.
@@ -849,7 +838,7 @@ async function main(): Promise<void> {
     if (r.family === "VELVET TOUCH" && VELVET_TOUCH_UI[sub]) { r.uiGroup = VELVET_TOUCH_UI[sub]; uiAssigned++; continue; }
     if (r.family === "SATIN"   && SATIN_UI[sub])   { r.uiGroup = SATIN_UI[sub];   uiAssigned++; continue; }
     if (r.family === "STAINER" && STAINER_UI[sub]) { r.uiGroup = STAINER_UI[sub]; uiAssigned++; continue; }
-    if (r.family === "PRIMER"  && PRIMER_UI[sub])  { r.uiGroup = PRIMER_UI[sub];  uiAssigned++; continue; }
+    if (r.family === "PRIMER")  { r.uiGroup = "Primers";  uiAssigned++; continue; }
     if (r.family === "AQUATECH" && AQUA_UI[sub])   { r.uiGroup = AQUA_UI[sub];    uiAssigned++; continue; }
     if (r.family === "SADOLIN"  && SADOLIN_UI[sub]) { r.uiGroup = SADOLIN_UI[sub]; uiAssigned++; continue; }
   }
