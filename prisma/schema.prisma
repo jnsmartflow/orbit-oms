@@ -1515,6 +1515,7 @@ model mo_order_form_index_v2 {
   section      String
   subgroup     String
   mobileFamily String?
+  region       String?   // optional grey per-row region label (Tools); NULL for paint
   createdAt    DateTime @default(now())
 
   @@unique([family, subProduct, baseColour])

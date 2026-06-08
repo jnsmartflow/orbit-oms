@@ -283,6 +283,41 @@ async function loadSadolinMap(): Promise<Map<string, SadolinEntry>> {
   return map;
 }
 
+// ── CSV-as-source for the TOOLS injection (2026-06-08) ─────────────────
+// docs/SKU/review/tools-catalog-source.csv = 25 brand-new tool SKUs (rollers /
+// brushes), none in legacy. STOCK needs only columns 0-9 (material..isPrimary);
+// the lone comma-bearing/quoted column is searchTokens (11, a MENU concern). We
+// split on PLAIN commas because every column we read is comma-free — including
+// the inch-mark `"` in description, which is literal data, not a CSV quote, so
+// splitCsvLine (quote-aware) would mis-parse it. category forced "TOOLS",
+// baseColour forced "" on every tool row.
+const TOOLS_CSV      = path.join("docs", "SKU", "review", "tools-catalog-source.csv");
+const TOOLS_CATEGORY = "TOOLS";
+type ToolsEntry = { material: string; description: string; product: string; packCode: string; unit: string; isPrimary: boolean };
+
+// Columns: 0 material · 1 description · 2 product · 3 displayName · 4 region ·
+// 5 baseColour · 6 category · 7 packCode · 8 unit · 9 isPrimary · 10 uiGroup ·
+// 11 searchTokens · 12 sortOrder.
+async function loadToolsMap(): Promise<Map<string, ToolsEntry>> {
+  const map = new Map<string, ToolsEntry>();
+  const raw = await fs.readFile(TOOLS_CSV, "utf8");
+  for (const line of raw.split(/\r?\n/).slice(1)) {
+    if (!line.trim()) continue;
+    const c = line.split(",");                 // stock columns (0-9) are comma-free
+    const material = (c[0] ?? "").trim();
+    if (!material) continue;
+    map.set(material, {
+      material,
+      description: (c[1] ?? "").trim(),
+      product:     (c[2] ?? "").trim(),
+      packCode:    (c[7] ?? "").trim(),
+      unit:        (c[8] ?? "").trim() || "PC",
+      isPrimary:   (c[9] ?? "").trim().toUpperCase() === "TRUE",
+    });
+  }
+  return map;
+}
+
 // Shape of one row to be inserted into mo_sku_lookup_v2.
 type V2Row = {
   material:        string;
@@ -374,6 +409,10 @@ async function main(): Promise<void> {
   // CSV-as-source for the SADOLIN woodcare rebuild (154 rows).
   const sadolin = await loadSadolinMap();
   console.log(`SADOLIN CSV map: ${sadolin.size} materials (source of truth)`);
+
+  // CSV-as-source for the TOOLS injection (25 new rollers/brushes).
+  const tools = await loadToolsMap();
+  console.log(`TOOLS CSV map: ${tools.size} materials (source of truth)`);
 
   // ── 2. Translate each legacy row via mapLegacyToNew ─────────────────
   let skippedNull = 0;
@@ -642,6 +681,35 @@ async function main(): Promise<void> {
   }
   console.log(`SADOLIN: re-keyed ${sadAssigned} existing, built ${sadolinBuilt.length} new [${sadolinBuilt.join(", ")}], ${sadolinPreexisting.length} pre-existing`);
 
+  // ── 2g. TOOLS new-SKU build (no legacy source) ──────────────────────
+  // 25 brand-new tool SKUs (rollers packCode "25" / brushes packCode "12",
+  // unit "PC"), never in legacy. category "TOOLS", baseColour "". Guarded by
+  // seenMaterials (additive — no paint/legacy row touched). piecesPerCarton
+  // stays null: carton size rides packCode and the box-step comes from
+  // packStepForPack() at render time.
+  const toolsBuilt: string[] = [];
+  for (const [mat, e] of Array.from(tools.entries())) {
+    if (seenMaterials.has(mat)) continue;   // brand-new — never expected in legacy
+    v2Rows.push({
+      material:        mat,
+      description:     e.description,
+      category:        TOOLS_CATEGORY,
+      product:         e.product,
+      baseColour:      "",
+      packCode:        e.packCode,
+      unit:            e.unit,
+      refMaterial:     null,
+      refDescription:  null,
+      paintType:       null,
+      materialType:    null,
+      piecesPerCarton: null,
+      isPrimary:       e.isPrimary,
+    });
+    seenMaterials.add(mat);
+    toolsBuilt.push(mat);
+  }
+  console.log(`TOOLS: built ${toolsBuilt.length} new SKUs [${toolsBuilt.join(", ")}]`);
+
   console.log(`Skipped (mapLegacyToNew → null)         : ${skippedNull}`);
   console.log(`Source rows expanded into multiple v2  : ${crossListed}`);
   console.log(`Name-override rows (live names applied) : ${overridden}`);
@@ -866,7 +934,7 @@ async function main(): Promise<void> {
     console.log(`  (product,base,pack) with >1 primary (CSV-as-source; report only): ${dupPrimary.length}`);
     for (const [k, m] of dupPrimary) console.log(`     ${k} -> ${JSON.stringify(m)}`);
     // totals
-    console.log(`  TOTAL stock rows after rebuild: ${deduped.length} (expect 1535 = 1527 + 8 Hydro)`);
+    console.log(`  TOTAL stock rows after rebuild: ${deduped.length} (expect 1560 = 1527 + 8 Hydro + 25 Tools)`);
 
     console.log("");
     console.log("DRY_RUN=1 — NO wipe, NO insert performed.");

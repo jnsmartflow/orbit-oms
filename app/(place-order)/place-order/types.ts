@@ -43,6 +43,10 @@ export type Product = {
   // email rendering. formatPack(packCode, unit) renders the label;
   // bucket-buckets.packToBucket(pack) places it in a column.
   packs:        RawPack[];
+  // Optional grey per-row region label (e.g. a brush's "Delhi NCR"). Null/
+  // absent for every paint row; rendered in the existing grey style on both
+  // desktop grid and mobile. Carried only by Tools rows.
+  region?:      string | null;
 };
 
 // Cart shape — used by page state, cart panel, draft persistence, and email

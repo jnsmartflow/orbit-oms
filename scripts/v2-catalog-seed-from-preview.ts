@@ -51,7 +51,7 @@ const DRY_RUN      = process.env.DRY_RUN === "1";
 // Locked expectations from the May 6 preview run. If the JSON drifts from
 // these the script refuses to seed — better to fail loudly than to ship
 // surprise data into v2.
-const EXPECTED_TOTAL_NEW_ROWS    = 481;  // 474 − 51 + 63 − 1 − 4 (7 ex-Woodcare brand families removed; one SADOLIN family of 63 finish-tab rows added 2026-06-04; HP COLORANT menu row removed 2026-06-08; PRIMER preview rebuilt to a clean flat 11-row set, −4 raw rows 2026-06-08)
+const EXPECTED_TOTAL_NEW_ROWS    = 506;  // 474 − 51 + 63 − 1 − 4 + 25 (…; PRIMER rebuilt to flat 11-row set −4 rows 2026-06-08; TOOLS family +25 rollers/brushes 2026-06-08)
 const EXPECTED_WARNINGS          = 0;
 
 // ── PROMISE transform constants ────────────────────────────────────────
@@ -149,6 +149,7 @@ const FAMILY_TO_SECTION: Record<string, string> = {
   "DISTEMPER":        "UTILITY",
   "PUTTY":            "UTILITY",
   "STAINER":          "UTILITY",
+  "TOOLS":            "UTILITY",
   // PROMISE (own section — one family head, 6 tabs, surfaced via speed-dial)
   "PROMISE":          "PROMISE",
 };
@@ -168,6 +169,7 @@ const FAMILY_TO_SUBGROUP: Record<string, string> = {
   "DISTEMPER":        "Mass distemper",
   "AQUATECH":         "Waterproofing & decorative",
   "PUTTY":            "Prep – putty",
+  "TOOLS":            "Tools & accessories",
   // INTERIORS
   "PROMISE INTERIOR": "Promise (use-case interior)",
   "VELVET TOUCH":     "VT (Dulux Velvet Touch)",
@@ -222,6 +224,7 @@ type PreviewRow = {
   tinterType:   string | null;
   sortOrder:    number;
   isActive:     boolean;
+  region?:      string | null;   // optional grey per-row region (Tools); paint rows omit it
   skuCount?:    number;     // preview metadata — discarded before insert
 };
 
@@ -629,6 +632,9 @@ async function main(): Promise<void> {
   let filledRule2 = 0;
   for (const r of deduped) {
     const sp = r.subProduct.trim().toUpperCase();
+    // TOOLS: identity join-key — subProduct already IS the uppercase stock
+    // product name, so fill product = subProduct (byte-matches mo_sku_lookup_v2).
+    if (r.family === "TOOLS") { r.product = r.subProduct; filledRule1++; continue; }
     const confirmed = CONFIRMED_SUBPRODUCT_MAP[sp];
     if (confirmed) {
       r.product = confirmed;
@@ -841,6 +847,8 @@ async function main(): Promise<void> {
     if (r.family === "PRIMER")  { r.uiGroup = "Primers";  uiAssigned++; continue; }
     if (r.family === "AQUATECH" && AQUA_UI[sub])   { r.uiGroup = AQUA_UI[sub];    uiAssigned++; continue; }
     if (r.family === "SADOLIN"  && SADOLIN_UI[sub]) { r.uiGroup = SADOLIN_UI[sub]; uiAssigned++; continue; }
+    // TOOLS — two tabs derived from the product name (Rollers / Brushes).
+    if (r.family === "TOOLS")   { r.uiGroup = /ROLLER/i.test(r.product ?? r.subProduct) ? "Rollers" : "Brushes"; uiAssigned++; continue; }
   }
   if (floorPlusDropped.size > 0) deduped = deduped.filter((r) => !floorPlusDropped.has(r));
   console.log(`Grouping transform: WS consolidated=${wsCount}, FLOOR PLUS moved=${floorPlusMoved}, ` +
@@ -1236,6 +1244,7 @@ async function main(): Promise<void> {
       section:      FAMILY_TO_SECTION[r.family]!,
       subgroup:     FAMILY_TO_SUBGROUP[r.family]!,
       mobileFamily: r.mobileFamily,
+      region:       r.region ?? null,
     }));
     const result = await prisma.mo_order_form_index_v2.createMany({
       data,

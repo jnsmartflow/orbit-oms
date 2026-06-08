@@ -67,6 +67,7 @@ type Product = {
   productType:  string;          // BASE_VARIANT | COLOUR | PLAIN; informational only
   sortOrder:    number;          // family tab order — used by keyword-family promotion
   packs:        RawPack[];       // v2: {packCode, unit} — unit-aware (KG / L / ML)
+  region?:      string | null;   // optional grey per-row region (Tools); null for paint
 };
 type PackQty  = { pack: string; qty: number };   // pack is the FORMATTED label ("1L", "25KG")
 type BillLine = {
@@ -1735,7 +1736,7 @@ const BillCard = forwardRef<BillCardHandle, BillCardProps>(function BillCard({
                     <div className="w-[7px] h-[7px] rounded-full bg-teal-100 border-2 border-teal-600 shrink-0" />
                     <div className="flex-1 min-w-0">
                       <p className="text-[14px] font-medium text-gray-900 truncate">{productLabel(p)}{aliasSuffix(p)}</p>
-                      <p className="text-[11px] text-gray-400 mt-0.5">{getSecondLine(p.family, p.subProduct, getBaseAliasDisplay(p.product, p.baseColour)) ?? p.family}</p>
+                      <p className="text-[11px] text-gray-400 mt-0.5">{p.region ?? getSecondLine(p.family, p.subProduct, getBaseAliasDisplay(p.product, p.baseColour)) ?? p.family}</p>
                     </div>
                     <span className="text-gray-300 text-[17px] shrink-0 leading-none">›</span>
                   </button>
@@ -1764,7 +1765,7 @@ const BillCard = forwardRef<BillCardHandle, BillCardProps>(function BillCard({
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-[13px] font-medium text-gray-900 truncate">{productLabel(product)}{aliasSuffix(product)}</p>
-                          <p className="text-[11px] text-gray-400 mt-0.5">{getSecondLine(product.family, product.subProduct, getBaseAliasDisplay(product.product, product.baseColour)) ?? product.family}</p>
+                          <p className="text-[11px] text-gray-400 mt-0.5">{product.region ?? getSecondLine(product.family, product.subProduct, getBaseAliasDisplay(product.product, product.baseColour)) ?? product.family}</p>
                         </div>
                         <span
                           className="text-gray-300 text-[18px] leading-none shrink-0 px-1"
@@ -1823,7 +1824,7 @@ const BillCard = forwardRef<BillCardHandle, BillCardProps>(function BillCard({
                         <div className="w-5 h-5 rounded-[6px] border-2 bg-white border-gray-300 flex items-center justify-center shrink-0" />
                         <div className="flex-1 min-w-0">
                           <p className="text-[14px] font-medium text-gray-900 truncate">{productLabel(p)}{aliasSuffix(p)}</p>
-                          <p className="text-[11px] text-gray-400 mt-0.5">{getSecondLine(p.family, p.subProduct, getBaseAliasDisplay(p.product, p.baseColour)) ?? p.family}</p>
+                          <p className="text-[11px] text-gray-400 mt-0.5">{p.region ?? getSecondLine(p.family, p.subProduct, getBaseAliasDisplay(p.product, p.baseColour)) ?? p.family}</p>
                         </div>
                       </div>
                     );

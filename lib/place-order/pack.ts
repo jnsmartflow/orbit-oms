@@ -21,6 +21,11 @@ export function formatPack(packCode: string, unit?: string | null): string {
   const u = (unit ?? "").toUpperCase();
   if (u === "KG") return `${packCode}KG`;
   if (u === "GM") return `${packCode}GM`;
+  // PC — tools sold by the piece (boxed). The pack is "1 piece"; the carton
+  // size (25 rollers / 12 brushes) rides packCode and surfaces only via the
+  // container sub-label, so the cell label stays "1 pc". Additive: no paint
+  // SKU carries unit "PC".
+  if (u === "PC") return "1 pc";
   // ML / L / LT / null → magnitude inference (legacy behaviour).
   const num = parseFloat(packCode);
   if (Number.isNaN(num)) return packCode;
@@ -33,7 +38,7 @@ export function packToMl(packCode: string, unit?: string | null): number {
   // KG / GM packs aren't litres — exclude from L-based totals by
   // returning 0. The cart panel's KG total reads packToKg below.
   const u = (unit ?? "").toUpperCase();
-  if (u === "KG" || u === "GM") return 0;
+  if (u === "KG" || u === "GM" || u === "PC") return 0;   // pieces aren't litres
   const num = parseFloat(packCode);
   if (Number.isNaN(num)) return Number.MAX_SAFE_INTEGER;
   if (num >= 50)         return num;     // already millilitres
@@ -111,10 +116,28 @@ const PACK_STEP_MAP: Record<string, number> = {
   "25KG":  1,
   "30KG":  1,
   "5KG":   1,
+  "1 pc":  1,   // tools — step 1 piece (carton 25/12 is informational, not the step)
 };
 
 export function packStep(packLabel: string): number {
   return PACK_STEP_MAP[packLabel] ?? 1;
+}
+
+// Carton step for tools (piece-with-box). Keyed by the DISTINCT pack
+// (packCode + unit "PC") rather than the shared "1 pc" display label, so
+// rollers (25PC) step by a whole box of 25 and brushes (12PC) by 12 — while
+// both still render "1 pc". Additive: every non-PC pack delegates to
+// packStep(formatPack(...)), so all litre/ML/KG steps are byte-identical.
+const PIECE_BOX_STEP: Record<string, number> = {
+  "25PC": 25,   // rollers — whole box of 25
+  "12PC": 12,   // brushes — whole box of 12
+};
+
+export function packStepForPack(packCode: string, unit?: string | null): number {
+  if ((unit ?? "").toUpperCase() === "PC") {
+    return PIECE_BOX_STEP[`${packCode}PC`] ?? 1;
+  }
+  return packStep(formatPack(packCode, unit));
 }
 
 // Display-only container label for the variant grid column header.
@@ -138,6 +161,8 @@ const PACK_CONTAINER_MAP: Record<string, string> = {
   "40KG":  "bag",
   "25KG":  "bag",
   "30KG":  "bag",
+  "25PC":  "box of 25",   // tools — roller carton (keyed by the bucket name)
+  "12PC":  "box of 12",   // tools — brush carton
 };
 
 export function packContainerLabel(packLabel: string): string | null {

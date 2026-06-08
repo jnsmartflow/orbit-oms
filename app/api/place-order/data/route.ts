@@ -84,6 +84,7 @@ export async function GET(): Promise<NextResponse> {
         tinterType:   true,
         productType:  true,
         sortOrder:    true,
+        region:       true,
       },
       orderBy: [{ family: "asc" }, { sortOrder: "asc" }],
     });
@@ -178,6 +179,7 @@ export async function GET(): Promise<NextResponse> {
         tinterType:   row.tinterType ?? null,
         productType:  row.productType ?? "PLAIN",
         sortOrder:    row.sortOrder,
+        region:       row.region ?? null,
         packs:        sortRawPacks(packMap.get(packKey) ?? []),
       };
     });

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef } from "react";
 import type { Product } from "../types";
-import { formatPack, packContainerLabel, packStep } from "@/lib/place-order/pack";
+import { formatPack, packContainerLabel, packStepForPack } from "@/lib/place-order/pack";
 import {
   bucketColumnsForTab,
   bucketDisplayLabel,
@@ -281,6 +281,7 @@ export default function VariantGrid({
               <td className="px-3 py-2 border-l-[3px] border-l-transparent group-focus-within/row:border-l-amber-500">
                 <div className="text-[12px] font-semibold text-gray-900 group-focus-within/row:font-bold">{baseLabel}{baseAlias && !qualifierLine && <span className="font-normal text-gray-400"> · {baseAlias}</span>}</div>
                 {baseAlias && qualifierLine && <div className="text-[10px] font-normal text-gray-400 leading-tight">{baseAlias}</div>}
+                {product.region && <div className="text-[10px] font-normal text-gray-400 leading-tight">{product.region}</div>}
               </td>
               {columns.map((bucket, colIdx) => {
                 const cell         = cellMatrix[rowIdx][colIdx];
@@ -288,7 +289,7 @@ export default function VariantGrid({
                 const isAvailable  = selectedPack !== null;
                 const qty          = isAvailable ? qtyAt(product, selectedPack) : 0;
                 const boxSize      = selectedPack
-                  ? packStep(formatPack(selectedPack.packCode, selectedPack.unit))
+                  ? packStepForPack(selectedPack.packCode, selectedPack.unit)
                   : 1;
                 return (
                   <td key={bucket} className="text-center py-1 align-top">
