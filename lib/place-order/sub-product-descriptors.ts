@@ -11,6 +11,12 @@
 export const SUB_PRODUCT_DESCRIPTORS: Record<string, string> = {
   "SATIN|SUPER SATIN":       "Super Satin · Oil Base",
   "SATIN|SATIN STAY BRIGHT": "Satin · Water Base",
+  // STAINER tabs — short displayName (GVA / Universal / Tinter / Acotone) on
+  // line 1, the fuller name on the light second line (Satin pattern).
+  "STAINER|PU STAINER":        "PU Stainer",
+  "STAINER|UNIVERSAL STAINER": "Universal Stainer",
+  "STAINER|MACHINE TINTER":    "Dramatone",
+  "STAINER|ACOTONE TINTER":    "Acotone Tinter",
   // Promise single-base variant tabs — the variant is the row (baseColour); the
   // per-variant qualifier (Br White / Int & Ext, from base-aliases) is appended
   // on the SAME light second line via getSecondLine() below.

@@ -51,7 +51,7 @@ const DRY_RUN      = process.env.DRY_RUN === "1";
 // Locked expectations from the May 6 preview run. If the JSON drifts from
 // these the script refuses to seed — better to fail loudly than to ship
 // surprise data into v2.
-const EXPECTED_TOTAL_NEW_ROWS    = 486;  // 474 − 51 + 63 (7 ex-Woodcare brand families removed; one SADOLIN family of 63 finish-tab rows added; 2026-06-04)
+const EXPECTED_TOTAL_NEW_ROWS    = 485;  // 474 − 51 + 63 − 1 (7 ex-Woodcare brand families removed; one SADOLIN family of 63 finish-tab rows added 2026-06-04; HP COLORANT menu row removed 2026-06-08)
 const EXPECTED_WARNINGS          = 0;
 
 // ── PROMISE transform constants ────────────────────────────────────────
@@ -1213,7 +1213,7 @@ async function main(): Promise<void> {
     console.log(`   Damp Protect Basecoat → uiGroup=${dpb?.uiGroup ?? "(missing)"} (expect BASECOAT)`);
     console.log(`   Interior WBC          → uiGroup=${iwbc?.uiGroup ?? "(missing)"} (expect BASECOAT)`);
     console.log(`   2in1 Int-Ext Primer   → uiGroup=${p2?.uiGroup ?? "(missing)"} (expect PROMISE)`);
-    console.log(`   HP Colorant           → ${hp.length} row(s), uiGroup=${hp[0]?.uiGroup ?? "(missing)"} (expect 1 row, HP — not split)`);
+    console.log(`   HP Colorant           → ${hp.length} row(s) (expect 0 — menu row removed 2026-06-08; stock kept but isPrimary=false)`);
 
     console.log("");
     console.log("DRY_RUN exit — no DB ops performed.");

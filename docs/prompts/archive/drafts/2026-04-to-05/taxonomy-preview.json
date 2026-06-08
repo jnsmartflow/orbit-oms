@@ -4,7 +4,7 @@
   "summary": {
     "totalLegacyTriples": 560,
     "totalLegacySkuCount": 1599,
-    "totalNewRows": 486,
+    "totalNewRows": 485,
     "crossListedExtraRows": 68,
     "suppressedPlainRows": 19,
     "skippedTriples": 82,
@@ -3932,7 +3932,7 @@
       {
         "family": "STAINER",
         "subProduct": "PU STAINER",
-        "displayName": "PU Stainer (GVA)",
+        "displayName": "GVA",
         "searchTokens": "PU STAINER, GVA, GVA STAINER",
         "baseColour": "BRILLIANT WHITE",
         "productType": "BASE_VARIANT",
@@ -3944,7 +3944,7 @@
       {
         "family": "STAINER",
         "subProduct": "UNIVERSAL STAINER",
-        "displayName": "Universal Stainer",
+        "displayName": "Universal",
         "searchTokens": "UNIVERSAL STAINER, FAST STAINER",
         "baseColour": "FAST GREEN",
         "productType": "COLOUR",
@@ -3956,7 +3956,7 @@
       {
         "family": "STAINER",
         "subProduct": "UNIVERSAL STAINER",
-        "displayName": "Universal Stainer",
+        "displayName": "Universal",
         "searchTokens": "UNIVERSAL STAINER, FAST STAINER",
         "baseColour": "YELLOW OXIDE",
         "productType": "COLOUR",
@@ -3968,7 +3968,7 @@
       {
         "family": "STAINER",
         "subProduct": "PU STAINER",
-        "displayName": "PU Stainer (GVA)",
+        "displayName": "GVA",
         "searchTokens": "PU STAINER, GVA, GVA STAINER",
         "baseColour": "ORGANIC RED VIOLET",
         "productType": "COLOUR",
@@ -3980,7 +3980,7 @@
       {
         "family": "STAINER",
         "subProduct": "UNIVERSAL STAINER",
-        "displayName": "Universal Stainer",
+        "displayName": "Universal",
         "searchTokens": "UNIVERSAL STAINER, FAST STAINER",
         "baseColour": "FAST ORANGE",
         "productType": "COLOUR",
@@ -3992,7 +3992,7 @@
       {
         "family": "STAINER",
         "subProduct": "PU STAINER",
-        "displayName": "PU Stainer (GVA)",
+        "displayName": "GVA",
         "searchTokens": "PU STAINER, GVA, GVA STAINER",
         "baseColour": "YELLOW OXIDE",
         "productType": "COLOUR",
@@ -4004,7 +4004,7 @@
       {
         "family": "STAINER",
         "subProduct": "PU STAINER",
-        "displayName": "PU Stainer (GVA)",
+        "displayName": "GVA",
         "searchTokens": "PU STAINER, GVA, GVA STAINER",
         "baseColour": "GREEN",
         "productType": "COLOUR",
@@ -4016,7 +4016,7 @@
       {
         "family": "STAINER",
         "subProduct": "PU STAINER",
-        "displayName": "PU Stainer (GVA)",
+        "displayName": "GVA",
         "searchTokens": "PU STAINER, GVA, GVA STAINER",
         "baseColour": "ORGANIC VIOLET",
         "productType": "COLOUR",
@@ -4028,8 +4028,8 @@
       {
         "family": "STAINER",
         "subProduct": "MACHINE TINTER",
-        "displayName": "Machine Tinter (Dealer)",
-        "searchTokens": "MACHINE TINTER, JSW DEALER TINTER, DEALER TINTER",
+        "displayName": "Tinter",
+        "searchTokens": "MACHINE TINTER, JSW DEALER TINTER, DEALER TINTER, DRAMATONE",
         "baseColour": "FFR",
         "productType": "COLOUR",
         "tinterType": "MACHINE_TINTER",
@@ -4040,8 +4040,8 @@
       {
         "family": "STAINER",
         "subProduct": "MACHINE TINTER",
-        "displayName": "Machine Tinter (Dealer)",
-        "searchTokens": "MACHINE TINTER, JSW DEALER TINTER, DEALER TINTER",
+        "displayName": "Tinter",
+        "searchTokens": "MACHINE TINTER, JSW DEALER TINTER, DEALER TINTER, DRAMATONE",
         "baseColour": "MAG",
         "productType": "COLOUR",
         "tinterType": "MACHINE_TINTER",
@@ -4052,7 +4052,7 @@
       {
         "family": "STAINER",
         "subProduct": "ACOTONE TINTER",
-        "displayName": "Acotone Tinter",
+        "displayName": "Acotone",
         "searchTokens": "ACOTONE, ACOTONE TINTER",
         "baseColour": "NO1",
         "productType": "COLOUR",
@@ -4064,7 +4064,7 @@
       {
         "family": "STAINER",
         "subProduct": "ACOTONE TINTER",
-        "displayName": "Acotone Tinter",
+        "displayName": "Acotone",
         "searchTokens": "ACOTONE, ACOTONE TINTER",
         "baseColour": "XY1",
         "productType": "COLOUR",
@@ -4076,7 +4076,7 @@
       {
         "family": "STAINER",
         "subProduct": "PU STAINER",
-        "displayName": "PU Stainer (GVA)",
+        "displayName": "GVA",
         "searchTokens": "PU STAINER, GVA, GVA STAINER",
         "baseColour": "BLUE",
         "productType": "COLOUR",
@@ -4088,7 +4088,7 @@
       {
         "family": "STAINER",
         "subProduct": "ACOTONE TINTER",
-        "displayName": "Acotone Tinter",
+        "displayName": "Acotone",
         "searchTokens": "ACOTONE, ACOTONE TINTER",
         "baseColour": "NO2",
         "productType": "COLOUR",
@@ -4100,8 +4100,8 @@
       {
         "family": "STAINER",
         "subProduct": "MACHINE TINTER",
-        "displayName": "Machine Tinter (Dealer)",
-        "searchTokens": "MACHINE TINTER, JSW DEALER TINTER, DEALER TINTER",
+        "displayName": "Tinter",
+        "searchTokens": "MACHINE TINTER, JSW DEALER TINTER, DEALER TINTER, DRAMATONE",
         "baseColour": "OXR",
         "productType": "COLOUR",
         "tinterType": "MACHINE_TINTER",
@@ -4112,7 +4112,7 @@
       {
         "family": "STAINER",
         "subProduct": "UNIVERSAL STAINER",
-        "displayName": "Universal Stainer",
+        "displayName": "Universal",
         "searchTokens": "UNIVERSAL STAINER, FAST STAINER",
         "baseColour": "FAST YELLOW",
         "productType": "COLOUR",
@@ -4124,7 +4124,7 @@
       {
         "family": "STAINER",
         "subProduct": "ACOTONE TINTER",
-        "displayName": "Acotone Tinter",
+        "displayName": "Acotone",
         "searchTokens": "ACOTONE, ACOTONE TINTER",
         "baseColour": "GR1",
         "productType": "COLOUR",
@@ -4135,21 +4135,9 @@
       },
       {
         "family": "STAINER",
-        "subProduct": "HP COLORANT",
-        "displayName": "HP Colorant",
-        "searchTokens": "HP COLORANT, HP TINTER, COLORANT",
-        "baseColour": "COLORANT",
-        "productType": "COLOUR",
-        "tinterType": "HP_COLORANT",
-        "sortOrder": 3364,
-        "isActive": true,
-        "skuCount": 3
-      },
-      {
-        "family": "STAINER",
         "subProduct": "MACHINE TINTER",
-        "displayName": "Machine Tinter (Dealer)",
-        "searchTokens": "MACHINE TINTER, JSW DEALER TINTER, DEALER TINTER",
+        "displayName": "Tinter",
+        "searchTokens": "MACHINE TINTER, JSW DEALER TINTER, DEALER TINTER, DRAMATONE",
         "baseColour": "LFY",
         "productType": "COLOUR",
         "tinterType": "MACHINE_TINTER",
@@ -4160,7 +4148,7 @@
       {
         "family": "STAINER",
         "subProduct": "ACOTONE TINTER",
-        "displayName": "Acotone Tinter",
+        "displayName": "Acotone",
         "searchTokens": "ACOTONE, ACOTONE TINTER",
         "baseColour": "BU1",
         "productType": "COLOUR",
@@ -4172,7 +4160,7 @@
       {
         "family": "STAINER",
         "subProduct": "ACOTONE TINTER",
-        "displayName": "Acotone Tinter",
+        "displayName": "Acotone",
         "searchTokens": "ACOTONE, ACOTONE TINTER",
         "baseColour": "OR1",
         "productType": "COLOUR",
@@ -4184,7 +4172,7 @@
       {
         "family": "STAINER",
         "subProduct": "ACOTONE TINTER",
-        "displayName": "Acotone Tinter",
+        "displayName": "Acotone",
         "searchTokens": "ACOTONE, ACOTONE TINTER",
         "baseColour": "RE1",
         "productType": "COLOUR",
@@ -4196,7 +4184,7 @@
       {
         "family": "STAINER",
         "subProduct": "UNIVERSAL STAINER",
-        "displayName": "Universal Stainer",
+        "displayName": "Universal",
         "searchTokens": "UNIVERSAL STAINER, FAST STAINER",
         "baseColour": "FAST BLUE",
         "productType": "COLOUR",
@@ -4208,7 +4196,7 @@
       {
         "family": "STAINER",
         "subProduct": "ACOTONE TINTER",
-        "displayName": "Acotone Tinter",
+        "displayName": "Acotone",
         "searchTokens": "ACOTONE, ACOTONE TINTER",
         "baseColour": "BU2",
         "productType": "COLOUR",
@@ -4220,7 +4208,7 @@
       {
         "family": "STAINER",
         "subProduct": "ACOTONE TINTER",
-        "displayName": "Acotone Tinter",
+        "displayName": "Acotone",
         "searchTokens": "ACOTONE, ACOTONE TINTER",
         "baseColour": "RE2",
         "productType": "COLOUR",
@@ -4232,7 +4220,7 @@
       {
         "family": "STAINER",
         "subProduct": "UNIVERSAL STAINER",
-        "displayName": "Universal Stainer",
+        "displayName": "Universal",
         "searchTokens": "UNIVERSAL STAINER, FAST STAINER",
         "baseColour": "FAST VIOLET",
         "productType": "COLOUR",
@@ -4244,8 +4232,8 @@
       {
         "family": "STAINER",
         "subProduct": "MACHINE TINTER",
-        "displayName": "Machine Tinter (Dealer)",
-        "searchTokens": "MACHINE TINTER, JSW DEALER TINTER, DEALER TINTER",
+        "displayName": "Tinter",
+        "searchTokens": "MACHINE TINTER, JSW DEALER TINTER, DEALER TINTER, DRAMATONE",
         "baseColour": "WHITE",
         "productType": "COLOUR",
         "tinterType": "MACHINE_TINTER",
@@ -4256,7 +4244,7 @@
       {
         "family": "STAINER",
         "subProduct": "ACOTONE TINTER",
-        "displayName": "Acotone Tinter",
+        "displayName": "Acotone",
         "searchTokens": "ACOTONE, ACOTONE TINTER",
         "baseColour": "YE1",
         "productType": "COLOUR",
@@ -4268,7 +4256,7 @@
       {
         "family": "STAINER",
         "subProduct": "ACOTONE TINTER",
-        "displayName": "Acotone Tinter",
+        "displayName": "Acotone",
         "searchTokens": "ACOTONE, ACOTONE TINTER",
         "baseColour": "YE2",
         "productType": "COLOUR",
@@ -4280,7 +4268,7 @@
       {
         "family": "STAINER",
         "subProduct": "ACOTONE TINTER",
-        "displayName": "Acotone Tinter",
+        "displayName": "Acotone",
         "searchTokens": "ACOTONE, ACOTONE TINTER",
         "baseColour": "XR1",
         "productType": "COLOUR",
@@ -4292,7 +4280,7 @@
       {
         "family": "STAINER",
         "subProduct": "UNIVERSAL STAINER",
-        "displayName": "Universal Stainer",
+        "displayName": "Universal",
         "searchTokens": "UNIVERSAL STAINER, FAST STAINER",
         "baseColour": "FAST RED",
         "productType": "COLOUR",
@@ -4304,7 +4292,7 @@
       {
         "family": "STAINER",
         "subProduct": "PU STAINER",
-        "displayName": "PU Stainer (GVA)",
+        "displayName": "GVA",
         "searchTokens": "PU STAINER, GVA, GVA STAINER",
         "baseColour": "ORGANIC LEMON YELLOW",
         "productType": "COLOUR",
@@ -4316,7 +4304,7 @@
       {
         "family": "STAINER",
         "subProduct": "UNIVERSAL STAINER",
-        "displayName": "Universal Stainer",
+        "displayName": "Universal",
         "searchTokens": "UNIVERSAL STAINER, FAST STAINER",
         "baseColour": "FASTYELLOWGREEN",
         "productType": "COLOUR",
@@ -4328,7 +4316,7 @@
       {
         "family": "STAINER",
         "subProduct": "ACOTONE TINTER",
-        "displayName": "Acotone Tinter",
+        "displayName": "Acotone",
         "searchTokens": "ACOTONE, ACOTONE TINTER",
         "baseColour": "WH1",
         "productType": "COLOUR",
@@ -4340,7 +4328,7 @@
       {
         "family": "STAINER",
         "subProduct": "PU STAINER",
-        "displayName": "PU Stainer (GVA)",
+        "displayName": "GVA",
         "searchTokens": "PU STAINER, GVA, GVA STAINER",
         "baseColour": "FAST RED",
         "productType": "COLOUR",
@@ -4352,7 +4340,7 @@
       {
         "family": "STAINER",
         "subProduct": "PU STAINER",
-        "displayName": "PU Stainer (GVA)",
+        "displayName": "GVA",
         "searchTokens": "PU STAINER, GVA, GVA STAINER",
         "baseColour": "RED OXIDE",
         "productType": "COLOUR",
@@ -4364,8 +4352,8 @@
       {
         "family": "STAINER",
         "subProduct": "MACHINE TINTER",
-        "displayName": "Machine Tinter (Dealer)",
-        "searchTokens": "MACHINE TINTER, JSW DEALER TINTER, DEALER TINTER",
+        "displayName": "Tinter",
+        "searchTokens": "MACHINE TINTER, JSW DEALER TINTER, DEALER TINTER, DRAMATONE",
         "baseColour": "TBL",
         "productType": "COLOUR",
         "tinterType": "MACHINE_TINTER",
@@ -4376,7 +4364,7 @@
       {
         "family": "STAINER",
         "subProduct": "PU STAINER",
-        "displayName": "PU Stainer (GVA)",
+        "displayName": "GVA",
         "searchTokens": "PU STAINER, GVA, GVA STAINER",
         "baseColour": "ORGANIC ORANGE",
         "productType": "COLOUR",
@@ -4388,7 +4376,7 @@
       {
         "family": "STAINER",
         "subProduct": "UNIVERSAL STAINER",
-        "displayName": "Universal Stainer",
+        "displayName": "Universal",
         "searchTokens": "UNIVERSAL STAINER, FAST STAINER",
         "baseColour": "BURNT SIENNA",
         "productType": "COLOUR",
@@ -4400,7 +4388,7 @@
       {
         "family": "STAINER",
         "subProduct": "UNIVERSAL STAINER",
-        "displayName": "Universal Stainer",
+        "displayName": "Universal",
         "searchTokens": "UNIVERSAL STAINER, FAST STAINER",
         "baseColour": "BLACK",
         "productType": "COLOUR",
@@ -4412,7 +4400,7 @@
       {
         "family": "STAINER",
         "subProduct": "ACOTONE TINTER",
-        "displayName": "Acotone Tinter",
+        "displayName": "Acotone",
         "searchTokens": "ACOTONE, ACOTONE TINTER",
         "baseColour": "MA1",
         "productType": "COLOUR",
@@ -4424,8 +4412,8 @@
       {
         "family": "STAINER",
         "subProduct": "MACHINE TINTER",
-        "displayName": "Machine Tinter (Dealer)",
-        "searchTokens": "MACHINE TINTER, JSW DEALER TINTER, DEALER TINTER",
+        "displayName": "Tinter",
+        "searchTokens": "MACHINE TINTER, JSW DEALER TINTER, DEALER TINTER, DRAMATONE",
         "baseColour": "GRN",
         "productType": "COLOUR",
         "tinterType": "MACHINE_TINTER",
@@ -4436,7 +4424,7 @@
       {
         "family": "STAINER",
         "subProduct": "PU STAINER",
-        "displayName": "PU Stainer (GVA)",
+        "displayName": "GVA",
         "searchTokens": "PU STAINER, GVA, GVA STAINER",
         "baseColour": "ORGANIC MIDDLE YELLOW",
         "productType": "COLOUR",
@@ -4448,7 +4436,7 @@
       {
         "family": "STAINER",
         "subProduct": "PU STAINER",
-        "displayName": "PU Stainer (GVA)",
+        "displayName": "GVA",
         "searchTokens": "PU STAINER, GVA, GVA STAINER",
         "baseColour": "BLACK",
         "productType": "COLOUR",
@@ -4460,8 +4448,8 @@
       {
         "family": "STAINER",
         "subProduct": "MACHINE TINTER",
-        "displayName": "Machine Tinter (Dealer)",
-        "searchTokens": "MACHINE TINTER, JSW DEALER TINTER, DEALER TINTER",
+        "displayName": "Tinter",
+        "searchTokens": "MACHINE TINTER, JSW DEALER TINTER, DEALER TINTER, DRAMATONE",
         "baseColour": "YOX",
         "productType": "COLOUR",
         "tinterType": "MACHINE_TINTER",
@@ -4472,8 +4460,8 @@
       {
         "family": "STAINER",
         "subProduct": "MACHINE TINTER",
-        "displayName": "Machine Tinter (Dealer)",
-        "searchTokens": "MACHINE TINTER, JSW DEALER TINTER, DEALER TINTER",
+        "displayName": "Tinter",
+        "searchTokens": "MACHINE TINTER, JSW DEALER TINTER, DEALER TINTER, DRAMATONE",
         "baseColour": "BLACK",
         "productType": "COLOUR",
         "tinterType": "MACHINE_TINTER",

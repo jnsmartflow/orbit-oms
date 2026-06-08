@@ -123,6 +123,11 @@ const SET_FALSE = new Set<string>([
   // primary; these NEW packs are hidden until promoted, so the route shows
   // one Interior Basecoat pack set.
   "9075187", "9075189", "9075190", "9075191",
+  // HP Colorant hidden (2026-06-08): the HP COLORANT menu row was removed from
+  // taxonomy-preview.json (its synthetic "COLORANT" base matched no stock base,
+  // so it rendered with no packs). Keep the 3 stock SKUs (Yellow/Red/Green) but
+  // mark them non-primary so they drop off the mobile route without deleting them.
+  "IN68011072", "IN68011172", "IN68011372",
 ]);
 
 // ── CSV-as-source for the 3 WS targets (2026-06-01) ─────────────────────
