@@ -62,8 +62,9 @@ const CROSS_DEPOTS = ["Dahisar", "Ahmedabad", "Rajkot", "Pune"] as const;
 // Notes "Quick add" presets — appended into the free-text notes field.
 const NOTE_PRESETS = ["Pls share DPL", "Pls send stickers"] as const;
 
-// Email recipient — identical to /order.
-const ORDER_TO = "surat.order@outlook.com";
+// Email recipient — orders go to the AkzoNobel depot inbox, which forwards to the
+// parser inbox (surat.order@outlook.com). No longer identical to /order (frozen).
+const ORDER_TO = "surat.depot@akzonobel.com";
 
 // Sort pack entries KG-last, then by ML magnitude — the SAME comparator the
 // /api/order/data feed + /order use, so the per-line pack order in the email

@@ -51,7 +51,7 @@ export type EmailOutput = {
   valid:   boolean;
 };
 
-export const ORDER_TO = "surat.order@outlook.com";
+export const ORDER_TO = "surat.depot@akzonobel.com";
 
 export function buildEmail(input: EmailInput): EmailOutput {
   const { customer, bills, shipTo, dispatch, marker } = input;
