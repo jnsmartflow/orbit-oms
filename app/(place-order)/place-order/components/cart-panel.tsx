@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Bill, CartLine, Customer } from "../types";
 import { formatPack, packStep, packToKg, packToLitres, parsePackKey, sortPacks } from "@/lib/place-order/pack";
-import type { EmailDispatch, EmailMarker } from "@/lib/place-order/email";
+import type { EmailCallTarget, EmailDispatch, EmailMarker } from "@/lib/place-order/email";
 import { getBaseAliasDisplay } from "@/lib/place-order/base-aliases";
 
 // Cart panel — right pane (340px) per v4 mockup. Renders ONLY the active
@@ -17,19 +17,26 @@ import { getBaseAliasDisplay } from "@/lib/place-order/base-aliases";
 
 interface CartPanelProps {
   customer:        Customer | null;
+  customers:       Customer[];                   // for the ship-to autocomplete
   bills:           Bill[];
   activeBillId:    number;
   justAddedKeys:   Record<string, true>;        // key = `${billId}|||${subProduct}|||${baseColour ?? ""}`
   shipTo:          string;
   dispatch:        EmailDispatch;
+  callTarget:      EmailCallTarget;
   marker:          EmailMarker;
+  crossDepot:      string | null;
+  notes:           string;
   onSetActiveBill: (id: number) => void;
   onAddBill:       () => void;
   onDuplicateBill: (id: number) => void;
   onDeleteBill:    (id: number) => void;
   onShipToChange:  (value: string) => void;
   onDispatchChange:(value: EmailDispatch) => void;
+  onCallTargetChange: (value: EmailCallTarget) => void;
   onMarkerChange:  (value: EmailMarker) => void;
+  onCrossDepotChange: (value: string | null) => void;
+  onNotesChange:   (value: string) => void;
   // Phase 3 (2026-05-13): productId is the first arg so the parent
   // can resolve the exact catalog row even for filled families where
   // multiple rows share (subProduct, baseColour). Pre-Phase-3 legacy
@@ -62,11 +69,30 @@ function formatLitres(l: number): string {
   return l.toFixed(1);
 }
 
+// Cross-billing source depots + Notes quick-add presets — same sets the mobile
+// /po page uses.
+const CROSS_DEPOTS = ["Dahisar", "Ahmedabad", "Rajkot", "Pune"] as const;
+const NOTE_PRESETS = ["Pls share DPL", "Pls send stickers"] as const;
+
+// Order-remark options for the 2×2 grid. `stroke` is the idle icon colour
+// (switches to teal when active); `paths` are the icon's inner svg elements.
+const REMARKS: { value: EmailMarker; label: string; stroke: string; paths: React.JSX.Element }[] = [
+  { value: "Truck", label: "Truck", stroke: "#475569",
+    paths: (<><path d="M3 7h11v9H3z" /><path d="M14 10h4l3 3v3h-7z" /><circle cx="7" cy="18" r="1.6" /><circle cx="17.5" cy="18" r="1.6" /></>) },
+  { value: "Cross Delivery", label: "Cross", stroke: "#2563eb",
+    paths: (<><path d="M4 8h11M4 8l3-3M4 8l3 3" /><path d="M20 16H9M20 16l-3-3M20 16l-3 3" /></>) },
+  { value: "Bounce", label: "Bounce", stroke: "#2563eb",
+    paths: (<><polyline points="9 15 4 10 9 5" /><path d="M4 10h11a5 5 0 0 1 5 5v2" /></>) },
+  { value: "DTS", label: "DTS", stroke: "#b45309",
+    paths: (<><path d="M21 8l-9-5-9 5 9 5 9-5z" /><path d="M3 8v8l9 5 9-5V8" /></>) },
+];
+
 export default function CartPanel({
-  customer, bills, activeBillId, justAddedKeys,
-  shipTo, dispatch, marker,
+  customer, customers, bills, activeBillId, justAddedKeys,
+  shipTo, dispatch, callTarget, marker, crossDepot, notes,
   onSetActiveBill, onAddBill, onDuplicateBill, onDeleteBill,
-  onShipToChange, onDispatchChange, onMarkerChange,
+  onShipToChange, onDispatchChange, onCallTargetChange,
+  onMarkerChange, onCrossDepotChange, onNotesChange,
   onRemovePack, onConfirmSend, canSend, sendButtonRef,
 }: CartPanelProps): React.JSX.Element {
 
@@ -100,6 +126,21 @@ export default function CartPanel({
   // active bill changes so the confirm never lingers on the wrong bill.
   const [confirmDelete, setConfirmDelete] = useState(false);
   useEffect(() => { setConfirmDelete(false); }, [activeBillId]);
+
+  // Ship-to autocomplete + Notes quick-add open state.
+  const [shipFocused,  setShipFocused]  = useState(false);
+  const [quickAddOpen, setQuickAddOpen] = useState(false);
+
+  // Reuses CustomerSearch's suggestion filter (≥4 chars; digits → code prefix,
+  // else name substring; cap 8). Selecting writes "Name (Code)" into shipTo.
+  const shipSuggestions = useMemo<Customer[]>(() => {
+    const q = shipTo.trim();
+    if (q.length < 4) return [];
+    const lower = q.toLowerCase();
+    const digitsOnly = /^\d+$/.test(q);
+    if (digitsOnly) return customers.filter((c) => c.code.includes(q)).slice(0, 8);
+    return customers.filter((c) => c.name.toLowerCase().includes(lower)).slice(0, 8);
+  }, [shipTo, customers]);
 
   // Cart groups within the active bill, ordered by max(touchedAt) DESC
   // so the most-recently-touched group floats to the top.
@@ -235,7 +276,8 @@ export default function CartPanel({
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto px-4 py-3">
+      <div className="flex-1 overflow-y-auto">
+        <div className="px-4 py-3">
         {activeLines.length === 0 ? (
           <div className="text-[11.5px] text-gray-400 italic">
             {customer ? "No items yet — search or tap a tile to add." : "Select a customer to start."}
@@ -333,67 +375,190 @@ export default function CartPanel({
             + search or tap a tile to add more
           </div>
         )}
+        </div>
+
+        {/* ── Order options — always visible (no "More options" collapse) ── */}
+        {customer && (
+          <>
+            {/* Ship to */}
+            <div className="px-4 py-[13px] border-t border-gray-100">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.06em] text-gray-400 mb-2">Ship to</p>
+              <div className="relative">
+                <span className="absolute left-[11px] top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+                </span>
+                <input
+                  type="text"
+                  value={shipTo}
+                  onChange={(e) => onShipToChange(e.target.value)}
+                  onFocus={() => setShipFocused(true)}
+                  onBlur={() => setTimeout(() => setShipFocused(false), 120)}
+                  placeholder="Same as billing"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  className="w-full h-[38px] pl-[34px] pr-3 text-[13px] text-gray-900 placeholder:text-gray-400 border border-gray-200 rounded-[9px] bg-white focus:border-teal-500 focus:outline-none"
+                />
+                {shipFocused && shipSuggestions.length > 0 && (
+                  <div className="absolute left-0 right-0 top-[42px] z-30 bg-white border border-gray-200 rounded-[8px] shadow-lg overflow-hidden">
+                    {shipSuggestions.map((c) => (
+                      <button
+                        key={c.code}
+                        type="button"
+                        onMouseDown={(e) => { e.preventDefault(); onShipToChange(`${c.name} (${c.code})`); setShipFocused(false); }}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-left border-b border-gray-50 last:border-b-0 hover:bg-gray-50"
+                      >
+                        <span className="flex-1 min-w-0">
+                          <span className="block text-[13px] text-gray-900 truncate">{c.name}</span>
+                          <span className="block text-[11px] text-gray-400 font-mono truncate">
+                            {c.code}{c.area && <span className="font-sans"> · {c.area}</span>}
+                          </span>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Dispatch */}
+            <div className="px-4 py-[13px] border-t border-gray-100">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.06em] text-gray-400 mb-2">Dispatch</p>
+              <div className="flex gap-[7px]">
+                {([
+                  { value: "Normal", dot: "#0d9488" },
+                  { value: "Urgent", dot: "#f59e0b" },
+                  { value: "Call",   dot: "#ef4444" },
+                ] as const).map((d) => {
+                  const on = dispatch === d.value;
+                  return (
+                    <button
+                      key={d.value}
+                      type="button"
+                      onClick={() => { onDispatchChange(d.value); if (d.value !== "Call") onCallTargetChange(null); }}
+                      className={`flex-1 h-10 rounded-[9px] border text-[12.5px] flex items-center justify-center gap-1.5 transition-colors ${
+                        on ? "border-teal-500 bg-teal-50 text-teal-700 font-medium" : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+                      }`}
+                    >
+                      <span className="w-[7px] h-[7px] rounded-full shrink-0" style={{ background: d.dot }} />
+                      {d.value}
+                    </button>
+                  );
+                })}
+              </div>
+              {dispatch === "Call" && (
+                <div className="flex items-center gap-1.5 mt-[9px] px-2.5 py-2 bg-gray-50 rounded-[9px]">
+                  <span className="text-[11px] text-gray-400 shrink-0">Call:</span>
+                  {(["SO", "Dealer"] as const).map((t) => {
+                    const on = (callTarget ?? "SO") === t;
+                    return (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() => onCallTargetChange(t)}
+                        className={`h-7 px-[13px] rounded-[14px] border text-[11.5px] flex items-center transition-colors ${
+                          on ? "border-teal-500 bg-teal-50 text-teal-700 font-medium" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+                        }`}
+                      >
+                        {t}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Order remarks */}
+            <div className="px-4 py-[13px] border-t border-gray-100">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.06em] text-gray-400 mb-2">
+                Order remarks <span className="text-gray-300 font-medium normal-case tracking-normal">· optional</span>
+              </p>
+              <div className="grid grid-cols-2 gap-[7px]">
+                {REMARKS.map((m) => {
+                  const on = marker === m.value;
+                  return (
+                    <button
+                      key={m.label}
+                      type="button"
+                      onClick={() => {
+                        if (marker === m.value) { onMarkerChange(null); onCrossDepotChange(null); }
+                        else { onMarkerChange(m.value); if (m.value !== "Cross Delivery") onCrossDepotChange(null); }
+                      }}
+                      className={`h-[42px] rounded-[9px] border text-[12.5px] flex items-center justify-center gap-[7px] transition-colors ${
+                        on ? "border-teal-500 bg-teal-50 text-teal-700 font-medium" : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+                      }`}
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={on ? "#0f766e" : m.stroke} strokeWidth="1.8">
+                        {m.paths}
+                      </svg>
+                      {m.label}
+                    </button>
+                  );
+                })}
+              </div>
+              {marker === "Cross Delivery" && (
+                <div className="flex items-center gap-1.5 mt-[9px] px-2.5 py-2 bg-gray-50 rounded-[9px] flex-wrap">
+                  <span className="text-[11px] text-gray-400 shrink-0">From:</span>
+                  {CROSS_DEPOTS.map((depot) => {
+                    const on = crossDepot === depot;
+                    return (
+                      <button
+                        key={depot}
+                        type="button"
+                        onClick={() => onCrossDepotChange(depot)}
+                        className={`h-7 px-[13px] rounded-[14px] border text-[11.5px] flex items-center transition-colors ${
+                          on ? "border-teal-500 bg-teal-50 text-teal-700 font-medium" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+                        }`}
+                      >
+                        {depot}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Notes */}
+            <div className="px-4 py-[13px] border-t border-gray-100">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.06em] text-gray-400">
+                  Notes <span className="text-gray-300 font-medium normal-case tracking-normal">· optional</span>
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setQuickAddOpen((o) => !o)}
+                  className="text-[11.5px] font-medium text-teal-600 hover:text-teal-700"
+                >
+                  Quick add {quickAddOpen ? "▴" : "▾"}
+                </button>
+              </div>
+              <textarea
+                value={notes}
+                onChange={(e) => onNotesChange(e.target.value)}
+                placeholder="Add a note…"
+                rows={2}
+                className="w-full min-h-[44px] px-[11px] py-[9px] text-[13px] text-gray-900 placeholder:text-gray-400 border border-gray-200 rounded-[9px] resize-none focus:border-teal-500 focus:outline-none"
+              />
+              {quickAddOpen && (
+                <div className="flex items-center gap-1.5 mt-[7px] flex-wrap">
+                  {NOTE_PRESETS.map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => onNotesChange(notes.trim() ? `${notes.trim()}, ${preset}` : preset)}
+                      className="h-7 px-[13px] rounded-[14px] border border-gray-200 bg-white text-[11.5px] text-gray-600 hover:bg-gray-50 flex items-center"
+                    >
+                      + {preset}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
+        )}
       </div>
 
       <div className="border-t border-gray-200 bg-gray-50 px-4 py-3 space-y-2">
-        <details className="text-[10.5px]">
-          <summary className="cursor-pointer text-gray-500 hover:text-gray-900 select-none flex items-center justify-between list-none [&::-webkit-details-marker]:hidden">
-            <span>More options · ship-to, dispatch, marker</span>
-            <span className="text-gray-400">▾</span>
-          </summary>
-          <div className="mt-2 space-y-2">
-            <input
-              type="text"
-              value={shipTo}
-              onChange={(e) => onShipToChange(e.target.value)}
-              placeholder="Ship to (same as customer)"
-              autoComplete="off"
-              autoCorrect="off"
-              spellCheck={false}
-              className="w-full h-[28px] px-2 text-[11px] border border-gray-200 rounded bg-white focus:border-teal-500 focus:outline-none"
-            />
-            <div className="flex items-center gap-1">
-              {(["Normal", "Hold", "Urgent"] as const).map((v) => {
-                const isActive = v === dispatch;
-                return (
-                  <button
-                    key={v}
-                    type="button"
-                    onClick={() => onDispatchChange(v)}
-                    className={`flex-1 px-2 py-1 text-[10.5px] font-medium rounded transition-colors duration-75 ${
-                      isActive
-                        ? "bg-gray-900 text-white"
-                        : "bg-white border border-gray-200 text-gray-500 hover:text-gray-900"
-                    }`}
-                  >
-                    {v}
-                  </button>
-                );
-              })}
-            </div>
-            <div className="flex items-center gap-1">
-              {(["Truck", "Cross Delivery", "DTS", null] as const).map((v) => {
-                const isActive = v === marker;
-                const label    = v === null ? "None" : v === "Cross Delivery" ? "Cross" : v;
-                return (
-                  <button
-                    key={label}
-                    type="button"
-                    onClick={() => onMarkerChange(v)}
-                    className={`flex-1 px-2 py-1 text-[10.5px] font-medium rounded transition-colors duration-75 ${
-                      isActive
-                        ? "bg-gray-900 text-white"
-                        : "bg-white border border-gray-200 text-gray-500 hover:text-gray-900"
-                    }`}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </details>
-
         <div className="flex items-center justify-between pt-2 border-t border-gray-200 text-[12px]">
           <span className="text-gray-500">Total · Bill {activeBillId}</span>
           <span className="font-mono text-gray-900 font-semibold">

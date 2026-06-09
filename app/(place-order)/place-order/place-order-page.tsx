@@ -16,7 +16,7 @@ import { addRecent } from "@/lib/place-order/recents";
 import type { Bill, CartLine, Customer, Product } from "./types";
 import type { RawPack } from "@/lib/place-order/pack-buckets";
 import { packKey, parsePackKey } from "@/lib/place-order/pack";
-import { buildEmail, buildMailtoUrl, type EmailDispatch, type EmailMarker } from "@/lib/place-order/email";
+import { buildEmail, buildMailtoUrl, type EmailCallTarget, type EmailDispatch, type EmailMarker } from "@/lib/place-order/email";
 import { clearDraft, loadDraft, saveDraft, type DraftSnapshot } from "@/lib/place-order/draft-storage";
 import type { QuickTile } from "@/lib/place-order/quick-tiles-config";
 import type { SearchResult } from "@/lib/place-order/queries";
@@ -97,9 +97,12 @@ export default function PlaceOrderPage(): React.JSX.Element {
   const [justAddedKeys, setJustAddedKeys] = useState<Record<string, true>>({});
 
   // Order-level fields.
-  const [shipTo,   setShipTo]   = useState<string>("");
-  const [dispatch, setDispatch] = useState<EmailDispatch>("Normal");
-  const [marker,   setMarker]   = useState<EmailMarker>(null);
+  const [shipTo,     setShipTo]     = useState<string>("");
+  const [dispatch,   setDispatch]   = useState<EmailDispatch>("Normal");
+  const [callTarget, setCallTarget] = useState<EmailCallTarget>(null);
+  const [marker,     setMarker]     = useState<EmailMarker>(null);
+  const [crossDepot, setCrossDepot] = useState<string | null>(null);
+  const [notes,      setNotes]      = useState<string>("");
 
   // Send / help flow.
   const [confirmOpen,  setConfirmOpen]  = useState<boolean>(false);
@@ -325,8 +328,12 @@ export default function PlaceOrderPage(): React.JSX.Element {
     setActiveBillId(activeId);
     setBillCounter(restored.length);
     setShipTo(snap.shipTo);
-    setDispatch(snap.dispatch);
+    // Coerce any stale stored dispatch (e.g. the removed "Hold") to a valid value.
+    setDispatch(snap.dispatch === "Urgent" || snap.dispatch === "Call" ? snap.dispatch : "Normal");
+    setCallTarget(snap.callTarget);
     setMarker(snap.marker);
+    setCrossDepot(snap.crossDepot);
+    setNotes(snap.notes);
     setJustAddedKeys({});
     setActiveState({ kind: "idle" });
     setFocusHint(null);
@@ -338,14 +345,17 @@ export default function PlaceOrderPage(): React.JSX.Element {
     setBillCounter(1);
     setShipTo("");
     setDispatch("Normal");
+    setCallTarget(null);
     setMarker(null);
+    setCrossDepot(null);
+    setNotes("");
     setJustAddedKeys({});
     setActiveState({ kind: "idle" });
     setFocusHint(null);
   }
 
   function currentSnapshot(): DraftSnapshot {
-    return { bills, activeBillId, billCounter, shipTo, dispatch, marker };
+    return { bills, activeBillId, billCounter, shipTo, dispatch, callTarget, marker, crossDepot, notes };
   }
 
   function handleSelectCustomer(next: Customer): void {
@@ -369,13 +379,13 @@ export default function PlaceOrderPage(): React.JSX.Element {
   // Autosave on any cart-shape change while customer is set.
   useEffect(() => {
     if (!selectedCustomer) return;
-    saveDraft(selectedCustomer, { bills, activeBillId, billCounter, shipTo, dispatch, marker });
-  }, [selectedCustomer, bills, activeBillId, billCounter, shipTo, dispatch, marker]);
+    saveDraft(selectedCustomer, { bills, activeBillId, billCounter, shipTo, dispatch, callTarget, marker, crossDepot, notes });
+  }, [selectedCustomer, bills, activeBillId, billCounter, shipTo, dispatch, callTarget, marker, crossDepot, notes]);
 
   // beforeunload — single-attach via latest-state ref.
-  const stateRef = useRef({ selectedCustomer, bills, activeBillId, billCounter, shipTo, dispatch, marker });
+  const stateRef = useRef({ selectedCustomer, bills, activeBillId, billCounter, shipTo, dispatch, callTarget, marker, crossDepot, notes });
   useEffect(() => {
-    stateRef.current = { selectedCustomer, bills, activeBillId, billCounter, shipTo, dispatch, marker };
+    stateRef.current = { selectedCustomer, bills, activeBillId, billCounter, shipTo, dispatch, callTarget, marker, crossDepot, notes };
   });
   useEffect(() => {
     function onBeforeUnload(): void {
@@ -387,7 +397,10 @@ export default function PlaceOrderPage(): React.JSX.Element {
           billCounter:  s.billCounter,
           shipTo:       s.shipTo,
           dispatch:     s.dispatch,
+          callTarget:   s.callTarget,
           marker:       s.marker,
+          crossDepot:   s.crossDepot,
+          notes:        s.notes,
         });
       }
     }
@@ -587,9 +600,12 @@ export default function PlaceOrderPage(): React.JSX.Element {
       }))),
       shipTo,
       dispatch,
+      callTarget,
       marker,
+      crossDepot,
+      notes,
     });
-  }, [selectedCustomer, bills, shipTo, dispatch, marker]);
+  }, [selectedCustomer, bills, shipTo, dispatch, callTarget, marker, crossDepot, notes]);
 
   const canSend = emailOutput.valid;
 
@@ -840,16 +856,23 @@ export default function PlaceOrderPage(): React.JSX.Element {
           bills={bills}
           activeBillId={activeBillId}
           justAddedKeys={justAddedKeys}
+          customers={customers}
           shipTo={shipTo}
           dispatch={dispatch}
+          callTarget={callTarget}
           marker={marker}
+          crossDepot={crossDepot}
+          notes={notes}
           onSetActiveBill={setActiveBillId}
           onAddBill={addBill}
           onDuplicateBill={duplicateBill}
           onDeleteBill={deleteBill}
           onShipToChange={setShipTo}
           onDispatchChange={setDispatch}
+          onCallTargetChange={setCallTarget}
           onMarkerChange={setMarker}
+          onCrossDepotChange={setCrossDepot}
+          onNotesChange={setNotes}
           onRemovePack={handleRemovePack}
           onConfirmSend={onConfirmSend}
           canSend={canSend}

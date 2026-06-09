@@ -10,7 +10,7 @@
 // stored payload can round-trip through `bills` directly.
 
 import type { Bill, Customer } from "@/app/(place-order)/place-order/types";
-import type { EmailDispatch, EmailMarker } from "./email";
+import type { EmailCallTarget, EmailDispatch, EmailMarker } from "./email";
 
 const STORAGE_KEY = "orbitoms_place_order_draft_v2";
 const TTL_MS      = 24 * 60 * 60 * 1000;
@@ -28,7 +28,10 @@ export interface DraftSnapshot {
   billCounter:  number;
   shipTo:       string;
   dispatch:     EmailDispatch;
+  callTarget:   EmailCallTarget;
   marker:       EmailMarker;
+  crossDepot:   string | null;
+  notes:        string;
 }
 
 interface StoredEntry extends DraftSnapshot {
@@ -93,7 +96,11 @@ export function loadDraft(customerCode: string): DraftSnapshot | null {
     billCounter:  entry.billCounter,
     shipTo:       entry.shipTo,
     dispatch:     entry.dispatch,
+    // Defaults keep pre-existing drafts (saved before these fields) valid.
+    callTarget:   entry.callTarget === "SO" || entry.callTarget === "Dealer" ? entry.callTarget : null,
     marker:       entry.marker,
+    crossDepot:   typeof entry.crossDepot === "string" ? entry.crossDepot : null,
+    notes:        typeof entry.notes === "string" ? entry.notes : "",
   };
 }
 

@@ -34,15 +34,19 @@ export type EmailLine = {
   packQtys:    Record<string, number>;   // pack-code (raw, e.g. "1") → qty in UNITS
 };
 
-export type EmailDispatch = "Normal" | "Hold" | "Urgent";
-export type EmailMarker   = "Truck" | "Cross Delivery" | "DTS" | null;
+export type EmailDispatch   = "Normal" | "Urgent" | "Call";
+export type EmailCallTarget = "SO" | "Dealer" | null;
+export type EmailMarker     = "Truck" | "Cross Delivery" | "Bounce" | "DTS" | null;
 
 export type EmailInput = {
-  customer: EmailCustomer | null;
-  bills:    EmailLine[][];               // one inner array per bill (multi-bill is Phase 7)
-  shipTo:   string;
-  dispatch: EmailDispatch;
-  marker:   EmailMarker;
+  customer:   EmailCustomer | null;
+  bills:      EmailLine[][];             // one inner array per bill
+  shipTo:     string;
+  dispatch:   EmailDispatch;
+  callTarget: EmailCallTarget;
+  marker:     EmailMarker;
+  crossDepot: string | null;
+  notes:      string;
 };
 
 export type EmailOutput = {
@@ -54,7 +58,7 @@ export type EmailOutput = {
 export const ORDER_TO = "surat.depot@akzonobel.com";
 
 export function buildEmail(input: EmailInput): EmailOutput {
-  const { customer, bills, shipTo, dispatch, marker } = input;
+  const { customer, bills, shipTo, dispatch, callTarget, marker, crossDepot, notes } = input;
   const name = customer?.name ?? "";
   const code = customer?.code ?? "";
   const lines: string[] = [];
@@ -63,9 +67,31 @@ export function buildEmail(input: EmailInput): EmailOutput {
     const customerLine = name && code ? `${name} (${code})` : (name || code);
     lines.push("Customer: " + customerLine);
   }
-  if (dispatch !== "Normal") lines.push("Dispatch: " + dispatch);
-  if (marker)                lines.push("Marker: "   + marker);
-  if (shipTo.trim())         lines.push("Ship To: "  + shipTo.trim());
+  // Unified /po line formats — this is now the shared builder (decision d).
+  // Dispatch: Call → "Call to SO/Dealer"; Urgent → "Urgent"; Normal omits the
+  // line, so a plain order stays byte-identical to before.
+  if (dispatch === "Call") {
+    lines.push("Dispatch: Call to " + (callTarget ?? "SO"));
+  } else if (dispatch !== "Normal") {
+    lines.push("Dispatch: " + dispatch);
+  }
+  // Order remark — humanized; Cross carries its source depot.
+  if (marker) {
+    const remarkText =
+      marker === "Cross Delivery" ? `Cross billing from ${crossDepot ?? ""}`.trim()
+      : marker === "Truck"        ? "Truck order"
+      : marker === "Bounce"       ? "Bounce order"
+      : marker === "DTS"          ? "DTS order"
+      :                             "";
+    if (remarkText) lines.push("Remark: " + remarkText);
+  }
+  // Ship To only for a real custom address — blank / "same as billing" omitted.
+  const shipToTrim = shipTo.trim();
+  if (shipToTrim && shipToTrim.toLowerCase() !== "same as billing") {
+    lines.push("Ship To: " + shipToTrim);
+  }
+  // Free-text note.
+  if (notes.trim()) lines.push("Note: " + notes.trim());
 
   // Strip empty bills, then iterate the remaining ones. Multi-bill header
   // ("Bill N") only emitted when more than one bill survives the filter —
