@@ -527,6 +527,24 @@ export default function PoPage(): React.JSX.Element {
   // Debounce for the keyboardOpen flag (avoids flicker on the open/close ramp).
   const kbDebounceRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // ── Android Back / iPhone swipe-back: browser history = single nav authority ─
+  // depthRef = pushed entries above the base (landing) entry. suppressPopRef
+  // ignores the popstate from a PROGRAMMATIC history.back()/go(). backConfirmRef
+  // marks the discard-confirm raised by back-on-build (item 4) vs the New-order
+  // button. navStateRef carries the live screen for the one popstate handler.
+  const depthRef       = useRef(0);
+  const suppressPopRef = useRef(false);
+  const backConfirmRef = useRef(false);
+  const navStateRef    = useRef<{
+    selectedCust: boolean;
+    view:         "build" | "review";
+    mode:         "search" | "picking" | "multiqty";
+    confirmOpen:  boolean;
+    crossOpen:    boolean;
+    deleteOpen:   boolean;
+    hasLines:     boolean;
+  }>({ selectedCust: false, view: "build", mode: "search", confirmOpen: false, crossOpen: false, deleteOpen: false, hasLines: false });
+
   // ── Data ──────────────────────────────────────────────────────────────────
   useEffect(() => {
     fetch("/api/order/data")
@@ -553,6 +571,9 @@ export default function PoPage(): React.JSX.Element {
       setCrossDepot(saved.crossDepot);
       setNotes(saved.notes);
       setMultiSelect(saved.multiSelect);
+      // Restored straight into build-search — seat one history entry so Back goes
+      // build → landing (not straight out of /po).
+      pushScreen("build");
     }
   }, []);
 
@@ -753,7 +774,7 @@ export default function PoPage(): React.JSX.Element {
     function onKey(e: KeyboardEvent): void {
       if (e.key === "Escape") {
         e.preventDefault();
-        setConfirmKind(null);
+        dismissConfirm();
       } else if (e.key === "Tab") {
         const first = cancelBtnRef.current;
         const last  = confirmBtnRef.current;
@@ -773,6 +794,65 @@ export default function PoPage(): React.JSX.Element {
       window.removeEventListener("keydown", onKey);
     };
   }, [confirmKind]);
+
+  // ── ONE popstate handler — the only place that navigates BACK ──────────────
+  // Closes the topmost LIVE layer (read from navStateRef) via the existing pure
+  // handler and NEVER pushes. Every in-app Back/Cancel/× routes through
+  // history.back() so it flows here too. Programmatic back()/go() set
+  // suppressPopRef so their popstate is ignored. depthRef mirrors entries above
+  // the base (landing) entry. (CORE §3 — no $transaction etc.; this is UI only.)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    function onPop(): void {
+      depthRef.current = Math.max(0, depthRef.current - 1);   // an entry was popped
+      if (suppressPopRef.current) { suppressPopRef.current = false; return; }
+      const s = navStateRef.current;
+      if (s.confirmOpen) {                       // overlay: discard-confirm dialog
+        backConfirmRef.current = false;
+        setConfirmKind(null);
+        return;
+      }
+      if (s.crossOpen)  { cancelCrossSheet(); return; }   // overlay: cross-depot sheet
+      if (s.deleteOpen) { cancelDeleteBill(); return; }   // overlay: delete-bill sheet
+      if (s.view === "review")   { closeReview();   return; }
+      if (s.mode === "picking")  { cancelPicking(); return; }
+      if (s.mode === "multiqty") { closeMultiQty(); return; }
+      if (s.selectedCust) {                      // build-search → landing (discard guard)
+        if (s.hasLines) {
+          backConfirmRef.current = true;
+          setConfirmKind("change");              // "Switch customer? This clears the order."
+        } else {
+          clearCustomer();
+        }
+        return;
+      }
+      // landing → allow exit (the pop already navigated away; nothing to do)
+    }
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+
+  // Push one tagged history entry on a FORWARD navigation; track depth.
+  function pushScreen(tag: string): void {
+    if (typeof window === "undefined") return;
+    window.history.pushState({ poScreen: tag }, "");
+    depthRef.current += 1;
+  }
+
+  // Dismiss the discard-confirm. Back-triggered (item 4): KEEP the order and
+  // re-push a build entry so we stay "in" build with an entry to pop next time.
+  // Button-triggered (New order): pop its own pushed entry via history.back().
+  function dismissConfirm(): void {
+    if (backConfirmRef.current) {
+      backConfirmRef.current = false;
+      setConfirmKind(null);
+      pushScreen("build");
+    } else if (typeof window !== "undefined") {
+      window.history.back();
+    } else {
+      setConfirmKind(null);
+    }
+  }
 
   // ── Customer handlers (modelled on /order) ────────────────────────────────
   const custSuggestions = useMemo<Customer[]>(() => {
@@ -809,6 +889,7 @@ export default function PoPage(): React.JSX.Element {
       customer: c, bills, billCounter, activeBillId, shipTo, dispatch, marker,
       crossDepot, notes, multiSelect,
     });
+    pushScreen("build");   // landing → build-search
   }
 
   function clearCustomer(): void {
@@ -851,13 +932,26 @@ export default function PoPage(): React.JSX.Element {
   // folded into the merged header — changing customer = New order full reset).
   function onNewOrder(): void {
     if (!selectedCust && !hasAnyLines) return;
+    backConfirmRef.current = false;   // button-triggered (not the back-on-build path)
     setConfirmKind("new");
+    pushScreen("confirm");
   }
 
-  // Confirm dialog primary action.
+  // Confirm dialog primary action (discard + reset to landing).
   function confirmProceed(): void {
-    clearCustomer();
+    const fromBack = backConfirmRef.current;
+    backConfirmRef.current = false;
     setConfirmKind(null);
+    if (!fromBack && typeof window !== "undefined" && depthRef.current > 0) {
+      // Button-triggered from any depth — snap history to base so a later Back
+      // exits cleanly (item 5). One go(-N) fires one popstate → suppress it.
+      const n = depthRef.current;
+      depthRef.current = 0;
+      suppressPopRef.current = true;
+      window.history.go(-n);
+    }
+    // back-triggered: already at base (depthRef 0) — nothing to pop.
+    clearCustomer();
   }
 
   // ── Multi-select ──────────────────────────────────────────────────────────
@@ -886,6 +980,7 @@ export default function PoPage(): React.JSX.Element {
     if (selectedProducts.length === 0) return;
     if (listening) stopListening();
     setMode("multiqty");
+    pushScreen("multiqty");
   }
 
   // Back from the multi-qty screen — preserve selection + typed quantities.
@@ -949,6 +1044,8 @@ export default function PoPage(): React.JSX.Element {
     setSelectedProducts([]);
     setMultiQtys({});
     setMode("search");
+    // Pop the multiqty entry — we navigated multiqty → build-search ourselves.
+    if (typeof window !== "undefined") { suppressPopRef.current = true; window.history.back(); }
   }
 
   // ── Review-screen handlers ────────────────────────────────────────────────
@@ -994,6 +1091,7 @@ export default function PoPage(): React.JSX.Element {
   // pick cancels the Cross selection (Cross must always carry a depot).
   function openCrossSheet(): void {
     setCrossSheetOpen(true);
+    pushScreen("cross");
   }
   function confirmCross(depot: string): void {
     setMarker("Cross Delivery");
@@ -1001,6 +1099,8 @@ export default function PoPage(): React.JSX.Element {
     setCrossSheetOpen(false);
     const s = snapshot({ marker: "Cross Delivery", crossDepot: depot });
     if (s) savePoDraft(s);
+    // Close = pop the cross overlay entry (programmatic → suppress the popstate).
+    if (typeof window !== "undefined") { suppressPopRef.current = true; window.history.back(); }
   }
   function cancelCrossSheet(): void {
     // No state change — if Cross wasn't already confirmed it stays unselected;
@@ -1050,6 +1150,8 @@ export default function PoPage(): React.JSX.Element {
 
   // Bill header edit affordance — make this bill active + drop to build screen.
   function editBill(billId: number): void {
+    // review → build-search (depth-reducing): pop the review entry.
+    if (typeof window !== "undefined") { suppressPopRef.current = true; window.history.back(); }
     setActiveBillId(billId);
     persist(bills, billCounter, billId);
     setView("build");
@@ -1058,6 +1160,8 @@ export default function PoPage(): React.JSX.Element {
 
   // "+ Add another bill" from review — create + activate + go build it.
   function addAnotherBill(): void {
+    // review → build-search (depth-reducing): pop the review entry.
+    if (typeof window !== "undefined") { suppressPopRef.current = true; window.history.back(); }
     const id = billCounter + 1;
     const nextBills: Bill[] = [...bills, { id, lines: [] }];
     setBills(nextBills);
@@ -1080,6 +1184,7 @@ export default function PoPage(): React.JSX.Element {
     setPackQtys({});
     packInputsRef.current = [];
     setMode("picking");
+    pushScreen("picking");
   }
 
   function cancelPicking(): void {
@@ -1114,7 +1219,9 @@ export default function PoPage(): React.JSX.Element {
       if (v > 0) filtered[k] = v;
     }
     if (Object.keys(filtered).length === 0) {
-      cancelPicking();   // nothing entered — treat as a silent back-out
+      // nothing entered — silent back-out = Back (pops the picking entry → popstate → cancelPicking).
+      if (typeof window !== "undefined") window.history.back();
+      else cancelPicking();
       return;
     }
 
@@ -1148,6 +1255,9 @@ export default function PoPage(): React.JSX.Element {
     setActiveProduct(null);
     setPackQtys({});
     setHeroQuery("");
+
+    // Pop the picking entry — we navigated picking → build-search ourselves.
+    if (typeof window !== "undefined") { suppressPopRef.current = true; window.history.back(); }
 
     // Desktop-only refocus of the hero search (NO mobile auto-focus — §15.4).
     if (typeof window !== "undefined"
@@ -1239,8 +1349,8 @@ export default function PoPage(): React.JSX.Element {
     if (bills.length <= 1) return;
     const bill = bills[index];
     if (!bill) return;
-    if (bill.lines.length >= 1) setBillToDelete(index);
-    else                        deleteBillAt(index);
+    if (bill.lines.length >= 1) { setBillToDelete(index); pushScreen("delete"); }
+    else                        deleteBillAt(index);   // empty bill → no sheet, no entry
   }
 
   // Remove the bill at `index`, renumber ids 1..n so labels stay sequential
@@ -1262,10 +1372,17 @@ export default function PoPage(): React.JSX.Element {
     setBillToDelete(null);
   }
 
+  // Delete-sheet "Delete" action: remove the bill, then pop the sheet entry.
+  function confirmDeleteBill(index: number): void {
+    deleteBillAt(index);
+    if (typeof window !== "undefined") { suppressPopRef.current = true; window.history.back(); }
+  }
+
   function openReview(): void {
     if (listening) stopListening();
     setMode("search");
     setView("review");
+    pushScreen("review");
   }
 
   function closeReview(): void {
@@ -1293,6 +1410,16 @@ export default function PoPage(): React.JSX.Element {
     ? { title: "Switch customer?", body: "This clears the current order.", cta: "Switch customer" }
     : { title: "Start a new order?", body: "This clears the current order and starts fresh. It can’t be undone.", cta: "New order" };
 
+  // Live screen snapshot read by the popstate handler (refreshed every render).
+  navStateRef.current = {
+    selectedCust: selectedCust !== null,
+    view, mode,
+    confirmOpen:  confirmKind !== null,
+    crossOpen:    crossSheetOpen,
+    deleteOpen:   billToDelete !== null,
+    hasLines:     hasAnyLines,
+  };
+
   // Email — byte-identical to /order. Computed each render (like /order).
   const { subject: emailSubject, body: emailBody, valid: canSend } =
     buildEmailParts({ customer: selectedCust, bills, shipTo, dispatch, marker, crossDepot, notes });
@@ -1304,6 +1431,13 @@ export default function PoPage(): React.JSX.Element {
     // the ONLY place recents are written.
     if (selectedCust) setRecents(addRecent(selectedCust));
     window.location.href = url;   // mailto: opens the mail app; page does not unload
+    // Snap history to base so a later Back exits cleanly (item 5), then full reset.
+    if (typeof window !== "undefined" && depthRef.current > 0) {
+      const n = depthRef.current;
+      depthRef.current = 0;
+      suppressPopRef.current = true;
+      window.history.go(-n);
+    }
     // Full reset so the next order starts empty (back to customer-pick).
     clearCustomer();
   }
@@ -1375,7 +1509,7 @@ export default function PoPage(): React.JSX.Element {
       >
         <button
           type="button"
-          onClick={cancelPicking}
+          onClick={() => window.history.back()}
           className="px-[14px] py-[12px] text-gray-500 hover:text-gray-700 text-[14px] font-medium"
         >
           Cancel
@@ -1599,7 +1733,7 @@ export default function PoPage(): React.JSX.Element {
               <div className="flex items-center gap-2 px-4 py-[14px]">
                 <button
                   type="button"
-                  onClick={closeReview}
+                  onClick={() => window.history.back()}
                   aria-label="Back to build"
                   className="flex items-center gap-2 text-left"
                 >
@@ -1870,7 +2004,7 @@ export default function PoPage(): React.JSX.Element {
               <div className="bg-white border-b border-gray-200 px-4 py-[14px]">
                 <button
                   type="button"
-                  onClick={cancelPicking}
+                  onClick={() => window.history.back()}
                   className="flex items-center gap-2 min-w-0 text-left"
                   aria-label="Back to search"
                 >
@@ -2117,7 +2251,7 @@ export default function PoPage(): React.JSX.Element {
               <>
                 {/* sticky header (single top-pinned element on this screen) */}
                 <div className="sticky top-0 z-30 bg-white border-b border-gray-200 px-4 py-[13px] flex items-center gap-2.5 shadow-[0_2px_6px_rgba(0,0,0,0.04)]">
-                  <button type="button" onClick={closeMultiQty} aria-label="Back to results" className="shrink-0">
+                  <button type="button" onClick={() => window.history.back()} aria-label="Back to results" className="shrink-0">
                     <ChevronDown className="w-[18px] h-[18px] text-gray-500" />
                   </button>
                   <span className="text-[15px] font-semibold text-gray-900">Set quantities</span>
@@ -2218,7 +2352,7 @@ export default function PoPage(): React.JSX.Element {
         {crossSheetOpen && (
           <div
             className="fixed inset-0 z-50 flex items-end justify-center bg-black/40"
-            onClick={cancelCrossSheet}
+            onClick={() => window.history.back()}
           >
             <div
               role="dialog"
@@ -2232,7 +2366,7 @@ export default function PoPage(): React.JSX.Element {
                 <h2 className="text-[16px] font-semibold text-gray-900">Cross billing from?</h2>
                 <button
                   type="button"
-                  onClick={cancelCrossSheet}
+                  onClick={() => window.history.back()}
                   aria-label="Close"
                   className="text-gray-400 text-[22px] leading-none px-1 active:text-gray-600"
                 >
@@ -2268,7 +2402,7 @@ export default function PoPage(): React.JSX.Element {
         {billToDelete !== null && bills[billToDelete] && (
           <div
             className="fixed inset-0 z-50 flex items-end justify-center bg-black/40"
-            onClick={cancelDeleteBill}
+            onClick={() => window.history.back()}
           >
             <div
               role="dialog"
@@ -2288,14 +2422,14 @@ export default function PoPage(): React.JSX.Element {
               <div className="flex gap-2 mt-4">
                 <button
                   type="button"
-                  onClick={cancelDeleteBill}
+                  onClick={() => window.history.back()}
                   className="flex-1 h-[44px] rounded-[10px] bg-gray-100 text-gray-700 text-[14px] font-medium active:bg-gray-200"
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
-                  onClick={() => deleteBillAt(billToDelete)}
+                  onClick={() => confirmDeleteBill(billToDelete)}
                   className="flex-1 h-[44px] rounded-[10px] bg-red-600 text-white text-[14px] font-semibold active:bg-red-700"
                 >
                   Delete
@@ -2309,7 +2443,7 @@ export default function PoPage(): React.JSX.Element {
         {confirmKind && (
           <div
             className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-6"
-            onClick={() => setConfirmKind(null)}
+            onClick={dismissConfirm}
           >
             <div
               role="dialog"
@@ -2329,7 +2463,7 @@ export default function PoPage(): React.JSX.Element {
                 <button
                   ref={cancelBtnRef}
                   type="button"
-                  onClick={() => setConfirmKind(null)}
+                  onClick={dismissConfirm}
                   className="flex-1 h-[44px] rounded-[10px] border border-gray-200 bg-white text-gray-700 text-[14px] font-medium active:bg-gray-50"
                 >
                   Cancel
