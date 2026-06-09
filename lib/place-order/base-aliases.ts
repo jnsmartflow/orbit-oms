@@ -106,6 +106,27 @@ export const BASE_ALIASES: Record<string, Record<string, BaseAlias>> = {
     "92 BASE": { display: "Intermediate",   search: ["intermediate", "intermediate base"] },
     "94 BASE": { display: "Accent",         search: ["accent", "accent base"] },
   },
+  // SuperClean (mass-market emulsion) + its 3in1 sibling. Product join-keys set
+  // in CONFIRMED_SUBPRODUCT_MAP so these render + bake into tokens. 96/97 label
+  // plainly Yellow/Red. Brilliant White + 93 BASE: no alias. 3in1 adds Pastel/Pro.
+  "SUPERCLEAN": {
+    "90 BASE": { display: "White",          search: ["white", "white base"] },
+    "92 BASE": { display: "Intermediate",   search: ["intermediate", "intermediate base"] },
+    "94 BASE": { display: "Accent",         search: ["accent", "accent base"] },
+    "95 BASE": { display: "Deep",           search: ["deep", "deep base"] },
+    "96 BASE": { display: "Yellow",         search: ["yellow", "yellow base"] },
+    "97 BASE": { display: "Red",            search: ["red", "red base"] },
+  },
+  "SUPERCLEAN 3IN1": {
+    "90 BASE":     { display: "White",        search: ["white", "white base"] },
+    "92 BASE":     { display: "Intermediate", search: ["intermediate", "intermediate base"] },
+    "94 BASE":     { display: "Accent",       search: ["accent", "accent base"] },
+    "95 BASE":     { display: "Deep",         search: ["deep", "deep base"] },
+    "96 BASE":     { display: "Yellow",       search: ["yellow", "yellow base"] },
+    "97 BASE":     { display: "Red",          search: ["red", "red base"] },
+    "PASTEL BASE": { display: "Pastel",       search: ["pastel", "pastel base"] },
+    "PRO BASE":    { display: "Pro",          search: ["pro", "pro base"] },
+  },
   // ── Promise family (6 tabs) ──────────────────────────────────────────────
   // Emulsion tabs: numbered-base aliases (whichever present). SmartChoice/Primer
   // tabs: the row's baseColour is the VARIANT; the alias carries the light

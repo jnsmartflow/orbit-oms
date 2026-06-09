@@ -356,6 +356,43 @@ async function loadSuperCoverMap(): Promise<Map<string, SuperCoverEntry>> {
   return map;
 }
 
+// ── CSV-as-source for the SUPERCLEAN + SUPERCLEAN 3IN1 rebuild (2026-06-09) ──
+// docs/SKU/review/superclean-final.csv is the source of truth for both products'
+// stock. Mirrors the SuperCover drill: 80 existing materials are re-keyed in the
+// main loop; 31 absent-from-legacy materials are built in step 2i. CSV wins over
+// the legacy→v2 translation, scoped to these two products only. category forced
+// "SUPERCLEAN" (the family); product = CSV MapToProduct ("SUPERCLEAN" | "SUPERCLEAN
+// 3IN1"); baseColour = CSV Base; packCode/unit from the CSV Pack column (all litres
+// here: 1L/4L/10L/20L → 1/4/10/20 + L, no 250ML).
+const SUPERCLEAN_CSV      = path.join("docs", "SKU", "review", "superclean-final.csv");
+const SUPERCLEAN_CATEGORY = "SUPERCLEAN";
+type SuperCleanEntry = { product: string; baseColour: string; packCode: string; unit: string; isPrimary: boolean; description: string };
+
+// Columns: 0 Tab · 1 Base · 2 Alias · 3 Pack · 4 Unit · 5 SAP · 6 isPrimary ·
+// 7 MapToProduct · 8 Description · 9 Carton · 10 Notes. Quote-aware split (mirrors
+// loadSuperCoverMap).
+async function loadSuperCleanMap(): Promise<Map<string, SuperCleanEntry>> {
+  const map = new Map<string, SuperCleanEntry>();
+  const raw = await fs.readFile(SUPERCLEAN_CSV, "utf8");
+  for (const line of raw.split(/\r?\n/).slice(1)) {
+    if (!line.trim()) continue;
+    const c = splitCsvLine(line);
+    const material = (c[5] ?? "").trim();           // SAP column
+    if (!material) continue;
+    const pk = parsePackLabel((c[3] ?? "").trim()); // Pack column "1L" / "4L" / "10L" / "20L"
+    if (!pk) { console.log(`[superclean] bad pack "${c[3]}" for ${material} — skipped`); continue; }
+    map.set(material, {
+      product:     (c[7] ?? "").trim(),   // MapToProduct
+      baseColour:  (c[1] ?? "").trim(),   // Base
+      packCode:    pk.packCode,
+      unit:        pk.unit,
+      isPrimary:   (c[6] ?? "").trim().toUpperCase() === "TRUE",
+      description: (c[8] ?? "").trim(),
+    });
+  }
+  return map;
+}
+
 // Shape of one row to be inserted into mo_sku_lookup_v2.
 type V2Row = {
   material:        string;
@@ -456,6 +493,10 @@ async function main(): Promise<void> {
   const superCover = await loadSuperCoverMap();
   console.log(`SUPERCOVER CSV map: ${superCover.size} materials (source of truth)`);
 
+  // CSV-as-source for the SUPERCLEAN + SUPERCLEAN 3IN1 rebuild (111 materials).
+  const superClean = await loadSuperCleanMap();
+  console.log(`SUPERCLEAN CSV map: ${superClean.size} materials (source of truth)`);
+
   // ── 2. Translate each legacy row via mapLegacyToNew ─────────────────
   let skippedNull = 0;
   let crossListed = 0;  // source rows producing >1 v2 row
@@ -469,6 +510,7 @@ async function main(): Promise<void> {
   let miskeyedFixed = 0;       // packCode 22 → 20
   let sadAssigned = 0;         // existing materials re-keyed by the SADOLIN CSV
   let scAssigned = 0;          // existing materials re-keyed by the SUPERCOVER CSV
+  let sclAssigned = 0;         // existing materials re-keyed by the SUPERCLEAN CSV
   const seenMaterials = new Set<string>();  // every material legacy produced (for rule-5 report)
   const v2Rows: V2Row[] = [];
 
@@ -514,23 +556,29 @@ async function main(): Promise<void> {
       // SUPERCOVER CSV (2026-06-09) WINS over everything for its 34 existing
       // materials: category SUPERCOVER, MapToProduct, CSV Base, CSV pack.
       const sc = superCover.get(material);
+      // SUPERCLEAN CSV (2026-06-09) WINS the same way for its 80 existing materials.
+      const scl = superClean.get(material);
       if (sad) sadAssigned++;
       if (csv) csvAssigned++;
       if (sc) scAssigned++;
+      if (scl) sclAssigned++;
 
       const category =
-        sc ? SUPERCOVER_CATEGORY
+        scl ? SUPERCLEAN_CATEGORY
+        : sc ? SUPERCOVER_CATEGORY
         : sad ? SADOLIN_CATEGORY
         : ov ? ov.category
         : newRow.family;
       const product =
-        sc ? sc.product
+        scl ? scl.product
+        : sc ? sc.product
         : sad ? sad.product
         : csv ? csv.product
         : ov ? ov.product
         : newRow.subProduct;
       const baseColour =
-        sc ? sc.baseColour
+        scl ? scl.baseColour
+        : sc ? sc.baseColour
         : sad ? sad.baseColour
         : ov ? ov.baseColour
         : (newRow.baseColour ?? legacy.baseColour);
@@ -555,6 +603,8 @@ async function main(): Promise<void> {
       if (pf) { normPack = pf.packCode; normUnit = pf.unit; }
       // SUPERCOVER CSV is authoritative on pack/unit for its materials (last win).
       if (sc) { normPack = sc.packCode; normUnit = sc.unit; }
+      // SUPERCLEAN CSV likewise authoritative on pack/unit (last win).
+      if (scl) { normPack = scl.packCode; normUnit = scl.unit; }
 
       v2Rows.push({
         material,
@@ -574,7 +624,9 @@ async function main(): Promise<void> {
         // CSV is the authoritative primary list. Then SADOLIN CSV (with White-1KG
         // demote); then WS CSV KEEP/HIDE; else the SET_FALSE rule.
         isPrimary:
-          sc ? sc.isPrimary
+          scl ? scl.isPrimary
+          : (product === "SUPERCLEAN" || product === "SUPERCLEAN 3IN1") ? false
+          : sc ? sc.isPrimary
           : (product === "SUPERCOVER" || product === "SUPERCOVER SHEEN") ? false
           : sad ? (SADOLIN_DEMOTE.has(material) ? false : sad.isPrimary)
           : csv ? csv.isPrimary
@@ -795,6 +847,33 @@ async function main(): Promise<void> {
   }
   console.log(`SUPERCOVER: re-keyed ${scAssigned} existing, built ${superCoverBuilt.length} new (expect 34 re-key / 56 build)`);
 
+  // ── 2i. SUPERCLEAN build-from-CSV (no legacy source) ────────────────
+  // 31 of superclean-final.csv's materials are absent from legacy (3 KEEP:
+  // 5906725 / 5832493 / 5832500; 28 HIDE). Build each from CSV fields (mirrors
+  // 2h). seenMaterials-guarded. KEEP→isPrimary true, HIDE→isPrimary false.
+  const superCleanBuilt: string[] = [];
+  for (const [mat, e] of Array.from(superClean.entries())) {
+    if (seenMaterials.has(mat)) continue;   // produced/re-keyed by legacy after all
+    v2Rows.push({
+      material:        mat,
+      description:     e.description,
+      category:        SUPERCLEAN_CATEGORY,
+      product:         e.product,
+      baseColour:      e.baseColour,
+      packCode:        e.packCode,
+      unit:            e.unit,
+      refMaterial:     null,
+      refDescription:  null,
+      paintType:       null,
+      materialType:    null,
+      piecesPerCarton: null,
+      isPrimary:       e.isPrimary,
+    });
+    seenMaterials.add(mat);
+    superCleanBuilt.push(mat);
+  }
+  console.log(`SUPERCLEAN: re-keyed ${sclAssigned} existing, built ${superCleanBuilt.length} new (expect 81 re-key / 31 build)`);
+
   console.log(`Skipped (mapLegacyToNew → null)         : ${skippedNull}`);
   console.log(`Source rows expanded into multiple v2  : ${crossListed}`);
   console.log(`Name-override rows (live names applied) : ${overridden}`);
@@ -862,7 +941,7 @@ async function main(): Promise<void> {
       const r = rows.filter((x) => x.product === prod);
       return { n: r.length, pri: r.filter((x) => x.isPrimary).length };
     };
-    const TARGETS = ["WS PROTECT DUSTPROOF", "WS PROTECT RAINPROOF", "WS POWERFLEXX", "WS PROTECT HI-SHEEN", "GLOSS", "PU ENAMEL", "SUPER SATIN", "SATIN STAY BRIGHT", "PROMISE INTERIOR", "PROMISE SHEEN INTERIOR", "PROMISE EXTERIOR", "PROMISE SHEEN EXTERIOR", "PROMISE PRIMER", "PROMISE SMARTCHOICE", "SUPERCOVER", "SUPERCOVER SHEEN"];
+    const TARGETS = ["WS PROTECT DUSTPROOF", "WS PROTECT RAINPROOF", "WS POWERFLEXX", "WS PROTECT HI-SHEEN", "GLOSS", "PU ENAMEL", "SUPER SATIN", "SATIN STAY BRIGHT", "PROMISE INTERIOR", "PROMISE SHEEN INTERIOR", "PROMISE EXTERIOR", "PROMISE SHEEN EXTERIOR", "PROMISE PRIMER", "PROMISE SMARTCHOICE", "SUPERCOVER", "SUPERCOVER SHEEN", "SUPERCLEAN", "SUPERCLEAN 3IN1"];
     console.log("");
     console.log("════════════ WS RESTRUCTURE REHEARSAL (before → after) ════════════");
     for (const t of TARGETS) {
@@ -1052,8 +1131,37 @@ async function main(): Promise<void> {
     const scUnresolved = Array.from(superCover.keys()).filter((m) => !deduped.some((r) => r.material === m));
     console.log(`  CSV SAP unresolved (not in final set): ${scUnresolved.length} (expect 0)${scUnresolved.length ? " -> " + scUnresolved.join(", ") : ""}`);
 
+    // ── SUPERCLEAN rebuild verification (2026-06-09) ──
+    const sclRows = deduped.filter((r) => r.category === "SUPERCLEAN");
+    const sclBuiltSet = new Set(superCleanBuilt);
+    const sclReKey = Array.from(superClean.keys()).filter((m) => !sclBuiltSet.has(m));
+    const sclInjVisible = superCleanBuilt.filter((m) => superClean.get(m)!.isPrimary).length;
+    const sclInjHidden  = superCleanBuilt.length - sclInjVisible;
+    const sclBefore = liveRows.filter((r) => r.product === "SUPERCLEAN" || r.product === "SUPERCLEAN 3IN1").length;
     console.log("");
-    console.log(`  TOTAL stock rows after rebuild: ${deduped.length} (expect 1616 = 1527 + 8 Hydro + 25 Tools + 56 SuperCover)`);
+    console.log("════════════ SUPERCLEAN STOCK REBUILD ════════════");
+    console.log(`  SUPERCLEAN category SKUs: before ${sclBefore} -> after ${sclRows.length} (delta +${sclRows.length - sclBefore})`);
+    console.log(`  Re-key (existing CSV codes touched): ${sclReKey.length} (expect 81)`);
+    console.log(`  Inject (build-from-CSV): ${superCleanBuilt.length} (expect 31) — visible ${sclInjVisible} / hidden ${sclInjHidden}`);
+    const sclShow = (m: string) => { const r = deduped.find((x) => x.material === m); return r ? `${r.product} base=${r.baseColour} ${r.packCode}${r.unit ?? ""} pri=${r.isPrimary}` : "ABSENT"; };
+    console.log(`  KEEP injects (expect pri=true):`);
+    console.log(`     5906725 ${sclShow("5906725")} (95 BASE 1L)`);
+    console.log(`     5832493 ${sclShow("5832493")} (94 BASE 10L)`);
+    console.log(`     5832500 ${sclShow("5832500")} (94 BASE 20L)`);
+    console.log(`  Stray IN23809482 ${sclShow("IN23809482")} (expect pri=false)`);
+    for (const prod of ["SUPERCLEAN", "SUPERCLEAN 3IN1"]) {
+      const rs = sclRows.filter((r) => r.product === prod);
+      const byBP = new Map<string, { n: number; pri: number }>();
+      for (const r of rs) { const k = `${r.baseColour}|${r.packCode}${r.unit ?? ""}`; const e = byBP.get(k) ?? { n: 0, pri: 0 }; e.n++; if (r.isPrimary) e.pri++; byBP.set(k, e); }
+      const doubles = Array.from(byBP.values()).filter((e) => e.pri !== 1).length;
+      console.log(`  ${prod} per base+pack (pri/total), ${rs.length} rows, ${doubles} not-exactly-1-primary:`);
+      for (const k of Array.from(byBP.keys()).sort()) { const e = byBP.get(k)!; const flag = e.pri !== 1 ? (e.pri === 0 ? " ZERO!" : " DOUBLE!") : ""; console.log(`     ${k.padEnd(26)} ${e.pri}/${e.n}${flag}`); }
+    }
+    const sclUnresolved = Array.from(superClean.keys()).filter((m) => !deduped.some((r) => r.material === m));
+    console.log(`  CSV SAP unresolved (not in final set): ${sclUnresolved.length} (expect 0)${sclUnresolved.length ? " -> " + sclUnresolved.join(", ") : ""}`);
+
+    console.log("");
+    console.log(`  TOTAL stock rows after rebuild: ${deduped.length} (expect 1647 = 1527 + 8 Hydro + 25 Tools + 56 SuperCover + 31 SuperClean)`);
 
     console.log("");
     console.log("DRY_RUN=1 — NO wipe, NO insert performed.");
