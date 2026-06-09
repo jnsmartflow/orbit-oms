@@ -11,6 +11,8 @@ import BrowseAllFamilies from "./components/browse-all-families";
 import CartPanel from "./components/cart-panel";
 import SendConfirmOverlay from "./components/send-confirm-overlay";
 import KeyboardHelpOverlay from "./components/keyboard-help-overlay";
+import RecentCustomers from "./components/recent-customers";
+import { addRecent } from "@/lib/place-order/recents";
 import type { Bill, CartLine, Customer, Product } from "./types";
 import type { RawPack } from "@/lib/place-order/pack-buckets";
 import { packKey, parsePackKey } from "@/lib/place-order/pack";
@@ -76,6 +78,9 @@ export default function PlaceOrderPage(): React.JSX.Element {
   const [activeState, setActiveState] = useState<ActivePanelState>({ kind: "idle" });
   const [focusHint,   setFocusHint]   = useState<{ base: string | null } | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>("");
+  // Top-bar customer-search query (lifted from CustomerSearch) — gates the
+  // landing recent-dealers grid so it hides while the operator is typing.
+  const [customerQuery, setCustomerQuery] = useState<string>("");
 
   // Cart (multi-bill — preserved from v1-v3 build).
   const [bills, setBills]                 = useState<Bill[]>(FRESH_BILLS);
@@ -547,7 +552,12 @@ export default function PlaceOrderPage(): React.JSX.Element {
     const url = buildMailtoUrl(emailOutput.subject, emailOutput.body);
     window.location.href = url;
     setConfirmOpen(false);
-    if (selectedCustomer) clearDraft(selectedCustomer.code);
+    if (selectedCustomer) {
+      clearDraft(selectedCustomer.code);
+      // Device-local recents shortcut (best-effort; never blocks Send, never
+      // touches the mailto body). Save AFTER the order is sent.
+      addRecent(selectedCustomer);
+    }
     resetCart();
     setToastVisible(true);
     setTimeout(() => setToastVisible(false), 3000);
@@ -651,6 +661,20 @@ export default function PlaceOrderPage(): React.JSX.Element {
       .slice(0, 5);
   })();
 
+  // Empty-landing hint (no customer). Shown as-is when there are no recents or
+  // while the operator is typing a customer query; replaced by the recent-
+  // dealers grid otherwise.
+  const landingHint = (
+    <div className="text-center py-12">
+      <p className="text-[13px] text-gray-500">
+        Type a customer name (e.g. <span className="font-mono">Mehta</span>) or SAP code (e.g. <span className="font-mono">12389</span>) above to begin.
+      </p>
+      <p className="text-[11px] text-gray-400 mt-2 font-mono">
+        {customers.length} customers loaded
+      </p>
+    </div>
+  );
+
   return (
     <>
       <header className="bg-white border-b border-gray-200 h-[52px] flex items-center px-4 gap-3 sticky top-0 z-30">
@@ -669,6 +693,7 @@ export default function PlaceOrderPage(): React.JSX.Element {
             selected={selectedCustomer}
             onSelect={handleSelectCustomer}
             onClear={handleClearCustomer}
+            onQueryChange={setCustomerQuery}
             autoFocusOnMount={!dataLoading}
           />
         </div>
@@ -697,14 +722,15 @@ export default function PlaceOrderPage(): React.JSX.Element {
             {dataLoading ? (
               <p className="text-[13px] text-gray-400 text-center py-12">Loading customers and products…</p>
             ) : !selectedCustomer ? (
-              <div className="text-center py-12">
-                <p className="text-[13px] text-gray-500">
-                  Type a customer name (e.g. <span className="font-mono">Mehta</span>) or SAP code (e.g. <span className="font-mono">12389</span>) above to begin.
-                </p>
-                <p className="text-[11px] text-gray-400 mt-2 font-mono">
-                  {customers.length} customers loaded
-                </p>
-              </div>
+              customerQuery.trim() === "" ? (
+                <RecentCustomers
+                  customerCount={customers.length}
+                  onSelect={handleSelectCustomer}
+                  fallback={landingHint}
+                />
+              ) : (
+                landingHint
+              )
             ) : (
               <>
                 <BigSearchBar

@@ -24,6 +24,10 @@ interface CustomerSearchProps {
   onSelect:            (customer: Customer) => void;
   onClear:             () => void;
   autoFocusOnMount?:   boolean;
+  // Optional: notified on every query change (incl. clears) so a parent can
+  // gate landing UI (e.g. hide the recent-dealers grid while typing). Purely
+  // additive — does not change search/select behaviour.
+  onQueryChange?:      (query: string) => void;
 }
 
 export default function CustomerSearch({
@@ -32,6 +36,7 @@ export default function CustomerSearch({
   onSelect,
   onClear,
   autoFocusOnMount = false,
+  onQueryChange,
 }: CustomerSearchProps): React.JSX.Element {
   const [query,            setQuery]            = useState("");
   const [highlightedIndex, setHighlightedIndex] = useState<number>(-1);
@@ -62,6 +67,7 @@ export default function CustomerSearch({
       e.preventDefault();
       setQuery("");
       setHighlightedIndex(-1);
+      onQueryChange?.("");
       return;
     }
     if (suggestions.length === 0) return;
@@ -79,6 +85,7 @@ export default function CustomerSearch({
       onSelect(c);
       setQuery("");
       setHighlightedIndex(-1);
+      onQueryChange?.("");
       // Hand off keyboard context to the grid by blurring this input.
       // The page-level router only fires its 1-9 / letter shortcuts when
       // no input is focused.
@@ -90,6 +97,7 @@ export default function CustomerSearch({
   function handleChange(value: string): void {
     setQuery(value);
     setHighlightedIndex(-1);
+    onQueryChange?.(value);
   }
 
   if (selected) {
@@ -146,6 +154,7 @@ export default function CustomerSearch({
                   onSelect(c);
                   setQuery("");
                   setHighlightedIndex(-1);
+                  onQueryChange?.("");
                 }}
                 className={`w-full flex items-center gap-2 px-3 py-2 text-left border-b border-gray-50 last:border-b-0 ${
                   isHighlighted ? "bg-teal-50" : "hover:bg-gray-50"
