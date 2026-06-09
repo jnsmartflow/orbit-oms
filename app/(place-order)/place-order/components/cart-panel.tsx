@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Bill, CartLine, Customer } from "../types";
 import { formatPack, packStep, packToKg, packToLitres, parsePackKey, sortPacks } from "@/lib/place-order/pack";
 import type { EmailDispatch, EmailMarker } from "@/lib/place-order/email";
@@ -25,6 +25,8 @@ interface CartPanelProps {
   marker:          EmailMarker;
   onSetActiveBill: (id: number) => void;
   onAddBill:       () => void;
+  onDuplicateBill: (id: number) => void;
+  onDeleteBill:    (id: number) => void;
   onShipToChange:  (value: string) => void;
   onDispatchChange:(value: EmailDispatch) => void;
   onMarkerChange:  (value: EmailMarker) => void;
@@ -63,7 +65,7 @@ function formatLitres(l: number): string {
 export default function CartPanel({
   customer, bills, activeBillId, justAddedKeys,
   shipTo, dispatch, marker,
-  onSetActiveBill, onAddBill,
+  onSetActiveBill, onAddBill, onDuplicateBill, onDeleteBill,
   onShipToChange, onDispatchChange, onMarkerChange,
   onRemovePack, onConfirmSend, canSend, sendButtonRef,
 }: CartPanelProps): React.JSX.Element {
@@ -71,35 +73,33 @@ export default function CartPanel({
   const activeBill = bills.find((b) => b.id === activeBillId);
   const activeLines: CartLine[] = activeBill?.lines ?? [];
 
-  // Total volume + KG across ALL bills (order-wide, not just active).
-  // Post-2026-05-12 flip: packQtys values are UNITS, so the volume
-  // calculation is units × litres-per-unit directly (no × packStep
-  // factor — that was the boxes→units multiplier in the pre-flip code).
-  //
-  // Phase 3.5 (2026-05-13): keys are composite "<packCode>|<unit>"
-  // (parsePackKey handles legacy bare keys too). KG packs are
-  // excluded from the L total per policy C1 and accumulated
-  // separately into totalKg — surfaced as "+ Y KG" on the totals
-  // line when > 0.
+  // Footer total reflects the ACTIVE bill (the footer reads "Total · Bill N").
+  // Send still emails every non-empty bill — this is display only.
+  // Post-2026-05-12 flip: packQtys values are UNITS, so volume = units ×
+  // litres-per-unit (no × packStep). Phase 3.5: keys are composite
+  // "<packCode>|<unit>" (parsePackKey handles legacy bare keys). KG packs are
+  // excluded from the L total per policy C1 and surfaced separately when > 0.
   const { totalLitres, totalKg } = useMemo<{ totalLitres: number; totalKg: number }>(() => {
     let litres = 0;
     let kg = 0;
-    for (const bill of bills) {
-      for (const line of bill.lines) {
-        for (const key of Object.keys(line.packQtys)) {
-          const units = line.packQtys[key] ?? 0;
-          if (units <= 0) continue;
-          const { packCode, unit } = parsePackKey(key);
-          litres += units * packToLitres(packCode, unit);
-          kg     += units * packToKg(packCode, unit);
-        }
+    for (const line of activeLines) {
+      for (const key of Object.keys(line.packQtys)) {
+        const units = line.packQtys[key] ?? 0;
+        if (units <= 0) continue;
+        const { packCode, unit } = parsePackKey(key);
+        litres += units * packToLitres(packCode, unit);
+        kg     += units * packToKg(packCode, unit);
       }
     }
     return { totalLitres: litres, totalKg: kg };
-  }, [bills]);
+  }, [activeLines]);
 
-  const totalLines  = bills.reduce((acc, b) => acc + b.lines.length, 0);
-  const isMultiBill = bills.length > 1;
+  const totalLines = activeLines.length;
+
+  // Inline delete-confirm for the active bill (mockup). Reset whenever the
+  // active bill changes so the confirm never lingers on the wrong bill.
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  useEffect(() => { setConfirmDelete(false); }, [activeBillId]);
 
   // Cart groups within the active bill, ordered by max(touchedAt) DESC
   // so the most-recently-touched group floats to the top.
@@ -141,38 +141,97 @@ export default function CartPanel({
         </div>
       )}
 
-      {isMultiBill && (
-        <div className="px-4 py-2 border-b border-gray-100 flex flex-wrap gap-1">
-          {bills.map((bill) => {
-            const isActive = bill.id === activeBillId;
-            return (
-              <button
-                key={bill.id}
-                type="button"
-                onClick={() => onSetActiveBill(bill.id)}
-                className={`px-3 h-7 rounded-[6px] border text-[11px] font-medium transition-colors duration-75 ${
-                  isActive
-                    ? "bg-teal-50 text-teal-700 border-teal-600"
-                    : "bg-white text-gray-500 border-gray-200 hover:bg-gray-50"
-                }`}
-              >
-                Bill {bill.id}
-                {bill.lines.length > 0 && (
-                  <span className={`ml-1.5 text-[9px] font-mono ${isActive ? "text-teal-500" : "text-gray-400"}`}>
-                    {bill.lines.length}
-                  </span>
-                )}
-              </button>
-            );
-          })}
+      {/* Bill bar — always shown once a customer is locked, so "+ Add" is
+          reachable from the single-bill state. Neutral tabs (no teal). */}
+      {customer && (
+        <div className="px-3 py-[9px] border-b border-gray-100 flex items-center gap-2">
+          <div className="flex items-center gap-0.5 bg-gray-100 rounded-[8px] p-[3px]">
+            {bills.map((bill) => {
+              const isActive = bill.id === activeBillId;
+              return (
+                <button
+                  key={bill.id}
+                  type="button"
+                  onClick={() => onSetActiveBill(bill.id)}
+                  className={`text-[12px] px-[11px] py-1 rounded-[6px] whitespace-nowrap transition-colors duration-75 ${
+                    isActive
+                      ? "bg-white text-gray-900 font-medium shadow-[0_1px_2px_rgba(0,0,0,0.06)]"
+                      : "text-gray-500 hover:text-gray-700"
+                  }`}
+                >
+                  Bill {bill.id}
+                </button>
+              );
+            })}
+          </div>
           <button
             type="button"
             onClick={onAddBill}
-            className="px-3 h-7 rounded-[6px] border border-dashed border-gray-300 text-[11px] text-gray-400 hover:bg-gray-50 hover:text-gray-600"
+            title="Add bill"
             aria-label="Add bill"
+            className="w-[26px] h-[26px] rounded-[7px] border border-dashed border-gray-300 text-gray-400 hover:text-gray-600 hover:border-gray-400 flex items-center justify-center flex-shrink-0"
           >
-            + Add
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+              <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
           </button>
+          <div className="flex-1" />
+          <button
+            type="button"
+            onClick={() => onDuplicateBill(activeBillId)}
+            title="Duplicate bill"
+            aria-label="Duplicate active bill"
+            className="w-[26px] h-[26px] rounded-[7px] text-gray-400 hover:bg-gray-100 hover:text-gray-600 flex items-center justify-center flex-shrink-0"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="9" y="9" width="12" height="12" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            disabled={bills.length === 1}
+            onClick={() => {
+              if (!activeBill) return;
+              if (activeBill.lines.length === 0) onDeleteBill(activeBillId);
+              else setConfirmDelete(true);
+            }}
+            title="Delete bill"
+            aria-label="Delete active bill"
+            className={`w-[26px] h-[26px] rounded-[7px] flex items-center justify-center flex-shrink-0 ${
+              bills.length === 1
+                ? "text-gray-200 cursor-not-allowed"
+                : "text-gray-400 hover:bg-red-50 hover:text-red-600"
+            }`}
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+            </svg>
+          </button>
+        </div>
+      )}
+
+      {/* Inline delete-confirm — only when the active bill has lines. */}
+      {confirmDelete && activeBill && (
+        <div className="px-[14px] py-[11px] bg-red-50 border-b border-red-100">
+          <div className="text-[12.5px] text-red-800">
+            Delete <span className="font-bold">Bill {activeBill.id}</span> and its {activeBill.lines.length} {activeBill.lines.length === 1 ? "line" : "lines"}?
+          </div>
+          <div className="flex gap-2 mt-[9px]">
+            <button
+              type="button"
+              onClick={() => setConfirmDelete(false)}
+              className="flex-1 h-[30px] border border-gray-200 bg-white rounded-[7px] text-[12px] text-gray-700 flex items-center justify-center hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => { onDeleteBill(activeBillId); setConfirmDelete(false); }}
+              className="flex-1 h-[30px] bg-red-600 text-white rounded-[7px] text-[12px] font-medium flex items-center justify-center hover:bg-red-700"
+            >
+              Delete bill
+            </button>
+          </div>
         </div>
       )}
 
@@ -336,15 +395,12 @@ export default function CartPanel({
         </details>
 
         <div className="flex items-center justify-between pt-2 border-t border-gray-200 text-[12px]">
-          <span className="text-gray-500">Total</span>
+          <span className="text-gray-500">Total · Bill {activeBillId}</span>
           <span className="font-mono text-gray-900 font-semibold">
             {totalLines} {totalLines === 1 ? "line" : "lines"} · {formatLitres(totalLitres)} L
-            {/* Phase 3.5 (2026-05-13): KG packs are excluded from the
-                L total per policy C1 and surfaced as a tail when
-                non-zero. WRP / Waterblock 2K / cement-paste SKUs land
-                here. */}
+            {/* KG packs are excluded from the L total per policy C1 and
+                surfaced as a tail when non-zero. */}
             {totalKg > 0 && ` · ${formatLitres(totalKg)} KG`}
-            {isMultiBill && ` · ${bills.length} bills`}
           </span>
         </div>
 

@@ -65,6 +65,14 @@ const MOBILE_BREAKPOINT_PX = 1024;
 
 const FRESH_BILLS: Bill[] = [{ id: 1, lines: [] }];
 
+// Re-assign bill ids so id === index+1 after every mutation (add/delete/
+// duplicate). buildEmail numbers non-empty bills by POSITION, not id (see
+// lib/place-order/email.ts), so renumbering never changes the email for an
+// unchanged cart — it only keeps the Bill-N tab labels gap-free.
+function renumberBills(bills: Bill[]): Bill[] {
+  return bills.map((b, i) => ({ ...b, id: i + 1 }));
+}
+
 export default function PlaceOrderPage(): React.JSX.Element {
   const [customers,   setCustomers]   = useState<Customer[]>([]);
   const [products,    setProducts]    = useState<Product[]>([]);
@@ -256,23 +264,66 @@ export default function PlaceOrderPage(): React.JSX.Element {
 
   // ── Multi-bill ─────────────────────────────────────────────────────────
 
-  const addBill = useCallback((): void => {
-    setBillCounter((prev) => {
-      const id = prev + 1;
-      setBills((prevBills) => [...prevBills, { id, lines: [] }]);
-      setActiveBillId(id);
-      setActiveState({ kind: "idle" });
-      setFocusHint(null);
-      return id;
-    });
-  }, []);
+  // All three mutations renumber to id === index+1 and leave activeBillId
+  // pointing at a real bill. Reachable from the single-bill state — the cart
+  // bill-bar now always renders when a customer is selected.
+  function addBill(): void {
+    const next = renumberBills([...bills, { id: bills.length + 1, lines: [] }]);
+    setBills(next);
+    setBillCounter(next.length);
+    setActiveBillId(next.length);                 // new bill is last → id = length
+    setActiveState({ kind: "idle" });
+    setFocusHint(null);
+  }
+
+  function duplicateBill(billId: number): void {
+    const idx = bills.findIndex((b) => b.id === billId);
+    if (idx < 0) return;
+    // Deep copy: brand-new line objects AND new packQtys maps so the copy
+    // shares NO references with the source (CORE §3 — editing one must never
+    // mutate the other).
+    const copiedLines: CartLine[] = bills[idx].lines.map((l) => ({
+      ...l,
+      packQtys: { ...l.packQtys },
+    }));
+    const next = renumberBills([
+      ...bills.slice(0, idx + 1),
+      { id: 0, lines: copiedLines },              // id fixed by renumber
+      ...bills.slice(idx + 1),
+    ]);
+    setBills(next);
+    setBillCounter(next.length);
+    setActiveBillId(idx + 2);                      // copy sits at index idx+1 → id idx+2
+    setActiveState({ kind: "idle" });
+    setFocusHint(null);
+  }
+
+  function deleteBill(billId: number): void {
+    if (bills.length <= 1) return;                // never delete the last bill
+    const idx = bills.findIndex((b) => b.id === billId);
+    if (idx < 0) return;
+    const next = renumberBills(bills.filter((_, i) => i !== idx));
+    // Repoint active: the previous bill if any, else the first remaining.
+    const nextActiveId = next[Math.max(0, idx - 1)]?.id ?? 1;
+    setBills(next);
+    setBillCounter(next.length);
+    setActiveBillId(nextActiveId);
+    setActiveState({ kind: "idle" });
+    setFocusHint(null);
+  }
 
   // ── Customer / draft persistence ───────────────────────────────────────
 
   function applyDraft(snap: DraftSnapshot): void {
-    setBills(snap.bills.length > 0 ? snap.bills : FRESH_BILLS);
-    setActiveBillId(snap.activeBillId);
-    setBillCounter(snap.billCounter);
+    // Renumber on restore (idempotent for already-1..n drafts) and clamp the
+    // active id so a draft can never rehydrate a dangling activeBillId.
+    const restored = renumberBills(snap.bills.length > 0 ? snap.bills : FRESH_BILLS);
+    const activeId = restored.some((b) => b.id === snap.activeBillId)
+      ? snap.activeBillId
+      : (restored[0]?.id ?? 1);
+    setBills(restored);
+    setActiveBillId(activeId);
+    setBillCounter(restored.length);
     setShipTo(snap.shipTo);
     setDispatch(snap.dispatch);
     setMarker(snap.marker);
@@ -794,6 +845,8 @@ export default function PlaceOrderPage(): React.JSX.Element {
           marker={marker}
           onSetActiveBill={setActiveBillId}
           onAddBill={addBill}
+          onDuplicateBill={duplicateBill}
+          onDeleteBill={deleteBill}
           onShipToChange={setShipTo}
           onDispatchChange={setDispatch}
           onMarkerChange={setMarker}
