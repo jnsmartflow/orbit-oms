@@ -1488,16 +1488,23 @@ export default function PoPage(): React.JSX.Element {
     // Record this customer in device-local recents BEFORE the reset — this is
     // the ONLY place recents are written.
     if (selectedCust) setRecents(addRecent(selectedCust));
+    // Fire the mailto FIRST — within the tap gesture, BEFORE any history navigation.
+    // On mobile a synchronous history.go() in the same tick cancels the pending
+    // external mailto handoff before the mail app opens (the working /order only sets
+    // location.href and does nothing after). Nothing that navigates history may run
+    // before or in the same sync tick as this line.
     window.location.href = url;   // mailto: opens the mail app; page does not unload
-    // Snap history to base so a later Back exits cleanly (item 5), then full reset.
+    // Full reset — pure state, NO navigation, so it can't pre-empt the mailto.
+    clearCustomer();
+    // Snap history to base so a later Back exits cleanly — DEFERRED to a later task
+    // (setTimeout 0) so it runs AFTER the mailto handoff and never pre-empts it. End
+    // state is unchanged: user on landing (cleared), history at base, Back exits.
     if (typeof window !== "undefined" && depthRef.current > 0) {
       const n = depthRef.current;
       depthRef.current = 0;
       suppressPopRef.current = true;
-      window.history.go(-n);
+      setTimeout(() => { window.history.go(-n); }, 0);
     }
-    // Full reset so the next order starts empty (back to customer-pick).
-    clearCustomer();
   }
 
   // §10 chips for a cart line: per pack "{label} ×{units}" + conditional
