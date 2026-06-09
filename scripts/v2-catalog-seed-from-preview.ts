@@ -51,7 +51,7 @@ const DRY_RUN      = process.env.DRY_RUN === "1";
 // Locked expectations from the May 6 preview run. If the JSON drifts from
 // these the script refuses to seed — better to fail loudly than to ship
 // surprise data into v2.
-const EXPECTED_TOTAL_NEW_ROWS    = 506;  // 474 − 51 + 63 − 1 − 4 + 25 (…; PRIMER rebuilt to flat 11-row set −4 rows 2026-06-08; TOOLS family +25 rollers/brushes 2026-06-08)
+const EXPECTED_TOTAL_NEW_ROWS    = 505;  // 474 − 51 + 63 − 1 − 4 + 25 − 1 (…; TOOLS family +25 rollers/brushes 2026-06-08; SUPERCOVER cleanup net −1: −dup92 −yellow +93 BASE 2026-06-09)
 const EXPECTED_WARNINGS          = 0;
 
 // ── PROMISE transform constants ────────────────────────────────────────
@@ -255,6 +255,11 @@ const CONFIRMED_SUBPRODUCT_MAP: Record<string, string> = {
   // equals these, so the pack join is unchanged.
   "SUPER SATIN":       "SUPER SATIN",
   "SATIN STAY BRIGHT": "SATIN STAY BRIGHT",
+  // SuperCover: identity join-keys so menu.product is non-null → base aliases
+  // render + §7.8 bakes the alias search words. Stock product already equals
+  // these ("SUPERCOVER" / "SUPERCOVER SHEEN"), so the pack join is unchanged.
+  "SUPERCOVER":        "SUPERCOVER",
+  "SUPERCOVER SHEEN":  "SUPERCOVER SHEEN",
   // Promise 7 tabs — identity join-key so base aliases render + §7.8 bakes tokens
   // (stock product, set via overrides, equals these).
   "PROMISE ENAMEL":         "PROMISE ENAMEL",
@@ -842,6 +847,9 @@ async function main(): Promise<void> {
     // PROMISE: one family, 6 tabs (uiGroup short label; subProduct = tab = pack-join key).
     if (r.family === "PROMISE" && PROMISE_TAB_LABEL[r.subProduct]) { r.uiGroup = PROMISE_TAB_LABEL[r.subProduct]; uiAssigned++; continue; }
     if (r.family === "VELVET TOUCH" && VELVET_TOUCH_UI[sub]) { r.uiGroup = VELVET_TOUCH_UI[sub]; uiAssigned++; continue; }
+    // SUPERCOVER: one family, 2 tabs (SuperCover / SuperCover Sheen). uiGroup =
+    // tab label; subProduct stays the pack-join key. Display/tab-label only.
+    if (r.family === "SUPERCOVER") { r.uiGroup = sub === "SUPERCOVER SHEEN" ? "SuperCover Sheen" : "SuperCover"; uiAssigned++; continue; }
     if (r.family === "SATIN"   && SATIN_UI[sub])   { r.uiGroup = SATIN_UI[sub];   uiAssigned++; continue; }
     if (r.family === "STAINER" && STAINER_UI[sub]) { r.uiGroup = STAINER_UI[sub]; uiAssigned++; continue; }
     if (r.family === "PRIMER")  { r.uiGroup = "Primers";  uiAssigned++; continue; }

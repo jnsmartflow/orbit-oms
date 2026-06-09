@@ -19,6 +19,8 @@ const KEYWORD_FAMILY: Record<string, string> = {
   "vt":           "VELVET TOUCH",
   "velvet touch": "VELVET TOUCH",
   "velvettouch":  "VELVET TOUCH",
+  "supercover":   "SUPERCOVER",
+  "super cover":  "SUPERCOVER",
   "sadolin":      "SADOLIN",
   "woodcare":     "SADOLIN",
   "tools":        "TOOLS",

@@ -4,7 +4,7 @@
   "summary": {
     "totalLegacyTriples": 560,
     "totalLegacySkuCount": 1599,
-    "totalNewRows": 506,
+    "totalNewRows": 505,
     "crossListedExtraRows": 68,
     "suppressedPlainRows": 19,
     "skippedTriples": 82,
@@ -2121,17 +2121,17 @@
         "tinterType": null,
         "sortOrder": 1902,
         "isActive": true,
-        "skuCount": 1
+        "skuCount": 4
       },
       {
         "family": "SUPERCOVER",
         "subProduct": "SUPERCOVER",
         "displayName": "SuperCover",
         "searchTokens": "SUPERCOVER, SUPER COVER, DULUX SUPERCOVER",
-        "baseColour": "92 BASE",
+        "baseColour": "93 BASE",
         "productType": "BASE_VARIANT",
         "tinterType": null,
-        "sortOrder": 1902,
+        "sortOrder": 1903,
         "isActive": true,
         "skuCount": 4
       },
@@ -2182,18 +2182,6 @@
         "sortOrder": 1907,
         "isActive": true,
         "skuCount": 3
-      },
-      {
-        "family": "SUPERCOVER",
-        "subProduct": "SUPERCOVER",
-        "displayName": "SuperCover",
-        "searchTokens": "SUPERCOVER, SUPER COVER, DULUX SUPERCOVER",
-        "baseColour": "YELLOW BASE",
-        "productType": "BASE_VARIANT",
-        "tinterType": null,
-        "sortOrder": 1909,
-        "isActive": true,
-        "skuCount": 2
       },
       {
         "family": "SUPERCOVER",

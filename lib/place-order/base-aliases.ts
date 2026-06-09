@@ -90,6 +90,22 @@ export const BASE_ALIASES: Record<string, Record<string, BaseAlias>> = {
     "96 BASE": { display: "YOX",            search: ["yox", "yellow oxide", "yellow oxide base"] },
     "97 BASE": { display: "ROX",            search: ["rox", "red oxide", "red oxide base"] },
   },
+  // SuperCover (mass-market emulsion). Product join-key set in the catalog seed's
+  // CONFIRMED_SUBPRODUCT_MAP so these render + bake into tokens. SuperCover labels
+  // 96/97 plainly as Yellow/Red (not YOX/ROX). Brilliant White + 93 BASE: no alias.
+  "SUPERCOVER": {
+    "90 BASE": { display: "White",          search: ["white", "white base"] },
+    "92 BASE": { display: "Intermediate",   search: ["intermediate", "intermediate base"] },
+    "94 BASE": { display: "Accent",         search: ["accent", "accent base"] },
+    "95 BASE": { display: "Deep",           search: ["deep", "deep base"] },
+    "96 BASE": { display: "Yellow",         search: ["yellow", "yellow base"] },
+    "97 BASE": { display: "Red",            search: ["red", "red base"] },
+  },
+  "SUPERCOVER SHEEN": {
+    "90 BASE": { display: "White",          search: ["white", "white base"] },
+    "92 BASE": { display: "Intermediate",   search: ["intermediate", "intermediate base"] },
+    "94 BASE": { display: "Accent",         search: ["accent", "accent base"] },
+  },
   // ── Promise family (6 tabs) ──────────────────────────────────────────────
   // Emulsion tabs: numbered-base aliases (whichever present). SmartChoice/Primer
   // tabs: the row's baseColour is the VARIANT; the alias carries the light
