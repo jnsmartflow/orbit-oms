@@ -527,6 +527,9 @@ export default function PoPage(): React.JSX.Element {
   // Debounce for the keyboardOpen flag (avoids flicker on the open/close ramp).
   const kbDebounceRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // The single scroll container (flex-1) — reset to top on every screen change.
+  const scrollAreaRef  = useRef<HTMLDivElement | null>(null);
+
   // ── Android Back / iPhone swipe-back: browser history = single nav authority ─
   // depthRef = pushed entries above the base (landing) entry. suppressPopRef
   // ignores the popstate from a PROGRAMMATIC history.back()/go(). backConfirmRef
@@ -765,6 +768,17 @@ export default function PoPage(): React.JSX.Element {
     });
     return () => cancelAnimationFrame(id);
   }, [mode, activeProduct]);
+
+  // Reset the shared scroll container to the TOP on every screen ENTER (mode
+  // and/or view change) so review / picker / multiqty / build-search never open
+  // mid-scroll from the previous screen. Deps are [mode, view] ONLY — this never
+  // fires on input focus, so it can't fight the focusin scrollIntoView or the
+  // --vvh keyboard re-scroll (both run on focus/resize, NOT a screen change). The
+  // picking-entry scrollIntoView (the rAF above) runs async and still governs the
+  // picker's landing position; for every other screen this opens it at the top.
+  useEffect(() => {
+    scrollAreaRef.current?.scrollTo({ top: 0 });
+  }, [mode, view]);
 
   // Confirm dialog: focus the confirm button on open, trap Tab between the two
   // buttons, Esc cancels. Accessible per the task spec.
@@ -1533,7 +1547,7 @@ export default function PoPage(): React.JSX.Element {
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
     <main
-      className="bg-[#f9fafb] flex flex-col overflow-hidden"
+      className="po-page bg-[#f9fafb] flex flex-col overflow-hidden"
       style={{ height: "var(--vvh, 100vh)" }}
     >
       {/* Pinned teal Orbit brand bar — flex-shrink-0 TOP sibling of the scroll
@@ -1583,7 +1597,7 @@ export default function PoPage(): React.JSX.Element {
           On keyboard-open the resize listener shrinks --vvh → <main> shrinks →
           this scroll area shrinks while the footer rides up and stays pinned
           above the keyboard. No sticky-bottom jank, no viewport math (§22). */}
-      <div className="flex-1 min-h-0 overflow-y-auto">
+      <div ref={scrollAreaRef} className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
         <div className="max-w-[480px] mx-auto flex flex-col min-h-full">
 
         {/* Merged header — normal flow (scrolls away). The product search bar is
@@ -2196,7 +2210,7 @@ export default function PoPage(): React.JSX.Element {
                             <div
                               key={p.id}
                               onClick={() => toggleProductSelection(p)}
-                              className="flex items-center gap-3 py-[13px] px-1 border-b border-gray-100 last:border-b-0 cursor-pointer active:bg-gray-50"
+                              className="flex items-center gap-3 py-[13px] px-1 border-b border-gray-100 last:border-b-0 cursor-pointer active:bg-gray-50 touch-manipulation"
                             >
                               <div className={`w-5 h-5 rounded-[6px] border-2 flex items-center justify-center shrink-0 ${selected ? "bg-teal-600 border-teal-600" : "bg-white border-gray-300"}`}>
                                 {selected && (

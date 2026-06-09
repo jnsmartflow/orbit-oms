@@ -20,6 +20,17 @@ html, body { overscroll-behavior: none; }
 @tailwind components;
 @tailwind utilities;
 
+/* /po (mobile order) — remove the ~300ms double-tap delay on tap targets so
+   buttons feel instant. touch-action is NOT inherited, so target the interactive
+   elements directly; scoped to .po-page so the rest of the app is untouched. The
+   zoom-lock (maximumScale / userScalable in the viewport meta) is left as-is. */
+.po-page button,
+.po-page a,
+.po-page input,
+.po-page textarea,
+.po-page label,
+.po-page [role="button"] { touch-action: manipulation; }
+
 @layer base {
   :root {
     --background: 0 0% 100%;
