@@ -52,10 +52,12 @@ declare global {
   }
 }
 
-// Order-level fields. /po's set DIVERGES from /order on purpose: "Hold" is
-// renamed "Call to SO" and a "Bounce" remark is added. These feed the email.
-type Dispatch = "Normal" | "Call to SO" | "Urgent";
-type Marker   = "Truck" | "Cross Delivery" | "Bounce" | "DTS" | null;
+// Order-level fields. /po's set DIVERGES from /order on purpose: a "Call" dispatch
+// (routed to SO or Dealer via callTarget) replaces /order's "Hold", and a "Bounce"
+// remark is added. These feed the email.
+type Dispatch   = "Normal" | "Urgent" | "Call";
+type CallTarget = "SO" | "Dealer" | null;
+type Marker     = "Truck" | "Cross Delivery" | "Bounce" | "DTS" | null;
 
 // Cross-billing source depots (shown in the "Cross billing from?" sheet).
 const CROSS_DEPOTS = ["Dahisar", "Ahmedabad", "Rajkot", "Pune"] as const;
@@ -91,11 +93,12 @@ function buildEmailParts(args: {
   bills:      Bill[];
   shipTo:     string;
   dispatch:   Dispatch;
+  callTarget: CallTarget;
   marker:     Marker;
   crossDepot: string | null;
   notes:      string;
 }): { subject: string; body: string; valid: boolean } {
-  const { customer, bills, shipTo, dispatch, marker, crossDepot, notes } = args;
+  const { customer, bills, shipTo, dispatch, callTarget, marker, crossDepot, notes } = args;
   const name = customer?.name ?? "";
   const code = customer?.code ?? "";
   const lines: string[] = [];
@@ -104,8 +107,13 @@ function buildEmailParts(args: {
     const customerLine = name && code ? `${name} (${code})` : (name || code);
     lines.push("Customer: " + customerLine);
   }
-  // Dispatch reflects the rename — "Dispatch: Call to SO" when chosen.
-  if (dispatch !== "Normal") lines.push("Dispatch: " + dispatch);
+  // Dispatch line. Urgent → "Dispatch: Urgent"; Call → "Dispatch: Call to SO/Dealer"
+  // (from callTarget); Normal omits the line.
+  if (dispatch === "Call") {
+    lines.push("Dispatch: Call to " + (callTarget ?? "SO"));
+  } else if (dispatch !== "Normal") {
+    lines.push("Dispatch: " + dispatch);
+  }
   // Order-remark line for the selected marker (Order Remarks section).
   if (marker) {
     const remarkText =
@@ -171,6 +179,7 @@ type PoDraft = {
   activeBillId: number;
   shipTo:       string;
   dispatch:     Dispatch;
+  callTarget:   CallTarget;
   marker:       Marker;
   crossDepot:   string | null;
   notes:        string;
@@ -201,8 +210,10 @@ function loadPoDraft(): Omit<PoDraft, "updatedAt"> | null {
       billCounter:  typeof parsed.billCounter === "number" ? parsed.billCounter : 1,
       activeBillId: typeof parsed.activeBillId === "number" ? parsed.activeBillId : 1,
       shipTo:       typeof parsed.shipTo === "string" ? parsed.shipTo : "",
-      dispatch:     parsed.dispatch === "Call to SO" || parsed.dispatch === "Urgent"
+      dispatch:     parsed.dispatch === "Call" || parsed.dispatch === "Urgent"
                       ? parsed.dispatch : "Normal",
+      callTarget:   parsed.callTarget === "SO" || parsed.callTarget === "Dealer"
+                      ? parsed.callTarget : null,
       marker:       parsed.marker === "Truck" || parsed.marker === "Cross Delivery"
                       || parsed.marker === "Bounce" || parsed.marker === "DTS"
                       ? parsed.marker : null,
@@ -493,6 +504,9 @@ export default function PoPage(): React.JSX.Element {
   // Cross-billing depot (set only when marker === "Cross Delivery") + its sheet.
   const [crossDepot,     setCrossDepot]     = useState<string | null>(null);
   const [crossSheetOpen, setCrossSheetOpen] = useState(false);
+  // Call routing — which party to call (SO/Dealer) + its bottom-sheet open flag.
+  const [callTarget,     setCallTarget]     = useState<CallTarget>(null);
+  const [callSheetOpen,  setCallSheetOpen]  = useState(false);
   // Free-text order notes + the "Quick add" preset menu.
   const [notes,        setNotes]        = useState("");
   const [quickAddOpen, setQuickAddOpen] = useState(false);
@@ -545,9 +559,10 @@ export default function PoPage(): React.JSX.Element {
     mode:         "search" | "picking" | "multiqty";
     confirmOpen:  boolean;
     crossOpen:    boolean;
+    callOpen:     boolean;
     deleteOpen:   boolean;
     hasLines:     boolean;
-  }>({ selectedCust: false, view: "build", mode: "search", confirmOpen: false, crossOpen: false, deleteOpen: false, hasLines: false });
+  }>({ selectedCust: false, view: "build", mode: "search", confirmOpen: false, crossOpen: false, callOpen: false, deleteOpen: false, hasLines: false });
 
   // ── Data ──────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -571,6 +586,7 @@ export default function PoPage(): React.JSX.Element {
       setActiveBillId(saved.activeBillId);
       setShipTo(saved.shipTo);
       setDispatch(saved.dispatch);
+      setCallTarget(saved.callTarget);
       setMarker(saved.marker);
       setCrossDepot(saved.crossDepot);
       setNotes(saved.notes);
@@ -828,6 +844,7 @@ export default function PoPage(): React.JSX.Element {
         return;
       }
       if (s.crossOpen)  { cancelCrossSheet(); return; }   // overlay: cross-depot sheet
+      if (s.callOpen)   { cancelCallSheet();  return; }   // overlay: call-routing sheet
       if (s.deleteOpen) { cancelDeleteBill(); return; }   // overlay: delete-bill sheet
       if (s.view === "review")   { closeReview();   return; }
       if (s.mode === "picking")  { cancelPicking(); return; }
@@ -886,7 +903,7 @@ export default function PoPage(): React.JSX.Element {
     if (!selectedCust) return null;
     return {
       customer:     selectedCust,
-      bills, billCounter, activeBillId, shipTo, dispatch, marker,
+      bills, billCounter, activeBillId, shipTo, dispatch, callTarget, marker,
       crossDepot, notes, multiSelect,
       ...overrides,
     };
@@ -901,7 +918,7 @@ export default function PoPage(): React.JSX.Element {
     setSelectedCust(c);
     setCustQuery("");
     savePoDraft({
-      customer: c, bills, billCounter, activeBillId, shipTo, dispatch, marker,
+      customer: c, bills, billCounter, activeBillId, shipTo, dispatch, callTarget, marker,
       crossDepot, notes, multiSelect,
     });
     pushScreen("build");   // landing → build-search
@@ -925,6 +942,8 @@ export default function PoPage(): React.JSX.Element {
     setShipFocused(false);
     setInputFocused(false);
     setDispatch("Normal");
+    setCallTarget(null);
+    setCallSheetOpen(false);
     setMarker(null);
     setCrossDepot(null);
     setCrossSheetOpen(false);
@@ -1087,8 +1106,10 @@ export default function PoPage(): React.JSX.Element {
   }
 
   function chooseDispatch(d: Dispatch): void {
+    // Normal / Urgent only — "Call" is set via confirmCall. Clears any stale target.
     setDispatch(d);
-    const s = snapshot({ dispatch: d });
+    setCallTarget(null);
+    const s = snapshot({ dispatch: d, callTarget: null });
     if (s) savePoDraft(s);
   }
 
@@ -1121,6 +1142,27 @@ export default function PoPage(): React.JSX.Element {
     // No state change — if Cross wasn't already confirmed it stays unselected;
     // if it was (reopened via "change"), the prior depot is kept.
     setCrossSheetOpen(false);
+  }
+
+  // Call routing — tapping "Call" opens the SO/Dealer sheet. MIRRORS Cross: opening
+  // does NOT commit dispatch; only picking a target does, so dismissing without a
+  // pick leaves the previous Dispatch (never "Call" with no target).
+  function openCallSheet(): void {
+    setCallSheetOpen(true);
+    pushScreen("call");
+  }
+  function confirmCall(target: "SO" | "Dealer"): void {
+    setCallTarget(target);
+    setDispatch("Call");
+    setCallSheetOpen(false);
+    const s = snapshot({ dispatch: "Call", callTarget: target });
+    if (s) savePoDraft(s);
+    // Close = pop the call overlay entry (programmatic → suppress the popstate).
+    if (typeof window !== "undefined") { suppressPopRef.current = true; window.history.back(); }
+  }
+  function cancelCallSheet(): void {
+    // No state change — dispatch stays at its previous value (Call never committed).
+    setCallSheetOpen(false);
   }
 
   // Notes free-text + "Quick add" preset append (joined with ", " when the
@@ -1431,13 +1473,14 @@ export default function PoPage(): React.JSX.Element {
     view, mode,
     confirmOpen:  confirmKind !== null,
     crossOpen:    crossSheetOpen,
+    callOpen:     callSheetOpen,
     deleteOpen:   billToDelete !== null,
     hasLines:     hasAnyLines,
   };
 
   // Email — byte-identical to /order. Computed each render (like /order).
   const { subject: emailSubject, body: emailBody, valid: canSend } =
-    buildEmailParts({ customer: selectedCust, bills, shipTo, dispatch, marker, crossDepot, notes });
+    buildEmailParts({ customer: selectedCust, bills, shipTo, dispatch, callTarget, marker, crossDepot, notes });
 
   function handleSend(): void {
     if (!canSend) return;
@@ -1892,22 +1935,27 @@ export default function PoPage(): React.JSX.Element {
               <p className="text-[11px] uppercase tracking-wide text-gray-400 mb-[7px]">Dispatch</p>
               <div className="grid grid-cols-3 gap-2">
                 {([
-                  { label: "Normal",     dot: "bg-teal-500",  on: "border-teal-500 bg-teal-50 text-teal-700" },
-                  { label: "Call to SO", dot: "bg-red-400",   on: "border-red-300 bg-red-50 text-red-700" },
-                  { label: "Urgent",     dot: "bg-amber-400", on: "border-amber-300 bg-amber-50 text-amber-700" },
+                  { value: "Normal", dot: "bg-teal-500",  on: "border-teal-500 bg-teal-50 text-teal-700" },
+                  { value: "Urgent", dot: "bg-amber-400", on: "border-amber-300 bg-amber-50 text-amber-700" },
+                  { value: "Call",   dot: "bg-red-400",   on: "border-red-300 bg-red-50 text-red-700" },
                 ] as const).map((d) => {
-                  const on = dispatch === d.label;
+                  const on     = dispatch === d.value;
+                  const isCall = d.value === "Call";
+                  // Call pill shows its chosen target once committed: "Call · SO/Dealer".
+                  const label  = isCall
+                    ? (dispatch === "Call" && callTarget ? `Call · ${callTarget}` : "Call")
+                    : d.value;
                   return (
                     <button
-                      key={d.label}
+                      key={d.value}
                       type="button"
-                      onClick={() => chooseDispatch(d.label)}
+                      onClick={() => (isCall ? openCallSheet() : chooseDispatch(d.value))}
                       className={`h-[42px] rounded-[10px] border text-[13px] flex items-center justify-center gap-1.5 whitespace-nowrap ${
                         on ? `${d.on} font-semibold` : "border-gray-200 bg-white text-gray-400 font-medium"
                       }`}
                     >
                       <span className={`w-[7px] h-[7px] rounded-full shrink-0 ${d.dot}`} />
-                      {d.label}
+                      {label}
                     </button>
                   );
                 })}
@@ -2403,6 +2451,56 @@ export default function PoPage(): React.JSX.Element {
                       }`}
                     >
                       {d}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Call-routing bottom-sheet — CLONE of the Cross-depot sheet. Dismissing
+            without a pick cancels (cancelCallSheet makes no state change, so Call is
+            only ever committed by choosing SO/Dealer). */}
+        {callSheetOpen && (
+          <div
+            className="fixed inset-0 z-50 flex items-end justify-center bg-black/40"
+            onClick={() => window.history.back()}
+          >
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-label="Call to"
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-[480px] bg-white rounded-t-[18px] p-5"
+              style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 20px)" }}
+            >
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-[16px] font-semibold text-gray-900">Call to?</h2>
+                <button
+                  type="button"
+                  onClick={() => window.history.back()}
+                  aria-label="Close"
+                  className="text-gray-400 text-[22px] leading-none px-1 active:text-gray-600"
+                >
+                  ×
+                </button>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {(["SO", "Dealer"] as const).map((t) => {
+                  const on = callTarget === t;
+                  return (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => confirmCall(t)}
+                      className={`h-[48px] rounded-[10px] border text-[15px] ${
+                        on
+                          ? "border-indigo-300 bg-indigo-50 text-indigo-700 font-semibold"
+                          : "border-gray-200 bg-white text-gray-700 font-medium active:bg-gray-50"
+                      }`}
+                    >
+                      {t}
                     </button>
                   );
                 })}
