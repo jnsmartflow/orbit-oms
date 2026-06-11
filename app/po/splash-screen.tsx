@@ -122,8 +122,8 @@ export default function SplashScreen({
         }}
       >
         {/* Orbit mark — geometry from public/icon-source.svg, white on teal.
-            viewBox 22 at 210px → ring r7 renders ~134px diameter. */}
-        <svg width="210" height="210" viewBox="0 0 22 22" fill="none" aria-hidden="true">
+            viewBox 22 at 112px → ring r7 renders ~71px diameter. */}
+        <svg width="112" height="112" viewBox="0 0 22 22" fill="none" aria-hidden="true">
           <circle cx="11" cy="11" r="7" stroke="#fff" strokeWidth="1.6" />
           <circle cx="11" cy="11" r="2.2" fill="#fff" />
           <circle cx="18" cy="11" r="2" fill="#fff" />
@@ -132,9 +132,9 @@ export default function SplashScreen({
           style={{
             color: "#fff",
             fontWeight: 600,
-            fontSize: 68,
+            fontSize: 34,
             lineHeight: 1,
-            marginTop: 28,
+            marginTop: 14,
             letterSpacing: "-0.5px",
           }}
         >
