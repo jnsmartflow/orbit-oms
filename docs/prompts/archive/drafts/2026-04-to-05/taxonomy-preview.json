@@ -3299,9 +3299,9 @@
       },
       {
         "family": "PRIMER",
-        "subProduct": "EXTERIOR ACRYLIC PRIMER",
+        "subProduct": "INTERIOR ACRYLIC PRIMER",
         "displayName": "Acrylic Primer - Int",
-        "searchTokens": "ACRYLIC PRIMER INT, INTERIOR ACRYLIC PRIMER, ACRYLIC PRIMER, WS PRIME COAT PRIMER, PRIME COAT",
+        "searchTokens": "ACRYLIC PRIMER INT, INTERIOR ACRYLIC PRIMER, ACRYLIC PRIMER, DUWEL ACRYLIC PRIMER",
         "baseColour": null,
         "productType": "PLAIN",
         "tinterType": null,
@@ -3311,9 +3311,9 @@
       },
       {
         "family": "PRIMER",
-        "subProduct": "INTERIOR ACRYLIC PRIMER",
+        "subProduct": "EXTERIOR ACRYLIC PRIMER",
         "displayName": "Acrylic Primer - Ext",
-        "searchTokens": "ACRYLIC PRIMER EXT, EXTERIOR ACRYLIC PRIMER, ACRYLIC PRIMER, DUWEL ACRYLIC PRIMER",
+        "searchTokens": "ACRYLIC PRIMER EXT, EXTERIOR ACRYLIC PRIMER, ACRYLIC PRIMER, WS PRIME COAT PRIMER, PRIME COAT",
         "baseColour": null,
         "productType": "PLAIN",
         "tinterType": null,
