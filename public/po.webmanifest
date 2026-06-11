@@ -6,7 +6,7 @@
   "scope": "/po",
   "display": "standalone",
   "display_override": ["standalone"],
-  "background_color": "#f9fafb",
+  "background_color": "#0d9488",
   "theme_color": "#0d9488",
   "orientation": "portrait",
   "icons": [

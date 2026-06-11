@@ -8,6 +8,7 @@ import { rankProductsForQuery } from "@/lib/place-order/mobile-search";
 import { formatPack, packToMl, packStepForPack, packKey, parsePackKey } from "@/lib/place-order/pack";
 import { getBaseAliasDisplay } from "@/lib/place-order/base-aliases";
 import { getSecondLine, isVariantQualifierTab } from "@/lib/place-order/sub-product-descriptors";
+import SplashScreen from "./splash-screen";
 
 // /po — new public mobile order page. PHASE 2 (search + add, build screen).
 //   - live ranked product search on the locked-customer hero bar
@@ -443,6 +444,9 @@ export default function PoPage(): React.JSX.Element {
   const [customers,   setCustomers]   = useState<Customer[]>([]);
   const [products,    setProducts]    = useState<Product[]>([]);
   const [dataLoading, setDataLoading] = useState(true);
+  // Opening splash — shown once per app open (initial mount), then never again
+  // (splashDone stays true across internal re-renders / navigation; no storage).
+  const [splashDone, setSplashDone] = useState(false);
 
   const [selectedCust, setSelectedCust] = useState<Customer | null>(null);
   const [custQuery,    setCustQuery]    = useState("");
@@ -1601,6 +1605,14 @@ export default function PoPage(): React.JSX.Element {
       className="po-page bg-[#f9fafb] flex flex-col overflow-hidden"
       style={{ height: "var(--vvh, 100vh)" }}
     >
+      {/* Opening splash — FIRST child so it covers the landing from first paint
+          (no landing flash). position:fixed inset-0 escapes this <main>'s
+          overflow-hidden + --vvh height. Wired to the catalog-ready flag
+          (!dataLoading) and self-dismisses once min-hold + ready are both met. */}
+      {!splashDone && (
+        <SplashScreen ready={!dataLoading} onDone={() => setSplashDone(true)} />
+      )}
+
       {/* Pinned teal Orbit brand bar — flex-shrink-0 TOP sibling of the scroll
           area (mirrors footerPill, the shrink-0 sibling below it). It carries
           the status-bar inset on a teal bg, so teal is continuous from the
