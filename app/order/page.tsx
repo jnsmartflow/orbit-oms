@@ -617,7 +617,7 @@ export default function OrderPage(): React.JSX.Element {
       // step is keyed by (packCode, unit) via packStepForPack so tools (unit
       // "PC") get the box step (rollers 25 / brushes 12); paint delegates to
       // the label-keyed packStep — byte-identical. Unknown packs fall to 1.
-      const step = packStepForPack(packCode, unit);
+      const step = packStepForPack(packCode, unit, b.activeProduct ? (b.activeProduct.product ?? b.activeProduct.subProduct) : null);
       const cur  = b.packQtys[pack] ?? 0;
       const next = Math.max(0, cur + delta * step);
       return { ...b, packQtys: { ...b.packQtys, [pack]: next } };
@@ -1894,7 +1894,7 @@ const BillCard = forwardRef<BillCardHandle, BillCardProps>(function BillCard({
             // keyed by label so render, lookup, and step all share one key.
             const label = formatPack(rawPack.packCode, rawPack.unit);
             const qty   = bill.packQtys[label] ?? 0;
-            const step  = packStepForPack(rawPack.packCode, rawPack.unit);
+            const step  = packStepForPack(rawPack.packCode, rawPack.unit, bill.activeProduct ? (bill.activeProduct.product ?? bill.activeProduct.subProduct) : null);
             const onlyPack = sortedPacks.length === 1;
             return (
               <div

@@ -368,7 +368,7 @@ function PackRows({
       {sorted.map((rp, i) => {
         const key      = packKey(rp.packCode, rp.unit);
         const label    = formatPack(rp.packCode, rp.unit);
-        const step     = packStepForPack(rp.packCode, rp.unit);   // PC tools → box 25/12; paint via label-keyed packStep
+        const step     = packStepForPack(rp.packCode, rp.unit, product.product ?? product.subProduct);   // PC tools → box 25/12; paint via label-keyed packStep (+ product-scoped carton overrides)
         const qty      = qtys[key] ?? 0;
         const onlyPack = sorted.length === 1;
         const boxes    = step > 1 && qty > 0 && qty % step === 0 ? qty / step : null;
@@ -1028,7 +1028,8 @@ export default function PoPage(): React.JSX.Element {
 
   function stepMultiPack(productId: number, key: string, label: string, delta: number): void {
     const { packCode, unit } = parsePackKey(key);   // composite key carries packCode|unit
-    const step = packStepForPack(packCode, unit);
+    const prod = selectedProducts.find((p) => p.id === productId);
+    const step = packStepForPack(packCode, unit, prod ? (prod.product ?? prod.subProduct) : null);
     setMultiQtys((prev) => {
       const cur = prev[productId] ?? {};
       const nextQty = Math.max(0, (cur[key] ?? 0) + delta * step);
@@ -1257,7 +1258,7 @@ export default function PoPage(): React.JSX.Element {
   // ── Quantity cell semantics (units; +/- by box step) ──────────────────────
   function stepPack(key: string, label: string, delta: number): void {
     const { packCode, unit } = parsePackKey(key);   // composite key carries packCode|unit
-    const step = packStepForPack(packCode, unit);
+    const step = packStepForPack(packCode, unit, activeProduct?.product ?? activeProduct?.subProduct ?? null);
     setPackQtys((prev) => {
       const cur = prev[key] ?? 0;
       return { ...prev, [key]: Math.max(0, cur + delta * step) };
@@ -1521,7 +1522,7 @@ export default function PoPage(): React.JSX.Element {
     );
     return entries.map((e) => {
       const label = formatPack(e.packCode, e.unit);
-      const step  = packStepForPack(e.packCode, e.unit);
+      const step  = packStepForPack(e.packCode, e.unit, line.product ?? line.subProduct);
       const boxes = step > 1 && e.qty > 0 && e.qty % step === 0 ? e.qty / step : null;
       return { label, units: e.qty, boxes };
     });

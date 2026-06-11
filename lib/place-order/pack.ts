@@ -119,7 +119,35 @@ const PACK_STEP_MAP: Record<string, number> = {
   "1 pc":  1,   // tools — step 1 piece (carton 25/12 is informational, not the step)
 };
 
-export function packStep(packLabel: string): number {
+// Product-scoped carton overrides (2026-06-11). Mirrors the
+// FAMILY_BUCKET_OVERRIDES precedent in pack-buckets.ts: checked BEFORE the
+// global PACK_STEP_MAP / PACK_CONTAINER_MAP so a single product can re-size
+// its cartons without touching the shared tables or any other product.
+// Keyed by product identity (`product ?? subProduct`) → pack label → units
+// per box. ONE table drives BOTH the +/- step (packStep) and the "box N"
+// container label (packContainerLabel) so the two never drift.
+//
+// UNIVERSAL STAINER: depot cartons are 50ML→20, 100ML→20, 200ML→10 (the
+// global stainer/wood-stain values are 12/24/12). Every OTHER product stays
+// on the global maps — incl. the other 3 stainers (GVA/PU, Machine, Acotone,
+// all 1L) and the 100/200ML sharers (GLOSS, WOOD STAIN, METALLIC, PEARL GLO,
+// SATIN STAY BRIGHT, VT METALLICS). Universal Stainer has product=null in the
+// catalog, so its key is its subProduct "UNIVERSAL STAINER".
+const PRODUCT_CARTON_OVERRIDES: Record<string, Record<string, number>> = {
+  "UNIVERSAL STAINER": { "50ML": 20, "100ML": 20, "200ML": 10 },
+};
+
+// Shared override lookup for packStep + packContainerLabel. Returns the
+// per-box unit count when (productKey, packLabel) is overridden, else null.
+// No key (or no match) → null → caller falls back to the global map.
+function cartonOverride(productKey: string | null | undefined, packLabel: string): number | null {
+  if (!productKey) return null;
+  return PRODUCT_CARTON_OVERRIDES[productKey]?.[packLabel] ?? null;
+}
+
+export function packStep(packLabel: string, productKey?: string | null): number {
+  const override = cartonOverride(productKey, packLabel);
+  if (override != null) return override;
   return PACK_STEP_MAP[packLabel] ?? 1;
 }
 
@@ -133,11 +161,11 @@ const PIECE_BOX_STEP: Record<string, number> = {
   "12PC": 12,   // brushes — whole box of 12
 };
 
-export function packStepForPack(packCode: string, unit?: string | null): number {
+export function packStepForPack(packCode: string, unit?: string | null, productKey?: string | null): number {
   if ((unit ?? "").toUpperCase() === "PC") {
     return PIECE_BOX_STEP[`${packCode}PC`] ?? 1;
   }
-  return packStep(formatPack(packCode, unit));
+  return packStep(formatPack(packCode, unit), productKey);
 }
 
 // Display-only container label for the variant grid column header.
@@ -165,6 +193,8 @@ const PACK_CONTAINER_MAP: Record<string, string> = {
   "12PC":  "box of 12",   // tools — brush carton
 };
 
-export function packContainerLabel(packLabel: string): string | null {
+export function packContainerLabel(packLabel: string, productKey?: string | null): string | null {
+  const override = cartonOverride(productKey, packLabel);
+  if (override != null) return `box ${override}`;
   return PACK_CONTAINER_MAP[packLabel] ?? null;
 }

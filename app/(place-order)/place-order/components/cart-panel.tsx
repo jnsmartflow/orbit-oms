@@ -331,7 +331,7 @@ export default function CartPanel({
                       // looks up the formatted label correctly.
                       const { packCode, unit } = parsePackKey(packCompositeKey);
                       const packLabel = formatPack(packCode, unit);
-                      const step      = packStep(packLabel);
+                      const step      = packStep(packLabel, line.product ?? line.subProduct);
                       const isClean   = step > 1 && units > 0 && units % step === 0;
                       return (
                         <div

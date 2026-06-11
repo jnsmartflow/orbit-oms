@@ -69,6 +69,10 @@ export default function VariantGrid({
   // into the bucket helpers so family-scoped overrides (e.g. AQUATECH 25KG→20L)
   // shape both the column set and per-cell placement.
   const activeFamily = products[0]?.family ?? null;
+  // Tab identity for product-scoped carton overrides (e.g. UNIVERSAL STAINER
+  // 50/100/200ML → box 20/20/10). The grid renders one sub-product per tab, so
+  // every row shares this key; the column header (shared across rows) uses it.
+  const activeProductKey = products[0]?.product ?? products[0]?.subProduct ?? null;
 
   const columns = useMemo<BucketColumn[]>(() => {
     const allPacks: RawPack[] = [];
@@ -226,7 +230,7 @@ export default function VariantGrid({
             Base · Colour
           </th>
           {columns.map((bucket) => {
-            const container = packContainerLabel(bucket);
+            const container = packContainerLabel(bucket, activeProductKey);
             return (
               <th key={bucket} className="text-center px-1 py-2">
                 <div className="text-[10.5px] font-semibold text-gray-700">
@@ -289,7 +293,7 @@ export default function VariantGrid({
                 const isAvailable  = selectedPack !== null;
                 const qty          = isAvailable ? qtyAt(product, selectedPack) : 0;
                 const boxSize      = selectedPack
-                  ? packStepForPack(selectedPack.packCode, selectedPack.unit)
+                  ? packStepForPack(selectedPack.packCode, selectedPack.unit, product.product ?? product.subProduct)
                   : 1;
                 return (
                   <td key={bucket} className="text-center py-1 align-top">
