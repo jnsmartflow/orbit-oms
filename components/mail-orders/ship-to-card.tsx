@@ -1,6 +1,7 @@
 "use client";
 
 import type { OrderSignal } from "@/lib/mail-orders/utils";
+import { MO_TAG } from "@/lib/hide/tag-catalog";
 import { SignalPill } from "./signal-pill";
 
 interface ShipToCardProps {
@@ -10,6 +11,8 @@ interface ShipToCardProps {
   shipToDeliveryType: string | null;
   isOverride: boolean;
   signals: OrderSignal[];
+  /** Tag visibility (Feature B) — keys turned OFF. Default-on when absent. */
+  disabledTagKeys?: Set<string>;
 }
 
 function getDeliveryDotClass(type: string | null | undefined): string {
@@ -30,8 +33,13 @@ export function ShipToCard({
   shipToDeliveryType,
   isOverride,
   signals,
+  disabledTagKeys,
 }: ShipToCardProps): JSX.Element {
   const dotClass = getDeliveryDotClass(shipToDeliveryType);
+
+  // Gate the "captured" badge on the same tag-visibility mechanism (default-on:
+  // hidden only when mail_orders.captured is explicitly disabled).
+  const showCaptured = isOverride && !(disabledTagKeys?.has(MO_TAG.captured) ?? false);
 
   const cardClasses = isOverride
     ? "relative bg-white border border-gray-200 rounded-lg pl-[14px] pr-3 py-2.5 before:content-[''] before:absolute before:left-0 before:top-2 before:bottom-2 before:w-[3px] before:bg-amber-500 before:rounded-sm"
@@ -48,7 +56,7 @@ export function ShipToCard({
         <span className="text-[9.5px] font-semibold tracking-[0.06em] uppercase text-gray-400">
           Ship to
         </span>
-        {isOverride && (
+        {showCaptured && (
           <span
             className="inline-flex items-center gap-[3px] h-4 px-[5px] text-[9.5px] font-semibold rounded border bg-amber-50 border-amber-200 text-amber-700"
             title="Ship-to captured from email remark"

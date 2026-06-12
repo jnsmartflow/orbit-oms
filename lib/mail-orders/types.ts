@@ -100,4 +100,6 @@ export interface MoOrdersResponse {
   totalLines: number;
   matchedLines: number;
   punchedOrders: number;
+  /** Tag keys turned OFF in app_tag_settings (Feature B). Optional/back-compat. */
+  disabledTags?: string[];
 }

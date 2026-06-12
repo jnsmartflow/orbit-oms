@@ -125,6 +125,8 @@ export default function MailOrdersPage() {
 
   // ── State ────────────────────────────────────────────────────────────────────
   const [orders, setOrders] = useState<MoOrder[]>([]);
+  // Tag visibility (Feature B) — keys turned OFF; threaded into signal builders.
+  const [disabledTagKeys, setDisabledTagKeys] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [activeSlot, setActiveSlot] = useState<string | null>(null);
@@ -189,6 +191,7 @@ export default function MailOrdersPage() {
         fetchSlotCutoffs(),
       ]);
       setOrders(data.orders);
+      setDisabledTagKeys(new Set(data.disabledTags ?? []));
       setSlotCutoffs(freshCutoffs);
       setError(false);
       // Re-enable dismissed slots if new unpunched orders arrived
@@ -1148,6 +1151,7 @@ export default function MailOrdersPage() {
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
           onSplitComplete={handleSplitComplete}
+          disabledTagKeys={disabledTagKeys}
         />
       )}
 
@@ -1224,6 +1228,7 @@ export default function MailOrdersPage() {
               onTogglePunched={() => setPunchedVisible(prev => !prev)}
               skuPanelOrderId={skuPanelOrderId}
               onCloseSkuPanel={() => setSkuPanelOrderId(null)}
+              disabledTagKeys={disabledTagKeys}
             />
           )}
         </div>

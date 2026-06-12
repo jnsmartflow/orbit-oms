@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { splitDeliveryRemarks } from "@/lib/mail-orders/utils";
+import { getTagSettings } from "@/lib/hide/tag-settings";
 
 export const dynamic = "force-dynamic";
 
@@ -142,5 +143,12 @@ export async function GET(req: Request): Promise<NextResponse> {
     };
   });
 
-  return NextResponse.json({ orders: enrichedOrders });
+  // Tag visibility (Feature B) — disabled tag keys (isEnabled === false) so the
+  // client can suppress the matching badges. Sequential await, no $transaction.
+  const tagSettings = await getTagSettings();
+  const disabledTags = Object.entries(tagSettings)
+    .filter(([, enabled]) => enabled === false)
+    .map(([key]) => key);
+
+  return NextResponse.json({ orders: enrichedOrders, disabledTags });
 }

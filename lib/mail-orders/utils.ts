@@ -1,4 +1,5 @@
 import type { MoOrderLine, MoOrder } from "./types";
+import { MO_TAG } from "@/lib/hide/tag-catalog";
 
 // ── Pack volume map ─────────────────────────────────────────────────────────
 
@@ -713,11 +714,13 @@ export interface OrderSignal {
   type: "blocker" | "attention" | "info" | "split" | "bill" | "status" | "truck-order";
   card: "bill" | "ship";
   dot?: string;
+  /** Toggle key (lib/hide/tag-catalog). Undefined = not toggleable, always shown. */
+  tagKey?: string;
 }
 
 export function getOrderSignals(
   order: MoOrder,
-  opts?: { isPunched?: boolean },
+  opts?: { isPunched?: boolean; disabledTagKeys?: Set<string> },
 ): OrderSignal[] {
   const result: OrderSignal[] = [];
   const combined = [order.remarks, order.billRemarks, order.deliveryRemarks]
@@ -725,58 +728,65 @@ export function getOrderSignals(
 
   // ── BLOCKER (red) ──
   if (/\b(od|overdue)\b/.test(combined))
-    result.push({ label: "OD", type: "blocker", card: "bill" });
+    result.push({ label: "OD", type: "blocker", card: "bill", tagKey: MO_TAG.od });
   if (/\b(ci|credit\s*(hold|block|issue))\b/.test(combined))
-    result.push({ label: "CI", type: "blocker", card: "bill" });
+    result.push({ label: "CI", type: "blocker", card: "bill", tagKey: MO_TAG.ci });
   if (/\bbounce\b/.test(combined))
-    result.push({ label: "Bounce", type: "blocker", card: "bill" });
+    result.push({ label: "Bounce", type: "blocker", card: "bill", tagKey: MO_TAG.bounce });
 
   // ── ATTENTION (amber) ──
   if (/bill\s*tomorrow/.test(combined))
-    result.push({ label: "Bill Tomorrow", type: "attention", card: "bill" });
+    result.push({ label: "Bill Tomorrow", type: "attention", card: "bill", tagKey: MO_TAG.billTomorrow });
   if (/cross\s*billing/.test(combined)) {
     const code = combined.match(/cross\s*billing\s*(\w+)/);
-    result.push({ label: code ? `Cross ${code[1].toUpperCase()}` : "Cross", type: "attention", card: "bill" });
+    result.push({ label: code ? `Cross ${code[1].toUpperCase()}` : "Cross", type: "attention", card: "bill", tagKey: MO_TAG.cross });
   }
   if (order.dispatchPriority === "Urgent")
-    result.push({ label: "Urgent", type: "attention", card: "ship" });
+    result.push({ label: "Urgent", type: "attention", card: "ship", tagKey: MO_TAG.urgent });
 
   // ── INFO (gray) ──
   if (/7\s*days/.test(combined))
-    result.push({ label: "7 Days", type: "info", card: "bill" });
+    result.push({ label: "7 Days", type: "info", card: "bill", tagKey: MO_TAG.sevenDays });
   if (/\bextension\b/.test(combined) && !/bill\s*tomorrow/.test(combined))
-    result.push({ label: "Extension", type: "info", card: "bill" });
+    result.push({ label: "Extension", type: "info", card: "bill", tagKey: MO_TAG.extension });
   // Only show parent Bill N badges when the order is NOT a split.
   // Split orders show their bill info via the "✂ Bill X-Y" purple badge.
   if (!order.splitLabel) {
     const billMatches = Array.from(combined.matchAll(/\bbill\s+(\d+)\b/g));
     const billNums = Array.from(new Set(billMatches.map(m => parseInt(m[1], 10)))).sort((a, b) => a - b);
     for (const n of billNums) {
-      result.push({ label: `Bill ${n}`, type: "bill", card: "bill" });
+      result.push({ label: `Bill ${n}`, type: "bill", card: "bill", tagKey: MO_TAG.bill });
     }
   }
   if (/dpl/.test(combined))
-    result.push({ label: "DPL", type: "info", card: "bill" });
+    result.push({ label: "DPL", type: "info", card: "bill", tagKey: MO_TAG.dpl });
   if (/challan\s*attachment/.test(combined))
-    result.push({ label: "Challan", type: "info", card: "ship" });
+    result.push({ label: "Challan", type: "info", card: "ship", tagKey: MO_TAG.challan });
   if (/\btruck\b/i.test([order.subject, order.billRemarks, order.remarks].filter(Boolean).join(" ")))
-    result.push({ label: "Truck Order", type: "truck-order", card: "bill" });
+    result.push({ label: "Truck Order", type: "truck-order", card: "bill", tagKey: MO_TAG.truckOrder });
 
   // ── SPLIT (purple) ──
   if (order.splitLabel) {
     const splitDisplay = getSplitDisplayLabel(order);
-    result.push({ label: `\u2702 ${splitDisplay}`, type: "split", card: "bill" });
+    result.push({ label: `\u2702 ${splitDisplay}`, type: "split", card: "bill", tagKey: MO_TAG.splitLabel });
   }
   const totalVol = getOrderVolume(order.lines);
   if (!order.splitLabel && !opts?.isPunched &&
       (totalVol > SPLIT_VOLUME_THRESHOLD || order.totalLines > SPLIT_LINE_THRESHOLD))
-    result.push({ label: "\u26A0 Split", type: "split", card: "bill", dot: "bg-amber-400" });
+    result.push({ label: "\u26A0 Split", type: "split", card: "bill", dot: "bg-amber-400", tagKey: MO_TAG.splitSuggestion });
 
   if (order.dispatchStatus) {
     const label = order.dispatchStatus === "Hold" ? "Hold" : order.dispatchStatus;
-    result.push({ label, type: "status", card: "ship" });
+    // Only the Hold badge is toggleable (mail_orders.hold); other dispatch
+    // statuses (e.g. Dispatch) have no tag and always render.
+    result.push({ label, type: "status", card: "ship", tagKey: label === "Hold" ? MO_TAG.hold : undefined });
   }
 
+  // Suppress toggled-off tags. No set / empty set \u2192 emit all (backward compatible).
+  const disabled = opts?.disabledTagKeys;
+  if (disabled && disabled.size > 0) {
+    return result.filter((s) => !s.tagKey || !disabled.has(s.tagKey));
+  }
   return result;
 }
 

@@ -48,6 +48,8 @@ interface ReviewViewProps {
   searchQuery: string;
   onSearchChange: (q: string) => void;
   onSplitComplete?: (orderAId: number) => void;
+  /** Tag visibility (Feature B) — keys turned OFF; suppress matching badges. */
+  disabledTagKeys?: Set<string>;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -409,6 +411,7 @@ export function ReviewView({
   searchQuery,
   onSearchChange,
   onSplitComplete,
+  disabledTagKeys,
 }: ReviewViewProps) {
   // ── Local state ─────────────────────────────────────────────────
   const [soInput, setSoInput] = useState("");
@@ -792,7 +795,7 @@ export function ReviewView({
               {smartTitleCase(order.customerName ?? cleanSubject(order.subject))}
             </span>
             {(() => {
-              const sigs = getOrderSignals(order);
+              const sigs = getOrderSignals(order, { disabledTagKeys });
               // Show bill OR split badges in left panel — each order gets
               // at most one of these because getOrderSignals emits the
               // parent "Bill N" only when splitLabel is null.
@@ -1015,7 +1018,7 @@ export function ReviewView({
   // ── Detail header (right panel) ──────────────────────────────────
   function renderDetailHeader(order: MoOrder) {
     const isPunched = order.status === "punched" && !!order.soNumber;
-    const signals = getOrderSignals(order, { isPunched });
+    const signals = getOrderSignals(order, { isPunched, disabledTagKeys });
     const isFlagged = !!order.isLocked || isOdCiFlagged(order);
     const showInputMode = !isPunched || editingSoNumber;
     const punchReady = soInput.length === 10;
@@ -1370,6 +1373,7 @@ export function ReviewView({
             shipToDeliveryType={shipToDeliveryType}
             isOverride={order.shipToOverride ?? false}
             signals={shipSignals}
+            disabledTagKeys={disabledTagKeys}
           />
         </div>
 

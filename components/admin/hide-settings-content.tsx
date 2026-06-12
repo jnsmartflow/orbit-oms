@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { X, Loader2, Globe } from "lucide-react";
 import { toast } from "sonner";
+import { TAG_CATALOG, type TagCatalogEntry } from "@/lib/hide/tag-catalog";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Admin Settings › Hide. Three tabs: Rules (built), Hidden Orders + Tags (next).
@@ -89,20 +90,146 @@ export function HideSettingsContent(): React.JSX.Element {
       <div className="p-[18px]">
         {tab === "rules"  && <RulesTab />}
         {tab === "hidden" && <HiddenOrdersTab onCount={setHiddenCount} />}
-        {tab === "tags"   && <ComingNext label="Tags" />}
+        {tab === "tags"   && <TagsTab />}
       </div>
     </div>
   );
 }
 
-// ── Placeholder for the not-yet-built tabs ───────────────────────────────────
+// ── Tags tab ─────────────────────────────────────────────────────────────────
 
-function ComingNext({ label }: { label: string }): React.JSX.Element {
+function TagsTab(): React.JSX.Element {
+  const [settings, setSettings] = useState<Record<string, boolean>>({});
+  const [loading, setLoading]   = useState(true);
+  const [busyKey, setBusyKey]   = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res  = await fetch("/api/admin/tag-settings", { credentials: "include" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json.ok === false) {
+        toast.error(typeof json.error === "string" ? json.error : "Could not load tags");
+        return;
+      }
+      setSettings(json.settings && typeof json.settings === "object" ? json.settings : {});
+    } catch (err) {
+      console.error("[tags] load failed", err);
+      toast.error("Network error loading tags");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { void load(); }, [load]);
+
+  // Default ON: a tag with no row is enabled.
+  const isOn = (tagKey: string): boolean => settings[tagKey] ?? true;
+
+  async function toggle(entry: TagCatalogEntry): Promise<void> {
+    const current  = isOn(entry.tagKey);
+    const newValue = !current;
+
+    // Important tags confirm before turning OFF.
+    if (!newValue && entry.important) {
+      if (!window.confirm(`Turn off the ${entry.label} badge everywhere?`)) return;
+    }
+
+    // Optimistic update; revert on failure.
+    setSettings((prev) => ({ ...prev, [entry.tagKey]: newValue }));
+    setBusyKey(entry.tagKey);
+    try {
+      const res = await fetch("/api/admin/tag-settings", {
+        method:      "PATCH",
+        credentials: "include",
+        headers:     { "Content-Type": "application/json" },
+        body:        JSON.stringify({ tagKey: entry.tagKey, isEnabled: newValue }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json.ok === false) {
+        setSettings((prev) => ({ ...prev, [entry.tagKey]: current }));
+        toast.error(typeof json.error === "string" ? json.error : "Could not update tag");
+        return;
+      }
+      toast.success(newValue ? `${entry.label} badge on` : `${entry.label} badge off`);
+    } catch (err) {
+      console.error("[tags] toggle failed", err);
+      setSettings((prev) => ({ ...prev, [entry.tagKey]: current }));
+      toast.error("Network error");
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
+  // Group catalog entries by `group`, preserving first-seen order.
+  const groups: { group: string; entries: TagCatalogEntry[] }[] = [];
+  for (const entry of TAG_CATALOG) {
+    let bucket = groups.find((g) => g.group === entry.group);
+    if (!bucket) { bucket = { group: entry.group, entries: [] }; groups.push(bucket); }
+    bucket.entries.push(entry);
+  }
+
   return (
-    <div className="flex flex-col items-center justify-center text-center py-24">
-      <div className="text-[14px] font-semibold text-gray-900">{label}</div>
-      <div className="text-[12px] text-gray-400 mt-1">Coming next.</div>
-    </div>
+    <>
+      <div className="bg-white border border-gray-200 rounded-[10px] overflow-hidden">
+        {/* Card header */}
+        <div className="px-4 py-3.5 border-b border-gray-200">
+          <h3 className="text-[13px] font-bold text-gray-900">Tags</h3>
+          <p className="text-[11px] text-gray-400 mt-0.5">
+            Switch a badge on/off across the whole app. Data stays — only the visual badge changes. Saves automatically.
+          </p>
+        </div>
+
+        {loading ? (
+          <div className="flex items-center justify-center py-16 text-gray-400">
+            <Loader2 className="animate-spin" size={18} />
+          </div>
+        ) : (
+          groups.map((g) => (
+            <div key={g.group}>
+              <div className="text-[10px] font-bold uppercase tracking-widest text-gray-400 px-4 pt-3.5 pb-1.5">
+                {g.group}
+              </div>
+              {g.entries.map((entry) => (
+                <div
+                  key={entry.tagKey}
+                  className="flex items-center gap-3.5 px-4 py-3 border-b border-gray-100 last:border-b-0"
+                >
+                  {/* Badge preview */}
+                  <div className="w-[88px] flex-shrink-0">
+                    <span className="inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded bg-gray-100 text-gray-700 border border-gray-200 max-w-full truncate">
+                      {entry.label}
+                    </span>
+                  </div>
+                  {/* Info */}
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[12.5px] font-bold text-gray-900 flex items-center gap-1.5">
+                      {entry.label}
+                      {entry.important && (
+                        <span className="text-[9px] font-extrabold uppercase tracking-wide px-1.5 py-px rounded bg-amber-50 text-amber-700 border border-amber-200">
+                          Important
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-[11px] text-gray-500 mt-0.5">{entry.description}</div>
+                  </div>
+                  {/* Toggle */}
+                  <Toggle
+                    on={isOn(entry.tagKey)}
+                    busy={busyKey === entry.tagKey}
+                    onClick={() => void toggle(entry)}
+                  />
+                </div>
+              ))}
+            </div>
+          ))
+        )}
+      </div>
+
+      <p className="text-[10.5px] text-gray-400 mt-3">
+        Important tags ask before turning off. Changes apply across the app and are saved automatically.
+      </p>
+    </>
   );
 }
 

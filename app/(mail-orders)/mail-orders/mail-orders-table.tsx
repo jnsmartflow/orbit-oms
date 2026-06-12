@@ -62,6 +62,8 @@ interface MailOrdersTableProps {
   onTogglePunched: () => void;
   skuPanelOrderId: number | null;
   onCloseSkuPanel: () => void;
+  /** Tag visibility (Feature B) — keys turned OFF; suppress matching badges. */
+  disabledTagKeys?: Set<string>;
 }
 
 // ── Slot dot colors ──────────────────────────────────────────────────────────
@@ -128,6 +130,7 @@ export function MailOrdersTable({
   onTogglePunched,
   skuPanelOrderId,
   onCloseSkuPanel,
+  disabledTagKeys,
 }: MailOrdersTableProps) {
   const slotOrder = ["Morning", "Afternoon", "Evening", "Night"] as const;
   const isVis = (key: string) => visibleColumns.has(key);
@@ -229,6 +232,7 @@ export function MailOrdersTable({
                 onTogglePunched={onTogglePunched}
                 skuPanelOrderId={skuPanelOrderId}
                 onCloseSkuPanel={onCloseSkuPanel}
+                disabledTagKeys={disabledTagKeys}
               />
             );
           })}
@@ -267,6 +271,7 @@ function SlotGroup({
   onTogglePunched,
   skuPanelOrderId,
   onCloseSkuPanel,
+  disabledTagKeys,
 }: {
   slot: string;
   orders: MoOrder[];
@@ -294,6 +299,7 @@ function SlotGroup({
   onTogglePunched: () => void;
   skuPanelOrderId: number | null;
   onCloseSkuPanel: () => void;
+  disabledTagKeys?: Set<string>;
 }) {
   const dotColor = SLOT_DOTS[slot] ?? "bg-gray-400";
 
@@ -335,6 +341,7 @@ function SlotGroup({
       punchedSection={inPunchedSection}
       skuPanelOrderId={skuPanelOrderId}
       onCloseSkuPanel={onCloseSkuPanel}
+      disabledTagKeys={disabledTagKeys}
     />
   );
 
@@ -632,6 +639,7 @@ function OrderRow({
   punchedSection,
   skuPanelOrderId,
   onCloseSkuPanel,
+  disabledTagKeys,
 }: {
   order: MoOrder;
   isFlagged: boolean;
@@ -656,6 +664,7 @@ function OrderRow({
   punchedSection?: boolean;
   skuPanelOrderId: number | null;
   onCloseSkuPanel: () => void;
+  disabledTagKeys?: Set<string>;
 }) {
   const isVis = (key: string) => visibleColumns.has(key);
   const autoFlagged = isOdCiFlagged(order);
@@ -858,7 +867,7 @@ function OrderRow({
   const totalVol = getOrderVolume(order.lines);
   const volStr = formatVolume(totalVol);
 
-  const signals = getOrderSignals(order, { isPunched });
+  const signals = getOrderSignals(order, { isPunched, disabledTagKeys });
 
   const remarksTooltip = [order.remarks, order.billRemarks, order.deliveryRemarks]
     .filter(Boolean)
