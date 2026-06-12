@@ -24,6 +24,7 @@ import { monogramFor } from "@/lib/place-order/monogram";
 
 export interface FamilyNavWithTabsProps {
   familyName:           string;
+  headerLabel?:         string;          // overrides the "{familyName} family" header (multi-family group tile, e.g. "Primer and Distemper")
   section:              string;
   products:             Product[];                                                        // ALL rows in this family
   activeSubProduct:     string;
@@ -40,7 +41,7 @@ export interface FamilyNavWithTabsProps {
 }
 
 export default function FamilyNavWithTabs({
-  familyName, section, products,
+  familyName, headerLabel, section, products,
   activeSubProduct, onSubProductChange,
   qtyAt, onSetQty, cartLines,
   speedDialPosition,
@@ -268,7 +269,7 @@ export default function FamilyNavWithTabs({
           {monogramFor(familyName)}
         </span>
         <div className="flex-1 min-w-0">
-          <div className="text-[13px] font-bold text-gray-900 truncate">{familyName} family</div>
+          <div className="text-[13px] font-bold text-gray-900 truncate">{headerLabel ?? `${familyName} family`}</div>
           <div className="text-[10px] text-gray-400 truncate">{breadcrumb}</div>
         </div>
         {/* TODO: pagination indicator is hidden in embedded mode (drilled

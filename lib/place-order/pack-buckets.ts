@@ -26,6 +26,18 @@ export const STANDARD_COLUMNS = [
   "4L",
   "10L",
   "20L",
+  // DISTEMPER KG columns (2026-06-12) — own KG buckets so distemper's 1/2/5/10/20 KG
+  // render as distinct KG-labelled columns instead of colliding (1KG+2KG → "1L") or
+  // mislabelling (5/10/20 KG under litre headers). Rendered ONLY for DISTEMPER (routed
+  // via FAMILY_BUCKET_OVERRIDES); the global PACK_TO_BUCKET still folds these KG sizes
+  // into litre buckets for every other family (Aquatech/Putty/Sadolin/VT Specialty/
+  // Promise), so no other grid changes. Columns are derived-from-present-packs
+  // (bucketColumnsForTab filters to present buckets), so these never show empty.
+  "1KG",
+  "2KG",
+  "5KG",
+  "10KG",
+  "20KG",
   "25KG",
   "30KG",
   "40KG",
@@ -122,6 +134,12 @@ const PACK_TO_BUCKET: Record<string, BucketColumn> = {
 // "25KG" → "25KG" own-column mapping untouched.
 const FAMILY_BUCKET_OVERRIDES: Record<string, Record<string, BucketColumn>> = {
   AQUATECH: { "25KG": "20L" },
+  // DISTEMPER (2026-06-12) is an all-KG family sold per bag. Route its 1/2/5/10/20 KG
+  // to their OWN KG columns instead of the shared litre buckets, so 1KG and 2KG stop
+  // colliding in "1L" and 5/10/20 KG stop rendering under litre headers. Scoped here
+  // so the other KG-carrying families (Aquatech/Putty/Sadolin/VT Specialty/Promise),
+  // which deliberately fold KG into litre via the global map, are unaffected.
+  DISTEMPER: { "1KG": "1KG", "2KG": "2KG", "5KG": "5KG", "10KG": "10KG", "20KG": "20KG" },
 };
 
 /** Normalises LT → L. Other units pass through (KG, ML, GM stay). */

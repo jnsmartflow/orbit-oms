@@ -428,15 +428,20 @@ export default function PlaceOrderPage(): React.JSX.Element {
       });
       setFocusHint(null);
     } else if (tile.type === "family" && tile.familyName) {
-      const familyProducts  = products.filter((p) => p.family === tile.familyName);
-      // Phase 3 (2026-05-13): default tab is the first row's uiGroup
-      // when present, else its subProduct (unmigrated families).
+      // Single family → [familyName]; multi-family group tile (e.g. Primer +
+      // Distemper) → tile.familyNames, filtered in list ORDER so the first
+      // family's tabs lead. Phase 3 (2026-05-13): default tab is the first
+      // row's uiGroup when present, else its subProduct (unmigrated families).
+      const families        = tile.familyNames ?? [tile.familyName];
+      const familyProducts  = families.flatMap((f) => products.filter((p) => p.family === f));
       const firstSubProduct = familyProducts[0]
         ? familyProducts[0].uiGroup ?? familyProducts[0].subProduct
         : "";
       setActiveState({
         kind:              "family",
         familyName:        tile.familyName,
+        familyNames:       tile.familyNames,
+        headerLabel:       tile.familyNames ? tile.label : undefined,
         activeSubProduct:  firstSubProduct,
         speedDialPosition: tile.position,
       });
@@ -459,7 +464,11 @@ export default function PlaceOrderPage(): React.JSX.Element {
 
   function handleSearchSelect(result: SearchResult): void {
     if (result.type === "family") {
-      const familyProducts = products.filter((p) => p.family === result.family);
+      // Search results are always single-family (the group is a tile-only
+      // concept) — use the same set shape for uniformity. familyNames stays
+      // undefined → header "{familyName} family", behaviour unchanged.
+      const families        = [result.family];
+      const familyProducts  = families.flatMap((f) => products.filter((p) => p.family === f));
       const firstSubProduct = familyProducts[0]
         ? familyProducts[0].uiGroup ?? familyProducts[0].subProduct
         : "";
@@ -572,7 +581,10 @@ export default function PlaceOrderPage(): React.JSX.Element {
   }
 
   function handleBrowseFamilyClick(familyName: string): void {
-    const familyProducts  = products.filter((p) => p.family === familyName);
+    // Browse-all is single-family — same set shape for uniformity (familyNames
+    // undefined → header "{familyName} family", behaviour unchanged).
+    const families        = [familyName];
+    const familyProducts  = families.flatMap((f) => products.filter((p) => p.family === f));
     const firstSubProduct = familyProducts[0]
       ? familyProducts[0].uiGroup ?? familyProducts[0].subProduct
       : "";
@@ -695,7 +707,8 @@ export default function PlaceOrderPage(): React.JSX.Element {
     if (tile.type === "sub-product" && tile.subProductName) {
       hasLines = activeCartLines.some((l) => l.subProduct === tile.subProductName);
     } else if (tile.type === "family" && tile.familyName) {
-      hasLines = activeCartLines.some((l) => l.family === tile.familyName);
+      const families = tile.familyNames ?? [tile.familyName];
+      hasLines = activeCartLines.some((l) => families.includes(l.family));
     } else if (tile.type === "section" && tile.sectionName) {
       const familiesInSection = new Set(
         products.filter((p) => p.section === tile.sectionName).map((p) => p.family),

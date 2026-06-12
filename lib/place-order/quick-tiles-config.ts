@@ -9,7 +9,12 @@ export type QuickTile = {
   type:            "sub-product" | "family" | "section";
   label:           string;                                // "GLOSS", "VT GLO", "WOODCARE"
   parentLabel:     string | null;                        // "ENAMELS" / null for sections
-  familyName?:     string;                                // when type === "family"
+  familyName?:     string;                                // when type === "family" (primary family — drives tile highlight)
+  familyNames?:    string[];                              // OPTIONAL multi-family group (e.g. PRIMER + DISTEMPER under one tile).
+                                                          // When set, the desktop panel renders all listed families' rows as one
+                                                          // flat tab-set (tabs come from each family's uiGroup). UI/nav grouping
+                                                          // ONLY — families stay separate in data/section/search. familyName must
+                                                          // be one of these (it keeps the existing single-family highlight working).
   subProductName?: string;                                // when type === "sub-product"
   sectionName?:    string;                                // when type === "section"
 };
@@ -22,6 +27,6 @@ export const QUICK_TILES_V1: ReadonlyArray<QuickTile> = [
   { position: 5, type: "family",      label: "VELVET TOUCH",   parentLabel: "INTERIORS", familyName:     "VELVET TOUCH"   },
   { position: 6, type: "family",      label: "SADOLIN",        parentLabel: "WOODCARE",  familyName:     "SADOLIN"        },
   { position: 7, type: "family",      label: "STAINER",        parentLabel: "UTILITY",   familyName:     "STAINER"        },
-  { position: 8, type: "family",      label: "PRIMER",         parentLabel: "UTILITY",   familyName:     "PRIMER"         },
+  { position: 8, type: "family",      label: "Primer and Distemper", parentLabel: "UTILITY", familyName: "PRIMER", familyNames: ["PRIMER", "DISTEMPER"] },
   { position: 9, type: "family",      label: "AQUATECH",       parentLabel: "UTILITY",   familyName:     "AQUATECH"       },
 ];

@@ -51,7 +51,7 @@ const DRY_RUN      = process.env.DRY_RUN === "1";
 // Locked expectations from the May 6 preview run. If the JSON drifts from
 // these the script refuses to seed — better to fail loudly than to ship
 // surprise data into v2.
-const EXPECTED_TOTAL_NEW_ROWS    = 492;  // 474 − 51 + 63 − 1 − 4 + 25 − 1 − 13 (…; SUPERCOVER cleanup net −1 2026-06-09; SUPERCLEAN dedup −13: 31 dup source rows → 18 unique 2026-06-09)
+const EXPECTED_TOTAL_NEW_ROWS    = 491;  // 474 − 51 + 63 − 1 − 4 + 25 − 1 − 13 − 1 (…; SUPERCOVER cleanup net −1 2026-06-09; SUPERCLEAN dedup −13 2026-06-09; DISTEMPER Interior row dropped −1 2026-06-12)
 const EXPECTED_WARNINGS          = 0;
 
 // ── PROMISE transform constants ────────────────────────────────────────
@@ -859,6 +859,10 @@ async function main(): Promise<void> {
     if (r.family === "SATIN"   && SATIN_UI[sub])   { r.uiGroup = SATIN_UI[sub];   uiAssigned++; continue; }
     if (r.family === "STAINER" && STAINER_UI[sub]) { r.uiGroup = STAINER_UI[sub]; uiAssigned++; continue; }
     if (r.family === "PRIMER")  { r.uiGroup = "Primers";  uiAssigned++; continue; }
+    // DISTEMPER (2026-06-12): one flat tab like PRIMER. uiGroup="Distemper" on all
+    // rows; product stays null and baseColour is KEPT so the two Magik rows stay
+    // separate (MAGIK|||90 BASE vs MAGIK|||BRILLIANT WHITE).
+    if (r.family === "DISTEMPER") { r.uiGroup = "Distemper"; uiAssigned++; continue; }
     if (r.family === "AQUATECH" && AQUA_UI[sub])   { r.uiGroup = AQUA_UI[sub];    uiAssigned++; continue; }
     if (r.family === "SADOLIN"  && SADOLIN_UI[sub]) { r.uiGroup = SADOLIN_UI[sub]; uiAssigned++; continue; }
     // TOOLS — two tabs derived from the product name (Rollers / Brushes).

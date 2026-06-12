@@ -4,7 +4,7 @@
   "summary": {
     "totalLegacyTriples": 560,
     "totalLegacySkuCount": 1599,
-    "totalNewRows": 492,
+    "totalNewRows": 491,
     "crossListedExtraRows": 68,
     "suppressedPlainRows": 19,
     "skippedTriples": 82,
@@ -3425,8 +3425,8 @@
       {
         "family": "DISTEMPER",
         "subProduct": "MAGIK",
-        "displayName": "Magik (Distemper)",
-        "searchTokens": "MAGIK, DUWEL MAGIK",
+        "displayName": "Magik - Brilliant White",
+        "searchTokens": "MAGIK, DUWEL MAGIK, DISTEMPER",
         "baseColour": "BRILLIANT WHITE",
         "productType": "BASE_VARIANT",
         "tinterType": null,
@@ -3437,8 +3437,8 @@
       {
         "family": "DISTEMPER",
         "subProduct": "MAGIK",
-        "displayName": "Magik (Distemper)",
-        "searchTokens": "MAGIK, DUWEL MAGIK",
+        "displayName": "Magik - 90 Base",
+        "searchTokens": "MAGIK, DUWEL MAGIK, DISTEMPER",
         "baseColour": "90 BASE",
         "productType": "BASE_VARIANT",
         "tinterType": null,
@@ -3449,20 +3449,8 @@
       {
         "family": "DISTEMPER",
         "subProduct": "ACRYLIC DISTEMPER",
-        "displayName": "Acrylic Distemper",
-        "searchTokens": "ACRYLIC DISTEMPER, DUWEL ACRYLIC DISTEMPER, INTERIOR DISTEMPER",
-        "baseColour": "INTERIOR DISTEMPER",
-        "productType": "COLOUR",
-        "tinterType": null,
-        "sortOrder": 3121,
-        "isActive": true,
-        "skuCount": 1
-      },
-      {
-        "family": "DISTEMPER",
-        "subProduct": "ACRYLIC DISTEMPER",
-        "displayName": "Acrylic Distemper",
-        "searchTokens": "ACRYLIC DISTEMPER, DUWEL ACRYLIC DISTEMPER, INTERIOR DISTEMPER",
+        "displayName": "Duwell - Acrylic Distemper",
+        "searchTokens": "ACRYLIC DISTEMPER, DUWELL ACRYLIC DISTEMPER, DUWEL ACRYLIC DISTEMPER, DISTEMPER",
         "baseColour": "DUWEL ACRYLIC DISTEMPER",
         "productType": "COLOUR",
         "tinterType": null,

@@ -393,6 +393,34 @@ async function loadSuperCleanMap(): Promise<Map<string, SuperCleanEntry>> {
   return map;
 }
 
+// ── CSV-as-source for the DISTEMPER allowlist (2026-06-12) ──────────────────
+// docs/SKU/review/distemper-final.csv is the COMPLETE allowlist for the
+// DISTEMPER family stock. Unlike SuperCover/SuperClean (which HIDE non-CSV
+// rows via isPrimary=false), here non-CSV DISTEMPER rows are DROPPED entirely
+// (see the category-scoped drop in the main loop). The 13 listed materials
+// keep their existing legacy product/baseColour (ACRYLIC DISTEMPER / MAGIK,
+// which already resolve their packs) — the CSV only enforces (a) the allowlist
+// and (b) isPrimary. Columns: 0 Family · 1 Row · 2 Pack · 3 Unit · 4 SAP ·
+// 5 isPrimary · 6 Description · 7 Notes. Quote-aware split (mirrors the others).
+const DISTEMPER_CSV      = path.join("docs", "SKU", "review", "distemper-final.csv");
+const DISTEMPER_CATEGORY = "DISTEMPER";
+type DistemperEntry = { isPrimary: boolean };
+
+async function loadDistemperMap(): Promise<Map<string, DistemperEntry>> {
+  const map = new Map<string, DistemperEntry>();
+  const raw = await fs.readFile(DISTEMPER_CSV, "utf8");
+  for (const line of raw.split(/\r?\n/).slice(1)) {
+    if (!line.trim()) continue;
+    const c = splitCsvLine(line);
+    const material = (c[4] ?? "").trim();           // SAP column
+    if (!material) continue;
+    map.set(material, {
+      isPrimary: (c[5] ?? "").trim().toUpperCase() === "TRUE",
+    });
+  }
+  return map;
+}
+
 // Shape of one row to be inserted into mo_sku_lookup_v2.
 type V2Row = {
   material:        string;
@@ -497,6 +525,10 @@ async function main(): Promise<void> {
   const superClean = await loadSuperCleanMap();
   console.log(`SUPERCLEAN CSV map: ${superClean.size} materials (source of truth)`);
 
+  // CSV-as-source ALLOWLIST for the DISTEMPER family (13 materials).
+  const distemper = await loadDistemperMap();
+  console.log(`DISTEMPER CSV allowlist: ${distemper.size} materials (drop any DISTEMPER stock not listed)`);
+
   // ── 2. Translate each legacy row via mapLegacyToNew ─────────────────
   let skippedNull = 0;
   let crossListed = 0;  // source rows producing >1 v2 row
@@ -511,6 +543,7 @@ async function main(): Promise<void> {
   let sadAssigned = 0;         // existing materials re-keyed by the SADOLIN CSV
   let scAssigned = 0;          // existing materials re-keyed by the SUPERCOVER CSV
   let sclAssigned = 0;         // existing materials re-keyed by the SUPERCLEAN CSV
+  let droppedDistemper = 0;    // DISTEMPER stock rows dropped (not in the CSV allowlist)
   const seenMaterials = new Set<string>();  // every material legacy produced (for rule-5 report)
   const v2Rows: V2Row[] = [];
 
@@ -558,6 +591,9 @@ async function main(): Promise<void> {
       const sc = superCover.get(material);
       // SUPERCLEAN CSV (2026-06-09) WINS the same way for its 80 existing materials.
       const scl = superClean.get(material);
+      // DISTEMPER allowlist (2026-06-12): membership + isPrimary only; product/
+      // baseColour are left as the legacy values (they already resolve).
+      const dist = distemper.get(material);
       if (sad) sadAssigned++;
       if (csv) csvAssigned++;
       if (sc) scAssigned++;
@@ -590,6 +626,15 @@ async function main(): Promise<void> {
         product === "WS MAX" &&
         EXCLUDE_BASE_WSMAX.has((baseColour ?? "").trim().toUpperCase())
       ) { excludedByBase++; continue; }
+
+      // ── DISTEMPER allowlist drop (2026-06-12) ──
+      // distemper-final.csv is the COMPLETE allowlist for the DISTEMPER family.
+      // Any DISTEMPER-category stock row whose material is NOT in the CSV is
+      // DROPPED (not hidden) — removes IN87109011 (11KG), IN87109022 (22KG),
+      // 5862521 (Interior). Scoped strictly to category DISTEMPER; no other
+      // family is affected (the Promise SmartChoice acrylic-distemper rows are
+      // category PROMISE, so they pass through untouched).
+      if (category === DISTEMPER_CATEGORY && !distemper.has(material)) { droppedDistemper++; continue; }
 
       // ── Root-cause pack/unit normalization (2026-06-03) ──
       let normUnit = normalizeUnit(legacy.unit);
@@ -624,7 +669,8 @@ async function main(): Promise<void> {
         // CSV is the authoritative primary list. Then SADOLIN CSV (with White-1KG
         // demote); then WS CSV KEEP/HIDE; else the SET_FALSE rule.
         isPrimary:
-          scl ? scl.isPrimary
+          dist ? dist.isPrimary
+          : scl ? scl.isPrimary
           : (product === "SUPERCLEAN" || product === "SUPERCLEAN 3IN1") ? false
           : sc ? sc.isPrimary
           : (product === "SUPERCOVER" || product === "SUPERCOVER SHEEN") ? false
@@ -879,6 +925,7 @@ async function main(): Promise<void> {
   console.log(`Name-override rows (live names applied) : ${overridden}`);
   console.log(`Excluded — WS Max removed bases         : ${excludedByBase}`);
   console.log(`Excluded — stray material list          : ${excludedByMaterial}`);
+  console.log(`Dropped — DISTEMPER not in allowlist     : ${droppedDistemper} (expect 3: 11KG/22KG/Interior)`);
   console.log(`v2 rows after translation              : ${v2Rows.length}`);
   console.log(`isPrimary=false rows (SET_FALSE applied): ${v2Rows.filter((r) => !r.isPrimary).length}`);
   console.log(`CSV-assigned rows (product from CSV)    : ${csvAssigned}`);
@@ -936,12 +983,12 @@ async function main(): Promise<void> {
     console.log(`IN46350082 (BW 10L stray)     : ${stray ? "STILL PRESENT (unexpected!)" : "excluded ✓"}`);
 
     // ── WS RESTRUCTURE REHEARSAL (before vs after) ──────────────────
-    const liveRows = await prisma.mo_sku_lookup_v2.findMany({ select: { product: true, isPrimary: true, material: true } });
+    const liveRows = await prisma.mo_sku_lookup_v2.findMany({ select: { product: true, isPrimary: true, material: true, category: true } });
     const agg = (rows: { product: string; isPrimary: boolean }[], prod: string) => {
       const r = rows.filter((x) => x.product === prod);
       return { n: r.length, pri: r.filter((x) => x.isPrimary).length };
     };
-    const TARGETS = ["WS PROTECT DUSTPROOF", "WS PROTECT RAINPROOF", "WS POWERFLEXX", "WS PROTECT HI-SHEEN", "GLOSS", "PU ENAMEL", "SUPER SATIN", "SATIN STAY BRIGHT", "PROMISE INTERIOR", "PROMISE SHEEN INTERIOR", "PROMISE EXTERIOR", "PROMISE SHEEN EXTERIOR", "PROMISE PRIMER", "PROMISE SMARTCHOICE", "SUPERCOVER", "SUPERCOVER SHEEN", "SUPERCLEAN", "SUPERCLEAN 3IN1"];
+    const TARGETS = ["WS PROTECT DUSTPROOF", "WS PROTECT RAINPROOF", "WS POWERFLEXX", "WS PROTECT HI-SHEEN", "GLOSS", "PU ENAMEL", "SUPER SATIN", "SATIN STAY BRIGHT", "PROMISE INTERIOR", "PROMISE SHEEN INTERIOR", "PROMISE EXTERIOR", "PROMISE SHEEN EXTERIOR", "PROMISE PRIMER", "PROMISE SMARTCHOICE", "SUPERCOVER", "SUPERCOVER SHEEN", "SUPERCLEAN", "SUPERCLEAN 3IN1", "ACRYLIC DISTEMPER", "MAGIK"];
     console.log("");
     console.log("════════════ WS RESTRUCTURE REHEARSAL (before → after) ════════════");
     for (const t of TARGETS) {
@@ -1160,8 +1207,34 @@ async function main(): Promise<void> {
     const sclUnresolved = Array.from(superClean.keys()).filter((m) => !deduped.some((r) => r.material === m));
     console.log(`  CSV SAP unresolved (not in final set): ${sclUnresolved.length} (expect 0)${sclUnresolved.length ? " -> " + sclUnresolved.join(", ") : ""}`);
 
+    // ── DISTEMPER allowlist rehearsal (2026-06-12) ──
     console.log("");
-    console.log(`  TOTAL stock rows after rebuild: ${deduped.length} (expect 1647 = 1527 + 8 Hydro + 25 Tools + 56 SuperCover + 31 SuperClean)`);
+    console.log("════════════ DISTEMPER ALLOWLIST REHEARSAL ════════════");
+    const distLive  = liveRows.filter((r) => r.category === "DISTEMPER");
+    const distFinal = deduped.filter((r) => r.category === "DISTEMPER");
+    console.log(`  DISTEMPER stock: before ${distLive.length} -> after ${distFinal.length} (expect 16 -> 13, -3)`);
+    for (const m of ["IN87109011", "IN87109022", "5862521"]) {
+      const present = deduped.some((r) => r.material === m);
+      console.log(`  drop ${m.padEnd(12)}: ${present ? "STILL PRESENT (FAIL)" : "dropped (not hidden) OK"}`);
+    }
+    // Pack resolution per the 3 menu join keys (product|||baseColour).
+    const resolve = (product: string, base: string): string => {
+      const rows = distFinal.filter((r) => r.product === product && r.baseColour === base && r.isPrimary);
+      const packs = rows.map((r) => formatPack(r.packCode, r.unit)).sort();
+      return `${rows.length} primary [${packs.join(", ")}]`;
+    };
+    console.log(`  Duwell  (ACRYLIC DISTEMPER|||DUWEL ACRYLIC DISTEMPER): ${resolve("ACRYLIC DISTEMPER", "DUWEL ACRYLIC DISTEMPER")}`);
+    console.log(`  Magik90 (MAGIK|||90 BASE)                            : ${resolve("MAGIK", "90 BASE")}`);
+    console.log(`  MagikBW (MAGIK|||BRILLIANT WHITE)                    : ${resolve("MAGIK", "BRILLIANT WHITE")}`);
+    const distPrimary = distFinal.filter((r) => r.isPrimary).length;
+    console.log(`  isPrimary=true rows: ${distPrimary}/${distFinal.length} (expect 13/13)`);
+    const distMatCounts = new Map<string, number>();
+    for (const r of distFinal) distMatCounts.set(r.material, (distMatCounts.get(r.material) ?? 0) + 1);
+    const distCrossList = Array.from(distMatCounts.values()).filter((n) => n > 1).length;
+    console.log(`  Cross-list (SAP under >1 row): ${distCrossList} (expect 0)`);
+
+    console.log("");
+    console.log(`  TOTAL stock rows after rebuild: ${deduped.length} (expect 1644 = 1527 + 8 Hydro + 25 Tools + 56 SuperCover + 31 SuperClean - 3 Distemper)`);
 
     console.log("");
     console.log("DRY_RUN=1 — NO wipe, NO insert performed.");

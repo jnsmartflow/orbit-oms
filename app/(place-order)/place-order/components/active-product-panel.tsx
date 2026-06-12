@@ -16,7 +16,7 @@ import SectionLanding from "./section-landing";
 export type ActivePanelState =
   | { kind: "idle" }
   | { kind: "sub-product"; subProductName: string; family: string; speedDialPosition?: number }
-  | { kind: "family";      familyName: string; activeSubProduct: string; speedDialPosition?: number }
+  | { kind: "family";      familyName: string; familyNames?: string[]; headerLabel?: string; activeSubProduct: string; speedDialPosition?: number }
   | { kind: "section";     sectionName: string; drilled: null | { familyName: string; activeSubProduct: string }; speedDialPosition?: number };
 
 export interface ActiveProductPanelProps {
@@ -74,15 +74,21 @@ export default function ActiveProductPanel({
   }
 
   if (state.kind === "family") {
-    const filtered = productsAll.filter((p) => p.family === state.familyName);
+    // Single family → familyNames undefined → [familyName] (identical to before).
+    // Multi-family group (e.g. Primer + Distemper) → filter in the family-list
+    // ORDER so the first family's tabs lead (PRIMER's "Primers" before
+    // DISTEMPER's "Distemper"). flatMap preserves each family's own row order.
+    const families = state.familyNames ?? [state.familyName];
+    const filtered = families.flatMap((f) => productsAll.filter((p) => p.family === f));
     if (filtered.length === 0) {
-      console.warn(`[ActiveProductPanel] family not found in catalog: ${state.familyName}`);
+      console.warn(`[ActiveProductPanel] family not found in catalog: ${families.join(", ")}`);
       return null;
     }
     const section = filtered[0].section;
     return (
       <FamilyNavWithTabs
         familyName={state.familyName}
+        headerLabel={state.headerLabel}
         section={section}
         products={filtered}
         activeSubProduct={state.activeSubProduct}

@@ -29,6 +29,9 @@ const KEYWORD_FAMILY: Record<string, string> = {
   "tools":        "TOOLS",
   "roller":       "TOOLS",
   "brush":        "TOOLS",
+  "distemper":    "DISTEMPER",
+  "magik":        "DISTEMPER",
+  "duwel":        "DISTEMPER",
 };
 
 function normalizeQuery(query: string): string {
