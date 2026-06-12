@@ -39,7 +39,10 @@ const PAGE_NAV_MAP: NavItemConfig[] = [
   { pageKey: "ti_report",          label: "TI Report",         href: "/tint/manager/ti-report" },
   { pageKey: "attendance",         label: "Attendance",        href: "/attendance" },
   { pageKey: "attendance_admin",   label: "Attendance",        href: "/admin/attendance" },
-  { pageKey: "settings_hide",      label: "Hide",              href: "/admin/settings/hide" },
+  // NOTE: no "settings_hide" entry here — the Hide page is admin-only and lives
+  // in the dedicated admin sidebar (components/admin/admin-sidebar.tsx). The
+  // "settings_hide" PageKey stays in ALL_PAGE_KEYS so that sidebar's gating
+  // (allPerms["settings_hide"]) resolves to ALL_TRUE for admin.
 ];
 
 // Per-role href overrides: non-admin roles access shared pages via their own route group

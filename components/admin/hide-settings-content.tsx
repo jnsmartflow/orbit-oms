@@ -250,14 +250,22 @@ function HiddenOrdersTab({ onCount }: { onCount: (n: number) => void }): React.J
                   <HiddenBy reason={row.reason} />
                 </td>
                 <td className="px-3.5 py-3 align-middle text-right">
-                  <button
-                    type="button"
-                    onClick={() => void unhide(row)}
-                    disabled={busyId === row.id}
-                    className="bg-gray-100 hover:bg-gray-200 text-gray-700 text-[11px] font-semibold rounded-md px-2.5 py-1 disabled:opacity-50"
-                  >
-                    Un-hide
-                  </button>
+                  {row.reason?.type === "manual" ? (
+                    <button
+                      type="button"
+                      onClick={() => void unhide(row)}
+                      disabled={busyId === row.id}
+                      className="bg-gray-100 hover:bg-gray-200 text-gray-700 text-[11px] font-semibold rounded-md px-2.5 py-1 disabled:opacity-50"
+                    >
+                      Un-hide
+                    </button>
+                  ) : row.reason?.type === "rule" ? (
+                    // Rule-hidden rows can't be un-hidden individually — the rule
+                    // governs them. Turn the rule off in the Rules tab instead.
+                    <span className="text-[10.5px] text-gray-400 italic">Managed by rule</span>
+                  ) : (
+                    <span className="text-gray-300">—</span>
+                  )}
                 </td>
               </tr>
             ))}
