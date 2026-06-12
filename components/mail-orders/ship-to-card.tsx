@@ -13,6 +13,13 @@ interface ShipToCardProps {
   signals: OrderSignal[];
   /** Tag visibility (Feature B) — keys turned OFF. Default-on when absent. */
   disabledTagKeys?: Set<string>;
+  // Bill-to fallback identity — shown INSTEAD of the captured ship-to when the
+  // "captured" tag is OFF and this order has an override. Display only; the
+  // stored override is never changed.
+  billToName?: string | null;
+  billToCode?: string | null;
+  billToArea?: string | null;
+  billToDeliveryType?: string | null;
 }
 
 function getDeliveryDotClass(type: string | null | undefined): string {
@@ -34,20 +41,38 @@ export function ShipToCard({
   isOverride,
   signals,
   disabledTagKeys,
+  billToName,
+  billToCode,
+  billToArea,
+  billToDeliveryType,
 }: ShipToCardProps): JSX.Element {
-  const dotClass = getDeliveryDotClass(shipToDeliveryType);
+  const capturedDisabled = disabledTagKeys?.has(MO_TAG.captured) ?? false;
 
-  // Gate the "captured" badge on the same tag-visibility mechanism (default-on:
-  // hidden only when mail_orders.captured is explicitly disabled).
-  const showCaptured = isOverride && !(disabledTagKeys?.has(MO_TAG.captured) ?? false);
+  // When "captured" is OFF, an overridden order falls back to showing the
+  // bill-to customer's address (display only — stored override is untouched).
+  // The card then renders like a normal (non-override) ship-to: no amber bar,
+  // no captured pill, bill-to identity.
+  const useBillToFallback = isOverride && capturedDisabled;
 
-  const cardClasses = isOverride
+  const effectiveName        = useBillToFallback ? (billToName ?? "") : shipToName;
+  const effectiveCode        = useBillToFallback ? (billToCode ?? null) : shipToCode;
+  const effectiveArea        = useBillToFallback ? (billToArea ?? null) : shipToArea;
+  const effectiveDeliveryType = useBillToFallback ? (billToDeliveryType ?? null) : shipToDeliveryType;
+
+  const dotClass = getDeliveryDotClass(effectiveDeliveryType);
+
+  // Captured pill shows only for a real override while the tag is ON.
+  const showCaptured = isOverride && !capturedDisabled;
+  // Amber override styling only when we're actually showing the override.
+  const showOverrideStyling = isOverride && !useBillToFallback;
+
+  const cardClasses = showOverrideStyling
     ? "relative bg-white border border-gray-200 rounded-lg pl-[14px] pr-3 py-2.5 before:content-[''] before:absolute before:left-0 before:top-2 before:bottom-2 before:w-[3px] before:bg-amber-500 before:rounded-sm"
     : "relative bg-white border border-gray-200 rounded-lg px-3 py-2.5";
 
-  const showCode = !!shipToCode;
-  const showArea = !!shipToArea;
-  const showRegion = !!shipToDeliveryType;
+  const showCode = !!effectiveCode;
+  const showArea = !!effectiveArea;
+  const showRegion = !!effectiveDeliveryType;
   const hasDetail = showCode || showArea || showRegion;
 
   return (
@@ -69,7 +94,7 @@ export function ShipToCard({
       <div className="flex items-baseline gap-1.5 mb-[3px]">
         <span className={`w-[6px] h-[6px] rounded-full flex-shrink-0 ${dotClass}`} />
         <span className="text-[14.5px] font-bold text-gray-900 tracking-tight truncate">
-          {shipToName || "—"}
+          {effectiveName || "—"}
         </span>
       </div>
 
@@ -77,13 +102,13 @@ export function ShipToCard({
         <div className="flex items-center gap-2 text-[11.5px] text-gray-500">
           {showCode && (
             <span className="font-mono text-[11px] px-1.5 py-px rounded border bg-gray-100 text-gray-700 border-gray-200">
-              {shipToCode}
+              {effectiveCode}
             </span>
           )}
           {showCode && showArea && <span>·</span>}
-          {showArea && <span>{shipToArea}</span>}
+          {showArea && <span>{effectiveArea}</span>}
           {(showCode || showArea) && showRegion && <span>·</span>}
-          {showRegion && <span className="text-[11px]">{shipToDeliveryType}</span>}
+          {showRegion && <span className="text-[11px]">{effectiveDeliveryType}</span>}
         </div>
       )}
 

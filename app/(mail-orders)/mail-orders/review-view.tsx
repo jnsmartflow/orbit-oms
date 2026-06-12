@@ -1374,6 +1374,10 @@ export function ReviewView({
             isOverride={order.shipToOverride ?? false}
             signals={shipSignals}
             disabledTagKeys={disabledTagKeys}
+            billToName={billToName}
+            billToCode={order.customerCode}
+            billToArea={order.customerArea ?? null}
+            billToDeliveryType={order.customerDeliveryType ?? null}
           />
         </div>
 
