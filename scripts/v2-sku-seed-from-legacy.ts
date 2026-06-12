@@ -653,7 +653,12 @@ async function main(): Promise<void> {
 
       v2Rows.push({
         material,
-        description:     legacy.description,
+        // SADOLIN CSV is the single source for its rows (product/base/pack/
+        // isPrimary), so honour its col-10 description too — fixes the
+        // legacy-description drift (e.g. the PU PRIME→MULTI PURPOSE THINNER
+        // rename for 5826259/60/61). Verified no-op for the other 151 Sadolin
+        // rows: every CSV col-10 already equals the live/legacy description.
+        description:     sad ? sad.description : legacy.description,
         category,
         product,
         baseColour,
