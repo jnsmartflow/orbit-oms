@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
+import { getHideExclusion } from "@/lib/hide/visibility";
 
 export const dynamic = "force-dynamic";
 
@@ -84,8 +85,9 @@ export async function GET(): Promise<NextResponse> {
   });
 
   // ── ALERTS ──────────────────────────────────────────────────────────────────
+  const hideExclusion = await getHideExclusion();
   const overdueOrders = await prisma.orders.findMany({
-    where: { originalSlotId: { not: null }, isRemoved: false },
+    where: { AND: [{ originalSlotId: { not: null }, isRemoved: false }, hideExclusion] },
     select: { slotId: true, originalSlotId: true },
   });
   const overdueCount = overdueOrders.filter(

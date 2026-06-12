@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { getSlotNamesAtEndOfDay } from "@/lib/slot-history";
+import { getHideExclusion } from "@/lib/hide/visibility";
 import type { Prisma } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
@@ -122,8 +123,10 @@ export async function GET(req: Request): Promise<NextResponse> {
   }
 
   // ── Query ────────────────────────────────────────────────────────────────
+  // AND-merge the hide-feature exclusion with the fully-assembled where above.
+  const hideExclusion = await getHideExclusion();
   let orders = await prisma.orders.findMany({
-    where,
+    where: { AND: [where, hideExclusion] },
     include: ORDER_INCLUDE,
     orderBy: ORDER_BY,
   });

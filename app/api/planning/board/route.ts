@@ -4,6 +4,7 @@ import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { runDailyCleanupIfNeeded } from "@/lib/day-boundary";
 import { runSlotCascadeIfNeeded } from "@/lib/slot-cascade";
+import { getHideExclusion } from "@/lib/hide/visibility";
 
 export const dynamic = "force-dynamic";
 
@@ -29,27 +30,33 @@ export async function GET(req: Request): Promise<NextResponse> {
     : ["dispatch_confirmation"];
 
   // Orders ready for planning: today + carried-over (older, not completed)
+  const hideExclusion = await getHideExclusion();
   const orders = await prisma.orders.findMany({
     where: {
-      workflowStage: { in: workflowStages },
-      isRemoved: false,
-      obdEmailDate: {
-        lte: new Date(date + "T23:59:59"),
-      },
-      OR: [
-        // Tinting orders with dispatched splits
+      AND: [
         {
-          splits: {
-            some: {
-              dispatchStatus: "dispatch",
-              status: { not: "cancelled" },
-            },
+          workflowStage: { in: workflowStages },
+          isRemoved: false,
+          obdEmailDate: {
+            lte: new Date(date + "T23:59:59"),
           },
+          OR: [
+            // Tinting orders with dispatched splits
+            {
+              splits: {
+                some: {
+                  dispatchStatus: "dispatch",
+                  status: { not: "cancelled" },
+                },
+              },
+            },
+            // Non-tinting orders (no splits at all)
+            {
+              splits: { none: {} },
+            },
+          ],
         },
-        // Non-tinting orders (no splits at all)
-        {
-          splits: { none: {} },
-        },
+        hideExclusion,
       ],
     },
     include: {

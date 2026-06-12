@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { runDailyCleanupIfNeeded } from "@/lib/day-boundary";
 import { runSlotCascadeIfNeeded } from "@/lib/slot-cascade";
 import { getSlotNamesAtEndOfDay } from "@/lib/slot-history";
+import { getHideExclusion } from "@/lib/hide/visibility";
 
 export const dynamic = "force-dynamic";
 
@@ -39,6 +40,9 @@ export async function GET(req: Request): Promise<NextResponse> {
     },
   });
 
+  // Hide-feature exclusion — AND-merged into the history orders list below.
+  const hideExclusion = await getHideExclusion();
+
   // ── Per-slot counts ─────────────────────────────────────────────────────
   let slotResults;
 
@@ -46,9 +50,14 @@ export async function GET(req: Request): Promise<NextResponse> {
     // History: reconstruct slot assignments from audit logs
     const allOrders = await prisma.orders.findMany({
       where: {
-        obdEmailDate: { gte: dateStart, lte: dateEnd },
-        workflowStage: { notIn: ["dispatched", "cancelled"] },
-        isRemoved: false,
+        AND: [
+          {
+            obdEmailDate: { gte: dateStart, lte: dateEnd },
+            workflowStage: { notIn: ["dispatched", "cancelled"] },
+            isRemoved: false,
+          },
+          hideExclusion,
+        ],
       },
       select: {
         id: true,

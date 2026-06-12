@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { checkAnyPermission } from "@/lib/permissions";
 import { resolveFiniMap } from "@/lib/fini-resolver";
 import { buildSkuDisplay } from "@/types/sku-display";
+import { getHideExclusion } from "@/lib/hide/visibility";
 
 export const dynamic = "force-dynamic";
 
@@ -24,20 +25,28 @@ export async function GET(): Promise<NextResponse> {
   const startOfToday = new Date();
   startOfToday.setUTCHours(0, 0, 0, 0);
 
+  // Hide-feature exclusion — AND-merged into the operator display queries.
+  const hideExclusion = await getHideExclusion();
+
   const [assignedOrders, assignedSplits, completedOrders, completedSplits] = await Promise.all([
     // Query 1: Regular assigned orders (non-split flow)
     prisma.orders.findMany({
       where: {
-        workflowStage: { in: ["tint_assigned", "tinting_in_progress"] },
-        isRemoved:     false,
-        tintAssignments: {
-          some: {
-            ...(isOpsOrAdmin ? {} : { assignedToId: userId }),
-            // Phase 3e — exclude skipped assignments. Skipped rows are kept
-            // for audit but must not surface as live work in the operator queue.
-            status: { notIn: ["done", "skipped"] },
+        AND: [
+          {
+            workflowStage: { in: ["tint_assigned", "tinting_in_progress"] },
+            isRemoved:     false,
+            tintAssignments: {
+              some: {
+                ...(isOpsOrAdmin ? {} : { assignedToId: userId }),
+                // Phase 3e — exclude skipped assignments. Skipped rows are kept
+                // for audit but must not surface as live work in the operator queue.
+                status: { notIn: ["done", "skipped"] },
+              },
+            },
           },
-        },
+          hideExclusion,
+        ],
       },
       include: {
         customer: {
@@ -97,7 +106,7 @@ export async function GET(): Promise<NextResponse> {
       where: {
         ...(isOpsOrAdmin ? {} : { assignedToId: userId }),
         status: { in: ["tint_assigned", "tinting_in_progress"] },
-        order:  { isRemoved: false },
+        order:  { AND: [{ isRemoved: false }, hideExclusion] },
       },
       include: {
         order: {
@@ -133,7 +142,7 @@ export async function GET(): Promise<NextResponse> {
         ...(isOpsOrAdmin ? {} : { assignedToId: userId }),
         status:       "tinting_done",
         completedAt:  { gte: startOfToday },
-        order:        { isRemoved: false },
+        order:        { AND: [{ isRemoved: false }, hideExclusion] },
       },
       include: {
         order: {
@@ -151,7 +160,7 @@ export async function GET(): Promise<NextResponse> {
         ...(isOpsOrAdmin ? {} : { assignedToId: userId }),
         status:       { in: ["tinting_done", "pending_support", "dispatch_confirmation", "dispatched"] },
         completedAt:  { gte: startOfToday },
-        order:        { isRemoved: false },
+        order:        { AND: [{ isRemoved: false }, hideExclusion] },
       },
       include: {
         order: {

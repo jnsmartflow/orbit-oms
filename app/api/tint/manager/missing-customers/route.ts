@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { checkPermission } from "@/lib/permissions";
+import { getHideExclusion } from "@/lib/hide/visibility";
 
 export const dynamic = "force-dynamic";
 
@@ -14,12 +15,19 @@ export async function GET(): Promise<NextResponse> {
     if (!allowed) return NextResponse.json({ error: "Permission denied" }, { status: 403 });
   }
 
+  const hideExclusion = await getHideExclusion();
+
   const rows = await prisma.orders.findMany({
     where: {
-      customerMissing: true,
-      smu: { in: ["Retail Offtake", "Decorative Projects"] },
-      workflowStage: { notIn: ["dispatched", "cancelled"] },
-      isRemoved: false,
+      AND: [
+        {
+          customerMissing: true,
+          smu: { in: ["Retail Offtake", "Decorative Projects"] },
+          workflowStage: { notIn: ["dispatched", "cancelled"] },
+          isRemoved: false,
+        },
+        hideExclusion,
+      ],
     },
     select: {
       id: true,

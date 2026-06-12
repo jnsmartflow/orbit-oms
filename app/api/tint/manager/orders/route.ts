@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { checkPermission } from "@/lib/permissions";
 import { resolveFiniMap } from "@/lib/fini-resolver";
 import { buildSkuDisplay } from "@/types/sku-display";
+import { getHideExclusion } from "@/lib/hide/visibility";
 
 export const dynamic = "force-dynamic";
 
@@ -100,15 +101,24 @@ export async function GET(): Promise<NextResponse> {
     const now          = new Date();
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
 
+    // Hide-feature exclusion — AND-merged into the display queries below so
+    // manually-hidden + rule-matched OBDs drop out of the Tint Manager board.
+    const hideExclusion = await getHideExclusion();
+
     // ── All six queries in parallel ──────────────────────────────────────────
     const [activeOrders, completedTodayOrders, activeSplits, completedSplits, completedAssignments, allSlots] = await Promise.all([
 
       // Set A — pending orders (Pending Assignment column)
       prisma.orders.findMany({
         where: {
-          orderType:     "tint",
-          workflowStage: { in: ["pending_tint_assignment", "tint_assigned", "tinting_in_progress"] },
-          isRemoved:     false,
+          AND: [
+            {
+              orderType:     "tint",
+              workflowStage: { in: ["pending_tint_assignment", "tint_assigned", "tinting_in_progress"] },
+              isRemoved:     false,
+            },
+            hideExclusion,
+          ],
         },
         orderBy: [{ sequenceOrder: "asc" }],
         include: {
@@ -205,15 +215,20 @@ export async function GET(): Promise<NextResponse> {
       // Set B — completed today (legacy, kept for split-builder existingSplits)
       prisma.orders.findMany({
         where: {
-          orderType:     "tint",
-          workflowStage: "pending_support",
-          isRemoved:     false,
-          tintAssignments: {
-            some: {
-              status:      "tinting_done",
-              completedAt: { gte: startOfToday },
+          AND: [
+            {
+              orderType:     "tint",
+              workflowStage: "pending_support",
+              isRemoved:     false,
+              tintAssignments: {
+                some: {
+                  status:      "tinting_done",
+                  completedAt: { gte: startOfToday },
+                },
+              },
             },
-          },
+            hideExclusion,
+          ],
         },
         include: {
           slot: { select: { id: true, name: true, slotTime: true, isNextDay: true, sortOrder: true } },
@@ -283,7 +298,7 @@ export async function GET(): Promise<NextResponse> {
       prisma.order_splits.findMany({
         where:   {
           status: { in: ["tint_assigned", "tinting_in_progress"] },
-          order:  { isRemoved: false },
+          order:  { AND: [{ isRemoved: false }, hideExclusion] },
         },
         orderBy: [{ sequenceOrder: "asc" }],
         include: {
@@ -333,7 +348,7 @@ export async function GET(): Promise<NextResponse> {
         where: {
           status:      "tinting_done",
           completedAt: { gte: startOfToday },
-          order:       { isRemoved: false },
+          order:       { AND: [{ isRemoved: false }, hideExclusion] },
         },
         include: {
           order: {
@@ -383,7 +398,7 @@ export async function GET(): Promise<NextResponse> {
         where: {
           status:      "tinting_done",
           completedAt: { gte: startOfToday },
-          order:       { isRemoved: false },
+          order:       { AND: [{ isRemoved: false }, hideExclusion] },
         },
         include: {
           order: {

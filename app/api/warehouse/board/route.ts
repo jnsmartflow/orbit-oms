@@ -4,6 +4,7 @@ import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { runDailyCleanupIfNeeded } from "@/lib/day-boundary";
 import { runSlotCascadeIfNeeded } from "@/lib/slot-cascade";
+import { getHideExclusion } from "@/lib/hide/visibility";
 
 export const dynamic = "force-dynamic";
 
@@ -67,16 +68,22 @@ export async function GET(req: Request): Promise<NextResponse> {
   // }
 
   // Fetch orders ready for warehouse: today + carried-over (older, not completed)
+  const hideExclusion = await getHideExclusion();
   const rawOrders = await prisma.orders.findMany({
     where: {
-      workflowStage: "dispatch_confirmation",
-      isRemoved: false,
-      obdEmailDate: {
-        lte: new Date(date + "T23:59:59"),
-      },
-      OR: [
-        { splits: { some: { dispatchStatus: "dispatch", status: { not: "cancelled" } } } },
-        { splits: { none: {} } },
+      AND: [
+        {
+          workflowStage: "dispatch_confirmation",
+          isRemoved: false,
+          obdEmailDate: {
+            lte: new Date(date + "T23:59:59"),
+          },
+          OR: [
+            { splits: { some: { dispatchStatus: "dispatch", status: { not: "cancelled" } } } },
+            { splits: { none: {} } },
+          ],
+        },
+        hideExclusion,
       ],
     },
     include: {
