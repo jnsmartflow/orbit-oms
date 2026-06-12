@@ -27,6 +27,6 @@ export const QUICK_TILES_V1: ReadonlyArray<QuickTile> = [
   { position: 5, type: "family",      label: "VELVET TOUCH",   parentLabel: "INTERIORS", familyName:     "VELVET TOUCH"   },
   { position: 6, type: "family",      label: "SADOLIN",        parentLabel: "WOODCARE",  familyName:     "SADOLIN"        },
   { position: 7, type: "family",      label: "STAINER",        parentLabel: "UTILITY",   familyName:     "STAINER"        },
-  { position: 8, type: "family",      label: "Putty & Primer", parentLabel: "UTILITY", familyName: "PRIMER", familyNames: ["PRIMER", "DISTEMPER", "PUTTY", "TEXTURE"] },
+  { position: 8, type: "family",      label: "Putty & Primer", parentLabel: "UTILITY", familyName: "PRIMER", familyNames: ["PRIMER", "DISTEMPER", "TEXTURE", "PUTTY"] },
   { position: 9, type: "family",      label: "AQUATECH",       parentLabel: "UTILITY",   familyName:     "AQUATECH"       },
 ];
