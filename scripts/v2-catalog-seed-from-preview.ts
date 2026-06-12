@@ -51,7 +51,7 @@ const DRY_RUN      = process.env.DRY_RUN === "1";
 // Locked expectations from the May 6 preview run. If the JSON drifts from
 // these the script refuses to seed — better to fail loudly than to ship
 // surprise data into v2.
-const EXPECTED_TOTAL_NEW_ROWS    = 491;  // 474 − 51 + 63 − 1 − 4 + 25 − 1 − 13 − 1 (…; SUPERCOVER cleanup net −1 2026-06-09; SUPERCLEAN dedup −13 2026-06-09; DISTEMPER Interior row dropped −1 2026-06-12)
+const EXPECTED_TOTAL_NEW_ROWS    = 490;  // 474 − 51 + 63 − 1 − 4 + 25 − 1 − 13 − 1 − 1 (…; DISTEMPER Interior row dropped −1 2026-06-12; TEXTURE net −1 [−3 Matt +2 Texture 2MM/3MM] 2026-06-12)
 const EXPECTED_WARNINGS          = 0;
 
 // ── PROMISE transform constants ────────────────────────────────────────
@@ -273,6 +273,14 @@ const CONFIRMED_SUBPRODUCT_MAP: Record<string, string> = {
   "PROMISE SHEEN EXTERIOR": "PROMISE SHEEN EXTERIOR",
   "PROMISE PRIMER":         "PROMISE PRIMER",
   "PROMISE SMARTCHOICE":    "PROMISE SMARTCHOICE",
+  // PUTTY + TEXTURE (2026-06-12): identity join-keys so menu.product is non-null
+  // (explicit join + base aliases can fire later). Stock product == subProduct
+  // after the texture-putty CSV re-key (step 1), so the pack join is unchanged.
+  "ACRYLIC PUTTY":          "ACRYLIC PUTTY",
+  "POLYPUTTY":              "POLYPUTTY",
+  "TEXTURE":                "TEXTURE",
+  "TEXTURE 2MM":            "TEXTURE 2MM",
+  "TEXTURE 3MM":            "TEXTURE 3MM",
 };
 
 // Rule 2: HIGH-confidence rows from the reviewed name-map draft
@@ -863,6 +871,10 @@ async function main(): Promise<void> {
     // rows; product stays null and baseColour is KEPT so the two Magik rows stay
     // separate (MAGIK|||90 BASE vs MAGIK|||BRILLIANT WHITE).
     if (r.family === "DISTEMPER") { r.uiGroup = "Distemper"; uiAssigned++; continue; }
+    // PUTTY + TEXTURE (2026-06-12): two families share ONE flat tab "Texture & Putty"
+    // (like Distemper's flat branch). Renders as 6 rows — Acrylic/Poly Putty +
+    // Texture 90/94 + Texture 2MM/3MM — under one tab on tile 8.
+    if (r.family === "PUTTY" || r.family === "TEXTURE") { r.uiGroup = "Texture & Putty"; uiAssigned++; continue; }
     if (r.family === "AQUATECH" && AQUA_UI[sub])   { r.uiGroup = AQUA_UI[sub];    uiAssigned++; continue; }
     if (r.family === "SADOLIN"  && SADOLIN_UI[sub]) { r.uiGroup = SADOLIN_UI[sub]; uiAssigned++; continue; }
     // TOOLS — two tabs derived from the product name (Rollers / Brushes).

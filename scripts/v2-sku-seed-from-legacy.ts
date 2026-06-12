@@ -421,6 +421,44 @@ async function loadDistemperMap(): Promise<Map<string, DistemperEntry>> {
   return map;
 }
 
+// ── CSV-as-source for the TEXTURE + PUTTY rebuild (2026-06-12) ──────────────
+// docs/SKU/review/texture-putty-review.csv is the source of truth for BOTH the
+// PUTTY and TEXTURE families' stock. Mirrors the Sadolin/SuperCover drill: the
+// 11 existing materials are re-keyed in the main loop (CSV wins on product/
+// baseColour/isPrimary/pack/unit AND description — Path-B precedent), and the 3
+// new TEXTURE materials (5857610/11/12, absent from legacy) are built in step 2j.
+// category = CSV family ("PUTTY" | "TEXTURE"); packCode/unit parsed from the CSV
+// Pack column ("1KG"/"40KG"/"18L"/"25KG"/"30KG"). Scoped strictly to these two
+// families; any PUTTY/TEXTURE stock material NOT in the CSV is REPORTED (never
+// dropped). Columns: 0 material · 1 family · 2 product · 3 baseColour ·
+// 4 displayName · 5 pack · 6 unit · 7 isPrimary · 8 searchTokens · 9 description ·
+// 10 uiGroup · 11 decisionNote. Quote-aware split (searchTokens carries commas).
+const TEXTURE_PUTTY_CSV = path.join("docs", "SKU", "review", "texture-putty-review.csv");
+type TexturePuttyEntry = { family: string; product: string; baseColour: string; isPrimary: boolean; packCode: string; unit: string; description: string };
+
+async function loadTexturePuttyMap(): Promise<Map<string, TexturePuttyEntry>> {
+  const map = new Map<string, TexturePuttyEntry>();
+  const raw = await fs.readFile(TEXTURE_PUTTY_CSV, "utf8");
+  for (const line of raw.split(/\r?\n/).slice(1)) {
+    if (!line.trim()) continue;
+    const c = splitCsvLine(line);
+    const material = (c[0] ?? "").trim();
+    if (!material) continue;
+    const pk = parsePackLabel((c[5] ?? "").trim());   // Pack column "1KG" / "40KG" / "18L"
+    if (!pk) { console.log(`[texture-putty] bad pack "${c[5]}" for ${material} — skipped`); continue; }
+    map.set(material, {
+      family:      (c[1] ?? "").trim(),
+      product:     (c[2] ?? "").trim(),
+      baseColour:  (c[3] ?? "").trim(),
+      isPrimary:   (c[7] ?? "").trim().toUpperCase() === "TRUE",
+      packCode:    pk.packCode,
+      unit:        pk.unit,
+      description: (c[9] ?? "").trim(),
+    });
+  }
+  return map;
+}
+
 // Shape of one row to be inserted into mo_sku_lookup_v2.
 type V2Row = {
   material:        string;
@@ -529,6 +567,10 @@ async function main(): Promise<void> {
   const distemper = await loadDistemperMap();
   console.log(`DISTEMPER CSV allowlist: ${distemper.size} materials (drop any DISTEMPER stock not listed)`);
 
+  // CSV-as-source for the TEXTURE + PUTTY rebuild (14 materials: 11 re-key + 3 new).
+  const texturePutty = await loadTexturePuttyMap();
+  console.log(`TEXTURE/PUTTY CSV map: ${texturePutty.size} materials (source of truth for PUTTY + TEXTURE)`);
+
   // ── 2. Translate each legacy row via mapLegacyToNew ─────────────────
   let skippedNull = 0;
   let crossListed = 0;  // source rows producing >1 v2 row
@@ -544,6 +586,8 @@ async function main(): Promise<void> {
   let scAssigned = 0;          // existing materials re-keyed by the SUPERCOVER CSV
   let sclAssigned = 0;         // existing materials re-keyed by the SUPERCLEAN CSV
   let droppedDistemper = 0;    // DISTEMPER stock rows dropped (not in the CSV allowlist)
+  let tpAssigned = 0;          // existing materials re-keyed by the TEXTURE/PUTTY CSV
+  const texturePuttyNotInCsv: string[] = [];  // PUTTY/TEXTURE natives absent from the CSV (report, never drop)
   const seenMaterials = new Set<string>();  // every material legacy produced (for rule-5 report)
   const v2Rows: V2Row[] = [];
 
@@ -594,26 +638,33 @@ async function main(): Promise<void> {
       // DISTEMPER allowlist (2026-06-12): membership + isPrimary only; product/
       // baseColour are left as the legacy values (they already resolve).
       const dist = distemper.get(material);
+      // TEXTURE/PUTTY CSV (2026-06-12) WINS over everything for its 14 materials:
+      // category = CSV family, product, baseColour, isPrimary, pack/unit, description.
+      const tp = texturePutty.get(material);
       if (sad) sadAssigned++;
       if (csv) csvAssigned++;
       if (sc) scAssigned++;
       if (scl) sclAssigned++;
+      if (tp) tpAssigned++;
 
       const category =
-        scl ? SUPERCLEAN_CATEGORY
+        tp ? tp.family
+        : scl ? SUPERCLEAN_CATEGORY
         : sc ? SUPERCOVER_CATEGORY
         : sad ? SADOLIN_CATEGORY
         : ov ? ov.category
         : newRow.family;
       const product =
-        scl ? scl.product
+        tp ? tp.product
+        : scl ? scl.product
         : sc ? sc.product
         : sad ? sad.product
         : csv ? csv.product
         : ov ? ov.product
         : newRow.subProduct;
       const baseColour =
-        scl ? scl.baseColour
+        tp ? tp.baseColour
+        : scl ? scl.baseColour
         : sc ? sc.baseColour
         : sad ? sad.baseColour
         : ov ? ov.baseColour
@@ -650,15 +701,22 @@ async function main(): Promise<void> {
       if (sc) { normPack = sc.packCode; normUnit = sc.unit; }
       // SUPERCLEAN CSV likewise authoritative on pack/unit (last win).
       if (scl) { normPack = scl.packCode; normUnit = scl.unit; }
+      // TEXTURE/PUTTY CSV authoritative on pack/unit (last win).
+      if (tp) { normPack = tp.packCode; normUnit = tp.unit; }
+
+      // ── PUTTY/TEXTURE not-in-CSV report (2026-06-12) ──
+      // texture-putty-review.csv is the source of truth for both families. Any
+      // PUTTY/TEXTURE-category native NOT in the CSV is flagged for review and
+      // kept (legacy resolution) — never silently dropped.
+      if ((category === "PUTTY" || category === "TEXTURE") && !tp) texturePuttyNotInCsv.push(material);
 
       v2Rows.push({
         material,
-        // SADOLIN CSV is the single source for its rows (product/base/pack/
-        // isPrimary), so honour its col-10 description too — fixes the
-        // legacy-description drift (e.g. the PU PRIME→MULTI PURPOSE THINNER
-        // rename for 5826259/60/61). Verified no-op for the other 151 Sadolin
-        // rows: every CSV col-10 already equals the live/legacy description.
-        description:     sad ? sad.description : legacy.description,
+        // SADOLIN/TEXTURE-PUTTY CSV is the single source for its rows (product/
+        // base/pack/isPrimary), so honour its description too — Path-B precedent
+        // (fixes legacy-description drift). Verified no-op for the other 151
+        // Sadolin rows: every CSV description already equals the live/legacy one.
+        description:     tp ? tp.description : sad ? sad.description : legacy.description,
         category,
         product,
         baseColour,
@@ -674,7 +732,8 @@ async function main(): Promise<void> {
         // CSV is the authoritative primary list. Then SADOLIN CSV (with White-1KG
         // demote); then WS CSV KEEP/HIDE; else the SET_FALSE rule.
         isPrimary:
-          dist ? dist.isPrimary
+          tp ? tp.isPrimary
+          : dist ? dist.isPrimary
           : scl ? scl.isPrimary
           : (product === "SUPERCLEAN" || product === "SUPERCLEAN 3IN1") ? false
           : sc ? sc.isPrimary
@@ -925,6 +984,35 @@ async function main(): Promise<void> {
   }
   console.log(`SUPERCLEAN: re-keyed ${sclAssigned} existing, built ${superCleanBuilt.length} new (expect 81 re-key / 31 build)`);
 
+  // ── 2j. TEXTURE/PUTTY build-from-CSV (3 new TEXTURE, no legacy source) ──
+  // The 3 new TEXTURE codes (5857610/11/12) are absent from legacy → built here
+  // from CSV fields (mirrors Sadolin 2f / SuperCover 2h). The 11 existing PUTTY/
+  // TEXTURE materials are re-keyed in the main loop, so seenMaterials guards them
+  // out of the build (re-key, never doubled). category = CSV family.
+  const texturePuttyBuilt: string[] = [];
+  const texturePuttyReKeyed: string[] = [];
+  for (const [mat, e] of Array.from(texturePutty.entries())) {
+    if (seenMaterials.has(mat)) { texturePuttyReKeyed.push(mat); continue; }
+    v2Rows.push({
+      material:        mat,
+      description:     e.description,
+      category:        e.family,
+      product:         e.product,
+      baseColour:      e.baseColour,
+      packCode:        e.packCode,
+      unit:            e.unit,
+      refMaterial:     null,
+      refDescription:  null,
+      paintType:       null,
+      materialType:    null,
+      piecesPerCarton: null,
+      isPrimary:       e.isPrimary,
+    });
+    seenMaterials.add(mat);
+    texturePuttyBuilt.push(mat);
+  }
+  console.log(`TEXTURE/PUTTY: re-keyed ${texturePuttyReKeyed.length} existing, built ${texturePuttyBuilt.length} new [${texturePuttyBuilt.join(", ")}]`);
+
   console.log(`Skipped (mapLegacyToNew → null)         : ${skippedNull}`);
   console.log(`Source rows expanded into multiple v2  : ${crossListed}`);
   console.log(`Name-override rows (live names applied) : ${overridden}`);
@@ -993,7 +1081,7 @@ async function main(): Promise<void> {
       const r = rows.filter((x) => x.product === prod);
       return { n: r.length, pri: r.filter((x) => x.isPrimary).length };
     };
-    const TARGETS = ["WS PROTECT DUSTPROOF", "WS PROTECT RAINPROOF", "WS POWERFLEXX", "WS PROTECT HI-SHEEN", "GLOSS", "PU ENAMEL", "SUPER SATIN", "SATIN STAY BRIGHT", "PROMISE INTERIOR", "PROMISE SHEEN INTERIOR", "PROMISE EXTERIOR", "PROMISE SHEEN EXTERIOR", "PROMISE PRIMER", "PROMISE SMARTCHOICE", "SUPERCOVER", "SUPERCOVER SHEEN", "SUPERCLEAN", "SUPERCLEAN 3IN1", "ACRYLIC DISTEMPER", "MAGIK"];
+    const TARGETS = ["WS PROTECT DUSTPROOF", "WS PROTECT RAINPROOF", "WS POWERFLEXX", "WS PROTECT HI-SHEEN", "GLOSS", "PU ENAMEL", "SUPER SATIN", "SATIN STAY BRIGHT", "PROMISE INTERIOR", "PROMISE SHEEN INTERIOR", "PROMISE EXTERIOR", "PROMISE SHEEN EXTERIOR", "PROMISE PRIMER", "PROMISE SMARTCHOICE", "SUPERCOVER", "SUPERCOVER SHEEN", "SUPERCLEAN", "SUPERCLEAN 3IN1", "ACRYLIC DISTEMPER", "MAGIK", "ACRYLIC PUTTY", "POLYPUTTY", "TEXTURE", "TEXTURE 2MM", "TEXTURE 3MM", "MATT"];
     console.log("");
     console.log("════════════ WS RESTRUCTURE REHEARSAL (before → after) ════════════");
     for (const t of TARGETS) {
@@ -1238,8 +1326,36 @@ async function main(): Promise<void> {
     const distCrossList = Array.from(distMatCounts.values()).filter((n) => n > 1).length;
     console.log(`  Cross-list (SAP under >1 row): ${distCrossList} (expect 0)`);
 
+    // ── TEXTURE / PUTTY rebuild rehearsal (2026-06-12) ──
     console.log("");
-    console.log(`  TOTAL stock rows after rebuild: ${deduped.length} (expect 1644 = 1527 + 8 Hydro + 25 Tools + 56 SuperCover + 31 SuperClean - 3 Distemper)`);
+    console.log("════════════ TEXTURE / PUTTY REBUILD ════════════");
+    const puttyFinal = deduped.filter((r) => r.category === "PUTTY");
+    const texFinal   = deduped.filter((r) => r.category === "TEXTURE");
+    const puttyLive  = liveRows.filter((r) => r.category === "PUTTY").length;
+    const texLive    = liveRows.filter((r) => r.category === "TEXTURE").length;
+    console.log(`  PUTTY  : before ${puttyLive} -> after ${puttyFinal.length} (expect 6 -> 6)`);
+    console.log(`  TEXTURE: before ${texLive} -> after ${texFinal.length} (expect 5 -> 8, +3 new)`);
+    console.log(`  Re-keyed existing (loop): ${tpAssigned} (expect 11) | built new: ${texturePuttyBuilt.length} (expect 3) [${texturePuttyBuilt.join(", ")}]`);
+    console.log(`  New TEXTURE codes — path each took:`);
+    for (const m of ["5857610", "5857611", "5857612"]) {
+      const r = deduped.find((x) => x.material === m);
+      const built = texturePuttyBuilt.includes(m);
+      console.log(`     ${m}: ${r ? `product="${r.product}" base="${r.baseColour}" ${r.packCode}${r.unit ?? ""} pri=${r.isPrimary} [${built ? "CREATED (no legacy)" : "RE-KEYED from legacy"}]` : "ABSENT (FAIL)"}`);
+    }
+    const tpBreak = (cat: string) => {
+      const rs = deduped.filter((r) => r.category === cat);
+      const byk = new Map<string, { n: number; pri: number }>();
+      for (const r of rs) { const k = `${r.product}|${r.baseColour}|${formatPack(r.packCode, r.unit)}`; const e = byk.get(k) ?? { n: 0, pri: 0 }; e.n++; if (r.isPrimary) e.pri++; byk.set(k, e); }
+      for (const k of Array.from(byk.keys()).sort()) { const e = byk.get(k)!; console.log(`     ${k.padEnd(44)} ${e.pri}/${e.n}`); }
+    };
+    console.log(`  PUTTY (product|base|pack: primary/total):`); tpBreak("PUTTY");
+    console.log(`  TEXTURE (product|base|pack: primary/total):`); tpBreak("TEXTURE");
+    console.log(`  POLYPUTTY primaries: [${deduped.filter((r) => r.product === "POLYPUTTY" && r.isPrimary).map((r) => r.material).join(", ")}] (expect 5578774)`);
+    console.log(`  MATT demoted (expect all false): ${["IN43109881", "IN43109981", "IN41250620"].map((m) => { const r = deduped.find((x) => x.material === m); return `${m}=${r ? r.isPrimary : "ABSENT"}`; }).join(", ")}`);
+    console.log(`  PUTTY/TEXTURE natives NOT in CSV (report only, kept): ${texturePuttyNotInCsv.length}${texturePuttyNotInCsv.length ? " -> " + texturePuttyNotInCsv.join(", ") : ""} (expect 0)`);
+
+    console.log("");
+    console.log(`  TOTAL stock rows after rebuild: ${deduped.length} (expect 1647 = 1527 + 8 Hydro + 25 Tools + 56 SuperCover + 31 SuperClean - 3 Distemper + 3 TexturePutty)`);
 
     console.log("");
     console.log("DRY_RUN=1 — NO wipe, NO insert performed.");

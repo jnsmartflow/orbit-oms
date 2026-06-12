@@ -137,9 +137,16 @@ const FAMILY_BUCKET_OVERRIDES: Record<string, Record<string, BucketColumn>> = {
   // DISTEMPER (2026-06-12) is an all-KG family sold per bag. Route its 1/2/5/10/20 KG
   // to their OWN KG columns instead of the shared litre buckets, so 1KG and 2KG stop
   // colliding in "1L" and 5/10/20 KG stop rendering under litre headers. Scoped here
-  // so the other KG-carrying families (Aquatech/Putty/Sadolin/VT Specialty/Promise),
+  // so the other KG-carrying families (Aquatech/Sadolin/VT Specialty/Promise),
   // which deliberately fold KG into litre via the global map, are unaffected.
   DISTEMPER: { "1KG": "1KG", "2KG": "2KG", "5KG": "5KG", "10KG": "10KG", "20KG": "20KG" },
+  // PUTTY (2026-06-12) is an all-KG family. Acrylic Putty 1/5/20 KG would fold into
+  // 1L/4L/20L via the global map — override to own KG columns. 40 KG (PolyPutty)
+  // already maps to its own 40KG column globally; listed for explicitness.
+  PUTTY: { "1KG": "1KG", "5KG": "5KG", "20KG": "20KG", "40KG": "40KG" },
+  // TEXTURE (2026-06-12) carries 25/30 KG. The global map already routes 25/30 KG to
+  // their own columns; listed here so the family's KG intent is explicit and local.
+  TEXTURE: { "25KG": "25KG", "30KG": "30KG" },
 };
 
 /** Normalises LT → L. Other units pass through (KG, ML, GM stay). */
@@ -179,6 +186,29 @@ export function bucketColumnsForTab(packs: RawPack[], family?: string | null): B
   for (const p of packs) {
     const b = packToBucket(p, family);
     if (b) present.add(b);
+  }
+  return STANDARD_COLUMNS.filter((c) => present.has(c));
+}
+
+/**
+ * Bucket columns for a tab whose rows may span MORE THAN ONE family (e.g. the
+ * "Texture & Putty" tab = PUTTY + TEXTURE). Each row resolves its packs with its
+ * OWN family override, so the column set is the union across families — PUTTY's
+ * 1/5/20 KG (KG override) AND TEXTURE's 25/30 KG together. `bucketColumnsForTab`
+ * can't express this: its single `family` arg would apply one family's override
+ * to every pack, mis-bucketing the other family's KG packs into litre columns.
+ * For single-family tabs this is identical to bucketColumnsForTab. Ordered per
+ * STANDARD_COLUMNS; columns with no mapping SKU are excluded (no bloat).
+ */
+export function bucketColumnsForRows(
+  rows: Array<{ packs: RawPack[]; family?: string | null }>,
+): BucketColumn[] {
+  const present = new Set<BucketColumn>();
+  for (const row of rows) {
+    for (const p of row.packs) {
+      const b = packToBucket(p, row.family ?? null);
+      if (b) present.add(b);
+    }
   }
   return STANDARD_COLUMNS.filter((c) => present.has(c));
 }

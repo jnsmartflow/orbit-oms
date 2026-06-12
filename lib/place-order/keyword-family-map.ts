@@ -32,6 +32,14 @@ const KEYWORD_FAMILY: Record<string, string> = {
   "distemper":    "DISTEMPER",
   "magik":        "DISTEMPER",
   "duwel":        "DISTEMPER",
+  // PUTTY + TEXTURE (2026-06-12). "texture"/"rustic" promote TEXTURE (decoupled
+  // from WS — the "WS TEXTURE" searchToken was dropped from the menu rows).
+  "putty":         "PUTTY",
+  "acrylic putty": "PUTTY",
+  "polyputty":     "PUTTY",
+  "poly putty":    "PUTTY",
+  "texture":       "TEXTURE",
+  "rustic":        "TEXTURE",
 };
 
 function normalizeQuery(query: string): string {
