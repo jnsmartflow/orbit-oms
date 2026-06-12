@@ -679,6 +679,38 @@ model orders {
   // Operator Skip / Pause back-relations (Features 2 & 3)
   skipEvents           tint_skip_events[]
   pauseEvents          tint_pause_events[]
+  // Hide (Feature A — manual one-off hide)
+  isHidden             Boolean                   @default(false)
+  hiddenById           Int?
+  hiddenReason         String?
+  hiddenAt             DateTime?                 @db.Timestamptz(6)
+}
+
+// ─────────────────────────────────────────────
+// HIDE FEATURE (OBD visibility) — 2026-06-12
+// ─────────────────────────────────────────────
+
+model obd_visibility_rules {
+  id              Int       @id @default(autoincrement())
+  ruleName        String
+  conditionType   String // 'tag' | 'daysOld'
+  conditionTag    String? // 'HOLD' | 'URGENT' | 'MISSING_CUSTOMER'
+  conditionDaysGt Int?
+  isActive        Boolean   @default(true)
+  createdById     Int
+  createdAt       DateTime  @default(now()) @db.Timestamptz(6)
+  updatedById     Int?
+  updatedAt       DateTime? @db.Timestamptz(6)
+
+  @@index([isActive])
+}
+
+model app_tag_settings {
+  id          Int       @id @default(autoincrement())
+  tagKey      String    @unique
+  isEnabled   Boolean   @default(true)
+  updatedById Int?
+  updatedAt   DateTime? @db.Timestamptz(6)
 }
 
 model order_splits {
