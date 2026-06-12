@@ -2002,7 +2002,7 @@
       {
         "family": "TEXTURE",
         "subProduct": "TEXTURE",
-        "displayName": "Texture",
+        "displayName": "Texture - 90 BASE",
         "searchTokens": "TEXTURE,RUSTIC,90 BASE",
         "baseColour": "90 BASE",
         "productType": "BASE_VARIANT",
@@ -2014,7 +2014,7 @@
       {
         "family": "TEXTURE",
         "subProduct": "TEXTURE",
-        "displayName": "Texture",
+        "displayName": "Texture - 94 BASE",
         "searchTokens": "TEXTURE,RUSTIC,94 BASE",
         "baseColour": "94 BASE",
         "productType": "BASE_VARIANT",
@@ -2026,7 +2026,7 @@
       {
         "family": "TEXTURE",
         "subProduct": "TEXTURE 2MM",
-        "displayName": "Texture 2MM",
+        "displayName": "Texture 2MM - 94 BASE",
         "searchTokens": "TEXTURE,RUSTIC,2MM,94 BASE",
         "baseColour": "94 BASE",
         "productType": "BASE_VARIANT",
@@ -2038,7 +2038,7 @@
       {
         "family": "TEXTURE",
         "subProduct": "TEXTURE 3MM",
-        "displayName": "Texture 3MM",
+        "displayName": "Texture 3MM - 92 BASE",
         "searchTokens": "TEXTURE,RUSTIC,3MM,92 BASE",
         "baseColour": "92 BASE",
         "productType": "BASE_VARIANT",
