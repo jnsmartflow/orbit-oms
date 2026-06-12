@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Plus, Scissors, MoreHorizontal, UserPlus, ChevronUp, ChevronDown, RefreshCw, X, AlertCircle, Trash2, SkipForward, History, Pause } from "lucide-react";
+import { Plus, Scissors, MoreHorizontal, UserPlus, ChevronUp, ChevronDown, RefreshCw, X, AlertCircle, Trash2, SkipForward, History, Pause, EyeOff } from "lucide-react";
 import type { TintOrder, SplitCard, CompletedAssignment } from "@/components/tint/tint-manager-content";
 import { computeElapsedMs } from "@/lib/tint/elapsed-time";
 
@@ -26,6 +26,10 @@ export interface TintTableViewProps {
   canRemove?:              boolean;
   /** Fires when the user clicks "Remove OBD…" on a pending row. */
   onRequestRemove?:        (order: TintOrder) => void;
+  /** When true (admin only), append "Hide OBD…" to pending-stage row menus. */
+  canHide?:                boolean;
+  /** Fires when the user clicks "Hide OBD…" on a pending row. */
+  onRequestHide?:          (order: TintOrder) => void;
   /** Phase 3d — opens the parent's SkipHistoryModal. Receives (orderId,
       obdNumber, customerName) so the parent doesn't need to look it up. */
   onOpenSkipHistory?:      (orderId: number, obdNumber: string, customerName: string | null) => void;
@@ -322,6 +326,8 @@ export function TintTableView({
   onCustomerMissing,
   canRemove,
   onRequestRemove,
+  canHide,
+  onRequestHide,
   onOpenSkipHistory,
   onOpenPauseHistory,
 }: TintTableViewProps) {
@@ -694,6 +700,14 @@ export function TintTableView({
                     icon:    <Trash2 size={13} />,
                     onClick: () => onRequestRemove(order),
                     danger:  true,
+                  });
+                }
+                // Hide OBD — ADMIN ONLY (parent computes canHide). Next to Remove.
+                if (canHide && onRequestHide) {
+                  actions.push({
+                    label:   "Hide OBD…",
+                    icon:    <EyeOff size={13} />,
+                    onClick: () => onRequestHide(order),
                   });
                 }
                 const remainingQty = order.remainingQty ?? 0;

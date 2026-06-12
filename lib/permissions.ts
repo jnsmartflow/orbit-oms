@@ -39,6 +39,7 @@ const PAGE_NAV_MAP: NavItemConfig[] = [
   { pageKey: "ti_report",          label: "TI Report",         href: "/tint/manager/ti-report" },
   { pageKey: "attendance",         label: "Attendance",        href: "/attendance" },
   { pageKey: "attendance_admin",   label: "Attendance",        href: "/admin/attendance" },
+  { pageKey: "settings_hide",      label: "Hide",              href: "/admin/settings/hide" },
 ];
 
 // Per-role href overrides: non-admin roles access shared pages via their own route group
@@ -131,7 +132,8 @@ export type PageKey =
   | "sampling_library"
   | "ti_report"
   | "attendance"
-  | "attendance_admin";
+  | "attendance_admin"
+  | "settings_hide";
 
 export type ActionKey =
   | "canView"
@@ -172,6 +174,7 @@ const ALL_PAGE_KEYS: PageKey[] = [
   "import_obd", "support_queue", "planning_board", "tint_manager", "tint_operator",
   "dispatcher", "warehouse", "place_order", "mail_orders",
   "delivery_challans", "shade_master", "sampling_library", "ti_report",
+  "settings_hide",
 ];
 
 // ── Functions ─────────────────────────────────────────────────────────────────

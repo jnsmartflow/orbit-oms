@@ -7,7 +7,7 @@ import {
   AlertCircle, Layers,
   Eye, Plus, MoreHorizontal, UserPlus, RefreshCw, X, Scissors,
   Truck, ChevronDown, ChevronUp, LayoutGrid, Table as TableIcon,
-  RotateCcw, Trash2, History, SkipForward, Pause,
+  RotateCcw, Trash2, History, SkipForward, Pause, EyeOff,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -17,6 +17,7 @@ import type { SplitBuilderModalProps } from "@/components/tint/split-builder-mod
 import { ManualTintEntryModal } from "@/components/tint/manual-tint-entry-modal";
 import { ManualTintRevertModal } from "@/components/tint/manual-tint-revert-modal";
 import { RemoveObdModal } from "@/components/tint/RemoveObdModal";
+import { HideObdModal } from "@/components/tint/HideObdModal";
 import { SkipHistoryModal } from "@/components/tint/SkipHistoryModal";
 import { PauseHistoryModal } from "@/components/tint/PauseHistoryModal";
 import { humaniseReason } from "@/lib/tint/pause-reasons";
@@ -544,13 +545,17 @@ interface KanbanCardProps {
   canRemove:          boolean;
   /** Fires when the user clicks "Remove OBD…" — parent opens the modal. */
   onRequestRemove:    () => void;
+  /** When true (admin only), render "Hide OBD…" in the pending-stage menu. */
+  canHide:            boolean;
+  /** Fires when the user clicks "Hide OBD…" — parent opens the hide modal. */
+  onRequestHide:      () => void;
   /** Phase 3d — fires when the user opens skip history (pill / link / menu). */
   onOpenSkipHistory:  () => void;
   /** Phase 4e — fires when the user opens pause history (pill / link / menu). */
   onOpenPauseHistory: () => void;
 }
 
-function KanbanCard({ order, stage, onAssign, onCreateSplit, onRefresh, onMoveUp, onMoveDown, onViewDetail, onCustomerMissing, onRequestRevert, canRemove, onRequestRemove, onOpenSkipHistory, onOpenPauseHistory }: KanbanCardProps) {
+function KanbanCard({ order, stage, onAssign, onCreateSplit, onRefresh, onMoveUp, onMoveDown, onViewDetail, onCustomerMissing, onRequestRevert, canRemove, onRequestRemove, canHide, onRequestHide, onOpenSkipHistory, onOpenPauseHistory }: KanbanCardProps) {
   const [menuOpen,     setMenuOpen]     = useState(false);
   const [popoverOpen,  setPopoverOpen]  = useState(false);
   const [popoverPos,   setPopoverPos]   = useState<{ top: number; right: number } | null>(null);
@@ -814,6 +819,19 @@ function KanbanCard({ order, stage, onAssign, onCreateSplit, onRefresh, onMoveUp
                           >
                             <Trash2 size={12} className="text-red-400 flex-shrink-0" />
                             Remove OBD…
+                          </button>
+                        </>
+                      )}
+                      {canHide && (
+                        <>
+                          <div className="mx-3 border-t border-gray-100" />
+                          <button
+                            type="button"
+                            onClick={() => { setMenuOpen(false); onRequestHide(); }}
+                            className="w-full flex items-center gap-2.5 px-3.5 py-2 text-[12px] text-gray-700 hover:bg-gray-50 transition-colors whitespace-nowrap"
+                          >
+                            <EyeOff size={12} className="text-gray-400 flex-shrink-0" />
+                            Hide OBD…
                           </button>
                         </>
                       )}
@@ -1879,9 +1897,21 @@ export function TintManagerContent() {
     return all.includes("tint_manager");
   })();
 
+  // Hide OBD is ADMIN ONLY (narrower than Remove). Server re-enforces via
+  // /api/admin/hide/orders/[id]/hide.
+  const canHideObd = (() => {
+    const primary = session?.user?.role ?? "";
+    const all     = session?.user?.roles ?? (primary ? [primary] : []);
+    return primary === "admin" || all.includes("admin");
+  })();
+
   // State for the Remove OBD modal — single instance mounted at end of return.
   // Hoisted here so both Kanban cards and the Table view trigger the same modal.
   const [removeModalOrder, setRemoveModalOrder] = useState<TintOrder | null>(null);
+
+  // Hide OBD modal — single instance, hoisted like Remove. Both Kanban cards
+  // and Table rows feed the same state.
+  const [hideModalOrder, setHideModalOrder] = useState<TintOrder | null>(null);
 
   // Phase 3d — Skip History modal. Single instance; all 5 entry points
   // (Kanban pill, Kanban "View full history" link, Kanban kebab item,
@@ -2768,6 +2798,8 @@ export function TintManagerContent() {
                           }}
                           canRemove={canRemoveObd}
                           onRequestRemove={() => setRemoveModalOrder(item.data)}
+                          canHide={canHideObd}
+                          onRequestHide={() => setHideModalOrder(item.data)}
                           onOpenSkipHistory={() => setSkipHistoryFor({
                             orderId:      item.data.id,
                             obdNumber:    item.data.obdNumber,
@@ -2869,6 +2901,8 @@ export function TintManagerContent() {
           onCustomerMissing={(order) => { setMissingSheetOrder(order); setMissingSheetOpen(true); }}
           canRemove={canRemoveObd}
           onRequestRemove={(order) => setRemoveModalOrder(order)}
+          canHide={canHideObd}
+          onRequestHide={(order) => setHideModalOrder(order)}
           onOpenSkipHistory={(orderId, obdNumber, customerName) =>
             setSkipHistoryFor({ orderId, obdNumber, customerName })
           }
@@ -3209,6 +3243,25 @@ export function TintManagerContent() {
             articleTag:         removeModalOrder.querySnapshot?.articleTag ?? null,
             totalVolume:        removeModalOrder.querySnapshot?.totalVolume ?? null,
             challan:            removeModalOrder.challan ?? null,
+          }}
+        />
+      )}
+
+      {/* ── Hide OBD Modal (admin-only) ──────────────────────────────────── */}
+      {/* Single instance — both Kanban cards and Table rows set hideModalOrder. */}
+      {hideModalOrder && (
+        <HideObdModal
+          open={true}
+          onClose={() => setHideModalOrder(null)}
+          onHidden={() => {
+            setHideModalOrder(null);
+            void fetchOrders();
+          }}
+          order={{
+            id:        hideModalOrder.id,
+            obdNumber: hideModalOrder.obdNumber,
+            siteName:  hideModalOrder.customer?.customerName
+                         ?? hideModalOrder.shipToCustomerName,
           }}
         />
       )}
