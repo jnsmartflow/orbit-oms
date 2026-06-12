@@ -11,6 +11,7 @@ import {
   Tag, Palette, Package,
   Building2, UserCheck, ContactRound, Store,
   Upload, ClipboardList, ClipboardCheck, CalendarCheck, Paintbrush, Briefcase,
+  EyeOff,
 } from "lucide-react";
 import { useSidebar } from "./sidebar-provider";
 import type { PagePermissions } from "@/lib/permissions";
@@ -84,6 +85,13 @@ const NAV_SECTIONS: NavSection[] = [
       { label: "Attendance", href: "/attendance" },
     ],
   },
+  {
+    label: "Settings",
+    items: [
+      // pageKey "settings_hide" → admin sees it (ALL_TRUE), gated for everyone else.
+      { label: "Hide", href: "/admin/settings/hide", pageKey: "settings_hide" },
+    ],
+  },
 ];
 
 // ── Icon map ─────────────────────────────────────────────────────────────────
@@ -118,6 +126,7 @@ const ICONS: Record<string, NavIcon> = {
   "Shade Master":        Palette,
   "My Tint Jobs":        Paintbrush,
   "Attendance":          ClipboardCheck,
+  "Hide":                EyeOff,
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
