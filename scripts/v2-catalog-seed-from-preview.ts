@@ -289,6 +289,16 @@ const CONFIRMED_SUBPRODUCT_MAP: Record<string, string> = {
   "VELVETINO":              "VELVETINO",
   "VT MARBLE":              "VT MARBLE",
   "VT CLEAR COAT":          "VT CLEAR COAT",
+  // VELVET TOUCH (2026-06-13): identity join-keys so menu.product is non-null →
+  // base aliases (base-aliases.ts) fire + §7.8 bakes the alias search words.
+  // Stock product == subProduct already (rows join via subProduct today), so the
+  // pack join is unchanged. Scoped to the 6 alias-bearing ranges.
+  "PEARL GLO":              "PEARL GLO",
+  "PLATINUM GLO":           "PLATINUM GLO",
+  "DIAMOND GLO":            "DIAMOND GLO",
+  "ETERNA":                 "ETERNA",
+  "ETERNA MATT":            "ETERNA MATT",
+  "ETERNA HI-SHEEN":        "ETERNA HI-SHEEN",
 };
 
 // Rule 2: HIGH-confidence rows from the reviewed name-map draft

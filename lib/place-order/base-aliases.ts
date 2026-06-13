@@ -162,6 +162,48 @@ export const BASE_ALIASES: Record<string, Record<string, BaseAlias>> = {
     "2in1 Primer":         { display: "Int & Ext", search: ["int & ext", "interior exterior", "int ext"] },
     "Freedom 2in1 Primer": { display: "Int & Ext", search: ["int & ext", "interior exterior", "int ext"] },
   },
+  // ── Velvet Touch family (6 ranges) ───────────────────────────────────────
+  // Product join-keys set in the catalog seed's CONFIRMED_SUBPRODUCT_MAP so these
+  // render + bake into tokens. GLO ranges label 96/97 plainly Yellow/Red (not
+  // YOX/ROX). No alias for 93 BASE / BRILLIANT WHITE / PASTEL BASE / RARE PEARL
+  // COPPER / RARE PEARL GREEN / BASECOAT (carried but unaliased, like BW elsewhere).
+  "PEARL GLO": {
+    "90 BASE": { display: "White",        search: ["white", "white base"] },
+    "92 BASE": { display: "Intermediate", search: ["intermediate", "intermediate base"] },
+    "94 BASE": { display: "Accent",       search: ["accent", "accent base"] },
+    "95 BASE": { display: "Deep",         search: ["deep", "deep base"] },
+    "96 BASE": { display: "Yellow",       search: ["yellow", "yellow base"] },
+    "97 BASE": { display: "Red",          search: ["red", "red base"] },
+  },
+  "PLATINUM GLO": {
+    "90 BASE": { display: "White",        search: ["white", "white base"] },
+    "92 BASE": { display: "Intermediate", search: ["intermediate", "intermediate base"] },
+    "94 BASE": { display: "Accent",       search: ["accent", "accent base"] },
+    "95 BASE": { display: "Deep",         search: ["deep", "deep base"] },
+    "96 BASE": { display: "Yellow",       search: ["yellow", "yellow base"] },
+    "97 BASE": { display: "Red",          search: ["red", "red base"] },
+  },
+  "DIAMOND GLO": {
+    "90 BASE": { display: "White",        search: ["white", "white base"] },
+    "92 BASE": { display: "Intermediate", search: ["intermediate", "intermediate base"] },
+    "94 BASE": { display: "Accent",       search: ["accent", "accent base"] },
+    "95 BASE": { display: "Deep",         search: ["deep", "deep base"] },
+    "96 BASE": { display: "Yellow",       search: ["yellow", "yellow base"] },
+    "97 BASE": { display: "Red",          search: ["red", "red base"] },
+  },
+  "ETERNA": {
+    "90 BASE": { display: "White",        search: ["white", "white base"] },
+    "92 BASE": { display: "Intermediate", search: ["intermediate", "intermediate base"] },
+    "94 BASE": { display: "Accent",       search: ["accent", "accent base"] },
+  },
+  "ETERNA MATT": {
+    "92 BASE": { display: "Intermediate", search: ["intermediate", "intermediate base"] },
+    "94 BASE": { display: "Accent",       search: ["accent", "accent base"] },
+  },
+  "ETERNA HI-SHEEN": {
+    "90 BASE": { display: "White",        search: ["white", "white base"] },
+    "92 BASE": { display: "Intermediate", search: ["intermediate", "intermediate base"] },
+  },
 };
 
 /**
