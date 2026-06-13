@@ -21,7 +21,7 @@ export type QuickTile = {
 
 export const QUICK_TILES_V1: ReadonlyArray<QuickTile> = [
   { position: 1, type: "family",      label: "GLOSS",          parentLabel: "ENAMELS",   familyName:     "GLOSS"          },
-  { position: 2, type: "family",      label: "SATIN",          parentLabel: "ENAMELS",   familyName:     "SATIN"          },
+  { position: 2, type: "family",      label: "Satin & PU",     parentLabel: "ENAMELS",   familyName: "SATIN", familyNames: ["SATIN", "PU ENAMEL"] },
   { position: 3, type: "family",      label: "PROMISE",        parentLabel: "PROMISE",   familyName:     "PROMISE"        },
   { position: 4, type: "family",      label: "WS",             parentLabel: "EXTERIORS", familyName:     "WS"             },
   { position: 5, type: "family",      label: "VELVET TOUCH",   parentLabel: "INTERIORS", familyName: "VELVET TOUCH", familyNames: ["VELVET TOUCH", "VT SPECIALTY"] },

@@ -299,6 +299,11 @@ const CONFIRMED_SUBPRODUCT_MAP: Record<string, string> = {
   "ETERNA":                 "ETERNA",
   "ETERNA MATT":            "ETERNA MATT",
   "ETERNA HI-SHEEN":        "ETERNA HI-SHEEN",
+  // PU ENAMEL (2026-06-13): identity join-key so menu.product is non-null → its
+  // (previously dormant) base aliases fire + §7.8 bakes the alias search words.
+  // Stock product == subProduct already (joins via subProduct today), pack join
+  // unchanged.
+  "PU ENAMEL":              "PU ENAMEL",
 };
 
 // Rule 2: HIGH-confidence rows from the reviewed name-map draft
@@ -871,9 +876,11 @@ async function main(): Promise<void> {
     // GLOSS: BASE/COLOUR split — GREEN BASE moves to COLOUR (locked 2026-06-02)
     // despite ending in "BASE", so it groups with the named colours.
     if (r.family === "GLOSS")    { r.uiGroup = (glossBase(r.baseColour) && (r.baseColour ?? "").toUpperCase() !== "GREEN BASE") ? "BASE" : "COLOUR"; uiAssigned++; continue; }
-    // PU ENAMEL: standalone ENAMELS family, BASE/COLOUR split by the same rule
-    // as GLOSS; subProduct stays "PU ENAMEL" (the stock pack-join key).
-    if (r.family === "PU ENAMEL") { r.uiGroup = glossBase(r.baseColour) ? "BASE" : "COLOUR"; uiAssigned++; continue; }
+    // PU ENAMEL (2026-06-13): one flat tab "PU Enamel" (was a GLOSS-style
+    // BASE/COLOUR split) so it forms a single tab when folded into tile 2.
+    // subProduct stays "PU ENAMEL" (the stock pack-join key); product set via
+    // CONFIRMED_SUBPRODUCT_MAP so base aliases (90/92/94) render.
+    if (r.family === "PU ENAMEL") { r.uiGroup = "PU Enamel"; uiAssigned++; continue; }
     // PROMISE: one family, 6 tabs (uiGroup short label; subProduct = tab = pack-join key).
     if (r.family === "PROMISE" && PROMISE_TAB_LABEL[r.subProduct]) { r.uiGroup = PROMISE_TAB_LABEL[r.subProduct]; uiAssigned++; continue; }
     if (r.family === "VELVET TOUCH" && VELVET_TOUCH_UI[sub]) { r.uiGroup = VELVET_TOUCH_UI[sub]; uiAssigned++; continue; }
