@@ -37,6 +37,7 @@ export const STANDARD_COLUMNS = [
   "2KG",
   "5KG",
   "10KG",
+  "15KG",
   "20KG",
   "25KG",
   "30KG",
@@ -147,6 +148,12 @@ const FAMILY_BUCKET_OVERRIDES: Record<string, Record<string, BucketColumn>> = {
   // TEXTURE (2026-06-12) carries 25/30 KG. The global map already routes 25/30 KG to
   // their own columns; listed here so the family's KG intent is explicit and local.
   TEXTURE: { "25KG": "25KG", "30KG": "30KG" },
+  // VT SPECIALTY (2026-06-13) mixes 1L liquids (VAF/Velvetino/Clear Coat → global 1L)
+  // with KG solids: VAF Marble 1KG, VT Marble 5KG, VT Concrete Finish 5/10/15/25 KG.
+  // Route those KG sizes to OWN columns (global would fold 1KG→1L, 5KG→4L, 10KG→10L,
+  // 15KG→20L). 25KG already maps to its own column globally; listed for explicitness.
+  // Scoped here so Aquatech's 15 KG (Waterblock) keeps folding to 20L via the global map.
+  "VT SPECIALTY": { "1KG": "1KG", "5KG": "5KG", "10KG": "10KG", "15KG": "15KG", "25KG": "25KG" },
 };
 
 /** Normalises LT → L. Other units pass through (KG, ML, GM stay). */

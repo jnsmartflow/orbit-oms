@@ -51,7 +51,7 @@ const DRY_RUN      = process.env.DRY_RUN === "1";
 // Locked expectations from the May 6 preview run. If the JSON drifts from
 // these the script refuses to seed — better to fail loudly than to ship
 // surprise data into v2.
-const EXPECTED_TOTAL_NEW_ROWS    = 490;  // 474 − 51 + 63 − 1 − 4 + 25 − 1 − 13 − 1 − 1 (…; DISTEMPER Interior row dropped −1 2026-06-12; TEXTURE net −1 [−3 Matt +2 Texture 2MM/3MM] 2026-06-12)
+const EXPECTED_TOTAL_NEW_ROWS    = 486;  // 474 − 51 + 63 − 1 − 4 + 25 − 1 − 13 − 1 − 1 − 4 (…; TEXTURE net −1 2026-06-12; VT SPECIALTY net −4 [+5 VAF, −9 hidden-range rows] 2026-06-13)
 const EXPECTED_WARNINGS          = 0;
 
 // ── PROMISE transform constants ────────────────────────────────────────
@@ -281,6 +281,14 @@ const CONFIRMED_SUBPRODUCT_MAP: Record<string, string> = {
   "TEXTURE":                "TEXTURE",
   "TEXTURE 2MM":            "TEXTURE 2MM",
   "TEXTURE 3MM":            "TEXTURE 3MM",
+  // VT SPECIALTY (2026-06-13): identity join-keys so menu.product is non-null
+  // (explicit join + base aliases can fire later). Stock product == subProduct
+  // after the VT SPECIALTY CSV re-key (step 1), so the pack join is unchanged.
+  "VAF":                    "VAF",
+  "VT CONCRETE FINISH":     "VT CONCRETE FINISH",
+  "VELVETINO":              "VELVETINO",
+  "VT MARBLE":              "VT MARBLE",
+  "VT CLEAR COAT":          "VT CLEAR COAT",
 };
 
 // Rule 2: HIGH-confidence rows from the reviewed name-map draft
@@ -875,6 +883,9 @@ async function main(): Promise<void> {
     // (like Distemper's flat branch). Renders as 6 rows — Acrylic/Poly Putty +
     // Texture 90/94 + Texture 2MM/3MM — under one tab on tile 8.
     if (r.family === "PUTTY" || r.family === "TEXTURE") { r.uiGroup = "Texture & Putty"; uiAssigned++; continue; }
+    // VT SPECIALTY (2026-06-13): one flat tab "VT Specialty" — 11 visible rows
+    // (VAF ×6, VT Concrete Finish, Velvetino ×2, VT Marble, VT Clear Coat).
+    if (r.family === "VT SPECIALTY") { r.uiGroup = "VT Specialty"; uiAssigned++; continue; }
     if (r.family === "AQUATECH" && AQUA_UI[sub])   { r.uiGroup = AQUA_UI[sub];    uiAssigned++; continue; }
     if (r.family === "SADOLIN"  && SADOLIN_UI[sub]) { r.uiGroup = SADOLIN_UI[sub]; uiAssigned++; continue; }
     // TOOLS — two tabs derived from the product name (Rollers / Brushes).

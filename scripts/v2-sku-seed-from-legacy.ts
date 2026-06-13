@@ -459,6 +459,46 @@ async function loadTexturePuttyMap(): Promise<Map<string, TexturePuttyEntry>> {
   return map;
 }
 
+// ── CSV-as-source for the VT SPECIALTY rebuild (2026-06-13) ─────────────────
+// docs/SKU/review/velvet-touch-specialty-review.csv is the source of truth for
+// the VT SPECIALTY family stock. Mirrors loadTexturePuttyMap exactly: existing
+// materials are re-keyed in the main loop (CSV wins on product/baseColour/
+// isPrimary/pack/unit AND description), and the 3 new VAF materials (Trends
+// Glitter Silver/Gold, Marble — absent from legacy) are built in step 2k. The
+// 14 VISIBLE rows are isPrimary=TRUE; the 18 HIDDEN rows (VT Fin/Metallics/
+// Ambiance/Luxury Finishes) are isPrimary=FALSE (demoted, kept in DB). category
+// forced "VT SPECIALTY"; packCode/unit parsed from the CSV Pack column
+// ("1L"/"500ML"/"1KG"/"5KG"…). Scoped strictly to VT SPECIALTY; any VT SPECIALTY
+// stock material NOT in the CSV is REPORTED (never dropped). Columns: same shape
+// as texture-putty (0 material · 1 family · 2 product · 3 baseColour · 5 pack ·
+// 7 isPrimary · 9 description). Quote-aware split (searchTokens carries commas).
+const VT_SPECIALTY_CSV = path.join("docs", "SKU", "review", "velvet-touch-specialty-review.csv");
+const VT_SPECIALTY_CATEGORY = "VT SPECIALTY";
+type VtSpecialtyEntry = { family: string; product: string; baseColour: string; isPrimary: boolean; packCode: string; unit: string; description: string };
+
+async function loadVtSpecialtyMap(): Promise<Map<string, VtSpecialtyEntry>> {
+  const map = new Map<string, VtSpecialtyEntry>();
+  const raw = await fs.readFile(VT_SPECIALTY_CSV, "utf8");
+  for (const line of raw.split(/\r?\n/).slice(1)) {
+    if (!line.trim()) continue;
+    const c = splitCsvLine(line);
+    const material = (c[0] ?? "").trim();
+    if (!material) continue;
+    const pk = parsePackLabel((c[5] ?? "").trim());   // Pack column "1L" / "500ML" / "1KG"
+    if (!pk) { console.log(`[vt-specialty] bad pack "${c[5]}" for ${material} — skipped`); continue; }
+    map.set(material, {
+      family:      (c[1] ?? "").trim(),
+      product:     (c[2] ?? "").trim(),
+      baseColour:  (c[3] ?? "").trim(),
+      isPrimary:   (c[7] ?? "").trim().toUpperCase() === "TRUE",
+      packCode:    pk.packCode,
+      unit:        pk.unit,
+      description: (c[9] ?? "").trim(),
+    });
+  }
+  return map;
+}
+
 // Shape of one row to be inserted into mo_sku_lookup_v2.
 type V2Row = {
   material:        string;
@@ -571,6 +611,10 @@ async function main(): Promise<void> {
   const texturePutty = await loadTexturePuttyMap();
   console.log(`TEXTURE/PUTTY CSV map: ${texturePutty.size} materials (source of truth for PUTTY + TEXTURE)`);
 
+  // CSV-as-source for the VT SPECIALTY rebuild (32 materials: 14 visible + 18 hidden; 3 new VAF).
+  const vtSpecialty = await loadVtSpecialtyMap();
+  console.log(`VT SPECIALTY CSV map: ${vtSpecialty.size} materials (source of truth for VT SPECIALTY)`);
+
   // ── 2. Translate each legacy row via mapLegacyToNew ─────────────────
   let skippedNull = 0;
   let crossListed = 0;  // source rows producing >1 v2 row
@@ -588,6 +632,8 @@ async function main(): Promise<void> {
   let droppedDistemper = 0;    // DISTEMPER stock rows dropped (not in the CSV allowlist)
   let tpAssigned = 0;          // existing materials re-keyed by the TEXTURE/PUTTY CSV
   const texturePuttyNotInCsv: string[] = [];  // PUTTY/TEXTURE natives absent from the CSV (report, never drop)
+  let vtAssigned = 0;          // existing materials re-keyed by the VT SPECIALTY CSV
+  const vtSpecialtyNotInCsv: string[] = [];   // VT SPECIALTY natives absent from the CSV (report, never drop)
   const seenMaterials = new Set<string>();  // every material legacy produced (for rule-5 report)
   const v2Rows: V2Row[] = [];
 
@@ -641,21 +687,27 @@ async function main(): Promise<void> {
       // TEXTURE/PUTTY CSV (2026-06-12) WINS over everything for its 14 materials:
       // category = CSV family, product, baseColour, isPrimary, pack/unit, description.
       const tp = texturePutty.get(material);
+      // VT SPECIALTY CSV (2026-06-13) WINS over everything for its 32 materials:
+      // category = "VT SPECIALTY", product, baseColour, isPrimary, pack/unit, description.
+      const vt = vtSpecialty.get(material);
       if (sad) sadAssigned++;
       if (csv) csvAssigned++;
       if (sc) scAssigned++;
       if (scl) sclAssigned++;
       if (tp) tpAssigned++;
+      if (vt) vtAssigned++;
 
       const category =
-        tp ? tp.family
+        vt ? vt.family
+        : tp ? tp.family
         : scl ? SUPERCLEAN_CATEGORY
         : sc ? SUPERCOVER_CATEGORY
         : sad ? SADOLIN_CATEGORY
         : ov ? ov.category
         : newRow.family;
       const product =
-        tp ? tp.product
+        vt ? vt.product
+        : tp ? tp.product
         : scl ? scl.product
         : sc ? sc.product
         : sad ? sad.product
@@ -663,7 +715,8 @@ async function main(): Promise<void> {
         : ov ? ov.product
         : newRow.subProduct;
       const baseColour =
-        tp ? tp.baseColour
+        vt ? vt.baseColour
+        : tp ? tp.baseColour
         : scl ? scl.baseColour
         : sc ? sc.baseColour
         : sad ? sad.baseColour
@@ -703,12 +756,16 @@ async function main(): Promise<void> {
       if (scl) { normPack = scl.packCode; normUnit = scl.unit; }
       // TEXTURE/PUTTY CSV authoritative on pack/unit (last win).
       if (tp) { normPack = tp.packCode; normUnit = tp.unit; }
+      // VT SPECIALTY CSV authoritative on pack/unit (last win).
+      if (vt) { normPack = vt.packCode; normUnit = vt.unit; }
 
       // ── PUTTY/TEXTURE not-in-CSV report (2026-06-12) ──
       // texture-putty-review.csv is the source of truth for both families. Any
       // PUTTY/TEXTURE-category native NOT in the CSV is flagged for review and
       // kept (legacy resolution) — never silently dropped.
       if ((category === "PUTTY" || category === "TEXTURE") && !tp) texturePuttyNotInCsv.push(material);
+      // ── VT SPECIALTY not-in-CSV report (2026-06-13) ── same rule: report, never drop.
+      if (category === VT_SPECIALTY_CATEGORY && !vt) vtSpecialtyNotInCsv.push(material);
 
       v2Rows.push({
         material,
@@ -716,7 +773,7 @@ async function main(): Promise<void> {
         // base/pack/isPrimary), so honour its description too — Path-B precedent
         // (fixes legacy-description drift). Verified no-op for the other 151
         // Sadolin rows: every CSV description already equals the live/legacy one.
-        description:     tp ? tp.description : sad ? sad.description : legacy.description,
+        description:     vt ? vt.description : tp ? tp.description : sad ? sad.description : legacy.description,
         category,
         product,
         baseColour,
@@ -732,7 +789,8 @@ async function main(): Promise<void> {
         // CSV is the authoritative primary list. Then SADOLIN CSV (with White-1KG
         // demote); then WS CSV KEEP/HIDE; else the SET_FALSE rule.
         isPrimary:
-          tp ? tp.isPrimary
+          vt ? vt.isPrimary
+          : tp ? tp.isPrimary
           : dist ? dist.isPrimary
           : scl ? scl.isPrimary
           : (product === "SUPERCLEAN" || product === "SUPERCLEAN 3IN1") ? false
@@ -1013,6 +1071,36 @@ async function main(): Promise<void> {
   }
   console.log(`TEXTURE/PUTTY: re-keyed ${texturePuttyReKeyed.length} existing, built ${texturePuttyBuilt.length} new [${texturePuttyBuilt.join(", ")}]`);
 
+  // ── 2k. VT SPECIALTY build-from-CSV (3 new VAF, no legacy source) ──
+  // The 3 new VAF codes (IN73509672/772 Trends Glitter Silver/Gold, IN73539303
+  // Marble 1KG) are absent from legacy → built here from CSV fields (mirrors the
+  // TEXTURE/PUTTY 2j build). Existing VT SPECIALTY materials are re-keyed in the
+  // main loop, so seenMaterials guards them out of the build (re-key, never
+  // doubled). category = CSV family ("VT SPECIALTY").
+  const vtSpecialtyBuilt: string[] = [];
+  const vtSpecialtyReKeyed: string[] = [];
+  for (const [mat, e] of Array.from(vtSpecialty.entries())) {
+    if (seenMaterials.has(mat)) { vtSpecialtyReKeyed.push(mat); continue; }
+    v2Rows.push({
+      material:        mat,
+      description:     e.description,
+      category:        e.family,
+      product:         e.product,
+      baseColour:      e.baseColour,
+      packCode:        e.packCode,
+      unit:            e.unit,
+      refMaterial:     null,
+      refDescription:  null,
+      paintType:       null,
+      materialType:    null,
+      piecesPerCarton: null,
+      isPrimary:       e.isPrimary,
+    });
+    seenMaterials.add(mat);
+    vtSpecialtyBuilt.push(mat);
+  }
+  console.log(`VT SPECIALTY: re-keyed ${vtSpecialtyReKeyed.length} existing, built ${vtSpecialtyBuilt.length} new [${vtSpecialtyBuilt.join(", ")}]`);
+
   console.log(`Skipped (mapLegacyToNew → null)         : ${skippedNull}`);
   console.log(`Source rows expanded into multiple v2  : ${crossListed}`);
   console.log(`Name-override rows (live names applied) : ${overridden}`);
@@ -1081,7 +1169,7 @@ async function main(): Promise<void> {
       const r = rows.filter((x) => x.product === prod);
       return { n: r.length, pri: r.filter((x) => x.isPrimary).length };
     };
-    const TARGETS = ["WS PROTECT DUSTPROOF", "WS PROTECT RAINPROOF", "WS POWERFLEXX", "WS PROTECT HI-SHEEN", "GLOSS", "PU ENAMEL", "SUPER SATIN", "SATIN STAY BRIGHT", "PROMISE INTERIOR", "PROMISE SHEEN INTERIOR", "PROMISE EXTERIOR", "PROMISE SHEEN EXTERIOR", "PROMISE PRIMER", "PROMISE SMARTCHOICE", "SUPERCOVER", "SUPERCOVER SHEEN", "SUPERCLEAN", "SUPERCLEAN 3IN1", "ACRYLIC DISTEMPER", "MAGIK", "ACRYLIC PUTTY", "POLYPUTTY", "TEXTURE", "TEXTURE 2MM", "TEXTURE 3MM", "MATT"];
+    const TARGETS = ["WS PROTECT DUSTPROOF", "WS PROTECT RAINPROOF", "WS POWERFLEXX", "WS PROTECT HI-SHEEN", "GLOSS", "PU ENAMEL", "SUPER SATIN", "SATIN STAY BRIGHT", "PROMISE INTERIOR", "PROMISE SHEEN INTERIOR", "PROMISE EXTERIOR", "PROMISE SHEEN EXTERIOR", "PROMISE PRIMER", "PROMISE SMARTCHOICE", "SUPERCOVER", "SUPERCOVER SHEEN", "SUPERCLEAN", "SUPERCLEAN 3IN1", "ACRYLIC DISTEMPER", "MAGIK", "ACRYLIC PUTTY", "POLYPUTTY", "TEXTURE", "TEXTURE 2MM", "TEXTURE 3MM", "MATT", "VAF", "VT CONCRETE FINISH", "VELVETINO", "VT MARBLE", "VT CLEAR COAT", "VT FIN", "VT METALLICS", "AMBIANCE", "LUXURY FINISHES"];
     console.log("");
     console.log("════════════ WS RESTRUCTURE REHEARSAL (before → after) ════════════");
     for (const t of TARGETS) {
@@ -1354,8 +1442,35 @@ async function main(): Promise<void> {
     console.log(`  MATT demoted (expect all false): ${["IN43109881", "IN43109981", "IN41250620"].map((m) => { const r = deduped.find((x) => x.material === m); return `${m}=${r ? r.isPrimary : "ABSENT"}`; }).join(", ")}`);
     console.log(`  PUTTY/TEXTURE natives NOT in CSV (report only, kept): ${texturePuttyNotInCsv.length}${texturePuttyNotInCsv.length ? " -> " + texturePuttyNotInCsv.join(", ") : ""} (expect 0)`);
 
+    // ── VT SPECIALTY rebuild rehearsal (2026-06-13) ──
     console.log("");
-    console.log(`  TOTAL stock rows after rebuild: ${deduped.length} (expect 1647 = 1527 + 8 Hydro + 25 Tools + 56 SuperCover + 31 SuperClean - 3 Distemper + 3 TexturePutty)`);
+    console.log("════════════ VT SPECIALTY REBUILD ════════════");
+    const vtFinal = deduped.filter((r) => r.category === "VT SPECIALTY");
+    const vtLive  = liveRows.filter((r) => r.category === "VT SPECIALTY").length;
+    console.log(`  VT SPECIALTY: before ${vtLive} -> after ${vtFinal.length} (re-key ${vtAssigned} + build ${vtSpecialtyBuilt.length})`);
+    console.log(`  3 new VAF codes — path each took:`);
+    for (const m of ["IN73509672", "IN73509772", "IN73539303"]) {
+      const r = deduped.find((x) => x.material === m);
+      const built = vtSpecialtyBuilt.includes(m);
+      console.log(`     ${m}: ${r ? `product="${r.product}" base="${r.baseColour}" ${r.packCode}${r.unit ?? ""} pri=${r.isPrimary} [${built ? "CREATED (no legacy)" : "RE-KEYED from legacy"}]` : "ABSENT (FAIL)"}`);
+    }
+    const vtVisible = vtFinal.filter((r) => r.isPrimary);
+    const vtHidden  = vtFinal.filter((r) => !r.isPrimary);
+    console.log(`  VISIBLE (isPrimary=true): ${vtVisible.length} (expect 14) | HIDDEN (isPrimary=false): ${vtHidden.length} (expect 18)`);
+    const vtByProd = new Map<string, { n: number; pri: number }>();
+    for (const r of vtFinal) { const e = vtByProd.get(r.product) ?? { n: 0, pri: 0 }; e.n++; if (r.isPrimary) e.pri++; vtByProd.set(r.product, e); }
+    console.log(`  VT SPECIALTY per-product (product: primary/total), ${vtByProd.size} products:`);
+    for (const p of Array.from(vtByProd.keys()).sort()) { const e = vtByProd.get(p)!; console.log(`     ${p.padEnd(20)} ${e.pri}/${e.n}`); }
+    console.log(`  HIDDEN products demoted (expect all pri=false): VT FIN/VT METALLICS/AMBIANCE/LUXURY FINISHES`);
+    for (const p of ["VT FIN", "VT METALLICS", "AMBIANCE", "LUXURY FINISHES"]) {
+      const rs = vtFinal.filter((r) => r.product === p);
+      const anyPri = rs.filter((r) => r.isPrimary).length;
+      console.log(`     ${p.padEnd(20)} ${rs.length} rows, primary=${anyPri} (expect 0)`);
+    }
+    console.log(`  VT SPECIALTY natives NOT in CSV (report only, kept): ${vtSpecialtyNotInCsv.length}${vtSpecialtyNotInCsv.length ? " -> " + vtSpecialtyNotInCsv.join(", ") : ""}`);
+
+    console.log("");
+    console.log(`  TOTAL stock rows after rebuild: ${deduped.length} (expect ${1647 + vtSpecialtyBuilt.length} = 1647 prior baseline + ${vtSpecialtyBuilt.length} new VtSpecialty)`);
 
     console.log("");
     console.log("DRY_RUN=1 — NO wipe, NO insert performed.");

@@ -40,6 +40,15 @@ const KEYWORD_FAMILY: Record<string, string> = {
   "poly putty":    "PUTTY",
   "texture":       "TEXTURE",
   "rustic":        "TEXTURE",
+  // VT SPECIALTY (2026-06-13) — only the VISIBLE products promote. The hidden
+  // ranges (vt fin / vt metallics / ambiance / luxury finishes) are intentionally
+  // absent (no menu row, not searchable).
+  "vaf":             "VT SPECIALTY",
+  "velvetino":       "VT SPECIALTY",
+  "concrete finish": "VT SPECIALTY",
+  "vt marble":       "VT SPECIALTY",
+  "clear coat":      "VT SPECIALTY",
+  "vt specialty":    "VT SPECIALTY",
 };
 
 function normalizeQuery(query: string): string {
