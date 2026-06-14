@@ -56,6 +56,10 @@ const KEYWORD_FAMILY: Record<string, string> = {
   "smoothover":      "SMOOTHOVER",
   "floor plus":      "FLOOR PLUS",
   "floorplus":       "FLOOR PLUS",
+  // SPRAY PAINT (2026-06-14) — search-only family (no speed-dial tile).
+  "spray":           "SPRAY PAINT",
+  "spray paint":     "SPRAY PAINT",
+  "aerosol":         "SPRAY PAINT",
 };
 
 function normalizeQuery(query: string): string {

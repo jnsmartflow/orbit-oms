@@ -26,6 +26,9 @@ export function formatPack(packCode: string, unit?: string | null): string {
   // container sub-label, so the cell label stays "1 pc". Additive: no paint
   // SKU carries unit "PC".
   if (u === "PC") return "1 pc";
+  // Spray paint — 400 ml aerosol can. Specific (packCode+unit) case so the
+  // 50/100/200 ML magnitude path stays byte-identical (paint untouched).
+  if (packCode === "400" && u === "ML") return "400 ml";
   // ML / L / LT / null → magnitude inference (legacy behaviour).
   const num = parseFloat(packCode);
   if (Number.isNaN(num)) return packCode;
@@ -191,6 +194,7 @@ const PACK_CONTAINER_MAP: Record<string, string> = {
   "30KG":  "bag",
   "25PC":  "box of 25",   // tools — roller carton (keyed by the bucket name)
   "12PC":  "box of 12",   // tools — brush carton
+  "400ML": "can",         // spray paint — aerosol can (keyed by the bucket name)
 };
 
 export function packContainerLabel(packLabel: string, productKey?: string | null): string | null {

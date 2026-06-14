@@ -21,6 +21,10 @@ export const STANDARD_COLUMNS = [
   "50ML",
   "100ML",
   "200ML",
+  // Spray paint — 400 ml aerosol can. Own disjoint column (2026-06-14); the
+  // single SPRAY PAINT family is the only carrier. Identity-mapped (lookupKey
+  // == bucket) so packNeedsHint stays false. Rendered "400 ml" via bucketDisplayLabel.
+  "400ML",
   "500ML",
   "1L",
   "4L",
@@ -66,9 +70,12 @@ const PACK_TO_BUCKET: Record<string, BucketColumn> = {
   // 200 ML
   "200ML":  "200ML",
 
+  // 400 ML — spray paint aerosol can. Own disjoint column (identity-mapped),
+  // NOT folded into the 500 ML small catch-all. Only SPRAY PAINT carries 400+ML.
+  "400ML":  "400ML",
+
   // 500 ML — small catch-all swallows 0.2 LT, 0.5 KG, 400/500 GM
   "250ML":  "500ML",
-  "400ML":  "500ML",
   "500ML":  "500ML",
   "0.2L":   "500ML",
   "0.5KG":  "500ML",
@@ -226,6 +233,7 @@ export function bucketColumnsForRows(
  */
 export function bucketDisplayLabel(b: BucketColumn): string {
   if (b === "25PC" || b === "12PC") return "1 pc";   // tools — pieces; carton via container label
+  if (b === "400ML") return "400 ml";                // spray paint — lowercase can label
   return b.replace(/([A-Z]+)$/, " $1");
 }
 

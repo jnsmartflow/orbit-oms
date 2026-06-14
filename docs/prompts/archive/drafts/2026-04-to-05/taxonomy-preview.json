@@ -4,14 +4,27 @@
   "summary": {
     "totalLegacyTriples": 560,
     "totalLegacySkuCount": 1599,
-    "totalNewRows": 484,
+    "totalNewRows": 495,
     "crossListedExtraRows": 68,
     "suppressedPlainRows": 19,
     "skippedTriples": 82,
     "warnings": 0,
-    "familiesProduced": 25
+    "familiesProduced": 26
   },
   "newRowsByFamily": {
+    "SPRAY PAINT": [
+      { "family":"SPRAY PAINT","subProduct":"SPRAY PAINT","displayName":"Spray Paint - Brilliant White","searchTokens":"spray,spray paint,aerosol,400ml,brilliant white","baseColour":"BRILLIANT WHITE","productType":"BASE_VARIANT","tinterType":null,"sortOrder":7001,"isActive":true,"skuCount":1 },
+      { "family":"SPRAY PAINT","subProduct":"SPRAY PAINT","displayName":"Spray Paint - Black","searchTokens":"spray,spray paint,aerosol,400ml,black","baseColour":"BLACK","productType":"COLOUR","tinterType":null,"sortOrder":7002,"isActive":true,"skuCount":1 },
+      { "family":"SPRAY PAINT","subProduct":"SPRAY PAINT","displayName":"Spray Paint - Phiroza","searchTokens":"spray,spray paint,aerosol,400ml,phiroza","baseColour":"PHIROZA","productType":"COLOUR","tinterType":null,"sortOrder":7003,"isActive":true,"skuCount":1 },
+      { "family":"SPRAY PAINT","subProduct":"SPRAY PAINT","displayName":"Spray Paint - Golden Yellow","searchTokens":"spray,spray paint,aerosol,400ml,golden yellow","baseColour":"GOLDEN YELLOW","productType":"COLOUR","tinterType":null,"sortOrder":7004,"isActive":true,"skuCount":1 },
+      { "family":"SPRAY PAINT","subProduct":"SPRAY PAINT","displayName":"Spray Paint - Signal Red","searchTokens":"spray,spray paint,aerosol,400ml,signal red","baseColour":"SIGNAL RED","productType":"COLOUR","tinterType":null,"sortOrder":7005,"isActive":true,"skuCount":1 },
+      { "family":"SPRAY PAINT","subProduct":"SPRAY PAINT","displayName":"Spray Paint - Deep Orange","searchTokens":"spray,spray paint,aerosol,400ml,deep orange","baseColour":"DEEP ORANGE","productType":"COLOUR","tinterType":null,"sortOrder":7006,"isActive":true,"skuCount":1 },
+      { "family":"SPRAY PAINT","subProduct":"SPRAY PAINT","displayName":"Spray Paint - Golden Brown","searchTokens":"spray,spray paint,aerosol,400ml,golden brown","baseColour":"GOLDEN BROWN","productType":"COLOUR","tinterType":null,"sortOrder":7007,"isActive":true,"skuCount":1 },
+      { "family":"SPRAY PAINT","subProduct":"SPRAY PAINT","displayName":"Spray Paint - Dark Brown","searchTokens":"spray,spray paint,aerosol,400ml,dark brown","baseColour":"DARK BROWN","productType":"COLOUR","tinterType":null,"sortOrder":7008,"isActive":true,"skuCount":1 },
+      { "family":"SPRAY PAINT","subProduct":"SPRAY PAINT","displayName":"Spray Paint - Gold","searchTokens":"spray,spray paint,aerosol,400ml,gold","baseColour":"GOLD","productType":"COLOUR","tinterType":null,"sortOrder":7009,"isActive":true,"skuCount":1 },
+      { "family":"SPRAY PAINT","subProduct":"SPRAY PAINT","displayName":"Spray Paint - Silver","searchTokens":"spray,spray paint,aerosol,400ml,silver","baseColour":"SILVER","productType":"COLOUR","tinterType":null,"sortOrder":7010,"isActive":true,"skuCount":1 },
+      { "family":"SPRAY PAINT","subProduct":"SPRAY PAINT","displayName":"Spray Paint - Bus Green","searchTokens":"spray,spray paint,aerosol,400ml,bus green","baseColour":"BUS GREEN","productType":"COLOUR","tinterType":null,"sortOrder":7011,"isActive":true,"skuCount":1 }
+    ],
     "GLOSS": [
       {
         "family": "GLOSS",

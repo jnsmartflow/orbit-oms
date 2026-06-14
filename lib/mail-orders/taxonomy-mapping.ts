@@ -134,7 +134,10 @@ const HIDDEN_BY_CATEGORY: Record<string, string> = {
   AUTO:          "Hidden family — AUTO (per planning doc §6.2)",
   DUCO:          "Hidden family — DUCO (per planning doc §6.2)",
   M900:          "Hidden family — M900 (per planning doc §6.2)",
-  "SPRAY PAINT": "Hidden family — SPRAY PAINT (per planning doc §6.2)",
+  // SPRAY PAINT un-hidden 2026-06-14 — surfaced as its own visible search-only
+  // family. The 11 legacy "SR SPRAY PAINT" rows now flow through the SPRAY PAINT
+  // branch in mapLegacyToNew. (Live v1 parser reads legacy mo_sku_lookup
+  // directly and is unaffected; the legacy re-key is a separate DB task.)
   TOOLS:         "Hidden family — TOOLS (per planning doc §6.2)",
 };
 
@@ -468,6 +471,12 @@ export function mapLegacyToNew(legacy: LegacyKey): NewRow[] | null {
   const cat  = legacy.category.toUpperCase().trim();
   const prod = legacy.product.toUpperCase().trim();
   const bc   = normalizeBase(legacy.baseColour);
+
+  // ── SPRAY PAINT (2026-06-14) — un-hidden, single product + colour variants.
+  // Legacy product is "SR SPRAY PAINT"; the stock seed writes newRow.subProduct
+  // as `product`, so returning subProduct "SPRAY PAINT" re-keys it to the clean
+  // family name. baseColour = the legacy colour (kept as-is). Search-only family.
+  if (cat === "SPRAY PAINT") return [row("SPRAY PAINT", "SPRAY PAINT", bc)];
 
   // ── WOODCARE (Round 1) — pattern-based SADOLIN dispatch ──────────────
   //

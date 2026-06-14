@@ -51,7 +51,7 @@ const DRY_RUN      = process.env.DRY_RUN === "1";
 // Locked expectations from the May 6 preview run. If the JSON drifts from
 // these the script refuses to seed — better to fail loudly than to ship
 // surprise data into v2.
-const EXPECTED_TOTAL_NEW_ROWS    = 484;  // …; VT SPECIALTY net −4 2026-06-13; REMAINING-5 net −2 [TILE +1, LUSTRE −2 (drop BW-dup+YELLOW, +96), FLOOR PLUS −1 (drop BW)] 2026-06-14
+const EXPECTED_TOTAL_NEW_ROWS    = 495;  // …; VT SPECIALTY net −4 2026-06-13; REMAINING-5 net −2 [TILE +1, LUSTRE −2 (drop BW-dup+YELLOW, +96), FLOOR PLUS −1 (drop BW)] 2026-06-14; SPRAY PAINT +11 2026-06-14
 const EXPECTED_WARNINGS          = 0;
 
 // ── PROMISE transform constants ────────────────────────────────────────
@@ -150,6 +150,7 @@ const FAMILY_TO_SECTION: Record<string, string> = {
   "PUTTY":            "UTILITY",
   "STAINER":          "UTILITY",
   "TOOLS":            "UTILITY",
+  "SPRAY PAINT":      "UTILITY",
   // PROMISE (own section — one family head, 6 tabs, surfaced via speed-dial)
   "PROMISE":          "PROMISE",
 };
@@ -170,6 +171,7 @@ const FAMILY_TO_SUBGROUP: Record<string, string> = {
   "AQUATECH":         "Waterproofing & decorative",
   "PUTTY":            "Prep – putty",
   "TOOLS":            "Tools & accessories",
+  "SPRAY PAINT":      "Spray paints",
   // INTERIORS
   "PROMISE INTERIOR": "Promise (use-case interior)",
   "VELVET TOUCH":     "VT (Dulux Velvet Touch)",
@@ -249,6 +251,10 @@ const CONFIRMED_SUBPRODUCT_MAP: Record<string, string> = {
   "PROTECT DUSTPROOF": "WS PROTECT DUSTPROOF",
   "HISHEEN":           "WS PROTECT HI-SHEEN",
   "PU STAINER":        "GVA",
+  // SPRAY PAINT (2026-06-14): identity join-key so menu.product = "SPRAY PAINT"
+  // (non-null) joins the stock rows (re-keyed from legacy SR SPRAY PAINT) and
+  // §7.8 can bake any alias tokens. Single product, colour variants.
+  "SPRAY PAINT":       "SPRAY PAINT",
   // INTERIOR WBC (2026-06-14): menu subProduct "INTERIOR BASECOAT" → product
   // "INTERIOR WBC" (real SAP name; paired with the AQUATECH stock rename) so the
   // product+baseColour join hydrates its 4 packs and the email reads "INTERIOR
@@ -942,6 +948,8 @@ async function main(): Promise<void> {
     if (r.family === "SADOLIN"  && SADOLIN_UI[sub]) { r.uiGroup = SADOLIN_UI[sub]; uiAssigned++; continue; }
     // TOOLS — two tabs derived from the product name (Rollers / Brushes).
     if (r.family === "TOOLS")   { r.uiGroup = /ROLLER/i.test(r.product ?? r.subProduct) ? "Rollers" : "Brushes"; uiAssigned++; continue; }
+    // SPRAY PAINT — single flat uiGroup (no tabs; one product, colour variants).
+    if (r.family === "SPRAY PAINT") { r.uiGroup = "Spray Paint"; uiAssigned++; continue; }
   }
   if (floorPlusDropped.size > 0) deduped = deduped.filter((r) => !floorPlusDropped.has(r));
   console.log(`Grouping transform: WS consolidated=${wsCount}, FLOOR PLUS moved=${floorPlusMoved}, ` +
