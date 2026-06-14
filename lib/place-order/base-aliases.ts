@@ -166,7 +166,7 @@ export const BASE_ALIASES: Record<string, Record<string, BaseAlias>> = {
   // render + bake into tokens. GLO ranges label 96/97 plainly Yellow/Red (not
   // YOX/ROX). No alias for 93 BASE / BRILLIANT WHITE / PASTEL BASE / RARE PEARL
   // COPPER / RARE PEARL GREEN / BASECOAT (carried but unaliased, like BW elsewhere).
-  "PEARL GLO": {
+  "VT PEARL GLO": {
     "90 BASE": { display: "White",        search: ["white", "white base"] },
     "92 BASE": { display: "Intermediate", search: ["intermediate", "intermediate base"] },
     "94 BASE": { display: "Accent",       search: ["accent", "accent base"] },
@@ -174,7 +174,7 @@ export const BASE_ALIASES: Record<string, Record<string, BaseAlias>> = {
     "96 BASE": { display: "Yellow",       search: ["yellow", "yellow base"] },
     "97 BASE": { display: "Red",          search: ["red", "red base"] },
   },
-  "PLATINUM GLO": {
+  "VT PLATINUM GLO": {
     "90 BASE": { display: "White",        search: ["white", "white base"] },
     "92 BASE": { display: "Intermediate", search: ["intermediate", "intermediate base"] },
     "94 BASE": { display: "Accent",       search: ["accent", "accent base"] },
@@ -182,7 +182,7 @@ export const BASE_ALIASES: Record<string, Record<string, BaseAlias>> = {
     "96 BASE": { display: "Yellow",       search: ["yellow", "yellow base"] },
     "97 BASE": { display: "Red",          search: ["red", "red base"] },
   },
-  "DIAMOND GLO": {
+  "VT DIAMOND GLO": {
     "90 BASE": { display: "White",        search: ["white", "white base"] },
     "92 BASE": { display: "Intermediate", search: ["intermediate", "intermediate base"] },
     "94 BASE": { display: "Accent",       search: ["accent", "accent base"] },
@@ -190,16 +190,16 @@ export const BASE_ALIASES: Record<string, Record<string, BaseAlias>> = {
     "96 BASE": { display: "Yellow",       search: ["yellow", "yellow base"] },
     "97 BASE": { display: "Red",          search: ["red", "red base"] },
   },
-  "ETERNA": {
+  "VT ETERNA": {
     "90 BASE": { display: "White",        search: ["white", "white base"] },
     "92 BASE": { display: "Intermediate", search: ["intermediate", "intermediate base"] },
     "94 BASE": { display: "Accent",       search: ["accent", "accent base"] },
   },
-  "ETERNA MATT": {
+  "VT ETERNA MATT": {
     "92 BASE": { display: "Intermediate", search: ["intermediate", "intermediate base"] },
     "94 BASE": { display: "Accent",       search: ["accent", "accent base"] },
   },
-  "ETERNA HI-SHEEN": {
+  "VT ETERNA HI-SHEEN": {
     "90 BASE": { display: "White",        search: ["white", "white base"] },
     "92 BASE": { display: "Intermediate", search: ["intermediate", "intermediate base"] },
   },

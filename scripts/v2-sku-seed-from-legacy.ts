@@ -517,6 +517,20 @@ const REMAINING5_CSV = path.join("docs", "SKU", "review", "remaining5-final.csv"
 const REMAINING5_FAMILIES = new Set<string>(["TILE", "METALLIC", "LUSTRE", "SMOOTHOVER", "FLOOR PLUS"]);
 type Remaining5Entry = { family: string; product: string; baseColour: string; isPrimary: boolean; packCode: string; unit: string; description: string };
 
+// ── VELVET TOUCH product → "VT …" rename (2026-06-14) ───────────────────────
+// Brands the 6 VT ranges' stock product like WS Tile/Metallic, so email +
+// last-order + search read "VT PEARL GLO …". Applied gated to category
+// "VELVET TOUCH" in the main loop (see finalProduct). Mirrored on the menu side
+// by CONFIRMED_SUBPRODUCT_MAP + base-aliases keys (join + alias key follow).
+const VT_PRODUCT_RENAME: Record<string, string> = {
+  "PEARL GLO":       "VT PEARL GLO",
+  "PLATINUM GLO":    "VT PLATINUM GLO",
+  "DIAMOND GLO":     "VT DIAMOND GLO",
+  "ETERNA":          "VT ETERNA",
+  "ETERNA MATT":     "VT ETERNA MATT",
+  "ETERNA HI-SHEEN": "VT ETERNA HI-SHEEN",
+};
+
 async function loadRemaining5Map(): Promise<Map<string, Remaining5Entry>> {
   const map = new Map<string, Remaining5Entry>();
   const raw = await fs.readFile(REMAINING5_CSV, "utf8");
@@ -775,6 +789,14 @@ async function main(): Promise<void> {
         : ov ? ov.baseColour
         : (newRow.baseColour ?? legacy.baseColour);
 
+      // ── VELVET TOUCH product → "VT …" (2026-06-14, email + last-order + search
+      //    consistency, like WS Tile/Metallic). Gated to category VELVET TOUCH so
+      //    no other family's product (incl any "ETERNA" elsewhere) is touched.
+      //    Only the WRITTEN product is renamed; the exclusion / pack-norm / isPrimary
+      //    checks above keep using the un-renamed `product`. baseColour unchanged.
+      const finalProduct =
+        category === "VELVET TOUCH" && VT_PRODUCT_RENAME[product] ? VT_PRODUCT_RENAME[product] : product;
+
       // ── Exclusions (post-override keys, 2026-06-01) ──
       //   EXCLUDE_MATERIALS + PROTECT_DELETE (9 group-B) + POWERFLEXX_DROP (IN76109271).
       if (EXCLUDE_MATERIALS.has(material) || PROTECT_DELETE.has(material) || POWERFLEXX_DROP.has(material) || PROMISE_REMOVE.has(material)) { excludedByMaterial++; continue; }
@@ -832,7 +854,7 @@ async function main(): Promise<void> {
         // Sadolin rows: every CSV description already equals the live/legacy one.
         description:     rem5 ? rem5.description : vt ? vt.description : tp ? tp.description : sad ? sad.description : legacy.description,
         category,
-        product,
+        product:         finalProduct,
         baseColour,
         packCode:        normPack,
         unit:            normUnit,

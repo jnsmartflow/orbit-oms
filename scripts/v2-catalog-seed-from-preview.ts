@@ -293,12 +293,12 @@ const CONFIRMED_SUBPRODUCT_MAP: Record<string, string> = {
   // base aliases (base-aliases.ts) fire + §7.8 bakes the alias search words.
   // Stock product == subProduct already (rows join via subProduct today), so the
   // pack join is unchanged. Scoped to the 6 alias-bearing ranges.
-  "PEARL GLO":              "PEARL GLO",
-  "PLATINUM GLO":           "PLATINUM GLO",
-  "DIAMOND GLO":            "DIAMOND GLO",
-  "ETERNA":                 "ETERNA",
-  "ETERNA MATT":            "ETERNA MATT",
-  "ETERNA HI-SHEEN":        "ETERNA HI-SHEEN",
+  "PEARL GLO":              "VT PEARL GLO",
+  "PLATINUM GLO":           "VT PLATINUM GLO",
+  "DIAMOND GLO":            "VT DIAMOND GLO",
+  "ETERNA":                 "VT ETERNA",
+  "ETERNA MATT":            "VT ETERNA MATT",
+  "ETERNA HI-SHEEN":        "VT ETERNA HI-SHEEN",
   // PU ENAMEL (2026-06-13): identity join-key so menu.product is non-null → its
   // (previously dormant) base aliases fire + §7.8 bakes the alias search words.
   // Stock product == subProduct already (joins via subProduct today), pack join
