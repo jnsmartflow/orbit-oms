@@ -249,6 +249,11 @@ const CONFIRMED_SUBPRODUCT_MAP: Record<string, string> = {
   "PROTECT DUSTPROOF": "WS PROTECT DUSTPROOF",
   "HISHEEN":           "WS PROTECT HI-SHEEN",
   "PU STAINER":        "GVA",
+  // INTERIOR WBC (2026-06-14): menu subProduct "INTERIOR BASECOAT" → product
+  // "INTERIOR WBC" (real SAP name; paired with the AQUATECH stock rename) so the
+  // product+baseColour join hydrates its 4 packs and the email reads "INTERIOR
+  // WBC". subProduct/displayName/uiGroup unchanged (AQUA_UI keys by subProduct).
+  "INTERIOR BASECOAT": "INTERIOR WBC",
   // MACHINE TINTER (2026-06-14): renamed product STAINER→TINTER (email/grid/tab
   // brand). Identity now; base aliases (codes) key on "MACHINE TINTER".
   "MACHINE TINTER":    "MACHINE TINTER",
@@ -703,6 +708,16 @@ async function main(): Promise<void> {
   }
   console.log(`Product name-map fill: rule1(subProduct)=${filledRule1}, ` +
               `rule2(inline HIGH)=${filledRule2}, total=${filledRule1 + filledRule2}`);
+
+  // ── Interior WBC baseColour align (2026-06-14) ──────────────────────────────
+  // Stock carries baseColour "" (empty) for INTERIOR WBC; the menu preview row
+  // carries null, so the product+baseColour join would miss. Rule 1 sets only
+  // product, so align baseColour → "" here. Scoped to the single renamed row.
+  let interiorWbcAligned = 0;
+  for (const r of deduped) {
+    if (r.product === "INTERIOR WBC") { r.baseColour = ""; interiorWbcAligned++; }
+  }
+  console.log(`Interior WBC baseColour align: ${interiorWbcAligned} row(s) → ""`);
 
   // ── 7.65. WS Max base removal (durable; approved 2026-06-01) ────────
   // Drop 5 WS Max menu bases entirely, PRE-grouping (rows are still

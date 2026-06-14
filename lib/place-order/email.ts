@@ -75,6 +75,14 @@ export function emailLineLabel(
     return baseColour.startsWith("Promise") ? baseColour : `Promise ${baseColour}`;
   }
   const name = product ?? subProduct;
+  // General de-double (2026-06-14): when baseColour already contains the full
+  // product name (a Path-A repurpose — e.g. Duwel: product/subProduct
+  // "ACRYLIC DISTEMPER" with base "DUWEL ACRYLIC DISTEMPER"), printing
+  // `name baseColour` doubles. The base already carries the descriptive name,
+  // so print it alone → "DUWEL ACRYLIC DISTEMPER".
+  if (baseColour && name && baseColour.toUpperCase().includes(name.toUpperCase())) {
+    return baseColour;
+  }
   return baseColour ? `${name} ${baseColour}` : name;
 }
 

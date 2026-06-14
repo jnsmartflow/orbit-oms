@@ -7,6 +7,7 @@ import type { Product, CartLine, Bill, Customer } from "@/app/(place-order)/plac
 import { rankProductsForQuery } from "@/lib/place-order/mobile-search";
 import { formatPack, packToMl, packStepForPack, packKey, parsePackKey } from "@/lib/place-order/pack";
 import { getBaseAliasDisplay, getBaseAliasLabel } from "@/lib/place-order/base-aliases";
+import { emailLineLabel } from "@/lib/place-order/email";
 import { getSecondLine, isVariantQualifierTab } from "@/lib/place-order/sub-product-descriptors";
 import SplashScreen from "./splash-screen";
 
@@ -153,8 +154,10 @@ function buildEmailParts(args: {
       const packStr = entries
         .map((e) => `${formatPack(e.packCode, e.unit)}*${e.qty}`)
         .join(", ");
-      const head = l.product ?? l.subProduct;
-      const productText = l.baseColour ? `${head} ${l.baseColour}` : head;
+      // Name via the shared helper so all three surfaces (desktop email.ts,
+      // /order, /po) stay byte-identical — incl. the PROMISE PRIMER + general
+      // de-double rules. Pack suffix + layout unchanged.
+      const productText = emailLineLabel(l.product ?? null, l.baseColour, l.subProduct);
       lines.push(`${productText} ${packStr}`);
     });
   });

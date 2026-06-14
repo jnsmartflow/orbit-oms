@@ -540,6 +540,15 @@ const STAINER_PRODUCT_RENAME: Record<string, string> = {
   "MACHINE STAINER": "MACHINE TINTER",
 };
 
+// ── AQUATECH product rename (2026-06-14) ────────────────────────────────────
+// "INTERIOR BASECOAT" is a taxonomy label; the real SAP product is "INTERIOR
+// WBC" (every description reads "AQUATECH INTERIOR WBC …"). Rename so the email
+// reads "INTERIOR WBC" and the menu→stock join (paired CONFIRMED_SUBPRODUCT_MAP
+// entry) hydrates its 4 packs. Gated to category AQUATECH; baseColours untouched.
+const AQUATECH_PRODUCT_RENAME: Record<string, string> = {
+  "INTERIOR BASECOAT": "INTERIOR WBC",
+};
+
 async function loadRemaining5Map(): Promise<Map<string, Remaining5Entry>> {
   const map = new Map<string, Remaining5Entry>();
   const raw = await fs.readFile(REMAINING5_CSV, "utf8");
@@ -806,6 +815,7 @@ async function main(): Promise<void> {
       const finalProduct =
         category === "VELVET TOUCH" && VT_PRODUCT_RENAME[product] ? VT_PRODUCT_RENAME[product]
         : category === "STAINER" && STAINER_PRODUCT_RENAME[product] ? STAINER_PRODUCT_RENAME[product]
+        : category === "AQUATECH" && AQUATECH_PRODUCT_RENAME[product] ? AQUATECH_PRODUCT_RENAME[product]
         : product;
 
       // ── Exclusions (post-override keys, 2026-06-01) ──
