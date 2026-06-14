@@ -49,6 +49,13 @@ const KEYWORD_FAMILY: Record<string, string> = {
   "vt marble":       "VT SPECIALTY",
   "clear coat":      "VT SPECIALTY",
   "vt specialty":    "VT SPECIALTY",
+  // REMAINING-5 (2026-06-14)
+  "tile":            "TILE",
+  "metallic":        "METALLIC",
+  "lustre":          "LUSTRE",
+  "smoothover":      "SMOOTHOVER",
+  "floor plus":      "FLOOR PLUS",
+  "floorplus":       "FLOOR PLUS",
 };
 
 function normalizeQuery(query: string): string {

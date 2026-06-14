@@ -1,0 +1,81 @@
+material,family,product,baseColour,pack,unit,isPrimary,displayName,uiGroup,description,note
+IN46508072,TILE,TILE,WHITE BASE,1,L,true,WS Tile - White Base,WS Tile,DN WS TILE BASE .9 L,re-key empty base to WHITE BASE (coverage gap fix)
+IN46508071,TILE,TILE,WHITE BASE,4,L,true,WS Tile - White Base,WS Tile,DN WS TILE BASE 3.6 L,re-key empty base
+IN46508082,TILE,TILE,WHITE BASE,10,L,true,WS Tile - White Base,WS Tile,DN WS TILE BASE 9 L,re-key empty base
+IN46508081,TILE,TILE,WHITE BASE,20,L,true,WS Tile - White Base,WS Tile,DN WS TILE BASE 18 L,re-key empty base
+IN46670072,TILE,TILE,YELLOW BASE,1,L,true,WS Tile - Yellow Base,WS Tile,DN WS TILE YELLOW BASE .9 L,
+IN46670071,TILE,TILE,YELLOW BASE,4,L,true,WS Tile - Yellow Base,WS Tile,DN WS TILE YELLOW BASE 3.6,
+IN46670082,TILE,TILE,YELLOW BASE,10,L,true,WS Tile - Yellow Base,WS Tile,DN WS TILE YELLOW BASE 9 L,
+IN46670081,TILE,TILE,YELLOW BASE,20,L,true,WS Tile - Yellow Base,WS Tile,DN WS TILE YELLOW BASE 18 L,
+5961033,METALLIC,METALLIC,GOLD,1,L,true,WS Metallic - Gold,WS Metallic,DN WS METALLIC GOLD 1L,
+9070816,METALLIC,METALLIC,GOLD,200,ML,true,WS Metallic - Gold,WS Metallic,DN WS METALLIC GOLD 200ML,
+5961032,METALLIC,METALLIC,GOLD,500,ML,true,WS Metallic - Gold,WS Metallic,DN WS METALLIC GOLD 0.5L,
+5961028,METALLIC,METALLIC,SILVER,1,L,true,WS Metallic - Silver,WS Metallic,DN WS METALLIC SILVER 1L,
+9070815,METALLIC,METALLIC,SILVER,200,ML,true,WS Metallic - Silver,WS Metallic,DN WS METALLIC SILVER 200ML,
+5960727,METALLIC,METALLIC,SILVER,500,ML,true,WS Metallic - Silver,WS Metallic,DN WS METALLIC SILVER 0.5L,
+5962381,LUSTRE,LUSTRE,90 BASE,1,L,true,Lustre - 90 Base,Lustre,DN LUSTRE WHITE BASE (NEW) 1LT,keep (NEW set)
+IN55009072,LUSTRE,LUSTRE,90 BASE,1,L,false,,,DN LUSTRE WHITE BASE 1LT,"demoted/hidden - kept in DB, off grid+search | demoted twin - leave off grid"
+IN28085072,LUSTRE,LUSTRE,90 BASE,1,L,false,,,DN LUSTRE WHITE 1LT,"demoted/hidden - kept in DB, off grid+search | demoted twin - leave off grid"
+5962382,LUSTRE,LUSTRE,90 BASE,4,L,true,Lustre - 90 Base,Lustre,DN LUSTRE WHITE BASE (NEW) 4LT,keep (NEW set)
+IN55009071,LUSTRE,LUSTRE,90 BASE,4,L,false,,,DN LUSTRE WHITE BASE 4LT,"demoted/hidden - kept in DB, off grid+search | demoted twin - leave off grid"
+IN28085071,LUSTRE,LUSTRE,90 BASE,4,L,false,,,DN LUSTRE WHITE 4LT,"demoted/hidden - kept in DB, off grid+search | demoted twin - leave off grid"
+5962383,LUSTRE,LUSTRE,90 BASE,10,L,true,Lustre - 90 Base,Lustre,DN LUSTRE WHITE BASE (NEW) 10LT,keep (NEW set)
+IN55009082,LUSTRE,LUSTRE,90 BASE,10,L,false,,,DN LUSTRE WHITE BASE 10LT,"demoted/hidden - kept in DB, off grid+search | alias 90 -> White"
+IN28085082,LUSTRE,LUSTRE,90 BASE,10,L,false,,,DN LUSTRE WHITE 10LT,"demoted/hidden - kept in DB, off grid+search | demoted twin - leave off grid"
+5962384,LUSTRE,LUSTRE,90 BASE,20,L,true,Lustre - 90 Base,Lustre,DN LUSTRE WHITE BASE (NEW) 20LT,keep (NEW set)
+IN55009081,LUSTRE,LUSTRE,90 BASE,20,L,false,,,DN LUSTRE WHITE BASE 20L,"demoted/hidden - kept in DB, off grid+search | alias 90 -> White"
+IN28085081,LUSTRE,LUSTRE,90 BASE,20,L,false,,,DN LUSTRE WHITE 20LT,"demoted/hidden - kept in DB, off grid+search | demoted twin - leave off grid"
+IN55009272,LUSTRE,LUSTRE,92 BASE,1,L,true,Lustre - 92 Base,Lustre,DN LUSTRE INTERMEDIATE BASE 1LT,NEW code - build-from-CSV (confirmed in SAP)
+IN55009271,LUSTRE,LUSTRE,92 BASE,4,L,true,Lustre - 92 Base,Lustre,DN LUSTRE INTERMEDIATE BASE 3.6LT,alias 92 -> Intermediate
+IN55009282,LUSTRE,LUSTRE,92 BASE,10,L,true,Lustre - 92 Base,Lustre,DN LUSTRE INTERMEDIATE BASE 10LT,NEW code - build-from-CSV (confirmed in SAP)
+IN55009281,LUSTRE,LUSTRE,92 BASE,20,L,true,Lustre - 92 Base,Lustre,DN LUSTRE INTERMEDIATE BASE 18LT,alias 92 -> Intermediate
+IN55009472,LUSTRE,LUSTRE,94 BASE,1,L,true,Lustre - 94 Base,Lustre,DN LUSTRE ACCENT BASE 0.9LT,alias 94 -> Accent
+IN55009471,LUSTRE,LUSTRE,94 BASE,4,L,true,Lustre - 94 Base,Lustre,DN LUSTRE ACCENT BASE 4LT,NEW code - build-from-CSV (confirmed in SAP)
+IN55009482,LUSTRE,LUSTRE,94 BASE,10,L,true,Lustre - 94 Base,Lustre,DN LUSTRE ACCENT BASE 10LT,NEW code - build-from-CSV (confirmed in SAP)
+IN55009481,LUSTRE,LUSTRE,94 BASE,20,L,true,Lustre - 94 Base,Lustre,DN LUSTRE ACCENT BASE 20LT,NEW code - build-from-CSV (confirmed in SAP)
+IN55009672,LUSTRE,LUSTRE,96 BASE,1,L,true,Lustre - 96 Base,Lustre,DN LUSTRE YELLOW BASE 0.9LT,re-key -> 96 BASE | 96 relabel to nominal
+IN55009671,LUSTRE,LUSTRE,96 BASE,4,L,true,Lustre - 96 Base,Lustre,DN LUSTRE LUSTRE YELLOW BA 3.6LT,re-key -> 96 BASE | 96 relabel to nominal | re-key stray empty base
+IN32500015,SMOOTHOVER,SMOOTHOVER,,15,L,true,Smoothover,Smoothover,DN SMOOTHOVER 15L,
+5992129,FLOOR PLUS,FLOOR PLUS,93 BASE,1,L,true,Floor Plus - 93 Base,Floor Plus,DULUX WS FLOORPLUS 93 BASE 1 LTR,
+5992130,FLOOR PLUS,FLOOR PLUS,93 BASE,4,L,true,Floor Plus - 93 Base,Floor Plus,DULUX WS FLOORPLUS 93 BASE 4LTR,
+5992131,FLOOR PLUS,FLOOR PLUS,93 BASE,10,L,true,Floor Plus - 93 Base,Floor Plus,Dulux WS Floorplus 93 Base 10 ltr,re-key TOPCOAT + strip prefix (gap-fill 10L)
+5992534,FLOOR PLUS,FLOOR PLUS,93 BASE,20,L,true,Floor Plus - 93 Base,Floor Plus,DULUX WS FLOORPLUS 93 BASE 20 LTR,
+5992799,FLOOR PLUS,FLOOR PLUS,BLACK,1,L,true,Floor Plus - Black,Floor Plus,DULUX WS FLOORPLUS BLACK 1LTR,
+5727764,FLOOR PLUS,FLOOR PLUS,BLACK,1,L,false,,,DULUX FLOORPLUS BLACK 1L,"demoted/hidden - kept in DB, off grid+search | demote dupe (FP BLACK 1L already = 5992799)"
+5992800,FLOOR PLUS,FLOOR PLUS,BLACK,4,L,true,Floor Plus - Black,Floor Plus,DULUX WS FLOORPLUS BLACK 4LTR,
+5727765,FLOOR PLUS,FLOOR PLUS,BLACK,4,L,false,,,DULUX FLOORPLUS BLACK 4L,"demoted/hidden - kept in DB, off grid+search | demote dupe (FP BLACK 4L already = 5992800)"
+5727766,FLOOR PLUS,FLOOR PLUS,BLACK,10,L,true,Floor Plus - Black,Floor Plus,DULUX FLOORPLUS BLACK 10L,re-key TOPCOAT + strip prefix (gap-fill 10L)
+5992535,FLOOR PLUS,FLOOR PLUS,BLACK,20,L,true,Floor Plus - Black,Floor Plus,Dulux WS Floorplus Black 20 ltr,re-key TOPCOAT + strip prefix (gap-fill 20L)
+5727755,FLOOR PLUS,FLOOR PLUS,FOREST GREEN,1,L,true,Floor Plus - Forest Green,Floor Plus,DULUX FLOORPLUS FOREST GREEN 1L,
+5727756,FLOOR PLUS,FLOOR PLUS,FOREST GREEN,4,L,true,Floor Plus - Forest Green,Floor Plus,DULUX FLOORPLUS FOREST GREEN 4L,
+5727757,FLOOR PLUS,FLOOR PLUS,FOREST GREEN,10,L,true,Floor Plus - Forest Green,Floor Plus,DULUX FLOORPLUS FOREST GREEN 10L,NEW code - build-from-CSV (confirmed in SAP)
+5727767,FLOOR PLUS,FLOOR PLUS,GOLDEN YELLOW,1,L,true,Floor Plus - Golden Yellow,Floor Plus,DULUX FLOORPLUS GOLDEN YELLOW 1L,
+5727768,FLOOR PLUS,FLOOR PLUS,GOLDEN YELLOW,4,L,true,Floor Plus - Golden Yellow,Floor Plus,DULUX FLOORPLUS GOLDEN YELLOW 4L,
+5727769,FLOOR PLUS,FLOOR PLUS,GOLDEN YELLOW,10,L,true,Floor Plus - Golden Yellow,Floor Plus,DULUX FLOORPLUS GOLDEN YELLOW 10L,
+5727758,FLOOR PLUS,FLOOR PLUS,GUN GREY,1,L,true,Floor Plus - Gun Grey,Floor Plus,DULUX FLOORPLUS GUN GREY 1L,
+5727759,FLOOR PLUS,FLOOR PLUS,GUN GREY,4,L,true,Floor Plus - Gun Grey,Floor Plus,DULUX FLOORPLUS GUN GREY 4L,
+5727760,FLOOR PLUS,FLOOR PLUS,GUN GREY,10,L,true,Floor Plus - Gun Grey,Floor Plus,DULUX FLOORPLUS GUN GREY 10L,
+5727761,FLOOR PLUS,FLOOR PLUS,PAVER GREY,1,L,true,Floor Plus - Paver Grey,Floor Plus,DULUX FLOORPLUS PAVER GREY 1L,
+5727762,FLOOR PLUS,FLOOR PLUS,PAVER GREY,4,L,true,Floor Plus - Paver Grey,Floor Plus,DULUX FLOORPLUS PAVER GREY 4L,
+5727763,FLOOR PLUS,FLOOR PLUS,PAVER GREY,10,L,true,Floor Plus - Paver Grey,Floor Plus,DULUX FLOORPLUS PAVER GREY 10L,
+5727752,FLOOR PLUS,FLOOR PLUS,PEACOCK BLUE,1,L,true,Floor Plus - Peacock Blue,Floor Plus,DULUX FLOORPLUS PEACOCK BLUE 1L,
+5727753,FLOOR PLUS,FLOOR PLUS,PEACOCK BLUE,4,L,true,Floor Plus - Peacock Blue,Floor Plus,DULUX FLOORPLUS PEACOCK BLUE 4L,
+5727754,FLOOR PLUS,FLOOR PLUS,PEACOCK BLUE,10,L,true,Floor Plus - Peacock Blue,Floor Plus,DULUX FLOORPLUS PEACOCK BLUE 10L,
+5727743,FLOOR PLUS,FLOOR PLUS,PO RED,1,L,true,Floor Plus - PO Red,Floor Plus,DULUX FLOORPLUS PO RED 1L,re-key TOPCOAT + strip prefix (gap-fill 1L)
+5727744,FLOOR PLUS,FLOOR PLUS,PO RED,4,L,true,Floor Plus - PO Red,Floor Plus,DULUX FLOORPLUS PO RED 4L,re-key TOPCOAT + strip prefix (gap-fill 4L)
+5727745,FLOOR PLUS,FLOOR PLUS,PO RED,10,L,true,Floor Plus - PO Red,Floor Plus,DULUX FLOORPLUS PO RED 10L,
+5727746,FLOOR PLUS,FLOOR PLUS,SIGNAL RED,1,L,true,Floor Plus - Signal Red,Floor Plus,DULUX FLOORPLUS SIGNAL RED 1L,
+5727747,FLOOR PLUS,FLOOR PLUS,SIGNAL RED,4,L,true,Floor Plus - Signal Red,Floor Plus,DULUX FLOORPLUS SIGNAL RED 4L,
+5727748,FLOOR PLUS,FLOOR PLUS,SIGNAL RED,10,L,true,Floor Plus - Signal Red,Floor Plus,DULUX FLOORPLUS SIGNAL RED 10L,
+5727749,FLOOR PLUS,FLOOR PLUS,SIGNAL RED PLUS,1,L,true,Floor Plus - Signal Red Plus,Floor Plus,DULUX FLOORPLUS SIGNAL RED PLUS 1L,
+5727750,FLOOR PLUS,FLOOR PLUS,SIGNAL RED PLUS,4,L,true,Floor Plus - Signal Red Plus,Floor Plus,DULUX FLOORPLUS SIGNAL RED PLUS 4L,
+5727751,FLOOR PLUS,FLOOR PLUS,SIGNAL RED PLUS,10,L,true,Floor Plus - Signal Red Plus,Floor Plus,DULUX FLOORPLUS SIGNAL RED PLUS 10L,NEW code - build-from-CSV (confirmed in SAP)
+5727740,FLOOR PLUS,FLOOR PLUS,TERACOTTA,1,L,true,Floor Plus - Terracotta,Floor Plus,DULUX FLOORPLUS TERRACOTTA 1L,
+5727741,FLOOR PLUS,FLOOR PLUS,TERACOTTA,4,L,true,Floor Plus - Terracotta,Floor Plus,DULUX FLOORPLUS TERRACOTTA 4L,
+5727742,FLOOR PLUS,FLOOR PLUS,TERACOTTA,10,L,true,Floor Plus - Terracotta,Floor Plus,DULUX FLOORPLUS TERRACOTTA 10L,
+5992796,FLOOR PLUS,FLOOR PLUS,WHITE,1,L,true,Floor Plus - White,Floor Plus,DULUX WS FLOORPLUS WHITE 1LTR,re-key base BRILLIANT WHITE -> WHITE
+5727737,FLOOR PLUS,FLOOR PLUS,WHITE,1,L,false,,,DULUX FLOORPLUS WHITE 1L,"demoted/hidden - kept in DB, off grid+search | demote dupe (white 1L already = 5992796)"
+5992797,FLOOR PLUS,FLOOR PLUS,WHITE,4,L,true,Floor Plus - White,Floor Plus,DULUX WS FLOORPLUS WHITE 4LTR,re-key base BRILLIANT WHITE -> WHITE
+5727738,FLOOR PLUS,FLOOR PLUS,WHITE,4,L,false,,,DULUX FLOORPLUS WHITE 4L,"demoted/hidden - kept in DB, off grid+search | demote dupe (white 4L already = 5992797)"
+5992798,FLOOR PLUS,FLOOR PLUS,WHITE,10,L,true,Floor Plus - White,Floor Plus,Dulux WS Floorplus White 10ltr,
+5992536,FLOOR PLUS,FLOOR PLUS,WHITE,20,L,true,Floor Plus - White,Floor Plus,Dulux WS Floorplus White 20 ltr,

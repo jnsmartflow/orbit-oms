@@ -499,6 +499,45 @@ async function loadVtSpecialtyMap(): Promise<Map<string, VtSpecialtyEntry>> {
   return map;
 }
 
+// ── CSV-as-source for the REMAINING-5 rebuild (2026-06-14) ──────────────────
+// docs/SKU/review/remaining5-final.csv is the COMPLETE source of truth for the
+// TILE / METALLIC / LUSTRE / SMOOTHOVER / FLOOR PLUS family stock (73 existing +
+// 7 net-new = 80 rows). Mirrors loadVtSpecialtyMap: existing materials are
+// re-keyed in the main loop (CSV wins on product/baseColour/isPrimary/pack/unit
+// AND description — applies the TILE empty→WHITE BASE re-key, LUSTRE 96 re-key,
+// FLOOR PLUS TOPCOAT→FLOOR PLUS merge, BRILLIANT WHITE→WHITE, and all demotions),
+// and the 7 new codes (IN55009272/282/471/482/481, 5727751, 5727757) are built in
+// step 2l. category = CSV family. Unlike VT, pack and unit are SEPARATE CSV
+// columns (4 + 5), so packCode/unit are read directly (no parsePackLabel).
+// Columns: 0 material · 1 family · 2 product · 3 baseColour · 4 pack · 5 unit ·
+// 6 isPrimary · 7 displayName · 8 uiGroup · 9 description · 10 note. Quote-aware
+// split (the note column carries commas). Any legacy SKU in these 5 families NOT
+// in the CSV is a HARD STOP (CSV is complete coverage).
+const REMAINING5_CSV = path.join("docs", "SKU", "review", "remaining5-final.csv");
+const REMAINING5_FAMILIES = new Set<string>(["TILE", "METALLIC", "LUSTRE", "SMOOTHOVER", "FLOOR PLUS"]);
+type Remaining5Entry = { family: string; product: string; baseColour: string; isPrimary: boolean; packCode: string; unit: string; description: string };
+
+async function loadRemaining5Map(): Promise<Map<string, Remaining5Entry>> {
+  const map = new Map<string, Remaining5Entry>();
+  const raw = await fs.readFile(REMAINING5_CSV, "utf8");
+  for (const line of raw.split(/\r?\n/).slice(1)) {
+    if (!line.trim()) continue;
+    const c = splitCsvLine(line);
+    const material = (c[0] ?? "").trim();
+    if (!material) continue;
+    map.set(material, {
+      family:      (c[1] ?? "").trim(),
+      product:     (c[2] ?? "").trim(),
+      baseColour:  (c[3] ?? "").trim(),
+      packCode:    (c[4] ?? "").trim(),
+      unit:        (c[5] ?? "").trim(),
+      isPrimary:   (c[6] ?? "").trim().toUpperCase() === "TRUE",
+      description: (c[9] ?? "").trim(),
+    });
+  }
+  return map;
+}
+
 // Shape of one row to be inserted into mo_sku_lookup_v2.
 type V2Row = {
   material:        string;
@@ -615,6 +654,10 @@ async function main(): Promise<void> {
   const vtSpecialty = await loadVtSpecialtyMap();
   console.log(`VT SPECIALTY CSV map: ${vtSpecialty.size} materials (source of truth for VT SPECIALTY)`);
 
+  // CSV-as-source for the REMAINING-5 rebuild (80 materials: 73 re-key + 7 new).
+  const remaining5 = await loadRemaining5Map();
+  console.log(`REMAINING5 CSV map: ${remaining5.size} materials (TILE/METALLIC/LUSTRE/SMOOTHOVER/FLOOR PLUS)`);
+
   // ── 2. Translate each legacy row via mapLegacyToNew ─────────────────
   let skippedNull = 0;
   let crossListed = 0;  // source rows producing >1 v2 row
@@ -634,6 +677,8 @@ async function main(): Promise<void> {
   const texturePuttyNotInCsv: string[] = [];  // PUTTY/TEXTURE natives absent from the CSV (report, never drop)
   let vtAssigned = 0;          // existing materials re-keyed by the VT SPECIALTY CSV
   const vtSpecialtyNotInCsv: string[] = [];   // VT SPECIALTY natives absent from the CSV (report, never drop)
+  let rem5Assigned = 0;        // existing materials re-keyed by the REMAINING-5 CSV
+  const remaining5NotInCsv: string[] = [];    // legacy SKU in the 5 families absent from the CSV (HARD STOP)
   const seenMaterials = new Set<string>();  // every material legacy produced (for rule-5 report)
   const v2Rows: V2Row[] = [];
 
@@ -690,15 +735,20 @@ async function main(): Promise<void> {
       // VT SPECIALTY CSV (2026-06-13) WINS over everything for its 32 materials:
       // category = "VT SPECIALTY", product, baseColour, isPrimary, pack/unit, description.
       const vt = vtSpecialty.get(material);
+      // REMAINING-5 CSV (2026-06-14) WINS over everything for its 80 materials:
+      // category = CSV family, product, baseColour, isPrimary, pack/unit, description.
+      const rem5 = remaining5.get(material);
       if (sad) sadAssigned++;
       if (csv) csvAssigned++;
       if (sc) scAssigned++;
       if (scl) sclAssigned++;
       if (tp) tpAssigned++;
       if (vt) vtAssigned++;
+      if (rem5) rem5Assigned++;
 
       const category =
-        vt ? vt.family
+        rem5 ? rem5.family
+        : vt ? vt.family
         : tp ? tp.family
         : scl ? SUPERCLEAN_CATEGORY
         : sc ? SUPERCOVER_CATEGORY
@@ -706,7 +756,8 @@ async function main(): Promise<void> {
         : ov ? ov.category
         : newRow.family;
       const product =
-        vt ? vt.product
+        rem5 ? rem5.product
+        : vt ? vt.product
         : tp ? tp.product
         : scl ? scl.product
         : sc ? sc.product
@@ -715,7 +766,8 @@ async function main(): Promise<void> {
         : ov ? ov.product
         : newRow.subProduct;
       const baseColour =
-        vt ? vt.baseColour
+        rem5 ? rem5.baseColour
+        : vt ? vt.baseColour
         : tp ? tp.baseColour
         : scl ? scl.baseColour
         : sc ? sc.baseColour
@@ -758,6 +810,11 @@ async function main(): Promise<void> {
       if (tp) { normPack = tp.packCode; normUnit = tp.unit; }
       // VT SPECIALTY CSV authoritative on pack/unit (last win).
       if (vt) { normPack = vt.packCode; normUnit = vt.unit; }
+      // REMAINING-5 CSV authoritative on pack/unit (last win).
+      if (rem5) { normPack = rem5.packCode; normUnit = rem5.unit; }
+
+      // ── REMAINING-5 not-in-CSV report (2026-06-14) ── HARD STOP (see step 2l).
+      if (REMAINING5_FAMILIES.has(category) && !rem5) remaining5NotInCsv.push(material);
 
       // ── PUTTY/TEXTURE not-in-CSV report (2026-06-12) ──
       // texture-putty-review.csv is the source of truth for both families. Any
@@ -773,7 +830,7 @@ async function main(): Promise<void> {
         // base/pack/isPrimary), so honour its description too — Path-B precedent
         // (fixes legacy-description drift). Verified no-op for the other 151
         // Sadolin rows: every CSV description already equals the live/legacy one.
-        description:     vt ? vt.description : tp ? tp.description : sad ? sad.description : legacy.description,
+        description:     rem5 ? rem5.description : vt ? vt.description : tp ? tp.description : sad ? sad.description : legacy.description,
         category,
         product,
         baseColour,
@@ -789,7 +846,8 @@ async function main(): Promise<void> {
         // CSV is the authoritative primary list. Then SADOLIN CSV (with White-1KG
         // demote); then WS CSV KEEP/HIDE; else the SET_FALSE rule.
         isPrimary:
-          vt ? vt.isPrimary
+          rem5 ? rem5.isPrimary
+          : vt ? vt.isPrimary
           : tp ? tp.isPrimary
           : dist ? dist.isPrimary
           : scl ? scl.isPrimary
@@ -1100,6 +1158,41 @@ async function main(): Promise<void> {
     vtSpecialtyBuilt.push(mat);
   }
   console.log(`VT SPECIALTY: re-keyed ${vtSpecialtyReKeyed.length} existing, built ${vtSpecialtyBuilt.length} new [${vtSpecialtyBuilt.join(", ")}]`);
+
+  // ── 2l. REMAINING-5 build-from-CSV (7 new codes, no legacy source) ──
+  // IN55009272/282/471/482/481 (LUSTRE 92/94 BASE) + 5727751 (FP SIGNAL RED PLUS
+  // 10L) + 5727757 (FP FOREST GREEN 10L) are absent from legacy → built here from
+  // CSV fields (mirrors the VT 2k build). The 73 existing materials are re-keyed
+  // in the main loop, so seenMaterials guards them out (re-key, never doubled).
+  const remaining5Built: string[] = [];
+  const remaining5ReKeyed: string[] = [];
+  for (const [mat, e] of Array.from(remaining5.entries())) {
+    if (seenMaterials.has(mat)) { remaining5ReKeyed.push(mat); continue; }
+    v2Rows.push({
+      material:        mat,
+      description:     e.description,
+      category:        e.family,
+      product:         e.product,
+      baseColour:      e.baseColour,
+      packCode:        e.packCode,
+      unit:            e.unit,
+      refMaterial:     null,
+      refDescription:  null,
+      paintType:       null,
+      materialType:    null,
+      piecesPerCarton: null,
+      isPrimary:       e.isPrimary,
+    });
+    seenMaterials.add(mat);
+    remaining5Built.push(mat);
+  }
+  console.log(`REMAINING5: re-keyed ${remaining5ReKeyed.length} existing, built ${remaining5Built.length} new [${remaining5Built.join(", ")}]`);
+  // HARD STOP: the CSV is complete coverage for these 5 families. Any legacy SKU
+  // in TILE/METALLIC/LUSTRE/SMOOTHOVER/FLOOR PLUS not present in the CSV is a bug.
+  if (remaining5NotInCsv.length > 0) {
+    console.error(`[remaining5] ${remaining5NotInCsv.length} legacy SKU(s) in the 5 families NOT in the CSV — STOPPING: ${remaining5NotInCsv.join(", ")}`);
+    throw new Error("remaining5 coverage gap — legacy SKU not in CSV");
+  }
 
   console.log(`Skipped (mapLegacyToNew → null)         : ${skippedNull}`);
   console.log(`Source rows expanded into multiple v2  : ${crossListed}`);
@@ -1469,8 +1562,30 @@ async function main(): Promise<void> {
     }
     console.log(`  VT SPECIALTY natives NOT in CSV (report only, kept): ${vtSpecialtyNotInCsv.length}${vtSpecialtyNotInCsv.length ? " -> " + vtSpecialtyNotInCsv.join(", ") : ""}`);
 
+    // ── REMAINING-5 rebuild rehearsal (2026-06-14) ──
     console.log("");
-    console.log(`  TOTAL stock rows after rebuild: ${deduped.length} (expect ${1647 + vtSpecialtyBuilt.length} = 1647 prior baseline + ${vtSpecialtyBuilt.length} new VtSpecialty)`);
+    console.log("════════════ REMAINING-5 REBUILD (TILE/METALLIC/LUSTRE/SMOOTHOVER/FLOOR PLUS) ════════════");
+    console.log(`  Re-keyed existing: ${rem5Assigned} | built new: ${remaining5Built.length} (expect 73 / 7)`);
+    console.log(`  7 new codes — path each took:`);
+    for (const m of ["IN55009272", "IN55009282", "IN55009471", "IN55009482", "IN55009481", "5727751", "5727757"]) {
+      const r = deduped.find((x) => x.material === m);
+      const built = remaining5Built.includes(m);
+      console.log(`     ${m}: ${r ? `${r.category}/${r.product}/${r.baseColour} ${r.packCode}${r.unit ?? ""} pri=${r.isPrimary} [${built ? "CREATED (no legacy)" : "RE-KEYED"}]` : "ABSENT (FAIL)"}`);
+    }
+    for (const fam of ["TILE", "METALLIC", "LUSTRE", "SMOOTHOVER", "FLOOR PLUS"]) {
+      const rs = deduped.filter((r) => r.category === fam);
+      const live = liveRows.filter((r) => r.category === fam).length;
+      const pri = rs.filter((r) => r.isPrimary).length;
+      const bases = Array.from(new Set(rs.filter((r) => r.isPrimary).map((r) => r.baseColour))).sort();
+      console.log(`  ${fam.padEnd(11)} before ${live} -> after ${rs.length} (primary ${pri}/${rs.length}) | primary bases: [${bases.join(", ")}]`);
+    }
+    // demotions (CSV isPrimary=false)
+    const demoted = deduped.filter((r) => REMAINING5_FAMILIES.has(r.category) && !r.isPrimary);
+    console.log(`  Demotions (isPrimary=false, kept in DB): ${demoted.length} -> [${demoted.map((r) => r.material).join(", ")}]`);
+    console.log(`  REMAINING-5 legacy NOT in CSV (HARD STOP if >0): ${remaining5NotInCsv.length}`);
+
+    console.log("");
+    console.log(`  TOTAL stock rows after rebuild: ${deduped.length} (expect ${1647 + vtSpecialtyBuilt.length + remaining5Built.length} = 1647 + ${vtSpecialtyBuilt.length} VtSpecialty + ${remaining5Built.length} Remaining5)`);
 
     console.log("");
     console.log("DRY_RUN=1 — NO wipe, NO insert performed.");

@@ -51,7 +51,7 @@ const DRY_RUN      = process.env.DRY_RUN === "1";
 // Locked expectations from the May 6 preview run. If the JSON drifts from
 // these the script refuses to seed — better to fail loudly than to ship
 // surprise data into v2.
-const EXPECTED_TOTAL_NEW_ROWS    = 486;  // 474 − 51 + 63 − 1 − 4 + 25 − 1 − 13 − 1 − 1 − 4 (…; TEXTURE net −1 2026-06-12; VT SPECIALTY net −4 [+5 VAF, −9 hidden-range rows] 2026-06-13)
+const EXPECTED_TOTAL_NEW_ROWS    = 484;  // …; VT SPECIALTY net −4 2026-06-13; REMAINING-5 net −2 [TILE +1, LUSTRE −2 (drop BW-dup+YELLOW, +96), FLOOR PLUS −1 (drop BW)] 2026-06-14
 const EXPECTED_WARNINGS          = 0;
 
 // ── PROMISE transform constants ────────────────────────────────────────
@@ -304,6 +304,14 @@ const CONFIRMED_SUBPRODUCT_MAP: Record<string, string> = {
   // Stock product == subProduct already (joins via subProduct today), pack join
   // unchanged.
   "PU ENAMEL":              "PU ENAMEL",
+  // REMAINING-5 (2026-06-14): identity join-keys so menu.product is non-null →
+  // pack join is explicit and LUSTRE base aliases fire. Stock product ==
+  // subProduct after the remaining5 CSV re-key (step 1), so the join is unchanged.
+  "TILE":                   "TILE",
+  "METALLIC":               "METALLIC",
+  "LUSTRE":                 "LUSTRE",
+  "SMOOTHOVER":             "SMOOTHOVER",
+  "FLOOR PLUS":             "FLOOR PLUS",
 };
 
 // Rule 2: HIGH-confidence rows from the reviewed name-map draft
@@ -903,6 +911,13 @@ async function main(): Promise<void> {
     // VT SPECIALTY (2026-06-13): one flat tab "VT Specialty" — 11 visible rows
     // (VAF ×6, VT Concrete Finish, Velvetino ×2, VT Marble, VT Clear Coat).
     if (r.family === "VT SPECIALTY") { r.uiGroup = "VT Specialty"; uiAssigned++; continue; }
+    // REMAINING-5 (2026-06-14): one flat tab per family (folded onto tile 4 WS /
+    // tile 2 Satin&PU / search-only). uiGroup matches remaining5-final.csv.
+    if (r.family === "TILE")       { r.uiGroup = "WS Tile";     uiAssigned++; continue; }
+    if (r.family === "METALLIC")   { r.uiGroup = "WS Metallic"; uiAssigned++; continue; }
+    if (r.family === "LUSTRE")     { r.uiGroup = "Lustre";      uiAssigned++; continue; }
+    if (r.family === "SMOOTHOVER") { r.uiGroup = "Smoothover";  uiAssigned++; continue; }
+    if (r.family === "FLOOR PLUS") { r.uiGroup = "Floor Plus";  uiAssigned++; continue; }
     if (r.family === "AQUATECH" && AQUA_UI[sub])   { r.uiGroup = AQUA_UI[sub];    uiAssigned++; continue; }
     if (r.family === "SADOLIN"  && SADOLIN_UI[sub]) { r.uiGroup = SADOLIN_UI[sub]; uiAssigned++; continue; }
     // TOOLS — two tabs derived from the product name (Rollers / Brushes).

@@ -203,6 +203,14 @@ export const BASE_ALIASES: Record<string, Record<string, BaseAlias>> = {
     "90 BASE": { display: "White",        search: ["white", "white base"] },
     "92 BASE": { display: "Intermediate", search: ["intermediate", "intermediate base"] },
   },
+  // Lustre (2026-06-14). Numeric bases 90/92/94/96 only; 96 labels plainly Yellow.
+  // Product join-key set in CONFIRMED_SUBPRODUCT_MAP so these render + bake tokens.
+  "LUSTRE": {
+    "90 BASE": { display: "White",        search: ["white", "white base"] },
+    "92 BASE": { display: "Intermediate", search: ["intermediate", "intermediate base"] },
+    "94 BASE": { display: "Accent",       search: ["accent", "accent base"] },
+    "96 BASE": { display: "Yellow",       search: ["yellow", "yellow base"] },
+  },
 };
 
 /**

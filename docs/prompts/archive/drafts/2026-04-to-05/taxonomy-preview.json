@@ -4,7 +4,7 @@
   "summary": {
     "totalLegacyTriples": 560,
     "totalLegacySkuCount": 1599,
-    "totalNewRows": 486,
+    "totalNewRows": 484,
     "crossListedExtraRows": 68,
     "suppressedPlainRows": 19,
     "skippedTriples": 82,
@@ -860,74 +860,50 @@
       {
         "family": "LUSTRE",
         "subProduct": "LUSTRE",
-        "displayName": "Lustre",
-        "searchTokens": "LUSTRE, LUSTRE FINISH, DULUX LUSTRE",
-        "baseColour": "BRILLIANT WHITE",
-        "productType": "BASE_VARIANT",
-        "tinterType": null,
-        "sortOrder": 1000,
-        "isActive": true,
-        "skuCount": 6
-      },
-      {
-        "family": "LUSTRE",
-        "subProduct": "LUSTRE",
-        "displayName": "Lustre",
-        "searchTokens": "LUSTRE, LUSTRE FINISH, DULUX LUSTRE",
-        "baseColour": "BRILLIANT WHITE",
-        "productType": "BASE_VARIANT",
-        "tinterType": null,
-        "sortOrder": 1000,
-        "isActive": true,
-        "skuCount": 4
-      },
-      {
-        "family": "LUSTRE",
-        "subProduct": "LUSTRE",
-        "displayName": "Lustre",
+        "displayName": "Lustre - 90 Base",
         "searchTokens": "LUSTRE, LUSTRE FINISH, DULUX LUSTRE",
         "baseColour": "90 BASE",
         "productType": "BASE_VARIANT",
         "tinterType": null,
         "sortOrder": 1001,
         "isActive": true,
-        "skuCount": 2
+        "skuCount": 4
       },
       {
         "family": "LUSTRE",
         "subProduct": "LUSTRE",
-        "displayName": "Lustre",
+        "displayName": "Lustre - 92 Base",
         "searchTokens": "LUSTRE, LUSTRE FINISH, DULUX LUSTRE",
         "baseColour": "92 BASE",
         "productType": "BASE_VARIANT",
         "tinterType": null,
         "sortOrder": 1002,
         "isActive": true,
-        "skuCount": 2
+        "skuCount": 4
       },
       {
         "family": "LUSTRE",
         "subProduct": "LUSTRE",
-        "displayName": "Lustre",
+        "displayName": "Lustre - 94 Base",
         "searchTokens": "LUSTRE, LUSTRE FINISH, DULUX LUSTRE",
         "baseColour": "94 BASE",
         "productType": "BASE_VARIANT",
         "tinterType": null,
         "sortOrder": 1004,
         "isActive": true,
-        "skuCount": 1
+        "skuCount": 4
       },
       {
         "family": "LUSTRE",
         "subProduct": "LUSTRE",
-        "displayName": "Lustre",
+        "displayName": "Lustre - 96 Base",
         "searchTokens": "LUSTRE, LUSTRE FINISH, DULUX LUSTRE",
-        "baseColour": "YELLOW BASE",
+        "baseColour": "96 BASE",
         "productType": "BASE_VARIANT",
         "tinterType": null,
-        "sortOrder": 1009,
+        "sortOrder": 1006,
         "isActive": true,
-        "skuCount": 1
+        "skuCount": 2
       }
     ],
     "MAX": [
@@ -1988,7 +1964,19 @@
       {
         "family": "TILE",
         "subProduct": "TILE",
-        "displayName": "Dulux WS Tile",
+        "displayName": "WS Tile - White Base",
+        "searchTokens": "WS TILE, TILE, WS TILE BASE",
+        "baseColour": "WHITE BASE",
+        "productType": "BASE_VARIANT",
+        "tinterType": null,
+        "sortOrder": 1608,
+        "isActive": true,
+        "skuCount": 4
+      },
+      {
+        "family": "TILE",
+        "subProduct": "TILE",
+        "displayName": "WS Tile - Yellow Base",
         "searchTokens": "WS TILE, TILE, WS TILE BASE",
         "baseColour": "YELLOW BASE",
         "productType": "BASE_VARIANT",
@@ -2052,7 +2040,7 @@
       {
         "family": "METALLIC",
         "subProduct": "METALLIC",
-        "displayName": "Dulux WS Metallic",
+        "displayName": "WS Metallic - Gold",
         "searchTokens": "WS METALLIC, METALLIC SILVER, METALLIC GOLD, WS METALLIC SILVER, WS METALLIC GOLD",
         "baseColour": "GOLD",
         "productType": "COLOUR",
@@ -2064,7 +2052,7 @@
       {
         "family": "METALLIC",
         "subProduct": "METALLIC",
-        "displayName": "Dulux WS Metallic",
+        "displayName": "WS Metallic - Silver",
         "searchTokens": "WS METALLIC, METALLIC SILVER, METALLIC GOLD, WS METALLIC SILVER, WS METALLIC GOLD",
         "baseColour": "SILVER",
         "productType": "COLOUR",
@@ -3046,31 +3034,19 @@
       {
         "family": "FLOOR PLUS",
         "subProduct": "FLOOR PLUS",
-        "displayName": "Floor Plus",
-        "searchTokens": "FLOOR PLUS, FLOORPLUS",
-        "baseColour": "BRILLIANT WHITE",
-        "productType": "BASE_VARIANT",
-        "tinterType": null,
-        "sortOrder": 2900,
-        "isActive": true,
-        "skuCount": 2
-      },
-      {
-        "family": "FLOOR PLUS",
-        "subProduct": "FLOOR PLUS",
-        "displayName": "Floor Plus",
+        "displayName": "Floor Plus - 93 Base",
         "searchTokens": "FLOOR PLUS, FLOORPLUS",
         "baseColour": "93 BASE",
         "productType": "BASE_VARIANT",
         "tinterType": null,
         "sortOrder": 2903,
         "isActive": true,
-        "skuCount": 1
+        "skuCount": 4
       },
       {
         "family": "FLOOR PLUS",
         "subProduct": "FLOOR PLUS",
-        "displayName": "Floor Plus",
+        "displayName": "Floor Plus - Gun Grey",
         "searchTokens": "FLOOR PLUS, FLOORPLUS",
         "baseColour": "GUN GREY",
         "productType": "COLOUR",
@@ -3082,7 +3058,7 @@
       {
         "family": "FLOOR PLUS",
         "subProduct": "FLOOR PLUS",
-        "displayName": "Floor Plus",
+        "displayName": "Floor Plus - Peacock Blue",
         "searchTokens": "FLOOR PLUS, FLOORPLUS",
         "baseColour": "PEACOCK BLUE",
         "productType": "COLOUR",
@@ -3094,43 +3070,43 @@
       {
         "family": "FLOOR PLUS",
         "subProduct": "FLOOR PLUS",
-        "displayName": "Floor Plus",
+        "displayName": "Floor Plus - Forest Green",
         "searchTokens": "FLOOR PLUS, FLOORPLUS",
         "baseColour": "FOREST GREEN",
         "productType": "COLOUR",
         "tinterType": null,
         "sortOrder": 2936,
         "isActive": true,
-        "skuCount": 2
+        "skuCount": 3
       },
       {
         "family": "FLOOR PLUS",
         "subProduct": "FLOOR PLUS",
-        "displayName": "Floor Plus",
+        "displayName": "Floor Plus - PO Red",
         "searchTokens": "FLOOR PLUS, FLOORPLUS",
         "baseColour": "PO RED",
         "productType": "COLOUR",
         "tinterType": null,
-        "sortOrder": 2936,
+        "sortOrder": 2940,
         "isActive": true,
-        "skuCount": 2
+        "skuCount": 3
       },
       {
         "family": "FLOOR PLUS",
         "subProduct": "FLOOR PLUS",
-        "displayName": "Floor Plus",
+        "displayName": "Floor Plus - White",
         "searchTokens": "FLOOR PLUS, FLOORPLUS",
         "baseColour": "WHITE",
         "productType": "COLOUR",
         "tinterType": null,
         "sortOrder": 2945,
         "isActive": true,
-        "skuCount": 2
+        "skuCount": 4
       },
       {
         "family": "FLOOR PLUS",
         "subProduct": "FLOOR PLUS",
-        "displayName": "Floor Plus",
+        "displayName": "Floor Plus - Paver Grey",
         "searchTokens": "FLOOR PLUS, FLOORPLUS",
         "baseColour": "PAVER GREY",
         "productType": "COLOUR",
@@ -3142,7 +3118,7 @@
       {
         "family": "FLOOR PLUS",
         "subProduct": "FLOOR PLUS",
-        "displayName": "Floor Plus",
+        "displayName": "Floor Plus - Signal Red",
         "searchTokens": "FLOOR PLUS, FLOORPLUS",
         "baseColour": "SIGNAL RED",
         "productType": "COLOUR",
@@ -3154,7 +3130,7 @@
       {
         "family": "FLOOR PLUS",
         "subProduct": "FLOOR PLUS",
-        "displayName": "Floor Plus",
+        "displayName": "Floor Plus - Golden Yellow",
         "searchTokens": "FLOOR PLUS, FLOORPLUS",
         "baseColour": "GOLDEN YELLOW",
         "productType": "COLOUR",
@@ -3166,19 +3142,19 @@
       {
         "family": "FLOOR PLUS",
         "subProduct": "FLOOR PLUS",
-        "displayName": "Floor Plus",
+        "displayName": "Floor Plus - Signal Red Plus",
         "searchTokens": "FLOOR PLUS, FLOORPLUS",
         "baseColour": "SIGNAL RED PLUS",
         "productType": "COLOUR",
         "tinterType": null,
         "sortOrder": 2983,
         "isActive": true,
-        "skuCount": 2
+        "skuCount": 3
       },
       {
         "family": "FLOOR PLUS",
         "subProduct": "FLOOR PLUS",
-        "displayName": "Floor Plus",
+        "displayName": "Floor Plus - Terracotta",
         "searchTokens": "FLOOR PLUS, FLOORPLUS",
         "baseColour": "TERACOTTA",
         "productType": "COLOUR",
@@ -3190,7 +3166,7 @@
       {
         "family": "FLOOR PLUS",
         "subProduct": "FLOOR PLUS",
-        "displayName": "Floor Plus",
+        "displayName": "Floor Plus - Black",
         "searchTokens": "FLOOR PLUS, FLOORPLUS",
         "baseColour": "BLACK",
         "productType": "COLOUR",
