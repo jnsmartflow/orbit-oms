@@ -531,6 +531,15 @@ const VT_PRODUCT_RENAME: Record<string, string> = {
   "ETERNA HI-SHEEN": "VT ETERNA HI-SHEEN",
 };
 
+// ── STAINER product rename (2026-06-14) ─────────────────────────────────────
+// Machine's stock product is "MACHINE STAINER" (via sku-name-overrides.json);
+// rebrand → "MACHINE TINTER" so both join sides match the menu (CONFIRMED_
+// SUBPRODUCT_MAP) and the email/grid/tab read "Machine Tinter". Gated to
+// category STAINER (VT pattern); baseColours untouched.
+const STAINER_PRODUCT_RENAME: Record<string, string> = {
+  "MACHINE STAINER": "MACHINE TINTER",
+};
+
 async function loadRemaining5Map(): Promise<Map<string, Remaining5Entry>> {
   const map = new Map<string, Remaining5Entry>();
   const raw = await fs.readFile(REMAINING5_CSV, "utf8");
@@ -795,7 +804,9 @@ async function main(): Promise<void> {
       //    Only the WRITTEN product is renamed; the exclusion / pack-norm / isPrimary
       //    checks above keep using the un-renamed `product`. baseColour unchanged.
       const finalProduct =
-        category === "VELVET TOUCH" && VT_PRODUCT_RENAME[product] ? VT_PRODUCT_RENAME[product] : product;
+        category === "VELVET TOUCH" && VT_PRODUCT_RENAME[product] ? VT_PRODUCT_RENAME[product]
+        : category === "STAINER" && STAINER_PRODUCT_RENAME[product] ? STAINER_PRODUCT_RENAME[product]
+        : product;
 
       // ── Exclusions (post-override keys, 2026-06-01) ──
       //   EXCLUDE_MATERIALS + PROTECT_DELETE (9 group-B) + POWERFLEXX_DROP (IN76109271).

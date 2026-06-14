@@ -15,7 +15,7 @@
 // module is pure data + a lookup helper so BOTH the frontend (display) and
 // the seed (searchTokens) can import it.
 
-export type BaseAlias = { display: string; search: string[] };
+export type BaseAlias = { display: string; search: string[]; label?: string };
 
 export const BASE_ALIASES: Record<string, Record<string, BaseAlias>> = {
   "WS MAX": {
@@ -211,6 +211,48 @@ export const BASE_ALIASES: Record<string, Record<string, BaseAlias>> = {
     "94 BASE": { display: "Accent",       search: ["accent", "accent base"] },
     "96 BASE": { display: "Yellow",       search: ["yellow", "yellow base"] },
   },
+  // ── Stainer tint codes (2026-06-14) ──────────────────────────────────────
+  // display = the SAP tint code → renders "Black · 108"; search bakes the code
+  // so "108" finds the shade. UNIVERSAL/GVA carry the colour name in the base
+  // already; MACHINE TINTER's base is a 3-letter abbr (FFR/YOX), so it also
+  // carries `label` = the full colour name for the mobile subtitle.
+  "UNIVERSAL STAINER": {
+    "YELLOW OXIDE":    { display: "101", search: ["101"] },
+    "FAST YELLOW":     { display: "102", search: ["102"] },
+    "FAST GREEN":      { display: "103", search: ["103"] },
+    "FAST BLUE":       { display: "104", search: ["104"] },
+    "FAST VIOLET":     { display: "106", search: ["106"] },
+    "FAST RED":        { display: "107", search: ["107"] },
+    "BLACK":           { display: "108", search: ["108"] },
+    "FAST ORANGE":     { display: "110", search: ["110"] },
+    "FASTYELLOWGREEN": { display: "111", search: ["111"] },
+    "BURNT SIENNA":    { display: "112", search: ["112"] },
+  },
+  "GVA": {
+    "RED OXIDE":             { display: "122", search: ["122"] },
+    "BLUE":                  { display: "124", search: ["124"] },
+    "BLACK":                 { display: "126", search: ["126"] },
+    "YELLOW OXIDE":          { display: "127", search: ["127"] },
+    "ORGANIC ORANGE":        { display: "140", search: ["140"] },
+    "ORGANIC VIOLET":        { display: "142", search: ["142"] },
+    "ORGANIC MIDDLE YELLOW": { display: "145", search: ["145"] },
+    "ORGANIC LEMON YELLOW":  { display: "146", search: ["146"] },
+    "BRILLIANT WHITE":       { display: "147", search: ["147"] },
+    "GREEN":                 { display: "149", search: ["149"] },
+    "FAST RED":              { display: "322", search: ["322"] },
+    "ORGANIC RED VIOLET":    { display: "480", search: ["480"] },
+  },
+  "MACHINE TINTER": {
+    "YOX":   { display: "101", search: ["101", "yellow oxide"],       label: "Yellow Oxide" },
+    "LFY":   { display: "102", search: ["102", "light fast yellow"],  label: "Light Fast Yellow" },
+    "GRN":   { display: "103", search: ["103", "green"],              label: "Green" },
+    "TBL":   { display: "104", search: ["104", "pthalo blue"],        label: "Pthalo Blue" },
+    "WHITE": { display: "105", search: ["105", "white"],              label: "White" },
+    "MAG":   { display: "106", search: ["106", "magenta"],            label: "Magenta" },
+    "FFR":   { display: "107", search: ["107", "fast red"],           label: "Fast Red" },
+    "BLACK": { display: "108", search: ["108", "black"],              label: "Black" },
+    "OXR":   { display: "109", search: ["109", "red oxide"],          label: "Red Oxide" },
+  },
 };
 
 /**
@@ -224,4 +266,18 @@ export function getBaseAliasDisplay(
 ): string | null {
   if (!product || !baseColour) return null;
   return BASE_ALIASES[product]?.[baseColour]?.display ?? null;
+}
+
+/**
+ * Optional full-name `label` for a (product, baseColour) pair, or null. Used by
+ * the mobile /po subtitle for MACHINE TINTER (whose base is a 3-letter abbr) to
+ * show "Dramatone · Fast Red". Most products have no label (their base already
+ * carries the colour name) → returns null and nothing is appended.
+ */
+export function getBaseAliasLabel(
+  product: string | null | undefined,
+  baseColour: string | null | undefined,
+): string | null {
+  if (!product || !baseColour) return null;
+  return BASE_ALIASES[product]?.[baseColour]?.label ?? null;
 }

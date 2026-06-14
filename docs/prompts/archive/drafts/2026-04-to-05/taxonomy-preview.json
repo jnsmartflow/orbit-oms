@@ -3652,7 +3652,7 @@
         "baseColour": "BRILLIANT WHITE",
         "productType": "BASE_VARIANT",
         "tinterType": "PU_STAINER",
-        "sortOrder": 3310,
+        "sortOrder": 4147,
         "isActive": true,
         "skuCount": 1
       },
@@ -3664,7 +3664,7 @@
         "baseColour": "FAST GREEN",
         "productType": "COLOUR",
         "tinterType": "FAST_STAINER",
-        "sortOrder": 3321,
+        "sortOrder": 1103,
         "isActive": true,
         "skuCount": 3
       },
@@ -3676,7 +3676,7 @@
         "baseColour": "YELLOW OXIDE",
         "productType": "COLOUR",
         "tinterType": "FAST_STAINER",
-        "sortOrder": 3331,
+        "sortOrder": 1101,
         "isActive": true,
         "skuCount": 3
       },
@@ -3688,7 +3688,7 @@
         "baseColour": "ORGANIC RED VIOLET",
         "productType": "COLOUR",
         "tinterType": "PU_STAINER",
-        "sortOrder": 3333,
+        "sortOrder": 4480,
         "isActive": true,
         "skuCount": 1
       },
@@ -3700,7 +3700,7 @@
         "baseColour": "FAST ORANGE",
         "productType": "COLOUR",
         "tinterType": "FAST_STAINER",
-        "sortOrder": 3338,
+        "sortOrder": 1110,
         "isActive": true,
         "skuCount": 3
       },
@@ -3712,7 +3712,7 @@
         "baseColour": "YELLOW OXIDE",
         "productType": "COLOUR",
         "tinterType": "PU_STAINER",
-        "sortOrder": 3341,
+        "sortOrder": 4127,
         "isActive": true,
         "skuCount": 1
       },
@@ -3724,7 +3724,7 @@
         "baseColour": "GREEN",
         "productType": "COLOUR",
         "tinterType": "PU_STAINER",
-        "sortOrder": 3349,
+        "sortOrder": 4149,
         "isActive": true,
         "skuCount": 1
       },
@@ -3736,7 +3736,7 @@
         "baseColour": "ORGANIC VIOLET",
         "productType": "COLOUR",
         "tinterType": "PU_STAINER",
-        "sortOrder": 3350,
+        "sortOrder": 4142,
         "isActive": true,
         "skuCount": 1
       },
@@ -3748,7 +3748,7 @@
         "baseColour": "FFR",
         "productType": "COLOUR",
         "tinterType": "MACHINE_TINTER",
-        "sortOrder": 3352,
+        "sortOrder": 2107,
         "isActive": true,
         "skuCount": 1
       },
@@ -3760,7 +3760,7 @@
         "baseColour": "MAG",
         "productType": "COLOUR",
         "tinterType": "MACHINE_TINTER",
-        "sortOrder": 3353,
+        "sortOrder": 2106,
         "isActive": true,
         "skuCount": 1
       },
@@ -3772,7 +3772,7 @@
         "baseColour": "NO1",
         "productType": "COLOUR",
         "tinterType": "ACOTONE",
-        "sortOrder": 3356,
+        "sortOrder": 3000,
         "isActive": true,
         "skuCount": 1
       },
@@ -3784,7 +3784,7 @@
         "baseColour": "XY1",
         "productType": "COLOUR",
         "tinterType": "ACOTONE",
-        "sortOrder": 3356,
+        "sortOrder": 3001,
         "isActive": true,
         "skuCount": 1
       },
@@ -3796,7 +3796,7 @@
         "baseColour": "BLUE",
         "productType": "COLOUR",
         "tinterType": "PU_STAINER",
-        "sortOrder": 3356,
+        "sortOrder": 4124,
         "isActive": true,
         "skuCount": 1
       },
@@ -3808,7 +3808,7 @@
         "baseColour": "NO2",
         "productType": "COLOUR",
         "tinterType": "ACOTONE",
-        "sortOrder": 3357,
+        "sortOrder": 3002,
         "isActive": true,
         "skuCount": 1
       },
@@ -3820,7 +3820,7 @@
         "baseColour": "OXR",
         "productType": "COLOUR",
         "tinterType": "MACHINE_TINTER",
-        "sortOrder": 3359,
+        "sortOrder": 2109,
         "isActive": true,
         "skuCount": 1
       },
@@ -3832,7 +3832,7 @@
         "baseColour": "FAST YELLOW",
         "productType": "COLOUR",
         "tinterType": "FAST_STAINER",
-        "sortOrder": 3360,
+        "sortOrder": 1102,
         "isActive": true,
         "skuCount": 3
       },
@@ -3844,7 +3844,7 @@
         "baseColour": "GR1",
         "productType": "COLOUR",
         "tinterType": "ACOTONE",
-        "sortOrder": 3362,
+        "sortOrder": 3003,
         "isActive": true,
         "skuCount": 1
       },
@@ -3856,7 +3856,7 @@
         "baseColour": "LFY",
         "productType": "COLOUR",
         "tinterType": "MACHINE_TINTER",
-        "sortOrder": 3365,
+        "sortOrder": 2102,
         "isActive": true,
         "skuCount": 1
       },
@@ -3868,7 +3868,7 @@
         "baseColour": "BU1",
         "productType": "COLOUR",
         "tinterType": "ACOTONE",
-        "sortOrder": 3370,
+        "sortOrder": 3004,
         "isActive": true,
         "skuCount": 1
       },
@@ -3880,7 +3880,7 @@
         "baseColour": "OR1",
         "productType": "COLOUR",
         "tinterType": "ACOTONE",
-        "sortOrder": 3370,
+        "sortOrder": 3005,
         "isActive": true,
         "skuCount": 1
       },
@@ -3892,7 +3892,7 @@
         "baseColour": "RE1",
         "productType": "COLOUR",
         "tinterType": "ACOTONE",
-        "sortOrder": 3370,
+        "sortOrder": 3006,
         "isActive": true,
         "skuCount": 1
       },
@@ -3904,7 +3904,7 @@
         "baseColour": "FAST BLUE",
         "productType": "COLOUR",
         "tinterType": "FAST_STAINER",
-        "sortOrder": 3370,
+        "sortOrder": 1104,
         "isActive": true,
         "skuCount": 3
       },
@@ -3916,7 +3916,7 @@
         "baseColour": "BU2",
         "productType": "COLOUR",
         "tinterType": "ACOTONE",
-        "sortOrder": 3371,
+        "sortOrder": 3007,
         "isActive": true,
         "skuCount": 1
       },
@@ -3928,7 +3928,7 @@
         "baseColour": "RE2",
         "productType": "COLOUR",
         "tinterType": "ACOTONE",
-        "sortOrder": 3371,
+        "sortOrder": 3008,
         "isActive": true,
         "skuCount": 1
       },
@@ -3940,7 +3940,7 @@
         "baseColour": "FAST VIOLET",
         "productType": "COLOUR",
         "tinterType": "FAST_STAINER",
-        "sortOrder": 3371,
+        "sortOrder": 1106,
         "isActive": true,
         "skuCount": 3
       },
@@ -3952,7 +3952,7 @@
         "baseColour": "WHITE",
         "productType": "COLOUR",
         "tinterType": "MACHINE_TINTER",
-        "sortOrder": 3375,
+        "sortOrder": 2105,
         "isActive": true,
         "skuCount": 1
       },
@@ -3964,7 +3964,7 @@
         "baseColour": "YE1",
         "productType": "COLOUR",
         "tinterType": "ACOTONE",
-        "sortOrder": 3377,
+        "sortOrder": 3009,
         "isActive": true,
         "skuCount": 1
       },
@@ -3976,7 +3976,7 @@
         "baseColour": "YE2",
         "productType": "COLOUR",
         "tinterType": "ACOTONE",
-        "sortOrder": 3378,
+        "sortOrder": 3010,
         "isActive": true,
         "skuCount": 1
       },
@@ -3988,7 +3988,7 @@
         "baseColour": "XR1",
         "productType": "COLOUR",
         "tinterType": "ACOTONE",
-        "sortOrder": 3379,
+        "sortOrder": 3011,
         "isActive": true,
         "skuCount": 1
       },
@@ -4000,7 +4000,7 @@
         "baseColour": "FAST RED",
         "productType": "COLOUR",
         "tinterType": "FAST_STAINER",
-        "sortOrder": 3381,
+        "sortOrder": 1107,
         "isActive": true,
         "skuCount": 3
       },
@@ -4012,7 +4012,7 @@
         "baseColour": "ORGANIC LEMON YELLOW",
         "productType": "COLOUR",
         "tinterType": "PU_STAINER",
-        "sortOrder": 3384,
+        "sortOrder": 4146,
         "isActive": true,
         "skuCount": 1
       },
@@ -4024,7 +4024,7 @@
         "baseColour": "FASTYELLOWGREEN",
         "productType": "COLOUR",
         "tinterType": "FAST_STAINER",
-        "sortOrder": 3387,
+        "sortOrder": 1111,
         "isActive": true,
         "skuCount": 3
       },
@@ -4036,7 +4036,7 @@
         "baseColour": "WH1",
         "productType": "COLOUR",
         "tinterType": "ACOTONE",
-        "sortOrder": 3388,
+        "sortOrder": 3012,
         "isActive": true,
         "skuCount": 1
       },
@@ -4048,7 +4048,7 @@
         "baseColour": "FAST RED",
         "productType": "COLOUR",
         "tinterType": "PU_STAINER",
-        "sortOrder": 3391,
+        "sortOrder": 4322,
         "isActive": true,
         "skuCount": 1
       },
@@ -4060,7 +4060,7 @@
         "baseColour": "RED OXIDE",
         "productType": "COLOUR",
         "tinterType": "PU_STAINER",
-        "sortOrder": 3392,
+        "sortOrder": 4122,
         "isActive": true,
         "skuCount": 1
       },
@@ -4072,7 +4072,7 @@
         "baseColour": "TBL",
         "productType": "COLOUR",
         "tinterType": "MACHINE_TINTER",
-        "sortOrder": 3396,
+        "sortOrder": 2104,
         "isActive": true,
         "skuCount": 1
       },
@@ -4084,7 +4084,7 @@
         "baseColour": "ORGANIC ORANGE",
         "productType": "COLOUR",
         "tinterType": "PU_STAINER",
-        "sortOrder": 3397,
+        "sortOrder": 4140,
         "isActive": true,
         "skuCount": 1
       },
@@ -4096,7 +4096,7 @@
         "baseColour": "BURNT SIENNA",
         "productType": "COLOUR",
         "tinterType": "FAST_STAINER",
-        "sortOrder": 3397,
+        "sortOrder": 1112,
         "isActive": true,
         "skuCount": 3
       },
@@ -4108,7 +4108,7 @@
         "baseColour": "BLACK",
         "productType": "COLOUR",
         "tinterType": "FAST_STAINER",
-        "sortOrder": 3399,
+        "sortOrder": 1108,
         "isActive": true,
         "skuCount": 3
       },
@@ -4120,7 +4120,7 @@
         "baseColour": "MA1",
         "productType": "COLOUR",
         "tinterType": "ACOTONE",
-        "sortOrder": 3401,
+        "sortOrder": 3013,
         "isActive": true,
         "skuCount": 1
       },
@@ -4132,7 +4132,7 @@
         "baseColour": "GRN",
         "productType": "COLOUR",
         "tinterType": "MACHINE_TINTER",
-        "sortOrder": 3401,
+        "sortOrder": 2103,
         "isActive": true,
         "skuCount": 1
       },
@@ -4144,7 +4144,7 @@
         "baseColour": "ORGANIC MIDDLE YELLOW",
         "productType": "COLOUR",
         "tinterType": "PU_STAINER",
-        "sortOrder": 3404,
+        "sortOrder": 4145,
         "isActive": true,
         "skuCount": 1
       },
@@ -4156,7 +4156,7 @@
         "baseColour": "BLACK",
         "productType": "COLOUR",
         "tinterType": "PU_STAINER",
-        "sortOrder": 3409,
+        "sortOrder": 4126,
         "isActive": true,
         "skuCount": 1
       },
@@ -4168,7 +4168,7 @@
         "baseColour": "YOX",
         "productType": "COLOUR",
         "tinterType": "MACHINE_TINTER",
-        "sortOrder": 3416,
+        "sortOrder": 2101,
         "isActive": true,
         "skuCount": 1
       },
@@ -4180,7 +4180,7 @@
         "baseColour": "BLACK",
         "productType": "COLOUR",
         "tinterType": "MACHINE_TINTER",
-        "sortOrder": 3429,
+        "sortOrder": 2108,
         "isActive": true,
         "skuCount": 1
       }

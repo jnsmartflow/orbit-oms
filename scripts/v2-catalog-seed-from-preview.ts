@@ -249,7 +249,12 @@ const CONFIRMED_SUBPRODUCT_MAP: Record<string, string> = {
   "PROTECT DUSTPROOF": "WS PROTECT DUSTPROOF",
   "HISHEEN":           "WS PROTECT HI-SHEEN",
   "PU STAINER":        "GVA",
-  "MACHINE TINTER":    "MACHINE STAINER",
+  // MACHINE TINTER (2026-06-14): renamed product STAINER→TINTER (email/grid/tab
+  // brand). Identity now; base aliases (codes) key on "MACHINE TINTER".
+  "MACHINE TINTER":    "MACHINE TINTER",
+  // UNIVERSAL STAINER (2026-06-14): identity (was null) so its tint-code aliases
+  // render + §7.8 bakes the code search words. Stock product already equals this.
+  "UNIVERSAL STAINER": "UNIVERSAL STAINER",
   // Satin: identity join-key so base aliases render (product must be non-null,
   // like WS) and §7.8 bakes the alias search words. Stock product already
   // equals these, so the pack join is unchanged.
@@ -745,7 +750,7 @@ async function main(): Promise<void> {
   };
   const STAINER_UI: Record<string, string> = {
     "UNIVERSAL STAINER": "UNIVERSAL STAINER",
-    "MACHINE TINTER":    "MACHINE STAINER",
+    "MACHINE TINTER":    "MACHINE TINTER",
     "ACOTONE TINTER":    "ACOTONE",
     "PU STAINER":        "GVA / PU",
     "HP COLORANT":       "HP",

@@ -6,7 +6,7 @@ import type { RawPack } from "@/lib/place-order/pack-buckets";
 import type { Product, CartLine, Bill, Customer } from "@/app/(place-order)/place-order/types";
 import { rankProductsForQuery } from "@/lib/place-order/mobile-search";
 import { formatPack, packToMl, packStepForPack, packKey, parsePackKey } from "@/lib/place-order/pack";
-import { getBaseAliasDisplay } from "@/lib/place-order/base-aliases";
+import { getBaseAliasDisplay, getBaseAliasLabel } from "@/lib/place-order/base-aliases";
 import { getSecondLine, isVariantQualifierTab } from "@/lib/place-order/sub-product-descriptors";
 import SplashScreen from "./splash-screen";
 
@@ -2271,6 +2271,10 @@ export default function PoPage(): React.JSX.Element {
                           p.family, p.subProduct,
                           getBaseAliasDisplay(p.product, p.baseColour),
                         ) ?? p.family;
+                        // Optional full-name label appended to the subtitle (e.g.
+                        // MACHINE TINTER "Dramatone · Fast Red"). Null for products
+                        // whose base already shows the colour name (Universal/GVA).
+                        const aliasLabel = getBaseAliasLabel(p.product, p.baseColour);
                         // Multi-select ON → checkbox row that TOGGLES selection
                         // (does not open the picker). OFF → single-add row.
                         if (multiSelect) {
@@ -2293,7 +2297,7 @@ export default function PoPage(): React.JSX.Element {
                                   {productLabel(p)}{aliasSuffix(p)}
                                 </p>
                                 {second && (
-                                  <p className="text-[12px] text-gray-400 truncate mt-0.5">{second}</p>
+                                  <p className="text-[12px] text-gray-400 truncate mt-0.5">{second}{aliasLabel && <span className="text-gray-300"> · {aliasLabel}</span>}</p>
                                 )}
                               </div>
                             </div>
@@ -2311,7 +2315,7 @@ export default function PoPage(): React.JSX.Element {
                                 {productLabel(p)}{aliasSuffix(p)}
                               </p>
                               {second && (
-                                <p className="text-[12px] text-gray-400 truncate mt-0.5">{second}</p>
+                                <p className="text-[12px] text-gray-400 truncate mt-0.5">{second}{aliasLabel && <span className="text-gray-300"> · {aliasLabel}</span>}</p>
                               )}
                             </div>
                             <Plus className="w-[18px] h-[18px] text-teal-600 shrink-0" />
