@@ -4,6 +4,7 @@ import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState }
 import { Search, Send } from "lucide-react";
 import type { RawPack } from "@/lib/place-order/pack-buckets";
 import { formatPack, packToMl, packStepForPack } from "@/lib/place-order/pack";
+import { emailLineLabel } from "@/lib/place-order/email";
 import { getBaseAliasDisplay } from "@/lib/place-order/base-aliases";
 import { getSecondLine, isVariantQualifierTab } from "@/lib/place-order/sub-product-descriptors";
 import { rankProductsForQuery } from "@/lib/place-order/mobile-search";
@@ -828,12 +829,10 @@ export default function OrderPage(): React.JSX.Element {
         // no re-format here. Pack text matches the legacy depot format
         // byte-for-byte.
         const packStr = l.packs.map((p) => `${p.pack}*${p.qty}`).join(", ");
-        // v2 email format: "{product ?? subProduct} [{baseColour}] {packs}".
-        // Prefer v2 `product` (real product name) when set; fall back to
-        // legacy `subProduct` for unmigrated rows. baseColour appended for
-        // variants. SAP-friendly layout unchanged.
-        const head = l.product ?? l.subProduct;
-        const productText = l.baseColour ? `${head} ${l.baseColour}` : head;
+        // v2 email format via the shared helper (byte-identical to desktop
+        // email.ts): "{product ?? subProduct} [{baseColour}] {packs}", with the
+        // PROMISE PRIMER doubling special-cased. SAP-friendly layout unchanged.
+        const productText = emailLineLabel(l.product ?? null, l.baseColour, l.subProduct);
         lines.push(`${productText} ${packStr}`);
       });
     });

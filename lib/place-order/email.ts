@@ -57,6 +57,27 @@ export type EmailOutput = {
 
 export const ORDER_TO = "surat.depot@akzonobel.com";
 
+/**
+ * Full product-name + base label for one email/order line. Shared by the
+ * desktop (this file) and mobile (/order page) builders so both stay
+ * byte-identical. Scoped special case: PROMISE PRIMER's stored product name
+ * overlaps its base ("PROMISE PRIMER" + "Promise Primer" → doubling), so we
+ * print the clean variant name only — reproducing the menu displayName
+ * ("Promise Primer" / "Promise 2in1 Primer" / "Promise Freedom 2in1 Primer").
+ * Every other product is the unchanged `${product ?? subProduct} ${base}`.
+ */
+export function emailLineLabel(
+  product: string | null,
+  baseColour: string | null,
+  subProduct: string,
+): string {
+  if (product === "PROMISE PRIMER" && baseColour) {
+    return baseColour.startsWith("Promise") ? baseColour : `Promise ${baseColour}`;
+  }
+  const name = product ?? subProduct;
+  return baseColour ? `${name} ${baseColour}` : name;
+}
+
 export function buildEmail(input: EmailInput): EmailOutput {
   const { customer, bills, shipTo, dispatch, callTarget, marker, crossDepot, notes } = input;
   const name = customer?.name ?? "";
@@ -116,10 +137,7 @@ export function buildEmail(input: EmailInput): EmailOutput {
         const units = line.packQtys[k] ?? 0;
         return `${label}*${units}`;
       }).join(", ");
-      const productName = line.product ?? line.subProduct;
-      const productText = line.baseColour
-        ? `${productName} ${line.baseColour}`
-        : productName;
+      const productText = emailLineLabel(line.product ?? null, line.baseColour, line.subProduct);
       lines.push(`${productText} ${packStr}`);
     }
   });
