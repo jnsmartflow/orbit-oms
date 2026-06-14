@@ -22,7 +22,7 @@ export default function SubProductTabBar({
 }: SubProductTabBarProps): React.JSX.Element {
   return (
     <div className="border-b border-gray-200 bg-gray-50/40 px-5">
-      <div className="flex items-end gap-1 -mb-px">
+      <div className="flex items-end gap-1 -mb-px overflow-x-auto">
         {tabs.map((tab, idx) => {
           const isActive = tab.name === activeSubProduct;
           return (
@@ -30,7 +30,7 @@ export default function SubProductTabBar({
               key={tab.name}
               type="button"
               onClick={() => onSelect(tab.name)}
-              className={`px-3 py-1.5 text-[12px] flex items-center transition-all duration-75 border-b-2 ${
+              className={`px-3 py-1.5 text-[12px] flex items-center whitespace-nowrap shrink-0 transition-all duration-75 border-b-2 ${
                 isActive
                   ? "text-gray-900 font-bold border-gray-900"
                   : "text-gray-500 border-transparent hover:text-gray-900"

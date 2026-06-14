@@ -40,6 +40,18 @@ export interface FamilyNavWithTabsProps {
   embedded?:            boolean;                                                          // when true, skip the rounded-xl wrapper + family header (used by SectionLanding)
 }
 
+// Desktop-only tab display overrides (UI render layer; the stored uiGroup,
+// searchTokens, displayName, and mobile /order are all untouched). Mapping two
+// uiGroups to the same string MERGES them into one tab (the Set below dedups);
+// mapping one to a shorter string RELABELS it. Applied to the tab grouping key.
+const TAB_DISPLAY: Record<string, string> = {
+  "WS Tile":          "Tile & Metallic",
+  "WS Metallic":      "Tile & Metallic",
+  "Protect Dustproof": "Dustproof",
+  "Protect Rainproof": "Rainproof",
+  "Protect Hi-Sheen":  "Hi-Sheen",
+};
+
 export default function FamilyNavWithTabs({
   familyName, headerLabel, section, products,
   activeSubProduct, onSubProductChange,
@@ -61,7 +73,8 @@ export default function FamilyNavWithTabs({
     const seen  = new Set<string>();
     const order: string[] = [];
     for (const p of products) {
-      const tabName = p.uiGroup ?? p.subProduct;
+      const key = p.uiGroup ?? p.subProduct;
+      const tabName = TAB_DISPLAY[key] ?? key;
       if (!seen.has(tabName)) {
         seen.add(tabName);
         order.push(tabName);
@@ -82,7 +95,7 @@ export default function FamilyNavWithTabs({
   const tabs = useMemo<SubProductTab[]>(() => {
     return subProductNames.map((name) => {
       const rowsInTab = products.filter(
-        (p) => (p.uiGroup ?? p.subProduct) === name,
+        (p) => (TAB_DISPLAY[p.uiGroup ?? p.subProduct] ?? (p.uiGroup ?? p.subProduct)) === name,
       );
       const skuCount = rowsInTab.reduce((acc, p) => acc + p.packs.length, 0);
       // In-cart dot: a cart line belongs to this tab if a catalog
@@ -101,7 +114,7 @@ export default function FamilyNavWithTabs({
   }, [subProductNames, products, cartLines]);
 
   const filteredProducts = useMemo(
-    () => products.filter((p) => (p.uiGroup ?? p.subProduct) === activeSubProduct),
+    () => products.filter((p) => (TAB_DISPLAY[p.uiGroup ?? p.subProduct] ?? (p.uiGroup ?? p.subProduct)) === activeSubProduct),
     [products, activeSubProduct],
   );
 
