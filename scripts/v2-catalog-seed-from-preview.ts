@@ -307,8 +307,8 @@ const CONFIRMED_SUBPRODUCT_MAP: Record<string, string> = {
   // REMAINING-5 (2026-06-14): identity join-keys so menu.product is non-null →
   // pack join is explicit and LUSTRE base aliases fire. Stock product ==
   // subProduct after the remaining5 CSV re-key (step 1), so the join is unchanged.
-  "TILE":                   "TILE",
-  "METALLIC":               "METALLIC",
+  "TILE":                   "WS TILE",
+  "METALLIC":               "WS METALLIC",
   "LUSTRE":                 "LUSTRE",
   "SMOOTHOVER":             "SMOOTHOVER",
   "FLOOR PLUS":             "FLOOR PLUS",
