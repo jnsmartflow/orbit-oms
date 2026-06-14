@@ -5,6 +5,7 @@ import type { Bill, CartLine, Customer } from "../types";
 import { formatPack, packStep, packToKg, packToLitres, parsePackKey, sortPacks } from "@/lib/place-order/pack";
 import type { EmailCallTarget, EmailDispatch, EmailMarker } from "@/lib/place-order/email";
 import { getBaseAliasDisplay } from "@/lib/place-order/base-aliases";
+import { emailLineLabel } from "@/lib/place-order/email";
 
 // Cart panel — right pane (340px) per v4 mockup. Renders ONLY the active
 // bill's lines, grouped by sub-product. Multi-bill workflow preserved
@@ -315,11 +316,16 @@ export default function CartPanel({
                     // baseColour=null fallback "Plain". CartLine
                     // already carries displayName + product + subProduct
                     // (populated at add-to-cart in place-order-page).
+                    // Use baseColour when it carries a real variant token, but
+                    // fall through on EMPTY string too (not just null) — Interior
+                    // WBC has baseColour "" which `??` wouldn't catch, leaving the
+                    // name blank ("· 1L"). For empty/null base, use the shared
+                    // email label (product ?? subProduct, with de-double) so the
+                    // cart line matches the email name ("INTERIOR WBC").
                     const baseLabel =
-                      line.baseColour
-                      ?? line.displayName
-                      ?? line.product
-                      ?? line.subProduct;
+                      line.baseColour && line.baseColour.trim()
+                        ? line.baseColour
+                        : emailLineLabel(line.product ?? null, line.baseColour, line.subProduct);
                     const baseAlias = getBaseAliasDisplay(line.product, line.baseColour);
                     return sortPacks(
                       Object.keys(line.packQtys).filter((p) => (line.packQtys[p] ?? 0) > 0),
