@@ -60,6 +60,10 @@ const KEYWORD_FAMILY: Record<string, string> = {
   "spray":           "SPRAY PAINT",
   "spray paint":     "SPRAY PAINT",
   "aerosol":         "SPRAY PAINT",
+  // M900 (2026-06-14) — folded into GLOSS as a 3rd tab; promote the GLOSS family
+  // (the M900 rows then rank via their "m900" searchTokens).
+  "m900":            "GLOSS",
+  "m900 gloss":      "GLOSS",
 };
 
 function normalizeQuery(query: string): string {

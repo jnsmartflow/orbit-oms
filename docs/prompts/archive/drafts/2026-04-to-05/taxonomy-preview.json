@@ -4,7 +4,7 @@
   "summary": {
     "totalLegacyTriples": 560,
     "totalLegacySkuCount": 1599,
-    "totalNewRows": 495,
+    "totalNewRows": 507,
     "crossListedExtraRows": 68,
     "suppressedPlainRows": 19,
     "skippedTriples": 82,
@@ -26,6 +26,18 @@
       { "family":"SPRAY PAINT","subProduct":"SPRAY PAINT","displayName":"Spray Paint - Bus Green","searchTokens":"spray,spray paint,aerosol,400ml,bus green","baseColour":"BUS GREEN","productType":"COLOUR","tinterType":null,"sortOrder":7011,"isActive":true,"skuCount":1 }
     ],
     "GLOSS": [
+      { "family":"GLOSS","subProduct":"M900 GLOSS","displayName":"M900 Gloss - Brilliant White","searchTokens":"m900,m900 gloss,brilliant white","baseColour":"BRILLIANT WHITE","productType":"BASE_VARIANT","tinterType":null,"sortOrder":860,"isActive":true,"skuCount":1 },
+      { "family":"GLOSS","subProduct":"M900 GLOSS","displayName":"M900 Gloss - 90 Base","searchTokens":"m900,m900 gloss,90 base","baseColour":"90 BASE","productType":"BASE_VARIANT","tinterType":null,"sortOrder":861,"isActive":true,"skuCount":1 },
+      { "family":"GLOSS","subProduct":"M900 GLOSS","displayName":"M900 Gloss - 92 Base","searchTokens":"m900,m900 gloss,92 base","baseColour":"92 BASE","productType":"BASE_VARIANT","tinterType":null,"sortOrder":862,"isActive":true,"skuCount":1 },
+      { "family":"GLOSS","subProduct":"M900 GLOSS","displayName":"M900 Gloss - 94 Base","searchTokens":"m900,m900 gloss,94 base","baseColour":"94 BASE","productType":"BASE_VARIANT","tinterType":null,"sortOrder":863,"isActive":true,"skuCount":1 },
+      { "family":"GLOSS","subProduct":"M900 GLOSS","displayName":"M900 Gloss - Black","searchTokens":"m900,m900 gloss,black","baseColour":"BLACK","productType":"COLOUR","tinterType":null,"sortOrder":864,"isActive":true,"skuCount":1 },
+      { "family":"GLOSS","subProduct":"M900 GLOSS","displayName":"M900 Gloss - Golden Yellow","searchTokens":"m900,m900 gloss,golden yellow","baseColour":"GOLDEN YELLOW","productType":"COLOUR","tinterType":null,"sortOrder":865,"isActive":true,"skuCount":1 },
+      { "family":"GLOSS","subProduct":"M900 GLOSS","displayName":"M900 Gloss - Golden Brown","searchTokens":"m900,m900 gloss,golden brown","baseColour":"GOLDEN BROWN","productType":"COLOUR","tinterType":null,"sortOrder":866,"isActive":true,"skuCount":1 },
+      { "family":"GLOSS","subProduct":"M900 GLOSS","displayName":"M900 Gloss - Dark Brown","searchTokens":"m900,m900 gloss,dark brown","baseColour":"DARK BROWN","productType":"COLOUR","tinterType":null,"sortOrder":867,"isActive":true,"skuCount":1 },
+      { "family":"GLOSS","subProduct":"M900 GLOSS","displayName":"M900 Gloss - Bus Green","searchTokens":"m900,m900 gloss,bus green","baseColour":"BUS GREEN","productType":"COLOUR","tinterType":null,"sortOrder":868,"isActive":true,"skuCount":1 },
+      { "family":"GLOSS","subProduct":"M900 GLOSS","displayName":"M900 Gloss - Smoke Grey","searchTokens":"m900,m900 gloss,smoke grey","baseColour":"SMOKE GREY","productType":"COLOUR","tinterType":null,"sortOrder":869,"isActive":true,"skuCount":1 },
+      { "family":"GLOSS","subProduct":"M900 GLOSS","displayName":"M900 Gloss - Phiroza Blue","searchTokens":"m900,m900 gloss,phiroza blue","baseColour":"PHIROZA BLUE","productType":"COLOUR","tinterType":null,"sortOrder":870,"isActive":true,"skuCount":1 },
+      { "family":"GLOSS","subProduct":"M900 GLOSS","displayName":"M900 Gloss - PO Red","searchTokens":"m900,m900 gloss,po red","baseColour":"PO RED","productType":"COLOUR","tinterType":null,"sortOrder":871,"isActive":true,"skuCount":1 },
       {
         "family": "GLOSS",
         "subProduct": "GLOSS",

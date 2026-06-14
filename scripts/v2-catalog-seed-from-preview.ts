@@ -51,7 +51,7 @@ const DRY_RUN      = process.env.DRY_RUN === "1";
 // Locked expectations from the May 6 preview run. If the JSON drifts from
 // these the script refuses to seed — better to fail loudly than to ship
 // surprise data into v2.
-const EXPECTED_TOTAL_NEW_ROWS    = 495;  // …; VT SPECIALTY net −4 2026-06-13; REMAINING-5 net −2 [TILE +1, LUSTRE −2 (drop BW-dup+YELLOW, +96), FLOOR PLUS −1 (drop BW)] 2026-06-14; SPRAY PAINT +11 2026-06-14
+const EXPECTED_TOTAL_NEW_ROWS    = 507;  // …; VT SPECIALTY net −4 2026-06-13; REMAINING-5 net −2 [TILE +1, LUSTRE −2 (drop BW-dup+YELLOW, +96), FLOOR PLUS −1 (drop BW)] 2026-06-14; SPRAY PAINT +11 2026-06-14; M900 GLOSS +12 2026-06-14
 const EXPECTED_WARNINGS          = 0;
 
 // ── PROMISE transform constants ────────────────────────────────────────
@@ -251,6 +251,10 @@ const CONFIRMED_SUBPRODUCT_MAP: Record<string, string> = {
   "PROTECT DUSTPROOF": "WS PROTECT DUSTPROOF",
   "HISHEEN":           "WS PROTECT HI-SHEEN",
   "PU STAINER":        "GVA",
+  // M900 GLOSS (2026-06-14): identity join-key so menu.product = "M900 GLOSS"
+  // joins the stock rows (re-keyed from legacy M900). Folded into family GLOSS
+  // as a flat 3rd tab; regular GLOSS rows (subProduct "GLOSS") stay product=null.
+  "M900 GLOSS":        "M900 GLOSS",
   // SPRAY PAINT (2026-06-14): identity join-key so menu.product = "SPRAY PAINT"
   // (non-null) joins the stock rows (re-keyed from legacy SR SPRAY PAINT) and
   // §7.8 can bake any alias tokens. Single product, colour variants.
@@ -909,7 +913,12 @@ async function main(): Promise<void> {
     // uiGroup assignment (subProduct UNCHANGED → pack join key preserved)
     // GLOSS: BASE/COLOUR split — GREEN BASE moves to COLOUR (locked 2026-06-02)
     // despite ending in "BASE", so it groups with the named colours.
-    if (r.family === "GLOSS")    { r.uiGroup = (glossBase(r.baseColour) && (r.baseColour ?? "").toUpperCase() !== "GREEN BASE") ? "BASE" : "COLOUR"; uiAssigned++; continue; }
+    // M900 GLOSS (2026-06-14) is a 3rd sub-product folded into GLOSS — one FLAT
+    // tab "M900" (no base/colour split); routed before the BASE/COLOUR split.
+    if (r.family === "GLOSS")    {
+      if (r.subProduct === "M900 GLOSS") { r.uiGroup = "M900"; uiAssigned++; continue; }
+      r.uiGroup = (glossBase(r.baseColour) && (r.baseColour ?? "").toUpperCase() !== "GREEN BASE") ? "BASE" : "COLOUR"; uiAssigned++; continue;
+    }
     // PU ENAMEL (2026-06-13): one flat tab "PU Enamel" (was a GLOSS-style
     // BASE/COLOUR split) so it forms a single tab when folded into tile 2.
     // subProduct stays "PU ENAMEL" (the stock pack-join key); product set via

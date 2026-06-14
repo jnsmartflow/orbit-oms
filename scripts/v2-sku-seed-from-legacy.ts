@@ -1628,7 +1628,7 @@ async function main(): Promise<void> {
     console.log(`  REMAINING-5 legacy NOT in CSV (HARD STOP if >0): ${remaining5NotInCsv.length}`);
 
     console.log("");
-    console.log(`  TOTAL stock rows after rebuild: ${deduped.length} (expect ${1658 + vtSpecialtyBuilt.length + remaining5Built.length} = 1658 [incl. SPRAY PAINT +11] + ${vtSpecialtyBuilt.length} VtSpecialty + ${remaining5Built.length} Remaining5)`);
+    console.log(`  TOTAL stock rows after rebuild: ${deduped.length} (expect ${1670 + vtSpecialtyBuilt.length + remaining5Built.length} = 1670 [incl. SPRAY PAINT +11, M900 GLOSS +12] + ${vtSpecialtyBuilt.length} VtSpecialty + ${remaining5Built.length} Remaining5)`);
 
     console.log("");
     console.log("DRY_RUN=1 — NO wipe, NO insert performed.");

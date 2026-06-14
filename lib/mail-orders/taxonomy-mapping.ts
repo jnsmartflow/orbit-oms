@@ -133,11 +133,12 @@ export const SUB_PRODUCT_ORDER: Record<string, string[]> = {
 const HIDDEN_BY_CATEGORY: Record<string, string> = {
   AUTO:          "Hidden family — AUTO (per planning doc §6.2)",
   DUCO:          "Hidden family — DUCO (per planning doc §6.2)",
-  M900:          "Hidden family — M900 (per planning doc §6.2)",
-  // SPRAY PAINT un-hidden 2026-06-14 — surfaced as its own visible search-only
-  // family. The 11 legacy "SR SPRAY PAINT" rows now flow through the SPRAY PAINT
-  // branch in mapLegacyToNew. (Live v1 parser reads legacy mo_sku_lookup
-  // directly and is unaffected; the legacy re-key is a separate DB task.)
+  // SPRAY PAINT un-hidden 2026-06-14 — own visible search-only family (11 legacy
+  // "SR SPRAY PAINT" rows flow through the SPRAY PAINT branch in mapLegacyToNew).
+  // M900 un-hidden 2026-06-14 — folded into GLOSS as a 3rd sub-product/tab
+  // ("M900 GLOSS"); the 12 legacy "M900" rows flow through the M900 branch.
+  // (Live v1 parser reads legacy mo_sku_lookup directly and is unaffected; the
+  // legacy re-keys are a separate DB task.)
   TOOLS:         "Hidden family — TOOLS (per planning doc §6.2)",
 };
 
@@ -477,6 +478,13 @@ export function mapLegacyToNew(legacy: LegacyKey): NewRow[] | null {
   // as `product`, so returning subProduct "SPRAY PAINT" re-keys it to the clean
   // family name. baseColour = the legacy colour (kept as-is). Search-only family.
   if (cat === "SPRAY PAINT") return [row("SPRAY PAINT", "SPRAY PAINT", bc)];
+
+  // ── M900 (2026-06-14) — un-hidden, folded into GLOSS as a 3rd sub-product.
+  // Legacy product "M900" (category "M900"); return family GLOSS + subProduct
+  // "M900 GLOSS" so the stock seed writes product "M900 GLOSS", category "GLOSS"
+  // (= family). baseColour = legacy. The menu §7.7 GLOSS branch routes this
+  // subProduct to a flat "M900" tab (no base/colour split). 20L only.
+  if (cat === "M900") return [row("GLOSS", "M900 GLOSS", bc)];
 
   // ── WOODCARE (Round 1) — pattern-based SADOLIN dispatch ──────────────
   //
