@@ -824,6 +824,24 @@ export function TintOperatorContent() {
     return null;
   }, [tiEntries, suggestDataByEntry]);
 
+  // New-site auto-form: when /suggest returns "no history at this site" for an
+  // entry still browsing (no pick yet), drop straight into the new-shade form —
+  // no empty list, no "Add shade" click. Guarded on mode==="browse" so it never
+  // re-flips after the operator navigates. Repeat sites are untouched.
+  useEffect(() => {
+    setTiEntries(prev => {
+      let changed = false;
+      const next = prev.map(e => {
+        if (e.mode !== "browse" || !e.skuCodeRaw) return e;
+        const data = suggestDataByEntry[e.id];
+        if (!data || !data.siteHistorySummary.isNewSite) return e;
+        changed = true;
+        return { ...e, mode: "newshade" as const };
+      });
+      return changed ? next : prev;
+    });
+  }, [suggestDataByEntry]);
+
   // ── TI form functions ─────────────────────────────────────────────────────
 
   function handleTinterTypeChange(type: "TINTER" | "ACOTONE") {
@@ -1016,11 +1034,14 @@ export function TintOperatorContent() {
     } : e));
   }
 
-  // "Back to list" / "Change" — drop the selection and return to browse.
+  // "Back to list" / "Change" — drop the selection and return to the entry's
+  // home view: the new-shade form on a new site (no list to go back to), else
+  // the browse list.
   function handleBackToList(entryId: string): void {
+    const isNew = suggestDataByEntry[entryId]?.siteHistorySummary?.isNewSite ?? false;
     setTiEntries(prev => prev.map(e => e.id === entryId ? {
       ...e,
-      mode: "browse",
+      mode: isNew ? "newshade" : "browse",
       selectedShadeName: null, samplingNo: null, shadeName: "",
       shadeValues: {}, showAllColumns: true,
     } : e));
@@ -1914,6 +1935,13 @@ export function TintOperatorContent() {
                   const browseLoading = isSearching
                     ? !!searchLoadingByEntry[entryId]
                     : !!suggestLoadingByEntry[entryId];
+                  // View routing (Part A). Search box shows in browse + newshade.
+                  // List shows in browse (always) or newshade while searching.
+                  // The new-shade form shows in newshade with no active search.
+                  const entryIsNewSite = suggestDataByEntry[entryId]?.siteHistorySummary?.isNewSite ?? false;
+                  const showList       = !!entry.skuCodeRaw && (entry.mode === "browse" || (entry.mode === "newshade" && isSearching));
+                  const showFormCard   = entry.mode === "confirm" || (entry.mode === "newshade" && !isSearching);
+                  const showBack       = entry.mode === "confirm" || (entry.mode === "newshade" && !entryIsNewSite);
 
                   return (
                     <div key={entryId} className="mb-4">
@@ -1963,30 +1991,51 @@ export function TintOperatorContent() {
                         </div>
                       )}
 
-                      {/* BROWSE — search-first flat suggestion list. Renders
-                          once a tinting line is picked. Empty query → this-site
-                          flatSuggestions; typed query → global search. */}
-                      {entry.mode === "browse" && entry.skuCodeRaw && (
+                      {/* SEARCH BOX — browse + newshade (not confirm). Lifted to
+                          the parent so it stays mounted as the view toggles
+                          form↔list (preserves focus). */}
+                      {entry.skuCodeRaw && entry.mode !== "confirm" && (
+                        <div className="flex items-center gap-2 mb-2">
+                          <div className="relative flex-1 min-w-0">
+                            <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+                            </svg>
+                            <input type="text" value={searchVal}
+                              onChange={e => handleSearchChange(entryId, e.target.value)}
+                              placeholder="Search any shade, sampling no or site — all sites"
+                              className="w-full h-[34px] pl-8 pr-2.5 text-[12px] border border-gray-200 rounded-md text-gray-900 placeholder:text-gray-300 focus:border-gray-900 focus:outline-none" />
+                          </div>
+                          {showList && (
+                            <button type="button" onClick={() => handleAddShade(entryId)}
+                              className="h-[34px] px-3 rounded-md border border-gray-200 bg-white text-gray-700 text-[12px] font-medium hover:bg-gray-50 transition-colors flex-shrink-0 whitespace-nowrap">
+                              + Add shade
+                            </button>
+                          )}
+                        </div>
+                      )}
+
+                      {/* LIST — this-site browse list OR active-search results */}
+                      {showList && (
                         <FlatSuggestionList
                           rows={browseRows}
                           isLoading={browseLoading}
-                          searchValue={searchVal}
-                          onSearchChange={(v) => handleSearchChange(entryId, v)}
+                          isSearching={isSearching}
                           onUse={(row) => handleUseSuggestion(entryId, row)}
-                          onAddShade={() => handleAddShade(entryId)}
                         />
                       )}
 
                       {/* CONFIRM / NEW-SHADE — collapsed selection + form */}
-                      {(entry.mode === "confirm" || entry.mode === "newshade") && (
+                      {showFormCard && (
                       <>
                       {/* Back / Change control */}
-                      <div className="mb-2">
-                        <button type="button" onClick={() => handleBackToList(entryId)}
-                          className="inline-flex items-center gap-1 text-[11px] font-medium text-gray-500 hover:text-gray-800 bg-transparent border-none cursor-pointer p-0">
-                          ← {entry.mode === "confirm" ? "Change / back to list" : "Back to list"}
-                        </button>
-                      </div>
+                      {showBack && (
+                        <div className="mb-2">
+                          <button type="button" onClick={() => handleBackToList(entryId)}
+                            className="inline-flex items-center gap-1 text-[11px] font-medium text-gray-500 hover:text-gray-800 bg-transparent border-none cursor-pointer p-0">
+                            ← {entry.mode === "confirm" ? "Change" : "Back to list"}
+                          </button>
+                        </div>
+                      )}
 
                       {/* New-shade: hand-typed shade name (new sampling on save) */}
                       {entry.mode === "newshade" && (
