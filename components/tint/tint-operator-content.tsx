@@ -1942,6 +1942,9 @@ export function TintOperatorContent() {
                   const showList       = !!entry.skuCodeRaw && (entry.mode === "browse" || (entry.mode === "newshade" && isSearching));
                   const showFormCard   = entry.mode === "confirm" || (entry.mode === "newshade" && !isSearching);
                   const showBack       = entry.mode === "confirm" || (entry.mode === "newshade" && !entryIsNewSite);
+                  // New-shade form view (newshade, not searching): the search box
+                  // becomes a labelled "reuse from another site" zone + divider.
+                  const isNewShadeForm = showFormCard && entry.mode === "newshade";
 
                   return (
                     <div key={entryId} className="mb-4">
@@ -1993,24 +1996,44 @@ export function TintOperatorContent() {
 
                       {/* SEARCH BOX — browse + newshade (not confirm). Lifted to
                           the parent so it stays mounted as the view toggles
-                          form↔list (preserves focus). */}
+                          form↔list (preserves focus — hence the keyed search-row,
+                          so the label appearing/disappearing never remounts it).
+                          On the new-shade form it becomes a labelled grey "reuse"
+                          zone; everywhere else it's the plain inline row. */}
                       {entry.skuCodeRaw && entry.mode !== "confirm" && (
-                        <div className="flex items-center gap-2 mb-2">
-                          <div className="relative flex-1 min-w-0">
-                            <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                              <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
-                            </svg>
-                            <input type="text" value={searchVal}
-                              onChange={e => handleSearchChange(entryId, e.target.value)}
-                              placeholder="Search any shade, sampling no or site — all sites"
-                              className="w-full h-[34px] pl-8 pr-2.5 text-[12px] border border-gray-200 rounded-md text-gray-900 placeholder:text-gray-300 focus:border-gray-900 focus:outline-none" />
-                          </div>
-                          {showList && (
-                            <button type="button" onClick={() => handleAddShade(entryId)}
-                              className="h-[34px] px-3 rounded-md border border-gray-200 bg-white text-gray-700 text-[12px] font-medium hover:bg-gray-50 transition-colors flex-shrink-0 whitespace-nowrap">
-                              + Add shade
-                            </button>
+                        <div className={isNewShadeForm ? "bg-gray-50 border border-gray-200 rounded-lg p-3 mb-2" : "mb-2"}>
+                          {isNewShadeForm && (
+                            <label key="reuse-lbl" className="block text-[11px] font-semibold tracking-wide text-gray-500 mb-1.5">
+                              REUSE A SHADE FROM ANOTHER SITE
+                            </label>
                           )}
+                          <div key="search-row" className="flex items-center gap-2">
+                            <div className="relative flex-1 min-w-0">
+                              <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+                              </svg>
+                              <input type="text" value={searchVal}
+                                onChange={e => handleSearchChange(entryId, e.target.value)}
+                                placeholder="Search any shade, sampling no or site — all sites"
+                                className="w-full h-[34px] pl-8 pr-2.5 text-[12px] border border-gray-200 rounded-md bg-white text-gray-900 placeholder:text-gray-300 focus:border-gray-900 focus:outline-none" />
+                            </div>
+                            {showList && (
+                              <button type="button" onClick={() => handleAddShade(entryId)}
+                                className="h-[34px] px-3 rounded-md border border-gray-200 bg-white text-gray-700 text-[12px] font-medium hover:bg-gray-50 transition-colors flex-shrink-0 whitespace-nowrap">
+                                + Add shade
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Divider — new-shade form only: separates the reuse search
+                          zone above from the create-new form below. */}
+                      {isNewShadeForm && (
+                        <div className="flex items-center gap-3 mb-3">
+                          <div className="flex-1 h-px bg-gray-200" />
+                          <span className="text-[11px] text-gray-400 flex-shrink-0">or enter a new shade</span>
+                          <div className="flex-1 h-px bg-gray-200" />
                         </div>
                       )}
 
