@@ -268,20 +268,20 @@ const SHADES = [
 ] as const;
 
 const ACOTONE_SHADES = [
-  { code: "YE2", bg: "#fef9c3", border: "#eab308", text: "#713f12" },
-  { code: "YE1", bg: "#fef3c7", border: "#f59e0b", text: "#92400e" },
-  { code: "XY1", bg: "#fde68a", border: "#d97706", text: "#78350f" },
-  { code: "XR1", bg: "#ffedd5", border: "#f97316", text: "#7c2d12" },
   { code: "WH1", bg: "#f9fafb", border: "#9ca3af", text: "#374151" },
-  { code: "RE2", bg: "#fce7f3", border: "#ec4899", text: "#831843" },
-  { code: "RE1", bg: "#fee2e2", border: "#ef4444", text: "#7f1d1d" },
-  { code: "OR1", bg: "#fff7ed", border: "#fb923c", text: "#9a3412" },
-  { code: "NO2", bg: "#f1f5f9", border: "#94a3b8", text: "#334155" },
   { code: "NO1", bg: "#e2e8f0", border: "#64748b", text: "#1e293b" },
+  { code: "NO2", bg: "#f1f5f9", border: "#94a3b8", text: "#334155" },
+  { code: "YE1", bg: "#fef3c7", border: "#f59e0b", text: "#92400e" },
+  { code: "YE2", bg: "#fef9c3", border: "#eab308", text: "#713f12" },
+  { code: "XY1", bg: "#fde68a", border: "#d97706", text: "#78350f" },
+  { code: "RE1", bg: "#fee2e2", border: "#ef4444", text: "#7f1d1d" },
+  { code: "RE2", bg: "#fce7f3", border: "#ec4899", text: "#831843" },
+  { code: "XR1", bg: "#ffedd5", border: "#f97316", text: "#7c2d12" },
   { code: "MA1", bg: "#ede9fe", border: "#8b5cf6", text: "#4c1d95" },
+  { code: "OR1", bg: "#fff7ed", border: "#fb923c", text: "#9a3412" },
   { code: "GR1", bg: "#d1fae5", border: "#10b981", text: "#065f46" },
-  { code: "BU2", bg: "#dbeafe", border: "#3b82f6", text: "#1e3a8a" },
   { code: "BU1", bg: "#e0e7ff", border: "#6366f1", text: "#312e81" },
+  { code: "BU2", bg: "#dbeafe", border: "#3b82f6", text: "#1e3a8a" },
 ] as const;
 
 // TINTER_SHADE_COLORS and ACOTONE_SHADE_COLORS now live in
@@ -512,7 +512,7 @@ export function TintOperatorContent() {
       const rawB = resB.ok ? (await resB.json()) as { entries: RawEntry[] } : null;
 
       const TINTER_COLS  = ["YOX","LFY","GRN","TBL","WHT","MAG","FFR","BLK","OXR","HEY","HER","COB","COG"] as const;
-      const ACOTONE_COLS = ["YE2","YE1","XY1","XR1","WH1","RE2","RE1","OR1","NO2","NO1","MA1","GR1","BU2","BU1"] as const;
+      const ACOTONE_COLS = ["WH1","NO1","NO2","YE1","YE2","XY1","RE1","RE2","XR1","MA1","OR1","GR1","BU1","BU2"] as const;
 
       const map = new Map<number, TIEntryRecord>();
 

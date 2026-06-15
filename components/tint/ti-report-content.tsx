@@ -48,7 +48,7 @@ interface Operator {
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const TINTER_SHADES  = ["YOX","LFY","GRN","TBL","WHT","MAG","FFR","BLK","OXR","HEY","HER","COB","COG"] as const;
-const ACOTONE_SHADES = ["YE2","YE1","XY1","XR1","WH1","RE2","RE1","OR1","NO2","NO1","MA1","GR1","BU2","BU1"] as const;
+const ACOTONE_SHADES = ["WH1","NO1","NO2","YE1","YE2","XY1","RE1","RE2","XR1","MA1","OR1","GR1","BU1","BU2"] as const;
 const KG_FACTOR      = 2162;
 const MONTH_NAMES    = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const DAY_NAMES      = ["Su","Mo","Tu","We","Th","Fr","Sa"];
