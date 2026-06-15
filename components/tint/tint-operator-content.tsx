@@ -2004,8 +2004,8 @@ export function TintOperatorContent() {
                         <div className={isNewShadeForm ? "bg-gray-50 border border-gray-200 rounded-lg p-3 mb-2" : "mb-2"}>
                           {/* Heading above search — shown on both repeat-site
                               browse and the new-site reuse zone, matching styles. */}
-                          <label key="reuse-lbl" className="block text-[11px] font-semibold tracking-wide text-red-600 mb-1.5">
-                            REUSE A SHADE FROM ANOTHER SITE
+                          <label key="reuse-lbl" className="block text-[11px] font-semibold tracking-wide text-gray-900 mb-1.5">
+                            REUSE A SHADE — ANY SITE
                           </label>
                           <div key="search-row" className="flex items-center gap-2">
                             <div className="relative flex-1 min-w-0">
