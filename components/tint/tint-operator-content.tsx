@@ -11,15 +11,14 @@ import { SkuDisplayToggle } from "@/components/tint/sku-display-toggle";
 // Phase 4 — Sampling Library suggestion card replaces the legacy shade_master
 // suggestion strip + "All shades…" popover. Step 11 retired the save-as-shade
 // toggle; /suggest + /tinter-issue now handle the full Library write path.
-import { SuggestionCard } from "@/components/tint/operator/suggestion-card";
+import { FlatSuggestionList } from "@/components/tint/operator/flat-suggestion-list";
 import {
   SaveSamplingPopup,
   type SaveSamplingResult,
 } from "@/components/tint/operator/save-sampling-popup";
 import type {
   SuggestResponse,
-  SuggestExactMatch,
-  SuggestReferenceItem,
+  SuggestFlatRow,
 } from "@/app/api/sampling-library/_lib/suggest";
 import { Button } from "@/components/ui/button";
 import { TINTER_SHADE_COLORS, ACOTONE_SHADE_COLORS } from "@/lib/tint/shade-colors";
@@ -165,6 +164,9 @@ interface TIFormEntry {
   // saved (allocated samplingNo from the TI POST response). null on the
   // legacy save-as-shade path until step 11 retires that.
   samplingNo:          string | null;
+  // Search-first flow view mode (per entry): browse the flat list, confirm a
+  // picked shade, or enter a brand-new shade. Default browse.
+  mode:                "browse" | "confirm" | "newshade";
 }
 
 interface TIEntryRecord {
@@ -325,6 +327,7 @@ function defaultTIFormEntry(): TIFormEntry {
     flashActive:         false,
     selectedShadeName:   null,
     showAllColumns:      true,
+    mode:                "browse",
   };
 }
 
@@ -433,6 +436,14 @@ export function TintOperatorContent() {
   // Per-entry version counter so stale fetches (SKU changed mid-fetch) get
   // discarded on response. Increment on every kick-off.
   const suggestVersionRef = useRef<Record<string, number>>({});
+  // Search-first flow — per-entry global-search state (operator-search endpoint).
+  // searchResultsByEntry[id] === null means "no active search" (browse falls
+  // back to flatSuggestions); [] means "searched, no hits".
+  const [searchByEntry,        setSearchByEntry]        = useState<Record<string, string>>({});
+  const [searchResultsByEntry, setSearchResultsByEntry] = useState<Record<string, SuggestFlatRow[] | null>>({});
+  const [searchLoadingByEntry, setSearchLoadingByEntry] = useState<Record<string, boolean>>({});
+  const searchVersionRef  = useRef<Record<string, number>>({});
+  const searchDebounceRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const [tiActionLoading,    setTiActionLoading]    = useState(false);
   const [tiSuccessToast,      setTiSuccessToast]      = useState(false);
   const [tiUpdateToast,       setTiUpdateToast]       = useState(false);
@@ -762,6 +773,10 @@ export function TintOperatorContent() {
     setSuggestDataByEntry({});
     setSuggestLoadingByEntry({});
     suggestVersionRef.current = {};
+    setSearchByEntry({});
+    setSearchResultsByEntry({});
+    setSearchLoadingByEntry({});
+    searchVersionRef.current = {};
     setTiSuccessToast(false);
     setTiUpdateToast(false);
     setSamplingPopup(null);
@@ -819,7 +834,14 @@ export function TintOperatorContent() {
       selectedShadeName: null, showAllColumns: true,
       samplingNo: null,
       shadeName: "",
+      mode: "browse",
     })));
+    // Manual toggle re-scopes the global search to the new type — clear active
+    // search so browse falls back to the (refetched) this-site flat list.
+    setSearchByEntry({});
+    setSearchResultsByEntry({});
+    setSearchLoadingByEntry({});
+    searchVersionRef.current = {};
     // Phase 4 fix — a manual toggle used to wipe the suggestion list to {} with
     // no refetch, leaving the picker stuck on its skeleton. Refetch for every
     // entry that has a SKU + pack selected so the list refills. The suggest
@@ -885,6 +907,9 @@ export function TintOperatorContent() {
       showAllColumns:     existing ? false : true,
       samplingNo:         existing ? existing.samplingNo : null,
       shadeName:          existing ? (existing.shadeName ?? "") : "",
+      // Existing TI → land in confirm (show applied bar + values); fresh line →
+      // browse the search-first list.
+      mode:               existing ? "confirm" : "browse",
     }));
 
     if (existing) {
@@ -902,8 +927,11 @@ export function TintOperatorContent() {
     fetchSuggestForEntry(entryId, line.skuCodeRaw, line.packCode, selectedJob.siteId);
   }
 
-  // ── Phase 4: apply a SuggestionCard pick to an entry ─────────────────────
-  function applySuggestionToEntry(entryId: string, card: SuggestExactMatch | SuggestReferenceItem): void {
+  // ── Phase 4: apply a suggestion/search pick to an entry ──────────────────
+  // Accepts SuggestFlatRow (this-site flat list AND cross-site search rows share
+  // this shape). Type-aware: columns come from the CARD's own tinterType, never
+  // the component toggle.
+  function applySuggestionToEntry(entryId: string, card: SuggestFlatRow): void {
     // Map pigments using the CARD's own recipe type — NOT the component toggle.
     // An Acotone card clicked while the toggle still reads TINTER must still
     // copy its 14 Acotone columns (was the populate-fails bug).
@@ -929,6 +957,73 @@ export function TintOperatorContent() {
     setTimeout(() => {
       setTiEntries(prev => prev.map(e => e.id !== entryId ? e : { ...e, flashActive: false }));
     }, 1500);
+  }
+
+  // ── Search-first flow handlers ───────────────────────────────────────────
+
+  // Debounced global search (operator-search). Version-guarded so a stale
+  // response can't overwrite a newer query. type = current toggle.
+  function fetchSearchForEntry(entryId: string, q: string): void {
+    const myVersion = (searchVersionRef.current[entryId] ?? 0) + 1;
+    searchVersionRef.current[entryId] = myVersion;
+    setSearchLoadingByEntry(prev => ({ ...prev, [entryId]: true }));
+    const url = `/api/sampling-library/operator-search?q=${encodeURIComponent(q)}&type=${tinterType}`;
+    fetch(url)
+      .then(r => r.ok ? r.json() as Promise<{ rows: SuggestFlatRow[] }> : null)
+      .then(data => {
+        if (searchVersionRef.current[entryId] !== myVersion) return; // stale
+        setSearchResultsByEntry(prev => ({ ...prev, [entryId]: data?.rows ?? [] }));
+      })
+      .catch(() => {
+        if (searchVersionRef.current[entryId] !== myVersion) return;
+        setSearchResultsByEntry(prev => ({ ...prev, [entryId]: [] }));
+      })
+      .finally(() => {
+        if (searchVersionRef.current[entryId] !== myVersion) return;
+        setSearchLoadingByEntry(prev => ({ ...prev, [entryId]: false }));
+      });
+  }
+
+  function handleSearchChange(entryId: string, value: string): void {
+    setSearchByEntry(prev => ({ ...prev, [entryId]: value }));
+    const existing = searchDebounceRef.current[entryId];
+    if (existing) clearTimeout(existing);
+    const q = value.trim();
+    if (q === "") {
+      // Empty query → browse falls back to this-site flatSuggestions. Bump the
+      // version so any in-flight search response is discarded.
+      searchVersionRef.current[entryId] = (searchVersionRef.current[entryId] ?? 0) + 1;
+      setSearchResultsByEntry(prev => ({ ...prev, [entryId]: null }));
+      setSearchLoadingByEntry(prev => ({ ...prev, [entryId]: false }));
+      return;
+    }
+    searchDebounceRef.current[entryId] = setTimeout(() => fetchSearchForEntry(entryId, q), 300);
+  }
+
+  // "Use" — apply the row, then collapse the list to the confirm view.
+  function handleUseSuggestion(entryId: string, row: SuggestFlatRow): void {
+    applySuggestionToEntry(entryId, row);
+    setTiEntries(prev => prev.map(e => e.id === entryId ? { ...e, mode: "confirm" } : e));
+  }
+
+  // "Add shade" — switch to the new-shade form (fresh pigment grid).
+  function handleAddShade(entryId: string): void {
+    setTiEntries(prev => prev.map(e => e.id === entryId ? {
+      ...e,
+      mode: "newshade",
+      selectedShadeName: null, samplingNo: null, shadeName: "",
+      shadeValues: {}, showAllColumns: true,
+    } : e));
+  }
+
+  // "Back to list" / "Change" — drop the selection and return to browse.
+  function handleBackToList(entryId: string): void {
+    setTiEntries(prev => prev.map(e => e.id === entryId ? {
+      ...e,
+      mode: "browse",
+      selectedShadeName: null, samplingNo: null, shadeName: "",
+      shadeValues: {}, showAllColumns: true,
+    } : e));
   }
 
   // Phase 4 (step 11): unconditional Sampling Library write — payload always
@@ -1809,6 +1904,16 @@ export function TintOperatorContent() {
                   const shadeColumns = tinterType === "TINTER" ? SHADES : ACOTONE_SHADES;
                   const flash = entry.flashActive;
                   const entryId = entry.id;
+                  // Browse-mode data: typed query → global search results;
+                  // empty query → this-site flatSuggestions (exact pinned).
+                  const searchVal     = searchByEntry[entryId] ?? "";
+                  const isSearching   = searchVal.trim() !== "";
+                  const browseRows    = isSearching
+                    ? (searchResultsByEntry[entryId] ?? [])
+                    : (suggestDataByEntry[entryId]?.flatSuggestions ?? []);
+                  const browseLoading = isSearching
+                    ? !!searchLoadingByEntry[entryId]
+                    : !!suggestLoadingByEntry[entryId];
 
                   return (
                     <div key={entryId} className="mb-4">
@@ -1858,38 +1963,43 @@ export function TintOperatorContent() {
                         </div>
                       )}
 
-                      {/* Phase 4 — Sampling Library suggestion card. Renders
-                          only when an SKU + pack are picked AND siteId is
-                          known. SuggestionCard handles its own loading +
-                          empty states. Picker stays visible after a
-                          samplingNo is bound — the binding shows in the
-                          Applied shade bar pill below, not by collapsing
-                          the picker (step 13c pivot). */}
-                      {entry.skuCodeRaw && entry.packCode && selectedJob?.siteId != null && (
-                        <div className="mb-3">
-                          <SuggestionCard
-                            data={suggestDataByEntry[entryId] ?? null}
-                            isLoading={!!suggestLoadingByEntry[entryId]}
-                            onApplyRecipe={(card) => applySuggestionToEntry(entryId, card)}
-                            siteName={selectedJob?.customerName}
-                          />
-                        </div>
+                      {/* BROWSE — search-first flat suggestion list. Renders
+                          once a tinting line is picked. Empty query → this-site
+                          flatSuggestions; typed query → global search. */}
+                      {entry.mode === "browse" && entry.skuCodeRaw && (
+                        <FlatSuggestionList
+                          rows={browseRows}
+                          isLoading={browseLoading}
+                          searchValue={searchVal}
+                          onSearchChange={(v) => handleSearchChange(entryId, v)}
+                          onUse={(row) => handleUseSuggestion(entryId, row)}
+                          onAddShade={() => handleAddShade(entryId)}
+                        />
                       )}
 
-                      {/* Phase 4 (step 11) — always-visible shade name input.
-                          Auto-fills when operator clicks a suggestion above;
-                          hand-typed otherwise (new sampling on save). */}
-                      <div className="mb-3 px-3.5 py-2 bg-white border border-gray-200 rounded-lg flex items-center gap-2">
-                        <label className="text-[9.5px] font-bold uppercase tracking-[.4px] text-gray-400 flex-shrink-0">Shade name</label>
-                        <input type="text" placeholder="e.g. Ivory White" value={entry.shadeName}
-                          onChange={e => setTiEntries(prev => prev.map(en => en.id === entryId ? { ...en, shadeName: e.target.value } : en))}
-                          className="flex-1 h-[32px] border rounded-md text-[12px] px-2.5 font-medium text-gray-900 border-gray-200 focus:border-gray-900 focus:outline-none" />
-                        {!entry.samplingNo && (
-                          <span className="text-[10px] text-gray-400 italic flex-shrink-0">
-                            (auto-fills when you pick a suggestion)
-                          </span>
-                        )}
+                      {/* CONFIRM / NEW-SHADE — collapsed selection + form */}
+                      {(entry.mode === "confirm" || entry.mode === "newshade") && (
+                      <>
+                      {/* Back / Change control */}
+                      <div className="mb-2">
+                        <button type="button" onClick={() => handleBackToList(entryId)}
+                          className="inline-flex items-center gap-1 text-[11px] font-medium text-gray-500 hover:text-gray-800 bg-transparent border-none cursor-pointer p-0">
+                          ← {entry.mode === "confirm" ? "Change / back to list" : "Back to list"}
+                        </button>
                       </div>
+
+                      {/* New-shade: hand-typed shade name (new sampling on save) */}
+                      {entry.mode === "newshade" && (
+                        <div className="mb-3 px-3.5 py-2 bg-white border border-gray-200 rounded-lg flex items-center gap-2">
+                          <label className="text-[9.5px] font-bold uppercase tracking-[.4px] text-gray-400 flex-shrink-0">Shade name</label>
+                          <input type="text" placeholder="e.g. Ivory White" value={entry.shadeName}
+                            onChange={e => setTiEntries(prev => prev.map(en => en.id === entryId ? { ...en, shadeName: e.target.value } : en))}
+                            className="flex-1 h-[32px] border rounded-md text-[12px] px-2.5 font-medium text-gray-900 border-gray-200 focus:border-gray-900 focus:outline-none" />
+                          <span className="text-[10px] text-gray-400 italic flex-shrink-0">
+                            (new shade — saves a new sampling no)
+                          </span>
+                        </div>
+                      )}
 
                       {/* Form card */}
                       <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
@@ -1913,7 +2023,7 @@ export function TintOperatorContent() {
                               {entry.selectedShadeName}
                             </span>
                             <button type="button"
-                              onClick={() => setTiEntries(prev => prev.map(en => en.id === entryId ? { ...en, selectedShadeName: null, samplingNo: null, shadeName: "", shadeValues: {}, showAllColumns: true } : en))}
+                              onClick={() => handleBackToList(entryId)}
                               className="text-[10px] font-bold text-red-600 bg-transparent border-none cursor-pointer">
                               Clear ×
                             </button>
@@ -1992,6 +2102,8 @@ export function TintOperatorContent() {
                           })()}
                         </div>
                       </div>
+                      </>
+                      )}
                     </div>
                   );
                 })}
