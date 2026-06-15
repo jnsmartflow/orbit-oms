@@ -45,9 +45,40 @@ export interface SuggestSiteSummary {
   isNewSite:           boolean;
 }
 
+// ── Phase-3 flat list (additive) ─────────────────────────────────────────────
+// One row per sampling tinted at THIS site, uncapped. Mirrors the existing card
+// shape (so applySuggestionToEntry consumes it unchanged) plus exact-match flag
+// and cross-site reuse info. The current UI still reads exactMatches +
+// referenceList; this is consumed by the new search-first picker later.
+
+export interface SuggestOtherSite {
+  siteName: string;
+  lastUsed: string; // ISO
+}
+
+export interface SuggestFlatRow {
+  samplingNo:           string;
+  shadeName:            string;
+  tinterType:           TinterType;
+  recipeId:             number;
+  skuCode:              string;
+  packCode:             PackCode | null;
+  pigments:             Record<string, number>;
+  activePigments:       ActivePigment[];
+  usageCountAtThisSite: number;
+  totalUsageCount:      number;
+  lastUsedAt:           string;
+  isPrimary:            boolean;
+  // flat-list extras
+  isExactMatch:         boolean;
+  primarySiteName:      string;
+  otherSites:           SuggestOtherSite[];
+}
+
 export interface SuggestResponse {
   exactMatches:       SuggestExactMatch[];
   referenceList:      SuggestReferenceItem[];
+  flatSuggestions:    SuggestFlatRow[];
   siteHistorySummary: SuggestSiteSummary;
 }
 
@@ -263,9 +294,115 @@ export async function buildSuggestPayload(
     isNewSite:           totalTIs === 0,
   };
 
+  // 6) Flat suggestion list (additive — does not touch exactMatches /
+  //    referenceList above). One row per sampling at THIS site, uncapped,
+  //    exact match pinned + flagged, with cross-site reuse info attached.
+  //    All queries sequential (CORE §3 — no $transaction).
+
+  // 6a) This site's display name (primarySiteName on every flat row).
+  const currentSite = await prisma.delivery_point_master.findUnique({
+    where:  { id: siteId },
+    select: { customerName: true },
+  });
+  const primarySiteName = currentSite?.customerName ?? "";
+
+  // 6b) Other sites per sampling: group usage_log across ALL sites by
+  //     (samplingNo, site), excluding the current site, most-recent first.
+  //     `NOT: { siteId }` yields `siteId <> current OR siteId IS NULL`, so
+  //     other-site rows with a null FK are kept and current-site rows dropped.
+  const samplingNos = Array.from(bySamplingNo.keys());
+  const otherSitesBySampling = new Map<string, SuggestOtherSite[]>();
+  if (samplingNos.length > 0) {
+    const crossLogs = await prisma.sampling_usage_log.findMany({
+      where:  { samplingNo: { in: samplingNos }, NOT: { siteId } },
+      select: { samplingNo: true, siteId: true, siteNameRaw: true, usageDate: true },
+    });
+
+    // Resolve non-null other-site FKs to current master names.
+    const otherSiteIds = Array.from(
+      new Set(crossLogs.map((r) => r.siteId).filter((x): x is number => x != null)),
+    );
+    const siteNameMap = new Map<number, string>();
+    if (otherSiteIds.length > 0) {
+      const dpms = await prisma.delivery_point_master.findMany({
+        where:  { id: { in: otherSiteIds } },
+        select: { id: true, customerName: true },
+      });
+      for (const d of dpms) siteNameMap.set(d.id, d.customerName);
+    }
+
+    // Group by (samplingNo, siteKey); track max usageDate per site.
+    const grouped = new Map<string, Map<string, { siteName: string; lastUsed: Date | null }>>();
+    for (const r of crossLogs) {
+      const name = r.siteId != null
+        ? (siteNameMap.get(r.siteId) ?? r.siteNameRaw ?? "")
+        : (r.siteNameRaw ?? "");
+      if (!name) continue; // no displayable name — skip
+      const siteKey = r.siteId != null ? `id:${r.siteId}` : `raw:${name.toLowerCase()}`;
+      let perSampling = grouped.get(r.samplingNo);
+      if (!perSampling) { perSampling = new Map(); grouped.set(r.samplingNo, perSampling); }
+      let entry = perSampling.get(siteKey);
+      if (!entry) { entry = { siteName: name, lastUsed: null }; perSampling.set(siteKey, entry); }
+      if (r.usageDate && (!entry.lastUsed || r.usageDate > entry.lastUsed)) entry.lastUsed = r.usageDate;
+    }
+    for (const [sNo, perSampling] of Array.from(grouped.entries())) {
+      const arr: SuggestOtherSite[] = Array.from(perSampling.values())
+        .map((e) => ({ siteName: e.siteName, lastUsed: (e.lastUsed ?? new Date(0)).toISOString() }))
+        .sort((a, b) => b.lastUsed.localeCompare(a.lastUsed));
+      otherSitesBySampling.set(sNo, arr);
+    }
+  }
+
+  // 6c) Build one flat row per sampling. Prefer the exact (skuCode + packCode)
+  //     variant as the representative + flag it; otherwise the most-used /
+  //     most-recent variant (same rep logic as the reference list).
+  const flatSuggestions: SuggestFlatRow[] = [];
+  for (const acc of Array.from(bySamplingNo.values())) {
+    const variants = Array.from(acc.variants.values());
+    if (variants.length === 0) continue;
+    const exactVariant = variants.find(
+      (v) => v.skuCode === skuCode && v.packCode === packCode,
+    );
+    const rep = exactVariant ?? variants.slice().sort((a, b) => {
+      if (b.logCountForVariant !== a.logCountForVariant) return b.logCountForVariant - a.logCountForVariant;
+      const at = a.lastUsedAt?.getTime() ?? 0;
+      const bt = b.lastUsedAt?.getTime() ?? 0;
+      return bt - at;
+    })[0];
+
+    const { pigments, activePigments } = buildPigmentsAndActive(rep.pigmentRow);
+    flatSuggestions.push({
+      samplingNo:           acc.samplingNo,
+      shadeName:            acc.shadeName,
+      tinterType:           acc.tinterType,
+      recipeId:             rep.recipeId,
+      skuCode:              rep.skuCode,
+      packCode:             rep.packCode,
+      pigments,
+      activePigments,
+      usageCountAtThisSite: acc.usageCountAtThisSite,
+      totalUsageCount:      rep.totalUsageCount,
+      lastUsedAt:           (rep.lastUsedAt ?? acc.lastUsedAt ?? new Date(0)).toISOString(),
+      isPrimary:            rep.isPrimary,
+      isExactMatch:         exactVariant !== undefined,
+      primarySiteName,
+      otherSites:           otherSitesBySampling.get(acc.samplingNo) ?? [],
+    });
+  }
+
+  // Exact pinned to top, then most-recent first, usage count breaks date ties.
+  // No cap.
+  flatSuggestions.sort((a, b) => {
+    if (a.isExactMatch !== b.isExactMatch) return a.isExactMatch ? -1 : 1;
+    const dateCmp = b.lastUsedAt.localeCompare(a.lastUsedAt);
+    if (dateCmp !== 0) return dateCmp;
+    return b.usageCountAtThisSite - a.usageCountAtThisSite;
+  });
+
   return {
     exactMatches:  exactCapped,
     referenceList: referenceCapped,
+    flatSuggestions,
     siteHistorySummary,
   };
 }
