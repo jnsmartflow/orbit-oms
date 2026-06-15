@@ -143,7 +143,8 @@ const HIDDEN_BY_CATEGORY: Record<string, string> = {
 };
 
 const SKIPPED_PAIRS: Array<[string, string, string]> = [
-  ["DULUX",       "5IN1",                    "Hidden — DULUX/5IN1 (planning doc §6.2)"],
+  // DULUX/5IN1 un-hidden 2026-06-15 — folded into GLOSS as a 4th flat tab
+  // ("5IN1 GLOSS") via the prod==="5IN1" sub-case in the DULUX branch below.
   ["DULUX",       "SILK FINISH",             "Skipped orphan — single-SKU low volume"],
   ["DULUX",       "IAE PROJECT",             "Skipped orphan — single-SKU low volume"],
   ["DUWEL",       "DUWEL ENAMEL",            "Skipped orphan — single-SKU, no good fit"],
@@ -584,6 +585,11 @@ export function mapLegacyToNew(legacy: LegacyKey): NewRow[] | null {
   // SUPERCLEAN / SMOOTHOVER / DISTEMPER / PRIMER. PU ENAMEL folds into GLOSS.
   if (cat === "DULUX") {
     if (prod === "GLOSS")        return [row("GLOSS", "GLOSS", bc)];
+    // 5IN1 (2026-06-15) — un-hidden, folded into GLOSS as a 4th flat sub-product.
+    // Stock writes product "5IN1 GLOSS", category "GLOSS" (= family); legacy base
+    // kept. The WHITE BASE→90 BASE re-key is per-material in sku-name-overrides.json
+    // (mapLegacyToNew has no material/description access to split WHITE vs WHITE BASE).
+    if (prod === "5IN1")         return [row("GLOSS", "5IN1 GLOSS", bc)];
     if (prod === "LUSTRE")       return [row("LUSTRE", "LUSTRE", bc)];
     if (prod === "SATIN STAY BRIGHT") return [row("SATIN", "SATIN STAY BRIGHT", bc)];
     if (prod === "SUPER SATIN")  return [row("SATIN", "SUPER SATIN", bc)];

@@ -73,6 +73,15 @@ export const BASE_ALIASES: Record<string, Record<string, BaseAlias>> = {
     "92 BASE": { display: "Intermediate",   search: ["intermediate", "intermediate base"] },
     "94 BASE": { display: "Accent",         search: ["accent", "accent base"] },
   },
+  // 5IN1 Gloss (2026-06-15) — folded into GLOSS as a flat 4th tab. Tint bases
+  // 90/92/94 carry friendly aliases; 93 BASE + BRILLIANT WHITE + named colours
+  // (Black/Brown/Cherry/Golden Brown/Phiroza) get none. Product join-key set via
+  // CONFIRMED_SUBPRODUCT_MAP so these render + bake into tokens (§7.8).
+  "5IN1 GLOSS": {
+    "90 BASE": { display: "White",          search: ["white", "white base"] },
+    "92 BASE": { display: "Intermediate",   search: ["intermediate", "intermediate base"] },
+    "94 BASE": { display: "Accent",         search: ["accent", "accent base"] },
+  },
   // Satin (oil + WB share the same tint bases). Product join-key set in the
   // catalog seed's CONFIRMED_SUBPRODUCT_MAP so these render + bake into tokens.
   "SUPER SATIN": {

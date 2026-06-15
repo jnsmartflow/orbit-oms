@@ -51,7 +51,7 @@ const DRY_RUN      = process.env.DRY_RUN === "1";
 // Locked expectations from the May 6 preview run. If the JSON drifts from
 // these the script refuses to seed — better to fail loudly than to ship
 // surprise data into v2.
-const EXPECTED_TOTAL_NEW_ROWS    = 507;  // …; VT SPECIALTY net −4 2026-06-13; REMAINING-5 net −2 [TILE +1, LUSTRE −2 (drop BW-dup+YELLOW, +96), FLOOR PLUS −1 (drop BW)] 2026-06-14; SPRAY PAINT +11 2026-06-14; M900 GLOSS +12 2026-06-14
+const EXPECTED_TOTAL_NEW_ROWS    = 517;  // …; VT SPECIALTY net −4 2026-06-13; REMAINING-5 net −2 [TILE +1, LUSTRE −2 (drop BW-dup+YELLOW, +96), FLOOR PLUS −1 (drop BW)] 2026-06-14; SPRAY PAINT +11 2026-06-14; M900 GLOSS +12 2026-06-14; 5IN1 GLOSS +10 2026-06-15
 const EXPECTED_WARNINGS          = 0;
 
 // ── PROMISE transform constants ────────────────────────────────────────
@@ -251,6 +251,11 @@ const CONFIRMED_SUBPRODUCT_MAP: Record<string, string> = {
   "PROTECT DUSTPROOF": "WS PROTECT DUSTPROOF",
   "HISHEEN":           "WS PROTECT HI-SHEEN",
   "PU STAINER":        "GVA",
+  // 5IN1 GLOSS (2026-06-15): identity join-key so menu.product = "5IN1 GLOSS"
+  // joins the stock rows (mapped from legacy DULUX/5IN1 + 2 Phiroza injects).
+  // Folded into family GLOSS as a flat 4th tab. Non-null product → base aliases
+  // (90→White etc.) render + §7.8 bakes their search words.
+  "5IN1 GLOSS":        "5IN1 GLOSS",
   // M900 GLOSS (2026-06-14): identity join-key so menu.product = "M900 GLOSS"
   // joins the stock rows (re-keyed from legacy M900). Folded into family GLOSS
   // as a flat 3rd tab; regular GLOSS rows (subProduct "GLOSS") stay product=null.
@@ -915,8 +920,10 @@ async function main(): Promise<void> {
     // despite ending in "BASE", so it groups with the named colours.
     // M900 GLOSS (2026-06-14) is a 3rd sub-product folded into GLOSS — one FLAT
     // tab "M900" (no base/colour split); routed before the BASE/COLOUR split.
+    // 5IN1 GLOSS (2026-06-15) is a 4th sub-product — one FLAT tab "5IN1".
     if (r.family === "GLOSS")    {
       if (r.subProduct === "M900 GLOSS") { r.uiGroup = "M900"; uiAssigned++; continue; }
+      if (r.subProduct === "5IN1 GLOSS") { r.uiGroup = "5IN1"; uiAssigned++; continue; }
       r.uiGroup = (glossBase(r.baseColour) && (r.baseColour ?? "").toUpperCase() !== "GREEN BASE") ? "BASE" : "COLOUR"; uiAssigned++; continue;
     }
     // PU ENAMEL (2026-06-13): one flat tab "PU Enamel" (was a GLOSS-style

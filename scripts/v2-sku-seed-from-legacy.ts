@@ -1087,6 +1087,38 @@ async function main(): Promise<void> {
   }
   console.log(`TOOLS: built ${toolsBuilt.length} new SKUs [${toolsBuilt.join(", ")}]`);
 
+  // ── 2g.5IN1. PHIROZA inject (no legacy / SAP source) ────────────────
+  // 5IN1 Phiroza has only the 1L in legacy (IN56000472, mapped). The 500ML + 4L
+  // below are SAP-unverified codes, owner-approved; need SAP creation to bill.
+  // Built like Tools 2g; guarded by seenMaterials. category "GLOSS" (= family),
+  // product "5IN1 GLOSS", baseColour "PHIROZA".
+  const fiveInOnePhirozaInject = [
+    { material: "IN56000473", description: "DN 5IN1 PHIROZA 500ML", packCode: "500", unit: "ML" },
+    { material: "IN56000471", description: "DN 5IN1 PHIROZA 4L",    packCode: "4",   unit: "L"  },
+  ];
+  const fiveInOneBuilt: string[] = [];
+  for (const e of fiveInOnePhirozaInject) {
+    if (seenMaterials.has(e.material)) continue;   // brand-new — never expected in legacy
+    v2Rows.push({
+      material:        e.material,
+      description:     e.description,
+      category:        "GLOSS",
+      product:         "5IN1 GLOSS",
+      baseColour:      "PHIROZA",
+      packCode:        e.packCode,
+      unit:            e.unit,
+      refMaterial:     null,
+      refDescription:  null,
+      paintType:       null,
+      materialType:    null,
+      piecesPerCarton: null,
+      isPrimary:       true,
+    });
+    seenMaterials.add(e.material);
+    fiveInOneBuilt.push(e.material);
+  }
+  console.log(`5IN1 PHIROZA: built ${fiveInOneBuilt.length} new SKUs [${fiveInOneBuilt.join(", ")}]`);
+
   // ── 2h. SUPERCOVER build-from-CSV (no legacy source) ────────────────
   // 56 of supercover-final.csv's materials are absent from the legacy
   // translation (incl. all four 93 BASE codes 5766355-58, which exist in
@@ -1628,7 +1660,7 @@ async function main(): Promise<void> {
     console.log(`  REMAINING-5 legacy NOT in CSV (HARD STOP if >0): ${remaining5NotInCsv.length}`);
 
     console.log("");
-    console.log(`  TOTAL stock rows after rebuild: ${deduped.length} (expect ${1670 + vtSpecialtyBuilt.length + remaining5Built.length} = 1670 [incl. SPRAY PAINT +11, M900 GLOSS +12] + ${vtSpecialtyBuilt.length} VtSpecialty + ${remaining5Built.length} Remaining5)`);
+    console.log(`  TOTAL stock rows after rebuild: ${deduped.length} (expect ${1696 + vtSpecialtyBuilt.length + remaining5Built.length + fiveInOneBuilt.length} = 1696 [incl. SPRAY PAINT +11, M900 GLOSS +12, 5IN1 mapped +26] + ${vtSpecialtyBuilt.length} VtSpecialty + ${remaining5Built.length} Remaining5 + ${fiveInOneBuilt.length} 5in1Phiroza)`);
 
     console.log("");
     console.log("DRY_RUN=1 — NO wipe, NO insert performed.");

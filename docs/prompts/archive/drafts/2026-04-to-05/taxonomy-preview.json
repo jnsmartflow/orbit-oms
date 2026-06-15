@@ -4,7 +4,7 @@
   "summary": {
     "totalLegacyTriples": 560,
     "totalLegacySkuCount": 1599,
-    "totalNewRows": 507,
+    "totalNewRows": 517,
     "crossListedExtraRows": 68,
     "suppressedPlainRows": 19,
     "skippedTriples": 82,
@@ -26,6 +26,16 @@
       { "family":"SPRAY PAINT","subProduct":"SPRAY PAINT","displayName":"Spray Paint - Bus Green","searchTokens":"spray,spray paint,aerosol,400ml,bus green","baseColour":"BUS GREEN","productType":"COLOUR","tinterType":null,"sortOrder":7011,"isActive":true,"skuCount":1 }
     ],
     "GLOSS": [
+      { "family":"GLOSS","subProduct":"5IN1 GLOSS","displayName":"5IN1 Gloss - Brilliant White","searchTokens":"5in1,5 in 1,5-in-1,brilliant white","baseColour":"BRILLIANT WHITE","productType":"BASE_VARIANT","tinterType":null,"sortOrder":880,"isActive":true,"skuCount":1 },
+      { "family":"GLOSS","subProduct":"5IN1 GLOSS","displayName":"5IN1 Gloss - 90 Base","searchTokens":"5in1,5 in 1,5-in-1,90 base","baseColour":"90 BASE","productType":"BASE_VARIANT","tinterType":null,"sortOrder":881,"isActive":true,"skuCount":1 },
+      { "family":"GLOSS","subProduct":"5IN1 GLOSS","displayName":"5IN1 Gloss - 92 Base","searchTokens":"5in1,5 in 1,5-in-1,92 base","baseColour":"92 BASE","productType":"BASE_VARIANT","tinterType":null,"sortOrder":882,"isActive":true,"skuCount":1 },
+      { "family":"GLOSS","subProduct":"5IN1 GLOSS","displayName":"5IN1 Gloss - 93 Base","searchTokens":"5in1,5 in 1,5-in-1,93 base","baseColour":"93 BASE","productType":"BASE_VARIANT","tinterType":null,"sortOrder":883,"isActive":true,"skuCount":1 },
+      { "family":"GLOSS","subProduct":"5IN1 GLOSS","displayName":"5IN1 Gloss - 94 Base","searchTokens":"5in1,5 in 1,5-in-1,94 base","baseColour":"94 BASE","productType":"BASE_VARIANT","tinterType":null,"sortOrder":884,"isActive":true,"skuCount":1 },
+      { "family":"GLOSS","subProduct":"5IN1 GLOSS","displayName":"5IN1 Gloss - Black","searchTokens":"5in1,5 in 1,5-in-1,black","baseColour":"BLACK","productType":"COLOUR","tinterType":null,"sortOrder":885,"isActive":true,"skuCount":1 },
+      { "family":"GLOSS","subProduct":"5IN1 GLOSS","displayName":"5IN1 Gloss - Brown","searchTokens":"5in1,5 in 1,5-in-1,brown","baseColour":"BROWN","productType":"COLOUR","tinterType":null,"sortOrder":886,"isActive":true,"skuCount":1 },
+      { "family":"GLOSS","subProduct":"5IN1 GLOSS","displayName":"5IN1 Gloss - Cherry","searchTokens":"5in1,5 in 1,5-in-1,cherry","baseColour":"CHERRY","productType":"COLOUR","tinterType":null,"sortOrder":887,"isActive":true,"skuCount":1 },
+      { "family":"GLOSS","subProduct":"5IN1 GLOSS","displayName":"5IN1 Gloss - Golden Brown","searchTokens":"5in1,5 in 1,5-in-1,golden brown","baseColour":"GOLDEN BROWN","productType":"COLOUR","tinterType":null,"sortOrder":888,"isActive":true,"skuCount":1 },
+      { "family":"GLOSS","subProduct":"5IN1 GLOSS","displayName":"5IN1 Gloss - Phiroza","searchTokens":"5in1,5 in 1,5-in-1,phiroza","baseColour":"PHIROZA","productType":"COLOUR","tinterType":null,"sortOrder":889,"isActive":true,"skuCount":1 },
       { "family":"GLOSS","subProduct":"M900 GLOSS","displayName":"M900 Gloss - Brilliant White","searchTokens":"m900,m900 gloss,brilliant white","baseColour":"BRILLIANT WHITE","productType":"BASE_VARIANT","tinterType":null,"sortOrder":860,"isActive":true,"skuCount":1 },
       { "family":"GLOSS","subProduct":"M900 GLOSS","displayName":"M900 Gloss - 90 Base","searchTokens":"m900,m900 gloss,90 base","baseColour":"90 BASE","productType":"BASE_VARIANT","tinterType":null,"sortOrder":861,"isActive":true,"skuCount":1 },
       { "family":"GLOSS","subProduct":"M900 GLOSS","displayName":"M900 Gloss - 92 Base","searchTokens":"m900,m900 gloss,92 base","baseColour":"92 BASE","productType":"BASE_VARIANT","tinterType":null,"sortOrder":862,"isActive":true,"skuCount":1 },

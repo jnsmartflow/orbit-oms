@@ -64,6 +64,11 @@ const KEYWORD_FAMILY: Record<string, string> = {
   // (the M900 rows then rank via their "m900" searchTokens).
   "m900":            "GLOSS",
   "m900 gloss":      "GLOSS",
+  // 5IN1 (2026-06-15) — folded into GLOSS as a 4th tab; promote GLOSS (the 5IN1
+  // rows rank via their "5in1" searchTokens).
+  "5in1":            "GLOSS",
+  "5 in 1":          "GLOSS",
+  "5-in-1":          "GLOSS",
 };
 
 function normalizeQuery(query: string): string {
