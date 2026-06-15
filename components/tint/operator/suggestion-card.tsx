@@ -93,6 +93,16 @@ function CompactSuggestionCard({
           {usageMeta}
         </span>
       </div>
+      {/* Tinter-type tag — style copied verbatim from the Sampling Library list
+          pane (sampling-library-list-pane.tsx): gray TINTER, orange ACOTONE.
+          Never teal. */}
+      <span
+        className={`font-mono text-[10px] font-medium uppercase tracking-wider leading-none ${
+          card.tinterType === "TINTER" ? "text-gray-400" : "text-orange-700"
+        }`}
+      >
+        {card.tinterType}
+      </span>
       {/* Line 2: shade name (truncate) */}
       <div className="text-[12px] text-gray-900 whitespace-nowrap overflow-hidden text-ellipsis min-w-0">
         {card.shadeName}
