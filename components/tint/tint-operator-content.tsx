@@ -1899,14 +1899,14 @@ export function TintOperatorContent() {
                     <span className="text-[11px] text-gray-400">No line selected</span>
                   )}
                 </div>
-                {/* Tinter type toggle */}
-                <div className="flex border border-gray-200 rounded-md overflow-hidden flex-shrink-0">
+                {/* Tinter type toggle — white-pill on grey track */}
+                <div className="flex bg-gray-100 rounded-lg p-[3px] gap-[2px] flex-shrink-0">
                   <button type="button" onClick={() => handleTinterTypeChange("TINTER")}
-                    className={`px-3.5 py-1 text-[11px] font-semibold transition-colors ${tinterType === "TINTER" ? "bg-gray-900 text-white" : "bg-white text-gray-500 hover:bg-gray-50"}`}>
+                    className={`px-3.5 py-1 text-[11px] rounded-md transition-colors ${tinterType === "TINTER" ? "bg-white text-gray-900 font-medium shadow-sm" : "text-gray-500"}`}>
                     TINTER
                   </button>
                   <button type="button" onClick={() => handleTinterTypeChange("ACOTONE")}
-                    className={`px-3.5 py-1 text-[11px] font-semibold transition-colors border-l border-gray-200 ${tinterType === "ACOTONE" ? "bg-gray-900 text-white" : "bg-white text-gray-500 hover:bg-gray-50"}`}>
+                    className={`px-3.5 py-1 text-[11px] rounded-md transition-colors ${tinterType === "ACOTONE" ? "bg-white text-gray-900 font-medium shadow-sm" : "text-gray-500"}`}>
                     ACOTONE
                   </button>
                 </div>
@@ -2004,7 +2004,7 @@ export function TintOperatorContent() {
                         <div className={isNewShadeForm ? "bg-gray-50 border border-gray-200 rounded-lg p-3 mb-2" : "mb-2"}>
                           {/* Heading above search — shown on both repeat-site
                               browse and the new-site reuse zone, matching styles. */}
-                          <label key="reuse-lbl" className="block text-[11px] font-semibold tracking-wide text-gray-600 mb-1.5">
+                          <label key="reuse-lbl" className="block text-[11px] font-semibold tracking-wide text-red-600 mb-1.5">
                             REUSE A SHADE FROM ANOTHER SITE
                           </label>
                           <div key="search-row" className="flex items-center gap-2">

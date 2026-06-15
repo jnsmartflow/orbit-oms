@@ -7,16 +7,16 @@ export function SkuDisplayToggle() {
 
   return (
     <div
-      className="flex border border-gray-300 rounded-[5px] overflow-hidden"
+      className="flex items-center bg-gray-100 rounded-lg p-[3px] gap-[2px]"
       title="SKU code display (Fini / Generic)"
     >
       <button
         type="button"
         onClick={() => setMode("fini")}
-        className={`text-[10px] px-2.5 py-[3px] font-medium transition-colors ${
+        className={`text-[10px] px-2.5 py-[3px] rounded-md transition-colors ${
           mode === "fini"
-            ? "bg-gray-800 text-white"
-            : "bg-white text-gray-500 hover:bg-gray-50"
+            ? "bg-white text-gray-900 font-medium shadow-sm"
+            : "text-gray-500"
         }`}
       >
         Fini
@@ -24,10 +24,10 @@ export function SkuDisplayToggle() {
       <button
         type="button"
         onClick={() => setMode("generic")}
-        className={`text-[10px] px-2.5 py-[3px] font-medium transition-colors ${
+        className={`text-[10px] px-2.5 py-[3px] rounded-md transition-colors ${
           mode === "generic"
-            ? "bg-gray-800 text-white"
-            : "bg-white text-gray-500 hover:bg-gray-50"
+            ? "bg-white text-gray-900 font-medium shadow-sm"
+            : "text-gray-500"
         }`}
       >
         Generic
