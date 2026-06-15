@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import type { PackCode, Prisma } from "@prisma/client";
+import type { PackCode, Prisma, TinterType } from "@prisma/client";
 import { PIGMENT_CODES, decToNum, type PigmentCode } from "./validate";
 
 // ── Public types ────────────────────────────────────────────────────────────
@@ -14,6 +14,7 @@ export interface ActivePigment {
 export interface SuggestExactMatch {
   samplingNo:           string;
   shadeName:            string;
+  tinterType:           TinterType;
   recipeId:             number;
   skuCode:              string;
   packCode:             PackCode | null;
@@ -28,6 +29,7 @@ export interface SuggestExactMatch {
 export interface SuggestReferenceItem {
   samplingNo:           string;
   shadeName:            string;
+  tinterType:           TinterType;
   recipeId:             number;
   skuCode:              string;
   packCode:             PackCode | null;
@@ -88,7 +90,7 @@ export async function buildSuggestPayload(
       samplingNo:  true,
       recipeId:    true,
       usageDate:   true,
-      sampling:    { select: { shadeName: true } },
+      sampling:    { select: { shadeName: true, tinterType: true } },
       recipe: {
         select: {
           id:         true,
@@ -122,6 +124,7 @@ export async function buildSuggestPayload(
   interface SamplingAcc {
     samplingNo:           string;
     shadeName:            string;
+    tinterType:           TinterType;
     usageCountAtThisSite: number;
     lastUsedAt:           Date | null;
     variants:             Map<number, VariantAcc>; // by recipeId
@@ -136,6 +139,7 @@ export async function buildSuggestPayload(
       acc = {
         samplingNo:           row.samplingNo,
         shadeName:            row.sampling?.shadeName ?? "",
+        tinterType:           row.sampling?.tinterType ?? "TINTER",
         usageCountAtThisSite: 0,
         lastUsedAt:           null,
         variants:             new Map(),
@@ -181,6 +185,7 @@ export async function buildSuggestPayload(
       exactMatches.push({
         samplingNo:           acc.samplingNo,
         shadeName:            acc.shadeName,
+        tinterType:           acc.tinterType,
         recipeId:             v.recipeId,
         skuCode:              v.skuCode,
         packCode:             v.packCode,
@@ -213,6 +218,7 @@ export async function buildSuggestPayload(
     referenceList.push({
       samplingNo:           acc.samplingNo,
       shadeName:            acc.shadeName,
+      tinterType:           acc.tinterType,
       recipeId:             rep.recipeId,
       skuCode:              rep.skuCode,
       packCode:             rep.packCode,

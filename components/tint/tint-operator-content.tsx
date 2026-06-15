@@ -820,13 +820,19 @@ export function TintOperatorContent() {
       samplingNo: null,
       shadeName: "",
     })));
-    // Phase 4 — clear per-entry suggest state so the suggest endpoint
-    // refetches against the new tinterType (siteHistorySummary is shared
-    // across types but exact-match filters by recipe.packCode + skuCode
-    // which is tinterType-bucketed in practice).
-    setSuggestDataByEntry({});
-    setSuggestLoadingByEntry({});
-    suggestVersionRef.current = {};
+    // Phase 4 fix — a manual toggle used to wipe the suggestion list to {} with
+    // no refetch, leaving the picker stuck on its skeleton. Refetch for every
+    // entry that has a SKU + pack selected so the list refills. The suggest
+    // endpoint is type-agnostic (returns both TINTER + ACOTONE cards, each now
+    // carrying its own tinterType), so this re-runs the same query and the
+    // cards apply correctly regardless of the current toggle.
+    if (selectedJob?.siteId != null) {
+      for (const e of tiEntries) {
+        if (e.skuCodeRaw && e.packCode) {
+          fetchSuggestForEntry(e.id, e.skuCodeRaw, e.packCode, selectedJob.siteId);
+        }
+      }
+    }
   }
 
   // ── Phase 4: Sampling Library suggest fetch (per-entry) ──────────────────
@@ -898,11 +904,19 @@ export function TintOperatorContent() {
 
   // ── Phase 4: apply a SuggestionCard pick to an entry ─────────────────────
   function applySuggestionToEntry(entryId: string, card: SuggestExactMatch | SuggestReferenceItem): void {
-    const cols = tinterType === "TINTER" ? SHADES : ACOTONE_SHADES;
+    // Map pigments using the CARD's own recipe type — NOT the component toggle.
+    // An Acotone card clicked while the toggle still reads TINTER must still
+    // copy its 14 Acotone columns (was the populate-fails bug).
+    const cols = card.tinterType === "TINTER" ? SHADES : ACOTONE_SHADES;
     const shadeValues: Record<string, number> = {};
     for (const col of cols) {
       shadeValues[col.code] = Number(card.pigments[col.code] ?? 0);
     }
+    // Flip the visible toggle to the card's type via the bare setter so the
+    // grid renders the matching pigment rows. We deliberately do NOT call
+    // handleTinterTypeChange here — that resets entries + wipes suggestions and
+    // would erase the values we are about to apply (ordering trap).
+    if (card.tinterType !== tinterType) setTinterType(card.tinterType);
     setTiEntries(prev => prev.map(e => e.id !== entryId ? e : {
       ...e,
       shadeValues,
