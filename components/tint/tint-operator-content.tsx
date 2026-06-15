@@ -2002,11 +2002,11 @@ export function TintOperatorContent() {
                           zone; everywhere else it's the plain inline row. */}
                       {entry.skuCodeRaw && entry.mode !== "confirm" && (
                         <div className={isNewShadeForm ? "bg-gray-50 border border-gray-200 rounded-lg p-3 mb-2" : "mb-2"}>
-                          {isNewShadeForm && (
-                            <label key="reuse-lbl" className="block text-[11px] font-semibold tracking-wide text-gray-500 mb-1.5">
-                              REUSE A SHADE FROM ANOTHER SITE
-                            </label>
-                          )}
+                          {/* Heading above search — shown on both repeat-site
+                              browse and the new-site reuse zone, matching styles. */}
+                          <label key="reuse-lbl" className="block text-[11px] font-semibold tracking-wide text-gray-600 mb-1.5">
+                            REUSE A SHADE FROM ANOTHER SITE
+                          </label>
                           <div key="search-row" className="flex items-center gap-2">
                             <div className="relative flex-1 min-w-0">
                               <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
