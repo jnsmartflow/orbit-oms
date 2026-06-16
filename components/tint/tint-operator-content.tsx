@@ -1203,6 +1203,9 @@ export function TintOperatorContent() {
           shadeName:          existing.shadeName ?? "",
           selectedShadeName:  existing.shadeName ?? null,
           showAllColumns:     false,
+          // Saved line → show the applied shade + formula (confirm), not the
+          // picker. Mirrors handleSkuSelect's existing→confirm.
+          mode:               "confirm",
         }, ...prev.slice(1)];
       });
       setTimeout(() => {
@@ -2094,11 +2097,21 @@ export function TintOperatorContent() {
                               )}
                               {entry.selectedShadeName}
                             </span>
-                            <button type="button"
-                              onClick={() => handleBackToList(entryId)}
-                              className="text-[10px] font-bold text-red-600 bg-transparent border-none cursor-pointer">
-                              Clear ×
-                            </button>
+                            <div className="flex items-center gap-3">
+                              {/* Edit — reopen search for this line WITHOUT clearing
+                                  the selection. editingEntryId + samplingNo persist,
+                                  so a later Save updates the SAME TI (never new). */}
+                              <button type="button"
+                                onClick={() => setTiEntries(prev => prev.map(en => en.id === entryId ? { ...en, mode: "browse" } : en))}
+                                className="text-[13px] text-gray-600 hover:text-gray-900 bg-transparent border-none cursor-pointer">
+                                Edit
+                              </button>
+                              <button type="button"
+                                onClick={() => handleBackToList(entryId)}
+                                className="text-[10px] font-bold text-red-600 bg-transparent border-none cursor-pointer">
+                                Clear ×
+                              </button>
+                            </div>
                           </div>
                         )}
 
