@@ -255,8 +255,15 @@ export function FormulaMatchModal({
           </div>
         )}
 
-        {/* Footer — outlined Create new button */}
-        <div className="mt-3 flex justify-center">
+        {/* Footer — Cancel aborts (no mint); Create new explicitly mints. */}
+        <div className="mt-3 flex justify-center items-center gap-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="border border-gray-300 bg-white text-gray-700 font-medium rounded-lg px-4 py-2.5 text-[13.5px] hover:bg-gray-50 transition-colors"
+          >
+            Cancel
+          </button>
           <button
             type="button"
             onClick={onCreateNew}
