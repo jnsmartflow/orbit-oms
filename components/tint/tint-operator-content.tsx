@@ -1235,6 +1235,7 @@ export function TintOperatorContent() {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             tinterType,
+            packCode: newShadeEntry.packCode,
             ...Object.fromEntries(cols.map(c => [c.code, newShadeEntry.shadeValues[c.code] ?? 0])),
           }),
         });

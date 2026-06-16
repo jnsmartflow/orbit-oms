@@ -113,7 +113,7 @@ export function FormulaMatchModal({
         {/* Header */}
         <div className="flex items-center gap-2.5 mb-1.5">
           <span className="w-[26px] h-[26px] rounded-full bg-red-50 text-red-600 flex items-center justify-center font-bold text-[15px] flex-shrink-0">!</span>
-          <span className="text-[16px] font-bold text-gray-900">Same formula found</span>
+          <span className="text-[16px] font-bold text-gray-900">Same shade found</span>
         </div>
         <p className="text-[13.5px] leading-relaxed text-gray-500 mb-4">
           This exact formula already exists in the library. Use one of these numbers instead of creating a new one?

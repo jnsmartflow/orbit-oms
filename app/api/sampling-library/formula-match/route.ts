@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
-import { Prisma, TinterType } from "@prisma/client";
+import { PackCode, Prisma, TinterType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import {
   PIGMENT_CODES,
   buildPigmentNumbers,
+  decToNum,
+  isValidPackCode,
   isValidTinterType,
   type PigmentCode,
 } from "../_lib/validate";
@@ -14,6 +16,7 @@ import {
   groupOtherSitesBySampling,
   type SuggestFlatRow,
 } from "../_lib/suggest";
+import { canScale, perLitreFingerprint } from "@/lib/sampling/pack-litres";
 
 export const dynamic = "force-dynamic";
 
@@ -24,11 +27,11 @@ const MATCH_LIMIT = 20;
 const FETCH_LIMIT = 100;
 
 // ── POST /api/sampling-library/formula-match ────────────────────────────────
-// Exact-formula reuse lookup for the same-formula pop-up. Formula IS the
-// identity here — base/product are not part of the match. Returns ACTIVE
-// samplings whose recipe has ALL 27 pigments numerically equal to the input,
-// for the same tinterType. Rows share the search-list SuggestFlatRow shape.
-// Auth: sampling_library:canView (same as operator-search). Reads only.
+// Same-shade reuse lookup for the pop-up. Formula IS the identity (no
+// base/product). Returns ACTIVE same-tinterType samplings whose recipe matches
+// the input PER LITRE (dose basis) — so a 20L recipe matches a 4L entry of the
+// same shade — falling back to exact raw equality when a pack can't be scaled.
+// Rows share the search-list SuggestFlatRow shape. Auth: sampling_library:canView.
 export async function POST(req: Request): Promise<NextResponse> {
   const session = await auth();
   if (!session?.user) {
@@ -60,6 +63,11 @@ export async function POST(req: Request): Promise<NextResponse> {
       ? b.excludeSamplingNo.trim()
       : undefined;
 
+  // The typed shade's line pack — drives per-litre scaling. Optional/unknown →
+  // null → exact raw match only.
+  const inputPackCode: PackCode | null =
+    typeof b.packCode === "string" && isValidPackCode(b.packCode) ? b.packCode : null;
+
   // 27 pigment values, same shape as the operator save/suggest payload (codes as
   // top-level keys). buildPigmentNumbers clamps negatives/non-finite to 0.
   const pigments = buildPigmentNumbers(b);
@@ -70,18 +78,19 @@ export async function POST(req: Request): Promise<NextResponse> {
   }
 
   try {
-    // Numeric Decimal equality: pass numbers to `equals` per column. Postgres
-    // numeric '=' is value-based, so 84.4 matches 84.40 (scale-insensitive) —
-    // no string compare.
+    // Pre-filter (cheap, narrows candidates): same active/zero column pattern as
+    // the input — scaled versions of a formula share the EXACT set of non-zero
+    // columns, so this is safe. Per-column: gt 0 where the input is non-zero,
+    // equals 0 where the input is zero.
     const where: Prisma.sampling_recipesWhereInput = {
       sampling: { isActive: true, tinterType },
       ...(excludeSamplingNo ? { samplingNo: { not: excludeSamplingNo } } : {}),
     };
     for (const c of PIGMENT_CODES) {
-      (where as Record<string, unknown>)[c] = { equals: pigments[c] };
+      (where as Record<string, unknown>)[c] = pigments[c] > 0 ? { gt: 0 } : { equals: 0 };
     }
 
-    const recipes = await prisma.sampling_recipes.findMany({
+    const candidates = await prisma.sampling_recipes.findMany({
       where,
       take: FETCH_LIMIT,
       include: {
@@ -89,14 +98,29 @@ export async function POST(req: Request): Promise<NextResponse> {
       },
     });
 
+    // JS compare: per-litre fingerprint when both packs scale (catches 20L↔4L
+    // etc.), else exact raw equality of all 27 values.
+    const inputFp = perLitreFingerprint(pigments, inputPackCode, PIGMENT_CODES);
+    const matched = candidates.filter((r) => {
+      const candValues: Record<string, number> = {};
+      for (const c of PIGMENT_CODES) {
+        candValues[c] = decToNum((r as unknown as Record<PigmentCode, Prisma.Decimal | null>)[c]);
+      }
+      if (inputFp !== null && canScale(inputPackCode, r.packCode)) {
+        const candFp = perLitreFingerprint(candValues, r.packCode, PIGMENT_CODES);
+        return candFp !== null && candFp === inputFp;
+      }
+      return PIGMENT_CODES.every((c) => candValues[c] === pigments[c]);
+    });
+
     // One row per sampling — prefer the primary recipe, else first match.
     interface Rep {
-      recipe:     (typeof recipes)[number];
+      recipe:     (typeof candidates)[number];
       samplingNo: string;
       createdAt:  Date;
     }
     const repBySampling = new Map<string, Rep>();
-    for (const r of recipes) {
+    for (const r of matched) {
       const cur = repBySampling.get(r.samplingNo);
       if (!cur) {
         repBySampling.set(r.samplingNo, { recipe: r, samplingNo: r.samplingNo, createdAt: r.sampling.createdAt });
