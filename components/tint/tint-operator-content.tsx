@@ -2178,11 +2178,7 @@ export function TintOperatorContent() {
                                             value={entry.shadeValues[shade.code] || ""}
                                             readOnly={locked}
                                             onChange={locked ? undefined : (e => setTiEntries(prev => prev.map(en => en.id === entryId ? { ...en, shadeValues: { ...en.shadeValues, [shade.code]: Number(e.target.value) } } : en)))}
-                                            style={locked ? {
-                                              background: "transparent",
-                                              border: "none",
-                                              borderRadius: 0,
-                                            } : {
+                                            style={{
                                               background: hasVal ? (sc?.bgFill ?? "#f0fdf4") : (sc?.bg ?? "#fff"),
                                               borderTop: `3px solid ${hasVal ? (sc?.topFill ?? "#d1d5db") : (sc?.top ?? "#d1d5db")}`,
                                               borderLeft: `1.5px solid ${hasVal ? (sc?.topFill ?? "#d1d5db") : (sc?.border ?? "#d1d5db")}`,
@@ -2190,11 +2186,9 @@ export function TintOperatorContent() {
                                               borderBottom: `1.5px solid ${hasVal ? (sc?.topFill ?? "#d1d5db") : (sc?.border ?? "#d1d5db")}`,
                                               borderRadius: "0 0 6px 6px",
                                             }}
-                                            className={locked
-                                              ? "w-[56px] h-[34px] text-center text-[13px] font-semibold text-gray-700 focus:outline-none"
-                                              : cn("w-[56px] h-[34px] text-center text-[13px] font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-400/20 transition-colors",
-                                                flash && "ring-2 ring-amber-300"
-                                              )} />
+                                            className={cn("w-[56px] h-[34px] text-center text-[13px] font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-400/20 transition-colors",
+                                              flash && "ring-2 ring-amber-300"
+                                            )} />
                                         </div>
                                       );
                                     });
