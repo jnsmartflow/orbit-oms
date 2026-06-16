@@ -106,7 +106,8 @@ export async function POST(req: Request): Promise<NextResponse> {
       for (const c of PIGMENT_CODES) {
         candValues[c] = decToNum((r as unknown as Record<PigmentCode, Prisma.Decimal | null>)[c]);
       }
-      if (inputFp !== null && canScale(inputPackCode, r.packCode)) {
+      // Per-litre matching is TINTER-only; ACOTONE uses exact 27-value equality.
+      if (tinterType === "TINTER" && inputFp !== null && canScale(inputPackCode, r.packCode)) {
         const candFp = perLitreFingerprint(candValues, r.packCode, PIGMENT_CODES);
         return candFp !== null && candFp === inputFp;
       }

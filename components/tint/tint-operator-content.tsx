@@ -975,7 +975,8 @@ export function TintOperatorContent() {
     // pack lacks dose-litres (null/unknown). entry.packCode stays the line pack.
     const targetEntry = tiEntries.find(e => e.id === entryId);
     const linePack    = (targetEntry?.packCode ?? null) as PackCode | null;
-    const scaled      = canScale(card.packCode, linePack)
+    // Pack scaling is TINTER-only — ACOTONE applies raw card.pigments.
+    const scaled      = (card.tinterType === "TINTER" && canScale(card.packCode, linePack))
       ? scalePigments(card.pigments, card.packCode, linePack)
       : null;
     const sourceValues = scaled ?? card.pigments;
@@ -2142,6 +2143,7 @@ export function TintOperatorContent() {
                           isLoading={browseLoading}
                           isSearching={isSearching}
                           linePack={entry.packCode as PackCode | null}
+                          scalingEnabled={tinterType === "TINTER"}
                           onUse={(row) => handleUseSuggestion(entryId, row)}
                         />
                       )}
@@ -2599,6 +2601,8 @@ export function TintOperatorContent() {
         const e = pendingEntryId ? tiEntries.find(x => x.id === pendingEntryId) : null;
         return e ? activePigmentsFromEntry(e) : [];
       })()}
+      linePack={((pendingEntryId ? tiEntries.find(x => x.id === pendingEntryId)?.packCode : null) ?? null) as PackCode | null}
+      scalingEnabled={tinterType === "TINTER"}
       matches={formulaMatches}
       loading={formulaLoading}
       onUse={(samplingNo) => {

@@ -3,8 +3,9 @@
 import { Fragment, useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { TinterType } from "@prisma/client";
+import type { PackCode, TinterType } from "@prisma/client";
 import type { SuggestFlatRow } from "@/app/api/sampling-library/_lib/suggest";
+import { canScale, packDoseLitres } from "@/lib/sampling/pack-litres";
 
 // Same-formula reuse pop-up. Shown when an operator's entered formula already
 // exists in the library — offers reuse instead of minting a new number. Looks
@@ -18,6 +19,9 @@ export interface FormulaMatchModalProps {
   enteredActivePigments: Array<{ code: string; value: number }>;
   matches:               SuggestFlatRow[];
   loading:               boolean;
+  // Current line's pack — matched rows scale to it when scalingEnabled (TINTER).
+  linePack:              PackCode | null;
+  scalingEnabled:        boolean;
   onUse:                 (samplingNo: string) => void;
   onCreateNew:           () => void;
   onClose:               () => void;
@@ -75,6 +79,8 @@ export function FormulaMatchModal({
   enteredActivePigments,
   matches,
   loading,
+  linePack,
+  scalingEnabled,
   onUse,
   onCreateNew,
   onClose,
@@ -150,6 +156,21 @@ export function FormulaMatchModal({
               {matches.map((row) => {
                 const key    = `${row.samplingNo}-${row.recipeId}`;
                 const isOpen = expanded.has(key);
+                // Mirror the search list: scale matched rows to the line pack
+                // (TINTER only — gated by scalingEnabled).
+                const isReal   = scalingEnabled && linePack != null && row.packCode === linePack;
+                const scalable = scalingEnabled && linePack != null && !isReal && canScale(row.packCode, linePack);
+                let ratio: number | null = null;
+                let displayPigments = row.activePigments;
+                if (scalable) {
+                  const fromL = packDoseLitres(row.packCode)!;
+                  const toL   = packDoseLitres(linePack)!;
+                  ratio = parseFloat((toL / fromL).toFixed(2));
+                  displayPigments = row.activePigments.map((p) => ({
+                    code:  p.code,
+                    value: parseFloat((p.value * (toL / fromL)).toFixed(2)),
+                  }));
+                }
                 return (
                   <Fragment key={key}>
                     <div
@@ -176,12 +197,35 @@ export function FormulaMatchModal({
                           </button>
                         )}
                       </div>
-                      {/* Formula */}
+                      {/* Formula (scaled to the line pack when TINTER) */}
                       <div>
-                        <Chips pigments={row.activePigments} />
-                        <div className="text-[11.5px] text-gray-400 mt-1.5">
-                          {packCodeToLabel(row.packCode)} · {formatDayMonth(row.lastUsedAt)}
-                        </div>
+                        <Chips pigments={displayPigments} />
+                        {scalingEnabled ? (
+                          <div className="flex items-center gap-1.5 mt-1.5 text-[11.5px]">
+                            {isReal ? (
+                              <>
+                                <span className="bg-gray-100 text-gray-700 rounded px-1.5 py-px font-medium">{packCodeToLabel(row.packCode)}</span>
+                                <span className="text-green-600 font-bold">✓</span>
+                              </>
+                            ) : scalable ? (
+                              <>
+                                <span className="bg-gray-100 text-gray-400 rounded px-1.5 py-px">{packCodeToLabel(row.packCode)}</span>
+                                <span className="text-teal-700 font-semibold">×{ratio}</span>
+                              </>
+                            ) : (
+                              <>
+                                <span className="bg-gray-100 text-gray-400 rounded px-1.5 py-px">{packCodeToLabel(row.packCode)}</span>
+                                <span className="text-gray-400">stored</span>
+                              </>
+                            )}
+                            <span className="text-gray-300">·</span>
+                            <span className="text-gray-400">{formatDayMonth(row.lastUsedAt)}</span>
+                          </div>
+                        ) : (
+                          <div className="text-[11.5px] text-gray-400 mt-1.5">
+                            {packCodeToLabel(row.packCode)} · {formatDayMonth(row.lastUsedAt)}
+                          </div>
+                        )}
                       </div>
                       {/* Use */}
                       <button

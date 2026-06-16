@@ -24,6 +24,9 @@ export interface FlatSuggestionListProps {
   // dose. Stored rows in other packs are scaled to it (display only). null →
   // no scaling (raw stored values shown).
   linePack:    PackCode | null;
+  // Pack scaling is TINTER-only. When false (ACOTONE) → pre-feature behaviour:
+  // no locked pill, raw values, original "{pack} · {date}" meta, no ✓/×N.
+  scalingEnabled: boolean;
   onUse:       (row: SuggestFlatRow) => void;
 }
 
@@ -71,7 +74,7 @@ function PigmentChips({
   );
 }
 
-export function FlatSuggestionList({ rows, isLoading, isSearching, linePack, onUse }: FlatSuggestionListProps) {
+export function FlatSuggestionList({ rows, isLoading, isSearching, linePack, scalingEnabled, onUse }: FlatSuggestionListProps) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const scopeLabel = isSearching
     ? `Searching all sites · ${rows.length}`
@@ -87,13 +90,15 @@ export function FlatSuggestionList({ rows, isLoading, isSearching, linePack, onU
 
   return (
     <div className="mb-3">
-      {/* Scope line + locked pack pill (formula values are shown at this pack) */}
+      {/* Scope line + locked pack pill (TINTER only; values shown at this pack) */}
       <div className="flex items-center justify-between gap-2 mb-1.5">
         <p className="text-[11px] font-medium tracking-wide text-gray-500">{scopeLabel}</p>
-        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-gray-600 bg-gray-100 border border-gray-200 rounded px-2 py-0.5 flex-shrink-0">
-          PACK · {linePack ? packCodeToLabel(linePack) : "—"}
-          {linePack && <span aria-hidden>🔒</span>}
-        </span>
+        {scalingEnabled && (
+          <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-gray-600 bg-gray-100 border border-gray-200 rounded px-2 py-0.5 flex-shrink-0">
+            PACK · {linePack ? packCodeToLabel(linePack) : "—"}
+            {linePack && <span aria-hidden>🔒</span>}
+          </span>
+        )}
       </div>
 
       {/* Table */}
@@ -130,8 +135,9 @@ export function FlatSuggestionList({ rows, isLoading, isSearching, linePack, onU
                   const key    = `${row.samplingNo}-${row.recipeId}`;
                   const isOpen = expanded.has(key);
                   // Display scaling: lock the formula to the current line's pack.
-                  const isReal   = linePack != null && row.packCode === linePack;
-                  const scalable = linePack != null && !isReal && canScale(row.packCode, linePack);
+                  // TINTER only — gated by scalingEnabled.
+                  const isReal   = scalingEnabled && linePack != null && row.packCode === linePack;
+                  const scalable = scalingEnabled && linePack != null && !isReal && canScale(row.packCode, linePack);
                   let ratio: number | null = null;
                   let displayPigments = row.activePigments;
                   if (scalable) {
@@ -191,9 +197,14 @@ export function FlatSuggestionList({ rows, isLoading, isSearching, linePack, onU
                             )}
                           </div>
                         </td>
-                        {/* Formula (scaled to the line pack for display) */}
+                        {/* Formula (scaled to the line pack for display when TINTER) */}
                         <td className="px-2.5 py-2">
                           <PigmentChips pigments={displayPigments} onWash={row.isExactMatch} />
+                          {!scalingEnabled ? (
+                            <div className="text-[10px] text-gray-400 mt-1">
+                              {packCodeToLabel(row.packCode)} · {formatDayMonth(row.lastUsedAt)}
+                            </div>
+                          ) : (
                           <div className="flex items-center gap-1.5 mt-1 text-[10px]">
                             {isReal ? (
                               <>
@@ -214,6 +225,7 @@ export function FlatSuggestionList({ rows, isLoading, isSearching, linePack, onU
                             <span className="text-gray-300">·</span>
                             <span className="text-gray-400">{formatDayMonth(row.lastUsedAt)}</span>
                           </div>
+                          )}
                         </td>
                         {/* Use */}
                         <td className="px-2.5 py-2 text-right">
