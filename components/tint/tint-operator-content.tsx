@@ -21,6 +21,7 @@ import type {
   SuggestResponse,
   SuggestFlatRow,
 } from "@/app/api/sampling-library/_lib/suggest";
+import type { PackCode } from "@prisma/client";
 import { Button } from "@/components/ui/button";
 import { TINTER_SHADE_COLORS, ACOTONE_SHADE_COLORS } from "@/lib/tint/shade-colors";
 import { humaniseReason } from "@/lib/tint/pause-reasons";
@@ -2128,6 +2129,7 @@ export function TintOperatorContent() {
                           rows={browseRows}
                           isLoading={browseLoading}
                           isSearching={isSearching}
+                          linePack={entry.packCode as PackCode | null}
                           onUse={(row) => handleUseSuggestion(entryId, row)}
                         />
                       )}

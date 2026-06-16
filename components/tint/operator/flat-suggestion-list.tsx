@@ -2,7 +2,9 @@
 
 import { Fragment, useState } from "react";
 import { cn } from "@/lib/utils";
+import type { PackCode } from "@prisma/client";
 import type { SuggestFlatRow } from "@/app/api/sampling-library/_lib/suggest";
+import { packDoseLitres, canScale } from "@/lib/sampling/pack-litres";
 
 // Search-first flat suggestion list for the Tint Operator TI form. Pure list:
 // the search box + "Add shade" live in the parent so they stay mounted as the
@@ -18,6 +20,10 @@ export interface FlatSuggestionListProps {
   rows:        SuggestFlatRow[];
   isLoading:   boolean;
   isSearching: boolean;
+  // Current tinting line's pack — locks the displayed formula to this pack's
+  // dose. Stored rows in other packs are scaled to it (display only). null →
+  // no scaling (raw stored values shown).
+  linePack:    PackCode | null;
   onUse:       (row: SuggestFlatRow) => void;
 }
 
@@ -65,7 +71,7 @@ function PigmentChips({
   );
 }
 
-export function FlatSuggestionList({ rows, isLoading, isSearching, onUse }: FlatSuggestionListProps) {
+export function FlatSuggestionList({ rows, isLoading, isSearching, linePack, onUse }: FlatSuggestionListProps) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const scopeLabel = isSearching
     ? `Searching all sites · ${rows.length}`
@@ -81,8 +87,14 @@ export function FlatSuggestionList({ rows, isLoading, isSearching, onUse }: Flat
 
   return (
     <div className="mb-3">
-      {/* Scope line */}
-      <p className="text-[11px] font-medium tracking-wide text-gray-500 mb-1.5">{scopeLabel}</p>
+      {/* Scope line + locked pack pill (formula values are shown at this pack) */}
+      <div className="flex items-center justify-between gap-2 mb-1.5">
+        <p className="text-[11px] font-medium tracking-wide text-gray-500">{scopeLabel}</p>
+        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-gray-600 bg-gray-100 border border-gray-200 rounded px-2 py-0.5 flex-shrink-0">
+          PACK · {linePack ? packCodeToLabel(linePack) : "—"}
+          {linePack && <span aria-hidden>🔒</span>}
+        </span>
+      </div>
 
       {/* Table */}
       <div className="border border-gray-200 rounded-md overflow-hidden">
@@ -117,6 +129,20 @@ export function FlatSuggestionList({ rows, isLoading, isSearching, onUse }: Flat
                 {rows.map((row) => {
                   const key    = `${row.samplingNo}-${row.recipeId}`;
                   const isOpen = expanded.has(key);
+                  // Display scaling: lock the formula to the current line's pack.
+                  const isReal   = linePack != null && row.packCode === linePack;
+                  const scalable = linePack != null && !isReal && canScale(row.packCode, linePack);
+                  let ratio: number | null = null;
+                  let displayPigments = row.activePigments;
+                  if (scalable) {
+                    const fromL = packDoseLitres(row.packCode)!;
+                    const toL   = packDoseLitres(linePack)!;
+                    ratio = parseFloat((toL / fromL).toFixed(2));
+                    displayPigments = row.activePigments.map((p) => ({
+                      code:  p.code,
+                      value: parseFloat((p.value * (toL / fromL)).toFixed(2)),
+                    }));
+                  }
                   return (
                     <Fragment key={key}>
                       <tr
@@ -165,11 +191,28 @@ export function FlatSuggestionList({ rows, isLoading, isSearching, onUse }: Flat
                             )}
                           </div>
                         </td>
-                        {/* Formula */}
+                        {/* Formula (scaled to the line pack for display) */}
                         <td className="px-2.5 py-2">
-                          <PigmentChips pigments={row.activePigments} onWash={row.isExactMatch} />
-                          <div className="text-[10px] text-gray-400 mt-1">
-                            {packCodeToLabel(row.packCode)} · {formatDayMonth(row.lastUsedAt)}
+                          <PigmentChips pigments={displayPigments} onWash={row.isExactMatch} />
+                          <div className="flex items-center gap-1.5 mt-1 text-[10px]">
+                            {isReal ? (
+                              <>
+                                <span className="bg-gray-100 text-gray-700 rounded px-1.5 py-px font-medium">{packCodeToLabel(row.packCode)}</span>
+                                <span className="text-green-600 font-bold">✓</span>
+                              </>
+                            ) : scalable ? (
+                              <>
+                                <span className="bg-gray-100 text-gray-400 rounded px-1.5 py-px">{packCodeToLabel(row.packCode)}</span>
+                                <span className="text-teal-700 font-semibold">×{ratio}</span>
+                              </>
+                            ) : (
+                              <>
+                                <span className="bg-gray-100 text-gray-400 rounded px-1.5 py-px">{packCodeToLabel(row.packCode)}</span>
+                                <span className="text-gray-400">stored</span>
+                              </>
+                            )}
+                            <span className="text-gray-300">·</span>
+                            <span className="text-gray-400">{formatDayMonth(row.lastUsedAt)}</span>
                           </div>
                         </td>
                         {/* Use */}
