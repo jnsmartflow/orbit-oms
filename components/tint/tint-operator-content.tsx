@@ -22,6 +22,7 @@ import type {
   SuggestFlatRow,
 } from "@/app/api/sampling-library/_lib/suggest";
 import type { PackCode } from "@prisma/client";
+import { canScale, scalePigments } from "@/lib/sampling/pack-litres";
 import { Button } from "@/components/ui/button";
 import { TINTER_SHADE_COLORS, ACOTONE_SHADE_COLORS } from "@/lib/tint/shade-colors";
 import { humaniseReason } from "@/lib/tint/pause-reasons";
@@ -968,9 +969,19 @@ export function TintOperatorContent() {
     // An Acotone card clicked while the toggle still reads TINTER must still
     // copy its 14 Acotone columns (was the populate-fails bug).
     const cols = card.tinterType === "TINTER" ? SHADES : ACOTONE_SHADES;
+    // Scale the picked recipe from its STORED pack to THIS line's pack (dose
+    // basis) so the applied formula matches the tin being made — same scaling
+    // the search row displayed. Falls back to raw card.pigments when either
+    // pack lacks dose-litres (null/unknown). entry.packCode stays the line pack.
+    const targetEntry = tiEntries.find(e => e.id === entryId);
+    const linePack    = (targetEntry?.packCode ?? null) as PackCode | null;
+    const scaled      = canScale(card.packCode, linePack)
+      ? scalePigments(card.pigments, card.packCode, linePack)
+      : null;
+    const sourceValues = scaled ?? card.pigments;
     const shadeValues: Record<string, number> = {};
     for (const col of cols) {
-      shadeValues[col.code] = Number(card.pigments[col.code] ?? 0);
+      shadeValues[col.code] = Number(sourceValues[col.code] ?? 0);
     }
     // Flip the visible toggle to the card's type via the bare setter so the
     // grid renders the matching pigment rows. We deliberately do NOT call
