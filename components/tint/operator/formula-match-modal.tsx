@@ -113,7 +113,7 @@ export function FormulaMatchModal({
         {/* Header */}
         <div className="flex items-center gap-2.5 mb-1.5">
           <span className="w-[26px] h-[26px] rounded-full bg-gray-100 text-gray-700 flex items-center justify-center font-bold text-[15px] flex-shrink-0">!</span>
-          <span className="text-[16px] font-bold text-gray-900">Same formula found</span>
+          <span className="text-[16px] font-bold text-red-600">Same formula found</span>
         </div>
         <p className="text-[13.5px] leading-relaxed text-gray-500 mb-4">
           This exact formula already exists in the library. Use one of these numbers instead of creating a new one?
@@ -211,14 +211,16 @@ export function FormulaMatchModal({
           </div>
         )}
 
-        {/* Footer — quiet ghost */}
-        <button
-          type="button"
-          onClick={onCreateNew}
-          className="w-full bg-transparent text-gray-500 hover:text-gray-700 rounded-lg py-2.5 text-[13.5px] font-medium mt-3"
-        >
-          Create new anyway
-        </button>
+        {/* Footer — outlined Create new button */}
+        <div className="mt-3 flex justify-center">
+          <button
+            type="button"
+            onClick={onCreateNew}
+            className="border border-gray-300 bg-white text-gray-700 font-medium rounded-lg px-4 py-2.5 text-[13.5px] hover:bg-gray-50 transition-colors"
+          >
+            Create new
+          </button>
+        </div>
       </div>
     </div>
   );
