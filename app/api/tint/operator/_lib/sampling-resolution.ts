@@ -85,11 +85,11 @@ export async function resolveSamplingForEntry(
   });
 
   if (variant) {
-    // ── Scenario 3: UPDATE existing variant ───────────────────────────
-    await prisma.sampling_recipes.update({
-      where: { id: variant.id },
-      data:  pigments,
-    });
+    // ── Scenario 3: EXISTING variant — recipe formula is IMMUTABLE ──────
+    // Never overwrite the stored pigments. A changed formula must become a NEW
+    // shade via the front door (formula-match modal), not silently rewrite an
+    // existing number for everyone. usageCount/lastUsedAt are bumped separately
+    // on Mark Done by usage-log-writer. Parent shadeName update kept as-is.
     let resolvedShadeName = parent.shadeName;
     if (bodyShadeName && bodyShadeName !== parent.shadeName) {
       await prisma.sampling_register.update({

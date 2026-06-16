@@ -125,11 +125,9 @@ export async function PATCH(
   }
 
   // Phase 4: samplingNo + shadeName accepted; behaviour:
-  //   - new samplingNo provided & matches existing TI row's samplingNo
-  //     → treat as Scenario 3 mid-edit, update the sampling_recipes variant
-  //       pigments (last-saved-wins).
-  //   - samplingNo provided AND differs from current → just rewrite TI row's
-  //     samplingNo + shadeName; do NOT touch sampling_recipes on old or new.
+  //   - samplingNo provided (matches or differs) → rewrite the TI row's
+  //     samplingNo + shadeName only. The sampling_recipes formula is IMMUTABLE
+  //     and is NEVER overwritten here (server guard).
   //   - samplingNo omitted from body → leave TI row's samplingNo unchanged.
   let nextSamplingNo: string | null | undefined = undefined;
   if (samplingNoRaw !== undefined) {
@@ -162,7 +160,6 @@ export async function PATCH(
     }
   }
 
-  const finalSamplingNo = nextSamplingNo !== undefined ? nextSamplingNo : entry.samplingNo;
   const finalPackCode   = (packCodeRaw ?? entry.packCode) as PackCode | null;
   const finalBaseSku    = String(baseSku).trim();
   const pigments = {
@@ -173,24 +170,9 @@ export async function PATCH(
     COG: Number(COG ?? 0),
   };
 
-  // Scenario 3 mid-edit: same samplingNo as before AND we have a packCode →
-  // update the matching sampling_recipes variant's pigment values.
-  if (
-    finalSamplingNo !== null
-    && finalSamplingNo === entry.samplingNo
-    && finalPackCode !== null
-  ) {
-    const variant = await prisma.sampling_recipes.findUnique({
-      where:  { samplingNo_skuCode_packCode: { samplingNo: finalSamplingNo, skuCode: finalBaseSku, packCode: finalPackCode } },
-      select: { id: true },
-    });
-    if (variant) {
-      await prisma.sampling_recipes.update({
-        where: { id: variant.id },
-        data:  pigments,
-      });
-    }
-  }
+  // Server guard: the sampling_recipes formula is IMMUTABLE — this route NEVER
+  // overwrites recipe pigments (a same-number mid-edit used to; removed). Only
+  // the TI row below is updated; usageCount/lastUsedAt bump on Mark Done.
 
   const updated = await prisma.tinter_issue_entries.update({
     where: { id: entryId },
