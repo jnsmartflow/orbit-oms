@@ -12,6 +12,7 @@ import { SkuDisplayToggle } from "@/components/tint/sku-display-toggle";
 // suggestion strip + "All shades…" popover. Step 11 retired the save-as-shade
 // toggle; /suggest + /tinter-issue now handle the full Library write path.
 import { FlatSuggestionList } from "@/components/tint/operator/flat-suggestion-list";
+import { FormulaMatchModal } from "@/components/tint/operator/formula-match-modal";
 import {
   SaveSamplingPopup,
   type SaveSamplingResult,
@@ -460,6 +461,13 @@ export function TintOperatorContent() {
   const [tiEntriesLoading,   setTiEntriesLoading]   = useState(false);
   const [editingEntryId,     setEditingEntryId]     = useState<{ id: number; table: "TINTER" | "ACOTONE" } | null>(null);
   const [expandedLineId,     setExpandedLineId]     = useState<number | null>(null);
+  // Same-formula reuse modal (new-shade save → check existing formulas first).
+  const [formulaModalOpen,   setFormulaModalOpen]   = useState(false);
+  const [formulaMatches,     setFormulaMatches]     = useState<SuggestFlatRow[]>([]);
+  const [formulaLoading,     setFormulaLoading]     = useState(false);
+  const [pendingEntryId,     setPendingEntryId]     = useState<string | null>(null);
+  const [pendingAndStart,    setPendingAndStart]    = useState(false);
+  const [pendingSaveAfterApply, setPendingSaveAfterApply] = useState(false);
 
   const coverageStripRef  = useRef<HTMLDivElement>(null);
   const autoSelectDoneRef = useRef(false);
@@ -777,6 +785,11 @@ export function TintOperatorContent() {
     setSearchResultsByEntry({});
     setSearchLoadingByEntry({});
     searchVersionRef.current = {};
+    setFormulaModalOpen(false);
+    setFormulaMatches([]);
+    setFormulaLoading(false);
+    setPendingEntryId(null);
+    setPendingSaveAfterApply(false);
     setTiSuccessToast(false);
     setTiUpdateToast(false);
     setSamplingPopup(null);
@@ -1154,6 +1167,29 @@ export function TintOperatorContent() {
     }
   }
 
+  // Non-zero pigments for an entry, in the current toggle's column order.
+  function activePigmentsFromEntry(entry: TIFormEntry): Array<{ code: string; value: number }> {
+    const cols = tinterType === "TINTER" ? SHADES : ACOTONE_SHADES;
+    return cols
+      .map(c => ({ code: c.code, value: entry.shadeValues[c.code] ?? 0 }))
+      .filter(p => p.value > 0);
+  }
+
+  // The actual submit (validation already passed). Kept separate so the
+  // formula-match gate can defer it (matches → hold) or run it (no-match /
+  // create-new / after a reuse pick).
+  async function proceedSubmitTI(job: Job, andStart: boolean) {
+    setTiActionLoading(true);
+    setError(null);
+    try {
+      await saveShadesThenSubmitTI(job, [], andStart);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to submit TI");
+    } finally {
+      setTiActionLoading(false);
+    }
+  }
+
   async function handleSubmitTI(job: Job, andStart: boolean = true) {
     if (tiEntries.length === 0) { setError("Add at least one entry"); return; }
     for (const e of tiEntries) {
@@ -1166,16 +1202,59 @@ export function TintOperatorContent() {
         return;
       }
     }
-    setTiActionLoading(true);
-    setError(null);
-    try {
-      await saveShadesThenSubmitTI(job, [], andStart);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to submit TI");
-    } finally {
-      setTiActionLoading(false);
+
+    // Guard against double-submit while a check is in flight.
+    if (formulaLoading || tiActionLoading) return;
+
+    // Formula-match gate — ONLY for a genuinely new shade (samplingNo == null)
+    // with a real (non-empty) formula. Reused entries (samplingNo set) save
+    // unchanged, no check.
+    const newShadeEntry = tiEntries.find(e => e.samplingNo == null && e.skuCodeRaw && e.tinQty > 0);
+    const active = newShadeEntry ? activePigmentsFromEntry(newShadeEntry) : [];
+    if (newShadeEntry && active.length > 0) {
+      setPendingEntryId(newShadeEntry.id);
+      setPendingAndStart(andStart);
+      setFormulaMatches([]);
+      setFormulaLoading(true);
+      setFormulaModalOpen(true);
+      try {
+        const cols = tinterType === "TINTER" ? SHADES : ACOTONE_SHADES;
+        const res = await fetch("/api/sampling-library/formula-match", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            tinterType,
+            ...Object.fromEntries(cols.map(c => [c.code, newShadeEntry.shadeValues[c.code] ?? 0])),
+          }),
+        });
+        const data = res.ok ? (await res.json()) as { matches?: SuggestFlatRow[] } : { matches: [] };
+        const matches = data.matches ?? [];
+        if (matches.length > 0) {
+          setFormulaMatches(matches);
+          setFormulaLoading(false);
+          return; // HOLD the save — operator chooses reuse or create-new.
+        }
+      } catch {
+        // On error, don't block the operator — fall through to mint as today.
+      }
+      // No matches (or check failed) → close the modal and proceed to mint.
+      setFormulaModalOpen(false);
+      setFormulaLoading(false);
     }
+
+    await proceedSubmitTI(job, andStart);
   }
+
+  // After a reuse pick (applySuggestionToEntry sets samplingNo on the pending
+  // entry), run the held save with the applied values. Effect waits for the
+  // state update to land so saveShadesThenSubmitTI reads the reused samplingNo.
+  useEffect(() => {
+    if (!pendingSaveAfterApply || !pendingEntryId || !selectedJob) return;
+    const e = tiEntries.find(x => x.id === pendingEntryId);
+    if (!e || e.samplingNo == null) return; // wait until the pick lands
+    setPendingSaveAfterApply(false);
+    void proceedSubmitTI(selectedJob, pendingAndStart);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingSaveAfterApply, tiEntries, pendingEntryId, selectedJob]);
 
   function handleStripRowClick(rawLineItemId: number) {
     const line = tintingLines.find(l => l.rawLineItemId === rawLineItemId);
@@ -2493,6 +2572,39 @@ export function TintOperatorContent() {
         component returns null when samplingPopup is null, so mounting here
         unconditionally is safe. */}
     <SaveSamplingPopup result={samplingPopup} onClose={() => setSamplingPopup(null)} />
+
+    {/* Same-formula reuse modal — new-shade save found existing matches.
+        "Use" routes through applySuggestionToEntry (attaches the existing
+        number, formula unchanged → no overwrite), then the held save runs via
+        the pendingSaveAfterApply effect. "Create new anyway" mints as today. */}
+    <FormulaMatchModal
+      open={formulaModalOpen}
+      enteredShadeName={(pendingEntryId ? tiEntries.find(e => e.id === pendingEntryId)?.shadeName : "") ?? ""}
+      enteredTinterType={tinterType}
+      enteredActivePigments={(() => {
+        const e = pendingEntryId ? tiEntries.find(x => x.id === pendingEntryId) : null;
+        return e ? activePigmentsFromEntry(e) : [];
+      })()}
+      matches={formulaMatches}
+      loading={formulaLoading}
+      onUse={(samplingNo) => {
+        if (!pendingEntryId) return;
+        const row = formulaMatches.find(m => m.samplingNo === samplingNo);
+        if (!row) return;
+        applySuggestionToEntry(pendingEntryId, row);
+        setFormulaModalOpen(false);
+        setPendingSaveAfterApply(true);
+      }}
+      onCreateNew={() => {
+        setFormulaModalOpen(false);
+        if (selectedJob) void proceedSubmitTI(selectedJob, pendingAndStart);
+      }}
+      onClose={() => {
+        setFormulaModalOpen(false);
+        setPendingSaveAfterApply(false);
+        setPendingEntryId(null);
+      }}
+    />
 
     {/* Phase 3c — Skip Job modal. Single instance; gated on skipModalJob state. */}
     {skipModalJob && (
