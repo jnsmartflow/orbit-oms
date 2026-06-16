@@ -4,6 +4,15 @@
   margin: 10mm;
 }
 
+/* @page (named) — Tint Summary daily report. Top-level per CORE/UI rule.
+   margin:0 so the report's own .page padding (15mm) governs the layout and the
+   blue topbar can bleed to the sheet edge. Applied via `page: tint-report` on
+   #tint-report-print-area inside @media print (see report print block below). */
+@page tint-report {
+  size: A4 portrait;
+  margin: 0;
+}
+
 /* --vvh fallback — /order's <main> consumes var(--vvh, 100vh) for keyboard-
    aware sizing. The visualViewport useEffect overwrites this on mount, but
    before JS runs (SSR first paint, or on browsers without visualViewport)
@@ -571,3 +580,41 @@ html, body { overscroll-behavior: none; }
 
 /* MO print footer — hidden by default on screen */
 .mo-print-footer { display: none; }
+
+/* ═════════════════════════════════════════════
+   Tint Summary — daily report print isolation
+   (challan block above already sets `body * { visibility: hidden }` in print;
+   here we reveal only the report's print area and switch it to the borderless
+   tint-report @page. id-scoped so challan / mail-order prints are untouched.)
+   ═════════════════════════════════════════════ */
+@media print {
+  #tint-report-print-area,
+  #tint-report-print-area * { visibility: visible !important; }
+
+  #tint-report-print-area {
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    page: tint-report;
+  }
+
+  /* On paper each .page fills the sheet edge-to-edge — drop the screen desk
+     margin + drop shadow, force a hard break after every page but the last. */
+  #tint-report-print-area .page {
+    margin: 0 !important;
+    box-shadow: none !important;
+    min-height: auto !important;
+    page-break-after: always;
+  }
+  #tint-report-print-area .page:last-child { page-break-after: auto; }
+
+  /* Never split a chart, KPI row, operator card or aging bar across a page. */
+  #tint-report-print-area tr,
+  #tint-report-print-area .br,
+  #tint-report-print-area .hero,
+  #tint-report-print-area .row,
+  #tint-report-print-area .card,
+  #tint-report-print-area .bd,
+  #tint-report-print-area .opc { page-break-inside: avoid; }
+}
