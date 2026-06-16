@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from "react";
-import { Loader2, ChevronDown, ChevronLeft, ChevronRight, Palette, Save, Play, Check, Plus, SkipForward, Pause, Eye, Inbox } from "lucide-react";
+import { Loader2, ChevronDown, ChevronLeft, ChevronRight, Palette, Save, Play, Check, Plus, SkipForward, Pause, Eye, Inbox, Pencil } from "lucide-react";
 import { UniversalHeader } from "@/components/universal-header";
 import { useSession } from "next-auth/react";
 import { cn } from "@/lib/utils";
@@ -1944,7 +1944,10 @@ export function TintOperatorContent() {
                   const entryIsNewSite = suggestDataByEntry[entryId]?.siteHistorySummary?.isNewSite ?? false;
                   const showList       = !!entry.skuCodeRaw && (entry.mode === "browse" || (entry.mode === "newshade" && isSearching));
                   const showFormCard   = entry.mode === "confirm" || (entry.mode === "newshade" && !isSearching);
-                  const showBack       = entry.mode === "confirm" || (entry.mode === "newshade" && !entryIsNewSite);
+                  // "Back to list" only for the new-shade form (repeat site).
+                  // Confirm mode reselects via the applied-bar "Edit" button, so
+                  // no separate "← Change" link (was redundant).
+                  const showBack       = entry.mode === "newshade" && !entryIsNewSite;
                   // New-shade form view (newshade, not searching): the search box
                   // becomes a labelled "reuse from another site" zone + divider.
                   const isNewShadeForm = showFormCard && entry.mode === "newshade";
@@ -2058,7 +2061,7 @@ export function TintOperatorContent() {
                         <div className="mb-2">
                           <button type="button" onClick={() => handleBackToList(entryId)}
                             className="inline-flex items-center gap-1 text-[11px] font-medium text-gray-500 hover:text-gray-800 bg-transparent border-none cursor-pointer p-0">
-                            ← {entry.mode === "confirm" ? "Change" : "Back to list"}
+                            ← Back to list
                           </button>
                         </div>
                       )}
@@ -2103,12 +2106,13 @@ export function TintOperatorContent() {
                                   so a later Save updates the SAME TI (never new). */}
                               <button type="button"
                                 onClick={() => setTiEntries(prev => prev.map(en => en.id === entryId ? { ...en, mode: "browse" } : en))}
-                                className="text-[13px] text-gray-600 hover:text-gray-900 bg-transparent border-none cursor-pointer">
+                                className="inline-flex items-center gap-1.5 border border-gray-300 bg-white rounded-lg px-2.5 py-1 text-[12.5px] font-medium text-gray-700 hover:border-gray-400 hover:text-gray-900 cursor-pointer">
+                                <Pencil size={13} />
                                 Edit
                               </button>
                               <button type="button"
                                 onClick={() => handleBackToList(entryId)}
-                                className="text-[10px] font-bold text-red-600 bg-transparent border-none cursor-pointer">
+                                className="text-[12.5px] text-gray-400 hover:text-red-600 bg-transparent border-none cursor-pointer">
                                 Clear ×
                               </button>
                             </div>
