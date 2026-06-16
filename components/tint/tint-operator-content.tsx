@@ -2141,16 +2141,23 @@ export function TintOperatorContent() {
                           {(() => {
                             const allCols = shadeColumns as readonly { code: string; bg: string; border: string; text: string }[];
                             const activeCols = allCols.filter(col => (entry.shadeValues[col.code] ?? 0) > 0);
-                            const displayCols = (!entry.showAllColumns && activeCols.length > 0) ? activeCols : allCols;
+                            // Reused/saved sampling (samplingNo set) → formula is
+                            // locked: show active values only, read-only, no toggle.
+                            // New shade (samplingNo null) → fully editable. Applies
+                            // to both TINTER and ACOTONE (single render path).
+                            const locked = entry.samplingNo != null;
+                            const displayCols = locked
+                              ? (activeCols.length > 0 ? activeCols : allCols)
+                              : ((!entry.showAllColumns && activeCols.length > 0) ? activeCols : allCols);
                             const hiddenCount = allCols.length - activeCols.length;
                             const hasActive = activeCols.length > 0;
                             return (
                               <>
                                 <div className="flex items-center justify-between mb-1.5">
                                   <div className="text-[9.5px] font-extrabold uppercase tracking-[.5px] text-gray-400">
-                                    {!entry.showAllColumns && hasActive ? "Active shade values" : `Shade quantities (${tinterType})`}
+                                    {locked || (!entry.showAllColumns && hasActive) ? "Active shade values" : `Shade quantities (${tinterType})`}
                                   </div>
-                                  {hasActive && (
+                                  {!locked && hasActive && (
                                     <button type="button"
                                       onClick={() => setTiEntries(prev => prev.map(en => en.id === entryId ? { ...en, showAllColumns: !en.showAllColumns } : en))}
                                       className="text-[10.5px] font-semibold text-gray-500 bg-transparent border-none cursor-pointer p-0">
@@ -2169,8 +2176,13 @@ export function TintOperatorContent() {
                                           <span style={{ color: sc?.label ?? "#9ca3af" }} className="text-[9px] font-bold uppercase tracking-[.3px]">{shade.code}</span>
                                           <input type="number" min={0} step={0.01} placeholder="—"
                                             value={entry.shadeValues[shade.code] || ""}
-                                            onChange={e => setTiEntries(prev => prev.map(en => en.id === entryId ? { ...en, shadeValues: { ...en.shadeValues, [shade.code]: Number(e.target.value) } } : en))}
-                                            style={{
+                                            readOnly={locked}
+                                            onChange={locked ? undefined : (e => setTiEntries(prev => prev.map(en => en.id === entryId ? { ...en, shadeValues: { ...en.shadeValues, [shade.code]: Number(e.target.value) } } : en)))}
+                                            style={locked ? {
+                                              background: "transparent",
+                                              border: "none",
+                                              borderRadius: 0,
+                                            } : {
                                               background: hasVal ? (sc?.bgFill ?? "#f0fdf4") : (sc?.bg ?? "#fff"),
                                               borderTop: `3px solid ${hasVal ? (sc?.topFill ?? "#d1d5db") : (sc?.top ?? "#d1d5db")}`,
                                               borderLeft: `1.5px solid ${hasVal ? (sc?.topFill ?? "#d1d5db") : (sc?.border ?? "#d1d5db")}`,
@@ -2178,9 +2190,11 @@ export function TintOperatorContent() {
                                               borderBottom: `1.5px solid ${hasVal ? (sc?.topFill ?? "#d1d5db") : (sc?.border ?? "#d1d5db")}`,
                                               borderRadius: "0 0 6px 6px",
                                             }}
-                                            className={cn("w-[56px] h-[34px] text-center text-[13px] font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-400/20 transition-colors",
-                                              flash && "ring-2 ring-amber-300"
-                                            )} />
+                                            className={locked
+                                              ? "w-[56px] h-[34px] text-center text-[13px] font-semibold text-gray-700 focus:outline-none"
+                                              : cn("w-[56px] h-[34px] text-center text-[13px] font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-400/20 transition-colors",
+                                                flash && "ring-2 ring-amber-300"
+                                              )} />
                                         </div>
                                       );
                                     });
