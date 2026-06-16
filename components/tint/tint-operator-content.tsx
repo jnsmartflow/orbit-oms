@@ -1763,12 +1763,10 @@ export function TintOperatorContent() {
                 )}
               </div>
 
-              {/* Status badge — only when a CURRENT job is selected */}
-              {selectedJob && (selectedJob.status === "tinting_in_progress" ? (
+              {/* Status badge — In Progress only. "Assigned" tag dropped. */}
+              {selectedJob && selectedJob.status === "tinting_in_progress" && (
                 <span className="text-[10px] font-semibold px-2 py-0.5 rounded-[5px] border bg-green-50 border-green-200 text-green-700 flex-shrink-0">In Progress</span>
-              ) : (
-                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-[5px] border bg-amber-50 border-amber-200 text-amber-700 flex-shrink-0">Assigned</span>
-              ))}
+              )}
 
               {/* Timer (in progress) */}
               {selectedJob && selectedJob.status === "tinting_in_progress" && elapsed && (
@@ -1870,7 +1868,7 @@ export function TintOperatorContent() {
                               {tiEntry ? (
                                 <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-green-50 border border-green-200 text-green-700 flex-shrink-0 ml-1">✓</span>
                               ) : (
-                                <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-700 flex-shrink-0 ml-1">Pending</span>
+                                <span className="text-[9px] font-semibold text-amber-700 flex-shrink-0 ml-1">Pending</span>
                               )}
                             </div>
                             {/* Row 2: Description */}

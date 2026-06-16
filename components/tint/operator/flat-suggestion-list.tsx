@@ -115,11 +115,13 @@ export function FlatSuggestionList({ rows, isLoading, isSearching, linePack, sca
           <div className="max-h-[320px] overflow-y-auto">
             <table className="w-full" style={{ borderCollapse: "collapse", tableLayout: "fixed" }}>
               <colgroup>
+                <col style={{ width: "13%" }} />
                 <col style={{ width: "20%" }} />
-                <col style={{ width: "22%" }} />
-                <col style={{ width: "20%" }} />
-                <col style={{ width: "26%" }} />
-                <col style={{ width: "12%" }} />
+                <col style={{ width: "17%" }} />
+                <col style={{ width: "23%" }} />
+                <col style={{ width: "11%" }} />
+                <col style={{ width: "9%" }} />
+                <col style={{ width: "7%" }} />
               </colgroup>
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-100">
@@ -127,6 +129,8 @@ export function FlatSuggestionList({ rows, isLoading, isSearching, linePack, sca
                   <th className="text-left text-[10px] font-medium text-gray-400 uppercase tracking-wider px-2.5 py-1.5">Shade</th>
                   <th className="text-left text-[10px] font-medium text-gray-400 uppercase tracking-wider px-2.5 py-1.5">Site</th>
                   <th className="text-left text-[10px] font-medium text-gray-400 uppercase tracking-wider px-2.5 py-1.5">Formula</th>
+                  <th className="text-left text-[10px] font-medium text-gray-400 uppercase tracking-wider px-2.5 py-1.5">Pack</th>
+                  <th className="text-left text-[10px] font-medium text-gray-400 uppercase tracking-wider px-2.5 py-1.5">Last Used</th>
                   <th className="px-2.5 py-1.5" />
                 </tr>
               </thead>
@@ -197,35 +201,31 @@ export function FlatSuggestionList({ rows, isLoading, isSearching, linePack, sca
                             )}
                           </div>
                         </td>
-                        {/* Formula (scaled to the line pack for display when TINTER) */}
+                        {/* Formula — scaled chips only (pack/date moved to own columns) */}
                         <td className="px-2.5 py-2">
                           <PigmentChips pigments={displayPigments} onWash={row.isExactMatch} />
-                          {!scalingEnabled ? (
-                            <div className="text-[10px] text-gray-400 mt-1">
-                              {packCodeToLabel(row.packCode)} · {formatDayMonth(row.lastUsedAt)}
+                        </td>
+                        {/* Pack — green ✓ (real) / teal ×N (scaled) / muted stored */}
+                        <td className="px-2.5 py-2">
+                          {isReal ? (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-medium text-green-700 bg-green-50 border border-green-200 rounded px-1.5 py-px whitespace-nowrap">
+                              {packCodeToLabel(row.packCode)} ✓
+                            </span>
+                          ) : scalable ? (
+                            <div className="flex items-center gap-1 flex-wrap">
+                              <span className="text-[10px] text-gray-500 bg-gray-100 rounded px-1.5 py-px whitespace-nowrap">{packCodeToLabel(row.packCode)}</span>
+                              <span className="text-[10px] font-semibold text-teal-700 bg-teal-50 border border-teal-200 rounded px-1 py-px">×{ratio}</span>
                             </div>
                           ) : (
-                          <div className="flex items-center gap-1.5 mt-1 text-[10px]">
-                            {isReal ? (
-                              <>
-                                <span className="bg-gray-100 text-gray-700 rounded px-1.5 py-px font-medium">{packCodeToLabel(row.packCode)}</span>
-                                <span className="text-green-600 font-bold">✓</span>
-                              </>
-                            ) : scalable ? (
-                              <>
-                                <span className="bg-gray-100 text-gray-400 rounded px-1.5 py-px">{packCodeToLabel(row.packCode)}</span>
-                                <span className="text-teal-700 font-semibold">×{ratio}</span>
-                              </>
-                            ) : (
-                              <>
-                                <span className="bg-gray-100 text-gray-400 rounded px-1.5 py-px">{packCodeToLabel(row.packCode)}</span>
-                                <span className="text-gray-400">stored</span>
-                              </>
-                            )}
-                            <span className="text-gray-300">·</span>
-                            <span className="text-gray-400">{formatDayMonth(row.lastUsedAt)}</span>
-                          </div>
+                            <div className="flex items-center gap-1 flex-wrap">
+                              <span className="text-[10px] text-gray-500 bg-gray-100 rounded px-1.5 py-px whitespace-nowrap">{packCodeToLabel(row.packCode)}</span>
+                              <span className="text-[10px] text-gray-400">stored</span>
+                            </div>
                           )}
+                        </td>
+                        {/* Last Used */}
+                        <td className="px-2.5 py-2">
+                          <span className="text-[10px] text-gray-400 whitespace-nowrap">{formatDayMonth(row.lastUsedAt)}</span>
                         </td>
                         {/* Use */}
                         <td className="px-2.5 py-2 text-right">
@@ -241,7 +241,7 @@ export function FlatSuggestionList({ rows, isLoading, isSearching, linePack, sca
                       {isOpen && row.otherSites.length > 0 && (
                         <tr className="border-b border-gray-50 bg-gray-50/40">
                           <td />
-                          <td colSpan={4} className="px-2.5 py-1.5">
+                          <td colSpan={6} className="px-2.5 py-1.5">
                             <div className="flex flex-col gap-0.5">
                               {row.otherSites.map((s, i) => (
                                 <div key={i} className="flex items-center justify-between text-[10px]">
