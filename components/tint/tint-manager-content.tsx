@@ -7,7 +7,7 @@ import {
   AlertCircle, Layers,
   Eye, Plus, MoreHorizontal, UserPlus, RefreshCw, X, Scissors,
   Truck, ChevronDown, ChevronUp, LayoutGrid, Table as TableIcon,
-  RotateCcw, Trash2, History, SkipForward, Pause, EyeOff,
+  RotateCcw, Trash2, History, SkipForward, Pause, EyeOff, FileBarChart,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -2599,6 +2599,14 @@ export function TintManagerContent() {
                 )}
               </div>
             )}
+            <a
+              href="/reports?r=tint-summary"
+              className="inline-flex items-center gap-1 text-[11px] font-semibold bg-white text-gray-700 border border-gray-200 rounded-full px-2.5 py-0.5 hover:bg-gray-50 hover:border-gray-300 transition-colors"
+              title="Open Reports — Tint Summary"
+            >
+              <FileBarChart size={12} />
+              Reports
+            </a>
             <button
               type="button"
               onClick={() => setPullModalOpen(true)}

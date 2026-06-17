@@ -19,6 +19,13 @@ const nextConfig = {
       { source: "/demo", destination: "/order-demo.html" },
     ];
   },
+  // TI Report folded into the Reports hub — old direct URLs land on the rail item.
+  async redirects() {
+    return [
+      { source: "/tint/manager/ti-report", destination: "/reports?r=ti-report", permanent: false },
+      { source: "/ti-report", destination: "/reports?r=ti-report", permanent: false },
+    ];
+  },
 };
 
 export default nextConfig;

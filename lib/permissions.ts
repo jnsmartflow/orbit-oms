@@ -36,7 +36,9 @@ const PAGE_NAV_MAP: NavItemConfig[] = [
   { pageKey: "delivery_challans",  label: "Delivery Challans", href: "/tint/manager/challan" },
   { pageKey: "shade_master",       label: "Shade Master",      href: "/tint/manager/shades" },
   { pageKey: "sampling_library",   label: "Sampling Library",  href: "/tint/sampling-library" },
-  { pageKey: "ti_report",          label: "TI Report",         href: "/tint/manager/ti-report" },
+  // "Reports" hub (/reports) — holds Tint Summary + TI Report under one rail.
+  // Reuses the ti_report permission so the same roles that had TI Report keep access.
+  { pageKey: "ti_report",          label: "Reports",           href: "/reports" },
   { pageKey: "attendance",         label: "Attendance",        href: "/attendance" },
   { pageKey: "attendance_admin",   label: "Attendance",        href: "/admin/attendance" },
   // NOTE: no "settings_hide" entry here — the Hide page is admin-only and lives
