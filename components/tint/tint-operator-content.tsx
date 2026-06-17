@@ -445,12 +445,13 @@ export function TintOperatorContent() {
   const [searchByEntry,        setSearchByEntry]        = useState<Record<string, string>>({});
   const [searchResultsByEntry, setSearchResultsByEntry] = useState<Record<string, SuggestFlatRow[] | null>>({});
   const [searchLoadingByEntry, setSearchLoadingByEntry] = useState<Record<string, boolean>>({});
-  // Pack-FILTER model — per-entry selected pack for the reuse list. Value is a
-  // PackCode or "ALL" (no pack filter). undefined → not yet chosen, so the
-  // render derives the default = the line's own pack (or "ALL" when the line
-  // pack is null/unknown). Reset on job change + whenever the entry's SKU line
-  // (hence its pack) changes via handleSkuSelect.
-  const [packFilterByEntry, setPackFilterByEntry] = useState<Record<string, PackCode | "ALL">>({});
+  // Pack-FILTER model — per-entry selected pack BUCKET for the reuse list. The
+  // value is a nominal dose-litre bucket (1 | 4 | 10 | 20) or "ALL" (no filter).
+  // undefined → not yet chosen, so the render derives the default = the line's
+  // own bucket (or "ALL" when the line pack is null/unknown/non-standard). Reset
+  // on job change + whenever the entry's SKU line (hence its pack) changes via
+  // handleSkuSelect.
+  const [packFilterByEntry, setPackFilterByEntry] = useState<Record<string, number | "ALL">>({});
   const searchVersionRef  = useRef<Record<string, number>>({});
   const searchDebounceRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const [tiActionLoading,    setTiActionLoading]    = useState(false);
@@ -2045,26 +2046,37 @@ export function TintOperatorContent() {
                   const browseLoading = isSearching
                     ? !!searchLoadingByEntry[entryId]
                     : !!suggestLoadingByEntry[entryId];
-                  // Pack-FILTER model — build the dropdown options from the packs
-                  // present in the CURRENT rows (site list, or search results when
-                  // searching), UNION the line's own pack. Default selection = the
-                  // line pack; "ALL" when the line pack is null/unknown. The list
-                  // is then filtered to the selected pack (both site + search).
-                  const entryLinePack = entry.packCode as PackCode | null;
+                  // Pack-FILTER model — bucket rows by NOMINAL dose-litres into the
+                  // four standard packs {1, 4, 10, 20} (so 3.7→4, 18/18.5→20, etc).
+                  // The dropdown always lists all four; counts come from the CURRENT
+                  // rows (site list, or search results when searching). Default
+                  // selection = the line's bucket when it's standard, else "ALL".
+                  // Rows with a null/non-standard dose (0.5/15/22/30/40) only show
+                  // under "All packs". The list is filtered by matching dose bucket.
+                  const STANDARD_BUCKETS = [1, 4, 10, 20] as const;
+                  const entryLinePack   = entry.packCode as PackCode | null;
+                  const entryLineBucket = packDoseLitres(entryLinePack);
+                  const lineBucket = entryLineBucket != null && (STANDARD_BUCKETS as readonly number[]).includes(entryLineBucket)
+                    ? entryLineBucket
+                    : null;
                   const rawPackFilter = packFilterByEntry[entryId];
-                  const packFilter: PackCode | "ALL" =
-                    rawPackFilter !== undefined ? rawPackFilter : (entryLinePack ?? "ALL");
-                  const packCountMap = new Map<PackCode, number>();
+                  const packFilter: number | "ALL" =
+                    rawPackFilter !== undefined ? rawPackFilter : (lineBucket ?? "ALL");
+                  const bucketCounts = new Map<number, number>();
                   for (const r of browseRows) {
-                    if (r.packCode) packCountMap.set(r.packCode, (packCountMap.get(r.packCode) ?? 0) + 1);
+                    const b = packDoseLitres(r.packCode);
+                    if (b != null && (STANDARD_BUCKETS as readonly number[]).includes(b)) {
+                      bucketCounts.set(b, (bucketCounts.get(b) ?? 0) + 1);
+                    }
                   }
-                  if (entryLinePack && !packCountMap.has(entryLinePack)) packCountMap.set(entryLinePack, 0);
-                  const packOptions = Array.from(packCountMap.entries())
-                    .map(([code, count]) => ({ code, count, isLine: code === entryLinePack }))
-                    .sort((a, b) => (packDoseLitres(a.code) ?? 0) - (packDoseLitres(b.code) ?? 0));
+                  const packOptions = STANDARD_BUCKETS.map(b => ({
+                    bucket: b,
+                    count:  bucketCounts.get(b) ?? 0,
+                    isLine: b === lineBucket,
+                  }));
                   const filteredBrowseRows = packFilter === "ALL"
                     ? browseRows
-                    : browseRows.filter(r => r.packCode === packFilter);
+                    : browseRows.filter(r => packDoseLitres(r.packCode) === packFilter);
                   // View routing (Part A). Search box shows in browse + newshade.
                   // List shows in browse (always) or newshade while searching.
                   // The new-shade form shows in newshade with no active search.
@@ -2141,19 +2153,18 @@ export function TintOperatorContent() {
                             REUSE A SHADE — ANY SITE
                           </label>
                           <div key="search-row" className="flex items-center gap-2">
-                            {/* PACK FILTER — filters the reuse list to one stored
-                                pack. Defaults to the line pack; "ALL" clears it.
-                                0-shade packs (e.g. the line pack with no reuse
-                                rows) are disabled. */}
+                            {/* PACK FILTER — filters the reuse list to one nominal
+                                pack bucket (1/4/10/20 LT). Defaults to the line's
+                                bucket; "ALL" clears it. 0-count buckets disabled. */}
                             {showList && (
                               <select
                                 value={packFilter}
-                                onChange={e => setPackFilterByEntry(prev => ({ ...prev, [entryId]: e.target.value as PackCode | "ALL" }))}
+                                onChange={e => setPackFilterByEntry(prev => ({ ...prev, [entryId]: e.target.value === "ALL" ? "ALL" : Number(e.target.value) }))}
                                 className="h-[34px] px-2 rounded-md border border-gray-200 bg-white text-gray-700 text-[12px] font-medium focus:border-gray-900 focus:outline-none flex-shrink-0">
                                 <option value="ALL">All packs · {browseRows.length}</option>
                                 {packOptions.map(opt => (
-                                  <option key={opt.code} value={opt.code} disabled={opt.count === 0}>
-                                    {(PACK_CODES.find(p => p.value === opt.code)?.label ?? opt.code)}{opt.isLine ? " · LINE" : ""} · {opt.count}
+                                  <option key={opt.bucket} value={opt.bucket} disabled={opt.count === 0}>
+                                    {opt.bucket} LT{opt.isLine ? " · LINE" : ""} · {opt.count}
                                   </option>
                                 ))}
                               </select>

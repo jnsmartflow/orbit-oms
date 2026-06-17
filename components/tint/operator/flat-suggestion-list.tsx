@@ -4,6 +4,7 @@ import { Fragment, useState } from "react";
 import { cn } from "@/lib/utils";
 import type { PackCode } from "@prisma/client";
 import type { SuggestFlatRow } from "@/app/api/sampling-library/_lib/suggest";
+import { packDoseLitres } from "@/lib/sampling/pack-litres";
 
 // Search-first flat suggestion list for the Tint Operator TI form. Pure list:
 // the PACK FILTER + search box + "Add shade" live in the parent so they stay
@@ -71,8 +72,14 @@ function PigmentChips({
   );
 }
 
+const STANDARD_BUCKETS: readonly number[] = [1, 4, 10, 20];
+
 export function FlatSuggestionList({ rows, isLoading, isSearching, linePack, onUse }: FlatSuggestionListProps) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // Line's NOMINAL bucket (1/4/10/20) — used to green the PACK pill. null when
+  // the line pack is null/unknown/non-standard, so nothing matches it.
+  const lineDose = packDoseLitres(linePack);
+  const lineNominal = lineDose != null && STANDARD_BUCKETS.includes(lineDose) ? lineDose : null;
   const scopeLabel = isSearching
     ? `Searching all sites · ${rows.length}`
     : `Shades at this site · ${rows.length}`;
@@ -129,11 +136,15 @@ export function FlatSuggestionList({ rows, isLoading, isSearching, linePack, onU
                 {rows.map((row) => {
                   const key    = `${row.samplingNo}-${row.recipeId}`;
                   const isOpen = expanded.has(key);
-                  // Pack-FILTER model: rows arrive already filtered to one pack by
-                  // the parent. The PACK pill is just green when the row's stored
-                  // pack matches the line, gray otherwise. No scaling here —
+                  // Pack-FILTER model: rows arrive already filtered to one nominal
+                  // bucket by the parent. The PACK pill shows the NOMINAL label
+                  // ({n} LT) for standard buckets, raw label otherwise. Green when
+                  // the row's bucket equals the line's bucket. No scaling here —
                   // applySuggestionToEntry scales the picked recipe on Use.
-                  const isLinePack = linePack != null && row.packCode === linePack;
+                  const rowDose    = packDoseLitres(row.packCode);
+                  const rowNominal = rowDose != null && STANDARD_BUCKETS.includes(rowDose) ? rowDose : null;
+                  const packLabel  = rowNominal != null ? `${rowNominal} LT` : packCodeToLabel(row.packCode);
+                  const isLinePack = rowNominal != null && rowNominal === lineNominal;
                   return (
                     <Fragment key={key}>
                       <tr
@@ -194,7 +205,7 @@ export function FlatSuggestionList({ rows, isLoading, isSearching, linePack, onU
                               ? "text-green-700 bg-green-50 border-green-200"
                               : "text-gray-500 bg-gray-100 border-gray-200",
                           )}>
-                            {packCodeToLabel(row.packCode)}
+                            {packLabel}
                           </span>
                         </td>
                         {/* Last Used */}
