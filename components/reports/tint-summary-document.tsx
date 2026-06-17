@@ -465,8 +465,8 @@ export default function TintSummaryDocument({
         <Mast subtitle="Composition of today's tinted volume" reportDateStr={reportDateStr} />
 
         {show("breakdown") && (<>
-        <div className="lab">Today&apos;s completed volume · two cuts</div>
-        <div className="desc">The same {s.completed.count} finished OBDs, split two ways — by customer type, and by where they&apos;re being delivered.</div>
+        <div className="lab">Today&apos;s volume · two cuts</div>
+        <div className="desc">Today&apos;s OBDs split two ways — by customer type and by where they&apos;re being delivered.</div>
         <div className="two">
           <CutBoard title="By business unit (SMU)" rows={data.smu} />
           <CutBoard title="By area / delivery type" rows={data.area} />

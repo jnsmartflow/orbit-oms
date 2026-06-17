@@ -490,7 +490,10 @@ export async function getTintSummaryData(params: TintSummaryParams = {}): Promis
   }
   const aging = buckets.map((b) => ({ ...b, litres: r2(b.litres) }));
 
-  // ── SMU + AREA split (over today's intake) ───────────────────────────────
+  // ── SMU + AREA split — over ALL of today's OBDs (orderDateTime = report
+  // date), the SAME intakeRows set top-customers + intake totals use. Totals
+  // per board therefore equal the intake total (NOT the completed set). SMU
+  // null falls back to import_raw_summary.smu; missing-customer area → "Unknown".
   const smuAgg = new Map<string, { count: number; litres: number }>();
   const areaAgg = new Map<string, { count: number; litres: number }>();
   for (const r of intakeRows) {
