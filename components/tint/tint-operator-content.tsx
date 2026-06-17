@@ -22,7 +22,7 @@ import type {
   SuggestFlatRow,
 } from "@/app/api/sampling-library/_lib/suggest";
 import type { PackCode } from "@prisma/client";
-import { canScale, scalePigments } from "@/lib/sampling/pack-litres";
+import { canScale, scalePigments, packDoseLitres } from "@/lib/sampling/pack-litres";
 import { Button } from "@/components/ui/button";
 import { TINTER_SHADE_COLORS, ACOTONE_SHADE_COLORS } from "@/lib/tint/shade-colors";
 import { humaniseReason } from "@/lib/tint/pause-reasons";
@@ -445,6 +445,12 @@ export function TintOperatorContent() {
   const [searchByEntry,        setSearchByEntry]        = useState<Record<string, string>>({});
   const [searchResultsByEntry, setSearchResultsByEntry] = useState<Record<string, SuggestFlatRow[] | null>>({});
   const [searchLoadingByEntry, setSearchLoadingByEntry] = useState<Record<string, boolean>>({});
+  // Pack-FILTER model — per-entry selected pack for the reuse list. Value is a
+  // PackCode or "ALL" (no pack filter). undefined → not yet chosen, so the
+  // render derives the default = the line's own pack (or "ALL" when the line
+  // pack is null/unknown). Reset on job change + whenever the entry's SKU line
+  // (hence its pack) changes via handleSkuSelect.
+  const [packFilterByEntry, setPackFilterByEntry] = useState<Record<string, PackCode | "ALL">>({});
   const searchVersionRef  = useRef<Record<string, number>>({});
   const searchDebounceRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const [tiActionLoading,    setTiActionLoading]    = useState(false);
@@ -787,6 +793,7 @@ export function TintOperatorContent() {
     setSearchResultsByEntry({});
     setSearchLoadingByEntry({});
     searchVersionRef.current = {};
+    setPackFilterByEntry({});
     setFormulaModalOpen(false);
     setFormulaMatches([]);
     setFormulaLoading(false);
@@ -923,6 +930,15 @@ export function TintOperatorContent() {
     if (!line || !selectedJob) return;
 
     const existing = existingTIEntries.get(rawLineItemId);
+
+    // Pack-FILTER reset — the line (hence its pack) just changed, so drop any
+    // prior selection and let the render re-default the filter to the new pack.
+    setPackFilterByEntry(prev => {
+      if (prev[entryId] === undefined) return prev;
+      const next = { ...prev };
+      delete next[entryId];
+      return next;
+    });
 
     setTiEntries(prev => prev.map(e => e.id !== entryId ? e : {
       ...e,
@@ -2029,6 +2045,26 @@ export function TintOperatorContent() {
                   const browseLoading = isSearching
                     ? !!searchLoadingByEntry[entryId]
                     : !!suggestLoadingByEntry[entryId];
+                  // Pack-FILTER model — build the dropdown options from the packs
+                  // present in the CURRENT rows (site list, or search results when
+                  // searching), UNION the line's own pack. Default selection = the
+                  // line pack; "ALL" when the line pack is null/unknown. The list
+                  // is then filtered to the selected pack (both site + search).
+                  const entryLinePack = entry.packCode as PackCode | null;
+                  const rawPackFilter = packFilterByEntry[entryId];
+                  const packFilter: PackCode | "ALL" =
+                    rawPackFilter !== undefined ? rawPackFilter : (entryLinePack ?? "ALL");
+                  const packCountMap = new Map<PackCode, number>();
+                  for (const r of browseRows) {
+                    if (r.packCode) packCountMap.set(r.packCode, (packCountMap.get(r.packCode) ?? 0) + 1);
+                  }
+                  if (entryLinePack && !packCountMap.has(entryLinePack)) packCountMap.set(entryLinePack, 0);
+                  const packOptions = Array.from(packCountMap.entries())
+                    .map(([code, count]) => ({ code, count, isLine: code === entryLinePack }))
+                    .sort((a, b) => (packDoseLitres(a.code) ?? 0) - (packDoseLitres(b.code) ?? 0));
+                  const filteredBrowseRows = packFilter === "ALL"
+                    ? browseRows
+                    : browseRows.filter(r => r.packCode === packFilter);
                   // View routing (Part A). Search box shows in browse + newshade.
                   // List shows in browse (always) or newshade while searching.
                   // The new-shade form shows in newshade with no active search.
@@ -2105,6 +2141,23 @@ export function TintOperatorContent() {
                             REUSE A SHADE — ANY SITE
                           </label>
                           <div key="search-row" className="flex items-center gap-2">
+                            {/* PACK FILTER — filters the reuse list to one stored
+                                pack. Defaults to the line pack; "ALL" clears it.
+                                0-shade packs (e.g. the line pack with no reuse
+                                rows) are disabled. */}
+                            {showList && (
+                              <select
+                                value={packFilter}
+                                onChange={e => setPackFilterByEntry(prev => ({ ...prev, [entryId]: e.target.value as PackCode | "ALL" }))}
+                                className="h-[34px] px-2 rounded-md border border-gray-200 bg-white text-gray-700 text-[12px] font-medium focus:border-gray-900 focus:outline-none flex-shrink-0">
+                                <option value="ALL">All packs · {browseRows.length}</option>
+                                {packOptions.map(opt => (
+                                  <option key={opt.code} value={opt.code} disabled={opt.count === 0}>
+                                    {(PACK_CODES.find(p => p.value === opt.code)?.label ?? opt.code)}{opt.isLine ? " · LINE" : ""} · {opt.count}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
                             <div className="relative flex-1 min-w-0">
                               <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                 <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
@@ -2137,11 +2190,10 @@ export function TintOperatorContent() {
                       {/* LIST — this-site browse list OR active-search results */}
                       {showList && (
                         <FlatSuggestionList
-                          rows={browseRows}
+                          rows={filteredBrowseRows}
                           isLoading={browseLoading}
                           isSearching={isSearching}
                           linePack={entry.packCode as PackCode | null}
-                          scalingEnabled={tinterType === "TINTER"}
                           onUse={(row) => handleUseSuggestion(entryId, row)}
                         />
                       )}

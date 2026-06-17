@@ -4,29 +4,26 @@ import { Fragment, useState } from "react";
 import { cn } from "@/lib/utils";
 import type { PackCode } from "@prisma/client";
 import type { SuggestFlatRow } from "@/app/api/sampling-library/_lib/suggest";
-import { packDoseLitres, canScale } from "@/lib/sampling/pack-litres";
 
 // Search-first flat suggestion list for the Tint Operator TI form. Pure list:
-// the search box + "Add shade" live in the parent so they stay mounted as the
-// view toggles between this list and the new-shade form.
+// the PACK FILTER + search box + "Add shade" live in the parent so they stay
+// mounted as the view toggles between this list and the new-shade form, and so
+// the parent owns the filtering (rows arrive already filtered to one pack).
 // - empty query  → this-site flatSuggestions (exact pinned → recent).
 // - typed query  → global operator-search results (all sites).
 // Rows are SuggestFlatRow so the parent's applySuggestionToEntry consumes them
 // unchanged. Stays inside the §34 colour budget — gray family only, no teal:
 // exact rows get a grey "EXACT" chip + grey wash + gray-900 left accent (the
-// selected-card idiom); "Use" is soft grey.
+// selected-card idiom); "Use" is soft grey. FORMULA shows the shade's RAW
+// stored pigments (no scaling) — applySuggestionToEntry scales on Use.
 
 export interface FlatSuggestionListProps {
   rows:        SuggestFlatRow[];
   isLoading:   boolean;
   isSearching: boolean;
-  // Current tinting line's pack — locks the displayed formula to this pack's
-  // dose. Stored rows in other packs are scaled to it (display only). null →
-  // no scaling (raw stored values shown).
+  // Current tinting line's pack — only used to colour the PACK pill green when a
+  // row's stored pack matches the line. null → every pill renders gray.
   linePack:    PackCode | null;
-  // Pack scaling is TINTER-only. When false (ACOTONE) → pre-feature behaviour:
-  // no locked pill, raw values, original "{pack} · {date}" meta, no ✓/×N.
-  scalingEnabled: boolean;
   onUse:       (row: SuggestFlatRow) => void;
 }
 
@@ -74,7 +71,7 @@ function PigmentChips({
   );
 }
 
-export function FlatSuggestionList({ rows, isLoading, isSearching, linePack, scalingEnabled, onUse }: FlatSuggestionListProps) {
+export function FlatSuggestionList({ rows, isLoading, isSearching, linePack, onUse }: FlatSuggestionListProps) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const scopeLabel = isSearching
     ? `Searching all sites · ${rows.length}`
@@ -90,15 +87,9 @@ export function FlatSuggestionList({ rows, isLoading, isSearching, linePack, sca
 
   return (
     <div className="mb-3">
-      {/* Scope line + locked pack pill (TINTER only; values shown at this pack) */}
+      {/* Scope line (pack is chosen via the parent's PACK FILTER dropdown) */}
       <div className="flex items-center justify-between gap-2 mb-1.5">
         <p className="text-[11px] font-medium tracking-wide text-gray-500">{scopeLabel}</p>
-        {scalingEnabled && (
-          <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-gray-600 bg-gray-100 border border-gray-200 rounded px-2 py-0.5 flex-shrink-0">
-            PACK · {linePack ? packCodeToLabel(linePack) : "—"}
-            {linePack && <span aria-hidden>🔒</span>}
-          </span>
-        )}
       </div>
 
       {/* Table */}
@@ -138,23 +129,11 @@ export function FlatSuggestionList({ rows, isLoading, isSearching, linePack, sca
                 {rows.map((row) => {
                   const key    = `${row.samplingNo}-${row.recipeId}`;
                   const isOpen = expanded.has(key);
-                  // Display scaling: lock the formula to the current line's pack.
-                  // TINTER only — gated by scalingEnabled AND the ROW's own type
-                  // (an ACOTONE row on a TINTER line must not get ✓/×N).
-                  const rowScalable = scalingEnabled && row.tinterType === "TINTER";
-                  const isReal   = rowScalable && linePack != null && row.packCode === linePack;
-                  const scalable = rowScalable && linePack != null && !isReal && canScale(row.packCode, linePack);
-                  let ratio: number | null = null;
-                  let displayPigments = row.activePigments;
-                  if (scalable) {
-                    const fromL = packDoseLitres(row.packCode)!;
-                    const toL   = packDoseLitres(linePack)!;
-                    ratio = parseFloat((toL / fromL).toFixed(2));
-                    displayPigments = row.activePigments.map((p) => ({
-                      code:  p.code,
-                      value: parseFloat((p.value * (toL / fromL)).toFixed(2)),
-                    }));
-                  }
+                  // Pack-FILTER model: rows arrive already filtered to one pack by
+                  // the parent. The PACK pill is just green when the row's stored
+                  // pack matches the line, gray otherwise. No scaling here —
+                  // applySuggestionToEntry scales the picked recipe on Use.
+                  const isLinePack = linePack != null && row.packCode === linePack;
                   return (
                     <Fragment key={key}>
                       <tr
@@ -203,30 +182,20 @@ export function FlatSuggestionList({ rows, isLoading, isSearching, linePack, sca
                             )}
                           </div>
                         </td>
-                        {/* Formula — scaled chips only (pack/date moved to own columns) */}
+                        {/* Formula — RAW stored pigments (no scaling) */}
                         <td className="px-2.5 py-2">
-                          <PigmentChips pigments={displayPigments} onWash={row.isExactMatch} />
+                          <PigmentChips pigments={row.activePigments} onWash={row.isExactMatch} />
                         </td>
-                        {/* Pack — ✓/×N/"stored" only on TINTER rows when scaling
-                            is on; ACOTONE (or scaling off) → plain gray pill. */}
+                        {/* Pack — plain pill; green when it equals the line pack */}
                         <td className="px-2.5 py-2">
-                          {isReal ? (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-medium text-green-700 bg-green-50 border border-green-200 rounded px-1.5 py-px whitespace-nowrap">
-                              {packCodeToLabel(row.packCode)} ✓
-                            </span>
-                          ) : scalable ? (
-                            <div className="flex items-center gap-1 flex-wrap">
-                              <span className="text-[10px] text-gray-500 bg-gray-100 rounded px-1.5 py-px whitespace-nowrap">{packCodeToLabel(row.packCode)}</span>
-                              <span className="text-[10px] font-semibold text-teal-700 bg-teal-50 border border-teal-200 rounded px-1 py-px">×{ratio}</span>
-                            </div>
-                          ) : rowScalable ? (
-                            <div className="flex items-center gap-1 flex-wrap">
-                              <span className="text-[10px] text-gray-500 bg-gray-100 rounded px-1.5 py-px whitespace-nowrap">{packCodeToLabel(row.packCode)}</span>
-                              <span className="text-[10px] text-gray-400">stored</span>
-                            </div>
-                          ) : (
-                            <span className="text-[10px] text-gray-500 bg-gray-100 rounded px-1.5 py-px whitespace-nowrap">{packCodeToLabel(row.packCode)}</span>
-                          )}
+                          <span className={cn(
+                            "inline-flex items-center text-[10px] font-medium rounded px-1.5 py-px whitespace-nowrap border",
+                            isLinePack
+                              ? "text-green-700 bg-green-50 border-green-200"
+                              : "text-gray-500 bg-gray-100 border-gray-200",
+                          )}>
+                            {packCodeToLabel(row.packCode)}
+                          </span>
                         </td>
                         {/* Last Used */}
                         <td className="px-2.5 py-2">
