@@ -57,14 +57,14 @@ const SAMPLE: TintSummaryData = {
     { bucket: "8+", count: 0, litres: 0 },
   ],
   smu: [
-    { name: "Decorative Projects", count: 9, litres: 820 },
-    { name: "Retail Offtake", count: 7, litres: 420 },
+    { name: "Decorative Projects", count: 9, litres: 820, completedCount: 6, completedLitres: 540 },
+    { name: "Retail Offtake", count: 7, litres: 420, completedCount: 3, completedLitres: 180 },
   ],
   area: [
-    { name: "Local", count: 8, litres: 560 },
-    { name: "Upcountry", count: 4, litres: 360 },
-    { name: "IGT", count: 2, litres: 180 },
-    { name: "Cross Depot", count: 2, litres: 140 },
+    { name: "Local", count: 8, litres: 560, completedCount: 5, completedLitres: 360 },
+    { name: "Upcountry", count: 4, litres: 360, completedCount: 2, completedLitres: 200 },
+    { name: "IGT", count: 2, litres: 180, completedCount: 1, completedLitres: 100 },
+    { name: "Cross Depot", count: 2, litres: 140, completedCount: 0, completedLitres: 0 },
   ],
   topCustomers: [
     { customerId: 1, name: "THE MAPPLE SKYWALK", dealer: "Shree Paint Centre", obdCount: 2, litres: 180 },

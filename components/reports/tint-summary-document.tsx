@@ -1,5 +1,6 @@
 import { Inter } from "next/font/google";
 import type { TintSummaryData } from "@/lib/reports/tint-summary-data";
+import { AREA_OPTIONS } from "@/components/reports/report-params";
 
 // Re-export so existing importers (preview page) keep `{ type TintSummaryData }`
 // from this module. Canonical definition lives in lib/reports/tint-summary-data.
@@ -325,26 +326,57 @@ function AgingBars({ aging }: { aging: TintSummaryData["aging"] }) {
   );
 }
 
-// ── Two-cut breakdown board (SMU / Area) ─────────────────────────────────────
-function CutBoard({ title, rows }: { title: string; rows: Array<{ name: string; count: number; litres: number }> }) {
+// Dot colours — area reused from report-params; SMU mapped here. Unknown / any
+// other value → neutral slate.
+const AREA_DOT = new Map<string, string>(AREA_OPTIONS.map((a) => [a.value, a.dot]));
+const SMU_DOT: Record<string, string> = {
+  "Decorative Projects": "#4f46e5",
+  "Retail Offtake": "#0891b2",
+};
+const areaDot = (name: string) => AREA_DOT.get(name) ?? "#64748b";
+const smuDot = (name: string) => SMU_DOT[name] ?? "#64748b";
+
+const DONE_GREEN = "#15803d";
+const FILL_GREEN = "#16a34a";
+const TRACK_GREY = "#d1d5db";
+
+// ── Workload board (SMU / Area) — grey track sized by litres, green count-fill ─
+type BoardRow = { name: string; count: number; litres: number; completedCount: number; completedLitres: number };
+function CutBoard({ title, rows, dotFor }: { title: string; rows: BoardRow[]; dotFor: (name: string) => string }) {
   const maxL = Math.max(...rows.map((r) => r.litres), 1);
   const totC = rows.reduce((s, r) => s + r.count, 0);
   const totL = rows.reduce((s, r) => s + r.litres, 0);
+  const totDone = rows.reduce((s, r) => s + r.completedCount, 0);
   return (
     <div className="bd">
       <h3>{title}</h3>
-      {rows.map((r, i) => (
-        <div className="br" key={r.name}>
-          <div className="top">
-            <span className="nm">{r.name}</span>
-            <span className="mt"><b>{r.count}</b>OBD · {litres(r.litres)}</span>
+      {rows.map((r) => {
+        const trackPct = (r.litres / maxL) * 100;        // bar length = relative volume
+        const fillPct = r.count > 0 ? (r.completedCount / r.count) * 100 : 0; // green = N done / N
+        return (
+          <div className="br" key={r.name}>
+            <div className="top">
+              <span className="nm">
+                <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: dotFor(r.name), marginRight: 6, verticalAlign: "middle" }} />
+                {r.name}
+              </span>
+              <span className="mt">
+                <b>{r.count}</b>OBD · {litres(r.litres)} ·{" "}
+                <span style={{ color: r.completedCount > 0 ? DONE_GREEN : "#94a0b0", fontWeight: 600 }}>{r.completedCount} done</span>
+              </span>
+            </div>
+            <div style={{ height: 6, width: `${trackPct}%`, minWidth: 2, borderRadius: 3, background: TRACK_GREY, overflow: "hidden" }}>
+              <div style={{ height: "100%", width: `${fillPct}%`, background: FILL_GREEN }} />
+            </div>
           </div>
-          <div className="trk"><i className={i === 0 ? "lead" : undefined} style={{ width: `${(r.litres / maxL) * 100}%` }} /></div>
-        </div>
-      ))}
+        );
+      })}
       <div className="bd-tot">
         <span className="tl">Total</span>
-        <span className="tv"><b>{totC}</b>OBD · {litres(totL)}</span>
+        <span className="tv">
+          <b>{totC}</b>OBD · {litres(totL)} ·{" "}
+          <span style={{ color: DONE_GREEN, fontWeight: 700 }}>{totDone} done</span>
+        </span>
       </div>
     </div>
   );
@@ -465,11 +497,11 @@ export default function TintSummaryDocument({
         <Mast subtitle="Composition of today's tinted volume" reportDateStr={reportDateStr} />
 
         {show("breakdown") && (<>
-        <div className="lab">Open workload · two cuts</div>
-        <div className="desc">Everything currently on the tint board — split by business unit and by delivery area, including OBDs carried over from earlier days.</div>
+        <div className="lab">Workload · two cuts</div>
+        <div className="desc">Every OBD on the board today by business unit and delivery area. The green fill shows how much of each is already done.</div>
         <div className="two">
-          <CutBoard title="By business unit (SMU)" rows={data.smu} />
-          <CutBoard title="By area / delivery type" rows={data.area} />
+          <CutBoard title="By business unit (SMU)" rows={data.smu} dotFor={smuDot} />
+          <CutBoard title="By area / delivery type" rows={data.area} dotFor={areaDot} />
         </div>
         </>)}
 

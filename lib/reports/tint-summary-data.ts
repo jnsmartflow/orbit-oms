@@ -56,8 +56,8 @@ export interface TintSummaryData {
   trend: Array<{ date: string; intakeCount: number; completedCount: number }>;
   operators: Array<{ operatorId: number; name: string | null; jobs: number; litres: number }>;
   aging: Array<{ bucket: string; count: number; litres: number }>;
-  smu: Array<{ name: string; count: number; litres: number }>;
-  area: Array<{ name: string; count: number; litres: number }>;
+  smu: Array<{ name: string; count: number; litres: number; completedCount: number; completedLitres: number }>;
+  area: Array<{ name: string; count: number; litres: number; completedCount: number; completedLitres: number }>;
   topCustomers: Array<{ customerId: number; name: string; dealer: string | null; obdCount: number; litres: number }>;
   openRegister: Array<{ obd: string; site: string; litres: number; status: string; operator: string | null; ageDays: number; isHold: boolean }>;
   completedRegister: Array<{ obd: string; site: string; litres: number; operator: string | null; doneAtIST: string }>;
@@ -347,6 +347,7 @@ export async function getTintSummaryData(params: TintSummaryParams = {}): Promis
     orderId: number; obd: string; site: string; litres: number;
     completedAt: Date; operator: string | null; operatorId: number | null;
     smu: string | null; area: string; isHold: boolean;
+    customerId: number | null; dealer: string | null;
   };
   const completedByOrder = new Map<number, CompletedObd>();
   // Per-job rows feed the operators[] breakdown (a split OBD is many jobs).
@@ -365,6 +366,7 @@ export async function getTintSummaryData(params: TintSummaryParams = {}): Promis
       litres, completedAt: a.completedAt!,
       operator: a.assignedTo?.name ?? null, operatorId: a.assignedTo?.id ?? null,
       smu, area, isHold,
+      customerId: o.customerId, dealer: dealerMap.get(o.obdNumber) ?? null,
     });
     jobs.push({ operatorId: a.assignedTo?.id ?? null, operator: a.assignedTo?.name ?? null, litres, smu, area, isHold });
   }
@@ -386,6 +388,7 @@ export async function getTintSummaryData(params: TintSummaryParams = {}): Promis
         litres: splitLitres, completedAt: s.completedAt!,
         operator: s.assignedTo?.name ?? null, operatorId: s.assignedTo?.id ?? null,
         smu, area, isHold,
+        customerId: o.customerId, dealer: dealerMap.get(o.obdNumber) ?? null,
       });
     } else {
       existing.litres += splitLitres;
@@ -499,33 +502,64 @@ export async function getTintSummaryData(params: TintSummaryParams = {}): Promis
   }
   const aging = buckets.map((b) => ({ ...b, litres: r2(b.litres) }));
 
-  // ── SMU + AREA split — over the OPEN/PENDING board (openRows), summing
-  // querySnapshot volume per SMU / per Area. Same rows as the open register, so
-  // each board total equals "Remaining / Open now". SMU null falls back to
-  // import_raw_summary.smu; missing-customer area → "Unknown".
-  const smuAgg = new Map<string, { count: number; litres: number }>();
-  const areaAgg = new Map<string, { count: number; litres: number }>();
-  for (const r of openRows) {
-    const sk = r.smu ?? "Unknown";
-    const sc = smuAgg.get(sk) ?? { count: 0, litres: 0 };
-    sc.count += 1; sc.litres += r.litres; smuAgg.set(sk, sc);
-    const ac = areaAgg.get(r.area) ?? { count: 0, litres: 0 };
-    ac.count += 1; ac.litres += r.litres; areaAgg.set(r.area, ac);
+  // ── BOARD-WORKLOAD pool — open/pending OBDs ∪ completed-today OBDs, keyed by
+  // orderId so the two halves stay mutually exclusive (a done OBD has left the
+  // pending stages). Operator-scoped on both halves so the filter is honoured.
+  // SMU + Area + Top customers all derive from THIS pool, with the completed
+  // subset tracked for the green done-fill. SMU null → import_raw_summary.smu;
+  // missing-customer area → "Unknown".
+  const completedForBoard = completedObds.filter((c) => !opFilter || (c.operatorId != null && opFilter.has(c.operatorId)));
+  type BoardRow = {
+    orderId: number; smu: string | null; area: string; litres: number;
+    customerId: number | null; site: string; dealer: string | null; done: boolean;
+  };
+  const boardByOrder = new Map<number, BoardRow>();
+  for (const c of completedForBoard) {
+    boardByOrder.set(c.orderId, {
+      orderId: c.orderId, smu: c.smu, area: c.area, litres: c.litres,
+      customerId: c.customerId, site: c.site, dealer: c.dealer, done: true,
+    });
   }
-  const smuOut = Array.from(smuAgg.entries())
-    .map(([name, v]) => ({ name, count: v.count, litres: r2(v.litres) }))
-    .sort((a, b) => b.litres - a.litres);
-  const areaOut = Array.from(areaAgg.entries())
-    .map(([name, v]) => ({ name, count: v.count, litres: r2(v.litres) }))
-    .sort((a, b) => b.litres - a.litres);
-
-  // ── TOP CUSTOMERS — open/pending board grouped by customerId (top 5) ──────
-  const custAgg = new Map<number, { name: string; dealer: string | null; obdCount: number; litres: number }>();
   for (const r of openRows) {
-    if (r.customerId == null) continue;
-    const cur = custAgg.get(r.customerId) ?? { name: r.site, dealer: r.dealer, obdCount: 0, litres: 0 };
-    cur.obdCount += 1; cur.litres += r.litres;
-    custAgg.set(r.customerId, cur);
+    if (boardByOrder.has(r.orderId)) continue; // disjoint by stage; guard anyway
+    boardByOrder.set(r.orderId, {
+      orderId: r.orderId, smu: r.smu, area: r.area, litres: r.litres,
+      customerId: r.customerId, site: r.site, dealer: r.dealer, done: false,
+    });
+  }
+  const boardRows = Array.from(boardByOrder.values());
+
+  type BoardAgg = { count: number; litres: number; completedCount: number; completedLitres: number };
+  const smuAgg = new Map<string, BoardAgg>();
+  const areaAgg = new Map<string, BoardAgg>();
+  const bumpBoard = (m: Map<string, BoardAgg>, key: string, b: BoardRow) => {
+    const cur = m.get(key) ?? { count: 0, litres: 0, completedCount: 0, completedLitres: 0 };
+    cur.count += 1;
+    cur.litres += b.litres;
+    if (b.done) { cur.completedCount += 1; cur.completedLitres += b.litres; }
+    m.set(key, cur);
+  };
+  for (const b of boardRows) {
+    bumpBoard(smuAgg, b.smu ?? "Unknown", b);
+    bumpBoard(areaAgg, b.area, b);
+  }
+  const toBoardOut = (m: Map<string, BoardAgg>) =>
+    Array.from(m.entries())
+      .map(([name, v]) => ({
+        name, count: v.count, litres: r2(v.litres),
+        completedCount: v.completedCount, completedLitres: r2(v.completedLitres),
+      }))
+      .sort((a, b) => b.litres - a.litres);
+  const smuOut = toBoardOut(smuAgg);
+  const areaOut = toBoardOut(areaAgg);
+
+  // ── TOP CUSTOMERS — same board pool, ranked by TOTAL litres (top 5) ───────
+  const custAgg = new Map<number, { name: string; dealer: string | null; obdCount: number; litres: number }>();
+  for (const b of boardRows) {
+    if (b.customerId == null) continue;
+    const cur = custAgg.get(b.customerId) ?? { name: b.site, dealer: b.dealer, obdCount: 0, litres: 0 };
+    cur.obdCount += 1; cur.litres += b.litres;
+    custAgg.set(b.customerId, cur);
   }
   const topCustomers = Array.from(custAgg.entries())
     .map(([customerId, v]) => ({ customerId, name: v.name, dealer: v.dealer, obdCount: v.obdCount, litres: r2(v.litres) }))
