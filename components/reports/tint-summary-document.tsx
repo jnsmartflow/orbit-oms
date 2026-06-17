@@ -465,8 +465,8 @@ export default function TintSummaryDocument({
         <Mast subtitle="Composition of today's tinted volume" reportDateStr={reportDateStr} />
 
         {show("breakdown") && (<>
-        <div className="lab">Today&apos;s volume · two cuts</div>
-        <div className="desc">Today&apos;s OBDs split two ways — by customer type and by where they&apos;re being delivered.</div>
+        <div className="lab">Open workload · two cuts</div>
+        <div className="desc">Everything currently on the tint board — split by business unit and by delivery area, including OBDs carried over from earlier days.</div>
         <div className="two">
           <CutBoard title="By business unit (SMU)" rows={data.smu} />
           <CutBoard title="By area / delivery type" rows={data.area} />
@@ -474,8 +474,8 @@ export default function TintSummaryDocument({
         </>)}
 
         {show("topCustomers") && (<>
-        <div className="lab">Top customers · by volume today</div>
-        <div className="desc">The five sites that took the most paint today.</div>
+        <div className="lab">Top customers · by open volume</div>
+        <div className="desc">The sites with the most volume currently on the board.</div>
         <table>
           <thead>
             <tr><th style={{ width: 24 }}>#</th><th>Customer / Site</th><th>Bill-to dealer</th><th className="r">OBD</th><th className="r">Volume</th></tr>

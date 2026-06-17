@@ -317,6 +317,8 @@ export async function getTintSummaryData(params: TintSummaryParams = {}): Promis
     return {
       orderId: o.id,
       obd: o.obdNumber,
+      customerId: o.customerId,
+      dealer: dealerMap.get(o.obdNumber) ?? null,
       site: o.shipToCustomerName ?? (o.customer as Customer)?.customerName ?? "—",
       litres: o.querySnapshot?.totalVolume ?? 0,
       status,
@@ -332,6 +334,13 @@ export async function getTintSummaryData(params: TintSummaryParams = {}): Promis
   const closingRows = pendingRows.filter((r) => passOrder(r.smu, r.area, r.isHold));
   const closingCount = closingRows.length;
   const closingLitres = r2(closingRows.reduce((s, r) => s + r.litres, 0));
+
+  // Open rows on the board now, operator-scoped — the SHARED set behind the open
+  // register AND the SMU/Area/top-customer breakdowns. smu/area/includeHold are
+  // already applied (closingRows); the operator filter narrows further. At the
+  // default (no operator filter) this is exactly closingRows, so the breakdown
+  // totals equal "Remaining".
+  const openRows = closingRows.filter((r) => !opFilter || (r.operatorId != null && opFilter.has(r.operatorId)));
 
   // ── COMPLETED set — one row per OBD, MAX(completedAt) across splits ───────
   type CompletedObd = {
@@ -490,13 +499,13 @@ export async function getTintSummaryData(params: TintSummaryParams = {}): Promis
   }
   const aging = buckets.map((b) => ({ ...b, litres: r2(b.litres) }));
 
-  // ── SMU + AREA split — over ALL of today's OBDs (orderDateTime = report
-  // date), the SAME intakeRows set top-customers + intake totals use. Totals
-  // per board therefore equal the intake total (NOT the completed set). SMU
-  // null falls back to import_raw_summary.smu; missing-customer area → "Unknown".
+  // ── SMU + AREA split — over the OPEN/PENDING board (openRows), summing
+  // querySnapshot volume per SMU / per Area. Same rows as the open register, so
+  // each board total equals "Remaining / Open now". SMU null falls back to
+  // import_raw_summary.smu; missing-customer area → "Unknown".
   const smuAgg = new Map<string, { count: number; litres: number }>();
   const areaAgg = new Map<string, { count: number; litres: number }>();
-  for (const r of intakeRows) {
+  for (const r of openRows) {
     const sk = r.smu ?? "Unknown";
     const sc = smuAgg.get(sk) ?? { count: 0, litres: 0 };
     sc.count += 1; sc.litres += r.litres; smuAgg.set(sk, sc);
@@ -510,9 +519,9 @@ export async function getTintSummaryData(params: TintSummaryParams = {}): Promis
     .map(([name, v]) => ({ name, count: v.count, litres: r2(v.litres) }))
     .sort((a, b) => b.litres - a.litres);
 
-  // ── TOP CUSTOMERS — all today's OBDs grouped by customerId (top 5) ────────
+  // ── TOP CUSTOMERS — open/pending board grouped by customerId (top 5) ──────
   const custAgg = new Map<number, { name: string; dealer: string | null; obdCount: number; litres: number }>();
-  for (const r of intakeRows) {
+  for (const r of openRows) {
     if (r.customerId == null) continue;
     const cur = custAgg.get(r.customerId) ?? { name: r.site, dealer: r.dealer, obdCount: 0, litres: 0 };
     cur.obdCount += 1; cur.litres += r.litres;
@@ -523,9 +532,8 @@ export async function getTintSummaryData(params: TintSummaryParams = {}): Promis
     .sort((a, b) => b.litres - a.litres)
     .slice(0, 5);
 
-  // ── OPEN REGISTER — live pending (operator filter applies) ────────────────
-  const openRegister = closingRows
-    .filter((r) => !opFilter || (r.operatorId != null && opFilter.has(r.operatorId)))
+  // ── OPEN REGISTER — the same operator-scoped open rows ────────────────────
+  const openRegister = openRows
     .map((r) => ({
       obd: r.obd, site: r.site, litres: r2(r.litres),
       status: r.status, operator: r.operator, ageDays: r.ageDays, isHold: r.isHold,
