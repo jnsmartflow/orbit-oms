@@ -1,4 +1,9 @@
 import { Inter } from "next/font/google";
+import type { TintSummaryData } from "@/lib/reports/tint-summary-data";
+
+// Re-export so existing importers (preview page) keep `{ type TintSummaryData }`
+// from this module. Canonical definition lives in lib/reports/tint-summary-data.
+export type { TintSummaryData };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tint Summary — daily report PRINT DOCUMENT.
@@ -21,33 +26,8 @@ const inter = Inter({
   display: "swap",
 });
 
-// ── Prop shape — EXACTLY the JSON from GET /api/reports/tint-summary ──────────
-export interface TintSummaryData {
-  reportDate: string;
-  generatedAt: string;
-  summary: {
-    remaining: { count: number; litres: number };
-    completed: { count: number; litres: number };
-    intake: { count: number; litres: number };
-    workloadCleared: { pct: number; done: number; total: number };
-  };
-  movement: {
-    opening: { count: number; litres: number };
-    intake: { count: number; litres: number };
-    completed: { count: number; litres: number };
-    closing: { count: number; litres: number };
-  };
-  pace: Array<{ hourIST: number; cumulativeLitres: number }>;
-  trend: Array<{ date: string; intakeCount: number; completedCount: number }>;
-  operators: Array<{ operatorId: number; name: string | null; jobs: number; litres: number }>;
-  aging: Array<{ bucket: string; count: number; litres: number }>;
-  smu: Array<{ name: string; count: number; litres: number }>;
-  area: Array<{ name: string; count: number; litres: number }>;
-  topCustomers: Array<{ customerId: number; name: string; dealer: string | null; obdCount: number; litres: number }>;
-  openRegister: Array<{ obd: string; site: string; litres: number; status: string; operator: string | null; ageDays: number; isHold: boolean }>;
-  completedRegister: Array<{ obd: string; site: string; litres: number; operator: string | null; doneAtIST: string }>;
-  flags: { holdCount: number; oldestHoldDays: number; pausedToday: number; skippedToday: number; removedToday: number };
-}
+// Prop shape = the JSON from GET /api/reports/tint-summary (TintSummaryData,
+// imported from lib/reports/tint-summary-data above).
 
 // ── Scoped CSS (mockup-verbatim values, every selector prefixed `.tsr`) ───────
 const CSS = `
