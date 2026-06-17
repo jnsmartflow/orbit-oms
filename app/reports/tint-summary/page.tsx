@@ -26,7 +26,7 @@ function Notice({ title, body }: { title: string; body: string }) {
 }
 
 // Async body — fetches live data, then renders the document / empty / error state.
-async function ReportBody({ params, generatedByName }: { params: TintSummaryParams; generatedByName: string }) {
+async function ReportBody({ params, hidden, generatedByName }: { params: TintSummaryParams; hidden: string[]; generatedByName: string }) {
   let data;
   try {
     data = await getTintSummaryData(params);
@@ -45,7 +45,7 @@ async function ReportBody({ params, generatedByName }: { params: TintSummaryPara
     );
   }
 
-  return <TintSummaryDocument data={data} generatedByName={generatedByName} />;
+  return <TintSummaryDocument data={data} hiddenSections={hidden} generatedByName={generatedByName} />;
 }
 
 export default async function TintSummaryReportPage({ searchParams }: { searchParams: SP }) {
@@ -73,6 +73,7 @@ export default async function TintSummaryReportPage({ searchParams }: { searchPa
     area: csvStrs(one(searchParams.area)),
     trendDays: Number.isFinite(trendDaysN) ? trendDaysN : undefined,
   };
+  const hidden = csvStrs(one(searchParams.hide));
 
   const generatedByName = session.user.name ?? "Tint Manager";
 
@@ -93,7 +94,7 @@ export default async function TintSummaryReportPage({ searchParams }: { searchPa
       </div>
 
       <Suspense fallback={<Notice title="Loading the report…" body="Gathering today's tint activity." />}>
-        <ReportBody params={params} generatedByName={generatedByName} />
+        <ReportBody params={params} hidden={hidden} generatedByName={generatedByName} />
       </Suspense>
     </div>
   );
