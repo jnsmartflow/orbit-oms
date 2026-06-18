@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { splitDeliveryRemarks } from "@/lib/mail-orders/utils";
 import { getTagSettings } from "@/lib/hide/tag-settings";
+import { buildComboSiblings } from "@/lib/mail-orders/table-c";
 
 export const dynamic = "force-dynamic";
 
@@ -129,6 +130,21 @@ export async function GET(req: Request): Promise<NextResponse> {
     }
   }
 
+  // Alt-SKU twins — every v2 SKU sharing a line's product|baseColour|packCode
+  // combo. Built ONCE per request from v2 stock (sequential await, no
+  // $transaction — CORE §3), same batch shape as customerLookupMap above.
+  // Purely additive: the billed skuCode stays primary; altSkus is informational.
+  const comboSkuRows = await prisma.mo_sku_lookup_v2.findMany({
+    select: { material: true, product: true, baseColour: true, packCode: true, description: true, isPrimary: true },
+  });
+  const { materialToCombo, comboToSiblings } = buildComboSiblings(comboSkuRows);
+  const siblingsFor = (skuCode: string | null): { code: string; description: string }[] => {
+    if (!skuCode) return [];
+    const combo = materialToCombo.get(skuCode);
+    if (!combo) return [];
+    return (comboToSiblings.get(combo) ?? []).filter((s) => s.code !== skuCode);
+  };
+
   const enrichedOrders = orders.map((o) => {
     const lookup = o.customerCode ? customerLookupMap.get(o.customerCode) : undefined;
     const shipToCode = shipToCodeByOrderId.get(o.id) ?? null;
@@ -140,6 +156,8 @@ export async function GET(req: Request): Promise<NextResponse> {
       customerRoute: lookup?.route ?? null,
       shipToArea: shipToLookup?.area ?? null,
       shipToDeliveryType: shipToLookup?.deliveryType ?? null,
+      // Additive: append altSkus per line; every existing line field preserved.
+      lines: o.lines.map((l) => ({ ...l, altSkus: siblingsFor(l.skuCode) })),
     };
   });
 

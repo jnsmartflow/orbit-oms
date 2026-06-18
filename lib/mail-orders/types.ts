@@ -37,6 +37,11 @@ export interface MoOrderLine {
   matchStatus: MatchStatus;
   createdAt: string;
   lineStatus?: LineStatus | null;
+  // Load-time list of OTHER v2 SKUs sharing this line's
+  // product|baseColour|packCode combo (alt twins). Additive + optional;
+  // empty when the resolved skuCode has no siblings. Distinct from
+  // LineStatus.altSkuCode (the operator's single manual substitute).
+  altSkus?: { code: string; description: string }[];
 }
 
 export interface MoOrderRemark {

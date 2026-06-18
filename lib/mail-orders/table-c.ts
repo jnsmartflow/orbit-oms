@@ -221,3 +221,56 @@ export function buildTableC(
     menuRowsZeroKeys,
   };
 }
+
+// ─────────────────────────────────────────────────────────
+// Combo siblings — alt-SKU twins sharing a product|base|pack combo
+// ─────────────────────────────────────────────────────────
+// Inverse of enrich.ts's byCombo/byComboAlt (enrich.ts:270-286): instead of
+// keeping only the 1st (primary) + 2nd (alt) row per combo and DROPPING the
+// 3rd+, this keeps EVERY member so the mail-order line UI can surface all
+// alternate SKUs that share a line's (product|baseColour|packCode). Pure,
+// additive, read-only — used at load time by /api/mail-orders; the billed
+// skuCode stays the primary, this is informational only.
+
+/** Minimal stock shape for sibling grouping (subset of mo_sku_lookup_v2). */
+export interface ComboSiblingRow {
+  material:    string;
+  product:     string;
+  baseColour:  string;
+  packCode:    string;
+  description: string;
+}
+
+export interface ComboSiblingMaps {
+  /** material -> `${product}|${baseColour}|${packCode}` */
+  materialToCombo: Map<string, string>;
+  /** combo key -> ALL members (code + description), primary included */
+  comboToSiblings: Map<string, { code: string; description: string }[]>;
+}
+
+/** The combo key — product|baseColour|packCode (raw, un-normalized). */
+export function comboKeyFor(product: string, baseColour: string, packCode: string): string {
+  return `${product}|${baseColour}|${packCode}`;
+}
+
+/**
+ * Build the material->combo and combo->siblings maps from v2 stock rows.
+ * Keeps ALL rows for a combo (no 1st/2nd cap), so callers can list every
+ * twin and subtract the line's own code at read time.
+ */
+export function buildComboSiblings(skus: ComboSiblingRow[]): ComboSiblingMaps {
+  const materialToCombo = new Map<string, string>();
+  const comboToSiblings = new Map<string, { code: string; description: string }[]>();
+  for (const s of skus) {
+    if (!s.material) continue;
+    const key = comboKeyFor(s.product, s.baseColour, s.packCode);
+    materialToCombo.set(s.material, key);
+    let members = comboToSiblings.get(key);
+    if (!members) {
+      members = [];
+      comboToSiblings.set(key, members);
+    }
+    members.push({ code: s.material, description: s.description });
+  }
+  return { materialToCombo, comboToSiblings };
+}
