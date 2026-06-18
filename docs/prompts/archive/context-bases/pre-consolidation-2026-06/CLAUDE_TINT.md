@@ -1,9 +1,9 @@
 # CLAUDE_TINT.md — Tint Module
-# v1.4 · Schema v27.6 · June 2026
+# v1.3 · Schema v27.5
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
-Covers Tint Manager, Tint Operator (incl. skip, pause/resume, partial done, sampling reuse + pack scaling), Manual Tint Entry, Delivery Challans (incl. void), Shade Master (legacy), TI Report, Tint Summary report, Remove OBD.
+Covers Tint Manager, Tint Operator (incl. skip, pause/resume, partial done), Manual Tint Entry, Delivery Challans (incl. void), Shade Master (legacy), TI Report, Remove OBD.
 
 Users: Chandresh Kolgha (tint_manager), Deepak Vasava + Chandrasing Valvi (tint_operator).
 
@@ -164,8 +164,6 @@ TM controls sequence. Operator CANNOT start a future job — only "Save TI" avai
 
 Visual spec `CLAUDE_UI.md §35`. Tinted bg + 3px top border in pigment colour. Filled cells get deeper bg + darker border.
 
-**Acotone column order is locked to the operator's physical paper register** (2026-06-15): `WH1, NO1, NO2, YE1, YE2, XY1, RE1, RE2, XR1, MA1, OR1, GR1, BU1, BU2`. Same order across operator input grid, TI report, and XLSX export (§11). **Invariant:** in `tint-operator-content.tsx`, `ACOTONE_SHADES` (grid, object array — colours/styles keyed per code, so reordering moves whole objects) and `ACOTONE_COLS` (TI load mapping) must stay **code-for-code aligned**; if they drift, saved values load into the wrong cells — any future Acotone column change edits both together. (TINTER pigment order was NOT reviewed against a register — open question whether it needs the same treatment.)
-
 ### 3.6 Post-save form behaviour
 
 After Save TI or Update TI Entry:
@@ -213,28 +211,6 @@ Current job ALWAYS shows `[Save TI]` + `[Save TI & Start]` regardless of how man
 ### 3.11 API data
 
 `GET /api/tint/operator/my-orders` returns per order/split: `billToCustomerId`, `billToCustomerName`, `areaName`, `routeName`, `deliveryTypeName`. Top-level: `totalAssignedToday`, `totalDoneToday`. Per assignment: `pauseCount`, `lastPausedAt`, `currentProgress`, `accumulatedMinutes`.
-
-### 3.12 Sampling reuse — search-first flow + pack scaling
-
-The TI form's shade area is **search-first, one flat list** (the old exact/reference two-section split + caps are gone). UI spec: `CLAUDE_UI.md §34`. Suggestion-engine + pack-scaling model: `CLAUDE_SAMPLING_LIBRARY.md`.
-
-**Per-entry view mode `browse | confirm | newshade`** (collapse-on-pick, so the TI form never sits under a long list):
-- **Repeat site** → full this-site shade list, **no cap**, recent-first, exact match pinned top.
-- **New site** → no list; the new-shade form auto-renders with the search retained for cross-site reuse (grey reuse zone).
-- **Pick** → `confirm` (applied-shade bar + active-values grid + "Show all"). **Add shade** → `newshade`.
-
-**Exact match** = a sampling with a variant matching the current line's `skuCode` AND `packCode` (multiple possible — one per shade tinted on that base+pack). **Pick = reuse, no allocation:** attaches the EXISTING `samplingNo`; a cross-site pick records the current site as another usage (the duplicate problem was *findability*, not the save path — `sampling-resolution.ts` was already correct).
-
-**Type-aware apply:** Apply reads pigment columns from the card's OWN `tinterType` (not the toggle), auto-flips the toggle to match, and a toggle change refetches suggestions. Cards carry `tinterType` and a TINTER/ACOTONE tag.
-
-**Pack filter + scaling-on-Use (TINTER only):**
-- The reuse list is a **pack FILTER**, not an auto-scaler — rows show **raw stored** values. Dropdown defaults to the line's pack bucket, four nominal buckets only (1/4/10/20 via `packDoseLitres`); resets to line default on job/line/SKU change. PACK pill green = same bucket as the line (exact fit), grey = different bucket. (UI §34.)
-- **Scaling happens ON USE only:** `applySuggestionToEntry` scales a grey (different-bucket) TINTER shade to the line pack at the moment of Use. **ACOTONE is never scaled** — the gate is per-**row** (`row.tinterType === 'TINTER'`).
-- Using a scaled row **creates a NEW pack variant under the SAME sampling number** (no new number); each variant keeps its own usage. Existing variants stay immutable.
-- **formula-match** (`/api/sampling-library/formula-match`) is **per-litre for TINTER** (2-dp tolerance — catches a typed-fresh 4 L formula matching an existing 20 L recipe of the same shade) and **exact 27-value for ACOTONE**; active/zero pre-filter both.
-- **Reuse / "Same shade found" modal:** Cancel / Esc / backdrop aborts the save with **no** new number; only **Use** (reuse, scaled) and **Create new** mint/save.
-
-> ⚠️ Superseded (do not reintroduce): the earlier flat list that auto-scaled every row to the line pack with ✓ (exact) / ×N (scaled) markers + the `scalingEnabled` prop. Replaced by the pack-filter list above.
 
 ---
 
@@ -595,9 +571,7 @@ DEPRECATED. Sampling Library Phase 4 shipped 2026-05-25 — operator screen no l
 
 ---
 
-## 11. TI Report — /reports?r=ti-report
-
-**Folded into the Reports hub** (2026-06-17). No longer a standalone sidebar item — old URLs `/tint/manager/ti-report` and `/ti-report` redirect to `/reports?r=ti-report`; the `ti_report` permission gates the hub. Hub layout + the new Tint Summary report: `CLAUDE_UI.md §56` + §12 below. Report content itself unchanged:
+## 11. TI Report — /tint/manager/ti-report
 
 - `DateRangePicker` with presets (leftExtra)
 - Inline shade expand
@@ -605,39 +579,9 @@ DEPRECATED. Sampling Library Phase 4 shipped 2026-05-25 — operator screen no l
 - Filter: operator + type
 - Columns: chevron | Date | OBD No. | Dealer | Site | Base | Pack | Tins | Operator | Time
 
-**Acotone shade columns** in the report + inline shade-expand + XLSX export follow the locked register order (§3.5), driven from a single `ACOTONE_SHADES` array in `ti-report-content.tsx`: `WH1, NO1, NO2, YE1, YE2, XY1, RE1, RE2, XR1, MA1, OR1, GR1, BU1, BU2`. Pre-change printed/exported reports won't match the new on-screen order — accepted, no migration.
-
 ---
 
-## 12. Tint Summary report — /reports/tint-summary
-
-Read-only daily MIS report (no DB writes). Data source-of-truth: `lib/reports/tint-summary-data.ts` (`getTintSummaryData(params)`), used by both the JSON API (`GET /api/reports/tint-summary`, auth tint_manager/admin/operations) and the page. Print document visual spec + Reports hub: `CLAUDE_UI.md §56`.
-
-**Date axes (today boundaries, all IST):**
-- Intake / aging / open-age / top-customers / SMU / Area → `orders.orderDateTime` (OBD date).
-- Completed / pace / operator output → `tint_assignments.completedAt` (+ `order_splits.completedAt`).
-
-**Litres:** whole-OBD = `orders.querySnapshot.totalVolume` (SAP, already litres); split = Σ split `lineItems.rawLineItem.volumeLine`. No pack→litre maths.
-
-**Completed set:** `tint_assignments` (status `tinting_done`, `completedAt` today) + split-level `order_splits.completedAt` today. A split OBD counts once; OBD-level completion ts = MAX(split completedAt).
-
-**SMU / Area / Top-customers pool** = open/pending OBDs ∪ completed-today OBDs (keyed by `orderId`, mutually exclusive by stage). Board total = open + completed (does NOT shrink as jobs finish; larger than "Remaining" by design). `smu[]`/`area[]` return `{ name, count, litres, completedCount, completedLitres }`; `topCustomers` rank by total litres over the same pool.
-
-**Resolution / edge rules:**
-- **Hold:** `lower(dispatchStatus) = 'hold'` (mail-order enrichment can write capital "Hold"). `flags.holdCount` ignores `includeHold` so holds always surface.
-- **Area:** customer → `delivery_point_master` → `area_master` → `delivery_type_master`; missing → "Unknown". **SMU** null → fall back to `import_raw_summary.smu`.
-- **Hide:** `getHideExclusion()` AND-merged into every base query — report respects admin hide rules, never bypassed.
-- **Opening balance** = closing(live pending) + completed − intake (best-effort). Closing/open is LIVE-now, not date-scoped → past-date reports have accurate completions but approximate opening/closing.
-- **Operators filter** scopes operator-centric outputs only (operators[], registers); aggregate balances ignore it. A split OBD across two operators contributes two jobs.
-- Completion pace = cumulative **litres** (a 20 L job ≠ a 500 L job). Operator card = Jobs + Volume only (tinting time + utilisation deferred).
-
-**Params** (all optional): `date` (default today IST), `operators` (csv ids), `includeHold` (default true), `smu` (csv), `area` (csv), `trendDays` (default 7).
-
-**Pending:** remove temp dev preview `app/reports/tint-summary/preview/page.tsx`; switch intake/aging "today" axis from OBD date → import time once import-time reliability is fixed; add operator tinting-time/utilisation later.
-
----
-
-## 13. Permissions
+## 12. Permissions
 
 Three TM page keys in `lib/permissions.ts`:
 - `delivery_challans`
@@ -662,7 +606,7 @@ Layout uses `buildNavItems()` only.
 
 ---
 
-## 14. Landmines
+## 13. Landmines
 
 - **TM reorder API** (~line 429) uses `prisma.$transaction` — violates CORE §3, left as-is for simple two-update swap.
 - **`operatorSequence` field** on `tint_assignments`/`order_splits` — unused. Sort by `sequenceOrder` only.
@@ -683,10 +627,7 @@ Layout uses `buildNavItems()` only.
 - **Challan cell-clear UX bug** — `components/tint/challan-content.tsx:211-213` filters empty strings out of PATCH body. Server has no delete branch. Clearing a cell in the UI does NOT clear the DB row, so a TM can't "unlock" a manually-overridden formula by clearing it. Mitigation if unlock is ever needed: build a proper "Reset to auto" button. (CORE §13 also lists this.)
 - **Tint sampling siteId bug — FIXED 2026-06-01** (commit `df7e61e9`). Mark-Done was writing `sampling_usage_log.siteId = null` since Phase 4 ship. Fixed by passing `orders.customerId` (= ship-to FK) into the writer. Backfill applied via OBD→order link (preferred over name match). Lesson: `orders.customerId` IS the resolved ship-to site FK, NOT the bill-to dealer. The suggestion engine matches on `usage_log.siteId` STRICTLY — null rows are invisible to same-site suggestions.
 - **Pre-existing $transaction in admin customer routes** (lines 133 + 186) — left untouched in multi-SO commit. Refactor when convenient (CORE §13).
-- **Edit-path modal gate (open).** The "Update TI Entry" path (editing an already-saved line) does NOT run the formula-match gate and does not resolve/mint a sampling for a typed-fresh shade — it can save with a null `samplingNo` and no modal. The gate lives only in Save-TI / `handleSubmitTI`. Needs the same gate on the edit/update path.
-- **Cross-type rows in reuse list (low pri).** A TINTER line's reuse list still shows ACOTONE shades from the same site (rendered plain, never scaled). Consider filtering to the line's tinter type. Deferred.
-- **Scratch-file tsc noise.** Untracked `scripts/_*` scratch files (sampling/report seed helpers) throw ~24 `tsc --noEmit` errors; never committed. Exclude `scripts/_*` from tsconfig or delete so the tsc gate stays clean.
 
 ---
 
-*Tint v1.4 · Schema v27.6*
+*Tint v1.3 · Schema v27.5*

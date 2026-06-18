@@ -1,5 +1,5 @@
 # CLAUDE_IMPORT.md — OrbitOMS Import Pipeline
-# v1 · Schema v27.6 · Lives in: orbit-oms/docs/
+# v1 · Schema v27.4 · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
 Covers the SAP/OBD import pipeline end-to-end: manual SAP upload, Auto-Import (currently paused), the shared upsert utility that both paths funnel through, schema, filters, and downstream consumers.
@@ -460,4 +460,4 @@ Cross-reference CORE §9.
 
 ---
 
-*Import v1 · Schema v27.6 · OrbitOMS*
+*Import v1 · Schema v27.4 · OrbitOMS*

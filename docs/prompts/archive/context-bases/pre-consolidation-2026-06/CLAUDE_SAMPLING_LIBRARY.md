@@ -1,5 +1,5 @@
 # CLAUDE_SAMPLING_LIBRARY.md — Sampling Library Module
-# v1.3 · Schema v27.6 · June 2026 · Phase 4 shipped 2026-05-25 · Cohort A+B restore 2026-05-27
+# v1.2 · Schema v27.5 · Phase 4 shipped 2026-05-25 · Cohort A+B restore 2026-05-27
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -300,7 +300,7 @@ Typography drops one weight from spec (`font-bold` → `font-semibold` or `font-
 
 ## 5. API endpoints
 
-All `export const dynamic = 'force-dynamic'`.
+Total 8 endpoints. All `export const dynamic = 'force-dynamic'`.
 
 | Method | Path | Auth | Purpose |
 |---|---|---|---|
@@ -312,8 +312,6 @@ All `export const dynamic = 'force-dynamic'`.
 | POST | `/api/sampling-library/[samplingNo]/review` | sampling_library canEdit | Toggle `needsReview` |
 | GET | `/api/sampling-library/[samplingNo]/usage-log` | sampling_library canView | Paginated usage history |
 | POST | `/api/sampling-library` | sampling_library canEdit | Create new parent entry (allocates next samplingNo, inserts first variant + first usage_log row) |
-| GET | `/api/sampling-library/operator-search` | sampling_library canView | Global partial-match reuse search (§11) — ILIKE on samplingNo / shadeName / usage site name; optional `type`; `RESULT_LIMIT=50`; returns applyable `SuggestFlatRow` rows |
-| POST | `/api/sampling-library/formula-match` | operator | Issue-1 formula-match gate (§11) — per-litre for TINTER, exact 27-value for ACOTONE; active/zero pre-filter |
 
 ---
 
@@ -364,22 +362,14 @@ components/sampling-library/
   usage-log-table.tsx
   used-at-list.tsx
   skus-used-list.tsx
+  status-pills.tsx
   action-buttons.tsx
-  sampling-library-list-pane.tsx    left-pane list (carries the tinter-type tag ~:263-269;
-                                    earlier docs wrongly cited status-pills.tsx/sampling-list.tsx)
-
-components/tint/operator/
-  flat-suggestion-list.tsx          operator reuse list (§11; replaced retired suggestion-card.tsx)
-  formula-match-modal.tsx           "Same shade found" reuse modal (Use / Create new / Cancel)
 
 lib/sampling-library/
   types.ts
   fetchers.ts                       client API helpers
   filters.ts                        URL query → filter object
   allocate-sampling-no.ts           P2002 retry pattern
-lib/sampling/
-  pack-litres.ts                    dose-litres map + packDoseLitres / canScale /
-                                    scalePigments(3dp) / perLitreFingerprint(2dp) (§11)
 
 api/sampling-library/
   route.ts                          GET list, POST create
@@ -387,9 +377,6 @@ api/sampling-library/
   [samplingNo]/variants/route.ts    GET variants, POST new variant
   [samplingNo]/review/route.ts      POST toggle needsReview
   [samplingNo]/usage-log/route.ts   GET paginated usage
-  operator-search/route.ts          global partial-match reuse search (§11)
-  formula-match/route.ts            per-litre (TINTER) / exact (ACOTONE) match gate (§11)
-  _lib/suggest.ts                   flatSuggestions builder + otherSites grouping (§11)
 
 scripts/                            (outside docs index; reference scripts on depot PC)
   classify-sampling-excel.ts        Excel → review xlsx
@@ -467,55 +454,4 @@ FROM sampling_usage_log GROUP BY bucket ORDER BY bucket;
 
 ---
 
-## 11. Suggestion engine + pack scaling (operator reuse)
-
-The Tint Operator reuse area (UI: `CLAUDE_UI.md §34`; operator flow: `CLAUDE_TINT.md §3.12`) is fed by this module.
-
-**Flat suggestions (rewrite, 2026-06-16).** `_lib/suggest.ts` now emits **`flatSuggestions`** — an uncapped this-site list with `isExactMatch`, `primarySiteName`, `otherSites[]`. The old two-section exact/reference UI and its `exact.slice(0,3)` / `reference.slice(0,5)` caps are gone (`exactMatches`/`referenceList` still built but no longer consumed by the UI — remove in cleanup). Shared helpers `groupOtherSitesBySampling(samplingNos, excludeSiteId)` + `assembleFlatRow(...)`; exported `SuggestFlatRow`, `SuggestOtherSite`.
-
-- **Search scope** (`operator-search`): all sites, partial (ILIKE contains) on `samplingNo` / `shadeName` / usage site name; optional `type`; `RESULT_LIMIT = 50`. No fuzzy (CORE §3 never-fuzzy-match-sites; `pg_trgm` deferred). No formula-value search.
-- **Exact match** = a sampling with a variant matching the current line's `skuCode` AND `packCode` (multiple possible). Pinned top.
-- **Pick = reuse, no allocation.** Attaches the existing `samplingNo`; a cross-site pick records the current site as another usage. The save path (`sampling-resolution.ts`, Scenarios 2/3) was already correct — the duplicate problem was *findability*.
-
-**Pack scaling model (one sampling number holds multiple pack variants).** `lib/sampling/pack-litres.ts`:
-- A pack scales by its **dose litres**, not raw base volume (base pairs with its nominal can; colorant fills the gap). Map: `500ml→0.5 · 0.9/0.925/1L→1 · 3.6/3.7/4L→4 · 9/9.25/10L→10 · 15→15 · 18/18.5/20L→20 · 22→22 · 30→30 · 40→40 · null→unscalable`. Nominal reuse buckets are **1/4/10/20** only; rare (0.5/15/22/30/40/null) stand alone.
-- Scaling is **linear by dose-litres** (verified across all 217 multi-pack samplings; non-clean cases were data-quality noise, not real exceptions). `scalePigments` 3 dp; `perLitreFingerprint` 2 dp.
-- **Scaling happens ON USE only** (TINTER): using a different-bucket row creates a **NEW pack variant under the SAME sampling number** (no new number) via the existing `sampling_recipes.create` (Scenario 2). Each pack variant keeps its own `usageCount` / `lastUsedAt`; existing variants immutable (Issue-1 guard). **ACOTONE is never scaled.**
-- **formula-match** (`formula-match/route.ts`): per-litre fingerprint for TINTER (2-dp tolerance catches scaled packs — a typed 4 L matches an existing 20 L of the same shade), exact 27-value for ACOTONE. The reuse modal Cancel/Esc/backdrop aborts with no new number.
-
-> Edit-path gap (open): the "Update TI Entry" path skips the formula-match gate and can save a null `samplingNo` — see `CLAUDE_TINT.md §14`.
-
----
-
-## 12. Duplicate Merge (runbook)
-
-Sampling Library is **operator-created runtime data, NOT CSV-seeded** — merges go live the moment the SQL runs (no commit/push/deploy) and are NOT wiped on a catalog reseed; no seed mirror-back. All work is data-only via Supabase SQL Editor (no `BEGIN`/`COMMIT`, sequential, stop on any error), plus temporary `_bak_*` tables dropped after the live smoke test.
-
-**Business rules:**
-- **Duplicates = EXACT full formula, never shade name.** Same `shadeName` with different pigment values is NOT a duplicate; different name + identical formula IS. Recipe fingerprint (all pigment columns + tinterType) is the true dedup key.
-- **`packCode` is stored RAW** (`20L`, `10L`…), NOT the display label (`L_20` / `20 LT`); SQL uses the raw enum (`'20L'::"PackCode"`). Safer: match a recipe by `(samplingNo, skuCode)` only — within one number a SKU appears once — sidestepping the pack-label trap.
-- **SKU+pack clash on merge → combine, don't duplicate** (unique `(samplingNo, skuCode, packCode)` NULLS NOT DISTINCT): keep one recipe, `usageCount = SUM`, `lastUsedAt = MAX`, re-point dropped `usage_log.recipeId` to the survivor, DELETE the dropped recipe.
-- **`isPrimary` invariant (§9) survives** — master keeps its own primary; clear `isPrimary` on all re-pointed rows (exactly 1 true after).
-- **TI history re-points in place, never dedupe/delete** — `tinter_issue_entries.samplingNo` → master (unique OBD/delivery number prevents duplicate TI rows).
-- **Never delete `sampling_register` rows** — sources are inactivated (`isActive=false`); they stop appearing in the active list and stop matching new entries.
-- **One review CSV per slice** (new dated file per slice; never append — Excel/OneDrive locks the shared file).
-
-**Reference graph (every place a samplingNo lives):**
-| table.column | merge action |
-|---|---|
-| `sampling_register.samplingNo` (PK) | sources → `isActive=false` (keep) |
-| `sampling_recipes.samplingNo` (FK CASCADE) | re-point to master; resolve SKU+pack clashes first |
-| `sampling_usage_log.samplingNo` (FK CASCADE) | re-point to master |
-| `sampling_usage_log.recipeId` (FK SET NULL) | re-point dropped-clash rows to survivor recipe |
-| `tinter_issue_entries.samplingNo` (FK SetNull) | re-point in place (never delete) |
-| `tinter_issue_entries_b.samplingNo` | empty in practice — confirm 0, no action |
-| `delivery_challan_formulas.sourceTiEntryId` | points at TI **id**, not samplingNo → untouched; don't delete TI rows |
-| JSON / free-text columns | none hold a samplingNo (probed) |
-
-**Runbook (per group):** 1) find the group by exact-formula match → new dated review CSV (one per slice); 2) owner sets `mergeInto` master (default pick: prefer 26-series, else highest total usageCount, tie-break oldest createdAt); 3) clash-detection grid (`GROUP BY skuCode, packCode HAVING COUNT(*)>1`); 4) merge SQL — backup → per-clash combine → re-point sources to master → primary invariant → inactivate sources; 5) verify grid (master recipe_count, primary_count=1, sources_active=0, leftover_children=0); 6) live smoke test on orbitoms.in; 7) drop backup tables.
-
-**Status:** 3 white-only groups merged (masters `26-0196`/`26-0106`/`26-0094`); **~380 duplicate groups remain** — process group by group per the runbook. Pending: an exact-dupe-finder tool (given a seed number, find all active samplings whose primary recipe matches exactly → dated review CSV); junk test sampling `#26-0285` cleanup. Owner chose manual SQL over a batch script for now.
-
----
-
-*Sampling Library v1.3 · Schema v27.6 · Phase 4 shipped + Cohort A+B restored · OrbitOMS*
+*Sampling Library v1.2 · Schema v27.5 · Phase 4 shipped + Cohort A+B restored · OrbitOMS*

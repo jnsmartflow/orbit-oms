@@ -1,5 +1,5 @@
 # CLAUDE_MAIL_ORDERS.md — Mail Orders Module
-# v1.4 · Schema v27.6 · Parser v6.5 · Enrichment v3 · June 2026
+# v1.3 · Schema v27.5 · Parser v6.5 · Enrichment v3
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -9,10 +9,8 @@ Primary user: Deepanshu Thakur (billing_operator id=25). Secondary: Bankim (id=2
 
 ## 1. Architecture
 
-**Parser inbox unchanged:** the parser watches `surat.order@outlook.com`. Place-Order surfaces (`/po`, `/place-order`) now send to `surat.depot@akzonobel.com`, which **auto-forwards into** the Outlook parser inbox — so `OutlookAccount` config + parser are untouched (`CLAUDE_CORE.md §8`, `CLAUDE_PLACE_ORDER.md §11`).
-
 ```
-FW: email → Outlook (surat.order@outlook.com)  ← AkzoNobel front-door forwards in
+FW: email → Outlook (surat.order@outlook.com)
   → Parse-MailOrders-v6_5.ps1
   → POST /api/mail-orders/ingest (HMAC auth)
   → enrich.ts v3 (generate → verify → rank) with carryProduct fallback
@@ -354,19 +352,7 @@ Toggle in UniversalHeader title. Visual spec in `CLAUDE_UI.md §21, §28-32`.
 
 12 parent columns. Column toggle via `ALL_COLUMNS` config, `localStorage "mo-column-visibility"`. Dispatch `defaultVisible: false`. 4 always-visible: Time, Customer, SKU, SO No.
 
-**Slot sections (5, by `receivedAt` IST — cutoff time belongs to the NEXT slot):**
-
-| Received | Slot |
-|---|---|
-| before 10:30 | Morning |
-| 10:30 – before 12:30 | Afternoon |
-| 12:30 – before 17:00 | Evening |
-| 17:00 – before 20:00 | **Late Evening** (added 2026-06-18) |
-| 20:00 – 23:59 | Night |
-
-No data migration — slots are computed at render from `receivedAt`, so existing orders re-bucket automatically. Cutoffs are DB-configurable in `system_config` (`"HH:MM"` strings parsed by `parseHHMM()`): `slot_morning_cutoff` 10:30 · `slot_afternoon_cutoff` 12:30 · `slot_evening_cutoff` 17:00 (was 15:30) · `slot_late_evening_cutoff` 20:00 (new). Hardcoded fallbacks in `getSlotFromTime()`: 630/750/1020/1200.
-
-> **Separate system:** this mail-orders bucketing is NOT the depot-wide `slot_master` (CORE §9) used by Support/Planning/Warehouse — different boundaries, no stored slot column on `mo_orders` (`slotToOverride` is dead/write-only, no reader). The two never share numbers.
+Slot sections based on `receivedAt` IST: Morning (<10:30), Afternoon (10:30-13:30), Evening (13:30-16:30), Night (>16:30).
 
 Punched orders: separated to bottom per slot. Collapsible divider. `T` toggles globally.
 
@@ -496,7 +482,7 @@ Ctrl+ shortcuts MUST be in a separate `useEffect` from single-key. Ctrl+ uses `d
 | T | Toggle punched visibility |
 | / | Focus search |
 | ? | Toggle shortcuts panel |
-| 1-5 | Jump to slot segment (descriptive; the handler is segment-count driven and scaled to 5 automatically) |
+| 1-4 | Jump to slot segment |
 | ↑↓ | Navigate orders (Table) / Navigate SKU lines (Review) |
 | Tab / Shift+Tab | Next / previous order (Review) |
 | Space | Toggle found/not-found on active line (Review) |
@@ -535,8 +521,6 @@ Server-side auto-split on ingest is removed.
 Auto-detect when all orders in slot are punched. Also auto-trigger 15min after slot cutoff. Guard: `triggered` flag. `localStorage` key `mo-slot-email-sent-{date}-{slotName}`.
 
 Modal: green check, slot stats, SO list grouped by soName. Per-SO "Send" copies HTML email via `ClipboardItem` + opens mailto. Auto/Manual toggle.
-
-> **Known gap (owner-deferred):** the `slotDefs` slot-email trigger array in `mail-orders-page.tsx` (~lines 269-273) has only 3 entries — Morning / Afternoon / Evening. It omits Night and now also **Late Evening**, so slot-summary emails do NOT auto-fire for those two slots. Fix tracked in ROADMAP.
 
 ---
 
@@ -686,16 +670,4 @@ For mail-order sessions specifically: any new product keyword work (e.g. fixing 
 
 ---
 
-## 21. Tag gating + ship-to fallback (Settings → Hide, v27.6)
-
-Admin "Settings → Hide → Tags" can switch any Mail Order badge off app-wide (data stays; only the badge render is suppressed). Feature/schema: `CLAUDE_CORE.md §7.10`; UI: `CLAUDE_UI.md §57`.
-
-**`getOrderSignals()` is the SINGLE MO badge emitter** (`lib/mail-orders/utils.ts`) — each emitted signal carries a `tagKey`; the function accepts `opts.disabledTagKeys: Set<string>` and filters out disabled signals. **Default-ON** (no settings row = badge shows). Stable keys + the 16-entry catalog live in `lib/hide/tag-catalog.ts` (`MO_TAG.*` + `TAG_CATALOG`; important tags Hold/OD/CI confirm before disabling).
-
-**Flow:** `/api/mail-orders` computes `disabledTags` (keys where `isEnabled === false`) via `getTagSettings()` → payload → `mail-orders-page.tsx` stores a `Set` → drills into `review-view.tsx` (2 `getOrderSignals` calls + ShipToCard) and `mail-orders-table.tsx` → `SlotGroup` → `OrderRow`.
-
-**Ship-to fallback:** `useBillToFallback = isOverride && disabledTagKeys.has(MO_TAG.captured)` → `ShipToCard` renders the **bill-to identity** (name/code/area/delivery type), dropping the amber bar + captured pill (bill-to fields threaded from review-view). Dispatch-status badges (Challan / Dispatch / Hold) are untouched. (Hiding MO *rows* — separate `mo_orders`, no hide column — is out of v1 scope; ROADMAP.)
-
----
-
-*Mail Orders v1.4 · Schema v27.6 · Parser v6.5 · Enrichment v3*
+*Mail Orders v1.3 · Schema v27.5 · Parser v6.5 · Enrichment v3*

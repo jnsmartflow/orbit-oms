@@ -1,5 +1,5 @@
 # CLAUDE_UI.md — OrbitOMS UI Design System
-# v5.5 · June 2026 · Lives in: orbit-oms/docs/
+# v5.4 · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md
 
 Single source of truth for visual styling across all screens.
@@ -188,7 +188,7 @@ Per-board wiring summary:
 | Tint Manager | Operator pills | Del Type, Priority, Type | None | View toggle, missing-customer badge |
 | Planning | Slots (4) | Del Type, Dispatch | Stepper | — |
 | Warehouse | Slots (4) | Del Type, Pick Status | Stepper | — |
-| Mail Orders | Slots (5) | Status, Match, Dispatch, Lock | Stepper | Column toggle, Table/Review toggle |
+| Mail Orders | Slots (4) | Status, Match, Dispatch, Lock | Stepper | Column toggle, Table/Review toggle |
 | Tint Operator | Job pill (teal, dropdown) | — | None | Progress bar (rightExtra) |
 | TI Report | Date presets | Tinter Type, Operator | None | Date range, Download |
 | Shade Master | — | Tinter Type, Status | None | — |
@@ -651,16 +651,12 @@ Business behaviour: `CLAUDE_TINT.md §3`.
 - Main: 320px SKU left panel + flex TI form right. Mobile: left hidden below md.
 
 **Colour budget:**
-- Teal: sidebar + job pill segment ONLY (shared universal-header segmented control stays teal)
-- Gray-900: save CTAs + selected card border
+- Teal: sidebar + job pill segment ONLY
+- Gray-900: save CTAs + TINTER/ACOTONE toggle + selected card border
 - Green-600: workflow CTAs (start, done)
 - Amber-600: Pause CTA + paused-card amber accents
 - Pigment colours: shade grid cells ONLY
-- **Fini/Generic + Tinter/Acotone toggles → white-pill on gray-100 track** (active `bg-white text-gray-900 shadow-sm`), NOT `bg-gray-900`.
-- **Reuse-list "Use" buttons → soft grey** (`bg-gray-200 text-gray-800`), not `bg-gray-900`.
 - Everything else: white, gray-50, gray-100, gray-200, gray-400
-
-**Status badges removed:** "Assigned" job-header badge removed ("In Progress" retained); "Pending" line-card pill → plain `text-amber-700 font-semibold` text (no box).
 
 **Left panel card states:**
 - Selected: `bg-gray-100 border-l-[3px] border-l-gray-900`
@@ -671,19 +667,6 @@ Business behaviour: `CLAUDE_TINT.md §3`.
 - Workflow (Save TI & Start, Start Job, Mark as Done): `bg-green-600 text-white`
 - Pause: `bg-amber-600 text-white`
 - Skip: passive ghost `bg-gray-100 text-gray-700`
-
-### Search-first sampling reuse list
-
-Single search row at parent level: `[PACK ▾] [Search…] [+ Add shade]`. Below it, a single **flat** suggestion list (`flat-suggestion-list.tsx`) — not the old exact/reference two-section split. Per-entry view mode `browse | confirm | newshade` (collapses on pick so the TI form never sits under a long list). Behaviour: `CLAUDE_TINT.md` / `CLAUDE_SAMPLING_LIBRARY.md`.
-
-- **Columns** (fixed-table, §27): Sampling · Shade · Site · PACK · LAST USED · FORMULA (chips only) · Use.
-- **Exact row** pinned top: `bg-[#eef1f4]` wash + `border-l-[3px] border-l-gray-900` + grey EXACT chip; pigment chips white-bg.
-- **Reuse heading:** `text-gray-900 font-semibold` "REUSE A SHADE — ANY SITE".
-- **Tinter-type tag** per card: TINTER (grey) / ACOTONE (orange).
-- **PACK filter dropdown** (defaults to the line's pack bucket): `All packs · {total}`, then `1 LT`, `4 LT`, `10 LT`, `20 LT` — each `{n} LT · {count}`, the line's bucket tagged `· LINE`, 0-count buckets disabled. Four **nominal buckets only** (1/4/10/20 via `packDoseLitres`; folds 3.6/3.7→4, 0.9/0.925→1, 9/9.25→10, 18/18.5→20); rare packs (0.5/15/22/30/40/null) appear only under "All packs".
-- **PACK pill** shows the NOMINAL label (a 3.7L/18L shade reads "4 LT"/"20 LT"). **Green** = same bucket as the line (exact fit); **grey** = different bucket (formula auto-scales to the line pack on **Use**, TINTER only). The list shows **raw stored values** — it is a FILTER, not an auto-scaler.
-  - ⚠️ Superseded: the earlier flat "scale-everything-to-line-pack with ✓ (exact) / ×N (scaled) markers" list and the `scalingEnabled` prop are **removed** — do not reintroduce.
-- **"Same shade found" / reuse modal** (`formula-match-modal.tsx`): scaled matched rows; **Cancel / Esc / backdrop aborts with NO new sampling number** — only **Use** (reuse, scaled) and **Create new** mint/save.
 
 ---
 
@@ -796,13 +779,11 @@ Page title: "Purchase Order (PO)" (in sidebar nav + top bar).
 ## 42. Place Order — speed dial
 
 9-tile fixed grid. Tiles in order:
-`1 GLOSS · 2 Satin & PU · 3 PROMISE · 4 WS · 5 VELVET TOUCH · 6 SADOLIN · 7 STAINER · 8 Putty & Primer · 9 AQUATECH`
-
-Some tiles are multi-family (one card, several families' tabs): "Satin & PU", "Putty & Primer". Spec: `CLAUDE_PLACE_ORDER.md §6/§23`.
+1. GLOSS · 2 SATIN · 3 PROMISE ENAMEL · 4 WS · 5 VT GLO · 6 WOODCARE · 7 STAINER · 8 PRIMER · 9 AQUATECH
 
 Two render modes:
 - **Browse mode** (`activeState.kind === "idle"`): full 9-tile grid
-- **Work mode** (sub-product active): compact horizontal pill strip (~40px). Active pill teal-bordered + ▸ marker. Tabs never wrap (`whitespace-nowrap shrink-0` button + `overflow-x-auto` row).
+- **Work mode** (sub-product active): compact horizontal pill strip (~40px). Active pill teal-bordered + ▸ marker.
 
 Digit shortcuts 1-9. No Tab cycle.
 
@@ -812,25 +793,13 @@ Digit shortcuts 1-9. No Tab cycle.
 
 Sub-product tabs · pack header row · base × pack matrix. Card never scrolls internally.
 
-**Pack header:** single-line, 10.5px. Format `{pack} · {containerLabel}` (mono gray-400). Helper: `packContainerLabel()`. Desktop columns come from a fixed bucket set, not the raw pack union (`CLAUDE_PLACE_ORDER.md §24`).
+**Pack header:** single-line, 10.5px. Format `{pack} · {containerLabel}` (mono gray-400). Helper: `packContainerLabel()`.
 
 **Pack columns:** explicit 80px width via `style={{ width: "80px" }}` on each `<col>`. `table-layout: fixed`.
 
-**Pagination:** `VARIANT_GRID_PAGE_SIZE = 20`, threshold = 22 (page-size + 2 buffer; no 1-row trailing pages). >22-base sub-products paginate.
-
-**Row label:** single-product tab → `baseColour`; multi-product tab → `displayName` (so stacked brands read "2K PU Gloss - 90 Base"); `multiProductTab` computed over the FULL tab. Rule + collisions: `CLAUDE_PLACE_ORDER.md §7`.
-
-**Tab strip:** never wraps (`whitespace-nowrap shrink-0` + `overflow-x-auto`); single-uiGroup family hides the tab bar (flat list). `TAB_DISPLAY` render-map merges/relabels tabs (e.g. WS "Tile & Metallic").
+**Pagination:** `VARIANT_GRID_PAGE_SIZE = 15`, threshold = 17. Sub-products with >17 bases paginate.
 
 **Cell sizing:** 56×32px, font 13px.
-
-### Two-line result display (descriptor)
-
-Result rows and product headers can show a **muted second line** under the primary label: `text-[12px] text-gray-400 truncate mt-0.5`. Static map `lib/place-order/sub-product-descriptors.ts` (family|subProduct → descriptor) — no schema/seed field. Primary line is composed `"{displayName} — {baseColour}" + " · {alias}"`; the descriptor is a separate `<p>`.
-- e.g. Satin Finish primary `Satin Finish — <base> · <alias>`, descriptor `Super Satin · Oil Base`.
-- **Single-base / variant-qualifier tabs** (Promise SmartChoice/Primer): the per-variant qualifier moves to the second line via `getSecondLine(family, subProduct, qualifier)` (folds `{descriptor} · {qualifier}`, omits qualifier when null) and the line-1 alias suffix is suppressed; when the variant name already contains the tab word ("Primer"), the headline is the variant's own name.
-- `/po` + `/order` search rows fall back to `?? p.family` so plain products still show a grey line.
-- Render sites: mobile (`app/order/page.tsx`, `app/po/po-page.tsx`) search/selected/picked/active header; desktop `big-search-bar.tsx`, `variant-grid.tsx`, `sub-product-direct.tsx`. Cart has no family → no descriptor.
 
 ---
 
@@ -852,22 +821,11 @@ Cell stores **UNITS** in `cart.packQtys[pack]`.
 
 340px right column. Card list grouped by product/base.
 
-**Row name:** desktop cart labels by **`baseColour`**; an empty string (`""`) blanks the line (not nullish) → fall back to `emailLineLabel(product, baseColour, subProduct)`. `/po` cart labels by `displayName` and never blanks.
-
 **Chip format:** primary `×{units}` (mono gray-700 semibold). Conditional `· {N} box` (gray-400 normal) when `step > 1 && units > 0 && units % step === 0`.
 
 **Volume total:** `sum += units * packToLitres(pack)`. NO `packStep` multiplier.
 
 **Recently used:** shown only in browse state. Driven by `touchedAt?: number` on `CartLine`.
-
-### Bill bar + options panel (desktop parity with /po, 2026-06-09)
-
-- **Bill bar always visible** once a customer is selected — Add / Duplicate / Delete + inline delete-confirm reachable from the single-bill state. `id === index+1` enforced by `renumberBills()` after every add/delete/duplicate AND on draft restore; `activeBillId` never dangling. Delete-confirm only when the bill has lines; empty deletes immediately; disabled at 1 bill. Duplicate deep-copies lines + nested `packQtys`.
-- **Options always open** (no "More options" collapse): Ship-to / Dispatch / Remarks / Notes.
-  - **Dispatch dots** Normal / Urgent / Call (teal / amber / red); clicking Call opens an SO/Dealer picker.
-  - **Remarks** 2×2 Truck / Cross / Bounce / DTS (re-tap clears, no "None"); Cross opens a depot picker (Dahisar/Ahmedabad/Rajkot/Pune). Pickers render only while their parent option is active.
-  - **Notes** free text + Quick-add presets. **Ship-to** autocompletes; omitted from email when "same as billing".
-- **Landing recents grid** (desktop): 2-col, borderless soft-fill rows, neutral gray avatars, medium-weight names, relative recency; shows only when no customer selected AND search empty AND recents non-empty (else the "Type a customer name… N loaded" hint). `area` shown when present, code-only when null.
 
 ---
 
@@ -1068,45 +1026,4 @@ Search box + result list filtered against `sales_officer_master`. Active SOs onl
 
 ---
 
-## 55. Place Order — /po mobile (going-forward PO)
-
-Behaviour + architecture: `CLAUDE_PLACE_ORDER.md §25`. Visual specifics:
-
-- **Landing:** one elevated shadowed search field (rounded-16, shadow `0 8px 28px rgba(17,24,39,.09)`, `pt-16`) under the "Purchase Order" banner. No label/heading/recent list on the fresh page.
-- **Merged customer header:** once selected, the customer **name becomes the page title** (~16px), `code · area` below, single "New order" button (refresh icon + text, teal) top-right. The "Purchase Order" banner + gray customer block + "Change" button are gone (New order = full reset).
-- **Bill + Multi:** one row — left `Bill {n}` + "+ Add bill" (collapses to "+" at 2+ bills); right "Multi" + switch.
-- **Floating CTA pill** (`footerPill`): teal, rounded-full, padding ~`15px 34px`, white 15px bold, shadow `0 8px 22px rgba(13,148,136,.42)`, safe-area inset `max(env(safe-area-inset-bottom),16px)`. Renders "Review order" / "Send order" / "Set quantities (N)" / "Add N products" by state. **All floating footers gate on `keyboardOpen`** (real keyboard), never `inputFocused`.
-- **Selected bill chip:** teal pill = label + 19px `bg-teal-600` circle with white ×. Inactive chips plain (no ×). × only renders at 2+ bills (last bill never shows one).
-- **Bottom sheets** (Cross depot, Delete-bill confirm, Call SO/Dealer) share one pattern: `fixed inset-0 flex items-end`, `bg-black/40` backdrop, `max-w-[480px] bg-white rounded-t-[18px] p-5`, safe-area `paddingBottom`. The **Call sheet is a 1:1 clone of the Cross-depot sheet** (SO / Dealer buttons + × close).
-- **Delete-bill confirm:** title "Delete Bill {n}?", body "{count} product(s)…", `[Cancel]` (`bg-gray-100 text-gray-700`) + `[Delete]` (`bg-red-600 text-white`). Empty bill → instant delete, no sheet.
-- **Duplicate control:** quiet grey button in the review per-bill card header beside Edit (`<Copy 15px> Duplicate`, `text-[14px] text-gray-500`).
-- **Dispatch pills** order **Normal · Urgent · Call** (Call last, red dot); label "Call" → "Call · SO" / "Call · Dealer" once a target is chosen.
-- **Dispatch slot** section (date Today/Tomorrow/Pick + window 9–12/12–3/3–6) — **deferred/planned**, mockup only (`docs/mockups/dispatch-slot/`); not built.
-
----
-
-## 56. Reports hub + print (`/reports`)
-
-**Reports hub (Option C):** left rail (TINT group → Tint Summary + TI Report) · large live preview · top bar (date control + **Generate PDF** teal CTA) + Customise right-drawer. Generate opens `/reports/tint-summary?…&print=1` (auto-print); print route honours `hide` + filters so the PDF matches the preview. **Customise drawer:** 10 section IosToggles (teal ON), operator chips, Show Hold toggle, SMU chips, Area chips (dot colours), 7/14/30 trend; Done button = `bg-gray-900` (modal CTA rule). URL params (only non-defaults written): `r, date, hide(csv), operators, includeHold, smu, area, trendDays`.
-
-**Print document (`tint-summary-document.tsx`):** 4-page A4 portrait, today-only, litres. Inter via `next/font`.
-- **Brand blue `#1c3f93` accent — the one-teal rule does NOT apply to this print document** (a per-document exemption, like Sampling Library §22).
-- **Progress-bar boards** (SMU / Area): grey track `#d1d5db` (width = litres/maxLitres), green fill `#16a34a` (width = completedCount/count), category dot, "N done" green `#15803d` (grey if 0). Count = full workload (open + completed).
-- **Category dot colours** — Area: Local `#2563eb`, Upcountry `#ea580c`, IGT `#0d9488`, Cross `#e11d48`. SMU: Decorative Projects `#4f46e5`, Retail Offtake `#0891b2`, other → slate `#64748b`.
-- **Print CSS:** `@page tint-report` (A4) rules **top-level in `globals.css`** (never nested in `@media print`); `visibility:hidden` isolation via `#tint-report-print-area`; `print-color-adjust: exact` so colours survive the PDF.
-
----
-
-## 57. Settings › Hide (admin)
-
-New admin area under a **Settings** section in `components/admin/admin-sidebar.tsx` (EyeOff icon). One "Hide" nav home with **three flat tabs** (`hide-settings-content.tsx`):
-
-- **Rules** — list + "Add Rule" modal (HOLD, or older-than-N-days); toggle / edit / delete.
-- **Hidden Orders** — every hidden order with *why*; manual hides get an **Un-hide** button; rule-hidden rows show **"Managed by rule"** (no per-order un-hide in v1).
-- **Tags** — grouped on/off switches for Mail Order badges (app-wide); important tags (Hold / OD / CI) open a confirm before turning off.
-
-**Manual hide:** admin-only "Hide OBD…" action on Tint Manager rows (card + table) via `HideObdModal.tsx` → reason required; order drops off all boards, appears in Hidden Orders. Default state (no rules, nothing hidden, all tags on) = app looks exactly as before. Backend/schema: later batch (CORE / MAIL_ORDERS).
-
----
-
-*UI v5.5 · OrbitOMS*
+*UI v5.4 · OrbitOMS*

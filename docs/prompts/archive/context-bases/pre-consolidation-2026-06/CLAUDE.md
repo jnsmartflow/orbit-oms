@@ -1,5 +1,5 @@
 # CLAUDE.md — Orbit OMS Router
-# v1.1 · Entry point · Read this first · June 2026
+# v1.0 · Entry point · Read this first · April 2026
 
 This file tells you which context files to load for the work in front of you. Load the files. Confirm each by name. Then work.
 
@@ -35,15 +35,11 @@ All context files live in `docs/` relative to repo root.
 
 | You are working on | Also load |
 |---|---|
-| `/mail-orders`, `mo_*` tables, parser, enrichment, customer matching, learned keywords, email template, signal badges, Table/Review views, 5-slot bucketing, tag-gating | `docs/CLAUDE_MAIL_ORDERS.md` |
-| `/tint/manager`, `/tint/operator`, challans, shades, TI report, **Tint Summary report / `/reports` hub**, operator sequence, pigment shade grid, slot-at-completion, sampling reuse + pack scaling | `docs/CLAUDE_TINT.md` |
-| `/tint/sampling-library`, `sampling_register`/`sampling_recipes`/`sampling_usage_log`, suggestion engine, duplicate merge | `docs/CLAUDE_SAMPLING_LIBRARY.md` |
-| `/place-order`, `/po`, `/order`, `mo_order_form_index_v2`, `mo_sku_lookup_v2`, speed dial, cart, pack buckets, base aliases, catalog families, email builder | `docs/CLAUDE_PLACE_ORDER.md` |
-| `/attendance`, OT, `attendance_*`, admin OT pending/settings/audit | `docs/CLAUDE_ATTENDANCE.md` |
-| `/admin/import`, SAP parser, upsert brain, Auto-Import, `import_*` tables | `docs/CLAUDE_IMPORT.md` |
-| `/support`, `/planning`, `/warehouse`, `/admin` (incl. **Settings → Hide**), `/operations/*` | Core only — these live as stubs in `docs/CLAUDE_CORE.md §11-§12` until extracted |
+| `/mail-orders`, `mo_*` tables, parser, enrichment, customer matching, learned keywords, email template, signal badges, Table/Review views | `docs/CLAUDE_MAIL_ORDERS.md` |
+| `/tint/manager`, `/tint/operator`, challans, shades, TI report, operator sequence, pigment shade grid, slot-at-completion | `docs/CLAUDE_TINT.md` |
+| `/support`, `/planning`, `/warehouse`, `/admin`, `/operations/*` | Core only — these live as stubs in `docs/CLAUDE_CORE.md §11` until extracted |
 
-**Cross-cutting work** (SAP import enrichment touches MO + imports; dispatch data from MO flows to orders table; the Hide feature spans CORE schema + UI + MAIL_ORDERS): load both relevant domain files.
+**Cross-cutting work** (SAP import enrichment touches MO + imports; dispatch data from MO flows to orders table): load both relevant domain files.
 
 ---
 
@@ -51,7 +47,7 @@ All context files live in `docs/` relative to repo root.
 
 1. Read every file listed above for your task. `CLAUDE.md` at repo root, the rest at `docs/CLAUDE_*.md`.
 2. Respond with "Files read: CLAUDE.md, docs/CLAUDE_CORE.md, docs/CLAUDE_UI.md, [others]." before any other output.
-3. Confirm schema version (v27.6), parser version (v6.5 if MO work), UI version (v5.5).
+3. Confirm schema version (v26.5), parser version (v6.5 if MO work), UI version (v5.1).
 4. If any referenced file is missing or seems out of date, stop and ask.
 
 ---
@@ -72,4 +68,4 @@ When extracting, update §3 decision table in this file.
 
 ---
 
-*Router v1.1 · Orbit OMS · June 2026*
+*Router v1.0 · Orbit OMS · April 2026*

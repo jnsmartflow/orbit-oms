@@ -1,5 +1,5 @@
 # ROADMAP.md — OrbitOMS Planned Work
-# Updated 2026-06-18 · Lives in: orbit-oms/docs/ (manual attach — NOT auto-loaded)
+# Updated 2026-06-02 · Lives in: orbit-oms/docs/ (manual attach — NOT auto-loaded)
 
 Attach this file when planning the next phase of any module. Live "what's next" list, separated from canonical docs.
 
@@ -50,13 +50,26 @@ The big architectural arc. **Currently in Stage 1.** Full plan in `CLAUDE_PLACE_
 
 ---
 
-## Place Order — per-product CSV rollout ✅ COMPLETE (2026-06-14)
+## Place Order — per-product CSV rollout (continuing)
 
-The catalog-restructure workstream is **done — all families folded** into the final 9-tile speed dial (`CLAUDE_PLACE_ORDER.md §6/§23`). 6-step loop documented in `CLAUDE_PLACE_ORDER.md §14`. Covered GLOSS/PU Enamel/Satin/Promise/Velvet Touch/Sadolin/SuperCover/SuperClean/Primer/Distemper/Texture/Putty/Tools/Stainer/Spray Paint/M900 + the remaining-5 (Tile/Metallic/Lustre/Smoothover/Floor Plus) + email branding + dormant-alias light-up (PU Enamel etc.).
+Pattern established 2026-06-01 (WS Max → Protect Dustproof/Rainproof/Powerflexx). 6-step loop in `CLAUDE_PLACE_ORDER.md §14`.
 
-### Optional search refinements (NOT built — pick up if Smart Flow asks)
+**Shipped:**
+- WS Max base aliases (display + search)
+- WS Protect restructure (eliminated wrong "WS PROTECT", added 4 sub-products with correct SKUs)
+- BASE_ALIASES extended to Dustproof/Rainproof/Powerflexx with 99 → Vibrant Red
+- Search ranking (`mobile-search.ts`) with prefix/word-boundary/inner scoring
+
+**Next products (each follows the same 6-step loop):**
+- Other WS family members not yet revised (if any)
+- GLOSS family base aliases (if reviewer wants)
+- Other major families flagged by depot ops
+
+### Optional search refinements (NOT built)
 - `rainproof` → Rainproof only (drop the weak Dustproof link)
-- `ws` → WS-family-first (rank WS family above unrelated products that merely contain "WS")
+- `ws` → WS-family-first (rank WS family above unrelated "Dulux WS Hi-Sheen/Metallic" products that merely contain "WS")
+
+Pick up if Smart Flow asks.
 
 ---
 
@@ -90,7 +103,7 @@ Sampling Library is operationally stable. Reactive items only.
 
 - **Phase 4.5 + 5 orphan fix.** Designed (14 points locked), parked indefinitely. Live data shows ~15 orphans/month — manual cleanup is cheaper. Monthly check query in `CLAUDE_SAMPLING_LIBRARY.md §3`. Trigger Phase 4.5 + 5 if orphan count crosses 20/month sustained.
 
-- **Sampling Issue-5 duplicate cleanup (IN PROGRESS).** Runbook + reference graph shipped (`CLAUDE_SAMPLING_LIBRARY.md §12`); dedupe by EXACT formula fingerprint, never shade name; inactivate (never delete) sources. **3 white-only groups merged** (`26-0196`/`26-0106`/`26-0094`); **~380 duplicate groups remain** — process group by group. Pending: build the **exact-dupe-finder tool** (seed number → all matching active samplings → dated review CSV); remove junk test sampling **`#26-0285`**. Owner chose manual SQL over a batch script for now.
+- **Sampling duplicate refinement.** Planning doc exists (2026-05-27 web update). Identify duplicate sampling numbers where shadeName matches but one is "shell" (zero pigments) and another has formula. Merge with operator approval. Phase 1 (diagnosis only) → Phase 2 (preview Excel) → Phase 3 (merge SQL) → Phase 6 (prevention). Not started.
 
 - **Phase 5 fuzzy site match.** ~2,411 parents siteless after backfill. Recover most via fuzzy match against `delivery_point_master.customerName`. NEVER auto-fuzzy without operator review — site suffixes like "FACE" / phase numbers distinguish genuine different sites. CORE §3 rule.
 
@@ -266,53 +279,12 @@ Hobby tier cap at 2 cron jobs. If we ever need a third (e.g. nightly Sampling Li
 
 ---
 
-## Consolidation follow-ups (opened 2026-06-18)
-
-New OPEN items surfaced while consolidating the 29 drafts. Grouped by module.
-
-### Place Order / Catalog
-- **Primer Int/Ext billing audit** — orders placed via `/place-order` between the 2026-06-08 Primer rebuild and the 2026-06-09 fix (`f217a1f7`) may have billed the OPPOSITE SAP (Int↔Ext). Audit that window.
-- **Multi-Purpose Thinner billing audit** — thinner orders between the Sadolin `-final` rebuild and the 2026-06-09 fix (`70bd6369`) may have shown/emailed "PU Prime Thinner". Audit if any went to customers.
-- **Spray Paint + M900 legacy `mo_sku_lookup` re-key** — both were un-hidden in v2 only; the v1 parser still emits `SR SPRAY PAINT` / `M900` for inbound emails. Re-key rides the parser→v2 migration (§19).
-- **VT Specialty dedicated-tab fold** — currently search-only (Concrete Finish / Marble / Clear Coat). Deferred fold into a Velvet Touch tab (would reuse the per-row-family bucket + dormant-alias recipe).
-- **Smoothover EXTERIORS→UTILITY + 96/97 YOX-vs-Yellow alias standardisation** — the deferred "final CORE section pass" (do the UTILITY/INTERIORS/EXTERIORS relabel together, not piecemeal).
-- **Order email line-item reformat** — see the existing deferred bullet under "Place Order — email + catalog".
-
-### /po (going-forward mobile)
-- **`/po` → `/order` cutover rename** — replace the frozen `/order` backup once `/po` is fully signed off.
-- **Server-side per-user recents** — recents are device-local localStorage today; needs login-scoped storage.
-- **Orbit-bar collapse-on-scroll** — mockup approved, not built.
-- **Dispatch slot feature** (date + time window on `/po` review) — design agreed, build deferred by owner; mockup in `docs/mockups/dispatch-slot/`.
-
-### Tint / Reports
-- **Edit-path modal gate** — the "Update TI Entry" path skips the formula-match gate and can save a null `samplingNo`. Wire the gate onto the edit/update path.
-- **Cross-type reuse rows** — a TINTER line still lists ACOTONE shades (plain). Optionally filter the reuse list to the line's tinter type. Low priority.
-- **Remove temp dev preview** `app/reports/tint-summary/preview/page.tsx`.
-- **Intake/aging axis: OBD-date → import-time** — switch once import-time reliability is fixed (currently unreliable, so OBD date is used).
-- **Operator card: tinting time + utilisation** — needs attendance present-hours + handling that stored tinting time includes paused minutes.
-
-### Mail Orders
-- **Late-Evening / Night slot-summary auto-email gap** — `slotDefs` trigger array has only 3 entries (Morning/Afternoon/Evening); Night and the new Late Evening don't auto-fire. Add them if auto-emails for those slots are wanted (`CLAUDE_MAIL_ORDERS.md §13`).
-- **Dispatch cutoffs "Change-2"** — Local vs Upcountry dispatch cutoffs. Latent infra exists (`delivery_type_master`, `delivery_type_slot_config` UNUSED, `orders.dispatchSlotDeadline`, `delivery_point_master.deliveryTypeOverride`). Recommend a dedicated discovery session before building.
-
-### Hide feature (Settings → Hide) — v1 deferreds
-- **Hide Mail Order ROWS** (separate `mo_orders`, no hide column) — the bigger "hard part".
-- **Tint badge gating** in the Tags tab — needs a shared badge registry first (Tint badges aren't centralized).
-- **"N orders hidden by filter" banner** on the boards — parked.
-- **Combined rule conditions** (e.g. HOLD AND older than 7 days); URGENT / MISSING_CUSTOMER rule tags; per-rule hidden counts; per-order override/pin to reveal one rule-hidden order.
-
-### Cross-cutting
-- **`scripts/_*` tsc noise** — untracked scratch files throw ~24 `tsc --noEmit` errors. Exclude `scripts/_*` from tsconfig or delete to keep the gate clean.
-- **Two CLAUDE.md routers (repo-root vs docs/)** — confirm both intended or consolidate to one.
-
----
-
 ## Documentation hygiene
 
 ### Schema docs consolidation cadence
 Every 2-3 weeks: consolidate `docs/prompts/drafts/` into canonical files using the consolidation prompt. Archive consumed drafts to `docs/prompts/archive/YYYY-MM/`.
 
-Last cycle: 2026-06-18 (29 code-update drafts from Jun 2 – Jun 18: full catalog restructure, `/po` redesign + back-nav, desktop parity, pack buckets, email single-source, Sadolin/SuperCover/SuperClean/Tools/Spray Paint/M900, Stainer codes, Hide feature, tint sampling reuse + pack scaling + duplicate-merge runbook, Tint Summary report, mail-orders 5 slots). Prior cycle: 2026-06-02.
+Last cycle: 2026-06-02 (12 drafts: 7 code-update + 5 web-update from May 26 – Jun 1).
 
 ### `taxonomy-preview.json` path
 
@@ -320,4 +292,4 @@ Lives at `docs/prompts/archive/drafts/2026-04-to-05/taxonomy-preview.json`. The 
 
 ---
 
-*Updated 2026-06-18 — reflects the full catalog restructure (all families folded, 9-tile dial), `/po` going-forward build, desktop `/place-order` parity, email single-source + AkzoNobel recipient, Hide feature shipped, tint sampling reuse + pack scaling + duplicate-merge runbook (3 groups merged), Tint Summary report + `/reports` hub, mail-orders 5 slots. Schema v27.6.*
+*Updated 2026-06-02 — reflects Cohort A+B restore, REVIEW pile import, multi-SO + contacts auto-sync shipped, challan formula auto-fill shipped, `/order` v2 migration, order dedup, WS Max + Protect product rollouts, tint siteId bug fixed.*

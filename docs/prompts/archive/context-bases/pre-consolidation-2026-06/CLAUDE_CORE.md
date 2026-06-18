@@ -1,5 +1,5 @@
 # CLAUDE_CORE.md — OrbitOMS Core
-# v76 · Schema v27.6 · June 2026 · Lives in: orbit-oms/docs/
+# v75 · Schema v27.5 · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_UI.md
 
 ---
@@ -151,10 +151,8 @@ Primary role drives login redirect and href overrides. Additional rows add nav i
 | `place_order` | admin, billing_operator, tint_manager, support, dispatcher |
 | `attendance` | all roles gated per rollout stage |
 | `removed_orders` | admin only |
-| `ti_report` (reused) | gates the Reports hub `/reports` (Tint Summary + TI Report) |
-| `settings_hide` | admin only (v27.6). In `PageKey` union + `ALL_PAGE_KEYS` (admin auto-ALL_TRUE), **NOT** in `PAGE_NAV_MAP` (that feeds operational sidebars; would duplicate the admin entry). |
 
-**Sidebar:** Layout files pass `session.user.role as RoleSidebarRole` (not hardcoded). For **operational / role-based** sidebars, nav items come from `buildNavItems()` in `lib/permissions.ts` only — no manual appending. ⚠️ The **admin panel** sidebar is the separate `components/admin/admin-sidebar.tsx` (`NAV_SECTIONS` array: OVERVIEW / MASTER DATA / PEOPLE / OPERATIONS / PERSONAL / SETTINGS) — `buildNavItems()`/`PAGE_NAV_MAP` do NOT feed it. New admin items (e.g. Settings → Hide) are added there.
+**Sidebar:** Layout files pass `session.user.role as RoleSidebarRole` (not hardcoded). Nav items come from `buildNavItems()` in `lib/permissions.ts` only — no manual appending.
 
 **Route guard:** `PHASE1_BLOCKED` in `middleware.ts` is currently `[]` (all routes unblocked). To temporarily block a route, add the path to this array.
 
@@ -176,9 +174,9 @@ Primary role drives login redirect and href overrides. Additional rows add nav i
 
 ---
 
-## 7. Database schema — v27.6
+## 7. Database schema — v27.5
 
-Versions: v21 base → v22 (mo_*) → v23 (orders dispatch) → v24 (customer match) → v25 (split) → v26 (mo_order_remarks) → v26.1 (isLocked) → v26.2 (mo_line_status) → v26.3 (carton + piecesPerCarton) → v26.4 (mo_learned_customers) → v26.5 (orders.orderDateTime) → v26.6 (user_roles + manual_tint_entries + users.phone + mo_sku_lookup.refDescription) → v27.0 (attendance foundation) → v27.1 (attendance settings hardening) → v27.2 (OT workflow + 2026-05-13 place-order v2 tables) → v27.3 (sampling_register + sampling_recipes + sampling_usage_log; orders.isRemoved + delivery_challans.isVoided; tint_skip_events + tint_pause_events; tint_assignments + import_raw_line_items netWeight/totalWeight) → v27.4 (sampling_usage_log.deliveryNumber backfill + tinter_issue_entries.samplingNo/shadeName) → v27.5 (customer_sales_officers + linkedSalesOfficerId on delivery_point_contacts + 3 columns on delivery_challan_formulas + sampling_recipes.packCode nullable with NULLS NOT DISTINCT + mo_sku_lookup_v2.isPrimary + mo_order_form_index_v2.mobileFamily) → **v27.6** (mo_order_form_index_v2.region; Hide feature: `obd_visibility_rules` + `app_tag_settings` tables + orders.isHidden/hiddenById/hiddenReason/hiddenAt — §7.10).
+Versions: v21 base → v22 (mo_*) → v23 (orders dispatch) → v24 (customer match) → v25 (split) → v26 (mo_order_remarks) → v26.1 (isLocked) → v26.2 (mo_line_status) → v26.3 (carton + piecesPerCarton) → v26.4 (mo_learned_customers) → v26.5 (orders.orderDateTime) → v26.6 (user_roles + manual_tint_entries + users.phone + mo_sku_lookup.refDescription) → v27.0 (attendance foundation) → v27.1 (attendance settings hardening) → v27.2 (OT workflow + 2026-05-13 place-order v2 tables) → v27.3 (sampling_register + sampling_recipes + sampling_usage_log; orders.isRemoved + delivery_challans.isVoided; tint_skip_events + tint_pause_events; tint_assignments + import_raw_line_items netWeight/totalWeight) → v27.4 (sampling_usage_log.deliveryNumber backfill + tinter_issue_entries.samplingNo/shadeName) → **v27.5** (customer_sales_officers + linkedSalesOfficerId on delivery_point_contacts + 3 columns on delivery_challan_formulas + sampling_recipes.packCode nullable with NULLS NOT DISTINCT + mo_sku_lookup_v2.isPrimary + mo_order_form_index_v2.mobileFamily).
 
 ### 7.1 Setup / Master
 
@@ -253,10 +251,6 @@ orders                     workflowStage, slotId, originalSlotId, dispatchSlotDe
                            removalReason TEXT (CUSTOMER_CANCELLED | WRONG_ORDER)
                            removalRemark TEXT (mandatory free text)
                            removedAt TIMESTAMPTZ, removedById, restoredAt, restoredById
-
-                           HIDE columns (v27.6 — manual one-off hide, §7.10):
-                           isHidden BOOLEAN DEFAULT false (indexed), hiddenById,
-                           hiddenReason TEXT, hiddenAt TIMESTAMPTZ
 
 order_splits               Per tint batch/split
 split_line_items           Per line
@@ -343,7 +337,7 @@ Full detail in `CLAUDE_MAIL_ORDERS.md`.
 ### 7.7 Place Order (v2 tables)
 
 ```
-mo_order_form_index_v2     ~454 active rows (after the full catalog restructure).
+mo_order_form_index_v2     ~405 active rows (post-Promise-dedup + WS Protect restructure).
                            Columns:
                              family, product, baseColour, displayName, searchTokens,
                              tinterType, productType, sortOrder, isActive,
@@ -351,17 +345,15 @@ mo_order_form_index_v2     ~454 active rows (after the full catalog restructure)
                              mobileFamily TEXT? (v27.5) — collapses Promise-family variants for
                                                           mobile labelling; declared but currently
                                                           NOT used as the label (label stays = family).
-                             region TEXT? (v27.6) — optional grey-line qualifier (TOOLS 4" brushes:
-                                                    Delhi NCR / UP Punjab / South); null on all paint.
                            UNIQUE (family, product, baseColour).
                            `product` is the SAP-clean stock name — the JOIN KEY into
                            mo_sku_lookup_v2.product. May be null on rows the seed couldn't resolve;
                            those rows render as "no packs" on the order form.
 
-mo_sku_lookup_v2           ~1,680 rows (after the full catalog restructure). Parallel clean-name version.
+mo_sku_lookup_v2           ~1,625 rows (post WS Protect restructure). Parallel clean-name version.
                            material UNIQUE.
                            isPrimary BOOLEAN NOT NULL DEFAULT true (v27.5)
-                             — false on confirmed duplicate twins. /api/order/data
+                             — false on confirmed duplicate twins (130 rows). /api/order/data
                                filters where isPrimary = true; desktop /api/place-order/data
                                currently unfiltered (out of scope for this cut).
 ```
@@ -420,27 +412,6 @@ sampling_usage_log         id PK. samplingNo FK CASCADE, recipeId FK SET NULL,
 
 Full detail in `CLAUDE_SAMPLING_LIBRARY.md`.
 
-### 7.10 Visibility / Hide (v27.6)
-
-Admin "Settings → Hide" feature. SQL: `sql/2026-06-12-hide-feature.sql` (no transaction wrapper). Prisma: scalar fields only, no relations; timestamps `@db.Timestamptz(6)`.
-
-```
-obd_visibility_rules       Bulk auto-hide rules. id, ruleName,
-                           conditionType ('tag' | 'daysOld'),
-                           conditionTag (e.g. 'HOLD'), conditionDaysGt INT,
-                           isActive BOOLEAN DEFAULT true (indexed),
-                           createdById, createdAt, updatedById, updatedAt.
-                           v1 conditions: HOLD + daysOld only (schema is generic).
-
-app_tag_settings           Per-badge on/off. id, tagKey TEXT UNIQUE,
-                           isEnabled BOOLEAN DEFAULT true, updatedById, updatedAt.
-                           Default-ON (no row = badge shows).
-
-orders                     hide columns (see §7.3): isHidden, hiddenById, hiddenReason, hiddenAt.
-```
-
-Hide **audit reuses `order_status_logs`** (toStage `ORDER_HIDDEN` / `ORDER_UNHIDDEN`, note carries reason) — no separate audit table. Helpers `lib/hide/visibility.ts` (`getActiveHideRules`, `getHideExclusion` — NULL-safe, see §13 — `getHiddenWhere`, `matchesRule`), `lib/hide/tag-settings.ts`, `lib/hide/tag-catalog.ts`. Feature spec: `CLAUDE_UI.md §57`; MO tag-gating: `CLAUDE_MAIL_ORDERS.md §21`.
-
 ---
 
 ## 8. Key business rules (cross-cutting)
@@ -457,8 +428,6 @@ Hide **audit reuses `order_status_logs`** (toStage `ORDER_HIDDEN` / `ORDER_UNHID
 - **UTC→IST for mail order timestamps:** `AssumeUniversal` + `ConvertTimeFromUtc`. Never `.ToUniversalTime()`.
 - **Keyword length sorting is critical** — shorter generic keywords override longer specific ones without DESC sort.
 - **Bill To = dealer / Ship To = site** terminology applies on challans and mail orders.
-- **Order recipient:** `/po` + `/place-order` send orders to **`surat.depot@akzonobel.com`** (AkzoNobel inbox auto-forwards to `surat.order@outlook.com`, the parser inbox — so the parser `OutlookAccount` config is unchanged). The frozen public `/order` page still sends to `surat.order@outlook.com`. (`CLAUDE_PLACE_ORDER.md §11`.)
-- **Mobile external-scheme handoff:** on mobile, a synchronous `history.go()` in the same tick as a `mailto:` (or any external navigation) cancels the handoff — fire the external navigation first, defer any history reset via `setTimeout(…, 0)` (`CLAUDE_PLACE_ORDER.md §25`).
 
 ---
 
@@ -493,7 +462,7 @@ Component: `components/universal-header.tsx`. Used by ALL boards.
 
 **Color rule:** ONE teal element = active slot segment. Everything else gray. *Per-screen exemption:* Sampling Library uses teal on multiple elements intentionally (`CLAUDE_UI.md §22`).
 
-**Slot segments:** depot-wide boards (Support / Planning / Warehouse, `slot_master`-driven) show **4** — filter out Next Day Morning, no "All" button. **Mail Orders is a separate system** (computed at render from `receivedAt`, hardcoded names in `lib/mail-orders/utils.ts`, cutoffs in `system_config`) and shows **5** since 2026-06-18 (added "Late Evening"; `CLAUDE_MAIL_ORDERS.md §9.1`). The two slot systems never share numbers.
+**Slot segments:** 4 only. Filter out Next Day Morning. No "All" button.
 
 Per-board wiring summary in `CLAUDE_UI.md §6`.
 
@@ -519,16 +488,13 @@ Files: `components/shared/role-sidebar-provider.tsx`, `role-sidebar.tsx`, `role-
 Full detail in domain files. Cross-reference only here.
 
 ### Admin
-`/admin`. admin, ops_admin. Customer / SKU / route / area / user / system config / import / attendance dashboard / **removed-orders** (admin-only restore page) / **Settings → Hide** (`/admin/settings/hide`, admin-only — Rules / Hidden Orders / Tags tabs; `CLAUDE_UI.md §57`, schema §7.10).
+`/admin`. admin, ops_admin. Customer / SKU / route / area / user / system config / import / attendance dashboard / **removed-orders** (admin-only restore page).
 
 ### Mail Orders
 `/mail-orders`. billing_operator, tint_manager, admin. → `CLAUDE_MAIL_ORDERS.md`
 
-### Tint Manager / Operator / Challans / Shades
+### Tint Manager / Operator / Challans / Shades / TI Report
 `/tint/*`. → `CLAUDE_TINT.md`
-
-### Reports
-`/reports` hub + `/reports/tint-summary`. tint_manager, admin, operations. Gated by the reused `ti_report` permission. **Tint Summary** daily MIS report + the former **TI Report** (folded in — old `/tint/manager/ti-report` and `/ti-report` redirect to `/reports?r=ti-report`). API: `GET /api/reports/tint-summary`. → `CLAUDE_TINT.md §11-§12`, `CLAUDE_UI.md §56`.
 
 ### Sampling Library
 `/tint/sampling-library`. tint_manager, tint_operator (read), admin. → `CLAUDE_SAMPLING_LIBRARY.md`
@@ -589,35 +555,7 @@ Existing in code but intentionally disabled, broken, or stale. Do not "fix" with
 - **`/api/order/data` and `/api/place-order/data` carry duplicated v2 payload queries** — no shared helper yet. If you edit the v2 payload shape, edit BOTH or extract a shared builder.
 - **Legacy `mo_order_form_index` + `mo_sku_lookup` orphaned by `/order` and `/place-order`** — both frontends now read v2 tables. BUT the mail parser + enrichment still read the LEGACY tables. Do NOT delete the legacy tables until the parser is migrated to v2 (Stage 3 of the v2 single-source plan; see `CLAUDE_PLACE_ORDER.md`).
 - **Pre-existing `prisma.$transaction` in admin customer routes** (`app/api/admin/customers/route.ts` lines 133 & 186) — flagged in multi-SO commit, left untouched. Refactor when convenient.
-- **NULL three-valued logic (Hide filter).** Prisma `NOT { field: value }` on a NULLABLE column DROPS NULL rows (a "hide if HOLD" rule hid every order whose `dispatchStatus` was null). For "exclude matching" filters build NULL-safe KEEP conditions: `{ OR: [ { field: null }, { field: { not: value } } ] }`, AND-combined. Implemented in `getHideExclusion()`. The hide filter is AND-merged into every order-display query (Tint Manager, TM missing-customers, Tint Operator my-orders, Support, Planning, Warehouse, Operations) — NOT into Hidden-Orders/restore views, challan audit OR, import internals, or `mo_orders` (out of v1 scope).
-- **`orders.dispatchStatus` Hold value is lowercase `"hold"`.** The capitalized `"Hold"` belongs to the mail-orders pipeline (`getOrderSignals` status badge), not the orders table.
-- **MO badges are centralized in `getOrderSignals()`** (one emit point — easy to tag-gate, §MAIL_ORDERS §21). **Tint badges are NOT centralized** (hardcoded across 3 components, `getAgeBadge` duplicated) — gating them needs a shared badge registry first (the deferred "hard part").
-- **Hide does NOT delete.** Rules + manual hide are reversible; rule-hidden orders have no per-order un-hide in v1 (Hidden Orders shows "Managed by rule"); only manual hides get an Un-hide button.
 
 ---
 
-## 14. Operational checklists
-
-- **Sampling duplicate merge:** dedupe by EXACT full formula (recipe fingerprint), never shade name; use RAW `packCode` enum in SQL (not the display label); never delete `sampling_register` rows (inactivate `isActive=false`); preserve the single-`isPrimary` invariant on the master. Full runbook + reference graph: `CLAUDE_SAMPLING_LIBRARY.md §12`. Note: GEN-SKU delete-list SKUs may still appear as historical sampling variants — merging does not auto-strip them.
-
----
-
-## 15. Key lib modules (cross-cutting / new this cycle)
-
-Quick index; full detail in domain file maps.
-
-| Module | Purpose | Doc |
-|---|---|---|
-| `lib/place-order/pack-buckets.ts` | desktop variant-grid columns (`PACK_TO_BUCKET`, `FAMILY_BUCKET_OVERRIDES`, silent-drop) | PLACE_ORDER §24 |
-| `lib/place-order/keyword-family-map.ts` | whole-query word→family search promotion (shared mobile+desktop) | PLACE_ORDER §13 |
-| `lib/place-order/sub-product-descriptors.ts` | two-line descriptors + `isVariantQualifierTab` + `getSecondLine` | UI §43 |
-| `lib/place-order/email.ts` | `buildEmail` + `emailLineLabel` (single name source for all 3 builders) | PLACE_ORDER §11 |
-| `lib/sampling/pack-litres.ts` | dose-litres map + `packDoseLitres`/`scalePigments`/`perLitreFingerprint` | SAMPLING §11 |
-| `lib/hide/*` | `visibility.ts`, `tag-settings.ts`, `tag-catalog.ts` (Hide feature) | §7.10, UI §57 |
-| `lib/reports/tint-summary-data.ts` | Tint Summary report data source-of-truth | TINT §12 |
-
-Engineering note: a parallel session owns `scripts/_*` scratch files (sampling/report seed helpers) — they throw `tsc --noEmit` errors but are never committed; exclude `scripts/_*` from tsconfig or delete to keep the gate clean.
-
----
-
-*CORE v76 · Schema v27.6 · OrbitOMS*
+*CORE v75 · Schema v27.5 · OrbitOMS*

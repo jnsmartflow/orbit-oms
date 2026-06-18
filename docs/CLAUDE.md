@@ -1,5 +1,5 @@
 # CLAUDE.md — OrbitOMS context router
-# Lives in: repo root (auto-loaded by Claude Code)
+# June 2026 · Lives in: repo root (auto-loaded by Claude Code)
 
 OrbitOMS — depot operations management for JSW Dulux paint distribution, Surat depot. Live at https://orbitoms.in.
 
@@ -13,12 +13,13 @@ Then load the domain file(s) matching the task:
 
 | Task touches | Load |
 |---|---|
-| `/mail-orders`, parser, enrichment, mo_* tables, customer matching, slot email | `docs/CLAUDE_MAIL_ORDERS.md` |
-| `/tint/*`, challans, shades, TI report, tint_assignments, delivery_challans, skip/pause/remove OBD | `docs/CLAUDE_TINT.md` |
-| `/tint/sampling-library`, sampling_register, sampling_recipes, sampling_usage_log | `docs/CLAUDE_SAMPLING_LIBRARY.md` |
+| `/mail-orders`, parser, enrichment, mo_* tables, customer matching, slot email, 5-slot bucketing, tag-gating | `docs/CLAUDE_MAIL_ORDERS.md` |
+| `/tint/*`, `/reports` (Tint Summary + TI Report), challans, shades, tint_assignments, delivery_challans, skip/pause/remove OBD, sampling reuse + pack scaling | `docs/CLAUDE_TINT.md` |
+| `/tint/sampling-library`, sampling_register, sampling_recipes, sampling_usage_log, suggestion engine, duplicate merge | `docs/CLAUDE_SAMPLING_LIBRARY.md` |
 | `/attendance`, OT, attendance_*, admin OT pending/settings/audit | `docs/CLAUDE_ATTENDANCE.md` |
-| `/place-order`, `/order`, mo_order_form_index_v2, mo_sku_lookup_v2, speed dial, cart | `docs/CLAUDE_PLACE_ORDER.md` |
+| `/place-order`, `/po`, `/order`, mo_order_form_index_v2, mo_sku_lookup_v2, speed dial, cart, pack buckets, catalog families | `docs/CLAUDE_PLACE_ORDER.md` |
 | `/admin/import`, SAP parser, upsert brain, Auto-Import, import_* tables | `docs/CLAUDE_IMPORT.md` |
+| `/admin` Settings → Hide (rules / hidden orders / tags), `obd_visibility_rules`, `app_tag_settings`, orders.isHidden | `docs/CLAUDE_CORE.md §7.10` + `CLAUDE_UI.md §57` (+ `CLAUDE_MAIL_ORDERS.md §21` for tag-gating) |
 
 If unsure which domain, ask before loading.
 
