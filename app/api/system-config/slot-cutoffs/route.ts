@@ -11,6 +11,7 @@ export async function GET() {
           "slot_morning_cutoff",
           "slot_afternoon_cutoff",
           "slot_evening_cutoff",
+          "slot_late_evening_cutoff",
         ],
       },
     },
@@ -21,6 +22,7 @@ export async function GET() {
   return NextResponse.json({
     morning: map.slot_morning_cutoff ?? "10:30",
     afternoon: map.slot_afternoon_cutoff ?? "12:30",
-    evening: map.slot_evening_cutoff ?? "15:30",
+    evening: map.slot_evening_cutoff ?? "17:00",
+    lateEvening: map.slot_late_evening_cutoff ?? "20:00",
   });
 }

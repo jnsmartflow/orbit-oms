@@ -76,6 +76,7 @@ export interface SlotCutoffs {
   morning: string;
   afternoon: string;
   evening: string;
+  lateEvening: string;
 }
 
 function parseHHMM(time: string): number {
@@ -86,7 +87,7 @@ function parseHHMM(time: string): number {
 export function getSlotFromTime(
   receivedAt: string,
   cutoffs?: SlotCutoffs,
-): "Morning" | "Afternoon" | "Evening" | "Night" {
+): "Morning" | "Afternoon" | "Evening" | "Late Evening" | "Night" {
   const d = new Date(receivedAt);
   const [h, m] = d
     .toLocaleString("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false })
@@ -94,13 +95,17 @@ export function getSlotFromTime(
     .map(Number);
   const mins = h * 60 + m;
 
+  // Fallback cutoffs (IST minutes) match the live design even if the DB
+  // fetch fails: 10:30 / 12:30 / 17:00 / 20:00. Cutoff belongs to NEXT slot.
   const morningCutoff = cutoffs ? parseHHMM(cutoffs.morning) : 630;
   const afternoonCutoff = cutoffs ? parseHHMM(cutoffs.afternoon) : 750;
-  const eveningCutoff = cutoffs ? parseHHMM(cutoffs.evening) : 930;
+  const eveningCutoff = cutoffs ? parseHHMM(cutoffs.evening) : 1020;
+  const lateEveningCutoff = cutoffs ? parseHHMM(cutoffs.lateEvening) : 1200;
 
   if (mins < morningCutoff) return "Morning";
   if (mins < afternoonCutoff) return "Afternoon";
   if (mins < eveningCutoff) return "Evening";
+  if (mins < lateEveningCutoff) return "Late Evening";
   return "Night";
 }
 
@@ -573,7 +578,7 @@ export function groupOrdersBySlot(
 
   // Return keys in fixed order, only if they have orders
   const result: Record<string, MoOrder[]> = {};
-  for (const key of ["Morning", "Afternoon", "Evening", "Night"] as const) {
+  for (const key of ["Morning", "Afternoon", "Evening", "Late Evening", "Night"] as const) {
     if (groups[key]) result[key] = groups[key];
   }
   return result;

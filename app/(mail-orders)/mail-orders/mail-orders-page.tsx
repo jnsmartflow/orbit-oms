@@ -321,7 +321,7 @@ export default function MailOrdersPage() {
   // ── Focus mode: auto-select first slot with orders ──────────────────────────
   useEffect(() => {
     if (viewMode === "focus" && activeSlot === null && orders.length > 0) {
-      const slots = ["Morning", "Afternoon", "Evening", "Night"] as const;
+      const slots = ["Morning", "Afternoon", "Evening", "Late Evening", "Night"] as const;
       for (const slot of slots) {
         if (orders.some(o => getSlotFromTime(o.receivedAt, slotCutoffs) === slot)) {
           setActiveSlot(slot);
@@ -447,7 +447,7 @@ export default function MailOrdersPage() {
 
   // ── Slot counts (from all orders, before slot filter) ───────────────────────
   const slotCounts = useMemo(() => {
-    const counts: Record<string, number> = { Morning: 0, Afternoon: 0, Evening: 0, Night: 0 };
+    const counts: Record<string, number> = { Morning: 0, Afternoon: 0, Evening: 0, "Late Evening": 0, Night: 0 };
     for (const o of orders) {
       const slot = getSlotFromTime(o.receivedAt, slotCutoffs);
       counts[slot]++;
@@ -685,7 +685,7 @@ export default function MailOrdersPage() {
   const separatePunched = activeSlot !== null;
   const flatOrders = useMemo(() => {
     const result: MoOrder[] = [];
-    for (const slot of ["Morning", "Afternoon", "Evening", "Night"] as const) {
+    for (const slot of ["Morning", "Afternoon", "Evening", "Late Evening", "Night"] as const) {
       const group = groupedOrders[slot];
       if (!group) continue;
       for (const o of group) {
@@ -840,7 +840,7 @@ export default function MailOrdersPage() {
         if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
         e.preventDefault();
         const targetSlot = activeSlot ?? (() => {
-          const slots = ["Morning", "Afternoon", "Evening", "Night"];
+          const slots = ["Morning", "Afternoon", "Evening", "Late Evening", "Night"];
           for (const s of slots) {
             const slotOrders = orders.filter(
               o => getSlotFromTime(o.receivedAt, slotCutoffs) === s
@@ -1008,7 +1008,7 @@ export default function MailOrdersPage() {
   // ── Header props ─────────────────────────────────────────────────────────────
   const slotPunchStatus = useMemo(() => {
     const result: Record<string, boolean> = {};
-    for (const slot of ["Morning", "Afternoon", "Evening", "Night"]) {
+    for (const slot of ["Morning", "Afternoon", "Evening", "Late Evening", "Night"]) {
       const slotOrders = orders.filter(
         (o) => getSlotFromTime(o.receivedAt, slotCutoffs) === slot
       );
@@ -1022,6 +1022,7 @@ export default function MailOrdersPage() {
     { id: "Morning", label: slotPunchStatus.Morning ? "\u2713 Morning" : "Morning", count: slotCounts.Morning },
     { id: "Afternoon", label: slotPunchStatus.Afternoon ? "\u2713 Afternoon" : "Afternoon", count: slotCounts.Afternoon },
     { id: "Evening", label: slotPunchStatus.Evening ? "\u2713 Evening" : "Evening", count: slotCounts.Evening },
+    { id: "Late Evening", label: slotPunchStatus["Late Evening"] ? "\u2713 Late Evening" : "Late Evening", count: slotCounts["Late Evening"] },
     { id: "Night", label: slotPunchStatus.Night ? "\u2713 Night" : "Night", count: slotCounts.Night },
   ], [slotCounts, slotPunchStatus]);
 

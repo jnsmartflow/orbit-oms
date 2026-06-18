@@ -72,6 +72,7 @@ const SLOT_DOTS: Record<string, string> = {
   Morning: "bg-amber-400",
   Afternoon: "bg-blue-500",
   Evening: "bg-purple-500",
+  "Late Evening": "bg-indigo-500",
   Night: "bg-gray-400",
 };
 
@@ -132,7 +133,7 @@ export function MailOrdersTable({
   onCloseSkuPanel,
   disabledTagKeys,
 }: MailOrdersTableProps) {
-  const slotOrder = ["Morning", "Afternoon", "Evening", "Night"] as const;
+  const slotOrder = ["Morning", "Afternoon", "Evening", "Late Evening", "Night"] as const;
   const isVis = (key: string) => visibleColumns.has(key);
   const extraWidth = ALL_COLUMNS
     .filter(c => !visibleColumns.has(c.key))
