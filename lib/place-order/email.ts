@@ -130,7 +130,7 @@ export function renderOrderBody(input: OrderBodyInput): string {
     const padWidth = String(bill.lines.length).length;
     bill.lines.forEach((line, i) => {
       // Proper-case ONLY the product name — pack string untouched.
-      out.push(`${String(i + 1).padStart(padWidth, " ")}. ${emailCase(line.name)} - ${line.packString}`);
+      out.push(`${String(i + 1).padStart(padWidth, "\u2007")}. ${emailCase(line.name)} - ${line.packString}`);
     });
   }
 
