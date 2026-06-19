@@ -19,6 +19,8 @@
 //   - CATEGORY_KEYWORDS dead code removed
 // ─────────────────────────────────────────────────────────
 
+import { tableCKey } from "./table-c";
+
 export interface ProductKeyword {
   keyword: string; // already UPPERCASED
   category: string;
@@ -390,11 +392,15 @@ export function enrichLine(
   baseRegexMap?: Map<string, RegExp>,
   // v3.2 — carry-forward product hint from parser v6.5
   carryProduct?: string | null,
+  // v7.2 — Table C exact (emitted-name + pack) fast-path (app orders). Both
+  // optional: when absent the engine behaves exactly as before.
+  tableC?: Map<string, string>,
+  tableCResolver?: Map<string, SkuEntry>,
 ): EnrichResult {
   const result = enrichLineCore(
     rawText, packCode, productKeywords, baseKeywords,
     skuByCombo, skuByMaterial, skuByComboAlt, productProfiles,
-    prodRegexMap, baseRegexMap,
+    prodRegexMap, baseRegexMap, tableC, tableCResolver,
   );
 
   // carryProduct hint: if unmatched/partial and carryProduct provided,
@@ -404,7 +410,7 @@ export function enrichLine(
     const hintResult = enrichLineCore(
       `${carryProduct} ${rawText}`, packCode, productKeywords, baseKeywords,
       skuByCombo, skuByMaterial, skuByComboAlt, productProfiles,
-      prodRegexMap, baseRegexMap,
+      prodRegexMap, baseRegexMap, tableC, tableCResolver,
     );
     if (hintResult.matchStatus === 'matched' || hintResult.matchStatus === 'partial') {
       return hintResult;
@@ -415,7 +421,7 @@ export function enrichLine(
     const hintResult = enrichLineCore(
       `${carryProduct} ${rawText}`, packCode, productKeywords, baseKeywords,
       skuByCombo, skuByMaterial, skuByComboAlt, productProfiles,
-      prodRegexMap, baseRegexMap,
+      prodRegexMap, baseRegexMap, tableC, tableCResolver,
     );
     if (hintResult.matchStatus === 'matched') {
       return hintResult;
@@ -436,6 +442,8 @@ function enrichLineCore(
   productProfiles?: Map<string, ProductProfile>,
   prodRegexMap?: Map<string, RegExp>,
   baseRegexMap?: Map<string, RegExp>,
+  tableC?: Map<string, string>,
+  tableCResolver?: Map<string, SkuEntry>,
 ): EnrichResult {
   const EMPTY: EnrichResult = {
     productName: "",
@@ -483,6 +491,33 @@ function enrichLineCore(
 
   // Round fractional packs to standard
   if (PACK_ROUND[cleanPack]) cleanPack = PACK_ROUND[cleanPack];
+
+  // ── Step 2c (v7.2): Table C exact (emitted-name + pack) fast-path ─────────
+  // App orders emit raw v2 catalogue names; an exact (name|cleanPack) hit
+  // resolves straight to the primary V2 material via tableCResolver. The
+  // returned shape mirrors the material-code / "Clear winner" hit EXACTLY, so
+  // alt-skus, billing, and mo_line_status are identical to a keyword match.
+  // Collision keys are absent from `tableC` (built that way), and a miss or an
+  // unresolved material both fall through to the keyword path unchanged.
+  if (tableC && tableCResolver) {
+    const mat = tableC.get(tableCKey(text, cleanPack));
+    if (mat) {
+      const sku = tableCResolver.get(mat);
+      if (sku) {
+        return {
+          productName: sku.product,
+          baseColour: sku.baseColour,
+          skuCode: sku.material,
+          skuDescription: sku.description,
+          refSkuCode: sku.refMaterial ?? "",
+          paintType: sku.paintType ?? "",
+          materialType: sku.materialType ?? "",
+          packCode: resolvedPackCode(sku),
+          matchStatus: "matched",
+        };
+      }
+    }
+  }
 
   // Build packs to try: primary + fallback equivalents
   const packsToTry = [cleanPack];

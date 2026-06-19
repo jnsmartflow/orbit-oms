@@ -12,6 +12,7 @@ import {
 } from "@/lib/mail-orders/enrich";
 import { extractCustomerFromSubject, matchCustomer, parseSubject } from "@/lib/mail-orders/customer-match";
 import { matchDeliveryCustomer } from "@/lib/mail-orders/delivery-match";
+import { buildTableCContext } from "@/lib/mail-orders/table-c-context";
 
 
 export const dynamic = "force-dynamic";
@@ -130,6 +131,12 @@ export async function POST(req: NextRequest) {
     const { byCombo: skuByCombo, byComboAlt: skuByComboAlt, byMaterial: skuByMaterial } = buildSkuMaps(skuEntries);
     const productProfiles = buildProductProfiles(skuEntries, productKeywords, baseKeywords);
     const { prodRegexMap, baseRegexMap } = buildKeywordRegexes(productKeywords, baseKeywords);
+
+    // 4a. Table C fast-path (v7.2) — built ONCE per request via the shared
+    // helper (same dict the offline test validates). Exact (emitted v2 name +
+    // pack) → primary V2 material; resolver keyed on V2 materials so a hit
+    // always resolves; collision keys omitted.
+    const { tableC, tableCResolver } = await buildTableCContext(prisma);
 
     // 4b. Customer matching — subject first, body fallback
     const subjectParsed = parseSubject(subject);
@@ -364,6 +371,8 @@ export async function POST(req: NextRequest) {
         prodRegexMap,
         baseRegexMap,
         line.carryProduct || null,
+        tableC,
+        tableCResolver,
       );
 
       // Carton multiplication

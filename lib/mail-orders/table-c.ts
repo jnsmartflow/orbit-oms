@@ -204,11 +204,14 @@ export function buildTableC(
     }
   }
 
-  // ── Final dictionary: key -> material (first-seen). Ambiguity for a
-  //    collision key is preserved in full in `collisions`, never silently
-  //    discarded — the map just needs a single canonical value per key.
+  // ── Final dictionary: key -> material (first-seen), EXCLUDING collision
+  //    keys. A key that resolved to 2+ distinct materials is ambiguous, so it
+  //    is left OUT of the lookup map entirely — a fast-path miss there falls
+  //    through to keyword scoring (which disambiguates it today). The full
+  //    ambiguity for every excluded key is still preserved in `collisions`.
   const table = new Map<string, string>();
   for (const r of records) {
+    if (collisionKeys.has(r.key)) continue;       // ambiguous → not in the dict
     if (!table.has(r.key)) table.set(r.key, r.material);
   }
 
