@@ -27,6 +27,14 @@ import { BillToCard } from "@/components/mail-orders/bill-to-card";
 import { ShipToCard } from "@/components/mail-orders/ship-to-card";
 import { MetaRibbon } from "@/components/mail-orders/meta-ribbon";
 import { InstructionsStrip } from "@/components/mail-orders/instructions-strip";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 
 interface ReviewViewProps {
   orders: MoOrder[];           // filtered orders (by slot, search, filters)
@@ -436,6 +444,15 @@ export function ReviewView({
     skuDescription: string;
     packCode: string;
   }>>(new Map());
+  // Alt-SKU modal (combo twins). altModalLine = the line whose alternates are
+  // shown; copiedCode = the most-recently-copied code for the transient
+  // "Copied" state. No persistence — clipboard only.
+  const [altModalLine, setAltModalLine] = useState<MoOrderLine | null>(null);
+  const [copiedCode, setCopiedCode] = useState<string | null>(null);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+  }, []);
   const [activeLineIndex, setActiveLineIndex] = useState<number>(0);
   const [descMode, setDescMode] = useState<"long" | "short">(() => {
     if (typeof window === "undefined") return "long";
@@ -1456,14 +1473,50 @@ export function ReviewView({
       };
     }
 
+    // Copy a SKU code to the clipboard with a ~1.1s "Copied" confirmation.
+    // navigator.clipboard only — no storage.
+    function copyAltCode(code: string): void {
+      if (typeof navigator !== "undefined" && navigator.clipboard) {
+        void navigator.clipboard.writeText(code);
+      }
+      setCopiedCode(code);
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = setTimeout(() => setCopiedCode(null), 1100);
+    }
+
+    // One row in the alt-SKU modal (primary or alternate) + its Copy button.
+    function renderSkuRow(code: string, desc: string, primary: boolean, key: string) {
+      const copyable = !!code && code !== "—";
+      const done = copyable && copiedCode === code;
+      return (
+        <div
+          key={key}
+          className={`flex items-center gap-2.5 px-2.5 py-2 mb-1.5 rounded-lg border ${primary ? "bg-teal-50 border-teal-200" : "bg-white border-gray-200"}`}
+        >
+          <span className="min-w-[104px] font-mono text-[12px]">{code}</span>
+          <span className="flex-1 text-[10.5px] leading-[1.35] text-gray-600">{desc}</span>
+          {copyable && (
+            <button
+              type="button"
+              onClick={() => copyAltCode(code)}
+              className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border px-2.5 py-1 text-[10px] font-semibold ${done ? "border-teal-600 bg-teal-600 text-white" : "border-teal-200 bg-white text-teal-700 hover:bg-teal-50"}`}
+            >
+              {done ? <><Check size={11} /> Copied</> : <><Copy size={11} /> Copy</>}
+            </button>
+          )}
+        </div>
+      );
+    }
+
     return (
       <div data-tutorial="sku-table" className="flex-1 overflow-y-auto" style={{ padding: "0 6px" }}>
         <table className="w-full border-collapse" style={{ tableLayout: "fixed" }}>
           <colgroup>
             <col style={{ width: "4%" }} />
-            <col style={{ width: "24%" }} />
+            <col style={{ width: "20%" }} />
             <col style={{ width: "11%" }} />
-            <col style={{ width: "26%" }} />
+            <col style={{ width: "6%" }} />
+            <col style={{ width: "24%" }} />
             <col style={{ width: "5.5%" }} />
             <col style={{ width: "5.5%" }} />
             <col style={{ width: "5.5%" }} />
@@ -1475,6 +1528,7 @@ export function ReviewView({
               <th style={{ ...thStyle, ...thFirst }}>#</th>
               <th style={thStyle}>Raw Text</th>
               <th style={thStyle}>SKU Code</th>
+              <th style={{ ...thStyle, textAlign: "center" }}>Alt</th>
               <th style={thStyle}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
                   <span>Description</span>
@@ -1579,6 +1633,20 @@ export function ReviewView({
                       </span>
                     ) : (
                       line.skuCode ?? "—"
+                    )}
+                  </td>
+
+                  {/* Alt */}
+                  <td style={{ ...tdBase, ...rowEdge, textAlign: "center" }}>
+                    {(line.altSkus?.length ?? 0) > 0 ? (
+                      <span
+                        onClick={() => setAltModalLine(line)}
+                        className="inline-flex cursor-pointer select-none items-center gap-1 rounded-md border border-teal-200 bg-teal-50 px-2 py-0.5 text-[10px] font-semibold text-teal-700 hover:bg-teal-200"
+                      >
+                        ⇄ {line.altSkus?.length ?? 0}
+                      </span>
+                    ) : (
+                      <span style={{ color: "#d1d5db" }}>—</span>
                     )}
                   </td>
 
@@ -1715,6 +1783,45 @@ export function ReviewView({
             })}
           </tbody>
         </table>
+
+        {/* Alt-SKU modal — opens on the ⇄ chip; copy any code (primary or alt). */}
+        <Dialog
+          open={!!altModalLine}
+          onOpenChange={(open) => { if (!open) { setAltModalLine(null); setCopiedCode(null); } }}
+        >
+          <DialogContent showCloseButton={false} className="gap-0 overflow-hidden p-0 sm:max-w-md">
+            {altModalLine && (() => {
+              const ml = altModalLine;
+              const comboParts = [ml.productName, ml.baseColour, ml.packCode].filter(Boolean) as string[];
+              const title = comboParts.length > 0
+                ? comboParts.join(" · ")
+                : (ml.skuDescription ?? ml.rawText ?? "SKU options");
+              const alts = ml.altSkus ?? [];
+              return (
+                <>
+                  <DialogHeader className="gap-1 border-b border-gray-100 px-[18px] pt-4 pb-3">
+                    <DialogTitle className="text-[13px] font-semibold">{title}</DialogTitle>
+                    <DialogDescription className="text-[10.5px] text-gray-400">
+                      {ml.rawText ? <span className="mb-0.5 block truncate text-gray-500">{ml.rawText}</span> : null}
+                      1 primary · {alts.length} alternate{alts.length === 1 ? "" : "s"} — tap copy to grab any code
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="max-h-[340px] overflow-auto px-[14px] pt-2 pb-[14px]">
+                    <div className="mx-1 mt-3 mb-1.5 text-[9px] font-semibold uppercase tracking-[0.06em] text-gray-400">
+                      Primary (billed)
+                    </div>
+                    {renderSkuRow(ml.skuCode ?? "—", ml.skuDescription ?? "—", true, "primary")}
+                    <div className="mx-1 mt-3 mb-1.5 text-[9px] font-semibold uppercase tracking-[0.06em] text-teal-700">
+                      Alternate SKUs
+                    </div>
+                    {alts.map((a, i) => renderSkuRow(a.code, a.description, false, `${a.code}-${i}`))}
+                  </div>
+                  <DialogFooter showCloseButton className="px-[18px] py-2.5" />
+                </>
+              );
+            })()}
+          </DialogContent>
+        </Dialog>
       </div>
     );
   }
