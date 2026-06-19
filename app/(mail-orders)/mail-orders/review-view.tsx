@@ -29,12 +29,13 @@ import { MetaRibbon } from "@/components/mail-orders/meta-ribbon";
 import { InstructionsStrip } from "@/components/mail-orders/instructions-strip";
 import {
   Dialog,
-  DialogContent,
+  DialogPortal,
+  DialogOverlay,
   DialogHeader,
   DialogTitle,
   DialogDescription,
-  DialogFooter,
 } from "@/components/ui/dialog";
+import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
 
 interface ReviewViewProps {
   orders: MoOrder[];           // filtered orders (by slot, search, filters)
@@ -1515,8 +1516,8 @@ export function ReviewView({
             <col style={{ width: "4%" }} />
             <col style={{ width: "20%" }} />
             <col style={{ width: "11%" }} />
-            <col style={{ width: "6%" }} />
-            <col style={{ width: "24%" }} />
+            <col style={{ width: "8%" }} />
+            <col style={{ width: "22%" }} />
             <col style={{ width: "5.5%" }} />
             <col style={{ width: "5.5%" }} />
             <col style={{ width: "5.5%" }} />
@@ -1528,7 +1529,7 @@ export function ReviewView({
               <th style={{ ...thStyle, ...thFirst }}>#</th>
               <th style={thStyle}>Raw Text</th>
               <th style={thStyle}>SKU Code</th>
-              <th style={{ ...thStyle, textAlign: "center" }}>Alt</th>
+              <th style={{ ...thStyle, textAlign: "center", paddingLeft: 6, paddingRight: 6 }}>ALT SKU</th>
               <th style={thStyle}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
                   <span>Description</span>
@@ -1641,7 +1642,11 @@ export function ReviewView({
                     {(line.altSkus?.length ?? 0) > 0 ? (
                       <span
                         onClick={() => setAltModalLine(line)}
-                        className="inline-flex cursor-pointer select-none items-center gap-1 rounded-md border border-teal-200 bg-teal-50 px-2 py-0.5 text-[10px] font-semibold text-teal-700 hover:bg-teal-200"
+                        className={`inline-flex cursor-pointer select-none items-center gap-1 rounded-md border px-2 py-0.5 text-[10px] font-semibold ${
+                          altModalLine?.id === line.id
+                            ? "border-gray-700 bg-gray-700 text-white"
+                            : "border-gray-300 bg-gray-100 text-gray-700 hover:bg-gray-200"
+                        }`}
                       >
                         ⇄ {line.altSkus?.length ?? 0}
                       </span>
@@ -1789,38 +1794,51 @@ export function ReviewView({
           open={!!altModalLine}
           onOpenChange={(open) => { if (!open) { setAltModalLine(null); setCopiedCode(null); } }}
         >
-          <DialogContent showCloseButton={false} className="gap-0 overflow-hidden p-0 sm:max-w-md">
-            {altModalLine && (() => {
-              const ml = altModalLine;
-              const comboParts = [ml.productName, ml.baseColour, ml.packCode].filter(Boolean) as string[];
-              const title = comboParts.length > 0
-                ? comboParts.join(" · ")
-                : (ml.skuDescription ?? ml.rawText ?? "SKU options");
-              const alts = ml.altSkus ?? [];
-              return (
-                <>
-                  <DialogHeader className="gap-1 border-b border-gray-100 px-[18px] pt-4 pb-3">
-                    <DialogTitle className="text-[13px] font-semibold">{title}</DialogTitle>
-                    <DialogDescription className="text-[10.5px] text-gray-400">
-                      {ml.rawText ? <span className="mb-0.5 block truncate text-gray-500">{ml.rawText}</span> : null}
-                      1 primary · {alts.length} alternate{alts.length === 1 ? "" : "s"} — tap copy to grab any code
-                    </DialogDescription>
-                  </DialogHeader>
-                  <div className="max-h-[340px] overflow-auto px-[14px] pt-2 pb-[14px]">
-                    <div className="mx-1 mt-3 mb-1.5 text-[9px] font-semibold uppercase tracking-[0.06em] text-gray-400">
-                      Primary (billed)
+          <DialogPortal>
+            {/* Dark dimmed overlay (gray-900 = rgb 17,24,39 @ 45%) — matches mockup. */}
+            <DialogOverlay className="bg-gray-900/45" />
+            {/* Centered 440px card: header + scrollable body + footer all inside. */}
+            <DialogPrimitive.Popup className="fixed top-1/2 left-1/2 z-50 w-[440px] max-w-[92vw] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-xl bg-white shadow-2xl ring-1 ring-gray-900/10 outline-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95">
+              {altModalLine && (() => {
+                const ml = altModalLine;
+                const comboParts = [ml.productName, ml.baseColour, ml.packCode].filter(Boolean) as string[];
+                const title = comboParts.length > 0
+                  ? comboParts.join(" · ")
+                  : (ml.skuDescription ?? ml.rawText ?? "SKU options");
+                const alts = ml.altSkus ?? [];
+                return (
+                  <>
+                    <DialogHeader className="gap-1 border-b border-gray-100 px-[18px] pt-4 pb-3">
+                      <DialogTitle className="text-[13px] font-semibold">{title}</DialogTitle>
+                      <DialogDescription className="text-[10.5px] text-gray-400">
+                        {ml.rawText ? <span className="mb-0.5 block truncate text-gray-500">{ml.rawText}</span> : null}
+                        1 primary · {alts.length} alternate{alts.length === 1 ? "" : "s"} — tap copy to grab any code
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="max-h-[340px] overflow-auto px-[14px] pt-2 pb-[14px]">
+                      <div className="mx-1 mt-3 mb-1.5 text-[9px] font-semibold uppercase tracking-[0.06em] text-gray-400">
+                        Primary (billed)
+                      </div>
+                      {renderSkuRow(ml.skuCode ?? "—", ml.skuDescription ?? "—", true, "primary")}
+                      <div className="mx-1 mt-3 mb-1.5 text-[9px] font-semibold uppercase tracking-[0.06em] text-teal-700">
+                        Alternate SKUs
+                      </div>
+                      {alts.map((a, i) => renderSkuRow(a.code, a.description, false, `${a.code}-${i}`))}
                     </div>
-                    {renderSkuRow(ml.skuCode ?? "—", ml.skuDescription ?? "—", true, "primary")}
-                    <div className="mx-1 mt-3 mb-1.5 text-[9px] font-semibold uppercase tracking-[0.06em] text-teal-700">
-                      Alternate SKUs
+                    <div className="flex justify-end border-t border-gray-100 px-[18px] py-2.5">
+                      <button
+                        type="button"
+                        onClick={() => { setAltModalLine(null); setCopiedCode(null); }}
+                        className="rounded-md border border-gray-200 bg-white px-3.5 py-1.5 text-[11px] font-medium text-gray-500 hover:bg-gray-50"
+                      >
+                        Close
+                      </button>
                     </div>
-                    {alts.map((a, i) => renderSkuRow(a.code, a.description, false, `${a.code}-${i}`))}
-                  </div>
-                  <DialogFooter showCloseButton className="px-[18px] py-2.5" />
-                </>
-              );
-            })()}
-          </DialogContent>
+                  </>
+                );
+              })()}
+            </DialogPrimitive.Popup>
+          </DialogPortal>
         </Dialog>
       </div>
     );
