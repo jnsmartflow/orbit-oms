@@ -7,7 +7,7 @@ import type { Product, CartLine, Bill, Customer } from "@/app/(place-order)/plac
 import { rankProductsForQuery } from "@/lib/place-order/mobile-search";
 import { formatPack, packToMl, packStepForPack, packKey, parsePackKey } from "@/lib/place-order/pack";
 import { getBaseAliasDisplay, getBaseAliasLabel } from "@/lib/place-order/base-aliases";
-import { emailLineLabel } from "@/lib/place-order/email";
+import { emailLineLabel, renderOrderBody, type OrderBodyBill, type OrderBodyLine } from "@/lib/place-order/email";
 import { getSecondLine, isVariantQualifierTab } from "@/lib/place-order/sub-product-descriptors";
 import SplashScreen from "./splash-screen";
 
@@ -103,43 +103,37 @@ function buildEmailParts(args: {
   const { customer, bills, shipTo, dispatch, callTarget, marker, crossDepot, notes } = args;
   const name = customer?.name ?? "";
   const code = customer?.code ?? "";
-  const lines: string[] = [];
 
-  if (name || code) {
-    const customerLine = name && code ? `${name} (${code})` : (name || code);
-    lines.push("Bill To: " + customerLine);
-  }
-  // Dispatch line. Urgent → "Dispatch: Urgent"; Call → "Dispatch: Call to SO/Dealer"
-  // (from callTarget); Normal omits the line.
-  if (dispatch === "Call") {
-    lines.push("Dispatch: Call to " + (callTarget ?? "SO"));
-  } else if (dispatch !== "Normal") {
-    lines.push("Dispatch: " + dispatch);
-  }
+  const billTo = (name || code)
+    ? (name && code ? `${name} (${code})` : (name || code))
+    : null;
+
+  // Dispatch line. Urgent → "Urgent"; Call → "Call to SO/Dealer" (from
+  // callTarget); Normal omits the line.
+  const dispatchText =
+    dispatch === "Call"     ? "Call to " + (callTarget ?? "SO")
+    : dispatch !== "Normal" ? dispatch
+    :                         null;
+
   // Order-remark line for the selected marker (Order Remarks section).
-  if (marker) {
-    const remarkText =
-      marker === "Cross Delivery" ? `Cross billing from ${crossDepot ?? ""}`.trim()
-      : marker === "Truck"        ? "Truck order"
-      : marker === "Bounce"       ? "Bounce order"
-      : marker === "DTS"          ? "DTS order"
-      :                             "";
-    if (remarkText) lines.push("Remark: " + remarkText);
-  }
+  const remarkText =
+    marker === "Cross Delivery" ? `Cross billing from ${crossDepot ?? ""}`.trim()
+    : marker === "Truck"        ? "Truck order"
+    : marker === "Bounce"       ? "Bounce order"
+    : marker === "DTS"          ? "DTS order"
+    :                             null;
+
   // Ship To ONLY when a real custom address is entered. Blank (= "Same as
   // billing" default) is omitted entirely.
   const shipToTrim = shipTo.trim();
-  if (shipToTrim && shipToTrim.toLowerCase() !== "same as billing") {
-    lines.push("Ship To: " + shipToTrim);
-  }
-  // Free-text note (Notes section) when non-empty.
-  if (notes.trim()) lines.push("Note: " + notes.trim());
+  const shipToText =
+    shipToTrim && shipToTrim.toLowerCase() !== "same as billing" ? shipToTrim : null;
+
+  const note = notes.trim() || null;
 
   const activeBills = bills.filter((b) => b.lines.length > 0);
-  activeBills.forEach((b) => {
-    lines.push("");
-    if (activeBills.length > 1) lines.push("Bill " + b.id);
-    b.lines.forEach((l) => {
+  const bodyBills: OrderBodyBill[] = activeBills.map((b) => {
+    const itemLines: OrderBodyLine[] = b.lines.map((l) => {
       // CartLine.packQtys is keyed by composite "<packCode>|<unit>"; rebuild
       // the formatted "{label}*{units}" list in the same order /order emits
       // (the product's pack order = the KG-last/ML sort).
@@ -156,10 +150,20 @@ function buildEmailParts(args: {
         .join(", ");
       // Name via the shared helper so all three surfaces (desktop email.ts,
       // /order, /po) stay byte-identical — incl. the PROMISE PRIMER + general
-      // de-double rules. Pack suffix + layout unchanged.
+      // de-double rules.
       const productText = emailLineLabel(l.product ?? null, l.baseColour, l.subProduct);
-      lines.push(`${productText} ${packStr}`);
+      return { name: productText, packString: packStr };
     });
+    return { label: activeBills.length > 1 ? "Bill " + b.id : null, lines: itemLines };
+  });
+
+  const body = renderOrderBody({
+    billTo,
+    shipTo:   shipToText,
+    dispatch: dispatchText,
+    remark:   remarkText,
+    note,
+    bills:    bodyBills,
   });
 
   const subject = "Order"
@@ -167,7 +171,7 @@ function buildEmailParts(args: {
     + (code ? ` ${code}`    : "");
   const valid = !!customer && activeBills.length > 0;
 
-  return { subject, body: lines.join("\n"), valid };
+  return { subject, body, valid };
 }
 
 // ── Draft persistence — dedicated key, never /order's or desktop's ─────────

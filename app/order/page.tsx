@@ -4,7 +4,7 @@ import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState }
 import { Search, Send } from "lucide-react";
 import type { RawPack } from "@/lib/place-order/pack-buckets";
 import { formatPack, packToMl, packStepForPack } from "@/lib/place-order/pack";
-import { emailLineLabel } from "@/lib/place-order/email";
+import { emailLineLabel, renderOrderBody, type OrderBodyBill, type OrderBodyLine } from "@/lib/place-order/email";
 import { getBaseAliasDisplay } from "@/lib/place-order/base-aliases";
 import { getSecondLine, isVariantQualifierTab } from "@/lib/place-order/sub-product-descriptors";
 import { rankProductsForQuery } from "@/lib/place-order/mobile-search";
@@ -810,31 +810,46 @@ export default function OrderPage(): React.JSX.Element {
   function buildEmail(): { subject: string; body: string; valid: boolean } {
     const name = selectedCust?.name ?? "";
     const code = selectedCust?.code ?? "";
-    const lines: string[] = [];
 
-    if (name || code) {
-      const customerLine = name && code ? `${name} (${code})` : (name || code);
-      lines.push("Bill To: " + customerLine);
-    }
-    if (dispatch !== "Normal") lines.push("Dispatch: " + dispatch);
-    if (marker)                lines.push("Marker: "   + marker);
-    if (shipTo.trim())         lines.push("Ship To: "  + shipTo.trim());
+    const billTo = (name || code)
+      ? (name && code ? `${name} (${code})` : (name || code))
+      : null;
+
+    // /order dispatch is Normal|Hold|Urgent (no "Call"); Normal omits the line.
+    const dispatchText = dispatch !== "Normal" ? dispatch : null;
+
+    // Marker → humanized remark, matching the desktop/po wording. /order has no
+    // crossDepot, so Cross Delivery prints the bare "Cross billing".
+    const remarkText =
+      marker === "Cross Delivery" ? "Cross billing"
+      : marker === "Truck"        ? "Truck order"
+      : marker === "DTS"          ? "DTS order"
+      :                             null;
+
+    const shipToText = shipTo.trim() || null;
 
     const activeBills = bills.filter((b) => b.lines.length > 0);
-    activeBills.forEach((b) => {
-      lines.push("");
-      if (activeBills.length > 1) lines.push("Bill " + b.id);
-      b.lines.forEach((l) => {
+    const bodyBills: OrderBodyBill[] = activeBills.map((b) => {
+      const itemLines: OrderBodyLine[] = b.lines.map((l) => {
         // l.packs[i].pack is already the formatted label ("1L", "25KG") —
-        // no re-format here. Pack text matches the legacy depot format
-        // byte-for-byte.
+        // no re-format here. Pack text matches the legacy depot format.
         const packStr = l.packs.map((p) => `${p.pack}*${p.qty}`).join(", ");
-        // v2 email format via the shared helper (byte-identical to desktop
-        // email.ts): "{product ?? subProduct} [{baseColour}] {packs}", with the
-        // PROMISE PRIMER doubling special-cased. SAP-friendly layout unchanged.
+        // Name via the shared helper so all three surfaces (desktop email.ts,
+        // /order, /po) stay byte-identical — incl. the PROMISE PRIMER + general
+        // de-double rules.
         const productText = emailLineLabel(l.product ?? null, l.baseColour, l.subProduct);
-        lines.push(`${productText} ${packStr}`);
+        return { name: productText, packString: packStr };
       });
+      return { label: activeBills.length > 1 ? "Bill " + b.id : null, lines: itemLines };
+    });
+
+    const body = renderOrderBody({
+      billTo,
+      shipTo:   shipToText,
+      dispatch: dispatchText,
+      remark:   remarkText,
+      note:     null,   // /order has no free-text note field
+      bills:    bodyBills,
     });
 
     const subject = "Order"
@@ -842,7 +857,7 @@ export default function OrderPage(): React.JSX.Element {
       + (code ? ` ${code}`    : "");
     const valid   = !!selectedCust && activeBills.length > 0;
 
-    return { subject, body: lines.join("\n"), valid };
+    return { subject, body, valid };
   }
 
   const { subject, body, valid: canSend } = buildEmail();

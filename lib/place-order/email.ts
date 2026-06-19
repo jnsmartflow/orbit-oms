@@ -56,6 +56,53 @@ export type EmailOutput = {
 };
 
 export const ORDER_TO = "surat.depot@akzonobel.com";
+// Desktop /place-order CCs the parser inbox so app orders land there too.
+// Wired into buildMailtoUrl() ONLY (the desktop send path) — /po and /order
+// build their own mailto inline and intentionally do NOT carry this CC.
+export const ORDER_CC = "surat.order@outlook.com";
+
+/** One product line in the rendered order body: full name + pack list. */
+export type OrderBodyLine = { name: string; packString: string };
+/** One bill section: "Bill N" header (null = single-bill, header omitted). */
+export type OrderBodyBill = { label: string | null; lines: OrderBodyLine[] };
+/** Normalized input for the shared plain-text order-body renderer. */
+export type OrderBodyInput = {
+  billTo:   string | null;
+  shipTo:   string | null;
+  dispatch: string | null;
+  remark:   string | null;
+  note:     string | null;
+  bills:    OrderBodyBill[];
+};
+
+/**
+ * SINGLE SOURCE for the order-email BODY (plain text — mailto, no HTML/bold).
+ * All three surfaces (desktop /place-order, mobile /po, mobile /order) call
+ * this so the body never diverges. Header lines render only when they carry a
+ * value, in the locked sequence: Bill To → Ship To → Dispatch → Remark → Note.
+ * Each bill is preceded by a blank line and (multi-bill only) its "Bill N"
+ * header; line items are 1-based and RESTART per bill, joined to their pack
+ * list by " - " (space-hyphen-space). Pack list ("*", comma-separated) is
+ * passed in pre-formatted and emitted verbatim.
+ */
+export function renderOrderBody(input: OrderBodyInput): string {
+  const out: string[] = [];
+  if (input.billTo)   out.push("Bill To: "  + input.billTo);
+  if (input.shipTo)   out.push("Ship To: "  + input.shipTo);
+  if (input.dispatch) out.push("Dispatch: " + input.dispatch);
+  if (input.remark)   out.push("Remark: "   + input.remark);
+  if (input.note)     out.push("Note: "     + input.note);
+
+  for (const bill of input.bills) {
+    out.push("");
+    if (bill.label) out.push(bill.label);
+    bill.lines.forEach((line, i) => {
+      out.push(`${i + 1}. ${line.name} - ${line.packString}`);
+    });
+  }
+
+  return out.join("\n");
+}
 
 /**
  * Full product-name + base label for one email/order line. Shared by the
@@ -90,45 +137,36 @@ export function buildEmail(input: EmailInput): EmailOutput {
   const { customer, bills, shipTo, dispatch, callTarget, marker, crossDepot, notes } = input;
   const name = customer?.name ?? "";
   const code = customer?.code ?? "";
-  const lines: string[] = [];
 
-  if (name || code) {
-    const customerLine = name && code ? `${name} (${code})` : (name || code);
-    lines.push("Bill To: " + customerLine);
-  }
-  // Unified /po line formats — this is now the shared builder (decision d).
-  // Dispatch: Call → "Call to SO/Dealer"; Urgent → "Urgent"; Normal omits the
-  // line, so a plain order stays byte-identical to before.
-  if (dispatch === "Call") {
-    lines.push("Dispatch: Call to " + (callTarget ?? "SO"));
-  } else if (dispatch !== "Normal") {
-    lines.push("Dispatch: " + dispatch);
-  }
+  const billTo = (name || code)
+    ? (name && code ? `${name} (${code})` : (name || code))
+    : null;
+
+  // Dispatch: Call → "Call to SO/Dealer"; Urgent → "Urgent"; Normal omits.
+  const dispatchText =
+    dispatch === "Call"     ? "Call to " + (callTarget ?? "SO")
+    : dispatch !== "Normal" ? dispatch
+    :                         null;
+
   // Order remark — humanized; Cross carries its source depot.
-  if (marker) {
-    const remarkText =
-      marker === "Cross Delivery" ? `Cross billing from ${crossDepot ?? ""}`.trim()
-      : marker === "Truck"        ? "Truck order"
-      : marker === "Bounce"       ? "Bounce order"
-      : marker === "DTS"          ? "DTS order"
-      :                             "";
-    if (remarkText) lines.push("Remark: " + remarkText);
-  }
+  const remarkText =
+    marker === "Cross Delivery" ? `Cross billing from ${crossDepot ?? ""}`.trim()
+    : marker === "Truck"        ? "Truck order"
+    : marker === "Bounce"       ? "Bounce order"
+    : marker === "DTS"          ? "DTS order"
+    :                             null;
+
   // Ship To only for a real custom address — blank / "same as billing" omitted.
   const shipToTrim = shipTo.trim();
-  if (shipToTrim && shipToTrim.toLowerCase() !== "same as billing") {
-    lines.push("Ship To: " + shipToTrim);
-  }
-  // Free-text note.
-  if (notes.trim()) lines.push("Note: " + notes.trim());
+  const shipToText =
+    shipToTrim && shipToTrim.toLowerCase() !== "same as billing" ? shipToTrim : null;
 
-  // Strip empty bills, then iterate the remaining ones. Multi-bill header
-  // ("Bill N") only emitted when more than one bill survives the filter —
-  // mirrors mobile /order page line 568-570.
+  const note = notes.trim() || null;
+
+  // Strip empty bills; "Bill N" header only when >1 active bill survives.
   const activeBills = bills.filter((b) => b.length > 0);
-  activeBills.forEach((billLines, idx) => {
-    lines.push("");
-    if (activeBills.length > 1) lines.push("Bill " + (idx + 1));
+  const bodyBills: OrderBodyBill[] = activeBills.map((billLines, idx) => {
+    const itemLines: OrderBodyLine[] = [];
     for (const line of billLines) {
       const sortedKeys = sortPacks(
         Object.keys(line.packQtys).filter((k) => (line.packQtys[k] ?? 0) > 0),
@@ -146,8 +184,18 @@ export function buildEmail(input: EmailInput): EmailOutput {
         return `${label}*${units}`;
       }).join(", ");
       const productText = emailLineLabel(line.product ?? null, line.baseColour, line.subProduct);
-      lines.push(`${productText} ${packStr}`);
+      itemLines.push({ name: productText, packString: packStr });
     }
+    return { label: activeBills.length > 1 ? "Bill " + (idx + 1) : null, lines: itemLines };
+  });
+
+  const body = renderOrderBody({
+    billTo,
+    shipTo:   shipToText,
+    dispatch: dispatchText,
+    remark:   remarkText,
+    note,
+    bills:    bodyBills,
   });
 
   const subject = "Order"
@@ -155,9 +203,13 @@ export function buildEmail(input: EmailInput): EmailOutput {
     + (code ? ` ${code}`    : "");
   const valid = !!customer && activeBills.length > 0;
 
-  return { subject, body: lines.join("\n"), valid };
+  return { subject, body, valid };
 }
 
 export function buildMailtoUrl(subject: string, body: string): string {
-  return `mailto:${ORDER_TO}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  // Desktop send path only — carries the CC to the parser inbox.
+  return `mailto:${ORDER_TO}`
+    + `?cc=${encodeURIComponent(ORDER_CC)}`
+    + `&subject=${encodeURIComponent(subject)}`
+    + `&body=${encodeURIComponent(body)}`;
 }
