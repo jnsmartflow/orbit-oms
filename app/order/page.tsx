@@ -814,7 +814,7 @@ export default function OrderPage(): React.JSX.Element {
 
     if (name || code) {
       const customerLine = name && code ? `${name} (${code})` : (name || code);
-      lines.push("Customer: " + customerLine);
+      lines.push("Bill To: " + customerLine);
     }
     if (dispatch !== "Normal") lines.push("Dispatch: " + dispatch);
     if (marker)                lines.push("Marker: "   + marker);

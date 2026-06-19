@@ -107,7 +107,7 @@ function buildEmailParts(args: {
 
   if (name || code) {
     const customerLine = name && code ? `${name} (${code})` : (name || code);
-    lines.push("Customer: " + customerLine);
+    lines.push("Bill To: " + customerLine);
   }
   // Dispatch line. Urgent → "Dispatch: Urgent"; Call → "Dispatch: Call to SO/Dealer"
   // (from callTarget); Normal omits the line.

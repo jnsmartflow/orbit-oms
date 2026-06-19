@@ -94,7 +94,7 @@ export function buildEmail(input: EmailInput): EmailOutput {
 
   if (name || code) {
     const customerLine = name && code ? `${name} (${code})` : (name || code);
-    lines.push("Customer: " + customerLine);
+    lines.push("Bill To: " + customerLine);
   }
   // Unified /po line formats — this is now the shared builder (decision d).
   // Dispatch: Call → "Call to SO/Dealer"; Urgent → "Urgent"; Normal omits the
