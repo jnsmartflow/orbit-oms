@@ -125,9 +125,12 @@ export function renderOrderBody(input: OrderBodyInput): string {
   for (const bill of input.bills) {
     out.push("");
     if (bill.label) out.push(bill.label);
+    // Right-align serial numbers within this bill so names line up past 9 items
+    // (e.g. " 9." / "10."). padWidth is per-bill, from its own line count.
+    const padWidth = String(bill.lines.length).length;
     bill.lines.forEach((line, i) => {
       // Proper-case ONLY the product name — pack string untouched.
-      out.push(`${i + 1}. ${emailCase(line.name)} - ${line.packString}`);
+      out.push(`${String(i + 1).padStart(padWidth, " ")}. ${emailCase(line.name)} - ${line.packString}`);
     });
   }
 
