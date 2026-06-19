@@ -85,6 +85,35 @@ export type OrderBodyInput = {
  * list by " - " (space-hyphen-space). Pack list ("*", comma-separated) is
  * passed in pre-formatted and emitted verbatim.
  */
+// Three-letter tokens that must stay fully uppercase (acronyms / codes that
+// would read wrong title-cased — "GVA" not "Gva", "YOX" not "Yox").
+const KEEP_CAPS_3 = new Set([
+  "GVA", "FBC", "IBC", "WBC", "FFR", "GRN", "LFY",
+  "MAG", "OXR", "TBL", "YOX", "NCR", "VAF", "WRP",
+]);
+
+/**
+ * Proper-case a product NAME for the email body while preserving codes. Splits
+ * on runs of non-alphanumeric chars (space, -, /, parens, dot) KEEPING the
+ * separators, then per alphanumeric token: keep UPPERCASE when it has a digit
+ * (5IN1, M900, 10MM, 2K), or has ≤2 letters (WS, VT, PU), or its uppercase form
+ * is in KEEP_CAPS_3; otherwise title-case it. Separators are re-joined verbatim.
+ */
+export function emailCase(name: string): string {
+  // Split keeping separators: alphanumeric runs vs non-alphanumeric runs.
+  const tokens = name.split(/([^A-Za-z0-9]+)/);
+  return tokens
+    .map((tok) => {
+      if (!/[A-Za-z0-9]/.test(tok)) return tok;   // separator — keep verbatim
+      const letters = (tok.match(/[A-Za-z]/g) ?? []).length;
+      if (/[0-9]/.test(tok)) return tok.toUpperCase();
+      if (letters <= 2)      return tok.toUpperCase();
+      if (KEEP_CAPS_3.has(tok.toUpperCase())) return tok.toUpperCase();
+      return tok.charAt(0).toUpperCase() + tok.slice(1).toLowerCase();
+    })
+    .join("");
+}
+
 export function renderOrderBody(input: OrderBodyInput): string {
   const out: string[] = [];
   if (input.billTo)   out.push("Bill To: "  + input.billTo);
@@ -97,7 +126,8 @@ export function renderOrderBody(input: OrderBodyInput): string {
     out.push("");
     if (bill.label) out.push(bill.label);
     bill.lines.forEach((line, i) => {
-      out.push(`${i + 1}. ${line.name} - ${line.packString}`);
+      // Proper-case ONLY the product name — pack string untouched.
+      out.push(`${i + 1}. ${emailCase(line.name)} - ${line.packString}`);
     });
   }
 
