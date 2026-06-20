@@ -2249,6 +2249,10 @@ function headerRowToObdInput(hr: RawHeaderRow, lineRows: RawLineRow[]): ObdInput
 }
 
 // ── AUTO-IMPORT handler ───────────────────────────────────────────────────────
+//
+// Thin entry point: HMAC verify → parse XLSX → delegate to processAutoImportRows().
+// All create/guard/effect logic lives in processAutoImportRows so the v2 JSON
+// handler (?action=auto-json) can reuse it without duplication.
 
 async function handleAutoImport(req: Request): Promise<NextResponse> {
   if (!verifyHmacSignature(req)) {
@@ -2290,6 +2294,21 @@ async function handleAutoImport(req: Request): Promise<NextResponse> {
     return NextResponse.json({ error: "Header sheet has no data rows" }, { status: 422 });
   }
 
+  return processAutoImportRows(headerRows, lineRows, combinedEntry.name);
+}
+
+// ── processAutoImportRows — shared create core ────────────────────────────────
+//
+// Called by handleAutoImport (?action=auto, multipart XLSX) and will be called by
+// handleAutoImportJson (?action=auto-json, JSON body). Owns all DB work: validation
+// queries → batch create → interims → inserts → guards → orders → challans →
+// enrichment → shadow. Returns the final NextResponse.
+
+async function processAutoImportRows(
+  headerRows: RawHeaderRow[],
+  lineRows:   RawLineRow[],
+  fileName:   string,
+): Promise<NextResponse> {
   // ── STEP B — Validate headers (2 bulk queries) ────────────────────────────
   const allObdNumbers    = headerRows.map((r) => toStr(r["OBD Number"])).filter(Boolean);
   const allCustomerCodes = headerRows.map((r) => toStr(r["ShipToCustomerId"])).filter(Boolean);
@@ -2340,7 +2359,7 @@ async function handleAutoImport(req: Request): Promise<NextResponse> {
     const batch = await createBatchWithRetry({
       batchRef,
       importedBy:   { connect: { id: 1 } },
-      headerFile:   `[auto-import] ${combinedEntry.name}`,
+      headerFile:   `[auto-import] ${fileName}`,
       lineFile:     "",
       status:       "processing",
     });
