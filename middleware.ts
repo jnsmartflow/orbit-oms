@@ -34,10 +34,11 @@ export default auth(function middleware(req) {
     return NextResponse.next();
   }
 
-  // Allow HMAC auto-import
+  // Allow HMAC auto-import (v1: auto-import-v1, v2: auto-import-json-v1)
+  const importKeyId = req.headers.get("x-import-key-id");
   if (
     pathname === "/api/import/obd" &&
-    req.headers.get("x-import-key-id") === "auto-import-v1"
+    (importKeyId === "auto-import-v1" || importKeyId === "auto-import-json-v1")
   ) {
     return NextResponse.next();
   }

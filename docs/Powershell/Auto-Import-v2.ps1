@@ -1275,7 +1275,7 @@ if (-not ($page1 -and $page1.data)) {
             $todayHdrRows.Add($hdr)
             foreach ($ln in $lines) { $todayLineRows.Add((Build-LineRow -obd $obd -line $ln -hdrSmu $smu)) }
             $fetchedObdSet.Add($obd) | Out-Null
-            Write-Log "FORMGET $obd - OK ($($lines.Count) lines)"
+            Write-Log "FORMGET $obd - OK ($(@($lines).Count) lines)"
         } else {
             $todayFailed.Add($obd)
             Write-Log "FORMGET $obd - FAILED (queued for retry)" "Yellow"
