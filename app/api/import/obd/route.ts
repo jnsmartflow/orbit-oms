@@ -1698,6 +1698,32 @@ function verifyHmacSignature(req: Request): boolean {
   }
 }
 
+// ── HMAC verification — v2 (auto-import-json-v1) ─────────────────────────────
+
+function verifyHmacSignatureV2(req: Request): boolean {
+  const secret = process.env.IMPORT_HMAC_SECRET_JSON;
+  if (!secret) return false;
+
+  const keyId = req.headers.get("x-import-key-id");
+  const sig   = req.headers.get("x-import-signature");
+
+  if (keyId !== "auto-import-json-v1") return false;
+  if (!sig) return false;
+
+  const expectedSig = createHmac("sha256", secret)
+    .update("auto-import-json-v1")
+    .digest("hex");
+
+  try {
+    const expectedBuf = Buffer.from(expectedSig, "utf8");
+    const actualBuf   = Buffer.from(sig,          "utf8");
+    if (expectedBuf.length !== actualBuf.length) return false;
+    return timingSafeEqual(expectedBuf, actualBuf);
+  } catch {
+    return false;
+  }
+}
+
 // ── Shadow-mode runner (Step 4B — manual-template confirm only) ─────────────
 //
 // Runs upsertObd in dryRun=true mode for every OBD just confirmed via the
@@ -3001,13 +3027,91 @@ async function processAutoImportRows(
   });
 }
 
+// ── AUTO-IMPORT v2 handlers ───────────────────────────────────────────────────
+//
+// Both handlers are HMAC-verified with the v2 key (auto-import-json-v1 /
+// IMPORT_HMAC_SECRET_JSON). handleAutoImportCheck is read-only (pre-check).
+// handleAutoImportJson delegates to processAutoImportRows() so all create logic,
+// guards, challan auto-creation, and shadow runner run identically to v1.
+
+async function handleAutoImportCheck(req: Request): Promise<NextResponse> {
+  if (!verifyHmacSignatureV2(req)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  if (
+    !body ||
+    typeof body !== "object" ||
+    !Array.isArray((body as Record<string, unknown>).obdNumbers)
+  ) {
+    return NextResponse.json({ error: "obdNumbers array is required" }, { status: 400 });
+  }
+
+  const obdNumbers = ((body as Record<string, unknown>).obdNumbers as unknown[]).filter(
+    (x): x is string => typeof x === "string" && x.length > 0,
+  );
+
+  // Mirror processAutoImportRows STEP B: no isRemoved filter so soft-removed
+  // OBDs are returned as "existing" — PS pre-check won't re-import them.
+  const existingOrders = await prisma.orders.findMany({
+    where:  { obdNumber: { in: obdNumbers } },
+    select: { obdNumber: true },
+  });
+
+  return NextResponse.json({ existing: existingOrders.map((o) => o.obdNumber) });
+}
+
+async function handleAutoImportJson(req: Request): Promise<NextResponse> {
+  if (!verifyHmacSignatureV2(req)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  if (!body || typeof body !== "object") {
+    return NextResponse.json({ error: "JSON body must be an object" }, { status: 400 });
+  }
+
+  const b = body as Record<string, unknown>;
+
+  if (!Array.isArray(b.headerRows) || !Array.isArray(b.lineRows)) {
+    return NextResponse.json(
+      { error: "headerRows and lineRows arrays are required" },
+      { status: 400 },
+    );
+  }
+
+  const headerRows = b.headerRows as RawHeaderRow[];
+  const lineRows   = b.lineRows   as RawLineRow[];
+
+  if (headerRows.length === 0) {
+    return NextResponse.json({ error: "headerRows is empty" }, { status: 422 });
+  }
+
+  return processAutoImportRows(headerRows, lineRows, "auto-json");
+}
+
 // ── Main handler ──────────────────────────────────────────────────────────────
 
 export async function POST(req: Request): Promise<NextResponse> {
   const url = new URL(req.url, "http://localhost");
   const action = url.searchParams.get("action");
 
-  if (action === "auto") return handleAutoImport(req);
+  if (action === "auto")      return handleAutoImport(req);
+  if (action === "check")     return handleAutoImportCheck(req);
+  if (action === "auto-json") return handleAutoImportJson(req);
 
   // All other actions require session auth
   const session = await auth();
@@ -3030,7 +3134,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   if (action === "manual-sap-confirm") return handleManualSapConfirm(req, session!);
 
   return NextResponse.json(
-    { error: "Invalid action. Use ?action=preview, ?action=confirm, ?action=manual-sap-preview, or ?action=manual-sap-confirm" },
+    { error: "Invalid action. Use ?action=auto, ?action=check, ?action=auto-json, ?action=preview, ?action=confirm, ?action=manual-sap-preview, or ?action=manual-sap-confirm" },
     { status: 400 },
   );
 }
