@@ -3103,15 +3103,160 @@ async function handleAutoImportJson(req: Request): Promise<NextResponse> {
   return processAutoImportRows(headerRows, lineRows, "auto-json");
 }
 
+// ── AUTO-IMPORT v2: patch-headers handler ────────────────────────────────────
+//
+// ?action=patch-headers — fills stale invoiceNo/invoiceDate (null→value only)
+// and fixes orderDateTime/slot for SAP-first OBDs without a mail-order match.
+// Uses the same v2 HMAC key as auto-json and check.
+
+async function handleAutoImportPatchHeaders(req: Request): Promise<NextResponse> {
+  if (!verifyHmacSignatureV2(req)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  if (!body || typeof body !== "object") {
+    return NextResponse.json({ error: "JSON body must be an object" }, { status: 400 });
+  }
+
+  const b      = body as Record<string, unknown>;
+  const dryRun = b.dryRun === true;
+
+  if (!Array.isArray(b.patchHeaders)) {
+    return NextResponse.json({ error: "patchHeaders array is required" }, { status: 400 });
+  }
+
+  const counts = {
+    received:         (b.patchHeaders as unknown[]).length,
+    notFound:         0,
+    invoiceFilled:    0,
+    timeFixed:        0,
+    slotFixed:        0,
+    mailOwnedSkipped: 0,
+    slotOverrideKept: 0,
+    noChange:         0,
+  };
+  const changes: { obdNumber: string; fields: string[] }[] = [];
+
+  for (const raw of b.patchHeaders as Record<string, unknown>[]) {
+    const obdNumber = toStr(raw["OBD Number"]);
+    if (!obdNumber) { counts.notFound++; continue; }
+
+    const existing = await prisma.orders.findUnique({
+      where:  { obdNumber },
+      select: {
+        id:             true,
+        orderType:      true,
+        slotToOverride: true,
+        orderDateTime:  true,
+        invoiceNo:      true,
+        invoiceDate:    true,
+      },
+    });
+
+    if (!existing) { counts.notFound++; continue; }
+
+    const updateData: Record<string, unknown> = {};
+    const changedFields: string[]             = [];
+    let invoiceTouched                        = false;
+
+    // ── a. Invoice — fill-if-null ────────────────────────────────────────────
+    const incomingInvoiceNo   = toStr(raw["InvoiceNo"])  || null;
+    const incomingInvoiceDate = parseDateCell(raw["InvoiceDate"]);
+
+    if (existing.invoiceNo === null && incomingInvoiceNo) {
+      updateData.invoiceNo = incomingInvoiceNo;
+      changedFields.push("invoiceNo");
+      invoiceTouched = true;
+    }
+    if (existing.invoiceDate === null && incomingInvoiceDate !== null) {
+      updateData.invoiceDate = incomingInvoiceDate;
+      changedFields.push("invoiceDate");
+      invoiceTouched = true;
+    }
+
+    // ── b. Mail-owned check ──────────────────────────────────────────────────
+    const soNum = toStr(raw["SONum"]) || null;
+    let mailOwned = false;
+    if (soNum) {
+      const mailOrder = await prisma.mo_orders.findFirst({
+        where:   { soNumber: soNum, status: "punched" },
+        orderBy: { createdAt: "desc" },
+        select:  { receivedAt: true },
+      });
+      mailOwned = Boolean(mailOrder?.receivedAt);
+    }
+
+    // ── c. Time / slot — only if NOT mail-owned ──────────────────────────────
+    if (!mailOwned) {
+      const incomingDate = parseDateCell(raw["OBD Email Date"]);
+      const incomingTime = toStr(raw["OBD Email Time"]) || null;
+      const newDT        = mergeEmailDateTime(incomingDate, incomingTime);
+
+      if (newDT !== null) {
+        const existingMs = existing.orderDateTime?.getTime() ?? null;
+        if (existingMs !== newDT.getTime()) {
+          updateData.orderDateTime = newDT;
+          updateData.obdEmailDate  = incomingDate;
+          changedFields.push("orderDateTime", "obdEmailDate");
+          counts.timeFixed++;
+
+          if (existing.orderType !== "tint") {
+            if (!existing.slotToOverride) {
+              const { slotId, dispatchSlot } = resolveSlot(incomingTime);
+              updateData.slotId         = slotId;
+              updateData.originalSlotId = slotId;
+              updateData.dispatchSlot   = dispatchSlot;
+              changedFields.push("slotId", "originalSlotId", "dispatchSlot");
+              counts.slotFixed++;
+            } else {
+              counts.slotOverrideKept++;
+            }
+          }
+        }
+      }
+    } else {
+      if (parseDateCell(raw["OBD Email Date"]) !== null) {
+        counts.mailOwnedSkipped++;
+      }
+    }
+
+    // ── d. Apply / record ────────────────────────────────────────────────────
+    if (changedFields.length === 0) {
+      counts.noChange++;
+      continue;
+    }
+
+    if (invoiceTouched) counts.invoiceFilled++;
+    changes.push({ obdNumber, fields: changedFields });
+
+    if (!dryRun) {
+      await prisma.orders.update({
+        where: { id: existing.id },
+        data:  updateData as Prisma.ordersUpdateInput,
+      });
+    }
+  }
+
+  return NextResponse.json({ ok: true, dryRun, counts, changes });
+}
+
 // ── Main handler ──────────────────────────────────────────────────────────────
 
 export async function POST(req: Request): Promise<NextResponse> {
   const url = new URL(req.url, "http://localhost");
   const action = url.searchParams.get("action");
 
-  if (action === "auto")      return handleAutoImport(req);
-  if (action === "check")     return handleAutoImportCheck(req);
-  if (action === "auto-json") return handleAutoImportJson(req);
+  if (action === "auto")          return handleAutoImport(req);
+  if (action === "check")         return handleAutoImportCheck(req);
+  if (action === "auto-json")     return handleAutoImportJson(req);
+  if (action === "patch-headers") return handleAutoImportPatchHeaders(req);
 
   // All other actions require session auth
   const session = await auth();
@@ -3134,7 +3279,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   if (action === "manual-sap-confirm") return handleManualSapConfirm(req, session!);
 
   return NextResponse.json(
-    { error: "Invalid action. Use ?action=auto, ?action=check, ?action=auto-json, ?action=preview, ?action=confirm, ?action=manual-sap-preview, or ?action=manual-sap-confirm" },
+    { error: "Invalid action. Use ?action=auto, ?action=check, ?action=auto-json, ?action=patch-headers, ?action=preview, ?action=confirm, ?action=manual-sap-preview, or ?action=manual-sap-confirm" },
     { status: 400 },
   );
 }
