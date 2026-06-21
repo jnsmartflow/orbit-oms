@@ -56,8 +56,9 @@ $LastNoiseCallFile   = "$ToolRoot\Master\last-noise-call.txt"
 # v2 API endpoints
 $ApiUrlCheck    = "https://www.orbitoms.in/api/import/obd?action=check"
 $ApiUrlAutoJson     = "https://www.orbitoms.in/api/import/obd?action=auto-json"
-$ApiUrlPatchHeaders = "https://www.orbitoms.in/api/import/obd?action=patch-headers"
-$KeyIdJson          = "auto-import-json-v1"
+$ApiUrlPatchHeaders    = "https://www.orbitoms.in/api/import/obd?action=patch-headers"
+$ApiUrlPendingInvoices = "https://www.orbitoms.in/api/import/obd?action=pending-invoices"
+$KeyIdJson             = "auto-import-json-v1"
 
 # Breakwalls
 $BaseUrl            = "https://an.breakwalls.biz"
@@ -71,7 +72,9 @@ $AppVersionFallback = "VmRhZP4kZj=="
 # Time + date
 $Today     = Get-Date -Format "yyyy-MM-dd"
 $Yesterday = (Get-Date).AddDays(-1).ToString("yyyy-MM-dd")
-$KeepDays  = 2
+$KeepDays        = 2
+$GoLiveDate      = "2026-06-22"   # earliest date the invoice chase may look back to
+$ChaseWindowDays = 3
 
 # Session reuse: try cached cookie up to 4 hours old
 $CookieMaxAgeMin  = 240
@@ -818,6 +821,81 @@ function Send-PatchHeadersToOrbitOMS {
     return $false
 }
 
+# GET ?action=pending-invoices — returns array of OBD numbers with invoiceNo IS NULL
+# in the given date range.  Returns @() on error.
+function Get-PendingInvoiceObds {
+    param([string]$FromDate, [string]$ToDate)
+
+    $body    = (@{ fromDate = $FromDate; toDate = $ToDate } | ConvertTo-Json -Depth 3 -Compress)
+    $headers = Get-V2ApiHeaders
+
+    try {
+        $resp = Invoke-WebRequest `
+            -Uri $ApiUrlPendingInvoices `
+            -Method POST `
+            -Body $body `
+            -ContentType "application/json" `
+            -Headers $headers `
+            -UseBasicParsing `
+            -TimeoutSec 30 `
+            -ErrorAction Stop
+
+        $parsed = $resp.Content | ConvertFrom-Json
+        $obds   = if ($parsed.obdNumbers) { @($parsed.obdNumbers) } else { @() }
+        Write-Log "PENDING-INV - $($obds.Count) pending in $FromDate..$ToDate"
+        return $obds
+    } catch {
+        Write-Log "PENDING-INV - fetch failed: $_, returning empty" "Yellow"
+        return @()
+    }
+}
+
+# Fetch a single OBD's header row from /data using the sonum filter.
+# Returns a Build-HeaderRow PSCustomObject, or $null if not found / error.
+# Uses script-level $Session, $BaseUrl, $DataPath, $Today.
+function Get-ObdHeaderBySonum {
+    param([string]$Obd)
+
+    $bodyJson = [ordered]@{
+        reportId    = "Reports/105VCsI1rQ6u1QSEyGJ7I3Lc"
+        componentId = "c01105VCsI1rQ6u1QSEyGJ7I3Lc"
+        filters     = @()
+        page        = 1
+        size        = 20
+        sorters     = @()
+        params      = @(
+            [ordered]@{ field = "sonum";       value = $Obd }
+            [ordered]@{ field = "picklistdate"; value = $Today }
+            [ordered]@{ field = "transporter";  value = "Select Transporter" }
+            [ordered]@{ field = "formName";     value = "" }
+        )
+    } | ConvertTo-Json -Depth 5
+
+    try {
+        $response = Invoke-WebRequest `
+            -Uri ($BaseUrl + $DataPath) `
+            -Method POST `
+            -Body $bodyJson `
+            -ContentType "application/json" `
+            -Headers (Get-BrowserHeaders) `
+            -WebSession $Session `
+            -UseBasicParsing `
+            -TimeoutSec 30 `
+            -ErrorAction Stop
+
+        $parsed  = $response.Content | ConvertFrom-Json
+        if ($parsed.data) {
+            $rawRow = @($parsed.data) | Where-Object {
+                $_.PickListId -and $_.PickListId.ToString().Trim() -eq $Obd
+            } | Select-Object -First 1
+            if ($rawRow) { return Build-HeaderRow $rawRow }
+        }
+    } catch {
+        Write-Log "SONUM-FETCH $Obd failed: $_" "Yellow"
+    }
+    return $null
+}
+
 # Persist a failed payload JSON to disk for next-cycle retry.
 function Add-PendingJsonUpload {
     param([hashtable]$Payload, [string]$Date)
@@ -1473,6 +1551,38 @@ if (-not ($page1 -and $page1.data)) {
     }
 
 }   # end Phase 6 outer block
+
+
+# ============================================================
+#  PHASE 9.6 - INVOICE CHASE
+# ============================================================
+
+$toDate   = (Get-Date).AddDays(-1).ToString("yyyy-MM-dd")
+$fromRaw  = (Get-Date).AddDays(-$ChaseWindowDays).ToString("yyyy-MM-dd")
+$fromDate = if ($fromRaw -gt $GoLiveDate) { $fromRaw } else { $GoLiveDate }
+
+if ($fromDate -gt $toDate) {
+    Write-Log "PHASE 9.6 - Chase window empty ($fromDate..$toDate), skipping"
+} else {
+    $pending = @(Get-PendingInvoiceObds -FromDate $fromDate -ToDate $toDate)
+    if ($pending.Count -eq 0) {
+        Write-Log "PHASE 9.6 - 0 pending, nothing to chase"
+    } else {
+        $collected = @()
+        foreach ($obd in $pending) {
+            Get-RandomDelay -Min 1 -Max 2
+            $row = Get-ObdHeaderBySonum -Obd $obd
+            if ($row -and $row.InvoiceNo -and $row.InvoiceNo.ToString().Trim() -ne "") {
+                $collected += Build-PatchHeaderRow $row
+            }
+        }
+        $invoicedCount = $collected.Count
+        if ($invoicedCount -gt 0) {
+            Send-PatchHeadersToOrbitOMS -PatchHeaders $collected -IsDryRun ([bool]$DryRun) | Out-Null
+        }
+        Write-Log "PHASE 9.6 - Chase: $fromDate..$toDate pending=$($pending.Count) invoiced-now=$invoicedCount"
+    }
+}
 
 
 # ============================================================
