@@ -29,7 +29,8 @@
 
 param(
     [switch]$SkipYesterday,
-    [switch]$DryRun
+    [switch]$DryRun,
+    [string]$TargetDate = ""
 )
 
 #region CONFIG
@@ -1008,6 +1009,8 @@ if (-not $usedCachedSession) {
 
 if ($SkipYesterday) {
     Write-Log "[flag] SkipYesterday - yesterday recovery skipped; today only."
+} elseif ($TargetDate -ne "") {
+    Write-Log "[flag] TargetDate=$TargetDate - yesterday recovery skipped; processing target date only."
 } else {
 
 $yState = Read-YesterdayState
@@ -1113,21 +1116,26 @@ if ($yState -and $yState.Status -eq "pending") {
         if ($yHdrOut.Count -gt 0) {
             $yPayload = @{ headerRows = @($yHdrOut); lineRows = @($yLinesOut) }
             Get-RandomDelay -Min 1 -Max 3
-            $yUp = Send-JsonPayloadToOrbitOMS -Payload $yPayload
-            if ($yUp.Success) {
-                $Summary.YesterdayUpload = "imported=$($yUp.Imported) skipped=$($yUp.Skipped)"
-                if ($yFailed.Count -eq 0) {
-                    Write-YesterdayState -Status "done" -Date $recoveryDate -Attempts ($yState.Attempts + 1)
-                    Write-Log "Y-RECOVERY - DONE for $recoveryDate" "Green"
-                } else {
-                    Write-YesterdayState -Status "partial" -Date $recoveryDate -Attempts ($yState.Attempts + 1)
-                    Write-Log "Y-RECOVERY - Partial ($($yFailed.Count) FormGetData failed, not re-queued)" "Yellow"
-                }
+            if ($DryRun) {
+                Write-Log "[DRY RUN] would import yesterday-recovery for $recoveryDate - skipped" "Cyan"
+                $Summary.YesterdayUpload = "DRY RUN (not posted)"
             } else {
-                $Summary.YesterdayUpload = "FAILED"
-                Add-PendingJsonUpload -Payload $yPayload -Date $recoveryDate
-                Write-Log "Y-RECOVERY - Upload failed, parked in pending-upload-json.txt" "Yellow"
-                Write-YesterdayState -Status "pending" -Date $recoveryDate -Attempts ($yState.Attempts + 1)
+                $yUp = Send-JsonPayloadToOrbitOMS -Payload $yPayload
+                if ($yUp.Success) {
+                    $Summary.YesterdayUpload = "imported=$($yUp.Imported) skipped=$($yUp.Skipped)"
+                    if ($yFailed.Count -eq 0) {
+                        Write-YesterdayState -Status "done" -Date $recoveryDate -Attempts ($yState.Attempts + 1)
+                        Write-Log "Y-RECOVERY - DONE for $recoveryDate" "Green"
+                    } else {
+                        Write-YesterdayState -Status "partial" -Date $recoveryDate -Attempts ($yState.Attempts + 1)
+                        Write-Log "Y-RECOVERY - Partial ($($yFailed.Count) FormGetData failed, not re-queued)" "Yellow"
+                    }
+                } else {
+                    $Summary.YesterdayUpload = "FAILED"
+                    Add-PendingJsonUpload -Payload $yPayload -Date $recoveryDate
+                    Write-Log "Y-RECOVERY - Upload failed, parked in pending-upload-json.txt" "Yellow"
+                    Write-YesterdayState -Status "pending" -Date $recoveryDate -Attempts ($yState.Attempts + 1)
+                }
             }
         } else {
             $Summary.YesterdayUpload = "n/a (0 new)"
@@ -1208,16 +1216,17 @@ if (Test-Path $PendingJsonFile) {
 
 
 # ============================================================
-#  PHASE 6 - TODAY: /data PAGINATION (full header rows)
+#  PHASE 6 - /data PAGINATION (full header rows)
 # ============================================================
 
-Write-Log "PHASE 6 - Today's /data pagination"
+$EffectiveDate = if ($TargetDate -ne "") { $TargetDate } else { $Today }
+Write-Log "PHASE 6 - Processing date: $EffectiveDate"
 
 $headerRowsByObd = @{}
 $allObds         = [System.Collections.Generic.List[string]]::new()
 
 Get-RandomDelay -Min 2 -Max 5
-$page1 = Get-OBDListPage -PageNum 1 -Date $Today -Session $Session -Config $config
+$page1 = Get-OBDListPage -PageNum 1 -Date $EffectiveDate -Session $Session -Config $config
 
 if (-not ($page1 -and $page1.data)) {
     Write-Log "PHASE 6 - Page 1 unreachable. Cannot continue. Next cycle will retry." "Red"
@@ -1249,7 +1258,7 @@ if (-not ($page1 -and $page1.data)) {
         $pageOrder = 2..$lastPage | Get-Random -Count ($lastPage - 1)
         foreach ($p in $pageOrder) {
             Get-RandomDelay -Min 1 -Max 3
-            $pr = Get-OBDListPage -PageNum $p -Date $Today -Session $Session -Config $config
+            $pr = Get-OBDListPage -PageNum $p -Date $EffectiveDate -Session $Session -Config $config
             if ($pr -and $pr.data) {
                 foreach ($row in $pr.data) {
                     $obdNum = if ($row.PickListId) { $row.PickListId.ToString().Trim() } else { $null }
@@ -1267,7 +1276,7 @@ if (-not ($page1 -and $page1.data)) {
 
         # Refetch page 1 to catch OBDs added during pagination
         Get-RandomDelay -Min 1 -Max 3
-        $refetch = Get-OBDListPage -PageNum 1 -Date $Today -Session $Session -Config $config
+        $refetch = Get-OBDListPage -PageNum 1 -Date $EffectiveDate -Session $Session -Config $config
         if ($refetch -and $refetch.data) {
             foreach ($row in $refetch.data) {
                 $obdNum = if ($row.PickListId) { $row.PickListId.ToString().Trim() } else { $null }
@@ -1290,7 +1299,7 @@ if (-not ($page1 -and $page1.data)) {
     }
 
     $allObdsArr = @($allObds | Select-Object -Unique)
-    Save-Tally -Date $Today -TotalCount $totalCount -Page1Obds @($page1Obds) -Status "ok"
+    Save-Tally -Date $EffectiveDate -TotalCount $totalCount -Page1Obds @($page1Obds) -Status "ok"
     $Summary.BreakwallsTotal = if ($totalCount -ge 0) { $totalCount } else { "$($allObdsArr.Count) (estimated)" }
     Write-Log "PHASE 6 - $($allObdsArr.Count) OBDs collected ($($headerRowsByObd.Count) header rows built)"
 
@@ -1422,7 +1431,7 @@ if (-not ($page1 -and $page1.data)) {
             $dryRunFolder = "$OutputFolder\dryrun"
             if (-not (Test-Path $dryRunFolder)) { New-Item -ItemType Directory -Path $dryRunFolder | Out-Null }
             $dryRunTs   = Get-Date -Format "HHmmss"
-            $dryRunFile = "$dryRunFolder\$Today-$dryRunTs.json"
+            $dryRunFile = "$dryRunFolder\$EffectiveDate-$dryRunTs.json"
             $payload | ConvertTo-Json -Depth 5 | Set-Content $dryRunFile -Encoding UTF8
             Write-Log "[DRY RUN] would POST $($todayHdrRows.Count) header rows + $($todayLineRows.Count) line rows to ?action=auto-json" "Cyan"
             Write-Log "[DRY RUN] payload written to $dryRunFile" "Cyan"
@@ -1438,7 +1447,7 @@ if (-not ($page1 -and $page1.data)) {
             } else {
                 $Summary.UploadStatus  = "FAILED -> pending-upload-json.txt"
                 $Summary.PendingUpload = $true
-                Add-PendingJsonUpload -Payload $payload -Date $Today
+                Add-PendingJsonUpload -Payload $payload -Date $EffectiveDate
             }
         }
     } else {
