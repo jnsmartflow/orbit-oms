@@ -20,6 +20,7 @@
 #    Phase 7  - FormGetData per new OBD (in-memory)
 #    Phase 8  - Retry FormGetData failures from prior runs
 #    Phase 9  - Build payload + POST ?action=auto-json
+#    Phase 9.5- Patch headers for existing OBDs (?action=patch-headers)
 #    Phase 10 - Human-noise background GET
 #    Phase 11 - Cycle summary
 #
@@ -53,8 +54,9 @@ $LastNoiseCallFile   = "$ToolRoot\Master\last-noise-call.txt"
 
 # v2 API endpoints
 $ApiUrlCheck    = "https://www.orbitoms.in/api/import/obd?action=check"
-$ApiUrlAutoJson = "https://www.orbitoms.in/api/import/obd?action=auto-json"
-$KeyIdJson      = "auto-import-json-v1"
+$ApiUrlAutoJson     = "https://www.orbitoms.in/api/import/obd?action=auto-json"
+$ApiUrlPatchHeaders = "https://www.orbitoms.in/api/import/obd?action=patch-headers"
+$KeyIdJson          = "auto-import-json-v1"
 
 # Breakwalls
 $BaseUrl            = "https://an.breakwalls.biz"
@@ -758,6 +760,63 @@ function Send-JsonPayloadToOrbitOMS {
     return @{ Success = $false }
 }
 
+# Translate a pre-built header PSCustomObject into the 6-field hashtable
+# expected by ?action=patch-headers.
+function Build-PatchHeaderRow {
+    param($hdr)
+    return @{
+        "OBD Number"     = $hdr."OBD Number"
+        "InvoiceNo"      = $hdr.InvoiceNo
+        "InvoiceDate"    = $hdr.InvoiceDate
+        "OBD Email Date" = $hdr."OBD Email Date"
+        "OBD Email Time" = $hdr."OBD Email Time"
+        "SONum"          = $hdr.SONum
+    }
+}
+
+# POST ?action=patch-headers -- fills stale invoice fields + fixes
+# orderDateTime/slot for existing SAP-first OBDs.  3 retries.
+function Send-PatchHeadersToOrbitOMS {
+    param([array]$PatchHeaders, [bool]$IsDryRun = $false)
+
+    $body    = (@{ dryRun = $IsDryRun; patchHeaders = $PatchHeaders } | ConvertTo-Json -Depth 5 -Compress)
+    $headers = Get-V2ApiHeaders
+
+    $maxAttempts = 3
+    for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+        try {
+            $resp = Invoke-WebRequest `
+                -Uri $ApiUrlPatchHeaders `
+                -Method POST `
+                -Body $body `
+                -ContentType "application/json" `
+                -Headers $headers `
+                -UseBasicParsing `
+                -TimeoutSec 60 `
+                -ErrorAction Stop
+
+            $parsed = $resp.Content | ConvertFrom-Json
+            $c = $parsed.counts
+            Write-Log "PATCH-HDR - OK received=$($c.received) invoiceFilled=$($c.invoiceFilled) timeFixed=$($c.timeFixed) slotFixed=$($c.slotFixed) mailOwnedSkipped=$($c.mailOwnedSkipped) noChange=$($c.noChange)" "Green"
+            return $true
+        } catch {
+            $errMsg = $_.Exception.Message
+            if ($_.Exception.Response) {
+                try {
+                    $reader  = New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream())
+                    $errBody = $reader.ReadToEnd()
+                    $errMsg  = "$errMsg | $errBody"
+                } catch {}
+            }
+            Write-Log "PATCH-HDR attempt $attempt failed: $errMsg" "Yellow"
+            if ($attempt -lt $maxAttempts) { Start-Sleep -Seconds (10 * $attempt) }
+        }
+    }
+
+    Write-Log "PATCH-HDR - All $maxAttempts attempts failed" "Red"
+    return $false
+}
+
 # Persist a failed payload JSON to disk for next-cycle retry.
 function Add-PendingJsonUpload {
     param([hashtable]$Payload, [string]$Date)
@@ -1385,6 +1444,23 @@ if (-not ($page1 -and $page1.data)) {
     } else {
         Write-Log "PHASE 9 - No new OBDs fetched this cycle, skipping upload"
         $Summary.UploadStatus = "n/a (no new OBDs)"
+    }
+
+
+    # ============================================================
+    #  PHASE 9.5 - PATCH HEADERS FOR EXISTING OBDs
+    # ============================================================
+
+    if ($null -ne $existingSet -and $existingSet.Count -gt 0) {
+        $existingObds = @($allObdsArr | Where-Object { $existingSet.Contains($_) })
+        Write-Log "PHASE 9.5 - Patch headers for $($existingObds.Count) existing OBDs"
+
+        $patchRows = @($existingObds | ForEach-Object { Build-PatchHeaderRow $headerRowsByObd[$_] })
+
+        Get-RandomDelay -Min 1 -Max 3
+        Send-PatchHeadersToOrbitOMS -PatchHeaders $patchRows -IsDryRun ([bool]$DryRun) | Out-Null
+    } else {
+        Write-Log "PHASE 9.5 - No existing OBDs to patch (pre-check failed or 0 existing)"
     }
 
 }   # end Phase 6 outer block
