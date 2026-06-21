@@ -47,6 +47,7 @@ export async function POST(
     data: {
       slotId,
       originalSlotId: order.originalSlotId ?? slotId,
+      slotToOverride: true,
     },
   });
 
