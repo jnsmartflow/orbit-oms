@@ -53,7 +53,7 @@ export async function GET(req: Request): Promise<NextResponse> {
         AND: [
           {
             obdEmailDate: { gte: dateStart, lte: dateEnd },
-            workflowStage: { notIn: ["dispatched", "cancelled"] },
+            workflowStage: { notIn: ["dispatched", "cancelled", "closed"] },
             isRemoved: false,
           },
           hideExclusion,

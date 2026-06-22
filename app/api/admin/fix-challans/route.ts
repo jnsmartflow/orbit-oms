@@ -14,7 +14,7 @@ export async function POST(): Promise<NextResponse> {
   // Find all orders that should have challans but don't
   const orders = await prisma.orders.findMany({
     where: {
-      workflowStage: { notIn: ["cancelled"] },
+      workflowStage: { notIn: ["cancelled", "closed"] },
       challan: null, // no delivery_challans record
       isRemoved: false,
     },

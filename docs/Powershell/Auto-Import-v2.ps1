@@ -75,6 +75,7 @@ $Yesterday = (Get-Date).AddDays(-1).ToString("yyyy-MM-dd")
 $KeepDays        = 2
 $GoLiveDate      = "2026-06-22"   # earliest date the invoice chase may look back to
 $ChaseWindowDays = 3
+$MaxRecoveryDays = 3              # Phase 3 catches up at most this many days back
 
 # Session reuse: try cached cookie up to 4 hours old
 $CookieMaxAgeMin  = 240
@@ -929,6 +930,141 @@ function Remove-PendingJsonUpload {
     }
 }
 
+# Full recovery pass for one date: page listing, pre-check, create new OBDs (DryRun-gated),
+# patch existing OBDs from the same header rows (no FormGetData for existing).
+# Returns $true on success; $false if page-1 fetch or create upload failed.
+function Invoke-RecoveryDayPass {
+    param([string]$Date)
+
+    Write-Log "RECOVERY $Date - paging Breakwalls listing" "Cyan"
+
+    $rPage1 = Get-OBDListPage -PageNum 1 -Date $Date -Session $Session -Config $config
+    if (-not ($rPage1 -and $rPage1.data)) {
+        Write-Log "RECOVERY $Date - Page 1 fetch failed, will retry next cycle" "Yellow"
+        return $false
+    }
+
+    $keyList = ($rPage1.PSObject.Properties.Name -join ', ')
+    Write-Log "DIAG - RECOVERY $Date page 1 keys: $keyList"
+
+    $rLastPage      = [int]$rPage1.last_page
+    $rAllObds       = [System.Collections.Generic.List[string]]::new()
+    $rHeaderRowsMap = @{}
+
+    foreach ($row in $rPage1.data) {
+        $obdNum = if ($row.PickListId) { $row.PickListId.ToString().Trim() } else { $null }
+        if ($obdNum) {
+            $rAllObds.Add($obdNum)
+            $rHeaderRowsMap[$obdNum] = Build-HeaderRow $row
+        }
+    }
+
+    if ($rLastPage -gt 1) {
+        $pageOrder = 2..$rLastPage | Get-Random -Count ($rLastPage - 1)
+        foreach ($p in $pageOrder) {
+            Get-RandomDelay -Min 1 -Max 3
+            $pr = Get-OBDListPage -PageNum $p -Date $Date -Session $Session -Config $config
+            if ($pr -and $pr.data) {
+                foreach ($row in $pr.data) {
+                    $obdNum = if ($row.PickListId) { $row.PickListId.ToString().Trim() } else { $null }
+                    if ($obdNum -and -not $rAllObds.Contains($obdNum)) {
+                        $rAllObds.Add($obdNum)
+                        $rHeaderRowsMap[$obdNum] = Build-HeaderRow $row
+                    }
+                }
+                Write-Log "RECOVERY $Date - Page $p/$rLastPage : $($pr.data.Count) OBDs"
+            } else {
+                Write-Log "RECOVERY $Date - Page $p failed all retries" "Yellow"
+            }
+        }
+        Get-RandomDelay -Min 1 -Max 3
+        $rRefetch = Get-OBDListPage -PageNum 1 -Date $Date -Session $Session -Config $config
+        if ($rRefetch -and $rRefetch.data) {
+            foreach ($row in $rRefetch.data) {
+                $obdNum = if ($row.PickListId) { $row.PickListId.ToString().Trim() } else { $null }
+                if ($obdNum -and -not $rAllObds.Contains($obdNum)) {
+                    $rAllObds.Add($obdNum)
+                    $rHeaderRowsMap[$obdNum] = Build-HeaderRow $row
+                    Write-Log "RECOVERY $Date - New OBD on page 1 refetch: $obdNum"
+                }
+            }
+        }
+    }
+
+    $rAllObdsArr = @($rAllObds | Select-Object -Unique)
+    Write-Log "RECOVERY $Date - Breakwalls total: $($rAllObdsArr.Count)"
+
+    Get-RandomDelay -Min 1 -Max 3
+    $rExistingSet = Invoke-PreCheck -obdNumbers $rAllObdsArr -Session $Session
+    if ($null -eq $rExistingSet) {
+        $rNewObds = $rAllObdsArr
+        Write-Log "RECOVERY $Date - Pre-check failed, treating all as new" "Yellow"
+    } else {
+        $rNewObds = @($rAllObdsArr | Where-Object { -not $rExistingSet.Contains($_) })
+    }
+    Write-Log "RECOVERY $Date - $($rNewObds.Count) new OBDs to create"
+
+    # ---- CREATE new OBDs ----
+    $rHdrOut   = [System.Collections.Generic.List[PSCustomObject]]::new()
+    $rLinesOut = [System.Collections.Generic.List[PSCustomObject]]::new()
+    $rFetched  = 0
+    $rFailed   = [System.Collections.Generic.List[string]]::new()
+
+    foreach ($obd in $rNewObds) {
+        Get-RandomDelay -Min 1 -Max 3
+        $hdr = $rHeaderRowsMap[$obd]
+        $smu = if ($hdr -and $hdr.SMU) { $hdr.SMU.ToString() } else { "" }
+
+        $lines = Get-ObdJsonData -ObdNumber $obd -Session $Session -Config $config
+        if ($null -ne $lines) {
+            $rHdrOut.Add($hdr)
+            foreach ($ln in $lines) { $rLinesOut.Add((Build-LineRow -obd $obd -line $ln -hdrSmu $smu)) }
+            $rFetched++
+        } else {
+            $rFailed.Add($obd)
+            Write-Log "RECOVERY $Date - FormGetData failed for $obd" "Yellow"
+        }
+    }
+
+    $createSuccess = $true
+    if ($rHdrOut.Count -gt 0) {
+        $rPayload = @{ headerRows = @($rHdrOut); lineRows = @($rLinesOut) }
+        Get-RandomDelay -Min 1 -Max 3
+        if ($DryRun) {
+            Write-Log "[DRY RUN] RECOVERY $Date - would create $($rHdrOut.Count) OBDs, skipped" "Cyan"
+        } else {
+            $rUp = Send-JsonPayloadToOrbitOMS -Payload $rPayload
+            if (-not $rUp.Success) {
+                Add-PendingJsonUpload -Payload $rPayload -Date $Date
+                Write-Log "RECOVERY $Date - Create upload failed, parked in pending-upload-json.txt" "Yellow"
+                $createSuccess = $false
+            }
+        }
+    }
+
+    # ---- PATCH existing OBDs (header rows already paged — no FormGetData) ----
+    $patchCount = 0
+    if ($null -ne $rExistingSet -and $rExistingSet.Count -gt 0) {
+        $existingObdsForDay = @($rAllObdsArr | Where-Object { $rExistingSet.Contains($_) })
+        $patchRows = @($existingObdsForDay | ForEach-Object { Build-PatchHeaderRow $rHeaderRowsMap[$_] })
+        if ($patchRows.Count -gt 0) {
+            Get-RandomDelay -Min 1 -Max 2
+            Send-PatchHeadersToOrbitOMS -PatchHeaders $patchRows -IsDryRun ([bool]$DryRun) | Out-Null
+            $patchCount = $patchRows.Count
+        }
+    }
+
+    Write-Log "RECOVERY $Date - created=$rFetched patched=$patchCount"
+
+    # Accumulate into script-level summary counters
+    $script:Summary.YesterdayBreakwallsTotal += $rAllObdsArr.Count
+    $script:Summary.YesterdayPreCheckNew     += $rNewObds.Count
+    $script:Summary.YesterdayFetched         += $rFetched
+    $script:Summary.YesterdayFailed          += $rFailed.Count
+
+    return $createSuccess
+}
+
 #endregion NEW FUNCTIONS
 
 
@@ -1082,7 +1218,7 @@ if (-not $usedCachedSession) {
 
 
 # ============================================================
-#  PHASE 3 - YESTERDAY RECOVERY (if pending)
+#  PHASE 3 - RECOVERY PASS (multi-day, bounded)
 # ============================================================
 
 if ($SkipYesterday) {
@@ -1094,138 +1230,53 @@ if ($SkipYesterday) {
 $yState = Read-YesterdayState
 if ($yState -and $yState.Status -eq "pending") {
 
-    $recoveryDate = $yState.Date
-    Write-Log "PHASE 3 - Yesterday recovery for $recoveryDate (attempt $($yState.Attempts + 1))" "Cyan"
-    Write-YesterdayState -Status "pending" -Date $recoveryDate -Attempts ($yState.Attempts + 1)
-    $Summary.YesterdayRan = $true
+    # Compute bounded recovery range: clamp start to MaxRecoveryDays back and GoLiveDate floor
+    $recStart        = $yState.Date
+    $recStartWindow  = (Get-Date).AddDays(-$MaxRecoveryDays).ToString("yyyy-MM-dd")
+    if ($recStartWindow -gt $recStart) { $recStart = $recStartWindow }
+    if ($GoLiveDate     -gt $recStart) { $recStart = $GoLiveDate     }
+    $recEnd = $Yesterday
 
-    Invoke-SpecPrime -Session $Session -Reason "yesterday-recovery" | Out-Null
-    Get-RandomDelay -Min 2 -Max 5
-
-    $yPage1 = Get-OBDListPage -PageNum 1 -Date $recoveryDate -Session $Session -Config $config
-    if ($yPage1 -and $yPage1.data) {
-
-        $keyList = ($yPage1.PSObject.Properties.Name -join ', ')
-        Write-Log "DIAG - Yesterday page 1 response keys: $keyList"
-
-        $yLastPage      = [int]$yPage1.last_page
-        $yAllObds       = [System.Collections.Generic.List[string]]::new()
-        $yHeaderRowsMap = @{}
-
-        foreach ($row in $yPage1.data) {
-            $obdNum = if ($row.PickListId) { $row.PickListId.ToString().Trim() } else { $null }
-            if ($obdNum) {
-                $yAllObds.Add($obdNum)
-                $yHeaderRowsMap[$obdNum] = Build-HeaderRow $row
-            }
-        }
-
-        if ($yLastPage -gt 1) {
-            $pageOrder = 2..$yLastPage | Get-Random -Count ($yLastPage - 1)
-            foreach ($p in $pageOrder) {
-                Get-RandomDelay -Min 1 -Max 3
-                $pr = Get-OBDListPage -PageNum $p -Date $recoveryDate -Session $Session -Config $config
-                if ($pr -and $pr.data) {
-                    foreach ($row in $pr.data) {
-                        $obdNum = if ($row.PickListId) { $row.PickListId.ToString().Trim() } else { $null }
-                        if ($obdNum -and -not $yAllObds.Contains($obdNum)) {
-                            $yAllObds.Add($obdNum)
-                            $yHeaderRowsMap[$obdNum] = Build-HeaderRow $row
-                        }
-                    }
-                    Write-Log "Y-RECOVERY - Page $p/$yLastPage : $($pr.data.Count) OBDs"
-                } else {
-                    Write-Log "Y-RECOVERY - Page $p failed all retries" "Yellow"
-                }
-            }
-            Get-RandomDelay -Min 1 -Max 3
-            $yRefetch = Get-OBDListPage -PageNum 1 -Date $recoveryDate -Session $Session -Config $config
-            if ($yRefetch -and $yRefetch.data) {
-                foreach ($row in $yRefetch.data) {
-                    $obdNum = if ($row.PickListId) { $row.PickListId.ToString().Trim() } else { $null }
-                    if ($obdNum -and -not $yAllObds.Contains($obdNum)) {
-                        $yAllObds.Add($obdNum)
-                        $yHeaderRowsMap[$obdNum] = Build-HeaderRow $row
-                        Write-Log "Y-RECOVERY - New OBD on page 1 refetch: $obdNum"
-                    }
-                }
-            }
-        }
-
-        $yAllObdsArr = @($yAllObds | Select-Object -Unique)
-        $Summary.YesterdayBreakwallsTotal = $yAllObdsArr.Count
-        Write-Log "Y-RECOVERY - Breakwalls total for $($recoveryDate): $($yAllObdsArr.Count)"
-
-        Get-RandomDelay -Min 1 -Max 3
-        $yExistingSet = Invoke-PreCheck -obdNumbers $yAllObdsArr -Session $Session
-        if ($null -eq $yExistingSet) {
-            $yNewObds = $yAllObdsArr
-            Write-Log "Y-RECOVERY - Pre-check failed, treating all as new" "Yellow"
-        } else {
-            $yNewObds = @($yAllObdsArr | Where-Object { -not $yExistingSet.Contains($_) })
-        }
-        $Summary.YesterdayPreCheckNew = $yNewObds.Count
-        Write-Log "Y-RECOVERY - $($yNewObds.Count) new OBDs to fetch for $recoveryDate"
-
-        $yHdrOut    = [System.Collections.Generic.List[PSCustomObject]]::new()
-        $yLinesOut  = [System.Collections.Generic.List[PSCustomObject]]::new()
-        $yFetched   = 0
-        $yFailed    = [System.Collections.Generic.List[string]]::new()
-
-        foreach ($obd in $yNewObds) {
-            Get-RandomDelay -Min 1 -Max 3
-            $hdr = $yHeaderRowsMap[$obd]
-            $smu = if ($hdr -and $hdr.SMU) { $hdr.SMU.ToString() } else { "" }
-
-            $lines = Get-ObdJsonData -ObdNumber $obd -Session $Session -Config $config
-            if ($null -ne $lines) {
-                $yHdrOut.Add($hdr)
-                foreach ($ln in $lines) { $yLinesOut.Add((Build-LineRow -obd $obd -line $ln -hdrSmu $smu)) }
-                $yFetched++
-            } else {
-                $yFailed.Add($obd)
-                Write-Log "Y-RECOVERY - FormGetData failed for $obd" "Yellow"
-            }
-        }
-
-        $Summary.YesterdayFetched = $yFetched
-        $Summary.YesterdayFailed  = $yFailed.Count
-
-        if ($yHdrOut.Count -gt 0) {
-            $yPayload = @{ headerRows = @($yHdrOut); lineRows = @($yLinesOut) }
-            Get-RandomDelay -Min 1 -Max 3
-            if ($DryRun) {
-                Write-Log "[DRY RUN] would import yesterday-recovery for $recoveryDate - skipped" "Cyan"
-                $Summary.YesterdayUpload = "DRY RUN (not posted)"
-            } else {
-                $yUp = Send-JsonPayloadToOrbitOMS -Payload $yPayload
-                if ($yUp.Success) {
-                    $Summary.YesterdayUpload = "imported=$($yUp.Imported) skipped=$($yUp.Skipped)"
-                    if ($yFailed.Count -eq 0) {
-                        Write-YesterdayState -Status "done" -Date $recoveryDate -Attempts ($yState.Attempts + 1)
-                        Write-Log "Y-RECOVERY - DONE for $recoveryDate" "Green"
-                    } else {
-                        Write-YesterdayState -Status "partial" -Date $recoveryDate -Attempts ($yState.Attempts + 1)
-                        Write-Log "Y-RECOVERY - Partial ($($yFailed.Count) FormGetData failed, not re-queued)" "Yellow"
-                    }
-                } else {
-                    $Summary.YesterdayUpload = "FAILED"
-                    Add-PendingJsonUpload -Payload $yPayload -Date $recoveryDate
-                    Write-Log "Y-RECOVERY - Upload failed, parked in pending-upload-json.txt" "Yellow"
-                    Write-YesterdayState -Status "pending" -Date $recoveryDate -Attempts ($yState.Attempts + 1)
-                }
-            }
-        } else {
-            $Summary.YesterdayUpload = "n/a (0 new)"
-            Write-YesterdayState -Status "done" -Date $recoveryDate -Attempts ($yState.Attempts + 1)
-            Write-Log "Y-RECOVERY - No new OBDs for $recoveryDate, marking done" "Green"
-        }
-
+    if ($recStart -gt $recEnd) {
+        Write-Log "PHASE 3 - Recovery range empty ($recStart > $recEnd), marking done" "Cyan"
+        Write-YesterdayState -Status "done" -Date $yState.Date -Attempts ($yState.Attempts + 1)
     } else {
-        Write-Log "Y-RECOVERY - Page 1 fetch failed for $recoveryDate. Will retry next cycle." "Yellow"
-    }
+        Write-Log "PHASE 3 - Recovery $recStart..$recEnd (attempt $($yState.Attempts + 1))" "Cyan"
+        # Pre-increment attempts so a mid-run crash leaves the state incremented
+        Write-YesterdayState -Status "pending" -Date $yState.Date -Attempts ($yState.Attempts + 1)
+        $Summary.YesterdayRan = $true
 
-    Get-RandomDelay -Min 3 -Max 7
+        Invoke-SpecPrime -Session $Session -Reason "yesterday-recovery" | Out-Null
+
+        $allRangeSuccess = $true
+        $curDate = [datetime]::ParseExact($recStart, "yyyy-MM-dd", $null)
+        $endDate = [datetime]::ParseExact($recEnd,   "yyyy-MM-dd", $null)
+
+        while ($curDate -le $endDate) {
+            $dateStr = $curDate.ToString("yyyy-MM-dd")
+            Get-RandomDelay -Min 2 -Max 5
+            $dayOk = Invoke-RecoveryDayPass -Date $dateStr
+            if (-not $dayOk) { $allRangeSuccess = $false }
+            $curDate = $curDate.AddDays(1)
+        }
+
+        if ($allRangeSuccess) {
+            if (-not $DryRun) {
+                Write-YesterdayState -Status "done" -Date $yState.Date -Attempts ($yState.Attempts + 1)
+                Write-Log "PHASE 3 - Recovery complete for $recStart..$recEnd" "Green"
+                $Summary.YesterdayUpload = "done"
+            } else {
+                Write-Log "PHASE 3 - [DRY RUN] $recStart..$recEnd complete, state not consumed" "Cyan"
+                $Summary.YesterdayUpload = "DRY RUN (not posted)"
+            }
+        } else {
+            Write-YesterdayState -Status "pending" -Date $yState.Date -Attempts ($yState.Attempts + 1)
+            Write-Log "PHASE 3 - Recovery incomplete, will retry next cycle" "Yellow"
+            $Summary.YesterdayUpload = "partial/pending"
+        }
+
+        Get-RandomDelay -Min 3 -Max 7
+    }
 }
 
 }   # end -not SkipYesterday

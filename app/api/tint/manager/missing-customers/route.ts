@@ -23,7 +23,7 @@ export async function GET(): Promise<NextResponse> {
         {
           customerMissing: true,
           smu: { in: ["Retail Offtake", "Decorative Projects"] },
-          workflowStage: { notIn: ["dispatched", "cancelled"] },
+          workflowStage: { notIn: ["dispatched", "cancelled", "closed"] },
           isRemoved: false,
         },
         hideExclusion,

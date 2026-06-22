@@ -46,7 +46,7 @@ export async function POST(): Promise<NextResponse> {
   // 1. Load all active orders
   const orders = await prisma.orders.findMany({
     where: {
-      workflowStage: { notIn: ["dispatched", "cancelled"] },
+      workflowStage: { notIn: ["dispatched", "cancelled", "closed"] },
     },
     select: { id: true, obdNumber: true, soNumber: true, slotId: true, orderDateTime: true },
   });

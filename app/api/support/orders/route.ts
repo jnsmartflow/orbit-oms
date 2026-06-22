@@ -81,11 +81,11 @@ export async function GET(req: Request): Promise<NextResponse> {
     }
     // History: no slotId filter — reconstruction happens post-query
     where.workflowStage = {
-      notIn: ["dispatched", "cancelled", "order_created", "pending_tint_assignment"],
+      notIn: ["dispatched", "cancelled", "closed", "order_created", "pending_tint_assignment"],
     };
   } else if (section === "hold") {
     where.dispatchStatus = "hold";
-    where.workflowStage = { notIn: ["dispatched", "cancelled"] };
+    where.workflowStage = { notIn: ["dispatched", "cancelled", "closed"] };
   }
 
   // Status sub-filter (skip for hold section — don't overwrite dispatchStatus)

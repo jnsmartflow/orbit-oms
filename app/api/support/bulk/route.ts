@@ -70,7 +70,7 @@ export async function POST(req: Request): Promise<NextResponse> {
       await prisma.orders.update({
         where: { id: orderId },
         data: {
-          workflowStage: "dispatch_confirmation",
+          workflowStage: "closed",
           dispatchStatus: "dispatch",
         },
       });
@@ -79,7 +79,7 @@ export async function POST(req: Request): Promise<NextResponse> {
         data: {
           orderId,
           fromStage: order.workflowStage,
-          toStage: "dispatch_confirmation",
+          toStage: "closed",
           changedById: userId,
           note: defaultNote,
         },
