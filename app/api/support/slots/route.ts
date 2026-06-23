@@ -6,6 +6,7 @@ import { runDailyCleanupIfNeeded } from "@/lib/day-boundary";
 import { runSlotCascadeIfNeeded } from "@/lib/slot-cascade";
 import { getSlotNamesAtEndOfDay } from "@/lib/slot-history";
 import { getHideExclusion } from "@/lib/hide/visibility";
+import { getISTDayRange } from "@/lib/dates";
 
 export const dynamic = "force-dynamic";
 
@@ -116,6 +117,7 @@ export async function GET(req: Request): Promise<NextResponse> {
     });
   } else {
     // Today: use current slotId with direct DB counts
+    const { start: todayStart, end: todayEnd } = getISTDayRange(dateStr);
     slotResults = [];
     for (const slot of slots) {
       const pendingCount = await prisma.orders.count({
@@ -132,6 +134,7 @@ export async function GET(req: Request): Promise<NextResponse> {
           slotId: slot.id,
           dispatchStatus: "dispatch",
           isRemoved: false,
+          obdEmailDate: { gte: todayStart, lt: todayEnd },
         },
       });
 
