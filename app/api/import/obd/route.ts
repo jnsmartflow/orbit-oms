@@ -237,7 +237,7 @@ async function applyMailOrderEnrichment(soNumbers: (string | null)[]): Promise<v
     const updateData: Record<string, unknown> = { mailMatched: true };
 
     if (mailOrder.dispatchStatus) {
-      updateData.dispatchStatus = mailOrder.dispatchStatus;
+      updateData.dispatchStatus = mailOrder.dispatchStatus.toLowerCase();
     }
 
     if (mailOrder.dispatchPriority) {
@@ -287,6 +287,53 @@ async function applyMailOrderEnrichment(soNumbers: (string | null)[]): Promise<v
       where: { soNumber: soNum },
       data: updateData,
     });
+
+    // Auto-done: only when enrichment sets dispatchStatus = "dispatch".
+    // Hold stays in the queue. Guard: workflowStage = "pending_support" only —
+    // excludes tinting stages, order_created, already-closed, cancelled, removed.
+    if (updateData.dispatchStatus === "dispatch") {
+      const ordersToClose = await prisma.orders.findMany({
+        where: {
+          soNumber: soNum,
+          workflowStage: "pending_support",
+          isRemoved: false,
+        },
+        include: { splits: { where: { status: { not: "cancelled" } } } },
+      });
+
+      for (const ord of ordersToClose) {
+        for (const split of ord.splits) {
+          await prisma.order_splits.update({
+            where: { id: split.id },
+            data: { dispatchStatus: "dispatch" },
+          });
+          await prisma.split_status_logs.create({
+            data: {
+              splitId: split.id,
+              fromStage: split.status,
+              toStage: split.status,
+              changedById: 1, // System action
+              note: "Auto-dispatched by enrichment",
+            },
+          });
+        }
+
+        await prisma.orders.update({
+          where: { id: ord.id },
+          data: { workflowStage: "closed", dispatchStatus: "dispatch" },
+        });
+
+        await prisma.order_status_logs.create({
+          data: {
+            orderId: ord.id,
+            fromStage: "pending_support",
+            toStage: "closed",
+            changedById: 1, // System action
+            note: "Auto-dispatched by enrichment",
+          },
+        });
+      }
+    }
 
     console.log(`[mail-order-enrichment] Applied to soNumber=${soNum}`);
   }
