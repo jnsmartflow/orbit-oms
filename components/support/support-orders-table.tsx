@@ -6,8 +6,10 @@ import {
   ChevronDown,
   Search,
   Download,
+  RotateCcw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 import { Checkbox } from "@/components/ui/checkbox";
 import { CustomerMissingSheet } from "@/components/shared/customer-missing-sheet";
 import { CancelOrderDialog } from "@/components/support/cancel-order-dialog";
@@ -294,6 +296,26 @@ export function SupportOrdersTable({
     }
   }, []);
 
+  const handleUndoDispatch = useCallback(async (orderId: number) => {
+    try {
+      await withRowLoading(orderId, async () => {
+        const res = await fetch(`/api/support/orders/${orderId}/undo-dispatch`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: "{}",
+        });
+        if (!res.ok) {
+          const e = (await res.json().catch(() => ({}))) as { error?: string };
+          throw new Error(e.error ?? "Undo failed");
+        }
+        toast.success("Order returned to pending");
+        onOrdersChanged();
+      });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Undo failed");
+    }
+  }, [withRowLoading, onOrdersChanged]);
+
   async function handleSubmitSelected() {
     setBulkLoading(true);
     try {
@@ -507,6 +529,7 @@ export function SupportOrdersTable({
                     openPopover={openPopover}
                     isHistoryView={isHistoryView}
                     isDoneRow={true}
+                    onUndoDispatch={handleUndoDispatch}
                     onToggleOne={toggleOne}
                     onSetEdit={setEdit}
                     onDsChange={handleDsChange}
@@ -685,7 +708,7 @@ function GroupRows({
 
 function OrderRow({
   order, selected, detailOrder, localEdits, changedIds, rowLoading, slots,
-  openPopover, isHistoryView, isDoneRow,
+  openPopover, isHistoryView, isDoneRow, onUndoDispatch,
   onToggleOne, onSetEdit, onDsChange, onSetDetail, onSetPopover, onMissing, onShipOverride,
 }: {
   order: SupportOrder;
@@ -698,6 +721,7 @@ function OrderRow({
   openPopover: PopoverState;
   isHistoryView: boolean;
   isDoneRow?: boolean;
+  onUndoDispatch?: (orderId: number) => Promise<void>;
   onToggleOne: (id: number) => void;
   onSetEdit: (id: number, field: "ds" | "pri" | "slot", value: string) => void;
   onDsChange: (order: SupportOrder, value: string) => void;
@@ -987,6 +1011,21 @@ function OrderRow({
             <span className="text-[10px] text-gray-400">{order.slot?.name ?? "—"}</span>
             {hasCascade && (
               <span className="text-[10px] text-gray-300 ml-0.5">↻ {abbreviateSlotName(order.originalSlot!.name)}</span>
+            )}
+            {isDoneRow && onUndoDispatch && (
+              <button
+                type="button"
+                title="Undo dispatch — return to pending"
+                disabled={isRowBusy}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (!window.confirm("Return this order to the pending queue? It will be removed from Done.")) return;
+                  void onUndoDispatch(order.id);
+                }}
+                className="ml-1 p-0.5 text-gray-300 hover:text-gray-500 disabled:opacity-40 transition-colors rounded"
+              >
+                <RotateCcw size={11} />
+              </button>
             )}
           </div>
         ) : (
