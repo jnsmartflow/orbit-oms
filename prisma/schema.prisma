@@ -641,6 +641,7 @@ model orders {
   remarks              String?
   shipToOverride       Boolean                   @default(false)
   slotToOverride       Boolean                   @default(false)
+  mailMatched          Boolean                   @default(false)
   customerMissing      Boolean                   @default(false)
   manualTintEntry      Boolean                   @default(false)
   isActive             Boolean                   @default(true)

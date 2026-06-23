@@ -370,7 +370,17 @@ export function SupportPageContent() {
     else if (statusFilter === "dispatch")   active = work.filter((o) => o.dispatchStatus === "dispatch");
     else if (statusFilter === "dispatched") active = work.filter((o) => o.workflowStage === "dispatched" || o.dispatchStatus === "dispatched");
     else active = work;
-    return [...active, ...done];
+
+    const byTime = (a: SupportOrder, b: SupportOrder): number => {
+      const tA = a.orderDateTime ?? a.obdEmailDate;
+      const tB = b.orderDateTime ?? b.obdEmailDate;
+      const msA = tA ? new Date(tA).getTime() : Infinity;
+      const msB = tB ? new Date(tB).getTime() : Infinity;
+      if (msA !== msB) return msA - msB;
+      return a.obdNumber < b.obdNumber ? -1 : a.obdNumber > b.obdNumber ? 1 : 0;
+    };
+
+    return [...active.sort(byTime), ...done.sort(byTime)];
   }, [orders, statusFilter]);
 
   // Apply search filter on top of status filter

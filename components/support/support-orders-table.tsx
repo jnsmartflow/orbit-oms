@@ -7,6 +7,7 @@ import {
   Search,
   Download,
   RotateCcw,
+  Mail,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -24,10 +25,12 @@ export interface SupportOrder {
   id: number;
   obdNumber: string;
   obdEmailDate: string | null;
+  orderDateTime: string | null;
   smu: string | null;
   workflowStage: string;
   dispatchStatus: string | null;
   customerMissing: boolean;
+  mailMatched?: boolean;
   shipToCustomerId: string;
   shipToCustomerName: string | null;
   customerId: number | null;
@@ -97,7 +100,7 @@ function getRowType(order: SupportOrder): RowType {
 }
 
 function getAgePill(order: SupportOrder) {
-  const ref = order.obdEmailDate ?? order.createdAt;
+  const ref = order.orderDateTime ?? order.obdEmailDate ?? order.createdAt;
   if (!ref) return { label: "—", cls: "bg-gray-100 text-[#8e91a7]", pulse: false };
   const diffMs = Date.now() - new Date(ref).getTime();
   const hours = diffMs / 3600000;
@@ -790,9 +793,14 @@ function OrderRow({
           </p>
           <CarriedOverBadge daysOverdue={order.daysOverdue ?? 0} />
         </div>
-        <p className={cn("text-[10px]", isResolved ? "text-gray-300" : "text-gray-400")}>
-          {formatDate(order.obdEmailDate)}
-        </p>
+        <div className={cn("flex items-center gap-0.5 text-[10px]", isResolved ? "text-gray-300" : "text-gray-400")}>
+          <span>{formatDate(order.orderDateTime ?? order.obdEmailDate)}</span>
+          {order.mailMatched && (
+            <span title="Time from mail order" className="shrink-0 flex items-center">
+              <Mail size={10} />
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Customer */}

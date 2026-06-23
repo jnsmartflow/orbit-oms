@@ -234,7 +234,7 @@ async function applyMailOrderEnrichment(soNumbers: (string | null)[]): Promise<v
     });
     if (!mailOrder) continue;
 
-    const updateData: Record<string, unknown> = {};
+    const updateData: Record<string, unknown> = { mailMatched: true };
 
     if (mailOrder.dispatchStatus) {
       updateData.dispatchStatus = mailOrder.dispatchStatus;
