@@ -25,10 +25,18 @@ export async function GET(): Promise<NextResponse> {
     where: { workflowStage: "pending_support", isRemoved: false },
   });
   const onHold = await prisma.orders.count({
-    where: { dispatchStatus: "hold", isRemoved: false },
+    where: {
+      dispatchStatus: "hold",
+      workflowStage: { notIn: ["closed", "dispatched", "cancelled"] },
+      isRemoved: false,
+    },
   });
   const dispatched = await prisma.orders.count({
-    where: { workflowStage: "dispatched", isRemoved: false },
+    where: {
+      workflowStage: "dispatched",
+      createdAt: { gte: todayStart, lte: todayEnd },
+      isRemoved: false,
+    },
   });
 
   // ── TINTING ─────────────────────────────────────────────────────────────────
@@ -87,7 +95,16 @@ export async function GET(): Promise<NextResponse> {
   // ── ALERTS ──────────────────────────────────────────────────────────────────
   const hideExclusion = await getHideExclusion();
   const overdueOrders = await prisma.orders.findMany({
-    where: { AND: [{ originalSlotId: { not: null }, isRemoved: false }, hideExclusion] },
+    where: {
+      AND: [
+        {
+          originalSlotId: { not: null },
+          isRemoved: false,
+          workflowStage: { notIn: ["dispatched", "closed", "cancelled"] },
+        },
+        hideExclusion,
+      ],
+    },
     select: { slotId: true, originalSlotId: true },
   });
   const overdueCount = overdueOrders.filter(
