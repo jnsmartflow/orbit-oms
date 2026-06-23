@@ -54,6 +54,7 @@ export interface SupportOrder {
   updatedAt: string;
   isCarriedOver?: boolean;
   daysOverdue?: number;
+  isDone?: boolean;
 }
 
 interface SupportOrdersTableProps {
@@ -200,6 +201,7 @@ export function SupportOrdersTable({
   const [detailOrder, setDetailOrder] = useState<SupportOrder | null>(null);
   const [localEdits, setLocalEdits] = useState<Map<number, { ds?: string; pri?: string; slot?: string }>>(new Map());
   const [openPopover, setOpenPopover] = useState<PopoverState>(null);
+  const [doneExpanded, setDoneExpanded] = useState(false);
 
   const cardRef = useRef<HTMLDivElement>(null);
 
@@ -225,7 +227,19 @@ export function SupportOrdersTable({
     setDetailOrder(null);
     setCollapsedGroups(new Set());
     setOpenPopover(null);
+    setDoneExpanded(false);
   }, [section]);
+
+  // "T" shortcut — toggle done section open/closed (mirrors Mail Orders global toggle)
+  useEffect(() => {
+    function handler(e: KeyboardEvent) {
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (e.key === "t" || e.key === "T") setDoneExpanded((v) => !v);
+    }
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, []);
 
   // ── Filtered orders ────────────────────────────────────────────────────────
   const filtered = useMemo(() => {
@@ -240,11 +254,13 @@ export function SupportOrdersTable({
     );
   }, [orders, search]);
 
-  const groups = useMemo(() => groupOrders(filtered, groupBy), [filtered, groupBy]);
+  const doneOrders = useMemo(() => filtered.filter((o) => o.isDone), [filtered]);
+  const pendingOrders = useMemo(() => filtered.filter((o) => !o.isDone), [filtered]);
+  const groups = useMemo(() => groupOrders(pendingOrders, groupBy), [pendingOrders, groupBy]);
 
   const selectableIds = useMemo(
-    () => filtered.filter((o) => { const rt = getRowType(o); return rt !== "tinting" && rt !== "physically_dispatched"; }).map((o) => o.id),
-    [filtered],
+    () => pendingOrders.filter((o) => { const rt = getRowType(o); return rt !== "tinting" && rt !== "physically_dispatched"; }).map((o) => o.id),
+    [pendingOrders],
   );
 
   const allSelected = selectableIds.length > 0 && selectableIds.every((id) => selected.has(id));
@@ -463,6 +479,45 @@ export function SupportOrdersTable({
                 />
               );
             })}
+
+            {/* ── Done section ─────────────────────────────────────── */}
+            {!isHistoryView && doneOrders.length > 0 && (
+              <>
+                <div
+                  className="flex items-center gap-2 py-2.5 px-1 cursor-pointer bg-gray-50 border-b border-gray-100 select-none"
+                  onClick={() => setDoneExpanded((v) => !v)}
+                >
+                  <span className={cn(
+                    "text-[10px] text-green-700 inline-block transition-transform duration-150",
+                    doneExpanded && "rotate-90",
+                  )}>▸</span>
+                  <span className="text-[11px] font-semibold text-green-700">{doneOrders.length} done</span>
+                  <span className="text-[10px] text-gray-400 ml-auto">press T to toggle</span>
+                </div>
+                {doneExpanded && doneOrders.map((order) => (
+                  <OrderRow
+                    key={order.id}
+                    order={order}
+                    selected={selected}
+                    detailOrder={detailOrder}
+                    localEdits={localEdits}
+                    changedIds={changedIds}
+                    rowLoading={rowLoading}
+                    slots={slots}
+                    openPopover={openPopover}
+                    isHistoryView={isHistoryView}
+                    isDoneRow={true}
+                    onToggleOne={toggleOne}
+                    onSetEdit={setEdit}
+                    onDsChange={handleDsChange}
+                    onSetDetail={setDetailOrder}
+                    onSetPopover={setOpenPopover}
+                    onMissing={setMissingSheet}
+                    onShipOverride={setShipOverride}
+                  />
+                ))}
+              </>
+            )}
           </div>
         )}
       </div>
@@ -630,7 +685,7 @@ function GroupRows({
 
 function OrderRow({
   order, selected, detailOrder, localEdits, changedIds, rowLoading, slots,
-  openPopover, isHistoryView,
+  openPopover, isHistoryView, isDoneRow,
   onToggleOne, onSetEdit, onDsChange, onSetDetail, onSetPopover, onMissing, onShipOverride,
 }: {
   order: SupportOrder;
@@ -642,6 +697,7 @@ function OrderRow({
   slots: SlotNavItem[];
   openPopover: PopoverState;
   isHistoryView: boolean;
+  isDoneRow?: boolean;
   onToggleOne: (id: number) => void;
   onSetEdit: (id: number, field: "ds" | "pri" | "slot", value: string) => void;
   onDsChange: (order: SupportOrder, value: string) => void;
@@ -655,6 +711,7 @@ function OrderRow({
   const isTinting = rt === "tinting";
   const isResolved = rt === "resolved";
   const isNonInteractive = isPhysicallyDispatched || isTinting;
+  const isReadOnly = isHistoryView || !!isDoneRow;
 
   const isChanged = changedIds.has(order.id);
   const isDetailActive = detailOrder?.id === order.id;
@@ -694,7 +751,7 @@ function OrderRow({
     >
       {/* Checkbox */}
       <div data-checkbox>
-        {isNonInteractive || isHistoryView ? (
+        {isNonInteractive || isReadOnly ? (
           <div className="w-4" />
         ) : (
           <Checkbox checked={selected.has(order.id)} onCheckedChange={() => onToggleOne(order.id)} />
@@ -781,6 +838,10 @@ function OrderRow({
           <span className="inline-flex items-center gap-1.5 text-[9px] font-bold uppercase px-2.5 py-1 rounded-[5px] border bg-purple-100 text-purple-700 border-purple-200">
             <span className="w-1.5 h-1.5 rounded-full bg-purple-500" />
             TINTING
+          </span>
+        ) : isDoneRow ? (
+          <span className="inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded-[5px] bg-green-100 text-green-700 uppercase tracking-wide">
+            DONE
           </span>
         ) : isHistoryView ? (
           <span
@@ -869,7 +930,7 @@ function OrderRow({
           <span className="text-[10px] text-gray-300">—</span>
         ) : isResolved && (currentPri === "3" || currentPri === "0" || Number(currentPri) >= 3) ? (
           <span className="text-[10px] text-gray-400">FIFO</span>
-        ) : isHistoryView ? (
+        ) : isReadOnly ? (
           <span className={cn(
             "inline-flex items-center gap-1 text-[11px] font-medium px-2.5 py-0.5 rounded-full border cursor-default",
             currentPri === "1" ? "bg-red-50 border-red-200 text-red-600" :
@@ -921,7 +982,7 @@ function OrderRow({
       <div>
         {isPhysicallyDispatched || isTinting ? (
           <span className="text-[10px] text-gray-300">—</span>
-        ) : isResolved || isHistoryView ? (
+        ) : isResolved || isReadOnly ? (
           <div className="flex items-center gap-1">
             <span className="text-[10px] text-gray-400">{order.slot?.name ?? "—"}</span>
             {hasCascade && (

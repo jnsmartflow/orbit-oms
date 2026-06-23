@@ -4,6 +4,7 @@ import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { getSlotNamesAtEndOfDay } from "@/lib/slot-history";
 import { getHideExclusion } from "@/lib/hide/visibility";
+import { getISTDayRange } from "@/lib/dates";
 import type { Prisma } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
@@ -76,13 +77,20 @@ export async function GET(req: Request): Promise<NextResponse> {
 
   if (section === "slot") {
     if (!isHistoryView) {
-      // Today: filter by current slotId
       where.slotId = parseInt(slotIdStr, 10);
+      // Today: pending/tinting orders (any date — carry-over preserved) PLUS
+      // today's closed orders fenced to obdEmailDate so history never bleeds in.
+      const { start: obdStart, end: obdEnd } = getISTDayRange(dateStr);
+      where.OR = [
+        { workflowStage: { notIn: ["dispatched", "cancelled", "closed", "order_created", "pending_tint_assignment"] } },
+        { workflowStage: "closed", obdEmailDate: { gte: obdStart, lt: obdEnd } },
+      ];
+    } else {
+      // History: no slotId filter, closed excluded — reconstruction happens post-query
+      where.workflowStage = {
+        notIn: ["dispatched", "cancelled", "closed", "order_created", "pending_tint_assignment"],
+      };
     }
-    // History: no slotId filter — reconstruction happens post-query
-    where.workflowStage = {
-      notIn: ["dispatched", "cancelled", "closed", "order_created", "pending_tint_assignment"],
-    };
   } else if (section === "hold") {
     where.dispatchStatus = "hold";
     where.workflowStage = { notIn: ["dispatched", "cancelled", "closed"] };
@@ -166,7 +174,7 @@ export async function GET(req: Request): Promise<NextResponse> {
       ? Math.floor((new Date(dateStr).getTime() - new Date(obdDate).getTime()) / 86400000)
       : 0;
     const importVolume = volumeMap.get(order.obdNumber) ?? null;
-    return { ...order, isCarriedOver, daysOverdue, importVolume };
+    return { ...order, isCarriedOver, daysOverdue, importVolume, isDone: order.workflowStage === "closed" };
   });
 
   return NextResponse.json({ orders: mappedOrders });

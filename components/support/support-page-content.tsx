@@ -360,11 +360,17 @@ export function SupportPageContent() {
   }), [orders]);
 
   const filteredOrders = useMemo(() => {
-    if (statusFilter === "all")        return orders;
-    if (statusFilter === "pending")    return orders.filter((o) => !o.dispatchStatus);
-    if (statusFilter === "dispatch")   return orders.filter((o) => o.dispatchStatus === "dispatch");
-    if (statusFilter === "dispatched") return orders.filter((o) => o.workflowStage === "dispatched" || o.dispatchStatus === "dispatched");
-    return orders;
+    // Done orders (closed stage) always pass through — they render in the done section
+    // regardless of which status filter is active. Only non-done orders are filtered.
+    const done = orders.filter((o) => o.isDone);
+    const work = orders.filter((o) => !o.isDone);
+    let active: SupportOrder[];
+    if (statusFilter === "all")             active = work;
+    else if (statusFilter === "pending")    active = work.filter((o) => !o.dispatchStatus);
+    else if (statusFilter === "dispatch")   active = work.filter((o) => o.dispatchStatus === "dispatch");
+    else if (statusFilter === "dispatched") active = work.filter((o) => o.workflowStage === "dispatched" || o.dispatchStatus === "dispatched");
+    else active = work;
+    return [...active, ...done];
   }, [orders, statusFilter]);
 
   // Apply search filter on top of status filter
