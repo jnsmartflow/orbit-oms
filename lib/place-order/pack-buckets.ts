@@ -47,9 +47,10 @@ export const STANDARD_COLUMNS = [
   "30KG",
   "40KG",
   // Tools — pieces sold by the box. Disjoint from every paint pack; each Tools
-  // tab surfaces exactly one of these. "1 pc · box of 25" / "box of 12".
+  // tab surfaces exactly one of these. "1 pc · box of 25" / "box of 12" / "pack of 500".
   "25PC",
   "12PC",
+  "500PC",
 ] as const;
 
 export type BucketColumn = (typeof STANDARD_COLUMNS)[number];
@@ -127,9 +128,10 @@ const PACK_TO_BUCKET: Record<string, BucketColumn> = {
   "40KG":   "40KG",
 
   // Tools — lookupKey == bucket so packNeedsHint stays false (no stray hint).
-  // Carton size rides packCode ("25"/"12"); rendered "1 pc" via bucketDisplayLabel.
+  // Carton size rides packCode ("25"/"12"/"500"); rendered "1 pc" via bucketDisplayLabel.
   "25PC":   "25PC",
   "12PC":   "12PC",
+  "500PC":  "500PC",
 };
 
 // Family-scoped bucket overrides (2026-06-04). Checked BEFORE the global
@@ -232,7 +234,7 @@ export function bucketColumnsForRows(
  * number and unit. "1L" → "1 L", "25KG" → "25 KG".
  */
 export function bucketDisplayLabel(b: BucketColumn): string {
-  if (b === "25PC" || b === "12PC") return "1 pc";   // tools — pieces; carton via container label
+  if (b === "25PC" || b === "12PC" || b === "500PC") return "1 pc";   // tools — pieces; carton via container label
   if (b === "400ML") return "400 ml";                // spray paint — lowercase can label
   return b.replace(/([A-Z]+)$/, " $1");
 }

@@ -160,8 +160,9 @@ export function packStep(packLabel: string, productKey?: string | null): number 
 // both still render "1 pc". Additive: every non-PC pack delegates to
 // packStep(formatPack(...)), so all litre/ML/KG steps are byte-identical.
 const PIECE_BOX_STEP: Record<string, number> = {
-  "25PC": 25,   // rollers — whole box of 25
-  "12PC": 12,   // brushes — whole box of 12
+  "25PC":  25,   // rollers — whole box of 25
+  "12PC":  12,   // brushes — whole box of 12
+  "500PC": 500,  // stickers — pack of 500
 };
 
 export function packStepForPack(packCode: string, unit?: string | null, productKey?: string | null): number {
@@ -194,6 +195,7 @@ const PACK_CONTAINER_MAP: Record<string, string> = {
   "30KG":  "bag",
   "25PC":  "box of 25",   // tools — roller carton (keyed by the bucket name)
   "12PC":  "box of 12",   // tools — brush carton
+  "500PC": "pack of 500", // stickers
   "400ML": "can",         // spray paint — aerosol can (keyed by the bucket name)
 };
 

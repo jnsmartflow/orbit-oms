@@ -51,7 +51,7 @@ const DRY_RUN      = process.env.DRY_RUN === "1";
 // Locked expectations from the May 6 preview run. If the JSON drifts from
 // these the script refuses to seed — better to fail loudly than to ship
 // surprise data into v2.
-const EXPECTED_TOTAL_NEW_ROWS    = 517;  // …; VT SPECIALTY net −4 2026-06-13; REMAINING-5 net −2 [TILE +1, LUSTRE −2 (drop BW-dup+YELLOW, +96), FLOOR PLUS −1 (drop BW)] 2026-06-14; SPRAY PAINT +11 2026-06-14; M900 GLOSS +12 2026-06-14; 5IN1 GLOSS +10 2026-06-15
+const EXPECTED_TOTAL_NEW_ROWS    = 518;  // …; VT SPECIALTY net −4 2026-06-13; REMAINING-5 net −2 [TILE +1, LUSTRE −2 (drop BW-dup+YELLOW, +96), FLOOR PLUS −1 (drop BW)] 2026-06-14; SPRAY PAINT +11 2026-06-14; M900 GLOSS +12 2026-06-14; 5IN1 GLOSS +10 2026-06-15; TOOLS STICKERS +1 2026-06-24
 const EXPECTED_WARNINGS          = 0;
 
 // ── PROMISE transform constants ────────────────────────────────────────
@@ -962,8 +962,8 @@ async function main(): Promise<void> {
     if (r.family === "FLOOR PLUS") { r.uiGroup = "Floor Plus";  uiAssigned++; continue; }
     if (r.family === "AQUATECH" && AQUA_UI[sub])   { r.uiGroup = AQUA_UI[sub];    uiAssigned++; continue; }
     if (r.family === "SADOLIN"  && SADOLIN_UI[sub]) { r.uiGroup = SADOLIN_UI[sub]; uiAssigned++; continue; }
-    // TOOLS — two tabs derived from the product name (Rollers / Brushes).
-    if (r.family === "TOOLS")   { r.uiGroup = /ROLLER/i.test(r.product ?? r.subProduct) ? "Rollers" : "Brushes"; uiAssigned++; continue; }
+    // TOOLS — three tabs derived from the product name (Stickers / Rollers / Brushes).
+    if (r.family === "TOOLS")   { r.uiGroup = /STICKER/i.test(r.product ?? r.subProduct) ? "Stickers" : /ROLLER/i.test(r.product ?? r.subProduct) ? "Rollers" : "Brushes"; uiAssigned++; continue; }
     // SPRAY PAINT — single flat uiGroup (no tabs; one product, colour variants).
     if (r.family === "SPRAY PAINT") { r.uiGroup = "Spray Paint"; uiAssigned++; continue; }
   }

@@ -2277,7 +2277,7 @@ export default function PoPage(): React.JSX.Element {
                         const second = p.region ?? getSecondLine(
                           p.family, p.subProduct,
                           getBaseAliasDisplay(p.product, p.baseColour),
-                        ) ?? p.family;
+                        ) ?? (p.subProduct === "STICKERS" ? null : p.family);
                         // Optional full-name label appended to the subtitle (e.g.
                         // MACHINE TINTER "Dramatone · Fast Red"). Null for products
                         // whose base already shows the colour name (Universal/GVA).
