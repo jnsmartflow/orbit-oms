@@ -287,6 +287,7 @@ model slot_master {
   slotConfigs        delivery_type_slot_config[]
   orders             orders[]                    @relation("OrderCurrentSlot")
   ordersOriginalSlot orders[]                    @relation("OrderOriginalSlot")
+  ordersArrival      orders[]                    @relation("OrderArrivalSlot")
   dispatchPlans      dispatch_plans[]
 }
 
@@ -623,6 +624,8 @@ model orders {
   slot                 slot_master?              @relation("OrderCurrentSlot", fields: [slotId], references: [id])
   originalSlotId       Int?
   originalSlot         slot_master?              @relation("OrderOriginalSlot", fields: [originalSlotId], references: [id])
+  arrivalSlotId        Int?
+  arrivalSlot          slot_master?              @relation("OrderArrivalSlot",  fields: [arrivalSlotId],  references: [id])
   priorityLevel        Int                       @default(3)
   dispatchStatus       String?
   invoiceNo            String?
