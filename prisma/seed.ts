@@ -176,17 +176,18 @@ async function main() {
 
   // ── slot_master ────────────────────────────────────────────────────────────
   const slotRows = [
-    { name: "Morning",          slotTime: "10:30", isNextDay: false, sortOrder: 1 },
-    { name: "Afternoon",        slotTime: "12:30", isNextDay: false, sortOrder: 2 },
-    { name: "Evening",          slotTime: "15:30", isNextDay: false, sortOrder: 3 },
-    { name: "Night",            slotTime: "18:00", isNextDay: false, sortOrder: 4 },
-    { name: "Next Day Morning", slotTime: "10:30", isNextDay: true,  sortOrder: 5 },
+    { name: "Morning",          slotTime: "10:30", isNextDay: false, sortOrder: 1, isActive: true  },
+    { name: "Afternoon",        slotTime: "12:30", isNextDay: false, sortOrder: 2, isActive: true  },
+    { name: "Evening",          slotTime: "17:00", isNextDay: false, sortOrder: 3, isActive: true  },
+    { name: "Late Evening",     slotTime: "20:00", isNextDay: false, sortOrder: 4, isActive: true  },
+    { name: "Night",            slotTime: "23:59", isNextDay: false, sortOrder: 5, isActive: true  },
+    { name: "Next Day Morning", slotTime: "10:30", isNextDay: true,  sortOrder: 6, isActive: false },
   ];
 
   for (const row of slotRows) {
     await prisma.slot_master.upsert({
       where: { name: row.name },
-      update: { slotTime: row.slotTime, isNextDay: row.isNextDay, sortOrder: row.sortOrder },
+      update: { slotTime: row.slotTime, isNextDay: row.isNextDay, sortOrder: row.sortOrder, isActive: row.isActive },
       create: row,
     });
   }
