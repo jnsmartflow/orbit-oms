@@ -122,7 +122,7 @@ export async function GET(req: Request): Promise<NextResponse> {
     for (const slot of slots) {
       const pendingCount = await prisma.orders.count({
         where: {
-          slotId: slot.id,
+          arrivalSlotId: slot.id,
           workflowStage: { in: ["pending_support", "tinting_done"] },
           dispatchStatus: null,
           isRemoved: false,
@@ -131,7 +131,7 @@ export async function GET(req: Request): Promise<NextResponse> {
 
       const dispatchedCount = await prisma.orders.count({
         where: {
-          slotId: slot.id,
+          arrivalSlotId: slot.id,
           dispatchStatus: "dispatch",
           isRemoved: false,
           obdEmailDate: { gte: todayStart, lt: todayEnd },
@@ -140,7 +140,7 @@ export async function GET(req: Request): Promise<NextResponse> {
 
       const tintingCount = await prisma.orders.count({
         where: {
-          slotId: slot.id,
+          arrivalSlotId: slot.id,
           workflowStage: { in: ["tinting_in_progress", "tint_assigned"] },
           isRemoved: false,
         },

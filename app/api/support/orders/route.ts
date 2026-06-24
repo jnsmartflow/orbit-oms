@@ -77,7 +77,7 @@ export async function GET(req: Request): Promise<NextResponse> {
 
   if (section === "slot") {
     if (!isHistoryView) {
-      where.slotId = parseInt(slotIdStr, 10);
+      where.arrivalSlotId = parseInt(slotIdStr, 10);
       // Today: pending/tinting orders (any date — carry-over preserved) PLUS
       // today's closed orders fenced to obdEmailDate so history never bleeds in.
       const { start: obdStart, end: obdEnd } = getISTDayRange(dateStr);
