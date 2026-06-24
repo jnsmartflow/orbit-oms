@@ -17,6 +17,7 @@ import type {
   ImportConfirmResponse,
 } from "@/lib/import-types";
 import { upsertObd, resolveSmuFromDivision } from "@/lib/import-upsert";
+import { resolveArrivalSlotId } from "@/lib/slots/slot-ruler";
 import type {
   ExistingLine,
   ExistingOrder,
@@ -279,6 +280,17 @@ async function applyMailOrderEnrichment(soNumbers: (string | null)[]): Promise<v
         updateData.slotId = slotId;
         updateData.originalSlotId = slotId;
       }
+
+      // arrivalSlotId: received-vs-punch same-IST-day rule.
+      // Same day → slot from receivedAt (order arrived and was punched today).
+      // Different day (carried over) → slot from punchedAt.
+      // punchedAt null → fall back to receivedAt.
+      const receivedIST = mailOrder.receivedAt.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+      const punchedIST  = mailOrder.punchedAt?.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }) ?? null;
+      const arrivalBase = (punchedIST === null || receivedIST === punchedIST)
+        ? mailOrder.receivedAt
+        : mailOrder.punchedAt!;
+      updateData.arrivalSlotId = resolveArrivalSlotId(arrivalBase);
     }
 
     if (Object.keys(updateData).length === 0) continue;
@@ -990,6 +1002,7 @@ async function handleConfirm(req: Request, session: Session): Promise<NextRespon
     const { dispatchSlot, slotId } = orderType === "tint"
       ? { dispatchSlot: null as string | null, slotId: null as number | null }
       : resolveSlot(summary.obdEmailTime);
+    const arrivalSlotId = orderType !== "tint" && emailDateTime ? resolveArrivalSlotId(emailDateTime) : null;
 
     const priorityLevel = (customer?.isKeyCustomer || customer?.isKeySite) ? 1 : 3;
 
@@ -1020,6 +1033,7 @@ async function handleConfirm(req: Request, session: Session): Promise<NextRespon
         dispatchSlot,
         slotId,
         originalSlotId:      slotId,
+        arrivalSlotId,
         priorityLevel,
         invoiceNo:           summary.invoiceNo,
         soNumber:            summary.soNumber,
@@ -2789,6 +2803,7 @@ async function processAutoImportRows(
     const { dispatchSlot, slotId } = orderType === "tint"
       ? { dispatchSlot: null as string | null, slotId: null as number | null }
       : resolveSlot(summary.obdEmailTime);
+    const arrivalSlotId = orderType !== "tint" && emailDateTime ? resolveArrivalSlotId(emailDateTime) : null;
 
     const priorityLevel = (customer?.isKeyCustomer || customer?.isKeySite) ? 1 : 3;
 
@@ -2818,6 +2833,7 @@ async function processAutoImportRows(
         dispatchSlot,
         slotId,
         originalSlotId:      slotId,
+        arrivalSlotId,
         priorityLevel,
         invoiceNo:           summary.invoiceNo,
         soNumber:            summary.soNumber,

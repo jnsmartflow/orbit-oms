@@ -22,6 +22,7 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../prisma";
 import { mergeEmailDateTime, resolveSlotFromTime } from "./helpers";
+import { resolveArrivalSlotId } from "../slots/slot-ruler";
 import type {
   ExistingOrder,
   ExistingSummary,
@@ -129,6 +130,9 @@ export function patchHeader(
     orderUpdate.slotId         = slot.slotId;
     orderUpdate.originalSlotId = slot.slotId;
     orderUpdate.dispatchSlot   = slot.dispatchSlot;
+    const patchEmailDate = (orderUpdate.obdEmailDate as Date | undefined) ?? existing.obdEmailDate;
+    const arrivalBase    = mergeEmailDateTime(patchEmailDate, slotTime);
+    if (arrivalBase) orderUpdate.arrivalSlotId = resolveArrivalSlotId(arrivalBase);
     entries.push({ field: "slotId", oldValue: null, newValue: slot.slotId, type: "header_patched" });
   }
 

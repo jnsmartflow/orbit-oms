@@ -18,6 +18,7 @@
 
 import { prisma } from "./prisma";
 import { fmt, mergeEmailDateTime, resolveSlotFromTime, resolveSmuFromDivision } from "./import-upsert/helpers";
+import { resolveArrivalSlotId } from "./slots/slot-ruler";
 import { loadExistingObd, resolveCustomerId } from "./import-upsert/state";
 import { applyHeaderPatch, patchHeader } from "./import-upsert/header";
 import { applyLinePatch, patchLines } from "./import-upsert/lines";
@@ -156,6 +157,7 @@ async function createPath(
   const workflowStage = orderType === "tint" ? "pending_tint_assignment" : "pending_support";
   const slot          = orderType === "tint" ? null : resolveSlotFromTime(input.obdEmailTime);
   const orderDate     = mergeEmailDateTime(input.obdEmailDate, input.obdEmailTime);
+  const arrivalSlotId = orderType !== "tint" && orderDate ? resolveArrivalSlotId(orderDate) : null;
 
   let createdOrderId: number | null = null;
   if (!dryRun) {
@@ -171,6 +173,7 @@ async function createPath(
           workflowStage,
           slotId:              slot?.slotId ?? null,
           originalSlotId:      slot?.slotId ?? null,
+          arrivalSlotId,
           dispatchSlot:        slot?.dispatchSlot ?? null,
           invoiceNo:           input.invoiceNo,
           soNumber:            input.soNumber,
