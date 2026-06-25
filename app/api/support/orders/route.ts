@@ -66,45 +66,46 @@ export async function GET(req: Request): Promise<NextResponse> {
     return NextResponse.json({ error: "Invalid or missing section param" }, { status: 400 });
   }
 
-  if (section === "slot" && !slotIdStr) {
-    return NextResponse.json({ error: "slotId required for section=slot" }, { status: 400 });
-  }
-
   // ── Build where clause ───────────────────────────────────────────────────
   // isRemoved: false excludes soft-removed orders from the support board.
   const where: Prisma.ordersWhereInput = { isRemoved: false };
 
   if (section === "slot") {
     if (!isHistoryView) {
-      where.arrivalSlotId = parseInt(slotIdStr, 10);
-      // Today: pending/tinting orders (any date — carry-over preserved) PLUS
-      // today's closed orders fenced to obdEmailDate so history never bleeds in.
+      // No slotId → ALL-slot view; slotId present → scope to that slot.
+      if (slotIdStr) where.arrivalSlotId = parseInt(slotIdStr, 10);
+      // Pending/tinting orders (any date — carry-over preserved) PLUS today's
+      // done orders (closed + dispatched) fenced so history never bleeds in.
       const { start: obdStart, end: obdEnd } = getISTDayRange(dateStr);
       where.OR = [
         { workflowStage: { notIn: ["dispatched", "cancelled", "closed", "order_created", "pending_tint_assignment"] } },
-        { workflowStage: "closed", obdEmailDate: { gte: obdStart, lt: obdEnd } },
+        { workflowStage: { in: ["closed", "dispatched"] }, obdEmailDate: { gte: obdStart, lt: obdEnd } },
       ];
     } else {
-      // History: IST date-fence on obdEmailDate; done orders (any slot) returned
-      // whole-day so the frontend can render a collapsed Done group; pending orders
-      // restricted to the selected slot with originalSlotId fallback for NULL arrivalSlotId.
+      // History: IST date-fence on obdEmailDate.
       const { start: obdStart, end: obdEnd } = getISTDayRange(dateStr);
       where.obdEmailDate = { gte: obdStart, lt: obdEnd };
-      const histSlotId = parseInt(slotIdStr, 10);
-      where.OR = [
-        // Done orders — both terminal stages, any slot, entire day
-        { workflowStage: { in: ["dispatched", "closed"] } },
-        // Pending orders — this slot; NULL arrivalSlotId falls back to originalSlotId
-        {
-          workflowStage: {
-            notIn: ["dispatched", "closed", "cancelled", "order_created", "pending_tint_assignment"],
+      if (slotIdStr) {
+        // Slot-selected: done orders whole-day (for Done group) + pending for this slot.
+        const histSlotId = parseInt(slotIdStr, 10);
+        where.OR = [
+          // Done orders — both terminal stages, any slot, entire day
+          { workflowStage: { in: ["dispatched", "closed"] } },
+          // Pending orders — this slot; NULL arrivalSlotId falls back to originalSlotId
+          {
+            workflowStage: {
+              notIn: ["dispatched", "closed", "cancelled", "order_created", "pending_tint_assignment"],
+            },
+            OR: [
+              { arrivalSlotId: histSlotId },
+              { arrivalSlotId: null, originalSlotId: histSlotId },
+            ],
           },
-          OR: [
-            { arrivalSlotId: histSlotId },
-            { arrivalSlotId: null, originalSlotId: histSlotId },
-          ],
-        },
-      ];
+        ];
+      } else {
+        // ALL-slot: every non-cancelled order for the day (done + pending, all slots).
+        where.workflowStage = { notIn: ["cancelled", "order_created", "pending_tint_assignment"] };
+      }
     }
   } else if (section === "hold") {
     where.dispatchStatus = "hold";
@@ -175,7 +176,7 @@ export async function GET(req: Request): Promise<NextResponse> {
       ? Math.floor((new Date(dateStr).getTime() - new Date(obdDate).getTime()) / 86400000)
       : 0;
     const importVolume = volumeMap.get(order.obdNumber) ?? null;
-    return { ...order, isCarriedOver, daysOverdue, importVolume, isDone: order.workflowStage === "closed" || (isHistoryView && order.workflowStage === "dispatched") };
+    return { ...order, isCarriedOver, daysOverdue, importVolume, isDone: order.workflowStage === "closed" || order.workflowStage === "dispatched" };
   });
 
   return NextResponse.json({ orders: mappedOrders });

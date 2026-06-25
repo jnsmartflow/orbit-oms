@@ -183,9 +183,9 @@ export function SupportPageContent() {
         const qs = new URLSearchParams({ date });
         if (section === "hold") {
           qs.set("section", "hold");
-        } else if (section.startsWith("slot-") && slotId) {
+        } else if (section.startsWith("slot-")) {
           qs.set("section", "slot");
-          qs.set("slotId", String(slotId));
+          if (slotId) qs.set("slotId", String(slotId));
         } else {
           setOrders([]);
           setOrdersLoading(false);
@@ -445,7 +445,11 @@ export function SupportPageContent() {
         activeSegment={activeSlotId}
         onSegmentChange={(id) => {
           if (id === null) {
-            if (slots.length > 0) handleSelectSection(`slot-${slots[0].id}`, slots[0].id);
+            // Active segment clicked again → ALL view (deselect)
+            setActiveSection("slot-all");
+            setActiveSlotId(null);
+            setStatusFilter("all");
+            void fetchOrders("slot-all", undefined);
           } else {
             handleSelectSection(`slot-${id}`, id as number);
           }
@@ -495,6 +499,7 @@ export function SupportPageContent() {
               date={date}
               onOrdersChanged={refresh}
               isHistoryView={isHistoryView}
+              activeSlotId={activeSlotId}
             />
           </div>
         </>

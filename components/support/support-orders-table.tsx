@@ -60,6 +60,7 @@ export interface SupportOrder {
   isCarriedOver?: boolean;
   daysOverdue?: number;
   isDone?: boolean;
+  arrivalSlotId?: number | null;
 }
 
 interface SupportOrdersTableProps {
@@ -77,6 +78,7 @@ interface SupportOrdersTableProps {
   date: string;
   onOrdersChanged: () => void;
   isHistoryView: boolean;
+  activeSlotId: number | null;
 }
 
 // ── CSS Grid constant ─────────────────────────────────────────────────────────
@@ -187,6 +189,7 @@ export function SupportOrdersTable({
   date,
   onOrdersChanged,
   isHistoryView,
+  activeSlotId,
 }: SupportOrdersTableProps) {
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -259,7 +262,11 @@ export function SupportOrdersTable({
     );
   }, [orders, search]);
 
-  const doneOrders = useMemo(() => filtered.filter((o) => o.isDone), [filtered]);
+  const doneOrders = useMemo(() => {
+    const done = filtered.filter((o) => o.isDone);
+    if (activeSlotId === null) return done;
+    return done.filter((o) => (o.arrivalSlotId ?? o.originalSlotId) === activeSlotId);
+  }, [filtered, activeSlotId]);
   const pendingOrders = useMemo(() => filtered.filter((o) => !o.isDone), [filtered]);
   const groups = useMemo(() => groupOrders(pendingOrders, groupBy), [pendingOrders, groupBy]);
 
