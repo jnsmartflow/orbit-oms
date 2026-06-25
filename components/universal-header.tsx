@@ -18,7 +18,7 @@ import { ImportModal } from "@/components/import/import-modal";
 
 export interface HeaderStat {
   label: string;
-  value: number;
+  value: number | string;
 }
 
 export interface HeaderSegment {

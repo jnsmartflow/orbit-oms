@@ -118,6 +118,20 @@ export async function GET(req: Request): Promise<NextResponse> {
   } else {
     // Today: use current slotId with direct DB counts
     const { start: todayStart, end: todayEnd } = getISTDayRange(dateStr);
+
+    doneCount = await prisma.orders.count({
+      where: {
+        AND: [
+          {
+            workflowStage: { in: ["dispatched", "closed"] },
+            obdEmailDate: { gte: todayStart, lt: todayEnd },
+            isRemoved: false,
+          },
+          hideExclusion,
+        ],
+      },
+    });
+
     slotResults = [];
     for (const slot of slots) {
       const pendingCount = await prisma.orders.count({

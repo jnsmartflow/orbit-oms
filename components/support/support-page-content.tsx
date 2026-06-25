@@ -353,7 +353,8 @@ export function SupportPageContent() {
   const headerPending    = slots.reduce((s, sl) => s + sl.pendingCount, 0);
   const headerDispatched = slots.reduce((s, sl) => s + sl.dispatchedCount, 0);
   const headerTinting    = slots.reduce((s, sl) => s + sl.tintingCount, 0);
-  const headerTotal      = headerPending + headerDispatched + headerTinting;
+  const todayTotal    = headerPending + headerTinting + headerDispatched + doneCount;
+  const todayDonePct  = todayTotal > 0 ? Math.round((doneCount / todayTotal) * 100) : 0;
 
   const statusCounts = useMemo(() => ({
     all:        orders.length,
@@ -436,10 +437,8 @@ export function SupportPageContent() {
           { label: "tinting", value: headerTinting },
           { label: "OBDs", value: headerPending + doneCount + headerTinting },
         ] : [
-          { label: "pending", value: headerPending },
-          { label: "dispatched", value: headerDispatched },
-          { label: "tinting", value: headerTinting },
-          { label: "OBDs", value: headerTotal },
+          { label: "done", value: `${todayDonePct}%` },
+          { label: "OBDs", value: todayTotal },
         ]}
         segments={headerSegments}
         activeSegment={activeSlotId}
