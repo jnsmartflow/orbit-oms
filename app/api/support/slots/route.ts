@@ -148,6 +148,7 @@ export async function GET(req: Request): Promise<NextResponse> {
         where: {
           arrivalSlotId: slot.id,
           dispatchStatus: "dispatch",
+          workflowStage: { notIn: ["dispatched", "closed"] },
           isRemoved: false,
           obdEmailDate: { gte: todayStart, lt: todayEnd },
         },
