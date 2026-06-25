@@ -879,8 +879,21 @@ function OrderRow({
             TINTING
           </span>
         ) : isDoneRow ? (
-          <span className="inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded-[5px] bg-green-100 text-green-700 uppercase tracking-wide">
-            DONE
+          <span
+            className={cn(
+              "inline-flex items-center gap-1 text-[11px] font-medium px-2.5 py-0.5 rounded-full border cursor-default",
+              currentDs === "dispatch" ? "bg-emerald-50 border-emerald-200 text-emerald-600" :
+              currentDs === "hold"     ? "bg-amber-50 border-amber-200 text-amber-600" :
+                                         "bg-gray-100 border-gray-200 text-gray-400",
+            )}
+          >
+            <span className={cn(
+              "w-[5px] h-[5px] rounded-full inline-block",
+              currentDs === "dispatch" ? "bg-emerald-500" :
+              currentDs === "hold"     ? "bg-amber-500" :
+                                         "bg-gray-300",
+            )} />
+            {currentDs === "dispatch" ? "Dispatch" : currentDs === "hold" ? "Hold" : "Done"}
           </span>
         ) : isHistoryView ? (
           <span
