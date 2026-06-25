@@ -29,6 +29,7 @@ export interface SlotNavItem {
 interface SlotsResponse {
   slots: SlotNavItem[];
   holdCount: number;
+  doneCount: number;
   date: string;
 }
 
@@ -97,6 +98,7 @@ export function SupportPageContent() {
   const [date, setDate] = useState(() => new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }));
   const [slots, setSlots] = useState<SlotNavItem[]>([]);
   const [holdCount, setHoldCount] = useState(0);
+  const [doneCount, setDoneCount] = useState(0);
   const [orders, setOrders] = useState<SupportOrder[]>([]);
   const [activeSection, setActiveSection] = useState("");
   const [activeSlotId, setActiveSlotId] = useState<number | null>(null);
@@ -164,6 +166,7 @@ export function SupportPageContent() {
       const data = (await res.json()) as SlotsResponse;
       setSlots(data.slots);
       setHoldCount(data.holdCount);
+      setDoneCount(data.doneCount);
       return data;
     } catch {
       toast.error("Failed to load slots");
@@ -427,7 +430,12 @@ export function SupportPageContent() {
       <UniversalHeader
         title="Support Queue"
         showImport={canImportOBDs}
-        stats={[
+        stats={isHistoryView ? [
+          { label: "pending", value: headerPending },
+          { label: "done", value: doneCount },
+          { label: "tinting", value: headerTinting },
+          { label: "OBDs", value: headerPending + doneCount + headerTinting },
+        ] : [
           { label: "pending", value: headerPending },
           { label: "dispatched", value: headerDispatched },
           { label: "tinting", value: headerTinting },

@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
-import { getSlotNamesAtEndOfDay } from "@/lib/slot-history";
 import { getHideExclusion } from "@/lib/hide/visibility";
 import { getISTDayRange } from "@/lib/dates";
 import type { Prisma } from "@prisma/client";
@@ -86,10 +85,26 @@ export async function GET(req: Request): Promise<NextResponse> {
         { workflowStage: "closed", obdEmailDate: { gte: obdStart, lt: obdEnd } },
       ];
     } else {
-      // History: no slotId filter, closed excluded — reconstruction happens post-query
-      where.workflowStage = {
-        notIn: ["dispatched", "cancelled", "closed", "order_created", "pending_tint_assignment"],
-      };
+      // History: IST date-fence on obdEmailDate; done orders (any slot) returned
+      // whole-day so the frontend can render a collapsed Done group; pending orders
+      // restricted to the selected slot with originalSlotId fallback for NULL arrivalSlotId.
+      const { start: obdStart, end: obdEnd } = getISTDayRange(dateStr);
+      where.obdEmailDate = { gte: obdStart, lt: obdEnd };
+      const histSlotId = parseInt(slotIdStr, 10);
+      where.OR = [
+        // Done orders — both terminal stages, any slot, entire day
+        { workflowStage: { in: ["dispatched", "closed"] } },
+        // Pending orders — this slot; NULL arrivalSlotId falls back to originalSlotId
+        {
+          workflowStage: {
+            notIn: ["dispatched", "closed", "cancelled", "order_created", "pending_tint_assignment"],
+          },
+          OR: [
+            { arrivalSlotId: histSlotId },
+            { arrivalSlotId: null, originalSlotId: histSlotId },
+          ],
+        },
+      ];
     }
   } else if (section === "hold") {
     where.dispatchStatus = "hold";
@@ -133,25 +148,11 @@ export async function GET(req: Request): Promise<NextResponse> {
   // ── Query ────────────────────────────────────────────────────────────────
   // AND-merge the hide-feature exclusion with the fully-assembled where above.
   const hideExclusion = await getHideExclusion();
-  let orders = await prisma.orders.findMany({
+  const orders = await prisma.orders.findMany({
     where: { AND: [where, hideExclusion] },
     include: ORDER_INCLUDE,
     orderBy: ORDER_BY,
   });
-
-  // ── History reconstruction: filter by reconstructed slot ─────────────────
-  if (isHistoryView && section === "slot") {
-    const requestedSlot = await prisma.slot_master.findUnique({
-      where: { id: parseInt(slotIdStr, 10) },
-      select: { name: true },
-    });
-    const requestedSlotName = requestedSlot?.name ?? "";
-
-    const orderIds = orders.map((o) => o.id);
-    const slotMap = await getSlotNamesAtEndOfDay(orderIds, dateStr);
-
-    orders = orders.filter((o) => slotMap.get(o.id) === requestedSlotName);
-  }
 
   // ── Volume lookup ───────────────────────────────────────────────────────
   const obdNumbers = orders.map((o) => o.obdNumber);
@@ -174,7 +175,7 @@ export async function GET(req: Request): Promise<NextResponse> {
       ? Math.floor((new Date(dateStr).getTime() - new Date(obdDate).getTime()) / 86400000)
       : 0;
     const importVolume = volumeMap.get(order.obdNumber) ?? null;
-    return { ...order, isCarriedOver, daysOverdue, importVolume, isDone: order.workflowStage === "closed" };
+    return { ...order, isCarriedOver, daysOverdue, importVolume, isDone: order.workflowStage === "closed" || (isHistoryView && order.workflowStage === "dispatched") };
   });
 
   return NextResponse.json({ orders: mappedOrders });

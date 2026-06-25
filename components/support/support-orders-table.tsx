@@ -506,7 +506,7 @@ export function SupportOrdersTable({
             })}
 
             {/* ── Done section ─────────────────────────────────────── */}
-            {!isHistoryView && doneOrders.length > 0 && (
+            {doneOrders.length > 0 && (
               <>
                 <div
                   className="flex items-center gap-2 py-2.5 px-1 cursor-pointer bg-gray-50 border-b border-gray-100 select-none"
@@ -769,7 +769,7 @@ function OrderRow({
       style={GRID}
       className={cn(
         "px-1 border-b border-gray-50/80 transition-colors cursor-pointer",
-        isPhysicallyDispatched ? "opacity-[0.35] py-1.5" : isResolved ? "py-1.5" : "py-2",
+        isPhysicallyDispatched && !isDoneRow ? "opacity-[0.35] py-1.5" : isResolved ? "py-1.5" : "py-2",
         isChanged && !isNonInteractive && "bg-teal-50/20",
         isDetailActive && "bg-teal-50 border-l-[3px] border-l-teal-600",
         !isNonInteractive && !isChanged && !isDetailActive && "hover:bg-gray-50/50",
@@ -1020,7 +1020,7 @@ function OrderRow({
             {hasCascade && (
               <span className="text-[10px] text-gray-300 ml-0.5">↻ {abbreviateSlotName(order.originalSlot!.name)}</span>
             )}
-            {isDoneRow && onUndoDispatch && (
+            {isDoneRow && onUndoDispatch && !isHistoryView && (
               <button
                 type="button"
                 title="Undo dispatch — return to pending"
