@@ -285,7 +285,7 @@ export function UniversalHeader({
               {stats.map((s, i) => (
                 <span key={s.label}>
                   {i > 0 && " \u00b7 "}
-                  <span className={s.tone === "success" ? "text-green-600 font-semibold" : "text-gray-900 font-semibold"}>{s.value}</span>{" "}
+                  <span className={s.tone === "success" ? "bg-green-50 text-green-600 font-semibold px-1.5 py-0.5 rounded" : "text-gray-900 font-semibold"}>{s.value}</span>{" "}
                   {s.label}
                 </span>
               ))}
