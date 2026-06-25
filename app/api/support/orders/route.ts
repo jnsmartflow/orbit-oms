@@ -72,13 +72,12 @@ export async function GET(req: Request): Promise<NextResponse> {
 
   if (section === "slot") {
     if (!isHistoryView) {
-      // No slotId → ALL-slot view; slotId present → scope to that slot.
-      if (slotIdStr) where.arrivalSlotId = parseInt(slotIdStr, 10);
-      // Pending/tinting orders (any date — carry-over preserved) PLUS today's
-      // done orders (closed + dispatched) fenced so history never bleeds in.
+      // Today: all orders that ARRIVED today (IST-fenced on both arms).
+      // slotId present → also scope to that arrival slot; absent → all slots.
       const { start: obdStart, end: obdEnd } = getISTDayRange(dateStr);
+      if (slotIdStr) where.arrivalSlotId = parseInt(slotIdStr, 10);
       where.OR = [
-        { workflowStage: { notIn: ["dispatched", "cancelled", "closed", "order_created", "pending_tint_assignment"] } },
+        { workflowStage: { notIn: ["dispatched", "cancelled", "closed", "order_created", "pending_tint_assignment"] }, obdEmailDate: { gte: obdStart, lt: obdEnd } },
         { workflowStage: { in: ["closed", "dispatched"] }, obdEmailDate: { gte: obdStart, lt: obdEnd } },
       ];
     } else {
