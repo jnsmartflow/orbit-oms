@@ -19,6 +19,7 @@ import { ImportModal } from "@/components/import/import-modal";
 export interface HeaderStat {
   label: string;
   value: number | string;
+  tone?: "success";
 }
 
 export interface HeaderSegment {
@@ -284,7 +285,7 @@ export function UniversalHeader({
               {stats.map((s, i) => (
                 <span key={s.label}>
                   {i > 0 && " \u00b7 "}
-                  <span className="text-gray-900 font-semibold">{s.value}</span>{" "}
+                  <span className={s.tone === "success" ? "text-green-600 font-semibold" : "text-gray-900 font-semibold"}>{s.value}</span>{" "}
                   {s.label}
                 </span>
               ))}

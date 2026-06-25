@@ -437,7 +437,7 @@ export function SupportPageContent() {
           { label: "tinting", value: headerTinting },
           { label: "OBDs", value: headerPending + doneCount + headerTinting },
         ] : [
-          { label: "done", value: `${todayDonePct}%` },
+          { label: "done", value: `${todayDonePct}%`, tone: "success" as const },
           { label: "OBDs", value: todayTotal },
         ]}
         segments={headerSegments}
