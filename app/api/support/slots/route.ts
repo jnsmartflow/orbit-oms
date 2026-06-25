@@ -140,6 +140,7 @@ export async function GET(req: Request): Promise<NextResponse> {
           workflowStage: { in: ["pending_support", "tinting_done"] },
           dispatchStatus: null,
           isRemoved: false,
+          obdEmailDate: { gte: todayStart, lt: todayEnd },
         },
       });
 
@@ -157,6 +158,7 @@ export async function GET(req: Request): Promise<NextResponse> {
           arrivalSlotId: slot.id,
           workflowStage: { in: ["tinting_in_progress", "tint_assigned"] },
           isRemoved: false,
+          obdEmailDate: { gte: todayStart, lt: todayEnd },
         },
       });
 
