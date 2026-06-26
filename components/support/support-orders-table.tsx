@@ -1049,7 +1049,7 @@ function OrderRow({
             {hasCascade && (
               <span className="text-[10px] text-gray-300 ml-0.5">↻ {abbreviateSlotName(order.originalSlot!.name)}</span>
             )}
-            {isDoneRow && onUndoDispatch && !isHistoryView && (
+            {isDoneRow && onUndoDispatch && !isHistoryView && order.dispatchStatus !== "hold" && (
               <button
                 type="button"
                 title="Undo dispatch — return to pending"

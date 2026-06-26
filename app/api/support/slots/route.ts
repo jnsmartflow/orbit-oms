@@ -79,6 +79,7 @@ export async function GET(req: Request): Promise<NextResponse> {
             {
               obdEmailDate: { gte: histStart, lt: histEnd },
               workflowStage: { in: ["pending_support", "tinting_done"] },
+              dispatchStatus: { not: "hold" },
               OR: [
                 { arrivalSlotId: slot.id },
                 { arrivalSlotId: null, originalSlotId: slot.id },
@@ -127,13 +128,17 @@ export async function GET(req: Request): Promise<NextResponse> {
     // Today: use current slotId with direct DB counts
     const { start: todayStart, end: todayEnd } = getISTDayRange(dateStr);
 
+    // doneCount: closed/dispatched OR held (dispatchStatus="hold" = decision taken).
     doneCount = await prisma.orders.count({
       where: {
         AND: [
           {
-            workflowStage: { in: ["dispatched", "closed"] },
             obdEmailDate: { gte: todayStart, lt: todayEnd },
             isRemoved: false,
+            OR: [
+              { workflowStage: { in: ["dispatched", "closed"] } },
+              { dispatchStatus: "hold" },
+            ],
           },
           hideExclusion,
         ],

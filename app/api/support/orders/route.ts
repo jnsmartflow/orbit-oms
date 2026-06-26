@@ -186,7 +186,7 @@ export async function GET(req: Request): Promise<NextResponse> {
       ? Math.floor((new Date(dateStr).getTime() - new Date(obdDate).getTime()) / 86400000)
       : 0;
     const importVolume = volumeMap.get(order.obdNumber) ?? null;
-    const isDone = order.workflowStage === "closed" || order.workflowStage === "dispatched";
+    const isDone = order.workflowStage === "closed" || order.workflowStage === "dispatched" || order.dispatchStatus === "hold";
 
     // footprintType: which history footprint this row was fetched via (history only).
     // Priority: dispatch > hold > arrival.
