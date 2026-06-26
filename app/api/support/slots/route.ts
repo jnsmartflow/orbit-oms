@@ -49,14 +49,22 @@ export async function GET(req: Request): Promise<NextResponse> {
     // pendingCount has no dispatchStatus filter so held orders count (and render)
     // in exactly one place — their slot's pending section.
     const { start: histStart, end: histEnd } = getISTDayRange(dateStr);
+    const [histYr, histMo, histDy] = dateStr.split("-").map(Number);
+    const dateStart = new Date(Date.UTC(histYr, histMo - 1, histDy));
+    const dateEnd   = new Date(Date.UTC(histYr, histMo - 1, histDy + 1));
 
+    // doneCount: arrival footprint (closed/dispatched on D) OR dispatch footprint (targetDate=D).
+    // count() deduplicates by row — no double-count if both arms match the same order.
     doneCount = await prisma.orders.count({
       where: {
         AND: [
           {
-            obdEmailDate: { gte: histStart, lt: histEnd },
-            workflowStage: { in: ["dispatched", "closed"] },
             isRemoved: false,
+            workflowStage: { in: ["dispatched", "closed"] },
+            OR: [
+              { obdEmailDate: { gte: histStart, lt: histEnd } },
+              { dispatchTargetDate: { gte: dateStart, lt: dateEnd } },
+            ],
           },
           hideExclusion,
         ],

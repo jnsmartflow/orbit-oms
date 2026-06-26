@@ -37,6 +37,7 @@ const ORDER_INCLUDE = {
     where: { status: { not: "cancelled" } },
     select: { id: true, status: true, dispatchStatus: true },
   },
+  dispatchWindow: { select: { windowTime: true, label: true } },
 } as const;
 
 const ORDER_BY: Prisma.ordersOrderByWithRelationInput[] = [
@@ -62,6 +63,12 @@ export async function GET(req: Request): Promise<NextResponse> {
   const dateStr  = dateParam || todayStr;
   const isHistoryView = dateStr < todayStr;
 
+  // IST day range + UTC date range — hoisted for use in both WHERE and footprintType
+  const { start: istStart, end: istEnd } = getISTDayRange(dateStr);
+  const [histYr, histMo, histDy] = dateStr.split("-").map(Number);
+  const dateStart = new Date(Date.UTC(histYr, histMo - 1, histDy));
+  const dateEnd   = new Date(Date.UTC(histYr, histMo - 1, histDy + 1));
+
   if (!section || !["slot", "hold"].includes(section)) {
     return NextResponse.json({ error: "Invalid or missing section param" }, { status: 400 });
   }
@@ -74,36 +81,40 @@ export async function GET(req: Request): Promise<NextResponse> {
     if (!isHistoryView) {
       // Today: all orders that ARRIVED today (IST-fenced on both arms).
       // slotId present → also scope to that arrival slot; absent → all slots.
-      const { start: obdStart, end: obdEnd } = getISTDayRange(dateStr);
       if (slotIdStr) where.arrivalSlotId = parseInt(slotIdStr, 10);
       where.OR = [
-        { workflowStage: { notIn: ["dispatched", "cancelled", "closed", "order_created", "pending_tint_assignment"] }, obdEmailDate: { gte: obdStart, lt: obdEnd } },
-        { workflowStage: { in: ["closed", "dispatched"] }, obdEmailDate: { gte: obdStart, lt: obdEnd } },
+        { workflowStage: { notIn: ["dispatched", "cancelled", "closed", "order_created", "pending_tint_assignment"] }, obdEmailDate: { gte: istStart, lt: istEnd } },
+        { workflowStage: { in: ["closed", "dispatched"] }, obdEmailDate: { gte: istStart, lt: istEnd } },
       ];
     } else {
-      // History: IST date-fence on obdEmailDate.
-      const { start: obdStart, end: obdEnd } = getISTDayRange(dateStr);
-      where.obdEmailDate = { gte: obdStart, lt: obdEnd };
+      // History: TWO-FOOTPRINT — obdEmailDate (arrival), heldAt (hold), dispatchTargetDate (dispatch).
       if (slotIdStr) {
-        // Slot-selected: done orders whole-day (for Done group) + pending for this slot.
         const histSlotId = parseInt(slotIdStr, 10);
         where.OR = [
-          // Done orders — both terminal stages, any slot, entire day
-          { workflowStage: { in: ["dispatched", "closed"] } },
-          // Pending orders — this slot; NULL arrivalSlotId falls back to originalSlotId
+          // ── Done: arrival footprint (any slot)
+          { obdEmailDate: { gte: istStart, lt: istEnd }, workflowStage: { in: ["dispatched", "closed"] } },
+          // ── Done: hold footprint now released (held on D, later closed)
+          { heldAt: { gte: istStart, lt: istEnd }, workflowStage: "closed" },
+          // ── Done: dispatch footprint — always unslotted, always in done group
+          { dispatchTargetDate: { gte: dateStart, lt: dateEnd }, workflowStage: "closed" },
+          // ── Pending: (arrived OR held) on D, slot-filtered
           {
-            workflowStage: {
-              notIn: ["dispatched", "closed", "cancelled", "order_created", "pending_tint_assignment"],
-            },
-            OR: [
-              { arrivalSlotId: histSlotId },
-              { arrivalSlotId: null, originalSlotId: histSlotId },
+            workflowStage: { notIn: ["dispatched", "closed", "cancelled", "order_created", "pending_tint_assignment"] },
+            AND: [
+              { OR: [{ obdEmailDate: { gte: istStart, lt: istEnd } }, { heldAt: { gte: istStart, lt: istEnd } }] },
+              { OR: [{ arrivalSlotId: histSlotId }, { arrivalSlotId: null, originalSlotId: histSlotId }] },
             ],
           },
         ];
       } else {
-        // ALL-slot: every non-cancelled order for the day (done + pending, all slots).
-        where.workflowStage = { notIn: ["cancelled", "order_created", "pending_tint_assignment"] };
+        // ALL-slot: union of all three footprints
+        where.OR = [
+          { obdEmailDate: { gte: istStart, lt: istEnd },
+            workflowStage: { notIn: ["cancelled", "order_created", "pending_tint_assignment"] } },
+          { heldAt: { gte: istStart, lt: istEnd },
+            workflowStage: { notIn: ["cancelled", "order_created", "pending_tint_assignment"] } },
+          { dispatchTargetDate: { gte: dateStart, lt: dateEnd }, workflowStage: "closed" },
+        ];
       }
     }
   } else if (section === "hold") {
@@ -175,7 +186,21 @@ export async function GET(req: Request): Promise<NextResponse> {
       ? Math.floor((new Date(dateStr).getTime() - new Date(obdDate).getTime()) / 86400000)
       : 0;
     const importVolume = volumeMap.get(order.obdNumber) ?? null;
-    return { ...order, isCarriedOver, daysOverdue, importVolume, isDone: order.workflowStage === "closed" || order.workflowStage === "dispatched" };
+    const isDone = order.workflowStage === "closed" || order.workflowStage === "dispatched";
+
+    // footprintType: which history footprint this row was fetched via (history only).
+    // Priority: dispatch > hold > arrival.
+    let footprintType: "arrival" | "hold" | "dispatch" = "arrival";
+    if (isHistoryView) {
+      const dispDt = order.dispatchTargetDate;
+      if (dispDt && dispDt >= dateStart && dispDt < dateEnd) {
+        footprintType = "dispatch";
+      } else if (order.heldAt && order.heldAt >= istStart && order.heldAt < istEnd) {
+        footprintType = "hold";
+      }
+    }
+
+    return { ...order, isCarriedOver, daysOverdue, importVolume, isDone, footprintType };
   });
 
   return NextResponse.json({ orders: mappedOrders });

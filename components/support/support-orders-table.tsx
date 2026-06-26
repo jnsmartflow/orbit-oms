@@ -61,6 +61,10 @@ export interface SupportOrder {
   daysOverdue?: number;
   isDone?: boolean;
   arrivalSlotId?: number | null;
+  heldAt?: string | null;
+  dispatchTargetDate?: string | null;
+  footprintType?: "arrival" | "hold" | "dispatch";
+  dispatchWindow?: { windowTime: string; label: string | null } | null;
 }
 
 interface SupportOrdersTableProps {
@@ -265,7 +269,8 @@ export function SupportOrdersTable({
   const doneOrders = useMemo(() => {
     const done = filtered.filter((o) => o.isDone);
     if (activeSlotId === null) return done;
-    return done.filter((o) => (o.arrivalSlotId ?? o.originalSlotId) === activeSlotId);
+    // dispatch footprint rows bypass slot filter — they appear in done regardless of active slot
+    return done.filter((o) => o.footprintType === "dispatch" || (o.arrivalSlotId ?? o.originalSlotId) === activeSlotId);
   }, [filtered, activeSlotId]);
   const pendingOrders = useMemo(() => filtered.filter((o) => !o.isDone), [filtered]);
   const groups = useMemo(() => groupOrders(pendingOrders, groupBy), [pendingOrders, groupBy]);
@@ -882,35 +887,37 @@ function OrderRow({
           <span
             className={cn(
               "inline-flex items-center gap-1 text-[11px] font-medium px-2.5 py-0.5 rounded-full border cursor-default",
-              currentDs === "dispatch" ? "bg-emerald-50 border-emerald-200 text-emerald-600" :
-              currentDs === "hold"     ? "bg-amber-50 border-amber-200 text-amber-600" :
-                                         "bg-gray-100 border-gray-200 text-gray-400",
+              (order.footprintType === "dispatch" || currentDs === "dispatch") ? "bg-emerald-50 border-emerald-200 text-emerald-600" :
+              (order.footprintType === "hold"     || currentDs === "hold")     ? "bg-amber-50 border-amber-200 text-amber-600" :
+                                                                                 "bg-gray-100 border-gray-200 text-gray-400",
             )}
           >
             <span className={cn(
               "w-[5px] h-[5px] rounded-full inline-block",
-              currentDs === "dispatch" ? "bg-emerald-500" :
-              currentDs === "hold"     ? "bg-amber-500" :
-                                         "bg-gray-300",
+              (order.footprintType === "dispatch" || currentDs === "dispatch") ? "bg-emerald-500" :
+              (order.footprintType === "hold"     || currentDs === "hold")     ? "bg-amber-500" :
+                                                                                 "bg-gray-300",
             )} />
-            {currentDs === "dispatch" ? "Dispatch" : currentDs === "hold" ? "Hold" : "Done"}
+            {(order.footprintType === "dispatch" || currentDs === "dispatch") ? "Dispatch" :
+             (order.footprintType === "hold"     || currentDs === "hold")     ? "Hold" : "Done"}
           </span>
         ) : isHistoryView ? (
           <span
             className={cn(
               "inline-flex items-center gap-1 text-[11px] font-medium px-2.5 py-0.5 rounded-full border cursor-default",
-              currentDs === "dispatch" ? "bg-emerald-50 border-emerald-200 text-emerald-600" :
-              currentDs === "hold"     ? "bg-amber-50 border-amber-200 text-amber-600" :
-                                         "bg-gray-100 border-gray-200 text-gray-400",
+              (order.footprintType === "dispatch" || currentDs === "dispatch") ? "bg-emerald-50 border-emerald-200 text-emerald-600" :
+              (order.footprintType === "hold"     || currentDs === "hold")     ? "bg-amber-50 border-amber-200 text-amber-600" :
+                                                                                 "bg-gray-100 border-gray-200 text-gray-400",
             )}
           >
             <span className={cn(
               "w-[5px] h-[5px] rounded-full inline-block",
-              currentDs === "dispatch" ? "bg-emerald-500" :
-              currentDs === "hold"     ? "bg-amber-500" :
-                                         "bg-gray-300",
+              (order.footprintType === "dispatch" || currentDs === "dispatch") ? "bg-emerald-500" :
+              (order.footprintType === "hold"     || currentDs === "hold")     ? "bg-amber-500" :
+                                                                                 "bg-gray-300",
             )} />
-            {currentDs === "dispatch" ? "Dispatch" : currentDs === "hold" ? "Hold" : "—"}
+            {(order.footprintType === "dispatch" || currentDs === "dispatch") ? "Dispatch" :
+             (order.footprintType === "hold"     || currentDs === "hold")     ? "Hold" : "—"}
           </span>
         ) : (
           <>
@@ -1036,7 +1043,9 @@ function OrderRow({
           <span className="text-[10px] text-gray-300">—</span>
         ) : isResolved || isReadOnly ? (
           <div className="flex items-center gap-1">
-            <span className="text-[10px] text-gray-400">{order.slot?.name ?? "—"}</span>
+            <span className="text-[10px] text-gray-400">
+              {order.footprintType === "dispatch" ? (order.dispatchWindow?.windowTime ?? "—") : (order.slot?.name ?? "—")}
+            </span>
             {hasCascade && (
               <span className="text-[10px] text-gray-300 ml-0.5">↻ {abbreviateSlotName(order.originalSlot!.name)}</span>
             )}
