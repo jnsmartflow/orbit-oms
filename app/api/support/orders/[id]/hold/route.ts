@@ -56,7 +56,7 @@ export async function POST(
   // Update order — only dispatchStatus, workflowStage unchanged
   await prisma.orders.update({
     where: { id: orderId },
-    data: { dispatchStatus: "hold" },
+    data: { dispatchStatus: "hold", heldAt: new Date() },
   });
 
   await prisma.order_status_logs.create({
