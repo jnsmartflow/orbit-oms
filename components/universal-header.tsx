@@ -55,6 +55,7 @@ export interface UniversalHeaderProps {
   segments?: HeaderSegment[];
   activeSegment?: number | string | null;
   onSegmentChange?: (id: number | string | null) => void;
+  segmentsDisabled?: boolean;
   leftExtra?: React.ReactNode;
 
   // Row 2 right — extra + filters
@@ -131,6 +132,7 @@ export function UniversalHeader({
   onSearchChange,
   shortcuts,
   showImport,
+  segmentsDisabled,
 }: UniversalHeaderProps) {
   const [clock, setClock] = useState("");
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -409,7 +411,10 @@ export function UniversalHeader({
         {/* Left: segmented control + leftExtra */}
         <div className="flex items-center gap-2">
           {segments && segments.length > 0 && (
-            <div data-tutorial="slot-segments" className="inline-flex bg-gray-100 rounded-[7px] p-[3px] gap-[2px]">
+            <div
+              data-tutorial="slot-segments"
+              className={`inline-flex bg-gray-100 rounded-[7px] p-[3px] gap-[2px]${segmentsDisabled ? " opacity-40 pointer-events-none" : ""}`}
+            >
               {segments.map((seg) => {
                 const isActive = activeSegment === seg.id;
                 return (

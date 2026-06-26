@@ -487,7 +487,9 @@ export function SupportPageContent() {
         ]}
         segments={headerSegments}
         activeSegment={activeSlotId}
+        segmentsDisabled={mainTab === "hold"}
         onSegmentChange={(id) => {
+          if (mainTab === "hold") return;
           if (id === null) {
             // Active segment clicked again → ALL view (deselect)
             setActiveSection("slot-all");
