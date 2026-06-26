@@ -10,6 +10,8 @@ import { CancelOrderDialog } from "@/components/support/cancel-order-dialog";
 import type { SupportOrder } from "@/components/support/support-orders-table";
 import { UniversalHeader } from "@/components/universal-header";
 import { useSession } from "next-auth/react";
+import { DispatchSlotPicker } from "@/components/support/dispatch-slot-picker";
+import type { DispatchSlotValue, DispatchWindow } from "@/components/support/dispatch-slot-picker";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -40,7 +42,7 @@ type StatusFilter = "all" | "pending" | "dispatch" | "dispatched";
 
 const HOLD_GRID: React.CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "32px 1.1fr 1.8fr 1.1fr 0.5fr 0.7fr 1.2fr",
+  gridTemplateColumns: "32px 1.1fr 1.8fr 1.1fr 0.5fr 0.7fr 1.4fr 0.8fr",
   gap: "0 10px",
   alignItems: "center",
 };
@@ -112,6 +114,9 @@ export function SupportPageContent() {
   });
   const [selectedHold, setSelectedHold] = useState<Set<number>>(new Set());
   const [holdBulkLoading, setHoldBulkLoading] = useState(false);
+  const [dispatchWindows, setDispatchWindows] = useState<DispatchWindow[]>([]);
+  const [holdSlots, setHoldSlots] = useState<Map<number, DispatchSlotValue>>(new Map());
+  const [bulkSlot, setBulkSlot] = useState<DispatchSlotValue | null>(null);
   const [headerFilters, setHeaderFilters] = useState<Record<string, string[]>>({ view: [], status: [], deliveryType: [], priority: [] });
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -150,6 +155,17 @@ export function SupportPageContent() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [date]);
+
+  // Fetch dispatch windows once — they don't change by date
+  useEffect(() => {
+    fetch("/api/support/dispatch-windows")
+      .then((r) => r.json())
+      .then((d) => {
+        const data = d as { windows: DispatchWindow[] };
+        setDispatchWindows(data.windows);
+      })
+      .catch(() => {});
+  }, []);
 
   // Track all-tab order count so it persists when switching to hold tab
   useEffect(() => {
@@ -237,6 +253,8 @@ export function SupportPageContent() {
     setMainTab(tab);
     setStatusFilter("all");
     setSelectedHold(new Set());
+    setHoldSlots(new Map());
+    setBulkSlot(null);
     if (tab === "all") {
       if (activeSlotId && slots.find((s) => s.id === activeSlotId)) {
         void fetchOrders(`slot-${activeSlotId}`, activeSlotId);
@@ -295,6 +313,23 @@ export function SupportPageContent() {
     await refresh();
   }, [refresh]);
 
+  const handleHoldRelease = useCallback(
+    async (orderId: number, target: { dispatchTargetDate: string; dispatchWindowId: number }) => {
+      const res = await fetch(`/api/support/orders/${orderId}/release`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(target),
+      });
+      if (!res.ok) {
+        const e = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(e.error ?? "Release failed");
+      }
+      toast.success("Order released from hold");
+      await refresh();
+    },
+    [refresh],
+  );
+
   const handleCancel = useCallback(async (orderId: number, reason: string, note?: string) => {
     const res = await fetch(`/api/support/orders/${orderId}/cancel`, {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -348,6 +383,16 @@ export function SupportPageContent() {
     toast.success(`${data.processed ?? 0} placed on hold, ${data.skipped ?? 0} skipped`);
     await refresh();
   }, [refresh]);
+
+  // ── Hold slot state helpers ───────────────────────────────────────────────
+  function setRowSlot(orderId: number, v: DispatchSlotValue | null) {
+    setHoldSlots((prev) => {
+      const next = new Map(prev);
+      if (v) next.set(orderId, v);
+      else next.delete(orderId);
+      return next;
+    });
+  }
 
   // ── Derived values ────────────────────────────────────────────────────────
   const headerPending    = slots.reduce((s, sl) => s + sl.pendingCount, 0);
@@ -548,7 +593,8 @@ export function SupportPageContent() {
                   <div>Route / Type</div>
                   <div className="text-right">Vol</div>
                   <div>Hold Since</div>
-                  <div></div>
+                  <div>Dispatch Slot</div>
+                  <div className="text-right">Action</div>
                 </div>
 
                 {/* Hold rows */}
@@ -618,12 +664,34 @@ export function SupportPageContent() {
                         </span>
                       </div>
 
-                      {/* Actions */}
+                      {/* Dispatch Slot */}
+                      <div>
+                        <DispatchSlotPicker
+                          value={holdSlots.get(order.id) ?? null}
+                          onChange={(v) => setRowSlot(order.id, v)}
+                          windows={dispatchWindows}
+                        />
+                      </div>
+
+                      {/* Action */}
                       <div className="flex items-center justify-end gap-2">
                         <button
                           type="button"
-                          onClick={() => void handleRelease(order.id)}
-                          className="text-[11px] text-teal-600 hover:text-teal-700 font-medium"
+                          disabled={!holdSlots.has(order.id)}
+                          onClick={async () => {
+                            const slot = holdSlots.get(order.id);
+                            if (!slot) return;
+                            try {
+                              await handleHoldRelease(order.id, {
+                                dispatchTargetDate: slot.date,
+                                dispatchWindowId: slot.dispatchWindowId,
+                              });
+                              setRowSlot(order.id, null);
+                            } catch (err) {
+                              toast.error(err instanceof Error ? err.message : "Release failed");
+                            }
+                          }}
+                          className="text-[11px] font-semibold transition-colors disabled:text-gray-300 disabled:cursor-not-allowed text-teal-600 hover:text-teal-700"
                         >
                           Release
                         </button>
@@ -652,25 +720,37 @@ export function SupportPageContent() {
             <div className="bg-white border-t border-gray-200 shadow-[0_-4px_12px_rgba(0,0,0,0.06)]">
               <div className="flex items-center justify-between px-5 py-2">
                 <span className="text-xs font-medium text-gray-700">{selectedHold.size} selected</span>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-3">
+                  <DispatchSlotPicker
+                    value={bulkSlot}
+                    onChange={setBulkSlot}
+                    windows={dispatchWindows}
+                    popoverDir="up"
+                  />
                   <button
                     type="button"
-                    onClick={() => setSelectedHold(new Set())}
+                    onClick={() => { setSelectedHold(new Set()); setBulkSlot(null); }}
                     className="text-xs text-gray-400 hover:text-gray-600 px-3 py-1 transition-colors"
                   >
                     Clear
                   </button>
                   <button
                     type="button"
-                    disabled={holdBulkLoading}
+                    disabled={!bulkSlot || holdBulkLoading}
                     onClick={async () => {
+                      if (!bulkSlot) return;
                       setHoldBulkLoading(true);
                       try {
                         const ids = Array.from(selectedHold);
                         for (const id of ids) {
-                          await handleRelease(id);
+                          await handleHoldRelease(id, {
+                            dispatchTargetDate: bulkSlot.date,
+                            dispatchWindowId: bulkSlot.dispatchWindowId,
+                          });
                         }
                         setSelectedHold(new Set());
+                        setHoldSlots(new Map());
+                        setBulkSlot(null);
                       } finally {
                         setHoldBulkLoading(false);
                       }
