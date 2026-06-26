@@ -46,13 +46,18 @@ function getQuickDates(): { today: string; tomorrow: string } {
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS   = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
-function fmtDayLabel(iso: string, today: string, tomorrow: string): string {
-  const [y, m, d] = iso.split("-").map(Number);
-  const wd = WEEKDAYS[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
-  const base = `${wd}, ${d} ${MONTHS[m - 1]}`;
-  if (iso === today)    return `${base} · Today`;
-  if (iso === tomorrow) return `${base} · Tomorrow`;
-  return base;
+function getRailDates(anchor: string): Array<{ iso: string; wd: string; d: string; m: string }> {
+  const [y, m, d] = anchor.split("-").map(Number);
+  const pad2 = (n: number) => String(n).padStart(2, "0");
+  return Array.from({ length: 6 }, (_, i) => {
+    const dt = new Date(Date.UTC(y, m - 1, d + i));
+    return {
+      iso: `${dt.getUTCFullYear()}-${pad2(dt.getUTCMonth() + 1)}-${pad2(dt.getUTCDate())}`,
+      wd:  WEEKDAYS[dt.getUTCDay()],
+      d:   String(dt.getUTCDate()),
+      m:   MONTHS[dt.getUTCMonth()],
+    };
+  });
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -70,6 +75,7 @@ export function DispatchSlotPicker({
   const [calDate, setCalDate]     = useState("");
   const [mounted, setMounted]     = useState(false);
   const [popStyle, setPopStyle]   = useState<React.CSSProperties>({});
+  const [selDate, setSelDate]     = useState("");
 
   const triggerRef = useRef<HTMLButtonElement>(null);
   const popRef     = useRef<HTMLDivElement>(null);
@@ -77,13 +83,13 @@ export function DispatchSlotPicker({
   // Portal safety: only render after mount (avoids SSR mismatch)
   useEffect(() => setMounted(true), []);
 
-  const { today, tomorrow } = useMemo(() => getQuickDates(), []);
+  const { today } = useMemo(() => getQuickDates(), []);
 
   const updatePosition = useCallback(() => {
     const btn = triggerRef.current;
     if (!btn) return;
     const r = btn.getBoundingClientRect();
-    const style: React.CSSProperties = { position: "fixed", zIndex: 400, width: 308 };
+    const style: React.CSSProperties = { position: "fixed", zIndex: 400, width: 284 };
     if (popoverAlign === "right") {
       style.right = window.innerWidth - r.right;
     } else {
@@ -117,6 +123,7 @@ export function DispatchSlotPicker({
     } else {
       setCalOpen(false);
       setCalDate("");
+      setSelDate("");
       setOpen(true);
     }
   }
@@ -150,85 +157,95 @@ export function DispatchSlotPicker({
 
   // ── Popover markup ────────────────────────────────────────────────────────
 
+  const activeDate = selDate || today;
+
   const popover = (
     <div
       ref={popRef}
-      style={popStyle}
-      className="bg-white border border-gray-200 rounded-[10px] shadow-lg overflow-hidden"
+      style={{ ...popStyle, boxShadow: "0 8px 24px rgba(0,0,0,.11), 0 1px 4px rgba(0,0,0,.05)" }}
+      className="bg-white border border-slate-200 rounded-[11px] overflow-hidden"
       onClick={(e) => e.stopPropagation()}
     >
-      {/* Quick pick — Today + Tomorrow */}
-      {[today, tomorrow].map((date) => (
-        <div key={date} className="flex items-start py-[5px] px-3.5 gap-2 border-b border-gray-50">
-          <span className="text-[10px] text-gray-400 font-medium shrink-0 w-[100px] leading-[18px] pt-[2px]">
-            {fmtDayLabel(date, today, tomorrow)}
-          </span>
-          <div className="flex flex-wrap gap-1">
-            {windows.map((win) => (
-              <button
-                key={win.id}
-                type="button"
-                onClick={() => handleSelect(date, win)}
-                className={[
-                  "text-[10.5px] font-semibold px-2 py-[2px] rounded-[5px] transition-colors",
-                  isSelected(date, win.id)
-                    ? "bg-teal-600 text-white"
-                    : "bg-gray-100 text-gray-600 hover:bg-gray-200",
-                ].join(" ")}
-              >
-                {win.windowTime}
-              </button>
-            ))}
-          </div>
-        </div>
-      ))}
-
-      {/* Calendar zone */}
-      <div className="px-3.5 py-2.5">
+      {/* DATE RAIL */}
+      <div
+        className="flex items-stretch gap-[3px] px-2.5 py-[8px] border-b border-gray-100 overflow-x-auto"
+        style={{ scrollbarWidth: "none" }}
+      >
+        {getRailDates(today).map(({ iso, wd, d, m }) => (
+          <button
+            key={iso}
+            type="button"
+            onClick={() => setSelDate(iso)}
+            className={[
+              "flex-shrink-0 flex flex-col items-center px-[9px] py-[5px] min-w-[38px]",
+              "rounded-[7px] text-center transition-colors border-0 outline-none",
+              activeDate === iso ? "bg-teal-600" : "bg-gray-100 hover:bg-gray-200",
+            ].join(" ")}
+          >
+            <span className={`text-[8.5px] font-medium leading-[1.2] ${activeDate === iso ? "text-white/70" : "text-gray-400"}`}>{wd}</span>
+            <span className={`text-[15px] font-bold leading-[1.1] ${activeDate === iso ? "text-white" : "text-gray-800"}`}>{d}</span>
+            <span className={`text-[8.5px] leading-[1.2] ${activeDate === iso ? "text-white/70" : "text-gray-400"}`}>{m}</span>
+          </button>
+        ))}
+        {/* Calendar icon — tap to toggle far-date input */}
         <button
           type="button"
           onClick={() => setCalOpen((v) => !v)}
-          className="flex items-center gap-1 text-[10.5px] text-teal-600 hover:text-teal-700 font-medium"
+          className={[
+            "flex-shrink-0 self-stretch flex items-center justify-center w-[30px]",
+            "rounded-[7px] border transition-colors outline-none",
+            calOpen
+              ? "border-teal-500 text-teal-500 bg-teal-50"
+              : "border-gray-200 text-gray-400 hover:border-teal-500 hover:text-teal-500",
+          ].join(" ")}
+          title="Pick another date"
         >
-          <span
-            className="inline-block transition-transform duration-150"
-            style={{ transform: calOpen ? "rotate(90deg)" : "rotate(0deg)" }}
-          >
-            ▸
-          </span>
-          Pick another date…
+          <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24">
+            <rect x="3" y="4" width="18" height="18" rx="2" />
+            <path d="M16 2v4M8 2v4M3 10h18" />
+          </svg>
         </button>
+      </div>
 
-        {calOpen && (
-          <div className="mt-2">
-            <input
-              type="date"
-              min={today}
-              value={calDate}
-              onChange={(e) => setCalDate(e.target.value)}
-              className="text-[11px] border border-gray-200 rounded px-2 py-1 w-full focus:outline-none focus:border-teal-400"
-            />
-            {calDate && (
-              <div className="flex flex-wrap gap-1 mt-2">
-                {windows.map((win) => (
-                  <button
-                    key={win.id}
-                    type="button"
-                    onClick={() => handleSelect(calDate, win)}
-                    className={[
-                      "text-[10.5px] font-semibold px-2 py-[2px] rounded-[5px] transition-colors",
-                      isSelected(calDate, win.id)
-                        ? "bg-teal-600 text-white"
-                        : "bg-gray-100 text-gray-600 hover:bg-gray-200",
-                    ].join(" ")}
-                  >
-                    {win.windowTime}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+      {/* FAR DATE INPUT */}
+      {calOpen && (
+        <div className="px-2.5 py-2 bg-gray-50 border-b border-gray-100">
+          <input
+            type="date"
+            min={today}
+            value={calDate}
+            onChange={(e) => {
+              setCalDate(e.target.value);
+              if (e.target.value) setSelDate(e.target.value);
+            }}
+            className="text-[11px] border border-gray-200 rounded-[6px] px-2 py-[3px] w-full focus:outline-none focus:border-teal-400 bg-white"
+          />
+        </div>
+      )}
+
+      {/* WINDOW PILLS */}
+      <div className="px-2.5 pt-[7px] pb-[10px]">
+        <p className="text-[9px] font-semibold uppercase tracking-wide text-gray-400 mb-[6px]">
+          Window
+        </p>
+        <div className="flex gap-[5px]">
+          {windows.map((win) => (
+            <button
+              key={win.id}
+              type="button"
+              onClick={() => handleSelect(activeDate, win)}
+              className={[
+                "flex-1 flex items-center justify-center h-[32px] rounded-[7px]",
+                "text-[12px] font-bold transition-colors border outline-none",
+                isSelected(activeDate, win.id)
+                  ? "bg-teal-600 border-teal-600 text-white shadow-sm"
+                  : "bg-white border-gray-200 text-gray-700 hover:border-teal-500 hover:text-teal-500",
+              ].join(" ")}
+            >
+              {win.windowTime}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );
