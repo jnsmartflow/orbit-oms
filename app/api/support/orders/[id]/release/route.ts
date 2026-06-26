@@ -21,7 +21,7 @@ export async function POST(
   const body = (await req.json().catch(() => ({}))) as {
     note?: string;
     dispatchTargetDate?: string;
-    dispatchTargetSlotId?: number;
+    dispatchWindowId?: number;
   };
 
   if (!body.dispatchTargetDate || !/^\d{4}-\d{2}-\d{2}$/.test(body.dispatchTargetDate)) {
@@ -30,9 +30,9 @@ export async function POST(
       { status: 400 },
     );
   }
-  if (!body.dispatchTargetSlotId || !Number.isInteger(body.dispatchTargetSlotId)) {
+  if (!body.dispatchWindowId || !Number.isInteger(body.dispatchWindowId)) {
     return NextResponse.json(
-      { error: "dispatchTargetSlotId is required" },
+      { error: "dispatchWindowId is required" },
       { status: 400 },
     );
   }
@@ -86,7 +86,7 @@ export async function POST(
       workflowStage: "closed",
       dispatchStatus: "dispatch",
       dispatchTargetDate: targetDate,
-      dispatchTargetSlotId: body.dispatchTargetSlotId,
+      dispatchWindowId: body.dispatchWindowId,
     },
   });
 
