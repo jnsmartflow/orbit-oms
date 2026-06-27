@@ -25,6 +25,7 @@ interface Props {
   popoverDir?: "down" | "up";
   popoverAlign?: "left" | "right";
   disabled?: boolean;
+  forceOpenGen?: number;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -69,6 +70,7 @@ export function DispatchSlotPicker({
   popoverDir = "down",
   popoverAlign = "left",
   disabled,
+  forceOpenGen,
 }: Props) {
   const [open, setOpen]           = useState(false);
   const [calOpen, setCalOpen]     = useState(false);
@@ -77,11 +79,23 @@ export function DispatchSlotPicker({
   const [popStyle, setPopStyle]   = useState<React.CSSProperties>({});
   const [selDate, setSelDate]     = useState("");
 
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const popRef     = useRef<HTMLDivElement>(null);
+  const triggerRef    = useRef<HTMLButtonElement>(null);
+  const popRef        = useRef<HTMLDivElement>(null);
+  const lastForcedGen = useRef<number | undefined>(undefined);
 
   // Portal safety: only render after mount (avoids SSR mismatch)
   useEffect(() => setMounted(true), []);
+
+  // forceOpenGen: increments each time the Status menu requests this picker to open.
+  useEffect(() => {
+    if (forceOpenGen !== undefined && forceOpenGen !== lastForcedGen.current) {
+      lastForcedGen.current = forceOpenGen;
+      setCalOpen(false);
+      setCalDate("");
+      setSelDate("");
+      setOpen(true);
+    }
+  }, [forceOpenGen]);
 
   const { today } = useMemo(() => getQuickDates(), []);
 

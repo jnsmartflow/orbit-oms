@@ -18,7 +18,27 @@ export async function POST(
     return NextResponse.json({ error: "Invalid order ID" }, { status: 400 });
   }
 
-  const { note } = (await req.json().catch(() => ({}))) as { note?: string };
+  const body = (await req.json().catch(() => ({}))) as {
+    note?: string;
+    dispatchTargetDate?: string;
+    dispatchWindowId?: number;
+  };
+
+  if (!body.dispatchTargetDate || !/^\d{4}-\d{2}-\d{2}$/.test(body.dispatchTargetDate)) {
+    return NextResponse.json(
+      { error: "dispatchTargetDate is required (YYYY-MM-DD)" },
+      { status: 400 },
+    );
+  }
+  if (!body.dispatchWindowId || !Number.isInteger(body.dispatchWindowId)) {
+    return NextResponse.json(
+      { error: "dispatchWindowId is required" },
+      { status: 400 },
+    );
+  }
+
+  const [y, m, d] = body.dispatchTargetDate.split("-").map(Number);
+  const targetDate = new Date(Date.UTC(y, m - 1, d));
 
   const order = await prisma.orders.findFirst({
     where: { id: orderId, isRemoved: false },
@@ -40,7 +60,7 @@ export async function POST(
     );
   }
 
-  const defaultNote = note ?? "Dispatched by support";
+  const defaultNote = body.note ?? "Dispatched by support";
 
   // Update each non-cancelled split
   for (const split of order.splits) {
@@ -65,6 +85,8 @@ export async function POST(
     data: {
       workflowStage: "closed",
       dispatchStatus: "dispatch",
+      dispatchTargetDate: targetDate,
+      dispatchWindowId: body.dispatchWindowId,
     },
   });
 

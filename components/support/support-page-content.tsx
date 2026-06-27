@@ -273,9 +273,10 @@ export function SupportPageContent() {
   }, [fetchSlots, fetchOrders, activeSection, activeSlotId]);
 
   // ── Action handlers ──────────────────────────────────────────────────────
-  const handleDispatch = useCallback(async (orderId: number) => {
+  const handleDispatch = useCallback(async (orderId: number, target: { dispatchTargetDate: string; dispatchWindowId: number }) => {
     const res = await fetch(`/api/support/orders/${orderId}/dispatch`, {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dispatchTargetDate: target.dispatchTargetDate, dispatchWindowId: target.dispatchWindowId }),
     });
     if (!res.ok) {
       const e = (await res.json().catch(() => ({}))) as { error?: string };
@@ -352,10 +353,10 @@ export function SupportPageContent() {
     await refresh();
   }, [refresh]);
 
-  const handleBulkDispatch = useCallback(async (orderIds: number[]) => {
+  const handleBulkDispatch = useCallback(async (orderIds: number[], target: { dispatchTargetDate: string; dispatchWindowId: number }) => {
     const res = await fetch("/api/support/bulk", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ orderIds, action: "dispatch" }),
+      body: JSON.stringify({ orderIds, action: "dispatch", dispatchTargetDate: target.dispatchTargetDate, dispatchWindowId: target.dispatchWindowId }),
     });
     if (!res.ok) {
       const e = (await res.json().catch(() => ({}))) as { error?: string };
@@ -529,6 +530,7 @@ export function SupportPageContent() {
               onAssignSlot={handleAssignSlot}
               onBulkDispatch={handleBulkDispatch}
               onBulkHold={handleBulkHold}
+              dispatchWindows={dispatchWindows}
               loading={ordersLoading}
               slots={slots}
               date={date}

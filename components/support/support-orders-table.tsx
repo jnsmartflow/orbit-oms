@@ -9,6 +9,8 @@ import {
   RotateCcw,
   Mail,
 } from "lucide-react";
+import { DispatchSlotPicker } from "@/components/support/dispatch-slot-picker";
+import type { DispatchSlotValue, DispatchWindow } from "@/components/support/dispatch-slot-picker";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -70,13 +72,14 @@ export interface SupportOrder {
 interface SupportOrdersTableProps {
   orders: SupportOrder[];
   section: string;
-  onDispatch: (orderId: number) => Promise<void>;
+  onDispatch: (orderId: number, target: { dispatchTargetDate: string; dispatchWindowId: number }) => Promise<void>;
   onHold: (orderId: number) => Promise<void>;
   onRelease: (orderId: number) => Promise<void>;
   onCancel: (orderId: number, reason: string, note?: string) => Promise<void>;
   onAssignSlot: (orderId: number, slotId: number) => Promise<void>;
-  onBulkDispatch: (orderIds: number[]) => Promise<void>;
+  onBulkDispatch: (orderIds: number[], target: { dispatchTargetDate: string; dispatchWindowId: number }) => Promise<void>;
   onBulkHold: (orderIds: number[]) => Promise<void>;
+  dispatchWindows: DispatchWindow[];
   loading: boolean;
   slots: SlotNavItem[];
   date: string;
@@ -89,7 +92,7 @@ interface SupportOrdersTableProps {
 
 const GRID: React.CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "32px 1fr 2fr 0.7fr 0.4fr 0.5fr 0.9fr 0.6fr 1fr",
+  gridTemplateColumns: "32px 1fr 2fr 0.7fr 0.4fr 0.5fr 1.1fr 1.5fr 0.6fr",
   gap: "0 10px",
   alignItems: "center",
 };
@@ -161,6 +164,27 @@ function abbreviateSlotName(name: string): string {
   return name;
 }
 
+const MONTHS_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+function formatDispatchSlot(order: SupportOrder): string | null {
+  const dt = order.dispatchTargetDate;
+  const wt = order.dispatchWindow?.windowTime;
+  if (!dt || !wt) return null;
+  const iso = dt.includes("T") ? dt.split("T")[0] : dt;
+  const [, m, d] = iso.split("-");
+  return `${parseInt(d, 10)} ${MONTHS_SHORT[parseInt(m, 10) - 1]} · ${wt}`;
+}
+
+function formatSavingSlot(date: string): string {
+  const [, m, d] = date.split("-");
+  return `${parseInt(d, 10)} ${MONTHS_SHORT[parseInt(m, 10) - 1]}`;
+}
+
+function formatBulkSlot(slot: { date: string; windowTime: string }): string {
+  const [, m, d] = slot.date.split("-");
+  return `${parseInt(d, 10)} ${MONTHS_SHORT[parseInt(m, 10) - 1]} · ${slot.windowTime}`;
+}
+
 function getPriLabel(val: string): string {
   if (val === "1") return "P1";
   if (val === "2") return "P2";
@@ -188,6 +212,7 @@ export function SupportOrdersTable({
   onAssignSlot,
   onBulkDispatch,
   onBulkHold,
+  dispatchWindows,
   loading,
   slots,
   date,
@@ -214,8 +239,14 @@ export function SupportOrdersTable({
   const [localEdits, setLocalEdits] = useState<Map<number, { ds?: string; pri?: string; slot?: string }>>(new Map());
   const [openPopover, setOpenPopover] = useState<PopoverState>(null);
   const [doneExpanded, setDoneExpanded] = useState(false);
+  const [dispatchSlot, setDispatchSlot] = useState<DispatchSlotValue | null>(null);
+  const [dispatchPickerTrigger, setDispatchPickerTrigger] = useState<{ id: number; gen: number } | null>(null);
+  const [dispatchIntentIds, setDispatchIntentIds] = useState<Set<number>>(new Set());
+  const [bulkStatus, setBulkStatus] = useState<"dispatch" | "hold" | null>(null);
+  const [bulkStatusOpen, setBulkStatusOpen] = useState(false);
 
   const cardRef = useRef<HTMLDivElement>(null);
+  const bulkStatusRef = useRef<HTMLDivElement>(null);
 
   const changedIds = useMemo(() => {
     const s = new Set<number>();
@@ -240,7 +271,24 @@ export function SupportOrdersTable({
     setCollapsedGroups(new Set());
     setOpenPopover(null);
     setDoneExpanded(false);
+    setDispatchSlot(null);
+    setDispatchPickerTrigger(null);
+    setDispatchIntentIds(new Set());
+    setBulkStatus(null);
+    setBulkStatusOpen(false);
   }, [section]);
+
+  // Close bulk-status popover on outside click
+  useEffect(() => {
+    if (!bulkStatusOpen) return;
+    function handler(e: MouseEvent) {
+      if (bulkStatusRef.current && !bulkStatusRef.current.contains(e.target as Node)) {
+        setBulkStatusOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [bulkStatusOpen]);
 
   // "T" shortcut — toggle done section open/closed (mirrors Mail Orders global toggle)
   useEffect(() => {
@@ -351,27 +399,66 @@ export function SupportOrdersTable({
     }
   }, [withRowLoading, onOrdersChanged]);
 
+  // Count pending-dispatch candidates: selected orders with no local edit that are still pending.
+  // Filtering by pendingOrders ensures already-closed rows are never counted even if selected.
+  const pendingDispatchCount = useMemo(() => {
+    let count = 0;
+    const pendingIds = new Set(pendingOrders.map((o) => o.id));
+    localEdits.forEach((edits) => { if (edits.ds === "dispatch") count++; });
+    selected.forEach((id) => { if (!localEdits.has(id) && pendingIds.has(id)) count++; });
+    return count;
+  }, [localEdits, selected, pendingOrders]);
+
+  // Per-row immediate dispatch: removes orderId from selected BEFORE the API call
+  // so that a concurrent sticky-bar Submit cannot re-fire on the same order.
+  const handleRequestDispatchPickerOpen = useCallback((orderId: number) => {
+    setDispatchPickerTrigger((prev) => ({ id: orderId, gen: prev?.id === orderId ? prev.gen + 1 : 1 }));
+  }, []);
+
+  const handleSetDispatchIntent = useCallback((orderId: number) => {
+    setDispatchIntentIds((prev) => { const next = new Set(prev); next.add(orderId); return next; });
+  }, []);
+
+  const handleClearDispatchIntent = useCallback((orderId: number) => {
+    setDispatchIntentIds((prev) => { const next = new Set(prev); next.delete(orderId); return next; });
+  }, []);
+
+  const handleSingleDispatch = useCallback(async (orderId: number, target: { dispatchTargetDate: string; dispatchWindowId: number }) => {
+    setSelected((prev) => { const next = new Set(prev); next.delete(orderId); return next; });
+    setDispatchPickerTrigger(null);
+    setDispatchIntentIds((prev) => { const next = new Set(prev); next.delete(orderId); return next; });
+    try {
+      await withRowLoading(orderId, async () => {
+        await onDispatch(orderId, target);
+      });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Dispatch failed");
+    }
+  }, [withRowLoading, onDispatch]);
+
   async function handleSubmitSelected() {
     setBulkLoading(true);
     try {
-      const dispatchIds: number[] = [];
-      const holdIds: number[] = [];
+      // Per-row arrival slot reassignments (independent of bulk action)
       const slotChanges: { orderId: number; slotId: number }[] = [];
-
       Array.from(localEdits.entries()).forEach(([orderId, edits]) => {
-        if (edits.ds === "dispatch") dispatchIds.push(orderId);
-        else if (edits.ds === "hold") holdIds.push(orderId);
         if (edits.slot) slotChanges.push({ orderId, slotId: parseInt(edits.slot, 10) });
       });
-
-      Array.from(selected).forEach((id) => { if (!localEdits.has(id)) dispatchIds.push(id); });
-
       for (const { orderId, slotId } of slotChanges) await onAssignSlot(orderId, slotId);
-      if (dispatchIds.length > 0) await onBulkDispatch(dispatchIds);
-      if (holdIds.length > 0) await onBulkHold(holdIds);
+
+      // Bulk action: apply bulkStatus to all selected rows
+      const ids = Array.from(selected);
+      if (bulkStatus === "dispatch" && dispatchSlot) {
+        await onBulkDispatch(ids, { dispatchTargetDate: dispatchSlot.date, dispatchWindowId: dispatchSlot.dispatchWindowId });
+      } else if (bulkStatus === "hold") {
+        await onBulkHold(ids);
+      }
 
       setSelected(new Set());
       setLocalEdits(new Map());
+      setDispatchSlot(null);
+      setBulkStatus(null);
+      setBulkStatusOpen(false);
     } finally {
       setBulkLoading(false);
     }
@@ -489,9 +576,9 @@ export function SupportOrdersTable({
               <div>Route / Type</div>
               <div className="text-right pr-1">VOL (L)</div>
               <div className="text-center">Age</div>
-              <div>Dispatch</div>
+              <div>Status</div>
+              <div>Dispatch Slot</div>
               <div>Priority</div>
-              <div>Slot</div>
             </div>
 
             {/* Rows */}
@@ -522,6 +609,13 @@ export function SupportOrdersTable({
                   slots={slots}
                   openPopover={openPopover}
                   isHistoryView={isHistoryView}
+                  dispatchWindows={dispatchWindows}
+                  onSingleDispatch={handleSingleDispatch}
+                  dispatchPickerTrigger={dispatchPickerTrigger}
+                  onRequestDispatchPickerOpen={handleRequestDispatchPickerOpen}
+                  dispatchIntentIds={dispatchIntentIds}
+                  onSetDispatchIntent={handleSetDispatchIntent}
+                  onClearDispatchIntent={handleClearDispatchIntent}
                   onToggleOne={toggleOne}
                   onSetEdit={setEdit}
                   onDsChange={handleDsChange}
@@ -529,6 +623,7 @@ export function SupportOrdersTable({
                   onSetPopover={setOpenPopover}
                   onMissing={setMissingSheet}
                   onShipOverride={setShipOverride}
+                  bulkStatus={bulkStatus}
                 />
               );
             })}
@@ -587,38 +682,132 @@ export function SupportOrdersTable({
       {/* ── Sticky Bottom Bar ─────────────────────────────────────────────── */}
       <div
         className={cn(
-          "fixed bottom-0 left-14 right-0 z-50 transform transition-transform duration-200",
+          "fixed bottom-0 left-[72px] right-0 z-50 transform transition-transform duration-200",
           showStickyBar ? "translate-y-0" : "translate-y-full",
         )}
       >
-        <div className="bg-white border-t border-gray-200 shadow-[0_-4px_12px_rgba(0,0,0,0.06)]">
-          <div className="flex items-center justify-between px-5 py-2">
-            <div className="flex items-center gap-3">
-              <span className="text-xs font-medium text-gray-700">{selected.size} selected</span>
-              {selected.size > 0 && (
-                <span className="text-[10px] text-gray-400">
-                  {stickyQty} qty · {stickyCustomerCount} customer{stickyCustomerCount !== 1 ? "s" : ""}
-                </span>
+        <div className="bg-white" style={{ borderTop: "1px solid rgba(17,24,39,0.06)", boxShadow: "0 -1px 1px rgba(17,24,39,0.04), 0 -8px 24px rgba(17,24,39,0.06)" }}>
+          <div className="flex items-center gap-3 pl-5 pr-[22px] py-3" style={{ minHeight: "56px" }}>
+            {/* Selection summary */}
+            <span className="text-xs font-medium text-gray-700">{selected.size} selected</span>
+            {selected.size > 0 && (
+              <span className="text-[10px] text-gray-400">
+                {stickyQty} qty · {stickyCustomerCount} customer{stickyCustomerCount !== 1 ? "s" : ""}
+              </span>
+            )}
+
+            <div className="flex-1" />
+
+            {/* Status chooser */}
+            <div className="relative" ref={bulkStatusRef}>
+              <button
+                type="button"
+                onClick={() => setBulkStatusOpen((v) => !v)}
+                className={cn(
+                  "inline-flex items-center gap-1.5 text-xs border rounded-lg px-3 py-1.5 cursor-pointer transition-colors",
+                  bulkStatus === "dispatch" ? "border-green-200 bg-green-50 text-green-700" :
+                  bulkStatus === "hold"     ? "border-amber-200 bg-amber-50 text-amber-700" :
+                                              "border-gray-200 bg-white text-gray-500",
+                )}
+              >
+                <span className={cn(
+                  "w-1.5 h-1.5 rounded-full flex-shrink-0",
+                  bulkStatus === "dispatch" ? "bg-green-500" :
+                  bulkStatus === "hold"     ? "bg-amber-500" :
+                                              "bg-gray-300",
+                )} />
+                {bulkStatus === "dispatch" ? "Dispatch" : bulkStatus === "hold" ? "Hold" : "set status"}
+                <ChevronDown size={11} className="ml-0.5 opacity-60" />
+              </button>
+              {bulkStatusOpen && (
+                <div className="absolute bottom-full mb-1.5 left-0 bg-white border border-gray-200 rounded-[10px] shadow-[0_-8px_24px_rgba(0,0,0,0.10)] p-1.5 z-30 w-36">
+                  <div
+                    className="flex items-center gap-2 px-2.5 py-2 text-xs text-gray-700 rounded-[7px] cursor-pointer hover:bg-gray-50"
+                    onClick={() => {
+                      setLocalEdits((prev) => {
+                        const next = new Map(prev);
+                        selected.forEach((id) => {
+                          const edit = next.get(id);
+                          if (!edit || edit.ds === undefined) return;
+                          const { pri, slot } = edit;
+                          if (pri !== undefined || slot !== undefined) next.set(id, { pri, slot });
+                          else next.delete(id);
+                        });
+                        return next;
+                      });
+                      setBulkStatus("dispatch"); setBulkStatusOpen(false);
+                    }}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-green-500 flex-shrink-0" /> Dispatch
+                  </div>
+                  <div
+                    className="flex items-center gap-2 px-2.5 py-2 text-xs text-gray-700 rounded-[7px] cursor-pointer hover:bg-gray-50"
+                    onClick={() => {
+                      setLocalEdits((prev) => {
+                        const next = new Map(prev);
+                        selected.forEach((id) => {
+                          const edit = next.get(id);
+                          if (!edit || edit.ds === undefined) return;
+                          const { pri, slot } = edit;
+                          if (pri !== undefined || slot !== undefined) next.set(id, { pri, slot });
+                          else next.delete(id);
+                        });
+                        return next;
+                      });
+                      setBulkStatus("hold"); setBulkStatusOpen(false); setDispatchSlot(null);
+                    }}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 flex-shrink-0" /> Hold
+                  </div>
+                </div>
               )}
             </div>
-            <div className="flex items-center gap-2">
+
+            {/* Dispatch Slot */}
+            {bulkStatus === "dispatch" && dispatchSlot ? (
               <button
                 type="button"
-                onClick={() => { setSelected(new Set()); setLocalEdits(new Map()); }}
-                className="text-xs text-gray-400 hover:text-gray-600 px-3 py-1 transition-colors"
+                onClick={() => setDispatchSlot(null)}
+                className="inline-flex items-center gap-1.5 text-xs border border-green-200 bg-green-50 text-green-700 rounded-lg px-3 py-1.5"
               >
-                Clear
+                <span>{formatBulkSlot(dispatchSlot)}</span>
+                <span className="text-green-400 hover:text-green-700 leading-none">×</span>
               </button>
-              <button
-                type="button"
-                onClick={() => void handleSubmitSelected()}
-                disabled={bulkLoading}
-                className="px-4 py-1.5 bg-teal-600 text-white text-xs font-medium rounded-md hover:bg-teal-700 flex items-center gap-1.5 disabled:opacity-50 transition-colors"
-              >
-                {bulkLoading && <Loader2 size={12} className="animate-spin" />}
-                Submit {selected.size} Orders
-              </button>
-            </div>
+            ) : bulkStatus === "dispatch" ? (
+              <DispatchSlotPicker
+                value={null}
+                onChange={setDispatchSlot}
+                windows={dispatchWindows}
+                popoverDir="up"
+              />
+            ) : (
+              <span className="inline-flex items-center text-xs border border-dashed border-gray-200 rounded-lg px-3 py-1.5 text-gray-300 select-none">
+                {bulkStatus === "hold" ? "—" : "— pick status first"}
+              </span>
+            )}
+
+            {/* Divider */}
+            <div className="w-px h-[22px] bg-gray-200 mx-1 flex-shrink-0" />
+
+            {/* Clear */}
+            <button
+              type="button"
+              onClick={() => { setSelected(new Set()); setLocalEdits(new Map()); setDispatchSlot(null); setBulkStatus(null); setBulkStatusOpen(false); }}
+              className="text-xs text-gray-400 hover:text-gray-600 px-3 py-1 transition-colors"
+            >
+              Clear
+            </button>
+
+            {/* Submit */}
+            <button
+              type="button"
+              onClick={() => void handleSubmitSelected()}
+              disabled={bulkLoading || bulkStatus === null || (bulkStatus === "dispatch" && !dispatchSlot)}
+              className="px-4 py-1.5 bg-teal-600 text-white text-xs font-semibold rounded-lg hover:bg-teal-700 flex items-center gap-1.5 disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed transition-colors"
+            >
+              {bulkLoading && <Loader2 size={12} className="animate-spin" />}
+              Submit {selected.size} Orders
+            </button>
           </div>
         </div>
       </div>
@@ -657,8 +846,11 @@ export function SupportOrdersTable({
 function GroupRows({
   group, isCollapsed, showGroupHeader, onToggleGroup, onToggleGroupSelect, countText,
   selected, detailOrder, localEdits, changedIds, rowLoading, slots,
-  openPopover, isHistoryView,
+  openPopover, isHistoryView, dispatchWindows, onSingleDispatch,
+  dispatchPickerTrigger, onRequestDispatchPickerOpen,
+  dispatchIntentIds, onSetDispatchIntent, onClearDispatchIntent,
   onToggleOne, onSetEdit, onDsChange, onSetDetail, onSetPopover, onMissing, onShipOverride,
+  bulkStatus,
 }: {
   group: OrderGroup;
   isCollapsed: boolean;
@@ -674,6 +866,13 @@ function GroupRows({
   slots: SlotNavItem[];
   openPopover: PopoverState;
   isHistoryView: boolean;
+  dispatchWindows: DispatchWindow[];
+  onSingleDispatch: (orderId: number, target: { dispatchTargetDate: string; dispatchWindowId: number }) => Promise<void>;
+  dispatchPickerTrigger: { id: number; gen: number } | null;
+  onRequestDispatchPickerOpen: (orderId: number) => void;
+  dispatchIntentIds: Set<number>;
+  onSetDispatchIntent: (orderId: number) => void;
+  onClearDispatchIntent: (orderId: number) => void;
   onToggleOne: (id: number) => void;
   onSetEdit: (id: number, field: "ds" | "pri" | "slot", value: string) => void;
   onDsChange: (order: SupportOrder, value: string) => void;
@@ -681,6 +880,7 @@ function GroupRows({
   onSetPopover: (v: PopoverState) => void;
   onMissing: (v: { open: boolean; shipToCustomerId: string | null; shipToCustomerName: string | null }) => void;
   onShipOverride: (v: { open: boolean; orderId: number | null; obdNumber: string | null; currentOverride: string | null }) => void;
+  bulkStatus?: "dispatch" | "hold" | null;
 }) {
   const groupSelectableIds = useMemo(
     () => group.orders.filter((o) => { const rt = getRowType(o); return rt !== "tinting" && rt !== "physically_dispatched"; }).map((o) => o.id),
@@ -723,6 +923,13 @@ function GroupRows({
           slots={slots}
           openPopover={openPopover}
           isHistoryView={isHistoryView}
+          dispatchWindows={dispatchWindows}
+          onSingleDispatch={onSingleDispatch}
+          dispatchPickerTrigger={dispatchPickerTrigger}
+          onRequestDispatchPickerOpen={onRequestDispatchPickerOpen}
+          dispatchIntentIds={dispatchIntentIds}
+          onSetDispatchIntent={onSetDispatchIntent}
+          onClearDispatchIntent={onClearDispatchIntent}
           onToggleOne={onToggleOne}
           onSetEdit={onSetEdit}
           onDsChange={onDsChange}
@@ -730,6 +937,7 @@ function GroupRows({
           onSetPopover={onSetPopover}
           onMissing={onMissing}
           onShipOverride={onShipOverride}
+          bulkStatus={bulkStatus}
         />
       ))}
     </>
@@ -741,7 +949,11 @@ function GroupRows({
 function OrderRow({
   order, selected, detailOrder, localEdits, changedIds, rowLoading, slots,
   openPopover, isHistoryView, isDoneRow, onUndoDispatch, onUndoCancel,
+  dispatchWindows, onSingleDispatch,
+  dispatchPickerTrigger, onRequestDispatchPickerOpen,
+  dispatchIntentIds, onSetDispatchIntent, onClearDispatchIntent,
   onToggleOne, onSetEdit, onDsChange, onSetDetail, onSetPopover, onMissing, onShipOverride,
+  bulkStatus,
 }: {
   order: SupportOrder;
   selected: Set<number>;
@@ -755,6 +967,13 @@ function OrderRow({
   isDoneRow?: boolean;
   onUndoDispatch?: (orderId: number) => Promise<void>;
   onUndoCancel?: (orderId: number) => Promise<void>;
+  dispatchWindows?: DispatchWindow[];
+  onSingleDispatch?: (orderId: number, target: { dispatchTargetDate: string; dispatchWindowId: number }) => Promise<void>;
+  dispatchPickerTrigger?: { id: number; gen: number } | null;
+  onRequestDispatchPickerOpen?: (orderId: number) => void;
+  dispatchIntentIds?: Set<number>;
+  onSetDispatchIntent?: (orderId: number) => void;
+  onClearDispatchIntent?: (orderId: number) => void;
   onToggleOne: (id: number) => void;
   onSetEdit: (id: number, field: "ds" | "pri" | "slot", value: string) => void;
   onDsChange: (order: SupportOrder, value: string) => void;
@@ -762,6 +981,7 @@ function OrderRow({
   onSetPopover: (v: PopoverState) => void;
   onMissing: (v: { open: boolean; shipToCustomerId: string | null; shipToCustomerName: string | null }) => void;
   onShipOverride: (v: { open: boolean; orderId: number | null; obdNumber: string | null; currentOverride: string | null }) => void;
+  bulkStatus?: "dispatch" | "hold" | null;
 }) {
   const rt = getRowType(order);
   const isPhysicallyDispatched = rt === "physically_dispatched";
@@ -779,7 +999,21 @@ function OrderRow({
   const editDs   = localEdits.get(order.id)?.ds;
   const editPri  = localEdits.get(order.id)?.pri;
   const editSlot = localEdits.get(order.id)?.slot;
-  const currentDs   = editDs ?? order.dispatchStatus ?? "";
+
+  const [savingSlot, setSavingSlot] = useState<{ date: string; windowTime: string } | null>(null);
+  const prevRowBusy = useRef(false);
+  useEffect(() => {
+    if (prevRowBusy.current && !isRowBusy) setSavingSlot(null);
+    prevRowBusy.current = isRowBusy;
+  }, [isRowBusy]);
+
+  const hasDispatchIntent = !isDoneRow && (dispatchIntentIds?.has(order.id) ?? false);
+  const isSelected = !isDoneRow && selected.has(order.id);
+  const currentDs   = editDs ?? (
+    isSelected && bulkStatus ? bulkStatus
+    : hasDispatchIntent || savingSlot !== null ? "dispatch"
+    : (order.dispatchStatus ?? "")
+  );
   const currentPri  = editPri ?? String(order.priorityLevel);
   const currentSlot = editSlot ?? (order.slotId ? String(order.slotId) : "");
 
@@ -887,11 +1121,9 @@ function OrderRow({
         )}
       </div>
 
-      {/* ── Dispatch badge ─────────────────────────────────────────────── */}
+      {/* ── Status badge (col 7) ───────────────────────────────────────── */}
       <div className="relative" data-popover>
-        {isRowBusy ? (
-          <Loader2 size={14} className="animate-spin text-gray-400" />
-        ) : isPhysicallyDispatched ? (
+        {isPhysicallyDispatched ? (
           <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2.5 py-0.5 rounded-full border bg-emerald-50 border-emerald-200 text-emerald-600 cursor-default">
             <span className="w-[5px] h-[5px] rounded-full inline-block bg-emerald-500" />
             Dispatched
@@ -905,22 +1137,22 @@ function OrderRow({
           <span
             className={cn(
               "inline-flex items-center gap-1 text-[11px] font-medium px-2.5 py-0.5 rounded-full border cursor-default",
-              order.footprintType === "cancel"                                   ? "bg-red-50 border-red-200 text-red-600" :
-              (order.footprintType === "dispatch" || currentDs === "dispatch")   ? "bg-emerald-50 border-emerald-200 text-emerald-600" :
-              (order.footprintType === "hold"     || currentDs === "hold")       ? "bg-amber-50 border-amber-200 text-amber-600" :
-                                                                                   "bg-gray-100 border-gray-200 text-gray-400",
+              order.footprintType === "cancel"   ? "bg-red-50 border-red-200 text-red-600" :
+              order.footprintType === "dispatch" ? "bg-green-50 border-green-200 text-green-700" :
+              order.footprintType === "hold"     ? "bg-amber-50 border-amber-200 text-amber-700" :
+                                                   "bg-gray-100 border-gray-200 text-gray-400",
             )}
           >
             <span className={cn(
               "w-[5px] h-[5px] rounded-full inline-block",
-              order.footprintType === "cancel"                                   ? "bg-red-500" :
-              (order.footprintType === "dispatch" || currentDs === "dispatch")   ? "bg-emerald-500" :
-              (order.footprintType === "hold"     || currentDs === "hold")       ? "bg-amber-500" :
-                                                                                   "bg-gray-300",
+              order.footprintType === "cancel"   ? "bg-red-500" :
+              order.footprintType === "dispatch" ? "bg-green-500" :
+              order.footprintType === "hold"     ? "bg-amber-500" :
+                                                   "bg-gray-300",
             )} />
-            {order.footprintType === "cancel"                                   ? "Cancelled" :
-             (order.footprintType === "dispatch" || currentDs === "dispatch")   ? "Dispatch" :
-             (order.footprintType === "hold"     || currentDs === "hold")       ? "Hold" : "Done"}
+            {order.footprintType === "cancel"   ? "Cancelled" :
+             order.footprintType === "dispatch" ? "Dispatch" :
+             order.footprintType === "hold"     ? "Hold" : "Done"}
           </span>
         ) : (
           <>
@@ -946,26 +1178,26 @@ function OrderRow({
             </span>
             {isDispatchPopoverOpen && (
               <div
-                className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg p-1 z-30 min-w-[100px]"
+                className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg p-1 z-30 min-w-[120px]"
                 onClick={(e) => e.stopPropagation()}
               >
+                <div
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-gray-700 rounded cursor-pointer hover:bg-gray-50"
+                  onClick={() => { onSetDispatchIntent?.(order.id); onSetPopover(null); onRequestDispatchPickerOpen?.(order.id); }}
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-green-500 flex-shrink-0" /> Dispatch
+                </div>
                 {currentDs && (
                   <div
                     className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-gray-700 rounded cursor-pointer hover:bg-gray-50"
-                    onClick={() => { onDsChange(order, ""); onSetPopover(null); }}
+                    onClick={() => { onClearDispatchIntent?.(order.id); onDsChange(order, ""); onSetPopover(null); }}
                   >
                     <span className="w-1.5 h-1.5 rounded-full bg-gray-300" /> Unset
                   </div>
                 )}
                 <div
                   className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-gray-700 rounded cursor-pointer hover:bg-gray-50"
-                  onClick={() => { onDsChange(order, "dispatch"); onSetPopover(null); }}
-                >
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Dispatch
-                </div>
-                <div
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-gray-700 rounded cursor-pointer hover:bg-gray-50"
-                  onClick={() => { onDsChange(order, "hold"); onSetPopover(null); }}
+                  onClick={() => { onClearDispatchIntent?.(order.id); onDsChange(order, "hold"); onSetPopover(null); }}
                 >
                   <span className="w-1.5 h-1.5 rounded-full bg-amber-500" /> Hold
                 </div>
@@ -974,7 +1206,7 @@ function OrderRow({
                     <div className="border-t border-gray-100 my-1" />
                     <div
                       className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-red-500 rounded cursor-pointer hover:bg-red-50"
-                      onClick={() => { onDsChange(order, "cancel"); onSetPopover(null); }}
+                      onClick={() => { onClearDispatchIntent?.(order.id); onDsChange(order, "cancel"); onSetPopover(null); }}
                     >
                       Cancel
                     </div>
@@ -986,7 +1218,81 @@ function OrderRow({
         )}
       </div>
 
-      {/* ── Priority badge ─────────────────────────────────────────────── */}
+      {/* ── Dispatch Slot (col 8) ──────────────────────────────────────── */}
+      <div>
+        {isPhysicallyDispatched || isTinting ? (
+          <span className="text-[10px] text-gray-300">—</span>
+        ) : savingSlot ? (
+          <div className="flex items-center gap-1.5">
+            <span className="text-[11px]">
+              <span className="text-gray-900 font-medium">{formatSavingSlot(savingSlot.date)}</span>
+              <span className="text-gray-500"> · {savingSlot.windowTime}</span>
+            </span>
+            <Loader2 size={11} className="animate-spin text-gray-300 flex-shrink-0" />
+          </div>
+        ) : isDoneRow ? (
+          <div className="flex items-center gap-1">
+            {(() => {
+              const slotLabel = formatDispatchSlot(order);
+              if (slotLabel) {
+                const [datePart, timePart] = slotLabel.split(" · ");
+                return (
+                  <span className="text-[11px]">
+                    <span className="text-gray-900 font-medium">{datePart}</span>
+                    <span className="text-gray-500"> · {timePart}</span>
+                  </span>
+                );
+              }
+              return <span className="text-[11px] text-gray-300">—</span>;
+            })()}
+            {onUndoDispatch && order.dispatchStatus !== "hold" && order.footprintType !== "cancel" && (
+              <button
+                type="button"
+                title="Undo dispatch — return to pending"
+                disabled={isRowBusy}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (!window.confirm("Return this order to the pending queue? It will be removed from Done.")) return;
+                  void onUndoDispatch(order.id);
+                }}
+                className="ml-1 p-0.5 text-gray-300 hover:text-gray-500 disabled:opacity-40 transition-colors rounded"
+              >
+                <RotateCcw size={11} />
+              </button>
+            )}
+            {onUndoCancel && order.footprintType === "cancel" && (
+              <button
+                type="button"
+                title="Undo cancel — return to pending"
+                disabled={isRowBusy}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (!window.confirm("Return this order to the pending queue? The cancellation will be undone.")) return;
+                  void onUndoCancel(order.id);
+                }}
+                className="ml-1 p-0.5 text-gray-300 hover:text-gray-500 disabled:opacity-40 transition-colors rounded"
+              >
+                <RotateCcw size={11} />
+              </button>
+            )}
+          </div>
+        ) : currentDs === "hold" ? (
+          <span className="text-[10px] text-gray-300">—</span>
+        ) : (
+          <DispatchSlotPicker
+            value={null}
+            onChange={(v) => {
+              if (!v || !onSingleDispatch) return;
+              setSavingSlot({ date: v.date, windowTime: v.windowTime });
+              void onSingleDispatch(order.id, { dispatchTargetDate: v.date, dispatchWindowId: v.dispatchWindowId });
+            }}
+            windows={dispatchWindows ?? []}
+            forceOpenGen={dispatchPickerTrigger?.id === order.id ? dispatchPickerTrigger.gen : undefined}
+          />
+        )}
+      </div>
+
+      {/* ── Priority badge (col 10) ─────────────────────────────────────── */}
       <div className="relative" data-popover>
         {isPhysicallyDispatched || isTinting ? (
           <span className="text-[10px] text-gray-300">—</span>
@@ -1037,69 +1343,6 @@ function OrderRow({
               </div>
             )}
           </>
-        )}
-      </div>
-
-      {/* ── Slot ───────────────────────────────────────────────────────── */}
-      <div>
-        {isPhysicallyDispatched || isTinting ? (
-          <span className="text-[10px] text-gray-300">—</span>
-        ) : isResolved || isReadOnly ? (
-          <div className="flex items-center gap-1">
-            <span className="text-[10px] text-gray-400">
-              {order.footprintType === "dispatch" ? (order.dispatchWindow?.windowTime ?? "—") : (order.slot?.name ?? "—")}
-            </span>
-            {hasCascade && (
-              <span className="text-[10px] text-gray-300 ml-0.5">↻ {abbreviateSlotName(order.originalSlot!.name)}</span>
-            )}
-            {isDoneRow && onUndoDispatch && order.dispatchStatus !== "hold" && order.footprintType !== "cancel" && (
-              <button
-                type="button"
-                title="Undo dispatch — return to pending"
-                disabled={isRowBusy}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (!window.confirm("Return this order to the pending queue? It will be removed from Done.")) return;
-                  void onUndoDispatch(order.id);
-                }}
-                className="ml-1 p-0.5 text-gray-300 hover:text-gray-500 disabled:opacity-40 transition-colors rounded"
-              >
-                <RotateCcw size={11} />
-              </button>
-            )}
-            {isDoneRow && onUndoCancel && order.footprintType === "cancel" && (
-              <button
-                type="button"
-                title="Undo cancel — return to pending"
-                disabled={isRowBusy}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (!window.confirm("Return this order to the pending queue? The cancellation will be undone.")) return;
-                  void onUndoCancel(order.id);
-                }}
-                className="ml-1 p-0.5 text-gray-300 hover:text-gray-500 disabled:opacity-40 transition-colors rounded"
-              >
-                <RotateCcw size={11} />
-              </button>
-            )}
-          </div>
-        ) : (
-          <div className="flex flex-col">
-            <select
-              value={currentSlot}
-              onChange={(e) => { e.stopPropagation(); onSetEdit(order.id, "slot", e.target.value); }}
-              onClick={(e) => e.stopPropagation()}
-              className={PILL_SLOT_CLS}
-            >
-              <option value="">—</option>
-              {slots.map((s) => (
-                <option key={s.id} value={String(s.id)}>{s.name}</option>
-              ))}
-            </select>
-            {hasCascade && (
-              <div className="text-[10px] text-gray-400 mt-px leading-none">↻ {order.originalSlot!.name}</div>
-            )}
-          </div>
         )}
       </div>
     </div>

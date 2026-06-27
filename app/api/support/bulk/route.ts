@@ -14,6 +14,8 @@ export async function POST(req: Request): Promise<NextResponse> {
     orderIds?: number[];
     action?: string;
     note?: string;
+    dispatchTargetDate?: string;
+    dispatchWindowId?: number;
   };
 
   if (!Array.isArray(body.orderIds) || body.orderIds.length === 0) {
@@ -23,7 +25,26 @@ export async function POST(req: Request): Promise<NextResponse> {
     return NextResponse.json({ error: "action must be 'dispatch' or 'hold'" }, { status: 400 });
   }
 
+  if (body.action === "dispatch") {
+    if (!body.dispatchTargetDate || !/^\d{4}-\d{2}-\d{2}$/.test(body.dispatchTargetDate)) {
+      return NextResponse.json(
+        { error: "dispatchTargetDate is required (YYYY-MM-DD)" },
+        { status: 400 },
+      );
+    }
+    if (!body.dispatchWindowId || !Number.isInteger(body.dispatchWindowId)) {
+      return NextResponse.json(
+        { error: "dispatchWindowId is required" },
+        { status: 400 },
+      );
+    }
+  }
+
   const { orderIds, action, note } = body;
+
+  // Parse date once for the whole batch — only used when action === "dispatch"
+  const [dy, dm, dd] = (body.dispatchTargetDate ?? "1970-01-01").split("-").map(Number);
+  const targetDate = new Date(Date.UTC(dy, dm - 1, dd));
   let processed = 0;
   let skipped = 0;
 
@@ -72,6 +93,8 @@ export async function POST(req: Request): Promise<NextResponse> {
         data: {
           workflowStage: "closed",
           dispatchStatus: "dispatch",
+          dispatchTargetDate: targetDate,
+          dispatchWindowId: body.dispatchWindowId,
         },
       });
 

@@ -200,6 +200,10 @@ export async function GET(req: Request): Promise<NextResponse> {
       } else if (order.heldAt && order.heldAt >= istStart && order.heldAt < istEnd) {
         footprintType = "hold";
       }
+    } else {
+      // Today board: read dispatchStatus directly — no date-range comparison needed.
+      if (order.dispatchStatus === "dispatch") footprintType = "dispatch";
+      else if (order.dispatchStatus === "hold") footprintType = "hold";
     }
 
     return { ...order, isCarriedOver, daysOverdue, importVolume, isDone, footprintType };
