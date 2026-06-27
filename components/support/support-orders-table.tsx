@@ -384,7 +384,7 @@ export function SupportOrdersTable({
   }
 
   // ── Sticky bar derived ─────────────────────────────────────────────────────
-  const showStickyBar = !isHistoryView && (selected.size > 0 || changedIds.size > 0);
+  const showStickyBar = selected.size > 0 || changedIds.size > 0;
   const selectedOrders = useMemo(() => filtered.filter((o) => selected.has(o.id)), [filtered, selected]);
   const stickyQty = selectedOrders.reduce((s, o) => s + (o.querySnapshot?.totalUnitQty ?? 0), 0);
   const stickyCustomerCount = new Set(selectedOrders.map((o) => o.shipToCustomerId)).size;
@@ -410,17 +410,13 @@ export function SupportOrdersTable({
 
       {/* ── Toolbar ─────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between px-5 py-1.5 border-b border-gray-50 flex-shrink-0">
-        {!isHistoryView ? (
-          <button
-            type="button"
-            onClick={toggleAll}
-            className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
-          >
-            {allSelected ? "Deselect All" : "Select All"}
-          </button>
-        ) : (
-          <div />
-        )}
+        <button
+          type="button"
+          onClick={toggleAll}
+          className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
+        >
+          {allSelected ? "Deselect All" : "Select All"}
+        </button>
         <div className="flex items-center gap-2.5">
           <div className="flex items-center gap-1.5 text-xs text-gray-400">
             Group by
@@ -467,7 +463,7 @@ export function SupportOrdersTable({
           <div className="px-5">
             {/* Column headers */}
             <div style={GRID} className="py-1.5 px-1 text-[10px] font-medium text-gray-400 uppercase tracking-wider border-b border-gray-100 sticky top-0 bg-white z-10">
-              <div>{!isHistoryView && <Checkbox checked={allSelected} onCheckedChange={() => toggleAll()} />}</div>
+              <div><Checkbox checked={allSelected} onCheckedChange={() => toggleAll()} /></div>
               <div>OBD / Date</div>
               <div>Customer</div>
               <div>Route / Type</div>
@@ -680,7 +676,7 @@ function GroupRows({
           className="flex items-center gap-2 py-2 px-1 cursor-pointer hover:bg-gray-50 transition-colors"
           onClick={onToggleGroup}
         >
-          {!isHistoryView && groupSelectableIds.length > 0 && (
+          {groupSelectableIds.length > 0 && (
             <div data-checkbox onClick={(e) => e.stopPropagation()}>
               <Checkbox
                 checked={groupAllSelected}
@@ -750,7 +746,7 @@ function OrderRow({
   const isTinting = rt === "tinting";
   const isResolved = rt === "resolved";
   const isNonInteractive = isPhysicallyDispatched || isTinting;
-  const isReadOnly = isHistoryView || !!isDoneRow;
+  const isReadOnly = !!isDoneRow;
 
   const isChanged = changedIds.has(order.id);
   const isDetailActive = detailOrder?.id === order.id;
@@ -901,24 +897,6 @@ function OrderRow({
             {(order.footprintType === "dispatch" || currentDs === "dispatch") ? "Dispatch" :
              (order.footprintType === "hold"     || currentDs === "hold")     ? "Hold" : "Done"}
           </span>
-        ) : isHistoryView ? (
-          <span
-            className={cn(
-              "inline-flex items-center gap-1 text-[11px] font-medium px-2.5 py-0.5 rounded-full border cursor-default",
-              (order.footprintType === "dispatch" || currentDs === "dispatch") ? "bg-emerald-50 border-emerald-200 text-emerald-600" :
-              (order.footprintType === "hold"     || currentDs === "hold")     ? "bg-amber-50 border-amber-200 text-amber-600" :
-                                                                                 "bg-gray-100 border-gray-200 text-gray-400",
-            )}
-          >
-            <span className={cn(
-              "w-[5px] h-[5px] rounded-full inline-block",
-              (order.footprintType === "dispatch" || currentDs === "dispatch") ? "bg-emerald-500" :
-              (order.footprintType === "hold"     || currentDs === "hold")     ? "bg-amber-500" :
-                                                                                 "bg-gray-300",
-            )} />
-            {(order.footprintType === "dispatch" || currentDs === "dispatch") ? "Dispatch" :
-             (order.footprintType === "hold"     || currentDs === "hold")     ? "Hold" : "—"}
-          </span>
         ) : (
           <>
             <span
@@ -1049,7 +1027,7 @@ function OrderRow({
             {hasCascade && (
               <span className="text-[10px] text-gray-300 ml-0.5">↻ {abbreviateSlotName(order.originalSlot!.name)}</span>
             )}
-            {isDoneRow && onUndoDispatch && !isHistoryView && order.dispatchStatus !== "hold" && (
+            {isDoneRow && onUndoDispatch && order.dispatchStatus !== "hold" && (
               <button
                 type="button"
                 title="Undo dispatch — return to pending"
