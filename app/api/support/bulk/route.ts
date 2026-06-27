@@ -106,7 +106,7 @@ export async function POST(req: Request): Promise<NextResponse> {
 
       await prisma.orders.update({
         where: { id: orderId },
-        data: { dispatchStatus: "hold", heldAt: new Date() },
+        data: { dispatchStatus: "hold", heldAt: order.obdEmailDate ?? new Date() },
       });
 
       await prisma.order_status_logs.create({

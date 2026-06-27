@@ -240,9 +240,7 @@ async function applyMailOrderEnrichment(soNumbers: (string | null)[]): Promise<v
     if (mailOrder.dispatchStatus) {
       const loweredStatus = mailOrder.dispatchStatus.toLowerCase();
       updateData.dispatchStatus = loweredStatus;
-      if (loweredStatus === "hold") {
-        updateData.heldAt = new Date();
-      }
+      // heldAt set per-order below — updateMany can't apply per-row values
     }
 
     if (mailOrder.dispatchPriority) {
@@ -303,6 +301,20 @@ async function applyMailOrderEnrichment(soNumbers: (string | null)[]): Promise<v
       where: { soNumber: soNum },
       data: updateData,
     });
+
+    // heldAt = each order's own obdEmailDate (arrival anchor for the board).
+    if (updateData.dispatchStatus === "hold") {
+      const ordersToHold = await prisma.orders.findMany({
+        where: { soNumber: soNum },
+        select: { id: true, obdEmailDate: true },
+      });
+      for (const ord of ordersToHold) {
+        await prisma.orders.update({
+          where: { id: ord.id },
+          data: { heldAt: ord.obdEmailDate ?? new Date() },
+        });
+      }
+    }
 
     // Auto-done: only when enrichment sets dispatchStatus = "dispatch".
     // Hold stays in the queue. Guard: workflowStage = "pending_support" only —
