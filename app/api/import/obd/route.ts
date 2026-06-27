@@ -238,7 +238,11 @@ async function applyMailOrderEnrichment(soNumbers: (string | null)[]): Promise<v
     const updateData: Record<string, unknown> = { mailMatched: true };
 
     if (mailOrder.dispatchStatus) {
-      updateData.dispatchStatus = mailOrder.dispatchStatus.toLowerCase();
+      const loweredStatus = mailOrder.dispatchStatus.toLowerCase();
+      updateData.dispatchStatus = loweredStatus;
+      if (loweredStatus === "hold") {
+        updateData.heldAt = new Date();
+      }
     }
 
     if (mailOrder.dispatchPriority) {
