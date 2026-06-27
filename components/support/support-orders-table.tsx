@@ -63,7 +63,7 @@ export interface SupportOrder {
   arrivalSlotId?: number | null;
   heldAt?: string | null;
   dispatchTargetDate?: string | null;
-  footprintType?: "arrival" | "hold" | "dispatch";
+  footprintType?: "arrival" | "hold" | "dispatch" | "cancel";
   dispatchWindow?: { windowTime: string; label: string | null } | null;
 }
 
@@ -331,6 +331,26 @@ export function SupportOrdersTable({
     }
   }, [withRowLoading, onOrdersChanged]);
 
+  const handleUndoCancel = useCallback(async (orderId: number) => {
+    try {
+      await withRowLoading(orderId, async () => {
+        const res = await fetch(`/api/support/orders/${orderId}/undo-cancel`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: "{}",
+        });
+        if (!res.ok) {
+          const e = (await res.json().catch(() => ({}))) as { error?: string };
+          throw new Error(e.error ?? "Undo failed");
+        }
+        toast.success("Cancellation undone — order returned to pending");
+        onOrdersChanged();
+      });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Undo failed");
+    }
+  }, [withRowLoading, onOrdersChanged]);
+
   async function handleSubmitSelected() {
     setBulkLoading(true);
     try {
@@ -541,6 +561,7 @@ export function SupportOrdersTable({
                     isHistoryView={isHistoryView}
                     isDoneRow={true}
                     onUndoDispatch={handleUndoDispatch}
+                    onUndoCancel={handleUndoCancel}
                     onToggleOne={toggleOne}
                     onSetEdit={setEdit}
                     onDsChange={handleDsChange}
@@ -719,7 +740,7 @@ function GroupRows({
 
 function OrderRow({
   order, selected, detailOrder, localEdits, changedIds, rowLoading, slots,
-  openPopover, isHistoryView, isDoneRow, onUndoDispatch,
+  openPopover, isHistoryView, isDoneRow, onUndoDispatch, onUndoCancel,
   onToggleOne, onSetEdit, onDsChange, onSetDetail, onSetPopover, onMissing, onShipOverride,
 }: {
   order: SupportOrder;
@@ -733,6 +754,7 @@ function OrderRow({
   isHistoryView: boolean;
   isDoneRow?: boolean;
   onUndoDispatch?: (orderId: number) => Promise<void>;
+  onUndoCancel?: (orderId: number) => Promise<void>;
   onToggleOne: (id: number) => void;
   onSetEdit: (id: number, field: "ds" | "pri" | "slot", value: string) => void;
   onDsChange: (order: SupportOrder, value: string) => void;
@@ -883,19 +905,22 @@ function OrderRow({
           <span
             className={cn(
               "inline-flex items-center gap-1 text-[11px] font-medium px-2.5 py-0.5 rounded-full border cursor-default",
-              (order.footprintType === "dispatch" || currentDs === "dispatch") ? "bg-emerald-50 border-emerald-200 text-emerald-600" :
-              (order.footprintType === "hold"     || currentDs === "hold")     ? "bg-amber-50 border-amber-200 text-amber-600" :
-                                                                                 "bg-gray-100 border-gray-200 text-gray-400",
+              order.footprintType === "cancel"                                   ? "bg-red-50 border-red-200 text-red-600" :
+              (order.footprintType === "dispatch" || currentDs === "dispatch")   ? "bg-emerald-50 border-emerald-200 text-emerald-600" :
+              (order.footprintType === "hold"     || currentDs === "hold")       ? "bg-amber-50 border-amber-200 text-amber-600" :
+                                                                                   "bg-gray-100 border-gray-200 text-gray-400",
             )}
           >
             <span className={cn(
               "w-[5px] h-[5px] rounded-full inline-block",
-              (order.footprintType === "dispatch" || currentDs === "dispatch") ? "bg-emerald-500" :
-              (order.footprintType === "hold"     || currentDs === "hold")     ? "bg-amber-500" :
-                                                                                 "bg-gray-300",
+              order.footprintType === "cancel"                                   ? "bg-red-500" :
+              (order.footprintType === "dispatch" || currentDs === "dispatch")   ? "bg-emerald-500" :
+              (order.footprintType === "hold"     || currentDs === "hold")       ? "bg-amber-500" :
+                                                                                   "bg-gray-300",
             )} />
-            {(order.footprintType === "dispatch" || currentDs === "dispatch") ? "Dispatch" :
-             (order.footprintType === "hold"     || currentDs === "hold")     ? "Hold" : "Done"}
+            {order.footprintType === "cancel"                                   ? "Cancelled" :
+             (order.footprintType === "dispatch" || currentDs === "dispatch")   ? "Dispatch" :
+             (order.footprintType === "hold"     || currentDs === "hold")       ? "Hold" : "Done"}
           </span>
         ) : (
           <>
@@ -1027,7 +1052,7 @@ function OrderRow({
             {hasCascade && (
               <span className="text-[10px] text-gray-300 ml-0.5">↻ {abbreviateSlotName(order.originalSlot!.name)}</span>
             )}
-            {isDoneRow && onUndoDispatch && order.dispatchStatus !== "hold" && (
+            {isDoneRow && onUndoDispatch && order.dispatchStatus !== "hold" && order.footprintType !== "cancel" && (
               <button
                 type="button"
                 title="Undo dispatch — return to pending"
@@ -1036,6 +1061,21 @@ function OrderRow({
                   e.stopPropagation();
                   if (!window.confirm("Return this order to the pending queue? It will be removed from Done.")) return;
                   void onUndoDispatch(order.id);
+                }}
+                className="ml-1 p-0.5 text-gray-300 hover:text-gray-500 disabled:opacity-40 transition-colors rounded"
+              >
+                <RotateCcw size={11} />
+              </button>
+            )}
+            {isDoneRow && onUndoCancel && order.footprintType === "cancel" && (
+              <button
+                type="button"
+                title="Undo cancel — return to pending"
+                disabled={isRowBusy}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (!window.confirm("Return this order to the pending queue? The cancellation will be undone.")) return;
+                  void onUndoCancel(order.id);
                 }}
                 className="ml-1 p-0.5 text-gray-300 hover:text-gray-500 disabled:opacity-40 transition-colors rounded"
               >

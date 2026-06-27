@@ -84,7 +84,7 @@ export async function GET(req: Request): Promise<NextResponse> {
       if (slotIdStr) where.arrivalSlotId = parseInt(slotIdStr, 10);
       where.OR = [
         { workflowStage: { notIn: ["dispatched", "cancelled", "closed", "order_created", "pending_tint_assignment"] }, obdEmailDate: { gte: istStart, lt: istEnd } },
-        { workflowStage: { in: ["closed", "dispatched"] }, obdEmailDate: { gte: istStart, lt: istEnd } },
+        { workflowStage: { in: ["closed", "dispatched", "cancelled"] }, obdEmailDate: { gte: istStart, lt: istEnd } },
       ];
     } else {
       // History: TWO-FOOTPRINT — obdEmailDate (arrival), heldAt (hold), dispatchTargetDate (dispatch).
@@ -92,7 +92,7 @@ export async function GET(req: Request): Promise<NextResponse> {
         const histSlotId = parseInt(slotIdStr, 10);
         where.OR = [
           // ── Done: arrival footprint (any slot)
-          { obdEmailDate: { gte: istStart, lt: istEnd }, workflowStage: { in: ["dispatched", "closed"] } },
+          { obdEmailDate: { gte: istStart, lt: istEnd }, workflowStage: { in: ["dispatched", "closed", "cancelled"] } },
           // ── Done: hold footprint now released (held on D, later closed)
           { heldAt: { gte: istStart, lt: istEnd }, workflowStage: "closed" },
           // ── Done: dispatch footprint — always unslotted, always in done group
@@ -110,7 +110,7 @@ export async function GET(req: Request): Promise<NextResponse> {
         // ALL-slot: union of all three footprints
         where.OR = [
           { obdEmailDate: { gte: istStart, lt: istEnd },
-            workflowStage: { notIn: ["cancelled", "order_created", "pending_tint_assignment"] } },
+            workflowStage: { notIn: ["order_created", "pending_tint_assignment"] } },
           { heldAt: { gte: istStart, lt: istEnd },
             workflowStage: { notIn: ["cancelled", "order_created", "pending_tint_assignment"] } },
           { dispatchTargetDate: { gte: dateStart, lt: dateEnd }, workflowStage: "closed" },
@@ -186,12 +186,14 @@ export async function GET(req: Request): Promise<NextResponse> {
       ? Math.floor((new Date(dateStr).getTime() - new Date(obdDate).getTime()) / 86400000)
       : 0;
     const importVolume = volumeMap.get(order.obdNumber) ?? null;
-    const isDone = order.workflowStage === "closed" || order.workflowStage === "dispatched" || order.dispatchStatus === "hold";
+    const isDone = order.workflowStage === "closed" || order.workflowStage === "dispatched" || order.dispatchStatus === "hold" || order.workflowStage === "cancelled";
 
-    // footprintType: which history footprint this row was fetched via (history only).
-    // Priority: dispatch > hold > arrival.
-    let footprintType: "arrival" | "hold" | "dispatch" = "arrival";
-    if (isHistoryView) {
+    // footprintType: which footprint this row represents. Set for both today and history.
+    // Priority: cancel > dispatch > hold > arrival.
+    let footprintType: "arrival" | "hold" | "dispatch" | "cancel" = "arrival";
+    if (order.workflowStage === "cancelled") {
+      footprintType = "cancel";
+    } else if (isHistoryView) {
       const dispDt = order.dispatchTargetDate;
       if (dispDt && dispDt >= dateStart && dispDt < dateEnd) {
         footprintType = "dispatch";

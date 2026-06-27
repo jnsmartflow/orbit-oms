@@ -60,10 +60,10 @@ export async function GET(req: Request): Promise<NextResponse> {
         AND: [
           {
             isRemoved: false,
-            workflowStage: { in: ["dispatched", "closed"] },
             OR: [
-              { obdEmailDate: { gte: histStart, lt: histEnd } },
-              { dispatchTargetDate: { gte: dateStart, lt: dateEnd } },
+              { workflowStage: { in: ["dispatched", "closed"] }, obdEmailDate: { gte: histStart, lt: histEnd } },
+              { workflowStage: { in: ["dispatched", "closed"] }, dispatchTargetDate: { gte: dateStart, lt: dateEnd } },
+              { workflowStage: "cancelled", obdEmailDate: { gte: histStart, lt: histEnd } },
             ],
           },
           hideExclusion,
@@ -138,6 +138,7 @@ export async function GET(req: Request): Promise<NextResponse> {
             OR: [
               { workflowStage: { in: ["dispatched", "closed"] } },
               { dispatchStatus: "hold" },
+              { workflowStage: "cancelled" },
             ],
           },
           hideExclusion,
