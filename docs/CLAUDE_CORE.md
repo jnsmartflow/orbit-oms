@@ -1,5 +1,5 @@
 # CLAUDE_CORE.md — OrbitOMS Core
-# v76 · Schema v27.6 · June 2026 · Lives in: orbit-oms/docs/
+# v77 · Schema v27.7 · June 2026 · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_UI.md
 
 ---
@@ -176,9 +176,9 @@ Primary role drives login redirect and href overrides. Additional rows add nav i
 
 ---
 
-## 7. Database schema — v27.6
+## 7. Database schema — v27.7
 
-Versions: v21 base → v22 (mo_*) → v23 (orders dispatch) → v24 (customer match) → v25 (split) → v26 (mo_order_remarks) → v26.1 (isLocked) → v26.2 (mo_line_status) → v26.3 (carton + piecesPerCarton) → v26.4 (mo_learned_customers) → v26.5 (orders.orderDateTime) → v26.6 (user_roles + manual_tint_entries + users.phone + mo_sku_lookup.refDescription) → v27.0 (attendance foundation) → v27.1 (attendance settings hardening) → v27.2 (OT workflow + 2026-05-13 place-order v2 tables) → v27.3 (sampling_register + sampling_recipes + sampling_usage_log; orders.isRemoved + delivery_challans.isVoided; tint_skip_events + tint_pause_events; tint_assignments + import_raw_line_items netWeight/totalWeight) → v27.4 (sampling_usage_log.deliveryNumber backfill + tinter_issue_entries.samplingNo/shadeName) → v27.5 (customer_sales_officers + linkedSalesOfficerId on delivery_point_contacts + 3 columns on delivery_challan_formulas + sampling_recipes.packCode nullable with NULLS NOT DISTINCT + mo_sku_lookup_v2.isPrimary + mo_order_form_index_v2.mobileFamily) → **v27.6** (mo_order_form_index_v2.region; Hide feature: `obd_visibility_rules` + `app_tag_settings` tables + orders.isHidden/hiddenById/hiddenReason/hiddenAt — §7.10).
+Versions: v21 base → v22 (mo_*) → v23 (orders dispatch) → v24 (customer match) → v25 (split) → v26 (mo_order_remarks) → v26.1 (isLocked) → v26.2 (mo_line_status) → v26.3 (carton + piecesPerCarton) → v26.4 (mo_learned_customers) → v26.5 (orders.orderDateTime) → v26.6 (user_roles + manual_tint_entries + users.phone + mo_sku_lookup.refDescription) → v27.0 (attendance foundation) → v27.1 (attendance settings hardening) → v27.2 (OT workflow + 2026-05-13 place-order v2 tables) → v27.3 (sampling_register + sampling_recipes + sampling_usage_log; orders.isRemoved + delivery_challans.isVoided; tint_skip_events + tint_pause_events; tint_assignments + import_raw_line_items netWeight/totalWeight) → v27.4 (sampling_usage_log.deliveryNumber backfill + tinter_issue_entries.samplingNo/shadeName) → v27.5 (customer_sales_officers + linkedSalesOfficerId on delivery_point_contacts + 3 columns on delivery_challan_formulas + sampling_recipes.packCode nullable with NULLS NOT DISTINCT + mo_sku_lookup_v2.isPrimary + mo_order_form_index_v2.mobileFamily) → **v27.6** (mo_order_form_index_v2.region; Hide feature: `obd_visibility_rules` + `app_tag_settings` tables + orders.isHidden/hiddenById/hiddenReason/hiddenAt — §7.10) → **v27.7** (Support gatekeeper + Hold/Dispatch-Target: orders.mailMatched; orders.heldAt, dispatchTargetDate, dispatchWindowId, arrivalSlotId; new `dispatch_slot_master` table — §7.4).
 
 ### 7.1 Setup / Master
 
@@ -258,6 +258,18 @@ orders                     workflowStage, slotId, originalSlotId, dispatchSlotDe
                            isHidden BOOLEAN DEFAULT false (indexed), hiddenById,
                            hiddenReason TEXT, hiddenAt TIMESTAMPTZ
 
+                           GATEKEEPER column (v27.7 — Support module, 06-23 session):
+                           mailMatched Boolean NOT NULL DEFAULT false — true when enrichment
+                           matched a mail order; envelope icon in Support table gates on this.
+                           Cannot use orderDateTime for this (it is NEVER null — see SUPPORT §5).
+
+                           HOLD + DISPATCH-TARGET columns (v27.7 — Support module, 06-27 session):
+                           heldAt TIMESTAMPTZ? — hold footprint anchor; set to obdEmailDate (NOT wall-clock)
+                           dispatchTargetDate DATE? — chosen dispatch day (date-only; window carries the time)
+                           dispatchWindowId INT? FK → dispatch_slot_master.id
+                           arrivalSlotId INT? FK → slot_master.id — arrival-day slot; used for history grouping
+                           (dispatchWindow is a Prisma relation on dispatchWindowId, not an extra column)
+
 order_splits               Per tint batch/split
 split_line_items           Per line
 split_status_logs          INSERT-ONLY audit
@@ -301,6 +313,13 @@ dispatch_plan_orders       Order-level. clearedAt TIMESTAMPTZ.
 pick_assignments           Picker assignments. orderId FK unique per active.
 pick_lists, pick_list_items
 dispatch_change_queue
+
+dispatch_slot_master       v27.7. Dispatch TIME windows — DISTINCT from arrival slots in slot_master.
+                           id INT PK, windowTime TEXT (e.g. "10:30"), label TEXT?,
+                           sortOrder INT, isActive BOOL, createdAt TIMESTAMPTZ, updatedAt TIMESTAMPTZ.
+                           Seeded 4 windows: 10:30 / 12:30 / 16:00 / 18:00.
+                           FK target for orders.dispatchWindowId. Will drive auto-slot-assignment
+                           + downstream picking/planning when those layers are built.
 ```
 
 ### 7.5 Delivery Challan
@@ -544,6 +563,7 @@ Full detail in domain files. Cross-reference only here.
 
 ### Support
 `/support`. support, admin, operations. Columns: checkbox | OBD/DATE | CUSTOMER | ROUTE/TYPE | VOL(L) | AGE | DISPATCH | PRIORITY | SLOT. History view, slot sections, bulk actions, date picker, OrderDetailPanel.
+→ `CLAUDE_SUPPORT.md` (gatekeeper, workflow pipeline, closed parking-stage, hold/dispatch-target, open agenda).
 
 ### Dispatch Planning
 `/planning`. dispatcher, admin, operations. Planning at ORDER level. All splits of one OBD go to same vehicle.
@@ -620,4 +640,4 @@ Engineering note: a parallel session owns `scripts/_*` scratch files (sampling/r
 
 ---
 
-*CORE v76 · Schema v27.6 · OrbitOMS*
+*CORE v77 · Schema v27.7 · OrbitOMS*

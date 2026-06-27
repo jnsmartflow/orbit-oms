@@ -1,5 +1,5 @@
 # CLAUDE_IMPORT.md — OrbitOMS Import Pipeline
-# v1 · Schema v27.6 · Lives in: orbit-oms/docs/
+# v1.1 · Schema v27.7 · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
 Covers the SAP/OBD import pipeline end-to-end: manual SAP upload, Auto-Import (currently paused), the shared upsert utility that both paths funnel through, schema, filters, and downstream consumers.
@@ -87,7 +87,9 @@ The current SAP OBT export. One worksheet (`Sheet1` typical). Header row 1, data
 
 REQUIRED_COLS (read-sheet.ts:54-58): `[delivery, warehouse, division, soldToParty, shipToParty, referenceDoc, deliveryType, itemCategory, item, material, deliveryQty]`. Optional positions (`volume`, `netWeight`, `totalWeight`, `batch`, name fields, `storageLocation`) may legitimately be blank on individual rows.
 
-### 3.2 Auto-Import — LogisticsTracker + per-OBD merge
+### 3.2 Auto-Import v1 — LogisticsTracker + per-OBD merge (current, PAUSED)
+
+> **v2 replaces this entirely with FormGetData JSON — no Excel files.** See §10.1 for the v2 design. The sheet layout below is v1-only.
 
 `Auto-Import.ps1` builds a combined `.xlsx` with two named sheets:
 
@@ -368,7 +370,9 @@ export async function POST(req: Request): Promise<NextResponse> {
 |---|---|---|
 | `manual-sap-preview` | `handleManualSapPreview` | SAP preview (dry run) |
 | `manual-sap-confirm` | `handleManualSapConfirm` | SAP confirm (commits) |
-| `auto` | `handleAutoImport` | HMAC-signed Auto-Import endpoint |
+| `auto` | `handleAutoImport` | HMAC-signed Auto-Import v1 (PAUSED) |
+| `auto-json` | `handleAutoImportJson` | [PLANNED — v2] HMAC-signed JSON payload; no XLSX |
+| `check` | `handleAutoImportCheck` | [PLANNED — v2] Pre-check: are any submitted OBDs already imported? |
 | `preview` | `handlePreview` | Legacy preview (kept for backwards compat) |
 | `confirm` | `handleConfirm` | Legacy confirm |
 
@@ -378,16 +382,99 @@ All routes need `export const dynamic = 'force-dynamic'`.
 
 ## 10. Auto-Import operational details
 
-**Status: PAUSED as of 2026-05-14.** Manual SAP upload is the active path.
+**Status: PAUSED as of 2026-05-14.** Manual SAP upload is the active path. When Auto-Import resumes it will be v2 (pure JSON) — see §10.1. The v1 XLSX path (`?action=auto`) is kept for reference but will not be un-paused.
 
-When un-paused:
+When un-paused (v1 reference):
 - Scheduled task: every 10 min, 8AM-8PM IST
 - HMAC signing: `IMPORT_HMAC_SECRET` env var, fixed string `"auto-import-v1"` (timestamp-free, avoids clock drift)
 - State files in `Master\`: see CORE §4
 - PowerShell 5.1 quirks per CORE §3
 - ExecutionTimeLimit `PT5M`, Repetition interval `PT10M`, `StopAtDurationEnd=false`
 
-### Resume checklist (when ready)
+### 10.1 Auto-Import v2 — pure JSON pipeline [DESIGN LOCKED 2026-06-20, BUILD IN PROGRESS]
+
+Goal: replace the two-step XLSX download cycle with a direct FormGetData JSON POST. No Excel files. No intermediate sheets.
+
+**Locked decisions:**
+- `lineId` carries the real SAP item number (the ONE approved deviation from v1: v1 used ordinal 10/20/30; v2 preserves what the SAP Breakwalls API returns).
+- CREATE-ONLY: same as v1 — never patches existing OBDs. Patch is manual-SAP's domain.
+- HMAC key: hardcoded `"auto-import-json-v1"` string (distinct from v1's `"auto-import-v1"`).
+- Env var: `IMPORT_HMAC_SECRET_JSON` (new; separate from `IMPORT_HMAC_SECRET` which stays for v1 route).
+- All v1 PC enrichment rules still apply (isTinting from SMU gate, article/articleTag logic, config files in `Master\`).
+
+**FormGetData payload shape:**
+```json
+{
+  "invoiceNumber": "string",
+  "obdNumber": "string",
+  "headerRows": [{ "key": "...", "value": "..." }],
+  "lineRows":   [{ "key": "...", "value": "..." }]
+}
+```
+
+**Header field map** (`headerRows[].key` → DB field):
+
+| FormGetData key | DB field |
+|---|---|
+| `SAP Delivery Number` | `obdNumber` |
+| `Sales Order Number` | `soNumber` |
+| `Bill To Customer Id` | `billToCustomerId` |
+| `Name of Sold-To Party` | `billToCustomerName` |
+| `Ship-To Party` | `shipToCustomerId` |
+| `Name of Ship-To Party` | `shipToCustomerName` |
+| `SMU Code` | `smuCode` / `smu` (lookup) |
+| `Invoice No` | `invoiceNo` |
+| `Invoice Date` | `invoiceDate` |
+| `OBD Email Date` | `obdEmailDate` |
+| `OBD Email Time` | `obdEmailTime` |
+| `Unit Qty` | `totalUnitQty` |
+| `Gross Weight` | `grossWeight` |
+| `Volume` | `volume` |
+| `SAP Status` | `sapStatus` |
+| `Material Type` | `materialType` |
+| `Nature of Transaction` | `natureOfTransaction` |
+| `Warehouse` | `warehouse` |
+| `Posting Date` | fallback for `obdEmailDate` if missing |
+
+**Line field map** (`lineRows[].key` → DB field):
+
+| FormGetData key | DB field |
+|---|---|
+| `Item Number` | `lineId` (real SAP item number) |
+| `Material Code` | `skuCodeRaw` |
+| `Description` | `skuDescriptionRaw` |
+| `Delivery Qty` | `unitQty` |
+| `Volume` | `volumeLine` |
+| `Item Category` | `itemCategory` (→ `isTinting` via Z007 rule) |
+| `Net Weight` | `netWeight` |
+| `Total Weight` | `totalWeight` |
+| `Batch` | `batchCode` |
+
+**Header-patch for existing OBDs (§3.5 of design doc):**
+If `?action=auto-json` receives an OBD number that already exists, it does NOT skip blindly. It patches `invoiceNo`, `orderDateTime`, and `slotId` ONLY IF they are currently null on that order. Rationale: v1 never had these fields (they were in the LogisticsTracker sheet which the PS script couldn't easily correlate per-OBD); v2's FormGetData response has them directly. Guard: don't overwrite if already set by manual-SAP.
+
+**Yesterday-completeness pass (§3.6 of design doc):**
+On each run, PS v2 also re-fetches OBDs from yesterday + day-before-yesterday (rolling 3-day chase window). Covers OBDs that were created late or had their invoice stamped after the same-day run. Server only patches null fields — safe to re-submit.
+
+**Build sequence status (as of 2026-06-20):**
+
+| Step | Description | Status |
+|---|---|---|
+| 1 | Prove FormGetData returns the expected payload | DONE |
+| 2 | Confirm field key names match the map above | DONE |
+| 3 | Design `processAutoImportRows()` refactor (shared core for v1+v2) | DONE (design) |
+| 4 | Build `processAutoImportRows()` in route | NOT DONE |
+| 5 | Build `?action=auto-json` handler | NOT DONE |
+| 6 | Design PS v2 script | DONE |
+| 7 | Build PS v2 script | NOT DONE |
+| 8 | Integrate `?action=check` pre-check | NOT DONE |
+| 8b | Build `?action=check` handler on server | NOT DONE |
+| 9 | End-to-end smoke test on dev (bench data) | NOT DONE |
+| 10 | Deploy PS v2 + enable on depot PC | NOT DONE |
+
+**Known recovery gaps:** v2 will miss any OBD created between pause (2026-05-14) and v2 go-live. Those must be imported manually via SAP.
+
+### Resume checklist (v1 — superseded by v2)
 
 1. Verify HMAC secret matches Vercel env vars
 2. Audit cross-source orphan policy (see §15 open items)
@@ -457,7 +544,10 @@ Cross-reference CORE §9.
 - **`articleTag` rule for ZINR.** Today the row is included with a breadcrumb warning. If business semantics emerge for ZINR articleTags, implement the rule and remove the warning.
 - **Old SAP layout shim** if SAP ever ships the old layout again (e.g. depot-level legacy). Not built today.
 - **Auto-Import patch path.** Today Auto-Import is create-only. If Auto-Import ever needs to patch existing OBDs (e.g. for late-update detection), the path needs to go through `upsertObd` like manual SAP does, with `LINE_AUTHORITY['auto-import'] = 'authoritative'`. Big change — full re-audit needed.
+- **Auto-Import v2 — steps 4–10 not yet built.** See §10.1 build sequence. Design is locked; build has not started. Reference design doc at `docs/prompts/drafts/web-update-2026-06-20-auto-import-v2-pure-json.md` for full detail.
+- **`IMPORT_HMAC_SECRET_JSON` env var** must be added to Vercel before step 5. Keep `IMPORT_HMAC_SECRET` (v1 var) until v1 handler is retired.
+- **lineId semantic change in v2.** v1 used ordinal positions (10/20/30); v2 uses real SAP item numbers. This means composite key `lineId|skuCodeRaw` will NOT match between a v1 create and a v2 patch. Create-only policy makes this safe, but if patch path ever becomes needed for Auto-Import, re-audit the key strategy.
 
 ---
 
-*Import v1 · Schema v27.6 · OrbitOMS*
+*Import v1.1 · Schema v27.7 · OrbitOMS*

@@ -1,5 +1,5 @@
 # CLAUDE_PLACE_ORDER.md — Place Order Module
-# v1.3 · Schema v27.6 · June 2026
+# v1.4 · Schema v27.7 · June 2026
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -320,6 +320,34 @@ Plain-text body, units written directly (no box conversion). Send opens `mailto:
 2. **General de-double:** `name = product ?? subProduct`; if `baseColour` ⊇ `name` (case-insensitive) → return `baseColour` (fixes product-name-in-base doubling, e.g. Duwel "ACRYLIC DISTEMPER DUWEL ACRYLIC DISTEMPER").
 3. Else `"{name} {baseColour}"`.
 
+**`emailCase()` — proper-case product names [LIVE 2026-06-19]:**
+
+Applied inside `renderOrderBody` to the output of `emailLineLabel(...)` only — the per-line product name. Composition: `emailCase(emailLineLabel(product, baseColour, subProduct))`. All other email elements (header lines `Bill To:` / `Dispatch:` / etc., customer name, pack string) are untouched. Email-display only; no data change, no reseed.
+
+**Rule — split on non-alphanumeric separator runs; for each token:**
+1. Contains a digit → **UPPERCASE** (`5IN1`, `M900`, `3IN1`, `2K`, `1K`, `10MM`, `BU1`…)
+2. ≤2 letters → **UPPERCASE** (`WS`, `VT`, `PU`, `NC`, `UP`, `DA`…)
+3. Uppercase form in `KEEP_CAPS_3` → **UPPERCASE**
+4. Else → title-case
+
+```
+KEEP_CAPS_3 = ["GVA","FBC","IBC","WBC","FFR","GRN","LFY","MAG","OXR","TBL","YOX","NCR","VAF","WRP"]
+```
+
+The 2-letter and digit-bearing codes are handled by the rule itself (no list to maintain). `KEEP_CAPS_3` holds only 3-letter, no-digit codes that collide with real 3-letter words — derived from a full audit of 464 distinct email names. Real 3-letter words correctly go proper: Red, Oak, Int, Ext, Max, Gun, Neo, Off, Pro, Sky, Bus, Glo. **If a new 3-letter code appears in the catalog later, add it to `KEEP_CAPS_3`; run a before→after name dump first — `NCR` looked like a code but is "Delhi NCR" (region) and must stay caps.**
+
+**Line-number alignment — figure space ` ` [LIVE 2026-06-19]:**
+
+```ts
+padWidth = String(bill.lines.length).length
+`${String(i + 1).padStart(padWidth, " ")}. ${emailCase(line.name)} - ${line.packString}`
+```
+
+- Serial number restarts per bill; `padWidth` is per-bill (its own line count). ≤9 lines → no pad; 10+ → pads to 2; 100+ → 3.
+- **Pad character MUST be ` ` (FIGURE SPACE), NOT a regular space.** A regular space lines up in the in-app preview (monospace font) but fails in the actual mail client — email bodies render in a proportional font (Outlook/Gmail) where a space is narrower than a digit, so ` 9.` never reaches the `10.` column. Figure space is exactly one digit wide and non-collapsing. **Always test column alignment in a real mail client, not the preview.** All three mailto builders URL-encode the body so ` ` → `%E2%80%87` and survives the handoff.
+
+**`renderOrderBody` is the single builder for all three surfaces:** `emailCase` + figure-space padding apply uniformly. Desktop `/place-order` goes via `buildEmail` → `renderOrderBody` → `buildMailtoUrl`; mobile `/po` goes via `buildEmailParts` → `renderOrderBody`; public `/order` goes via its local `buildEmail` closure → `renderOrderBody`. If `/po` looks unchanged after an email-format deploy, suspect **PWA cache** (force-close / reinstall), not the code.
+
 **Two ways to fix an email name — pick by side-effect:**
 - **Product rename (structural):** bakes the name everywhere (email, recall, search subtitle, alias key). Needs the rename on **both** join sides (stock source CSV/overrides + `CONFIRMED_SUBPRODUCT_MAP`) **+ paired reseed**; and if the product carries numeric-base aliases, **re-key its `base-aliases.ts` block in the same change** (aliases are keyed on `product`) or the friendly names silently vanish. Use when the new name is the real product name (WS Tile/Metallic, VT ranges, Interior WBC).
 - **`emailLineLabel` override (code-only):** email-only, no reseed, reversible. Use when a data rename would break the grid (Promise Primer labels by baseColour) or only the email needs it.
@@ -621,7 +649,7 @@ lib/place-order/
                                     packToBucket, bucketColumnsForTab/ForRows (§24)
   cart.ts                           CartLine type, setQty, volume reducer, touchedAt
   draft.ts / draft-storage.ts       localStorage hydrate/save, TTL, DraftSnapshot
-  email.ts                          buildEmail + emailLineLabel (shared name source)
+  email.ts                          buildEmail + renderOrderBody + emailLineLabel (shared name source) + emailCase()
   recents.ts                        desktop device-local recent customers (§25)
   search.ts                         legacy multi-token scoring (still used in places)
   queries.ts                        searchProducts (desktop) — reads searchTokens
@@ -757,6 +785,7 @@ On every cart change: full cart object serialised. On mount: deserialise + valid
 - **Email name is single-source via `emailLineLabel`** across all 3 builders (§11). Fix names there once; don't diverge a single builder.
 - **Family-scoped pack placement, not global** (§24). KG sizes are shared across AQUATECH/PUTTY/SADOLIN/VT SPECIALTY/PROMISE/DISTEMPER (most fold KG→litre columns). A global KG remap breaks them all — scope via `FAMILY_BUCKET_OVERRIDES`.
 - **iOS/Android keyboard work writes height only** — §22-of-old reaffirmed: never use `visualViewport` offset / `translateY` / per-scroll-tick math to place sticky bars; write the measured height to `--vvh` behind a height-change guard; `scrollIntoView` is the only allowed focus mechanism (§25).
+- **`scripts/_*` excluded from typecheck.** `tsconfig.json` `exclude` contains `"scripts/_*.ts"` and `"scripts/_tmp/**"` — scratch scripts from old sessions had type errors that blocked `next build` ~3 times. Convention going forward: underscore-prefixed scripts = scratch = excluded from the typecheck gate. Do not delete scratch files; they stay but are ignored by tsc.
 - **Keep reports lean / time-box.** A CSV-gen run once rabbit-holed ~53 min on a cosmetic distemper-report regex while the CSV was already correct — keep verification reports lean, time-box, STOP and report.
 
 ---
@@ -830,4 +859,4 @@ Manifest `display_override: ["standalone"]`; `html,body { overscroll-behavior: n
 
 ---
 
-*Place Order v1.3 · Schema v27.6 · OrbitOMS*
+*Place Order v1.4 · Schema v27.7 · OrbitOMS*

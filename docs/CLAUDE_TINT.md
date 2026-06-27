@@ -1,5 +1,5 @@
 # CLAUDE_TINT.md — Tint Module
-# v1.4 · Schema v27.6 · June 2026
+# v1.5 · Schema v27.7 · June 2026
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -109,6 +109,7 @@ See `CLAUDE_CORE.md §9`.
 - At import: `orderType === "tint"` → `slotId = null`, `originalSlotId = null`
 - At completion (whole order, `/api/tint/operator/done`): sets `slotId` + `originalSlotId` on order using `resolveSlot()` thresholds on current IST time
 - At split completion (`/api/tint/operator/split/done`): sets slot on **parent** order. Latest completion wins.
+- **Parent auto-advance (2026-06-25 fix):** after setting the slot, the route checks whether all non-cancelled splits are now `tinting_done`. If yes AND parent is still `tinting_in_progress`, it advances the parent to `workflowStage = "pending_support"` and writes an `order_status_logs` entry (`changedById: 1`, note `"Auto-advanced: all splits tinting_done"`). Guard is idempotent (`workflowStage === "tinting_in_progress"`). **Cancelled splits are excluded from the count — non-negotiable for correctness.**
 - No buffer before cutoff
 - `applyMailOrderEnrichment()` skips slot recalculation for tint orders
 
@@ -365,7 +366,7 @@ Client-side preflight using `existingTIEntries` shows per-line warning before mo
 
 ### Splits keep the legacy path
 
-Mark Done on splits branches to `/api/tint/operator/split/done` (untouched). The new validation only applies to whole-OBD orders.
+Mark Done on splits branches to `/api/tint/operator/split/done`. The new partial-qty validation only applies to whole-OBD orders. The split/done route was updated 2026-06-25 to add the parent auto-advance block — see §2 for details.
 
 ---
 
@@ -664,6 +665,9 @@ Layout uses `buildNavItems()` only.
 
 ## 14. Landmines
 
+- **Split/done parent auto-advance — RESOLVED 2026-06-25.** `app/api/tint/operator/split/done` previously never advanced the parent OBD after all splits finished — it marked the split done and walked away. Fixed: bubble block added (after the split update, outside any transaction, sequential awaits). Live OBD id=6478 (Pramukh Yogiwood · Silvassa) was the only stuck instance; repaired manually via SQL. **Distinct from the usage-log gap below.**
+- **Split-done sampling-usage-log gap — STILL OPEN.** `split/done` does not write a `sampling_usage_log` row. Split-completed tints remain absent from Sampling Library usage history and same-site suggestions. ROADMAP item (also in CORE §13).
+- **Schema confirmations from 06-25 session:** `order_status_logs` uses `fromStage`/`toStage` columns (NOT `previousStage`/`newStage`). `order_splits` has `totalQty` (not `skuCode`). `orders` has no `isTinting` column — tinting is determined by `orderType`.
 - **TM reorder API** (~line 429) uses `prisma.$transaction` — violates CORE §3, left as-is for simple two-update swap.
 - **`operatorSequence` field** on `tint_assignments`/`order_splits` — unused. Sort by `sequenceOrder` only.
 - **`SlotSummaryItem` interface** in `tint-manager-content.tsx` — defined but unused.
@@ -689,4 +693,4 @@ Layout uses `buildNavItems()` only.
 
 ---
 
-*Tint v1.4 · Schema v27.6*
+*Tint v1.5 · Schema v27.7*

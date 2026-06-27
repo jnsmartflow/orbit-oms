@@ -19,6 +19,7 @@ Then load the domain file(s) matching the task:
 | `/attendance`, OT, attendance_*, admin OT pending/settings/audit | `docs/CLAUDE_ATTENDANCE.md` |
 | `/place-order`, `/po`, `/order`, mo_order_form_index_v2, mo_sku_lookup_v2, speed dial, cart, pack buckets, catalog families | `docs/CLAUDE_PLACE_ORDER.md` |
 | `/admin/import`, SAP parser, upsert brain, Auto-Import, import_* tables | `docs/CLAUDE_IMPORT.md` |
+| `/support`, `/operations/support` — gatekeeper, workflow pipeline, closed parking-stage, hold/dispatch-target, history board | `docs/CLAUDE_SUPPORT.md` |
 | `/admin` Settings → Hide (rules / hidden orders / tags), `obd_visibility_rules`, `app_tag_settings`, orders.isHidden | `docs/CLAUDE_CORE.md §7.10` + `CLAUDE_UI.md §57` (+ `CLAUDE_MAIL_ORDERS.md §21` for tag-gating) |
 
 If unsure which domain, ask before loading.

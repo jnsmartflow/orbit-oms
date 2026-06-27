@@ -1,5 +1,5 @@
 # CLAUDE_MAIL_ORDERS.md — Mail Orders Module
-# v1.4 · Schema v27.6 · Parser v6.5 · Enrichment v3 · June 2026
+# v1.5 · Schema v27.7 · Parser v6.5 · Enrichment v3 · June 2026
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -132,6 +132,52 @@ OutlookAccount=surat.order@outlook.com
 CheckInterval=10
 ```
 
+### 3.1 Parser v7.2 — App-format extension [BUILT · BENCH-TESTED 21/21 · DEPLOY PENDING]
+
+The depot PC (Windows, PS 5.1) has a second class of inbound email: orders placed via the OrbitOMS app (`/place-order`) that arrive as structured app-format emails. These have a `Bill To:` header as the first content line — distinct from human-written order emails.
+
+**Script:** `docs/Parser/Parse-MailOrders-V7.ps1` (v7.2) — editing/repo copy. **Live copy lives on the separate depot PC; DEPLOY PENDING as of 2026-06-19.** Deploy is manual: back up live file → paste v7.2 over it.
+
+**Sorter — `Test-IsAppFormat`:**
+- Strips blank lines from body top
+- Checks if first real content line starts with `"Bill To:"` (case-insensitive)
+- Returns `$true` → routed to `Parse-AppBody`; else falls through to existing `Parse-EmailBody` (human path untouched)
+
+**App email template (required `Bill To:` first, rest optional):**
+```
+Bill To: {CustomerName} ({CustomerCode})
+Ship To: {ShipToName} ({ShipToCode})     ← optional
+Dispatch: {Dispatch|Hold}                ← optional
+Priority: {Normal|Urgent}               ← optional
+Remark: {free text}                     ← optional
+Note: {free text}                       ← optional
+{blank line}
+{product lines — same format as human emails}
+```
+
+**`Parse-AppBody` label→field mapping:**
+
+| Label | Extracted field |
+|---|---|
+| `Bill To:` | `customerName` + `customerCode` (pattern: `Name (Code)`) |
+| `Ship To:` | sets `bodyShipToOverride`, extracted as separate delivery remark |
+| `Dispatch:` | `AppDispatchStatus` (→ `dispatchStatus` via mapping) |
+| `Priority:` | `AppDispatchPriority` (→ `dispatchPriority`) |
+| `Remark:` | appended to remarks |
+| `Note:` | appended to remarks |
+
+**Return keys (Parse-AppBody):** all keys that `Parse-EmailBody` returns, PLUS `AppDispatchStatus`, `AppDispatchPriority`, `AppShipToOverride`. The ingest server already handles these extra keys; no server-side change needed.
+
+**Main-loop changes (2 edits only):**
+1. `$isApp = Test-IsAppFormat $mail.Body` call after body extraction
+2. `if ($isApp) { $parsed = Parse-AppBody $mail.Body } else { $parsed = Parse-EmailBody ... }`
+
+**Engineering notes:** byte-for-byte additive — human path (`Parse-EmailBody`) is NOT modified. UTF-8 BOM required on the live file (PS 5.1 quirk — CORE §3). 
+
+**Test harness:** `docs/Parser/test-app-parser.ps1` — 21/21 assertions pass. Re-run after any edit to the parser.
+
+**New remark types from app-format:** `Bounce` and `DTS` (from `Remark:` / `Note:` fields). Signal badges for these are deferred — parser delivers the text; badge wiring needs meaning clarification first. `Truck Order` already handled by existing signal catalog.
+
 ---
 
 ## 4. Enrichment engine — lib/mail-orders/enrich.ts v3
@@ -174,11 +220,12 @@ When `isCarton=true` and SKU matched: `finalQty = qty × sku.piecesPerCarton`.
 enrichLine(
   rawText, packCode, skuMaps, productProfiles, keywordRegexes,
   productKeywords, baseKeywords, productByKeyword, baseByKeyword,
-  options?, carryProduct?
+  options?, carryProduct?,
+  tableC?: Map<string,string>, tableCResolver?: Map<string,SkuEntry>
 )
 ```
 
-11th param `carryProduct`. `enrichLineCore()` is private. Wrapper retries core with `${carryProduct} ${rawText}` when core returns unmatched/partial.
+11th param `carryProduct`. 12th/13th `tableC`/`tableCResolver` — optional, injected by ingest route for the Table C fast-path (see §4.1). `enrichLineCore()` is private. Wrapper retries core with `${carryProduct} ${rawText}` when core returns unmatched/partial.
 
 ### Debug endpoint
 
@@ -195,6 +242,33 @@ fetch('/api/mail-orders/re-enrich', { method: 'POST' }).then(r => r.json()).then
 ### Current match rate
 
 ~98.2% on 2,366 real lines.
+
+### 4.1 Table C exact-name fast-path [LIVE · dormant until app orders flow]
+
+**Deployed:** commit `da219238` (5 files, +282/−6). **Dormant until the app-format parser (§3.1) deploys to the depot PC** — Table C only fires on exact `productName` matches, which only come from structured app-format emails.
+
+**Architecture — stacked:**
+```
+enrichLine called:
+  1. tableCKey(nameUpper, cleanPackCode) → lookup in tableC Map
+     HIT  → exact SKU returned immediately (skips keyword scoring)
+     MISS → keyword scoring proceeds as before (unchanged)
+```
+
+**Key construction:** `tableCKey(productName.toUpperCase(), cleanPackCode(packCode))` — matches the key format used when the map was built from `mo_sku_lookup_v2` in `buildTableC()`.
+
+**Coverage:** 1,343 distinct keys built from V2 catalogue. 15 keys had collisions (same key, 2+ SKUs) — excluded from the map for safety. 1,328 usable keys. Coverage: ~99.7% on matched app-format lines.
+
+**Files:**
+- `lib/mail-orders/table-c.ts` — `buildTableC()` (returns the `Map<string,string>` of tableCKey→skuCode), `tableCKey()`, `cleanPackCode()`. Also exports `buildComboSiblings()` (feeds the Alt-SKU column — §9.2).
+- `lib/mail-orders/table-c-context.ts` (NEW) — `buildTableCContext()`. Called ONCE per `POST /api/mail-orders/ingest` request; builds and returns `{ tableC, tableCResolver }` for threading into each `enrichLine` call.
+- `lib/mail-orders/enrich.ts` — `enrichLine` + `enrichLineCore` accept the optional `tableC`/`tableCResolver` params; Table C check runs before PACK_ROUND inside `enrichLineCore` at step 2c.
+- `app/api/mail-orders/ingest/route.ts` — calls `buildTableCContext()` once, threads maps into `enrichLine`.
+
+**Deferred items:**
+- Re-enrich path (`POST /api/mail-orders/re-enrich`) does NOT yet call `buildTableCContext`. Deferred until app orders are flowing and re-enrich is needed.
+- 13 double-primary fix: 13 SKUs in `mo_sku_lookup_v2` have `isPrimary=true` on both the Fini row AND the Generic row, causing conflicts. Audit + fix needed before full Table C go-live.
+- Live verification: once the app-format parser is deployed, smoke-test that Table C hits appear in the ingest logs.
 
 ---
 
@@ -289,8 +363,8 @@ if (shipToOverride && deliveryRemarks has "[→ Name (Code)]" suffix) {
 
 | Method | Path | Auth | Purpose |
 |---|---|---|---|
-| POST | /api/mail-orders/ingest | HMAC | Receives from PowerShell. Accepts `carryProduct?`, `bodyCustomerName?`, `bodyCustomerCode?`. No server-side auto-split. |
-| GET | /api/mail-orders | Session | Fetches by date (IST) + status filter. Two-batch ship-to lookup against `mo_customer_keywords`. Response includes `shipToArea`, `shipToDeliveryType`. |
+| POST | /api/mail-orders/ingest | HMAC | Receives from PowerShell. Accepts `carryProduct?`, `bodyCustomerName?`, `bodyCustomerCode?`. No server-side auto-split. Calls `buildTableCContext()` once per request for Table C fast-path. |
+| GET | /api/mail-orders | Session | Fetches by date (IST) + status filter. Two-batch ship-to lookup against `mo_customer_keywords`. Response includes `shipToArea`, `shipToDeliveryType`. Each line includes `altSkus: string[]` from `mo_sku_lookup_v2` combo siblings (display-time, additive; `[]` on miss, ~99.7% v2 coverage). |
 | PATCH | /api/mail-orders/[id]/punch | Session | Mark punched. |
 | PATCH | /api/mail-orders/[id]/so-number | Session | Save soNumber, auto-punch. |
 | PATCH | /api/mail-orders/[id]/customer | Session | Manual customer pick. |
@@ -339,6 +413,8 @@ lib/mail-orders/
   customer-match.ts     server-side matching (v2)
   delivery-match.ts     server-side ship-to override
   enrich.ts             enrichment engine v3 + carryProduct
+  table-c.ts            buildTableC() exact-name map; tableCKey(); cleanPackCode(); buildComboSiblings() (→ altSkus)
+  table-c-context.ts    buildTableCContext() — builds tableC + tableCResolver per ingest request (NEW, commit da219238)
   email-template.ts     slot summary HTML builder
 ```
 
@@ -405,6 +481,8 @@ Page background: `bg-gray-50`. Cards + SKU table sit as white islands.
 **Resolve popover:** fixed-position 480px modal. Search input (debounced 300ms) + pack filter chips + results list.
 
 **Auto-advance disabled.** Operators can navigate to punched orders.
+
+**ALT SKU column [Focus/Review mode only · LIVE 2026-06-19]:** In the SKU table, a rightmost "ALT SKU" column shows alternates for each line sourced from `mo_sku_lookup_v2` combo siblings. Operator clicks the chip to open a modal listing the billed (primary) SKU + all alternates, with per-row copy-to-clipboard. Chip recoloured to neutral grey (no teal/amber status colour). Data is display-time only — nothing is written back; the API attaches `altSkus: string[]` per line via `buildComboSiblings()` in `table-c.ts`. Mockup: `docs/mockups/mail-order/alt-sku-modal-mockup.html`. **Not available in Table mode** — see §18 landmine.
 
 **Punched-by attribution:** `✓ {Name} {HH:MM}` prepended as first meta item on punched orders, and as third line in left panel.
 
@@ -640,6 +718,8 @@ If "X" emails return Generic codes instead of Fini, root cause is Generic codes 
 - **Truncated material codes** — "320768" prefix matching ambiguity.
 - **`CATEGORY_KEYWORDS`** in `enrich.ts` — dead code.
 - **`mo_sku_lookup` GLOSS Brilliant White state:** 3 IN28301xxx Fini rows still have null `refMaterial` (10L IN28301082, 100ML IN28301098, 200ML IN28301074) — Generic codes not yet supplied.
+- **Table-mode parity gap.** `mail-orders-table.tsx` (§9.1) does NOT show the ALT SKU column. Only the Review View (§9.2) has it. Small/deferred per 2026-06-19 handoff.
+- **Bounce / DTS signal badges deferred.** Parser v7.2 delivers `Bounce` and `DTS` remark text from app-format emails, but badge wiring (meaning, colour, card routing) is not yet built. `Truck Order` is already in the signal catalog.
 
 ---
 
@@ -684,6 +764,18 @@ This split is intentional during the migration window. Full plan in `CLAUDE_PLAC
 
 For mail-order sessions specifically: any new product keyword work (e.g. fixing the SmartChoice/Distemper search misroute) should be done in **both** legacy tables AND the v2 `searchTokens` column to keep the two paths in sync until the parser migrates.
 
+### Parser v7.2 deferred items (as of 2026-06-19)
+
+- **Deploy to depot PC.** `docs/Parser/Parse-MailOrders-V7.ps1` (v7.2) is bench-tested. Live copy on separate depot PC must be manually replaced. Owner to do post template-finalisation.
+- **Live verification.** After deploy: confirm app-format emails hit `Parse-AppBody` path (check `mail_order.log` for `[APP]` lines), confirm Table C hits appear in ingest response.
+- **Keyword health scan.** A structured keyword-vs-SKU analysis to catch ghost keywords (keyword present, zero SKU matches) and missing keywords (product has SKUs, no keyword). Deferred from 2026-06-19 session.
+
+### Table C deferred items (as of 2026-06-19)
+
+- **Re-enrich wiring.** `POST /api/mail-orders/re-enrich` does not call `buildTableCContext`. Deferred until app orders flow and re-enrich needs to benefit from Table C.
+- **13 double-primary fix.** 13 SKUs in `mo_sku_lookup_v2` have `isPrimary=true` on both the Fini and Generic rows simultaneously. Causes key collisions → excluded from Table C map. Fix by auditing and de-flagging the incorrect primary.
+- **Table-mode ALT SKU.** Add `altSkus` column to `mail-orders-table.tsx` for parity with Review View. Small, deferred.
+
 ---
 
 ## 21. Tag gating + ship-to fallback (Settings → Hide, v27.6)
@@ -698,4 +790,4 @@ Admin "Settings → Hide → Tags" can switch any Mail Order badge off app-wide 
 
 ---
 
-*Mail Orders v1.4 · Schema v27.6 · Parser v6.5 · Enrichment v3*
+*Mail Orders v1.5 · Schema v27.7 · Parser v6.5 · Enrichment v3*
