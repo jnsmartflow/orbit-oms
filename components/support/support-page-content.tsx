@@ -49,10 +49,6 @@ const HOLD_GRID: React.CSSProperties = {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-function formatDateDDMMYYYY(iso: string): string {
-  const [y, m, d] = iso.split("-");
-  return `${d}-${m}-${y}`;
-}
 
 function formatHoldDate(dateStr: string | null): string {
   if (!dateStr) return "—";
@@ -518,14 +514,7 @@ export function SupportPageContent() {
         ]}
       />
 
-      {/* ── Read-only history banner ─────────────────────────────────────── */}
-      {isHistoryView && (
-        <div className="px-5 py-2 bg-gray-50 text-xs text-gray-500 border-b border-gray-100 flex items-center gap-2 flex-shrink-0">
-          Viewing {formatDateDDMMYYYY(date)}
-        </div>
-      )}
-
-      {/* ── All Tab Content ───────────────────────────────────────────────── */}
+{/* ── All Tab Content ───────────────────────────────────────────────── */}
       {mainTab === "all" && (
         <>
           {/* Orders table */}
