@@ -33,6 +33,12 @@ export async function POST(
   if (order.workflowStage === "cancelled") {
     return NextResponse.json({ error: "Order is cancelled" }, { status: 400 });
   }
+  if (order.orderType === "tint" && ["tint_assigned", "tinting_in_progress"].includes(order.workflowStage)) {
+    return NextResponse.json(
+      { error: "Cannot hold a tint order while it is being mixed. Allowed only before tinting starts." },
+      { status: 409 },
+    );
+  }
 
   const defaultNote = note ?? "Placed on hold by support";
 

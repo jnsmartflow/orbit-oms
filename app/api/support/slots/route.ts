@@ -171,7 +171,7 @@ export async function GET(req: Request): Promise<NextResponse> {
       const tintingCount = await prisma.orders.count({
         where: {
           arrivalSlotId: slot.id,
-          workflowStage: { in: ["tinting_in_progress", "tint_assigned"] },
+          workflowStage: { in: ["pending_tint_assignment", "tinting_in_progress", "tint_assigned"] },
           isRemoved: false,
           obdEmailDate: { gte: todayStart, lt: todayEnd },
         },
@@ -200,10 +200,28 @@ export async function GET(req: Request): Promise<NextResponse> {
     where: { dispatchStatus: "hold", isRemoved: false },
   });
 
+  // Past-day pending count: orders that arrived before today IST and are still unhandled.
+  // Uses todayStr (already IST-correct at line 18) so the boundary matches the today board's fence.
+  const { start: earlierBound } = getISTDayRange(todayStr);
+  const earlierPendingCount = await prisma.orders.count({
+    where: {
+      AND: [
+        {
+          obdEmailDate:   { lt: earlierBound },
+          workflowStage:  { in: ["pending_support", "tinting_done"] },
+          dispatchStatus: null,
+          isRemoved:      false,
+        },
+        hideExclusion,
+      ],
+    },
+  });
+
   return NextResponse.json({
     slots: slotResults,
     holdCount,
     doneCount,
+    earlierPendingCount,
     date: dateStr,
   });
 }

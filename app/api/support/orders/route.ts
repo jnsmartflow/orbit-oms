@@ -69,7 +69,7 @@ export async function GET(req: Request): Promise<NextResponse> {
   const dateStart = new Date(Date.UTC(histYr, histMo - 1, histDy));
   const dateEnd   = new Date(Date.UTC(histYr, histMo - 1, histDy + 1));
 
-  if (!section || !["slot", "hold"].includes(section)) {
+  if (!section || !["slot", "hold", "earlier"].includes(section)) {
     return NextResponse.json({ error: "Invalid or missing section param" }, { status: 400 });
   }
 
@@ -83,7 +83,7 @@ export async function GET(req: Request): Promise<NextResponse> {
       // slotId present → also scope to that arrival slot; absent → all slots.
       if (slotIdStr) where.arrivalSlotId = parseInt(slotIdStr, 10);
       where.OR = [
-        { workflowStage: { notIn: ["dispatched", "cancelled", "closed", "order_created", "pending_tint_assignment"] }, obdEmailDate: { gte: istStart, lt: istEnd } },
+        { workflowStage: { notIn: ["dispatched", "cancelled", "closed", "order_created"] }, obdEmailDate: { gte: istStart, lt: istEnd } },
         { workflowStage: { in: ["closed", "dispatched", "cancelled"] }, obdEmailDate: { gte: istStart, lt: istEnd } },
       ];
     } else {
@@ -99,7 +99,7 @@ export async function GET(req: Request): Promise<NextResponse> {
           { dispatchTargetDate: { gte: dateStart, lt: dateEnd }, workflowStage: "closed" },
           // ── Pending: (arrived OR held) on D, slot-filtered
           {
-            workflowStage: { notIn: ["dispatched", "closed", "cancelled", "order_created", "pending_tint_assignment"] },
+            workflowStage: { notIn: ["dispatched", "closed", "cancelled", "order_created"] },
             AND: [
               { OR: [{ obdEmailDate: { gte: istStart, lt: istEnd } }, { heldAt: { gte: istStart, lt: istEnd } }] },
               { OR: [{ arrivalSlotId: histSlotId }, { arrivalSlotId: null, originalSlotId: histSlotId }] },
@@ -110,9 +110,9 @@ export async function GET(req: Request): Promise<NextResponse> {
         // ALL-slot: union of all three footprints
         where.OR = [
           { obdEmailDate: { gte: istStart, lt: istEnd },
-            workflowStage: { notIn: ["order_created", "pending_tint_assignment"] } },
+            workflowStage: { notIn: ["order_created"] } },
           { heldAt: { gte: istStart, lt: istEnd },
-            workflowStage: { notIn: ["cancelled", "order_created", "pending_tint_assignment"] } },
+            workflowStage: { notIn: ["cancelled", "order_created"] } },
           { dispatchTargetDate: { gte: dateStart, lt: dateEnd }, workflowStage: "closed" },
         ];
       }
@@ -120,6 +120,14 @@ export async function GET(req: Request): Promise<NextResponse> {
   } else if (section === "hold") {
     where.dispatchStatus = "hold";
     where.workflowStage = { notIn: ["dispatched", "cancelled", "closed"] };
+  } else if (section === "earlier") {
+    // Orders that arrived before today IST and are still pending/unhandled.
+    // Uses IST-aware today string to match slots/route.ts boundary exactly.
+    const istTodayStr = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    const { start: todayIstStart } = getISTDayRange(istTodayStr);
+    where.obdEmailDate  = { lt: todayIstStart };
+    where.workflowStage = { in: ["pending_support", "tinting_done"] };
+    where.dispatchStatus = null;
   }
 
   // Status sub-filter (skip for hold section — don't overwrite dispatchStatus)

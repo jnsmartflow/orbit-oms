@@ -1018,7 +1018,7 @@ async function handleConfirm(req: Request, session: Session): Promise<NextRespon
     const { dispatchSlot, slotId } = orderType === "tint"
       ? { dispatchSlot: null as string | null, slotId: null as number | null }
       : resolveSlot(summary.obdEmailTime);
-    const arrivalSlotId = orderType !== "tint" && emailDateTime ? resolveArrivalSlotId(emailDateTime) : null;
+    const arrivalSlotId = emailDateTime ? resolveArrivalSlotId(emailDateTime) : null;
 
     const priorityLevel = (customer?.isKeyCustomer || customer?.isKeySite) ? 1 : 3;
 
@@ -2819,7 +2819,7 @@ async function processAutoImportRows(
     const { dispatchSlot, slotId } = orderType === "tint"
       ? { dispatchSlot: null as string | null, slotId: null as number | null }
       : resolveSlot(summary.obdEmailTime);
-    const arrivalSlotId = orderType !== "tint" && emailDateTime ? resolveArrivalSlotId(emailDateTime) : null;
+    const arrivalSlotId = emailDateTime ? resolveArrivalSlotId(emailDateTime) : null;
 
     const priorityLevel = (customer?.isKeyCustomer || customer?.isKeySite) ? 1 : 3;
 

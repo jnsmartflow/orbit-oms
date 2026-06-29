@@ -65,6 +65,7 @@ export interface SupportOrder {
   arrivalSlotId?: number | null;
   heldAt?: string | null;
   dispatchTargetDate?: string | null;
+  dispatchWindowId?: number | null;
   footprintType?: "arrival" | "hold" | "dispatch" | "cancel";
   dispatchWindow?: { windowTime: string; label: string | null } | null;
 }
@@ -73,6 +74,7 @@ interface SupportOrdersTableProps {
   orders: SupportOrder[];
   section: string;
   onDispatch: (orderId: number, target: { dispatchTargetDate: string; dispatchWindowId: number }) => Promise<void>;
+  onPresetSlot: (orderId: number, target: { dispatchTargetDate: string; dispatchWindowId: number }) => Promise<void>;
   onHold: (orderId: number) => Promise<void>;
   onRelease: (orderId: number) => Promise<void>;
   onCancel: (orderId: number, reason: string, note?: string) => Promise<void>;
@@ -103,7 +105,7 @@ type RowType = "physically_dispatched" | "tinting" | "resolved" | "pending";
 
 function getRowType(order: SupportOrder): RowType {
   if (order.workflowStage === "dispatched") return "physically_dispatched";
-  if (["tinting_in_progress", "tint_assigned"].includes(order.workflowStage)) return "tinting";
+  if (["pending_tint_assignment", "tinting_in_progress", "tint_assigned"].includes(order.workflowStage)) return "tinting";
   if (order.dispatchStatus === "dispatch") return "resolved";
   return "pending";
 }
@@ -206,6 +208,7 @@ export function SupportOrdersTable({
   orders,
   section,
   onDispatch,
+  onPresetSlot,
   onHold,
   onRelease,
   onCancel,
@@ -436,6 +439,16 @@ export function SupportOrdersTable({
     }
   }, [withRowLoading, onDispatch]);
 
+  const handleSinglePresetSlot = useCallback(async (orderId: number, target: { dispatchTargetDate: string; dispatchWindowId: number }) => {
+    try {
+      await withRowLoading(orderId, async () => {
+        await onPresetSlot(orderId, target);
+      });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Pre-set slot failed");
+    }
+  }, [withRowLoading, onPresetSlot]);
+
   async function handleSubmitSelected() {
     setBulkLoading(true);
     try {
@@ -611,6 +624,7 @@ export function SupportOrdersTable({
                   isHistoryView={isHistoryView}
                   dispatchWindows={dispatchWindows}
                   onSingleDispatch={handleSingleDispatch}
+                  onPresetSlot={handleSinglePresetSlot}
                   dispatchPickerTrigger={dispatchPickerTrigger}
                   onRequestDispatchPickerOpen={handleRequestDispatchPickerOpen}
                   dispatchIntentIds={dispatchIntentIds}
@@ -846,7 +860,7 @@ export function SupportOrdersTable({
 function GroupRows({
   group, isCollapsed, showGroupHeader, onToggleGroup, onToggleGroupSelect, countText,
   selected, detailOrder, localEdits, changedIds, rowLoading, slots,
-  openPopover, isHistoryView, dispatchWindows, onSingleDispatch,
+  openPopover, isHistoryView, dispatchWindows, onSingleDispatch, onPresetSlot,
   dispatchPickerTrigger, onRequestDispatchPickerOpen,
   dispatchIntentIds, onSetDispatchIntent, onClearDispatchIntent,
   onToggleOne, onSetEdit, onDsChange, onSetDetail, onSetPopover, onMissing, onShipOverride,
@@ -868,6 +882,7 @@ function GroupRows({
   isHistoryView: boolean;
   dispatchWindows: DispatchWindow[];
   onSingleDispatch: (orderId: number, target: { dispatchTargetDate: string; dispatchWindowId: number }) => Promise<void>;
+  onPresetSlot: (orderId: number, target: { dispatchTargetDate: string; dispatchWindowId: number }) => Promise<void>;
   dispatchPickerTrigger: { id: number; gen: number } | null;
   onRequestDispatchPickerOpen: (orderId: number) => void;
   dispatchIntentIds: Set<number>;
@@ -925,6 +940,7 @@ function GroupRows({
           isHistoryView={isHistoryView}
           dispatchWindows={dispatchWindows}
           onSingleDispatch={onSingleDispatch}
+          onPresetSlot={onPresetSlot}
           dispatchPickerTrigger={dispatchPickerTrigger}
           onRequestDispatchPickerOpen={onRequestDispatchPickerOpen}
           dispatchIntentIds={dispatchIntentIds}
@@ -949,7 +965,7 @@ function GroupRows({
 function OrderRow({
   order, selected, detailOrder, localEdits, changedIds, rowLoading, slots,
   openPopover, isHistoryView, isDoneRow, onUndoDispatch, onUndoCancel,
-  dispatchWindows, onSingleDispatch,
+  dispatchWindows, onSingleDispatch, onPresetSlot,
   dispatchPickerTrigger, onRequestDispatchPickerOpen,
   dispatchIntentIds, onSetDispatchIntent, onClearDispatchIntent,
   onToggleOne, onSetEdit, onDsChange, onSetDetail, onSetPopover, onMissing, onShipOverride,
@@ -969,6 +985,7 @@ function OrderRow({
   onUndoCancel?: (orderId: number) => Promise<void>;
   dispatchWindows?: DispatchWindow[];
   onSingleDispatch?: (orderId: number, target: { dispatchTargetDate: string; dispatchWindowId: number }) => Promise<void>;
+  onPresetSlot?: (orderId: number, target: { dispatchTargetDate: string; dispatchWindowId: number }) => Promise<void>;
   dispatchPickerTrigger?: { id: number; gen: number } | null;
   onRequestDispatchPickerOpen?: (orderId: number) => void;
   dispatchIntentIds?: Set<number>;
@@ -1131,7 +1148,9 @@ function OrderRow({
         ) : isTinting ? (
           <span className="inline-flex items-center gap-1.5 text-[9px] font-bold uppercase px-2.5 py-1 rounded-[5px] border bg-purple-100 text-purple-700 border-purple-200">
             <span className="w-1.5 h-1.5 rounded-full bg-purple-500" />
-            TINTING
+            {order.workflowStage === "pending_tint_assignment" ? "Tint · Pending" :
+             order.workflowStage === "tinting_in_progress"    ? "Tint · Mixing"  :
+                                                                "Tint · Assigned"}
           </span>
         ) : isDoneRow ? (
           <span
@@ -1220,8 +1239,28 @@ function OrderRow({
 
       {/* ── Dispatch Slot (col 8) ──────────────────────────────────────── */}
       <div>
-        {isPhysicallyDispatched || isTinting ? (
+        {isPhysicallyDispatched ? (
           <span className="text-[10px] text-gray-300">—</span>
+        ) : isTinting ? (
+          <DispatchSlotPicker
+            value={
+              order.dispatchTargetDate != null && order.dispatchWindowId != null
+                ? {
+                    date: order.dispatchTargetDate.includes("T")
+                      ? order.dispatchTargetDate.split("T")[0]
+                      : order.dispatchTargetDate,
+                    dispatchWindowId: order.dispatchWindowId,
+                    windowTime: order.dispatchWindow?.windowTime ?? "",
+                  }
+                : null
+            }
+            onChange={(v) => {
+              if (!v || !onPresetSlot) return;
+              void onPresetSlot(order.id, { dispatchTargetDate: v.date, dispatchWindowId: v.dispatchWindowId });
+            }}
+            windows={dispatchWindows ?? []}
+            disabled={isRowBusy}
+          />
         ) : savingSlot ? (
           <div className="flex items-center gap-1.5">
             <span className="text-[11px]">
@@ -1280,7 +1319,17 @@ function OrderRow({
           <span className="text-[10px] text-gray-300">—</span>
         ) : (
           <DispatchSlotPicker
-            value={null}
+            value={
+              order.dispatchTargetDate != null && order.dispatchWindowId != null
+                ? {
+                    date: order.dispatchTargetDate.includes("T")
+                      ? order.dispatchTargetDate.split("T")[0]
+                      : order.dispatchTargetDate,
+                    dispatchWindowId: order.dispatchWindowId,
+                    windowTime: order.dispatchWindow?.windowTime ?? "",
+                  }
+                : null
+            }
             onChange={(v) => {
               if (!v || !onSingleDispatch) return;
               setSavingSlot({ date: v.date, windowTime: v.windowTime });

@@ -44,6 +44,8 @@ export async function POST(req: Request): Promise<NextResponse> {
   const userId = parseInt(session!.user.id, 10);
   const isOpsOrAdmin = ["operations", "admin"].includes(session!.user.role ?? "");
 
+  let parentOrderId: number | null = null;
+
   try {
     await prisma.$transaction(async (tx) => {
       // 1. Load split — verify ownership and stage
@@ -57,6 +59,7 @@ export async function POST(req: Request): Promise<NextResponse> {
       if (!isOpsOrAdmin && split.assignedToId !== userId) throw new NotAssignedError();
       if (split.status !== "tinting_in_progress") throw new WrongStageError();
 
+      parentOrderId = split.orderId;
       const now = new Date();
 
       // TI completion gate — all isTinting lines must have at least one TI entry
@@ -159,6 +162,48 @@ export async function POST(req: Request): Promise<NextResponse> {
       { error: err instanceof Error ? err.message : "Failed to complete split" },
       { status: 500 },
     );
+  }
+
+  // 5. Parent bubble — advance workflowStage when all non-cancelled splits are
+  //    tinting_done. Auto-flips to closed+dispatch if operator pre-set a slot,
+  //    otherwise lands in pending_support. Sequential awaits per CORE §3.
+  //    NOTE: The $transaction above (line 50) is a pre-existing CORE §3 landmine
+  //    (Supabase pooler timeout risk). Do not refactor it here.
+  if (parentOrderId !== null) {
+    const siblings = await prisma.order_splits.findMany({
+      where:  { orderId: parentOrderId },
+      select: { status: true },
+    });
+    const nonCancelled = siblings.filter(s => s.status !== "cancelled");
+    const activeCount  = nonCancelled.length;
+    const doneCount    = nonCancelled.filter(s => s.status === "tinting_done").length;
+
+    if (activeCount > 0 && doneCount === activeCount) {
+      const parent = await prisma.orders.findUnique({
+        where:  { id: parentOrderId },
+        select: { workflowStage: true, dispatchWindowId: true, dispatchTargetDate: true },
+      });
+      if (parent?.workflowStage === "tinting_in_progress") {
+        const hasPresetSlot = parent.dispatchWindowId != null && parent.dispatchTargetDate != null;
+        await prisma.orders.update({
+          where: { id: parentOrderId },
+          data:  hasPresetSlot
+            ? { workflowStage: "closed", dispatchStatus: "dispatch" }
+            : { workflowStage: "pending_support" },
+        });
+        await prisma.order_status_logs.create({
+          data: {
+            orderId:     parentOrderId,
+            fromStage:   "tinting_in_progress",
+            toStage:     hasPresetSlot ? "closed" : "pending_support",
+            changedById: 1,
+            note:        hasPresetSlot
+              ? "Auto-dispatched on tint completion (operator pre-set slot)"
+              : "Auto-advanced: all splits tinting_done",
+          },
+        });
+      }
+    }
   }
 
   return NextResponse.json({ success: true });

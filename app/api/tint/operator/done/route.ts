@@ -175,13 +175,22 @@ export async function POST(req: Request): Promise<NextResponse> {
       return 4;
     })();
 
+    const hasPresetSlot = order.dispatchWindowId != null && order.dispatchTargetDate != null;
+
     await prisma.orders.update({
       where: { id: orderId },
-      data: {
-        workflowStage: "pending_support",
-        slotId: completionSlotId,
-        originalSlotId: completionSlotId,
-      },
+      data: hasPresetSlot
+        ? {
+            workflowStage: "closed",
+            dispatchStatus: "dispatch",
+            slotId: completionSlotId,
+            originalSlotId: completionSlotId,
+          }
+        : {
+            workflowStage: "pending_support",
+            slotId: completionSlotId,
+            originalSlotId: completionSlotId,
+          },
     })
 
     // 5. INSERT tint_logs
@@ -198,9 +207,11 @@ export async function POST(req: Request): Promise<NextResponse> {
       data: {
         orderId,
         fromStage:   "tinting_in_progress",
-        toStage:     "pending_support",
+        toStage:     hasPresetSlot ? "closed" : "pending_support",
         changedById: userId,
-        note:        "Tinting completed — moved to support queue",
+        note:        hasPresetSlot
+          ? "Auto-dispatched on tint completion (operator pre-set slot)"
+          : "Tinting completed — moved to support queue",
       },
     })
 

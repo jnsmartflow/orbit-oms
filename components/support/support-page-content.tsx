@@ -32,6 +32,7 @@ interface SlotsResponse {
   slots: SlotNavItem[];
   holdCount: number;
   doneCount: number;
+  earlierPendingCount: number;
   date: string;
 }
 
@@ -97,6 +98,7 @@ export function SupportPageContent() {
   const [slots, setSlots] = useState<SlotNavItem[]>([]);
   const [holdCount, setHoldCount] = useState(0);
   const [doneCount, setDoneCount] = useState(0);
+  const [earlierPendingCount, setEarlierPendingCount] = useState(0);
   const [orders, setOrders] = useState<SupportOrder[]>([]);
   const [activeSection, setActiveSection] = useState("");
   const [activeSlotId, setActiveSlotId] = useState<number | null>(null);
@@ -179,6 +181,7 @@ export function SupportPageContent() {
       setSlots(data.slots);
       setHoldCount(data.holdCount);
       setDoneCount(data.doneCount);
+      setEarlierPendingCount(data.earlierPendingCount ?? 0);
       return data;
     } catch {
       toast.error("Failed to load slots");
@@ -195,6 +198,8 @@ export function SupportPageContent() {
         const qs = new URLSearchParams({ date });
         if (section === "hold") {
           qs.set("section", "hold");
+        } else if (section === "earlier") {
+          qs.set("section", "earlier");
         } else if (section.startsWith("slot-")) {
           qs.set("section", "slot");
           if (slotId) qs.set("slotId", String(slotId));
@@ -283,6 +288,19 @@ export function SupportPageContent() {
       throw new Error(e.error ?? "Dispatch failed");
     }
     toast.success("Order dispatched");
+    await refresh();
+  }, [refresh]);
+
+  const handlePresetSlot = useCallback(async (orderId: number, target: { dispatchTargetDate: string; dispatchWindowId: number }) => {
+    const res = await fetch(`/api/support/orders/${orderId}/preset-slot`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dispatchTargetDate: target.dispatchTargetDate, dispatchWindowId: target.dispatchWindowId }),
+    });
+    if (!res.ok) {
+      const e = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(e.error ?? "Pre-set slot failed");
+    }
+    toast.success("Dispatch slot saved");
     await refresh();
   }, [refresh]);
 
@@ -442,6 +460,7 @@ export function SupportPageContent() {
 
   const todayIST = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
   const isHistoryView = date < todayIST;
+  const isEarlierView = activeSection === "earlier";
 
   // Header props
   const headerDate = useMemo(() => new Date(date + "T00:00:00+05:30"), [date]);
@@ -484,9 +503,10 @@ export function SupportPageContent() {
         ]}
         segments={headerSegments}
         activeSegment={activeSlotId}
-        segmentsDisabled={mainTab === "hold"}
+        segmentsDisabled={mainTab === "hold" || isEarlierView}
         onSegmentChange={(id) => {
           if (mainTab === "hold") return;
+          if (isEarlierView) return;
           if (id === null) {
             // Active segment clicked again → ALL view (deselect)
             setActiveSection("slot-all");
@@ -515,6 +535,31 @@ export function SupportPageContent() {
         ]}
       />
 
+{/* ── Earlier pending badge — toggle (tap in / tap out) ───────────── */}
+      {!isHistoryView && earlierPendingCount > 0 && (
+        <button
+          type="button"
+          onClick={() => {
+            if (isEarlierView) {
+              handleMainTabChange("all");   // lands on Morning (activeSlotId=null → slots[0])
+            } else {
+              setMainTab("all");
+              handleSelectSection("earlier");
+            }
+          }}
+          style={{ background: "#fdf6e7", borderTop: "none", borderRight: "none", borderLeft: "none", borderBottom: "0.5px solid #f0d79a", color: "#854f0b" }}
+          className="flex items-center justify-between px-5 py-2.5 text-xs font-medium w-full text-left flex-shrink-0 transition-colors"
+        >
+          <span className="flex items-center gap-2">
+            <span>⚠</span>
+            <span>{earlierPendingCount} pending from earlier</span>
+          </span>
+          <span className="text-[11px] font-medium" style={{ opacity: isEarlierView ? 1 : 0.8 }}>
+            {isEarlierView ? "← back to today" : "tap to view"}
+          </span>
+        </button>
+      )}
+
 {/* ── All Tab Content ───────────────────────────────────────────────── */}
       {mainTab === "all" && (
         <>
@@ -524,6 +569,7 @@ export function SupportPageContent() {
               orders={displayOrders}
               section={activeSection}
               onDispatch={handleDispatch}
+              onPresetSlot={handlePresetSlot}
               onHold={handleHold}
               onRelease={handleRelease}
               onCancel={handleCancel}
