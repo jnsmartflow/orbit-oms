@@ -283,7 +283,7 @@ export default function VariantGrid({
               className={`group/row ${isLastRow ? "" : "border-b border-gray-200"} hover:bg-amber-50/30 focus-within:bg-amber-50/70`}
             >
               <td className="px-3 py-2 border-l-[3px] border-l-transparent group-focus-within/row:border-l-amber-500">
-                <div className="text-[12px] font-semibold text-gray-900 group-focus-within/row:font-bold">{baseLabel}{baseAlias && !qualifierLine && <span className="font-normal text-gray-400"> · {baseAlias}</span>}</div>
+                <div className="text-[12px] font-semibold text-gray-900 group-focus-within/row:font-bold">{baseLabel}{baseAlias && !qualifierLine && <span className="font-normal text-gray-400"> · {baseAlias}</span>}{product.family === "TOOLS" && product.packs[0]?.material && <span className="ml-2 font-mono font-normal text-[12px] text-gray-400">{product.packs[0].material}</span>}</div>
                 {baseAlias && qualifierLine && <div className="text-[10px] font-normal text-gray-400 leading-tight">{baseAlias}</div>}
                 {product.region && <div className="text-[10px] font-normal text-gray-400 leading-tight">{product.region}</div>}
               </td>

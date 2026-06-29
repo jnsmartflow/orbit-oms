@@ -15,6 +15,7 @@
 export interface RawPack {
   packCode: string;        // bare numeric string from mo_sku_lookup_v2.packCode
   unit:     string | null; // mo_sku_lookup_v2.unit — "ML" | "L" | "LT" | "KG" | "GM" | null
+  material?: string | null; // mo_sku_lookup_v2.material — SAP code; set for TOOLS display, optional elsewhere
 }
 
 export const STANDARD_COLUMNS = [

@@ -93,7 +93,7 @@ export async function GET(): Promise<NextResponse> {
       // Phase 3.5 (2026-05-13): also select `unit` so KG packs reach
       // the frontend and the bucket helper can place them correctly
       // (5 KG → 4L bucket, 25 KG → its own column).
-      select: { product: true, baseColour: true, packCode: true, unit: true },
+      select: { product: true, baseColour: true, packCode: true, unit: true, material: true },
     });
 
     // ── Customers — dedupe by code (keep first occurrence) ─────────────
@@ -147,7 +147,7 @@ export async function GET(): Promise<NextResponse> {
     };
     for (const r of skuRows) {
       if (!r.product || !r.packCode) continue;
-      const pack: RawPack = { packCode: String(r.packCode), unit: r.unit ?? null };
+      const pack: RawPack = { packCode: String(r.packCode), unit: r.unit ?? null, material: r.material };
       addToPackMap(r.product, pack);
       if (r.baseColour) {
         addToPackMap(`${r.product}|||${r.baseColour}`, pack);

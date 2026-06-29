@@ -2274,10 +2274,13 @@ export default function PoPage(): React.JSX.Element {
                         // Fallback to family (e.g. "VELVET TOUCH") when there's no
                         // sub-product descriptor — mirrors /order. The {second && …}
                         // guard still renders nothing when family is empty.
-                        const second = p.region ?? getSecondLine(
-                          p.family, p.subProduct,
-                          getBaseAliasDisplay(p.product, p.baseColour),
-                        ) ?? (p.subProduct === "STICKERS" ? null : p.family);
+                        const toolsMaterial = p.family === "TOOLS" ? (p.packs[0]?.material ?? null) : null;
+                        const second = toolsMaterial
+                          ? `TOOLS · ${toolsMaterial}${p.region ? ` · ${p.region}` : ""}`
+                          : p.region ?? getSecondLine(
+                              p.family, p.subProduct,
+                              getBaseAliasDisplay(p.product, p.baseColour),
+                            ) ?? (p.subProduct === "STICKERS" ? null : p.family);
                         // Optional full-name label appended to the subtitle (e.g.
                         // MACHINE TINTER "Dramatone · Fast Red"). Null for products
                         // whose base already shows the colour name (Universal/GVA).

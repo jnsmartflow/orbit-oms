@@ -58,7 +58,7 @@ export async function GET(): Promise<NextResponse> {
 
     const skuRows = await prisma.mo_sku_lookup_v2.findMany({
       where:  { isPrimary: true },
-      select: { product: true, baseColour: true, packCode: true, unit: true },
+      select: { product: true, baseColour: true, packCode: true, unit: true, material: true },
     });
 
     // ── Customers — dedupe by code, carry first non-null area ──────────
@@ -99,7 +99,7 @@ export async function GET(): Promise<NextResponse> {
     };
     for (const r of skuRows) {
       if (!r.product || !r.packCode) continue;
-      const pack: RawPack = { packCode: String(r.packCode), unit: r.unit ?? null };
+      const pack: RawPack = { packCode: String(r.packCode), unit: r.unit ?? null, material: r.material };
       addToPackMap(r.product, pack);
       if (r.baseColour) {
         addToPackMap(`${r.product}|||${r.baseColour}`, pack);
