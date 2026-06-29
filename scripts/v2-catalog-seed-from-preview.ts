@@ -980,17 +980,44 @@ async function main(): Promise<void> {
   deduped = deduped.filter((r) => !(r.family === "WS" && r.subProduct === "PROTECT"));
   console.log(`WS plain-PROTECT drop: removed ${beforeProtectDrop - deduped.length} menu row(s)`);
 
-  // ── 7.8. Base-alias search words (any product in BASE_ALIASES) ──────
-  // Bake the friendly base-alias words from lib/place-order/base-aliases.ts
-  // into searchTokens so "accent"/"deep"/"rox"/"vibrant red" etc. find the
-  // row on BOTH mobile (haystack already includes searchTokens) and desktop
-  // (queries.ts now includes searchTokens). DISPLAY-ONLY fields (baseColour,
-  // displayName) and the order email are untouched. Applies to every row
-  // whose `product` has a BASE_ALIASES block (WS MAX + WS PROTECT DUSTPROOF /
-  // RAINPROOF / POWERFLEXX); bases with no mapped alias (93, Brilliant White,
-  // colours) are skipped.
+  // ── 7.75. Pre-fetch TOOLS material codes ─────────────────────────────
+  // TOOLS index rows carry baseColour = null, so the existing 7.8 alias
+  // guard (!r.baseColour) would skip them. Fetch all TOOLS material codes
+  // once here and handle them as a branch inside the 7.8 loop.
+  const toolsMatMap = new Map<string, string[]>();
+  const toolsSkuRows = await prisma.mo_sku_lookup_v2.findMany({
+    where:  { category: "TOOLS" },
+    select: { product: true, material: true },
+  });
+  for (const tr of toolsSkuRows) {
+    const bucket = toolsMatMap.get(tr.product) ?? [];
+    bucket.push(tr.material);
+    toolsMatMap.set(tr.product, bucket);
+  }
+  console.log(`TOOLS material map: ${toolsMatMap.size} product(s), ${toolsSkuRows.length} SKU(s)`);
+
+  // ── 7.8. Base-alias search words + TOOLS material codes ──────────────
+  // (a) TOOLS rows: bake SAP material code(s) into searchTokens so the
+  //     code is findable on mobile (/po) and desktop. Runs BEFORE the
+  //     !r.baseColour guard (TOOLS have null baseColour). `continue` after
+  //     so TOOLS never fall into the alias path (no BASE_ALIASES block).
+  // (b) All other rows: bake friendly alias words (accent/deep/rox etc.)
+  //     from lib/place-order/base-aliases.ts. Display fields + email untouched.
+  let toolsCodeRows = 0;
   let aliasTokenRows = 0;
   for (const r of deduped) {
+    if (r.family === "TOOLS") {
+      const codes = r.product ? toolsMatMap.get(r.product) : undefined;
+      if (codes && codes.length > 0) {
+        const before = r.searchTokens;
+        r.searchTokens = mergeSearchTokens(r.searchTokens, codes.join(", "));
+        if (r.searchTokens !== before) {
+          toolsCodeRows++;
+          if (DRY_RUN) console.log(`  [tools-code] ${r.product}: "${before}" -> "${r.searchTokens}"`);
+        }
+      }
+      continue;
+    }
     if (!r.product || !r.baseColour) continue;
     const alias = BASE_ALIASES[r.product]?.[r.baseColour];
     if (!alias || alias.search.length === 0) continue;
@@ -1001,6 +1028,7 @@ async function main(): Promise<void> {
       if (DRY_RUN) console.log(`  [alias] ${r.product} ${r.baseColour}: "${before}" -> "${r.searchTokens}"`);
     }
   }
+  console.log(`TOOLS code search words appended: ${toolsCodeRows} row(s)`);
   console.log(`Base-alias search words appended: ${aliasTokenRows} row(s)`);
 
   // ── 7.85. WS search-token tweaks (2026-06-01) ───────────────────────
