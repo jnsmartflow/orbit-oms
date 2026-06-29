@@ -2275,8 +2275,10 @@ export default function PoPage(): React.JSX.Element {
                         // sub-product descriptor — mirrors /order. The {second && …}
                         // guard still renders nothing when family is empty.
                         const toolsMaterial = p.family === "TOOLS" ? (p.packs[0]?.material ?? null) : null;
-                        const second = toolsMaterial
-                          ? `TOOLS · ${toolsMaterial}${p.region ? ` · ${p.region}` : ""}`
+                        const second = p.family === "TOOLS"
+                          ? (p.region && toolsMaterial
+                              ? `${p.region} · ${toolsMaterial}`
+                              : toolsMaterial ?? p.region ?? null)
                           : p.region ?? getSecondLine(
                               p.family, p.subProduct,
                               getBaseAliasDisplay(p.product, p.baseColour),
