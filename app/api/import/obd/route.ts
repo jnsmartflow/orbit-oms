@@ -3285,6 +3285,8 @@ async function handleAutoImportPatchHeaders(req: Request): Promise<NextResponse>
           updateData.obdEmailDate  = incomingDate;
           changedFields.push("orderDateTime", "obdEmailDate");
           counts.timeFixed++;
+          updateData.arrivalSlotId = resolveArrivalSlotId(newDT);
+          changedFields.push("arrivalSlotId");
 
           if (existing.orderType !== "tint") {
             if (!existing.slotToOverride) {
