@@ -27,13 +27,7 @@ export function RoleLayoutClient({
         userInitials={userInitials}
         navItems={navItems}
       />
-      <div
-        className="min-h-screen overflow-hidden"
-        style={{
-          marginLeft: "72px",
-          maxWidth:   "calc(100vw - 72px)",
-        }}
-      >
+      <div className="min-h-screen overflow-hidden md:ml-[72px] md:max-w-[calc(100vw-72px)]">
         {children}
       </div>
     </div>
