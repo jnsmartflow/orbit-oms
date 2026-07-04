@@ -32,6 +32,7 @@ export const ROLE_REDIRECTS: Record<string, string> = {
   billing_operator: "/mail-orders",
   ops_admin: "/admin/attendance",
   operation_manager: "/tint/manager",
+  logistics: "/trips",
 };
 
 // ── Guards ─────────────────────────────────────────────────────────────────────
