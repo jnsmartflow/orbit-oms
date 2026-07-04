@@ -1731,3 +1731,52 @@ model attendance_ot_audit {
   @@index([recordId])
   @@index([userId, performedAt(sort: Desc)])
 }
+
+// ─────────────────────────────────────────────
+// TRIP REPORT
+// ─────────────────────────────────────────────
+
+model TripReport {
+  sourceId            String    @id
+  tripNo              String?
+  deliveryType        String?
+  fixedType           String?
+  tRate               String?
+  disDate             DateTime? @db.Date
+  disTime             String?
+  vehicleNo           String?
+  vehType             String?
+  vModal              String?
+  driverName          String?
+  driverMobile        String?
+  dlRoute             String?
+  deliveryNo          String?
+  custCode            String?
+  custName            String?
+  custAreaName        String?
+  siteName            String?
+  siteArea            String?
+  noArticle           String?
+  disQty              String?
+  volLt               String?
+  netWeight           String?
+  totQty              String?
+  totWeight           String?
+  totDistributor      String?
+  otherDelAreaName    String?
+  modiInv             String?
+  remark              String?
+  promoType           String?
+  isManual            String?
+  transporter         String?
+  tranTransporterName String?
+  adminName           String?
+  dieselAmt           String?
+  custsoName          String?
+  createdOn           String?
+  fetchedAt           DateTime  @default(now())
+
+  @@index([disDate])
+  @@index([disDate, tripNo])
+  @@map("trip_report")
+}

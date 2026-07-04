@@ -13,6 +13,19 @@
   margin: 0;
 }
 
+/* @page (named) — Trip Sheet. Top-level per CORE/UI rule. Even 10mm margin
+   on all four sides, matching the challan (which relies on the default
+   unnamed @page { margin: 10mm } above — same value, just named here since
+   #trip-sheet-print-area sets `page: trip-sheet` explicitly). A prior
+   margin:0 version left the document box unevenly balanced on the printed
+   page. Applied via `page: trip-sheet` on #trip-sheet-print-area inside
+   @media print (see block below). Printable area is now 190mm×277mm —
+   MIN_ROWS in app/trips/[tripNo]/sheet/page.tsx is sized for this. */
+@page trip-sheet {
+  size: A4 portrait;
+  margin: 10mm;
+}
+
 /* --vvh fallback — /order's <main> consumes var(--vvh, 100vh) for keyboard-
    aware sizing. The visualViewport useEffect overwrites this on mount, but
    before JS runs (SSR first paint, or on browsers without visualViewport)
@@ -617,4 +630,61 @@ html, body { overscroll-behavior: none; }
   #tint-report-print-area .card,
   #tint-report-print-area .bd,
   #tint-report-print-area .opc { page-break-inside: avoid; }
+}
+
+/* ═════════════════════════════════════════════
+   Trip Sheet — printable A4 document isolation
+   (challan block above already sets `body * { visibility: hidden }` in print;
+   here we reveal only the sheet's print area and switch it to the borderless
+   trip-sheet @page. id-scoped so challan / mail-order / tint-report prints
+   are untouched.
+   Logo: NO filter — matches the Delivery Challan's actual print behaviour.
+   The challan's own logo has no className/filter (the `.ch-header img`
+   grayscale rule elsewhere in this file is stale, orphaned CSS — the
+   documented landmine in CLAUDE_TINT.md — and never actually applies).
+   Both documents print the logo in full colour. )
+   ═════════════════════════════════════════════ */
+@media print {
+  #trip-sheet-print-area,
+  #trip-sheet-print-area * { visibility: visible !important; }
+
+  /* Outer #trip-sheet-print-area handles ONLY print isolation/positioning —
+     it is deliberately NOT the min-height/flex target (see .trip-sheet-inner
+     below). Combining position:absolute (out-of-flow, height:auto) with a
+     min-height-driven flex auto-margin on the SAME element is unreliable in
+     Chromium's print pagination pass: children get positioned against the
+     shrink-to-fit content height before the min-height floor is applied, so
+     margin-top:auto sees no free space even though the box still paints out
+     to 297mm afterward — exactly the "gap appears below the ack band"
+     symptom this fixes. */
+  #trip-sheet-print-area {
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    page: trip-sheet;
+  }
+
+  /* .trip-sheet-inner: box-sizing/box-shadow only — no min-height, no
+     reserved padding. The fixed-position approach (position:fixed on
+     .trip-sheet-bottom + a reserved padding-bottom here) anchored the band
+     to the page edge but left it visually detached from the table for short
+     trips. Reverted to the challan's actual mechanism: .trip-sheet-bottom
+     (ack band + footer) is normal flow, connected directly after the table,
+     and MIN_ROWS (below the table markup) pads the deliveries table with
+     blank rows so total content ≈ one page — the row count is the "spacer,"
+     not a height/position trick. */
+  #trip-sheet-print-area .trip-sheet-inner {
+    box-sizing: border-box !important;
+    box-shadow: none !important;
+  }
+
+  #trip-sheet-print-area tr { page-break-inside: avoid; }
+
+  /* Ack band + footer must never split across a page break. */
+  #trip-sheet-print-area .trip-sheet-ack-band,
+  #trip-sheet-print-area .trip-sheet-footer {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
 }

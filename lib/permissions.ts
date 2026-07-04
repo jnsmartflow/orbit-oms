@@ -31,6 +31,7 @@ const PAGE_NAV_MAP: NavItemConfig[] = [
   { pageKey: "skus",          label: "SKUs",           href: "/admin/skus" },
   { pageKey: "routes_areas",  label: "Routes",         href: "/admin/routes" },
   { pageKey: "vehicles",      label: "Vehicles",        href: "/admin/vehicles" },
+  { pageKey: "trip_report",   label: "Trip Report",     href: "/trips" },
   { pageKey: "place_order",        label: "Purchase Order (PO)", href: "/place-order" },
   { pageKey: "mail_orders",        label: "Mail Orders",       href: "/mail-orders" },
   { pageKey: "delivery_challans",  label: "Delivery Challans", href: "/tint/manager/challan" },
@@ -131,6 +132,7 @@ export type PageKey =
   | "dispatcher"
   | "warehouse"
   | "place_order"
+  | "trip_report"
   | "mail_orders"
   | "delivery_challans"
   | "shade_master"
@@ -177,7 +179,7 @@ const ALL_PAGE_KEYS: PageKey[] = [
   "dashboard", "users", "system_config", "permissions",
   "customers", "skus", "routes_areas", "vehicles",
   "import_obd", "support_queue", "planning_board", "tint_manager", "tint_operator",
-  "dispatcher", "warehouse", "place_order", "mail_orders",
+  "dispatcher", "warehouse", "place_order", "trip_report", "mail_orders",
   "delivery_challans", "shade_master", "sampling_library", "ti_report",
   "settings_hide",
 ];
