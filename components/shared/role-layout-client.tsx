@@ -2,6 +2,7 @@
 
 import { RoleSidebar } from "./role-sidebar";
 import type { RoleSidebarRole } from "./role-sidebar";
+import { MobileShell } from "./mobile-shell";
 import type { NavItemConfig } from "@/lib/permissions";
 
 interface RoleLayoutClientProps {
@@ -27,7 +28,13 @@ export function RoleLayoutClient({
         userInitials={userInitials}
         navItems={navItems}
       />
-      <div className="min-h-screen overflow-hidden md:ml-[72px] md:max-w-[calc(100vw-72px)]">
+      <MobileShell
+        role={role}
+        navItems={navItems}
+        userName={userName}
+        userInitials={userInitials}
+      />
+      <div className="min-h-screen overflow-hidden pb-[76px] md:pb-0 md:ml-[72px] md:max-w-[calc(100vw-72px)]">
         {children}
       </div>
     </div>

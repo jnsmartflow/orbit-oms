@@ -36,7 +36,7 @@ export interface RoleSidebarProps {
 
 // ── Icon map ──────────────────────────────────────────────────────────────────
 
-const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
+export const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   operations_support:   ClipboardList,
   operations_tinting:       Layers,
   operations_tint_operator: Zap,
@@ -61,7 +61,7 @@ const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   mail_orders:         Mail,
 };
 
-const DEFAULT_ICON = User;
+export const DEFAULT_ICON = User;
 
 const ROLE_LABELS: Record<RoleSidebarRole, string> = {
   support:        "Support Team",
