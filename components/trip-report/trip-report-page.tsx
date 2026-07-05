@@ -118,6 +118,22 @@ function normType(v: string): string {
   return v.toLowerCase().replace(/[\s-]/g, "");
 }
 
+// Map segment/pill labels → canonical DB deliveryType values (normTyped).
+// Extend this if new delivery types appear in trip_report.
+const SEGMENT_TO_DB_VALUES: Record<string, string[]> = {
+  local: ["local"],
+  upcountry: ["upc"],
+};
+
+function matchesTypeFilter(deliveryType: string | null, filterLabel: string): boolean {
+  const dbNorm = normType(deliveryType ?? "");
+  const filterNorm = normType(filterLabel);
+  const allowed = SEGMENT_TO_DB_VALUES[filterNorm];
+  if (allowed) return allowed.includes(dbNorm);
+  // Fallback: direct comparison
+  return dbNorm === filterNorm;
+}
+
 function typeDotColor(type: string | null): string {
   if (!type) return "bg-gray-400";
   const t = type.toLowerCase();
@@ -137,14 +153,56 @@ function dropTag(d: TripDrop): "INV" | "PROMO" {
   return d.promoType && d.promoType.trim() !== "" ? "PROMO" : "INV";
 }
 
+function formatCaptionDate(isoDate: string, time: string | null): string {
+  const d = new Date(isoDate + "T00:00:00+05:30");
+  const day = d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", timeZone: "Asia/Kolkata" });
+  if (!time || time.trim() === "") return day;
+  // time is "HH:MM:SS" or "HH:MM" — parse to 12h
+  const [hStr, mStr] = time.split(":");
+  const h = parseInt(hStr, 10);
+  const m = parseInt(mStr, 10);
+  const ampm = h >= 12 ? "PM" : "AM";
+  const h12 = h % 12 || 12;
+  const timeStr = `${h12}:${String(m).padStart(2, "0")} ${ampm}`;
+  return `${day} ${timeStr}`;
+}
+
 function buildShareCaption(tripNo: string, detail: TripDetail): string {
-  const vehicle = detail.header.vehicleNo ?? "—";
-  const driver = smartTitleCase(detail.header.driverName) || "—";
-  return (
-    `Trip ${tripNo} · ${detail.disDate}\n` +
-    `${vehicle} · ${driver}\n` +
-    `${detail.drops.length} drops · Qty ${fmtNum(detail.totals.qty)} · ${fmtNum(detail.totals.weight)} kg`
-  );
+  const lines: string[] = [];
+
+  // Line 1: trip + type
+  const type = detail.header.deliveryType ?? "";
+  lines.push(`🚚 Trip ${tripNo}${type ? ` · ${type}` : ""}`);
+
+  // Line 2: date + time
+  lines.push(`📅 ${formatCaptionDate(detail.disDate, detail.header.disTime)}`);
+
+  // Line 3: driver (skip if no name)
+  const driverName = smartTitleCase(detail.header.driverName) || "";
+  const driverMobile = (detail.header.driverMobile ?? "").trim();
+  if (driverName) {
+    lines.push(driverMobile ? `👤 ${driverName} · ${driverMobile}` : `👤 ${driverName}`);
+  }
+
+  // Line 4: drops
+  const count = detail.drops.length;
+  lines.push(`📦 ${count} ${count === 1 ? "drop" : "drops"}`);
+
+  // Line 5: unique areas (preserve first-seen order)
+  const seen = new Set<string>();
+  const areas: string[] = [];
+  for (const d of detail.drops) {
+    const route = (d.dlRoute ?? "").trim();
+    if (route && !seen.has(route)) {
+      seen.add(route);
+      areas.push(route);
+    }
+  }
+  if (areas.length > 0) {
+    lines.push(`📍 ${areas.join(", ")}`);
+  }
+
+  return lines.join("\n");
 }
 
 const th = "text-left px-3.5 text-[10px] font-medium uppercase tracking-wider text-gray-400";
@@ -210,7 +268,7 @@ export function TripReportPage() {
   const filteredTrips = useMemo(() => {
     const q = search.trim().toLowerCase();
     return trips.filter((t) => {
-      if (typeFilter && normType(t.deliveryType ?? "") !== normType(String(typeFilter))) return false;
+      if (typeFilter && !matchesTypeFilter(t.deliveryType, String(typeFilter))) return false;
       if (!q) return true;
       return (
         t.tripNo.toLowerCase().includes(q) ||
@@ -226,7 +284,7 @@ export function TripReportPage() {
   const mobileFilteredTrips = useMemo(() => {
     const q = search.trim().toLowerCase();
     return trips.filter((t) => {
-      if (typeFilter && normType(t.deliveryType ?? "") !== normType(String(typeFilter))) return false;
+      if (typeFilter && !matchesTypeFilter(t.deliveryType, String(typeFilter))) return false;
       if (!q) return true;
       return (
         t.tripNo.toLowerCase().includes(q) ||
