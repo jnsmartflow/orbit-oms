@@ -1,6 +1,5 @@
 import { smartTitleCase } from "@/lib/mail-orders/utils";
 import { resolveDeliveryArea, resolveCustomerLabel } from "@/lib/trip-report/display";
-import { JSW_DULUX_LOGO_DATA_URI } from "@/lib/trip-report/logo-data-uri";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TripSheetDocument — pure presentational component, NO data fetching.
@@ -194,7 +193,7 @@ export function TripSheetDocument({ tripNo, date, header, drops, dropCount, tota
         >
           <div style={{ flexShrink: 0 }}>
             <img
-              src={JSW_DULUX_LOGO_DATA_URI}
+              src="/jsw-dulux-logo.png"
               alt="JSW Dulux"
               style={{ height: 34, width: "auto", display: "block" }}
             />
