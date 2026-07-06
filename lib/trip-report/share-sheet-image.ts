@@ -44,17 +44,27 @@ async function captureSheetImage(sheet: SheetProps): Promise<Blob> {
     const node = container.querySelector(".trip-sheet-inner") as HTMLElement | null;
     if (!node) throw new Error("Trip sheet did not render");
 
-    // Wait for the JSW logo to finish decoding so it isn't missing/blank in
-    // the captured image. decode() resolves immediately if already loaded.
-    const img = node.querySelector("img");
-    if (img) {
-      try {
-        await img.decode();
-      } catch {
-        // A decode failure (e.g. the image genuinely failed to load) isn't
-        // worth blocking the whole capture over — proceed without it.
-      }
-    }
+    // Wait for EVERY image (currently just the inlined-data-URI logo) to finish
+    // decoding/loading so none is missing/blank in the capture. Awaiting all
+    // images — not just the first — means no future DOM change can shift which
+    // element is awaited. The logo is a data URI, so decode() resolves instantly
+    // with no network: fast and deterministic.
+    const imgs = Array.from(node.querySelectorAll("img"));
+    await Promise.all(
+      imgs.map(async (img) => {
+        try {
+          await img.decode();
+        } catch {
+          // decode() can reject on some engines even for a valid image; fall
+          // back to the load event, and never block the capture on one image.
+          if (img.complete) return;
+          await new Promise<void>((resolve) => {
+            img.addEventListener("load", () => resolve(), { once: true });
+            img.addEventListener("error", () => resolve(), { once: true });
+          });
+        }
+      }),
+    );
 
     const blob = await toBlob(node, {
       pixelRatio: 2,

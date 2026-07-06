@@ -1,5 +1,6 @@
 import { smartTitleCase } from "@/lib/mail-orders/utils";
 import { resolveDeliveryArea, resolveCustomerLabelParts } from "@/lib/trip-report/display";
+import { JSW_DULUX_LOGO_DATA_URI } from "@/lib/trip-report/logo-data-uri";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TripSheetDocument — pure presentational component, NO data fetching.
@@ -211,12 +212,15 @@ export function TripSheetDocument({ tripNo, date, header, drops, dropCount, tota
         >
           <div style={{ flexShrink: 0 }}>
             <img
-              src="/jsw-dulux-logo.png"
+              id="trip-sheet-logo"
+              src={JSW_DULUX_LOGO_DATA_URI}
               alt="JSW Dulux"
-              // Explicit px width (not auto): html-to-image's foreignObject
-              // serialization drops intrinsic width on mobile WebKit, so the
-              // WhatsApp-share capture rendered the logo at ~0 width. 141×34
-              // keeps the 800×193 aspect ratio it already shows on screen/PDF.
+              // TWO required fixes together: (1) inlined data URI so html-to-image
+              // never re-fetches the URL during capture (that fetch was flaky on
+              // mobile WebKit and dropped the logo); (2) explicit px width so the
+              // foreignObject doesn't collapse it to ~0 width. 141×34 keeps the
+              // 800×193 aspect ratio it already shows on screen/PDF. Do NOT revert
+              // width to auto and do NOT revert src to the URL — either alone fails.
               style={{ height: 34, width: 141, display: "block" }}
             />
           </div>
