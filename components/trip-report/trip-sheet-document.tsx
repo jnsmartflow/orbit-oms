@@ -1,4 +1,5 @@
 import { smartTitleCase } from "@/lib/mail-orders/utils";
+import { resolveDeliveryArea, resolveCustomerLabel } from "@/lib/trip-report/display";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TripSheetDocument — pure presentational component, NO data fetching.
@@ -34,9 +35,11 @@ export interface TripSheetHeader {
 export interface TripSheetDrop {
   deliveryNo: string | null;
   custName: string | null;
-  dlRoute: string | null;
   siteName: string | null;
   siteArea: string | null;
+  otherDelAreaName: string | null;
+  custAreaName: string | null;
+  noArticle: string | null;
   disQty: string | null;
   netWeight: string | null;
 }
@@ -46,7 +49,9 @@ export interface TripSheetDocumentProps {
   date: string; // YYYY-MM-DD
   header: TripSheetHeader;
   drops: TripSheetDrop[];
-  totals: { qty: number; weight: number };
+  dropCount: number;
+  /** articles counts ALL rows; qty (LT) + weight (KG) are INV-only totals. */
+  totals: { articles: number; qty: number; weight: number };
   /** Set ONLY by the print route — enables globals.css's print isolation
       (#trip-sheet-print-area). The hidden capture instance omits this. */
   printAreaId?: string;
@@ -60,17 +65,6 @@ function toNum(raw: string | null | undefined): number {
 
 function fmtNum(n: number): string {
   return n.toLocaleString("en-IN", { maximumFractionDigits: 2 });
-}
-
-function deliveryAreaSite(d: {
-  siteName: string | null;
-  siteArea: string | null;
-  dlRoute: string | null;
-}): string {
-  if (d.siteName && d.siteName.trim() !== "") {
-    return d.siteArea && d.siteArea.trim() !== "" ? `${d.siteName} · ${d.siteArea}` : d.siteName;
-  }
-  return d.dlRoute && d.dlRoute.trim() !== "" ? d.dlRoute : "—";
 }
 
 function formatSheetDate(dateStr: string): string {
@@ -170,7 +164,7 @@ const tdStyle: React.CSSProperties = {
 const MIN_ROWS = 20;
 const BLANK_BORDER = "#f0f0f0"; // fainter than BORDER_ROW — matches the challan's blank-row rule colour
 
-export function TripSheetDocument({ tripNo, date, header, drops, totals, printAreaId }: TripSheetDocumentProps) {
+export function TripSheetDocument({ tripNo, date, header, drops, dropCount, totals, printAreaId }: TripSheetDocumentProps) {
   return (
     <div id={printAreaId} style={{ width: "210mm", margin: "0 auto" }}>
       <div
@@ -254,20 +248,22 @@ export function TripSheetDocument({ tripNo, date, header, drops, totals, printAr
           <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
             <colgroup>
               <col style={{ width: "5%" }} />
-              <col style={{ width: "15%" }} />
-              <col style={{ width: "32%" }} />
-              <col style={{ width: "24%" }} />
-              <col style={{ width: "10%" }} />
               <col style={{ width: "14%" }} />
+              <col style={{ width: "29%" }} />
+              <col style={{ width: "22%" }} />
+              <col style={{ width: "9%" }} />
+              <col style={{ width: "10%" }} />
+              <col style={{ width: "11%" }} />
             </colgroup>
             <thead>
               <tr>
                 <th style={{ ...thStyle, paddingLeft: 24, textAlign: "center" }}>#</th>
                 <th style={thStyle}>Delivery No</th>
                 <th style={thStyle}>Customer</th>
-                <th style={thStyle}>Delivery Area / Site</th>
-                <th style={thRight}>Qty</th>
-                <th style={{ ...thRight, paddingRight: 24 }}>Net kg</th>
+                <th style={thStyle}>Delivery Area</th>
+                <th style={thRight}>Articles</th>
+                <th style={thRight}>LT</th>
+                <th style={{ ...thRight, paddingRight: 24 }}>KG</th>
               </tr>
             </thead>
             <tbody>
@@ -278,9 +274,14 @@ export function TripSheetDocument({ tripNo, date, header, drops, totals, printAr
                     {r.deliveryNo ?? "—"}
                   </td>
                   <td style={{ ...tdStyle, color: "#111827", fontWeight: 600 }}>
-                    {smartTitleCase(r.custName) || "—"}
+                    {resolveCustomerLabel(r.siteName, r.custName)}
                   </td>
-                  <td style={{ ...tdStyle, color: "#475569" }}>{smartTitleCase(deliveryAreaSite(r))}</td>
+                  <td style={{ ...tdStyle, color: "#475569" }}>
+                    {smartTitleCase(resolveDeliveryArea(r)) || "—"}
+                  </td>
+                  <td style={{ ...tdStyle, textAlign: "right", color: "#475569", fontVariantNumeric: "tabular-nums" }}>
+                    {fmtNum(toNum(r.noArticle))}
+                  </td>
                   <td style={{ ...tdStyle, textAlign: "right", color: "#111827", fontVariantNumeric: "tabular-nums" }}>
                     {fmtNum(toNum(r.disQty))}
                   </td>
@@ -319,6 +320,7 @@ export function TripSheetDocument({ tripNo, date, header, drops, totals, printAr
                   <td style={{ height: 30, borderBottom: `1px solid ${BLANK_BORDER}` }} />
                   <td style={{ height: 30, borderBottom: `1px solid ${BLANK_BORDER}` }} />
                   <td style={{ height: 30, borderBottom: `1px solid ${BLANK_BORDER}` }} />
+                  <td style={{ height: 30, borderBottom: `1px solid ${BLANK_BORDER}` }} />
                 </tr>
               ))}
             </tbody>
@@ -338,7 +340,21 @@ export function TripSheetDocument({ tripNo, date, header, drops, totals, printAr
                     ...UP,
                   }}
                 >
-                  Total &middot; {drops.length} drops
+                  Total &middot; {dropCount} {dropCount === 1 ? "drop" : "drops"}
+                </td>
+                <td
+                  style={{
+                    height: 32,
+                    padding: "0 8px",
+                    borderTop: `2px solid ${BORDER_HEAVY}`,
+                    textAlign: "right",
+                    fontWeight: 700,
+                    fontSize: 11.5,
+                    color: "#475569",
+                    fontVariantNumeric: "tabular-nums",
+                  }}
+                >
+                  {fmtNum(totals.articles)}
                 </td>
                 <td
                   style={{
@@ -399,7 +415,7 @@ export function TripSheetDocument({ tripNo, date, header, drops, totals, printAr
             <div style={{ marginTop: 7, fontSize: 10, color: "#111827", lineHeight: 1.6 }}>
               <div>
                 <span style={{ color: "#94a3b8", fontSize: 8, letterSpacing: "0.06em", ...UP }}>Transporter </span>
-                <span style={{ fontWeight: 600 }}>Nagadhiraj Trans Service</span>
+                <span style={{ fontWeight: 600 }}>Nagadhiraj Transport Service</span>
               </div>
               <div>
                 <span style={{ color: "#94a3b8", fontSize: 8, letterSpacing: "0.06em", ...UP }}>Vehicle </span>

@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { TripSheetDocument } from "@/components/trip-report/trip-sheet-document";
 import { TripSheetPrintButton } from "@/components/trip-report/trip-sheet-print-button";
+import { isPromoRow, sortTripDropRows } from "@/lib/trip-report/display";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +23,22 @@ function toNum(raw: string | null | undefined): number {
   if (!raw) return 0;
   const n = parseFloat(raw);
   return Number.isFinite(n) ? n : 0;
+}
+
+/** 1 drop = 1 unique customer (by custCode). Null/blank custCode rows each count as 1. */
+function countDrops(rows: { custCode: string | null }[]): number {
+  const seen = new Set<string>();
+  let count = 0;
+  for (const r of rows) {
+    const code = (r.custCode ?? "").trim();
+    if (!code) {
+      count++;
+    } else if (!seen.has(code)) {
+      seen.add(code);
+      count++;
+    }
+  }
+  return count;
 }
 
 export default async function TripSheetPage({
@@ -53,9 +70,15 @@ export default async function TripSheetPage({
   if (rows.length === 0) notFound();
 
   const first = rows[0];
+  // Articles counts ALL rows; LT (qty) + KG (weight) totals are INV-only by
+  // design — PROMO rows still print in the table but aren't summed.
   const totals = rows.reduce(
-    (acc, r) => ({ qty: acc.qty + toNum(r.disQty), weight: acc.weight + toNum(r.netWeight) }),
-    { qty: 0, weight: 0 },
+    (acc, r) => ({
+      articles: acc.articles + toNum(r.noArticle),
+      qty: acc.qty + (isPromoRow(r) ? 0 : toNum(r.disQty)),
+      weight: acc.weight + (isPromoRow(r) ? 0 : toNum(r.netWeight)),
+    }),
+    { articles: 0, qty: 0, weight: 0 },
   );
 
   return (
@@ -84,15 +107,18 @@ export default async function TripSheetPage({
           driverName: first.driverName,
           driverMobile: first.driverMobile,
         }}
-        drops={rows.map((r) => ({
+        drops={sortTripDropRows(rows).map((r) => ({
           deliveryNo: r.deliveryNo,
           custName: r.custName,
-          dlRoute: r.dlRoute,
           siteName: r.siteName,
           siteArea: r.siteArea,
+          otherDelAreaName: r.otherDelAreaName,
+          custAreaName: r.custAreaName,
+          noArticle: r.noArticle,
           disQty: r.disQty,
           netWeight: r.netWeight,
         }))}
+        dropCount={countDrops(rows)}
         totals={totals}
       />
     </div>

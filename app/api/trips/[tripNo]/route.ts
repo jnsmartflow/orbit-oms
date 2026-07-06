@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { isPromoRow, sortTripDropRows } from "@/lib/trip-report/display";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +17,22 @@ function toNum(value: string | null | undefined): number {
   if (!value) return 0;
   const n = parseFloat(value);
   return Number.isFinite(n) ? n : 0;
+}
+
+/** 1 drop = 1 unique customer (by custCode). Null/blank custCode rows each count as 1. */
+function countDrops(rows: { custCode: string | null }[]): number {
+  const seen = new Set<string>();
+  let count = 0;
+  for (const r of rows) {
+    const code = (r.custCode ?? "").trim();
+    if (!code) {
+      count++;
+    } else if (!seen.has(code)) {
+      seen.add(code);
+      count++;
+    }
+  }
+  return count;
 }
 
 export async function GET(
@@ -49,7 +66,9 @@ export async function GET(
 
   const first = rows[0];
 
-  const drops = rows.map((r) => ({
+  // SORT 2 — group same-customer rows adjacent (shared helper; totals/dropCount
+  // below stay order-independent so they read from the unsorted `rows`).
+  const drops = sortTripDropRows(rows).map((r) => ({
     deliveryNo: r.deliveryNo,
     custName: r.custName,
     custCode: r.custCode,
@@ -64,11 +83,13 @@ export async function GET(
     netWeight: r.netWeight,
   }));
 
+  // Articles + drops count ALL rows. LT (qty) + KG (weight) totals are INV-only
+  // by design — PROMO rows still appear in the table but aren't summed.
   const totals = rows.reduce(
     (acc, r) => ({
       articles: acc.articles + toNum(r.noArticle),
-      qty: acc.qty + toNum(r.disQty),
-      weight: acc.weight + toNum(r.netWeight),
+      qty: acc.qty + (isPromoRow(r) ? 0 : toNum(r.disQty)),
+      weight: acc.weight + (isPromoRow(r) ? 0 : toNum(r.netWeight)),
     }),
     { articles: 0, qty: 0, weight: 0 },
   );
@@ -88,6 +109,7 @@ export async function GET(
       dieselAmt: first.dieselAmt,
     },
     drops,
+    dropCount: countDrops(rows),
     totals,
   });
 }

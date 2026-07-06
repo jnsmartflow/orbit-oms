@@ -7,6 +7,7 @@ import { UniversalHeader } from "@/components/universal-header";
 import { smartTitleCase } from "@/lib/mail-orders/utils";
 import { getTodayIST } from "@/lib/dates";
 import { shareTripSheetImage } from "@/lib/trip-report/share-sheet-image";
+import { resolveDeliveryArea, resolveCustomerLabel, isPromoRow } from "@/lib/trip-report/display";
 
 // ── Types (mirror /api/trips + /api/trips/[tripNo] JSON shapes) ────────────
 
@@ -64,6 +65,7 @@ interface TripDetail {
     dieselAmt: string | null;
   };
   drops: TripDrop[];
+  dropCount: number;
   totals: { articles: number; qty: number; weight: number };
 }
 
@@ -142,15 +144,10 @@ function typeDotColor(type: string | null): string {
   return "bg-gray-400";
 }
 
-function deliveryAreaSite(d: TripDrop): string {
-  if (d.siteName && d.siteName.trim() !== "") {
-    return d.siteArea && d.siteArea.trim() !== "" ? `${d.siteName} · ${d.siteArea}` : d.siteName;
-  }
-  return d.dlRoute && d.dlRoute.trim() !== "" ? d.dlRoute : "—";
-}
-
 function dropTag(d: TripDrop): "INV" | "PROMO" {
-  return d.promoType && d.promoType.trim() !== "" ? "PROMO" : "INV";
+  // promoType is the NTS "INV TYPE" column, values {"INV","PROMO"}, non-empty on
+  // every row. Only a literal PROMO is a promo; anything else defaults to INV.
+  return isPromoRow(d) ? "PROMO" : "INV";
 }
 
 function formatCaptionDate(isoDate: string, time: string | null): string {
@@ -175,27 +172,33 @@ function buildShareCaption(tripNo: string, detail: TripDetail): string {
   lines.push(`🚚 Trip ${tripNo}${type ? ` · ${type}` : ""}`);
 
   // Line 2: date + time
-  lines.push(`📅 ${formatCaptionDate(detail.disDate, detail.header.disTime)}`);
+  lines.push(`🕐 ${formatCaptionDate(detail.disDate, detail.header.disTime)}`);
 
-  // Line 3: driver (skip if no name)
-  const driverName = smartTitleCase(detail.header.driverName) || "";
+  // Line 3: driver first name (skip if no name)
+  const driverFull = smartTitleCase(detail.header.driverName) || "";
+  const driverFirst = driverFull.split(" ")[0] || "";
   const driverMobile = (detail.header.driverMobile ?? "").trim();
-  if (driverName) {
-    lines.push(driverMobile ? `👤 ${driverName} · ${driverMobile}` : `👤 ${driverName}`);
+  if (driverFirst) {
+    lines.push(driverMobile ? `👤 ${driverFirst} · ${driverMobile}` : `👤 ${driverFirst}`);
   }
 
-  // Line 4: drops
-  const count = detail.drops.length;
+  // Line 4: drops (unique customers)
+  const count = detail.dropCount;
   lines.push(`📦 ${count} ${count === 1 ? "drop" : "drops"}`);
 
-  // Line 5: unique areas (preserve first-seen order)
+  // Line 5: unique RULE A delivery areas. Dedup in deliveryNo order so the
+  // caption reads identically to the list column (disTime is constant within a
+  // trip, so deliveryNo is the deterministic shared order both surfaces use).
+  const orderedDrops = [...detail.drops].sort((a, b) =>
+    (a.deliveryNo ?? "").localeCompare(b.deliveryNo ?? ""),
+  );
   const seen = new Set<string>();
   const areas: string[] = [];
-  for (const d of detail.drops) {
-    const route = (d.dlRoute ?? "").trim();
-    if (route && !seen.has(route)) {
-      seen.add(route);
-      areas.push(route);
+  for (const d of orderedDrops) {
+    const area = resolveDeliveryArea(d);
+    if (area && !seen.has(area)) {
+      seen.add(area);
+      areas.push(smartTitleCase(area));
     }
   }
   if (areas.length > 0) {
@@ -419,8 +422,8 @@ export function TripReportPage() {
                     <th className={th}>Driver</th>
                     <th className={th}>Delivery Areas</th>
                     <th className={`${thNum} border-l border-gray-200`}>Drops</th>
-                    <th className={thNum}>Qty</th>
-                    <th className={thNum}>Weight</th>
+                    <th className={thNum}>LT</th>
+                    <th className={thNum}>KG</th>
                     <th className={thNum}>Diesel</th>
                   </tr>
                 </thead>
@@ -487,8 +490,8 @@ export function TripReportPage() {
                   </div>
                   <div className="flex justify-between mt-[11px] pt-[10px] border-t border-gray-100">
                     <MobileStat label="Drops" value={String(t.dropCount)} />
-                    <MobileStat label="Qty" value={fmtNum(t.totalQty)} />
-                    <MobileStat label="Weight" value={fmtNum(t.totalWeight)} />
+                    <MobileStat label="LT" value={fmtNum(t.totalQty)} />
+                    <MobileStat label="KG" value={fmtNum(t.totalWeight)} />
                     <MobileStat label="Diesel" value={fmtMoney(t.dieselAmt)} />
                   </div>
                 </div>
@@ -536,13 +539,16 @@ function TripDetailsView({
           drops: detail.drops.map((d) => ({
             deliveryNo: d.deliveryNo,
             custName: d.custName,
-            dlRoute: d.dlRoute,
             siteName: d.siteName,
             siteArea: d.siteArea,
+            otherDelAreaName: d.otherDelAreaName,
+            custAreaName: d.custAreaName,
+            noArticle: d.noArticle,
             disQty: d.disQty,
             netWeight: d.netWeight,
           })),
-          totals: { qty: detail.totals.qty, weight: detail.totals.weight },
+          dropCount: detail.dropCount,
+          totals: { articles: detail.totals.articles, qty: detail.totals.qty, weight: detail.totals.weight },
         },
       });
       if (result === "downloaded") {
@@ -629,12 +635,11 @@ function TripDetailsView({
                 <colgroup>
                   <col style={{ width: "4%" }} />
                   <col style={{ width: "12%" }} />
-                  <col style={{ width: "20%" }} />
+                  <col style={{ width: "26%" }} />
                   <col style={{ width: "12%" }} />
-                  <col style={{ width: "18%" }} />
-                  <col style={{ width: "10%" }} />
-                  <col style={{ width: "8%" }} />
-                  <col style={{ width: "6%" }} />
+                  <col style={{ width: "22%" }} />
+                  <col style={{ width: "7%" }} />
+                  <col style={{ width: "7%" }} />
                   <col style={{ width: "5%" }} />
                   <col style={{ width: "5%" }} />
                 </colgroup>
@@ -644,12 +649,11 @@ function TripDetailsView({
                     <th className={th}>Delivery No</th>
                     <th className={th}>Customer</th>
                     <th className={th}>Cust Area</th>
-                    <th className={th}>Delivery Area / Site</th>
-                    <th className={th}>Route</th>
+                    <th className={th}>Delivery Area</th>
                     <th className={th}>Tag</th>
                     <th className={`${thNum} border-l border-gray-200`}>Articles</th>
-                    <th className={thNum}>Qty</th>
-                    <th className={thNum}>Net kg</th>
+                    <th className={thNum}>LT</th>
+                    <th className={thNum}>KG</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -659,10 +663,9 @@ function TripDetailsView({
                       <tr key={d.deliveryNo ?? i} className="border-b border-[#f0f0f0]" style={{ height: 36 }}>
                         <td className="px-3.5 text-[11px] text-gray-400">{i + 1}</td>
                         <td className="px-3.5 text-[11px] font-medium text-gray-900 font-mono truncate">{d.deliveryNo ?? "—"}</td>
-                        <td className="px-3.5 text-[11px] font-medium text-gray-900 truncate">{smartTitleCase(d.custName) || "—"}</td>
+                        <td className="px-3.5 text-[11px] font-medium text-gray-900 truncate">{resolveCustomerLabel(d.siteName, d.custName)}</td>
                         <td className="px-3.5 text-[11px] text-gray-600 truncate">{smartTitleCase(d.custAreaName) || "—"}</td>
-                        <td className="px-3.5 text-[11px] text-gray-600 truncate">{smartTitleCase(deliveryAreaSite(d))}</td>
-                        <td className="px-3.5 text-[11px] text-gray-400 truncate">{smartTitleCase(d.dlRoute) || "—"}</td>
+                        <td className="px-3.5 text-[11px] text-gray-600 truncate">{smartTitleCase(resolveDeliveryArea(d)) || "—"}</td>
                         <td className="px-3.5">
                           <span
                             className={`text-[9.5px] font-semibold px-1.5 py-0.5 rounded-full ${
@@ -681,7 +684,7 @@ function TripDetailsView({
                 </tbody>
                 <tfoot>
                   <tr className="border-t-2 border-gray-200 bg-gray-50">
-                    <td colSpan={7} className="px-3.5 text-[11px] font-medium text-gray-900 text-right" style={{ height: 36 }}>
+                    <td colSpan={6} className="px-3.5 text-[11px] font-medium text-gray-900 text-right" style={{ height: 36 }}>
                       Total
                     </td>
                     <td className="px-3.5 text-[11px] font-medium text-gray-900 text-right border-l border-gray-200">
@@ -739,7 +742,7 @@ function TripDetailsView({
                     value={detail.header.transporter ? smartTitleCase(detail.header.transporter) : "—"}
                     large
                   />
-                  <MobileStat label="Drops" value={String(detail.drops.length)} large />
+                  <MobileStat label="Drops" value={String(detail.dropCount)} large />
                 </div>
               </div>
 
@@ -774,7 +777,7 @@ function TripDetailsView({
                     >
                       <div className="flex items-start justify-between gap-2">
                         <span className="text-[13px] font-bold text-gray-900">
-                          {i + 1}. {smartTitleCase(d.custName) || "—"}
+                          {i + 1}. {resolveCustomerLabel(d.siteName, d.custName)}
                         </span>
                         <span
                           className={`flex-shrink-0 text-[9.5px] font-semibold px-[7px] py-0.5 rounded-full ${
@@ -786,12 +789,12 @@ function TripDetailsView({
                       </div>
                       <div className="text-[11px] text-gray-600 font-mono mt-[3px]">{d.deliveryNo ?? "—"}</div>
                       <div className="text-[11.5px] text-gray-400 truncate mt-0.5">
-                        {smartTitleCase(deliveryAreaSite(d))} &middot; route {smartTitleCase(d.dlRoute) || "—"}
+                        {smartTitleCase(resolveDeliveryArea(d)) || "—"}
                       </div>
                       <div className="flex gap-5 mt-[9px] pt-2 border-t border-gray-100">
                         <MobileStat label="Art" value={fmtRowNum(d.noArticle)} />
-                        <MobileStat label="Qty" value={fmtRowNum(d.disQty)} />
-                        <MobileStat label="kg" value={fmtRowNum(d.netWeight)} />
+                        <MobileStat label="LT" value={fmtRowNum(d.disQty)} />
+                        <MobileStat label="KG" value={fmtRowNum(d.netWeight)} />
                       </div>
                     </div>
                   );
