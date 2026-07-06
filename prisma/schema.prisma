@@ -1776,6 +1776,7 @@ model TripReport {
   createdOn           String?
   fetchedAt           DateTime  @default(now())
 
+  @@unique([deliveryNo, disDate], map: "trip_report_delivery_no_dis_date_key")
   @@index([disDate])
   @@index([disDate, tripNo])
   @@map("trip_report")
