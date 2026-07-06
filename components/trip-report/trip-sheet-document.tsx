@@ -195,7 +195,11 @@ export function TripSheetDocument({ tripNo, date, header, drops, dropCount, tota
             <img
               src="/jsw-dulux-logo.png"
               alt="JSW Dulux"
-              style={{ height: 34, width: "auto", display: "block" }}
+              // Explicit px width (not auto): html-to-image's foreignObject
+              // serialization drops intrinsic width on mobile WebKit, so the
+              // WhatsApp-share capture rendered the logo at ~0 width. 141×34
+              // keeps the 800×193 aspect ratio it already shows on screen/PDF.
+              style={{ height: 34, width: 141, display: "block" }}
             />
           </div>
           <div style={{ flex: 1, textAlign: "center", padding: "0 16px" }}>

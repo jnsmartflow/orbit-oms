@@ -59,7 +59,10 @@ async function captureSheetImage(sheet: SheetProps): Promise<Blob> {
     const blob = await toBlob(node, {
       pixelRatio: 2,
       backgroundColor: "#ffffff",
-      cacheBust: true,
+      // false: the logo has an explicit px width now (the real fix); a
+      // cache-bust ?t= query would only risk the apex->www redirect on the
+      // inline fetch for no benefit (same-origin /public asset).
+      cacheBust: false,
     });
     if (!blob) throw new Error("html-to-image returned no data");
     return blob;
