@@ -1,5 +1,5 @@
 import { smartTitleCase } from "@/lib/mail-orders/utils";
-import { resolveDeliveryArea, resolveCustomerLabel } from "@/lib/trip-report/display";
+import { resolveDeliveryArea, resolveCustomerLabelParts } from "@/lib/trip-report/display";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TripSheetDocument — pure presentational component, NO data fetching.
@@ -39,6 +39,7 @@ export interface TripSheetDrop {
   siteArea: string | null;
   otherDelAreaName: string | null;
   custAreaName: string | null;
+  remark: string | null;
   noArticle: string | null;
   disQty: string | null;
   netWeight: string | null;
@@ -164,6 +165,23 @@ const tdStyle: React.CSSProperties = {
 const MIN_ROWS = 20;
 const BLANK_BORDER = "#f0f0f0"; // fainter than BORDER_ROW — matches the challan's blank-row rule colour
 
+// Customer name + a muted "(Remark)" that shows only when Other Delivery Area
+// is filled. Muted colour survives the html-to-image capture + print (inline).
+function SheetCustomerCell({ drop }: { drop: TripSheetDrop }) {
+  const { main, remark } = resolveCustomerLabelParts(
+    drop.siteName,
+    drop.custName,
+    drop.otherDelAreaName,
+    drop.remark,
+  );
+  return (
+    <>
+      {main}
+      {remark ? <span style={{ color: "#6b7280", fontWeight: 400 }}> ({remark})</span> : null}
+    </>
+  );
+}
+
 export function TripSheetDocument({ tripNo, date, header, drops, dropCount, totals, printAreaId }: TripSheetDocumentProps) {
   return (
     <div id={printAreaId} style={{ width: "210mm", margin: "0 auto" }}>
@@ -280,7 +298,7 @@ export function TripSheetDocument({ tripNo, date, header, drops, dropCount, tota
                     {r.deliveryNo ?? "—"}
                   </td>
                   <td style={{ ...tdStyle, color: "#111827", fontWeight: 600 }}>
-                    {resolveCustomerLabel(r.siteName, r.custName)}
+                    <SheetCustomerCell drop={r} />
                   </td>
                   <td style={{ ...tdStyle, color: "#475569" }}>
                     {smartTitleCase(resolveDeliveryArea(r)) || "—"}

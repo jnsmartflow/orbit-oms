@@ -77,6 +77,7 @@ export async function GET(
     siteName: r.siteName,
     siteArea: r.siteArea,
     otherDelAreaName: r.otherDelAreaName,
+    remark: r.remark,
     promoType: r.promoType,
     noArticle: r.noArticle,
     disQty: r.disQty,

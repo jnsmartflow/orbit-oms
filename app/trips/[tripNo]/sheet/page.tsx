@@ -114,6 +114,7 @@ export default async function TripSheetPage({
           siteArea: r.siteArea,
           otherDelAreaName: r.otherDelAreaName,
           custAreaName: r.custAreaName,
+          remark: r.remark,
           noArticle: r.noArticle,
           disQty: r.disQty,
           netWeight: r.netWeight,

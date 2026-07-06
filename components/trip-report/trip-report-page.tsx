@@ -7,7 +7,7 @@ import { UniversalHeader } from "@/components/universal-header";
 import { smartTitleCase } from "@/lib/mail-orders/utils";
 import { getTodayIST } from "@/lib/dates";
 import { shareTripSheetImage } from "@/lib/trip-report/share-sheet-image";
-import { resolveDeliveryArea, resolveCustomerLabel, isPromoRow } from "@/lib/trip-report/display";
+import { resolveDeliveryArea, resolveCustomerLabelParts, isPromoRow } from "@/lib/trip-report/display";
 
 // ── Types (mirror /api/trips + /api/trips/[tripNo] JSON shapes) ────────────
 
@@ -44,6 +44,7 @@ interface TripDrop {
   siteName: string | null;
   siteArea: string | null;
   otherDelAreaName: string | null;
+  remark: string | null;
   promoType: string | null;
   noArticle: string | null;
   disQty: string | null;
@@ -148,6 +149,24 @@ function dropTag(d: TripDrop): "INV" | "PROMO" {
   // promoType is the NTS "INV TYPE" column, values {"INV","PROMO"}, non-empty on
   // every row. Only a literal PROMO is a promo; anything else defaults to INV.
   return isPromoRow(d) ? "PROMO" : "INV";
+}
+
+// Customer name + a muted "(Remark)" — the remark shows only when Other
+// Delivery Area is filled (see resolveCustomerLabelParts). Shared by the
+// desktop table + mobile drop card so both style the remark identically.
+function CustomerLabel({ d }: { d: TripDrop }) {
+  const { main, remark } = resolveCustomerLabelParts(
+    d.siteName,
+    d.custName,
+    d.otherDelAreaName,
+    d.remark,
+  );
+  return (
+    <>
+      {main}
+      {remark ? <span className="text-gray-400 font-normal"> ({remark})</span> : null}
+    </>
+  );
 }
 
 function formatCaptionDate(isoDate: string, time: string | null): string {
@@ -543,6 +562,7 @@ function TripDetailsView({
             siteArea: d.siteArea,
             otherDelAreaName: d.otherDelAreaName,
             custAreaName: d.custAreaName,
+            remark: d.remark,
             noArticle: d.noArticle,
             disQty: d.disQty,
             netWeight: d.netWeight,
@@ -663,7 +683,7 @@ function TripDetailsView({
                       <tr key={d.deliveryNo ?? i} className="border-b border-[#f0f0f0]" style={{ height: 36 }}>
                         <td className="px-3.5 text-[11px] text-gray-400">{i + 1}</td>
                         <td className="px-3.5 text-[11px] font-medium text-gray-900 font-mono truncate">{d.deliveryNo ?? "—"}</td>
-                        <td className="px-3.5 text-[11px] font-medium text-gray-900 truncate">{resolveCustomerLabel(d.siteName, d.custName)}</td>
+                        <td className="px-3.5 text-[11px] font-medium text-gray-900 truncate"><CustomerLabel d={d} /></td>
                         <td className="px-3.5 text-[11px] text-gray-600 truncate">{smartTitleCase(d.custAreaName) || "—"}</td>
                         <td className="px-3.5 text-[11px] text-gray-600 truncate">{smartTitleCase(resolveDeliveryArea(d)) || "—"}</td>
                         <td className="px-3.5">
@@ -777,7 +797,7 @@ function TripDetailsView({
                     >
                       <div className="flex items-start justify-between gap-2">
                         <span className="text-[13px] font-bold text-gray-900">
-                          {i + 1}. {resolveCustomerLabel(d.siteName, d.custName)}
+                          {i + 1}. <CustomerLabel d={d} />
                         </span>
                         <span
                           className={`flex-shrink-0 text-[9.5px] font-semibold px-[7px] py-0.5 rounded-full ${
