@@ -59,7 +59,10 @@ async function captureSheetImage(sheet: SheetProps): Promise<Blob> {
     const blob = await toBlob(node, {
       pixelRatio: 2,
       backgroundColor: "#ffffff",
-      cacheBust: true,
+      // Logo is now an inlined data URI (lib/trip-report/logo-data-uri.ts), so
+      // the capture is self-contained — no network fetch to cache-bust, and the
+      // old fresh-fetch race (logo dropping on mobile) is gone.
+      cacheBust: false,
     });
     if (!blob) throw new Error("html-to-image returned no data");
     return blob;

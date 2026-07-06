@@ -1,5 +1,6 @@
 import { smartTitleCase } from "@/lib/mail-orders/utils";
 import { resolveDeliveryArea, resolveCustomerLabel } from "@/lib/trip-report/display";
+import { JSW_DULUX_LOGO_DATA_URI } from "@/lib/trip-report/logo-data-uri";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TripSheetDocument — pure presentational component, NO data fetching.
@@ -193,7 +194,7 @@ export function TripSheetDocument({ tripNo, date, header, drops, dropCount, tota
         >
           <div style={{ flexShrink: 0 }}>
             <img
-              src="/jsw-dulux-logo.png"
+              src={JSW_DULUX_LOGO_DATA_URI}
               alt="JSW Dulux"
               style={{ height: 34, width: "auto", display: "block" }}
             />
@@ -219,7 +220,7 @@ export function TripSheetDocument({ tripNo, date, header, drops, dropCount, tota
             background: BORDER_MED,
             color: BORDER_LIGHT,
             padding: "5px 24px",
-            fontSize: 9.5,
+            fontSize: 10,
             letterSpacing: 0.2,
             textAlign: "center",
             flexShrink: 0,
@@ -227,8 +228,10 @@ export function TripSheetDocument({ tripNo, date, header, drops, dropCount, tota
             printColorAdjust: "exact",
           } as React.CSSProperties}
         >
-          JSW Dulux &middot; Surat Depot &middot; Paint Distribution &middot; Shiv Logistics Park, Block
-          No.244, Kosmada, Surat, Gujarat 395006
+          {/* Matches the Delivery Challan dark address band (challan-document.tsx
+              S2, sourced from system_config companySubtitle + depotAddress). */}
+          Decorative Paints &middot; Shiv Logistics Park, Block No.244, Kosmada, Surat, Gujarat
+          395006
         </div>
 
         {/* ── META STRIP — Type · Vehicle · Driver · Mobile ────────────────── */}
