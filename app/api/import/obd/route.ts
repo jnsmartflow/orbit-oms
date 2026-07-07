@@ -259,6 +259,9 @@ async function applyMailOrderEnrichment(soNumbers: (string | null)[]): Promise<v
     if (mailOrder.shipToOverride) {
       updateData.shipToOverride = true;
     }
+    if (mailOrder.shipToOverrideCustomerId != null) {
+      updateData.shipToOverrideCustomerId = mailOrder.shipToOverrideCustomerId;
+    }
     if (mailOrder.slotToOverride) {
       updateData.slotToOverride = true;
     }
