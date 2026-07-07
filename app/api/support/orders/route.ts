@@ -24,6 +24,13 @@ const ORDER_INCLUDE = {
       },
     },
   },
+  shipToOverrideCustomer: {
+    select: {
+      id: true,
+      customerName: true,
+      area: { select: { name: true } },
+    },
+  },
   slot: { select: { name: true } },
   originalSlot: { select: { name: true } },
   querySnapshot: {

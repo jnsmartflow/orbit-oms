@@ -36,6 +36,8 @@ export interface SupportOrder {
   shipToCustomerId: string;
   shipToCustomerName: string | null;
   customerId: number | null;
+  shipToOverrideCustomerId?: number | null;
+  shipToOverrideCustomer?: { id: number; customerName: string; area?: { name: string | null } | null } | null;
   customer: {
     customerName: string;
     dispatchDeliveryType: { name: string } | null;
