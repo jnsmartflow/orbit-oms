@@ -44,6 +44,7 @@ export async function matchDeliveryCustomer(
 ): Promise<{
   customerCode: string;
   customerName: string;
+  customerId: number;
   isOverride: boolean;
 } | null> {
   if (!deliveryRemarks || !deliveryRemarks.trim()) return null;
@@ -57,7 +58,7 @@ export async function matchDeliveryCustomer(
       customerName: { contains: cleaned, mode: "insensitive" },
       isActive: true,
     },
-    select: { customerCode: true, customerName: true },
+    select: { id: true, customerCode: true, customerName: true },
     take: 5,
   });
 
@@ -71,6 +72,7 @@ export async function matchDeliveryCustomer(
     return {
       customerCode: match.customerCode,
       customerName: match.customerName,
+      customerId: match.id,
       isOverride: true,
     };
   }
@@ -81,6 +83,7 @@ export async function matchDeliveryCustomer(
   return {
     customerCode: match.customerCode,
     customerName: match.customerName,
+    customerId: match.id,
     isOverride: true,
   };
 }

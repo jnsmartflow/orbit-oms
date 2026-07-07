@@ -313,6 +313,7 @@ export async function POST(req: NextRequest) {
       ? billFromSubject + (billRemarks ? "; " + billRemarks : "")
       : billRemarks ?? null;
     let finalShipToOverride = shipToOverride || false;
+    let shipToOverrideCustomerId: number | undefined = undefined;
 
     if (deliveryRemarks && deliveryRemarks.trim()) {
       const deliveryMatch = await matchDeliveryCustomer(
@@ -321,6 +322,7 @@ export async function POST(req: NextRequest) {
       );
       if (deliveryMatch && deliveryMatch.isOverride) {
         finalShipToOverride = true;
+        shipToOverrideCustomerId = deliveryMatch.customerId;
         finalDeliveryRemarks = `${deliveryRemarks} [→ ${deliveryMatch.customerName} (${deliveryMatch.customerCode})]`;
         console.log(
           `[Ship-To Override] "${deliveryRemarks}" → ${deliveryMatch.customerName} (${deliveryMatch.customerCode})`,
@@ -345,6 +347,7 @@ export async function POST(req: NextRequest) {
         dispatchStatus: dispatchStatus || "Dispatch",
         dispatchPriority: dispatchPriority || "Normal",
         shipToOverride: finalShipToOverride,
+        shipToOverrideCustomerId: shipToOverrideCustomerId ?? null,
         slotToOverride: slotToOverride || false,
         emailEntryId,
         status: "pending",
