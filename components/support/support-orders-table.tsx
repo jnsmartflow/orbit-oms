@@ -37,6 +37,7 @@ export interface SupportOrder {
   shipToCustomerId: string;
   shipToCustomerName: string | null;
   customerId: number | null;
+  materialType?: string | null;
   shipToOverrideCustomerId?: number | null;
   shipToOverrideCustomer?: { id: number; customerName: string; area?: { name: string | null } | null } | null;
   customer: {
@@ -98,7 +99,7 @@ interface SupportOrdersTableProps {
 
 const GRID: React.CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "32px 1fr 2fr 1.4fr 0.7fr 0.4fr 0.5fr 1.1fr 1.5fr 0.6fr",
+  gridTemplateColumns: "32px 1fr 2fr 1.4fr 0.7fr 0.8fr 0.7fr 0.4fr 0.5fr 1.1fr 1.5fr 0.6fr",
   gap: "0 10px",
   alignItems: "center",
 };
@@ -593,6 +594,8 @@ export function SupportOrdersTable({
               <div>Customer</div>
               <div>Ship-to Override</div>
               <div>Route / Type</div>
+              <div>Material Type</div>
+              <div>Article</div>
               <div className="text-right pr-1">VOL (L)</div>
               <div className="text-center">Age</div>
               <div>Status</div>
@@ -1140,6 +1143,20 @@ function OrderRow({
             {delType}
           </span>
         )}
+      </div>
+
+      {/* Material Type — plain text, display-only */}
+      <div>
+        <p className={cn("text-xs", isResolved ? "text-gray-400" : "text-gray-600")}>
+          {order.materialType ?? "—"}
+        </p>
+      </div>
+
+      {/* Article — plain text, display-only */}
+      <div>
+        <p className={cn("text-xs", isResolved ? "text-gray-400" : "text-gray-600")}>
+          {order.querySnapshot?.articleTag ?? "—"}
+        </p>
       </div>
 
       {/* Vol */}
