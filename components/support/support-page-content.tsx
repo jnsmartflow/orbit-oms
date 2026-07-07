@@ -291,6 +291,21 @@ export function SupportPageContent() {
     await refresh();
   }, [refresh]);
 
+  const handleShipToOverride = useCallback(async (orderId: number, customerId: number | null) => {
+    const res = await fetch(`/api/support/orders/${orderId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ shipToOverrideCustomerId: customerId }),
+    });
+    if (!res.ok) {
+      const e = (await res.json().catch(() => ({}))) as { error?: string };
+      toast.error(e.error ?? "Ship-to override failed");
+      throw new Error(e.error ?? "Ship-to override failed");
+    }
+    toast.success(customerId ? "Ship-to override set" : "Ship-to override cleared");
+    await refresh();
+  }, [refresh]);
+
   const handlePresetSlot = useCallback(async (orderId: number, target: { dispatchTargetDate: string; dispatchWindowId: number }) => {
     const res = await fetch(`/api/support/orders/${orderId}/preset-slot`, {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -569,6 +584,7 @@ export function SupportPageContent() {
               orders={displayOrders}
               section={activeSection}
               onDispatch={handleDispatch}
+              onShipToOverride={handleShipToOverride}
               onPresetSlot={handlePresetSlot}
               onHold={handleHold}
               onRelease={handleRelease}

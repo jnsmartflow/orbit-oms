@@ -17,6 +17,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { CustomerMissingSheet } from "@/components/shared/customer-missing-sheet";
 import { CancelOrderDialog } from "@/components/support/cancel-order-dialog";
 import { ShipToOverrideModal } from "@/components/support/ship-to-override-modal";
+import { ShipToOverrideCell } from "@/components/support/ship-to-override-cell";
 import { CarriedOverBadge } from "@/components/shared/carried-over-badge";
 import { OrderDetailPanel } from "@/components/shared/order-detail-panel";
 import type { SlotNavItem } from "@/components/support/support-page-content";
@@ -76,6 +77,7 @@ interface SupportOrdersTableProps {
   orders: SupportOrder[];
   section: string;
   onDispatch: (orderId: number, target: { dispatchTargetDate: string; dispatchWindowId: number }) => Promise<void>;
+  onShipToOverride: (orderId: number, customerId: number | null) => Promise<void>;
   onPresetSlot: (orderId: number, target: { dispatchTargetDate: string; dispatchWindowId: number }) => Promise<void>;
   onHold: (orderId: number) => Promise<void>;
   onRelease: (orderId: number) => Promise<void>;
@@ -96,7 +98,7 @@ interface SupportOrdersTableProps {
 
 const GRID: React.CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "32px 1fr 2fr 0.7fr 0.4fr 0.5fr 1.1fr 1.5fr 0.6fr",
+  gridTemplateColumns: "32px 1fr 2fr 1.4fr 0.7fr 0.4fr 0.5fr 1.1fr 1.5fr 0.6fr",
   gap: "0 10px",
   alignItems: "center",
 };
@@ -210,6 +212,7 @@ export function SupportOrdersTable({
   orders,
   section,
   onDispatch,
+  onShipToOverride,
   onPresetSlot,
   onHold,
   onRelease,
@@ -588,6 +591,7 @@ export function SupportOrdersTable({
               <div><Checkbox checked={allSelected} onCheckedChange={() => toggleAll()} /></div>
               <div>OBD / Date</div>
               <div>Customer</div>
+              <div>Ship-to Override</div>
               <div>Route / Type</div>
               <div className="text-right pr-1">VOL (L)</div>
               <div className="text-center">Age</div>
@@ -626,6 +630,7 @@ export function SupportOrdersTable({
                   isHistoryView={isHistoryView}
                   dispatchWindows={dispatchWindows}
                   onSingleDispatch={handleSingleDispatch}
+                  onShipToOverride={onShipToOverride}
                   onPresetSlot={handleSinglePresetSlot}
                   dispatchPickerTrigger={dispatchPickerTrigger}
                   onRequestDispatchPickerOpen={handleRequestDispatchPickerOpen}
@@ -673,6 +678,7 @@ export function SupportOrdersTable({
                     isDoneRow={true}
                     onUndoDispatch={handleUndoDispatch}
                     onUndoCancel={handleUndoCancel}
+                    onShipToOverride={onShipToOverride}
                     onToggleOne={toggleOne}
                     onSetEdit={setEdit}
                     onDsChange={handleDsChange}
@@ -862,7 +868,7 @@ export function SupportOrdersTable({
 function GroupRows({
   group, isCollapsed, showGroupHeader, onToggleGroup, onToggleGroupSelect, countText,
   selected, detailOrder, localEdits, changedIds, rowLoading, slots,
-  openPopover, isHistoryView, dispatchWindows, onSingleDispatch, onPresetSlot,
+  openPopover, isHistoryView, dispatchWindows, onSingleDispatch, onShipToOverride, onPresetSlot,
   dispatchPickerTrigger, onRequestDispatchPickerOpen,
   dispatchIntentIds, onSetDispatchIntent, onClearDispatchIntent,
   onToggleOne, onSetEdit, onDsChange, onSetDetail, onSetPopover, onMissing, onShipOverride,
@@ -884,6 +890,7 @@ function GroupRows({
   isHistoryView: boolean;
   dispatchWindows: DispatchWindow[];
   onSingleDispatch: (orderId: number, target: { dispatchTargetDate: string; dispatchWindowId: number }) => Promise<void>;
+  onShipToOverride: (orderId: number, customerId: number | null) => Promise<void>;
   onPresetSlot: (orderId: number, target: { dispatchTargetDate: string; dispatchWindowId: number }) => Promise<void>;
   dispatchPickerTrigger: { id: number; gen: number } | null;
   onRequestDispatchPickerOpen: (orderId: number) => void;
@@ -942,6 +949,7 @@ function GroupRows({
           isHistoryView={isHistoryView}
           dispatchWindows={dispatchWindows}
           onSingleDispatch={onSingleDispatch}
+          onShipToOverride={onShipToOverride}
           onPresetSlot={onPresetSlot}
           dispatchPickerTrigger={dispatchPickerTrigger}
           onRequestDispatchPickerOpen={onRequestDispatchPickerOpen}
@@ -967,7 +975,7 @@ function GroupRows({
 function OrderRow({
   order, selected, detailOrder, localEdits, changedIds, rowLoading, slots,
   openPopover, isHistoryView, isDoneRow, onUndoDispatch, onUndoCancel,
-  dispatchWindows, onSingleDispatch, onPresetSlot,
+  dispatchWindows, onSingleDispatch, onShipToOverride, onPresetSlot,
   dispatchPickerTrigger, onRequestDispatchPickerOpen,
   dispatchIntentIds, onSetDispatchIntent, onClearDispatchIntent,
   onToggleOne, onSetEdit, onDsChange, onSetDetail, onSetPopover, onMissing, onShipOverride,
@@ -987,6 +995,7 @@ function OrderRow({
   onUndoCancel?: (orderId: number) => Promise<void>;
   dispatchWindows?: DispatchWindow[];
   onSingleDispatch?: (orderId: number, target: { dispatchTargetDate: string; dispatchWindowId: number }) => Promise<void>;
+  onShipToOverride: (orderId: number, customerId: number | null) => Promise<void>;
   onPresetSlot?: (orderId: number, target: { dispatchTargetDate: string; dispatchWindowId: number }) => Promise<void>;
   dispatchPickerTrigger?: { id: number; gen: number } | null;
   onRequestDispatchPickerOpen?: (orderId: number) => void;
@@ -1109,6 +1118,17 @@ function OrderRow({
           {order.shipToCustomerId}
         </p>
       </div>
+
+      {/* Ship-to Override */}
+      <ShipToOverrideCell
+        orderId={order.id}
+        current={
+          order.shipToOverrideCustomer
+            ? { id: order.shipToOverrideCustomer.id, customerName: order.shipToOverrideCustomer.customerName }
+            : null
+        }
+        onSave={onShipToOverride}
+      />
 
       {/* Route / Type — plain text */}
       <div>
