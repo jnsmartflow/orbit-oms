@@ -79,10 +79,11 @@ export async function GET(
 // ── PATCH — update order fields ───────────────────────────────────────────────
 
 const patchSchema = z.object({
-  dispatchStatus: z.string().optional(),
-  priorityLevel:  z.number().int().min(1).max(5).optional(),
-  dispatchSlot:   z.string().nullable().optional(),
-  note:           z.string().optional(),
+  dispatchStatus:           z.string().optional(),
+  priorityLevel:            z.number().int().min(1).max(5).optional(),
+  dispatchSlot:             z.string().nullable().optional(),
+  shipToOverrideCustomerId: z.number().int().positive().nullable().optional(),
+  note:                     z.string().optional(),
 });
 
 export async function PATCH(
@@ -109,7 +110,7 @@ export async function PATCH(
     );
   }
 
-  const { dispatchStatus, priorityLevel, dispatchSlot, note } = parsed.data;
+  const { dispatchStatus, priorityLevel, dispatchSlot, shipToOverrideCustomerId, note } = parsed.data;
   const userId = parseInt(session!.user.id, 10);
 
   // ── Load current order ────────────────────────────────────────────────────
@@ -119,7 +120,7 @@ export async function PATCH(
   }
 
   // ── Build update data + log entries ──────────────────────────────────────
-  const updateData: Prisma.ordersUpdateInput = {};
+  const updateData: Prisma.ordersUncheckedUpdateInput = {};
 
   type LogEntry = {
     orderId:     number;
@@ -138,6 +139,18 @@ export async function PATCH(
       orderId:     id,
       fromStage:   order.dispatchStatus ?? null,
       toStage:     dispatchStatus || "cleared",
+      changedById: userId,
+      note:        logNote,
+    });
+  }
+
+  if (shipToOverrideCustomerId !== undefined && shipToOverrideCustomerId !== order.shipToOverrideCustomerId) {
+    updateData.shipToOverrideCustomerId = shipToOverrideCustomerId;
+    updateData.shipToOverride = shipToOverrideCustomerId !== null;
+    logEntries.push({
+      orderId:     id,
+      fromStage:   order.shipToOverrideCustomerId !== null ? String(order.shipToOverrideCustomerId) : null,
+      toStage:     shipToOverrideCustomerId !== null ? String(shipToOverrideCustomerId) : "cleared",
       changedById: userId,
       note:        logNote,
     });
