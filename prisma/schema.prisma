@@ -464,7 +464,9 @@ model delivery_point_master {
   updatedAt               DateTime                  @updatedAt
   contacts                delivery_point_contacts[]
   // Phase 2 back-relation
-  orders                  orders[]
+  orders                  orders[]                  @relation("OrderCustomer")
+  // Ship-to override back-relation (2026-07-07)
+  shipToOverrideOrders    orders[]                  @relation("OrderShipToOverride")
   // Sampling Library back-relation
   samplingRegisterEntries sampling_register[]
   samplingUsageLogEntries sampling_usage_log[]
@@ -624,9 +626,11 @@ model orders {
   batchId              Int
   batch                import_batches            @relation(fields: [batchId], references: [id])
   customerId           Int?
-  customer             delivery_point_master?    @relation(fields: [customerId], references: [id])
+  customer             delivery_point_master?    @relation("OrderCustomer", fields: [customerId], references: [id])
   shipToCustomerId     String
   shipToCustomerName   String?
+  shipToOverrideCustomerId Int?
+  shipToOverrideCustomer   delivery_point_master? @relation("OrderShipToOverride", fields: [shipToOverrideCustomerId], references: [id])
   orderType            String
   workflowStage        String                    @default("order_created")
   dispatchSlot         String?
