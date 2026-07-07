@@ -467,6 +467,8 @@ model delivery_point_master {
   orders                  orders[]                  @relation("OrderCustomer")
   // Ship-to override back-relation (2026-07-07)
   shipToOverrideOrders    orders[]                  @relation("OrderShipToOverride")
+  // mo_orders ship-to override back-relation (2026-07-07)
+  mo_orders_shipToOverride mo_orders[]              @relation("MoOrderShipToOverride")
   // Sampling Library back-relation
   samplingRegisterEntries sampling_register[]
   samplingUsageLogEntries sampling_usage_log[]
@@ -1372,6 +1374,8 @@ model mo_orders {
   dispatchPriority    String?            @default("Normal")
   shipToOverride      Boolean?           @default(false)
   slotToOverride      Boolean?           @default(false)
+  shipToOverrideCustomerId Int?
+  shipToOverrideCustomer   delivery_point_master? @relation("MoOrderShipToOverride", fields: [shipToOverrideCustomerId], references: [id])
   customerMatchStatus String?            @default("unmatched")
   customerCandidates  String?
   status              String             @default("pending")
