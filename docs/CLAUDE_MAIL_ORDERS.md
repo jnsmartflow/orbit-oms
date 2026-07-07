@@ -1,5 +1,5 @@
 # CLAUDE_MAIL_ORDERS.md — Mail Orders Module
-# v1.5 · Schema v27.7 · Parser v6.5 · Enrichment v3 · June 2026
+# v1.6 · Schema v27.9 · Parser v6.5 · Enrichment v3 · July 2026
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -317,6 +317,8 @@ Operator picks → saved to `mo_learned_customers`. Auto-match triggers ONLY whe
 
 If guards fail but learned candidate exists → `unmatched` upgraded to `multiple`.
 
+**Customer onboarding runbook:** `docs/runbooks/customer-intake.sql` — step-by-step SQL template for adding one new customer to BOTH `mo_customer_keywords` (search) and `delivery_point_master` (master record); a customer added to only one half-works.
+
 ---
 
 ## 6. Ship-to override — delivery-match.ts
@@ -324,6 +326,37 @@ If guards fail but learned candidate exists → `unmatched` upgraded to `multipl
 `matchDeliveryCustomer()`: searches `delivery_point_master` from `deliveryRemarks`. Override if different customer code found. Appends `[→ CustomerName (Code)]` to `deliveryRemarks`.
 
 **Cross billing ≠ shipToOverride.**
+
+### Resolved id now carried through, alongside the existing text encoding (2026-07-07) [LIVE]
+
+Shipped alongside the Support-side inline picker (`CLAUDE_SUPPORT.md §4.18`) — this is the mail-order-side half of the same feature, mirroring how `dispatchStatus` already flows from `mo_orders` into `orders` via enrichment (§4 above).
+
+- **`matchDeliveryCustomer()` widened:** the `findMany` on `delivery_point_master` now also selects `id: true` (previously fetched only `customerCode` + `customerName` — the id was queried but never returned). Return type widened to include `customerId: number`; an override-hit result now includes `customerId: match.id`. Null-return paths (not-found / same-customer) unchanged. **The `[→ Name (Code)]` suffix text encoding into `deliveryRemarks` is UNCHANGED** — the id is stored ALONGSIDE it, not instead of it.
+- **`app/api/mail-orders/ingest/route.ts` — the `mo_orders.create`:** on an override hit (`deliveryMatch && deliveryMatch.isOverride`), sets `shipToOverrideCustomerId: deliveryMatch.customerId`. Existing `shipToOverride` flag + `deliveryRemarks` suffix write unchanged.
+- **`applyMailOrderEnrichment()` (§4, `app/api/import/obd/route.ts`):** beside the existing `shipToOverride` flag copy (already present, unchanged), now also copies the id:
+  ```ts
+  if (mailOrder.shipToOverrideCustomerId != null) {
+    updateData.shipToOverrideCustomerId = mailOrder.shipToOverrideCustomerId;
+  }
+  ```
+  Uses `!= null` (not truthiness) so a valid id is never dropped. Copies onto `orders` via the existing `orders.updateMany({ where: { soNumber }, data: updateData })` — the same path `dispatchStatus` already uses. No `mo_orders` `findFirst` select change was needed (the whole row is already fetched).
+- **`orders.shipToOverrideCustomerId` / `mo_orders.shipToOverrideCustomerId` are new FK columns** — now documented in `CLAUDE_CORE.md` §7.3 / §7.6 (schema v27.9).
+
+**Flag can be `true` with no id.** `shipToOverride = true` can still occur with NO resolvable `customerId` — free-text redirects that don't match a real `delivery_point_master` row (e.g. "as per challan", "Delivery on Challan copy"). "Flag true" does not imply "id present." Any consumer (Support board, future screens) must handle both states.
+
+**Verification pending (2b, not yet confirmed):** a real post-deploy mail order with a resolved redirect should fill `mo_orders.shipToOverrideCustomerId`, then flow to `orders.shipToOverrideCustomerId` via enrichment. Check via:
+```sql
+SELECT id, "createdAt", "customerCode", "shipToOverride", "shipToOverrideCustomerId", "deliveryRemarks"
+FROM mo_orders
+WHERE "shipToOverride" = true
+ORDER BY "createdAt" DESC
+LIMIT 15;
+```
+Older rows are expected `null` (no backfill was run).
+
+**Backfill of historical overrides — DEFERRED, maybe never.** Old `mo_orders` rows only carry the redirect as `[→ Name (Code)]` text inside `deliveryRemarks`; recovering the id needs a parse-then-resolve one-off script (parse the suffix via `splitDeliveryRemarks()`, then resolve the recovered code against `delivery_point_master`). Not needed to proceed.
+
+**Ship-to override on other screens (Planning, Warehouse, challan, etc.) — DEFERRED.** Support only, one screen at a time, per Smart Flow's sequencing.
 
 ### splitDeliveryRemarks helper (in lib/mail-orders/utils.ts)
 
@@ -720,6 +753,7 @@ If "X" emails return Generic codes instead of Fini, root cause is Generic codes 
 - **`mo_sku_lookup` GLOSS Brilliant White state:** 3 IN28301xxx Fini rows still have null `refMaterial` (10L IN28301082, 100ML IN28301098, 200ML IN28301074) — Generic codes not yet supplied.
 - **Table-mode parity gap.** `mail-orders-table.tsx` (§9.1) does NOT show the ALT SKU column. Only the Review View (§9.2) has it. Small/deferred per 2026-06-19 handoff.
 - **Bounce / DTS signal badges deferred.** Parser v7.2 delivers `Bounce` and `DTS` remark text from app-format emails, but badge wiring (meaning, colour, card routing) is not yet built. `Truck Order` is already in the signal catalog.
+- **`shipToOverrideCustomerId` can be null even when `shipToOverride` is true** (§6) — free-text redirects that never resolved to a real `delivery_point_master` row. Any code path reading the override must handle flag-true/id-null as valid, not treat it as a data-integrity error.
 
 ---
 
@@ -790,4 +824,4 @@ Admin "Settings → Hide → Tags" can switch any Mail Order badge off app-wide 
 
 ---
 
-*Mail Orders v1.5 · Schema v27.7 · Parser v6.5 · Enrichment v3*
+*Mail Orders v1.6 · Schema v27.9 · Parser v6.5 · Enrichment v3*

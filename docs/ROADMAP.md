@@ -1,5 +1,5 @@
 # ROADMAP.md — OrbitOMS Planned Work
-# Updated 2026-06-18 · Lives in: orbit-oms/docs/ (manual attach — NOT auto-loaded)
+# Updated 2026-06-19 · Lives in: orbit-oms/docs/ (manual attach — NOT auto-loaded)
 
 Attach this file when planning the next phase of any module. Live "what's next" list, separated from canonical docs.
 
@@ -10,6 +10,17 @@ Items grouped by module. Within each module: SHIPPED → P0 (blocking) → P1 (n
 ## Place Order / Mail Orders — v2 single source of truth (3-stage plan)
 
 The big architectural arc. **Currently in Stage 1.** Full plan in `CLAUDE_PLACE_ORDER.md §19`.
+
+**Shipped 2026-06-19 — App-format parser + Table C fast-path (app orders → V2):**
+- Mail parser v7.2: App reader (`Parse-AppBody`) + sorter (`Test-IsAppFormat`, routes on first content line `Bill To:`) + name-lock (pins the exact emitted name so the Table C key matches by construction). Human/typed path untouched. Manual-deploy to depot PC. (Parser lives in the repo's `docs/Parser/` working copy and is **untracked / not committed** — the canonical live parser is outside git per `CLAUDE_MAIL_ORDERS.md §3`.)
+- Table C exact-match fast-path in enrichment (commit `da219238`, on `main`): app line → exact dict (built from `mo_sku_lookup_v2` via `buildTableCContext`) → V2 material via a V2 resolver; 15 collisions excluded from the dict → keyword fallback. Stacked design (exact-first, keyword-fallback). Tested 11/11 this session; one real SKU rescue proven (`2K PU GLOSS 90 BASE` → V2 primary). **INGEST-only** — verified the other callers (debug / backfill / re-enrich) pass no context.
+- **Net:** a clean app line that HITS Table C resolves via `mo_sku_lookup_v2` (fast lane). A MISS (collision / not-in-dict) and ALL typed/human orders still resolve via legacy `mo_sku_lookup` (keyword path — verified ingest still reads it; legacy `mo_sku_lookup` model still in schema). The split is intentional — a partial early bridge ahead of full Stage 3. Legacy tables stay (do NOT delete).
+
+**Pending (this bridge):**
+- [ ] Parser go-live: re-copy the name-locked v7.2 parser to the live PC (UTF-8 BOM) + restart. (Live copy is pre-name-lock — cannot be verified from here.)
+- [ ] Live verification: first real app order → billed SKU matches app-catalogue intent (rescue sanity-check), with live keywords.
+- [ ] Reclaim the 13 double-primary collisions into the fast lane: pick keeper per pair → `SET_FALSE` loser in `scripts/v2-sku-seed-from-legacy.ts` + flip `isPrimary` in Supabase (SELECT-verify + backup). The 2 pack-rounding collisions stay excluded.
+- [ ] Thread `tableC` into RE-ENRICH so historical / re-run orders also get the fast-path (ingest-only today).
 
 ### Stage 1 — urgent fix (production-safe) · IN PROGRESS
 
@@ -64,7 +75,7 @@ The catalog-restructure workstream is **done — all families folded** into the 
 
 ### P2 — Deferred / open
 
-- **Order email line-item reformat.** Plain text, NO HTML/bold (bold needs an HTML send-path — declined). New per-line format `{n}. {Product Name} - {pack}*{qty}`: numbered lines (`1.` `2.` `3.`); `" - "` (space-hyphen-space) after the product name; keep `*` and the comma multi-pack list (`1L*6, 4L*4, 10L*1, 20L*1`); customer header unchanged. e.g. `1. GLOSS Brilliant White - 1L*6` / `5. WS MAX Brilliant White - 1L*6, 4L*4, 10L*1, 20L*1`. Build: change the line assembly in all 3 email builders (`lib/place-order/email.ts`, `app/po/po-page.tsx`, `app/order/page.tsx`); PREFER a shared line/body render helper so they can't diverge (same reasoning as the `emailLineLabel` consolidation). Code-only, no DB/reseed.
+- **Order email line-item reformat — ✅ SHIPPED 2026-06-19.** Plain text, NO HTML/bold (bold needs an HTML send-path — declined). Per-line format `{n}. {Product Name} - {pack}*{qty}`: numbered lines (`1.` `2.` `3.`); `" - "` (space-hyphen-space) after the product name; keep `*` and the comma multi-pack list (`1L*6, 4L*4, 10L*1, 20L*1`); customer header unchanged. e.g. `1. GLOSS Brilliant White - 1L*6` / `5. WS MAX Brilliant White - 1L*6, 4L*4, 10L*1, 20L*1`. Done via the **shared** `renderOrderBody` helper in `lib/place-order/email.ts` (the preferred no-divergence approach, like the `emailLineLabel` consolidation) — all 3 builders (`lib/place-order/email.ts`, `app/po/po-page.tsx`, `app/order/page.tsx`) call it. Plus refinements: header resequenced (Bill To → Ship To → Dispatch → Remark → Note), proper-case names (`emailCase`, codes/short/digit words stay caps), per-bill right-aligned line numbers with figure-space padding, and CC `surat.order@outlook.com` on desktop `/place-order` only. The app emitting this format is exactly what mail parser v7.2 (`Parse-AppBody`) reads. No email-builder shared-helper work pending. Code-only, no DB/reseed.
 
 - **5IN1 Phiroza — create SAP codes.** `IN56000473` (500ML) + `IN56000471` (4L) were injected into v2 (owner-approved, SAP-unverified). They will NOT bill until created in SAP. Once real in SAP they import naturally — then verify the injected rows still match (no duplicate).
 
@@ -264,6 +275,14 @@ Zero automated tests today. `npx tsc --noEmit` is the only smoke. Worth adding:
 
 Hobby tier cap at 2 cron jobs. If we ever need a third (e.g. nightly Sampling Library `usageCount` rebuild + retention sweep), we'll need Pro.
 
+### P1 — OneDrive dev-machine sync risk
+
+`orbit-oms` is OneDrive-synced and shared between the depot/server PC and the (returning) laptop. Two machines two-way-syncing one git folder risks `.git` corruption mid-sync and propagates deletions both ways — the 3 stale deletions currently sitting in `git status` (`docs/CLAUDE_IMPORT V1.md`, two `.xlsx` files under `docs/plans/sampling-register/`) may already be a symptom of this. Decide a single-primary-dev-machine policy before it causes real data loss.
+
+### P2 — `trip_report` field meanings
+
+13 columns exist in the live `trip_report` table but are undocumented: `fixedType`, `tRate`, `vehType`, `vModal`, `volLt`, `totQty`, `totWeight`, `modiInv`, `remark`, `isManual`, `tranTransporterName`, `custsoName`, `createdOn`. Confirm meanings with Smart Flow and backfill into `CLAUDE_TRIP_REPORT.md §3`.
+
 ---
 
 ## Consolidation follow-ups (opened 2026-06-18)
@@ -320,4 +339,4 @@ Lives at `docs/prompts/archive/drafts/2026-04-to-05/taxonomy-preview.json`. The 
 
 ---
 
-*Updated 2026-06-18 — reflects the full catalog restructure (all families folded, 9-tile dial), `/po` going-forward build, desktop `/place-order` parity, email single-source + AkzoNobel recipient, Hide feature shipped, tint sampling reuse + pack scaling + duplicate-merge runbook (3 groups merged), Tint Summary report + `/reports` hub, mail-orders 5 slots. Schema v27.6.*
+*Updated 2026-06-19 — reflects the full catalog restructure (all families folded, 9-tile dial), `/po` going-forward build, desktop `/place-order` parity, email single-source + AkzoNobel recipient, Hide feature shipped, tint sampling reuse + pack scaling + duplicate-merge runbook (3 groups merged), Tint Summary report + `/reports` hub, mail-orders 5 slots, **app-format order email (shared `renderOrderBody` + proper-case + line-number alignment) + mail parser v7.2 (`Parse-AppBody` reader, `Test-IsAppFormat` sorter, name-lock) + Table C exact-name enrichment fast-path (app orders → `mo_sku_lookup_v2`, ingest-only, 15 collisions excluded)**. Schema v27.6.*

@@ -1,5 +1,5 @@
 # CLAUDE_UI.md — OrbitOMS UI Design System
-# v5.5 · June 2026 · Lives in: orbit-oms/docs/
+# v5.7 · July 2026 · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md
 
 Single source of truth for visual styling across all screens.
@@ -1109,4 +1109,62 @@ New admin area under a **Settings** section in `components/admin/admin-sidebar.t
 
 ---
 
-*UI v5.5 · OrbitOMS*
+## 58. Support board — ship-to override cell + Material Type/Article columns (2026-07-07)
+
+Business behaviour: `CLAUDE_SUPPORT.md §4.18` (ship-to override), `§4.19` (Material Type/Article).
+
+**Note on structure:** the Support board is **CSS Grid, not `<table>`** (`CLAUDE_SUPPORT.md §7` landmine — a full rewrite to the §27 fixed-table standard was proposed and rejected as scope creep). This spec is Grid-native, kept visually consistent with §27 (same typography, row heights) but structurally separate — do not conflate the two, and do not add Support to §27's "applies to" list.
+
+### Ship-to override cell (`components/support/ship-to-override-cell.tsx`)
+
+Inserted immediately after the CUSTOMER column. Three states:
+
+- **Empty** (no override) — faint gray "Set ship-to" text-only affordance (`text-gray-400`), no border/pill. Click enters editing.
+- **Editing** — autofocused text input (matches §9 form-input sizing), ~250ms-debounced search (skipped under 2 characters). Dropdown below the input lists ≤8 results: customer name as the primary line, area as a muted secondary line underneath (same two-line pattern as §18 Mail Orders customer column). Click a result commits the save and exits editing; Esc, blur (with a short delay to allow the click), or backdrop cancels with no save.
+- **Set** — compact **teal** pill (matches the brand-action usage in §2, not a semantic status colour) showing **customer name ONLY** — no area, per approved refinement — plus a small × to clear. Saving state disables the input/pill (matches the existing `savingSlot` optimistic-disable pattern used by the Dispatch Slot picker, `CLAUDE_SUPPORT.md §4.13`).
+
+Failure surfaces a toast (sonner, already used elsewhere on this board) — no inline error state.
+
+### Material Type + Article columns
+
+Plain display-only text cells — no edit affordance, no hover state, no click target. Styled identically to the existing ROUTE/TYPE text cell: `text-[11px] text-gray-600` data, `text-gray-400` for the empty `"—"` fallback. Positioned between ROUTE/TYPE and VOL(L).
+
+### Column order (11 total, Grid tracks)
+
+`OBD/Date · Customer · [Ship-To Override] · Route/Type · [Material Type] · [Article] · Vol(L) · Status · Dispatch Slot · Priority` + row-selection checkbox. Bracketed columns are new this session.
+
+---
+
+## 59. Mobile app shell — shared bottom bar (Home / Menu / You) [LIVE]
+
+A shared, role-aware mobile app shell: a fixed bottom bar with three anchors **identical for every user** — **Home · Menu · You**. Not a per-role tab bar (rejected mid-design — see design history below); the bottom anchors themselves never change, only the Menu list's contents do.
+
+- **Home** — navigates to `navItems[0]?.href ?? "/"` (the user's primary page). Active-teal when `pathname === that href`.
+- **Menu** (center) — slide-up sheet listing every page the user can view, with a "Find a page…" filter (`text-[16px]`). Active row: `bg-teal-50 text-teal-700 border-l-teal-600`. Reuses the **exact same** `ICON_MAP` / `DEFAULT_ICON` (keyed by `pageKey`, exported from `role-sidebar.tsx`) as the desktop sidebar (§7) — icons always match between the two.
+- **You** — slide-up sheet: teal avatar (initials) + userName + role label + red Sign out row → confirm dialog → `signOut({ callbackUrl: "/login" })` (reuses the sidebar's existing sign-out, not reinvented).
+
+One sheet open at a time; scrim closes. Safe-area padding via `env(safe-area-inset-bottom)`.
+
+**Component:** `components/shared/mobile-shell.tsx`. Entirely scoped `block md:hidden` — mobile only.
+
+**Mounting — one global insertion point:** `components/shared/role-layout-client.tsx` mounts `<MobileShell>` as a sibling to `<RoleSidebar>`. `role-layout-client.tsx` is the single shared wrapper for every role-shelled page, so every page that wraps itself in it inherits the shell automatically with no per-page work — confirmed live on `/trips` and `/place-order`; other role pages are "future adopters" of the same wrapper.
+
+**Desktop untouched, mobile-only split:**
+- The existing desktop sidebar (§7) stays `hidden md:flex` — completely unchanged.
+- The page content wrapper gets `pb-[76px] md:pb-0` so mobile content clears the fixed bottom bar; no effect on desktop.
+- **Pages that don't route through `role-layout-client.tsx` don't inherit the shell.** Attendance, for instance, has its own full-screen wrapper with no sidebar (`app/attendance/layout.tsx`, `CLAUDE_ATTENDANCE.md §13`) and is unaffected by this shell.
+
+**Design history:** rejected per-role bottom tabs → rejected drawer-only → landed on the fixed Home/Menu/You anchors (variable pages live behind Menu, not as their own tabs).
+
+**Reference mobile user:** Praveen (`logistics` role, primary landing → Trip Report — `CLAUDE_TRIP_REPORT.md §1`).
+
+**Approved mockup:** `docs/mockups/mobile/index.html` (v3 — the Home/Menu/You version). The grey role-switcher shown in that mockup is a demo aid only, not part of the shipped app.
+
+**[DEFERRED]**
+- Shared minimal header + big search component (from the mockup) — to be rolled in page by page; each page currently keeps its own header (why `/trips` still looks right and wasn't disturbed).
+- Shell rollout/polish across other role pages.
+- PWA install (add-to-home-screen). Manifest + icons + root-layout metadata already exist (`public/manifest.json`, `app/layout.tsx` metadata + `appleWebApp` + viewport); **no service worker exists** (never built). Do NOT reintroduce a middleware-level redirect toward `/attendance` (the retired attendance auto-check-in gate — see `CLAUDE_TRIP_REPORT.md §7`) when building this.
+
+---
+
+*UI v5.7 · OrbitOMS*

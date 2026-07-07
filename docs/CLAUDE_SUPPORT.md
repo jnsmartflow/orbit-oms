@@ -1,5 +1,5 @@
 # CLAUDE_SUPPORT.md — Support Module
-# v1.1 · Schema v27.7 · June 2026 · updated 2026-06-27
+# v1.4 · Schema v27.9 · July 2026 · updated 2026-07-07
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md
 
@@ -66,9 +66,13 @@ When Warehouse goes live: introduce the forward stage (likely `support_done`), f
 
 All pieces below are live in production. Listed in build order.
 
-### §4.1 Header dispatched-counter — today fence [LIVE]
-**Route/file:** `app/api/support/slots/route.ts` — today-path `dispatchedCount`
-**Rule:** Dispatched tile is fenced on `obdEmailDate ∈ ISTrange(today)`. No `workflowStage` fence (closed-today still counts). **Pending and tinting tiles stay unfenced** — carry-over is intentional; a Monday order still pending on Tuesday is real workload and must match the list.
+### §4.1 Header tile fencing — today fence [LIVE]
+**Route/file:** `app/api/support/slots/route.ts` — today-path `dispatchedCount`, `pendingCount`, `tintingCount`
+**Rule:** ALL THREE live tiles — `dispatchedCount`, `pendingCount`, `tintingCount` — are fenced on `obdEmailDate ∈ ISTrange(today)`, each hard-requiring `arrivalSlotId = slot.id`. `doneCount` has no `arrivalSlotId` requirement but is still IST-today fenced.
+
+**CORRECTION (2026-06-29):** this section previously claimed "pending and tinting tiles stay unfenced — carry-over is intentional." **That was never true in the code.** Both the today list query (`orders/route.ts`) and every per-slot count (`slots/route.ts`) have always been IST-date-fenced to today's arrivals only — there is no carry-over arm. The only genuinely unfenced pieces are `holdCount` (global, all dates) and the `section === "hold"` orders list — both intentionally cross-date overlays. Carry-over workload (yesterday's still-pending orders) is now surfaced as a deliberate, SEPARATE mechanism — see §4.17 "Pending from earlier" — not as an implicit unfenced tile.
+
+**Header vs export count — verified consistent, not a bug (2026-06-29).** A suspected 12-order gap between the header tile sum and the "All" slot-view CSV export was investigated and confirmed to be a **ghost** — stale local-only test data (old orders with `arrivalSlotId = null` from before tint orders got stamped at import, which never reached main), not a live production issue. Explanation: the header total is a **sum of per-slot tiles**, each hard-requiring `arrivalSlotId = slot.id`; the export lists all of today's orders with no slot filter, so any order without a slot bucket would appear in the export but fall through the header sum. On live, every OBD now gets a real `arrivalSlotId` at import (tint included, per CLAUDE_IMPORT.md §12) so the two totals match. **No code fix was made for this specific gap** — it was closed by verification, not a patch. (Note in passing, not a fix: the header still sums per-slot buckets rather than counting the board directly, so it would silently under-count again if a future stage ever fell outside every bucket.)
 
 ### §4.2 Done group + collapse [LIVE]
 **Route/file:** `app/api/support/orders/route.ts` (today path, section=slot); `components/support/support-orders-table.tsx`
@@ -114,6 +118,8 @@ All pieces below are live in production. Listed in build order.
 **Rule:** Any code path that sets `dispatchStatus = "hold"` MUST ALSO stamp `heldAt = order.obdEmailDate ?? new Date()`. `heldAt` is the arrival date (not wall-clock) — anchors the hold footprint to the order's arrival day. When an action has multiple entry points, ALL must be updated together. Each of these three paths was missed once; the lesson is structural.
 
 `isDone` is widened to: `workflowStage in ["closed", "dispatched", "cancelled"] OR dispatchStatus = "hold"` — held orders land in the done group on both live and history boards.
+
+**Tint-stage guard (2026-06-29) [LIVE]:** `app/api/support/orders/[id]/hold/route.ts` now rejects (409) a hold on a tint order (`orderType === "tint"`) at `workflowStage in ["tint_assigned", "tinting_in_progress"]` — mid-mixing. All other cases pass: non-tint at any stage; tint at `pending_tint_assignment`, `tinting_done`, or `pending_support`. Effect: Support can only hold a tint order before mixing starts or after it finishes. Tint Manager's own hold route (`orders/[id]/status/route.ts`) was NOT touched this build — cross-screen sync deferred (see §7).
 
 ### §4.10 Release + dispatch-target [LIVE]
 **Route/file:** `app/api/support/orders/[id]/release/route.ts` (single-order release only; no bulk-release API)
@@ -172,6 +178,8 @@ All pieces below are live in production. Listed in build order.
 
 8. **Button isolation.** Undo-dispatch button condition gained `&& order.footprintType !== "cancel"`. Undo-cancel button renders only on `footprintType === "cancel"` rows. Without the guard, a cancelled row (dispatchStatus null) would render the undo-DISPATCH button and fire a 409.
 
+**Tint-stage guard (2026-06-29) [LIVE]:** `app/api/support/orders/[id]/cancel/route.ts` now rejects (409) a cancel on a tint order at `workflowStage in ["tint_assigned", "tinting_in_progress"]`, same condition as the hold guard above. Prevents Support from cancelling (and cascading split cancellation to) an order that's actively being mixed. Tint Manager's Remove-OBD (already hard-gated to `pending_tint_assignment`) was not touched — this is a Support-side-only addition.
+
 **Still DEFERRED from cancel work:**
 - **Structured reason column** [DEFERRED] — the cancel-dialog reasons are stored only in the log note string, not a queryable column. "Show me all credit-hold cancels" is still a raw DB query.
 - **Bulk cancel** [DEFERRED] — `bulk/route.ts` still accepts `dispatch | hold` only. Cancel remains single-order with mandatory confirm dialog.
@@ -227,7 +235,94 @@ The sticky bottom bar appears when ≥1 row is selected. It mirrors a row: `[set
 - "STATUS" / "DISPATCH SLOT" text labels removed (triggers are self-describing).
 
 **On the horizon — Task 2 (NOT built):**
-Auto-assign dispatch slot at enrichment ("the brain") [NEXT]: auto-dispatched OBDs currently get no `dispatchTargetDate`/`dispatchWindowId`. Task 2 will assign a date+window automatically. Smart Flow noted multiple conditions may require one or more prep changes before the auto-assign logic is wired. This is interim-safe (no break, just inconsistent labels until built).
+Auto-assign dispatch slot at enrichment ("the brain") [NEXT]: auto-dispatched OBDs currently get no `dispatchTargetDate`/`dispatchWindowId`. Task 2 will assign a date+window automatically. Smart Flow noted multiple conditions may require one or more prep changes before the auto-assign logic is wired. This is interim-safe (no break, just inconsistent labels until built). **Distinct from §4.16 below** — §4.16 is a human pre-set on an individual tint row, not the automatic enrichment-time assignment described here.
+
+### §4.14 Tint orders visible on Support board [LIVE]
+**Shipped:** 2026-06-29 (commit `c901d6`).
+**Route/file:** `app/api/support/orders/route.ts` (today + history `notIn` exclusions); `components/support/support-orders-table.tsx` (`getRowType`)
+
+**Rule:** `pending_tint_assignment` was removed from the today-list and history `notIn` exclusions — tint orders now show on the Support board from the moment they arrive (arrival-slot stamped at import, same as any other order — see §4.1/CLAUDE_IMPORT.md §12), instead of only becoming visible at `pending_support`.
+
+`getRowType()` now returns `"tinting"` for **all three** tint stages — `pending_tint_assignment`, `tint_assigned`, `tinting_in_progress` (previously only the latter two). Rows in any of these three stages are **read-only**: no checkbox, no Status menu, no Priority — only the Dispatch Slot column is live on them (see §4.16).
+
+**Locked status pill labels** (purple, non-interactive), per stage:
+| `workflowStage` | Pill label |
+|---|---|
+| `pending_tint_assignment` | "Tint · Pending" |
+| `tint_assigned` | "Tint · Assigned" |
+| `tinting_in_progress` | "Tint · Mixing" |
+
+`slots/route.ts` today `tintingCount` now also includes `pending_tint_assignment` in its `workflowStage in [...]` filter, so the slot-tab badge counts these rows too.
+
+### §4.15 Hold/cancel gating for tint orders [LIVE]
+See §4.9 (hold) and §4.12 (cancel) for the exact guard condition. Summary: Support can hold or cancel a tint order only **before mixing starts** (`pending_tint_assignment`) or **after it finishes** (`tinting_done` / `pending_support`) — never mid-mix (`tint_assigned`, `tinting_in_progress`). Tint Manager's own hold/cancel-equivalent routes were not touched this build; cross-screen sync (TM hold/cancel reflecting on Support, and TM's missing `heldAt` stamp — see CLAUDE_TINT.md discovery) is deferred, see §7.
+
+### §4.16 Pre-set dispatch slot on tint rows [LIVE]
+**Shipped:** 2026-06-29 (commit `c901d6`).
+**New route:** `app/api/support/orders/[id]/preset-slot/route.ts` (POST) — writes **only** `dispatchTargetDate` + `dispatchWindowId`; does **not** change `workflowStage` or `dispatchStatus` (the order stays in its current tint stage). Guarded to `orderType === "tint"` at the three tint stages (`pending_tint_assignment`, `tint_assigned`, `tinting_in_progress`). Accepts `null` for both fields to clear a pre-set slot. Sequential awaits (no `$transaction` — CORE §3 compliant).
+
+**Why a new route, not the existing PATCH:** every existing route that writes `dispatchTargetDate`/`dispatchWindowId` (`dispatch/route.ts`, `release/route.ts`, `bulk/route.ts`) also unconditionally writes `workflowStage: "closed"` — inseparably coupled to closing. The generic PATCH route (`orders/[id]/route.ts`) has the `$transaction` landmine (§8) and no schema field for these columns. A standalone route was the only clean path.
+
+**Table changes:** the Dispatch Slot column's `isPhysicallyDispatched || isTinting` hide-gate was narrowed — the picker now renders on tinting rows too (checkbox + Priority columns still hidden on tint rows, per §4.14). Its `onChange` calls a **new `onPresetSlot` handler**, NOT `onSingleDispatch` (which would fire the dispatch close-couple). **Display fix:** the pending-row picker previously had `value={null}` hardcoded, so a saved slot never displayed once an order reached `pending_support` — now derives its value from `order.dispatchTargetDate`/`dispatchWindowId`, mirroring the tinting-row picker.
+
+**Auto-flip on completion:** `app/api/tint/operator/done/route.ts` and `split/done/route.ts` now branch on `hasPresetSlot = order.dispatchWindowId != null && order.dispatchTargetDate != null` at completion time:
+- **TRUE** → completion writes `workflowStage: "closed"`, `dispatchStatus: "dispatch"` (+ `slotId`/`originalSlotId` as before). The order auto-flips to Dispatch using the pre-set slot and leaves the pending list entirely.
+- **FALSE** → unchanged fallback: `workflowStage: "pending_support"` (operator decides the slot later, as today).
+
+The whole-order fetch in `done/route.ts` is a no-`select` `findFirst`, so `dispatchWindowId`/`dispatchTargetDate` are already present on `order` — no query change needed. Same for the `split/done/route.ts` parent-bubble fetch.
+
+**Landmine (split/done):** the parent-bubble advance (the step that flips the parent to `pending_support`/now `closed+dispatch`) runs **outside** the existing `$transaction` at line ~50, as it always has — the pre-set conditional was added there, consistent with the existing structure. If the parent-bubble update throws after the transaction commits: parent gets stuck at `tinting_in_progress` while all splits show `tinting_done`. **This is re-runnable, not a bug** — the bubble's entry condition re-triggers on the next completion attempt.
+
+**Interactions:**
+- The "dispatch intent is client-only" principle (§4.13) does NOT apply here — there is no `dispatchIntentIds` pending-intent state for a tint pre-set. It's a direct pick, saved immediately (deliberate: the order stays in its tint stage regardless of what's pre-set, so there's no "half-committed" state to protect against).
+- **Cancel does not clear pre-set slot fields.** If an operator pre-sets a slot and the order is later cancelled, `cancel/route.ts` clears `dispatchStatus` but leaves `dispatchTargetDate`/`dispatchWindowId` untouched — stale but harmless (cancelled rows show the red pill, not the slot). See §8 landmine.
+- `pending_tint_assignment` rows: the picker only needs to work on `tint_assigned` and `tinting_in_progress` (the stages visible in Support's today list per §4.14).
+
+### §4.17 "Pending from earlier" badge + flat list [LIVE]
+**Shipped:** 2026-06-29 (commit `c901d6`). Approved mockup: `docs/mockups/support/earlier-toggle.html`.
+
+**Purpose:** surfaces unhandled pending orders from **past** days in a flat list, since the today board (§4.1) has always been strictly IST-today-fenced with no carry-over arm.
+
+- **`slots/route.ts`:** new `earlierPendingCount` — `obdEmailDate < today IST start`, `workflowStage in ["pending_support", "tinting_done"]`, `dispatchStatus = null`, `isRemoved = false`, same hide-exclusion as other tiles. Strictly non-overlapping with the today tiles (today = `>= todayStart`) — **not** added to `todayTotal`, so no double-count.
+- **`orders/route.ts`:** new `section === "earlier"` arm — same WHERE, oldest-arrival-first. Purely additive; no existing section changed.
+- **`support-page-content.tsx`:** header badge "⚠ N pending from earlier", shown only when count > 0.
+- **Toggle behaviour:** the badge is the **only** toggle — tap in → earlier list; tap again → back to today (lands on Morning). While in earlier view, slot tabs grey out AND are unclickable (reuses the existing Hold-tab disable pattern — `segmentsDisabled` + early-return in `onSegmentChange`). Banner stays the same soft cream in both states; only the right-side hint text flips ("tap to view" ⇄ "← back to today"). A solid loud-orange fill was tried and rejected.
+- **Sort (currently undecided — see §7):** the earlier-pending list currently sorts priority-then-age (module-level `ORDER_BY`), not pure oldest-first arrival order. Pending a call on whether to force pure oldest-first.
+
+### §4.18 Ship-to override — now editable via inline picker (2026-07-07) [LIVE]
+**Shipped:** commits through `714251ef`. Discovery: `docs/prompts/drafts/code-discovery-2026-07-07-shipto-override.md`. Mirrors the existing `dispatchStatus` enrichment-copy pattern (§4.7).
+
+**Before this build, ship-to on Support was display-only** — the board showed `order.customer?.customerName ?? order.shipToCustomerName` (resolved match, falling back to the raw SAP name when unmatched) with no write path anywhere under `app/api/support/orders/**`. Support staff can now **redirect an order's ship-to to a different real customer** from `delivery_point_master`, in addition to the existing automatic path from mail-order enrichment.
+
+**Storage decision: id only** — a resolved FK (`orders.shipToOverrideCustomerId`, now in `CLAUDE_CORE.md` §7.3, schema v27.9; the orphaned-modal landmine is tracked in `CLAUDE_CORE.md` §13 and this file's §8), NOT a free-text or name/code snapshot. When the master customer's name is later corrected, the override reflects it automatically (the id is a live pointer; name/code are read through it). No denormalized copy to go stale.
+
+**New route:** `GET /api/support/ship-to-search?q=...` — auth-gated (support/admin/operations), `force-dynamic`. Short-circuits to `[]` when `q` is missing or under 2 characters. Queries `delivery_point_master`: `contains` + `mode: "insensitive"` on `customerName`, `isActive: true`, `take: 8`, ordered by name. Returns `[{ id, customerName, area }]` — read-only, no writes.
+
+**New component:** `components/support/ship-to-override-cell.tsx` — inline searchable picker, three states (visual spec: `CLAUDE_UI.md §58`):
+- **Empty** (no override set) — faint "Set ship-to" affordance, click enters editing.
+- **Editing** — autofocused input, ~250ms-debounced search (skipped under 2 chars), dropdown of ≤8 results (customer name + area). Click a result saves; Esc/blur-with-delay cancels without saving.
+- **Set** — compact teal pill showing **customer name only** (no area, per approved refinement) + × to clear.
+
+**PATCH extended:** `app/api/support/orders/[id]/route.ts` `patchSchema` gains `shipToOverrideCustomerId: z.number().int().positive().nullable().optional()` (number = set, `null` = clear, omitted = no change). New diff block mirrors the existing `dispatchStatus` block exactly — compares against current, sets `updateData.shipToOverrideCustomerId`, ALSO sets `updateData.shipToOverride = (value !== null)` to keep the legacy boolean flag in sync, and pushes an `order_status_logs` entry. No new `delivery_point_master` lookup on this route (the DB FK enforces validity). Rides the route's EXISTING `$transaction` (pre-existing landmine, §8 — not newly introduced).
+
+**Board payload:** `ORDER_INCLUDE` in `orders/route.ts` now includes `shipToOverrideCustomer: { select: { id, customerName, area: { select: { name } } } }`, matching the existing `customer` include style. `handleShipToOverride` in `support-page-content.tsx` is structurally identical to `handleDispatch`, hitting the generic PATCH route with `{ shipToOverrideCustomerId }`.
+
+**Important caveat — flag can be `true` with no id.** `shipToOverride = true` can still fire from mail-order enrichment with NO resolved id (free-text redirects like "as per challan", "Delivery on Challan copy" — see `CLAUDE_MAIL_ORDERS.md §6`). "Flag true" does NOT guarantee "id present." Any Support screen displaying the override must handle both: id set (show the resolved customer) vs flag-only (no clean id to show).
+
+**Deferred/parked (not built this session):**
+- Ship-to override on other screens (Planning, Warehouse, challan, etc.) — one screen at a time, later.
+- Backfill of historical overrides — old `mo_orders` rows only carry the redirect as `[→ Name (Code)]` text in `deliveryRemarks`; recovering the id needs a parse-then-resolve one-off script. Not needed to proceed.
+- 2b live test: confirming a real post-deploy mail order with a resolved redirect actually flows `mo_orders.shipToOverrideCustomerId → orders.shipToOverrideCustomerId` via enrichment — see `CLAUDE_MAIL_ORDERS.md §6`.
+
+### §4.19 Two new display-only columns — Material Type, Article (2026-07-07) [LIVE]
+Surfaces data auto-import already stores; neither column has an edit affordance.
+
+- **MATERIAL TYPE** ← `orders.materialType` (`String?`, e.g. `"FG"`) — written directly at import (`summary.materialType` in `app/api/import/obd/route.ts`). Was already riding down via `include`; was NOT typed on the `SupportOrder` interface until this build.
+- **ARTICLE** ← `orders.querySnapshot.articleTag` (via the 1:1 `import_obd_query_summary` relation) — the human-readable pack-breakdown tag (e.g. `"18 Drum, 2 Carton"`), chosen over the numeric `totalArticle` count. `articleTag` was already selected in `ORDER_INCLUDE.querySnapshot.select` and already typed on `SupportOrder` — no payload change needed for this one, only the table-side render.
+
+Both cells: `order.materialType ?? "—"` / `order.querySnapshot?.articleTag ?? "—"`, styled like the existing ROUTE/TYPE text cell. Visual spec: `CLAUDE_UI.md §58`.
+
+**Support board columns — now 11 (was 9 before this session's two features):** OBD/Date · Customer · **Ship-To Override** (NEW, §4.18) · Route/Type · **Material Type** (NEW) · **Article** (NEW) · Vol(L) · Status · Dispatch Slot · Priority, plus the row-selection checkbox. Ship-to override sits after Customer; Material Type + Article sit between Route/Type and Vol(L).
 
 ---
 
@@ -261,7 +356,10 @@ If an order is held AND released on the **same calendar day**, it shows ONCE as 
 
 ## 6. Key learnings / principles
 
-- **Carry-over is passive — no cron.** Yesterday's pending orders carry forward naturally. Header pending/tinting tiles are unfenced (live workload); only "dispatched/done today" counters get an IST fence on `obdEmailDate`.
+- **Carry-over is NOT passive — correction (2026-06-29).** Every today-path query (list + all per-slot counts) is IST-date-fenced with no carry-over arm; this was true even before the tint-in-Support build, but §4.1/§6 previously documented the opposite. Yesterday's still-pending orders do NOT appear on today's board by default — they surface only through the dedicated "pending from earlier" badge + flat list (§4.17), a deliberate separate mechanism, not an implicit unfenced tile.
+- **Local DB and live DB are separate.** A slot pre-set on a LOCAL dev DB while the operator marks the order Done on the LIVE app will look like a broken auto-dispatch (completion reads live's DB, finds no slot, drops to `pending_support`) but is actually two different databases. A set-slot and its mark-done must happen on the SAME app/DB.
+- **Reasoning about runtime ≠ runtime.** Two static code-reads can both conclude a route "should work"; only an instrumented log + a clean same-DB test proves it. When DB state and code logic seem to contradict, instrument and run — don't keep re-reading.
+- **Prisma P2024 pool timeout risk on local** (`connection_limit:1`) — slow local→Supabase queries can stack and starve the single connection (observed on `slots/route.ts` counts). Local-only infra symptom, not a code bug; parked for a separate look.
 - **`closed` = parking stage during incremental build.** Each new downstream screen gets fed by flipping the prior screen's done output forward once ready. Test orders never leak.
 - **Auto-done guard = `pending_support` stage ONLY.** Non-negotiable. Enrichment can run before tinting completes. The guard prevents closing un-tinted / mid-tint orders. Without it, a tint OBD with `dispatchStatus="dispatch"` set by enrichment would auto-close, skipping paint mixing entirely.
 - **Priority is NOT a Support concern.** It was dropped from the Support sort. Planning owns priority. Support sorts earliest → latest (received time).
@@ -288,12 +386,17 @@ If an order is held AND released on the **same calendar day**, it shows ONCE as 
 - **"0 line items" panel display bug for split OBDs** [DEFERRED] — detail panel shows 0 line items though data exists (1 raw, 2 split lines). Data is fine; fetch/display is wrong. Low priority.
 
 ### Support view build [NEXT]
-- **Board-slot rule (06-24 design, LOCKED but NOT BUILT)** [NEXT] — 5-slot structure (add Late-Evening), cutoff fix (≤ vs <), carry-over slot logic (same-day → received time; carried-over → punch time), dual-date card (OBD date bold + "⚠ rec. {date} · {N}d" flag). See `docs/prompts/drafts/code-update-2026-06-24-support-board-slot-rule.md` for the full locked spec.
+- **Board-slot rule (06-24 design) — PARTIALLY SUPERSEDED (2026-06-29)** — the carry-over/dual-date portion of this locked spec (dual-date card, "⚠ rec. {date} · {N}d" flag) was superseded by a different design: the "pending from earlier" badge + flat list (§4.17), not a dual-date card on each row. The 5-slot structure (incl. Late Evening) and the `≤` vs `<` cutoff fix described in this spec are unrelated to carry-over and already exist in code (`lib/slots/slot-ruler.ts` — confirmed by discovery, not built as part of this item). See `docs/prompts/drafts/code-update-2026-06-24-support-board-slot-rule.md` for the original full spec (kept for history; carry-over section is stale).
 - **Hold auto-route** [NEXT] — enriched holds currently appear in the pending list AND the Hold tab (Hold is an overlay, doesn't remove from pending). Goal: enriched holds auto-route to the Hold tab with zero human touch, mirroring auto-done but for hold. Separate build.
-- **Auto-assign dispatch slot at enrichment ("the brain")** [NEXT] — Task 2 of the dispatch-slot work. Auto-dispatched OBDs get no `dispatchTargetDate`/`dispatchWindowId` today. Multiple conditions; may need prep changes first. See §4.13 "On the horizon".
+- **Auto-assign dispatch slot at enrichment ("the brain")** [NEXT] — Task 2 of the dispatch-slot work. Auto-dispatched OBDs get no `dispatchTargetDate`/`dispatchWindowId` today. Multiple conditions; may need prep changes first. See §4.13 "On the horizon" (distinct from the tint-row pre-set at §4.16, which is a human action).
 - **CSS Grid → `<table>` §27 cleanup** [DEFERRED] — the Support table uses CSS Grid, not `<table>`. Agent proposed a full rewrite (UI §27); REJECTED as scope creep. Own session when ready.
 - **Mail indicator placement polish** [DEFERRED] — ship a clearer indicator than the current trailing gray envelope. Leading gray envelope (Option A) is the recommended safe choice. Teal options ruled out (collision with row-selection teal edge). Mockups: `docs/mockups/support/mail-time-symbol.html`, `docs/mockups/support/mail-indicator-placement.html`, `docs/mockups/support/mail-indicator-options-EFGH.html`.
 - **Mail punched time (Piece 2)** [DEFERRED] — store `mo_orders.punchedAt` on the order (new column), decide display placement (detail panel vs tooltip vs separate column). Piece 1 (received time) is live; Piece 2 needs new column + enrichment copy + display.
+
+### Tint-in-Support follow-ups [NEXT / DEFERRED] (from the 2026-06-29 build)
+- **Tint Manager cross-screen sync** [NEXT] — TM's own hold/cancel-equivalent actions don't reflect the new Support-side tint gating (§4.15), and TM's hold route never stamps `heldAt` (history hold-footprint silently fails for TM-held orders). Agreed sequence: build after Support is confirmed solid.
+- **Split tint deeper edge cases** [DEFERRED] — the parent-bubble pre-set/auto-flip conditional (§4.16) covers the common path; deeper split-specific edge cases were not explored this session.
+- **"Pending from earlier" sort order (A7, open decision)** — currently priority-then-age, not pure oldest-first arrival. Needs a call, not yet decided either way — see §4.17.
 
 ### Cancel [DEFERRED]
 - **Structured reason column** [DEFERRED] — cancel-dialog reasons stored only in log note string, not a queryable column. "Show me all credit-hold cancels" = raw DB query. Reason column parked.
@@ -326,6 +429,9 @@ Existing in code — do NOT "fix" without explicit instruction.
 - **`lib/slot-cascade.ts`, `lib/day-boundary.ts`** [LANDMINE] — exist but are not called. If re-enabled, must skip tint orders (CORE §13).
 - **Split-done usage-log gap** [LANDMINE] — `app/api/tint/operator/split/done/route.ts` never writes a `sampling_usage_log` row. Split-completed tints don't appear in Sampling Library usage history. CORE §13 pre-existing item.
 - **Grey "Done" fallback must stay grey** [LANDMINE] — the grey pill fires for auto-enriched/uncategorized done rows (auto-dispatched-on-arrival, ex-tint, other closed). Do NOT paint it green or re-derive it from `dispatchStatus` — that would mislabel enriched-auto rows as "Dispatch" when they carried no `dispatchTargetDate`.
+- **Pre-set slot fields not cleared on cancel** [LANDMINE] — if a tint row has a pre-set `dispatchTargetDate`/`dispatchWindowId` (§4.16) and the order is then cancelled, `cancel/route.ts` clears `dispatchStatus` but leaves the slot fields untouched. Not a display bug today (cancelled rows show the red pill, not the slot), but stale data remains on the row.
+- **Orphaned `components/support/ship-to-override-modal.tsx`** [LANDMINE] — predates the §4.18 inline-picker build: no button opens it (no trigger wired in `OrderRow`), its form is free-text (not the search picker), and its `onSave` is a no-op (never calls fetch). Left untouched this session (never delete files unless instructed). The live ship-to override is the inline cell (§4.18), fully independent of this dead file. Also tracked in `CLAUDE_CORE.md §13` (flagged for the CORE consolidation pass).
+- **`shipToOverride` flag can be true with no id** [LANDMINE] — see §4.18. Mail-order enrichment can set the boolean flag from a free-text redirect that never resolved to a `delivery_point_master` row. Any screen reading the override must handle "flag true, id null" as a valid state, not an error.
 
 ---
 
@@ -345,7 +451,7 @@ All added via Supabase SQL Editor + hand-edit `prisma/schema.prisma` + `npx pris
 **New table `dispatch_slot_master`:**
 `id`, `windowTime` (text, e.g. `"10:30"`), `label` (text?), `sortOrder`, `isActive`, `createdAt`, `updatedAt`. Seeded 4 windows: **10:30, 12:30, 16:00, 18:00**. Distinct from arrival slots in `slot_master`.
 
-⚠ **FLAG FOR CORE PASS:** CORE `orders` schema block (§7.3) does not yet list these columns or `dispatch_slot_master`. Update CORE in a dedicated consolidation pass.
+✅ **Now in CORE:** CORE `orders` schema block (§7.3) lists these columns; `dispatch_slot_master` is documented in CORE §7.4 (schema v27.9).
 
 ---
 
@@ -362,6 +468,9 @@ All added via Supabase SQL Editor + hand-edit `prisma/schema.prisma` + `npx pris
 | `app/api/support/orders/[id]/undo-dispatch/route.ts` | Undo dispatch: guard on `closed` + `footprintType !== "cancel"`, resets to `pending_support` |
 | `app/api/support/orders/[id]/undo-cancel/route.ts` | Undo cancel: guard on `cancelled`, resets to `pending_support` + un-cancels splits |
 | `app/api/support/orders/[id]/route.ts` | PATCH (priority/ship override; arrival-slot field may be unused from UI) — has `$transaction` landmine |
+| `app/api/support/orders/[id]/preset-slot/route.ts` | Pre-set `dispatchTargetDate`/`dispatchWindowId` on a tint row without closing it (§4.16); sequential awaits |
+| `app/api/support/ship-to-search/route.ts` | Read-only customer search for the ship-to override picker (§4.18); auth-gated, `take: 8` |
+| `components/support/ship-to-override-cell.tsx` | Inline searchable ship-to override picker — empty/editing/set states (§4.18) |
 | `app/api/support/splits/[id]/route.ts` | PATCH split — has `$transaction` landmine |
 | `app/api/support/bulk/route.ts` | Bulk dispatch (date+window required) / hold; bulk hold stamps `heldAt`; no bulk cancel |
 | `app/api/support/dispatch-windows/route.ts` | Returns active `dispatch_slot_master` windows |
@@ -376,4 +485,4 @@ All added via Supabase SQL Editor + hand-edit `prisma/schema.prisma` + `npx pris
 
 ---
 
-*CLAUDE_SUPPORT.md v1.1 · Support Module · June 2026*
+*CLAUDE_SUPPORT.md v1.4 · Support Module · July 2026*

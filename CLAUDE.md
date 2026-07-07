@@ -1,5 +1,5 @@
 # CLAUDE.md — Orbit OMS Router
-# v1.1 · Entry point · Read this first · June 2026
+# v1.2 · Entry point · Read this first · July 2026
 
 This file tells you which context files to load for the work in front of you. Load the files. Confirm each by name. Then work.
 
@@ -42,6 +42,7 @@ All context files live in `docs/` relative to repo root.
 | `/attendance`, OT, `attendance_*`, admin OT pending/settings/audit | `docs/CLAUDE_ATTENDANCE.md` |
 | `/admin/import`, SAP parser, upsert brain, Auto-Import, `import_*` tables | `docs/CLAUDE_IMPORT.md` |
 | `/support`, `/operations/support` — gatekeeper, workflow pipeline, closed parking-stage, hold/dispatch-target, history board | `docs/CLAUDE_SUPPORT.md` |
+| `/trips`, `trip_report`, NTS trip mirror, puller/mirror function, A4 trip sheet, WhatsApp share, logistics role | `docs/CLAUDE_TRIP_REPORT.md` |
 | `/planning`, `/warehouse`, `/admin` (incl. **Settings → Hide**), `/operations/*` (non-support) | Core only — stubs in `docs/CLAUDE_CORE.md §11-§12` |
 
 **Cross-cutting work** (SAP import enrichment touches MO + imports; dispatch data from MO flows to orders table; the Hide feature spans CORE schema + UI + MAIL_ORDERS): load both relevant domain files.
@@ -52,7 +53,7 @@ All context files live in `docs/` relative to repo root.
 
 1. Read every file listed above for your task. `CLAUDE.md` at repo root, the rest at `docs/CLAUDE_*.md`.
 2. Respond with "Files read: CLAUDE.md, docs/CLAUDE_CORE.md, docs/CLAUDE_UI.md, [others]." before any other output.
-3. Confirm schema version (v27.7), parser version (v6.5 if MO work), UI version (v5.5).
+3. Confirm schema version (v27.9), parser version (v6.5 if MO work), UI version (v5.7).
 4. If any referenced file is missing or seems out of date, stop and ask.
 
 ---
@@ -73,4 +74,4 @@ When extracting, update §3 decision table in this file.
 
 ---
 
-*Router v1.2 · Orbit OMS · June 2026*
+*Router v1.2 · Orbit OMS · July 2026*

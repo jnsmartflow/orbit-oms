@@ -1,5 +1,5 @@
 # CLAUDE_IMPORT.md — OrbitOMS Import Pipeline
-# v1.1 · Schema v27.7 · Lives in: orbit-oms/docs/
+# v1.3 · Schema v27.9 · July 2026 · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
 Covers the SAP/OBD import pipeline end-to-end: manual SAP upload, Auto-Import (currently paused), the shared upsert utility that both paths funnel through, schema, filters, and downstream consumers.
@@ -496,11 +496,30 @@ State lives in `useState` inside each component. No shared state store.
 
 ## 12. Slot assignment integration
 
-Cross-reference CORE §9.
+Cross-reference CORE §9 (⚠ pending update — see flag below).
 
-- **Non-tint orders:** slot set at import via `resolveSlot(orderDateTime)`.
-- **Tint orders (`orderType === "tint"`):** `slotId = null` at import. Slot set on tint completion (CLAUDE_TINT.md §2).
-- **`applyMailOrderEnrichment()` overrides `orderDateTime`** from `mo_orders.receivedAt` when there's a matching `soNumber`. Then re-applies `resolveSlot` for non-tint orders only.
+**Two distinct slot fields — do not conflate:**
+| Field | Meaning | Set when | Applies to |
+|---|---|---|---|
+| `arrivalSlotId` | which slot the OBD *arrived* in (5-slot ruler: Morning/Afternoon/Evening/Late Evening/Night) | import time | ALL orders — tint and non-tint |
+| `slotId` / `originalSlotId` | completion/dispatch slot | SAP: at import (non-tint); tint: at tinting completion | ALL orders |
+
+- **Non-tint orders:** both `arrivalSlotId` and `slotId`/`originalSlotId` are set at import via the resolvers below.
+- **Tint orders (`orderType === "tint"`):** `slotId`/`originalSlotId` stay `null` at import — set on tint completion (CLAUDE_TINT.md §2). `arrivalSlotId` is now set at import for tint orders too, same as non-tint (see below) — **this changed 2026-06-29.**
+- **`arrivalSlotId` at import (2026-06-29 change) [LIVE]:** both `handleManualSapConfirm` (~line 1021) and the auto-import confirm path (~line 2822) in `app/api/import/obd/route.ts` used to compute `arrivalSlotId` with a tint-guarded ternary: `orderType !== "tint" && emailDateTime ? resolveArrivalSlotId(emailDateTime) : null`. The tint guard was **removed** from both — now `emailDateTime ? resolveArrivalSlotId(emailDateTime) : null`, so tint orders get a real `arrivalSlotId` at import instead of permanently `null`. No backfill run — applies to new orders only.
+- **Pre-existing coverage note:** `applyMailOrderEnrichment()` already stamped `arrivalSlotId` correctly for **mail-matched** orders (tint included) before this change — only `slotId`/`originalSlotId` were tint-guarded there, never `arrivalSlotId`. So before 2026-06-29, mail-matched tint orders already had a correct `arrivalSlotId`; only NON-mail-matched tint orders were affected by the old import-time guard. The 2026-06-29 change covers that remaining gap at the source.
+- **`applyMailOrderEnrichment()` overrides `orderDateTime`** from `mo_orders.receivedAt` when there's a matching `soNumber`. Then re-applies `resolveSlot` for non-tint orders only (`slotId`/`originalSlotId`); `arrivalSlotId` recalculation is not tint-guarded (see above).
+
+**Why a wrong import-time value mattered — manual SAP has no time column.** The 19-column manual SAP layout (§3.1) has no `OBD Email Time` column, so `obdEmailTime = null` for every row → `mergeEmailDateTime` returns the date unchanged → `emailDateTime` = midnight UTC = 05:30 IST = 330 minutes → `resolveArrivalSlotId` always buckets this to **Morning**, regardless of true arrival time. This is a pre-existing condition for non-tint orders too (they've always landed in Morning when no email time is present); it only became newly *visible* for tint orders once the 2026-06-29 import-time change above gave them a real (if wrong) `arrivalSlotId` instead of `null`.
+
+**JSON auto-import correction pass now re-stamps `arrivalSlotId` (2026-06-29 fix, commit `0a9b2a37`) [LIVE].** `handleAutoImportPatchHeaders` (`?action=patch-headers`, §10.1) is the correction pass that re-fetches real email times for **non-mail-owned** orders (mail-owned orders are already corrected by `applyMailOrderEnrichment`, which has always re-stamped `arrivalSlotId` correctly). Before this fix, `handleAutoImportPatchHeaders` corrected `orderDateTime`/`obdEmailDate` and (for non-tint) `slotId`/`originalSlotId`/`dispatchSlot`, but **never touched `arrivalSlotId`** — so a manual-SAP order stuck at Morning stayed stuck at Morning even after its real time arrived via auto-import. Fix: two lines added immediately after `counts.timeFixed++` and **above** the `if (existing.orderType !== "tint")` guard —
+```ts
+updateData.arrivalSlotId = resolveArrivalSlotId(newDT);
+changedFields.push("arrivalSlotId");
+```
+Sitting above the tint guard is deliberate: `arrivalSlotId` recalculation applies to **all** order types (consistent with the two-field distinction above), while the guard below it correctly continues to gate only `slotId`/`originalSlotId`/`dispatchSlot`. **Effect:** new orders self-correct — SAP import drops them in with a rough Morning slot, the next auto-import correction pass (~10 min during business hours) fixes the time and now also moves the order to its correct arrival-slot tab, with no manual action and no backfill. **Known limitation (accepted):** between SAP import and the next correction pass, the order still shows under Morning — Smart Flow confirmed this window is acceptable.
+
+⚠ **FLAG FOR CORE PASS (step 6):** CORE §9 needs one sentence added: *"`arrivalSlotId` is set at import for ALL orders (tint and non-tint) via `resolveArrivalSlotId(emailDateTime)`. `slotId` stays null for tint until completion."* (Already flagged in step 1 — not re-flagged here.) No new CORE items from this step.
 
 ---
 
@@ -550,4 +569,4 @@ Cross-reference CORE §9.
 
 ---
 
-*Import v1.1 · Schema v27.7 · OrbitOMS*
+*Import v1.3 · Schema v27.9 · OrbitOMS*

@@ -1,5 +1,5 @@
 # CLAUDE_TINT.md — Tint Module
-# v1.5 · Schema v27.7 · June 2026
+# v1.6 · Schema v27.9 · July 2026
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -104,14 +104,18 @@ Operator reads `sequenceOrder` (NOT `operatorSequence`).
 
 ## 2. Slot assignment for tint orders
 
-See `CLAUDE_CORE.md §9`.
+See `CLAUDE_CORE.md §9` (⚠ CORE §9 has a pending update from this section — see the flag at the end of this section).
 
 - At import: `orderType === "tint"` → `slotId = null`, `originalSlotId = null`
+- **`arrivalSlotId` — now stamped at import for tint orders too (2026-06-29) [LIVE].** Previously tint orders got `arrivalSlotId = null` at import (the `orderType !== "tint"` guard). That guard was removed from both import paths (`handleManualSapConfirm` and the auto-import confirm path in `app/api/import/obd/route.ts`) — tint orders now get `arrivalSlotId = resolveArrivalSlotId(emailDateTime)` (the 5-slot ruler), exactly like non-tint orders. This is separate from `slotId`/`originalSlotId`, which remain null until completion (unchanged, see below). No backfill was run — applies to NEW orders only. See CLAUDE_IMPORT.md §12 for the import-side detail.
 - At completion (whole order, `/api/tint/operator/done`): sets `slotId` + `originalSlotId` on order using `resolveSlot()` thresholds on current IST time
-- At split completion (`/api/tint/operator/split/done`): sets slot on **parent** order. Latest completion wins.
+- **Completion now branches on a pre-set dispatch slot (2026-06-29) [LIVE].** If `order.dispatchWindowId != null && order.dispatchTargetDate != null` (an operator pre-set a slot on the Support board while the order was still tinting — see `CLAUDE_SUPPORT.md §4.16`), completion additionally writes `workflowStage: "closed"`, `dispatchStatus: "dispatch"` — the order auto-flips to Dispatch and leaves the pending list, made actionable/visible on Support as a done row instead of landing back in `pending_support`. If no slot was pre-set, behaviour is unchanged: `workflowStage: "pending_support"`.
+- At split completion (`/api/tint/operator/split/done`): sets slot on **parent** order. Latest completion wins. The same pre-set/auto-flip branch applies to the parent-bubble update (runs after the `$transaction`, not inside it — no new landmine interaction).
 - **Parent auto-advance (2026-06-25 fix):** after setting the slot, the route checks whether all non-cancelled splits are now `tinting_done`. If yes AND parent is still `tinting_in_progress`, it advances the parent to `workflowStage = "pending_support"` and writes an `order_status_logs` entry (`changedById: 1`, note `"Auto-advanced: all splits tinting_done"`). Guard is idempotent (`workflowStage === "tinting_in_progress"`). **Cancelled splits are excluded from the count — non-negotiable for correctness.**
 - No buffer before cutoff
-- `applyMailOrderEnrichment()` skips slot recalculation for tint orders
+- `applyMailOrderEnrichment()` skips recalculation of **`slotId`/`originalSlotId` only** for tint orders. It does **not** skip `arrivalSlotId` — that field is stamped for every mail-matched order regardless of `orderType` (not tint-guarded), and always has been.
+
+⚠ **FLAG FOR CORE PASS (step 6):** CORE §9 needs one sentence added: *"`arrivalSlotId` is set at import for ALL orders (tint and non-tint) via `resolveArrivalSlotId(emailDateTime)`. `slotId` stays null for tint until completion."* Not applied here — CORE is out of scope for this pass.
 
 ---
 
@@ -693,4 +697,4 @@ Layout uses `buildNavItems()` only.
 
 ---
 
-*Tint v1.5 · Schema v27.7*
+*Tint v1.6 · Schema v27.9*

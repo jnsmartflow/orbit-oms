@@ -1,5 +1,5 @@
 # CLAUDE_CORE.md — OrbitOMS Core
-# v77 · Schema v27.7 · June 2026 · Lives in: orbit-oms/docs/
+# v78 · Schema v27.9 · July 2026 · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_UI.md
 
 ---
@@ -114,8 +114,13 @@ Never introduce new libraries without being asked.
 | 12 | operations | `/operations/support` | operations@orbitoms.com |
 | 13 | billing_operator | `/mail-orders` | Deepanshu Thakur (id=25), Bankim (id=26) |
 | 14 | ops_admin | `/admin` | Dhruv (id=27), Kuldeep (id=28) |
+| 16 | logistics | `/trips` | Praveen (primary role — sees only Trip Report). Full detail: `CLAUDE_TRIP_REPORT.md §1`. |
 
-**Login redirects** (`lib/rbac.ts` `ROLE_REDIRECTS` map): admin→`/admin`, dispatcher→`/place-order`, support→`/place-order`, tint_manager→`/tint/manager`, tint_operator→`/tint/operator`, floor_supervisor/picker→`/warehouse`, operations→`/operations/support`, billing_operator→`/mail-orders`, ops_admin→`/admin`.
+**Login redirects** (`lib/rbac.ts` `ROLE_REDIRECTS` map): admin→`/admin`, dispatcher→`/place-order`, support→`/place-order`, tint_manager→`/tint/manager`, tint_operator→`/tint/operator`, floor_supervisor/picker→`/warehouse`, operations→`/operations/support`, billing_operator→`/mail-orders`, ops_admin→`/admin`, logistics→`/trips`.
+
+**Middleware — no forced attendance redirect (fixed 2026-07-04).** `middleware.ts` previously had an attendance gate (~lines 69-96) that redirected EVERY authenticated request to `/attendance` until check-in — not mobile-specific, but fired right after the login redirect above, so it looked mobile-only. That entire `if` block + the unused `istDateString` import were removed. Login (mobile and desktop) now routes straight to the role's landing page via `ROLE_REDIRECTS`, with no forced detour. Attendance itself is unaffected — still reachable directly at `/attendance`. Only 3 test accounts (admin/ops_admin) ever had the flag; no operational role relied on it. Confirmed via `middleware.ts` — no attendance-gate or `istDateString` reference remains. Full detail: `CLAUDE_TRIP_REPORT.md §7` (this fix shipped alongside the Trip Report build).
+
+**Trip Report secondary-role grants:** 4 existing users were added to `logistics` as a **secondary** role via `user_roles` (primary roles kept, unaffected): Ajay Vansiya (dispatcher), Dhanraj Shah (dispatcher), Priya Chaudhari (support), Operations User (operations). The `operations` role itself is NOT granted `trip_report` — only these 5 named users (the 4 above + Praveen).
 
 **Dispatcher / support gated permissions:** these roles have `role_permissions.canView = true` only for `pageKey = 'place_order'`. All other pageKeys are `canView = false` until the real dispatcher/support screens go live.
 
@@ -153,6 +158,7 @@ Primary role drives login redirect and href overrides. Additional rows add nav i
 | `removed_orders` | admin only |
 | `ti_report` (reused) | gates the Reports hub `/reports` (Tint Summary + TI Report) |
 | `settings_hide` | admin only (v27.6). In `PageKey` union + `ALL_PAGE_KEYS` (admin auto-ALL_TRUE), **NOT** in `PAGE_NAV_MAP` (that feeds operational sidebars; would duplicate the admin entry). |
+| `trip_report` | logistics (view only) + the 4 named secondary-role users above (§5). `operations` role NOT granted. → `CLAUDE_TRIP_REPORT.md §1`. |
 
 **Sidebar:** Layout files pass `session.user.role as RoleSidebarRole` (not hardcoded). For **operational / role-based** sidebars, nav items come from `buildNavItems()` in `lib/permissions.ts` only — no manual appending. ⚠️ The **admin panel** sidebar is the separate `components/admin/admin-sidebar.tsx` (`NAV_SECTIONS` array: OVERVIEW / MASTER DATA / PEOPLE / OPERATIONS / PERSONAL / SETTINGS) — `buildNavItems()`/`PAGE_NAV_MAP` do NOT feed it. New admin items (e.g. Settings → Hide) are added there.
 
@@ -176,9 +182,9 @@ Primary role drives login redirect and href overrides. Additional rows add nav i
 
 ---
 
-## 7. Database schema — v27.7
+## 7. Database schema — v27.9
 
-Versions: v21 base → v22 (mo_*) → v23 (orders dispatch) → v24 (customer match) → v25 (split) → v26 (mo_order_remarks) → v26.1 (isLocked) → v26.2 (mo_line_status) → v26.3 (carton + piecesPerCarton) → v26.4 (mo_learned_customers) → v26.5 (orders.orderDateTime) → v26.6 (user_roles + manual_tint_entries + users.phone + mo_sku_lookup.refDescription) → v27.0 (attendance foundation) → v27.1 (attendance settings hardening) → v27.2 (OT workflow + 2026-05-13 place-order v2 tables) → v27.3 (sampling_register + sampling_recipes + sampling_usage_log; orders.isRemoved + delivery_challans.isVoided; tint_skip_events + tint_pause_events; tint_assignments + import_raw_line_items netWeight/totalWeight) → v27.4 (sampling_usage_log.deliveryNumber backfill + tinter_issue_entries.samplingNo/shadeName) → v27.5 (customer_sales_officers + linkedSalesOfficerId on delivery_point_contacts + 3 columns on delivery_challan_formulas + sampling_recipes.packCode nullable with NULLS NOT DISTINCT + mo_sku_lookup_v2.isPrimary + mo_order_form_index_v2.mobileFamily) → **v27.6** (mo_order_form_index_v2.region; Hide feature: `obd_visibility_rules` + `app_tag_settings` tables + orders.isHidden/hiddenById/hiddenReason/hiddenAt — §7.10) → **v27.7** (Support gatekeeper + Hold/Dispatch-Target: orders.mailMatched; orders.heldAt, dispatchTargetDate, dispatchWindowId, arrivalSlotId; new `dispatch_slot_master` table — §7.4).
+Versions: v21 base → v22 (mo_*) → v23 (orders dispatch) → v24 (customer match) → v25 (split) → v26 (mo_order_remarks) → v26.1 (isLocked) → v26.2 (mo_line_status) → v26.3 (carton + piecesPerCarton) → v26.4 (mo_learned_customers) → v26.5 (orders.orderDateTime) → v26.6 (user_roles + manual_tint_entries + users.phone + mo_sku_lookup.refDescription) → v27.0 (attendance foundation) → v27.1 (attendance settings hardening) → v27.2 (OT workflow + 2026-05-13 place-order v2 tables) → v27.3 (sampling_register + sampling_recipes + sampling_usage_log; orders.isRemoved + delivery_challans.isVoided; tint_skip_events + tint_pause_events; tint_assignments + import_raw_line_items netWeight/totalWeight) → v27.4 (sampling_usage_log.deliveryNumber backfill + tinter_issue_entries.samplingNo/shadeName) → v27.5 (customer_sales_officers + linkedSalesOfficerId on delivery_point_contacts + 3 columns on delivery_challan_formulas + sampling_recipes.packCode nullable with NULLS NOT DISTINCT + mo_sku_lookup_v2.isPrimary + mo_order_form_index_v2.mobileFamily) → v27.6 (mo_order_form_index_v2.region; Hide feature: `obd_visibility_rules` + `app_tag_settings` tables + orders.isHidden/hiddenById/hiddenReason/hiddenAt — §7.10) → v27.7 (Support gatekeeper + Hold/Dispatch-Target: orders.mailMatched; orders.heldAt, dispatchTargetDate, dispatchWindowId, arrivalSlotId; new `dispatch_slot_master` table — §7.4) → **v27.8** (Trip Report module, 2026-07-04/06: new standalone `trip_report` table — full columns → `CLAUDE_TRIP_REPORT.md §3`, §7.11 pointer here; `trip_report_delivery_no_dis_date_key` UNIQUE(deliveryNo, disDate); `mirror_trip_report_today` Postgres function) → **v27.9** (Support ship-to override, 2026-07-07: `orders.shipToOverrideCustomerId` Int? FK → `delivery_point_master`, relation `shipToOverrideCustomer` / `@relation("OrderShipToOverride")` — see dual-relation note in §7.3; `mo_orders.shipToOverrideCustomerId` Int? FK → `delivery_point_master`, relation `shipToOverrideCustomer` / `@relation("MoOrderShipToOverride")` — mo_orders' first relation to that table, no dual-relation trap).
 
 ### 7.1 Setup / Master
 
@@ -270,6 +276,17 @@ orders                     workflowStage, slotId, originalSlotId, dispatchSlotDe
                            arrivalSlotId INT? FK → slot_master.id — arrival-day slot; used for history grouping
                            (dispatchWindow is a Prisma relation on dispatchWindowId, not an extra column)
 
+                           SHIP-TO OVERRIDE column (v27.9 — 2026-07-07 session, CLAUDE_SUPPORT.md §4.18):
+                           shipToOverrideCustomerId INT? FK → delivery_point_master.id
+                           relation `shipToOverrideCustomer`, @relation("OrderShipToOverride")
+                           ⚠ DUAL-RELATION TRAP: `orders` already relates to delivery_point_master via
+                           `customer` / @relation("OrderCustomer") (customerId). Both relations MUST stay
+                           explicitly named on all sides (model + back-relation on delivery_point_master) —
+                           an unnamed relation here is a Prisma ambiguity error, not a warning.
+                           The legacy boolean `shipToOverride` flag is retained and kept in sync
+                           (true when an id is set, false when cleared) — a flag can still be true
+                           with the id null (free-text redirects with no resolved customer).
+
 order_splits               Per tint batch/split
 split_line_items           Per line
 split_status_logs          INSERT-ONLY audit
@@ -347,6 +364,11 @@ delivery_challan_formulas  Per-line tinting formula. v27.5 adds 3 columns for au
 
 ```
 mo_orders                  Per parsed email
+                           SHIP-TO OVERRIDE (v27.9): shipToOverrideCustomerId INT? FK →
+                           delivery_point_master.id, relation `shipToOverrideCustomer`,
+                           @relation("MoOrderShipToOverride") — mo_orders' FIRST relation to
+                           delivery_point_master, no dual-relation trap. Legacy boolean
+                           `shipToOverride` retained. Full detail: CLAUDE_MAIL_ORDERS.md §6.
 mo_order_lines             Per product line. isCarton, cartonCount.
 mo_order_remarks           billing|delivery|contact|instruction|cross|customer|area|unknown
 mo_line_status             SKU found/not-found tracking
@@ -460,6 +482,18 @@ orders                     hide columns (see §7.3): isHidden, hiddenById, hidde
 
 Hide **audit reuses `order_status_logs`** (toStage `ORDER_HIDDEN` / `ORDER_UNHIDDEN`, note carries reason) — no separate audit table. Helpers `lib/hide/visibility.ts` (`getActiveHideRules`, `getHideExclusion` — NULL-safe, see §13 — `getHiddenWhere`, `matchesRule`), `lib/hide/tag-settings.ts`, `lib/hide/tag-catalog.ts`. Feature spec: `CLAUDE_UI.md §57`; MO tag-gating: `CLAUDE_MAIL_ORDERS.md §21`.
 
+### 7.11 Trip Report (v27.8)
+
+```
+trip_report                Standalone Supabase mirror of NTS trip/delivery data — read-only,
+                           not connected to the orders/OBD pipeline. sourceId TEXT @id (NTS's
+                           own row id — changes per pull, not used for dedup).
+                           UNIQUE (deliveryNo, disDate) — trip_report_delivery_no_dis_date_key.
+                           Indexes: (disDate), (disDate, tripNo).
+```
+
+Full ~38-column list: `CLAUDE_TRIP_REPORT.md §3`. Populated by an external PowerShell puller (outside the repo) via the `mirror_trip_report_today(rows jsonb)` Postgres function — an atomic per-day delete+insert, not a row-level upsert (see `CLAUDE_TRIP_REPORT.md §2` for why). `/trips` access: `CLAUDE_TRIP_REPORT.md §1`; roles: §5 above.
+
 ---
 
 ## 8. Key business rules (cross-cutting)
@@ -496,6 +530,8 @@ Time-based thresholds, IST.
 
 **Tint orders (`orderType === "tint"`):** `slotId = null` at import. Slot assigned at tinting completion based on IST time. Splits: parent slot set when last split completes.
 
+**`arrivalSlotId` (2026-06-29 — added v27.7 column, behaviour completed this consolidation):** stamped at import for ALL orders — tint and non-tint alike — via `resolveArrivalSlotId(emailDateTime)` (the 5-slot ruler in `lib/slots/slot-ruler.ts`: Morning/Afternoon/Evening/Late Evening/Night, distinct from the 4-slot table above). `slotId` stays null for tint until completion, unaffected by this. Full detail + landmines (manual-SAP no-time-column → Morning default, JSON auto-import re-stamp fix): `CLAUDE_IMPORT.md §12`.
+
 **Slot cascade and day-boundary reset are DISABLED.** Files `lib/slot-cascade.ts` and `lib/day-boundary.ts` exist but are not called.
 
 **`applyMailOrderEnrichment()`:** On SAP import, checks `mo_orders` for matching `soNumber`. If found, applies `dispatchStatus`, `priorityLevel`, `remarks`, overrides, and sets `orderDateTime` from `mo_orders.receivedAt`. Skips slot recalc for tint orders. One soNumber can map to many OBDs (`updateMany`).
@@ -531,6 +567,8 @@ Files: `components/shared/role-sidebar-provider.tsx`, `role-sidebar.tsx`, `role-
 
 `/place-order` uses the same sidebar. `/attendance` uses no sidebar (full-screen PWA layout). `/order` uses no sidebar (public mobile).
 
+**Mobile shell (2026-07-05/06):** `role-layout-client.tsx` now also mounts a shared mobile app shell (`components/shared/mobile-shell.tsx`) globally as a sibling to `<RoleSidebar>` — a fixed, mobile-only (`block md:hidden`) Home/Menu/You bottom bar. Every page that wraps itself in `role-layout-client.tsx` inherits it automatically, no per-page work. Desktop sidebar untouched. Pages with their own layout that bypasses this wrapper (Attendance, `/order`) don't get it. Full spec: `CLAUDE_UI.md §59`.
+
 ---
 
 ## 12. Screens index
@@ -554,6 +592,9 @@ Full detail in domain files. Cross-reference only here.
 
 ### Attendance
 `/attendance` (end-user PWA), `/admin/attendance` (admin dashboard + ot-pending + settings + ot-audit). → `CLAUDE_ATTENDANCE.md`
+
+### Trip Report
+`/trips` (list, per-trip detail), `/trips/[tripNo]/sheet` (A4 print). logistics + 4 named secondary-role users (§5). Read-only NTS trip mirror — standalone, not connected to the OBD pipeline. → `CLAUDE_TRIP_REPORT.md`
 
 ### Place Order
 `/place-order` (desktop, label "Purchase Order (PO)"). `/order` (public mobile). → `CLAUDE_PLACE_ORDER.md`
@@ -613,6 +654,7 @@ Existing in code but intentionally disabled, broken, or stale. Do not "fix" with
 - **`orders.dispatchStatus` Hold value is lowercase `"hold"`.** The capitalized `"Hold"` belongs to the mail-orders pipeline (`getOrderSignals` status badge), not the orders table.
 - **MO badges are centralized in `getOrderSignals()`** (one emit point — easy to tag-gate, §MAIL_ORDERS §21). **Tint badges are NOT centralized** (hardcoded across 3 components, `getAgeBadge` duplicated) — gating them needs a shared badge registry first (the deferred "hard part").
 - **Hide does NOT delete.** Rules + manual hide are reversible; rule-hidden orders have no per-order un-hide in v1 (Hidden Orders shows "Managed by rule"); only manual hides get an Un-hide button.
+- **Orphaned `components/support/ship-to-override-modal.tsx`** — dead code predating the 2026-07-07 inline ship-to override picker (`CLAUDE_SUPPORT.md §4.18`). No trigger opens it, its form is free-text (not the search picker), its `onSave` is a no-op. Left untouched (never delete files unless instructed) — the live feature is the inline cell, fully independent of this file.
 
 ---
 
@@ -640,4 +682,4 @@ Engineering note: a parallel session owns `scripts/_*` scratch files (sampling/r
 
 ---
 
-*CORE v77 · Schema v27.7 · OrbitOMS*
+*CORE v78 · Schema v27.9 · OrbitOMS*
