@@ -649,6 +649,8 @@ model orders {
   dispatchWindow       dispatch_slot_master?     @relation("OrderDispatchWindow", fields: [dispatchWindowId], references: [id])
   priorityLevel        Int                       @default(3)
   dispatchStatus       String?
+  dispatchSlotSource   String?
+  dispatchSlotRuleId   String?
   invoiceNo            String?
   soNumber             String?
   invoiceDate          DateTime?

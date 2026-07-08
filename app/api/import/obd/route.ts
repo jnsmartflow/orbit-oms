@@ -18,6 +18,7 @@ import type {
 } from "@/lib/import-types";
 import { upsertObd, resolveSmuFromDivision } from "@/lib/import-upsert";
 import { resolveArrivalSlotId } from "@/lib/slots/slot-ruler";
+import { evaluateDispatchSlot } from "@/lib/dispatch/dispatch-engine";
 import type {
   ExistingLine,
   ExistingOrder,
@@ -228,6 +229,14 @@ async function applyMailOrderEnrichment(soNumbers: (string | null)[]): Promise<v
   const unique = Array.from(new Set(soNumbers.filter(Boolean))) as string[];
   if (unique.length === 0) return;
 
+  // Dispatch engine — windowTime ("10:30" etc.) → dispatch_slot_master.id.
+  // Loaded once for this batch; no hardcoded ids.
+  const activeWindows = await prisma.dispatch_slot_master.findMany({
+    where: { isActive: true },
+    select: { id: true, windowTime: true },
+  });
+  const windowIdByTime = new Map(activeWindows.map((w) => [w.windowTime, w.id]));
+
   for (const soNum of unique) {
     const mailOrder = await prisma.mo_orders.findFirst({
       where: { soNumber: soNum },
@@ -304,6 +313,69 @@ async function applyMailOrderEnrichment(soNumbers: (string | null)[]): Promise<v
       where: { soNumber: soNum },
       data: updateData,
     });
+
+    // Dispatch engine (Rule 1) — auto-assign a slot for orders enriched in
+    // this run only (soNumber-scoped, never a full-table scan). A human's
+    // manual pick (dispatchSlotSource === "manual") is never overridden.
+    const ordersForEngine = await prisma.orders.findMany({
+      where: { soNumber: soNum, isRemoved: false },
+      select: {
+        id: true,
+        obdNumber: true,
+        smu: true,
+        dispatchStatus: true,
+        orderDateTime: true,
+        dispatchSlotSource: true,
+        customer: {
+          select: {
+            area: {
+              select: {
+                deliveryType: { select: { name: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    for (const ord of ordersForEngine) {
+      if (ord.dispatchSlotSource === "manual") {
+        console.log(`[dispatch-engine] Skipped obdNumber=${ord.obdNumber} — dispatchSlotSource is manual`);
+        continue;
+      }
+
+      const deliveryType = ord.customer?.area?.deliveryType?.name ?? null;
+      const result = evaluateDispatchSlot({
+        smu: ord.smu,
+        dispatchStatus: ord.dispatchStatus,
+        deliveryType,
+        orderDateTime: ord.orderDateTime,
+      });
+
+      if (!result.assigned) continue;
+
+      const dispatchWindowId = windowIdByTime.get(result.windowTime);
+      if (dispatchWindowId === undefined) {
+        console.warn(
+          `[dispatch-engine] No active dispatch_slot_master row for windowTime=${result.windowTime} — skipping obdNumber=${ord.obdNumber}`,
+        );
+        continue;
+      }
+
+      await prisma.orders.update({
+        where: { id: ord.id },
+        data: {
+          dispatchTargetDate: result.targetDate,
+          dispatchWindowId,
+          dispatchSlotRuleId: result.ruleId,
+          dispatchSlotSource: "auto",
+        },
+      });
+
+      console.log(
+        `[dispatch-engine] Assigned obdNumber=${ord.obdNumber} ruleId=${result.ruleId} targetDate=${result.targetDate.toISOString().slice(0, 10)} windowTime=${result.windowTime}`,
+      );
+    }
 
     // heldAt = each order's own obdEmailDate (arrival anchor for the board).
     if (updateData.dispatchStatus === "hold") {
