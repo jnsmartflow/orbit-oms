@@ -7,7 +7,7 @@ import type { Product, CartLine, Bill, Customer } from "@/app/(place-order)/plac
 import { rankProductsForQuery } from "@/lib/place-order/mobile-search";
 import { formatPack, packToMl, packStepForPack, packKey, parsePackKey } from "@/lib/place-order/pack";
 import { getBaseAliasDisplay, getBaseAliasLabel } from "@/lib/place-order/base-aliases";
-import { emailLineLabel, renderOrderBody, type OrderBodyBill, type OrderBodyLine } from "@/lib/place-order/email";
+import { emailLineLabel, renderOrderBody, buildSubject, type OrderBodyBill, type OrderBodyLine } from "@/lib/place-order/email";
 import { getSecondLine, isVariantQualifierTab } from "@/lib/place-order/sub-product-descriptors";
 import SplashScreen from "./splash-screen";
 
@@ -166,9 +166,7 @@ function buildEmailParts(args: {
     bills:    bodyBills,
   });
 
-  const subject = "Order"
-    + (name ? ` — ${name}` : "")
-    + (code ? ` ${code}`    : "");
+  const subject = buildSubject(customer, marker, crossDepot);
   const valid = !!customer && activeBills.length > 0;
 
   return { subject, body, valid };

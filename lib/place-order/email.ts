@@ -166,6 +166,43 @@ export function emailLineLabel(
   return baseColour ? `${name} ${baseColour}` : name;
 }
 
+/**
+ * Order-email SUBJECT — shared by desktop /place-order and mobile /po (the
+ * /order public page is frozen and keeps its own inline copy, out of scope).
+ * No-remark case is byte-identical to the pre-2026-07 subject ("Order —
+ * {name} {code}"). Cross carries its source depot when one was picked;
+ * falls back to the plain "Cross Billing Order" prefix otherwise. Only one
+ * remark can be selected at a time (Order Remarks chips are single-select),
+ * so no combine/priority logic is needed. No date — by design (Step 2).
+ *
+ *   marker            crossDepot   subject
+ *   ────────────────────────────────────────────────────────────────────
+ *   null               —           Order — Ambika Paints 447636
+ *   "Truck"            —           Truck Order — Ambika Paints 447636
+ *   "Bounce"           —           Bounce Order — Ambika Paints 447636
+ *   "DTS"              —           DTS Order — Ambika Paints 447636
+ *   "Cross Delivery"   "Dahisar"   Cross Billing Order From Dahisar — Ambika Paints 447636
+ *   "Cross Delivery"   null        Cross Billing Order — Ambika Paints 447636
+ */
+export function buildSubject(
+  customer: EmailCustomer | null,
+  marker: EmailMarker,
+  crossDepot: string | null,
+): string {
+  const name = customer?.name ?? "";
+  const code = customer?.code ?? "";
+  const tail = (name ? ` — ${name}` : "") + (code ? ` ${code}` : "");
+
+  const prefix =
+    marker === "Truck"            ? "Truck Order"
+    : marker === "Bounce"         ? "Bounce Order"
+    : marker === "DTS"            ? "DTS Order"
+    : marker === "Cross Delivery" ? (crossDepot ? `Cross Billing Order From ${crossDepot}` : "Cross Billing Order")
+    :                                "Order";
+
+  return prefix + tail;
+}
+
 export function buildEmail(input: EmailInput): EmailOutput {
   const { customer, bills, shipTo, dispatch, callTarget, marker, crossDepot, notes } = input;
   const name = customer?.name ?? "";
@@ -231,9 +268,7 @@ export function buildEmail(input: EmailInput): EmailOutput {
     bills:    bodyBills,
   });
 
-  const subject = "Order"
-    + (name ? ` — ${name}` : "")
-    + (code ? ` ${code}`    : "");
+  const subject = buildSubject(customer, marker, crossDepot);
   const valid = !!customer && activeBills.length > 0;
 
   return { subject, body, valid };
