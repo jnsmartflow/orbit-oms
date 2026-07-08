@@ -95,6 +95,7 @@ export async function POST(req: Request): Promise<NextResponse> {
           dispatchStatus: "dispatch",
           dispatchTargetDate: targetDate,
           dispatchWindowId: body.dispatchWindowId,
+          dispatchSlotSource: "manual",
         },
       });
 

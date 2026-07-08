@@ -87,6 +87,7 @@ export async function POST(
       dispatchStatus: "dispatch",
       dispatchTargetDate: targetDate,
       dispatchWindowId: body.dispatchWindowId,
+      dispatchSlotSource: "manual",
     },
   });
 

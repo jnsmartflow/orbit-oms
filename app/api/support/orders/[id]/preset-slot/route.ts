@@ -61,6 +61,7 @@ export async function POST(
     data: {
       dispatchTargetDate: targetDate,
       dispatchWindowId:   body.dispatchWindowId,
+      dispatchSlotSource: "manual",
     },
   });
 
