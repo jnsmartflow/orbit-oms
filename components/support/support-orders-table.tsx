@@ -99,7 +99,7 @@ interface SupportOrdersTableProps {
 
 const GRID: React.CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "32px 1fr 2fr 1.4fr 0.7fr 0.8fr 0.7fr 0.4fr 0.5fr 1.1fr 1.5fr 0.6fr",
+  gridTemplateColumns: "32px minmax(0,1fr) minmax(0,1.7fr) minmax(0,1.1fr) minmax(0,0.5fr) minmax(0,0.9fr) minmax(0,0.6fr) minmax(0,1fr) minmax(0,1.1fr) minmax(0,1.5fr) minmax(0,0.6fr)",
   gap: "0 10px",
   alignItems: "center",
 };
@@ -593,11 +593,10 @@ export function SupportOrdersTable({
               <div>OBD / Date</div>
               <div>Customer</div>
               <div>Ship-to Override</div>
-              <div>Route / Type</div>
-              <div>Material Type</div>
-              <div>Article</div>
-              <div className="text-right pr-1">VOL (L)</div>
               <div className="text-center">Age</div>
+              <div>Route / Type</div>
+              <div className="text-right pr-1">VOL (L)</div>
+              <div className="whitespace-nowrap">Article</div>
               <div>Status</div>
               <div>Dispatch Slot</div>
               <div>Priority</div>
@@ -1099,9 +1098,12 @@ function OrderRow({
       </div>
 
       {/* Customer */}
-      <div>
+      <div className="min-w-0">
         <div className="flex items-center gap-1 min-w-0">
-          <p className={cn("text-xs font-medium truncate", isResolved ? "text-gray-500" : "text-gray-700")}>
+          <p
+            className={cn("text-xs font-medium truncate", isResolved ? "text-gray-500" : "text-gray-700")}
+            title={order.customer?.customerName ?? order.shipToCustomerName ?? undefined}
+          >
             {order.customer?.customerName ?? order.shipToCustomerName ?? "—"}
           </p>
           {order.customerMissing && !isPhysicallyDispatched && (
@@ -1117,53 +1119,22 @@ function OrderRow({
             <span className="text-[10px] text-purple-500 flex-shrink-0">🎨</span>
           )}
         </div>
-        <p className={cn("text-[10px]", isResolved ? "text-gray-300" : "text-gray-400")}>
+        <p className={cn("text-[10px] truncate", isResolved ? "text-gray-300" : "text-gray-400")}>
           {order.shipToCustomerId}
         </p>
       </div>
 
       {/* Ship-to Override */}
-      <ShipToOverrideCell
-        orderId={order.id}
-        current={
-          order.shipToOverrideCustomer
-            ? { id: order.shipToOverrideCustomer.id, customerName: order.shipToOverrideCustomer.customerName }
-            : null
-        }
-        onSave={onShipToOverride}
-      />
-
-      {/* Route / Type — plain text */}
-      <div>
-        <p className={cn("text-xs", isResolved ? "text-gray-400" : "text-gray-600")}>
-          {order.customer?.area?.primaryRoute?.name ?? "—"}
-        </p>
-        {delType && (
-          <span className={cn("text-[10px]", isResolved ? "text-gray-300" : "text-gray-400")}>
-            {delType}
-          </span>
-        )}
-      </div>
-
-      {/* Material Type — plain text, display-only */}
-      <div>
-        <p className={cn("text-xs", isResolved ? "text-gray-400" : "text-gray-600")}>
-          {order.materialType ?? "—"}
-        </p>
-      </div>
-
-      {/* Article — plain text, display-only */}
-      <div>
-        <p className={cn("text-xs", isResolved ? "text-gray-400" : "text-gray-600")}>
-          {order.querySnapshot?.articleTag ?? "—"}
-        </p>
-      </div>
-
-      {/* Vol */}
-      <div className="text-right pr-1">
-        <span className={cn("font-mono font-semibold text-xs tabular-nums", isResolved ? "text-gray-400" : "text-gray-700")}>
-          {order.importVolume != null ? Math.round(order.importVolume) : "—"}
-        </span>
+      <div className="min-w-0" title={order.shipToOverrideCustomer?.customerName ?? undefined}>
+        <ShipToOverrideCell
+          orderId={order.id}
+          current={
+            order.shipToOverrideCustomer
+              ? { id: order.shipToOverrideCustomer.id, customerName: order.shipToOverrideCustomer.customerName }
+              : null
+          }
+          onSave={onShipToOverride}
+        />
       </div>
 
       {/* Age */}
@@ -1175,6 +1146,38 @@ function OrderRow({
             {age.label}
           </span>
         )}
+      </div>
+
+      {/* Route / Type — plain text */}
+      <div className="min-w-0">
+        <p className={cn("text-xs truncate", isResolved ? "text-gray-400" : "text-gray-600")}>
+          {order.customer?.area?.primaryRoute?.name ?? "—"}
+        </p>
+        {delType && (
+          <span className={cn("text-[10px] truncate block", isResolved ? "text-gray-300" : "text-gray-400")}>
+            {delType}
+          </span>
+        )}
+      </div>
+
+      {/* Vol — volume + materialType stacked sub-line */}
+      <div className="text-right pr-1">
+        <p className={cn("font-mono font-semibold text-xs tabular-nums", isResolved ? "text-gray-400" : "text-gray-700")}>
+          {order.importVolume != null ? Math.round(order.importVolume) : "—"}
+        </p>
+        <span className="text-[10px] text-gray-400">
+          {order.materialType ?? "—"}
+        </span>
+      </div>
+
+      {/* Article — plain text, display-only */}
+      <div className="min-w-0">
+        <p
+          className={cn("text-xs whitespace-nowrap truncate", isResolved ? "text-gray-400" : "text-gray-600")}
+          title={order.querySnapshot?.articleTag ?? undefined}
+        >
+          {order.querySnapshot?.articleTag ?? "—"}
+        </p>
       </div>
 
       {/* ── Status badge (col 7) ───────────────────────────────────────── */}
