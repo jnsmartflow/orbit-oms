@@ -99,8 +99,8 @@ interface SupportOrdersTableProps {
 
 const GRID: React.CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "32px minmax(0,1fr) minmax(0,1.7fr) minmax(0,1.1fr) minmax(0,0.5fr) minmax(0,0.9fr) minmax(0,0.6fr) minmax(0,1fr) minmax(0,1.1fr) minmax(0,1.5fr) minmax(0,0.6fr)",
-  gap: "0 10px",
+  gridTemplateColumns: "3% 9% 19% 11% 5% 9% 5% 9% 9% 13% 8%",
+  gap: "0 0",
   alignItems: "center",
 };
 
@@ -197,6 +197,27 @@ function getPriLabel(val: string): string {
   if (val === "2") return "P2";
   if (val === "4") return "P3";
   return "FIFO";
+}
+
+// articleTag is a comma-separated "{integer} {word}" list written at import
+// (e.g. "16 Drum, 14 Carton"). Abbreviates known words for display only —
+// never touches the stored value. Any group that fails to parse as
+// "{integer} {word}" bails the whole string back to the raw original,
+// verbatim, rather than partially formatting it.
+const ARTICLE_WORD_ABBR: Record<string, string> = { Drum: "D", Carton: "C", Tin: "T", Bag: "B" };
+
+function formatArticleTag(raw: string): string {
+  const groups = raw.split(",").map((g) => g.trim()).filter((g) => g.length > 0);
+  if (groups.length === 0) return raw;
+  const parts: string[] = [];
+  for (const g of groups) {
+    const m = g.match(/^(\d+)\s+(\S.*)$/);
+    if (!m) return raw;
+    const [, num, word] = m;
+    const short = ARTICLE_WORD_ABBR[word];
+    parts.push(short ? `${num} ${short}` : `${num} ${word}`);
+  }
+  return parts.join(" · ");
 }
 
 // ── Pill slot select styling ─────────────────────────────────────────────────
@@ -588,18 +609,18 @@ export function SupportOrdersTable({
         ) : (
           <div className="px-5">
             {/* Column headers */}
-            <div style={GRID} className="py-1.5 px-1 text-[10px] font-medium text-gray-400 uppercase tracking-wider border-b border-gray-100 sticky top-0 bg-white z-10">
-              <div><Checkbox checked={allSelected} onCheckedChange={() => toggleAll()} /></div>
-              <div>OBD / Date</div>
-              <div>Customer</div>
-              <div>Ship-to Override</div>
-              <div className="text-center">Age</div>
-              <div>Route / Type</div>
-              <div className="text-right pr-1">VOL (L)</div>
-              <div className="whitespace-nowrap">Article</div>
-              <div>Status</div>
-              <div>Dispatch Slot</div>
-              <div>Priority</div>
+            <div style={GRID} className="py-1.5 text-[10px] font-medium text-gray-400 uppercase tracking-wider border-b border-gray-100 sticky top-0 bg-white z-10">
+              <div className="px-3.5 text-center"><Checkbox checked={allSelected} onCheckedChange={() => toggleAll()} /></div>
+              <div className="px-3.5">OBD</div>
+              <div className="px-3.5">Customer</div>
+              <div className="px-3.5">Ship-to</div>
+              <div className="px-3.5 text-center">Age</div>
+              <div className="px-3.5">Route</div>
+              <div className="px-3.5 text-right">Vol</div>
+              <div className="px-3.5 whitespace-nowrap">Article</div>
+              <div className="px-3.5">Status</div>
+              <div className="px-3.5">Slot</div>
+              <div className="px-3.5">Priority</div>
             </div>
 
             {/* Rows */}
@@ -1062,7 +1083,7 @@ function OrderRow({
     <div
       style={GRID}
       className={cn(
-        "px-1 border-b border-gray-50/80 transition-colors cursor-pointer",
+        "border-b border-gray-50/80 transition-colors cursor-pointer",
         isPhysicallyDispatched && !isDoneRow ? "opacity-[0.35] py-1.5" : isResolved ? "py-1.5" : "py-2",
         isChanged && !isNonInteractive && "bg-teal-50/20",
         isDetailActive && "bg-teal-50 border-l-[3px] border-l-teal-600",
@@ -1071,7 +1092,7 @@ function OrderRow({
       onClick={handleRowClick}
     >
       {/* Checkbox */}
-      <div data-checkbox>
+      <div data-checkbox className="px-3.5 text-center">
         {isNonInteractive || isReadOnly ? (
           <div className="w-4" />
         ) : (
@@ -1080,7 +1101,7 @@ function OrderRow({
       </div>
 
       {/* OBD / Date */}
-      <div>
+      <div className="px-3.5">
         <div className="flex items-center gap-1 flex-wrap">
           <p className={cn("font-mono font-semibold text-xs tabular-nums", isResolved ? "text-gray-500" : "text-gray-800")}>
             {order.obdNumber}
@@ -1098,7 +1119,7 @@ function OrderRow({
       </div>
 
       {/* Customer */}
-      <div className="min-w-0">
+      <div className="min-w-0 px-3.5">
         <div className="flex items-center gap-1 min-w-0">
           <p
             className={cn("text-xs font-medium truncate", isResolved ? "text-gray-500" : "text-gray-700")}
@@ -1125,7 +1146,7 @@ function OrderRow({
       </div>
 
       {/* Ship-to Override */}
-      <div className="min-w-0" title={order.shipToOverrideCustomer?.customerName ?? undefined}>
+      <div className="min-w-0 px-3.5" title={order.shipToOverrideCustomer?.customerName ?? undefined}>
         <ShipToOverrideCell
           orderId={order.id}
           current={
@@ -1138,7 +1159,7 @@ function OrderRow({
       </div>
 
       {/* Age */}
-      <div className="text-center">
+      <div className="px-3.5 text-center">
         {isPhysicallyDispatched ? (
           <span className="text-[10px] text-gray-300">—</span>
         ) : (
@@ -1149,7 +1170,7 @@ function OrderRow({
       </div>
 
       {/* Route / Type — plain text */}
-      <div className="min-w-0">
+      <div className="min-w-0 px-3.5">
         <p className={cn("text-xs truncate", isResolved ? "text-gray-400" : "text-gray-600")}>
           {order.customer?.area?.primaryRoute?.name ?? "—"}
         </p>
@@ -1161,27 +1182,27 @@ function OrderRow({
       </div>
 
       {/* Vol — volume + materialType stacked sub-line */}
-      <div className="text-right pr-1">
-        <p className={cn("font-mono font-semibold text-xs tabular-nums", isResolved ? "text-gray-400" : "text-gray-700")}>
+      <div className="px-3.5 text-right">
+        <p className={cn("font-mono font-semibold text-xs tabular-nums text-right", isResolved ? "text-gray-400" : "text-gray-700")}>
           {order.importVolume != null ? Math.round(order.importVolume) : "—"}
         </p>
-        <span className="text-[10px] text-gray-400">
+        <span className="text-[10px] text-gray-400 text-right block">
           {order.materialType ?? "—"}
         </span>
       </div>
 
-      {/* Article — plain text, display-only */}
-      <div className="min-w-0">
+      {/* Article — abbreviated pack breakdown, display-only */}
+      <div className="min-w-0 px-3.5">
         <p
           className={cn("text-xs whitespace-nowrap truncate", isResolved ? "text-gray-400" : "text-gray-600")}
           title={order.querySnapshot?.articleTag ?? undefined}
         >
-          {order.querySnapshot?.articleTag ?? "—"}
+          {order.querySnapshot?.articleTag != null ? formatArticleTag(order.querySnapshot.articleTag) : "—"}
         </p>
       </div>
 
       {/* ── Status badge (col 7) ───────────────────────────────────────── */}
-      <div className="relative" data-popover>
+      <div className="relative px-3.5" data-popover>
         {isPhysicallyDispatched ? (
           <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2.5 py-0.5 rounded-full border bg-emerald-50 border-emerald-200 text-emerald-600 cursor-default">
             <span className="w-[5px] h-[5px] rounded-full inline-block bg-emerald-500" />
@@ -1280,7 +1301,7 @@ function OrderRow({
       </div>
 
       {/* ── Dispatch Slot (col 8) ──────────────────────────────────────── */}
-      <div>
+      <div className="px-3.5">
         {isPhysicallyDispatched ? (
           <span className="text-[10px] text-gray-300">—</span>
         ) : isTinting ? (
@@ -1384,7 +1405,7 @@ function OrderRow({
       </div>
 
       {/* ── Priority badge (col 10) ─────────────────────────────────────── */}
-      <div className="relative" data-popover>
+      <div className="relative px-3.5" data-popover>
         {isPhysicallyDispatched || isTinting ? (
           <span className="text-[10px] text-gray-300">—</span>
         ) : isResolved && (currentPri === "3" || currentPri === "0" || Number(currentPri) >= 3) ? (
