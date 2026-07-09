@@ -21,6 +21,8 @@ import { ShipToOverrideCell } from "@/components/support/ship-to-override-cell";
 import { CarriedOverBadge } from "@/components/shared/carried-over-badge";
 import { OrderDetailPanel } from "@/components/shared/order-detail-panel";
 import type { SlotNavItem } from "@/components/support/support-page-content";
+import { SUPPORT_GRID_COLUMNS, formatArticleTag, getPriLabel, VolCell, CustomerCell, groupOrders } from "@/components/support/shared/table-cells";
+import type { GroupBy, OrderGroup } from "@/components/support/shared/table-cells";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -99,7 +101,7 @@ interface SupportOrdersTableProps {
 
 const GRID: React.CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "3% 9% 19% 11% 5% 9% 5% 9% 9% 13% 8%",
+  gridTemplateColumns: SUPPORT_GRID_COLUMNS,
   gap: "0 0",
   alignItems: "center",
 };
@@ -126,30 +128,6 @@ function getAgePill(order: SupportOrder) {
   }
   if (hours >= 1) return { label: `${Math.floor(hours)}h`, cls: "bg-amber-100 text-amber-700", pulse: false };
   return { label: `${Math.floor(hours * 60)}m`, cls: "bg-green-100 text-green-700", pulse: false };
-}
-
-function getSmuGroup(order: SupportOrder): string {
-  return order.smu || "Unknown SMU";
-}
-
-type GroupBy = "smu" | "route" | "none";
-
-interface OrderGroup {
-  groupName: string;
-  orders: SupportOrder[];
-}
-
-function groupOrders(orders: SupportOrder[], groupBy: GroupBy): OrderGroup[] {
-  if (groupBy === "none") return [{ groupName: "All Orders", orders }];
-  const map = new Map<string, SupportOrder[]>();
-  for (const o of orders) {
-    let key: string;
-    if (groupBy === "smu") key = getSmuGroup(o);
-    else key = o.customer?.area?.primaryRoute?.name ?? "Unassigned";
-    if (!map.has(key)) map.set(key, []);
-    map.get(key)!.push(o);
-  }
-  return Array.from(map.entries()).map(([groupName, orders]) => ({ groupName, orders }));
 }
 
 function formatDate(dateStr: string | null): string {
@@ -190,34 +168,6 @@ function formatSavingSlot(date: string): string {
 function formatBulkSlot(slot: { date: string; windowTime: string }): string {
   const [, m, d] = slot.date.split("-");
   return `${parseInt(d, 10)} ${MONTHS_SHORT[parseInt(m, 10) - 1]} · ${slot.windowTime}`;
-}
-
-function getPriLabel(val: string): string {
-  if (val === "1") return "P1";
-  if (val === "2") return "P2";
-  if (val === "4") return "P3";
-  return "FIFO";
-}
-
-// articleTag is a comma-separated "{integer} {word}" list written at import
-// (e.g. "16 Drum, 14 Carton"). Abbreviates known words for display only —
-// never touches the stored value. Any group that fails to parse as
-// "{integer} {word}" bails the whole string back to the raw original,
-// verbatim, rather than partially formatting it.
-const ARTICLE_WORD_ABBR: Record<string, string> = { Drum: "D", Carton: "C", Tin: "T", Bag: "B" };
-
-function formatArticleTag(raw: string): string {
-  const groups = raw.split(",").map((g) => g.trim()).filter((g) => g.length > 0);
-  if (groups.length === 0) return raw;
-  const parts: string[] = [];
-  for (const g of groups) {
-    const m = g.match(/^(\d+)\s+(\S.*)$/);
-    if (!m) return raw;
-    const [, num, word] = m;
-    const short = ARTICLE_WORD_ABBR[word];
-    parts.push(short ? `${num} ${short}` : `${num} ${word}`);
-  }
-  return parts.join(" · ");
 }
 
 // ── Pill slot select styling ─────────────────────────────────────────────────
@@ -1120,29 +1070,16 @@ function OrderRow({
 
       {/* Customer */}
       <div className="min-w-0 px-3.5">
-        <div className="flex items-center gap-1 min-w-0">
-          <p
-            className={cn("text-xs font-medium truncate", isResolved ? "text-gray-500" : "text-gray-700")}
-            title={order.customer?.customerName ?? order.shipToCustomerName ?? undefined}
-          >
-            {order.customer?.customerName ?? order.shipToCustomerName ?? "—"}
-          </p>
-          {order.customerMissing && !isPhysicallyDispatched && (
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); onMissing({ open: true, shipToCustomerId: order.shipToCustomerId, shipToCustomerName: order.shipToCustomerName }); }}
-              className="text-[9px] font-bold text-amber-700 bg-amber-100 hover:bg-amber-200 px-1.5 py-0.5 rounded transition-colors flex-shrink-0"
-            >
-              ⚠ Missing
-            </button>
-          )}
-          {order.querySnapshot?.hasTinting && !isPhysicallyDispatched && (
-            <span className="text-[10px] text-purple-500 flex-shrink-0">🎨</span>
-          )}
-        </div>
-        <p className={cn("text-[10px] truncate", isResolved ? "text-gray-300" : "text-gray-400")}>
-          {order.shipToCustomerId}
-        </p>
+        <CustomerCell
+          customerName={order.customer?.customerName}
+          fallbackName={order.shipToCustomerName}
+          shipToCustomerId={order.shipToCustomerId}
+          customerMissing={order.customerMissing}
+          hasTinting={order.querySnapshot?.hasTinting}
+          muted={isResolved}
+          showBadges={!isPhysicallyDispatched}
+          onMissing={onMissing}
+        />
       </div>
 
       {/* Ship-to Override */}
@@ -1183,12 +1120,7 @@ function OrderRow({
 
       {/* Vol — volume + materialType stacked sub-line */}
       <div className="px-3.5 text-right">
-        <p className={cn("font-mono font-semibold text-xs tabular-nums text-right", isResolved ? "text-gray-400" : "text-gray-700")}>
-          {order.importVolume != null ? Math.round(order.importVolume) : "—"}
-        </p>
-        <span className="text-[10px] text-gray-400 text-right block">
-          {order.materialType ?? "—"}
-        </span>
+        <VolCell importVolume={order.importVolume} materialType={order.materialType} muted={isResolved} />
       </div>
 
       {/* Article — abbreviated pack breakdown, display-only */}
