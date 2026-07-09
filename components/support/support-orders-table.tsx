@@ -36,7 +36,7 @@ export interface SupportOrder {
   dispatchStatus: string | null;
   customerMissing: boolean;
   mailMatched?: boolean;
-  shipToCustomerId: string;
+  shipToCustomerId: string | null;
   shipToCustomerName: string | null;
   customerId: number | null;
   materialType?: string | null;
@@ -44,6 +44,7 @@ export interface SupportOrder {
   shipToOverrideCustomer?: { id: number; customerName: string; area?: { name: string | null } | null } | null;
   customer: {
     customerName: string;
+    customerCode: string;
     dispatchDeliveryType: { name: string } | null;
     area: {
       name: string;
@@ -200,7 +201,6 @@ export function SupportOrdersTable({
   isHistoryView,
   activeSlotId,
 }: SupportOrdersTableProps) {
-  const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [rowLoading, setRowLoading] = useState<Set<number>>(new Set());
   const [bulkLoading, setBulkLoading] = useState(false);
@@ -245,7 +245,6 @@ export function SupportOrdersTable({
   // Reset state on section change
   useEffect(() => {
     setSelected(new Set());
-    setSearch("");
     setLocalEdits(new Map());
     setDetailOrder(null);
     setCollapsedGroups(new Set());
@@ -281,26 +280,16 @@ export function SupportOrdersTable({
     return () => document.removeEventListener("keydown", handler);
   }, []);
 
-  // ── Filtered orders ────────────────────────────────────────────────────────
-  const filtered = useMemo(() => {
-    if (!search.trim()) return orders;
-    const q = search.trim().toLowerCase();
-    return orders.filter(
-      (o) =>
-        o.obdNumber.toLowerCase().includes(q) ||
-        (o.shipToCustomerName ?? "").toLowerCase().includes(q) ||
-        (o.customer?.customerName ?? "").toLowerCase().includes(q) ||
-        (o.customer?.area?.primaryRoute?.name ?? "").toLowerCase().includes(q),
-    );
-  }, [orders, search]);
-
+  // ── Orders ───────────────────────────────────────────────────────────────
+  // `orders` arrives here already filtered (View/SMU/Delivery Type/Priority)
+  // and searched by the page — no local search/filter box on this toolbar.
   const doneOrders = useMemo(() => {
-    const done = filtered.filter((o) => o.isDone);
+    const done = orders.filter((o) => o.isDone);
     if (activeSlotId === null) return done;
     // dispatch footprint rows bypass slot filter — they appear in done regardless of active slot
     return done.filter((o) => o.footprintType === "dispatch" || (o.arrivalSlotId ?? o.originalSlotId) === activeSlotId);
-  }, [filtered, activeSlotId]);
-  const pendingOrders = useMemo(() => filtered.filter((o) => !o.isDone), [filtered]);
+  }, [orders, activeSlotId]);
+  const pendingOrders = useMemo(() => orders.filter((o) => !o.isDone), [orders]);
   const groups = useMemo(() => groupOrders(pendingOrders, groupBy), [pendingOrders, groupBy]);
 
   const selectableIds = useMemo(
@@ -463,9 +452,10 @@ export function SupportOrdersTable({
   }
 
   // ── Export CSV ─────────────────────────────────────────────────────────────
+  // Exports exactly what's visible — `orders` is already filtered+searched by the page.
   function handleExport() {
     const header = "OBD,Customer,Route,Vol,Status,Priority\n";
-    const rows = filtered.map((o) => {
+    const rows = orders.map((o) => {
       const cust = o.customer?.customerName ?? o.shipToCustomerName ?? "";
       const route = o.customer?.area?.primaryRoute?.name ?? "";
       const vol = o.importVolume != null ? o.importVolume.toFixed(1) : "";
@@ -482,7 +472,7 @@ export function SupportOrdersTable({
 
   // ── Sticky bar derived ─────────────────────────────────────────────────────
   const showStickyBar = selected.size > 0 || changedIds.size > 0;
-  const selectedOrders = useMemo(() => filtered.filter((o) => selected.has(o.id)), [filtered, selected]);
+  const selectedOrders = useMemo(() => orders.filter((o) => selected.has(o.id)), [orders, selected]);
   const stickyQty = selectedOrders.reduce((s, o) => s + (o.querySnapshot?.totalUnitQty ?? 0), 0);
   const stickyCustomerCount = new Set(selectedOrders.map((o) => o.shipToCustomerId)).size;
 
@@ -535,16 +525,6 @@ export function SupportOrdersTable({
             <Download size={12} />
             Export
           </button>
-          <div className="relative">
-            <Search size={13} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-300" />
-            <input
-              type="text"
-              placeholder="Search…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="h-8 w-[160px] pl-7 pr-2 text-[11.5px] border border-gray-200 rounded bg-white placeholder:text-gray-300 focus:outline-none focus:border-gray-300"
-            />
-          </div>
         </div>
       </div>
 
@@ -554,7 +534,7 @@ export function SupportOrdersTable({
           <div className="flex items-center justify-center py-20">
             <Loader2 size={24} className="animate-spin text-gray-300" />
           </div>
-        ) : filtered.length === 0 ? (
+        ) : orders.length === 0 ? (
           <EmptyState message="No orders" />
         ) : (
           <div className="px-5">

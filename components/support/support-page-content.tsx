@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { SupportOrdersTable } from "@/components/support/support-orders-table";
 import { SupportHoldTable } from "@/components/support/support-hold-table";
 import type { SupportOrder } from "@/components/support/support-orders-table";
+import { getPriLabel } from "@/components/support/shared/table-cells";
 import { UniversalHeader } from "@/components/universal-header";
 import { useSession } from "next-auth/react";
 import type { DispatchWindow } from "@/components/support/dispatch-slot-picker";
@@ -34,7 +35,6 @@ interface SlotsResponse {
 }
 
 type MainTab = "all" | "hold";
-type StatusFilter = "all" | "pending" | "dispatch" | "dispatched";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -75,10 +75,9 @@ export function SupportPageContent() {
   const [slotsLoading, setSlotsLoading] = useState(true);
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [mainTab, setMainTab] = useState<MainTab>("all");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("pending");
   const [allTabOrderCount, setAllTabOrderCount] = useState(0);
   const [dispatchWindows, setDispatchWindows] = useState<DispatchWindow[]>([]);
-  const [headerFilters, setHeaderFilters] = useState<Record<string, string[]>>({ view: [], status: [], deliveryType: [], priority: [] });
+  const [headerFilters, setHeaderFilters] = useState<Record<string, string[]>>({ view: [], smu: [], deliveryType: [], priority: [] });
   const [searchQuery, setSearchQuery] = useState("");
 
   // Sync header filters → existing state
@@ -89,11 +88,6 @@ export function SupportPageContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [headerFilters.view]);
 
-  useEffect(() => {
-    const s = headerFilters.status ?? [];
-    setStatusFilter(s.length === 1 ? (s[0] as StatusFilter) : "all");
-  }, [headerFilters.status]);
-
   // Re-fetch slots + orders when date changes; reset hold tab when switching to history
   useEffect(() => {
     if (!activeSection) return;
@@ -103,7 +97,10 @@ export function SupportPageContent() {
       const data = await fetchSlots();
       if (histView && mainTab === "hold") {
         setMainTab("all");
-        setStatusFilter("pending");
+        // Clear the View filter's "Hold Only" selection in the same beat as the
+        // tab reset — otherwise the Filter pill keeps showing Hold Only active
+        // (and its badge count) while the board silently renders the all-tab.
+        setHeaderFilters((prev) => ({ ...prev, view: [] }));
       }
       if (data?.slots.length) {
         const defaultSlot = pickDefaultSlot(data.slots, histView);
@@ -207,14 +204,12 @@ export function SupportPageContent() {
   function handleSelectSection(section: string, slotId?: number) {
     setActiveSection(section);
     setActiveSlotId(slotId ?? null);
-    setStatusFilter("all");
     void fetchOrders(section, slotId);
   }
 
   // ── Main tab change ──────────────────────────────────────────────────────
   function handleMainTabChange(tab: MainTab) {
     setMainTab(tab);
-    setStatusFilter("all");
     if (tab === "all") {
       if (activeSlotId && slots.find((s) => s.id === activeSlotId)) {
         void fetchOrders(`slot-${activeSlotId}`, activeSlotId);
@@ -380,24 +375,43 @@ export function SupportPageContent() {
   const todayTotal    = headerPending + headerTinting + headerDispatched + doneCount;
   const todayDonePct  = todayTotal > 0 ? Math.round((doneCount / todayTotal) * 100) : 0;
 
-  const statusCounts = useMemo(() => ({
-    all:        orders.length,
-    pending:    orders.filter((o) => !o.dispatchStatus).length,
-    dispatch:   orders.filter((o) => o.dispatchStatus === "dispatch").length,
-    dispatched: orders.filter((o) => o.workflowStage === "dispatched" || o.dispatchStatus === "dispatched").length,
-  }), [orders]);
+  // Distinct SMU values present in the currently-loaded list — mirrors
+  // getSmuGroup()'s "Unknown SMU" fallback so the filter options never
+  // disagree with the Group-by-SMU bucket names.
+  const smuOptions = useMemo(() => {
+    const set = new Set(orders.map((o) => o.smu || "Unknown SMU"));
+    return Array.from(set).sort();
+  }, [orders]);
+
+  // SMU / Delivery Type / Priority — groups AND together, options within a
+  // group OR together. Applies uniformly regardless of which section is
+  // loaded (slot / hold / earlier), so Hold-tab and carry-over lists filter
+  // the same way as the main board.
+  const passesGroupFilters = useCallback((o: SupportOrder): boolean => {
+    const smuSel = headerFilters.smu ?? [];
+    if (smuSel.length > 0 && !smuSel.includes(o.smu || "Unknown SMU")) return false;
+
+    const dtSel = headerFilters.deliveryType ?? [];
+    if (dtSel.length > 0) {
+      const dtName = (o.customer?.dispatchDeliveryType?.name ?? o.customer?.area?.deliveryType?.name ?? "").toLowerCase();
+      const dtCodeToName: Record<string, string> = { LOCAL: "local", UPC: "upcountry", IGT: "igt" };
+      const matches = dtSel.some((v) => dtName.includes(dtCodeToName[v] ?? v.toLowerCase()));
+      if (!matches) return false;
+    }
+
+    const priSel = headerFilters.priority ?? [];
+    if (priSel.length > 0 && !priSel.includes(getPriLabel(String(o.priorityLevel)))) return false;
+
+    return true;
+  }, [headerFilters]);
 
   const filteredOrders = useMemo(() => {
-    // Done orders (closed stage) always pass through — they render in the done section
-    // regardless of which status filter is active. Only non-done orders are filtered.
-    const done = orders.filter((o) => o.isDone);
-    const work = orders.filter((o) => !o.isDone);
-    let active: SupportOrder[];
-    if (statusFilter === "all")             active = work;
-    else if (statusFilter === "pending")    active = work.filter((o) => !o.dispatchStatus);
-    else if (statusFilter === "dispatch")   active = work.filter((o) => o.dispatchStatus === "dispatch");
-    else if (statusFilter === "dispatched") active = work.filter((o) => o.workflowStage === "dispatched" || o.dispatchStatus === "dispatched");
-    else active = work;
+    // SMU/Delivery Type/Priority apply to done AND pending rows alike, before
+    // Group by runs — so group headers (and the done-section count) always
+    // reflect the same scoped set the operator is looking at.
+    const scoped = orders.filter(passesGroupFilters);
+    const done = scoped.filter((o) => o.isDone);
+    const work = scoped.filter((o) => !o.isDone);
 
     const byTime = (a: SupportOrder, b: SupportOrder): number => {
       const tA = a.orderDateTime ?? a.obdEmailDate;
@@ -408,18 +422,31 @@ export function SupportPageContent() {
       return a.obdNumber < b.obdNumber ? -1 : a.obdNumber > b.obdNumber ? 1 : 0;
     };
 
-    return [...active.sort(byTime), ...done.sort(byTime)];
-  }, [orders, statusFilter]);
+    return [...work.sort(byTime), ...done.sort(byTime)];
+  }, [orders, passesGroupFilters]);
 
-  // Apply search filter on top of status filter
+  // Single header search box — strict superset of the old toolbar search
+  // (adds shipToCustomerId, customer.customerCode, keeps route name). Every
+  // field is null-guarded; feeds both the "all" tab table and the Hold tab.
   const displayOrders = useMemo(() => {
     if (!searchQuery.trim()) return filteredOrders;
     const q = searchQuery.trim().toLowerCase();
-    return filteredOrders.filter((o) =>
-      o.obdNumber.toLowerCase().includes(q) ||
-      o.shipToCustomerName?.toLowerCase().includes(q) ||
-      o.customer?.customerName?.toLowerCase().includes(q),
-    );
+    return filteredOrders.filter((o) => {
+      const obd      = o.obdNumber?.toLowerCase() ?? "";
+      const custName = o.customer?.customerName?.toLowerCase() ?? "";
+      const shipName = o.shipToCustomerName?.toLowerCase() ?? "";
+      const shipId   = o.shipToCustomerId?.toLowerCase() ?? "";
+      const custCode = o.customer?.customerCode?.toLowerCase() ?? "";
+      const route    = o.customer?.area?.primaryRoute?.name?.toLowerCase() ?? "";
+      return (
+        obd.includes(q) ||
+        custName.includes(q) ||
+        shipName.includes(q) ||
+        shipId.includes(q) ||
+        custCode.includes(q) ||
+        route.includes(q)
+      );
+    });
   }, [filteredOrders, searchQuery]);
 
   const todayIST = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
@@ -475,7 +502,6 @@ export function SupportPageContent() {
             // Active segment clicked again → ALL view (deselect)
             setActiveSection("slot-all");
             setActiveSlotId(null);
-            setStatusFilter("all");
             void fetchOrders("slot-all", undefined);
           } else {
             handleSelectSection(`slot-${id}`, id as number);
@@ -483,14 +509,20 @@ export function SupportPageContent() {
         }}
         filterGroups={[
           { label: "View", key: "view", options: [{ value: "hold", label: "Hold Only" }] },
-          { label: "Status", key: "status", options: [{ value: "pending", label: "Pending" }, { value: "dispatch", label: "Dispatch" }, { value: "dispatched", label: "Dispatched" }] },
+          { label: "SMU", key: "smu", options: smuOptions.map((s) => ({ value: s, label: s })) },
           { label: "Delivery Type", key: "deliveryType", options: [{ value: "LOCAL", label: "Local" }, { value: "UPC", label: "UPC" }, { value: "IGT", label: "IGT" }] },
+          { label: "Priority", key: "priority", options: [
+            { value: getPriLabel("1"), label: getPriLabel("1") },
+            { value: getPriLabel("2"), label: getPriLabel("2") },
+            { value: getPriLabel("4"), label: getPriLabel("4") },
+            { value: getPriLabel("3"), label: getPriLabel("3") },
+          ] },
         ]}
         activeFilters={headerFilters}
         onFilterChange={setHeaderFilters}
         currentDate={headerDate}
         onDateChange={handleHeaderDateChange}
-        searchPlaceholder="Search OBD, customer..."
+        searchPlaceholder="Search OBD, customer, code, route..."
         searchValue={searchQuery}
         onSearchChange={setSearchQuery}
         shortcuts={[
@@ -556,7 +588,7 @@ export function SupportPageContent() {
       {/* ── Hold Tab Content ─────────────────────────────────────────────── */}
       {mainTab === "hold" && (
         <SupportHoldTable
-          orders={orders}
+          orders={displayOrders}
           dispatchWindows={dispatchWindows}
           loading={ordersLoading}
           onRelease={handleHoldRelease}

@@ -117,7 +117,7 @@ export function CustomerCell({
 }: {
   customerName: string | null | undefined;
   fallbackName: string | null | undefined;
-  shipToCustomerId: string;
+  shipToCustomerId: string | null;
   customerMissing: boolean;
   hasTinting: boolean | undefined;
   muted: boolean;
@@ -147,7 +147,7 @@ export function CustomerCell({
         )}
       </div>
       <p className={cn("text-[10px] truncate", muted ? "text-gray-300" : "text-gray-400")}>
-        {shipToCustomerId}
+        {shipToCustomerId ?? "—"}
       </p>
     </>
   );

@@ -14,6 +14,7 @@ const ORDER_INCLUDE = {
     select: {
       id: true,
       customerName: true,
+      customerCode: true,
       dispatchDeliveryType: { select: { name: true } },
       area: {
         select: {
