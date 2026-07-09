@@ -14,26 +14,43 @@
 // "Asia/Kolkata"}) + Date.UTC(y, m-1, d) pattern already used
 // in app/api/import/obd/route.ts for the IST calendar date.
 //
-// Worked examples (RULE 1 test cases):
+// DUAL CLOCK — two candidate timestamps come in (emailDateTime
+// = mail-received time, punchDateTime = OBD punch time). Before
+// the window rule runs, the engine picks ONE "effectiveDateTime"
+// to feed it: same IST calendar date → earlier of the two;
+// different IST calendar date → later of the two. In practice
+// punch always follows email, so same-day resolves to email time
+// and different-day (carried-over order) resolves to punch time —
+// but the earlier/later rule is implemented generically so bad
+// data can never push a slot backwards into the past.
 //
-//   Local  09:15 → today 10:30      Local 10:30 → today 10:30
-//   Local  10:31 → today 12:30      Local 12:30 → today 12:30
-//   Local  13:00 → today 16:00      Local 16:00 → today 16:00
-//   Local  16:01 → next day 10:30   Local 20:00 → next day 10:30
-//   Upc    11:00 → today 18:00      Upc   17:00 → today 18:00
-//   Upc    17:01 → next day 18:00
+// CLOCK PICK          Email        Punch        Uses        Local slot
+// same day            Mon 11:00    Mon 11:05    Mon 11:00   Mon 12:30
+// different day       Sun 10:15    Mon 10:00    Mon 10:00   Mon 10:30
+// different day       Sun 10:15    Mon 14:00    Mon 14:00   Mon 16:00
+// different day       Sun 10:15    Mon 17:30    Mon 17:30   Tue 10:30
+// different day (Upc) Sun 09:00    Mon 16:00    Mon 16:00   Mon 18:00
+// punch null          Mon 11:00    —            Mon 11:00   Mon 12:30
+// email null          —            Mon 14:00    Mon 14:00   Mon 16:00
+//
+// Window rule (applied to the chosen clock) is unchanged:
+// Local  <=10:30 → 10:30 | <=12:30 → 12:30 | <=16:00 → 16:00 | else next-day 10:30
+// Upc    <=17:00 → same-day 18:00 | else next-day 18:00
 // ─────────────────────────────────────────────────────────
 
 import { istMinutes } from "@/lib/slots/slot-ruler";
 
 export interface DispatchSlotInput {
-  smu: string | null;            // orders.smu
-  dispatchStatus: string | null; // orders.dispatchStatus
-  deliveryType: string | null;   // resolved "Local" | "Upcountry" | other | null
-  orderDateTime: Date | null;    // orders.orderDateTime (timestamptz / UTC)
+  smu: string | null;             // orders.smu
+  dispatchStatus: string | null;  // orders.dispatchStatus
+  deliveryType: string | null;    // resolved "Local" | "Upcountry" | other | null
+  emailDateTime: Date | null;     // orders.orderDateTime (mail received time, post-enrichment)
+  punchDateTime: Date | null;     // orders.obdEmailDate (despite the column name: OBD punch date+time)
 }
 
 export type DispatchSlotWindowTime = "10:30" | "12:30" | "16:00" | "18:00";
+
+export type DispatchSlotClockUsed = "email" | "punch";
 
 export type DispatchSlotResult =
   | {
@@ -42,6 +59,8 @@ export type DispatchSlotResult =
       windowTime: DispatchSlotWindowTime;
       ruleId: string;
       source: "auto";
+      effectiveDateTime: Date;       // which clock actually decided the slot
+      clockUsed: DispatchSlotClockUsed; // audit: which one won
     }
   | {
       assigned: false;
@@ -71,11 +90,45 @@ function dateOnlyUTC(y: number, m: number, d: number): Date {
   return new Date(Date.UTC(y, m - 1, d));
 }
 
+/** Pick which of the two candidate clocks feeds the window rule.
+ *  Same IST calendar date → earlier of the two. Different IST
+ *  calendar date → later of the two. Either clock missing → the
+ *  other one wins outright. Both missing → null (caller reports
+ *  "no-order-datetime"). */
+function pickEffectiveClock(
+  emailDateTime: Date | null,
+  punchDateTime: Date | null,
+): { effectiveDateTime: Date; clockUsed: DispatchSlotClockUsed } | null {
+  if (emailDateTime == null && punchDateTime == null) return null;
+  if (emailDateTime == null) return { effectiveDateTime: punchDateTime!, clockUsed: "punch" };
+  if (punchDateTime == null) return { effectiveDateTime: emailDateTime, clockUsed: "email" };
+
+  const emailParts = istDateParts(emailDateTime);
+  const punchParts = istDateParts(punchDateTime);
+  const sameIstDate =
+    emailParts.y === punchParts.y &&
+    emailParts.m === punchParts.m &&
+    emailParts.d === punchParts.d;
+
+  const emailIsEarlierOrEqual = emailDateTime.getTime() <= punchDateTime.getTime();
+
+  if (sameIstDate) {
+    return emailIsEarlierOrEqual
+      ? { effectiveDateTime: emailDateTime, clockUsed: "email" }
+      : { effectiveDateTime: punchDateTime, clockUsed: "punch" };
+  }
+
+  // Different IST calendar date — use the later of the two.
+  return emailIsEarlierOrEqual
+    ? { effectiveDateTime: punchDateTime, clockUsed: "punch" }
+    : { effectiveDateTime: emailDateTime, clockUsed: "email" };
+}
+
 /** RULE 1 — slot assignment. Any gate failure returns assigned:false
  *  with the matching reason; gates are evaluated in the fixed order
  *  below so the reported reason is deterministic. */
 export function evaluateDispatchSlot(input: DispatchSlotInput): DispatchSlotResult {
-  const { smu, dispatchStatus, deliveryType, orderDateTime } = input;
+  const { smu, dispatchStatus, deliveryType, emailDateTime, punchDateTime } = input;
 
   if (smu !== "Deco Retail") {
     return { assigned: false, reason: "smu-not-deco-retail" };
@@ -86,31 +139,34 @@ export function evaluateDispatchSlot(input: DispatchSlotInput): DispatchSlotResu
   if (deliveryType !== "Local" && deliveryType !== "Upcountry") {
     return { assigned: false, reason: "delivery-type-unhandled" };
   }
-  if (orderDateTime == null) {
+
+  const clock = pickEffectiveClock(emailDateTime, punchDateTime);
+  if (clock == null) {
     return { assigned: false, reason: "no-order-datetime" };
   }
+  const { effectiveDateTime, clockUsed } = clock;
 
-  const mins = istMinutes(orderDateTime);
-  const { y, m, d } = istDateParts(orderDateTime);
+  const mins = istMinutes(effectiveDateTime);
+  const { y, m, d } = istDateParts(effectiveDateTime);
   const today = dateOnlyUTC(y, m, d);
   const nextDay = dateOnlyUTC(y, m, d + 1);
 
   if (deliveryType === "Local") {
     if (mins <= 630) {
-      return { assigned: true, targetDate: today, windowTime: "10:30", ruleId: "R1_LOCAL_1030", source: "auto" };
+      return { assigned: true, targetDate: today, windowTime: "10:30", ruleId: "R1_LOCAL_1030", source: "auto", effectiveDateTime, clockUsed };
     }
     if (mins <= 750) {
-      return { assigned: true, targetDate: today, windowTime: "12:30", ruleId: "R1_LOCAL_1230", source: "auto" };
+      return { assigned: true, targetDate: today, windowTime: "12:30", ruleId: "R1_LOCAL_1230", source: "auto", effectiveDateTime, clockUsed };
     }
     if (mins <= 960) {
-      return { assigned: true, targetDate: today, windowTime: "16:00", ruleId: "R1_LOCAL_1600", source: "auto" };
+      return { assigned: true, targetDate: today, windowTime: "16:00", ruleId: "R1_LOCAL_1600", source: "auto", effectiveDateTime, clockUsed };
     }
-    return { assigned: true, targetDate: nextDay, windowTime: "10:30", ruleId: "R1_LOCAL_NEXT_1030", source: "auto" };
+    return { assigned: true, targetDate: nextDay, windowTime: "10:30", ruleId: "R1_LOCAL_NEXT_1030", source: "auto", effectiveDateTime, clockUsed };
   }
 
   // Upcountry — single 18:00 window, cutoff 17:00 (1020 minutes).
   if (mins <= 1020) {
-    return { assigned: true, targetDate: today, windowTime: "18:00", ruleId: "R1_UPC_1800", source: "auto" };
+    return { assigned: true, targetDate: today, windowTime: "18:00", ruleId: "R1_UPC_1800", source: "auto", effectiveDateTime, clockUsed };
   }
-  return { assigned: true, targetDate: nextDay, windowTime: "18:00", ruleId: "R1_UPC_NEXT_1800", source: "auto" };
+  return { assigned: true, targetDate: nextDay, windowTime: "18:00", ruleId: "R1_UPC_NEXT_1800", source: "auto", effectiveDateTime, clockUsed };
 }

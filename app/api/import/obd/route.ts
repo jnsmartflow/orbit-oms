@@ -325,6 +325,7 @@ async function applyMailOrderEnrichment(soNumbers: (string | null)[]): Promise<v
         smu: true,
         dispatchStatus: true,
         orderDateTime: true,
+        obdEmailDate: true,
         dispatchSlotSource: true,
         customer: {
           select: {
@@ -349,7 +350,8 @@ async function applyMailOrderEnrichment(soNumbers: (string | null)[]): Promise<v
         smu: ord.smu,
         dispatchStatus: ord.dispatchStatus,
         deliveryType,
-        orderDateTime: ord.orderDateTime,
+        emailDateTime: ord.orderDateTime,
+        punchDateTime: ord.obdEmailDate,
       });
 
       if (!result.assigned) continue;
@@ -373,7 +375,7 @@ async function applyMailOrderEnrichment(soNumbers: (string | null)[]): Promise<v
       });
 
       console.log(
-        `[dispatch-engine] Assigned obdNumber=${ord.obdNumber} ruleId=${result.ruleId} targetDate=${result.targetDate.toISOString().slice(0, 10)} windowTime=${result.windowTime}`,
+        `[dispatch-engine] Assigned obdNumber=${ord.obdNumber} ruleId=${result.ruleId} targetDate=${result.targetDate.toISOString().slice(0, 10)} windowTime=${result.windowTime} clock=${result.clockUsed} effectiveDateTime=${result.effectiveDateTime.toISOString()}`,
       );
     }
 
