@@ -1,35 +1,131 @@
-// Single source of truth for Support's "done" output stage(s) — the parking-
-// stage flip pattern (CLAUDE_SUPPORT.md §3). Each new downstream screen gets
-// its own forward stage; every place that asks "is Support done with this
-// order?" or "what stage does Support currently hand off to?" should read
-// from here, not a pasted string literal, so the next flip edits one line.
+// ─────────────────────────────────────────────────────────────────────────
+// Central stage registry for `orders.workflowStage` (a plain String column,
+// never a Postgres enum — see prisma/schema.prisma). This is the ONE place
+// that encodes the stage LADDER: the order stages happen in, and who may
+// touch an order at each rung. Every consumer asks the ladder a POSITION
+// question ("is this stage at or past rank 60?") instead of maintaining its
+// own hand-written array of stage names — the exact bug class that put a
+// correctly-LOCKED 'pick_assigned' order back on Support's active board
+// wearing a Dispatch pill (it was in one array but not the other).
 //
-// SUPPORT_DONE_STAGES — the union of every stage that has ever meant "Support
-// decided dispatch." Historical rows keep their old value forever (no
-// backfill, no rewrite) — this array is how every downstream isDone/notIn
-// check stays aware of both the old word and the current one.
-//
-// SUPPORT_DONE_OUTPUT — the stage Support (and its automated equivalents,
-// e.g. mail-order auto-dispatch) writes TODAY when it dispatches an order.
-// Only this one, current value — never the historical ones — because
-// consumers like /picking must see only NEW dispatches, not resurrect old rows.
-export const SUPPORT_DONE_STAGES = ["closed", "pending_picking"];
-export const SUPPORT_DONE_OUTPUT = "pending_picking";
+// Today only Support reads this file. When Tint Manager and the picker view
+// are migrated onto the same registry, each gains its OWN flag column
+// (tintMayEdit, pickingMayEdit) — a column addition to StageDef, never a
+// rewrite of the ladder itself. Those columns are NOT added yet; their
+// rules haven't been decided.
+// ─────────────────────────────────────────────────────────────────────────
 
-// SUPPORT_LOCKED_STAGES — stages where the order has left Support's control
-// and is being physically worked on (mixed, or already on a picker's list).
-// Support must not mutate these: no dispatch, no release, no hold, no cancel.
-// This is a DIFFERENT question from SUPPORT_DONE_STAGES — a pick_assigned
-// order is done AND locked; a closed order is done but NOT locked (Support
-// can still undo-dispatch it). Do not merge the two arrays, and do not add
-// 'pending_picking' here — an unassigned bill in the queue must stay fully
-// mutable by Support.
-export const SUPPORT_LOCKED_STAGES = [
-  "tint_assigned",
-  "tinting_in_progress",
-  "pick_assigned", // NEW — no order reaches this yet; nothing writes it
+export type StageDef = {
+  stage: string;           // exact DB value
+  rank: number | null;     // null for terminal stages (cancelled)
+  label: string;           // human-readable; not wired to any UI yet
+  terminal?: true;         // cancelled only
+  supportMayEdit: boolean; // a PLAIN FLAG per stage — never derived from rank
+};
+
+// Ranks are spaced by ten so a future stage (e.g. pick_done at 80) slots in
+// without renumbering. 'pending_picking' and 'closed' deliberately SHARE
+// rank 60 — a legacy order must behave identically to a new one. 'closed' is
+// legacy only: nothing writes it any more (see SUPPORT_DONE_OUTPUT below).
+//
+// The shape is locked at 30-40 (mid-tint), unlocked at 50-60 (Support's own
+// territory), locked again from 70 (picker has it) — a hole in the middle.
+// supportMayEdit is a flag per row, not a threshold, because of that hole:
+// do not collapse it into "rank >= X" or "rank <= X".
+export const STAGE_LADDER: StageDef[] = [
+  { stage: "order_created",           rank: 10, label: "Created",                supportMayEdit: true },
+  { stage: "pending_tint_assignment", rank: 20, label: "Awaiting Tint",          supportMayEdit: true },
+  { stage: "tint_assigned",           rank: 30, label: "Tint Assigned",          supportMayEdit: false },
+  { stage: "tinting_in_progress",     rank: 40, label: "Tinting",                supportMayEdit: false },
+  { stage: "pending_support",         rank: 50, label: "Awaiting Support",       supportMayEdit: true },
+  { stage: "pending_picking",         rank: 60, label: "In Picking Queue",       supportMayEdit: true },
+  { stage: "closed",                  rank: 60, label: "In Picking Queue (old)", supportMayEdit: true },
+  { stage: "pick_assigned",           rank: 70, label: "Assigned to Picker",     supportMayEdit: false },
+  { stage: "dispatched",              rank: 90, label: "Dispatched",            supportMayEdit: false },
+  { stage: "cancelled", rank: null, label: "Cancelled", terminal: true, supportMayEdit: false },
 ];
 
-// The stage the (not-yet-built) Assigned button will write. Exported now so
-// step 3 has a single source instead of a fresh string literal.
+/** The stage Support (and its automated equivalents, e.g. mail-order
+ *  auto-dispatch) writes TODAY when it dispatches an order. Only this one,
+ *  current value — never the historical ones — because consumers like
+ *  /picking must see only NEW dispatches, not resurrect old 'closed' rows. */
+export const SUPPORT_DONE_OUTPUT = "pending_picking";
+
+/** The stage the (not-yet-built) Assigned button will write. */
 export const PICK_ASSIGNED = "pick_assigned";
+
+/** Position of a stage on the ladder. null for BOTH unknown stages and
+ *  explicitly off-ladder terminal stages ('cancelled') — callers must not
+ *  read null as "unknown"; use isSupportDone() to test cancelled by name. */
+export function stageRank(stage: string | null): number | null {
+  if (stage === null) return null;
+  const def = STAGE_LADDER.find((d) => d.stage === stage);
+  return def?.rank ?? null;
+}
+
+/** May Support mutate (dispatch/release/hold/cancel) an order at this stage?
+ *  Fails CLOSED: an unknown or null stage returns false, never true — a
+ *  typo'd or future stage this file hasn't been taught about must never be
+ *  silently treated as editable. */
+export function supportMayEdit(stage: string | null): boolean {
+  if (stage === null) return false;
+  const def = STAGE_LADDER.find((d) => d.stage === stage);
+  return def?.supportMayEdit ?? false;
+}
+
+/**
+ * Is Support done with this order? Must reproduce today's behaviour EXACTLY:
+ *   - stage === 'cancelled'      → true
+ *   - dispatchStatus === 'hold'  → true (hold is not a stage — a held order
+ *                                  stays at pending_support; this arm is
+ *                                  unrelated to the ladder and always existed)
+ *   - rank >= 60                 → true
+ *   - otherwise                  → false
+ * Fails CLOSED: unknown or null stage → false.
+ */
+export function isSupportDone(
+  stage: string | null,
+  dispatchStatus: string | null,
+): boolean {
+  if (stage === null) return false;
+  if (stage === "cancelled") return true;
+  if (dispatchStatus === "hold") return true;
+
+  const rank = stageRank(stage);
+  if (rank === null) return false;
+  return rank >= 60;
+}
+
+/**
+ * Every stage at rank >= 60. DERIVED from the ladder, never hand-written;
+ * recomputes automatically if the ladder changes. Used by list-query "is
+ * this order done" filters across Support, Tint Manager, Operations, and
+ * the two admin backfill tools.
+ */
+export const SUPPORT_DONE_STAGE_NAMES: string[] = STAGE_LADDER
+  .filter((d) => d.rank !== null && d.rank >= 60)
+  .map((d) => d.stage);
+
+/**
+ * NARROWER than SUPPORT_DONE_STAGE_NAMES — exactly rank 60 (pending_picking,
+ * closed), excluding 'dispatched' (rank 90). Also derived from the ladder,
+ * never hand-written.
+ *
+ * Exists because a handful of call sites' ORIGINAL arrays never included
+ * "dispatched" alongside SUPPORT_DONE_STAGES, unlike every other consumer,
+ * which always paired the spread with an explicit "dispatched" literal.
+ * Migrating those sites to the wide SUPPORT_DONE_STAGE_NAMES would silently
+ * widen their match to include 'dispatched' — a real (currently inert —
+ * zero production order has ever reached 'dispatched'; the Planning pipeline
+ * that writes it requires 'dispatch_confirmation', a stage nothing in this
+ * codebase writes yet) behaviour change. Reviewed and accepted by Smart Flow
+ * as an intentional, currently-inert divergence from the old ad-hoc arrays
+ * (2026-07 ladder migration). Used only at:
+ *   - app/api/support/orders/route.ts — the "hold released" and
+ *     "dispatch-target-date" history footprint arms (both the single-slot
+ *     and ALL-slot variants)
+ *   - app/api/admin/fix-challans/route.ts — its eligible-orders filter
+ */
+export const SUPPORT_PICKING_QUEUE_STAGE_NAMES: string[] = STAGE_LADDER
+  .filter((d) => d.rank === 60)
+  .map((d) => d.stage);

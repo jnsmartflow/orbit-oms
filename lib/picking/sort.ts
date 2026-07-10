@@ -75,7 +75,19 @@ export const byKeyCustomer: SortRule = {
   compare: (a, b) => Number(b.isKeyCustomer) - Number(a.isKeyCustomer),
 };
 
+// Assigned rows sink to the very bottom of the WHOLE tab (not just their
+// route block) — same idea as Support's done group sitting below its entire
+// active list (CLAUDE_SUPPORT.md §4.2). Placed FIRST in the spine so it wins
+// before window/route/etc ever get a say: an assigned row in Adajan still
+// sinks below an unassigned row in Varachha.
+export const byAssigned: SortRule = {
+  key: "assigned",
+  label: "Assigned last",
+  compare: (a, b) => Number(a.isAssigned) - Number(b.isAssigned),
+};
+
 export const PICKING_SPINE: SortRule[] = [
+  byAssigned,
   byWindow,
   byDeliveryType,
   byRoute,

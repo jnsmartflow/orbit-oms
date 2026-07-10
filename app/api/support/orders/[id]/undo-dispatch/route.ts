@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
-import { SUPPORT_DONE_STAGES } from "@/lib/workflow-stages";
+import { SUPPORT_PICKING_QUEUE_STAGE_NAMES, supportMayEdit, PICK_ASSIGNED } from "@/lib/workflow-stages";
 
 export const dynamic = "force-dynamic";
 
@@ -31,7 +31,21 @@ export async function POST(
   if (!order) {
     return NextResponse.json({ error: "Order not found" }, { status: 404 });
   }
-  if (!SUPPORT_DONE_STAGES.includes(order.workflowStage)) {
+  // NOT isSupportDone() here — that also returns true for a held
+  // pending_support order (dispatchStatus==='hold'), which must NOT pass
+  // this guard: undo-dispatch reverses a dispatch, it does not clear a hold.
+  // Undo-dispatch works only on an order sitting unassigned in the picking
+  // queue — SUPPORT_PICKING_QUEUE_STAGE_NAMES names exactly that set.
+  if (
+    !SUPPORT_PICKING_QUEUE_STAGE_NAMES.includes(order.workflowStage) ||
+    !supportMayEdit(order.workflowStage)
+  ) {
+    if (order.workflowStage === PICK_ASSIGNED) {
+      return NextResponse.json(
+        { error: "This order is assigned to a picker. Release it from the Picking screen, not here." },
+        { status: 409 },
+      );
+    }
     return NextResponse.json(
       { error: "Order is not in Done state" },
       { status: 409 },

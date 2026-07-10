@@ -4,7 +4,7 @@ import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { getHideExclusion } from "@/lib/hide/visibility";
 import { getISTDayRange } from "@/lib/dates";
-import { SUPPORT_DONE_STAGES } from "@/lib/workflow-stages";
+import { SUPPORT_DONE_STAGE_NAMES, SUPPORT_PICKING_QUEUE_STAGE_NAMES, isSupportDone } from "@/lib/workflow-stages";
 import type { Prisma } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
@@ -92,8 +92,8 @@ export async function GET(req: Request): Promise<NextResponse> {
       // slotId present → also scope to that arrival slot; absent → all slots.
       if (slotIdStr) where.arrivalSlotId = parseInt(slotIdStr, 10);
       where.OR = [
-        { workflowStage: { notIn: ["dispatched", "cancelled", "order_created", ...SUPPORT_DONE_STAGES] }, obdEmailDate: { gte: istStart, lt: istEnd } },
-        { workflowStage: { in: [...SUPPORT_DONE_STAGES, "dispatched", "cancelled"] }, obdEmailDate: { gte: istStart, lt: istEnd } },
+        { workflowStage: { notIn: ["cancelled", "order_created", ...SUPPORT_DONE_STAGE_NAMES] }, obdEmailDate: { gte: istStart, lt: istEnd } },
+        { workflowStage: { in: ["cancelled", ...SUPPORT_DONE_STAGE_NAMES] }, obdEmailDate: { gte: istStart, lt: istEnd } },
       ];
     } else {
       // History: TWO-FOOTPRINT — obdEmailDate (arrival), heldAt (hold), dispatchTargetDate (dispatch).
@@ -101,14 +101,14 @@ export async function GET(req: Request): Promise<NextResponse> {
         const histSlotId = parseInt(slotIdStr, 10);
         where.OR = [
           // ── Done: arrival footprint (any slot)
-          { obdEmailDate: { gte: istStart, lt: istEnd }, workflowStage: { in: ["dispatched", "cancelled", ...SUPPORT_DONE_STAGES] } },
+          { obdEmailDate: { gte: istStart, lt: istEnd }, workflowStage: { in: ["cancelled", ...SUPPORT_DONE_STAGE_NAMES] } },
           // ── Done: hold footprint now released (held on D, later closed/pending_picking)
-          { heldAt: { gte: istStart, lt: istEnd }, workflowStage: { in: SUPPORT_DONE_STAGES } },
+          { heldAt: { gte: istStart, lt: istEnd }, workflowStage: { in: SUPPORT_PICKING_QUEUE_STAGE_NAMES } },
           // ── Done: dispatch footprint — always unslotted, always in done group
-          { dispatchTargetDate: { gte: dateStart, lt: dateEnd }, workflowStage: { in: SUPPORT_DONE_STAGES } },
+          { dispatchTargetDate: { gte: dateStart, lt: dateEnd }, workflowStage: { in: SUPPORT_PICKING_QUEUE_STAGE_NAMES } },
           // ── Pending: (arrived OR held) on D, slot-filtered
           {
-            workflowStage: { notIn: ["dispatched", "cancelled", "order_created", ...SUPPORT_DONE_STAGES] },
+            workflowStage: { notIn: ["cancelled", "order_created", ...SUPPORT_DONE_STAGE_NAMES] },
             AND: [
               { OR: [{ obdEmailDate: { gte: istStart, lt: istEnd } }, { heldAt: { gte: istStart, lt: istEnd } }] },
               { OR: [{ arrivalSlotId: histSlotId }, { arrivalSlotId: null, originalSlotId: histSlotId }] },
@@ -122,13 +122,13 @@ export async function GET(req: Request): Promise<NextResponse> {
             workflowStage: { notIn: ["order_created"] } },
           { heldAt: { gte: istStart, lt: istEnd },
             workflowStage: { notIn: ["cancelled", "order_created"] } },
-          { dispatchTargetDate: { gte: dateStart, lt: dateEnd }, workflowStage: { in: SUPPORT_DONE_STAGES } },
+          { dispatchTargetDate: { gte: dateStart, lt: dateEnd }, workflowStage: { in: SUPPORT_PICKING_QUEUE_STAGE_NAMES } },
         ];
       }
     }
   } else if (section === "hold") {
     where.dispatchStatus = "hold";
-    where.workflowStage = { notIn: ["dispatched", "cancelled", ...SUPPORT_DONE_STAGES] };
+    where.workflowStage = { notIn: ["cancelled", ...SUPPORT_DONE_STAGE_NAMES] };
   } else if (section === "earlier") {
     // Orders that arrived before today IST and are still pending/unhandled.
     // Uses IST-aware today string to match slots/route.ts boundary exactly.
@@ -203,7 +203,7 @@ export async function GET(req: Request): Promise<NextResponse> {
       ? Math.floor((new Date(dateStr).getTime() - new Date(obdDate).getTime()) / 86400000)
       : 0;
     const importVolume = volumeMap.get(order.obdNumber) ?? null;
-    const isDone = SUPPORT_DONE_STAGES.includes(order.workflowStage) || order.workflowStage === "dispatched" || order.dispatchStatus === "hold" || order.workflowStage === "cancelled";
+    const isDone = isSupportDone(order.workflowStage, order.dispatchStatus);
 
     // footprintType: which footprint this row represents. Set for both today and history.
     // Priority: cancel > dispatch > hold > arrival.

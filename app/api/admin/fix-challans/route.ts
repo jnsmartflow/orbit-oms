@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
-import { SUPPORT_DONE_STAGES } from "@/lib/workflow-stages";
+import { SUPPORT_PICKING_QUEUE_STAGE_NAMES } from "@/lib/workflow-stages";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +15,7 @@ export async function POST(): Promise<NextResponse> {
   // Find all orders that should have challans but don't
   const orders = await prisma.orders.findMany({
     where: {
-      workflowStage: { notIn: ["cancelled", ...SUPPORT_DONE_STAGES] },
+      workflowStage: { notIn: ["cancelled", ...SUPPORT_PICKING_QUEUE_STAGE_NAMES] },
       challan: null, // no delivery_challans record
       isRemoved: false,
     },

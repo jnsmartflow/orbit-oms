@@ -18,6 +18,9 @@ export interface PickingQueueRow {
   volumeLitres: number | null;
   weightKg: number | null;
   obdDateTime: Date | string | null;
+  isAssigned: boolean;
+  assignedAt: Date | string | null;
+  assignedToName: string | null;
 }
 
 export type SortRule = {

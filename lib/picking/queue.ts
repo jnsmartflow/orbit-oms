@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { sortPickingQueue } from "./sort";
-import { SUPPORT_DONE_OUTPUT } from "@/lib/workflow-stages";
+import { SUPPORT_DONE_OUTPUT, PICK_ASSIGNED } from "@/lib/workflow-stages";
 import type { PickingQueueRow } from "./types";
 
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
@@ -71,7 +71,11 @@ export interface PickingQueueResult {
   rows: PickingQueueRow[];
   windows: PickingWindowSummary[];
   unmatchedCount: number;
+  // Unassigned count only — the tab badge shows work remaining, not work
+  // done. Assigned rows are still present in `rows` (sunk to the bottom by
+  // byAssigned) but excluded from this and from windows[].count.
   totalCount: number;
+  assignedCount: number;
 }
 
 // Shared shape for both dealer FKs (customer / shipToOverrideCustomer) —
@@ -92,10 +96,11 @@ const DEALER_SELECT = {
 } as const;
 
 /**
- * Live derived read — SELECT only. Fetches today's dispatch-stamped, not-yet-
- * picked OBDs, resolves the effective dealer per row, and hands the result to
- * the pure sort module. No writes. No orderBy in the Prisma query — sorting
- * is entirely sortPickingQueue()'s job.
+ * Live derived read — SELECT only. Fetches today's dispatch-stamped OBDs —
+ * both unassigned (SUPPORT_DONE_OUTPUT) and assigned (PICK_ASSIGNED) — resolves
+ * the effective dealer per row, and hands the result to the pure sort module.
+ * No writes. No orderBy in the Prisma query — sorting is entirely
+ * sortPickingQueue()'s job (byAssigned sinks assigned rows to the bottom).
  */
 export async function getPickingQueue(dateStr?: string): Promise<PickingQueueResult> {
   const { isoDate, dateOnly } = resolveTargetDate(dateStr);
@@ -105,13 +110,12 @@ export async function getPickingQueue(dateStr?: string): Promise<PickingQueueRes
     where: {
       dispatchStatus: "dispatch",
       dispatchTargetDate: dateOnly,
-      // Support's CURRENT done-output stage only (not the historical union) —
-      // /picking must see only new dispatches, never resurrect old 'closed'
-      // rows. See lib/workflow-stages.ts and CLAUDE_SUPPORT.md §3 (parking-
-      // stage flip). Old rows intentionally stay 'closed' forever, unmigrated.
-      workflowStage: SUPPORT_DONE_OUTPUT,
+      // Both the unassigned and assigned current stages — the queue shows
+      // assigned bills too (sunk to the bottom), it just doesn't count them
+      // as remaining work. Never the historical 'closed' union — see
+      // lib/workflow-stages.ts and CLAUDE_SUPPORT.md §3 (parking-stage flip).
+      workflowStage: { in: [SUPPORT_DONE_OUTPUT, PICK_ASSIGNED] },
       isRemoved: false,
-      pickAssignment: null, // no pick_assignments row yet for this order
     },
     include: {
       customer: { select: DEALER_SELECT },
@@ -119,6 +123,13 @@ export async function getPickingQueue(dateStr?: string): Promise<PickingQueueRes
       dispatchWindow: { select: { id: true, windowTime: true, sortOrder: true } },
       // 1:1, optional — an order may have no snapshot row. Source: CLAUDE_SUPPORT.md §4.19.
       querySnapshot: { select: { articleTag: true, totalVolume: true, totalWeight: true } },
+      // 1:1, optional — present only once the order is PICK_ASSIGNED.
+      pickAssignment: {
+        select: {
+          assignedAt: true,
+          picker: { select: { name: true } },
+        },
+      },
     },
   });
 
@@ -156,23 +167,31 @@ export async function getPickingQueue(dateStr?: string): Promise<PickingQueueRes
       // are already present on `order` — no select change needed, `include`
       // returns all base-model scalars alongside the named relations.
       obdDateTime: order.orderDateTime ?? order.obdEmailDate ?? null,
+      isAssigned: order.workflowStage === PICK_ASSIGNED,
+      assignedAt: order.pickAssignment?.assignedAt ?? null,
+      assignedToName: order.pickAssignment?.picker?.name ?? null,
     };
   });
 
   const sortedRows = sortPickingQueue(rows);
 
+  // Tab badges and totalCount show work REMAINING — assigned rows are still
+  // in `rows` (rendered, sunk to the bottom by byAssigned) but excluded here.
   const windows: PickingWindowSummary[] = activeWindows.map((w) => ({
     id: w.id,
     windowTime: w.windowTime,
     sortOrder: w.sortOrder,
-    count: sortedRows.filter((r) => r.windowId === w.id).length,
+    count: sortedRows.filter((r) => r.windowId === w.id && !r.isAssigned).length,
   }));
+
+  const assignedCount = sortedRows.filter((r) => r.isAssigned).length;
 
   return {
     date: isoDate,
     rows: sortedRows,
     windows,
     unmatchedCount,
-    totalCount: sortedRows.length,
+    totalCount: sortedRows.length - assignedCount,
+    assignedCount,
   };
 }
