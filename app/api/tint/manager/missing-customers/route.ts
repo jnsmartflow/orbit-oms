@@ -4,6 +4,7 @@ import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { checkPermission } from "@/lib/permissions";
 import { getHideExclusion } from "@/lib/hide/visibility";
+import { SUPPORT_DONE_STAGES } from "@/lib/workflow-stages";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +24,7 @@ export async function GET(): Promise<NextResponse> {
         {
           customerMissing: true,
           smu: { in: ["Retail Offtake", "Decorative Projects"] },
-          workflowStage: { notIn: ["dispatched", "cancelled", "closed"] },
+          workflowStage: { notIn: ["dispatched", "cancelled", ...SUPPORT_DONE_STAGES] },
           isRemoved: false,
         },
         hideExclusion,

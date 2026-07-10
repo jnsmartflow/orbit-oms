@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
+import { SUPPORT_DONE_STAGES } from "@/lib/workflow-stages";
 
 export const dynamic = "force-dynamic";
 
@@ -30,7 +31,7 @@ export async function POST(
   if (!order) {
     return NextResponse.json({ error: "Order not found" }, { status: 404 });
   }
-  if (order.workflowStage !== "closed") {
+  if (!SUPPORT_DONE_STAGES.includes(order.workflowStage)) {
     return NextResponse.json(
       { error: "Order is not in Done state" },
       { status: 409 },
@@ -68,7 +69,7 @@ export async function POST(
   await prisma.order_status_logs.create({
     data: {
       orderId,
-      fromStage: "closed",
+      fromStage: order.workflowStage,
       toStage: "pending_support",
       changedById: userId,
       note: defaultNote,

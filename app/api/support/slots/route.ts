@@ -6,6 +6,7 @@ import { runDailyCleanupIfNeeded } from "@/lib/day-boundary";
 import { runSlotCascadeIfNeeded } from "@/lib/slot-cascade";
 import { getHideExclusion } from "@/lib/hide/visibility";
 import { getISTDayRange } from "@/lib/dates";
+import { SUPPORT_DONE_STAGES } from "@/lib/workflow-stages";
 
 export const dynamic = "force-dynamic";
 
@@ -61,8 +62,8 @@ export async function GET(req: Request): Promise<NextResponse> {
           {
             isRemoved: false,
             OR: [
-              { workflowStage: { in: ["dispatched", "closed"] }, obdEmailDate: { gte: histStart, lt: histEnd } },
-              { workflowStage: { in: ["dispatched", "closed"] }, dispatchTargetDate: { gte: dateStart, lt: dateEnd } },
+              { workflowStage: { in: ["dispatched", ...SUPPORT_DONE_STAGES] }, obdEmailDate: { gte: histStart, lt: histEnd } },
+              { workflowStage: { in: ["dispatched", ...SUPPORT_DONE_STAGES] }, dispatchTargetDate: { gte: dateStart, lt: dateEnd } },
               { workflowStage: "cancelled", obdEmailDate: { gte: histStart, lt: histEnd } },
             ],
           },
@@ -136,7 +137,7 @@ export async function GET(req: Request): Promise<NextResponse> {
             obdEmailDate: { gte: todayStart, lt: todayEnd },
             isRemoved: false,
             OR: [
-              { workflowStage: { in: ["dispatched", "closed"] } },
+              { workflowStage: { in: ["dispatched", ...SUPPORT_DONE_STAGES] } },
               { dispatchStatus: "hold" },
               { workflowStage: "cancelled" },
             ],
@@ -162,7 +163,7 @@ export async function GET(req: Request): Promise<NextResponse> {
         where: {
           arrivalSlotId: slot.id,
           dispatchStatus: "dispatch",
-          workflowStage: { notIn: ["dispatched", "closed"] },
+          workflowStage: { notIn: ["dispatched", ...SUPPORT_DONE_STAGES] },
           isRemoved: false,
           obdEmailDate: { gte: todayStart, lt: todayEnd },
         },

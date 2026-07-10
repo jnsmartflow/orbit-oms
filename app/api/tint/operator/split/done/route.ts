@@ -4,6 +4,7 @@ import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { checkAnyPermission } from "@/lib/permissions";
+import { SUPPORT_DONE_OUTPUT } from "@/lib/workflow-stages";
 
 export const dynamic = "force-dynamic";
 
@@ -188,14 +189,14 @@ export async function POST(req: Request): Promise<NextResponse> {
         await prisma.orders.update({
           where: { id: parentOrderId },
           data:  hasPresetSlot
-            ? { workflowStage: "closed", dispatchStatus: "dispatch" }
+            ? { workflowStage: SUPPORT_DONE_OUTPUT, dispatchStatus: "dispatch" }
             : { workflowStage: "pending_support" },
         });
         await prisma.order_status_logs.create({
           data: {
             orderId:     parentOrderId,
             fromStage:   "tinting_in_progress",
-            toStage:     hasPresetSlot ? "closed" : "pending_support",
+            toStage:     hasPresetSlot ? SUPPORT_DONE_OUTPUT : "pending_support",
             changedById: 1,
             note:        hasPresetSlot
               ? "Auto-dispatched on tint completion (operator pre-set slot)"

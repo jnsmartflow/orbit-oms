@@ -4,6 +4,7 @@ import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { checkAnyPermission } from "@/lib/permissions";
+import { SUPPORT_DONE_OUTPUT } from "@/lib/workflow-stages";
 import {
   getIstUsageDate,
   writeUsageLogsForAssignment,
@@ -181,7 +182,7 @@ export async function POST(req: Request): Promise<NextResponse> {
       where: { id: orderId },
       data: hasPresetSlot
         ? {
-            workflowStage: "closed",
+            workflowStage: SUPPORT_DONE_OUTPUT,
             dispatchStatus: "dispatch",
             slotId: completionSlotId,
             originalSlotId: completionSlotId,
@@ -207,7 +208,7 @@ export async function POST(req: Request): Promise<NextResponse> {
       data: {
         orderId,
         fromStage:   "tinting_in_progress",
-        toStage:     hasPresetSlot ? "closed" : "pending_support",
+        toStage:     hasPresetSlot ? SUPPORT_DONE_OUTPUT : "pending_support",
         changedById: userId,
         note:        hasPresetSlot
           ? "Auto-dispatched on tint completion (operator pre-set slot)"

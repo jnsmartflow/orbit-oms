@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
+import { SUPPORT_DONE_OUTPUT } from "@/lib/workflow-stages";
 
 export const dynamic = "force-dynamic";
 
@@ -91,7 +92,7 @@ export async function POST(req: Request): Promise<NextResponse> {
       await prisma.orders.update({
         where: { id: orderId },
         data: {
-          workflowStage: "closed",
+          workflowStage: SUPPORT_DONE_OUTPUT,
           dispatchStatus: "dispatch",
           dispatchTargetDate: targetDate,
           dispatchWindowId: body.dispatchWindowId,
@@ -103,7 +104,7 @@ export async function POST(req: Request): Promise<NextResponse> {
         data: {
           orderId,
           fromStage: order.workflowStage,
-          toStage: "closed",
+          toStage: SUPPORT_DONE_OUTPUT,
           changedById: userId,
           note: defaultNote,
         },

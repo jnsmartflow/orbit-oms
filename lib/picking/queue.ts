@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { sortPickingQueue } from "./sort";
+import { SUPPORT_DONE_OUTPUT } from "@/lib/workflow-stages";
 import type { PickingQueueRow } from "./types";
 
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
@@ -104,7 +105,11 @@ export async function getPickingQueue(dateStr?: string): Promise<PickingQueueRes
     where: {
       dispatchStatus: "dispatch",
       dispatchTargetDate: dateOnly,
-      workflowStage: "closed", // seatbelt — see CLAUDE_SUPPORT.md §8
+      // Support's CURRENT done-output stage only (not the historical union) —
+      // /picking must see only new dispatches, never resurrect old 'closed'
+      // rows. See lib/workflow-stages.ts and CLAUDE_SUPPORT.md §3 (parking-
+      // stage flip). Old rows intentionally stay 'closed' forever, unmigrated.
+      workflowStage: SUPPORT_DONE_OUTPUT,
       isRemoved: false,
       pickAssignment: null, // no pick_assignments row yet for this order
     },

@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { getHideExclusion } from "@/lib/hide/visibility";
+import { SUPPORT_DONE_STAGES } from "@/lib/workflow-stages";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +28,7 @@ export async function GET(): Promise<NextResponse> {
   const onHold = await prisma.orders.count({
     where: {
       dispatchStatus: "hold",
-      workflowStage: { notIn: ["closed", "dispatched", "cancelled"] },
+      workflowStage: { notIn: ["dispatched", "cancelled", ...SUPPORT_DONE_STAGES] },
       isRemoved: false,
     },
   });
@@ -100,7 +101,7 @@ export async function GET(): Promise<NextResponse> {
         {
           originalSlotId: { not: null },
           isRemoved: false,
-          workflowStage: { notIn: ["dispatched", "closed", "cancelled"] },
+          workflowStage: { notIn: ["dispatched", "cancelled", ...SUPPORT_DONE_STAGES] },
         },
         hideExclusion,
       ],

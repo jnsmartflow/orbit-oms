@@ -7,6 +7,7 @@ import { auth } from "@/lib/auth";
 import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { checkPermission } from "@/lib/permissions";
+import { SUPPORT_DONE_OUTPUT } from "@/lib/workflow-stages";
 import { IMPORT_TEMPLATES } from "@/lib/import-templates";
 import type { ImportTemplateId } from "@/lib/import-templates";
 import type {
@@ -395,9 +396,9 @@ async function applyMailOrderEnrichment(soNumbers: (string | null)[]): Promise<v
 
     // Auto-done: only when enrichment sets dispatchStatus = "dispatch".
     // Hold stays in the queue. Guard: workflowStage = "pending_support" only —
-    // excludes tinting stages, order_created, already-closed, cancelled, removed.
+    // excludes tinting stages, order_created, already-advanced (closed/pending_picking), cancelled, removed.
     if (updateData.dispatchStatus === "dispatch") {
-      const ordersToClose = await prisma.orders.findMany({
+      const ordersToAdvance = await prisma.orders.findMany({
         where: {
           soNumber: soNum,
           workflowStage: "pending_support",
@@ -406,7 +407,7 @@ async function applyMailOrderEnrichment(soNumbers: (string | null)[]): Promise<v
         include: { splits: { where: { status: { not: "cancelled" } } } },
       });
 
-      for (const ord of ordersToClose) {
+      for (const ord of ordersToAdvance) {
         for (const split of ord.splits) {
           await prisma.order_splits.update({
             where: { id: split.id },
@@ -425,14 +426,14 @@ async function applyMailOrderEnrichment(soNumbers: (string | null)[]): Promise<v
 
         await prisma.orders.update({
           where: { id: ord.id },
-          data: { workflowStage: "closed", dispatchStatus: "dispatch" },
+          data: { workflowStage: SUPPORT_DONE_OUTPUT, dispatchStatus: "dispatch" },
         });
 
         await prisma.order_status_logs.create({
           data: {
             orderId: ord.id,
             fromStage: "pending_support",
-            toStage: "closed",
+            toStage: SUPPORT_DONE_OUTPUT,
             changedById: 1, // System action
             note: "Auto-dispatched by enrichment",
           },
