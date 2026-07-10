@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
-import { SUPPORT_DONE_OUTPUT } from "@/lib/workflow-stages";
+import { SUPPORT_DONE_OUTPUT, SUPPORT_LOCKED_STAGES } from "@/lib/workflow-stages";
 
 export const dynamic = "force-dynamic";
 
@@ -54,9 +54,9 @@ export async function POST(
   if (order.workflowStage === "cancelled") {
     return NextResponse.json({ error: "Order is cancelled" }, { status: 400 });
   }
-  if (["tinting_in_progress", "tint_assigned"].includes(order.workflowStage)) {
+  if (SUPPORT_LOCKED_STAGES.includes(order.workflowStage)) {
     return NextResponse.json(
-      { error: "Cannot dispatch — tinting not complete" },
+      { error: "Cannot dispatch — this order is locked (tinting in progress or already assigned for picking)" },
       { status: 400 },
     );
   }

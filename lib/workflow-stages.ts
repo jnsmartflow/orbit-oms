@@ -15,3 +15,21 @@
 // consumers like /picking must see only NEW dispatches, not resurrect old rows.
 export const SUPPORT_DONE_STAGES = ["closed", "pending_picking"];
 export const SUPPORT_DONE_OUTPUT = "pending_picking";
+
+// SUPPORT_LOCKED_STAGES — stages where the order has left Support's control
+// and is being physically worked on (mixed, or already on a picker's list).
+// Support must not mutate these: no dispatch, no release, no hold, no cancel.
+// This is a DIFFERENT question from SUPPORT_DONE_STAGES — a pick_assigned
+// order is done AND locked; a closed order is done but NOT locked (Support
+// can still undo-dispatch it). Do not merge the two arrays, and do not add
+// 'pending_picking' here — an unassigned bill in the queue must stay fully
+// mutable by Support.
+export const SUPPORT_LOCKED_STAGES = [
+  "tint_assigned",
+  "tinting_in_progress",
+  "pick_assigned", // NEW — no order reaches this yet; nothing writes it
+];
+
+// The stage the (not-yet-built) Assigned button will write. Exported now so
+// step 3 has a single source instead of a fresh string literal.
+export const PICK_ASSIGNED = "pick_assigned";

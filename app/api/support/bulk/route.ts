@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
-import { SUPPORT_DONE_OUTPUT } from "@/lib/workflow-stages";
+import { SUPPORT_DONE_OUTPUT, SUPPORT_LOCKED_STAGES } from "@/lib/workflow-stages";
 
 export const dynamic = "force-dynamic";
 
@@ -64,7 +64,15 @@ export async function POST(req: Request): Promise<NextResponse> {
 
     if (
       action === "dispatch" &&
-      ["tinting_in_progress", "tint_assigned"].includes(order.workflowStage)
+      SUPPORT_LOCKED_STAGES.includes(order.workflowStage)
+    ) {
+      skipped++;
+      continue;
+    }
+
+    if (
+      action === "hold" &&
+      SUPPORT_LOCKED_STAGES.includes(order.workflowStage)
     ) {
       skipped++;
       continue;

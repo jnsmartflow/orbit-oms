@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { requireRole, ROLES } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
+import { SUPPORT_LOCKED_STAGES } from "@/lib/workflow-stages";
 
 export const dynamic = "force-dynamic";
 
@@ -33,9 +34,9 @@ export async function POST(
   if (order.workflowStage === "cancelled") {
     return NextResponse.json({ error: "Order is cancelled" }, { status: 400 });
   }
-  if (order.orderType === "tint" && ["tint_assigned", "tinting_in_progress"].includes(order.workflowStage)) {
+  if (SUPPORT_LOCKED_STAGES.includes(order.workflowStage)) {
     return NextResponse.json(
-      { error: "Cannot hold a tint order while it is being mixed. Allowed only before tinting starts." },
+      { error: "Cannot hold — this order is locked (tinting in progress or already assigned for picking)" },
       { status: 409 },
     );
   }
