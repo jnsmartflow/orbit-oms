@@ -1,0 +1,173 @@
+import { prisma } from "@/lib/prisma";
+import { sortPickingQueue } from "./sort";
+import type { PickingQueueRow } from "./types";
+
+const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+
+/**
+ * Today's calendar date in IST, as a UTC-midnight Date — the shape Postgres
+ * expects for a @db.Date column (date only, no time-of-day). Built by
+ * shifting the current instant by the IST offset FIRST, then reading the
+ * Y/M/D off that shifted instant and re-anchoring at UTC midnight. This is
+ * the same Date.UTC(y, m-1, d) pattern used elsewhere in Support (release
+ * route) to avoid the server's own UTC clock silently picking the wrong
+ * calendar day near the IST/UTC day boundary.
+ */
+function getISTTodayDate(): { isoDate: string; dateOnly: Date } {
+  const istNow = new Date(Date.now() + IST_OFFSET_MS);
+  const year = istNow.getUTCFullYear();
+  const month = istNow.getUTCMonth();
+  const day = istNow.getUTCDate();
+  const dateOnly = new Date(Date.UTC(year, month, day));
+  const isoDate = dateOnly.toISOString().slice(0, 10);
+  return { isoDate, dateOnly };
+}
+
+const DATE_STR_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Resolves the target date for the queue. No dateStr → today in IST
+ * (unchanged getISTTodayDate() behaviour). With dateStr, parses it as
+ * UTC-midnight via Date.UTC(y, m-1, d) — the same anchoring getISTTodayDate()
+ * already uses — NEVER `new Date(dateStr)` directly, which parses as UTC
+ * midnight for a bare "YYYY-MM-DD" in spec but is a documented footgun (some
+ * engines/older behaviour treat it as local time), so we build it explicitly.
+ *
+ * Malformed input THROWS (chosen over falling back to today): this is a
+ * derived read the caller may script against, and returning "today" for a
+ * typo'd date would look like a working response while quietly answering a
+ * different question than asked. Throwing lets the API route surface a clear
+ * 400 instead of a silently-wrong day. Also rejects shape-valid-but-impossible
+ * calendar dates (e.g. "2026-02-30", which Date.UTC would silently roll into
+ * March) by round-tripping the constructed date back to a string and
+ * comparing it to the input.
+ */
+function resolveTargetDate(dateStr?: string): { isoDate: string; dateOnly: Date } {
+  if (dateStr === undefined) {
+    return getISTTodayDate();
+  }
+  if (!DATE_STR_RE.test(dateStr)) {
+    throw new Error(`Invalid date "${dateStr}" — expected YYYY-MM-DD`);
+  }
+  const [year, month, day] = dateStr.split("-").map(Number);
+  const dateOnly = new Date(Date.UTC(year, month - 1, day));
+  const isoDate = dateOnly.toISOString().slice(0, 10);
+  if (isoDate !== dateStr) {
+    throw new Error(`Invalid calendar date "${dateStr}"`);
+  }
+  return { isoDate, dateOnly };
+}
+
+export interface PickingWindowSummary {
+  id: number;
+  windowTime: string;
+  sortOrder: number;
+  count: number;
+}
+
+export interface PickingQueueResult {
+  date: string;
+  rows: PickingQueueRow[];
+  windows: PickingWindowSummary[];
+  unmatchedCount: number;
+  totalCount: number;
+}
+
+// Shared shape for both dealer FKs (customer / shipToOverrideCustomer) —
+// route + delivery type + key-customer flag all come from here, via the
+// dealer's area. delivery_point_master.primaryRouteId is stale and is never
+// read (locked decision, step 1) — only area.primaryRoute is used.
+const DEALER_SELECT = {
+  id: true,
+  customerName: true,
+  isKeyCustomer: true,
+  area: {
+    select: {
+      name: true,
+      primaryRoute: { select: { name: true } },
+      deliveryType: { select: { name: true } },
+    },
+  },
+} as const;
+
+/**
+ * Live derived read — SELECT only. Fetches today's dispatch-stamped, not-yet-
+ * picked OBDs, resolves the effective dealer per row, and hands the result to
+ * the pure sort module. No writes. No orderBy in the Prisma query — sorting
+ * is entirely sortPickingQueue()'s job.
+ */
+export async function getPickingQueue(dateStr?: string): Promise<PickingQueueResult> {
+  const { isoDate, dateOnly } = resolveTargetDate(dateStr);
+
+  // Sequential awaits only — never prisma.$transaction (CORE §3).
+  const orders = await prisma.orders.findMany({
+    where: {
+      dispatchStatus: "dispatch",
+      dispatchTargetDate: dateOnly,
+      workflowStage: "closed", // seatbelt — see CLAUDE_SUPPORT.md §8
+      isRemoved: false,
+      pickAssignment: null, // no pick_assignments row yet for this order
+    },
+    include: {
+      customer: { select: DEALER_SELECT },
+      shipToOverrideCustomer: { select: DEALER_SELECT },
+      dispatchWindow: { select: { id: true, windowTime: true, sortOrder: true } },
+      // 1:1, optional — an order may have no snapshot row. Source: CLAUDE_SUPPORT.md §4.19.
+      querySnapshot: { select: { articleTag: true, totalVolume: true, totalWeight: true } },
+    },
+  });
+
+  const activeWindows = await prisma.dispatch_slot_master.findMany({
+    where: { isActive: true },
+    orderBy: { sortOrder: "asc" },
+    select: { id: true, windowTime: true, sortOrder: true },
+  });
+
+  let unmatchedCount = 0;
+
+  const rows: PickingQueueRow[] = orders.map((order) => {
+    const effectiveDealer = order.shipToOverrideCustomer ?? order.customer;
+    if (!effectiveDealer) unmatchedCount++;
+
+    return {
+      orderId: order.id,
+      obdNumber: order.obdNumber,
+      dealerName: effectiveDealer?.customerName ?? "(Unmatched)",
+      isShipToOverride: order.shipToOverrideCustomerId !== null,
+      windowId: order.dispatchWindow?.id ?? null,
+      windowTime: order.dispatchWindow?.windowTime ?? null,
+      windowSortOrder: order.dispatchWindow?.sortOrder ?? null,
+      deliveryType: effectiveDealer?.area?.deliveryType?.name ?? null,
+      route: effectiveDealer?.area?.primaryRoute?.name ?? null,
+      area: effectiveDealer?.area?.name ?? null,
+      priorityLevel: order.priorityLevel,
+      isKeyCustomer: effectiveDealer?.isKeyCustomer ?? false,
+      articleTag: order.querySnapshot?.articleTag ?? null,
+      volumeLitres: order.querySnapshot?.totalVolume ?? null,
+      weightKg: order.querySnapshot?.totalWeight ?? null,
+      // CLAUDE_SUPPORT.md §4.5 — orderDateTime is never null in practice (set
+      // at SAP import, overwritten by enrichment on a mail match); the
+      // obdEmailDate fallback is a seatbelt, not a common path. Both scalars
+      // are already present on `order` — no select change needed, `include`
+      // returns all base-model scalars alongside the named relations.
+      obdDateTime: order.orderDateTime ?? order.obdEmailDate ?? null,
+    };
+  });
+
+  const sortedRows = sortPickingQueue(rows);
+
+  const windows: PickingWindowSummary[] = activeWindows.map((w) => ({
+    id: w.id,
+    windowTime: w.windowTime,
+    sortOrder: w.sortOrder,
+    count: sortedRows.filter((r) => r.windowId === w.id).length,
+  }));
+
+  return {
+    date: isoDate,
+    rows: sortedRows,
+    windows,
+    unmatchedCount,
+    totalCount: sortedRows.length,
+  };
+}
