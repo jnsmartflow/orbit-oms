@@ -1,7 +1,11 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
+import { Loader2 } from "lucide-react";
 import { UniversalHeader, type HeaderSegment } from "@/components/universal-header";
+import { Checkbox } from "@/components/ui/checkbox";
+import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 import { getTodayIST } from "@/lib/dates";
 import type { PickingQueueRow } from "@/lib/picking/types";
 import type { PickingQueueResult } from "@/lib/picking/queue";
@@ -10,6 +14,11 @@ const EM_DASH = "—";
 const NUMBER_LOCALE = "en-US"; // fixed locale — identical thousands-separator output depot PC vs Vercel
 
 type TabId = number | "all" | "unmatched";
+
+interface Picker {
+  id: number;
+  name: string;
+}
 
 function isUnmatchedRow(row: PickingQueueRow): boolean {
   return row.route === null && row.area === null && row.deliveryType === null;
@@ -24,12 +33,12 @@ function formatNullableNumber(n: number | null): string {
 }
 
 // §27 fixed-table standard — percentage widths, must sum to 100.
-// #(4) OBD(15) Dealer(24) Area(13) Article(17) LT(7) KG(7) Flags(8) spare(5) = 100
-// OBD widened 13→15 (stacked obdNumber + IST date/time line), Dealer narrowed 26→24 to compensate.
-const COLUMN_WIDTHS = [4, 15, 24, 13, 17, 7, 7, 8, 5] as const;
+// Checkbox(4) #(3) OBD(13) Dealer(20) Area(11) Article(14) LT(6) KG(6) Flags(7) Picker(10) Actions(6) = 100
+// Matches the approved mock (docs/mockups/picking/bulk-assign.html) column-for-column.
+const COLUMN_WIDTHS = [4, 3, 13, 20, 11, 14, 6, 6, 7, 10, 6] as const;
 const COLUMN_COUNT = COLUMN_WIDTHS.length;
 
-const DATA_ROW_HEIGHT = 44; // was 36 — grown to fit the OBD cell's two stacked lines (this table only)
+const DATA_ROW_HEIGHT = 44; // grown to fit the OBD cell's two stacked lines (this table only)
 
 const CELL_BASE: CSSProperties = {
   padding: "0 14px",
@@ -81,18 +90,6 @@ function badgeStyle(tone: "red" | "amber"): CSSProperties {
   };
 }
 
-function assignedPillStyle(): CSSProperties {
-  return {
-    fontSize: 10.5,
-    fontWeight: 600,
-    padding: "1px 6px",
-    borderRadius: 4,
-    background: "#f3f4f6",
-    color: "#6b7280",
-    border: "1px solid #e5e7eb",
-  };
-}
-
 // CLAUDE_SUPPORT.md §4.5: displayed value = orderDateTime ?? obdEmailDate,
 // resolved already in queue.ts. Format explicitly in IST — never let the
 // browser's local timezone pick the day.
@@ -111,17 +108,6 @@ function formatObdDateTime(value: Date | string | null): string | null {
     timeZone: "Asia/Kolkata",
   });
   return `${datePart} · ${timePart}`;
-}
-
-function formatAssignedTime(value: Date | string | null): string {
-  if (value === null) return EM_DASH;
-  const d = new Date(value);
-  return d.toLocaleTimeString("en-GB", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-    timeZone: "Asia/Kolkata",
-  });
 }
 
 const OBD_CELL_STYLE: CSSProperties = {
@@ -155,20 +141,9 @@ function FlagBadges({ row }: { row: PickingQueueRow }) {
   );
 }
 
-// ── Action column ────────────────────────────────────────────────────────
+// ── Undo (per-row, assigned rows only) ──────────────────────────────────────
 // Small, secondary, NOT teal — the active tab segment owns the page's one
-// teal element. Plain gray outline for Assign; a plain underlined text
-// button for Undo (still not teal, visually distinct as a reversal action).
-
-const ASSIGN_BUTTON_STYLE: CSSProperties = {
-  fontSize: 10.5,
-  fontWeight: 500,
-  padding: "3px 10px",
-  borderRadius: 6,
-  border: "1px solid #e5e7eb",
-  background: "#ffffff",
-  color: "#4b5563",
-};
+// teal element. A plain underlined text button, visually a reversal action.
 
 const UNDO_LINK_STYLE: CSSProperties = {
   fontSize: 10.5,
@@ -179,50 +154,6 @@ const UNDO_LINK_STYLE: CSSProperties = {
   border: "none",
   padding: 0,
 };
-
-function ActionCell({
-  row,
-  pendingOrderId,
-  actionError,
-  onAssign,
-  onUnassign,
-}: {
-  row: PickingQueueRow;
-  pendingOrderId: number | null;
-  actionError: { orderId: number; message: string } | null;
-  onAssign: (orderId: number) => void;
-  onUnassign: (orderId: number) => void;
-}) {
-  const isPending = pendingOrderId === row.orderId;
-  const errorForRow = actionError?.orderId === row.orderId ? actionError.message : null;
-
-  return (
-    <>
-      {row.isAssigned ? (
-        <button
-          type="button"
-          disabled={isPending}
-          onClick={() => onUnassign(row.orderId)}
-          style={{ ...UNDO_LINK_STYLE, opacity: isPending ? 0.6 : 1, cursor: isPending ? "default" : "pointer" }}
-        >
-          {isPending ? "…" : "Undo"}
-        </button>
-      ) : (
-        <button
-          type="button"
-          disabled={isPending}
-          onClick={() => onAssign(row.orderId)}
-          style={{ ...ASSIGN_BUTTON_STYLE, opacity: isPending ? 0.6 : 1, cursor: isPending ? "default" : "pointer" }}
-        >
-          {isPending ? "…" : "Assign"}
-        </button>
-      )}
-      {errorForRow !== null && (
-        <div style={{ fontSize: 9.5, color: "#dc2626", marginTop: 2, whiteSpace: "normal" }}>{errorForRow}</div>
-      )}
-    </>
-  );
-}
 
 // ── Route-block grouping ────────────────────────────────────────────────────
 //
@@ -318,7 +249,7 @@ const BLOCK_HEADER_CELL_STYLE: CSSProperties = {
   padding: "0 14px",
   display: "flex",
   alignItems: "center",
-  justifyContent: "space-between",
+  gap: 10,
   height: 30,
 };
 
@@ -339,13 +270,29 @@ const ASSIGNED_BAR_STYLE: CSSProperties = {
 
 interface PickingTableProps {
   rows: PickingQueueRow[];
-  pendingOrderId: number | null;
-  actionError: { orderId: number; message: string } | null;
-  onAssign: (orderId: number) => void;
+  selected: Set<number>;
+  onToggleOne: (orderId: number) => void;
+  onToggleBlock: (orderIds: number[], selectAll: boolean) => void;
+  allSelectedInTab: boolean;
+  someSelectedInTab: boolean;
+  onToggleAllInTab: () => void;
+  unassigningOrderId: number | null;
+  unassignError: { orderId: number; message: string } | null;
   onUnassign: (orderId: number) => void;
 }
 
-function PickingTable({ rows, pendingOrderId, actionError, onAssign, onUnassign }: PickingTableProps) {
+function PickingTable({
+  rows,
+  selected,
+  onToggleOne,
+  onToggleBlock,
+  allSelectedInTab,
+  someSelectedInTab,
+  onToggleAllInTab,
+  unassigningOrderId,
+  unassignError,
+  onUnassign,
+}: PickingTableProps) {
   const unassignedRows = useMemo(() => rows.filter((r) => !r.isAssigned), [rows]);
   const assignedRows = useMemo(() => rows.filter((r) => r.isAssigned), [rows]);
 
@@ -363,7 +310,14 @@ function PickingTable({ rows, pendingOrderId, actionError, onAssign, onUnassign 
       </colgroup>
       <thead>
         <tr style={{ height: 32, borderBottom: "1px solid #ebebeb" }}>
-          <th style={headerCellStyle("center", { paddingLeft: 10, paddingRight: 4 })}>#</th>
+          <th style={headerCellStyle("center", { paddingLeft: 10, paddingRight: 4 })}>
+            <Checkbox
+              checked={allSelectedInTab}
+              indeterminate={someSelectedInTab && !allSelectedInTab}
+              onCheckedChange={() => onToggleAllInTab()}
+            />
+          </th>
+          <th style={headerCellStyle("center")}>#</th>
           <th style={headerCellStyle("left")}>OBD</th>
           <th style={headerCellStyle("left")}>Dealer</th>
           <th style={headerCellStyle("left")}>Area</th>
@@ -371,79 +325,88 @@ function PickingTable({ rows, pendingOrderId, actionError, onAssign, onUnassign 
           <th style={headerCellStyle("right")}>LT</th>
           <th style={headerCellStyle("right")}>KG</th>
           <th style={headerCellStyle("left")}>Flags</th>
+          <th style={headerCellStyle("left")}>Picker</th>
           <th style={headerCellStyle("center", { paddingRight: 12 })} />
         </tr>
       </thead>
       <tbody>
-        {blocks.map((block) => (
-          <Fragment key={block.key}>
-            <tr style={BLOCK_HEADER_ROW_STYLE}>
-              <td colSpan={COLUMN_COUNT} style={{ padding: 0 }}>
-                <div style={BLOCK_HEADER_CELL_STYLE}>
-                  <span style={{ fontSize: 11, fontWeight: 600, color: "#374151" }}>
-                    {blockHeaderLabel(block, routeTypeCounts)}
-                  </span>
-                  <span style={{ fontSize: 10.5, color: "#6b7280" }}>{blockHeaderRight(block.rows)}</span>
-                </div>
-              </td>
-            </tr>
-            {block.rows.map((row, i) => {
-              const obdDateTimeLabel = formatObdDateTime(row.obdDateTime);
-              return (
-                <tr key={row.orderId} style={{ height: DATA_ROW_HEIGHT, borderBottom: "1px solid #f0f0f0" }}>
-                  <td style={dataCellStyle("center", "muted", { paddingLeft: 10, paddingRight: 4 })}>
-                    {block.startIndex + i + 1}
-                  </td>
-                  <td style={OBD_CELL_STYLE}>
-                    <div
-                      style={{
-                        ...OBD_LINE_STYLE,
-                        fontSize: 11,
-                        color: "#111827",
-                        fontFamily: '"SF Mono", ui-monospace, Menlo, monospace',
-                      }}
-                    >
-                      {row.obdNumber}
-                    </div>
-                    {obdDateTimeLabel !== null && (
-                      <div style={{ ...OBD_LINE_STYLE, fontSize: 10, color: "#9ca3af", marginTop: 1 }}>
-                        {obdDateTimeLabel}
-                      </div>
-                    )}
-                  </td>
-                  <td style={dataCellStyle("left", "primary")}>
-                    {row.dealerName}
-                    {row.isShipToOverride && (
-                      <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 400, color: "#9ca3af" }}>
-                        &rarr; ship-to
-                      </span>
-                    )}
-                  </td>
-                  <td style={dataCellStyle("left", "secondary")}>
-                    <NullableText value={row.area} />
-                  </td>
-                  <td style={dataCellStyle("left", "secondary")}>
-                    <NullableText value={row.articleTag} />
-                  </td>
-                  <td style={dataCellStyle("right", "secondary")}>{formatNullableNumber(row.volumeLitres)}</td>
-                  <td style={dataCellStyle("right", "secondary")}>{formatNullableNumber(row.weightKg)}</td>
-                  <td style={dataCellStyle("left", "secondary")}>
-                    <FlagBadges row={row} />
-                  </td>
-                  <td style={dataCellStyle("center", "secondary", { paddingRight: 12 })}>
-                    <ActionCell
-                      row={row}
-                      pendingOrderId={pendingOrderId}
-                      actionError={actionError}
-                      onAssign={onAssign}
-                      onUnassign={onUnassign}
+        {blocks.map((block) => {
+          const blockOrderIds = block.rows.map((r) => r.orderId);
+          const blockSelectedCount = blockOrderIds.filter((id) => selected.has(id)).length;
+          const blockAllSelected = blockOrderIds.length > 0 && blockSelectedCount === blockOrderIds.length;
+          const blockIndeterminate = blockSelectedCount > 0 && !blockAllSelected;
+
+          return (
+            <Fragment key={block.key}>
+              <tr style={BLOCK_HEADER_ROW_STYLE}>
+                <td colSpan={COLUMN_COUNT} style={{ padding: 0 }}>
+                  <div style={BLOCK_HEADER_CELL_STYLE}>
+                    <Checkbox
+                      checked={blockAllSelected}
+                      indeterminate={blockIndeterminate}
+                      onCheckedChange={() => onToggleBlock(blockOrderIds, !blockAllSelected)}
                     />
-                  </td>
-                </tr>
-              );
-            })}
-          </Fragment>
-        ))}
+                    <span style={{ fontSize: 11, fontWeight: 600, color: "#374151" }}>
+                      {blockHeaderLabel(block, routeTypeCounts)}
+                    </span>
+                    <span style={{ fontSize: 10.5, color: "#6b7280", marginLeft: "auto" }}>
+                      {blockHeaderRight(block.rows)}
+                    </span>
+                  </div>
+                </td>
+              </tr>
+              {block.rows.map((row, i) => {
+                const obdDateTimeLabel = formatObdDateTime(row.obdDateTime);
+                return (
+                  <tr key={row.orderId} style={{ height: DATA_ROW_HEIGHT, borderBottom: "1px solid #f0f0f0" }}>
+                    <td style={dataCellStyle("center", "muted", { paddingLeft: 10, paddingRight: 4 })}>
+                      <Checkbox checked={selected.has(row.orderId)} onCheckedChange={() => onToggleOne(row.orderId)} />
+                    </td>
+                    <td style={dataCellStyle("center", "muted")}>{block.startIndex + i + 1}</td>
+                    <td style={OBD_CELL_STYLE}>
+                      <div
+                        style={{
+                          ...OBD_LINE_STYLE,
+                          fontSize: 11,
+                          color: "#111827",
+                          fontFamily: '"SF Mono", ui-monospace, Menlo, monospace',
+                        }}
+                      >
+                        {row.obdNumber}
+                      </div>
+                      {obdDateTimeLabel !== null && (
+                        <div style={{ ...OBD_LINE_STYLE, fontSize: 10, color: "#9ca3af", marginTop: 1 }}>
+                          {obdDateTimeLabel}
+                        </div>
+                      )}
+                    </td>
+                    <td style={dataCellStyle("left", "primary")}>
+                      {row.dealerName}
+                      {row.isShipToOverride && (
+                        <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 400, color: "#9ca3af" }}>
+                          &rarr; ship-to
+                        </span>
+                      )}
+                    </td>
+                    <td style={dataCellStyle("left", "secondary")}>
+                      <NullableText value={row.area} />
+                    </td>
+                    <td style={dataCellStyle("left", "secondary")}>
+                      <NullableText value={row.articleTag} />
+                    </td>
+                    <td style={dataCellStyle("right", "secondary")}>{formatNullableNumber(row.volumeLitres)}</td>
+                    <td style={dataCellStyle("right", "secondary")}>{formatNullableNumber(row.weightKg)}</td>
+                    <td style={dataCellStyle("left", "secondary")}>
+                      <FlagBadges row={row} />
+                    </td>
+                    <td style={dataCellStyle("left", "muted")}>{EM_DASH}</td>
+                    <td style={dataCellStyle("center", "secondary", { paddingRight: 12 })} />
+                  </tr>
+                );
+              })}
+            </Fragment>
+          );
+        })}
 
         {assignedRows.length > 0 && (
           <>
@@ -468,60 +431,54 @@ function PickingTable({ rows, pendingOrderId, actionError, onAssign, onUnassign 
               </td>
             </tr>
             {assignedExpanded &&
-              assignedRows.map((row, i) => (
-                <tr key={row.orderId} style={{ height: DATA_ROW_HEIGHT, borderBottom: "1px solid #f0f0f0", opacity: 0.6 }}>
-                  <td style={dataCellStyle("center", "muted", { paddingLeft: 10, paddingRight: 4 })}>
-                    {unassignedRows.length + i + 1}
-                  </td>
-                  <td style={OBD_CELL_STYLE}>
-                    <div
-                      style={{
-                        ...OBD_LINE_STYLE,
-                        fontSize: 11,
-                        color: "#6b7280",
-                        fontFamily: '"SF Mono", ui-monospace, Menlo, monospace',
-                      }}
-                    >
-                      {row.obdNumber}
-                    </div>
-                  </td>
-                  <td style={dataCellStyle("left", "muted")}>
-                    <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                      <span style={{ ...OBD_LINE_STYLE, maxWidth: "100%" }}>{row.dealerName}</span>
-                      <span style={assignedPillStyle()}>Assigned</span>
-                    </span>
-                    <div style={{ fontSize: 10, color: "#9ca3af", marginTop: 1 }}>
-                      {/* Always self-assign in this build (test mode) — pickerId
-                          is always the current caller (no picker-select UI
-                          exists yet), so "You" is always accurate here. If a
-                          real picker-assignment UI is added later, this must
-                          become a real-name/"You"-if-self check against the
-                          signed-in user instead of a hardcoded label. */}
-                      You · {formatAssignedTime(row.assignedAt)}
-                    </div>
-                  </td>
-                  <td style={dataCellStyle("left", "muted")}>
-                    <NullableText value={row.area} />
-                  </td>
-                  <td style={dataCellStyle("left", "muted")}>
-                    <NullableText value={row.articleTag} />
-                  </td>
-                  <td style={dataCellStyle("right", "muted")}>{formatNullableNumber(row.volumeLitres)}</td>
-                  <td style={dataCellStyle("right", "muted")}>{formatNullableNumber(row.weightKg)}</td>
-                  <td style={dataCellStyle("left", "muted")}>
-                    <FlagBadges row={row} />
-                  </td>
-                  <td style={dataCellStyle("center", "secondary", { paddingRight: 12 })}>
-                    <ActionCell
-                      row={row}
-                      pendingOrderId={pendingOrderId}
-                      actionError={actionError}
-                      onAssign={onAssign}
-                      onUnassign={onUnassign}
-                    />
-                  </td>
-                </tr>
-              ))}
+              assignedRows.map((row, i) => {
+                const isRowBusy = unassigningOrderId === row.orderId;
+                const errorForRow = unassignError?.orderId === row.orderId ? unassignError.message : null;
+                return (
+                  <tr key={row.orderId} style={{ height: DATA_ROW_HEIGHT, borderBottom: "1px solid #f0f0f0", opacity: 0.6 }}>
+                    <td style={dataCellStyle("center", "muted", { paddingLeft: 10, paddingRight: 4 })} />
+                    <td style={dataCellStyle("center", "muted")} />
+                    <td style={OBD_CELL_STYLE}>
+                      <div
+                        style={{
+                          ...OBD_LINE_STYLE,
+                          fontSize: 11,
+                          color: "#6b7280",
+                          fontFamily: '"SF Mono", ui-monospace, Menlo, monospace',
+                        }}
+                      >
+                        {row.obdNumber}
+                      </div>
+                    </td>
+                    <td style={dataCellStyle("left", "muted")}>{row.dealerName}</td>
+                    <td style={dataCellStyle("left", "muted")}>
+                      <NullableText value={row.area} />
+                    </td>
+                    <td style={dataCellStyle("left", "muted")}>
+                      <NullableText value={row.articleTag} />
+                    </td>
+                    <td style={dataCellStyle("right", "muted")}>{formatNullableNumber(row.volumeLitres)}</td>
+                    <td style={dataCellStyle("right", "muted")}>{formatNullableNumber(row.weightKg)}</td>
+                    <td style={dataCellStyle("left", "muted")}>
+                      <FlagBadges row={row} />
+                    </td>
+                    <td style={dataCellStyle("left", "muted")}>{row.assignedToName ?? EM_DASH}</td>
+                    <td style={dataCellStyle("center", "secondary", { paddingRight: 12 })}>
+                      <button
+                        type="button"
+                        disabled={isRowBusy}
+                        onClick={() => onUnassign(row.orderId)}
+                        style={{ ...UNDO_LINK_STYLE, opacity: isRowBusy ? 0.6 : 1, cursor: isRowBusy ? "default" : "pointer" }}
+                      >
+                        {isRowBusy ? "…" : "Undo"}
+                      </button>
+                      {errorForRow !== null && (
+                        <div style={{ fontSize: 9.5, color: "#dc2626", marginTop: 2, whiteSpace: "normal" }}>{errorForRow}</div>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
           </>
         )}
       </tbody>
@@ -536,8 +493,16 @@ export function PickingQueue() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabId | null>(null);
-  const [pendingOrderId, setPendingOrderId] = useState<number | null>(null);
-  const [actionError, setActionError] = useState<{ orderId: number; message: string } | null>(null);
+  const [unassigningOrderId, setUnassigningOrderId] = useState<number | null>(null);
+  const [unassignError, setUnassignError] = useState<{ orderId: number; message: string } | null>(null);
+
+  // Bulk-assign selection (mirrors components/support/support-orders-table.tsx's
+  // `selected` Set<number> pattern exactly).
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [pickers, setPickers] = useState<Picker[]>([]);
+  const [pickersLoading, setPickersLoading] = useState(true);
+  const [chosenPickerId, setChosenPickerId] = useState<number | null>(null);
+  const [bulkAssigning, setBulkAssigning] = useState(false);
 
   // UniversalHeader wants a Date; convert both ways exactly as Support does
   // (support-page-content.tsx `headerDate` / `handleHeaderDateChange`).
@@ -557,6 +522,29 @@ export function PickingQueue() {
     }
     return res.json();
   }, [selectedDate]);
+
+  // Picker list for the bulk-assign dropdown — reuses the same picker-role
+  // query app/api/warehouse/pickers/route.ts already exposes. Fetched once;
+  // the picker roster doesn't change within a session.
+  useEffect(() => {
+    let cancelled = false;
+    async function loadPickers() {
+      try {
+        const res = await fetch("/api/warehouse/pickers");
+        if (!res.ok) throw new Error(`Request failed (${res.status})`);
+        const json = (await res.json()) as { pickers?: Picker[] };
+        if (!cancelled) setPickers(json.pickers ?? []);
+      } catch (err) {
+        if (!cancelled) toast.error(err instanceof Error ? err.message : "Failed to load pickers");
+      } finally {
+        if (!cancelled) setPickersLoading(false);
+      }
+    }
+    void loadPickers();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -587,10 +575,19 @@ export function PickingQueue() {
     };
   }, [fetchQueue]);
 
+  // Selection is scoped to "the current tab" (mirrors Support's reset-on-
+  // section-change, support-orders-table.tsx lines 245-258) — switching tabs
+  // clears it rather than carrying a stale cross-tab selection into a bar
+  // whose count would then not match what's visible.
+  useEffect(() => {
+    setSelected(new Set());
+    setChosenPickerId(null);
+  }, [activeTab]);
+
   // Post-action refetch — deliberately does NOT reset activeTab. The
   // date-driven effect above owns "reset on load"; after the operator's own
-  // Assign/Undo click we want to keep them exactly where they were, even if
-  // the tab they're looking at now has fewer (or zero) rows.
+  // Undo/Assign we want to keep them exactly where they were, even if the
+  // tab they're looking at now has fewer (or zero) rows.
   const refetchAfterAction = useCallback(async () => {
     try {
       const json = await fetchQueue();
@@ -600,38 +597,10 @@ export function PickingQueue() {
     }
   }, [fetchQueue]);
 
-  const handleAssign = useCallback(
-    async (orderId: number) => {
-      setPendingOrderId(orderId);
-      setActionError(null);
-      try {
-        const res = await fetch("/api/picking/assign", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ orderId }),
-        });
-        const json = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
-        if (!res.ok) {
-          setActionError({ orderId, message: json.error ?? `Request failed (${res.status})` });
-          if (res.status === 409) {
-            await refetchAfterAction();
-          }
-          return;
-        }
-        await refetchAfterAction();
-      } catch (err) {
-        setActionError({ orderId, message: err instanceof Error ? err.message : "Assign failed" });
-      } finally {
-        setPendingOrderId(null);
-      }
-    },
-    [refetchAfterAction],
-  );
-
   const handleUnassign = useCallback(
     async (orderId: number) => {
-      setPendingOrderId(orderId);
-      setActionError(null);
+      setUnassigningOrderId(orderId);
+      setUnassignError(null);
       try {
         const res = await fetch("/api/picking/unassign", {
           method: "POST",
@@ -640,7 +609,7 @@ export function PickingQueue() {
         });
         const json = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
         if (!res.ok) {
-          setActionError({ orderId, message: json.error ?? `Request failed (${res.status})` });
+          setUnassignError({ orderId, message: json.error ?? `Request failed (${res.status})` });
           if (res.status === 409) {
             await refetchAfterAction();
           }
@@ -648,9 +617,9 @@ export function PickingQueue() {
         }
         await refetchAfterAction();
       } catch (err) {
-        setActionError({ orderId, message: err instanceof Error ? err.message : "Unassign failed" });
+        setUnassignError({ orderId, message: err instanceof Error ? err.message : "Unassign failed" });
       } finally {
-        setPendingOrderId(null);
+        setUnassigningOrderId(null);
       }
     },
     [refetchAfterAction],
@@ -678,6 +647,85 @@ export function PickingQueue() {
     return data.rows.filter((r) => r.windowId === activeTab);
   }, [data, activeTab]);
 
+  // Selection scope — UNASSIGNED rows in the CURRENT TAB only. Never the
+  // assigned done-group, never rows outside this tab (those are cleared by
+  // the tab-change effect above, not filtered here — Array.from() below
+  // reflects exactly what's checked).
+  const selectableIdsInTab = useMemo(
+    () => visibleRows.filter((r) => !r.isAssigned).map((r) => r.orderId),
+    [visibleRows],
+  );
+  const allSelectedInTab = selectableIdsInTab.length > 0 && selectableIdsInTab.every((id) => selected.has(id));
+  const someSelectedInTab = selectableIdsInTab.some((id) => selected.has(id));
+
+  const toggleAllInTab = useCallback(() => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (allSelectedInTab) {
+        selectableIdsInTab.forEach((id) => next.delete(id));
+      } else {
+        selectableIdsInTab.forEach((id) => next.add(id));
+      }
+      return next;
+    });
+  }, [allSelectedInTab, selectableIdsInTab]);
+
+  const toggleOne = useCallback((orderId: number) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(orderId)) next.delete(orderId);
+      else next.add(orderId);
+      return next;
+    });
+  }, []);
+
+  const toggleBlock = useCallback((orderIds: number[], selectAll: boolean) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (selectAll) orderIds.forEach((id) => next.add(id));
+      else orderIds.forEach((id) => next.delete(id));
+      return next;
+    });
+  }, []);
+
+  const handleBulkAssign = useCallback(async () => {
+    if (selected.size === 0 || chosenPickerId === null) return;
+    setBulkAssigning(true);
+    try {
+      const res = await fetch("/api/picking/assign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderIds: Array.from(selected), pickerId: chosenPickerId }),
+      });
+      const json = (await res.json().catch(() => ({}))) as {
+        assigned?: number;
+        failed?: { orderId: number; error: string }[];
+        error?: string;
+      };
+      if (!res.ok) {
+        toast.error(json.error ?? `Request failed (${res.status})`);
+        return;
+      }
+      const assignedCount = json.assigned ?? 0;
+      const failedList = json.failed ?? [];
+      if (failedList.length > 0) {
+        toast(`${assignedCount} assigned, ${failedList.length} failed`);
+      } else {
+        toast.success(`${assignedCount} assigned`);
+      }
+      setSelected(new Set());
+      setChosenPickerId(null);
+      // Refetch fresh — never splice/patch local state. Subtotals, block
+      // counts, and numbering all recompute server-side; failed bills simply
+      // reappear as unassigned on this next read (no reconciliation needed).
+      await refetchAfterAction();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Assign failed");
+    } finally {
+      setBulkAssigning(false);
+    }
+  }, [selected, chosenPickerId, refetchAfterAction]);
+
   return (
     <>
       <UniversalHeader
@@ -695,10 +743,21 @@ export function PickingQueue() {
         showDatePicker
       />
 
-      <div className="px-4 py-4">
-        <p className="text-[11px] text-gray-400 mb-3">
-          Test mode — assignments are tagged and reversible.
-        </p>
+      <div className="px-4 py-4 pb-20">
+        {/* ── Toolbar — mirrors Support's Select All / hint bar ────────── */}
+        <div className="flex items-center justify-between px-1 py-1.5 mb-2">
+          <button
+            type="button"
+            onClick={toggleAllInTab}
+            disabled={selectableIdsInTab.length === 0}
+            className="text-xs text-gray-400 hover:text-gray-600 disabled:opacity-40 transition-colors"
+          >
+            {allSelectedInTab ? "Deselect All" : "Select All"}
+          </button>
+          <p className="text-[11px] text-gray-400">
+            Test mode — assignments are tagged and reversible.
+          </p>
+        </div>
 
         {loading && (
           <p className="text-[13px] text-gray-400 text-center py-16">Loading queue&hellip;</p>
@@ -719,14 +778,75 @@ export function PickingQueue() {
             <div className="rounded-lg border border-gray-200 overflow-hidden">
               <PickingTable
                 rows={visibleRows}
-                pendingOrderId={pendingOrderId}
-                actionError={actionError}
-                onAssign={handleAssign}
+                selected={selected}
+                onToggleOne={toggleOne}
+                onToggleBlock={toggleBlock}
+                allSelectedInTab={allSelectedInTab}
+                someSelectedInTab={someSelectedInTab}
+                onToggleAllInTab={toggleAllInTab}
+                unassigningOrderId={unassigningOrderId}
+                unassignError={unassignError}
                 onUnassign={handleUnassign}
               />
             </div>
           )
         )}
+      </div>
+
+      {/* ── Sticky bulk-assign bar — styled like Support's Submit bar ──── */}
+      <div
+        className={cn(
+          "fixed bottom-0 left-[72px] right-0 z-50 transform transition-transform duration-200",
+          selected.size > 0 ? "translate-y-0" : "translate-y-full",
+        )}
+      >
+        <div
+          className="bg-white"
+          style={{ borderTop: "1px solid rgba(17,24,39,0.06)", boxShadow: "0 -1px 1px rgba(17,24,39,0.04), 0 -8px 24px rgba(17,24,39,0.06)" }}
+        >
+          <div className="flex items-center gap-3 pl-5 pr-[22px] py-3" style={{ minHeight: "56px" }}>
+            <span className="text-xs font-medium text-gray-700">{selected.size} selected</span>
+
+            <div className="flex-1" />
+
+            <span className="text-[11px] text-gray-500">assign to</span>
+            <select
+              value={chosenPickerId ?? ""}
+              onChange={(e) => setChosenPickerId(e.target.value ? Number(e.target.value) : null)}
+              className="h-[30px] px-2.5 text-[11px] border border-gray-200 rounded-[10px] bg-white text-gray-900 font-medium focus:outline-none focus:border-teal-200 min-w-[150px]"
+            >
+              <option value="" disabled>
+                {pickersLoading ? "Loading…" : "Choose picker"}
+              </option>
+              {pickers.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+
+            <div className="w-px h-[22px] bg-gray-200 mx-1 flex-shrink-0" />
+
+            <button
+              type="button"
+              onClick={() => { setSelected(new Set()); setChosenPickerId(null); }}
+              className="text-xs text-gray-400 hover:text-gray-600 px-3 py-1 transition-colors"
+            >
+              Clear
+            </button>
+
+            {/* bg-gray-900 — NOT teal; the active tab segment owns this page's one teal element. */}
+            <button
+              type="button"
+              onClick={() => void handleBulkAssign()}
+              disabled={bulkAssigning || selected.size === 0 || chosenPickerId === null}
+              className="px-4 py-1.5 bg-gray-900 text-white text-xs font-semibold rounded-lg hover:bg-gray-800 flex items-center gap-1.5 disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed transition-colors"
+            >
+              {bulkAssigning && <Loader2 size={12} className="animate-spin" />}
+              Assign
+            </button>
+          </div>
+        </div>
       </div>
     </>
   );

@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Mockup — Picking Queue: Bulk Assign</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: #ffffff;
+    color: #111827;
+  }
+  .mono { font-family: "SF Mono", ui-monospace, Menlo, monospace; }
+
+  /* ── fake collapsed sidebar rail (72px, CORE §11) ─────────────────── */
+  .sidebar-rail {
+    position: fixed;
+    top: 0; left: 0; bottom: 0;
+    width: 72px;
+    background: #ffffff;
+    border-left: 3px solid #0d9488;
+    border-right: 1px solid #e5e7eb;
+    z-index: 40;
+  }
+  .content {
+    margin-left: 72px;
+  }
+  .mock-banner {
+    background: #fffbeb;
+    border-bottom: 1px solid #fde68a;
+    color: #92400e;
+    font-size: 11px;
+    padding: 6px 20px;
+    font-weight: 500;
+  }
+
+  /* ── UniversalHeader row 1 ─────────────────────────────────────────── */
+  .header-row1 {
+    height: 52px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 16px;
+    border-bottom: 1px solid #f0f0f0;
+    position: sticky;
+    top: 0;
+    background: #fff;
+    z-index: 30;
+  }
+  .header-title { font-size: 14px; font-weight: 600; color: #111827; }
+  .header-stats { font-size: 11px; color: #9ca3af; margin-left: 12px; }
+  .header-stats b { color: #111827; font-weight: 600; }
+  .header-right { display: flex; align-items: center; gap: 14px; font-size: 11px; color: #9ca3af; }
+
+  /* ── UniversalHeader row 2 — segmented control ────────────────────── */
+  .header-row2 {
+    height: 40px;
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    border-bottom: 1px solid #f0f0f0;
+    position: sticky;
+    top: 52px;
+    background: #fff;
+    z-index: 30;
+  }
+  .segmented {
+    display: inline-flex;
+    background: #f3f4f6;
+    border-radius: 7px;
+    padding: 3px;
+    gap: 2px;
+  }
+  .segment {
+    font-size: 11px;
+    font-weight: 500;
+    padding: 5px 12px;
+    border-radius: 5px;
+    color: #6b7280;
+    cursor: default;
+    white-space: nowrap;
+  }
+  .segment.active {
+    background: #0d9488;
+    color: #ffffff;
+    font-weight: 600;
+  }
+  .segment:hover:not(.active) { background: rgba(255,255,255,0.6); }
+
+  /* ── secondary toolbar (mirrors Support's Select All / Export bar) ── */
+  .toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 20px;
+    border-bottom: 1px solid #f9fafb;
+  }
+  .toolbar-link {
+    font-size: 11px;
+    color: #9ca3af;
+    background: none;
+    border: none;
+    cursor: default;
+  }
+  .toolbar-hint { font-size: 10.5px; color: #9ca3af; }
+
+  /* ── table ─────────────────────────────────────────────────────────── */
+  .table-wrap {
+    margin: 12px 20px 80px 20px;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  thead tr { height: 32px; border-bottom: 1px solid #ebebeb; }
+  th {
+    padding: 0 14px;
+    font-size: 10px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #9ca3af;
+    text-align: left;
+    white-space: nowrap;
+  }
+  th.center, td.center { text-align: center; }
+  th.right, td.right { text-align: right; }
+  td {
+    padding: 0 14px;
+    font-size: 11px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  tr.data-row { height: 44px; border-bottom: 1px solid #f0f0f0; }
+  tr.data-row:hover { background: #fafafa; }
+  tr.data-row.selected { background: #f0fdfa66; }
+
+  input[type="checkbox"] {
+    width: 15px;
+    height: 15px;
+    accent-color: #0d9488;
+    cursor: default;
+    vertical-align: middle;
+  }
+
+  /* block header row */
+  tr.block-header-row { height: 30px; background: #fafafa; border-bottom: 1px solid #ebebeb; }
+  .block-header-cell {
+    padding: 0 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 30px;
+  }
+  .block-header-label { font-size: 11px; font-weight: 600; color: #374151; }
+  .block-header-total { font-size: 10.5px; color: #6b7280; margin-left: auto; }
+
+  .obd-num { font-size: 11px; color: #111827; }
+  .obd-sub { font-size: 10px; color: #9ca3af; margin-top: 1px; }
+  .dealer-primary { font-size: 11px; font-weight: 500; color: #111827; }
+  .muted { color: #9ca3af; }
+  .secondary { color: #4b5563; }
+
+  .badge {
+    font-size: 10.5px;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 4px;
+    display: inline-block;
+  }
+  .badge-red { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
+  .badge-amber { background: #fffbeb; color: #b45309; border: 1px solid #fde68a; }
+  .badge-gray { background: #f3f4f6; color: #6b7280; border: 1px solid #e5e7eb; }
+
+  .picker-name { font-size: 11px; color: #374151; font-weight: 500; }
+  .picker-empty { color: #d1d5db; }
+
+  .btn-assign-row {
+    font-size: 10.5px;
+    font-weight: 500;
+    padding: 3px 10px;
+    border-radius: 6px;
+    border: 1px solid #e5e7eb;
+    background: #ffffff;
+    color: #4b5563;
+  }
+  .link-undo {
+    font-size: 10.5px;
+    font-weight: 500;
+    color: #4b5563;
+    text-decoration: underline;
+    background: none;
+    border: none;
+  }
+
+  /* assigned / done group collapse bar */
+  .assigned-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    background: #f9fafb;
+    border-top: 1px solid #f0f0f0;
+    border-bottom: 1px solid #f0f0f0;
+    cursor: default;
+  }
+  .assigned-bar .chevron { font-size: 10px; color: #6b7280; display: inline-block; transform: rotate(90deg); }
+  .assigned-bar .label { font-size: 11px; font-weight: 600; color: #6b7280; }
+  .assigned-bar .hint { font-size: 10px; color: #9ca3af; margin-left: auto; }
+  tr.assigned-row { opacity: 0.75; }
+  tr.assigned-row td { color: #6b7280; }
+
+  /* ── sticky bulk-assign bar ───────────────────────────────────────── */
+  .sticky-bar {
+    position: fixed;
+    left: 72px;
+    right: 0;
+    bottom: 0;
+    background: #ffffff;
+    border-top: 1px solid rgba(17,24,39,0.06);
+    box-shadow: 0 -1px 1px rgba(17,24,39,0.04), 0 -8px 24px rgba(17,24,39,0.06);
+    z-index: 50;
+  }
+  .sticky-bar-inner {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 22px 12px 20px;
+    min-height: 56px;
+  }
+  .selected-count { font-size: 12px; font-weight: 500; color: #374151; }
+  .selected-sub { font-size: 10px; color: #9ca3af; }
+  .spacer { flex: 1; }
+  .assign-to-label { font-size: 11px; color: #6b7280; margin-right: 2px; }
+  .picker-select {
+    font-size: 11px;
+    height: 30px;
+    padding: 0 26px 0 10px;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    background: #ffffff url('data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2020%2020%22%3E%3Cpath%20stroke%3D%22%239ca3af%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%221.5%22%20d%3D%22M6%208l4%204%204-4%22%2F%3E%3C%2Fsvg%3E') no-repeat right 8px center;
+    background-size: 12px;
+    appearance: none;
+    color: #111827;
+    font-weight: 500;
+    cursor: default;
+    min-width: 150px;
+  }
+  .divider { width: 1px; height: 22px; background: #e5e7eb; margin: 0 2px; flex-shrink: 0; }
+  .btn-clear {
+    font-size: 11px;
+    color: #9ca3af;
+    background: none;
+    border: none;
+    padding: 6px 10px;
+  }
+  .btn-assign {
+    padding: 8px 16px;
+    background: #111827; /* bg-gray-900 — NOT teal; active tab owns the page's one teal element */
+    color: #ffffff;
+    font-size: 11px;
+    font-weight: 600;
+    border: none;
+    border-radius: 8px;
+    cursor: default;
+  }
+</style>
+</head>
+<body>
+
+  <div class="sidebar-rail"></div>
+
+  <div class="content">
+    <div class="mock-banner">STATIC MOCK — docs/mockups/picking/bulk-assign.html — no data, no interactivity beyond checkbox visuals</div>
+
+    <!-- ── UniversalHeader ─────────────────────────────────────────── -->
+    <div class="header-row1">
+      <div style="display:flex; align-items:center;">
+        <span class="header-title">Picking Queue</span>
+        <span class="header-stats">OBDs <b>32</b></span>
+      </div>
+      <div class="header-right">
+        <span>15:42 IST</span>
+        <span>⌨ Shortcuts</span>
+      </div>
+    </div>
+
+    <div class="header-row2">
+      <div class="segmented">
+        <span class="segment active">10:30 · 14</span>
+        <span class="segment">12:30 · 9</span>
+        <span class="segment">16:00 · 6</span>
+        <span class="segment">18:00 · 3</span>
+        <span class="segment">All · 32</span>
+        <span class="segment">Unmatched · 2</span>
+      </div>
+    </div>
+
+    <!-- ── Secondary toolbar ───────────────────────────────────────── -->
+    <div class="toolbar">
+      <button type="button" class="toolbar-link">Deselect All</button>
+      <span class="toolbar-hint">Test mode — assignments are tagged and reversible.</span>
+    </div>
+
+    <!-- ── Table ───────────────────────────────────────────────────── -->
+    <div class="table-wrap">
+      <table>
+        <colgroup>
+          <col style="width:4%" />   <!-- checkbox -->
+          <col style="width:3%" />   <!-- # -->
+          <col style="width:13%" />  <!-- OBD -->
+          <col style="width:19%" />  <!-- Dealer -->
+          <col style="width:11%" />  <!-- Area -->
+          <col style="width:14%" />  <!-- Article -->
+          <col style="width:6%" />   <!-- LT -->
+          <col style="width:6%" />   <!-- KG -->
+          <col style="width:7%" />   <!-- Flags -->
+          <col style="width:11%" />  <!-- Picker -->
+          <col style="width:6%" />   <!-- Actions -->
+        </colgroup>
+        <thead>
+          <tr>
+            <th class="center"><input type="checkbox" id="select-all-header" checked /></th>
+            <th class="center">#</th>
+            <th>OBD</th>
+            <th>Dealer</th>
+            <th>Area</th>
+            <th>Article</th>
+            <th class="right">LT</th>
+            <th class="right">KG</th>
+            <th>Flags</th>
+            <th>Picker</th>
+            <th class="center"></th>
+          </tr>
+        </thead>
+        <tbody>
+
+          <!-- ── Route block 1: Local · Adajan (2 of 4 checked) ────── -->
+          <tr class="block-header-row">
+            <td colspan="11" style="padding:0;">
+              <div class="block-header-cell">
+                <input type="checkbox" id="block1-header-cb" checked />
+                <span class="block-header-label">Local · Adajan</span>
+                <span class="block-header-total">4 OBDs · 1350.0 L · 1242.5 kg</span>
+              </div>
+            </td>
+          </tr>
+
+          <tr class="data-row selected">
+            <td class="center"><input type="checkbox" checked /></td>
+            <td class="center muted">1</td>
+            <td><div class="obd-num mono">8271940123</div><div class="obd-sub">10 Jul · 09:14</div></td>
+            <td><span class="dealer-primary">Ramesh Traders</span></td>
+            <td class="secondary">Adajan</td>
+            <td class="secondary">12 Drum · 2 Carton</td>
+            <td class="right secondary">420.0</td>
+            <td class="right secondary">380.5</td>
+            <td><span class="badge badge-red">P1</span></td>
+            <td><span class="picker-empty">—</span></td>
+            <td class="center"></td>
+          </tr>
+          <tr class="data-row selected">
+            <td class="center"><input type="checkbox" checked /></td>
+            <td class="center muted">2</td>
+            <td><div class="obd-num mono">8271940456</div><div class="obd-sub">10 Jul · 09:37</div></td>
+            <td><span class="dealer-primary">Patel Hardware</span></td>
+            <td class="secondary">Adajan</td>
+            <td class="secondary">8 Drum</td>
+            <td class="right secondary">210.0</td>
+            <td class="right secondary">195.0</td>
+            <td><span class="picker-empty">—</span></td>
+            <td><span class="picker-empty">—</span></td>
+            <td class="center"></td>
+          </tr>
+          <tr class="data-row">
+            <td class="center"><input type="checkbox" /></td>
+            <td class="center muted">3</td>
+            <td><div class="obd-num mono">8271940789</div><div class="obd-sub">10 Jul · 10:02</div></td>
+            <td><span class="dealer-primary">Shree Ganesh Paints</span></td>
+            <td class="secondary">Adajan</td>
+            <td class="secondary">15 Drum</td>
+            <td class="right secondary">540.0</td>
+            <td class="right secondary">502.0</td>
+            <td><span class="badge badge-amber">KEY</span></td>
+            <td><span class="picker-empty">—</span></td>
+            <td class="center"></td>
+          </tr>
+          <tr class="data-row">
+            <td class="center"><input type="checkbox" /></td>
+            <td class="center muted">4</td>
+            <td><div class="obd-num mono">8271941012</div><div class="obd-sub">10 Jul · 10:20</div></td>
+            <td><span class="dealer-primary">New Bharat Traders</span></td>
+            <td class="secondary">Adajan</td>
+            <td class="secondary">6 Drum</td>
+            <td class="right secondary">180.0</td>
+            <td class="right secondary">165.0</td>
+            <td><span class="picker-empty">—</span></td>
+            <td><span class="picker-empty">—</span></td>
+            <td class="center"></td>
+          </tr>
+
+          <!-- ── Route block 2: Local · Varachha (1 of 3 checked) ──── -->
+          <tr class="block-header-row">
+            <td colspan="11" style="padding:0;">
+              <div class="block-header-cell">
+                <input type="checkbox" id="block2-header-cb" checked />
+                <span class="block-header-label">Local · Varachha</span>
+                <span class="block-header-total">3 OBDs · 710.0 L · 655.0 kg</span>
+              </div>
+            </td>
+          </tr>
+
+          <tr class="data-row selected">
+            <td class="center"><input type="checkbox" checked /></td>
+            <td class="center muted">5</td>
+            <td><div class="obd-num mono">8271941345</div><div class="obd-sub">10 Jul · 10:41</div></td>
+            <td><span class="dealer-primary">Om Sai Enterprises</span></td>
+            <td class="secondary">Varachha</td>
+            <td class="secondary">10 Drum</td>
+            <td class="right secondary">300.0</td>
+            <td class="right secondary">275.0</td>
+            <td><span class="picker-empty">—</span></td>
+            <td><span class="picker-empty">—</span></td>
+            <td class="center"></td>
+          </tr>
+          <tr class="data-row">
+            <td class="center"><input type="checkbox" /></td>
+            <td class="center muted">6</td>
+            <td><div class="obd-num mono">8271941678</div><div class="obd-sub">10 Jul · 11:05</div></td>
+            <td><span class="dealer-primary">Jay Ambe Paints</span></td>
+            <td class="secondary">Varachha</td>
+            <td class="secondary">5 Drum</td>
+            <td class="right secondary">150.0</td>
+            <td class="right secondary">140.0</td>
+            <td><span class="badge badge-red">P1</span></td>
+            <td><span class="picker-empty">—</span></td>
+            <td class="center"></td>
+          </tr>
+          <tr class="data-row">
+            <td class="center"><input type="checkbox" /></td>
+            <td class="center muted">7</td>
+            <td><div class="obd-num mono">8271941901</div><div class="obd-sub">10 Jul · 11:22</div></td>
+            <td><span class="dealer-primary">Krishna Colour House</span></td>
+            <td class="secondary">Varachha</td>
+            <td class="secondary">9 Drum</td>
+            <td class="right secondary">260.0</td>
+            <td class="right secondary">240.0</td>
+            <td><span class="picker-empty">—</span></td>
+            <td><span class="picker-empty">—</span></td>
+            <td class="center"></td>
+          </tr>
+
+          <!-- ── Assigned / done group — shown EXPANDED for this mock ─
+               (in the live board this collapses behind "▸ N assigned",
+               same pattern as Support's done-group — CLAUDE_SUPPORT §4.2) -->
+          <tr>
+            <td colspan="11" style="padding:0;">
+              <div class="assigned-bar">
+                <span class="chevron">▸</span>
+                <span class="label">2 assigned</span>
+                <span class="hint">shown expanded in this mock</span>
+              </div>
+            </td>
+          </tr>
+          <tr class="data-row assigned-row">
+            <td class="center"><!-- no checkbox — assigned rows are not selectable --></td>
+            <td class="center muted">8</td>
+            <td><div class="obd-num mono">8271939876</div></td>
+            <td><span class="dealer-primary" style="color:#6b7280;">Maruti Traders</span></td>
+            <td class="muted">Adajan</td>
+            <td class="muted">7 Drum</td>
+            <td class="right muted">200.0</td>
+            <td class="right muted">185.0</td>
+            <td><span class="picker-empty">—</span></td>
+            <td><span class="picker-name">Deepak</span></td>
+            <td class="center"><button class="link-undo" type="button">Undo</button></td>
+          </tr>
+          <tr class="data-row assigned-row">
+            <td class="center"><!-- no checkbox — assigned rows are not selectable --></td>
+            <td class="center muted">9</td>
+            <td><div class="obd-num mono">8271939654</div></td>
+            <td><span class="dealer-primary" style="color:#6b7280;">Siddhi Vinayak</span></td>
+            <td class="muted">Varachha</td>
+            <td class="muted">4 Drum</td>
+            <td class="right muted">120.0</td>
+            <td class="right muted">110.0</td>
+            <td><span class="picker-empty">—</span></td>
+            <td><span class="picker-name">Chandrasing</span></td>
+            <td class="center"><button class="link-undo" type="button">Undo</button></td>
+          </tr>
+
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ── Sticky bulk-assign bar ───────────────────────────────────── -->
+  <div class="sticky-bar">
+    <div class="sticky-bar-inner">
+      <span class="selected-count">3 selected</span>
+      <span class="selected-sub">1350.0 L · 3 customers</span>
+
+      <div class="spacer"></div>
+
+      <span class="assign-to-label">assign to</span>
+      <select class="picker-select">
+        <option>Deepak</option>
+        <option>Chandrasing</option>
+      </select>
+
+      <div class="divider"></div>
+
+      <button type="button" class="btn-clear">Clear</button>
+      <button type="button" class="btn-assign">Assign</button>
+    </div>
+  </div>
+
+  <script>
+    // Presentational only — sets the tri-state dash on partially-selected
+    // header/group checkboxes. No data, no fetch, no framework.
+    document.getElementById("select-all-header").indeterminate = true; // 3 of 7 unassigned selected
+    document.getElementById("block1-header-cb").indeterminate = true;  // 2 of 4 selected
+    document.getElementById("block2-header-cb").indeterminate = true;  // 1 of 3 selected
+  </script>
+
+</body>
+</html>
