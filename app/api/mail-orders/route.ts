@@ -130,6 +130,20 @@ export async function GET(req: Request): Promise<NextResponse> {
     }
   }
 
+  // Key dealer flag — sourced from delivery_point_master.isKeyCustomer.
+  // Reuses the SAME uniqueCodes array built for the bill-to batch above (no
+  // new code-collection pass). Sequential await, no $transaction (CORE §3).
+  const keyDealerMap = new Map<string, boolean>();
+  if (uniqueCodes.length > 0) {
+    const keyDealerRows = await prisma.delivery_point_master.findMany({
+      where: { customerCode: { in: uniqueCodes } },
+      select: { customerCode: true, isKeyCustomer: true },
+    });
+    for (const row of keyDealerRows) {
+      keyDealerMap.set(row.customerCode, row.isKeyCustomer);
+    }
+  }
+
   // Alt-SKU twins — every v2 SKU sharing a line's product|baseColour|packCode
   // combo. Built ONCE per request from v2 stock (sequential await, no
   // $transaction — CORE §3), same batch shape as customerLookupMap above.
@@ -154,6 +168,7 @@ export async function GET(req: Request): Promise<NextResponse> {
       customerArea: lookup?.area ?? null,
       customerDeliveryType: lookup?.deliveryType ?? null,
       customerRoute: lookup?.route ?? null,
+      isKeyCustomer: keyDealerMap.get(o.customerCode ?? "") ?? false,
       shipToArea: shipToLookup?.area ?? null,
       shipToDeliveryType: shipToLookup?.deliveryType ?? null,
       // Additive: append altSkus per line; every existing line field preserved.
