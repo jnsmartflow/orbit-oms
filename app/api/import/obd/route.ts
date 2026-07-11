@@ -3360,7 +3360,7 @@ async function handleAutoImportPatchHeaders(req: Request): Promise<NextResponse>
         const existingMs = existing.orderDateTime?.getTime() ?? null;
         if (existingMs !== newDT.getTime()) {
           updateData.orderDateTime = newDT;
-          updateData.obdEmailDate  = incomingDate;
+          updateData.obdEmailDate  = newDT;
           changedFields.push("orderDateTime", "obdEmailDate");
           counts.timeFixed++;
           updateData.arrivalSlotId = resolveArrivalSlotId(newDT);

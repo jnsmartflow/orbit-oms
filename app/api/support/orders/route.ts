@@ -197,7 +197,9 @@ export async function GET(req: Request): Promise<NextResponse> {
   }
 
   const mappedOrders = orders.map((order) => {
-    const obdDate = order.obdEmailDate?.toISOString().slice(0, 10) ?? dateStr;
+    const obdDate = order.obdEmailDate
+      ? order.obdEmailDate.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" })
+      : dateStr;
     const isCarriedOver = obdDate < dateStr;
     const daysOverdue = isCarriedOver
       ? Math.floor((new Date(dateStr).getTime() - new Date(obdDate).getTime()) / 86400000)
