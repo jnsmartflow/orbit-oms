@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { Star } from "lucide-react";
 import type { OrderSignal } from "@/lib/mail-orders/utils";
 import { SignalPill } from "./signal-pill";
 
@@ -10,6 +11,7 @@ interface BillToCardProps {
   customerArea: string | null;
   customerDeliveryType: string | null;
   customerMatchStatus: "exact" | "multiple" | "unmatched" | null;
+  isKeyCustomer?: boolean;
   signals: OrderSignal[];
   onCodeClick?: () => void;
   popoverSlot?: ReactNode;
@@ -42,6 +44,7 @@ export function BillToCard({
   customerArea,
   customerDeliveryType,
   customerMatchStatus,
+  isKeyCustomer,
   signals,
   onCodeClick,
   popoverSlot,
@@ -84,6 +87,12 @@ export function BillToCard({
         <span className="text-[14.5px] font-bold text-gray-900 tracking-tight truncate">
           {customerName ?? "—"}
         </span>
+        {isKeyCustomer && (
+          <span className="inline-flex items-center gap-0.5 text-[10.5px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-700 flex-shrink-0">
+            <Star size={9} fill="currentColor" />
+            Key
+          </span>
+        )}
       </div>
 
       {hasDetail && (

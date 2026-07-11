@@ -131,7 +131,7 @@ export default function MailOrdersPage() {
   const [error, setError] = useState(false);
   const [activeSlot, setActiveSlot] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [headerFilters, setHeaderFilters] = useState<Record<string, string[]>>({ status: [], matchStatus: [], dispatch: [], priority: [], lock: [] });
+  const [headerFilters, setHeaderFilters] = useState<Record<string, string[]>>({ status: [], matchStatus: [], dispatch: [], priority: [], lock: [], keyDealer: [] });
   const flaggedIds = useMemo(
     () => new Set(orders.filter(o => o.isLocked).map(o => o.id)),
     [orders],
@@ -398,6 +398,11 @@ export default function MailOrdersPage() {
         const val = locked ? "locked" : "unlocked";
         return lockArr.includes(val);
       });
+    }
+
+    // Key dealer filter
+    if (headerFilters.keyDealer?.includes("key")) {
+      result = result.filter((o) => o.isKeyCustomer);
     }
 
     if (searchQuery.trim()) {
@@ -1104,6 +1109,7 @@ export default function MailOrdersPage() {
           { label: "Dispatch", key: "dispatch", options: [{ value: "Hold", label: "Hold" }, { value: "Dispatch", label: "Dispatch" }] },
           { label: "Priority", key: "priority", options: [{ value: "Urgent", label: "Urgent" }, { value: "Normal", label: "Normal" }] },
           { label: "Lock", key: "lock", options: [{ value: "locked", label: "Locked" }, { value: "unlocked", label: "Unlocked" }] },
+          { label: "Dealer", key: "keyDealer", options: [{ value: "key", label: "Key" }] },
         ]}
         activeFilters={headerFilters}
         onFilterChange={setHeaderFilters}

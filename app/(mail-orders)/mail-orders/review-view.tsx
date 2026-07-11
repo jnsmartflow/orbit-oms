@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useRef } from "react";
-import { Check, Pencil, Copy, Mail, Flag, Search, Printer, StickyNote } from "lucide-react";
+import { Check, Pencil, Copy, Mail, Flag, Search, Printer, StickyNote, Star } from "lucide-react";
 import type { MoOrder, MoOrderLine, CustomerSearchResult } from "@/lib/mail-orders/types";
 import type { SlotCutoffs } from "@/lib/mail-orders/utils";
 import {
@@ -72,6 +72,10 @@ function getDeliveryDotClass(type: string | null | undefined): string {
     case "CROSS": return "bg-rose-600";
     default: return "bg-gray-300";
   }
+}
+
+function StarGlyph() {
+  return <Star size={12} className="text-amber-500 flex-shrink-0" fill="currentColor" />;
 }
 
 function formatTime(iso: string): string {
@@ -812,6 +816,7 @@ export function ReviewView({
             <span className="text-[13px] font-semibold text-gray-900 truncate">
               {smartTitleCase(order.customerName ?? cleanSubject(order.subject))}
             </span>
+            {order.isKeyCustomer && <StarGlyph />}
             {(() => {
               const sigs = getOrderSignals(order, { disabledTagKeys });
               // Show bill OR split badges in left panel — each order gets
@@ -1379,6 +1384,7 @@ export function ReviewView({
             customerArea={order.customerArea ?? null}
             customerDeliveryType={order.customerDeliveryType ?? null}
             customerMatchStatus={order.customerMatchStatus ?? null}
+            isKeyCustomer={order.isKeyCustomer}
             signals={billSignals}
             onCodeClick={onCodeClickHandler}
             popoverSlot={popoverContent}
