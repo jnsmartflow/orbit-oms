@@ -18,6 +18,13 @@ function compareNullableStringAsc(a: string | null, b: string | null): number {
   return a.localeCompare(b, LOCALE, { sensitivity: "base" });
 }
 
+function compareNullableDateAsc(a: Date | string | null, b: Date | string | null): number {
+  if (a === null && b === null) return 0;
+  if (a === null) return 1;
+  if (b === null) return -1;
+  return new Date(a).getTime() - new Date(b).getTime();
+}
+
 // Locked. Delivery type is NOT a Postgres enum and its role_master-style ids
 // are not sort order — this is the deliberate depot-priority ranking.
 export const DELIVERY_TYPE_ORDER: Record<string, number> = {
@@ -45,6 +52,31 @@ export const byDeliveryType: SortRule = {
   key: "deliveryType",
   label: "Delivery type",
   compare: (a, b) => deliveryTypeRank(a.deliveryType) - deliveryTypeRank(b.deliveryType),
+};
+
+// Vehicle-ready route rule (web-update-2026-07-12-picking-queue-v1-design-locked.md).
+// Lifts every row of a ready route above every row of a non-ready route, as a contiguous
+// block — never scattered, because within-route/within-tie ordering is deferred (return 0)
+// to the existing route/area/priority/key-customer rules below it in the spine. Must sit
+// AFTER byWindow (readiness is a per-window/per-truck concept — placement, not extra logic,
+// is what keeps this window-scoped: cross-window pairs are already decided by byWindow before
+// this rule ever runs) and BEFORE byDeliveryType/byRoute (so a ready route outranks EVERY
+// non-ready row, not just non-Local ones).
+export const byRouteReady: SortRule = {
+  key: "routeReady",
+  label: "Vehicle-ready route",
+  compare: (a, b) => {
+    if (a.isReadyRoute && !b.isReadyRoute) return -1;
+    if (!a.isReadyRoute && b.isReadyRoute) return 1;
+    if (!a.isReadyRoute && !b.isReadyRoute) return 0;
+
+    const sameRoute =
+      a.windowId === b.windowId && a.deliveryType === b.deliveryType && a.route === b.route;
+    if (sameRoute) return 0;
+
+    // Different ready routes — earliest-ready route first (FIFO-consistent).
+    return compareNullableDateAsc(a.readyRouteEarliestDateTime, b.readyRouteEarliestDateTime);
+  },
 };
 
 export const byRoute: SortRule = {
@@ -89,6 +121,7 @@ export const byAssigned: SortRule = {
 export const PICKING_SPINE: SortRule[] = [
   byAssigned,
   byWindow,
+  byRouteReady,
   byDeliveryType,
   byRoute,
   byArea,

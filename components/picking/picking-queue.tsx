@@ -76,11 +76,13 @@ function dataCellStyle(align: Align, tone: CellTone, extra?: CSSProperties): CSS
   return { ...CELL_BASE, textAlign: align, ...toneStyle, ...extra };
 }
 
-function badgeStyle(tone: "red" | "amber"): CSSProperties {
+function badgeStyle(tone: "red" | "amber" | "green"): CSSProperties {
   const palette: CSSProperties =
     tone === "red"
       ? { background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca" }
-      : { background: "#fffbeb", color: "#b45309", border: "1px solid #fde68a" };
+      : tone === "amber"
+        ? { background: "#fffbeb", color: "#b45309", border: "1px solid #fde68a" }
+        : { background: "#dcfce7", color: "#15803d", border: "1px solid #bbf7d0" };
   return {
     fontSize: 10.5,
     fontWeight: 600,
@@ -172,6 +174,11 @@ interface RouteBlock {
   route: string | null;
   rows: PickingQueueRow[];
   startIndex: number; // 0-based position of the block's first row within the tab's row list — feeds continuous "#" numbering
+  // Vehicle-ready route rule — copied from the block's first row. Safe: every row in a
+  // block already shares (deliveryType, route), so they share identical readiness values
+  // by construction (lib/picking/queue.ts computes them per window::deliveryType::route).
+  readyRoute: boolean;
+  routeReadyWeightKg: number;
 }
 
 function buildRouteBlocks(rows: PickingQueueRow[]): RouteBlock[] {
@@ -187,6 +194,8 @@ function buildRouteBlocks(rows: PickingQueueRow[]): RouteBlock[] {
         route: row.route,
         rows: [row],
         startIndex: idx,
+        readyRoute: row.isReadyRoute,
+        routeReadyWeightKg: row.routeReadyWeightKg,
       });
     }
   });
@@ -349,6 +358,11 @@ function PickingTable({
                     <span style={{ fontSize: 11, fontWeight: 600, color: "#374151" }}>
                       {blockHeaderLabel(block, routeTypeCounts)}
                     </span>
+                    {block.readyRoute && (
+                      <span style={badgeStyle("green")}>
+                        ＝{formatNumber(block.routeReadyWeightKg)} kg · truck ready
+                      </span>
+                    )}
                     <span style={{ fontSize: 10.5, color: "#6b7280", marginLeft: "auto" }}>
                       {blockHeaderRight(block.rows)}
                     </span>
