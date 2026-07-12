@@ -672,35 +672,47 @@ export function PickingQueue() {
   const allSelectedInTab = selectableIdsInTab.length > 0 && selectableIdsInTab.every((id) => selected.has(id));
   const someSelectedInTab = selectableIdsInTab.some((id) => selected.has(id));
 
+  // No-jump guard (web-update-2026-07-12-picking-queue-v1-design-locked.md): a valid
+  // selection is always a gap-free prefix of `selectableIdsInTab` — that array IS the
+  // flat, spine-sorted, tab-scoped waiting line already (buildRouteBlocks only groups it
+  // visually; it never reorders). Every handler below recomputes `selected` as a
+  // slice() of that same array, anchored at the clicked row/block/all boundary — so a
+  // gapped or skip-row-1 selection is structurally impossible to produce, not merely
+  // disallowed by disabling inputs. A route boundary is NOT a boundary here — a clean
+  // top run may span multiple route blocks (V1 locked decision).
+
   const toggleAllInTab = useCallback(() => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (allSelectedInTab) {
-        selectableIdsInTab.forEach((id) => next.delete(id));
-      } else {
-        selectableIdsInTab.forEach((id) => next.add(id));
-      }
-      return next;
-    });
+    setSelected(allSelectedInTab ? new Set() : new Set(selectableIdsInTab));
   }, [allSelectedInTab, selectableIdsInTab]);
 
-  const toggleOne = useCallback((orderId: number) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(orderId)) next.delete(orderId);
-      else next.add(orderId);
-      return next;
-    });
-  }, []);
+  const toggleOne = useCallback(
+    (orderId: number) => {
+      const idx = selectableIdsInTab.indexOf(orderId);
+      if (idx === -1) return; // assigned rows never render a live checkbox
+      setSelected((prev) =>
+        prev.has(orderId)
+          ? new Set(selectableIdsInTab.slice(0, idx)) // uncheck — shrink, drop this row through the end
+          : new Set(selectableIdsInTab.slice(0, idx + 1)), // check — extend through this row (may jump ahead)
+      );
+    },
+    [selectableIdsInTab],
+  );
 
-  const toggleBlock = useCallback((orderIds: number[], selectAll: boolean) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (selectAll) orderIds.forEach((id) => next.add(id));
-      else orderIds.forEach((id) => next.delete(id));
-      return next;
-    });
-  }, []);
+  const toggleBlock = useCallback(
+    (orderIds: number[], selectAll: boolean) => {
+      if (orderIds.length === 0) return;
+      if (selectAll) {
+        const lastIdx = selectableIdsInTab.indexOf(orderIds[orderIds.length - 1]);
+        if (lastIdx === -1) return;
+        setSelected(new Set(selectableIdsInTab.slice(0, lastIdx + 1)));
+      } else {
+        const firstIdx = selectableIdsInTab.indexOf(orderIds[0]);
+        if (firstIdx === -1) return;
+        setSelected(new Set(selectableIdsInTab.slice(0, firstIdx)));
+      }
+    },
+    [selectableIdsInTab],
+  );
 
   const handleBulkAssign = useCallback(async () => {
     if (selected.size === 0 || chosenPickerId === null) return;
@@ -768,9 +780,14 @@ export function PickingQueue() {
           >
             {allSelectedInTab ? "Deselect All" : "Select All"}
           </button>
-          <p className="text-[11px] text-gray-400">
-            Test mode — assignments are tagged and reversible.
-          </p>
+          <div className="text-right">
+            <p className="text-[11px] text-gray-400">
+              Test mode — assignments are tagged and reversible.
+            </p>
+            <p className="text-[11px] text-gray-400">
+              Selecting a row also selects everyone above it — pickers are served top to bottom.
+            </p>
+          </div>
         </div>
 
         {loading && (
