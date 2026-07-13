@@ -1766,9 +1766,12 @@ export default function PoPage(): React.JSX.Element {
     // draftsEnabled: show the "Opening mail" handoff overlay, log this order to
     // po_sent_orders, and drop it from Drafts if it came from a reopened one —
     // ALL plain state/localStorage writes, no history calls, so none of this
-    // conflicts with the mailto-must-fire-synchronously-first rule below.
+    // conflicts with the mailto-must-fire-synchronously-first rule below. The
+    // overlay's own backdrop fully covers the screen for its ~1.4s run, so the
+    // reset below (which now ALSO runs for this path — see below) is invisible
+    // until the overlay fades, revealing a fresh Home page underneath.
     if (draftsEnabled) {
-      runOverlaySequence("sending");   // no onComplete — the order stays on screen either way
+      runOverlaySequence("sending");
       if (selectedCust) {
         addSentOrder({
           id:      newSentId(),
@@ -1780,10 +1783,9 @@ export default function PoPage(): React.JSX.Element {
           },
         });
       }
-      if (openedDraftId) {
-        removeSavedDraft(openedDraftId);
-        setOpenedDraftId(null);   // that draft is gone — a later Save must start fresh, not resurrect it
-      }
+      // openedDraftId is cleared below by the shared clearCustomer() reset —
+      // no need to set it here too.
+      if (openedDraftId) removeSavedDraft(openedDraftId);
     }
 
     // Fire the mailto FIRST — within the tap gesture, BEFORE any history navigation.
@@ -1793,16 +1795,11 @@ export default function PoPage(): React.JSX.Element {
     // before or in the same sync tick as this line.
     window.location.href = url;   // mailto: opens the mail app; page does not unload
 
-    if (draftsEnabled) {
-      // The order STAYS ON SCREEN — mailto only opens the mail app, it never
-      // confirms delivery, so resetting here would assume a success we don't
-      // have. No reset, no history change; orbitoms_po_draft (crash-recovery)
-      // is untouched too, which is correct — the still-live order should stay
-      // recoverable.
-      return;
-    }
-
     // Full reset — pure state, NO navigation, so it can't pre-empt the mailto.
+    // Runs for BOTH paths now: the Sent list (just written above, when
+    // draftsEnabled) is the recovery net if the user backs out of the mail
+    // app, so there's no longer a reason to leave the order sitting on Review
+    // — same shared reset plain /po has always used.
     clearCustomer();
     // Snap history to base so a later Back exits cleanly — DEFERRED to a later task
     // (setTimeout 0) so it runs AFTER the mailto handoff and never pre-empts it. End
