@@ -2272,69 +2272,18 @@ export default function PoPage(): React.JSX.Element {
                 </div>
               )}
             </div>
-          ) : draftsEnabled && browseScreen === "sent" ? (
-            /* ── Sent screen (draftsEnabled only) — peer of landing, same
-                shape as Drafts. Tapping a row opens the READ-ONLY receipt
-                (viewSentReceipt) — reorder only happens from the receipt's
-                own "Edit order" button. ──────────────────────────────────── */
-            <div className="px-4 pt-6">
-              <div className="text-[13px] font-semibold text-gray-600 uppercase tracking-wide mb-2 px-1">
-                Sent
-              </div>
-              {sentOrders.length === 0 ? (
-                <div className="mt-10 flex flex-col items-center text-center px-6">
-                  <div className="w-[44px] h-[44px] rounded-full bg-gray-100 flex items-center justify-center mb-3">
-                    <Send className="w-[20px] h-[20px] text-gray-300" />
-                  </div>
-                  <p className="text-[14px] font-medium text-gray-500">No sent orders yet</p>
-                  <p className="text-[13px] text-gray-400 mt-1 leading-snug">
-                    Orders you send today and yesterday show up here.
-                  </p>
-                </div>
-              ) : (
-                <div className="bg-white border border-gray-100 rounded-[16px] overflow-hidden shadow-sm">
-                  {sentOrders.map((o) => {
-                    const sum = draftSummary(o.snapshot);
-                    return (
-                      <div
-                        key={o.id}
-                        className="flex items-center gap-3 px-4 py-3 border-b border-gray-50 last:border-b-0"
-                      >
-                        <button
-                          type="button"
-                          onClick={() => viewSentReceipt(o)}
-                          className="flex-1 min-w-0 text-left"
-                        >
-                          <p className="text-[15px] font-bold text-gray-900 truncate">
-                            {o.snapshot.customer.name}
-                          </p>
-                          <p className="text-[12px] text-gray-400 truncate mt-0.5">
-                            {o.snapshot.customer.area ? `${o.snapshot.customer.area} · ` : ""}
-                            {sum.bills} {sum.bills === 1 ? "bill" : "bills"} · {sum.units} units
-                          </p>
-                          <p className="text-[11px] text-gray-400 mt-0.5">{formatSavedAt(o.sentAt)}</p>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => requestDeleteSent(o.id)}
-                          aria-label="Delete sent order"
-                          className="text-gray-300 active:text-red-500 p-2 -mr-2 shrink-0"
-                        >
-                          <Trash2 className="w-[17px] h-[17px]" />
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
           ) : draftsEnabled && receiptOrder ? (
             /* ── Read-only Sent receipt (draftsEnabled only) ── renders
                 straight from the immutable snapshot, never touches live
                 state. Reuses the same bill-card visual language as Review
                 (lineChips/productLabel/aliasSuffix are pure helpers, work
                 identically on a snapshot's bills) minus every editable
-                control. ─────────────────────────────────────────────────── */
+                control. Checked BEFORE the Sent-list branch below: browseScreen
+                deliberately STAYS "sent" while the receipt is open (so Back
+                returns to the Sent list, not Home — see closeSentReceipt), so
+                this more-specific receiptOrder check must be evaluated first
+                or the broader browseScreen === "sent" branch always shadows
+                it. ──────────────────────────────────────────────────────── */
             <>
               <div className="bg-white border-b border-gray-200 px-4 py-[13px]">
                 <div className="flex items-center gap-2">
@@ -2419,6 +2368,62 @@ export default function PoPage(): React.JSX.Element {
                 </div>
               </div>
             </>
+          ) : draftsEnabled && browseScreen === "sent" ? (
+            /* ── Sent screen (draftsEnabled only) — peer of landing, same
+                shape as Drafts. Tapping a row opens the READ-ONLY receipt
+                (viewSentReceipt) — reorder only happens from the receipt's
+                own "Edit order" button. ──────────────────────────────────── */
+            <div className="px-4 pt-6">
+              <div className="text-[13px] font-semibold text-gray-600 uppercase tracking-wide mb-2 px-1">
+                Sent
+              </div>
+              {sentOrders.length === 0 ? (
+                <div className="mt-10 flex flex-col items-center text-center px-6">
+                  <div className="w-[44px] h-[44px] rounded-full bg-gray-100 flex items-center justify-center mb-3">
+                    <Send className="w-[20px] h-[20px] text-gray-300" />
+                  </div>
+                  <p className="text-[14px] font-medium text-gray-500">No sent orders yet</p>
+                  <p className="text-[13px] text-gray-400 mt-1 leading-snug">
+                    Orders you send today and yesterday show up here.
+                  </p>
+                </div>
+              ) : (
+                <div className="bg-white border border-gray-100 rounded-[16px] overflow-hidden shadow-sm">
+                  {sentOrders.map((o) => {
+                    const sum = draftSummary(o.snapshot);
+                    return (
+                      <div
+                        key={o.id}
+                        className="flex items-center gap-3 px-4 py-3 border-b border-gray-50 last:border-b-0"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => viewSentReceipt(o)}
+                          className="flex-1 min-w-0 text-left"
+                        >
+                          <p className="text-[15px] font-bold text-gray-900 truncate">
+                            {o.snapshot.customer.name}
+                          </p>
+                          <p className="text-[12px] text-gray-400 truncate mt-0.5">
+                            {o.snapshot.customer.area ? `${o.snapshot.customer.area} · ` : ""}
+                            {sum.bills} {sum.bills === 1 ? "bill" : "bills"} · {sum.units} units
+                          </p>
+                          <p className="text-[11px] text-gray-400 mt-0.5">{formatSavedAt(o.sentAt)}</p>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => requestDeleteSent(o.id)}
+                          aria-label="Delete sent order"
+                          className="text-gray-300 active:text-red-500 p-2 -mr-2 shrink-0"
+                        >
+                          <Trash2 className="w-[17px] h-[17px]" />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           ) : (
           /* ── Pick a customer — single elevated search field, no chrome ───
               No label / heading / logo / recent list. Generous top spacing
