@@ -487,6 +487,11 @@ export default function PoPage(): React.JSX.Element {
   const [draftToDelete,  setDraftToDelete]  = useState<string | null>(null);
   // Sent-order id awaiting its delete confirm sheet (null = no sheet).
   const [sentToDelete,   setSentToDelete]   = useState<string | null>(null);
+  // The Sent order currently shown as a read-only receipt (null = not
+  // showing). Renders directly from this immutable snapshot — never loaded
+  // into selectedCust/bills/etc., so there is no live state to accidentally
+  // mutate and nothing to reset if the user just backs out without acting.
+  const [receiptOrder,   setReceiptOrder]   = useState<SentOrder | null>(null);
   // Which saved draft (if any) the CURRENT live order came from — null for a
   // fresh order. Drives Save-draft's new-vs-overwrite choice; reset on New
   // order, after Send (both already funnel through clearCustomer() for the
@@ -620,12 +625,14 @@ export default function PoPage(): React.JSX.Element {
     deleteOpen:       boolean;
     draftDeleteOpen:  boolean;
     sentDeleteOpen:   boolean;
+    receiptOpen:      boolean;
     browseScreen:     "home" | "drafts" | "sent";
     hasLines:         boolean;
   }>({
     selectedCust: false, view: "build", mode: "search", confirmOpen: false,
     crossOpen: false, callOpen: false, deleteOpen: false,
-    draftDeleteOpen: false, sentDeleteOpen: false, browseScreen: "home", hasLines: false,
+    draftDeleteOpen: false, sentDeleteOpen: false, receiptOpen: false,
+    browseScreen: "home", hasLines: false,
   });
 
   // ── Data ──────────────────────────────────────────────────────────────────
@@ -912,6 +919,10 @@ export default function PoPage(): React.JSX.Element {
       if (s.deleteOpen) { cancelDeleteBill(); return; }   // overlay: delete-bill sheet
       if (s.draftDeleteOpen) { cancelDeleteDraft(); return; }   // overlay: delete-draft sheet (draftsEnabled only)
       if (s.sentDeleteOpen)  { cancelDeleteSent();  return; }   // overlay: delete-sent sheet (draftsEnabled only)
+      // Read-only Sent receipt → back to the Sent list (draftsEnabled only).
+      // Checked BEFORE the browseScreen check below so Back closes just the
+      // receipt (one level) instead of skipping past Sent straight to Home.
+      if (s.receiptOpen) { closeSentReceipt(); return; }
       if (s.view === "review")   { closeReview();   return; }
       if (s.mode === "picking")  { cancelPicking(); return; }
       if (s.mode === "multiqty") { closeMultiQty(); return; }
@@ -1083,6 +1094,18 @@ export default function PoPage(): React.JSX.Element {
     if (typeof window !== "undefined") { suppressPopRef.current = true; window.history.back(); }
   }
 
+  // Tapping a Sent row opens the read-only receipt (NOT the editable Review
+  // screen — that only happens via the receipt's own "Edit order" button).
+  // One push on top of the Sent list; browseScreen stays "sent" underneath.
+  function viewSentReceipt(order: SentOrder): void {
+    setReceiptOrder(order);
+    pushScreen("sent-receipt");
+  }
+  // Called ONLY from the popstate handler (mirrors closeBrowseScreen etc.).
+  function closeSentReceipt(): void {
+    setReceiptOrder(null);
+  }
+
   // Save the CURRENT live order as a saved draft. Overwrites in place when the
   // live order came from a reopened draft (openedDraftId set); otherwise mints
   // a new id and remembers it, so a SECOND Save in the same session overwrites
@@ -1188,6 +1211,9 @@ export default function PoPage(): React.JSX.Element {
   // back-nav trace), except openedDraftId is cleared to null: this is a NEW
   // order, not tied to any draft, so a later Save creates a fresh draft and a
   // later Send adds a fresh Sent entry rather than linking back to anything.
+  // This is the ONLY path from the read-only Sent receipt into editable mode
+  // (its "Edit order" button calls this directly) — so it also clears
+  // receiptOrder, leaving read-only viewing behind for good.
   function reopenSent(order: SentOrder): void {
     const s = order.snapshot;
     setSelectedCust(s.customer);
@@ -1202,6 +1228,7 @@ export default function PoPage(): React.JSX.Element {
     setNotes(s.notes);
     setMultiSelect(s.multiSelect);
     setOpenedDraftId(null);
+    setReceiptOrder(null);
     setBrowseScreen("home");
     setView("review");
     setMode("search");
@@ -1748,6 +1775,7 @@ export default function PoPage(): React.JSX.Element {
     deleteOpen:      billToDelete !== null,
     draftDeleteOpen: draftsEnabled && draftToDelete !== null,
     sentDeleteOpen:  draftsEnabled && sentToDelete !== null,
+    receiptOpen:     draftsEnabled && receiptOrder !== null,
     browseScreen:    draftsEnabled ? browseScreen : "home",
     hasLines:        hasAnyLines,
   };
@@ -1804,6 +1832,53 @@ export default function PoPage(): React.JSX.Element {
     // Snap history to base so a later Back exits cleanly — DEFERRED to a later task
     // (setTimeout 0) so it runs AFTER the mailto handoff and never pre-empts it. End
     // state is unchanged: user on landing (cleared), history at base, Back exits.
+    if (typeof window !== "undefined" && depthRef.current > 0) {
+      const n = depthRef.current;
+      depthRef.current = 0;
+      suppressPopRef.current = true;
+      setTimeout(() => { window.history.go(-n); }, 0);
+    }
+  }
+
+  // Resend button on the read-only Sent receipt. Builds the email straight
+  // from the saved snapshot via the SAME buildEmailParts a normal Send uses
+  // (byte-identical body to a fresh send of this order), runs the same
+  // "Opening mail" handoff overlay, and logs a FRESH po_sent_orders entry
+  // (new id + sentAt = now; the original entry is untouched — addSentOrder
+  // appends, never overwrites). openedDraftId is not touched — it's already
+  // null here (the receipt never rehydrates into live state) and stays null,
+  // since a resend isn't tied to any draft.
+  //
+  // Unlike handleSend(), there is no live editable state to reset afterward
+  // — the receipt renders straight from the snapshot and never touched
+  // selectedCust/bills/etc. — so "reset to Home" here just means closing the
+  // receipt + Sent screen and snapping history back to base, the same
+  // deferred (setTimeout 0) way handleSend() already does.
+  function resendFromReceipt(order: SentOrder): void {
+    const s = order.snapshot;
+    const { subject, body, valid } = buildEmailParts({
+      customer: s.customer, bills: s.bills, shipTo: s.shipTo, dispatch: s.dispatch,
+      callTarget: s.callTarget, marker: s.marker, crossDepot: s.crossDepot, notes: s.notes,
+    });
+    if (!valid) return;
+    const url = `mailto:${ORDER_TO}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+
+    setRecents(addRecent(s.customer));
+    runOverlaySequence("sending");
+    addSentOrder({
+      id:      newSentId(),
+      label:   s.customer.name,
+      sentAt:  Date.now(),
+      snapshot: s,
+    });
+
+    // Fire the mailto FIRST — same ordering rule as handleSend (see its
+    // comment): nothing that navigates history may run before or in the same
+    // sync tick as this line.
+    window.location.href = url;
+
+    setReceiptOrder(null);
+    setBrowseScreen("home");
     if (typeof window !== "undefined" && depthRef.current > 0) {
       const n = depthRef.current;
       depthRef.current = 0;
@@ -1940,6 +2015,36 @@ export default function PoPage(): React.JSX.Element {
         >
           <Send className="w-[17px] h-[17px]" />
           Send order
+        </button>
+      </div>
+    );
+  }
+
+  // Read-only Sent receipt footer — Edit order (outline/secondary) + Resend
+  // (solid teal, primary, slightly larger — the hero action). Mirrors the
+  // reviewFooter two-button shape above.
+  function receiptFooter(order: SentOrder): React.JSX.Element {
+    return (
+      <div
+        className="flex-shrink-0 bg-[#f9fafb] flex items-center gap-2.5 px-4 pt-3"
+        style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 16px)" }}
+      >
+        <button
+          type="button"
+          onClick={() => reopenSent(order)}
+          className="flex items-center justify-center gap-1.5 h-[48px] px-4 rounded-[12px] border border-teal-600 bg-white text-teal-700 text-[14px] font-semibold active:bg-teal-50"
+        >
+          <Pencil className="w-[15px] h-[15px]" />
+          Edit order
+        </button>
+        <button
+          type="button"
+          onClick={() => resendFromReceipt(order)}
+          className="flex-1 flex items-center justify-center gap-2 h-[52px] rounded-full bg-teal-600 active:bg-teal-700 text-white text-[15px] font-bold"
+          style={{ boxShadow: "0 8px 22px rgba(13,148,136,0.42)" }}
+        >
+          <Send className="w-[17px] h-[17px]" />
+          Resend
         </button>
       </div>
     );
@@ -2169,8 +2274,9 @@ export default function PoPage(): React.JSX.Element {
             </div>
           ) : draftsEnabled && browseScreen === "sent" ? (
             /* ── Sent screen (draftsEnabled only) — peer of landing, same
-                shape as Drafts. Reopening a row = REORDER (lands on Review
-                with openedDraftId cleared — see reopenSent). ────────────── */
+                shape as Drafts. Tapping a row opens the READ-ONLY receipt
+                (viewSentReceipt) — reorder only happens from the receipt's
+                own "Edit order" button. ──────────────────────────────────── */
             <div className="px-4 pt-6">
               <div className="text-[13px] font-semibold text-gray-600 uppercase tracking-wide mb-2 px-1">
                 Sent
@@ -2196,7 +2302,7 @@ export default function PoPage(): React.JSX.Element {
                       >
                         <button
                           type="button"
-                          onClick={() => reopenSent(o)}
+                          onClick={() => viewSentReceipt(o)}
                           className="flex-1 min-w-0 text-left"
                         >
                           <p className="text-[15px] font-bold text-gray-900 truncate">
@@ -2222,6 +2328,97 @@ export default function PoPage(): React.JSX.Element {
                 </div>
               )}
             </div>
+          ) : draftsEnabled && receiptOrder ? (
+            /* ── Read-only Sent receipt (draftsEnabled only) ── renders
+                straight from the immutable snapshot, never touches live
+                state. Reuses the same bill-card visual language as Review
+                (lineChips/productLabel/aliasSuffix are pure helpers, work
+                identically on a snapshot's bills) minus every editable
+                control. ─────────────────────────────────────────────────── */
+            <>
+              <div className="bg-white border-b border-gray-200 px-4 py-[13px]">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => window.history.back()}
+                    aria-label="Back to Sent"
+                    className="shrink-0"
+                  >
+                    <ChevronLeft className="w-[18px] h-[18px] text-gray-500" />
+                  </button>
+                  <span className="text-[16px] font-bold text-gray-900 truncate flex-1 min-w-0">
+                    {receiptOrder.snapshot.customer.name}
+                  </span>
+                  <span className="text-[11px] font-semibold text-teal-700 bg-teal-50 border border-teal-200 rounded-full px-2 py-0.5 shrink-0">
+                    Sent
+                  </span>
+                </div>
+                <div className="pl-[26px] text-[12px] text-gray-500 truncate">
+                  {receiptOrder.snapshot.customer.code}
+                  {receiptOrder.snapshot.customer.area ? ` · ${receiptOrder.snapshot.customer.area}` : ""}
+                </div>
+              </div>
+
+              <div className="px-4 pt-3 pb-1 text-[12px] text-gray-400">
+                Sent {formatSavedAt(receiptOrder.sentAt)}
+              </div>
+
+              {receiptOrder.snapshot.bills.filter((b) => b.lines.length > 0).map((b) => (
+                <div key={b.id} className="bg-white border-b border-gray-200 px-4 py-[13px]">
+                  <div className="mb-2">
+                    <span className="text-[12px] font-semibold text-gray-600">Bill {b.id}</span>
+                  </div>
+                  {b.lines.map((line, idx) => {
+                    const chips = lineChips(line);
+                    const totalUnits = chips.reduce((sum, c) => sum + c.units, 0);
+                    return (
+                      <div
+                        key={`${line.productId}-${idx}`}
+                        className="flex items-start justify-between gap-2 py-[6px] border-b border-gray-50 last:border-b-0"
+                      >
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[14px] text-gray-900 truncate">
+                            {productLabel(line)}{aliasSuffix(line)}
+                          </p>
+                          <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
+                            {chips.map((c) => (
+                              <span key={c.label} className="text-[12px] text-teal-700">
+                                {c.label} <span className="font-mono">×{c.units}</span>
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                        <span className="text-[12px] text-gray-400 font-mono shrink-0 mt-0.5 whitespace-nowrap">
+                          {totalUnits} units
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+
+              <div className="bg-white border-b border-gray-200 px-4 py-[13px] flex items-center justify-between">
+                <div>
+                  <p className="text-[11px] uppercase tracking-wide text-gray-400">Dispatch</p>
+                  <p className="text-[13px] text-gray-700 font-medium mt-0.5">
+                    {receiptOrder.snapshot.dispatch === "Call" && receiptOrder.snapshot.callTarget
+                      ? `Call · ${receiptOrder.snapshot.callTarget}`
+                      : receiptOrder.snapshot.dispatch}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-[11px] uppercase tracking-wide text-gray-400">Total</p>
+                  {(() => {
+                    const sum = draftSummary(receiptOrder.snapshot);
+                    return (
+                      <p className="text-[13px] text-gray-700 font-medium mt-0.5">
+                        {sum.bills} {sum.bills === 1 ? "bill" : "bills"} · {sum.units} units
+                      </p>
+                    );
+                  })()}
+                </div>
+              </div>
+            </>
           ) : (
           /* ── Pick a customer — single elevated search field, no chrome ───
               No label / heading / logo / recent list. Generous top spacing
@@ -3328,15 +3525,21 @@ export default function PoPage(): React.JSX.Element {
                   : null
       )}
 
+      {/* Read-only Sent receipt footer — Edit order / Resend. Lives outside
+          the {selectedCust && (...)} block above since the receipt renders
+          while selectedCust is null (it never loads into live state). */}
+      {draftsEnabled && receiptOrder && receiptFooter(receiptOrder)}
+
       {/* Home · Drafts · Sent bottom bar — draftsEnabled only, and only on the
-          three browsing screens (selectedCust true on Build/Review makes this
-          branch structurally unreachable there — no separate hide-on-order
-          logic needed). Gates on keyboardOpen like every other floating
-          footer on this page (§55). This is NOT the §59 Home/Menu/You shell —
-          that's login-only and unrelated; /po is public with no session, so
-          it needs its own bar. Bookmark (Drafts) vs. Send/paper-plane (Sent)
-          are deliberately distinct glyphs so the two are easy to tell apart. */}
-      {draftsEnabled && !selectedCust && !keyboardOpen && (
+          three browsing screens (selectedCust true on Build/Review, and
+          receiptOrder set on the receipt, both make this branch structurally
+          unreachable there — no separate hide-on-order logic needed). Gates
+          on keyboardOpen like every other floating footer on this page
+          (§55). This is NOT the §59 Home/Menu/You shell — that's login-only
+          and unrelated; /po is public with no session, so it needs its own
+          bar. Bookmark (Drafts) vs. Send/paper-plane (Sent) are deliberately
+          distinct glyphs so the two are easy to tell apart. */}
+      {draftsEnabled && !selectedCust && !receiptOrder && !keyboardOpen && (
         <div
           className="flex-shrink-0 bg-white border-t border-gray-200 flex"
           style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 4px)" }}
