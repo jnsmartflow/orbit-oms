@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Search, Mic, Check, ChevronLeft, ChevronDown, ChevronRight, Plus, Pencil, Copy, Clock, Send, RefreshCw } from "lucide-react";
+import { Search, Mic, Check, ChevronLeft, ChevronDown, ChevronRight, Plus, Pencil, Copy, Clock, Send, RefreshCw, Home, Bookmark, Trash2 } from "lucide-react";
 import type { RawPack } from "@/lib/place-order/pack-buckets";
 import type { Product, CartLine, Bill, Customer } from "@/app/(place-order)/place-order/types";
 import { rankProductsForQuery } from "@/lib/place-order/mobile-search";
@@ -9,6 +9,10 @@ import { formatPack, packToMl, packStepForPack, packKey, parsePackKey } from "@/
 import { getBaseAliasDisplay, getBaseAliasLabel } from "@/lib/place-order/base-aliases";
 import { emailLineLabel, renderOrderBody, buildSubject, type OrderBodyBill, type OrderBodyLine } from "@/lib/place-order/email";
 import { getSecondLine, isVariantQualifierTab } from "@/lib/place-order/sub-product-descriptors";
+import {
+  loadSavedDrafts, upsertSavedDraft, removeSavedDraft, newDraftId,
+  draftSummary, formatSavedAt, type SavedDraft,
+} from "@/lib/place-order/saved-drafts";
 import SplashScreen from "./splash-screen";
 
 // /po — new public mobile order page. PHASE 2 (search + add, build screen).
@@ -178,7 +182,10 @@ const PO_DRAFT_TTL_MS = 24 * 60 * 60 * 1000;   // 24h, matches desktop conventio
 
 // Full order snapshot persisted under PO_DRAFT_KEY: customer + bills (cart) +
 // order-level review fields (shipTo / dispatch / marker).
-type PoDraft = {
+// Exported (type-only) so lib/place-order/saved-drafts.ts can reuse this exact
+// shape for the Save-draft-and-reopen-later feature's snapshot — no duplicate
+// type, no runtime coupling.
+export type PoDraft = {
   customer:     Customer;
   bills:        Bill[];
   billCounter:  number;
@@ -453,6 +460,28 @@ export default function PoPage(): React.JSX.Element {
   // (splashDone stays true across internal re-renders / navigation; no storage).
   const [splashDone, setSplashDone] = useState(false);
 
+  // Save-draft-and-reopen-later feature — HIDDEN behind ?draft=on until Smart
+  // Flow flips it on for everyone. Read once, client-only, from the URL (not
+  // useSearchParams — avoids any App Router Suspense concern for a plain
+  // server-wrapped page). Starts false so first paint is byte-identical to
+  // today even for a ?draft=on visitor (matches the dataLoading/recentsLoaded
+  // mount-effect pattern already used on this page). Every new render branch
+  // for this feature (bottom bar, Drafts screen, two-button Review footer)
+  // gates on this one boolean.
+  const [draftsEnabled, setDraftsEnabled] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setDraftsEnabled(new URLSearchParams(window.location.search).get("draft") === "on");
+  }, []);
+  // Drafts list screen open (peer of landing — only reachable when !selectedCust).
+  const [draftsOpen,     setDraftsOpen]     = useState(false);
+  // Saved-draft id awaiting its delete confirm sheet (null = no sheet).
+  const [draftToDelete,  setDraftToDelete]  = useState<string | null>(null);
+  // Which saved draft (if any) the CURRENT live order came from — null for a
+  // fresh order. Drives Save-draft's new-vs-overwrite choice; reset on New
+  // order and after Send (both already funnel through clearCustomer()).
+  const [openedDraftId,  setOpenedDraftId]  = useState<string | null>(null);
+
   const [selectedCust, setSelectedCust] = useState<Customer | null>(null);
   const [custQuery,    setCustQuery]    = useState("");
   // Device-local recent customers (landing only). Loaded from localStorage in a
@@ -563,15 +592,21 @@ export default function PoPage(): React.JSX.Element {
   const suppressPopRef = useRef(false);
   const backConfirmRef = useRef(false);
   const navStateRef    = useRef<{
-    selectedCust: boolean;
-    view:         "build" | "review";
-    mode:         "search" | "picking" | "multiqty";
-    confirmOpen:  boolean;
-    crossOpen:    boolean;
-    callOpen:     boolean;
-    deleteOpen:   boolean;
-    hasLines:     boolean;
-  }>({ selectedCust: false, view: "build", mode: "search", confirmOpen: false, crossOpen: false, callOpen: false, deleteOpen: false, hasLines: false });
+    selectedCust:     boolean;
+    view:             "build" | "review";
+    mode:             "search" | "picking" | "multiqty";
+    confirmOpen:      boolean;
+    crossOpen:        boolean;
+    callOpen:         boolean;
+    deleteOpen:       boolean;
+    draftsOpen:       boolean;
+    draftDeleteOpen:  boolean;
+    hasLines:         boolean;
+  }>({
+    selectedCust: false, view: "build", mode: "search", confirmOpen: false,
+    crossOpen: false, callOpen: false, deleteOpen: false,
+    draftsOpen: false, draftDeleteOpen: false, hasLines: false,
+  });
 
   // ── Data ──────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -855,9 +890,11 @@ export default function PoPage(): React.JSX.Element {
       if (s.crossOpen)  { cancelCrossSheet(); return; }   // overlay: cross-depot sheet
       if (s.callOpen)   { cancelCallSheet();  return; }   // overlay: call-routing sheet
       if (s.deleteOpen) { cancelDeleteBill(); return; }   // overlay: delete-bill sheet
+      if (s.draftDeleteOpen) { cancelDeleteDraft(); return; }   // overlay: delete-draft sheet (draftsEnabled only)
       if (s.view === "review")   { closeReview();   return; }
       if (s.mode === "picking")  { cancelPicking(); return; }
       if (s.mode === "multiqty") { closeMultiQty(); return; }
+      if (s.draftsOpen) { closeDrafts(); return; }   // Drafts screen → landing (draftsEnabled only)
       if (s.selectedCust) {                      // build-search → landing (discard guard)
         if (s.hasLines) {
           backConfirmRef.current = true;
@@ -963,6 +1000,97 @@ export default function PoPage(): React.JSX.Element {
     setMultiQtys({});
     setLastAdded(null);
     clearPoDraft();
+    setOpenedDraftId(null);   // Save-draft feature: a reset always starts a fresh draft next time
+  }
+
+  // ── Save-draft-and-reopen-later (draftsEnabled only) ──────────────────────
+  // Bottom-bar "Drafts" tab: forward nav from landing, pushes one entry.
+  function openDrafts(): void {
+    setDraftsOpen(true);
+    pushScreen("drafts");
+  }
+  // Called ONLY from the popstate handler (mirrors cancelCrossSheet/cancelCallSheet
+  // — every close of this screen, whether hardware-back, swipe, or the bottom
+  // bar's "Home" tap, routes through history.back() so there is one authority).
+  function closeDrafts(): void {
+    setDraftsOpen(false);
+  }
+  // Bottom-bar "Home" tap while ON Drafts: same authority as hardware back —
+  // just pop the pushed "drafts" entry and let the popstate handler above close
+  // it. No-op if already on Home (nothing pushed to pop).
+  function goHome(): void {
+    if (draftsOpen && typeof window !== "undefined") window.history.back();
+  }
+
+  function requestDeleteDraft(id: string): void {
+    setDraftToDelete(id);
+    pushScreen("draft-delete");
+  }
+  function cancelDeleteDraft(): void {
+    setDraftToDelete(null);
+  }
+  function confirmDeleteDraftAction(id: string): void {
+    removeSavedDraft(id);
+    setDraftToDelete(null);
+    if (typeof window !== "undefined") { suppressPopRef.current = true; window.history.back(); }
+  }
+
+  // Save the CURRENT live order as a saved draft. Overwrites in place when the
+  // live order came from a reopened draft (openedDraftId set); otherwise mints
+  // a new id and remembers it, so a SECOND Save in the same session overwrites
+  // rather than duplicating.
+  function saveDraft(): void {
+    if (!selectedCust || !hasAnyLines) return;
+    const id = openedDraftId ?? newDraftId();
+    const draft: SavedDraft = {
+      id,
+      label:   selectedCust.name,
+      savedAt: Date.now(),
+      snapshot: {
+        customer: selectedCust, bills, billCounter, activeBillId, shipTo,
+        dispatch, callTarget, marker, crossDepot, notes, multiSelect,
+      },
+    };
+    upsertSavedDraft(draft);
+    if (!openedDraftId) setOpenedDraftId(id);
+    // Quiet confirmation — reuses the existing "last added" banner mechanism
+    // rather than inventing new UI.
+    setLastAdded("Draft saved");
+  }
+
+  // Reopen a saved draft: rehydrate every PoDraft field into live state (same
+  // fields the mount-restore effect hydrates from `orbitoms_po_draft` — but
+  // this is a SEPARATE code path; the auto-save key is never touched here),
+  // remember which draft this is (openedDraftId), and land on Review so the
+  // user sees what they saved. From there Back behaves exactly like a normal
+  // live order — nothing draft-specific past this point.
+  //
+  // History depth: only ONE new entry is pushed on top of the existing
+  // "drafts" entry (not a pop-then-repush of "build"+"review"), because the
+  // popstate handler never reads a pushed entry's tag — only live state via
+  // navStateRef. Traced by hand: Review's back-arrow pops this entry → the
+  // existing `view === "review"` branch fires → Build. The next back pops the
+  // old "drafts" entry (now just an anonymous slot) → since selectedCust+lines
+  // are live, the existing discard-confirm branch fires — identical to a
+  // normal in-progress order. No ghost entries, no extra dead back-press.
+  function reopenDraft(draft: SavedDraft): void {
+    const s = draft.snapshot;
+    setSelectedCust(s.customer);
+    setBills(s.bills);
+    setBillCounter(s.billCounter);
+    setActiveBillId(s.activeBillId);
+    setShipTo(s.shipTo);
+    setDispatch(s.dispatch);
+    setCallTarget(s.callTarget);
+    setMarker(s.marker);
+    setCrossDepot(s.crossDepot);
+    setNotes(s.notes);
+    setMultiSelect(s.multiSelect);
+    setOpenedDraftId(draft.id);
+    setDraftsOpen(false);
+    setView("review");
+    setMode("search");
+    pushScreen("review");
   }
 
   // ── New order / Change reset wiring ───────────────────────────────────────
@@ -1485,6 +1613,10 @@ export default function PoPage(): React.JSX.Element {
   // floating "Review order" CTA shows no counts, so those reducers are gone.)
   const reviewBills = bills.filter((b) => b.lines.length > 0);
 
+  // Read fresh on every render rather than cached in state — cheap, and stays
+  // correct after save/delete without a separate refresh call at each site.
+  const savedDrafts = draftsEnabled && draftsOpen ? loadSavedDrafts() : [];
+
   // Confirm-dialog copy, by intent.
   const confirmCopy = confirmKind === "change"
     ? { title: "Switch customer?", body: "This clears the current order.", cta: "Switch customer" }
@@ -1494,11 +1626,13 @@ export default function PoPage(): React.JSX.Element {
   navStateRef.current = {
     selectedCust: selectedCust !== null,
     view, mode,
-    confirmOpen:  confirmKind !== null,
-    crossOpen:    crossSheetOpen,
-    callOpen:     callSheetOpen,
-    deleteOpen:   billToDelete !== null,
-    hasLines:     hasAnyLines,
+    confirmOpen:     confirmKind !== null,
+    crossOpen:       crossSheetOpen,
+    callOpen:        callSheetOpen,
+    deleteOpen:      billToDelete !== null,
+    draftsOpen:      draftsEnabled && draftsOpen,
+    draftDeleteOpen: draftsEnabled && draftToDelete !== null,
+    hasLines:        hasAnyLines,
   };
 
   // Email — byte-identical to /order. Computed each render (like /order).
@@ -1517,6 +1651,9 @@ export default function PoPage(): React.JSX.Element {
     // location.href and does nothing after). Nothing that navigates history may run
     // before or in the same sync tick as this line.
     window.location.href = url;   // mailto: opens the mail app; page does not unload
+    // A sent order that came from a reopened draft is no longer a draft —
+    // remove it. Read openedDraftId BEFORE clearCustomer() resets it.
+    if (draftsEnabled && openedDraftId) removeSavedDraft(openedDraftId);
     // Full reset — pure state, NO navigation, so it can't pre-empt the mailto.
     clearCustomer();
     // Snap history to base so a later Back exits cleanly — DEFERRED to a later task
@@ -1613,6 +1750,51 @@ export default function PoPage(): React.JSX.Element {
           }`}
         >
           Add to Bill {activeBillId}
+        </button>
+      </div>
+    );
+  }
+
+  // Review-screen footer. Plain footerPill (Send order) when draftsEnabled is
+  // false — BYTE-IDENTICAL to today, zero visual change. When draftsEnabled,
+  // a second "Save draft" button sits beside Send order (two-button end bar,
+  // per the locked spec) — Save disabled on an empty cart, mirroring Send's
+  // own !canSend disable.
+  function reviewFooter(): React.JSX.Element {
+    if (!draftsEnabled) {
+      return footerPill({ onClick: handleSend, disabled: !canSend, label: "Send order", icon: "send" });
+    }
+    return (
+      <div
+        className="flex-shrink-0 bg-[#f9fafb] flex items-center gap-2.5 px-4 pt-3"
+        style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 16px)" }}
+      >
+        <button
+          type="button"
+          onClick={saveDraft}
+          disabled={!hasAnyLines}
+          className={`flex items-center gap-1.5 h-[52px] px-4 rounded-[12px] border text-[14px] font-semibold ${
+            hasAnyLines
+              ? "border-gray-200 bg-white text-gray-700 active:bg-gray-50"
+              : "border-gray-200 bg-gray-100 text-gray-300 cursor-not-allowed"
+          }`}
+        >
+          <Bookmark className="w-[15px] h-[15px]" />
+          Save draft
+        </button>
+        <button
+          type="button"
+          onClick={handleSend}
+          disabled={!canSend}
+          className={`flex-1 flex items-center justify-center gap-2 h-[52px] rounded-full text-[15px] font-bold ${
+            canSend
+              ? "bg-teal-600 active:bg-teal-700 text-white active:opacity-90"
+              : "bg-gray-200 text-gray-400 cursor-not-allowed"
+          }`}
+          style={{ boxShadow: canSend ? "0 8px 22px rgba(13,148,136,0.42)" : "none" }}
+        >
+          <Send className="w-[17px] h-[17px]" />
+          Send order
         </button>
       </div>
     );
@@ -1715,6 +1897,60 @@ export default function PoPage(): React.JSX.Element {
         )}
 
         {!selectedCust ? (
+          draftsEnabled && draftsOpen ? (
+            /* ── Drafts screen (draftsEnabled only) — peer of landing ────── */
+            <div className="px-4 pt-6">
+              <div className="text-[13px] font-semibold text-gray-600 uppercase tracking-wide mb-2 px-1">
+                Saved Drafts
+              </div>
+              {savedDrafts.length === 0 ? (
+                <div className="mt-10 flex flex-col items-center text-center px-6">
+                  <div className="w-[44px] h-[44px] rounded-full bg-gray-100 flex items-center justify-center mb-3">
+                    <Bookmark className="w-[20px] h-[20px] text-gray-300" />
+                  </div>
+                  <p className="text-[14px] font-medium text-gray-500">No saved drafts yet</p>
+                  <p className="text-[13px] text-gray-400 mt-1 leading-snug">
+                    Build an order and tap Save draft on the Review screen to come back to it later.
+                  </p>
+                </div>
+              ) : (
+                <div className="bg-white border border-gray-100 rounded-[16px] overflow-hidden shadow-sm">
+                  {savedDrafts.map((d) => {
+                    const sum = draftSummary(d.snapshot);
+                    return (
+                      <div
+                        key={d.id}
+                        className="flex items-center gap-3 px-4 py-3 border-b border-gray-50 last:border-b-0"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => reopenDraft(d)}
+                          className="flex-1 min-w-0 text-left"
+                        >
+                          <p className="text-[15px] font-bold text-gray-900 truncate">
+                            {d.snapshot.customer.name}
+                          </p>
+                          <p className="text-[12px] text-gray-400 truncate mt-0.5">
+                            {d.snapshot.customer.area ? `${d.snapshot.customer.area} · ` : ""}
+                            {sum.bills} {sum.bills === 1 ? "bill" : "bills"} · {sum.units} units
+                          </p>
+                          <p className="text-[11px] text-gray-400 mt-0.5">{formatSavedAt(d.savedAt)}</p>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => requestDeleteDraft(d.id)}
+                          aria-label="Delete draft"
+                          className="text-gray-300 active:text-red-500 p-2 -mr-2 shrink-0"
+                        >
+                          <Trash2 className="w-[17px] h-[17px]" />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          ) : (
           /* ── Pick a customer — single elevated search field, no chrome ───
               No label / heading / logo / recent list. Generous top spacing
               under the brand bar, whitespace below. */
@@ -1822,6 +2058,7 @@ export default function PoPage(): React.JSX.Element {
               )
             )}
           </div>
+          )
         ) : view === "review" ? (
           /* ── Review & send (mockup state 6) ────────────────────────────── */
           <>
@@ -2599,6 +2836,45 @@ export default function PoPage(): React.JSX.Element {
           </div>
         )}
 
+        {/* Delete-draft confirm — same bottom-sheet pattern as delete-bill above
+            (draftsEnabled only; only reachable from the Drafts screen). */}
+        {draftsEnabled && draftToDelete !== null && (
+          <div
+            className="fixed inset-0 z-50 flex items-end justify-center bg-black/40"
+            onClick={() => window.history.back()}
+          >
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-label="Delete draft"
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-[480px] bg-white rounded-t-[18px] p-5"
+              style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 20px)" }}
+            >
+              <h2 className="text-[16px] font-semibold text-gray-900">Delete this draft?</h2>
+              <p className="text-[13px] text-gray-500 mt-1.5 leading-snug">
+                {savedDrafts.find((d) => d.id === draftToDelete)?.snapshot.customer.name ?? "This"}&rsquo;s saved order will be removed. This can&rsquo;t be undone.
+              </p>
+              <div className="flex gap-2 mt-4">
+                <button
+                  type="button"
+                  onClick={() => window.history.back()}
+                  className="flex-1 h-[44px] rounded-[10px] bg-gray-100 text-gray-700 text-[14px] font-medium active:bg-gray-200"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => confirmDeleteDraftAction(draftToDelete)}
+                  className="flex-1 h-[44px] rounded-[10px] bg-red-600 text-white text-[14px] font-semibold active:bg-red-700"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Reset confirm dialog — New order / Switch customer */}
         {confirmKind && (
           <div
@@ -2657,7 +2933,7 @@ export default function PoPage(): React.JSX.Element {
           // keeps focus (Android down-caret).
           ? (keyboardOpen
               ? null
-              : footerPill({ onClick: handleSend, disabled: !canSend, label: "Send order", icon: "send" }))
+              : reviewFooter())
           // Multi-qty sub-screen — Add products. HIDDEN while the keyboard is open so it
           // never covers the rows; returns on keyboard close (focus may persist).
           : mode === "multiqty"
@@ -2681,6 +2957,40 @@ export default function PoPage(): React.JSX.Element {
                 : (mode === "search" && !showSelectBar && hasAnyLines)
                   ? (keyboardOpen ? null : footerPill({ onClick: openReview, label: "Review order" }))
                   : null
+      )}
+
+      {/* Home · Drafts bottom bar — draftsEnabled only, and only on Home/Drafts
+          (selectedCust true on Build/Review makes this branch structurally
+          unreachable there — no separate hide-on-order logic needed). Gates on
+          keyboardOpen like every other floating footer on this page (§55). This
+          is NOT the §59 Home/Menu/You shell — that's login-only and unrelated;
+          /po is public with no session, so it needs its own two-anchor bar. */}
+      {draftsEnabled && !selectedCust && !keyboardOpen && (
+        <div
+          className="flex-shrink-0 bg-white border-t border-gray-200 flex"
+          style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 4px)" }}
+        >
+          <button
+            type="button"
+            onClick={goHome}
+            className={`flex-1 flex flex-col items-center gap-0.5 pt-[9px] pb-[7px] text-[11px] font-medium ${
+              !draftsOpen ? "text-teal-600" : "text-gray-400"
+            }`}
+          >
+            <Home className="w-5 h-5" />
+            Home
+          </button>
+          <button
+            type="button"
+            onClick={() => { if (!draftsOpen) openDrafts(); }}
+            className={`flex-1 flex flex-col items-center gap-0.5 pt-[9px] pb-[7px] text-[11px] font-medium ${
+              draftsOpen ? "text-teal-600" : "text-gray-400"
+            }`}
+          >
+            <Bookmark className="w-5 h-5" />
+            Drafts
+          </button>
+        </div>
       )}
     </main>
   );
