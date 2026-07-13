@@ -1077,16 +1077,20 @@ export default function PoPage(): React.JSX.Element {
   function handleSaveDraftTap(): void {
     saveDraft();
     setOverlayPhase("enter");
+    // 1150ms: card lands ~450ms, check (the hero) finishes drawing ~1000ms,
+    // leaving ~150ms of fully-settled, nothing-moving hold before exit starts
+    // — plus the 250ms exit + ~270ms JS margin below, total tap-to-Drafts
+    // lands around 1.4s (the requested ~1.3-1.5s "deliberate, not a wait").
     window.setTimeout(() => {
-      setOverlayPhase("exit");   // plays the ~200ms fade+scale-down exit (CSS)
+      setOverlayPhase("exit");   // plays the ~250ms fade+scale-down exit (CSS)
       window.setTimeout(() => {
         setOverlayPhase(null);
         if (navStateRef.current.view !== "review") return;   // user already navigated away
         if (typeof window !== "undefined") { suppressPopRef.current = true; window.history.back(); }
         clearCustomer();     // order is already saved — safe to close it out
         setDraftsOpen(true);
-      }, 220);   // >= the exit animation's 200ms so it fully plays before unmount
-    }, 1000);
+      }, 270);   // >= the exit animation's 250ms so it fully plays before unmount
+    }, 1150);
   }
 
   // Reopen a saved draft: rehydrate every PoDraft field into live state (same
@@ -1854,28 +1858,28 @@ export default function PoPage(): React.JSX.Element {
         .po-save-text { opacity: 1; }
 
         @media (prefers-reduced-motion: no-preference) {
-          .po-save-backdrop--enter { animation: poSaveBackdropIn 150ms ease-out both; }
-          .po-save-backdrop--exit  { animation: poSaveBackdropOut 200ms ease-in both; }
+          .po-save-backdrop--enter { animation: poSaveBackdropIn 200ms ease-out both; }
+          .po-save-backdrop--exit  { animation: poSaveBackdropOut 250ms ease-in both; }
           .po-save-card--enter {
             opacity: 0;
-            animation: poSaveCardIn 350ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+            animation: poSaveCardIn 450ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
           }
-          .po-save-card--exit { animation: poSaveCardOut 200ms ease-in both; }
+          .po-save-card--exit { animation: poSaveCardOut 250ms ease-in both; }
           .po-save-card--enter .po-save-circle {
             opacity: 0;
-            animation: poSaveCircleIn 300ms cubic-bezier(0.34, 1.56, 0.64, 1) 60ms both;
+            animation: poSaveCircleIn 380ms cubic-bezier(0.34, 1.56, 0.64, 1) 50ms both;
           }
           .po-save-card--enter .po-save-ring {
             opacity: 0;
-            animation: poSaveRing 500ms ease-out 280ms both;
+            animation: poSaveRing 600ms ease-out 430ms both;
           }
           .po-save-card--enter .po-save-check {
             stroke-dashoffset: 24;
-            animation: poSaveCheckDraw 400ms ease-out 340ms both;
+            animation: poSaveCheckDraw 550ms ease-out 450ms both;
           }
           .po-save-card--enter .po-save-text {
             opacity: 0;
-            animation: poSaveTextIn 250ms ease-out 300ms both;
+            animation: poSaveTextIn 300ms ease-out 350ms both;
           }
         }
 
