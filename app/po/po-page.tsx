@@ -18,6 +18,14 @@ import {
 } from "@/lib/place-order/sent-orders";
 import SplashScreen from "./splash-screen";
 
+// "N bills" for a Drafts/Sent list row or the receipt's Total — units
+// dropped (was noisy); wraps draftSummary (which still computes both) so
+// every call site routes through this one function for the string.
+function billsCountLabel(snapshot: Parameters<typeof draftSummary>[0]): string {
+  const { bills } = draftSummary(snapshot);
+  return `${bills} ${bills === 1 ? "bill" : "bills"}`;
+}
+
 // /po — new public mobile order page. PHASE 2 (search + add, build screen).
 //   - live ranked product search on the locked-customer hero bar
 //     (rankProductsForQuery, reused from lib/place-order/mobile-search)
@@ -130,11 +138,7 @@ function buildEmailParts(args: {
     : marker === "DTS"          ? "DTS order"
     :                             null;
 
-  // Ship To ONLY when a real custom address is entered. Blank (= "Same as
-  // billing" default) is omitted entirely.
-  const shipToTrim = shipTo.trim();
-  const shipToText =
-    shipToTrim && shipToTrim.toLowerCase() !== "same as billing" ? shipToTrim : null;
+  const shipToText = resolvedShipTo(shipTo);
 
   const note = notes.trim() || null;
 
@@ -177,6 +181,33 @@ function buildEmailParts(args: {
   const valid = !!customer && activeBills.length > 0;
 
   return { subject, body, valid };
+}
+
+// Ship To ONLY when a real custom address is entered. Blank (= "Same as
+// billing" default) resolves to null. Shared by buildEmailParts and the
+// read-only Sent receipt so both display the exact same value.
+function resolvedShipTo(raw: string): string | null {
+  const trimmed = raw.trim();
+  return trimmed && trimmed.toLowerCase() !== "same as billing" ? trimmed : null;
+}
+
+// Current dispatch's display text — same "Call · target" shape the live
+// Dispatch pill shows once committed. Shared with the Sent receipt.
+function dispatchLabel(dispatch: Dispatch, callTarget: CallTarget): string {
+  return dispatch === "Call" && callTarget ? `Call · ${callTarget}` : dispatch;
+}
+
+// Order Remarks options — single source for the Review picker grid and the
+// Sent receipt's read-only label lookup.
+const MARKER_OPTIONS: { label: string; value: NonNullable<Marker> }[] = [
+  { label: "🚛 Truck",  value: "Truck" },
+  { label: "🔄 Cross",  value: "Cross Delivery" },
+  { label: "↩️ Bounce", value: "Bounce" },
+  { label: "📦 DTS",    value: "DTS" },
+];
+
+function markerLabel(marker: Marker): string | null {
+  return MARKER_OPTIONS.find((m) => m.value === marker)?.label ?? null;
 }
 
 // ── Draft persistence — dedicated key, never /order's or desktop's ─────────
@@ -1993,9 +2024,9 @@ export default function PoPage(): React.JSX.Element {
           type="button"
           onClick={handleSaveDraftTap}
           disabled={!hasAnyLines}
-          className={`flex items-center gap-1.5 h-[52px] px-4 rounded-[12px] border text-[14px] font-semibold ${
+          className={`flex-1 flex items-center justify-center gap-1.5 h-[48px] rounded-full border text-[14px] font-semibold ${
             hasAnyLines
-              ? "border-gray-200 bg-white text-gray-700 active:bg-gray-50"
+              ? "border-gray-300 bg-white text-gray-700 active:bg-gray-50"
               : "border-gray-200 bg-gray-100 text-gray-300 cursor-not-allowed"
           }`}
         >
@@ -2006,7 +2037,7 @@ export default function PoPage(): React.JSX.Element {
           type="button"
           onClick={handleSend}
           disabled={!canSend}
-          className={`flex-1 flex items-center justify-center gap-2 h-[52px] rounded-full text-[15px] font-bold ${
+          className={`flex-[1.5] flex items-center justify-center gap-2 h-[48px] rounded-full text-[15px] font-bold ${
             canSend
               ? "bg-teal-600 active:bg-teal-700 text-white active:opacity-90"
               : "bg-gray-200 text-gray-400 cursor-not-allowed"
@@ -2032,7 +2063,7 @@ export default function PoPage(): React.JSX.Element {
         <button
           type="button"
           onClick={() => reopenSent(order)}
-          className="flex items-center justify-center gap-1.5 h-[48px] px-4 rounded-[12px] border border-teal-600 bg-white text-teal-700 text-[14px] font-semibold active:bg-teal-50"
+          className="flex-1 flex items-center justify-center gap-1.5 h-[48px] rounded-full border border-teal-600 bg-white text-teal-700 text-[14px] font-semibold active:bg-teal-50"
         >
           <Pencil className="w-[15px] h-[15px]" />
           Edit order
@@ -2040,11 +2071,11 @@ export default function PoPage(): React.JSX.Element {
         <button
           type="button"
           onClick={() => resendFromReceipt(order)}
-          className="flex-1 flex items-center justify-center gap-2 h-[52px] rounded-full bg-teal-600 active:bg-teal-700 text-white text-[15px] font-bold"
+          className="flex-[1.5] flex items-center justify-center gap-2 h-[48px] rounded-full bg-teal-600 active:bg-teal-700 text-white text-[15px] font-bold"
           style={{ boxShadow: "0 8px 22px rgba(13,148,136,0.42)" }}
         >
           <Send className="w-[17px] h-[17px]" />
-          Resend
+          Resend order
         </button>
       </div>
     );
@@ -2238,7 +2269,6 @@ export default function PoPage(): React.JSX.Element {
               ) : (
                 <div className="bg-white border border-gray-100 rounded-[16px] overflow-hidden shadow-sm">
                   {savedDrafts.map((d) => {
-                    const sum = draftSummary(d.snapshot);
                     return (
                       <div
                         key={d.id}
@@ -2254,7 +2284,7 @@ export default function PoPage(): React.JSX.Element {
                           </p>
                           <p className="text-[12px] text-gray-400 truncate mt-0.5">
                             {d.snapshot.customer.area ? `${d.snapshot.customer.area} · ` : ""}
-                            {sum.bills} {sum.bills === 1 ? "bill" : "bills"} · {sum.units} units
+                            {billsCountLabel(d.snapshot)}
                           </p>
                           <p className="text-[11px] text-gray-400 mt-0.5">{formatSavedAt(d.savedAt)}</p>
                         </button>
@@ -2319,7 +2349,6 @@ export default function PoPage(): React.JSX.Element {
                   </div>
                   {b.lines.map((line, idx) => {
                     const chips = lineChips(line);
-                    const totalUnits = chips.reduce((sum, c) => sum + c.units, 0);
                     return (
                       <div
                         key={`${line.productId}-${idx}`}
@@ -2337,35 +2366,58 @@ export default function PoPage(): React.JSX.Element {
                             ))}
                           </div>
                         </div>
-                        <span className="text-[12px] text-gray-400 font-mono shrink-0 mt-0.5 whitespace-nowrap">
-                          {totalUnits} units
-                        </span>
                       </div>
                     );
                   })}
                 </div>
               ))}
 
-              <div className="bg-white border-b border-gray-200 px-4 py-[13px] flex items-center justify-between">
-                <div>
-                  <p className="text-[11px] uppercase tracking-wide text-gray-400">Dispatch</p>
+              {(() => {
+                const shipToText = resolvedShipTo(receiptOrder.snapshot.shipTo);
+                return shipToText ? (
+                  <div className="bg-white border-b border-gray-200 px-4 py-[13px]">
+                    <p className="text-[11px] uppercase tracking-wide text-gray-400">Ship to</p>
+                    <p className="text-[13px] text-gray-700 font-medium mt-0.5">{shipToText}</p>
+                  </div>
+                ) : null;
+              })()}
+
+              <div className="bg-white border-b border-gray-200 px-4 py-[13px]">
+                <p className="text-[11px] uppercase tracking-wide text-gray-400">Dispatch</p>
+                <p className="text-[13px] text-gray-700 font-medium mt-0.5">
+                  {dispatchLabel(receiptOrder.snapshot.dispatch, receiptOrder.snapshot.callTarget)}
+                </p>
+              </div>
+
+              {(() => {
+                const label = markerLabel(receiptOrder.snapshot.marker);
+                if (!label) return null;
+                const { marker, crossDepot } = receiptOrder.snapshot;
+                return (
+                  <div className="bg-white border-b border-gray-200 px-4 py-[13px]">
+                    <p className="text-[11px] uppercase tracking-wide text-gray-400">Order remarks</p>
+                    <p className="text-[13px] text-gray-700 font-medium mt-0.5">
+                      {label}
+                      {marker === "Cross Delivery" && crossDepot ? ` · Cross billing from ${crossDepot}` : ""}
+                    </p>
+                  </div>
+                );
+              })()}
+
+              {receiptOrder.snapshot.notes.trim() ? (
+                <div className="bg-white border-b border-gray-200 px-4 py-[13px]">
+                  <p className="text-[11px] uppercase tracking-wide text-gray-400">Notes</p>
                   <p className="text-[13px] text-gray-700 font-medium mt-0.5">
-                    {receiptOrder.snapshot.dispatch === "Call" && receiptOrder.snapshot.callTarget
-                      ? `Call · ${receiptOrder.snapshot.callTarget}`
-                      : receiptOrder.snapshot.dispatch}
+                    {receiptOrder.snapshot.notes.trim()}
                   </p>
                 </div>
-                <div className="text-right">
-                  <p className="text-[11px] uppercase tracking-wide text-gray-400">Total</p>
-                  {(() => {
-                    const sum = draftSummary(receiptOrder.snapshot);
-                    return (
-                      <p className="text-[13px] text-gray-700 font-medium mt-0.5">
-                        {sum.bills} {sum.bills === 1 ? "bill" : "bills"} · {sum.units} units
-                      </p>
-                    );
-                  })()}
-                </div>
+              ) : null}
+
+              <div className="bg-white border-b border-gray-200 px-4 py-[13px]">
+                <p className="text-[11px] uppercase tracking-wide text-gray-400">Total</p>
+                <p className="text-[13px] text-gray-700 font-medium mt-0.5">
+                  {billsCountLabel(receiptOrder.snapshot)}
+                </p>
               </div>
             </>
           ) : draftsEnabled && browseScreen === "sent" ? (
@@ -2390,7 +2442,6 @@ export default function PoPage(): React.JSX.Element {
               ) : (
                 <div className="bg-white border border-gray-100 rounded-[16px] overflow-hidden shadow-sm">
                   {sentOrders.map((o) => {
-                    const sum = draftSummary(o.snapshot);
                     return (
                       <div
                         key={o.id}
@@ -2406,7 +2457,7 @@ export default function PoPage(): React.JSX.Element {
                           </p>
                           <p className="text-[12px] text-gray-400 truncate mt-0.5">
                             {o.snapshot.customer.area ? `${o.snapshot.customer.area} · ` : ""}
-                            {sum.bills} {sum.bills === 1 ? "bill" : "bills"} · {sum.units} units
+                            {billsCountLabel(o.snapshot)}
                           </p>
                           <p className="text-[11px] text-gray-400 mt-0.5">{formatSavedAt(o.sentAt)}</p>
                         </button>
@@ -2718,12 +2769,7 @@ export default function PoPage(): React.JSX.Element {
                 Order remarks <span className="text-gray-300 normal-case tracking-normal">· optional</span>
               </p>
               <div className="grid grid-cols-2 gap-2">
-                {([
-                  { label: "🚛 Truck",  value: "Truck" as const },
-                  { label: "🔄 Cross",  value: "Cross Delivery" as const },
-                  { label: "↩️ Bounce", value: "Bounce" as const },
-                  { label: "📦 DTS",    value: "DTS" as const },
-                ]).map((m) => {
+                {MARKER_OPTIONS.map((m) => {
                   const on      = marker === m.value;
                   const isCross = m.value === "Cross Delivery";
                   return (
