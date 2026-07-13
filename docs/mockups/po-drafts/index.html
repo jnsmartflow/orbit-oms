@@ -127,7 +127,11 @@
   .bill-card-head .bill-label { font-size: 12px; font-weight: 600; color: var(--gray-600); }
   .bill-card-head .actions { display: flex; align-items: center; gap: 12px; }
   .bill-card-head .dup-btn { display: flex; align-items: center; gap: 4px; font-size: 14px; color: var(--gray-500); background: none; border: none; cursor: default; }
-  .bill-card-head .edit-btn { color: var(--gray-400); background: none; border: none; padding: 4px; cursor: default; }
+  .bill-card-head .edit-btn { display: flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 500; color: var(--gray-600); background: none; border: none; padding: 4px; cursor: default; }
+
+  /* ── Review hint strip — clarifies the two edit affordances (line tap = qty, Edit = add/change products) ── */
+  .review-hint { flex-shrink: 0; background: var(--gray-50); border-bottom: 1px solid var(--gray-200); padding: 8px 16px; font-size: 12px; line-height: 1.4; color: var(--gray-500); }
+  .review-hint b { color: var(--gray-700); font-weight: 600; }
 
   .line-row { display: flex; align-items: flex-start; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--gray-50); }
   .line-row:last-child { border-bottom: none; }
@@ -163,7 +167,9 @@
   }
   .send-pill:active { background: var(--teal-700); opacity: 0.9; }
 
-  /* ── Shared bottom bar — NEW, Home + Drafts only (public page, no login → no You) ── */
+  /* ── Bottom bar — NEW, Home + Drafts ONLY (public page, no login → no You).
+       Hidden entirely on Review (JS, see showScreen()) — inside an order,
+       navigation is the back arrow + floating pill only, matching live /po. ── */
   .bottom-bar {
     flex-shrink: 0; display: flex; background: #fff; border-top: 1px solid var(--gray-200);
     padding-bottom: max(env(safe-area-inset-bottom, 0px), 4px);
@@ -313,6 +319,10 @@
           <span class="draft-pill">Draft</span>
         </div>
 
+        <div class="review-hint">
+          Tap a product to change its quantities. Tap <b>Edit</b> on a bill to add or change products in it.
+        </div>
+
         <div class="scroll">
           <div class="bill-card">
             <div class="bill-card-head">
@@ -323,7 +333,8 @@
                   Duplicate
                 </button>
                 <button type="button" class="edit-btn">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" /></svg>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#4b5563" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" /></svg>
+                  Edit
                 </button>
               </div>
             </div>
@@ -358,7 +369,8 @@
                   Duplicate
                 </button>
                 <button type="button" class="edit-btn">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" /></svg>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#4b5563" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" /></svg>
+                  Edit
                 </button>
               </div>
             </div>
@@ -394,8 +406,8 @@
         </div>
       </div>
 
-      <!-- ══════════════════ SHARED — Home · Drafts bottom bar (NEW) ══════════════════ -->
-      <div class="bottom-bar">
+      <!-- ══════════════════ SHARED — Home · Drafts bottom bar (NEW). Home + Drafts only — hidden on Review via JS. ══════════════════ -->
+      <div class="bottom-bar" id="bottom-bar">
         <button type="button" id="tab-home" class="tab-active" onclick="showScreen('home')">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5" /><path d="M5 9.5V21h14V9.5" /></svg>
           Home
@@ -415,10 +427,13 @@
     ["home", "drafts", "review"].forEach(function (id) {
       document.getElementById("screen-" + id).classList.toggle("active", id === name);
     });
-    // Review is reached from Drafts, so the Drafts tab stays the active anchor.
+    // Review is reached from Drafts, so the Drafts tab stays the active anchor
+    // for when the bar IS visible — but on Review the bar is hidden entirely
+    // (inside an order, nav is back-arrow + floating pill only, like live /po).
     var activeTab = name === "review" ? "drafts" : name;
     document.getElementById("tab-home").classList.toggle("tab-active", activeTab === "home");
     document.getElementById("tab-drafts").classList.toggle("tab-active", activeTab === "drafts");
+    document.getElementById("bottom-bar").style.display = (name === "review") ? "none" : "flex";
   }
   function openReview() {
     showScreen("review");
