@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { Loader2 } from "lucide-react";
 import { UniversalHeader, type HeaderSegment } from "@/components/universal-header";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -172,8 +172,96 @@ const ASSIGNED_BAR_STYLE: CSSProperties = {
   userSelect: "none",
 };
 
+// ── Route filter (view-only) ────────────────────────────────────────────────
+// Styled off CLAUDE_UI's "Filter dropdown" tokens (border-gray-200/900, panel
+// bg-white border rounded-lg shadow-lg). Single-select, unlike the generic
+// multi-chip UniversalHeader filterGroups — "All" and each route are mutually
+// exclusive, matching how the waiting list itself narrows (one route at a time).
+function RouteFilterControl({
+  routes,
+  value,
+  onChange,
+}: {
+  routes: string[];
+  value: string | null;
+  onChange: (route: string | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handleClickOutside(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [open]);
+
+  if (routes.length === 0) return null;
+
+  return (
+    <div className="relative" ref={containerRef}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={cn(
+          "text-[11px] border rounded-[5px] px-[8px] py-[3px] cursor-pointer transition-colors",
+          value !== null
+            ? "border-gray-900 text-gray-900 font-medium"
+            : "border-gray-200 text-gray-500 hover:border-gray-300",
+        )}
+      >
+        {value ?? "Route"} <span className="text-gray-400">▾</span>
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full mt-1 z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-3 w-[200px]">
+          <div className="flex flex-wrap gap-[4px]">
+            <button
+              type="button"
+              onClick={() => {
+                onChange(null);
+                setOpen(false);
+              }}
+              className={cn(
+                "text-[10px] border rounded-[4px] px-[8px] py-[2px] cursor-pointer",
+                value === null
+                  ? "bg-gray-900 text-white border-gray-900"
+                  : "bg-white text-gray-500 border-gray-200 hover:border-gray-300",
+              )}
+            >
+              All
+            </button>
+            {routes.map((route) => (
+              <button
+                key={route}
+                type="button"
+                onClick={() => {
+                  onChange(route);
+                  setOpen(false);
+                }}
+                className={cn(
+                  "text-[10px] border rounded-[4px] px-[8px] py-[2px] cursor-pointer",
+                  value === route
+                    ? "bg-gray-900 text-white border-gray-900"
+                    : "bg-white text-gray-500 border-gray-200 hover:border-gray-300",
+                )}
+              >
+                {route}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface PickingTableProps {
   rows: PickingQueueRow[];
+  routeFilter: string | null;
   selected: Set<number>;
   onToggleOne: (orderId: number) => void;
   allSelectedInTab: boolean;
@@ -186,6 +274,7 @@ interface PickingTableProps {
 
 function PickingTable({
   rows,
+  routeFilter,
   selected,
   onToggleOne,
   allSelectedInTab,
@@ -195,7 +284,13 @@ function PickingTable({
   unassignError,
   onUnassign,
 }: PickingTableProps) {
-  const unassignedRows = useMemo(() => rows.filter((r) => !r.isAssigned), [rows]);
+  // View-only route narrowing — sort order (already applied server-side) is
+  // preserved, this only filters which already-sorted rows render. Assigned
+  // rows are untouched by routeFilter — the done bar always shows everything.
+  const unassignedRows = useMemo(() => {
+    const waiting = rows.filter((r) => !r.isAssigned);
+    return routeFilter === null ? waiting : waiting.filter((r) => r.route === routeFilter);
+  }, [rows, routeFilter]);
   const assignedRows = useMemo(() => rows.filter((r) => r.isAssigned), [rows]);
 
   const [assignedExpanded, setAssignedExpanded] = useState(false);
@@ -370,6 +465,10 @@ export function PickingQueue() {
   // Bulk-assign selection (mirrors components/support/support-orders-table.tsx's
   // `selected` Set<number> pattern exactly).
   const [selected, setSelected] = useState<Set<number>>(new Set());
+  // View-only route narrowing (Part 1) — null = "All". Reset whenever the
+  // tab changes, same as selection below (a route present in one window's
+  // waiting line may not exist in another's).
+  const [routeFilter, setRouteFilter] = useState<string | null>(null);
   const [pickers, setPickers] = useState<Picker[]>([]);
   const [pickersLoading, setPickersLoading] = useState(true);
   const [chosenPickerId, setChosenPickerId] = useState<number | null>(null);
@@ -453,6 +552,7 @@ export function PickingQueue() {
   useEffect(() => {
     setSelected(new Set());
     setChosenPickerId(null);
+    setRouteFilter(null);
   }, [activeTab]);
 
   // Post-action refetch — deliberately does NOT reset activeTab. The
@@ -518,40 +618,43 @@ export function PickingQueue() {
     return data.rows.filter((r) => r.windowId === activeTab);
   }, [data, activeTab]);
 
-  // Selection scope — UNASSIGNED rows in the CURRENT TAB only. Never the
-  // assigned done-group, never rows outside this tab (those are cleared by
-  // the tab-change effect above, not filtered here — Array.from() below
-  // reflects exactly what's checked).
-  const selectableIdsInTab = useMemo(
-    () => visibleRows.filter((r) => !r.isAssigned).map((r) => r.orderId),
-    [visibleRows],
-  );
+  // Route filter options — distinct row.route values PRESENT in the current
+  // tab's waiting rows, alphabetical. Derived client-side from already-loaded
+  // rows, no new fetch. Assigned rows never contribute (they're not part of
+  // "the waiting list" the filter narrows).
+  const availableRoutes = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of visibleRows) {
+      if (!r.isAssigned && r.route !== null) set.add(r.route);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "en", { sensitivity: "base" }));
+  }, [visibleRows]);
+
+  // Selection scope — UNASSIGNED rows in the CURRENT TAB, narrowed by the
+  // route filter — matches exactly what PickingTable renders as selectable,
+  // so "Select All" never silently selects a row hidden by the route filter.
+  const selectableIdsInTab = useMemo(() => {
+    const waiting = visibleRows.filter((r) => !r.isAssigned);
+    const filtered = routeFilter === null ? waiting : waiting.filter((r) => r.route === routeFilter);
+    return filtered.map((r) => r.orderId);
+  }, [visibleRows, routeFilter]);
   const allSelectedInTab = selectableIdsInTab.length > 0 && selectableIdsInTab.every((id) => selected.has(id));
   const someSelectedInTab = selectableIdsInTab.some((id) => selected.has(id));
 
-  // No-jump guard (web-update-2026-07-12-picking-queue-v1-design-locked.md): a valid
-  // selection is always a gap-free prefix of `selectableIdsInTab` — that array IS the
-  // flat, spine-sorted, tab-scoped waiting line itself, rendered as one continuous list.
-  // Every handler below recomputes `selected` as a slice() of that same array, anchored
-  // at the clicked row/all boundary — so a gapped or skip-row-1 selection is structurally
-  // impossible to produce, not merely disallowed by disabling inputs.
-
+  // Plain multi-select — no ordering constraint (the no-jump top-prefix guard
+  // was removed for V1; will be re-wired in a later iteration).
   const toggleAllInTab = useCallback(() => {
     setSelected(allSelectedInTab ? new Set() : new Set(selectableIdsInTab));
   }, [allSelectedInTab, selectableIdsInTab]);
 
-  const toggleOne = useCallback(
-    (orderId: number) => {
-      const idx = selectableIdsInTab.indexOf(orderId);
-      if (idx === -1) return; // assigned rows never render a live checkbox
-      setSelected((prev) =>
-        prev.has(orderId)
-          ? new Set(selectableIdsInTab.slice(0, idx)) // uncheck — shrink, drop this row through the end
-          : new Set(selectableIdsInTab.slice(0, idx + 1)), // check — extend through this row (may jump ahead)
-      );
-    },
-    [selectableIdsInTab],
-  );
+  const toggleOne = useCallback((orderId: number) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(orderId)) next.delete(orderId);
+      else next.add(orderId);
+      return next;
+    });
+  }, []);
 
   const handleBulkAssign = useCallback(async () => {
     if (selected.size === 0 || chosenPickerId === null) return;
@@ -611,20 +714,20 @@ export function PickingQueue() {
       <div className="px-4 py-4 pb-20">
         {/* ── Toolbar — mirrors Support's Select All / hint bar ────────── */}
         <div className="flex items-center justify-between px-1 py-1.5 mb-2">
-          <button
-            type="button"
-            onClick={toggleAllInTab}
-            disabled={selectableIdsInTab.length === 0}
-            className="text-xs text-gray-400 hover:text-gray-600 disabled:opacity-40 transition-colors"
-          >
-            {allSelectedInTab ? "Deselect All" : "Select All"}
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={toggleAllInTab}
+              disabled={selectableIdsInTab.length === 0}
+              className="text-xs text-gray-400 hover:text-gray-600 disabled:opacity-40 transition-colors"
+            >
+              {allSelectedInTab ? "Deselect All" : "Select All"}
+            </button>
+            <RouteFilterControl routes={availableRoutes} value={routeFilter} onChange={setRouteFilter} />
+          </div>
           <div className="text-right">
             <p className="text-[11px] text-gray-400">
               Test mode — assignments are tagged and reversible.
-            </p>
-            <p className="text-[11px] text-gray-400">
-              Selecting a row also selects everyone above it — pickers are served top to bottom.
             </p>
           </div>
         </div>
@@ -648,6 +751,7 @@ export function PickingQueue() {
             <div className="rounded-lg border border-gray-200 overflow-hidden">
               <PickingTable
                 rows={visibleRows}
+                routeFilter={routeFilter}
                 selected={selected}
                 onToggleOne={toggleOne}
                 allSelectedInTab={allSelectedInTab}

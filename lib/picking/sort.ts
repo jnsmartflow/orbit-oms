@@ -11,13 +11,6 @@ function compareNullableNumberAsc(a: number | null, b: number | null): number {
   return a - b;
 }
 
-function compareNullableStringAsc(a: string | null, b: string | null): number {
-  if (a === null && b === null) return 0;
-  if (a === null) return 1;
-  if (b === null) return -1;
-  return a.localeCompare(b, LOCALE, { sensitivity: "base" });
-}
-
 function compareNullableDateAsc(a: Date | string | null, b: Date | string | null): number {
   if (a === null && b === null) return 0;
   if (a === null) return 1;
@@ -52,18 +45,6 @@ export const byDeliveryType: SortRule = {
   key: "deliveryType",
   label: "Delivery type",
   compare: (a, b) => deliveryTypeRank(a.deliveryType) - deliveryTypeRank(b.deliveryType),
-};
-
-export const byRoute: SortRule = {
-  key: "route",
-  label: "Route",
-  compare: (a, b) => compareNullableStringAsc(a.route, b.route),
-};
-
-export const byArea: SortRule = {
-  key: "area",
-  label: "Area",
-  compare: (a, b) => compareNullableStringAsc(a.area, b.area),
 };
 
 export const byPriority: SortRule = {

@@ -3,8 +3,6 @@ import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { SUPPORT_DONE_OUTPUT, PICK_ASSIGNED } from "@/lib/workflow-stages";
-import { getPickingQueue } from "@/lib/picking/queue";
-import { validateTopPrefixSelection } from "@/lib/picking/validate-assign";
 
 export const dynamic = "force-dynamic";
 
@@ -62,23 +60,6 @@ export async function POST(req: Request): Promise<NextResponse> {
   });
   if (!picker) {
     return NextResponse.json({ error: "pickerId does not resolve to an active picker" }, { status: 400 });
-  }
-
-  // No-jump guard (web-update-2026-07-12-picking-queue-v1-design-locked.md): the
-  // selection must be exactly the top prefix of one window's waiting line, re-checked
-  // against a FRESH derived read so a stale screen can never sneak a gapped selection
-  // through. Reuses the same getPickingQueue() the board itself renders from — never a
-  // second hand-rolled sort. Rejects the whole batch (no partial writes) before any bill
-  // is touched. Route-boundary is deliberately not enforced — a clean top run may span
-  // multiple route blocks (V1 locked decision).
-  const freshQueue = await getPickingQueue();
-  const freshWaitingRows = freshQueue.rows.filter((r) => !r.isAssigned);
-  const prefixCheck = validateTopPrefixSelection(orderIds, freshWaitingRows);
-  if (!prefixCheck.ok) {
-    return NextResponse.json(
-      { error: prefixCheck.reason ?? "Selection must start from the top of the queue — refresh and try again." },
-      { status: 409 },
-    );
   }
 
   // Each bill runs its own fully sequential pair of writes — never
