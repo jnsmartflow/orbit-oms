@@ -2556,9 +2556,6 @@ export default function PoPage(): React.JSX.Element {
                         onClick={() => selectCustomer({ name: r.name, code: r.code, area: r.area })}
                         className="w-full flex items-center gap-3 px-4 py-3 text-left border-b border-gray-50 last:border-b-0 active:bg-gray-50"
                       >
-                        <div className="w-[38px] h-[38px] rounded-[10px] bg-gray-100 flex items-center justify-center shrink-0">
-                          <Clock className="w-[18px] h-[18px] text-gray-400" />
-                        </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-[16px] font-medium text-gray-800 truncate">{r.name}</p>
                           <p className="text-[13px] text-gray-400 truncate mt-px">
