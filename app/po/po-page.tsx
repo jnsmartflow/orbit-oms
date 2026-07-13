@@ -13,6 +13,9 @@ import {
   loadSavedDrafts, upsertSavedDraft, removeSavedDraft, newDraftId,
   draftSummary, formatSavedAt, type SavedDraft,
 } from "@/lib/place-order/saved-drafts";
+import {
+  loadSentOrders, addSentOrder, removeSentOrder, newSentId, type SentOrder,
+} from "@/lib/place-order/sent-orders";
 import SplashScreen from "./splash-screen";
 
 // /po — new public mobile order page. PHASE 2 (search + add, build screen).
@@ -473,20 +476,30 @@ export default function PoPage(): React.JSX.Element {
     if (typeof window === "undefined") return;
     setDraftsEnabled(new URLSearchParams(window.location.search).get("draft") === "on");
   }, []);
-  // Drafts list screen open (peer of landing — only reachable when !selectedCust).
-  const [draftsOpen,     setDraftsOpen]     = useState(false);
+  // Which browse-tier screen is showing — only meaningful when !selectedCust.
+  // "home" is the only UNPUSHED depth (base); "drafts"/"sent" are peer screens
+  // that sit at the SAME depth (1) above it. A single 3-way enum (not two
+  // independent booleans) so the two screens can never both be "open" at
+  // once, and a lateral switch between them is expressible as a pure state
+  // change with no history push/pop (see openDrafts/openSent).
+  const [browseScreen, setBrowseScreen] = useState<"home" | "drafts" | "sent">("home");
   // Saved-draft id awaiting its delete confirm sheet (null = no sheet).
   const [draftToDelete,  setDraftToDelete]  = useState<string | null>(null);
+  // Sent-order id awaiting its delete confirm sheet (null = no sheet).
+  const [sentToDelete,   setSentToDelete]   = useState<string | null>(null);
   // Which saved draft (if any) the CURRENT live order came from — null for a
   // fresh order. Drives Save-draft's new-vs-overwrite choice; reset on New
-  // order and after Send (both already funnel through clearCustomer()).
+  // order, after Send (both already funnel through clearCustomer() for the
+  // non-draftsEnabled path), and explicitly on a draftsEnabled Send (§P5) and
+  // on a Sent reopen (§P6 — it's a NEW order, not tied to any draft).
   const [openedDraftId,  setOpenedDraftId]  = useState<string | null>(null);
-  // Brief "Draft saved" confirmation overlay shown on Save-draft tap, before
-  // auto-navigating to Drafts (see handleSaveDraftTap). null = not rendered;
+  // Brief confirmation/handoff overlay — "saved" (Draft saved, then auto-nav
+  // to Drafts) or "sending" (Opening mail, no nav after). null = not rendered;
   // "enter"/"exit" pick which keyframe animation class the overlay wears —
   // real @keyframes `animation` (not `transition`), so no rAF/mount trick is
   // needed to kick it off, unlike a transition-based approach.
   const [overlayPhase, setOverlayPhase] = useState<"enter" | "exit" | null>(null);
+  const [overlayKind,  setOverlayKind]  = useState<"saved" | "sending">("saved");
 
   const [selectedCust, setSelectedCust] = useState<Customer | null>(null);
   const [custQuery,    setCustQuery]    = useState("");
@@ -605,13 +618,14 @@ export default function PoPage(): React.JSX.Element {
     crossOpen:        boolean;
     callOpen:         boolean;
     deleteOpen:       boolean;
-    draftsOpen:       boolean;
     draftDeleteOpen:  boolean;
+    sentDeleteOpen:   boolean;
+    browseScreen:     "home" | "drafts" | "sent";
     hasLines:         boolean;
   }>({
     selectedCust: false, view: "build", mode: "search", confirmOpen: false,
     crossOpen: false, callOpen: false, deleteOpen: false,
-    draftsOpen: false, draftDeleteOpen: false, hasLines: false,
+    draftDeleteOpen: false, sentDeleteOpen: false, browseScreen: "home", hasLines: false,
   });
 
   // ── Data ──────────────────────────────────────────────────────────────────
@@ -897,10 +911,15 @@ export default function PoPage(): React.JSX.Element {
       if (s.callOpen)   { cancelCallSheet();  return; }   // overlay: call-routing sheet
       if (s.deleteOpen) { cancelDeleteBill(); return; }   // overlay: delete-bill sheet
       if (s.draftDeleteOpen) { cancelDeleteDraft(); return; }   // overlay: delete-draft sheet (draftsEnabled only)
+      if (s.sentDeleteOpen)  { cancelDeleteSent();  return; }   // overlay: delete-sent sheet (draftsEnabled only)
       if (s.view === "review")   { closeReview();   return; }
       if (s.mode === "picking")  { cancelPicking(); return; }
       if (s.mode === "multiqty") { closeMultiQty(); return; }
-      if (s.draftsOpen) { closeDrafts(); return; }   // Drafts screen → landing (draftsEnabled only)
+      // Drafts OR Sent → landing (draftsEnabled only). One branch covers both
+      // peer screens — the popstate handler never reads a pushed entry's tag,
+      // only this live enum, so it doesn't matter which one was actually
+      // pushed vs. reached by a lateral in-tier switch.
+      if (s.browseScreen !== "home") { closeBrowseScreen(); return; }
       if (s.selectedCust) {                      // build-search → landing (discard guard)
         if (s.hasLines) {
           backConfirmRef.current = true;
@@ -1009,23 +1028,33 @@ export default function PoPage(): React.JSX.Element {
     setOpenedDraftId(null);   // Save-draft feature: a reset always starts a fresh draft next time
   }
 
-  // ── Save-draft-and-reopen-later (draftsEnabled only) ──────────────────────
-  // Bottom-bar "Drafts" tab: forward nav from landing, pushes one entry.
+  // ── Browse-tier nav — Home / Drafts / Sent (draftsEnabled only) ───────────
+  // Bottom-bar "Drafts" tab. Forward push from Home (depth 0->1); a LATERAL
+  // move from Sent (already at depth 1) is a pure state change — no push, no
+  // pop, since the popstate handler never reads a pushed entry's tag anyway.
   function openDrafts(): void {
-    setDraftsOpen(true);
-    pushScreen("drafts");
+    if (browseScreen === "drafts") return;
+    if (browseScreen === "home") pushScreen("drafts");
+    setBrowseScreen("drafts");
+  }
+  // Bottom-bar "Sent" tab. Same shape as openDrafts.
+  function openSent(): void {
+    if (browseScreen === "sent") return;
+    if (browseScreen === "home") pushScreen("sent");
+    setBrowseScreen("sent");
   }
   // Called ONLY from the popstate handler (mirrors cancelCrossSheet/cancelCallSheet
-  // — every close of this screen, whether hardware-back, swipe, or the bottom
-  // bar's "Home" tap, routes through history.back() so there is one authority).
-  function closeDrafts(): void {
-    setDraftsOpen(false);
+  // — every close of either browse screen, whether hardware-back, swipe, or the
+  // bottom bar's "Home" tap, routes through history.back() so there is one
+  // authority). Covers Drafts AND Sent — whichever was showing.
+  function closeBrowseScreen(): void {
+    setBrowseScreen("home");
   }
-  // Bottom-bar "Home" tap while ON Drafts: same authority as hardware back —
-  // just pop the pushed "drafts" entry and let the popstate handler above close
+  // Bottom-bar "Home" tap while on Drafts or Sent: same authority as hardware
+  // back — just pop the pushed entry and let the popstate handler above close
   // it. No-op if already on Home (nothing pushed to pop).
   function goHome(): void {
-    if (draftsOpen && typeof window !== "undefined") window.history.back();
+    if (browseScreen !== "home" && typeof window !== "undefined") window.history.back();
   }
 
   function requestDeleteDraft(id: string): void {
@@ -1038,6 +1067,19 @@ export default function PoPage(): React.JSX.Element {
   function confirmDeleteDraftAction(id: string): void {
     removeSavedDraft(id);
     setDraftToDelete(null);
+    if (typeof window !== "undefined") { suppressPopRef.current = true; window.history.back(); }
+  }
+
+  function requestDeleteSent(id: string): void {
+    setSentToDelete(id);
+    pushScreen("sent-delete");
+  }
+  function cancelDeleteSent(): void {
+    setSentToDelete(null);
+  }
+  function confirmDeleteSentAction(id: string): void {
+    removeSentOrder(id);
+    setSentToDelete(null);
     if (typeof window !== "undefined") { suppressPopRef.current = true; window.history.back(); }
   }
 
@@ -1065,32 +1107,45 @@ export default function PoPage(): React.JSX.Element {
     // so it was dead. saveDraft() itself stays pure save logic only.
   }
 
-  // Save-draft button handler: run the (unchanged) save, show a brief teal
-  // check overlay, then auto-navigate to Drafts so the user sees the saved
-  // order in the list. History: pop exactly ONE entry (Review's, depth 2 -> 1)
-  // — no new push — landing the stack at the same depth a fresh tap on the
-  // bottom bar's Drafts tab would leave it at (the popstate handler only ever
-  // reads live state via navStateRef, never a pushed entry's tag, so this is
-  // safe — see reopenDraft()'s comment for the full trace). Guarded by
-  // re-reading navStateRef at fire-time so a manual Back during the ~1s hold
-  // can't cause a double pop.
-  function handleSaveDraftTap(): void {
-    saveDraft();
+  // Runs the shared confirmation/handoff overlay sequence (enter -> hold ->
+  // exit), then calls onComplete once the exit animation has fully played.
+  // "saved" = Draft-saved tick (used by Save-draft, followed by a nav to
+  // Drafts). "sending" = Opening-mail handoff (used by Send; no onComplete —
+  // the order just stays on screen). Same choreography/timing either way —
+  // only the icon + text swap (see the overlay JSX for the kind switch).
+  function runOverlaySequence(kind: "saved" | "sending", onComplete?: () => void): void {
+    setOverlayKind(kind);
     setOverlayPhase("enter");
-    // 1150ms: card lands ~450ms, check (the hero) finishes drawing ~1000ms,
-    // leaving ~150ms of fully-settled, nothing-moving hold before exit starts
-    // — plus the 250ms exit + ~270ms JS margin below, total tap-to-Drafts
-    // lands around 1.4s (the requested ~1.3-1.5s "deliberate, not a wait").
+    // 1150ms: card lands ~450ms, the hero (check-draw or icon-fade) finishes
+    // ~1000ms, leaving ~150ms of fully-settled, nothing-moving hold before
+    // exit starts — plus the 250ms exit + ~270ms JS margin below, total
+    // ~1.4s (the tuned "deliberate, not a wait" feel).
     window.setTimeout(() => {
       setOverlayPhase("exit");   // plays the ~250ms fade+scale-down exit (CSS)
       window.setTimeout(() => {
         setOverlayPhase(null);
-        if (navStateRef.current.view !== "review") return;   // user already navigated away
-        if (typeof window !== "undefined") { suppressPopRef.current = true; window.history.back(); }
-        clearCustomer();     // order is already saved — safe to close it out
-        setDraftsOpen(true);
+        onComplete?.();
       }, 270);   // >= the exit animation's 250ms so it fully plays before unmount
     }, 1150);
+  }
+
+  // Save-draft button handler: run the (unchanged) save, show the "saved" tick
+  // overlay, then auto-navigate to Drafts so the user sees the saved order in
+  // the list. History: pop exactly ONE entry (Review's, depth 2 -> 1) — no new
+  // push — landing the stack at the same depth a fresh tap on the bottom bar's
+  // Drafts tab would leave it at (the popstate handler only ever reads live
+  // state via navStateRef, never a pushed entry's tag, so this is safe — see
+  // reopenDraft()'s comment for the full trace). Guarded by re-reading
+  // navStateRef at fire-time so a manual Back during the hold can't cause a
+  // double pop.
+  function handleSaveDraftTap(): void {
+    saveDraft();
+    runOverlaySequence("saved", () => {
+      if (navStateRef.current.view !== "review") return;   // user already navigated away
+      if (typeof window !== "undefined") { suppressPopRef.current = true; window.history.back(); }
+      clearCustomer();     // order is already saved — safe to close it out
+      setBrowseScreen("drafts");
+    });
   }
 
   // Reopen a saved draft: rehydrate every PoDraft field into live state (same
@@ -1122,7 +1177,32 @@ export default function PoPage(): React.JSX.Element {
     setNotes(s.notes);
     setMultiSelect(s.multiSelect);
     setOpenedDraftId(draft.id);
-    setDraftsOpen(false);
+    setBrowseScreen("home");   // leaving the browse tier (moot for render once selectedCust is set, kept for state hygiene)
+    setView("review");
+    setMode("search");
+    pushScreen("review");
+  }
+
+  // Reopen a Sent order = REORDER: identical mechanism to reopenDraft (same
+  // rehydrate, same single-push history math — see its comment for the full
+  // back-nav trace), except openedDraftId is cleared to null: this is a NEW
+  // order, not tied to any draft, so a later Save creates a fresh draft and a
+  // later Send adds a fresh Sent entry rather than linking back to anything.
+  function reopenSent(order: SentOrder): void {
+    const s = order.snapshot;
+    setSelectedCust(s.customer);
+    setBills(s.bills);
+    setBillCounter(s.billCounter);
+    setActiveBillId(s.activeBillId);
+    setShipTo(s.shipTo);
+    setDispatch(s.dispatch);
+    setCallTarget(s.callTarget);
+    setMarker(s.marker);
+    setCrossDepot(s.crossDepot);
+    setNotes(s.notes);
+    setMultiSelect(s.multiSelect);
+    setOpenedDraftId(null);
+    setBrowseScreen("home");
     setView("review");
     setMode("search");
     pushScreen("review");
@@ -1650,7 +1730,8 @@ export default function PoPage(): React.JSX.Element {
 
   // Read fresh on every render rather than cached in state — cheap, and stays
   // correct after save/delete without a separate refresh call at each site.
-  const savedDrafts = draftsEnabled && draftsOpen ? loadSavedDrafts() : [];
+  const savedDrafts = draftsEnabled && browseScreen === "drafts" ? loadSavedDrafts() : [];
+  const sentOrders  = draftsEnabled && browseScreen === "sent"   ? loadSentOrders()  : [];
 
   // Confirm-dialog copy, by intent.
   const confirmCopy = confirmKind === "change"
@@ -1665,8 +1746,9 @@ export default function PoPage(): React.JSX.Element {
     crossOpen:       crossSheetOpen,
     callOpen:        callSheetOpen,
     deleteOpen:      billToDelete !== null,
-    draftsOpen:      draftsEnabled && draftsOpen,
     draftDeleteOpen: draftsEnabled && draftToDelete !== null,
+    sentDeleteOpen:  draftsEnabled && sentToDelete !== null,
+    browseScreen:    draftsEnabled ? browseScreen : "home",
     hasLines:        hasAnyLines,
   };
 
@@ -1680,15 +1762,46 @@ export default function PoPage(): React.JSX.Element {
     // Record this customer in device-local recents BEFORE the reset — this is
     // the ONLY place recents are written.
     if (selectedCust) setRecents(addRecent(selectedCust));
+
+    // draftsEnabled: show the "Opening mail" handoff overlay, log this order to
+    // po_sent_orders, and drop it from Drafts if it came from a reopened one —
+    // ALL plain state/localStorage writes, no history calls, so none of this
+    // conflicts with the mailto-must-fire-synchronously-first rule below.
+    if (draftsEnabled) {
+      runOverlaySequence("sending");   // no onComplete — the order stays on screen either way
+      if (selectedCust) {
+        addSentOrder({
+          id:      newSentId(),
+          label:   selectedCust.name,
+          sentAt:  Date.now(),
+          snapshot: {
+            customer: selectedCust, bills, billCounter, activeBillId, shipTo,
+            dispatch, callTarget, marker, crossDepot, notes, multiSelect,
+          },
+        });
+      }
+      if (openedDraftId) {
+        removeSavedDraft(openedDraftId);
+        setOpenedDraftId(null);   // that draft is gone — a later Save must start fresh, not resurrect it
+      }
+    }
+
     // Fire the mailto FIRST — within the tap gesture, BEFORE any history navigation.
     // On mobile a synchronous history.go() in the same tick cancels the pending
     // external mailto handoff before the mail app opens (the working /order only sets
     // location.href and does nothing after). Nothing that navigates history may run
     // before or in the same sync tick as this line.
     window.location.href = url;   // mailto: opens the mail app; page does not unload
-    // A sent order that came from a reopened draft is no longer a draft —
-    // remove it. Read openedDraftId BEFORE clearCustomer() resets it.
-    if (draftsEnabled && openedDraftId) removeSavedDraft(openedDraftId);
+
+    if (draftsEnabled) {
+      // The order STAYS ON SCREEN — mailto only opens the mail app, it never
+      // confirms delivery, so resetting here would assume a success we don't
+      // have. No reset, no history change; orbitoms_po_draft (crash-recovery)
+      // is untouched too, which is correct — the still-live order should stay
+      // recoverable.
+      return;
+    }
+
     // Full reset — pure state, NO navigation, so it can't pre-empt the mailto.
     clearCustomer();
     // Snap history to base so a later Back exits cleanly — DEFERRED to a later task
@@ -1855,6 +1968,7 @@ export default function PoPage(): React.JSX.Element {
         .po-save-circle { opacity: 1; transform: scale(1); }
         .po-save-ring { opacity: 0; transform: scale(1); }
         .po-save-check { stroke-dasharray: 24; stroke-dashoffset: 0; }
+        .po-save-icon-fade { opacity: 1; transform: scale(1); }
         .po-save-text { opacity: 1; }
 
         @media (prefers-reduced-motion: no-preference) {
@@ -1876,6 +1990,10 @@ export default function PoPage(): React.JSX.Element {
           .po-save-card--enter .po-save-check {
             stroke-dashoffset: 24;
             animation: poSaveCheckDraw 550ms ease-out 450ms both;
+          }
+          .po-save-card--enter .po-save-icon-fade {
+            opacity: 0;
+            animation: poSaveIconFadeIn 350ms cubic-bezier(0.34, 1.56, 0.64, 1) 450ms both;
           }
           .po-save-card--enter .po-save-text {
             opacity: 0;
@@ -1901,6 +2019,10 @@ export default function PoPage(): React.JSX.Element {
           100% { opacity: 0; transform: scale(1.9); }
         }
         @keyframes poSaveCheckDraw { from { stroke-dashoffset: 24; } to { stroke-dashoffset: 0; } }
+        @keyframes poSaveIconFadeIn {
+          0%   { opacity: 0; transform: scale(0.6); }
+          100% { opacity: 1; transform: scale(1); }
+        }
         @keyframes poSaveTextIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
       `}</style>
 
@@ -1995,7 +2117,7 @@ export default function PoPage(): React.JSX.Element {
         )}
 
         {!selectedCust ? (
-          draftsEnabled && draftsOpen ? (
+          draftsEnabled && browseScreen === "drafts" ? (
             /* ── Drafts screen (draftsEnabled only) — peer of landing ────── */
             <div className="px-4 pt-6">
               <div className="text-[13px] font-semibold text-gray-600 uppercase tracking-wide mb-2 px-1">
@@ -2038,6 +2160,61 @@ export default function PoPage(): React.JSX.Element {
                           type="button"
                           onClick={() => requestDeleteDraft(d.id)}
                           aria-label="Delete draft"
+                          className="text-gray-300 active:text-red-500 p-2 -mr-2 shrink-0"
+                        >
+                          <Trash2 className="w-[17px] h-[17px]" />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          ) : draftsEnabled && browseScreen === "sent" ? (
+            /* ── Sent screen (draftsEnabled only) — peer of landing, same
+                shape as Drafts. Reopening a row = REORDER (lands on Review
+                with openedDraftId cleared — see reopenSent). ────────────── */
+            <div className="px-4 pt-6">
+              <div className="text-[13px] font-semibold text-gray-600 uppercase tracking-wide mb-2 px-1">
+                Sent
+              </div>
+              {sentOrders.length === 0 ? (
+                <div className="mt-10 flex flex-col items-center text-center px-6">
+                  <div className="w-[44px] h-[44px] rounded-full bg-gray-100 flex items-center justify-center mb-3">
+                    <Send className="w-[20px] h-[20px] text-gray-300" />
+                  </div>
+                  <p className="text-[14px] font-medium text-gray-500">No sent orders yet</p>
+                  <p className="text-[13px] text-gray-400 mt-1 leading-snug">
+                    Orders you send today and yesterday show up here.
+                  </p>
+                </div>
+              ) : (
+                <div className="bg-white border border-gray-100 rounded-[16px] overflow-hidden shadow-sm">
+                  {sentOrders.map((o) => {
+                    const sum = draftSummary(o.snapshot);
+                    return (
+                      <div
+                        key={o.id}
+                        className="flex items-center gap-3 px-4 py-3 border-b border-gray-50 last:border-b-0"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => reopenSent(o)}
+                          className="flex-1 min-w-0 text-left"
+                        >
+                          <p className="text-[15px] font-bold text-gray-900 truncate">
+                            {o.snapshot.customer.name}
+                          </p>
+                          <p className="text-[12px] text-gray-400 truncate mt-0.5">
+                            {o.snapshot.customer.area ? `${o.snapshot.customer.area} · ` : ""}
+                            {sum.bills} {sum.bills === 1 ? "bill" : "bills"} · {sum.units} units
+                          </p>
+                          <p className="text-[11px] text-gray-400 mt-0.5">{formatSavedAt(o.sentAt)}</p>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => requestDeleteSent(o.id)}
+                          aria-label="Delete sent order"
                           className="text-gray-300 active:text-red-500 p-2 -mr-2 shrink-0"
                         >
                           <Trash2 className="w-[17px] h-[17px]" />
@@ -2973,19 +3150,64 @@ export default function PoPage(): React.JSX.Element {
           </div>
         )}
 
+        {/* Delete-sent confirm — same bottom-sheet pattern as delete-draft
+            above (draftsEnabled only; only reachable from the Sent screen). */}
+        {draftsEnabled && sentToDelete !== null && (
+          <div
+            className="fixed inset-0 z-50 flex items-end justify-center bg-black/40"
+            onClick={() => window.history.back()}
+          >
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-label="Delete sent order"
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-[480px] bg-white rounded-t-[18px] p-5"
+              style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 20px)" }}
+            >
+              <h2 className="text-[16px] font-semibold text-gray-900">Delete this sent order?</h2>
+              <p className="text-[13px] text-gray-500 mt-1.5 leading-snug">
+                {sentOrders.find((o) => o.id === sentToDelete)?.snapshot.customer.name ?? "This"}&rsquo;s sent order will be removed from this list. This can&rsquo;t be undone.
+              </p>
+              <div className="flex gap-2 mt-4">
+                <button
+                  type="button"
+                  onClick={() => window.history.back()}
+                  className="flex-1 h-[44px] rounded-[10px] bg-gray-100 text-gray-700 text-[14px] font-medium active:bg-gray-200"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => confirmDeleteSentAction(sentToDelete)}
+                  className="flex-1 h-[44px] rounded-[10px] bg-red-600 text-white text-[14px] font-semibold active:bg-red-700"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Save-draft confirmation overlay — teal check + "Draft saved", then
-            handleSaveDraftTap auto-navigates to Drafts after ~1s. Position:fixed
-            so it sits above everything without touching the scroll container /
-            --vvh math (§22/§25) — same isolation as the sheets above (they're
-            fixed too; that doesn't conflict with the hand-tuned scroll since
-            fixed elements sit outside it regardless of --vvh sizing).
+            handleSaveDraftTap auto-navigates to Drafts after ~1s ("saved" kind).
+            handleSend uses the "sending" kind instead — "Opening mail", a
+            HANDOFF not a success (mailto only opens the mail app, it never
+            confirms delivery), so it never says "Sent" or shows a tick; no
+            onComplete nav after — the order stays on screen either way.
+            Position:fixed so it sits above everything without touching the
+            scroll container / --vvh math (§22/§25) — same isolation as the
+            sheets above (they're fixed too; that doesn't conflict with the
+            hand-tuned scroll since fixed elements sit outside it regardless of
+            --vvh sizing).
             Sequence: backdrop + card spring in -> circle pops -> ring pulses
-            once -> check draws -> (~1s hold) -> card fades+shrinks out. Pure
-            CSS @keyframes + SVG stroke-dashoffset, no animation library. All
-            animation rules live under prefers-reduced-motion: no-preference
-            (see the <style> block above <main>) — the un-animated base state
-            IS the fully-settled look, so reduced-motion users just see the
-            static tick + text with no transition at all. */}
+            once -> check draws OR icon fades in -> (~1s hold) -> card
+            fades+shrinks out. Pure CSS @keyframes + SVG stroke-dashoffset, no
+            animation library. All animation rules live under
+            prefers-reduced-motion: no-preference (see the <style> block above
+            <main>) — the un-animated base state IS the fully-settled look, so
+            reduced-motion users just see the static icon + text with no
+            transition at all. */}
         {overlayPhase && (
           <div
             className={`fixed inset-0 z-[60] flex items-center justify-center px-6 po-save-backdrop ${
@@ -3002,19 +3224,25 @@ export default function PoPage(): React.JSX.Element {
                 {/* Expanding pulse ring — one shot, behind the circle */}
                 <span className="po-save-ring absolute inset-0 rounded-full border-2 border-teal-600" aria-hidden="true" />
                 <div className="po-save-circle relative w-16 h-16 rounded-full bg-teal-600 flex items-center justify-center">
-                  <svg width="30" height="30" viewBox="0 0 24 24" fill="none">
-                    <polyline
-                      className="po-save-check"
-                      points="4 12 9 17 20 6"
-                      stroke="#fff"
-                      strokeWidth="3"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
+                  {overlayKind === "saved" ? (
+                    <svg width="30" height="30" viewBox="0 0 24 24" fill="none">
+                      <polyline
+                        className="po-save-check"
+                        points="4 12 9 17 20 6"
+                        stroke="#fff"
+                        strokeWidth="3"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  ) : (
+                    <Send className="po-save-icon-fade w-[26px] h-[26px] text-white" />
+                  )}
                 </div>
               </div>
-              <p className="po-save-text text-[15px] font-semibold text-gray-900">Draft saved</p>
+              <p className="po-save-text text-[15px] font-semibold text-gray-900">
+                {overlayKind === "saved" ? "Draft saved" : "Opening mail"}
+              </p>
             </div>
           </div>
         )}
@@ -3103,12 +3331,14 @@ export default function PoPage(): React.JSX.Element {
                   : null
       )}
 
-      {/* Home · Drafts bottom bar — draftsEnabled only, and only on Home/Drafts
-          (selectedCust true on Build/Review makes this branch structurally
-          unreachable there — no separate hide-on-order logic needed). Gates on
-          keyboardOpen like every other floating footer on this page (§55). This
-          is NOT the §59 Home/Menu/You shell — that's login-only and unrelated;
-          /po is public with no session, so it needs its own two-anchor bar. */}
+      {/* Home · Drafts · Sent bottom bar — draftsEnabled only, and only on the
+          three browsing screens (selectedCust true on Build/Review makes this
+          branch structurally unreachable there — no separate hide-on-order
+          logic needed). Gates on keyboardOpen like every other floating
+          footer on this page (§55). This is NOT the §59 Home/Menu/You shell —
+          that's login-only and unrelated; /po is public with no session, so
+          it needs its own bar. Bookmark (Drafts) vs. Send/paper-plane (Sent)
+          are deliberately distinct glyphs so the two are easy to tell apart. */}
       {draftsEnabled && !selectedCust && !keyboardOpen && (
         <div
           className="flex-shrink-0 bg-white border-t border-gray-200 flex"
@@ -3118,7 +3348,7 @@ export default function PoPage(): React.JSX.Element {
             type="button"
             onClick={goHome}
             className={`flex-1 flex flex-col items-center gap-0.5 pt-[9px] pb-[7px] text-[11px] font-medium ${
-              !draftsOpen ? "text-teal-600" : "text-gray-400"
+              browseScreen === "home" ? "text-teal-600" : "text-gray-400"
             }`}
           >
             <Home className="w-5 h-5" />
@@ -3126,13 +3356,23 @@ export default function PoPage(): React.JSX.Element {
           </button>
           <button
             type="button"
-            onClick={() => { if (!draftsOpen) openDrafts(); }}
+            onClick={openDrafts}
             className={`flex-1 flex flex-col items-center gap-0.5 pt-[9px] pb-[7px] text-[11px] font-medium ${
-              draftsOpen ? "text-teal-600" : "text-gray-400"
+              browseScreen === "drafts" ? "text-teal-600" : "text-gray-400"
             }`}
           >
             <Bookmark className="w-5 h-5" />
             Drafts
+          </button>
+          <button
+            type="button"
+            onClick={openSent}
+            className={`flex-1 flex flex-col items-center gap-0.5 pt-[9px] pb-[7px] text-[11px] font-medium ${
+              browseScreen === "sent" ? "text-teal-600" : "text-gray-400"
+            }`}
+          >
+            <Send className="w-5 h-5" />
+            Sent
           </button>
         </div>
       )}

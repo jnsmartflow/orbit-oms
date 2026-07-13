@@ -8,8 +8,7 @@
 import type { PoDraft } from "@/app/po/po-page";
 
 const STORAGE_KEY = "po_saved_drafts";
-// Mirrors the po_recent_customers cap-6 pattern (po-page.tsx PO_RECENTS_CAP).
-const MAX_DRAFTS = 6;
+const MAX_DRAFTS = 20;
 
 export type SavedDraftSnapshot = Omit<PoDraft, "updatedAt">;
 
