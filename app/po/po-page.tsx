@@ -481,6 +481,17 @@ export default function PoPage(): React.JSX.Element {
   // fresh order. Drives Save-draft's new-vs-overwrite choice; reset on New
   // order and after Send (both already funnel through clearCustomer()).
   const [openedDraftId,  setOpenedDraftId]  = useState<string | null>(null);
+  // Brief "Draft saved" confirmation overlay shown on Save-draft tap, before
+  // auto-navigating to Drafts (see handleSaveDraftTap). savedOverlayIn drives
+  // a plain CSS opacity/scale transition (no animation library) — flips true
+  // one rAF after mount so the enter transition actually plays.
+  const [showSavedOverlay, setShowSavedOverlay] = useState(false);
+  const [savedOverlayIn,   setSavedOverlayIn]   = useState(false);
+  useEffect(() => {
+    if (!showSavedOverlay) { setSavedOverlayIn(false); return; }
+    const id = requestAnimationFrame(() => setSavedOverlayIn(true));
+    return () => cancelAnimationFrame(id);
+  }, [showSavedOverlay]);
 
   const [selectedCust, setSelectedCust] = useState<Customer | null>(null);
   const [custQuery,    setCustQuery]    = useState("");
@@ -1053,9 +1064,31 @@ export default function PoPage(): React.JSX.Element {
     };
     upsertSavedDraft(draft);
     if (!openedDraftId) setOpenedDraftId(id);
-    // Quiet confirmation — reuses the existing "last added" banner mechanism
-    // rather than inventing new UI.
-    setLastAdded("Draft saved");
+    // Feedback lives in handleSaveDraftTap (the button's onClick) — the
+    // lastAdded banner used here originally never renders on the Review
+    // screen (it's gated on mode === "search", a build-screen-only concept),
+    // so it was dead. saveDraft() itself stays pure save logic only.
+  }
+
+  // Save-draft button handler: run the (unchanged) save, show a brief teal
+  // check overlay, then auto-navigate to Drafts so the user sees the saved
+  // order in the list. History: pop exactly ONE entry (Review's, depth 2 -> 1)
+  // — no new push — landing the stack at the same depth a fresh tap on the
+  // bottom bar's Drafts tab would leave it at (the popstate handler only ever
+  // reads live state via navStateRef, never a pushed entry's tag, so this is
+  // safe — see reopenDraft()'s comment for the full trace). Guarded by
+  // re-reading navStateRef at fire-time so a manual Back during the ~1s hold
+  // can't cause a double pop.
+  function handleSaveDraftTap(): void {
+    saveDraft();
+    setShowSavedOverlay(true);
+    window.setTimeout(() => {
+      setShowSavedOverlay(false);
+      if (navStateRef.current.view !== "review") return;   // user already navigated away
+      if (typeof window !== "undefined") { suppressPopRef.current = true; window.history.back(); }
+      clearCustomer();     // order is already saved — safe to close it out
+      setDraftsOpen(true);
+    }, 1000);
   }
 
   // Reopen a saved draft: rehydrate every PoDraft field into live state (same
@@ -1771,7 +1804,7 @@ export default function PoPage(): React.JSX.Element {
       >
         <button
           type="button"
-          onClick={saveDraft}
+          onClick={handleSaveDraftTap}
           disabled={!hasAnyLines}
           className={`flex items-center gap-1.5 h-[52px] px-4 rounded-[12px] border text-[14px] font-semibold ${
             hasAnyLines
@@ -2871,6 +2904,31 @@ export default function PoPage(): React.JSX.Element {
                   Delete
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Save-draft confirmation overlay — teal check + "Draft saved", then
+            handleSaveDraftTap auto-navigates to Drafts after ~1s. Position:fixed
+            so it sits above everything without touching the scroll container /
+            --vvh math (§22/§25) — same isolation as the sheets above. Plain CSS
+            opacity/scale transition, no animation library. */}
+        {showSavedOverlay && (
+          <div
+            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/25 px-6"
+            aria-live="polite"
+          >
+            <div
+              className={`flex flex-col items-center gap-3 bg-white rounded-[20px] px-8 py-7 shadow-xl transition-all duration-200 ease-out ${
+                savedOverlayIn ? "opacity-100 scale-100" : "opacity-0 scale-90"
+              }`}
+            >
+              <div className="w-16 h-16 rounded-full bg-teal-600 flex items-center justify-center">
+                <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="4 12 9 17 20 6" />
+                </svg>
+              </div>
+              <p className="text-[15px] font-semibold text-gray-900">Draft saved</p>
             </div>
           </div>
         )}
