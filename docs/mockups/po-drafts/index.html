@@ -36,6 +36,11 @@
     line-height: 1.5;
   }
   .page-label b { color: #111827; }
+  .merge-note {
+    max-width: 390px; margin: 0 auto 18px; padding: 10px 14px;
+    background: #f0fdfa; border: 1px solid #99f6e4; border-radius: 10px;
+    font-size: 12px; line-height: 1.5; color: #0f766e; text-align: center;
+  }
 
   /* Phone frame — NOT part of the real /po chrome, just a mockup container */
   .frame-wrap { display: flex; justify-content: center; padding-bottom: 40px; }
@@ -71,7 +76,7 @@
   /* ── Elevated search field — bg-white border-gray-200 rounded-[16px] p-[19px], shadow 0 8px 28px rgba(17,24,39,.09) ── */
   .search-pad { padding: 64px 16px 0; }
   .search-field {
-    display: flex; align-items: center; gap: 10px;
+    display: flex; align-items: center; gap: 10px; cursor: pointer;
     background: #fff; border: 1px solid var(--gray-200); border-radius: 16px; padding: 19px;
     box-shadow: 0 8px 28px rgba(17,24,39,0.09);
   }
@@ -167,6 +172,39 @@
   }
   .send-pill:active { background: var(--teal-700); opacity: 0.9; }
 
+  /* ── New order button — teal bar, right side, shown once a customer is locked
+       (Build + Review). Real: RefreshCw icon + "New order", 13px/500/white. ── */
+  .new-order-btn { display: flex; align-items: center; gap: 6px; color: #fff; font-size: 13px; font-weight: 500; background: none; border: none; cursor: pointer; }
+
+  /* ── Build screen — Bill + Multi row — bg-white border-b border-gray-200 px-4 py-[10px] ── */
+  .bill-row { flex-shrink: 0; background: #fff; border-bottom: 1px solid var(--gray-200); padding: 10px 16px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .bill-row-left { display: flex; align-items: center; gap: 10px; min-width: 0; overflow-x: auto; }
+  .bill-single { font-size: 14px; font-weight: 600; color: var(--gray-700); flex-shrink: 0; }
+  .add-bill-btn { display: flex; align-items: center; gap: 4px; font-size: 14px; color: var(--teal-700); font-weight: 500; background: none; border: none; flex-shrink: 0; cursor: default; }
+  .bill-row-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+  .bill-row-right span { font-size: 14px; color: var(--gray-700); }
+  .multi-switch { position: relative; width: 46px; height: 26px; border-radius: 999px; background: var(--gray-300); border: none; flex-shrink: 0; cursor: default; }
+  .multi-switch .knob { position: absolute; top: 2px; left: 2px; width: 22px; height: 22px; border-radius: 999px; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,0.2); }
+
+  /* ── Build screen — in-order product search — sticky bg-[#f9fafb] p-4 border-b shadow; pill border-gray-300 rounded-full px-[18px] py-[14px] ── */
+  .build-search-wrap { position: sticky; top: 0; z-index: 5; background: var(--gray-50); padding: 16px; border-bottom: 1px solid var(--gray-200); box-shadow: 0 2px 6px rgba(0,0,0,0.04); }
+  .build-search-field { display: flex; align-items: center; gap: 12px; border: 1px solid var(--gray-300); border-radius: 999px; padding: 14px 18px; }
+  .build-search-field input { flex: 1; border: none; outline: none; background: transparent; font-size: 16px; color: var(--gray-900); }
+  .build-search-field input::placeholder { color: var(--gray-400); }
+
+  /* ── Build screen — cart preview. NOTE: live /po's search screen shows only an
+       amber "last added" banner + Recently Used, not a persistent line list —
+       this card is a mockup addition (reuses the exact bill-card/line-row look
+       from Review) so the demo makes "what's already in this bill" visible. ── */
+  .cart-preview-label { font-size: 12px; font-weight: 600; color: var(--gray-600); margin-bottom: 8px; display: block; }
+
+  /* ── Build screen footer — single floating pill (no Save draft here — that's
+       a Review-screen affordance). Wrapper matches real footerPill exactly:
+       flex-shrink-0 bg-[#f9fafb] flex justify-center px-4 pt-3. ── */
+  .footer-1btn { flex-shrink: 0; background: var(--gray-50); display: flex; justify-content: center; padding: 12px 16px max(env(safe-area-inset-bottom, 0px), 16px); }
+  .review-pill { display: flex; align-items: center; gap: 8px; background: var(--teal); color: #fff; font-size: 15px; font-weight: 700; border: none; border-radius: 999px; padding: 15px 34px; box-shadow: 0 8px 22px rgba(13,148,136,0.42); cursor: pointer; }
+  .review-pill:active { background: var(--teal-700); opacity: 0.9; }
+
   /* ── Bottom bar — NEW, Home + Drafts ONLY (public page, no login → no You).
        Hidden entirely on Review (JS, see showScreen()) — inside an order,
        navigation is the back arrow + floating pill only, matching live /po. ── */
@@ -190,7 +228,11 @@
 
   <div class="page-label">
     <b>/po — Save Draft + Reopen Later</b> — tappable mockup, static HTML only.<br />
-    Tap <b>Home</b> / <b>Drafts</b> in the bottom bar, or tap a draft row to open Review.
+    Normal: Home &rarr; tap search/recent &rarr; Build &rarr; Review order &rarr; Review.
+    Draft: Drafts &rarr; tap a row &rarr; Build &rarr; identical onward.
+  </div>
+  <div class="merge-note">
+    A reopened draft loads back into the live Build screen &mdash; from there it behaves exactly like a normal order.
   </div>
 
   <div class="frame-wrap">
@@ -216,7 +258,7 @@
 
         <div class="scroll">
           <div class="search-pad">
-            <div class="search-field">
+            <div class="search-field" onclick="showScreen('build')" role="button" tabindex="0">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
               </svg>
@@ -225,7 +267,7 @@
 
             <div class="recent-label">Recent</div>
             <div class="recent-list">
-              <button type="button" class="recent-row">
+              <button type="button" class="recent-row" onclick="showScreen('build')">
                 <div class="icon-box">
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>
                 </div>
@@ -235,7 +277,7 @@
                 </div>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#d1d5db" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
               </button>
-              <button type="button" class="recent-row">
+              <button type="button" class="recent-row" onclick="showScreen('build')">
                 <div class="icon-box">
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>
                 </div>
@@ -271,7 +313,7 @@
         <div class="drafts-title-bar"><span>Saved Drafts</span></div>
 
         <div class="scroll">
-          <button type="button" class="draft-row" onclick="openReview()">
+          <button type="button" class="draft-row" onclick="showScreen('build')">
             <div style="flex:1;min-width:0;">
               <p class="draft-name">Ambika Paints</p>
               <p class="draft-meta">Varachha &middot; 2 bills &middot; 34 units</p>
@@ -281,7 +323,7 @@
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#d1d5db" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
             </div>
           </button>
-          <button type="button" class="draft-row" onclick="openReview()">
+          <button type="button" class="draft-row" onclick="showScreen('build')">
             <div style="flex:1;min-width:0;">
               <p class="draft-name">Shree Ganesh Hardware</p>
               <p class="draft-meta">Katargam &middot; 1 bill &middot; 12 units</p>
@@ -291,7 +333,7 @@
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#d1d5db" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
             </div>
           </button>
-          <button type="button" class="draft-row" onclick="openReview()">
+          <button type="button" class="draft-row" onclick="showScreen('build')">
             <div style="flex:1;min-width:0;">
               <p class="draft-name">Patel Paint House</p>
               <p class="draft-meta">Adajan &middot; 3 bills &middot; 58 units</p>
@@ -304,15 +346,113 @@
         </div>
       </div>
 
-      <!-- ══════════════════ SCREEN 3 — REVIEW (reopened draft) ══════════════════ -->
+      <!-- ══════════════════ SCREEN 3 — BUILD (live order — reached from Home OR a reopened Draft; this is where the two paths MERGE) ══════════════════ -->
+      <div class="screen" id="screen-build">
+        <div class="orbit-bar">
+          <div class="orbit-bar-row">
+            <div class="orbit-brand">
+              <svg viewBox="0 0 32 32" fill="none" width="26" height="26" aria-hidden="true">
+                <circle cx="16" cy="16" r="11" stroke="#fff" stroke-width="2" />
+                <circle cx="16" cy="16" r="3.4" fill="#fff" />
+                <circle cx="27" cy="16" r="2.6" fill="#fff" />
+              </svg>
+              <div class="orbit-title">Orbit</div>
+            </div>
+            <button type="button" class="new-order-btn" onclick="showScreen('home')">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>
+              New order
+            </button>
+          </div>
+        </div>
+
+        <div class="white-header">
+          <div class="name">Ambika Paints</div>
+          <div class="sub">447636 &middot; Varachha</div>
+        </div>
+
+        <div class="bill-row">
+          <div class="bill-row-left">
+            <span class="bill-single">Bill 1</span>
+            <button type="button" class="add-bill-btn">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0f766e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+              Add bill
+            </button>
+          </div>
+          <div class="bill-row-right">
+            <span>Multi</span>
+            <button type="button" class="multi-switch" role="switch" aria-checked="false" aria-label="Select multiple products">
+              <span class="knob"></span>
+            </button>
+          </div>
+        </div>
+
+        <div class="scroll">
+          <div class="bill-card">
+            <span class="cart-preview-label">Added to this bill</span>
+            <div class="line-row">
+              <button type="button" class="line-main">
+                <p class="line-name">Gloss 90 Base</p>
+                <div class="line-chips">
+                  <span class="line-chip">1L <span class="qty">&times;6</span></span>
+                  <span class="line-chip">4L <span class="qty">&times;4</span></span>
+                </div>
+              </button>
+              <button type="button" class="line-remove">&times;</button>
+            </div>
+            <div class="line-row">
+              <button type="button" class="line-main">
+                <p class="line-name">WS Max &mdash; Accent</p>
+                <div class="line-chips">
+                  <span class="line-chip">20L <span class="qty">&times;2</span></span>
+                </div>
+              </button>
+              <button type="button" class="line-remove">&times;</button>
+            </div>
+          </div>
+
+          <div class="build-search-wrap">
+            <div class="build-search-field">
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+              <input type="text" placeholder="Search product&hellip;" readonly />
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#0d9488" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><line x1="12" y1="19" x2="12" y2="23" /></svg>
+            </div>
+          </div>
+        </div>
+
+        <div class="footer-1btn">
+          <button type="button" class="review-pill" onclick="showScreen('review')">
+            Review order
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- ══════════════════ SCREEN 4 — REVIEW (both fresh-build and reopened-draft orders land here identically) ══════════════════ -->
       <div class="screen" id="screen-review">
+        <div class="orbit-bar">
+          <div class="orbit-bar-row">
+            <div class="orbit-brand">
+              <svg viewBox="0 0 32 32" fill="none" width="26" height="26" aria-hidden="true">
+                <circle cx="16" cy="16" r="11" stroke="#fff" stroke-width="2" />
+                <circle cx="16" cy="16" r="3.4" fill="#fff" />
+                <circle cx="27" cy="16" r="2.6" fill="#fff" />
+              </svg>
+              <div class="orbit-title">Orbit</div>
+            </div>
+            <button type="button" class="new-order-btn" onclick="showScreen('home')">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>
+              New order
+            </button>
+          </div>
+        </div>
+
         <div class="white-header">
           <div class="name">Ambika Paints</div>
           <div class="sub">447636 &middot; Varachha</div>
         </div>
 
         <div class="review-bar">
-          <button type="button" class="back" onclick="showScreen('drafts')" aria-label="Back to Drafts">
+          <button type="button" class="back" onclick="showScreen('build')" aria-label="Back to build">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
             <span class="title">Review &amp; send</span>
           </button>
@@ -422,21 +562,21 @@
   </div>
 
 <script>
-  // Tab-switching only — no other app logic. Three screens: home / drafts / review.
+  // Tab-switching only — no other app logic. Four screens: home / drafts / build / review.
+  // NORMAL flow:  home -> build -> review
+  // DRAFT flow:   drafts -> build -> review   (same build screen — the two paths merge here)
   function showScreen(name) {
-    ["home", "drafts", "review"].forEach(function (id) {
+    ["home", "drafts", "build", "review"].forEach(function (id) {
       document.getElementById("screen-" + id).classList.toggle("active", id === name);
     });
-    // Review is reached from Drafts, so the Drafts tab stays the active anchor
-    // for when the bar IS visible — but on Review the bar is hidden entirely
-    // (inside an order, nav is back-arrow + floating pill only, like live /po).
-    var activeTab = name === "review" ? "drafts" : name;
-    document.getElementById("tab-home").classList.toggle("tab-active", activeTab === "home");
-    document.getElementById("tab-drafts").classList.toggle("tab-active", activeTab === "drafts");
-    document.getElementById("bottom-bar").style.display = (name === "review") ? "none" : "flex";
-  }
-  function openReview() {
-    showScreen("review");
+    // Bottom bar only makes sense on Home/Drafts — inside an order (Build or
+    // Review) nav is the back-arrow + floating pill only, matching live /po.
+    var insideOrder = (name === "build" || name === "review");
+    document.getElementById("bottom-bar").style.display = insideOrder ? "none" : "flex";
+    if (!insideOrder) {
+      document.getElementById("tab-home").classList.toggle("tab-active", name === "home");
+      document.getElementById("tab-drafts").classList.toggle("tab-active", name === "drafts");
+    }
   }
 </script>
 
