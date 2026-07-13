@@ -482,16 +482,11 @@ export default function PoPage(): React.JSX.Element {
   // order and after Send (both already funnel through clearCustomer()).
   const [openedDraftId,  setOpenedDraftId]  = useState<string | null>(null);
   // Brief "Draft saved" confirmation overlay shown on Save-draft tap, before
-  // auto-navigating to Drafts (see handleSaveDraftTap). savedOverlayIn drives
-  // a plain CSS opacity/scale transition (no animation library) — flips true
-  // one rAF after mount so the enter transition actually plays.
-  const [showSavedOverlay, setShowSavedOverlay] = useState(false);
-  const [savedOverlayIn,   setSavedOverlayIn]   = useState(false);
-  useEffect(() => {
-    if (!showSavedOverlay) { setSavedOverlayIn(false); return; }
-    const id = requestAnimationFrame(() => setSavedOverlayIn(true));
-    return () => cancelAnimationFrame(id);
-  }, [showSavedOverlay]);
+  // auto-navigating to Drafts (see handleSaveDraftTap). null = not rendered;
+  // "enter"/"exit" pick which keyframe animation class the overlay wears —
+  // real @keyframes `animation` (not `transition`), so no rAF/mount trick is
+  // needed to kick it off, unlike a transition-based approach.
+  const [overlayPhase, setOverlayPhase] = useState<"enter" | "exit" | null>(null);
 
   const [selectedCust, setSelectedCust] = useState<Customer | null>(null);
   const [custQuery,    setCustQuery]    = useState("");
@@ -1081,13 +1076,16 @@ export default function PoPage(): React.JSX.Element {
   // can't cause a double pop.
   function handleSaveDraftTap(): void {
     saveDraft();
-    setShowSavedOverlay(true);
+    setOverlayPhase("enter");
     window.setTimeout(() => {
-      setShowSavedOverlay(false);
-      if (navStateRef.current.view !== "review") return;   // user already navigated away
-      if (typeof window !== "undefined") { suppressPopRef.current = true; window.history.back(); }
-      clearCustomer();     // order is already saved — safe to close it out
-      setDraftsOpen(true);
+      setOverlayPhase("exit");   // plays the ~200ms fade+scale-down exit (CSS)
+      window.setTimeout(() => {
+        setOverlayPhase(null);
+        if (navStateRef.current.view !== "review") return;   // user already navigated away
+        if (typeof window !== "undefined") { suppressPopRef.current = true; window.history.back(); }
+        clearCustomer();     // order is already saved — safe to close it out
+        setDraftsOpen(true);
+      }, 220);   // >= the exit animation's 200ms so it fully plays before unmount
     }, 1000);
   }
 
@@ -1839,6 +1837,69 @@ export default function PoPage(): React.JSX.Element {
       className="po-page bg-[#f9fafb] flex flex-col overflow-hidden"
       style={{ height: "var(--vvh, 100vh)" }}
     >
+      {/* Save-draft overlay keyframes. Scoped by unique `po-save-*` class names
+          (no global collision risk) — kept as a plain <style> tag here rather
+          than app/globals.css so the whole feature stays contained to this
+          file. Default (outside the media query) rules are the fully-SETTLED
+          look — full opacity, scale(1), check fully drawn, ring invisible —
+          so a browser (or a user) with prefers-reduced-motion: reduce gets a
+          static tick + text and literally none of the motion below; only
+          `no-preference` layers the actual keyframe animations on top. */}
+      <style>{`
+        .po-save-backdrop { background: rgba(0,0,0,0.4); }
+        .po-save-card { opacity: 1; transform: scale(1); }
+        .po-save-circle { opacity: 1; transform: scale(1); }
+        .po-save-ring { opacity: 0; transform: scale(1); }
+        .po-save-check { stroke-dasharray: 24; stroke-dashoffset: 0; }
+        .po-save-text { opacity: 1; }
+
+        @media (prefers-reduced-motion: no-preference) {
+          .po-save-backdrop--enter { animation: poSaveBackdropIn 150ms ease-out both; }
+          .po-save-backdrop--exit  { animation: poSaveBackdropOut 200ms ease-in both; }
+          .po-save-card--enter {
+            opacity: 0;
+            animation: poSaveCardIn 350ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+          }
+          .po-save-card--exit { animation: poSaveCardOut 200ms ease-in both; }
+          .po-save-card--enter .po-save-circle {
+            opacity: 0;
+            animation: poSaveCircleIn 300ms cubic-bezier(0.34, 1.56, 0.64, 1) 60ms both;
+          }
+          .po-save-card--enter .po-save-ring {
+            opacity: 0;
+            animation: poSaveRing 500ms ease-out 280ms both;
+          }
+          .po-save-card--enter .po-save-check {
+            stroke-dashoffset: 24;
+            animation: poSaveCheckDraw 400ms ease-out 340ms both;
+          }
+          .po-save-card--enter .po-save-text {
+            opacity: 0;
+            animation: poSaveTextIn 250ms ease-out 300ms both;
+          }
+        }
+
+        @keyframes poSaveBackdropIn  { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes poSaveBackdropOut { from { opacity: 1; } to { opacity: 0; } }
+        @keyframes poSaveCardIn {
+          0%   { opacity: 0; transform: scale(0.8); }
+          60%  { opacity: 1; transform: scale(1.03); }
+          100% { opacity: 1; transform: scale(1); }
+        }
+        @keyframes poSaveCardOut { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(0.95); } }
+        @keyframes poSaveCircleIn {
+          0%   { opacity: 0; transform: scale(0); }
+          70%  { opacity: 1; transform: scale(1.15); }
+          100% { opacity: 1; transform: scale(1); }
+        }
+        @keyframes poSaveRing {
+          0%   { opacity: 0.5; transform: scale(0.6); }
+          100% { opacity: 0; transform: scale(1.9); }
+        }
+        @keyframes poSaveCheckDraw { from { stroke-dashoffset: 24; } to { stroke-dashoffset: 0; } }
+        @keyframes poSaveTextIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+      `}</style>
+
       {/* Opening splash — FIRST child so it covers the landing from first paint
           (no landing flash). position:fixed inset-0 escapes this <main>'s
           overflow-hidden + --vvh height. Wired to the catalog-ready flag
@@ -2911,24 +2972,45 @@ export default function PoPage(): React.JSX.Element {
         {/* Save-draft confirmation overlay — teal check + "Draft saved", then
             handleSaveDraftTap auto-navigates to Drafts after ~1s. Position:fixed
             so it sits above everything without touching the scroll container /
-            --vvh math (§22/§25) — same isolation as the sheets above. Plain CSS
-            opacity/scale transition, no animation library. */}
-        {showSavedOverlay && (
+            --vvh math (§22/§25) — same isolation as the sheets above (they're
+            fixed too; that doesn't conflict with the hand-tuned scroll since
+            fixed elements sit outside it regardless of --vvh sizing).
+            Sequence: backdrop + card spring in -> circle pops -> ring pulses
+            once -> check draws -> (~1s hold) -> card fades+shrinks out. Pure
+            CSS @keyframes + SVG stroke-dashoffset, no animation library. All
+            animation rules live under prefers-reduced-motion: no-preference
+            (see the <style> block above <main>) — the un-animated base state
+            IS the fully-settled look, so reduced-motion users just see the
+            static tick + text with no transition at all. */}
+        {overlayPhase && (
           <div
-            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/25 px-6"
+            className={`fixed inset-0 z-[60] flex items-center justify-center px-6 po-save-backdrop ${
+              overlayPhase === "exit" ? "po-save-backdrop--exit" : "po-save-backdrop--enter"
+            }`}
             aria-live="polite"
           >
             <div
-              className={`flex flex-col items-center gap-3 bg-white rounded-[20px] px-8 py-7 shadow-xl transition-all duration-200 ease-out ${
-                savedOverlayIn ? "opacity-100 scale-100" : "opacity-0 scale-90"
+              className={`relative flex flex-col items-center gap-3 bg-white rounded-[20px] px-8 py-7 shadow-xl po-save-card ${
+                overlayPhase === "exit" ? "po-save-card--exit" : "po-save-card--enter"
               }`}
             >
-              <div className="w-16 h-16 rounded-full bg-teal-600 flex items-center justify-center">
-                <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="4 12 9 17 20 6" />
-                </svg>
+              <div className="relative w-16 h-16 flex items-center justify-center">
+                {/* Expanding pulse ring — one shot, behind the circle */}
+                <span className="po-save-ring absolute inset-0 rounded-full border-2 border-teal-600" aria-hidden="true" />
+                <div className="po-save-circle relative w-16 h-16 rounded-full bg-teal-600 flex items-center justify-center">
+                  <svg width="30" height="30" viewBox="0 0 24 24" fill="none">
+                    <polyline
+                      className="po-save-check"
+                      points="4 12 9 17 20 6"
+                      stroke="#fff"
+                      strokeWidth="3"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </div>
               </div>
-              <p className="text-[15px] font-semibold text-gray-900">Draft saved</p>
+              <p className="po-save-text text-[15px] font-semibold text-gray-900">Draft saved</p>
             </div>
           </div>
         )}
