@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { Loader2 } from "lucide-react";
 import { UniversalHeader, type HeaderSegment } from "@/components/universal-header";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -157,111 +157,6 @@ const UNDO_LINK_STYLE: CSSProperties = {
   padding: 0,
 };
 
-// ── Route-block grouping ────────────────────────────────────────────────────
-//
-// The payload arrives already spine-sorted. We NEVER re-sort or re-group by
-// key here — we walk the rows once, top to bottom, and start a new block only
-// when (deliveryType, route) differs from the immediately preceding row. This
-// is consecutive-run grouping, not a Map-keyed grouping — a Map would risk
-// reordering blocks by insertion/key order and silently fork the spine.
-//
-// Route blocks are built from UNASSIGNED rows only — an assigned bill is not
-// work remaining, so it doesn't belong in a route block or its L/kg subtotal.
-
-interface RouteBlock {
-  key: string;
-  deliveryType: string | null;
-  route: string | null;
-  rows: PickingQueueRow[];
-  startIndex: number; // 0-based position of the block's first row within the tab's row list — feeds continuous "#" numbering
-  // Vehicle-ready route rule — copied from the block's first row. Safe: every row in a
-  // block already shares (deliveryType, route), so they share identical readiness values
-  // by construction (lib/picking/queue.ts computes them per window::deliveryType::route).
-  readyRoute: boolean;
-  routeReadyWeightKg: number;
-}
-
-function buildRouteBlocks(rows: PickingQueueRow[]): RouteBlock[] {
-  const blocks: RouteBlock[] = [];
-  rows.forEach((row, idx) => {
-    const last = blocks[blocks.length - 1];
-    if (last && last.deliveryType === row.deliveryType && last.route === row.route) {
-      last.rows.push(row);
-    } else {
-      blocks.push({
-        key: `${row.deliveryType ?? "null"}::${row.route ?? "null"}::${idx}`,
-        deliveryType: row.deliveryType,
-        route: row.route,
-        rows: [row],
-        startIndex: idx,
-        readyRoute: row.isReadyRoute,
-        routeReadyWeightKg: row.routeReadyWeightKg,
-      });
-    }
-  });
-  return blocks;
-}
-
-// Read-only lookup (not a grouping mechanism) — used solely to decide whether
-// a route name needs its delivery-type prefix, e.g. "Local · Adajan" vs a
-// bare "Adajan", per the CURRENT TAB's visible (unassigned) rows only.
-function computeRouteTypeCounts(rows: PickingQueueRow[]): Map<string, Set<string>> {
-  const map = new Map<string, Set<string>>();
-  for (const r of rows) {
-    if (r.route === null) continue;
-    const set = map.get(r.route) ?? new Set<string>();
-    if (r.deliveryType !== null) set.add(r.deliveryType);
-    map.set(r.route, set);
-  }
-  return map;
-}
-
-function blockHeaderLabel(
-  block: Pick<RouteBlock, "deliveryType" | "route">,
-  routeTypeCounts: Map<string, Set<string>>,
-): string {
-  if (block.route === null) return EM_DASH;
-  const types = routeTypeCounts.get(block.route);
-  const spansMultipleTypes = types !== undefined && types.size > 1;
-  if (spansMultipleTypes && block.deliveryType !== null) {
-    return `${block.deliveryType} · ${block.route}`;
-  }
-  return block.route;
-}
-
-function formatBlockTotal(rows: PickingQueueRow[], field: "volumeLitres" | "weightKg", unit: string): string {
-  let sum = 0;
-  let hasValue = false;
-  for (const r of rows) {
-    const v = r[field];
-    if (v !== null) {
-      sum += v;
-      hasValue = true;
-    }
-  }
-  return hasValue ? `${formatNumber(sum)} ${unit}` : `${EM_DASH} ${unit}`;
-}
-
-function blockHeaderRight(rows: PickingQueueRow[]): string {
-  const litres = formatBlockTotal(rows, "volumeLitres", "L");
-  const kg = formatBlockTotal(rows, "weightKg", "kg");
-  return `${rows.length} OBDs · ${litres} · ${kg}`;
-}
-
-const BLOCK_HEADER_ROW_STYLE: CSSProperties = {
-  height: 30,
-  background: "#fafafa",
-  borderBottom: "1px solid #ebebeb",
-};
-
-const BLOCK_HEADER_CELL_STYLE: CSSProperties = {
-  padding: "0 14px",
-  display: "flex",
-  alignItems: "center",
-  gap: 10,
-  height: 30,
-};
-
 // Collapse bar for assigned rows — mirrors Support's done-group pattern
 // (CLAUDE_SUPPORT.md §4.2 / components/support/support-orders-table.tsx):
 // collapsed by default, a "▸ N assigned" bar, click to expand.
@@ -281,7 +176,6 @@ interface PickingTableProps {
   rows: PickingQueueRow[];
   selected: Set<number>;
   onToggleOne: (orderId: number) => void;
-  onToggleBlock: (orderIds: number[], selectAll: boolean) => void;
   allSelectedInTab: boolean;
   someSelectedInTab: boolean;
   onToggleAllInTab: () => void;
@@ -294,7 +188,6 @@ function PickingTable({
   rows,
   selected,
   onToggleOne,
-  onToggleBlock,
   allSelectedInTab,
   someSelectedInTab,
   onToggleAllInTab,
@@ -304,9 +197,6 @@ function PickingTable({
 }: PickingTableProps) {
   const unassignedRows = useMemo(() => rows.filter((r) => !r.isAssigned), [rows]);
   const assignedRows = useMemo(() => rows.filter((r) => r.isAssigned), [rows]);
-
-  const routeTypeCounts = useMemo(() => computeRouteTypeCounts(unassignedRows), [unassignedRows]);
-  const blocks = useMemo(() => buildRouteBlocks(unassignedRows), [unassignedRows]);
 
   const [assignedExpanded, setAssignedExpanded] = useState(false);
 
@@ -339,86 +229,53 @@ function PickingTable({
         </tr>
       </thead>
       <tbody>
-        {blocks.map((block) => {
-          const blockOrderIds = block.rows.map((r) => r.orderId);
-          const blockSelectedCount = blockOrderIds.filter((id) => selected.has(id)).length;
-          const blockAllSelected = blockOrderIds.length > 0 && blockSelectedCount === blockOrderIds.length;
-          const blockIndeterminate = blockSelectedCount > 0 && !blockAllSelected;
-
+        {unassignedRows.map((row, i) => {
+          const obdDateTimeLabel = formatObdDateTime(row.obdDateTime);
           return (
-            <Fragment key={block.key}>
-              <tr style={BLOCK_HEADER_ROW_STYLE}>
-                <td colSpan={COLUMN_COUNT} style={{ padding: 0 }}>
-                  <div style={BLOCK_HEADER_CELL_STYLE}>
-                    <Checkbox
-                      checked={blockAllSelected}
-                      indeterminate={blockIndeterminate}
-                      onCheckedChange={() => onToggleBlock(blockOrderIds, !blockAllSelected)}
-                    />
-                    <span style={{ fontSize: 11, fontWeight: 600, color: "#374151" }}>
-                      {blockHeaderLabel(block, routeTypeCounts)}
-                    </span>
-                    {block.readyRoute && (
-                      <span style={badgeStyle("green")}>
-                        ＝{formatNumber(block.routeReadyWeightKg)} kg · truck ready
-                      </span>
-                    )}
-                    <span style={{ fontSize: 10.5, color: "#6b7280", marginLeft: "auto" }}>
-                      {blockHeaderRight(block.rows)}
-                    </span>
+            <tr key={row.orderId} style={{ height: DATA_ROW_HEIGHT, borderBottom: "1px solid #f0f0f0" }}>
+              <td style={dataCellStyle("center", "muted", { paddingLeft: 10, paddingRight: 4 })}>
+                <Checkbox checked={selected.has(row.orderId)} onCheckedChange={() => onToggleOne(row.orderId)} />
+              </td>
+              <td style={dataCellStyle("center", "muted")}>{i + 1}</td>
+              <td style={OBD_CELL_STYLE}>
+                <div
+                  style={{
+                    ...OBD_LINE_STYLE,
+                    fontSize: 11,
+                    color: "#111827",
+                    fontFamily: '"SF Mono", ui-monospace, Menlo, monospace',
+                  }}
+                >
+                  {row.obdNumber}
+                </div>
+                {obdDateTimeLabel !== null && (
+                  <div style={{ ...OBD_LINE_STYLE, fontSize: 10, color: "#9ca3af", marginTop: 1 }}>
+                    {obdDateTimeLabel}
                   </div>
-                </td>
-              </tr>
-              {block.rows.map((row, i) => {
-                const obdDateTimeLabel = formatObdDateTime(row.obdDateTime);
-                return (
-                  <tr key={row.orderId} style={{ height: DATA_ROW_HEIGHT, borderBottom: "1px solid #f0f0f0" }}>
-                    <td style={dataCellStyle("center", "muted", { paddingLeft: 10, paddingRight: 4 })}>
-                      <Checkbox checked={selected.has(row.orderId)} onCheckedChange={() => onToggleOne(row.orderId)} />
-                    </td>
-                    <td style={dataCellStyle("center", "muted")}>{block.startIndex + i + 1}</td>
-                    <td style={OBD_CELL_STYLE}>
-                      <div
-                        style={{
-                          ...OBD_LINE_STYLE,
-                          fontSize: 11,
-                          color: "#111827",
-                          fontFamily: '"SF Mono", ui-monospace, Menlo, monospace',
-                        }}
-                      >
-                        {row.obdNumber}
-                      </div>
-                      {obdDateTimeLabel !== null && (
-                        <div style={{ ...OBD_LINE_STYLE, fontSize: 10, color: "#9ca3af", marginTop: 1 }}>
-                          {obdDateTimeLabel}
-                        </div>
-                      )}
-                    </td>
-                    <td style={dataCellStyle("left", "primary")}>
-                      {row.dealerName}
-                      {row.isShipToOverride && (
-                        <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 400, color: "#9ca3af" }}>
-                          &rarr; ship-to
-                        </span>
-                      )}
-                    </td>
-                    <td style={dataCellStyle("left", "secondary")}>
-                      <NullableText value={row.area} />
-                    </td>
-                    <td style={dataCellStyle("left", "secondary")}>
-                      <NullableText value={row.articleTag} />
-                    </td>
-                    <td style={dataCellStyle("right", "secondary")}>{formatNullableNumber(row.volumeLitres)}</td>
-                    <td style={dataCellStyle("right", "secondary")}>{formatNullableNumber(row.weightKg)}</td>
-                    <td style={dataCellStyle("left", "secondary")}>
-                      <FlagBadges row={row} />
-                    </td>
-                    <td style={dataCellStyle("left", "muted")}>{EM_DASH}</td>
-                    <td style={dataCellStyle("center", "secondary", { paddingRight: 12 })} />
-                  </tr>
-                );
-              })}
-            </Fragment>
+                )}
+              </td>
+              <td style={dataCellStyle("left", "primary")}>
+                {row.dealerName}
+                {row.isShipToOverride && (
+                  <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 400, color: "#9ca3af" }}>
+                    &rarr; ship-to
+                  </span>
+                )}
+              </td>
+              <td style={dataCellStyle("left", "secondary")}>
+                <NullableText value={row.area} />
+              </td>
+              <td style={dataCellStyle("left", "secondary")}>
+                <NullableText value={row.articleTag} />
+              </td>
+              <td style={dataCellStyle("right", "secondary")}>{formatNullableNumber(row.volumeLitres)}</td>
+              <td style={dataCellStyle("right", "secondary")}>{formatNullableNumber(row.weightKg)}</td>
+              <td style={dataCellStyle("left", "secondary")}>
+                <FlagBadges row={row} />
+              </td>
+              <td style={dataCellStyle("left", "muted")}>{EM_DASH}</td>
+              <td style={dataCellStyle("center", "secondary", { paddingRight: 12 })} />
+            </tr>
           );
         })}
 
@@ -674,12 +531,10 @@ export function PickingQueue() {
 
   // No-jump guard (web-update-2026-07-12-picking-queue-v1-design-locked.md): a valid
   // selection is always a gap-free prefix of `selectableIdsInTab` — that array IS the
-  // flat, spine-sorted, tab-scoped waiting line already (buildRouteBlocks only groups it
-  // visually; it never reorders). Every handler below recomputes `selected` as a
-  // slice() of that same array, anchored at the clicked row/block/all boundary — so a
-  // gapped or skip-row-1 selection is structurally impossible to produce, not merely
-  // disallowed by disabling inputs. A route boundary is NOT a boundary here — a clean
-  // top run may span multiple route blocks (V1 locked decision).
+  // flat, spine-sorted, tab-scoped waiting line itself, rendered as one continuous list.
+  // Every handler below recomputes `selected` as a slice() of that same array, anchored
+  // at the clicked row/all boundary — so a gapped or skip-row-1 selection is structurally
+  // impossible to produce, not merely disallowed by disabling inputs.
 
   const toggleAllInTab = useCallback(() => {
     setSelected(allSelectedInTab ? new Set() : new Set(selectableIdsInTab));
@@ -694,22 +549,6 @@ export function PickingQueue() {
           ? new Set(selectableIdsInTab.slice(0, idx)) // uncheck — shrink, drop this row through the end
           : new Set(selectableIdsInTab.slice(0, idx + 1)), // check — extend through this row (may jump ahead)
       );
-    },
-    [selectableIdsInTab],
-  );
-
-  const toggleBlock = useCallback(
-    (orderIds: number[], selectAll: boolean) => {
-      if (orderIds.length === 0) return;
-      if (selectAll) {
-        const lastIdx = selectableIdsInTab.indexOf(orderIds[orderIds.length - 1]);
-        if (lastIdx === -1) return;
-        setSelected(new Set(selectableIdsInTab.slice(0, lastIdx + 1)));
-      } else {
-        const firstIdx = selectableIdsInTab.indexOf(orderIds[0]);
-        if (firstIdx === -1) return;
-        setSelected(new Set(selectableIdsInTab.slice(0, firstIdx)));
-      }
     },
     [selectableIdsInTab],
   );
@@ -811,7 +650,6 @@ export function PickingQueue() {
                 rows={visibleRows}
                 selected={selected}
                 onToggleOne={toggleOne}
-                onToggleBlock={toggleBlock}
                 allSelectedInTab={allSelectedInTab}
                 someSelectedInTab={someSelectedInTab}
                 onToggleAllInTab={toggleAllInTab}

@@ -170,46 +170,7 @@ export async function getPickingQueue(dateStr?: string): Promise<PickingQueueRes
       isAssigned: order.workflowStage === PICK_ASSIGNED,
       assignedAt: order.pickAssignment?.assignedAt ?? null,
       assignedToName: order.pickAssignment?.picker?.name ?? null,
-      // Set below, once the full per-route aggregate is known — see byRouteReady pass.
-      isReadyRoute: false,
-      routeReadyWeightKg: 0,
-      readyRouteEarliestDateTime: null,
     };
-  });
-
-  // Vehicle-ready route rule (web-update-2026-07-12-picking-queue-v1-design-locked.md).
-  // Grouped by window::deliveryType::route, LOCAL only (route resolution and null-route
-  // rows never qualify — requirement 5). Sums grossWeight over BOTH assigned and waiting
-  // rows of the group (a frozen/assigned bill still rides the truck) and tracks the
-  // group's earliest obdDateTime for the byRouteReady FIFO tie-break. `orders[i]` lines up
-  // with `rows[i]` — same synchronous .map() above, same order, no re-fetch needed for
-  // grossWeight (already present on `order` via `include`, just unread until now).
-  const routeWeightGroups = new Map<string, { weight: number; earliest: Date | string | null }>();
-  rows.forEach((row, i) => {
-    if (row.deliveryType !== "Local" || row.route === null) return;
-    const key = `${row.windowId}::${row.deliveryType}::${row.route}`;
-    const grossWeight = orders[i].grossWeight ?? 0;
-    const group = routeWeightGroups.get(key);
-    if (!group) {
-      routeWeightGroups.set(key, { weight: grossWeight, earliest: row.obdDateTime });
-      return;
-    }
-    group.weight += grossWeight;
-    if (
-      row.obdDateTime !== null &&
-      (group.earliest === null || new Date(row.obdDateTime).getTime() < new Date(group.earliest).getTime())
-    ) {
-      group.earliest = row.obdDateTime;
-    }
-  });
-
-  rows.forEach((row) => {
-    if (row.deliveryType !== "Local" || row.route === null) return;
-    const group = routeWeightGroups.get(`${row.windowId}::${row.deliveryType}::${row.route}`);
-    if (!group) return;
-    row.routeReadyWeightKg = group.weight;
-    row.isReadyRoute = group.weight >= 950;
-    row.readyRouteEarliestDateTime = group.earliest;
   });
 
   const sortedRows = sortPickingQueue(rows);

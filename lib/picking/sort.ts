@@ -54,31 +54,6 @@ export const byDeliveryType: SortRule = {
   compare: (a, b) => deliveryTypeRank(a.deliveryType) - deliveryTypeRank(b.deliveryType),
 };
 
-// Vehicle-ready route rule (web-update-2026-07-12-picking-queue-v1-design-locked.md).
-// Lifts every row of a ready route above every row of a non-ready route, as a contiguous
-// block — never scattered, because within-route/within-tie ordering is deferred (return 0)
-// to the existing route/area/priority/key-customer rules below it in the spine. Must sit
-// AFTER byWindow (readiness is a per-window/per-truck concept — placement, not extra logic,
-// is what keeps this window-scoped: cross-window pairs are already decided by byWindow before
-// this rule ever runs) and BEFORE byDeliveryType/byRoute (so a ready route outranks EVERY
-// non-ready row, not just non-Local ones).
-export const byRouteReady: SortRule = {
-  key: "routeReady",
-  label: "Vehicle-ready route",
-  compare: (a, b) => {
-    if (a.isReadyRoute && !b.isReadyRoute) return -1;
-    if (!a.isReadyRoute && b.isReadyRoute) return 1;
-    if (!a.isReadyRoute && !b.isReadyRoute) return 0;
-
-    const sameRoute =
-      a.windowId === b.windowId && a.deliveryType === b.deliveryType && a.route === b.route;
-    if (sameRoute) return 0;
-
-    // Different ready routes — earliest-ready route first (FIFO-consistent).
-    return compareNullableDateAsc(a.readyRouteEarliestDateTime, b.readyRouteEarliestDateTime);
-  },
-};
-
 export const byRoute: SortRule = {
   key: "route",
   label: "Route",
@@ -107,6 +82,15 @@ export const byKeyCustomer: SortRule = {
   compare: (a, b) => Number(b.isKeyCustomer) - Number(a.isKeyCustomer),
 };
 
+// Universal FIFO tie-break — oldest obdDateTime first, nulls sink last.
+// Sits after every other tier in PICKING_SPINE; obdNumber (in
+// sortPickingQueue() itself) is the final deterministic fallback below this.
+export const byFifo: SortRule = {
+  key: "fifo",
+  label: "FIFO (oldest first)",
+  compare: (a, b) => compareNullableDateAsc(a.obdDateTime, b.obdDateTime),
+};
+
 // Assigned rows sink to the very bottom of the WHOLE tab (not just their
 // route block) — same idea as Support's done group sitting below its entire
 // active list (CLAUDE_SUPPORT.md §4.2). Placed FIRST in the spine so it wins
@@ -121,12 +105,10 @@ export const byAssigned: SortRule = {
 export const PICKING_SPINE: SortRule[] = [
   byAssigned,
   byWindow,
-  byRouteReady,
   byDeliveryType,
-  byRoute,
-  byArea,
-  byPriority,
   byKeyCustomer,
+  byPriority,
+  byFifo,
 ];
 
 /**
