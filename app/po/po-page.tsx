@@ -1010,13 +1010,18 @@ export default function PoPage(): React.JSX.Element {
   }
 
   // Toggle a product in the selection (add/remove by id — mirrors /order's
-  // toggleProductSelection).
+  // toggleProductSelection). On (re-)select, seed multiQtys from the active
+  // bill's existing line for this product (or blank it) so a reselect never
+  // carries a stale typed value from an earlier, since-deselected pass.
   function toggleProductSelection(p: Product): void {
-    setSelectedProducts((prev) =>
-      prev.some((s) => s.id === p.id)
-        ? prev.filter((s) => s.id !== p.id)
-        : [...prev, p],
-    );
+    const isSelected = selectedProducts.some((s) => s.id === p.id);
+    if (isSelected) {
+      setSelectedProducts((prev) => prev.filter((s) => s.id !== p.id));
+      return;
+    }
+    const existing = existingLineFor(p.id);
+    setMultiQtys((mq) => ({ ...mq, [p.id]: existing ? { ...existing.packQtys } : {} }));
+    setSelectedProducts((prev) => [...prev, p]);
   }
 
   function openMultiQty(): void {
@@ -1245,10 +1250,18 @@ export default function PoPage(): React.JSX.Element {
     return rankProductsForQuery(products, heroQuery).slice(0, 50);
   }, [heroQuery, products]);
 
+  // Pre-fill from the active bill's existing line for this product (if any)
+  // so re-opening an already-cart'd product edits its packs instead of
+  // silently overwriting them on Done (see commitLine).
+  function existingLineFor(productId: number): CartLine | undefined {
+    return bills.find((b) => b.id === activeBillId)?.lines.find((l) => l.productId === productId);
+  }
+
   function pickProduct(p: Product): void {
     if (listening) stopListening();
     setActiveProduct(p);
-    setPackQtys({});
+    const existing = existingLineFor(p.id);
+    setPackQtys(existing ? { ...existing.packQtys } : {});
     packInputsRef.current = [];
     setMode("picking");
     pushScreen("picking");
