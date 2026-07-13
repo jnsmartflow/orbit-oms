@@ -2279,7 +2279,7 @@ export default function PoPage(): React.JSX.Element {
                           onClick={() => reopenDraft(d)}
                           className="flex-1 min-w-0 text-left"
                         >
-                          <p className="text-[15px] font-bold text-gray-900 truncate">
+                          <p className="text-[15px] font-medium text-gray-800 truncate">
                             {d.snapshot.customer.name}
                           </p>
                           <p className="text-[12px] text-gray-400 truncate mt-0.5">
@@ -2325,7 +2325,7 @@ export default function PoPage(): React.JSX.Element {
                   >
                     <ChevronLeft className="w-[18px] h-[18px] text-gray-500" />
                   </button>
-                  <span className="text-[16px] font-bold text-gray-900 truncate flex-1 min-w-0">
+                  <span className="text-[16px] font-medium text-gray-800 truncate flex-1 min-w-0">
                     {receiptOrder.snapshot.customer.name}
                   </span>
                   <span className="text-[11px] font-semibold text-teal-700 bg-teal-50 border border-teal-200 rounded-full px-2 py-0.5 shrink-0">
@@ -2452,7 +2452,7 @@ export default function PoPage(): React.JSX.Element {
                           onClick={() => viewSentReceipt(o)}
                           className="flex-1 min-w-0 text-left"
                         >
-                          <p className="text-[15px] font-bold text-gray-900 truncate">
+                          <p className="text-[15px] font-medium text-gray-800 truncate">
                             {o.snapshot.customer.name}
                           </p>
                           <p className="text-[12px] text-gray-400 truncate mt-0.5">
@@ -2560,7 +2560,7 @@ export default function PoPage(): React.JSX.Element {
                           <Clock className="w-[18px] h-[18px] text-gray-400" />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-[16px] font-bold text-gray-900 truncate">{r.name}</p>
+                          <p className="text-[16px] font-medium text-gray-800 truncate">{r.name}</p>
                           <p className="text-[13px] text-gray-400 truncate mt-px">
                             {r.code}{r.area ? ` · ${r.area}` : ""}
                           </p>
