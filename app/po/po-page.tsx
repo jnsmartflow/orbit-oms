@@ -235,7 +235,7 @@ function billsChip(snapshot: Parameters<typeof draftSummary>[0]): React.JSX.Elem
 function dispatchChip(dispatch: Dispatch, callTarget: CallTarget): React.JSX.Element {
   const style =
     dispatch === "Urgent" ? { background: "#fef3e2", color: "#b45309" }
-    : dispatch === "Call" ? { background: "#f3f4f6", color: "#6b7280" }
+    : dispatch === "Call" ? { background: "#fef2f2", color: "#dc2626" }
     :                        { background: "#f0fdf4", color: "#15803d" };
   return (
     <span className={CHIP_CLASS} style={style}>
