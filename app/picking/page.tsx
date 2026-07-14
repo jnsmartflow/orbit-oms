@@ -5,6 +5,7 @@ import { RoleSidebarProvider } from "@/components/shared/role-sidebar-provider";
 import { RoleLayoutClient } from "@/components/shared/role-layout-client";
 import type { RoleSidebarRole } from "@/components/shared/role-sidebar";
 import { PickingQueue } from "@/components/picking/picking-queue";
+import { PickingBoardMobile } from "@/components/picking/picking-board-mobile";
 
 export const dynamic = "force-dynamic";
 
@@ -48,7 +49,13 @@ export default async function PickingPage() {
         userInitials={userInitials}
         navItems={dedupedNavItems}
       >
-        <PickingQueue />
+        {/* Same route, two faces — desktop table vs. mobile card board. */}
+        <div className="hidden md:block">
+          <PickingQueue />
+        </div>
+        <div className="block md:hidden">
+          <PickingBoardMobile />
+        </div>
       </RoleLayoutClient>
     </RoleSidebarProvider>
   );
