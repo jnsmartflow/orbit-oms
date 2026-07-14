@@ -2772,17 +2772,24 @@ export default function PoPage(): React.JSX.Element {
           /* ── Review & send (mockup state 6) ────────────────────────────── */
           <>
             <div className="bg-white border-b border-gray-200">
-              <div className="flex items-center gap-2 px-4 py-[14px]">
-                <button
-                  type="button"
-                  onClick={() => window.history.back()}
-                  aria-label="Back to build"
-                  className="flex items-center gap-2 text-left"
-                >
-                  <ChevronDown className="w-[18px] h-[18px] text-gray-500 shrink-0" />
+              {/* Same window.history.back() as before (Option B restyle only —
+                  no new nav path). Whole row is the tap target, matching the
+                  prior button's reach; the arrow gets its own soft rounded
+                  chip and a teal "Back to products" hint sits on the right. */}
+              <button
+                type="button"
+                onClick={() => window.history.back()}
+                aria-label="Back to build"
+                className="w-full flex items-center justify-between gap-2 pl-2 pr-4 py-[9px] text-left active:bg-gray-50"
+              >
+                <span className="flex items-center gap-2">
+                  <span className="w-[30px] h-[30px] rounded-full bg-[#f1f3f5] flex items-center justify-center shrink-0">
+                    <ChevronLeft className="w-[16px] h-[16px] text-gray-500" />
+                  </span>
                   <span className="text-[15px] font-semibold text-gray-900">Review &amp; send</span>
-                </button>
-              </div>
+                </span>
+                <span className="text-[12px] font-medium text-teal-600 shrink-0">Back to products</span>
+              </button>
             </div>
 
             {/* Bills + lines */}
