@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Search, Mic, Check, ChevronLeft, ChevronDown, ChevronRight, Plus, Pencil, Copy, Clock, Send, RefreshCw, Home, Bookmark, Trash2 } from "lucide-react";
+import { Search, Mic, Check, ChevronLeft, ChevronDown, ChevronRight, Plus, Pencil, Copy, Send, RefreshCw, Home, Bookmark, Trash2, Star } from "lucide-react";
 import type { RawPack } from "@/lib/place-order/pack-buckets";
 import type { Product, CartLine, Bill, Customer } from "@/app/(place-order)/place-order/types";
 import { rankProductsForQuery } from "@/lib/place-order/mobile-search";
@@ -16,6 +16,9 @@ import {
 import {
   loadSentOrders, addSentOrder, removeSentOrder, newSentId, type SentOrder,
 } from "@/lib/place-order/sent-orders";
+import {
+  loadFavs, addFav, removeFav, isFav, type FavCustomer,
+} from "@/lib/place-order/fav-customers";
 import SplashScreen from "./splash-screen";
 
 // "N bills" for a Drafts/Sent list row or the receipt's Total — units
@@ -545,6 +548,17 @@ export default function PoPage(): React.JSX.Element {
   const [recents,       setRecents]       = useState<RecentCustomer[]>([]);
   const [recentsLoaded, setRecentsLoaded] = useState(false);
 
+  // Favourites — replaces the Home "Recent" render (recents state above stays
+  // populated/written in the background so it can be restored later if
+  // needed; only its render is swapped out). Loaded post-mount, same
+  // SSR-guard shape as recents. favsFullMsg is a transient inline notice
+  // when the star toggle is blocked at the 8-favourite cap; auto-dismissed
+  // via favsFullTimerRef.
+  const [favs,           setFavs]           = useState<FavCustomer[]>([]);
+  const [favsLoaded,     setFavsLoaded]     = useState(false);
+  const [favsFullMsg,    setFavsFullMsg]    = useState(false);
+  const favsFullTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // Hero product search.
   const [heroQuery, setHeroQuery] = useState("");
 
@@ -704,6 +718,45 @@ export default function PoPage(): React.JSX.Element {
     setRecents(getRecents());
     setRecentsLoaded(true);
   }, []);
+
+  // Load device-local favourite customers on mount (client-only → no hydration mismatch).
+  useEffect(() => {
+    setFavs(loadFavs());
+    setFavsLoaded(true);
+  }, []);
+
+  // Clear the pending "favourites full" auto-dismiss timer on unmount.
+  useEffect(() => {
+    return () => {
+      if (favsFullTimerRef.current) clearTimeout(favsFullTimerRef.current);
+    };
+  }, []);
+
+  // Toggle the current customer's favourite state from the build-header star.
+  // Re-reads loadFavs() after a write so the Home list + header star + cap
+  // check all stay in sync with storage (list is capped at 8, cheap to re-read).
+  function toggleFav(customer: Customer): void {
+    if (favsFullTimerRef.current) {
+      clearTimeout(favsFullTimerRef.current);
+      favsFullTimerRef.current = null;
+    }
+    setFavsFullMsg(false);
+    if (isFav(customer.code)) {
+      removeFav(customer.code);
+      setFavs(loadFavs());
+      return;
+    }
+    const result = addFav(customer);
+    if (result === "full") {
+      setFavsFullMsg(true);
+      favsFullTimerRef.current = setTimeout(() => {
+        setFavsFullMsg(false);
+        favsFullTimerRef.current = null;
+      }, 3000);
+      return;
+    }
+    setFavs(loadFavs());
+  }
 
   // Central focus mechanism — ONE place that keeps every non-search input above
   // the keyboard (qty boxes, Ship To, Notes, and anything added later). On
@@ -1000,6 +1053,14 @@ export default function PoPage(): React.JSX.Element {
   }
 
   // ── Customer handlers (modelled on /order) ────────────────────────────────
+  // Whether the locked customer is currently a favourite — drives the header
+  // star's fill/colour. Derived from `favs` (kept in sync with storage by
+  // toggleFav) rather than re-reading storage on every render.
+  const custIsFav = useMemo<boolean>(
+    () => (selectedCust ? favs.some((f) => f.id === selectedCust.code) : false),
+    [favs, selectedCust],
+  );
+
   const custSuggestions = useMemo<Customer[]>(() => {
     if (custQuery.length < 2) return [];
     const q = custQuery.toLowerCase();
@@ -2240,12 +2301,38 @@ export default function PoPage(): React.JSX.Element {
             no white header (search is the first thing in the scroll area). */}
         {selectedCust && (
           <header className="bg-white border-b border-gray-200 px-4 py-[13px]">
-            <div className="text-[16px] font-bold text-gray-900 leading-tight truncate">
-              {selectedCust.name}
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-[16px] font-bold text-gray-900 leading-tight truncate">
+                  {selectedCust.name}
+                </div>
+                <div className="text-[12px] text-gray-500 leading-tight truncate mt-px">
+                  {selectedCust.code}{selectedCust.area ? ` · ${selectedCust.area}` : ""}
+                </div>
+              </div>
+              {/* Favourite star — filled amber = favourited, outline grey = not.
+                  Same plain icon-only treatment as the Mail Orders gold star
+                  (review-view.tsx StarGlyph) — no background box, no border.
+                  Checked against the `favs` state (kept in sync with storage
+                  by toggleFav) rather than re-reading storage every render. */}
+              <button
+                type="button"
+                onClick={() => toggleFav(selectedCust)}
+                aria-label={custIsFav ? "Remove from favourites" : "Add to favourites"}
+                className="shrink-0 p-1 -m-1 active:opacity-70"
+              >
+                <Star
+                  className={custIsFav ? "text-amber-500" : "text-gray-300"}
+                  size={20}
+                  fill={custIsFav ? "currentColor" : "none"}
+                />
+              </button>
             </div>
-            <div className="text-[12px] text-gray-500 leading-tight truncate mt-px">
-              {selectedCust.code}{selectedCust.area ? ` · ${selectedCust.area}` : ""}
-            </div>
+            {favsFullMsg && (
+              <p className="text-[12px] text-amber-700 mt-1.5">
+                Favourites full (8 of 8) — remove one first.
+              </p>
+            )}
           </header>
         )}
 
@@ -2530,36 +2617,33 @@ export default function PoPage(): React.JSX.Element {
               </div>
             )}
 
-            {/* Recent customers — landing only, while the search is idle.
-                Loaded post-mount (recentsLoaded) so SSR/first paint render
-                nothing. Neutral greys — no second teal accent (CLAUDE_UI). */}
-            {recentsLoaded && custQuery.trim().length < 2 && (
-              recents.length > 0 ? (
+            {/* Favourites — landing only, while the search is idle. Replaces
+                the old "Recent" render (recents state/storage keeps running
+                in the background, unrendered, so it's restorable later).
+                Loaded post-mount (favsLoaded) so SSR/first paint render
+                nothing. One column, A-Z by name, gold star only in the
+                section label — no star on the cards themselves. */}
+            {favsLoaded && custQuery.trim().length < 2 && (
+              favs.length > 0 ? (
                 <div className="mt-7">
-                  <div className="flex items-center justify-between px-1 mb-2">
+                  <div className="flex items-center gap-1 px-1 mb-2">
                     <span className="text-[12px] font-medium uppercase tracking-wider text-gray-400">
-                      Recent
+                      Favourites
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => { clearRecents(); setRecents([]); }}
-                      className="text-[13px] text-gray-400 active:text-gray-600"
-                    >
-                      Clear
-                    </button>
+                    <Star className="w-[12px] h-[12px] text-amber-500" fill="currentColor" />
                   </div>
                   <div className="bg-white border border-gray-100 rounded-[16px] overflow-hidden shadow-sm">
-                    {recents.map((r) => (
+                    {favs.map((f) => (
                       <button
-                        key={r.code}
+                        key={f.id}
                         type="button"
-                        onClick={() => selectCustomer({ name: r.name, code: r.code, area: r.area })}
+                        onClick={() => selectCustomer({ name: f.name, code: f.code, area: f.area })}
                         className="w-full flex items-center gap-3 px-4 py-3 text-left border-b border-gray-50 last:border-b-0 active:bg-gray-50"
                       >
                         <div className="flex-1 min-w-0">
-                          <p className="text-[16px] font-medium text-gray-800 truncate">{r.name}</p>
+                          <p className="text-[16px] font-medium text-gray-800 truncate">{f.name}</p>
                           <p className="text-[13px] text-gray-400 truncate mt-px">
-                            {r.code}{r.area ? ` · ${r.area}` : ""}
+                            {f.code}{f.area ? ` · ${f.area}` : ""}
                           </p>
                         </div>
                         <ChevronRight className="w-[18px] h-[18px] text-gray-300 shrink-0" />
@@ -2570,11 +2654,11 @@ export default function PoPage(): React.JSX.Element {
               ) : (
                 <div className="mt-10 flex flex-col items-center text-center px-6">
                   <div className="w-[44px] h-[44px] rounded-full bg-gray-100 flex items-center justify-center mb-3">
-                    <Clock className="w-[20px] h-[20px] text-gray-300" />
+                    <Star className="w-[20px] h-[20px] text-gray-300" />
                   </div>
-                  <p className="text-[14px] font-medium text-gray-500">No recent customers yet</p>
+                  <p className="text-[14px] font-medium text-gray-500">No favourites yet</p>
                   <p className="text-[13px] text-gray-400 mt-1 leading-snug">
-                    Search a customer above to start an order. The ones you send to will show up here for next time.
+                    Search a customer and tap the star to add them here for quick access.
                   </p>
                 </div>
               )
