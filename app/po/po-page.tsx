@@ -2439,7 +2439,7 @@ export default function PoPage(): React.JSX.Element {
                             onClick={() => reopenDraft(d)}
                             className="flex-1 min-w-0 text-left active:opacity-70"
                           >
-                            <p className="text-[14px] font-semibold text-[#111827] truncate">
+                            <p className="text-[15px] font-medium text-[#1d2939] truncate">
                               {d.snapshot.customer.name}
                             </p>
                             <p className="text-[12px] font-normal text-[#9ca3af] truncate mt-[3px]">
@@ -2636,7 +2636,7 @@ export default function PoPage(): React.JSX.Element {
                             onClick={() => viewSentReceipt(o)}
                             className="flex-1 min-w-0 text-left active:opacity-70"
                           >
-                            <p className="text-[14px] font-semibold text-[#111827] truncate">
+                            <p className="text-[15px] font-medium text-[#1d2939] truncate">
                               {o.snapshot.customer.name}
                             </p>
                             <p className="text-[12px] font-normal text-[#9ca3af] truncate mt-[3px]">
