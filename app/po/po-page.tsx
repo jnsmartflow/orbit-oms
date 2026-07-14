@@ -571,19 +571,12 @@ export default function PoPage(): React.JSX.Element {
   // (splashDone stays true across internal re-renders / navigation; no storage).
   const [splashDone, setSplashDone] = useState(false);
 
-  // Save-draft-and-reopen-later feature — HIDDEN behind ?draft=on until Smart
-  // Flow flips it on for everyone. Read once, client-only, from the URL (not
-  // useSearchParams — avoids any App Router Suspense concern for a plain
-  // server-wrapped page). Starts false so first paint is byte-identical to
-  // today even for a ?draft=on visitor (matches the dataLoading/recentsLoaded
-  // mount-effect pattern already used on this page). Every new render branch
-  // for this feature (bottom bar, Drafts screen, two-button Review footer)
-  // gates on this one boolean.
-  const [draftsEnabled, setDraftsEnabled] = useState(false);
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    setDraftsEnabled(new URLSearchParams(window.location.search).get("draft") === "on");
-  }, []);
+  // Save-draft-and-reopen-later feature — LIVE for everyone (2026-07-14 public
+  // launch; was previously hidden behind ?draft=on during testing). Every
+  // render branch for this feature (bottom bar, Drafts screen, two-button
+  // Review footer, receipt) still gates on this one constant, so the launch
+  // is a single flip rather than touching every call site.
+  const draftsEnabled = true;
   // Which browse-tier screen is showing — only meaningful when !selectedCust.
   // "home" is the only UNPUSHED depth (base); "drafts"/"sent" are peer screens
   // that sit at the SAME depth (1) above it. A single 3-way enum (not two
