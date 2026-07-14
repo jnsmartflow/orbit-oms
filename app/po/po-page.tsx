@@ -2564,9 +2564,11 @@ export default function PoPage(): React.JSX.Element {
             </div>
           ) : (
           /* ── Pick a customer — single elevated search field, no chrome ───
-              No label / heading / logo / recent list. Generous top spacing
-              under the brand bar, whitespace below. */
-          <div className="px-4 pt-16">
+              No label / heading / logo / recent list. Small intentional gap
+              under the brand bar (not jammed against it) — kept tight so the
+              Favourites list below starts high enough for all 8 cards to
+              clear the bottom bar on a 740px-tall viewport (Galaxy S8+). */
+          <div className="px-4 pt-4">
             <div
               className="flex items-center gap-2.5 bg-white border border-gray-200 rounded-[16px] p-[19px]"
               style={{ boxShadow: "0 8px 28px rgba(17,24,39,0.09)" }}

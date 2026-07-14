@@ -1072,7 +1072,7 @@ Search box + result list filtered against `sales_officer_master`. Active SOs onl
 
 Behaviour + architecture: `CLAUDE_PLACE_ORDER.md §25`. Visual specifics:
 
-- **Landing:** one elevated shadowed search field (rounded-16, shadow `0 8px 28px rgba(17,24,39,.09)`, `pt-16`) under the "Purchase Order" banner. No label/heading/recent list on the fresh page.
+- **Landing:** one elevated shadowed search field (rounded-16, shadow `0 8px 28px rgba(17,24,39,.09)`, `pt-4`) under the "Purchase Order" banner. No label/heading/recent list on the fresh page. Top gap tightened from `pt-16` (2026-07-14) so all 8 Favourites cards clear the bottom bar on a 740px-tall viewport (Galaxy S8+) — Favourites cards themselves are unchanged.
 - **Merged customer header:** once selected, the customer **name becomes the page title** (~16px), `code · area` below, single "New order" button (refresh icon + text, teal) top-right. The "Purchase Order" banner + gray customer block + "Change" button are gone (New order = full reset).
 - **Bill + Multi:** one row — left `Bill {n}` + "+ Add bill" (collapses to "+" at 2+ bills); right "Multi" + switch.
 - **Floating CTA pill** (`footerPill`): teal, rounded-full, padding ~`15px 34px`, white 15px bold, shadow `0 8px 22px rgba(13,148,136,.42)`, safe-area inset `max(env(safe-area-inset-bottom),16px)`. Renders "Review order" / "Send order" / "Set quantities (N)" / "Add N products" by state. **All floating footers gate on `keyboardOpen`** (real keyboard), never `inputFocused`.
