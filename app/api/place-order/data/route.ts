@@ -90,6 +90,7 @@ export async function GET(): Promise<NextResponse> {
     });
 
     const skuRows = await prisma.mo_sku_lookup_v2.findMany({
+      where:  { isPrimary: true },
       // Phase 3.5 (2026-05-13): also select `unit` so KG packs reach
       // the frontend and the bucket helper can place them correctly
       // (5 KG → 4L bucket, 25 KG → its own column).
