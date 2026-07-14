@@ -200,6 +200,50 @@ function dispatchLabel(dispatch: Dispatch, callTarget: CallTarget): string {
   return dispatch === "Call" && callTarget ? `Call · ${callTarget}` : dispatch;
 }
 
+// ── Soft-design tokens (2026-07-14 visual pass) ────────────────────────────
+// Card shadow — defines the card, not a border. Used by every soft card
+// (Favourites/Drafts/Sent rows, receipt Order Summary / Items sections).
+const SOFT_CARD_SHADOW = "0 1px 2px rgba(16,24,40,0.04), 0 3px 12px rgba(16,24,40,0.05)";
+
+// First letters of the first two words, uppercased ("Maruti Hardware" -> "MH").
+// Same algorithm as the desktop recents avatar (recent-customers.tsx).
+function initials(name: string): string {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  return ((words[0]?.[0] ?? "") + (words[1]?.[0] ?? "")).toUpperCase();
+}
+
+// Drafts/Sent list-row exception chip — amber "Urgent" or grey "Call · X";
+// null for Normal (the default, shown as nothing). Reuses dispatchLabel for
+// the text so the wording matches the receipt's plain-text Dispatch row.
+function dispatchListChip(dispatch: Dispatch, callTarget: CallTarget): React.JSX.Element | null {
+  if (dispatch === "Normal") return null;
+  const isUrgent = dispatch === "Urgent";
+  return (
+    <span
+      className={`inline-flex items-center text-[10.5px] font-semibold px-2 py-[3px] rounded-full border ${
+        isUrgent ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-gray-50 text-gray-500 border-gray-200"
+      }`}
+    >
+      {dispatchLabel(dispatch, callTarget)}
+    </span>
+  );
+}
+
+// One shared empty-state shell for Favourites / Drafts / Sent — soft grey
+// rounded-square tile + secondary-weight headline + tertiary subline. Only
+// the icon and words differ per list.
+function emptyState(icon: React.ReactNode, title: string, sub: string): React.JSX.Element {
+  return (
+    <div className="mt-10 flex flex-col items-center text-center px-6">
+      <div className="w-11 h-11 rounded-[14px] bg-[#f1f3f5] flex items-center justify-center mb-3">
+        {icon}
+      </div>
+      <p className="text-[14px] font-semibold text-[#667085]">{title}</p>
+      <p className="text-[13px] text-[#98a2b3] mt-1 leading-snug max-w-[240px]">{sub}</p>
+    </div>
+  );
+}
+
 // Order Remarks options — single source for the Review picker grid and the
 // Sent receipt's read-only label lookup.
 const MARKER_OPTIONS: { label: string; value: NonNullable<Marker> }[] = [
@@ -2087,7 +2131,7 @@ export default function PoPage(): React.JSX.Element {
           disabled={!hasAnyLines}
           className={`flex-1 flex items-center justify-center gap-1.5 h-[48px] rounded-full border text-[14px] font-semibold ${
             hasAnyLines
-              ? "border-gray-300 bg-white text-gray-700 active:bg-gray-50"
+              ? "border-[#d0d5dd] bg-white text-gray-700 active:bg-gray-50"
               : "border-gray-200 bg-gray-100 text-gray-300 cursor-not-allowed"
           }`}
         >
@@ -2098,7 +2142,7 @@ export default function PoPage(): React.JSX.Element {
           type="button"
           onClick={handleSend}
           disabled={!canSend}
-          className={`flex-[1.5] flex items-center justify-center gap-2 h-[48px] rounded-full text-[15px] font-bold ${
+          className={`flex-[1.5] flex items-center justify-center gap-2 h-[48px] rounded-full text-[15px] font-semibold ${
             canSend
               ? "bg-teal-600 active:bg-teal-700 text-white active:opacity-90"
               : "bg-gray-200 text-gray-400 cursor-not-allowed"
@@ -2124,7 +2168,7 @@ export default function PoPage(): React.JSX.Element {
         <button
           type="button"
           onClick={() => reopenSent(order)}
-          className="flex-1 flex items-center justify-center gap-1.5 h-[48px] rounded-full border border-teal-600 bg-white text-teal-700 text-[14px] font-semibold active:bg-teal-50"
+          className="flex-1 flex items-center justify-center gap-1.5 h-[48px] rounded-full border border-[#d0d5dd] bg-white text-gray-700 text-[14px] font-semibold active:bg-gray-50"
         >
           <Pencil className="w-[15px] h-[15px]" />
           Edit order
@@ -2132,7 +2176,7 @@ export default function PoPage(): React.JSX.Element {
         <button
           type="button"
           onClick={() => resendFromReceipt(order)}
-          className="flex-[1.5] flex items-center justify-center gap-2 h-[48px] rounded-full bg-teal-600 active:bg-teal-700 text-white text-[15px] font-bold"
+          className="flex-[1.5] flex items-center justify-center gap-2 h-[48px] rounded-full bg-teal-600 active:bg-teal-700 text-white text-[15px] font-semibold"
           style={{ boxShadow: "0 8px 22px rgba(13,148,136,0.42)" }}
         >
           <Send className="w-[17px] h-[17px]" />
@@ -2340,49 +2384,52 @@ export default function PoPage(): React.JSX.Element {
           draftsEnabled && browseScreen === "drafts" ? (
             /* ── Drafts screen (draftsEnabled only) — peer of landing ────── */
             <div className="px-4 pt-6">
-              <div className="text-[13px] font-semibold text-gray-600 uppercase tracking-wide mb-2 px-1">
+              <div className="text-[11px] font-semibold text-[#98a2b3] uppercase tracking-wide mb-2 px-1">
                 Saved Drafts
               </div>
               {savedDrafts.length === 0 ? (
-                <div className="mt-10 flex flex-col items-center text-center px-6">
-                  <div className="w-[44px] h-[44px] rounded-full bg-gray-100 flex items-center justify-center mb-3">
-                    <Bookmark className="w-[20px] h-[20px] text-gray-300" />
-                  </div>
-                  <p className="text-[14px] font-medium text-gray-500">No saved drafts yet</p>
-                  <p className="text-[13px] text-gray-400 mt-1 leading-snug">
-                    Build an order and tap Save draft on the Review screen to come back to it later.
-                  </p>
-                </div>
+                emptyState(
+                  <Bookmark className="w-5 h-5 text-gray-300" />,
+                  "No saved drafts yet",
+                  "Build an order and tap Save draft on the Review screen to come back to it later.",
+                )
               ) : (
-                <div className="bg-white border border-gray-100 rounded-[16px] overflow-hidden shadow-sm">
+                <div className="flex flex-col gap-2">
                   {savedDrafts.map((d) => {
                     return (
                       <div
                         key={d.id}
-                        className="flex items-center gap-3 px-4 py-3 border-b border-gray-50 last:border-b-0"
+                        className="flex items-start gap-3 bg-white rounded-[14px] p-[14px]"
+                        style={{ boxShadow: SOFT_CARD_SHADOW }}
                       >
                         <button
                           type="button"
                           onClick={() => reopenDraft(d)}
-                          className="flex-1 min-w-0 text-left"
+                          className="flex-1 min-w-0 text-left active:opacity-70"
                         >
-                          <p className="text-[15px] font-medium text-gray-800 truncate">
+                          <p className="text-[15px] font-semibold text-[#111827] truncate">
                             {d.snapshot.customer.name}
                           </p>
-                          <p className="text-[12px] text-gray-400 truncate mt-0.5">
-                            {d.snapshot.customer.area ? `${d.snapshot.customer.area} · ` : ""}
-                            {billsCountLabel(d.snapshot)}
+                          <p className="text-[12px] text-[#667085] truncate mt-0.5">
+                            {d.snapshot.customer.code}
+                            {d.snapshot.customer.area ? ` · ${d.snapshot.customer.area}` : ""}
                           </p>
-                          <p className="text-[11px] text-gray-400 mt-0.5">{formatSavedAt(d.savedAt)}</p>
+                          <div className="flex items-center gap-2 mt-1.5">
+                            {dispatchListChip(d.snapshot.dispatch, d.snapshot.callTarget)}
+                            <span className="text-[11px] text-[#98a2b3]">{billsCountLabel(d.snapshot)}</span>
+                          </div>
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => requestDeleteDraft(d.id)}
-                          aria-label="Delete draft"
-                          className="text-gray-300 active:text-red-500 p-2 -mr-2 shrink-0"
-                        >
-                          <Trash2 className="w-[17px] h-[17px]" />
-                        </button>
+                        <div className="flex flex-col items-end justify-between self-stretch shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => requestDeleteDraft(d.id)}
+                            aria-label="Delete draft"
+                            className="text-[#98a2b3] active:text-red-500 -m-1 p-1"
+                          >
+                            <Trash2 className="w-[16px] h-[16px]" />
+                          </button>
+                          <span className="text-[10px] text-[#98a2b3] mt-2">{formatSavedAt(d.savedAt)}</span>
+                        </div>
                       </div>
                     );
                   })}
@@ -2412,99 +2459,112 @@ export default function PoPage(): React.JSX.Element {
                   >
                     <ChevronLeft className="w-[18px] h-[18px] text-gray-500" />
                   </button>
-                  <span className="text-[16px] font-medium text-gray-800 truncate flex-1 min-w-0">
+                  <span className="text-[15px] font-semibold text-[#111827] truncate flex-1 min-w-0">
                     {receiptOrder.snapshot.customer.name}
                   </span>
                   <span className="text-[11px] font-semibold text-teal-700 bg-teal-50 border border-teal-200 rounded-full px-2 py-0.5 shrink-0">
                     Sent
                   </span>
                 </div>
-                <div className="pl-[26px] text-[12px] text-gray-500 truncate">
+                <div className="pl-[26px] text-[12px] text-[#667085] truncate">
                   {receiptOrder.snapshot.customer.code}
                   {receiptOrder.snapshot.customer.area ? ` · ${receiptOrder.snapshot.customer.area}` : ""}
                 </div>
               </div>
 
-              <div className="px-4 pt-3 pb-1 text-[12px] text-gray-400">
-                Sent {formatSavedAt(receiptOrder.sentAt)}
-              </div>
-
-              {receiptOrder.snapshot.bills.filter((b) => b.lines.length > 0).map((b) => (
-                <div key={b.id} className="bg-white border-b border-gray-200 px-4 py-[13px]">
-                  <div className="mb-2">
-                    <span className="text-[12px] font-semibold text-gray-600">Bill {b.id}</span>
+              <div className="px-4 pt-4 pb-6">
+                {/* ── ORDER SUMMARY — one soft card, label/value rows, Total
+                    set off by a top hairline only (no dividers between the
+                    other rows). Rows with no value are hidden entirely. */}
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-[#98a2b3] mb-2 px-1">
+                  Order Summary
+                </p>
+                <div className="bg-white rounded-[14px] p-4" style={{ boxShadow: SOFT_CARD_SHADOW }}>
+                  <div className="flex items-center justify-between py-[7px]">
+                    <span className="text-[12px] text-[#98a2b3]">Sent</span>
+                    <span className="text-[13px] text-[#667085]">{formatSavedAt(receiptOrder.sentAt)}</span>
                   </div>
-                  {b.lines.map((line, idx) => {
-                    const chips = lineChips(line);
+                  <div className="flex items-center justify-between py-[7px]">
+                    <span className="text-[12px] text-[#98a2b3]">Dispatch</span>
+                    {receiptOrder.snapshot.dispatch === "Urgent" ? (
+                      <span className="inline-flex items-center text-[10.5px] font-semibold px-2 py-[3px] rounded-full border bg-amber-50 text-amber-700 border-amber-200">
+                        Urgent
+                      </span>
+                    ) : (
+                      <span className="text-[13px] text-[#667085]">
+                        {dispatchLabel(receiptOrder.snapshot.dispatch, receiptOrder.snapshot.callTarget)}
+                      </span>
+                    )}
+                  </div>
+                  {(() => {
+                    const label = markerLabel(receiptOrder.snapshot.marker);
+                    if (!label) return null;
+                    const { marker, crossDepot } = receiptOrder.snapshot;
                     return (
-                      <div
-                        key={`${line.productId}-${idx}`}
-                        className="flex items-start justify-between gap-2 py-[6px] border-b border-gray-50 last:border-b-0"
-                      >
-                        <div className="flex-1 min-w-0">
-                          <p className="text-[14px] text-gray-900 truncate">
-                            {productLabel(line)}{aliasSuffix(line)}
-                          </p>
-                          <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
-                            {chips.map((c) => (
-                              <span key={c.label} className="text-[12px] text-teal-700">
-                                {c.label} <span className="font-mono">×{c.units}</span>
-                              </span>
-                            ))}
-                          </div>
-                        </div>
+                      <div className="flex items-start justify-between py-[7px] gap-3">
+                        <span className="text-[12px] text-[#98a2b3] shrink-0">Remarks</span>
+                        <span className="text-[13px] text-[#667085] text-right">
+                          {label}
+                          {marker === "Cross Delivery" && crossDepot ? ` · Cross billing from ${crossDepot}` : ""}
+                        </span>
                       </div>
                     );
-                  })}
-                </div>
-              ))}
-
-              {(() => {
-                const shipToText = resolvedShipTo(receiptOrder.snapshot.shipTo);
-                return shipToText ? (
-                  <div className="bg-white border-b border-gray-200 px-4 py-[13px]">
-                    <p className="text-[11px] uppercase tracking-wide text-gray-400">Ship to</p>
-                    <p className="text-[13px] text-gray-700 font-medium mt-0.5">{shipToText}</p>
+                  })()}
+                  {(() => {
+                    const shipToText = resolvedShipTo(receiptOrder.snapshot.shipTo);
+                    return shipToText ? (
+                      <div className="flex items-start justify-between py-[7px] gap-3">
+                        <span className="text-[12px] text-[#98a2b3] shrink-0">Ship to</span>
+                        <span className="text-[13px] text-[#667085] text-right truncate">{shipToText}</span>
+                      </div>
+                    ) : null;
+                  })()}
+                  {receiptOrder.snapshot.notes.trim() ? (
+                    <div className="flex items-start justify-between py-[7px] gap-3">
+                      <span className="text-[12px] text-[#98a2b3] shrink-0">Notes</span>
+                      <span className="text-[13px] text-[#667085] text-right">
+                        {receiptOrder.snapshot.notes.trim()}
+                      </span>
+                    </div>
+                  ) : null}
+                  <div className="flex items-center justify-between pt-[11px] mt-[3px] border-t border-gray-100">
+                    <span className="text-[12px] text-[#98a2b3]">Total</span>
+                    <span className="text-[13px] font-semibold text-[#111827]">
+                      {billsCountLabel(receiptOrder.snapshot)}
+                    </span>
                   </div>
-                ) : null;
-              })()}
-
-              <div className="bg-white border-b border-gray-200 px-4 py-[13px]">
-                <p className="text-[11px] uppercase tracking-wide text-gray-400">Dispatch</p>
-                <p className="text-[13px] text-gray-700 font-medium mt-0.5">
-                  {dispatchLabel(receiptOrder.snapshot.dispatch, receiptOrder.snapshot.callTarget)}
-                </p>
-              </div>
-
-              {(() => {
-                const label = markerLabel(receiptOrder.snapshot.marker);
-                if (!label) return null;
-                const { marker, crossDepot } = receiptOrder.snapshot;
-                return (
-                  <div className="bg-white border-b border-gray-200 px-4 py-[13px]">
-                    <p className="text-[11px] uppercase tracking-wide text-gray-400">Order remarks</p>
-                    <p className="text-[13px] text-gray-700 font-medium mt-0.5">
-                      {label}
-                      {marker === "Cross Delivery" && crossDepot ? ` · Cross billing from ${crossDepot}` : ""}
-                    </p>
-                  </div>
-                );
-              })()}
-
-              {receiptOrder.snapshot.notes.trim() ? (
-                <div className="bg-white border-b border-gray-200 px-4 py-[13px]">
-                  <p className="text-[11px] uppercase tracking-wide text-gray-400">Notes</p>
-                  <p className="text-[13px] text-gray-700 font-medium mt-0.5">
-                    {receiptOrder.snapshot.notes.trim()}
-                  </p>
                 </div>
-              ) : null}
 
-              <div className="bg-white border-b border-gray-200 px-4 py-[13px]">
-                <p className="text-[11px] uppercase tracking-wide text-gray-400">Total</p>
-                <p className="text-[13px] text-gray-700 font-medium mt-0.5">
-                  {billsCountLabel(receiptOrder.snapshot)}
+                {/* ── ITEMS — one soft card, bills as subtle subheaders, pack
+                    breakdown in grey mono (not teal — teal is actions-only). */}
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-[#98a2b3] mb-2 mt-5 px-1">
+                  Items
                 </p>
+                <div className="bg-white rounded-[14px] p-4" style={{ boxShadow: SOFT_CARD_SHADOW }}>
+                  {receiptOrder.snapshot.bills.filter((b) => b.lines.length > 0).map((b, bi) => (
+                    <div key={b.id} className={bi > 0 ? "mt-4" : ""}>
+                      <p className="text-[11px] font-semibold text-[#98a2b3] mb-1.5">Bill {b.id}</p>
+                      {b.lines.map((line, idx) => {
+                        const chips = lineChips(line);
+                        return (
+                          <div
+                            key={`${line.productId}-${idx}`}
+                            className="py-[8px] border-b border-gray-50 last:border-b-0"
+                          >
+                            <p className="text-[14px] font-medium text-[#111827] truncate">
+                              {productLabel(line)}{aliasSuffix(line)}
+                            </p>
+                            {chips.length > 0 && (
+                              <p className="text-[12px] text-[#98a2b3] font-mono mt-0.5">
+                                {chips.map((c) => `${c.label} ×${c.units}`).join(", ")}
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
               </div>
             </>
           ) : draftsEnabled && browseScreen === "sent" ? (
@@ -2513,49 +2573,52 @@ export default function PoPage(): React.JSX.Element {
                 (viewSentReceipt) — reorder only happens from the receipt's
                 own "Edit order" button. ──────────────────────────────────── */
             <div className="px-4 pt-6">
-              <div className="text-[13px] font-semibold text-gray-600 uppercase tracking-wide mb-2 px-1">
+              <div className="text-[11px] font-semibold text-[#98a2b3] uppercase tracking-wide mb-2 px-1">
                 Sent
               </div>
               {sentOrders.length === 0 ? (
-                <div className="mt-10 flex flex-col items-center text-center px-6">
-                  <div className="w-[44px] h-[44px] rounded-full bg-gray-100 flex items-center justify-center mb-3">
-                    <Send className="w-[20px] h-[20px] text-gray-300" />
-                  </div>
-                  <p className="text-[14px] font-medium text-gray-500">No sent orders yet</p>
-                  <p className="text-[13px] text-gray-400 mt-1 leading-snug">
-                    Orders you send today and yesterday show up here.
-                  </p>
-                </div>
+                emptyState(
+                  <Send className="w-5 h-5 text-gray-300" />,
+                  "No sent orders yet",
+                  "Orders you send today and yesterday show up here.",
+                )
               ) : (
-                <div className="bg-white border border-gray-100 rounded-[16px] overflow-hidden shadow-sm">
+                <div className="flex flex-col gap-2">
                   {sentOrders.map((o) => {
                     return (
                       <div
                         key={o.id}
-                        className="flex items-center gap-3 px-4 py-3 border-b border-gray-50 last:border-b-0"
+                        className="flex items-start gap-3 bg-white rounded-[14px] p-[14px]"
+                        style={{ boxShadow: SOFT_CARD_SHADOW }}
                       >
                         <button
                           type="button"
                           onClick={() => viewSentReceipt(o)}
-                          className="flex-1 min-w-0 text-left"
+                          className="flex-1 min-w-0 text-left active:opacity-70"
                         >
-                          <p className="text-[15px] font-medium text-gray-800 truncate">
+                          <p className="text-[15px] font-semibold text-[#111827] truncate">
                             {o.snapshot.customer.name}
                           </p>
-                          <p className="text-[12px] text-gray-400 truncate mt-0.5">
-                            {o.snapshot.customer.area ? `${o.snapshot.customer.area} · ` : ""}
-                            {billsCountLabel(o.snapshot)}
+                          <p className="text-[12px] text-[#667085] truncate mt-0.5">
+                            {o.snapshot.customer.code}
+                            {o.snapshot.customer.area ? ` · ${o.snapshot.customer.area}` : ""}
                           </p>
-                          <p className="text-[11px] text-gray-400 mt-0.5">{formatSavedAt(o.sentAt)}</p>
+                          <div className="flex items-center gap-2 mt-1.5">
+                            {dispatchListChip(o.snapshot.dispatch, o.snapshot.callTarget)}
+                            <span className="text-[11px] text-[#98a2b3]">{billsCountLabel(o.snapshot)}</span>
+                          </div>
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => requestDeleteSent(o.id)}
-                          aria-label="Delete sent order"
-                          className="text-gray-300 active:text-red-500 p-2 -mr-2 shrink-0"
-                        >
-                          <Trash2 className="w-[17px] h-[17px]" />
-                        </button>
+                        <div className="flex flex-col items-end justify-between self-stretch shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => requestDeleteSent(o.id)}
+                            aria-label="Delete sent order"
+                            className="text-[#98a2b3] active:text-red-500 -m-1 p-1"
+                          >
+                            <Trash2 className="w-[16px] h-[16px]" />
+                          </button>
+                          <span className="text-[10px] text-[#98a2b3] mt-2">{formatSavedAt(o.sentAt)}</span>
+                        </div>
                       </div>
                     );
                   })}
@@ -2630,40 +2693,40 @@ export default function PoPage(): React.JSX.Element {
               favs.length > 0 ? (
                 <div className="mt-7">
                   <div className="flex items-center gap-1 px-1 mb-2">
-                    <span className="text-[12px] font-medium uppercase tracking-wider text-gray-400">
+                    <span className="text-[11px] font-medium uppercase tracking-wider text-[#98a2b3]">
                       Favourites
                     </span>
                     <Star className="w-[12px] h-[12px] text-amber-500" fill="currentColor" />
                   </div>
-                  <div className="bg-white border border-gray-100 rounded-[16px] overflow-hidden shadow-sm">
+                  <div className="flex flex-col gap-2">
                     {favs.map((f) => (
                       <button
                         key={f.id}
                         type="button"
                         onClick={() => selectCustomer({ name: f.name, code: f.code, area: f.area })}
-                        className="w-full flex items-center gap-3 px-4 py-3 text-left border-b border-gray-50 last:border-b-0 active:bg-gray-50"
+                        className="w-full flex items-center gap-3 bg-white rounded-[14px] p-[14px] text-left active:bg-gray-50"
+                        style={{ boxShadow: SOFT_CARD_SHADOW }}
                       >
-                        <div className="flex-1 min-w-0">
-                          <p className="text-[16px] font-medium text-gray-800 truncate">{f.name}</p>
-                          <p className="text-[13px] text-gray-400 truncate mt-px">
+                        <span className="w-10 h-10 rounded-[11px] bg-[#f1f3f5] text-[#667085] text-[13px] font-semibold inline-flex items-center justify-center flex-shrink-0">
+                          {initials(f.name)}
+                        </span>
+                        <span className="flex-1 min-w-0">
+                          <span className="block text-[15px] font-semibold text-[#111827] truncate">{f.name}</span>
+                          <span className="block text-[12px] text-[#667085] truncate mt-0.5">
                             {f.code}{f.area ? ` · ${f.area}` : ""}
-                          </p>
-                        </div>
-                        <ChevronRight className="w-[18px] h-[18px] text-gray-300 shrink-0" />
+                          </span>
+                        </span>
+                        <ChevronRight className="w-[16px] h-[16px] text-[#98a2b3] shrink-0" />
                       </button>
                     ))}
                   </div>
                 </div>
               ) : (
-                <div className="mt-10 flex flex-col items-center text-center px-6">
-                  <div className="w-[44px] h-[44px] rounded-full bg-gray-100 flex items-center justify-center mb-3">
-                    <Star className="w-[20px] h-[20px] text-gray-300" />
-                  </div>
-                  <p className="text-[14px] font-medium text-gray-500">No favourites yet</p>
-                  <p className="text-[13px] text-gray-400 mt-1 leading-snug">
-                    Search a customer and tap the star to add them here for quick access.
-                  </p>
-                </div>
+                emptyState(
+                  <Star className="w-5 h-5 text-gray-300" />,
+                  "No favourites yet",
+                  "Search a customer and tap the star to add them here for quick access.",
+                )
               )
             )}
           </div>
