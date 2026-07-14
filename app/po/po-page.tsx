@@ -220,9 +220,8 @@ function dispatchListChip(dispatch: Dispatch, callTarget: CallTarget): React.JSX
   const isUrgent = dispatch === "Urgent";
   return (
     <span
-      className={`inline-flex items-center text-[10.5px] font-semibold px-2 py-[3px] rounded-full border ${
-        isUrgent ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-gray-50 text-gray-500 border-gray-200"
-      }`}
+      className="inline-flex items-center text-[10.5px] font-semibold px-2 py-[3px] rounded-full"
+      style={isUrgent ? { background: "#fef3e2", color: "#b45309" } : { background: "#f2f4f7", color: "#475467" }}
     >
       {dispatchLabel(dispatch, callTarget)}
     </span>
@@ -2129,7 +2128,7 @@ export default function PoPage(): React.JSX.Element {
           type="button"
           onClick={handleSaveDraftTap}
           disabled={!hasAnyLines}
-          className={`flex-1 flex items-center justify-center gap-1.5 h-[48px] rounded-full border text-[14px] font-semibold ${
+          className={`flex-1 flex items-center justify-center gap-1.5 h-[50px] rounded-full border text-[14px] font-semibold ${
             hasAnyLines
               ? "border-[#d0d5dd] bg-white text-gray-700 active:bg-gray-50"
               : "border-gray-200 bg-gray-100 text-gray-300 cursor-not-allowed"
@@ -2142,7 +2141,7 @@ export default function PoPage(): React.JSX.Element {
           type="button"
           onClick={handleSend}
           disabled={!canSend}
-          className={`flex-[1.5] flex items-center justify-center gap-2 h-[48px] rounded-full text-[15px] font-semibold ${
+          className={`flex-[1.5] flex items-center justify-center gap-2 h-[50px] rounded-full text-[15px] font-semibold ${
             canSend
               ? "bg-teal-600 active:bg-teal-700 text-white active:opacity-90"
               : "bg-gray-200 text-gray-400 cursor-not-allowed"
@@ -2168,7 +2167,7 @@ export default function PoPage(): React.JSX.Element {
         <button
           type="button"
           onClick={() => reopenSent(order)}
-          className="flex-1 flex items-center justify-center gap-1.5 h-[48px] rounded-full border border-[#d0d5dd] bg-white text-gray-700 text-[14px] font-semibold active:bg-gray-50"
+          className="flex-1 flex items-center justify-center gap-1.5 h-[50px] rounded-full border border-[#d0d5dd] bg-white text-gray-700 text-[14px] font-semibold active:bg-gray-50"
         >
           <Pencil className="w-[15px] h-[15px]" />
           Edit order
@@ -2176,7 +2175,7 @@ export default function PoPage(): React.JSX.Element {
         <button
           type="button"
           onClick={() => resendFromReceipt(order)}
-          className="flex-[1.5] flex items-center justify-center gap-2 h-[48px] rounded-full bg-teal-600 active:bg-teal-700 text-white text-[15px] font-semibold"
+          className="flex-[1.5] flex items-center justify-center gap-2 h-[50px] rounded-full bg-teal-600 active:bg-teal-700 text-white text-[15px] font-semibold"
           style={{ boxShadow: "0 8px 22px rgba(13,148,136,0.42)" }}
         >
           <Send className="w-[17px] h-[17px]" />
@@ -2399,7 +2398,7 @@ export default function PoPage(): React.JSX.Element {
                     return (
                       <div
                         key={d.id}
-                        className="flex items-start gap-3 bg-white rounded-[14px] p-[14px]"
+                        className="flex items-start gap-3 bg-white rounded-[14px] p-4"
                         style={{ boxShadow: SOFT_CARD_SHADOW }}
                       >
                         <button
@@ -2407,7 +2406,7 @@ export default function PoPage(): React.JSX.Element {
                           onClick={() => reopenDraft(d)}
                           className="flex-1 min-w-0 text-left active:opacity-70"
                         >
-                          <p className="text-[15px] font-semibold text-[#111827] truncate">
+                          <p className="text-[15px] font-medium text-[#1d2939] truncate">
                             {d.snapshot.customer.name}
                           </p>
                           <p className="text-[12px] text-[#667085] truncate mt-0.5">
@@ -2459,7 +2458,7 @@ export default function PoPage(): React.JSX.Element {
                   >
                     <ChevronLeft className="w-[18px] h-[18px] text-gray-500" />
                   </button>
-                  <span className="text-[15px] font-semibold text-[#111827] truncate flex-1 min-w-0">
+                  <span className="text-[15px] font-medium text-[#1d2939] truncate flex-1 min-w-0">
                     {receiptOrder.snapshot.customer.name}
                   </span>
                   <span className="text-[11px] font-semibold text-teal-700 bg-teal-50 border border-teal-200 rounded-full px-2 py-0.5 shrink-0">
@@ -2487,7 +2486,10 @@ export default function PoPage(): React.JSX.Element {
                   <div className="flex items-center justify-between py-[7px]">
                     <span className="text-[12px] text-[#98a2b3]">Dispatch</span>
                     {receiptOrder.snapshot.dispatch === "Urgent" ? (
-                      <span className="inline-flex items-center text-[10.5px] font-semibold px-2 py-[3px] rounded-full border bg-amber-50 text-amber-700 border-amber-200">
+                      <span
+                        className="inline-flex items-center text-[10.5px] font-semibold px-2 py-[3px] rounded-full"
+                        style={{ background: "#fef3e2", color: "#b45309" }}
+                      >
                         Urgent
                       </span>
                     ) : (
@@ -2551,12 +2553,12 @@ export default function PoPage(): React.JSX.Element {
                             key={`${line.productId}-${idx}`}
                             className="py-[8px] border-b border-gray-50 last:border-b-0"
                           >
-                            <p className="text-[14px] font-medium text-[#111827] truncate">
+                            <p className="text-[14px] font-medium text-[#1d2939] truncate">
                               {productLabel(line)}{aliasSuffix(line)}
                             </p>
                             {chips.length > 0 && (
-                              <p className="text-[12px] text-[#98a2b3] font-mono mt-0.5">
-                                {chips.map((c) => `${c.label} ×${c.units}`).join(", ")}
+                              <p className="text-[12px] text-[#98a2b3] font-mono mt-1 tracking-wide">
+                                {chips.map((c) => `${c.label} × ${c.units}`).join("   ·   ")}
                               </p>
                             )}
                           </div>
@@ -2588,7 +2590,7 @@ export default function PoPage(): React.JSX.Element {
                     return (
                       <div
                         key={o.id}
-                        className="flex items-start gap-3 bg-white rounded-[14px] p-[14px]"
+                        className="flex items-start gap-3 bg-white rounded-[14px] p-4"
                         style={{ boxShadow: SOFT_CARD_SHADOW }}
                       >
                         <button
@@ -2596,7 +2598,7 @@ export default function PoPage(): React.JSX.Element {
                           onClick={() => viewSentReceipt(o)}
                           className="flex-1 min-w-0 text-left active:opacity-70"
                         >
-                          <p className="text-[15px] font-semibold text-[#111827] truncate">
+                          <p className="text-[15px] font-medium text-[#1d2939] truncate">
                             {o.snapshot.customer.name}
                           </p>
                           <p className="text-[12px] text-[#667085] truncate mt-0.5">
@@ -2711,7 +2713,7 @@ export default function PoPage(): React.JSX.Element {
                           {initials(f.name)}
                         </span>
                         <span className="flex-1 min-w-0">
-                          <span className="block text-[15px] font-semibold text-[#111827] truncate">{f.name}</span>
+                          <span className="block text-[15px] font-medium text-[#1d2939] truncate">{f.name}</span>
                           <span className="block text-[12px] text-[#667085] truncate mt-0.5">
                             {f.code}{f.area ? ` · ${f.area}` : ""}
                           </span>
