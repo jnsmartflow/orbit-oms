@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Search, Mic, Check, ChevronLeft, ChevronDown, ChevronRight, Plus, Pencil, Copy, Send, RefreshCw, Home, Bookmark, Trash2, Star } from "lucide-react";
+import { Search, Mic, Check, ChevronLeft, ChevronDown, ChevronRight, Plus, Pencil, Copy, Send, RefreshCw, Home, Bookmark, Trash2, Star, Zap } from "lucide-react";
 import type { RawPack } from "@/lib/place-order/pack-buckets";
 import type { Product, CartLine, Bill, Customer } from "@/app/(place-order)/place-order/types";
 import { rankProductsForQuery } from "@/lib/place-order/mobile-search";
@@ -205,6 +205,11 @@ function dispatchLabel(dispatch: Dispatch, callTarget: CallTarget): string {
 // (Favourites/Drafts/Sent rows, receipt Order Summary / Items sections).
 const SOFT_CARD_SHADOW = "0 1px 2px rgba(16,24,40,0.04), 0 3px 12px rgba(16,24,40,0.05)";
 
+// "ENRICHED ROW" mock shadow (2026-07-14) — Drafts/Sent cards specifically;
+// a distinct second-layer blur/spread from SOFT_CARD_SHADOW above, matched
+// pixel-for-pixel to the approved mock. Do not merge with SOFT_CARD_SHADOW.
+const ENRICHED_ROW_SHADOW = "0 1px 2px rgba(16,24,40,0.04), 0 4px 14px rgba(16,24,40,0.05)";
+
 // First letters of the first two words, uppercased ("Maruti Hardware" -> "MH").
 // Same algorithm as the desktop recents avatar (recent-customers.tsx).
 function initials(name: string): string {
@@ -212,18 +217,44 @@ function initials(name: string): string {
   return ((words[0]?.[0] ?? "") + (words[1]?.[0] ?? "")).toUpperCase();
 }
 
-// Drafts/Sent list-row exception chip — amber "Urgent" or grey "Call · X";
-// null for Normal (the default, shown as nothing). Reuses dispatchLabel for
-// the text so the wording matches the receipt's plain-text Dispatch row.
-function dispatchListChip(dispatch: Dispatch, callTarget: CallTarget): React.JSX.Element | null {
-  if (dispatch === "Normal") return null;
-  const isUrgent = dispatch === "Urgent";
+// ── Drafts/Sent "ENRICHED ROW" chip row (2026-07-14 mock) ──────────────────
+// Shared pill shape for all three chip kinds below.
+const CHIP_CLASS = "inline-flex items-center gap-1 text-[11px] font-medium rounded-[6px] px-2 py-[3px]";
+
+// BILLS chip — always shown, teal. Reuses billsCountLabel's "N bills"/"1 bill".
+function billsChip(snapshot: Parameters<typeof draftSummary>[0]): React.JSX.Element {
   return (
-    <span
-      className="inline-flex items-center text-[10.5px] font-semibold px-2 py-[3px] rounded-full"
-      style={isUrgent ? { background: "#fef3e2", color: "#b45309" } : { background: "#f2f4f7", color: "#475467" }}
-    >
+    <span className={CHIP_CLASS} style={{ background: "#f0fdfa", color: "#0f766e" }}>
+      {billsCountLabel(snapshot)}
+    </span>
+  );
+}
+
+// DISPATCH chip — ALWAYS shown (unlike the old Normal-hides-entirely rule):
+// green Normal, amber Urgent (with a leading bolt icon), grey Call · X.
+function dispatchChip(dispatch: Dispatch, callTarget: CallTarget): React.JSX.Element {
+  const style =
+    dispatch === "Urgent" ? { background: "#fef3e2", color: "#b45309" }
+    : dispatch === "Call" ? { background: "#f3f4f6", color: "#6b7280" }
+    :                        { background: "#f0fdf4", color: "#15803d" };
+  return (
+    <span className={CHIP_CLASS} style={style}>
+      {dispatch === "Urgent" && <Zap className="w-[10px] h-[10px]" fill="currentColor" />}
       {dispatchLabel(dispatch, callTarget)}
+    </span>
+  );
+}
+
+// REMARK chip — only when a marker is set. Grey, emoji + SHORT name only
+// (markerLabel already returns e.g. "🚛 Truck" / "🔄 Cross" — the same
+// emoji the Order Remarks buttons use). Full "Cross billing from…" detail
+// stays receipt-only, never appears here.
+function remarkChip(marker: Marker): React.JSX.Element | null {
+  const label = markerLabel(marker);
+  if (!label) return null;
+  return (
+    <span className={CHIP_CLASS} style={{ background: "#f3f4f6", color: "#6b7280" }}>
+      {label}
     </span>
   );
 }
@@ -2394,41 +2425,46 @@ export default function PoPage(): React.JSX.Element {
                   "Build an order and tap Save draft on the Review screen to come back to it later.",
                 )
               ) : (
-                <div className="flex flex-col gap-2">
+                <div className="flex flex-col gap-[10px]">
                   {savedDrafts.map((d) => {
                     return (
                       <div
                         key={d.id}
-                        className="flex items-start gap-3 bg-white rounded-[14px] p-4"
-                        style={{ boxShadow: SOFT_CARD_SHADOW }}
+                        className="bg-white rounded-[14px]"
+                        style={{ boxShadow: ENRICHED_ROW_SHADOW, padding: "13px 14px" }}
                       >
-                        <button
-                          type="button"
-                          onClick={() => reopenDraft(d)}
-                          className="flex-1 min-w-0 text-left active:opacity-70"
-                        >
-                          <p className="text-[15px] font-medium text-[#1d2939] truncate">
-                            {d.snapshot.customer.name}
-                          </p>
-                          <p className="text-[12px] text-[#667085] truncate mt-0.5">
-                            {d.snapshot.customer.code}
-                            {d.snapshot.customer.area ? ` · ${d.snapshot.customer.area}` : ""}
-                          </p>
-                          <div className="flex items-center gap-2 mt-1.5">
-                            {dispatchListChip(d.snapshot.dispatch, d.snapshot.callTarget)}
-                            <span className="text-[11px] text-[#98a2b3]">{billsCountLabel(d.snapshot)}</span>
-                          </div>
-                        </button>
-                        <div className="flex flex-col items-end justify-between self-stretch shrink-0">
+                        <div className="flex items-start justify-between gap-3">
+                          <button
+                            type="button"
+                            onClick={() => reopenDraft(d)}
+                            className="flex-1 min-w-0 text-left active:opacity-70"
+                          >
+                            <p className="text-[14px] font-semibold text-[#111827] truncate">
+                              {d.snapshot.customer.name}
+                            </p>
+                            <p className="text-[12px] font-normal text-[#9ca3af] truncate mt-[3px]">
+                              {d.snapshot.customer.code}
+                              {d.snapshot.customer.area ? ` · ${d.snapshot.customer.area}` : ""}
+                            </p>
+                            <div className="flex flex-wrap items-center gap-[6px] mt-[11px]">
+                              {billsChip(d.snapshot)}
+                              {dispatchChip(d.snapshot.dispatch, d.snapshot.callTarget)}
+                              {remarkChip(d.snapshot.marker)}
+                              <span className="flex-1" />
+                              <span className="text-[11px] text-[#9ca3af] shrink-0">
+                                {formatSavedAt(d.savedAt)}
+                              </span>
+                            </div>
+                          </button>
                           <button
                             type="button"
                             onClick={() => requestDeleteDraft(d.id)}
                             aria-label="Delete draft"
-                            className="text-[#98a2b3] active:text-red-500 -m-1 p-1"
+                            className="shrink-0 -m-1 p-1 active:text-red-500"
+                            style={{ color: "#cbd5e1" }}
                           >
-                            <Trash2 className="w-[16px] h-[16px]" />
+                            <Trash2 className="w-4 h-4" />
                           </button>
-                          <span className="text-[10px] text-[#98a2b3] mt-2">{formatSavedAt(d.savedAt)}</span>
                         </div>
                       </div>
                     );
@@ -2586,41 +2622,46 @@ export default function PoPage(): React.JSX.Element {
                   "Orders you send today and yesterday show up here.",
                 )
               ) : (
-                <div className="flex flex-col gap-2">
+                <div className="flex flex-col gap-[10px]">
                   {sentOrders.map((o) => {
                     return (
                       <div
                         key={o.id}
-                        className="flex items-start gap-3 bg-white rounded-[14px] p-4"
-                        style={{ boxShadow: SOFT_CARD_SHADOW }}
+                        className="bg-white rounded-[14px]"
+                        style={{ boxShadow: ENRICHED_ROW_SHADOW, padding: "13px 14px" }}
                       >
-                        <button
-                          type="button"
-                          onClick={() => viewSentReceipt(o)}
-                          className="flex-1 min-w-0 text-left active:opacity-70"
-                        >
-                          <p className="text-[15px] font-medium text-[#1d2939] truncate">
-                            {o.snapshot.customer.name}
-                          </p>
-                          <p className="text-[12px] text-[#667085] truncate mt-0.5">
-                            {o.snapshot.customer.code}
-                            {o.snapshot.customer.area ? ` · ${o.snapshot.customer.area}` : ""}
-                          </p>
-                          <div className="flex items-center gap-2 mt-1.5">
-                            {dispatchListChip(o.snapshot.dispatch, o.snapshot.callTarget)}
-                            <span className="text-[11px] text-[#98a2b3]">{billsCountLabel(o.snapshot)}</span>
-                          </div>
-                        </button>
-                        <div className="flex flex-col items-end justify-between self-stretch shrink-0">
+                        <div className="flex items-start justify-between gap-3">
+                          <button
+                            type="button"
+                            onClick={() => viewSentReceipt(o)}
+                            className="flex-1 min-w-0 text-left active:opacity-70"
+                          >
+                            <p className="text-[14px] font-semibold text-[#111827] truncate">
+                              {o.snapshot.customer.name}
+                            </p>
+                            <p className="text-[12px] font-normal text-[#9ca3af] truncate mt-[3px]">
+                              {o.snapshot.customer.code}
+                              {o.snapshot.customer.area ? ` · ${o.snapshot.customer.area}` : ""}
+                            </p>
+                            <div className="flex flex-wrap items-center gap-[6px] mt-[11px]">
+                              {billsChip(o.snapshot)}
+                              {dispatchChip(o.snapshot.dispatch, o.snapshot.callTarget)}
+                              {remarkChip(o.snapshot.marker)}
+                              <span className="flex-1" />
+                              <span className="text-[11px] text-[#9ca3af] shrink-0">
+                                {formatSavedAt(o.sentAt)}
+                              </span>
+                            </div>
+                          </button>
                           <button
                             type="button"
                             onClick={() => requestDeleteSent(o.id)}
                             aria-label="Delete sent order"
-                            className="text-[#98a2b3] active:text-red-500 -m-1 p-1"
+                            className="shrink-0 -m-1 p-1 active:text-red-500"
+                            style={{ color: "#cbd5e1" }}
                           >
-                            <Trash2 className="w-[16px] h-[16px]" />
+                            <Trash2 className="w-4 h-4" />
                           </button>
-                          <span className="text-[10px] text-[#98a2b3] mt-2">{formatSavedAt(o.sentAt)}</span>
                         </div>
                       </div>
                     );
