@@ -1,10 +1,29 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Search, ChevronDown, Check, Star, Zap } from "lucide-react";
+import { Search, ChevronDown, Check, Star, Zap, ArrowRight } from "lucide-react";
+import { toast } from "sonner";
 import { getTodayIST } from "@/lib/dates";
 import type { PickingQueueRow } from "@/lib/picking/types";
 import type { PickingQueueResult } from "@/lib/picking/queue";
+
+// Real /api/warehouse/pickers response shape — do not invent fields.
+interface Picker {
+  id: number;
+  name: string;
+  avatarInitial: string;
+  status: "available" | "picking";
+  assignedCount: number;
+  pickedCount: number;
+  pendingCount: number;
+  totalKg: number;
+}
+
+interface AssignResponse {
+  assigned?: number;
+  failed?: { orderId: number; error: string }[];
+  error?: string;
+}
 
 // Card shell shadow — lifted verbatim from app/po/po-page.tsx's SOFT_CARD_SHADOW
 // (the /po visual reference this board is styled to match).
@@ -47,9 +66,14 @@ export function PickingBoardMobile(): React.JSX.Element {
   const [activeRoute, setActiveRoute] = useState<string | null>(null); // null = "All routes"
   const [routeSheetOpen, setRouteSheetOpen] = useState(false);
   const [assignedOpen, setAssignedOpen] = useState(false);
-  // Selection STATE ONLY this stage — no assign bar, no picker sheet, no API
-  // call wired to it yet (stage 5-7 per the task brief).
   const [selected, setSelected] = useState<Set<number>>(new Set());
+
+  const [pickers, setPickers] = useState<Picker[]>([]);
+  const [pickersLoading, setPickersLoading] = useState(true);
+  const [pickerSheetOpen, setPickerSheetOpen] = useState(false);
+  // In-flight guard — disables the Assign button + every picker row so a
+  // double-tap can't fire two overlapping POSTs.
+  const [assigning, setAssigning] = useState(false);
 
   const fetchQueue = useCallback(async (): Promise<PickingQueueResult> => {
     const res = await fetch(`/api/picking/queue?date=${selectedDate}`);
@@ -77,6 +101,40 @@ export function PickingBoardMobile(): React.JSX.Element {
     return () => {
       cancelled = true;
     };
+  }, [fetchQueue]);
+
+  // Picker roster for the assign sheet — same endpoint desktop uses, fetched
+  // once (the picker roster doesn't change within a session).
+  useEffect(() => {
+    let cancelled = false;
+    async function loadPickers() {
+      try {
+        const res = await fetch("/api/warehouse/pickers");
+        if (!res.ok) throw new Error(`Request failed (${res.status})`);
+        const json = (await res.json()) as { pickers?: Picker[] };
+        if (!cancelled) setPickers(json.pickers ?? []);
+      } catch (err) {
+        if (!cancelled) toast.error(err instanceof Error ? err.message : "Failed to load pickers");
+      } finally {
+        if (!cancelled) setPickersLoading(false);
+      }
+    }
+    void loadPickers();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Post-assign refetch — never patch rows locally. Mirrors
+  // picking-queue.tsx's refetchAfterAction: does not touch loading/error UI,
+  // just replaces data with a fresh server read.
+  const refetchQueue = useCallback(async () => {
+    try {
+      const json = await fetchQueue();
+      setData(json);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to refresh picking queue");
+    }
   }, [fetchQueue]);
 
   // data.rows arrives already sorted server-side (lib/picking/sort.ts
@@ -138,6 +196,56 @@ export function PickingBoardMobile(): React.JSX.Element {
     [activeType !== "All" ? (activeType === "Upcountry" ? "UPC" : activeType) : null, activeRoute]
       .filter(Boolean)
       .join(" · ") || "All routes";
+
+  // Selected rows narrowed to what's currently VISIBLE under the active
+  // type/route/search filters — a row hidden by a later filter change drops
+  // out of the bar/assign payload rather than silently riding along
+  // uncounted (its checkbox still shows checked if the filter is reverted;
+  // it just doesn't count or get submitted while hidden).
+  const selectedRows = filteredWaiting.filter((r) => selected.has(r.orderId));
+  const selectedLitres = selectedRows.reduce((sum, r) => sum + (r.volumeLitres ?? 0), 0);
+  const pickerSheetSubtitle =
+    selectedRows.length === 1
+      ? `1 bill · ${selectedRows[0].dealerName}`
+      : `${selectedRows.length} bills selected`;
+
+  const handleAssign = useCallback(
+    async (pickerId: number, pickerName: string) => {
+      if (selectedRows.length === 0 || assigning) return;
+      setAssigning(true);
+      try {
+        const res = await fetch("/api/picking/assign", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ orderIds: selectedRows.map((r) => r.orderId), pickerId }),
+        });
+        const json = (await res.json().catch(() => ({}))) as AssignResponse;
+        if (!res.ok) {
+          // Hard error / non-200 — keep selection intact so they can retry,
+          // sheet stays open.
+          toast.error(json.error ?? `Request failed (${res.status})`);
+          return;
+        }
+        const assignedCount = json.assigned ?? 0;
+        const failedList = json.failed ?? [];
+        if (failedList.length > 0) {
+          // Partial failure — the endpoint didn't abort the batch; never
+          // report this as a clean success.
+          toast(`${assignedCount} assigned, ${failedList.length} couldn't be assigned`);
+        } else {
+          toast.success(`${assignedCount} ${assignedCount === 1 ? "bill" : "bills"} → ${pickerName}`);
+        }
+        setSelected(new Set());
+        setPickerSheetOpen(false);
+        await refetchQueue();
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Assign failed");
+      } finally {
+        setAssigning(false);
+      }
+    },
+    [selectedRows, assigning, refetchQueue],
+  );
 
   return (
     <div className="bg-[#f9fafb] min-h-screen">
@@ -403,6 +511,94 @@ export function PickingBoardMobile(): React.JSX.Element {
                 <span className="text-[12px] text-gray-400 shrink-0">{routeCounts.get(route) ?? 0}</span>
               </button>
             ))}
+          </div>
+        </>
+      )}
+
+      {/* Floating assign bar — matches docs/mockups/picking/supervisor-assign-board.html's
+          .assignbar exactly (bg-gray-900 pill, teal Assign CTA), sitting just
+          above the fixed mobile shell (76px, per components/shared/mobile-shell.tsx). */}
+      {selectedRows.length > 0 && (
+        <div
+          className="fixed left-3 right-3 z-30 bg-gray-900 rounded-2xl px-3.5 py-3 flex items-center justify-between gap-2.5 shadow-[0_10px_26px_rgba(0,0,0,0.28)]"
+          style={{ bottom: "calc(76px + env(safe-area-inset-bottom, 0px) + 12px)" }}
+        >
+          <div className="text-[13px] font-semibold text-white min-w-0 truncate">
+            {selectedRows.length} {selectedRows.length === 1 ? "bill" : "bills"}
+            <span className="text-gray-400 font-normal"> · {selectedLitres} L selected</span>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => setSelected(new Set())}
+              disabled={assigning}
+              className="text-[12.5px] font-semibold text-gray-400 px-1 py-2 disabled:opacity-50"
+            >
+              Clear
+            </button>
+            <button
+              type="button"
+              onClick={() => setPickerSheetOpen(true)}
+              disabled={assigning}
+              className="flex items-center gap-1.5 bg-teal-600 active:bg-teal-700 text-white text-[13px] font-bold rounded-[10px] px-[15px] py-[9px] disabled:opacity-60"
+            >
+              Assign
+              <ArrowRight size={14} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Picker sheet — tap a row to fire the assign immediately (no separate
+          confirm step), per the approved mockup. */}
+      {pickerSheetOpen && (
+        <>
+          <div
+            className="fixed inset-0 bg-black/40 z-40"
+            onClick={() => {
+              if (!assigning) setPickerSheetOpen(false);
+            }}
+            aria-hidden="true"
+          />
+          <div
+            className="fixed left-0 right-0 bottom-0 z-50 bg-white rounded-t-[18px] p-5"
+            style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 20px)" }}
+          >
+            <div className="w-9 h-1 rounded-full bg-gray-300 mx-auto mb-3.5" />
+            <h3 className="text-[16px] font-extrabold text-gray-900">Assign to picker</h3>
+            <p className="text-[12.5px] text-gray-400 mt-[3px] mb-3.5">{pickerSheetSubtitle}</p>
+            {pickersLoading ? (
+              <p className="text-[13px] text-gray-400 text-center py-6">Loading pickers&hellip;</p>
+            ) : pickers.length === 0 ? (
+              <p className="text-[13px] text-gray-400 text-center py-6">No active pickers found.</p>
+            ) : (
+              pickers.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => void handleAssign(p.id, p.name)}
+                  disabled={assigning}
+                  className="w-full flex items-center gap-[11px] py-[11px] px-1 border-b border-gray-100 last:border-b-0 disabled:opacity-50"
+                >
+                  <span className="w-9 h-9 rounded-full bg-teal-600 text-white text-[13px] font-bold flex items-center justify-center shrink-0">
+                    {p.avatarInitial}
+                  </span>
+                  <span className="flex-1 min-w-0 text-[14px] font-semibold text-gray-900 text-left truncate">
+                    {p.name}
+                  </span>
+                  <span
+                    className={
+                      "text-[10.5px] font-semibold px-2.5 py-[3px] rounded-full shrink-0 " +
+                      (p.status === "available"
+                        ? "bg-green-50 text-green-700 border border-green-200"
+                        : "bg-gray-100 text-gray-600 border border-gray-200")
+                    }
+                  >
+                    {p.status === "available" ? "Free" : `${p.assignedCount} jobs`}
+                  </span>
+                </button>
+              ))
+            )}
           </div>
         </>
       )}
