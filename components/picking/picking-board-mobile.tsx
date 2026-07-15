@@ -74,6 +74,10 @@ export function PickingBoardMobile(): React.JSX.Element {
   // In-flight guard — disables the Assign button + every picker row so a
   // double-tap can't fire two overlapping POSTs.
   const [assigning, setAssigning] = useState(false);
+  // Per-row Undo in-flight guard — a Set (not a single scalar) so tapping
+  // Undo on one assigned row never disables another row's Undo, and two
+  // rows undone in quick succession can't lose track of each other.
+  const [unassigningIds, setUnassigningIds] = useState<Set<number>>(new Set());
 
   const fetchQueue = useCallback(async (): Promise<PickingQueueResult> => {
     const res = await fetch(`/api/picking/queue?date=${selectedDate}`);
@@ -247,6 +251,45 @@ export function PickingBoardMobile(): React.JSX.Element {
     [selectedRows, assigning, refetchQueue],
   );
 
+  // Undo — mirrors picking-queue.tsx's handleUnassign: single-order payload
+  // (no batch endpoint exists), refetch-after-action rather than patching
+  // rows locally, and the same 409 handling (bill already moved out from
+  // under us — refetch and say so honestly instead of a generic failure).
+  const handleUndo = useCallback(
+    async (row: PickingQueueRow) => {
+      if (unassigningIds.has(row.orderId)) return;
+      setUnassigningIds((prev) => new Set(prev).add(row.orderId));
+      try {
+        const res = await fetch("/api/picking/unassign", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ orderId: row.orderId }),
+        });
+        const json = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+        if (!res.ok) {
+          if (res.status === 409) {
+            toast("Already changed — refreshed.");
+            await refetchQueue();
+          } else {
+            toast.error(json.error ?? `Request failed (${res.status})`);
+          }
+          return;
+        }
+        toast.success(`${row.dealerName} released`);
+        await refetchQueue();
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Undo failed");
+      } finally {
+        setUnassigningIds((prev) => {
+          const next = new Set(prev);
+          next.delete(row.orderId);
+          return next;
+        });
+      }
+    },
+    [unassigningIds, refetchQueue],
+  );
+
   return (
     <div className="bg-[#f9fafb] min-h-screen">
       {/* Teal top bar — matches app/po/po-page.tsx's pinned brand bar */}
@@ -417,7 +460,7 @@ export function PickingBoardMobile(): React.JSX.Element {
             })
           ))}
 
-        {/* Collapsed assigned strip — display only, no Undo wiring this stage */}
+        {/* Collapsed assigned strip — Undo wired below; detail screen (stage 7) still not built */}
         {!loading && !error && data && assignedRows.length > 0 && (
           <div className="mt-1.5 border-t border-gray-200 pt-0.5">
             <button
@@ -435,18 +478,35 @@ export function PickingBoardMobile(): React.JSX.Element {
             </button>
             {assignedOpen && (
               <div>
-                {assignedRows.map((row) => (
-                  <div
-                    key={row.orderId}
-                    className="py-2.5 px-[3px] border-b border-gray-100 last:border-b-0 opacity-70"
-                  >
-                    <div className="text-[12.5px] font-semibold text-gray-700 truncate">{row.dealerName}</div>
-                    <div className="text-[11px] text-gray-400 font-mono">{row.obdNumber}</div>
-                    <div className="text-[11px] text-teal-700 font-semibold">
-                      &rarr; {row.assignedToName ?? "—"}
+                {assignedRows.map((row) => {
+                  const isUndoing = unassigningIds.has(row.orderId);
+                  return (
+                    <div
+                      key={row.orderId}
+                      className="flex items-center justify-between gap-2 py-2.5 px-[3px] border-b border-gray-100 last:border-b-0 opacity-70"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[12.5px] font-semibold text-gray-700 truncate">{row.dealerName}</div>
+                        <div className="text-[11px] text-gray-400 font-mono">{row.obdNumber}</div>
+                        <div className="text-[11px] text-teal-700 font-semibold">
+                          &rarr; {row.assignedToName ?? "—"}
+                        </div>
+                      </div>
+                      {/* Padding + negative margins expand the tap target well past the
+                          visible underlined text — finger-sized, and clearly separated
+                          from the row body above so it can't be hit by accident. */}
+                      <button
+                        type="button"
+                        onClick={() => void handleUndo(row)}
+                        disabled={isUndoing}
+                        aria-label={`Undo assignment for ${row.dealerName}`}
+                        className="shrink-0 -my-2 -mr-1 px-3 py-3 text-[11px] font-semibold text-gray-600 underline decoration-gray-400 underline-offset-2 disabled:opacity-40 disabled:no-underline"
+                      >
+                        {isUndoing ? "…" : "Undo"}
+                      </button>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
