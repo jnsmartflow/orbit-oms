@@ -111,10 +111,41 @@ export function groupProductsByFamily(
   return out;
 }
 
+// Bare 1-2 digit query tokens ("3", "9", "90") — see scoreToken below.
+const SHORT_DIGIT_TOKEN = /^\d{1,2}$/;
+
+// True when the haystack character immediately before `idx` is not part of a
+// word (undefined/space/comma/"("/"-"/etc). Deliberately a non-alphanumeric
+// test, not space-only — searchTokens joins on bare commas ("brush,double,
+// super,2 inch,dulux") with no space, so a space-only test would miss those
+// word starts.
+function isWordStart(haystack: string, idx: number): boolean {
+  if (idx === 0) return true;
+  return !/[a-z0-9]/i.test(haystack[idx - 1]);
+}
+
 // Score a single token against a haystack string. Returns 0 when the
 // token isn't found anywhere. Treats positions after a space (and the
 // haystack start) as word boundaries.
 function scoreToken(token: string, haystack: string): number {
+  if (SHORT_DIGIT_TOKEN.test(token)) {
+    // Bare 1-2 digit tokens must only score at a word start — a mid-word hit
+    // (e.g. "3" inside the SAP material code "6472113", which searchTokens
+    // carries per v2-catalog-seed-from-preview.ts step 7.8) must NOT count,
+    // or a query like "brush 3" leaks unrelated rows via their baked-in
+    // codes. indexOf() only finds the FIRST occurrence, which can be
+    // mid-word even when a later, legitimate word-start occurrence exists
+    // elsewhere in the haystack — so every occurrence is scanned and the
+    // best-scoring one wins.
+    let best = 0;
+    let idx  = haystack.indexOf(token);
+    while (idx !== -1) {
+      if (idx === 0) return SCORE_PREFIX_OF_HAYSTACK;
+      if (isWordStart(haystack, idx) && SCORE_WORD_BOUNDARY > best) best = SCORE_WORD_BOUNDARY;
+      idx = haystack.indexOf(token, idx + 1);
+    }
+    return best;
+  }
   const idx = haystack.indexOf(token);
   if (idx < 0) return 0;
   if (idx === 0)                  return SCORE_PREFIX_OF_HAYSTACK;
