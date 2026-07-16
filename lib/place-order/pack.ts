@@ -132,12 +132,34 @@ const PACK_STEP_MAP: Record<string, number> = {
 //
 // UNIVERSAL STAINER: depot cartons are 50ML→20, 100ML→20, 200ML→10 (the
 // global stainer/wood-stain values are 12/24/12). Every OTHER product stays
-// on the global maps — incl. the other 3 stainers (GVA/PU, Machine, Acotone,
-// all 1L) and the 100/200ML sharers (GLOSS, WOOD STAIN, METALLIC, PEARL GLO,
-// SATIN STAY BRIGHT, VT METALLICS). Universal Stainer has product=null in the
-// catalog, so its key is its subProduct "UNIVERSAL STAINER".
+// on the global maps — incl. the 100/200ML sharers (GLOSS, WOOD STAIN,
+// METALLIC, PEARL GLO, SATIN STAY BRIGHT, VT METALLICS). Universal Stainer
+// has product=null in the catalog, so its key is its subProduct
+// "UNIVERSAL STAINER".
+//
+// MACHINE TINTER / ACOTONE / GVA (2026-07-16): depot sells these 1L STAINER
+// tinters LOOSE, not by the carton — step 1, no box label. An override value
+// of exactly 1 is the signal packContainerLabel uses to render no suffix
+// (see below) — distinct from a pack simply being absent from this table
+// (which falls through to the global PACK_STEP_MAP / PACK_CONTAINER_MAP).
+//
+// AQUATECH CRACKFILLER 5MM/10MM/20MM (2026-07-16): real depot cartons per
+// product, keyed by the RAW pack label (packCode+unit — these fold into the
+// shared 1L/500ML bucket columns via the global PACK_TO_BUCKET, so the
+// override must key on what packStepForPack actually receives, not the
+// bucket). 5MM: 1KG→6, 400GM→12. 10MM: 1KG→4, 500GM→12 (piecesPerCarton=12
+// in mo_sku_lookup_v2 — previously undriven since "500GM" isn't a
+// PACK_STEP_MAP key; this override makes the step agree with the carton).
+// 20MM: 1KG→4. Scoped to these three products only — no other KG/GM pack
+// gets an override in this cut.
 const PRODUCT_CARTON_OVERRIDES: Record<string, Record<string, number>> = {
   "UNIVERSAL STAINER": { "50ML": 20, "100ML": 20, "200ML": 10 },
+  "MACHINE TINTER":    { "1L": 1 },
+  "ACOTONE":           { "1L": 1 },
+  "GVA":               { "1L": 1 },
+  "CRACKFILLER 5MM":   { "1KG": 6, "400GM": 12 },
+  "CRACKFILLER 10MM":  { "1KG": 4, "500GM": 12 },
+  "CRACKFILLER 20MM":  { "1KG": 4 },
 };
 
 // Shared override lookup for packStep + packContainerLabel. Returns the
@@ -201,6 +223,10 @@ const PACK_CONTAINER_MAP: Record<string, string> = {
 
 export function packContainerLabel(packLabel: string, productKey?: string | null): string | null {
   const override = cartonOverride(productKey, packLabel);
+  // An override of exactly 1 (e.g. Machine Tinter/Acotone/GVA 1L, sold
+  // loose) means no box — render no suffix rather than the nonsensical
+  // "box 1". Every other override value is a real per-box count.
+  if (override === 1) return null;
   if (override != null) return `box ${override}`;
   return PACK_CONTAINER_MAP[packLabel] ?? null;
 }

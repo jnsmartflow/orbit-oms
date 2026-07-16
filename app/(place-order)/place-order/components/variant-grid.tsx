@@ -65,11 +65,6 @@ export default function VariantGrid({
   // (subset of STANDARD_COLUMNS). The grid no longer renders one
   // column per distinct packCode — operators see "1 L · 4 L · 10 L"
   // instead of "1L · 900ML · 3.6L · 4L · 9L · 10L".
-  // Tab identity for product-scoped carton overrides (e.g. UNIVERSAL STAINER
-  // 50/100/200ML → box 20/20/10). The grid renders one sub-product per tab, so
-  // every row shares this key; the column header (shared across rows) uses it.
-  const activeProductKey = products[0]?.product ?? products[0]?.subProduct ?? null;
-
   // Columns resolve PER-ROW-FAMILY (not a single tab-family): a multi-family tab
   // like "Texture & Putty" (PUTTY + TEXTURE) must show the UNION of each family's
   // KG overrides (PUTTY 1/5/20 KG + TEXTURE 25/30 KG). Each row's packs are
@@ -81,8 +76,11 @@ export default function VariantGrid({
   );
 
   interface CellInfo {
-    selectedPack: RawPack | null;   // null = no SKU in this row for this bucket
-    hintLabel:    string | null;    // "900ML" hint when real pack != bucket
+    selectedPack:   RawPack | null;   // null = no SKU in this row for this bucket
+    hintLabel:      string | null;    // "900ML" hint when real pack != bucket
+    containerLabel: string | null;    // this row's own box/drum/bag/none label,
+                                       // keyed by its RAW pack (not the bucket) —
+                                       // used to check column-wide agreement below.
   }
 
   // For each row × bucket, pick the canonical SKU:
@@ -91,20 +89,43 @@ export default function VariantGrid({
   //   - first match otherwise
   // Hint label appears below the cell when canonical differs from bucket.
   const cellMatrix = useMemo<CellInfo[][]>(() => {
-    return products.map((product) =>
-      columns.map((bucket) => {
+    return products.map((product) => {
+      const productKey = product.product ?? product.subProduct;
+      return columns.map((bucket) => {
         const matching = product.packs.filter((p) => packToBucket(p, product.family) === bucket);
-        if (matching.length === 0) return { selectedPack: null, hintLabel: null };
+        if (matching.length === 0) return { selectedPack: null, hintLabel: null, containerLabel: null };
         const canonical =
           matching.find((p) => formatPack(p.packCode, p.unit) === bucket)
           ?? matching[0];
         return {
           selectedPack: canonical,
           hintLabel: packNeedsHint(canonical, bucket) ? packHintLabel(canonical) : null,
+          containerLabel: packContainerLabel(formatPack(canonical.packCode, canonical.unit), productKey),
         };
-      }),
-    );
+      });
+    });
   }, [products, columns]);
+
+  // Desktop column header: the container suffix ("box 6", "drum"…) is only
+  // trustworthy when EVERY row present in this column resolves to the SAME
+  // label from its OWN raw pack. A bucket column can hold products whose
+  // real cartons differ (e.g. AQUATECH Crackfiller 5MM/10MM/20MM all fold
+  // into the shared 1L/500ML columns via PACK_TO_BUCKET but carry different
+  // per-product carton overrides) — showing one product's carton over
+  // every row would be a lie. Disagreement (or any row resolving to null)
+  // → no suffix, bucket label only.
+  const headerContainerLabels = useMemo<(string | null)[]>(() => {
+    return columns.map((_, colIdx) => {
+      let label: string | null | undefined;
+      for (let r = 0; r < cellMatrix.length; r++) {
+        const cell = cellMatrix[r][colIdx];
+        if (!cell.selectedPack) continue;   // row has no SKU in this column — doesn't count
+        if (label === undefined) label = cell.containerLabel;
+        else if (label !== cell.containerLabel) return null;
+      }
+      return label ?? null;
+    });
+  }, [columns, cellMatrix]);
 
   // 2D ref grid populated via ref callbacks below.
   const cellRefs = useRef<Array<Array<VariantCellHandle | null>>>([]);
@@ -229,8 +250,8 @@ export default function VariantGrid({
           <th className="text-left px-3 py-2 text-[10px] font-medium uppercase tracking-wider text-gray-500">
             Base · Colour
           </th>
-          {columns.map((bucket) => {
-            const container = packContainerLabel(bucket, activeProductKey);
+          {columns.map((bucket, colIdx) => {
+            const container = headerContainerLabels[colIdx];
             return (
               <th key={bucket} className="text-center px-1 py-2">
                 <div className="text-[10.5px] font-semibold text-gray-700">
@@ -320,8 +341,12 @@ export default function VariantGrid({
                       // Real pack differs from bucket label — show the
                       // raw SAP unit ("900ML", "3.6L", "5KG") under the
                       // cell as low-emphasis hint text. Non-interactive.
+                      // Carton size is appended here (not the column header)
+                      // when the column holds products with different real
+                      // cartons — this row's own box count travels with its
+                      // own hint. Omitted at step 1 (loose/drum/bag).
                       <div className="text-[9px] text-gray-400 mt-0.5 leading-none font-mono">
-                        {cell.hintLabel}
+                        {cell.hintLabel}{boxSize > 1 && <> · box {boxSize}</>}
                       </div>
                     )}
                   </td>
