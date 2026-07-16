@@ -62,20 +62,20 @@ export async function GET(
       unitQty: true,
       enrichedLineItem: {
         select: {
-          sku: { select: { skuName: true, packSize: true, containerType: true } },
+          sku: { select: { skuName: true, packSize: true } },
         },
       },
     },
     orderBy: { lineId: "asc" },
   });
 
+  // `pack` is the code ONLY ("1LT", "500ML") — no container word. The picker
+  // matches pack size against the shelf/box, not the container type.
   const lines = rawLines.map((l) => ({
     id: l.id,
     name: l.enrichedLineItem?.sku?.skuName ?? l.skuDescriptionRaw ?? null,
     sku: l.skuCodeRaw,
-    pack: l.enrichedLineItem?.sku
-      ? `${l.enrichedLineItem.sku.packSize} ${l.enrichedLineItem.sku.containerType}`.trim()
-      : null,
+    pack: l.enrichedLineItem?.sku?.packSize ?? null,
     qty: l.unitQty,
   }));
 

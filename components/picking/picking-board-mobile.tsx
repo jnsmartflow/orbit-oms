@@ -38,6 +38,11 @@ interface LineItem {
 // (the /po visual reference this board is styled to match).
 const SOFT_CARD_SHADOW = "0 1px 2px rgba(16,24,40,0.04), 0 3px 12px rgba(16,24,40,0.05)";
 
+// Chip identity for lines with a null pack — kept out of the "ALL" sentinel
+// so a picker can isolate exactly the lines missing pack data (a real, live
+// risk — see SKU 5961032 on OBD 9108267692).
+const NO_PACK_KEY = "__no_pack__";
+
 type TypeFilter = "All" | "Local" | "Upcountry";
 
 // Square checkbox — matches po-page.tsx's multi-select row checkbox exactly
@@ -96,6 +101,11 @@ export function PickingBoardMobile(): React.JSX.Element {
   const [lineItems, setLineItems] = useState<LineItem[] | null>(null);
   const [lineItemsLoading, setLineItemsLoading] = useState(false);
   const [lineItemsError, setLineItemsError] = useState<string | null>(null);
+  // Detail screen's own search + pack filter — same collapsible pattern as
+  // the board's search, scoped to this screen only.
+  const [detailSearching, setDetailSearching] = useState(false);
+  const [detailQuery, setDetailQuery] = useState("");
+  const [activePackFilter, setActivePackFilter] = useState<string>("ALL");
 
   // Which rows the OPEN picker sheet will act on — bulk (floating bar, from
   // the current selection) or single (detail screen's own CTA). Decoupled
@@ -274,11 +284,46 @@ export function PickingBoardMobile(): React.JSX.Element {
   function openDetail(orderId: number): void {
     setDetailOrderId(orderId);
     setDetailOpen(true);
+    // Fresh screen, fresh filters — a stale search/pack filter from a
+    // previously-viewed bill must never carry into this one.
+    setDetailSearching(false);
+    setDetailQuery("");
+    setActivePackFilter("ALL");
   }
 
   function closeDetail(): void {
     setDetailOpen(false);
   }
+
+  // Distinct packs present on this bill, for the pack-filter chip row.
+  // Sorted alphabetically with "No pack" trailing last (an exception
+  // category, not a real pack value).
+  const distinctPackKeys = useMemo(() => {
+    if (!lineItems) return [];
+    const set = new Set<string>();
+    for (const li of lineItems) set.add(li.pack ?? NO_PACK_KEY);
+    const keys = Array.from(set);
+    const real = keys.filter((k) => k !== NO_PACK_KEY).sort((a, b) => a.localeCompare(b));
+    return keys.includes(NO_PACK_KEY) ? [...real, NO_PACK_KEY] : real;
+  }, [lineItems]);
+
+  const detailQueryNorm = detailQuery.trim().toLowerCase();
+  const filteredLineItems = useMemo(() => {
+    if (!lineItems) return [];
+    return lineItems.filter((li) => {
+      if (activePackFilter !== "ALL") {
+        const key = li.pack ?? NO_PACK_KEY;
+        if (key !== activePackFilter) return false;
+      }
+      if (
+        detailQueryNorm &&
+        !(li.sku.toLowerCase().includes(detailQueryNorm) || (li.name ?? "").toLowerCase().includes(detailQueryNorm))
+      ) {
+        return false;
+      }
+      return true;
+    });
+  }, [lineItems, activePackFilter, detailQueryNorm]);
 
   // Opens the shared picker sheet targeted at a single row — the detail
   // screen's own "Assign to picker" CTA, independent of the bulk selection.
@@ -657,8 +702,9 @@ export function PickingBoardMobile(): React.JSX.Element {
       )}
 
       {/* Detail screen — always mounted, slides in via translate-x so the
-          board underneath (filters + scroll) is never torn down. Matches
-          the approved mockup's Screen 2. */}
+          board underneath (filters + scroll) is never torn down. Redesigned
+          for the PICKER (not the supervisor): pack is the shelf, SKU is the
+          box, qty is the count — each gets its own fixed column below. */}
       <div
         className={
           "fixed inset-0 z-[35] bg-[#f9fafb] flex flex-col transition-transform duration-200 ease-out " +
@@ -677,51 +723,103 @@ export function PickingBoardMobile(): React.JSX.Element {
           >
             <ChevronLeft size={17} />
           </button>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <div className="text-[16px] font-extrabold text-white truncate">
               {detailRow?.dealerName ?? "—"}
             </div>
             <div className="text-[12px] text-white/75 truncate">
               {detailRow
-                ? `OBD ${detailRow.obdNumber} · ${detailRow.area ?? "Unmatched"}${
+                ? `${detailRow.obdNumber} · ${detailRow.area ?? "Unmatched"}${
                     detailRow.windowTime !== null ? ` · ${detailRow.windowTime}` : ""
                   }`
                 : "—"}
             </div>
           </div>
+          <button
+            type="button"
+            onClick={() => setDetailSearching((v) => !v)}
+            aria-label="Search line items"
+            className="w-8 h-8 rounded-[9px] flex items-center justify-center text-white active:bg-white/15 shrink-0"
+          >
+            <Search size={17} />
+          </button>
         </div>
 
-        <div className="bg-white border-b border-gray-200 flex px-2.5 py-3.5 shrink-0">
-          <div className="flex-1 text-center border-r border-gray-200 px-1">
-            <div className="text-[16px] font-extrabold text-gray-900">
-              {detailRow?.volumeLitres ?? "—"}
+        {detailSearching ? (
+          <div className="bg-white border-b border-gray-200 px-3.5 pt-2.5 pb-2.5 flex items-center gap-2 shrink-0">
+            <div className="flex-1 flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-[10px] px-3 py-2.5">
+              <Search size={16} className="text-gray-400 shrink-0" />
+              <input
+                autoFocus
+                type="text"
+                value={detailQuery}
+                onChange={(e) => setDetailQuery(e.target.value)}
+                placeholder="Search SKU or product…"
+                className="flex-1 bg-transparent border-none outline-none text-[15px] text-gray-900 placeholder:text-gray-400"
+              />
             </div>
-            <div className="text-[10px] text-gray-400 uppercase tracking-wide font-semibold mt-0.5">
-              Volume (LT)
-            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setDetailSearching(false);
+                setDetailQuery("");
+              }}
+              className="text-[13px] font-semibold text-teal-700 px-1 shrink-0"
+            >
+              Cancel
+            </button>
           </div>
-          <div className="flex-1 text-center border-r border-gray-200 px-1">
-            <div className="text-[11px] font-bold text-gray-900 leading-snug break-words">
-              {detailRow?.articleTag ?? "—"}
+        ) : (
+          <>
+            {/* Stat strip — articleTag is the hero; volume is small and
+                supporting, right-aligned. Weight/KG and any line count are
+                deliberately gone — a picker doesn't need them here. */}
+            <div className="bg-white border-b border-gray-200 px-3.5 py-3 flex items-end justify-between gap-3 shrink-0">
+              <div className="min-w-0 text-[16px] font-extrabold text-gray-900 leading-snug">
+                {detailRow?.articleTag ?? "—"}
+              </div>
+              <div className="shrink-0 text-[13px] font-semibold text-gray-500">
+                {detailRow?.volumeLitres ?? "—"} L
+              </div>
             </div>
-            <div className="text-[10px] text-gray-400 uppercase tracking-wide font-semibold mt-0.5">
-              Article
-            </div>
-          </div>
-          <div className="flex-1 text-center px-1">
-            <div className="text-[16px] font-extrabold text-gray-900">
-              {detailRow?.weightKg ?? "—"}
-            </div>
-            <div className="text-[10px] text-gray-400 uppercase tracking-wide font-semibold mt-0.5">
-              Weight (kg)
-            </div>
-          </div>
-        </div>
+
+            {/* Pack filter — only when the bill actually has more than one
+                pack to tell apart; a single-pack bill shows no row at all. */}
+            {distinctPackKeys.length >= 2 && (
+              <div className="bg-white border-b border-gray-200 px-3.5 py-2.5 flex items-center gap-1.5 overflow-x-auto shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setActivePackFilter("ALL")}
+                  className={
+                    "text-[12.5px] font-medium px-3 py-1.5 rounded-full border whitespace-nowrap shrink-0 " +
+                    (activePackFilter === "ALL"
+                      ? "bg-gray-900 border-gray-900 text-white font-semibold"
+                      : "bg-white border-gray-200 text-gray-700")
+                  }
+                >
+                  All
+                </button>
+                {distinctPackKeys.map((key) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setActivePackFilter(key)}
+                    className={
+                      "text-[12.5px] font-medium px-3 py-1.5 rounded-full border whitespace-nowrap shrink-0 " +
+                      (activePackFilter === key
+                        ? "bg-gray-900 border-gray-900 text-white font-semibold"
+                        : "bg-white border-gray-200 text-gray-700")
+                    }
+                  >
+                    {key === NO_PACK_KEY ? "No pack" : key}
+                  </button>
+                ))}
+              </div>
+            )}
+          </>
+        )}
 
         <div className="flex-1 overflow-y-auto px-3.5 pt-3 pb-24">
-          <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wide mb-2">
-            Line items
-          </div>
           {lineItemsLoading && (
             <p className="text-[13px] text-gray-400 text-center py-10">Loading line items&hellip;</p>
           )}
@@ -733,22 +831,39 @@ export function PickingBoardMobile(): React.JSX.Element {
           {!lineItemsLoading && !lineItemsError && lineItems !== null && (
             lineItems.length === 0 ? (
               <p className="text-[13px] text-gray-400 text-center py-10">No line items found for this bill.</p>
+            ) : filteredLineItems.length === 0 ? (
+              <p className="text-[13px] text-gray-400 text-center py-10">No lines match.</p>
             ) : (
-              lineItems.map((li) => (
+              // Flat — filtered, never restructured or grouped by pack.
+              filteredLineItems.map((li) => (
                 <div
                   key={li.id}
-                  className="flex items-center justify-between gap-2.5 bg-white rounded-xl p-3 mb-2"
+                  className="flex bg-white rounded-[14px] overflow-hidden mb-2"
                   style={{ boxShadow: SOFT_CARD_SHADOW }}
                 >
-                  <div className="min-w-0">
-                    <div className="text-[13.5px] font-semibold text-gray-900 truncate">
-                      {li.name ?? "—"}
-                    </div>
-                    <div className="text-[10.5px] text-gray-400 font-mono mt-0.5">{li.sku}</div>
+                  {/* PACK TILE — fixed 56px, full card height (flex stretch),
+                      teal when known, muted em-dash when missing (never an
+                      error/chip style). This column is what makes packs
+                      align down the left edge — must not flex. */}
+                  <div className="w-14 shrink-0 bg-[#f8fafa] border-r border-gray-200 flex items-center justify-center px-1 py-2.5">
+                    <span
+                      className={
+                        "text-[13px] font-bold text-center " + (li.pack !== null ? "text-teal-700" : "text-gray-400")
+                      }
+                    >
+                      {li.pack ?? "—"}
+                    </span>
                   </div>
-                  <div className="text-right shrink-0">
-                    <div className="text-[11px] text-gray-400">{li.pack ?? "—"}</div>
-                    <div className="text-[14px] font-bold text-gray-900 font-mono">&times;{li.qty}</div>
+                  {/* BODY — SKU is the loudest thing on the card; product name
+                      is muted confirmation underneath. */}
+                  <div className="flex-1 min-w-0 px-3 py-2.5">
+                    <div className="font-mono text-[17px] font-bold text-gray-900 truncate">{li.sku}</div>
+                    <div className="text-[12px] text-gray-500 truncate mt-0.5">{li.name ?? "—"}</div>
+                  </div>
+                  {/* QTY — fixed, plain, no "x" prefix. Space to the right of
+                      this column is reserved for a future tick-off checkbox. */}
+                  <div className="shrink-0 flex items-center justify-center px-3.5">
+                    <span className="text-[26px] font-extrabold text-gray-900">{li.qty}</span>
                   </div>
                 </div>
               ))
