@@ -526,13 +526,14 @@ export function PickingBoardMobile(): React.JSX.Element {
   return (
     <div className="bg-[#f9fafb] min-h-screen">
       {/* Teal top bar — matches app/po/po-page.tsx's pinned brand bar. Two
-          rows: search icon above (title slot — none needed, the tabs below
-          already communicate the screen), underline tabs below. */}
+          rows: title + search above, underline tabs below. Tight rhythm —
+          no dead spacer between them. */}
       <div
-        className="bg-teal-600 px-4 pb-1.5 sticky top-0 z-20"
+        className="bg-teal-600 px-4 pb-2 sticky top-0 z-20"
         style={{ paddingTop: "max(env(safe-area-inset-top, 0px), 12px)" }}
       >
-        <div className="flex items-center justify-end h-[34px] mb-1">
+        <div className="flex items-center justify-between gap-2.5 pb-2.5">
+          <h1 className="text-[19px] font-extrabold text-white tracking-tight">Picking</h1>
           {activeTab === "assign" && (
             <button
               type="button"
@@ -796,8 +797,12 @@ export function PickingBoardMobile(): React.JSX.Element {
                         <div className="text-[12px] font-semibold text-gray-700 truncate">
                           {row.assignedToName ?? "—"}
                         </div>
-                        {assignTime !== null && (
-                          <div className="text-[10.5px] text-gray-400">{assignTime}</div>
+                        {(row.assignedByName !== null || assignTime !== null) && (
+                          <div className="text-[10.5px] text-gray-400 truncate">
+                            {row.assignedByName !== null
+                              ? `by ${row.assignedByName}${assignTime !== null ? ` · ${assignTime}` : ""}`
+                              : assignTime}
+                          </div>
                         )}
                       </div>
                     </div>

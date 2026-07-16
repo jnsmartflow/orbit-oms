@@ -128,6 +128,7 @@ export async function getPickingQueue(dateStr?: string): Promise<PickingQueueRes
         select: {
           assignedAt: true,
           picker: { select: { name: true } },
+          assignedBy: { select: { name: true } },
         },
       },
     },
@@ -170,6 +171,7 @@ export async function getPickingQueue(dateStr?: string): Promise<PickingQueueRes
       isAssigned: order.workflowStage === PICK_ASSIGNED,
       assignedAt: order.pickAssignment?.assignedAt ?? null,
       assignedToName: order.pickAssignment?.picker?.name ?? null,
+      assignedByName: order.pickAssignment?.assignedBy?.name ?? null,
     };
   });
 

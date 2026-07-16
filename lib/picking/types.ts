@@ -21,6 +21,7 @@ export interface PickingQueueRow {
   isAssigned: boolean;
   assignedAt: Date | string | null;
   assignedToName: string | null;
+  assignedByName: string | null;
 }
 
 export type SortRule = {
