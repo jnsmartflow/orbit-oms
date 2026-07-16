@@ -45,6 +45,27 @@ const NO_PACK_KEY = "__no_pack__";
 
 type TypeFilter = "All" | "Local" | "Upcountry";
 
+// Fixed locale — same rationale as picking-queue.tsx (the desktop sibling):
+// identical thousands-separator output depot PC vs Vercel, regardless of
+// device locale settings.
+const NUMBER_LOCALE = "en-US";
+
+// Litres for display. Rounds to 1 decimal FIRST — that's the precision floor
+// that kills genuine floating-point noise (e.g. summed volumeLitres landing
+// on 12131.199999999999 instead of 12131.2) without discarding a real
+// half-litre difference from small packs (200/100/50ML). Then drops the
+// decimal entirely when that rounds to a whole litre (the common case) —
+// otherwise keeps exactly 1 decimal. Always thousands-separated. Never
+// renders a raw float. Display layer only — the underlying number is untouched.
+function formatLitres(n: number): string {
+  const rounded = Math.round(n * 10) / 10;
+  const isWhole = Number.isInteger(rounded);
+  return rounded.toLocaleString(NUMBER_LOCALE, {
+    minimumFractionDigits: isWhole ? 0 : 1,
+    maximumFractionDigits: 1,
+  });
+}
+
 // First letters of the first two words, uppercased — same algorithm as
 // po-page.tsx's initials() (desktop recents avatar), reused here for the
 // Check tab's picker avatar.
@@ -84,9 +105,12 @@ function formatAssignedTime(assignedAt: Date | string | null): string | null {
   return d.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "numeric", minute: "2-digit", hour12: true });
 }
 
-// Teal top bar tab — Assign / Check. Fills solid white when active (per the
-// mockup's "underline/fill for the active tab"); count badge always visible
-// on both, active or not.
+// Teal top bar tab — Assign / Check. Underline style (2026-07-16 restyle):
+// label + count are both PLAIN TEXT, no pill/badge container of any kind, so
+// a count's digit count changing (72 -> 8 -> 140) never resizes a shape —
+// only the text itself (and, following it, the underline) shifts. Count uses
+// tabular-nums so same-digit-count changes (e.g. 71 -> 72) don't jitter.
+// Tap target: min-h-[40px] regardless of the lighter visual weight.
 function TopBarTab({
   label, count, active, onClick,
 }: {
@@ -96,20 +120,26 @@ function TopBarTab({
     <button
       type="button"
       onClick={onClick}
-      className={
-        "flex items-center gap-[7px] px-3 py-[7px] rounded-full text-[14px] font-extrabold whitespace-nowrap " +
-        (active ? "bg-white text-teal-700" : "text-white/85")
-      }
+      className="relative flex items-baseline gap-[7px] min-h-[40px] py-2"
     >
-      {label}
+      <span className={"text-[15.5px] whitespace-nowrap " + (active ? "text-white font-bold" : "text-white/60 font-medium")}>
+        {label}
+      </span>
       <span
         className={
-          "text-[11px] font-bold rounded-full px-2 py-[2px] " +
-          (active ? "bg-teal-50 text-teal-700" : "bg-white/20 text-white")
+          "text-[13px] font-semibold tabular-nums whitespace-nowrap " +
+          (active ? "text-white" : "text-white/45")
         }
       >
         {count}
       </span>
+      <span
+        aria-hidden="true"
+        className={
+          "absolute left-0 right-0 -bottom-px h-[3px] rounded-full bg-white " +
+          (active ? "opacity-100" : "opacity-0")
+        }
+      />
     </button>
   );
 }
@@ -495,12 +525,26 @@ export function PickingBoardMobile(): React.JSX.Element {
 
   return (
     <div className="bg-[#f9fafb] min-h-screen">
-      {/* Teal top bar — matches app/po/po-page.tsx's pinned brand bar */}
+      {/* Teal top bar — matches app/po/po-page.tsx's pinned brand bar. Two
+          rows: search icon above (title slot — none needed, the tabs below
+          already communicate the screen), underline tabs below. */}
       <div
-        className="bg-teal-600 px-4 pb-3 flex items-center justify-between gap-2.5 sticky top-0 z-20"
+        className="bg-teal-600 px-4 pb-1.5 sticky top-0 z-20"
         style={{ paddingTop: "max(env(safe-area-inset-top, 0px), 12px)" }}
       >
-        <div className="flex items-center gap-1.5 min-w-0">
+        <div className="flex items-center justify-end h-[34px] mb-1">
+          {activeTab === "assign" && (
+            <button
+              type="button"
+              onClick={() => setSearching((v) => !v)}
+              aria-label="Search"
+              className="w-[34px] h-[34px] rounded-[10px] flex items-center justify-center text-white active:bg-white/15 shrink-0"
+            >
+              <Search size={19} />
+            </button>
+          )}
+        </div>
+        <div className="flex items-center gap-6">
           <TopBarTab
             label="Assign"
             count={waitingRows.length}
@@ -514,16 +558,6 @@ export function PickingBoardMobile(): React.JSX.Element {
             onClick={() => setActiveTab("check")}
           />
         </div>
-        {activeTab === "assign" && (
-          <button
-            type="button"
-            onClick={() => setSearching((v) => !v)}
-            aria-label="Search"
-            className="w-[34px] h-[34px] rounded-[10px] flex items-center justify-center text-white active:bg-white/15 shrink-0"
-          >
-            <Search size={19} />
-          </button>
-        )}
       </div>
 
       {/* Filter row + lane strip (swaps for search when active) — Assign tab only */}
@@ -591,7 +625,7 @@ export function PickingBoardMobile(): React.JSX.Element {
             <div className="mx-[-16px] bg-teal-50 border-t border-teal-200 px-4 py-2 text-[12px] font-medium text-teal-700 flex items-center gap-1">
               <b className="font-bold">{laneLabel}</b>
               <span>
-                &nbsp;·&nbsp;{filteredWaiting.length} waiting&nbsp;·&nbsp;{totalLitres} L ready to load
+                &nbsp;·&nbsp;{filteredWaiting.length} waiting&nbsp;·&nbsp;{formatLitres(totalLitres)} L ready to load
               </span>
             </div>
           </>
@@ -924,7 +958,7 @@ export function PickingBoardMobile(): React.JSX.Element {
                 {detailRow?.articleTag ?? "—"}
               </div>
               <div className="shrink-0 text-[13px] font-semibold text-gray-500">
-                {detailRow?.volumeLitres ?? "—"} L
+                {detailRow?.volumeLitres != null ? formatLitres(detailRow.volumeLitres) : "—"} L
               </div>
             </div>
 
@@ -1042,7 +1076,7 @@ export function PickingBoardMobile(): React.JSX.Element {
         >
           <div className="text-[13px] font-semibold text-white min-w-0 truncate">
             {selectedRows.length} {selectedRows.length === 1 ? "bill" : "bills"}
-            <span className="text-gray-400 font-normal"> · {selectedLitres} L selected</span>
+            <span className="text-gray-400 font-normal"> · {formatLitres(selectedLitres)} L selected</span>
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <button
