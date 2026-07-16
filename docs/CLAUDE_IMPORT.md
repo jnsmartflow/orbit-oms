@@ -1,5 +1,5 @@
 # CLAUDE_IMPORT.md — OrbitOMS Import Pipeline
-# v1.3 · Schema v27.9 · July 2026 · Lives in: orbit-oms/docs/
+# v1.4 · Schema v27.9 · July 2026 · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
 Covers the SAP/OBD import pipeline end-to-end: manual SAP upload, Auto-Import (currently paused), the shared upsert utility that both paths funnel through, schema, filters, and downstream consumers.
@@ -519,6 +519,58 @@ changedFields.push("arrivalSlotId");
 ```
 Sitting above the tint guard is deliberate: `arrivalSlotId` recalculation applies to **all** order types (consistent with the two-field distinction above), while the guard below it correctly continues to gate only `slotId`/`originalSlotId`/`dispatchSlot`. **Effect:** new orders self-correct — SAP import drops them in with a rough Morning slot, the next auto-import correction pass (~10 min during business hours) fixes the time and now also moves the order to its correct arrival-slot tab, with no manual action and no backfill. **Known limitation (accepted):** between SAP import and the next correction pass, the order still shows under Morning — Smart Flow confirmed this window is acceptable.
 
+### 12.1 `obdEmailDate` time-strip bug in the same correction pass — fixed (commit `3c0cd366`, 2026-07-11) [LIVE]
+
+A **separate** bug in the same `handleAutoImportPatchHeaders` function, found chasing an order
+(OBD `9108192224`, SO `1046195285`) that stayed stuck under Morning. The arrival-slot fix above
+(§12, `0a9b2a37`) was working correctly — the real problem was one field over: the correction pass
+computed the merged, correct date+time (`newDT`) and wrote it correctly to `orderDateTime`, but then
+wrote `obdEmailDate` from the **raw, date-only `incomingDate`** instead of the same `newDT` — a copy
+mistake, not a lost value:
+
+```diff
+             updateData.orderDateTime = newDT;
+-          updateData.obdEmailDate  = incomingDate;
++          updateData.obdEmailDate  = newDT;
+             changedFields.push("orderDateTime", "obdEmailDate");
+```
+
+Every header-patched order was losing its time on `obdEmailDate` and reverting to midnight. This
+was silently degrading two other consumers that already assumed `obdEmailDate` carried a real
+time — repaired for free by this one-line fix:
+- **`lib/dispatch/dispatch-engine.ts`** reads `obdEmailDate` as its `punchDateTime` for a
+  same-day/different-day "effective clock" pick — was getting a fake midnight for every
+  header-patched order, now correct.
+- **Support order display** (`support-orders-table.tsx`, `support-hold-table.tsx`) showed `00:00`
+  for previously-patched orders — now shows real time.
+
+**No backfill run.** Already-wrong orders self-correct on their next auto-import batch (same
+self-healing pattern as §12 above); the rest age out. Not worth a one-time re-stamp.
+
+### 12.2 The intended new arrival-slot rule — DESIGNED, **NOT BUILT** [NEXT]
+
+⚠ The arrival-slot fork itself (`applyMailOrderEnrichment`, ~route.ts:299-308) is **still the OLD
+rule** — it compares `mo_orders.receivedAt` vs `mo_orders.punchedAt`. §12.1 only made
+`obdEmailDate` trustworthy enough for a *future* rule to safely use it; the new rule was **not**
+applied in that commit. Do not treat this as done.
+
+**The intended rule (to build next):** compare `orders.orderDateTime` vs `orders.obdEmailDate` by
+IST calendar day —
+
+| Situation | Timestamp to use for arrival slot |
+|---|---|
+| same IST day | `orderDateTime` (real mail time) |
+| different IST day (order blocked, released later) | `obdEmailDate` (release/finalize time) |
+
+Since the OBD always follows the mail, earliest = `orderDateTime`, latest = `obdEmailDate` — no
+min/max step needed. No midnight fallback needed either, now that §12.1 guarantees `obdEmailDate`
+carries a real time. Single edit site: the fork in `applyMailOrderEnrichment` (it runs last and wins
+for mail-matched orders); non-mail orders already have `orderDateTime == obdEmailDate`, so the
+same-day branch gives them today's behaviour unchanged. Reuse the
+`toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" })` idiom for the day comparison — no new
+date library. Confirm OBD `9108192224` re-buckets correctly once a fresh order with a real time
+flows through, as the acceptance check.
+
 ⚠ **FLAG FOR CORE PASS (step 6):** CORE §9 needs one sentence added: *"`arrivalSlotId` is set at import for ALL orders (tint and non-tint) via `resolveArrivalSlotId(emailDateTime)`. `slotId` stays null for tint until completion."* (Already flagged in step 1 — not re-flagged here.) No new CORE items from this step.
 
 ---
@@ -549,6 +601,7 @@ Sitting above the tint guard is deliberate: `arrivalSlotId` recalculation applie
 - **Storage Location (col 3)** is read into `RawSapRow` but never written anywhere. Intentionally inert.
 - **Mail-order enrichment match is by `soNumber` only.** When SAP emits two separate OBDs for the same mail order's split bills, both get the same `soNumber` and both inherit the same enrichment payload (`updateMany` 1:N). Usually desired; flag if a future use case needs per-OBD targeting.
 - **Soft-removed OBDs in re-import.** If a removed OBD comes back, preview shows it as `skipped: previously_removed` and AUTO path skips silently via the existing `existingObdSet.has(...) → continue`. Admin restore is the only path back.
+- **Two date/time fields written from two different sources in `handleAutoImportPatchHeaders` is a repeatable mistake class.** `orderDateTime` and `obdEmailDate` must both be written from the same merged `newDT` value (§12.1) — a raw/unmerged source on one of the pair silently strips its time back to midnight. Fixed once (commit `3c0cd366`); watch for the same pattern if this function is edited again.
 
 ---
 
@@ -566,7 +619,8 @@ Sitting above the tint guard is deliberate: `arrivalSlotId` recalculation applie
 - **Auto-Import v2 — steps 4–10 not yet built.** See §10.1 build sequence. Design is locked; build has not started. Reference design doc at `docs/prompts/drafts/web-update-2026-06-20-auto-import-v2-pure-json.md` for full detail.
 - **`IMPORT_HMAC_SECRET_JSON` env var** must be added to Vercel before step 5. Keep `IMPORT_HMAC_SECRET` (v1 var) until v1 handler is retired.
 - **lineId semantic change in v2.** v1 used ordinal positions (10/20/30); v2 uses real SAP item numbers. This means composite key `lineId|skuCodeRaw` will NOT match between a v1 create and a v2 patch. Create-only policy makes this safe, but if patch path ever becomes needed for Auto-Import, re-audit the key strategy.
+- **The new same-day/different-day arrival-slot rule is designed but NOT built** (§12.2). The live fork in `applyMailOrderEnrichment` still uses the old `receivedAt` vs `punchedAt` comparison. Building it is a single-site edit once picked up — see §12.2 for the full rule and the acceptance check (OBD `9108192224`).
 
 ---
 
-*Import v1.3 · Schema v27.9 · OrbitOMS*
+*Import v1.4 · Schema v27.9 · OrbitOMS*

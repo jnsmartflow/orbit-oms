@@ -1,5 +1,5 @@
 # CLAUDE_MAIL_ORDERS.md — Mail Orders Module
-# v1.6 · Schema v27.9 · Parser v6.5 · Enrichment v3 · July 2026
+# v1.7 · Schema v27.9 · Parser v6.5 · Enrichment v3 · July 2026
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -132,11 +132,16 @@ OutlookAccount=surat.order@outlook.com
 CheckInterval=10
 ```
 
-### 3.1 Parser v7.2 — App-format extension [BUILT · BENCH-TESTED 21/21 · DEPLOY PENDING]
+### 3.1 Parser v7.2 — App-format extension [LIVE]
+
+**CORRECTED 2026-07-15 — this was wrongly documented as "DEPLOY PENDING."** The depot PC is
+confirmed running v7.2: a real test app-order (Ambika Enterprise 3296171, 2026-07-15) came back with
+a `Dispatch:` tag in its parsed output — that tag is **app-format-only**, the human parser path
+cannot produce it. Deploy already happened; treat this feature as live, not pending.
 
 The depot PC (Windows, PS 5.1) has a second class of inbound email: orders placed via the OrbitOMS app (`/place-order`) that arrive as structured app-format emails. These have a `Bill To:` header as the first content line — distinct from human-written order emails.
 
-**Script:** `docs/Parser/Parse-MailOrders-V7.ps1` (v7.2) — editing/repo copy. **Live copy lives on the separate depot PC; DEPLOY PENDING as of 2026-06-19.** Deploy is manual: back up live file → paste v7.2 over it.
+**Script:** `docs/Parser/Parse-MailOrders-V7.ps1` (v7.2) — editing/repo copy. **Live on the depot PC as of at least 2026-07-15** (confirmed above). Deploy is manual: back up live file → paste v7.2 over it — kept here as the redeploy procedure, not as a pending step.
 
 **Sorter — `Test-IsAppFormat`:**
 - Strips blank lines from body top
@@ -243,9 +248,13 @@ fetch('/api/mail-orders/re-enrich', { method: 'POST' }).then(r => r.json()).then
 
 ~98.2% on 2,366 real lines.
 
-### 4.1 Table C exact-name fast-path [LIVE · dormant until app orders flow]
+### 4.1 Table C exact-name fast-path [LIVE]
 
-**Deployed:** commit `da219238` (5 files, +282/−6). **Dormant until the app-format parser (§3.1) deploys to the depot PC** — Table C only fires on exact `productName` matches, which only come from structured app-format emails.
+**Deployed:** commit `da219238` (5 files, +282/−6). Table C only fires on exact `productName`
+matches, which only come from structured app-format emails — its precondition (the app-format
+parser, §3.1) is now confirmed deployed, but a live Table-C-hit verification in the ingest logs
+has not been separately re-confirmed since that deploy. Check `mail_order.log` for `[APP]` lines
++ Table C hits before treating this as fully proven in production.
 
 **Architecture — stacked:**
 ```
@@ -754,6 +763,8 @@ If "X" emails return Generic codes instead of Fini, root cause is Generic codes 
 - **Table-mode parity gap.** `mail-orders-table.tsx` (§9.1) does NOT show the ALT SKU column. Only the Review View (§9.2) has it. Small/deferred per 2026-06-19 handoff.
 - **Bounce / DTS signal badges deferred.** Parser v7.2 delivers `Bounce` and `DTS` remark text from app-format emails, but badge wiring (meaning, colour, card routing) is not yet built. `Truck Order` is already in the signal catalog.
 - **`shipToOverrideCustomerId` can be null even when `shipToOverride` is true** (§6) — free-text redirects that never resolved to a real `delivery_point_master` row. Any code path reading the override must handle flag-true/id-null as valid, not treat it as a data-integrity error.
+- **Most `app/api/mail-orders/**` routes check session only, never role/permission** [LANDMINE — security gap, surfaced 2026-07-10, not fixed]: `route.ts` (GET list), `[id]/punch`, `[id]/so-number`, `[id]/customer`, `[id]/lock`, `[id]/split`, `[id]/original-lines`, `[id]/note`, `lines/[lineId]/resolve`, `lines/[lineId]/status`, `skus`, `customers/search`, `re-enrich`, `debug-enrich`, `learn-customer`, `backfill-customers`. Any logged-in user of ANY role can PATCH/POST Mail Orders data by calling these directly, bypassing the layout guard (§22). Consequence: `tint_manager`'s view-only (`canEdit=false`) grant is a **UI illusion only** — nothing server-side enforces it. (Intentionally exempt, not part of this gap: `ingest` = HMAC-authenticated; `keywords` = deliberately public for the parser.)
+- **`GET /api/mail-orders/backfill-enrich` is fully unauthenticated** [LANDMINE — security gap, surfaced 2026-07-10, not fixed] — no session check, no HMAC. Marked `TEMPORARY — delete after backfill` in its own source but still live. Performs a bulk write across `mo_order_lines`. Reachable by anyone with the URL.
 
 ---
 
@@ -798,10 +809,10 @@ This split is intentional during the migration window. Full plan in `CLAUDE_PLAC
 
 For mail-order sessions specifically: any new product keyword work (e.g. fixing the SmartChoice/Distemper search misroute) should be done in **both** legacy tables AND the v2 `searchTokens` column to keep the two paths in sync until the parser migrates.
 
-### Parser v7.2 deferred items (as of 2026-06-19)
+### Parser v7.2 deferred items (as of 2026-07-15)
 
-- **Deploy to depot PC.** `docs/Parser/Parse-MailOrders-V7.ps1` (v7.2) is bench-tested. Live copy on separate depot PC must be manually replaced. Owner to do post template-finalisation.
-- **Live verification.** After deploy: confirm app-format emails hit `Parse-AppBody` path (check `mail_order.log` for `[APP]` lines), confirm Table C hits appear in ingest response.
+- ~~Deploy to depot PC~~ **DONE** — confirmed live 2026-07-15 (§3.1).
+- **Live verification still open.** Confirm app-format emails hit `Parse-AppBody` path (check `mail_order.log` for `[APP]` lines), confirm Table C hits appear in the ingest response (§4.1).
 - **Keyword health scan.** A structured keyword-vs-SKU analysis to catch ghost keywords (keyword present, zero SKU matches) and missing keywords (product has SKUs, no keyword). Deferred from 2026-06-19 session.
 
 ### Table C deferred items (as of 2026-06-19)
@@ -824,4 +835,51 @@ Admin "Settings → Hide → Tags" can switch any Mail Order badge off app-wide 
 
 ---
 
-*Mail Orders v1.6 · Schema v27.9 · Parser v6.5 · Enrichment v3*
+## 22. Access — role permission grants
+
+Access to `/mail-orders` is **entirely DB-driven** via `role_permissions` — not hardcoded to
+`billing_operator` anywhere. No code, no deploy needed to grant or revoke a role.
+
+| Layer | File | Mechanism |
+|---|---|---|
+| Sidebar | `lib/permissions.ts` — `PAGE_NAV_MAP` + `buildNavItems()` | filters nav entries by `allPerms[pageKey]?.canView === true` |
+| Page guard | `app/(mail-orders)/mail-orders/layout.tsx` | `checkAnyPermission(roles, "mail_orders", "canView")` → redirect `/unauthorized` |
+| `middleware.ts` | — | **no role check at all** for `/mail-orders`; only "has a session" |
+| API routes | `app/api/mail-orders/**` | **no role check at all** on most routes (see §18 landmine below); only "has a session" |
+
+`admin` bypasses the permission table entirely (hard-coded bypass in `lib/permissions.ts`). **Testing
+access while logged in as admin proves nothing** — always test as the actual role being granted.
+
+### Current `mail_orders` grants (as of 2026-07-10) [LIVE]
+
+| roleSlug | canView | canEdit |
+|---|---|---|
+| `billing_operator` | true | true |
+| `operations` | true | true — **granted 2026-07-10**, one additive `role_permissions` row, applied directly to production DB (no code deploy) |
+| `operation_manager` | true | true |
+| `tint_manager` | true | **false** (view-only) |
+
+**Undocumented facts this grant surfaced:**
+- A role slug **`operation_manager`** exists live in `role_permissions` and is **not** listed in
+  `CORE §5`'s `role_master` table — flagged for the CORE pass (identify: legacy slug, or a real role
+  missing from the docs).
+- `tint_manager` holds a **view-only** `mail_orders` grant that was previously undocumented anywhere.
+
+### Two authorization systems coexist
+
+- `lib/rbac.ts` — `requireRole()` / `hasRole()`.
+- `lib/permissions.ts` — `checkAnyPermission()` / `getAllPermissionsForRole(s)`, DB-backed.
+
+Mail Orders uses **only** the second. `requireRole`/`hasRole` are unused by this module. Which one is
+canonical for future modules is an open decision, not made here.
+
+### Seed-is-source-of-truth gap [LANDMINE]
+
+`prisma/seed.ts` contains **zero** rows for `pageKey='mail_orders'` — every grant above, including
+`billing_operator`'s original one, lives **only in the live DB**. A wipe-and-reseed silently removes
+Mail Orders access for everyone except `admin`. All four rows above should be added to
+`prisma/seed.ts` (ROADMAP).
+
+---
+
+*Mail Orders v1.7 · Schema v27.9 · Parser v6.5 · Enrichment v3*

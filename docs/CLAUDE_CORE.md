@@ -1,5 +1,5 @@
 # CLAUDE_CORE.md — OrbitOMS Core
-# v78 · Schema v27.9 · July 2026 · Lives in: orbit-oms/docs/
+# v79 · Schema v27.9 · July 2026 · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_UI.md
 
 ---
@@ -69,6 +69,8 @@ Never introduce new libraries without being asked.
 - **Partial unique index reconcile pattern (P2002):** when a partial unique index enforces "exactly one row of a kind per parent" (e.g. one Primary SO per customer), reconcile loops MUST demote-then-promote, never promote-then-demote. Pre-clear all rows of the constrained kind to a non-conflicting state (one `updateMany`) before running the main upsert loop. Drops role-comparison optimisations — safer than carrying stale-cache bugs.
 - **Seed is source of truth.** Any structural/taxonomy/grouping change applied directly to a live DB will be wiped by the next wipe-and-reseed. All such changes must go into the seed script (the durable source). Direct-to-DB ALTERs are acceptable for hot fixes ONLY when paired with the matching seed edit.
 - **Never fuzzy-match site names.** Site name suffixes like "FACE" / phase numbers distinguish genuinely different sites. Stripping or fuzzy-matching risks linking the wrong site. For backfill, prefer OBD→order→customerId resolution over name-based matches.
+- **OneDrive + Next.js stale `.next` symptom:** `Error: Cannot find module './NNNN.js'` + `missing required error components, refreshing...`. Fix: stop the dev server, `taskkill /F /IM node.exe`, `rmdir /s /q .next`, restart. Pause OneDrive sync if `rmdir` hits a permission error.
+- **Stop the dev server before any git operation in this repo.** Same OneDrive file-lock reason as above.
 
 ---
 
@@ -104,19 +106,20 @@ Never introduce new libraries without being asked.
 
 | ID | Role | Primary route | Key users |
 |---|---|---|---|
-| 1 | admin | `/admin` | admin@orbitoms.com |
+| 1 | admin | `/admin` | admin@orbitoms.in |
 | 2 | dispatcher | `/place-order` (gated, see below) | Ajay Vansiya, Dhanraj Shah |
 | 3 | support | `/place-order` (gated) | Priya Chaudhari, Rahul |
 | 4 | tint_manager | `/tint/manager` | Chandresh Kolgha |
 | 5 | tint_operator | `/tint/operator` | Deepak Vasava, Chandrasing Valvi |
-| 6 | floor_supervisor | `/warehouse` | — |
-| 7 | picker | `/warehouse` | seeded |
-| 12 | operations | `/operations/support` | operations@orbitoms.com |
+| 6 | floor_supervisor | `/warehouse/supervisor` | — |
+| 7 | picker | `/warehouse/picker` | seeded |
+| 12 | operations | `/operations/support` | operations@orbitoms.in |
 | 13 | billing_operator | `/mail-orders` | Deepanshu Thakur (id=25), Bankim (id=26) |
-| 14 | ops_admin | `/admin` | Dhruv (id=27), Kuldeep (id=28) |
+| 14 | ops_admin | `/admin/attendance` | Dhruv (id=27), Kuldeep (id=28) |
 | 16 | logistics | `/trips` | Praveen (primary role — sees only Trip Report). Full detail: `CLAUDE_TRIP_REPORT.md §1`. |
+| — | operation_manager | `/tint/manager` | Undocumented role slug (2026-07-10 discovery) — exists live in `role_permissions`/`lib/rbac.ts` with NO confirmed `role_master` row/ID. Not invented here; may be a legacy slug or a real role missing from this table. Identify before relying on it. |
 
-**Login redirects** (`lib/rbac.ts` `ROLE_REDIRECTS` map): admin→`/admin`, dispatcher→`/place-order`, support→`/place-order`, tint_manager→`/tint/manager`, tint_operator→`/tint/operator`, floor_supervisor/picker→`/warehouse`, operations→`/operations/support`, billing_operator→`/mail-orders`, ops_admin→`/admin`, logistics→`/trips`.
+**Login redirects** (`lib/rbac.ts` `ROLE_REDIRECTS` map — verified against live code 2026-07-16, three entries corrected): admin→`/admin`, dispatcher→`/place-order`, support→`/place-order`, tint_manager→`/tint/manager`, tint_operator→`/tint/operator`, **floor_supervisor→`/warehouse/supervisor`** (was wrongly `/warehouse`), **picker→`/warehouse/picker`** (was wrongly grouped with floor_supervisor under `/warehouse`), operations→`/operations/support`, billing_operator→`/mail-orders`, **ops_admin→`/admin/attendance`** (was wrongly `/admin`), operation_manager→`/tint/manager` (previously missing from this map entirely), logistics→`/trips`.
 
 **Middleware — no forced attendance redirect (fixed 2026-07-04).** `middleware.ts` previously had an attendance gate (~lines 69-96) that redirected EVERY authenticated request to `/attendance` until check-in — not mobile-specific, but fired right after the login redirect above, so it looked mobile-only. That entire `if` block + the unused `istDateString` import were removed. Login (mobile and desktop) now routes straight to the role's landing page via `ROLE_REDIRECTS`, with no forced detour. Attendance itself is unaffected — still reachable directly at `/attendance`. Only 3 test accounts (admin/ops_admin) ever had the flag; no operational role relied on it. Confirmed via `middleware.ts` — no attendance-gate or `istDateString` reference remains. Full detail: `CLAUDE_TRIP_REPORT.md §7` (this fix shipped alongside the Trip Report build).
 
@@ -159,6 +162,7 @@ Primary role drives login redirect and href overrides. Additional rows add nav i
 | `ti_report` (reused) | gates the Reports hub `/reports` (Tint Summary + TI Report) |
 | `settings_hide` | admin only (v27.6). In `PageKey` union + `ALL_PAGE_KEYS` (admin auto-ALL_TRUE), **NOT** in `PAGE_NAV_MAP` (that feeds operational sidebars; would duplicate the admin entry). |
 | `trip_report` | logistics (view only) + the 4 named secondary-role users above (§5). `operations` role NOT granted. → `CLAUDE_TRIP_REPORT.md §1`. |
+| `mail_orders` | billing_operator (view + edit), operations (view + edit — **granted 2026-07-10**, one additive DB row, no code deploy), operation_manager (view + edit), tint_manager (**view only**, previously undocumented). Zero rows in `prisma/seed.ts` — DB-only, wiped on reseed. → `CLAUDE_MAIL_ORDERS.md §22`. |
 
 **Sidebar:** Layout files pass `session.user.role as RoleSidebarRole` (not hardcoded). For **operational / role-based** sidebars, nav items come from `buildNavItems()` in `lib/permissions.ts` only — no manual appending. ⚠️ The **admin panel** sidebar is the separate `components/admin/admin-sidebar.tsx` (`NAV_SECTIONS` array: OVERVIEW / MASTER DATA / PEOPLE / OPERATIONS / PERSONAL / SETTINGS) — `buildNavItems()`/`PAGE_NAV_MAP` do NOT feed it. New admin items (e.g. Settings → Hide) are added there.
 
@@ -207,10 +211,13 @@ route_master, area_master, area_route_map, sub_area_master
 sales_officer_master, sales_officer_group
 contact_role_master
 customer_type_master, premises_type_master
-delivery_point_master      Ship-to. primaryRouteId, deliveryTypeOverride, salesOfficerGroupId
+delivery_point_master      Ship-to. primaryRouteId, salesOfficerGroupId
                            (now classification-tag only, no longer drives SO),
                            customerRating (A/B/C). salesOfficerId DEPRECATED — still read by
                            CSV importer until Phase 8 migration, write-ignored from admin UI.
+                           **CORRECTED 2026-07-16: no `deliveryTypeOverride` column exists.**
+                           Real columns are two separate FKs → `delivery_type_master.id`:
+                           `dispatchDeliveryTypeId` Int? and `reportingDeliveryTypeId` Int?.
 delivery_point_contacts    contactRoleId FK, isPrimary BOOLEAN.
                            linkedSalesOfficerId Int? FK → sales_officer_master ON DELETE SET NULL.
                            NULL for manual contacts; set for auto-managed SO contacts. v27.5.
@@ -394,17 +401,29 @@ mo_order_form_index_v2     ~454 active rows (after the full catalog restructure)
                                                           NOT used as the label (label stays = family).
                              region TEXT? (v27.6) — optional grey-line qualifier (TOOLS 4" brushes:
                                                     Delhi NCR / UP Punjab / South); null on all paint.
-                           UNIQUE (family, product, baseColour).
+                           UNIQUE (family, subProduct, baseColour) — **CORRECTED 2026-07-16**:
+                           earlier docs wrongly said `(family, product, baseColour)`. `product` is
+                           nullable; `subProduct` is NOT NULL — any duplicate guard must key on
+                           `subProduct`, or it silently fails to catch duplicates on null-`product`
+                           rows.
                            `product` is the SAP-clean stock name — the JOIN KEY into
                            mo_sku_lookup_v2.product. May be null on rows the seed couldn't resolve;
                            those rows render as "no packs" on the order form.
 
 mo_sku_lookup_v2           ~1,680 rows (after the full catalog restructure). Parallel clean-name version.
                            material UNIQUE.
+                           packCode TEXT — **CORRECTED 2026-07-16**: bare numeric string
+                             ("1"/"4"/"10"/"20"/"500"/"400"/"12"/"25"...), NOT the `PackCode` enum
+                             earlier docs claimed. `unit` is the separate type discriminator.
+                           description TEXT NOT NULL — undocumented until 2026-07-16; every
+                             insert must supply it, no db default.
                            isPrimary BOOLEAN NOT NULL DEFAULT true (v27.5)
-                             — false on confirmed duplicate twins. /api/order/data
-                               filters where isPrimary = true; desktop /api/place-order/data
-                               currently unfiltered (out of scope for this cut).
+                             — false on confirmed duplicate twins. **BOTH** `/api/order/data`
+                               **AND** `/api/place-order/data` filter WHERE isPrimary = true
+                               (confirmed live 2026-07-16 against `route.ts:92-93` — desktop was
+                               fixed to match mobile in commit `46b500fb`, 2026-07-15). Earlier
+                               "desktop unfiltered" claim is retired; do not reintroduce it
+                               without re-reading the live route first.
 ```
 
 Full detail in `CLAUDE_PLACE_ORDER.md`.
@@ -612,6 +631,9 @@ Full detail in domain files. Cross-reference only here.
 ### Warehouse
 `/warehouse`. floor_supervisor, picker, admin, operations. 300px left (unassigned) / flex right (pickers).
 
+### Picking
+`/picking`. Desktop queue + mobile supervisor board (Assign/Check tabs), one route/responsive split. admin, operations today — `floor_supervisor` (the intended primary user) currently CANNOT open it, see §13 landmine. → `CLAUDE_PICKING.md`.
+
 ### Operations View
 `/operations/support|tinting|tint-operator|dispatch|warehouse`. operations, ops_admin, admin.
 
@@ -655,6 +677,12 @@ Existing in code but intentionally disabled, broken, or stale. Do not "fix" with
 - **MO badges are centralized in `getOrderSignals()`** (one emit point — easy to tag-gate, §MAIL_ORDERS §21). **Tint badges are NOT centralized** (hardcoded across 3 components, `getAgeBadge` duplicated) — gating them needs a shared badge registry first (the deferred "hard part").
 - **Hide does NOT delete.** Rules + manual hide are reversible; rule-hidden orders have no per-order un-hide in v1 (Hidden Orders shows "Managed by rule"); only manual hides get an Un-hide button.
 - **Orphaned `components/support/ship-to-override-modal.tsx`** — dead code predating the 2026-07-07 inline ship-to override picker (`CLAUDE_SUPPORT.md §4.18`). No trigger opens it, its form is free-text (not the search picker), its `onSave` is a no-op. Left untouched (never delete files unless instructed) — the live feature is the inline cell, fully independent of this file.
+- **`floor_supervisor` cannot open `/picking`** — the intended primary user has no `role_permissions` row (nor a `prisma/seed.ts` row) for `pageKey='picking'`. SQL + a matching seed row are prepared but **not yet run** — diagnosed and ready, not a design question, hence a landmine rather than a ROADMAP item. Full detail + the SQL: `CLAUDE_PICKING.md §7`.
+- **SECURITY — `GET /api/mail-orders/backfill-enrich` is fully unauthenticated** — no session check, no HMAC. Marked `TEMPORARY — delete after backfill` in its own source but still live. Performs a bulk write across `mo_order_lines`. Reachable by anyone with the URL. Surfaced 2026-07-10, not fixed.
+- **SECURITY — broad no-role-check gap across `app/api/mail-orders/**`** — most routes check only "is there a valid session," never role/permission (full route list: `CLAUDE_MAIL_ORDERS.md §18`). Any logged-in user of any role can PATCH/POST Mail Orders data by calling these directly. Consequence: a view-only (`canEdit=false`) grant on this module — e.g. `tint_manager`'s — is currently a UI illusion only, not server-enforced.
+- **Mail Orders write routes gate on `canView`, not `canEdit`** — same pattern independently found on `/picking`'s write routes (`assign`/`unassign` both check `canView`). There is no distinct read-only access on either module today; a real write probably should check `canEdit`. Pre-existing on both, not introduced by any one session.
+- **`addToPackMap` dedupe-collision risk** (`app/api/place-order/data/route.ts` and `/api/order/data`) — dedup key is first-row-wins with **no `orderBy`** on the `skuRows` query. If two `isPrimary=true` rows ever collide on the same rendered pack, which one wins is unspecified. Unrelated to the isPrimary filter itself (§7.7) — a separate, still-open risk.
+- **"WHITE BASE" in a SKU `description` does NOT reliably mean Brilliant White** — at least 3 WS Powerflexx SKUs were found misfiled under `baseColour='BRILLIANT WHITE'` despite being `90 BASE` (fixed 2026-07-16). Likely not isolated — a catalog-wide `description ILIKE '%WHITE BASE%'` sweep under `baseColour='BRILLIANT WHITE'` is a candidate follow-up, not yet run.
 
 ---
 
@@ -678,8 +706,8 @@ Quick index; full detail in domain file maps.
 | `lib/hide/*` | `visibility.ts`, `tag-settings.ts`, `tag-catalog.ts` (Hide feature) | §7.10, UI §57 |
 | `lib/reports/tint-summary-data.ts` | Tint Summary report data source-of-truth | TINT §12 |
 
-Engineering note: a parallel session owns `scripts/_*` scratch files (sampling/report seed helpers) — they throw `tsc --noEmit` errors but are never committed; exclude `scripts/_*` from tsconfig or delete to keep the gate clean.
+Engineering note: a parallel session owns `scripts/_*` scratch files (sampling/report seed helpers) — they throw `tsc --noEmit` errors but are never committed; exclude `scripts/_*` from tsconfig or delete to keep the gate clean. Same treatment for `docs/dhruv-review/**` (added 2026-07-08) — a parked, untracked draft-review snapshot with its own stale/incomplete types; excluded from `tsconfig.json` for the same reason (never committed, not live code).
 
 ---
 
-*CORE v78 · Schema v27.9 · OrbitOMS*
+*CORE v79 · Schema v27.9 · OrbitOMS*

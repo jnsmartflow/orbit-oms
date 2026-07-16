@@ -1,5 +1,5 @@
 # CLAUDE_UI.md — OrbitOMS UI Design System
-# v5.7 · July 2026 · Lives in: orbit-oms/docs/
+# v5.8 · July 2026 · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md
 
 Single source of truth for visual styling across all screens.
@@ -174,6 +174,13 @@ Inactive: `border border-gray-200 text-gray-500`
 Active: `border-gray-900 text-gray-900` + count badge `bg-gray-900 text-white`
 Panel: `bg-white border-gray-200 rounded-lg shadow-lg p-3 w-[260px]`
 
+**Multi-select group shape (2026-07-09, Support Filter rework):** a panel can hold several
+independent groups (e.g. View / SMU / Delivery Type / Priority), each rendering its own options as
+toggleable chips — multiple chips per group may be active at once (options within a group OR
+together; groups AND together). The header count badge sums selections across **all** groups, not
+per-group. **"Clear all"** renders inside the panel only when the total badge count is **> 0** —
+hidden entirely at zero selections. Behaviour reference: `CLAUDE_SUPPORT.md §4.21`.
+
 ### Date control
 Click-to-open calendar popover. Format `‹ Today · 04 Apr ›`. Right arrow disabled when viewing today.
 
@@ -184,7 +191,7 @@ Per-board wiring summary:
 
 | Board | Segments | Filters | Date | Extras |
 |---|---|---|---|---|
-| Support | Slots (4) | View, Status, Del Type, Priority | Stepper | Search |
+| Support | Slots (4) | View, SMU, Del Type, Priority | Stepper | Search |
 | Tint Manager | Operator pills | Del Type, Priority, Type | None | View toggle, missing-customer badge |
 | Planning | Slots (4) | Del Type, Dispatch | Stepper | — |
 | Warehouse | Slots (4) | Del Type, Pick Status | Stepper | — |
@@ -461,6 +468,33 @@ All data tables use `table-layout: fixed` with `<colgroup>` percentage widths.
 - Admin OT audit user table
 - Sampling Library recipe table
 - Any future data table in any module
+
+**Support does NOT belong on this list.** Support's tables are CSS Grid, not `<table>` — see the
+Grid-native equivalent rule below and `§58`.
+
+### Grid-native equivalent — percentage tracks on CSS Grid (2026-07-09)
+
+When a table is built as **CSS Grid rows instead of `<table>`** (each row its own independent grid
+instance, e.g. Support), `table-layout:fixed` + `<colgroup>` isn't available — but the same
+content-blind column sync can still be achieved: **percentage grid-template-columns tracks**,
+one shared string constant read by both the header and every row.
+
+**Why this is the only scheme that works** (the reusable lesson — full narrative + measured drift
+numbers: `CLAUDE_SUPPORT.md §4.19`):
+- `fr` distributes *leftover* space, which depends on row content — one row's long value pools
+  surplus into a column and shifts everything right, in that row only.
+- `minmax(0, Nfr)` stops one value inflating its own track but doesn't fix the pooled surplus.
+- `max-content` sizes each grid instance to its OWN content — two rows with different cell content
+  land the same column at different pixel positions (measured drift up to ~67px). Structurally
+  impossible to align across independent grid instances.
+- Fixed `px` works but is content-blind by luck, not design, and leaves guessed/dead space.
+- **Percentages resolve against the container width, never cell content** — since every row
+  renders at the same container width, the same percentage string yields identical pixel columns
+  across every independent instance. This is the Grid-native equivalent of `<table>` +
+  `table-layout:fixed` + `<colgroup>` percentages — use it for any future per-row-grid table.
+
+Rule: one shared percentage-string constant, read by header AND every row; never reintroduce `fr`,
+`max-content`, or `auto` on such a table once percentages are locked in.
 
 ---
 
@@ -1083,6 +1117,44 @@ Behaviour + architecture: `CLAUDE_PLACE_ORDER.md §25`. Visual specifics:
 - **Dispatch pills** order **Normal · Urgent · Call** (Call last, red dot); label "Call" → "Call · SO" / "Call · Dealer" once a target is chosen.
 - **Dispatch slot** section (date Today/Tomorrow/Pick + window 9–12/12–3/3–6) — **deferred/planned**, mockup only (`docs/mockups/dispatch-slot/`); not built.
 
+### Favourites — replaces Recents on Home [LIVE, 2026-07-14]
+
+- Home "Recent" section replaced by "Favourites" — section label the word "Favourites" + a small
+  gold star (lucide `Star`, filled, `amber-500`, no background box — reused from the Mail Orders
+  star, `review-view.tsx` StarGlyph). Listed **one column, sorted A-Z** by name.
+- **Star toggle sits in the customer BUILD header** (right of the name row, `items-center` against
+  the two-line name+meta block; glyph nudged ~3px right to correct its optical inset from the
+  5-point star's shape vs its bounding box). Present the whole time an order is being built for that
+  customer — persists across build/search/quantities. Filled gold = favourite, outline grey = not;
+  tap toggles.
+- **Cap 8.** A 9th add is BLOCKED, not silently evicted — calm amber "Favourites full (8 of 8) —
+  remove one first" message near the header, auto-dismiss.
+- Favourites card: neutral grey **rounded-square initials avatar** (not a circle — businesses, not
+  people; not teal), name + `code · area`, chevron. Customer name `15px / 500 / #1d2939`.
+- Empty state: soft icon + "No favourites yet" + prompt.
+
+### Visual polish pass — palette discipline [LIVE, 2026-07-14]
+
+Overall direction: soft and light (Things / Apple Notes feel), not bold or hard.
+- **Teal = actions only** — primary buttons, active tab, the favourite star. NOT used for
+  avatars/chips/decoration (was diluting the brand colour).
+- Primary text `#1d2939` (softened from pure black `#111827`). Greys `#667085` / `#98a2b3` /
+  `#d0d5dd` for everything secondary.
+- Cards: soft two-layer low-opacity shadow, no hard border, radius 14, roomier padding, subtle
+  pressed state on tap.
+
+### Review & send — back affordance [LIVE, 2026-07-14]
+
+Soft-grey rounded back arrow + "Review & send" label (left) · "Back to products" teal hint (right)
+on the Review section row. Pure restyle of the existing back control — funnels through the same
+`history.back()` → popstate → close-review flow as before (§25-safe, no new nav path).
+
+### Launch — full feature set live [LIVE, 2026-07-14]
+
+The feature set built behind the `?draft=on` gate this cycle is now live to all users on plain
+`/po` (gate removed — see `CLAUDE_PLACE_ORDER.md §25`). Installed PWAs ("Add to Home Screen" strips
+query params) now show the full set automatically without a reinstall.
+
 ---
 
 ## 56. Reports hub + print (`/reports`)
@@ -1109,11 +1181,54 @@ New admin area under a **Settings** section in `components/admin/admin-sidebar.t
 
 ---
 
-## 58. Support board — ship-to override cell + Material Type/Article columns (2026-07-07)
+## 58. Support board — column order, ship-to override, Vol cell, Hold tab
 
-Business behaviour: `CLAUDE_SUPPORT.md §4.18` (ship-to override), `§4.19` (Material Type/Article).
+Business behaviour: `CLAUDE_SUPPORT.md §4.18` (ship-to override), `§4.19` (column rework + GRID
+sizing), `§4.20` (Hold tab rebuild), `§4.21` (Filter + search rework).
 
-**Note on structure:** the Support board is **CSS Grid, not `<table>`** (`CLAUDE_SUPPORT.md §7` landmine — a full rewrite to the §27 fixed-table standard was proposed and rejected as scope creep). This spec is Grid-native, kept visually consistent with §27 (same typography, row heights) but structurally separate — do not conflate the two, and do not add Support to §27's "applies to" list.
+**Note on structure:** the Support board is **CSS Grid, not `<table>`** (`CLAUDE_SUPPORT.md §7`
+landmine — a full rewrite to the §27 fixed-table standard was proposed and rejected as scope creep).
+This spec is Grid-native, kept visually consistent with §27 (same typography, row heights) but
+structurally separate — do not conflate the two, and do not add Support to §27's "applies to" list.
+
+### Locked column order (11 + checkbox) — corrected 2026-07-09
+
+| # | Column | Header label | Align |
+|---|---|---|---|
+| 1 | checkbox | — | centre |
+| 2 | OBD | `OBD` | left |
+| 3 | CUSTOMER | `CUSTOMER` | left |
+| 4 | SHIP-TO | `SHIP-TO` | left |
+| 5 | AGE | `AGE` | centre (pill) |
+| 6 | ROUTE | `ROUTE` | left |
+| 7 | VOL | `VOL` | right |
+| 8 | ARTICLE | `ARTICLE` | left |
+| 9 | STATUS | `STATUS` | left |
+| 10 | SLOT | `SLOT` | left |
+| 11 | PRIORITY | `PRIORITY` | left |
+
+Header labels are shortened display strings only (`OBD / DATE`→`OBD`, `SHIP-TO OVERRIDE`→`SHIP-TO`,
+`ROUTE / TYPE`→`ROUTE`, `VOL (L)`→`VOL`, `DISPATCH SLOT`→`SLOT`) — no field/data rename underneath.
+MATERIAL TYPE is no longer its own column (folded into the VOL cell below).
+
+**Percentage GRID (both sum to 100, live in `components/support/shared/table-cells.tsx`):**
+
+```
+SUPPORT_GRID_COLUMNS       "3% 9% 19% 11% 5% 9% 5% 9% 9% 13% 8%"     (main board)
+SUPPORT_HOLD_GRID_COLUMNS  "3% 9% 20% 11% 6% 9% 5% 9% 13% 7% 8%"     (hold tab)
+```
+
+Content-blind percentage tracks — see the Grid-native equivalent rule in §27. One shared constant,
+read by header AND every row; inter-column spacing is per-cell padding (§27 standard, 14px L/R),
+grid `gap` is `0`.
+
+### Stacked VOL cell
+
+Two lines, both right-aligned: the volume number on top, `orders.materialType` as a **muted
+sub-line** underneath (`text-gray-400`, same weight as other muted table-data text, §4). `null`
+materialType → `—` sub-line. This is why VOL is right-aligned system-wide on this board — digits
+must stack by place value (a load-planning read), unlike Tint Manager's left-aligned `"60 L"`-style
+volume strings (§33).
 
 ### Ship-to override cell (`components/support/ship-to-override-cell.tsx`)
 
@@ -1125,13 +1240,31 @@ Inserted immediately after the CUSTOMER column. Three states:
 
 Failure surfaces a toast (sonner, already used elsewhere on this board) — no inline error state.
 
-### Material Type + Article columns
+### Article cell
 
-Plain display-only text cells — no edit affordance, no hover state, no click target. Styled identically to the existing ROUTE/TYPE text cell: `text-[11px] text-gray-600` data, `text-gray-400` for the empty `"—"` fallback. Positioned between ROUTE/TYPE and VOL(L).
+Plain display-only text cell — no edit affordance, no hover state, no click target. Styled
+identically to the ROUTE text cell: `text-[11px] text-gray-600` data, `text-gray-400` for the empty
+`"—"` fallback. Rendered value is the render-time-abbreviated tag (`CLAUDE_SUPPORT.md §4.19` —
+`Drum→D`/`Carton→C`/`Tin→T`/`Bag→B`, joined `" · "`); the `title` tooltip carries the full original
+string.
 
-### Column order (11 total, Grid tracks)
+### Hold tab — visual spec (2026-07-09)
 
-`OBD/Date · Customer · [Ship-To Override] · Route/Type · [Material Type] · [Article] · Vol(L) · Status · Dispatch Slot · Priority` + row-selection checkbox. Bracketed columns are new this session.
+Same Grid-native percentage discipline as the main board, own constant (`SUPPORT_HOLD_GRID_COLUMNS`
+above). Column order: `OBD · CUSTOMER · SHIP-TO · HOLD SINCE · ROUTE · VOL · ARTICLE · SLOT ·
+PRIORITY · ACTION` + checkbox.
+
+- **HOLD SINCE** replaces AGE at the same position — centre-aligned pill, same visual treatment as
+  the main board's AGE pill. `heldAt === null` (legacy rows) → grey `"—"` pill, not an error state.
+- **VOL** — same stacked-cell treatment as the main board (§ above), right-aligned.
+- **ACTION** — right-aligned (last column; trailing buttons anchor to the row's trailing edge,
+  matching the "actions come after the data that informs them" placement rule).
+- **STATUS is absent** on this tab (every row is `hold` — a column of identical cells carries no
+  information, so it's dropped rather than rendered).
+- Group-header bar (chevron + checkbox + name + count) is a **plain flex row, not a grid row** — its
+  checkbox does not land on the same x as a data row's checkbox (96px vs 106px). This is copied
+  verbatim from the main board's existing group-header and is exact parity with an intentional
+  existing design, not a Hold-specific misalignment — do not "fix" one board without the other.
 
 ---
 
@@ -1167,4 +1300,4 @@ One sheet open at a time; scrim closes. Safe-area padding via `env(safe-area-ins
 
 ---
 
-*UI v5.7 · OrbitOMS*
+*UI v5.8 · OrbitOMS*

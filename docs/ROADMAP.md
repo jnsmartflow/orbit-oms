@@ -312,7 +312,7 @@ New OPEN items surfaced while consolidating the 29 drafts. Grouped by module.
 
 ### Mail Orders
 - **Late-Evening / Night slot-summary auto-email gap** — `slotDefs` trigger array has only 3 entries (Morning/Afternoon/Evening); Night and the new Late Evening don't auto-fire. Add them if auto-emails for those slots are wanted (`CLAUDE_MAIL_ORDERS.md §13`).
-- **Dispatch cutoffs "Change-2"** — Local vs Upcountry dispatch cutoffs. Latent infra exists (`delivery_type_master`, `delivery_type_slot_config` UNUSED, `orders.dispatchSlotDeadline`, `delivery_point_master.deliveryTypeOverride`). Recommend a dedicated discovery session before building.
+- **Dispatch cutoffs "Change-2"** — Local vs Upcountry dispatch cutoffs. Latent infra exists (`delivery_type_master`, `delivery_type_slot_config` UNUSED, `orders.dispatchSlotDeadline`, `delivery_point_master.dispatchDeliveryTypeId`/`reportingDeliveryTypeId` — corrected 2026-07-16, no `deliveryTypeOverride` column exists). Recommend a dedicated discovery session before building.
 
 ### Hide feature (Settings → Hide) — v1 deferreds
 - **Hide Mail Order ROWS** (separate `mo_orders`, no hide column) — the bigger "hard part".
@@ -323,6 +323,32 @@ New OPEN items surfaced while consolidating the 29 drafts. Grouped by module.
 ### Cross-cutting
 - **`scripts/_*` tsc noise** — untracked scratch files throw ~24 `tsc --noEmit` errors. Exclude `scripts/_*` from tsconfig or delete to keep the gate clean.
 - **Two CLAUDE.md routers (repo-root vs docs/)** — confirm both intended or consolidate to one.
+
+---
+
+## Consolidation follow-ups (opened 2026-07-16)
+
+New OPEN items surfaced while consolidating the 17 drafts (Jul 8–16) into canonical docs (Place Order, Support, UI, new `CLAUDE_PICKING.md`, Mail Orders, Import, CORE).
+
+### Security (P1)
+- **`GET /api/mail-orders/backfill-enrich` fully unauthenticated** — no session, no HMAC; still live despite being marked TEMPORARY in its own source; performs a bulk write on `mo_order_lines`. Remove or gate it. (`CLAUDE_MAIL_ORDERS.md §18`, `CLAUDE_CORE.md §13`)
+- **Mail Orders routes are session-only, no role check** — most of `app/api/mail-orders/**` never checks role/permission; write routes gate on `canView`, not `canEdit`. (`CLAUDE_MAIL_ORDERS.md §18`, `CLAUDE_CORE.md §13`)
+
+### Bugs (P1)
+- **App-format orders lose all product lines before enrichment.** Headers parse correctly (Bill To/Ship To/Dispatch), but zero product lines reach enrichment on a real test order. Live, unresolved, undocumented until this line. Surfaced 2026-07-15.
+
+### Picking
+- **`floor_supervisor` cannot open `/picking`.** SQL + a seed row are prepared, not run. (`CLAUDE_PICKING.md §7`, `CLAUDE_CORE.md §13`)
+- **Floor workflow (Picked/Approved states).** Designed, not built. (`CLAUDE_PICKING.md §6`)
+
+### Import
+- **Arrival-slot same-day/different-day rule.** Designed, not built — the live fork still uses the old `receivedAt` vs `punchedAt` comparison. (`CLAUDE_IMPORT.md §12.2`)
+
+### Dispatch / Planning
+- **Dispatch Planning Brain V2 — PARKED, fork unresolved.** The 6-slot sliding-capacity design conflicts with the live `vehicle_master` (flat-capacity, 6 rows, no sliding). No code written; the design-locked and fleet-mismatch-discovery drafts are kept as reference only — do NOT treat the locked design as settled. A `CLAUDE_PLANNING.md` gets created only when this ships.
+
+### Place Order
+- **Missing draft: `web-update-2026-07-14-po-save-draft-sent-feature.md`.** Referenced by the Favourites session as a companion but absent from `docs/prompts/drafts/`. The `/po` Drafts/Sent feature (draft list, receipt, resend) is live in code but undocumented in `CLAUDE_PLACE_ORDER.md`/`CLAUDE_UI.md` pending this draft's recovery or re-authoring.
 
 ---
 

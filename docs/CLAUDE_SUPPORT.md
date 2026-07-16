@@ -1,5 +1,5 @@
 # CLAUDE_SUPPORT.md — Support Module
-# v1.4 · Schema v27.9 · July 2026 · updated 2026-07-07
+# v1.6 · Schema v27.9 · July 2026 · updated 2026-07-11
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md
 
@@ -72,6 +72,8 @@ All pieces below are live in production. Listed in build order.
 
 **CORRECTION (2026-06-29):** this section previously claimed "pending and tinting tiles stay unfenced — carry-over is intentional." **That was never true in the code.** Both the today list query (`orders/route.ts`) and every per-slot count (`slots/route.ts`) have always been IST-date-fenced to today's arrivals only — there is no carry-over arm. The only genuinely unfenced pieces are `holdCount` (global, all dates) and the `section === "hold"` orders list — both intentionally cross-date overlays. Carry-over workload (yesterday's still-pending orders) is now surfaced as a deliberate, SEPARATE mechanism — see §4.17 "Pending from earlier" — not as an implicit unfenced tile.
 
+**IST carried-over-badge fix (commit `3c0cd366`, 2026-07-11) [LIVE]:** `app/api/support/orders/route.ts` (~line 200) computed the "carried over" badge's day via `order.obdEmailDate?.toISOString().slice(0, 10)` — a **UTC** slice. Any order timed 00:00–05:29 IST reads one calendar day earlier in UTC, so it wrongly showed a "carried over" badge + inflated the overdue count. Fixed to `order.obdEmailDate.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" })`, matching the board's own IST-day convention (`getISTDayRange()`, §5); the `?? dateStr` fallback was preserved. Landed alongside an unrelated Import-side fix to the same `obdEmailDate` field (`CLAUDE_IMPORT.md §12.1`) — same root theme (an IST/UTC or merged-vs-raw date mismatch), two different files, two different bugs.
+
 **Header vs export count — verified consistent, not a bug (2026-06-29).** A suspected 12-order gap between the header tile sum and the "All" slot-view CSV export was investigated and confirmed to be a **ghost** — stale local-only test data (old orders with `arrivalSlotId = null` from before tint orders got stamped at import, which never reached main), not a live production issue. Explanation: the header total is a **sum of per-slot tiles**, each hard-requiring `arrivalSlotId = slot.id`; the export lists all of today's orders with no slot filter, so any order without a slot bucket would appear in the export but fall through the header sum. On live, every OBD now gets a real `arrivalSlotId` at import (tint included, per CLAUDE_IMPORT.md §12) so the two totals match. **No code fix was made for this specific gap** — it was closed by verification, not a patch. (Note in passing, not a fix: the header still sums per-slot buckets rather than counting the board directly, so it would silently under-count again if a future stage ever fell outside every bucket.)
 
 ### §4.2 Done group + collapse [LIVE]
@@ -97,7 +99,7 @@ All pieces below are live in production. Listed in build order.
 
 ### §4.6 Earliest-first sort within each slot [LIVE]
 **Route/file:** `components/support/support-page-content.tsx`
-**Rule:** Frontend comparator: `(orderDateTime ?? obdEmailDate)` ASC, `obdNumber` ASC tiebreaker, null-times sink to bottom. Applied to both active and done slices independently; `[...active, ...done]` grouping preserved. Backend `ORDER_BY` (`priorityLevel ASC → obdEmailDate ASC → obdNumber ASC`) left as-is (priority is irrelevant at Support; Planning owns it). Carry-overs (older `obdEmailDate`) float to top — correct.
+**Rule:** Frontend comparator: `(orderDateTime ?? obdEmailDate)` ASC, `obdNumber` ASC tiebreaker, null-times sink to bottom. Applied to both active and done slices independently; `[...active, ...done]` grouping preserved. Backend `ORDER_BY` (`priorityLevel ASC → obdEmailDate ASC → obdNumber ASC`) left as-is as a tie-break only — **this is NOT evidence Priority is Planning-exclusive; see the §6 correction.** Carry-overs (older `obdEmailDate`) float to top — correct.
 
 ### §4.7 dispatchStatus casing — normalized system-wide [LIVE]
 **Route/file:** `app/api/import/obd/route.ts` — `applyMailOrderEnrichment`
@@ -314,15 +316,153 @@ The whole-order fetch in `done/route.ts` is a no-`select` `findFirst`, so `dispa
 - Backfill of historical overrides — old `mo_orders` rows only carry the redirect as `[→ Name (Code)]` text in `deliveryRemarks`; recovering the id needs a parse-then-resolve one-off script. Not needed to proceed.
 - 2b live test: confirming a real post-deploy mail order with a resolved redirect actually flows `mo_orders.shipToOverrideCustomerId → orders.shipToOverrideCustomerId` via enrichment — see `CLAUDE_MAIL_ORDERS.md §6`.
 
-### §4.19 Two new display-only columns — Material Type, Article (2026-07-07) [LIVE]
-Surfaces data auto-import already stores; neither column has an edit affordance.
+### §4.19 Column set — new columns (2026-07-07) + full rework (2026-07-09) [LIVE]
 
-- **MATERIAL TYPE** ← `orders.materialType` (`String?`, e.g. `"FG"`) — written directly at import (`summary.materialType` in `app/api/import/obd/route.ts`). Was already riding down via `include`; was NOT typed on the `SupportOrder` interface until this build.
-- **ARTICLE** ← `orders.querySnapshot.articleTag` (via the 1:1 `import_obd_query_summary` relation) — the human-readable pack-breakdown tag (e.g. `"18 Drum, 2 Carton"`), chosen over the numeric `totalArticle` count. `articleTag` was already selected in `ORDER_INCLUDE.querySnapshot.select` and already typed on `SupportOrder` — no payload change needed for this one, only the table-side render.
+**CORRECTION:** this section previously claimed the board went 9→11 columns and listed no AGE column at all. That was stale/wrong — AGE has always been a column; the old "11" count simply omitted it. Real timeline:
 
-Both cells: `order.materialType ?? "—"` / `order.querySnapshot?.articleTag ?? "—"`, styled like the existing ROUTE/TYPE text cell. Visual spec: `CLAUDE_UI.md §58`.
+- **2026-07-07:** Ship-To Override (§4.18), Material Type, and Article added as 3 new display columns → board went **9 → 12 columns** (including the pre-existing AGE column the old doc silently dropped). MATERIAL TYPE ← `orders.materialType` (`String?`, e.g. `"FG"`), written at import (`summary.materialType` in `app/api/import/obd/route.ts`); was already riding down via `include`, just not typed on `SupportOrder` until this build. ARTICLE ← `orders.querySnapshot.articleTag` (via the 1:1 `import_obd_query_summary` relation), the human-readable pack-breakdown tag chosen over the numeric `totalArticle` count.
+- **2026-07-09 (this rework):** reordered + renamed + folded Material Type into the Vol cell → board is now **11 columns + checkbox** (net -1: Material Type stopped being its own column; nothing else removed).
 
-**Support board columns — now 11 (was 9 before this session's two features):** OBD/Date · Customer · **Ship-To Override** (NEW, §4.18) · Route/Type · **Material Type** (NEW) · **Article** (NEW) · Vol(L) · Status · Dispatch Slot · Priority, plus the row-selection checkbox. Ship-to override sits after Customer; Material Type + Article sit between Route/Type and Vol(L).
+**Locked column sequence (11 + checkbox), current:**
+
+| # | Column | Header label | Note |
+|---|---|---|---|
+| 1 | checkbox | — | |
+| 2 | OBD | `OBD` | shortened from "OBD / DATE" |
+| 3 | CUSTOMER | `CUSTOMER` | |
+| 4 | SHIP-TO | `SHIP-TO` | shortened from "SHIP-TO OVERRIDE" (§4.18) |
+| 5 | AGE | `AGE` | **moved up** from position 9 |
+| 6 | ROUTE | `ROUTE` | shortened from "ROUTE / TYPE"; stays merged, not split |
+| 7 | VOL | `VOL` | shortened from "VOL (L)"; **`materialType` now renders as a muted sub-line inside this cell** |
+| 8 | ARTICLE | `ARTICLE` | |
+| 9 | STATUS | `STATUS` | |
+| 10 | SLOT | `SLOT` | shortened from "DISPATCH SLOT" |
+| 11 | PRIORITY | `PRIORITY` | |
+
+MATERIAL TYPE is no longer its own column — folded into the Vol cell (rule below). Nothing was removed from the board; nothing was renamed at the data level. Header labels are display strings only.
+
+**Vol cell rule:** renders `orders.materialType` **raw**, whatever the value — no mapping, no per-value styling, no hardcoded "what counts as paint" list. `null` → `—`. Gift items (typically 500/1000 volume) carry a real volume that is **excluded from load calculation** downstream — the Vol cell stacks volume over material type so the two can never be read apart. This does **not** mean the exclusion is actually enforced everywhere yet — see §7 parked item. `materialType` nulls are expected on genuinely-typeless orders, not a bug.
+
+**Alignment (main board):** checkbox centre · AGE centre (it's a pill) · VOL right — both stacked lines + the header label (Support's Vol is a bare number compared across rows for load planning, digits must stack by place value; this deliberately differs from Tint Manager, which left-aligns its `"60 L"`-style volume strings) · everything else left.
+
+### Column sizing — the percentage-GRID rule (reusable — read before touching table widths again)
+
+**Structural fact:** the Support tables are CSS Grid, not `<table>` — the header and every body row are **separate, independent grid instances**, each applying the same shared constant via `style={GRID}`. There is no shared column model between them (a real `<table>` gives that for free; Grid does not).
+
+Four sizing schemes were tried on this board; three failed:
+
+| Scheme | Result | Why |
+|---|---|---|
+| `fr` everywhere | **Failed** | `fr` distributes *leftover* space, which depends on content. A long customer name widened that row's tracks and shifted every column right, in that row only. |
+| `minmax(0, Nfr)` | Partial | Stops one long value inflating its own track. Does not fix pooled surplus — the gap just moves. |
+| `max-content` | **Failed hard** | Sizes each track to its OWN instance's content. Two rows with different Slot content ("pick slot" vs a filled pill) landed that column 66.6px apart; Priority drifted 30.2px. Structurally impossible with per-row grids. |
+| Fixed `px` | Worked, ugly | Content-blind so alignment held, but values were guessed and left dead channels at wide viewports. |
+| **Percentages** | **Correct** | Content-blind AND self-balancing — resolves against the container width, never cell content, so header and every row (same container width) land identical pixel widths. |
+
+This is the same mechanism Tint Manager gets natively via `<table>` + `table-layout:fixed` + `<colgroup>` percentages (`CLAUDE_UI.md` §27/§33) — the browser's table algorithm synchronises columns for free. Support can't get that guarantee without the `<table>` rewrite already rejected as scope creep (§7) — **but doesn't need it**; percentages give the same content-blindness on Grid.
+
+**Locked GRID constants** (both live in `components/support/shared/table-cells.tsx` so header and body can't drift apart):
+
+```
+SUPPORT_GRID_COLUMNS       "3% 9% 19% 11% 5% 9% 5% 9% 9% 13% 8%"     (main board, sums to 100)
+SUPPORT_HOLD_GRID_COLUMNS  "3% 9% 20% 11% 6% 9% 5% 9% 13% 7% 8%"     (hold tab, sums to 100)
+```
+
+**Rules:** each GRID is ONE shared constant, header and body both read it — change once. Any future column change must keep the percentages summing to 100. Do NOT reintroduce `fr`, `max-content`, or `auto`. Inter-column spacing comes from **per-cell padding** (`CLAUDE_UI.md` §27, 14px L/R), not the grid `gap` (gap is `0`).
+
+### Article pack abbreviation (render-time only)
+
+`articleTag` (from `import_obd_query_summary`, via `orders.querySnapshot`) is a comma-separated list of `"{integer} {word}"` groups, abbreviated **at render time only** — stored data and the import pipeline are untouched.
+
+**Discovery (live DB, 1,553 non-null rows):** Drum 991 · Carton 743 · Tin 368 · **Bag 34**. A hardcoded three-word map would have rendered blank on the 34 Bag rows, silently — always discover the real word set before hardcoding a map.
+
+**Map:** `Drum→D` · `Carton→C` · `Tin→T` · `Bag→B`. **Join:** `" · "` (matches the Slot separator). **Order:** preserved from the stored string, never sorted. Max 4 groups on one row; longest observed `"23 Drum, 20 Bag, 5 Carton, 8 Tin"` (32 chars).
+
+**Fallbacks — all three non-negotiable:**
+1. A word not in the map renders its **full original word** — never blank, never a guessed letter.
+2. A group not matching `/^(\d+)\s+(\S.*)$/` → returns the **raw stored string verbatim**, never a partially-formatted value.
+3. `articleTag === null` → `"—"` (pre-existing, unchanged).
+
+`title` tooltip carries the full original string. Helper `formatArticleTag`, shared module (`components/support/shared/table-cells.tsx`) — pure, total, no throws.
+
+### §4.20 Hold tab — rebuilt as its own component (2026-07-09) [LIVE]
+
+**Sibling, not reuse — and why.** Hold is now its own component, `components/support/support-hold-table.tsx`, extracted from `support-page-content.tsx` (previously inline JSX). **Deliberately NOT merged** into `support-orders-table.tsx`. The dispatch-slot picker has a genuinely different contract on each board: on the **main board**, picking a slot **commits immediately** (`onSingleDispatch`); on **Hold**, picking a slot **stages** into a local `holdSlots` Map and only writes on an explicit **Release** click. Sharing one component around two contracts is how a held order gets silently auto-dispatched the instant a slot is picked — a behavioural regression, not a visual one. (Forcing Hold through the main `OrderRow` would need ~7 guard branches, including two full cell-content swaps and a different `onChange` contract on the Slot cell, layered onto a component already carrying five pieces of main-board-only state.)
+
+**Hold columns (11 + checkbox):** `OBD · CUSTOMER · SHIP-TO · HOLD SINCE · ROUTE · VOL · ARTICLE · SLOT · PRIORITY · ACTION`. Swaps vs the main board:
+- **STATUS dropped** — every Hold row's status is `hold`; a column where every cell is identical carries zero information.
+- **AGE → HOLD SINCE** — `AGE` counts from arrival, `HOLD SINCE` counts from `heldAt`. The release decision is driven by time-since-held, not time-since-arrival; showing both invites reading the wrong one.
+- **ACTION moved to last** — actions belong at the row's trailing edge, after the data that informs them.
+- **SHIP-TO, VOL, ARTICLE, PRIORITY present** — these are the inputs that shape a release decision; an order can sit on hold for days while its delivery point changes.
+
+Nine of eleven columns sit in the same position/meaning as the main board — muscle memory preserved.
+
+**⚠️ Behaviour change — VOL metric corrected, not just restyled.** Hold's VOL column now reads **`orders.importVolume` (LITRES)**. It previously read `querySnapshot.totalUnitQty` (a unit **COUNT**) — a different metric entirely. The number on screen has changed meaning for anyone used to the old column.
+
+**Alignment (Hold):** checkbox centre · HOLD SINCE centre (pill) · VOL right (both lines + header) · ACTION right (trailing buttons anchor to the row's trailing edge) · everything else left.
+
+**Other Hold changes:**
+- **`Overdue Nd` badge removed** from Hold's OBD cell (duplicated HOLD SINCE with a slightly different number). Main board **keeps** its badge — it has no Hold Since column.
+- **Group by SMU / Route added**, mirroring the main board.
+- **Bulk bar offset fixed:** `left-14` → `left-[72px]` (the sidebar is 72px; the bar was tucking 16px underneath it — a real bug, not cosmetic).
+- **`heldAt` null fallback added:** `null → "—"`, grey pill — necessary for legacy rows with no `heldAt` stamp (the Sree Milap test row, §7).
+- **Customer badges suppressed on Hold** (`showBadges={false}`) — Hold has no wired Missing-resolution dialog to back a click; `onMissing` is a real no-op.
+
+**Held tint orders — "Hold means hold."** A held tint order renders as an **ordinary held row**: no purple pill, no locked cells, no `getRowType()` call anywhere in the Hold table. Release works on it normally. Rationale: §4.9 already forbids holding a mid-mix order (`tint_assigned`, `tinting_in_progress` rejected 409) — so anything sitting on Hold is either pre-mix or post-mix, and safe to release.
+
+**No backend work needed.** `ORDER_INCLUDE` in `app/api/support/orders/route.ts` is one shared const used by the single `findMany` regardless of section; `section === "hold"` only narrows the `where` clause. Every field the new layout needs was already in the hold arm's payload. **Double-edged:** because `ORDER_INCLUDE` has no section-specific carve-out, any future narrowing of it for a main-board reason silently changes Hold's payload too.
+
+**Shared module** — `components/support/shared/table-cells.tsx` (new), imported by BOTH boards so they can't drift: `SUPPORT_GRID_COLUMNS`/`SUPPORT_HOLD_GRID_COLUMNS`, `ARTICLE_WORD_ABBR` + `formatArticleTag`, `getPriLabel`, `VolCell`, `CustomerCell` (`showBadges` prop), `groupOrders`/`getSmuGroup`/`GroupBy`/`OrderGroup`. **Deliberately NOT extracted:** the group-header bar JSX — duplicated in the Hold table on top of the shared `groupOrders`, so the grouping *behaviour* can't drift even though the markup is written twice (refactoring the heavily-tested main-board version was out of scope). `ShipToOverrideCell` and `DispatchSlotPicker` were already standalone; both boards import them directly, neither modified.
+
+**Known parity quirk (not a Hold regression):** the group-header row is a plain flex row, not a grid row, so its checkbox doesn't land on the same x as a data row's checkbox (96px vs 106px). Copied verbatim from the main board's existing behaviour — exact parity with an intentional existing design. Changing it means changing both boards.
+
+**Landmine — inherited, not fixed:** Hold's new SHIP-TO column writes through `app/api/support/orders/[id]/route.ts`, which rides the existing `prisma.$transaction` (§8 landmine). Pre-existing; a second UI surface now hits the same fragile route.
+
+### §4.21 Filter rework + merged search (2026-07-09) [LIVE]
+
+*(Numbering note: this content was originally drafted under "§4.18" — that number is already Ship-To Override, §4.18 above. §4.21 is the next genuinely free number as of this consolidation.)*
+
+**What the Filter was doing before this build (kept for the record):** defined in `support-page-content.tsx:484-488`, rendered by `UniversalHeader`.
+
+| Group | Options offered | Reality |
+|---|---|---|
+| View | Hold Only | Worked — flipped `mainTab`, real re-fetch with `section=hold`. |
+| Status | Pending / Dispatch / Dispatched | Worked for a single selection only; 2+ silently collapsed to "all". |
+| Delivery Type | Local / UPC / IGT | **Dead** — wrote to `headerFilters.deliveryType`, nothing ever read it. |
+| Priority | — | **Ghost** — state key existed, no UI ever offered it. |
+
+All filtering was client-side over the already-loaded list; `fetchOrders` only ever sent `date`/`section`/`slotId`. **The bug that killed trust:** the date-change effect force-reset `mainTab` from `hold`→`all` on a history date but never cleared `headerFilters.view` — the Filter pill kept showing "Hold Only · 1" while the board silently rendered everything.
+
+**What the Filter is now — four groups, real multi-select:**
+1. **View** — single toggle: Hold Only. Still the **only route to the Hold tab** (the tabs row shows arrival slots, not Hold) — do not remove it.
+2. **SMU** — multi-select, options derived **live from the loaded orders** (distinct, sorted) — never hardcode this list.
+3. **Delivery Type** — multi-select: Local / UPC / IGT. Now actually wired.
+4. **Priority** — multi-select, labels from `getPriLabel`. Now has UI.
+
+**Status group deleted** — Status is already a visible column with three values; the slot tabs + Hold tab already do the real splitting.
+
+Semantics: groups **AND** together, options within a group **OR** together. Filter pill badge = total selected across all four groups. "Clear all" inside the popover, visible only when badge > 0. SMU / Delivery Type / Priority also narrow the **Hold tab** and the **"N pending from earlier"** carry-over list (§4.17). Filtering runs at the **page level, before `groupOrders`**, so group-header counts always match visible rows. **State still resets on navigation — deliberate, do not add URL/localStorage persistence.**
+
+**Desync bug fixed:** the date-change effect now does `setMainTab("all")` AND `setHeaderFilters(prev => ({...prev, view: []}))` in the same beat — one source of truth.
+
+**Search — one box, wider reach.** There were two search boxes (header, with `/` shortcut; a toolbar box beside Export) — NOT true duplicates (the toolbar one matched route name, the header one didn't; the header one didn't apply to Hold at all). **The toolbar search box is deleted.** The header search is now a strict superset, matching (case-insensitive, substring, trimmed, null-guarded): `obdNumber`, `customer.customerName`, `shipToCustomerName`, `shipToCustomerId` (the code visible on screen), `customer.customerCode` (the customer-master code, NOT shown on screen), `customer.area.primaryRoute.name`.
+
+**The two-code trap.** The board displays `shipToCustomerId` (a scalar on `orders`); the customer master has its own separate `customerCode` on `delivery_point_master`. Usually the same value, sometimes not — that divergence is the entire reason ship-to override exists (§4.18). Search matches BOTH, so a code copied off the screen and a code copied out of SAP both land. Placeholder: `Search OBD, customer, code, route...`. `/` shortcut kept. Header search now applies to the **Hold tab** too (`SupportHoldTable` receives `displayOrders`, not raw `orders`).
+
+Toolbar after the change: **Select All** (left) · **Group by + Export** (right) — nothing else. Every consumer of the old toolbar search state now reads the page-level filtered+searched list: Select All/`selectableIds`, Group by→`groups`, Export CSV rows, the Done section, and the bulk bar's `selectedOrders`/qty/customer-count. **Export exports exactly what is visible.**
+
+**API change (the only one):** `app/api/support/orders/route.ts` — one additive line: `customerCode: true` added to `ORDER_INCLUDE.customer.select`. Strictly additive — no query params, where-clause arms, or response semantics changed. Filtering remains 100% client-side; the field simply now reaches the client so the search matcher can see it.
+
+**Type correction (same session):** `orders.shipToCustomerId` is `String?` in the schema — the `SupportOrder` interface in `support-orders-table.tsx` had typed it non-null; widened, render made null-safe. `orders.smu` is also `String?` (matches the existing `order.smu || "Unknown SMU"` fallback in `getSmuGroup()`).
+
+**Things not to undo:**
+- The percentage GRID sizing model (§4.19) was not touched this session and must not be.
+- Filtering stays client-side — server-side filtering is an API contract change needing explicit go-ahead.
+- `ship-to-override-cell.tsx` and `dispatch-slot-picker.tsx` untouched.
+- The **View → Hold Only** filter group is load-bearing — removing it strands the Hold tab.
+- SMU options are derived at runtime — never hardcode.
+
+**Open:** whether the Hold tab's previously-absent search was deliberate or an oversight is unknown — it searches now either way. Whether a Priority filter was ever wired and stripped, or never built, is unconfirmed (vestigial state suggests the former).
 
 ---
 
@@ -362,7 +502,7 @@ If an order is held AND released on the **same calendar day**, it shows ONCE as 
 - **Prisma P2024 pool timeout risk on local** (`connection_limit:1`) — slow local→Supabase queries can stack and starve the single connection (observed on `slots/route.ts` counts). Local-only infra symptom, not a code bug; parked for a separate look.
 - **`closed` = parking stage during incremental build.** Each new downstream screen gets fed by flipping the prior screen's done output forward once ready. Test orders never leak.
 - **Auto-done guard = `pending_support` stage ONLY.** Non-negotiable. Enrichment can run before tinting completes. The guard prevents closing un-tinted / mid-tint orders. Without it, a tint OBD with `dispatchStatus="dispatch"` set by enrichment would auto-close, skipping paint mixing entirely.
-- **Priority is NOT a Support concern.** It was dropped from the Support sort. Planning owns priority. Support sorts earliest → latest (received time).
+- **CORRECTED 2026-07-09 — Priority IS a Support concern.** The earlier claim here ("Priority is NOT a Support concern — Planning owns it") was wrong; Smart Flow confirmed Priority stays on the board and now has a real multi-select filter group (§4.21). The backend `ORDER_BY` tie-break (§4.6) is unrelated — it's a stable-sort detail, not evidence Priority is Planning-only. Support's primary sort is still earliest → latest (received time); Priority is a filter/display concern layered on top, not a sort override.
 - **`orderDateTime` is never null.** Do not use it as a "came from mail" signal. Use `mailMatched`.
 - **dispatchStatus is canonical lowercase on the orders side.** Translate once at enrichment. No `.toLowerCase()` anywhere else.
 - **heldAt = arrival date.** Not wall-clock. Board placement depends on it.
@@ -402,6 +542,11 @@ If an order is held AND released on the **same calendar day**, it shows ONCE as 
 - **Structured reason column** [DEFERRED] — cancel-dialog reasons stored only in log note string, not a queryable column. "Show me all credit-hold cancels" = raw DB query. Reason column parked.
 - **Bulk cancel** [DEFERRED] — `bulk/route.ts` accepts `dispatch | hold` only. Cancel remains single-order with mandatory confirm dialog.
 - **`heldAt` not cleared on cancel** [DEFERRED, cosmetic] — stale column on held-then-cancelled order. No bug (board anchors cancel to arrival day via `obdEmailDate`), but a future restore-to-hold path would need to handle it.
+
+### Column/Hold rework follow-ups [DEFERRED] (from the 2026-07-09 build)
+- **Gift-item volume exclusion is documented (§4.19) but not enforced downstream** [DEFERRED] — if `querySnapshot.totalVolume`, the header tiles, or a CSV export sum ALL volume regardless of `materialType`, that's a real number problem, not a display one. Deliberately parked — "streamline when we build." Needs its own session.
+- **`lib/dispatch/dispatch-engine.ts` was dirty/uncommitted throughout this build** [NOTE] — unrelated in-progress auto-assign work, never staged, still uncommitted as of this session.
+- **Ship-To at 11% and Status at 9% (main board GRID) hold small content, cosmetically generous** [NOTE] — left alone; widths have been changed enough this cycle.
 
 ### Dispatch / downstream
 - **"Assign date+slot to any order"** [LIVE — manual case, §4.13] — manual dispatch (single + bulk) now requires and stores `dispatchTargetDate` + `dispatchWindowId`. Auto-dispatch at enrichment (the "brain") is [NEXT] above.
@@ -477,6 +622,8 @@ All added via Supabase SQL Editor + hand-edit `prisma/schema.prisma` + `npx pris
 | `app/api/import/obd/route.ts` | `applyMailOrderEnrichment`: mailMatched, dispatchStatus.toLowerCase(), auto-done block, enrichment-hold heldAt stamp |
 | `components/support/support-page-content.tsx` | Active/done split, earliest-first sort, hold-tab picker wiring, slot-tab guard, history unlock, onBulkDispatch/onBulkHold + dispatchWindows wired into table |
 | `components/support/support-orders-table.tsx` | Done group, footprintType pills (Dispatch/Hold/Cancelled/Done), Status + Dispatch-Slot columns, dispatch intent (`dispatchIntentIds`), `savingSlot` optimistic state, bulk bar (status+slot+preview+Submit), undo buttons, elevation/polish/nav-alignment |
+| `components/support/support-hold-table.tsx` | Hold tab, own component (§4.20) — staged `holdSlots` Map, own column set, VOL reads `importVolume` |
+| `components/support/shared/table-cells.tsx` | Shared by main + Hold boards (§4.19/§4.20) — `SUPPORT_GRID_COLUMNS`/`SUPPORT_HOLD_GRID_COLUMNS`, `formatArticleTag`, `getPriLabel`, `VolCell`, `CustomerCell`, `groupOrders`/`getSmuGroup` |
 | `components/support/dispatch-slot-picker.tsx` | Reusable date-rail + window-pills picker; `forceOpenGen` prop for programmatic open from Status menu; portal-rendered popover |
 | `lib/dates.ts` | `getISTDayRange()` — IST midnight-to-midnight UTC intervals |
 | `docs/mockups/support/v9.html` | Support board mockup v9 |
@@ -485,4 +632,4 @@ All added via Supabase SQL Editor + hand-edit `prisma/schema.prisma` + `npx pris
 
 ---
 
-*CLAUDE_SUPPORT.md v1.4 · Support Module · July 2026*
+*CLAUDE_SUPPORT.md v1.6 · Support Module · July 2026*

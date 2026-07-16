@@ -21,6 +21,7 @@ Then load the domain file(s) matching the task:
 | `/admin/import`, SAP parser, upsert brain, Auto-Import, import_* tables | `docs/CLAUDE_IMPORT.md` |
 | `/support`, `/operations/support` — gatekeeper, workflow pipeline, closed parking-stage, hold/dispatch-target, history board | `docs/CLAUDE_SUPPORT.md` |
 | `/trips`, `trip_report`, NTS trip mirror, puller/mirror function, A4 trip sheet, WhatsApp share, logistics role | `docs/CLAUDE_TRIP_REPORT.md` |
+| `/picking`, picking queue, mobile supervisor board (Assign/Check tabs), `pick_assignments`, stage ladder, sort spine | `docs/CLAUDE_PICKING.md` |
 | `/admin` Settings → Hide (rules / hidden orders / tags), `obd_visibility_rules`, `app_tag_settings`, orders.isHidden | `docs/CLAUDE_CORE.md §7.10` + `CLAUDE_UI.md §57` (+ `CLAUDE_MAIL_ORDERS.md §21` for tag-gating) |
 
 If unsure which domain, ask before loading.

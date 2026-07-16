@@ -1,5 +1,5 @@
 # CLAUDE_PLACE_ORDER.md — Place Order Module
-# v1.4 · Schema v27.9 · June 2026
+# v1.5 · Schema v27.9 · July 2026
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -60,24 +60,44 @@ region          TEXT? — optional grey-line qualifier (TOOLS 4" brushes: Delhi 
                         /order + /po). Added via Supabase SQL ALTER + hand-edited
                         `schema.prisma` + `npx prisma generate` (never db push/pull).
 
-UNIQUE (family, product, baseColour)
+UNIQUE (family, subProduct, baseColour)
 ```
+
+**⚠️ Corrected 2026-07-16 — the unique key is on `subProduct`, NOT `product`.** Earlier docs said
+`UNIQUE (family, product, baseColour)`. `product` is nullable; `subProduct` is NOT NULL. Any
+menu-row duplicate guard (`WHERE NOT EXISTS`, `ON CONFLICT`) MUST key on `subProduct` — guarding
+on `product` silently fails to prevent duplicates on null-`product` rows.
 
 ### mo_sku_lookup_v2 (~1,680 rows after the full catalog restructure)
 
 ```
 material        TEXT UNIQUE — SAP material code (the join key the parser will eventually use)
-product         TEXT — SAP-clean stock name (joins to mo_order_form_index_v2.product)
-baseColour      TEXT
-packCode        PackCode  — enum
-unit            TEXT — "L" | "ML" | "KG" | "GM" | "PC"
-description     TEXT — full product description
-category        TEXT
+product         TEXT NOT NULL — SAP-clean stock name (joins to mo_order_form_index_v2.product)
+baseColour      TEXT NOT NULL
+packCode        TEXT NOT NULL — bare numeric string ("1"/"4"/"10"/"20"/"500"/"400"/"12"/"25"…).
+                                **Corrected 2026-07-16: this is TEXT, not the `PackCode` enum
+                                earlier docs claimed.** `unit` (below) is the separate type
+                                discriminator, not packCode.
+unit            TEXT? — "L" | "ML" | "KG" | "GM" | "PC" — nullable
+description     TEXT NOT NULL — full product description. **Undocumented until 2026-07-16:
+                                every insert must supply it, no db default.**
+category        TEXT NOT NULL
 isPrimary       BOOLEAN NOT NULL DEFAULT true  — v27.5. False on confirmed duplicate twins
-                                                  (130 rows). /api/order/data filters
-                                                  WHERE isPrimary = true. Desktop
-                                                  /api/place-order/data currently
-                                                  unfiltered (out of scope for this cut).
+                                                  (130 rows). BOTH /api/order/data AND
+                                                  /api/place-order/data filter
+                                                  WHERE isPrimary = true on this table
+                                                  (confirmed live 2026-07-16 against
+                                                  route.ts:92-93 — `skuRows` query).
+                                                  Desktop was fixed to match mobile in
+                                                  commit `46b500fb` (2026-07-15). An
+                                                  intervening draft claimed this route was
+                                                  still unfiltered — that claim did not
+                                                  match a direct read of the live file;
+                                                  treat it as stale. Residual dedupe risk
+                                                  (unrelated to isPrimary) — see §22.
+createdAt       TIMESTAMPTZ NOT NULL, db default now()
+                — Nullable columns: unit, paintType, materialType, piecesPerCarton,
+                  refMaterial, refDescription. No `updatedAt` column on this table.
 ```
 
 Index: `material UNIQUE`. Used by the catalog payload routes.
@@ -219,6 +239,31 @@ Phase 1 (2026-05-31) of the v2 single-source plan filled `product` on 92 broken 
 
 ~13 oddball rows + 8 mapped-but-unstocked rows still pending (§19 Stage 1 touch-ups).
 
+### Customer data source — the two-address-book gap (documented reality, 2026-07-16)
+
+This is a **separate join mechanism from the pack join above** — noted here because it's the
+other half of "how order entry finds things." All three order surfaces read their **customer**
+list from **`mo_customer_keywords`**, NOT `delivery_point_master`:
+
+- Desktop `/api/place-order/data/route.ts` (55-62) and mobile `/api/order/data/route.ts` (33-36)
+  both run `prisma.mo_customer_keywords.findMany(...)`, dedup to one entry per `customerCode`.
+- Neither route touches `delivery_point_master` at all.
+
+**A customer needs a row in BOTH tables** to work end-to-end:
+- `mo_customer_keywords` → makes them **searchable** in `/po`, `/place-order`, `/order`.
+- `delivery_point_master` → the **official record** (admin CRUD, FK-linked area/route/type; used
+  by tint, challans, reports).
+
+Master-only = invisible to the sales team at order entry. Keyword-only = no official record. This
+is a **live, recurring gap** — SAP/import creates `delivery_point_master` rows without a matching
+keyword row. No fix is proposed here; this is a documented landmine, not a task.
+
+`mo_customer_keywords` has **no unique constraint on `customerCode`** (many rows per code are
+legal — one per keyword), so `ON CONFLICT ("customerCode")` is unusable; guard inserts with
+`WHERE NOT EXISTS` instead. Minimum for findability: `customerCode` + `customerName`; `area` is
+the only extra field displayed (grey `· {area}` suffix, §15.4). Search over this table is
+**client-side** — neither route filters server-side.
+
 ---
 
 ## 9. Variant cell — semantics
@@ -249,22 +294,82 @@ All four shortcut keys (`+`, `=`, `-`, `_`) call `e.preventDefault()` to suppres
 
 Distinguishable visually. NA cells have different bg + `cursor: not-allowed`.
 
-### Pack step map
+### Pack step map — CORRECTED 2026-07-16
 
-`PACK_STEP_MAP` in `lib/place-order/pack.ts`. Examples:
-- 1L → step 12 (box of 12)
-- 4L → step 6 (box of 6)
-- 10L → **step 1** (drum, NOT box of 2 — drums ship as singles)
-- 20L → step 4 (box of 4) for putty bags, etc.
-- 200ML → step 12
+`PACK_STEP_MAP` in `lib/place-order/pack.ts:108-123`. **The 1L and 4L values below were wrong in
+earlier docs (1L was documented as step 12, 4L as step 6) — the live code is 6 and 4.** Full table,
+verified live 2026-07-16:
 
-Helper `packContainerLabel(pack)` returns `"box 12" | "box 6" | "box 4" | "drum" | "bag" | "can" | null`.
+| Pack | Step | | Pack | Step |
+|---|---|---|---|---|
+| 50ML | 12 | | 20L | 1 |
+| 100ML | 24 | | 30L | 1 |
+| 200ML | 12 | | 40KG | 1 |
+| 500ML | 12 | | 25KG | 1 |
+| **1L** | **6** | | 30KG | 1 |
+| **4L** | **4** | | 5KG | 1 |
+| 10L | 1 | | "1 pc" | 1 |
+
+Unlisted pack label → `?? 1` default.
+
+`PACK_CONTAINER_MAP` (`pack.ts:183-200`): `50ML`→"box 12", `100ML`→"box 24", `200ML`→"box 12",
+`500ML`→"box 12", `1L`→"box 6", `4L`→"box 4", `10L`/`20L`/`30L`→"drum", `40KG`/`25KG`/`30KG`→"bag",
+`25PC`→"box of 25", `12PC`→"box of 12", `500PC`→"pack of 500", `400ML`→"can". Helper
+`packContainerLabel(pack, productKey?)` returns one of these or `null`.
 
 `formatPack`, `packToMl`, `packStep`, `sortPacksForDisplay` are all in `lib/place-order/pack.ts`. The mobile `/order` page imports from there too (in-page copies removed in the 2026-05-29 v2 migration).
 
-**Carton/box size is a SHARED per-pack constant** (`PACK_STEP_MAP` + `PACK_CONTAINER_MAP`), keyed by pack LABEL — NOT per-SKU. Changing one label ripples to every product carrying that pack — check blast radius first. (`100ML` carton is 24, set 2026-06-02.) The `piecesPerCarton` column on `mo_sku_lookup_v2` exists but is dead weight (no route selects it, grid never reads it); if cartons ever diverge for the same pack, the fix is to prefer `piecesPerCarton` with the map as fallback ("Option B", parked).
+**Step and container label are deliberately decoupled** — `5KG` has step 1 but no
+`PACK_CONTAINER_MAP` key (no header suffix); the KG columns (1/2/5/10/15/20 KG) likewise have none.
 
-**Piece/box packs (TOOLS, 2026-06-08):** `unit="PC"`, `packCode="25"` (rollers) / `"12"` (brushes) → distinct lookup keys `25PC`/`12PC`. `formatPack` PC → **"1 pc"**; `PACK_CONTAINER_MAP` `25PC`→"box of 25", `12PC`→"box of 12". New helper **`packStepForPack(packCode, unit)`** (with `PIECE_BOX_STEP { "25PC":25, "12PC":12 }`) **delegates to the label-keyed `packStep` for every non-PC pack** (paint byte-identical); used by desktop `variant-grid.tsx` AND both mobile renderers. Distinct keys are what let two carton sizes coexist (the label-keyed map couldn't carry both).
+### Carton is now product-scoped, not just pack-label-scoped — CORRECTED 2026-07-16
+
+Outdated since 2026-06-11. `PRODUCT_CARTON_OVERRIDES` (`pack.ts:139-141`) is a **product-scoped
+override**, checked via `cartonOverride()` (`pack.ts:146-149`) **before** the global maps, inside
+**both** `packStep` and `packContainerLabel` — one table drives both so they can't drift. Keyed by
+`product ?? subProduct` (already threaded at every call site — desktop grid/header/cart, `/po`
+PackRows/step closures/cart chips). Mirrors the `FAMILY_BUCKET_OVERRIDES` precedent (§24).
+
+**Shipped overrides (loose-selling, 2026-07-16):**
+
+```ts
+"UNIVERSAL STAINER":  { "50ML": 20, "100ML": 20, "200ML": 10 }   // pre-existing
+"MACHINE TINTER":     { "1L": 1 }
+"ACOTONE":            { "1L": 1 }
+"GVA":                { "1L": 1 }
+"CRACKFILLER 5MM":    { "1KG": 6, "400GM": 12 }
+"CRACKFILLER 10MM":   { "1KG": 4, "500GM": 12 }
+"CRACKFILLER 20MM":   { "1KG": 4 }
+```
+
+**Business rule:** Machine Tinter / Acotone / GVA are sold **LOOSE** (single tins) — the override
+is a UI ordering-granularity decision. The real factory carton **is still 6** (`piecesPerCarton`
+deliberately left unchanged) — do NOT "fix" the data to 1.
+
+**`packContainerLabel`: an override of 1 now returns `null`** (no "box 1" nonsense) — a single tin
+isn't a box. The desktop header computes each present row's container label from that row's OWN
+raw selected pack; if all present rows agree, the suffix renders (Gloss stays "1 L · box 6"); if
+any disagree or any is null, the header shows the bucket label alone with no suffix. The carton
+itself moved **per-row** onto the existing grey pack hint under each cell (`{rawPack} · box {n}`,
+suffix omitted at step 1).
+
+**⚠️ Landmine — override key shape diverges between step and header.** `packStepForPack` receives
+the RAW pack label (a 1KG SKU → `"1KG"`). The desktop header's `packContainerLabel` call receives
+the BUCKET label (`variant-grid.tsx:233`) — for most families these coincide, but AQUATECH folds
+KG/GM into litre buckets (§24: `400GM`/`500GM`→`500ML`, `1KG`→`1L`, `5KG`→`4L`), so a bucket-keyed
+override lookup (`"1L"`) **misses** a raw-keyed override (`"1KG"`) and silently falls through to
+the global map. **Rule: `PRODUCT_CARTON_OVERRIDES` keys must always be RAW pack labels
+(`formatPack` output), never bucket labels.**
+
+**`piecesPerCarton` current state (703/1,743 primary rows populated, 1,040 blank):** still read by
+**no route** — dead weight stands. The parked "Option B" (prefer `piecesPerCarton`, map as
+fallback) was **considered and rejected** this cut — the column already correctly said `6` for
+Machine Tinter 1L (that IS the real carton), so reading it would change nothing without also
+falsifying the loose-selling UI decision. `PRODUCT_CARTON_OVERRIDES` is the right mechanism because
+loose-selling is a UI concern, not a data correction. Option B remains viable if cartons ever
+diverge *factually* for the same pack label.
+
+**Piece/box packs (TOOLS, 2026-06-08):** `unit="PC"`, `packCode="25"` (rollers) / `"12"` (brushes) → distinct lookup keys `25PC`/`12PC`. `formatPack` PC → **"1 pc"**; `PACK_CONTAINER_MAP` `25PC`→"box of 25", `12PC`→"box of 12". Helper **`packStepForPack(packCode, unit, productKey?)`** (with `PIECE_BOX_STEP { "25PC":25, "12PC":12, "500PC":500 }`, unlisted PC code → `?? 1`) **delegates to the label-keyed `packStep` for every non-PC pack** (paint byte-identical); used by desktop `variant-grid.tsx` AND both mobile renderers. Distinct keys are what let two carton sizes coexist (the label-keyed map couldn't carry both).
 
 **New pack step defaults to 1** when the label isn't in `PACK_STEP_MAP` — so a per-unit pack like the Spray Paint **400 ml can** (`formatPack(400,ML)→"400 ml"`, `PACK_CONTAINER_MAP["400ML"]="can"`) needs no `packStepForPack` edit.
 
@@ -355,6 +460,26 @@ padWidth = String(bill.lines.length).length
 **Unified `/po`-format lines (desktop now uses the shared `buildEmail`):** emitted only when set — `Dispatch: Urgent` / `Dispatch: Call to SO|Dealer`; a remark line (`Truck order` / `Cross billing from {depot}` / `Bounce order` / `DTS order`); a Notes line; a Ship To line (omitted when "same as billing"). A plain order (Normal + no remark + no notes + ship-to same) is byte-identical to the prior output.
 
 **Email body is RAW.** Display aliases / shade codes (§12) are NEVER inserted. The mail parser sees `WS MAX 94 BASE`, not `WS Max · Accent`. Parser owner accepts ~90% v2-name match — full cutover is Stage 3 (§19).
+
+### Remark-aware email subject [LIVE, 2026-07-08]
+
+The mailto **subject line** changes based on the selected Order Remark chip, so the depot inbox is
+scannable at a glance without opening each mail. Shared helper **`buildSubject()`** in
+`lib/place-order/email.ts`; both `/po` and `/place-order` call it (only one remark can be selected
+at a time — no combine/priority logic; no date in the subject).
+
+| Remark | Subject |
+|---|---|
+| None (baseline) | `Order — {customer} {code}` *(byte-identical to before)* |
+| Truck | `Truck Order — {customer} {code}` |
+| Bounce | `Bounce Order — {customer} {code}` |
+| DTS | `DTS Order — {customer} {code}` |
+| Cross (+ depot) | `Cross Billing Order From {Depot} — {customer} {code}` |
+| Cross (no depot) | `Cross Billing Order — {customer} {code}` *(defensive fallback only —*
+| | *`/po`'s `confirmCross()` always sets marker+depot together; not proven live on desktop)* |
+
+Email **body** is untouched — the remark already shows there as a `Remark:` line. `/order` (frozen)
+does not carry this feature.
 
 ---
 
@@ -456,6 +581,36 @@ Mobile `getProductSuggestions` (in `app/order/page.tsx`) AND desktop `searchProd
 
 **NEW `lib/place-order/keyword-family-map.ts`** (pure TS, no React — like `base-aliases.ts`, so both rankers share one module → mobile == desktop, no drift). `KEYWORD_FAMILY` maps a word → family; `getFamilyDefaultForQuery(query)` normalises (trim → lowercase → collapse spaces) and returns the family **only on a whole-query match** (so "vt pearl" / "vt clear coat" fall through to normal ranking). Both rankers call it after normal ranking: on a hit `F`, result = `[F-rows by sortOrder asc] ++ [all other matches in normal order]`, sliced to limit — **promote-only, nothing dropped/hidden**. This is the §19 universal-keyword-layer precursor. Both search payloads + both `Product` types carry `sortOrder` so the promoted family orders by tab order. Current promotions include: vt/velvet touch → VELVET TOUCH; sadolin/woodcare → SADOLIN; supercover/superclean/3in1; distemper/magik/duwel; putty/texture/rustic; tools/roller/brush → TOOLS; spray/aerosol → SPRAY PAINT; m900; etc.
 
+### Bare-digit search fix [LIVE, 2026-07-15]
+
+**Symptom:** `brush 3` returned the Super Brush Double 2"; `brush 2` returned four unrelated rows.
+
+**Cause:** both matchers (`mobile-search.ts` for `/order`+`/po`, `queries.ts` for `/place-order`)
+fold filter + score into one function via `indexOf()` substring matching — score 0 excludes a row,
+any nonzero includes it. `searchTokens` has SAP material codes baked in (seed
+`v2-catalog-seed-from-preview.ts:1009-1019`), so a typed `3` matched the digit **inside**
+`6472113` and leaked in an unrelated row. A code-digit hit scores `5` (weakest signal) but the
+filter is boolean, not threshold-based — a `5` survives exactly as well as a `100`.
+
+**The rule (locked):** a query token that is **entirely digits AND 1-2 characters long** (`3`, `9`,
+`90`, `12`) only scores at a **word start** — index 0, or preceded by a non-alphanumeric char.
+Mid-word occurrence scores 0. Unaffected: any token containing a letter (`m900`, `3in1`, `2k`,
+`g20`), and any all-digit token of 3+ chars (`647`, `6474083`). Boundary test is
+**non-alphanumeric**, not space-only (`searchTokens` is comma-joined).
+
+New `SHORT_DIGIT_TOKEN` regex + `isWordStart` helper, mirrored in **both** `mobile-search.ts` and
+`queries.ts` (client-imported vs server-side — not extracted to a shared module, a separate
+decision). Numeric base codes 90/92/94/95/96/97/98/99 all sit at word starts → unaffected.
+
+**⚠️ Landmine — scan ALL occurrences, not just the first.** `indexOf()` returns only the first
+hit. If the first hit of a short digit is mid-word but a later hit is at a word start, the row must
+still match — the fix scans every occurrence and takes the best score. This is the easiest way to
+get a similar change wrong.
+
+Rejected fix: stripping codes out of `searchTokens` at the seed layer — that's a reseed and a
+data-layer change for a search-matcher bug. The matcher already distinguished word-start (20) from
+mid-word (5) scores; it just wasn't acting on it.
+
 ### Variant-qualifier tabs are NOT colours
 
 SmartChoice / Primer tabs carry a use-case label in `baseColour` ("Interior", "Int Primer"…), not a colour. The scorer's colour-base bonus (`+50` when a query word is a substring of `baseColour`) wrongly promoted them ("int" matched SmartChoice's "Interior"). Fix: **exempt `isVariantQualifierTab` rows from the colour-base bonus** in BOTH `mobile-search.ts` and `queries.ts` — surgical, zero blast radius on other families. (`isVariantQualifierTab` lives in `sub-product-descriptors.ts`, §UI two-line display.)
@@ -521,6 +676,65 @@ Spray Paint + M900 Gloss were both MAP (already hidden in legacy). **`HIDDEN_BY_
 6. `keyword-family-map.ts` promotion (§13).
 7. Speed-dial (`quick-tiles-config.ts`) — locked at 9; swap a tile or stay search-only.
 8. If a new pack type: `pack.ts` (`formatPack`, `packStepForPack`/`PIECE_BOX_STEP`) + `pack-buckets.ts` disjoint bucket + `PACK_CONTAINER_MAP`.
+
+### TOOLS conventions (banked, reuse for any future TOOLS row)
+
+**`mo_order_form_index_v2`:** `family`="TOOLS"; `subProduct`=UPPERCASE no inch mark
+("SIGNATURE BRUSH DOUBLE 3"); `product`=identical to `subProduct`; `uiGroup`= Rollers | Brushes |
+Stickers; `baseColour`=`''` (empty string, NOT null); `displayName`=Title case + `″` (U+2033 double
+prime, "Signature Brush Double 3″"); `searchTokens`=comma-space list ending with SAP code(s);
+`tinterType`=NULL; `productType`="PLAIN"; `section`="UTILITY"; `subgroup`="Tools & accessories";
+`mobileFamily`="TOOLS"; `region`=NULL or Delhi NCR / UP Punjab / South / All India;
+`sortOrder`=6001+.
+
+**`mo_sku_lookup_v2`:** `description`=Title case + `"` (plain ASCII quote — NOT the prime used in
+`displayName`; this is the live convention, not a typo), SAP prefix/suffix stripped;
+`category`="TOOLS"; `product`=UPPERCASE matching the menu row's `product` exactly; `baseColour`=`''`;
+`packCode`="12" brushes / "25" rollers (pieces per carton); `unit`="PC"; `paintType` /
+`materialType` / `piecesPerCarton`=NULL; `isPrimary`=true.
+
+**Smart-brand quirk:** Smart-brand rows drop the brand word from `displayName` ("Brush Double 3″",
+"Unifiber Int. Roller 4″") while Signature/Super keep it. Deliberate, pre-existing — new Smart rows
+follow it.
+
+### SAP series re-code — TOOLS brush/roller 645xxxx → 647xxxx (2026-07-15)
+
+SAP re-coded the entire brush/roller range. The new `647xxxx` series is now the only thing visible
+on all three order surfaces; the old `645xxxx` series is **switched off, never deleted**
+(`isPrimary=false` on SKU rows, `isActive=false` on menu rows — fully reversible with one UPDATE).
+Old codes stay in `searchTokens` so historical orders remain findable by old code.
+
+Shipped: **+12 menu rows** (10 brand-new products + 2 All-India brushes), **7 menu rows** deactivated
+(4 superseded region rows, 3 discontinued with no replacement); **+30 SKU rows** (all `647xxxx`,
+primary), **25 SKU rows** demoted to `isPrimary=false` (all `645%` TOOLS except STICKERS, which is
+untouched — not brush/roller). Verified zero rows on: active menu without primary stock, primary
+stock without active menu, old codes still primary.
+
+**Reusable pattern for any future SAP series re-code** (each step safe on its own, reversible):
+1. Arm the switch first (code) — confirm both order surfaces already respect `isPrimary`.
+2. Look before writing (SQL, read-only) — dump the live family's rows from both v2 tables; copy the
+   siblings' conventions, never invent one.
+3. Menu first (SQL) — new rows + deactivate superseded. New rows render with no pack buttons until
+   step 4 — expected, harmless.
+4. Stock second (SQL) — insert new `isPrimary=true`, flip old to `false`.
+5. Verify (SQL, read-only) — the three zero-row checks above.
+6. Browser smoke test — pack buttons on every new row is the tell; a row with no buttons means the
+   `product` string didn't match between the two tables.
+
+Guard inserts with `WHERE NOT EXISTS` on the real unique key — `mo_sku_lookup_v2` has no unique
+constraint suitable for `ON CONFLICT` beyond `material`; `mo_order_form_index_v2`'s is
+`(family, subProduct, baseColour)` (§2).
+
+### Recent SKU data fixes (2026-07-16)
+
+- **Added — DN Gloss DA Grey 10LT** (`IN28010582`, product `GLOSS`, baseColour `DA GREY`,
+  packCode `"10"`, unit `L`). Menu row already existed (Gloss DA Grey), so only the SKU side needed
+  the new pack — no menu work required.
+- **Fixed — WS Powerflexx 90 BASE was showing only 1L.** Three SKUs (5771986/87/88, the 4L/10L/20L
+  siblings of the existing 1L row) were filed under `baseColour='BRILLIANT WHITE'` but are actually
+  `90 BASE`; repointed. This also fixed a second bug at the same time — Brilliant White had been
+  showing duplicate 4L/10L/20L rows. See the "WHITE BASE" landmine in §22 — likely not an isolated
+  case.
 
 ---
 
@@ -607,11 +821,13 @@ User input escaped via React text nodes — never `dangerouslySetInnerHTML`.
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/api/place-order/quick-tiles` | Returns 9-tile config + counts (desktop) |
-| GET | `/api/order/data` | Returns hydrated v2 form index + SKU lookup (used by `/order` mobile). Public. Filters `isPrimary = true` on SKU lookup. |
-| GET | `/api/place-order/data` | Returns same shape (used by `/place-order` desktop). Session-auth'd. Currently unfiltered on `isPrimary` (out of scope for this cut). |
+| GET | `/api/order/data` | Returns hydrated v2 form index + SKU lookup (used by `/order` mobile **AND `/po`** — confirmed 2026-07-15, `app/po/po-page.tsx:752`). Public. Filters `isPrimary = true` on SKU lookup. |
+| GET | `/api/place-order/data` | Returns same shape (used by `/place-order` desktop only). Session-auth'd. **Also filters `isPrimary = true`** on SKU lookup as of commit `46b500fb` (2026-07-15) — confirmed live 2026-07-16, `route.ts:92-93`. |
 | POST | `/api/place-order/last-order` | Returns last order normalised to units for given customerCode |
 
 All routes: `export const dynamic = 'force-dynamic'`.
+
+**Route sharing (confirmed 2026-07-15):** `/place-order` is the **only** surface with its own data route AND its own search matcher (`queries.ts`). `/po` and `/order` share both `/api/order/data` and the mobile matcher (`rankProductsForQuery`, `mobile-search.ts`).
 
 **Duplicated payload queries:** `/api/order/data` and `/api/place-order/data` both build the v2 payload via duplicated queries. No shared helper yet. If you edit the v2 payload shape, edit BOTH or extract a shared builder. CORE §13 landmine.
 
@@ -771,7 +987,12 @@ On every cart change: full cart object serialised. On mount: deserialise + valid
 - **Cart volume total uses units × packToLitres, NOT × packStep.** Earlier bug double-counted boxes-and-units. Don't reintroduce a `packStep` multiplier.
 - **`PACK_STEP_MAP[10L] = 1`.** Drums ship as singles. Don't change to 2.
 - **Path A is tactical.** Stage E migration (proper `subVariant` column) was planned in earlier roadmap; superseded by the 3-stage v2 single-source plan (§19) which goes farther.
-- **`/api/order/data` filters `isPrimary = true`. `/api/place-order/data` does not.** Desktop will show duplicate twins until the filter is added there too (intentional — out of scope for the current cut).
+- **CORRECTED 2026-07-16 — both routes now filter `isPrimary = true`.** `/api/place-order/data` was fixed to match `/api/order/data` in commit `46b500fb` (2026-07-15), confirmed live against `route.ts:92-93`. The earlier "desktop is unfiltered" claim is retired — do not reintroduce it without re-checking the live route first (an intervening draft claimed it had regressed; that claim did not match the code).
+- **Residual dedupe-collision risk (unrelated to isPrimary), both routes.** `addToPackMap`'s dedup key is `` `${key}|||${formatPack(pack.packCode, pack.unit)}` `` — first row in wins, rest silently dropped — and the `skuRows` query carries **no `orderBy`**, so if two `isPrimary=true` rows ever collide on the same rendered pack, which one wins is unspecified (Prisma row order without `orderBy`).
+- **`mo_order_form_index_v2`'s real unique key is `(family, subProduct, baseColour)`, NOT `(family, product, baseColour)`.** `product` is nullable; guard inserts (`WHERE NOT EXISTS`, `ON CONFLICT`) on `subProduct` or they silently fail to catch duplicates on null-`product` rows.
+- **`mo_sku_lookup_v2.packCode` is TEXT, not the `PackCode` enum** earlier docs claimed — bare numeric strings (`"1"`, `"4"`, `"10"`…). `unit` is the separate type discriminator. `description` is NOT NULL with no db default — every insert must supply it.
+- **"WHITE BASE" in a `description` does NOT mean Brilliant White.** Three WS Powerflexx SKUs (5771986/87/88) were misfiled under `baseColour='BRILLIANT WHITE'` despite being `90 BASE` (fixed 2026-07-16 — evidence: consecutive SAP block, a complete sibling Brilliant White set already existed at 5771981-84). Likely not isolated — worth a catalog-wide `description ILIKE '%WHITE BASE%'` sweep under `baseColour='BRILLIANT WHITE'` if similar symptoms appear elsewhere. No sweep run yet.
+- **`PRODUCT_CARTON_OVERRIDES` keys must be RAW pack labels, never bucket labels** (§9) — AQUATECH's KG→litre bucket folding means a bucket-keyed override silently misses a raw-keyed one.
 - **`mobileFamily` is declared but unused as a label.** Populated by the seed, ready if a single-PROMISE mobile label is ever wanted. Today mobile labels by `family`.
 - **Promise cross-listing risk** — if a product appears under both family `PROMISE` and `PROMISE INTERIOR/EXTERIOR/ENAMEL`, surfaces as a near-duplicate in flat mobile search. Family chip distinguishes.
 - **Phase 3 `visualViewport` JS fight failed** on the qty card sticky bar. Don't fight iOS's sticky-position quirks with JS math. Move the bar to a place that doesn't need lifting (skip auto-focus on mobile is the right pattern).
@@ -851,12 +1072,53 @@ Android hardware Back and iPhone edge-swipe step *back through screens* instead 
 - On qty/field focus: scroll the whole `[data-product-section]` / `[data-field-section]` to the top of the scroll area on a double-rAF (the top is always above the keyboard regardless of iOS timing). Hide the Add/Send pill while a qty/field is focused.
 - **Send-path ordering:** `window.location.href = mailto:` must fire FIRST in the tap gesture; a synchronous `history.go()` in the same tick cancels the external handoff on mobile → defer any history reset via `setTimeout(…, 0)` (`depthRef`/`suppressPopRef` still set synchronously to absorb the deferred pop).
 
+### Favourites [LIVE, 2026-07-14] — replaces Recents on the /po Home screen
+
+**Why:** 80-90% of a Sales Officer's orders come from the same ~8 dealers; a shuffling "Recent"
+list didn't help quick access, so a curated stable list replaced it on Home.
+
+- Home section is "Favourites" (word + small gold star), one column, sorted A-Z by name.
+- **Star toggle in the customer BUILD header** (persists across build/search/quantities). Tap
+  toggles add/remove.
+- **Cap 8.** Adding a 9th is BLOCKED, not silently evicted — amber "Favourites full (8 of 8) —
+  remove one first", auto-dismiss.
+- Tapping a favourite starts an order instantly (no network lookup — the fav entry stores enough
+  customer data itself).
+- Empty state: soft icon + "No favourites yet" + prompt.
+- **`Recents` machinery is left intact but unrendered** — `getRecents`/`addRecent` still run in the
+  background (still written on Send), just not shown on Home. Restorable by re-rendering.
+
+**Storage:** `lib/place-order/fav-customers.ts`, key `po_fav_customers` — `{ version:1, favs:[{ id,
+name, code, area }] }`, `id === customer code` (Customer has no numeric id, matching how Recents
+keys customers). Helpers: `loadFavs` (A-Z), `addFav` (blocks at 8), `removeFav`, `isFav`. Same
+per-phone/per-browser localStorage nature as Drafts. **Favourites are per-phone/per-browser** —
+lost on browsing-data clear or a new phone; moving to server/DB is deferred until that pain is real.
+
+Visual polish (cards, chips, colour palette, unified footer buttons) → `CLAUDE_UI.md` §55; not
+duplicated here (docs-scope: this file owns behaviour, UI owns pixels).
+
+**⚠️ Gap — Drafts/Sent behaviour is NOT documented here.** This session's draft references a
+companion draft (`po-save-draft-sent-feature.md`, covering the Save-Draft/Sent/receipt build) that
+is **not present in `docs/prompts/drafts/`**. Do not infer Drafts/Sent behaviour from this section
+— only Favourites (above) is sourced from an actual draft. Locate or re-author that companion draft
+before documenting Drafts/Sent.
+
+### Launch — full /po feature set live [2026-07-14]
+
+The `?draft=on` gate was removed (commit `5b520304`): `draftsEnabled` changed from a
+`window.location.search`-reading `useState` to a plain `const draftsEnabled = true`; the
+query-reading effect deleted. Single-point flip — all `draftsEnabled &&` call sites still gate on
+the one constant, no call-site churn. Plain `/po` now shows the full feature set (Favourites +
+whatever the missing companion draft's Drafts/Sent build covers) to all users, including installed
+PWAs (the "Add to Home Screen" icon strips query params, so it always opened plain `/po` even
+during testing).
+
 ### Recents
-Device-local localStorage, saved **on Send** (not on select), dedupe by code, newest-first, cap 10. Desktop key `place_order_recent_customers`; `/po` key `po_recent_customers` (distinct). Grid shows only when no customer selected AND search empty AND recents non-empty. Server-side per-user recents deferred (ROADMAP).
+Device-local localStorage, saved **on Send** (not on select), dedupe by code, newest-first, cap 10. Desktop key `place_order_recent_customers`; `/po` key `po_recent_customers` (distinct). Grid shows only when no customer selected AND search empty AND recents non-empty. Server-side per-user recents deferred (ROADMAP). **On `/po` Home this is now superseded by Favourites** (above) — the mechanism still runs, just isn't rendered there.
 
 ### Android shell / polish
 Manifest `display_override: ["standalone"]`; `html,body { overscroll-behavior: none }` (kills pull-to-refresh); scroll container `overscroll-behavior: contain`; reset scroll on `[mode, view]` change; `.po-page` scoped `touch-action: manipulation` (tap-delay, scoped so the rest of the app incl. `/order` is untouched). Android "browser-feel/zoom" was a stale-install symptom — a clean PWA reinstall fixed it, not config.
 
 ---
 
-*Place Order v1.4 · Schema v27.9 · OrbitOMS*
+*Place Order v1.5 · Schema v27.9 · OrbitOMS*
