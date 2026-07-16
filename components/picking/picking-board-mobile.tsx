@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Search, ChevronDown, Check, Star, Zap, ArrowRight } from "lucide-react";
+import { Search, ChevronDown, Check, Star, Zap, ArrowRight, ChevronLeft } from "lucide-react";
 import { toast } from "sonner";
 import { getTodayIST } from "@/lib/dates";
 import type { PickingQueueRow } from "@/lib/picking/types";
@@ -23,6 +23,15 @@ interface AssignResponse {
   assigned?: number;
   failed?: { orderId: number; error: string }[];
   error?: string;
+}
+
+// Real GET /api/picking/order/[orderId] response shape — see that route.
+interface LineItem {
+  id: number;
+  name: string | null;
+  sku: string;
+  pack: string | null;
+  qty: number;
 }
 
 // Card shell shadow — lifted verbatim from app/po/po-page.tsx's SOFT_CARD_SHADOW
@@ -79,6 +88,20 @@ export function PickingBoardMobile(): React.JSX.Element {
   // rows undone in quick succession can't lose track of each other.
   const [unassigningIds, setUnassigningIds] = useState<Set<number>>(new Set());
 
+  // Detail screen — a full-screen overlay that stays MOUNTED (translateX
+  // slide, per the approved mockup) rather than conditionally rendered, so
+  // the board underneath (filters + scroll position) is never torn down.
+  const [detailOrderId, setDetailOrderId] = useState<number | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [lineItems, setLineItems] = useState<LineItem[] | null>(null);
+  const [lineItemsLoading, setLineItemsLoading] = useState(false);
+  const [lineItemsError, setLineItemsError] = useState<string | null>(null);
+
+  // Which rows the OPEN picker sheet will act on — bulk (floating bar, from
+  // the current selection) or single (detail screen's own CTA). Decoupled
+  // from `selected` so the two flows never fight over the same state.
+  const [assignTarget, setAssignTarget] = useState<PickingQueueRow[]>([]);
+
   const fetchQueue = useCallback(async (): Promise<PickingQueueResult> => {
     const res = await fetch(`/api/picking/queue?date=${selectedDate}`);
     if (!res.ok) {
@@ -128,6 +151,33 @@ export function PickingBoardMobile(): React.JSX.Element {
       cancelled = true;
     };
   }, []);
+
+  // Line items for the detail screen — fetched on demand per the task brief
+  // ("do NOT bloat the main queue payload"). Re-fires only when the target
+  // order changes, not on every open/close of the same order.
+  useEffect(() => {
+    if (detailOrderId === null) return;
+    let cancelled = false;
+    setLineItemsLoading(true);
+    setLineItemsError(null);
+    setLineItems(null);
+    async function load() {
+      try {
+        const res = await fetch(`/api/picking/order/${detailOrderId}`);
+        if (!res.ok) throw new Error(`Request failed (${res.status})`);
+        const json = (await res.json()) as { lines?: LineItem[] };
+        if (!cancelled) setLineItems(json.lines ?? []);
+      } catch (err) {
+        if (!cancelled) setLineItemsError(err instanceof Error ? err.message : "Failed to load line items");
+      } finally {
+        if (!cancelled) setLineItemsLoading(false);
+      }
+    }
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [detailOrderId]);
 
   // Post-assign refetch — never patch rows locally. Mirrors
   // picking-queue.tsx's refetchAfterAction: does not touch loading/error UI,
@@ -209,19 +259,43 @@ export function PickingBoardMobile(): React.JSX.Element {
   const selectedRows = filteredWaiting.filter((r) => selected.has(r.orderId));
   const selectedLitres = selectedRows.reduce((sum, r) => sum + (r.volumeLitres ?? 0), 0);
   const pickerSheetSubtitle =
-    selectedRows.length === 1
-      ? `1 bill · ${selectedRows[0].dealerName}`
-      : `${selectedRows.length} bills selected`;
+    assignTarget.length === 1
+      ? `1 bill · ${assignTarget[0].dealerName}`
+      : `${assignTarget.length} bills selected`;
+
+  // The row the detail screen is currently showing — looked up fresh from
+  // `data` each render (not a captured snapshot) so it reflects the latest
+  // fetch if something changed the row while the screen was open.
+  const detailRow: PickingQueueRow | null = useMemo(() => {
+    if (!data || detailOrderId === null) return null;
+    return data.rows.find((r) => r.orderId === detailOrderId) ?? null;
+  }, [data, detailOrderId]);
+
+  function openDetail(orderId: number): void {
+    setDetailOrderId(orderId);
+    setDetailOpen(true);
+  }
+
+  function closeDetail(): void {
+    setDetailOpen(false);
+  }
+
+  // Opens the shared picker sheet targeted at a single row — the detail
+  // screen's own "Assign to picker" CTA, independent of the bulk selection.
+  function openPickerForRow(row: PickingQueueRow): void {
+    setAssignTarget([row]);
+    setPickerSheetOpen(true);
+  }
 
   const handleAssign = useCallback(
     async (pickerId: number, pickerName: string) => {
-      if (selectedRows.length === 0 || assigning) return;
+      if (assignTarget.length === 0 || assigning) return;
       setAssigning(true);
       try {
         const res = await fetch("/api/picking/assign", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ orderIds: selectedRows.map((r) => r.orderId), pickerId }),
+          body: JSON.stringify({ orderIds: assignTarget.map((r) => r.orderId), pickerId }),
         });
         const json = (await res.json().catch(() => ({}))) as AssignResponse;
         if (!res.ok) {
@@ -241,6 +315,10 @@ export function PickingBoardMobile(): React.JSX.Element {
         }
         setSelected(new Set());
         setPickerSheetOpen(false);
+        // Closes the detail screen too when the assign came from its own
+        // CTA — a harmless no-op when it came from the bulk floating bar,
+        // since detail isn't open in that case.
+        setDetailOpen(false);
         await refetchQueue();
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Assign failed");
@@ -248,7 +326,7 @@ export function PickingBoardMobile(): React.JSX.Element {
         setAssigning(false);
       }
     },
-    [selectedRows, assigning, refetchQueue],
+    [assignTarget, assigning, refetchQueue],
   );
 
   // Undo — mirrors picking-queue.tsx's handleUnassign: single-order payload
@@ -419,7 +497,10 @@ export function PickingBoardMobile(): React.JSX.Element {
                   >
                     <SelectBox checked={isSel} />
                   </button>
-                  <div className="flex-1 min-w-0">
+                  <div
+                    className="flex-1 min-w-0 cursor-pointer"
+                    onClick={() => openDetail(row.orderId)}
+                  >
                     <div className="flex items-center justify-between gap-2 mb-[5px]">
                       <span className="flex items-baseline gap-[5px] min-w-0">
                         <span className="font-mono text-[11px] text-gray-400 whitespace-nowrap">
@@ -575,6 +656,122 @@ export function PickingBoardMobile(): React.JSX.Element {
         </>
       )}
 
+      {/* Detail screen — always mounted, slides in via translate-x so the
+          board underneath (filters + scroll) is never torn down. Matches
+          the approved mockup's Screen 2. */}
+      <div
+        className={
+          "fixed inset-0 z-[35] bg-[#f9fafb] flex flex-col transition-transform duration-200 ease-out " +
+          (detailOpen ? "translate-x-0" : "translate-x-full")
+        }
+      >
+        <div
+          className="bg-teal-600 px-3.5 pb-3.5 flex items-center gap-2.5 shrink-0"
+          style={{ paddingTop: "max(env(safe-area-inset-top, 0px), 12px)" }}
+        >
+          <button
+            type="button"
+            onClick={closeDetail}
+            aria-label="Back"
+            className="w-8 h-8 rounded-[9px] bg-white/15 flex items-center justify-center text-white shrink-0"
+          >
+            <ChevronLeft size={17} />
+          </button>
+          <div className="min-w-0">
+            <div className="text-[16px] font-extrabold text-white truncate">
+              {detailRow?.dealerName ?? "—"}
+            </div>
+            <div className="text-[12px] text-white/75 truncate">
+              {detailRow
+                ? `OBD ${detailRow.obdNumber} · ${detailRow.area ?? "Unmatched"}${
+                    detailRow.windowTime !== null ? ` · ${detailRow.windowTime}` : ""
+                  }`
+                : "—"}
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white border-b border-gray-200 flex px-2.5 py-3.5 shrink-0">
+          <div className="flex-1 text-center border-r border-gray-200 px-1">
+            <div className="text-[16px] font-extrabold text-gray-900">
+              {detailRow?.volumeLitres ?? "—"}
+            </div>
+            <div className="text-[10px] text-gray-400 uppercase tracking-wide font-semibold mt-0.5">
+              Volume (LT)
+            </div>
+          </div>
+          <div className="flex-1 text-center border-r border-gray-200 px-1">
+            <div className="text-[11px] font-bold text-gray-900 leading-snug break-words">
+              {detailRow?.articleTag ?? "—"}
+            </div>
+            <div className="text-[10px] text-gray-400 uppercase tracking-wide font-semibold mt-0.5">
+              Article
+            </div>
+          </div>
+          <div className="flex-1 text-center px-1">
+            <div className="text-[16px] font-extrabold text-gray-900">
+              {detailRow?.weightKg ?? "—"}
+            </div>
+            <div className="text-[10px] text-gray-400 uppercase tracking-wide font-semibold mt-0.5">
+              Weight (kg)
+            </div>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-3.5 pt-3 pb-24">
+          <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wide mb-2">
+            Line items
+          </div>
+          {lineItemsLoading && (
+            <p className="text-[13px] text-gray-400 text-center py-10">Loading line items&hellip;</p>
+          )}
+          {!lineItemsLoading && lineItemsError && (
+            <p className="text-[13px] text-red-600 text-center py-10">
+              Couldn&apos;t load line items: {lineItemsError}
+            </p>
+          )}
+          {!lineItemsLoading && !lineItemsError && lineItems !== null && (
+            lineItems.length === 0 ? (
+              <p className="text-[13px] text-gray-400 text-center py-10">No line items found for this bill.</p>
+            ) : (
+              lineItems.map((li) => (
+                <div
+                  key={li.id}
+                  className="flex items-center justify-between gap-2.5 bg-white rounded-xl p-3 mb-2"
+                  style={{ boxShadow: SOFT_CARD_SHADOW }}
+                >
+                  <div className="min-w-0">
+                    <div className="text-[13.5px] font-semibold text-gray-900 truncate">
+                      {li.name ?? "—"}
+                    </div>
+                    <div className="text-[10.5px] text-gray-400 font-mono mt-0.5">{li.sku}</div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <div className="text-[11px] text-gray-400">{li.pack ?? "—"}</div>
+                    <div className="text-[14px] font-bold text-gray-900 font-mono">&times;{li.qty}</div>
+                  </div>
+                </div>
+              ))
+            )
+          )}
+        </div>
+
+        {detailRow && !detailRow.isAssigned && (
+          <div
+            className="shrink-0 px-3.5 pb-3.5"
+            style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 14px)" }}
+          >
+            <button
+              type="button"
+              onClick={() => openPickerForRow(detailRow)}
+              className="w-full h-12 rounded-full bg-teal-600 active:bg-teal-700 text-white text-[14.5px] font-bold shadow-[0_8px_22px_rgba(13,148,136,0.42)]"
+            >
+              Assign to picker
+            </button>
+          </div>
+        )}
+      </div>
+
       {/* Floating assign bar — matches docs/mockups/picking/supervisor-assign-board.html's
           .assignbar exactly (bg-gray-900 pill, teal Assign CTA), sitting just
           above the fixed mobile shell (76px, per components/shared/mobile-shell.tsx). */}
@@ -598,7 +795,10 @@ export function PickingBoardMobile(): React.JSX.Element {
             </button>
             <button
               type="button"
-              onClick={() => setPickerSheetOpen(true)}
+              onClick={() => {
+                setAssignTarget(selectedRows);
+                setPickerSheetOpen(true);
+              }}
               disabled={assigning}
               className="flex items-center gap-1.5 bg-teal-600 active:bg-teal-700 text-white text-[13px] font-bold rounded-[10px] px-[15px] py-[9px] disabled:opacity-60"
             >
