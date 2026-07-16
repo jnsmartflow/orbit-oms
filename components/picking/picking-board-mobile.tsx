@@ -169,6 +169,39 @@ function SelectBox({ checked }: { checked: boolean }) {
   );
 }
 
+// [All][Local][UPC] delivery-type pills — the Assign tab's exact UI,
+// extracted so the Check tab's FIX 3 pills reuse this verbatim instead of a
+// second copy. Each tab passes its OWN state (Assign's activeType, Check's
+// own checkTypeFilter) — the two filters are deliberately independent, never
+// shared, so setting one tab's type filter can never silently change the
+// other tab's results (constraint: no behaviour change to Assign).
+function TypeFilterPills({
+  value, onChange,
+}: {
+  value: TypeFilter;
+  onChange: (t: TypeFilter) => void;
+}): React.JSX.Element {
+  return (
+    <div className="flex items-center gap-1.5">
+      {(["All", "Local", "Upcountry"] satisfies TypeFilter[]).map((t) => (
+        <button
+          key={t}
+          type="button"
+          onClick={() => onChange(t)}
+          className={
+            "text-[12.5px] font-medium px-3 py-1.5 rounded-full border whitespace-nowrap " +
+            (value === t
+              ? "bg-gray-900 border-gray-900 text-white font-semibold"
+              : "bg-white border-gray-200 text-gray-700")
+          }
+        >
+          {t === "Upcountry" ? "UPC" : t}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 // Single-select bottom sheet — the Route dropdown's exact UI, generalised so
 // FIX 3's picker filter can reuse it verbatim rather than a second copy.
 // value === null means "all" (the first, un-narrowed row).
@@ -193,10 +226,23 @@ function FilterBottomSheet({
   if (!open) return null;
   return (
     <>
-      <div className="fixed inset-0 bg-black/40 z-40" onClick={onClose} aria-hidden="true" />
+      {/* z-[65]/z-[75] — decisively above components/shared/mobile-shell.tsx's
+          fixed bottom nav (z-40). Root cause of the Check picker sheet being
+          cut off: this sheet's `bottom: 0` + only 20px of bottom padding never
+          reserved the mobile-shell's 76px footprint, unlike every other
+          bottom-pinned element on this board (the floating assign bar, the
+          scroll region's own pb-[76px]) — this was the ONE exception, present
+          since this sheet's very first version (the inline Route sheet, long
+          before Check/mobile-shell-awareness existed). On a SHORT option list
+          (few pickers) that missing 76px swallowed almost the whole sheet; on
+          the usually-longer route list it only ever clipped the last row or
+          two, easy to miss in testing. Both the z-index and the bottom offset
+          are fixed here, in the ONE shared component both sheets already use
+          — so this can't drift back apart between them. */}
+      <div className="fixed inset-0 bg-black/40 z-[65]" onClick={onClose} aria-hidden="true" />
       <div
-        className="fixed left-0 right-0 bottom-0 z-50 bg-white rounded-t-[18px] p-5"
-        style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 20px)" }}
+        className="fixed left-0 right-0 z-[75] bg-white rounded-t-[18px] p-5 max-h-[70vh] overflow-y-auto"
+        style={{ bottom: "calc(76px + env(safe-area-inset-bottom, 0px))" }}
       >
         <div className="w-9 h-1 rounded-full bg-gray-300 mx-auto mb-3.5" />
         <h3 className="text-[16px] font-extrabold text-gray-900">{title}</h3>
@@ -271,6 +317,11 @@ export function PickingBoardMobile(): React.JSX.Element {
   // the Assign tab's route filter, entirely separate state/sheet.
   const [activePicker, setActivePicker] = useState<string | null>(null); // null = "All pickers"
   const [pickerFilterSheetOpen, setPickerFilterSheetOpen] = useState(false);
+  // FIX 3 (reversed decision) — Check's OWN delivery-type filter. Deliberately
+  // NOT shared with Assign's activeType: switching one tab's type pills must
+  // never silently change what the other tab shows (no behaviour change to
+  // Assign, per constraints).
+  const [checkTypeFilter, setCheckTypeFilter] = useState<TypeFilter>("All");
 
   // Live clock for the Check tab's elapsed pill — ticks independently of any
   // data fetch so "4m" keeps advancing toward "5m" without a refetch.
@@ -446,35 +497,40 @@ export function PickingBoardMobile(): React.JSX.Element {
   const allRoutesCount = Array.from(routeCounts.values()).reduce((a, b) => a + b, 0);
 
   // FIX 3 — pickers who currently have assigned bills, client-derived from
-  // the same loaded assignedRows (no new fetch). Rows with a null
-  // assignedToName (shouldn't happen for an assigned bill, but the field is
-  // nullable) are skipped from the option list — they still show up under
-  // "All pickers", just never become a selectable filter value.
+  // the same loaded assignedRows (no new fetch). Counts reflect the current
+  // Check type pill (live) — same convention as routeCounts reflecting
+  // activeType above. Rows with a null assignedToName (shouldn't happen for
+  // an assigned bill, but the field is nullable) are skipped from the option
+  // list — they still show up under "All pickers", just never become a
+  // selectable filter value.
   const pickerCounts = useMemo(() => {
     const map = new Map<string, number>();
     for (const r of assignedRows) {
+      if (checkTypeFilter !== "All" && r.deliveryType !== checkTypeFilter) continue;
       if (r.assignedToName === null) continue;
       map.set(r.assignedToName, (map.get(r.assignedToName) ?? 0) + 1);
     }
     return map;
-  }, [assignedRows]);
+  }, [assignedRows, checkTypeFilter]);
   const pickerOptions: FilterSheetOption[] = useMemo(() => {
     return Array.from(pickerCounts.keys())
       .sort((a, b) => a.localeCompare(b, "en", { sensitivity: "base" }))
       .map((name) => ({ value: name, label: name, count: pickerCounts.get(name) ?? 0 }));
   }, [pickerCounts]);
+  const allPickersCount = Array.from(pickerCounts.values()).reduce((a, b) => a + b, 0);
 
-  // FIX 2 + FIX 3 — Check tab list, narrowed by the picker filter and the
-  // SAME search query the Assign tab uses (`q`, defined above). Unlike
-  // filteredWaiting, this deliberately does NOT look at activeType/activeRoute
-  // — Check has no type pills and its own separate picker filter instead.
+  // FIX 2 + FIX 3 — Check tab list, narrowed by type, picker, and the SAME
+  // search query the Assign tab uses (`q`, defined above). Type + picker +
+  // search all STACK (AND, not OR) — Check now has the same two-axis filter
+  // shape as Assign (type pills + one dropdown), just picker instead of route.
   const filteredAssigned: PickingQueueRow[] = useMemo(() => {
     return assignedRows.filter((r) => {
+      if (checkTypeFilter !== "All" && r.deliveryType !== checkTypeFilter) return false;
       if (activePicker !== null && r.assignedToName !== activePicker) return false;
       if (q && !(r.dealerName.toLowerCase().includes(q) || r.obdNumber.toLowerCase().includes(q))) return false;
       return true;
     });
-  }, [assignedRows, activePicker, q]);
+  }, [assignedRows, checkTypeFilter, activePicker, q]);
 
   // FIX 4 — count of the CURRENTLY VISIBLE (filtered) assigned bills whose
   // elapsed time has crossed the amber threshold. Reuses elapsedSinceAssigned
@@ -705,9 +761,9 @@ export function PickingBoardMobile(): React.JSX.Element {
       <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain pb-[76px]">
 
       {/* Filter row (swaps for search when active) — shared by both tabs.
-          Assign shows type pills + route dropdown + lane strip; Check shows
-          ONE picker dropdown + the check summary strip (FIX 3/4) — no type
-          pills, delivery type is a dispatch concern, not a checking one. */}
+          Assign: type pills + route dropdown + lane strip. Check: the SAME
+          type pills (own state) + picker dropdown + check summary strip
+          (FIX 3/4) — mirrors Assign's row exactly, pills left/dropdown right. */}
       <div className="bg-white border-b border-gray-200 px-4 pt-2.5">
         {searching ? (
           <div className="flex items-center gap-2 pb-2.5">
@@ -736,23 +792,7 @@ export function PickingBoardMobile(): React.JSX.Element {
         ) : activeTab === "assign" ? (
           <>
             <div className="flex items-center justify-between gap-2 pb-2.5">
-              <div className="flex items-center gap-1.5">
-                {(["All", "Local", "Upcountry"] satisfies TypeFilter[]).map((t) => (
-                  <button
-                    key={t}
-                    type="button"
-                    onClick={() => setActiveType(t)}
-                    className={
-                      "text-[12.5px] font-medium px-3 py-1.5 rounded-full border whitespace-nowrap " +
-                      (activeType === t
-                        ? "bg-gray-900 border-gray-900 text-white font-semibold"
-                        : "bg-white border-gray-200 text-gray-700")
-                    }
-                  >
-                    {t === "Upcountry" ? "UPC" : t}
-                  </button>
-                ))}
-              </div>
+              <TypeFilterPills value={activeType} onChange={setActiveType} />
               <button
                 type="button"
                 onClick={() => setRouteSheetOpen(true)}
@@ -777,15 +817,17 @@ export function PickingBoardMobile(): React.JSX.Element {
           </>
         ) : (
           <>
-            {/* FIX 3 — ONE control: picker dropdown, same screen position and
-                same active/inactive styling as the route dropdown. No type
-                pills — delivery type is a dispatch concern, not a checking one. */}
-            <div className="flex items-center justify-end gap-2 pb-2.5">
+            {/* FIX 3 (reversed decision) — SAME type pills as Assign (reused
+                component, own independent state) on the left, picker dropdown
+                on the right — same position/styling as the route dropdown.
+                Mirrors Assign's row exactly; fixes BUG 2's lopsided layout. */}
+            <div className="flex items-center justify-between gap-2 pb-2.5">
+              <TypeFilterPills value={checkTypeFilter} onChange={setCheckTypeFilter} />
               <button
                 type="button"
                 onClick={() => setPickerFilterSheetOpen(true)}
                 className={
-                  "flex items-center justify-between gap-1.5 text-[12.5px] font-medium px-3 py-1.5 rounded-full border " +
+                  "flex-1 min-w-0 max-w-[150px] flex items-center justify-between gap-1.5 text-[12.5px] font-medium px-3 py-1.5 rounded-full border " +
                   (activePicker !== null
                     ? "border-teal-500 bg-teal-50 text-teal-700"
                     : "border-gray-200 bg-white text-gray-500")
@@ -797,7 +839,9 @@ export function PickingBoardMobile(): React.JSX.Element {
             </div>
 
             {/* FIX 4 — Check summary strip, same teal-tint style as the lane
-                strip. "over 30m" segment omitted entirely when the count is 0. */}
+                strip, reflecting ALL active filters (type + picker + search
+                via filteredAssigned/overThresholdCount below). "over 30m"
+                segment omitted entirely when the count is 0. */}
             <div className="mx-[-16px] bg-teal-50 border-t border-teal-200 px-4 py-2 text-[12px] font-medium text-teal-700 flex items-center gap-1">
               <b className="font-bold">{activePicker ?? "All pickers"}</b>
               <span>
@@ -1028,9 +1072,9 @@ export function PickingBoardMobile(): React.JSX.Element {
         open={pickerFilterSheetOpen}
         onClose={() => setPickerFilterSheetOpen(false)}
         title="Filter by picker"
-        subtitle="Single-select · who currently has bills out"
+        subtitle="Single-select · counts reflect the current Type filter"
         allLabel="All pickers"
-        allCount={assignedRows.length}
+        allCount={allPickersCount}
         options={pickerOptions}
         value={activePicker}
         onChange={setActivePicker}
