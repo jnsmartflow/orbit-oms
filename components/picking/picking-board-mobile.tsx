@@ -78,17 +78,22 @@ function pickerInitials(name: string): string {
 // supervisor scans for at a glance. Returns null when assignedAt is missing
 // (Step 1 report — never fake this value; the pill is simply omitted).
 type ElapsedTier = "grey" | "amber" | "red";
+// Amber threshold — also the single source of truth for the Check summary
+// strip's "M over 30m" count (FIX 4). Never hardcode 30 a second time.
+const ELAPSED_AMBER_MINUTES = 30;
+const ELAPSED_RED_MINUTES = 60;
 function elapsedSinceAssigned(
   assignedAt: Date | string | null,
   nowMs: number,
-): { label: string; tier: ElapsedTier } | null {
+): { label: string; tier: ElapsedTier; minutes: number } | null {
   if (assignedAt === null) return null;
   const then = new Date(assignedAt).getTime();
   if (Number.isNaN(then)) return null;
   const minutes = Math.max(0, Math.floor((nowMs - then) / 60000));
   const label = minutes < 60 ? `${minutes}m` : `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
-  const tier: ElapsedTier = minutes >= 60 ? "red" : minutes >= 30 ? "amber" : "grey";
-  return { label, tier };
+  const tier: ElapsedTier =
+    minutes >= ELAPSED_RED_MINUTES ? "red" : minutes >= ELAPSED_AMBER_MINUTES ? "amber" : "grey";
+  return { label, tier, minutes };
 }
 const ELAPSED_PILL_CLASS: Record<ElapsedTier, string> = {
   grey: "bg-gray-100 text-gray-500",
@@ -164,6 +169,84 @@ function SelectBox({ checked }: { checked: boolean }) {
   );
 }
 
+// Single-select bottom sheet — the Route dropdown's exact UI, generalised so
+// FIX 3's picker filter can reuse it verbatim rather than a second copy.
+// value === null means "all" (the first, un-narrowed row).
+interface FilterSheetOption {
+  value: string;
+  label: string;
+  count: number;
+}
+function FilterBottomSheet({
+  open, onClose, title, subtitle, allLabel, allCount, options, value, onChange,
+}: {
+  open: boolean;
+  onClose: () => void;
+  title: string;
+  subtitle: string;
+  allLabel: string;
+  allCount: number;
+  options: FilterSheetOption[];
+  value: string | null;
+  onChange: (v: string | null) => void;
+}): React.JSX.Element | null {
+  if (!open) return null;
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/40 z-40" onClick={onClose} aria-hidden="true" />
+      <div
+        className="fixed left-0 right-0 bottom-0 z-50 bg-white rounded-t-[18px] p-5"
+        style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 20px)" }}
+      >
+        <div className="w-9 h-1 rounded-full bg-gray-300 mx-auto mb-3.5" />
+        <h3 className="text-[16px] font-extrabold text-gray-900">{title}</h3>
+        <p className="text-[12.5px] text-gray-400 mt-[3px] mb-3.5">{subtitle}</p>
+        <button
+          type="button"
+          onClick={() => {
+            onChange(null);
+            onClose();
+          }}
+          className="w-full flex items-center justify-between gap-2 py-3 px-1 border-b border-gray-100"
+        >
+          <span
+            className={
+              "text-[14px] flex items-center gap-2 " +
+              (value === null ? "text-teal-700 font-semibold" : "text-gray-900 font-medium")
+            }
+          >
+            {value === null && <Check size={16} className="text-teal-600" />}
+            {allLabel}
+          </span>
+          <span className="text-[12px] text-gray-400">{allCount}</span>
+        </button>
+        {options.map((opt) => (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => {
+              onChange(opt.value);
+              onClose();
+            }}
+            className="w-full flex items-center justify-between gap-2 py-3 px-1 border-b border-gray-100 last:border-b-0"
+          >
+            <span
+              className={
+                "text-[14px] flex items-center gap-2 min-w-0 " +
+                (value === opt.value ? "text-teal-700 font-semibold" : "text-gray-900 font-medium")
+              }
+            >
+              {value === opt.value && <Check size={16} className="text-teal-600 shrink-0" />}
+              <span className="truncate">{opt.label}</span>
+            </span>
+            <span className="text-[12px] text-gray-400 shrink-0">{opt.count}</span>
+          </button>
+        ))}
+      </div>
+    </>
+  );
+}
+
 export function PickingBoardMobile(): React.JSX.Element {
   // Same fetch-on-date-change shape as components/picking/picking-queue.tsx —
   // no date UI in this stage, so this never changes, but the pattern stays
@@ -183,6 +266,11 @@ export function PickingBoardMobile(): React.JSX.Element {
   const [activeRoute, setActiveRoute] = useState<string | null>(null); // null = "All routes"
   const [routeSheetOpen, setRouteSheetOpen] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
+
+  // FIX 3 — Check tab's picker filter (by PERSON, not lane). Same shape as
+  // the Assign tab's route filter, entirely separate state/sheet.
+  const [activePicker, setActivePicker] = useState<string | null>(null); // null = "All pickers"
+  const [pickerFilterSheetOpen, setPickerFilterSheetOpen] = useState(false);
 
   // Live clock for the Check tab's elapsed pill — ticks independently of any
   // data fetch so "4m" keeps advancing toward "5m" without a refetch.
@@ -357,6 +445,48 @@ export function PickingBoardMobile(): React.JSX.Element {
   const totalLitres = filteredWaiting.reduce((sum, r) => sum + (r.volumeLitres ?? 0), 0);
   const allRoutesCount = Array.from(routeCounts.values()).reduce((a, b) => a + b, 0);
 
+  // FIX 3 — pickers who currently have assigned bills, client-derived from
+  // the same loaded assignedRows (no new fetch). Rows with a null
+  // assignedToName (shouldn't happen for an assigned bill, but the field is
+  // nullable) are skipped from the option list — they still show up under
+  // "All pickers", just never become a selectable filter value.
+  const pickerCounts = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const r of assignedRows) {
+      if (r.assignedToName === null) continue;
+      map.set(r.assignedToName, (map.get(r.assignedToName) ?? 0) + 1);
+    }
+    return map;
+  }, [assignedRows]);
+  const pickerOptions: FilterSheetOption[] = useMemo(() => {
+    return Array.from(pickerCounts.keys())
+      .sort((a, b) => a.localeCompare(b, "en", { sensitivity: "base" }))
+      .map((name) => ({ value: name, label: name, count: pickerCounts.get(name) ?? 0 }));
+  }, [pickerCounts]);
+
+  // FIX 2 + FIX 3 — Check tab list, narrowed by the picker filter and the
+  // SAME search query the Assign tab uses (`q`, defined above). Unlike
+  // filteredWaiting, this deliberately does NOT look at activeType/activeRoute
+  // — Check has no type pills and its own separate picker filter instead.
+  const filteredAssigned: PickingQueueRow[] = useMemo(() => {
+    return assignedRows.filter((r) => {
+      if (activePicker !== null && r.assignedToName !== activePicker) return false;
+      if (q && !(r.dealerName.toLowerCase().includes(q) || r.obdNumber.toLowerCase().includes(q))) return false;
+      return true;
+    });
+  }, [assignedRows, activePicker, q]);
+
+  // FIX 4 — count of the CURRENTLY VISIBLE (filtered) assigned bills whose
+  // elapsed time has crossed the amber threshold. Reuses elapsedSinceAssigned
+  // (and therefore ELAPSED_AMBER_MINUTES) rather than re-deriving elapsed
+  // time with a second, possibly-drifting calculation.
+  const overThresholdCount = useMemo(() => {
+    return filteredAssigned.filter((r) => {
+      const e = elapsedSinceAssigned(r.assignedAt, nowTick);
+      return e !== null && e.minutes >= ELAPSED_AMBER_MINUTES;
+    }).length;
+  }, [filteredAssigned, nowTick]);
+
   function toggleSelect(orderId: number): void {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -524,26 +654,33 @@ export function PickingBoardMobile(): React.JSX.Element {
   );
 
   return (
-    <div className="bg-[#f9fafb] min-h-screen">
-      {/* Teal top bar — matches app/po/po-page.tsx's pinned brand bar. Two
-          rows: title + search above, underline tabs below. Tight rhythm —
-          no dead spacer between them. */}
+    <div className="fixed inset-0 flex flex-col overflow-hidden bg-[#f9fafb]">
+      {/* Teal top bar — matches app/po/po-page.tsx's pinned brand bar, and
+          its STRUCTURE: a flex-shrink-0 sibling of the scroll area below,
+          never a "sticky" element in normal document flow. This board is
+          nested inside RoleLayoutClient's `min-h-screen overflow-hidden`
+          wrappers, which are NOT actual scroll containers — the real scroll
+          was happening on the page body, outside this element's sticky
+          reference frame, which is why the header used to scroll away and
+          cards rendered under the iOS status bar. `fixed inset-0` on this
+          root escapes that ancestor chain entirely (the same technique the
+          detail screen below already uses successfully); the header/body
+          split below it mirrors po-page.tsx's flex-col + flex-shrink-0
+          header + flex-1 overflow-y-auto body shape. */}
       <div
-        className="bg-teal-600 px-4 pb-2 sticky top-0 z-20"
+        className="flex-shrink-0 bg-teal-600 px-4 pb-2"
         style={{ paddingTop: "max(env(safe-area-inset-top, 0px), 12px)" }}
       >
         <div className="flex items-center justify-between gap-2.5 pb-2.5">
           <h1 className="text-[19px] font-extrabold text-white tracking-tight">Picking</h1>
-          {activeTab === "assign" && (
-            <button
-              type="button"
-              onClick={() => setSearching((v) => !v)}
-              aria-label="Search"
-              className="w-[34px] h-[34px] rounded-[10px] flex items-center justify-center text-white active:bg-white/15 shrink-0"
-            >
-              <Search size={19} />
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => setSearching((v) => !v)}
+            aria-label="Search"
+            className="w-[34px] h-[34px] rounded-[10px] flex items-center justify-center text-white active:bg-white/15 shrink-0"
+          >
+            <Search size={19} />
+          </button>
         </div>
         <div className="flex items-center gap-6">
           <TopBarTab
@@ -561,8 +698,16 @@ export function PickingBoardMobile(): React.JSX.Element {
         </div>
       </div>
 
-      {/* Filter row + lane strip (swaps for search when active) — Assign tab only */}
-      {activeTab === "assign" && (
+      {/* Scrollable content area — flex-1, ONLY this scrolls. Reserves 76px
+          at the bottom for the fixed mobile-shell nav bar (the same "76px"
+          convention the floating assign bar already uses below), since this
+          root no longer benefits from RoleLayoutClient's own pb-[76px]. */}
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain pb-[76px]">
+
+      {/* Filter row (swaps for search when active) — shared by both tabs.
+          Assign shows type pills + route dropdown + lane strip; Check shows
+          ONE picker dropdown + the check summary strip (FIX 3/4) — no type
+          pills, delivery type is a dispatch concern, not a checking one. */}
       <div className="bg-white border-b border-gray-200 px-4 pt-2.5">
         {searching ? (
           <div className="flex items-center gap-2 pb-2.5">
@@ -588,7 +733,7 @@ export function PickingBoardMobile(): React.JSX.Element {
               Cancel
             </button>
           </div>
-        ) : (
+        ) : activeTab === "assign" ? (
           <>
             <div className="flex items-center justify-between gap-2 pb-2.5">
               <div className="flex items-center gap-1.5">
@@ -630,9 +775,41 @@ export function PickingBoardMobile(): React.JSX.Element {
               </span>
             </div>
           </>
+        ) : (
+          <>
+            {/* FIX 3 — ONE control: picker dropdown, same screen position and
+                same active/inactive styling as the route dropdown. No type
+                pills — delivery type is a dispatch concern, not a checking one. */}
+            <div className="flex items-center justify-end gap-2 pb-2.5">
+              <button
+                type="button"
+                onClick={() => setPickerFilterSheetOpen(true)}
+                className={
+                  "flex items-center justify-between gap-1.5 text-[12.5px] font-medium px-3 py-1.5 rounded-full border " +
+                  (activePicker !== null
+                    ? "border-teal-500 bg-teal-50 text-teal-700"
+                    : "border-gray-200 bg-white text-gray-500")
+                }
+              >
+                <span className="truncate">{activePicker ?? "All pickers"}</span>
+                <ChevronDown size={13} className="shrink-0" />
+              </button>
+            </div>
+
+            {/* FIX 4 — Check summary strip, same teal-tint style as the lane
+                strip. "over 30m" segment omitted entirely when the count is 0. */}
+            <div className="mx-[-16px] bg-teal-50 border-t border-teal-200 px-4 py-2 text-[12px] font-medium text-teal-700 flex items-center gap-1">
+              <b className="font-bold">{activePicker ?? "All pickers"}</b>
+              <span>
+                &nbsp;·&nbsp;{filteredAssigned.length} assigned
+                {overThresholdCount > 0 && (
+                  <>&nbsp;·&nbsp;{overThresholdCount} over {ELAPSED_AMBER_MINUTES}m</>
+                )}
+              </span>
+            </div>
+          </>
         )}
       </div>
-      )}
 
       {/* Card list — Assign tab: waiting bills, unchanged from before the tab split */}
       {activeTab === "assign" && (
@@ -716,9 +893,10 @@ export function PickingBoardMobile(): React.JSX.Element {
       </div>
       )}
 
-      {/* Card list — Check tab: EVERY assigned bill, unfiltered by the Assign
-          tab's type/route filters (mirrors desktop). Proper cards, same DNA
-          as the waiting card, plus an elapsed pill and a picker footer. */}
+      {/* Card list — Check tab: assigned bills narrowed by the picker filter
+          (FIX 3) and search (FIX 2) — NOT by the Assign tab's type/route
+          filters (mirrors desktop). Proper cards, same DNA as the waiting
+          card, plus an elapsed pill and a picker footer. */}
       {activeTab === "check" && (
       <div className="px-4 py-2.5">
         {loading && <p className="text-[13px] text-gray-400 text-center py-16">Loading queue&hellip;</p>}
@@ -732,10 +910,12 @@ export function PickingBoardMobile(): React.JSX.Element {
         {!loading &&
           !error &&
           data &&
-          (assignedRows.length === 0 ? (
-            <p className="text-[13px] text-gray-400 text-center py-16">No bills currently assigned.</p>
+          (filteredAssigned.length === 0 ? (
+            <p className="text-[13px] text-gray-400 text-center py-16">
+              {assignedRows.length === 0 ? "No bills currently assigned." : "No bills match."}
+            </p>
           ) : (
-            assignedRows.map((row) => {
+            filteredAssigned.map((row) => {
               const isUndoing = unassigningIds.has(row.orderId);
               const pill = elapsedSinceAssigned(row.assignedAt, nowTick);
               const assignTime = formatAssignedTime(row.assignedAt);
@@ -823,67 +1003,38 @@ export function PickingBoardMobile(): React.JSX.Element {
       </div>
       )}
 
-      {/* Route bottom sheet */}
-      {routeSheetOpen && (
-        <>
-          <div
-            className="fixed inset-0 bg-black/40 z-40"
-            onClick={() => setRouteSheetOpen(false)}
-            aria-hidden="true"
-          />
-          <div
-            className="fixed left-0 right-0 bottom-0 z-50 bg-white rounded-t-[18px] p-5"
-            style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 20px)" }}
-          >
-            <div className="w-9 h-1 rounded-full bg-gray-300 mx-auto mb-3.5" />
-            <h3 className="text-[16px] font-extrabold text-gray-900">Filter by route</h3>
-            <p className="text-[12.5px] text-gray-400 mt-[3px] mb-3.5">
-              Single-select &middot; counts reflect the current Type filter
-            </p>
-            <button
-              type="button"
-              onClick={() => {
-                setActiveRoute(null);
-                setRouteSheetOpen(false);
-              }}
-              className="w-full flex items-center justify-between gap-2 py-3 px-1 border-b border-gray-100"
-            >
-              <span
-                className={
-                  "text-[14px] flex items-center gap-2 " +
-                  (activeRoute === null ? "text-teal-700 font-semibold" : "text-gray-900 font-medium")
-                }
-              >
-                {activeRoute === null && <Check size={16} className="text-teal-600" />}
-                All routes
-              </span>
-              <span className="text-[12px] text-gray-400">{allRoutesCount}</span>
-            </button>
-            {availableRoutes.map((route) => (
-              <button
-                key={route}
-                type="button"
-                onClick={() => {
-                  setActiveRoute(route);
-                  setRouteSheetOpen(false);
-                }}
-                className="w-full flex items-center justify-between gap-2 py-3 px-1 border-b border-gray-100 last:border-b-0"
-              >
-                <span
-                  className={
-                    "text-[14px] flex items-center gap-2 min-w-0 " +
-                    (activeRoute === route ? "text-teal-700 font-semibold" : "text-gray-900 font-medium")
-                  }
-                >
-                  {activeRoute === route && <Check size={16} className="text-teal-600 shrink-0" />}
-                  <span className="truncate">{route}</span>
-                </span>
-                <span className="text-[12px] text-gray-400 shrink-0">{routeCounts.get(route) ?? 0}</span>
-              </button>
-            ))}
-          </div>
-        </>
-      )}
+      </div>
+      {/* ^ closes the flex-1 overflow-y-auto scroll region opened above the
+          filter row. Everything below is a fixed-position overlay (sheets,
+          the detail screen, the floating bar) — unaffected by this root's
+          fixed-inset-0 restructure since position:fixed always resolves
+          against the true viewport regardless of ancestor layout. */}
+
+      {/* Route bottom sheet (Assign) — reuses FilterBottomSheet */}
+      <FilterBottomSheet
+        open={routeSheetOpen}
+        onClose={() => setRouteSheetOpen(false)}
+        title="Filter by route"
+        subtitle="Single-select · counts reflect the current Type filter"
+        allLabel="All routes"
+        allCount={allRoutesCount}
+        options={availableRoutes.map((route) => ({ value: route, label: route, count: routeCounts.get(route) ?? 0 }))}
+        value={activeRoute}
+        onChange={setActiveRoute}
+      />
+
+      {/* Picker filter sheet (Check, FIX 3) — SAME reused sheet, different data */}
+      <FilterBottomSheet
+        open={pickerFilterSheetOpen}
+        onClose={() => setPickerFilterSheetOpen(false)}
+        title="Filter by picker"
+        subtitle="Single-select · who currently has bills out"
+        allLabel="All pickers"
+        allCount={assignedRows.length}
+        options={pickerOptions}
+        value={activePicker}
+        onChange={setActivePicker}
+      />
 
       {/* Detail screen — always mounted, slides in via translate-x so the
           board underneath (filters + scroll) is never torn down. Redesigned
