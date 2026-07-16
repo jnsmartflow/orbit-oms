@@ -45,6 +45,75 @@ const NO_PACK_KEY = "__no_pack__";
 
 type TypeFilter = "All" | "Local" | "Upcountry";
 
+// First letters of the first two words, uppercased — same algorithm as
+// po-page.tsx's initials() (desktop recents avatar), reused here for the
+// Check tab's picker avatar.
+function pickerInitials(name: string): string {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  return ((words[0]?.[0] ?? "") + (words[1]?.[0] ?? "")).toUpperCase();
+}
+
+// Elapsed time since assignedAt, bucketed into the three urgency tiers a
+// supervisor scans for at a glance. Returns null when assignedAt is missing
+// (Step 1 report — never fake this value; the pill is simply omitted).
+type ElapsedTier = "grey" | "amber" | "red";
+function elapsedSinceAssigned(
+  assignedAt: Date | string | null,
+  nowMs: number,
+): { label: string; tier: ElapsedTier } | null {
+  if (assignedAt === null) return null;
+  const then = new Date(assignedAt).getTime();
+  if (Number.isNaN(then)) return null;
+  const minutes = Math.max(0, Math.floor((nowMs - then) / 60000));
+  const label = minutes < 60 ? `${minutes}m` : `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+  const tier: ElapsedTier = minutes >= 60 ? "red" : minutes >= 30 ? "amber" : "grey";
+  return { label, tier };
+}
+const ELAPSED_PILL_CLASS: Record<ElapsedTier, string> = {
+  grey: "bg-gray-100 text-gray-500",
+  amber: "bg-amber-50 text-amber-700 border border-amber-200",
+  red: "bg-red-50 text-red-700 border border-red-200",
+};
+
+// "10:42 AM" in IST — the assign-time line under the picker name on a Check
+// tab card. Returns null when assignedAt is missing (line is omitted, not faked).
+function formatAssignedTime(assignedAt: Date | string | null): string | null {
+  if (assignedAt === null) return null;
+  const d = new Date(assignedAt);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "numeric", minute: "2-digit", hour12: true });
+}
+
+// Teal top bar tab — Assign / Check. Fills solid white when active (per the
+// mockup's "underline/fill for the active tab"); count badge always visible
+// on both, active or not.
+function TopBarTab({
+  label, count, active, onClick,
+}: {
+  label: string; count: number; active: boolean; onClick: () => void;
+}): React.JSX.Element {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={
+        "flex items-center gap-[7px] px-3 py-[7px] rounded-full text-[14px] font-extrabold whitespace-nowrap " +
+        (active ? "bg-white text-teal-700" : "text-white/85")
+      }
+    >
+      {label}
+      <span
+        className={
+          "text-[11px] font-bold rounded-full px-2 py-[2px] " +
+          (active ? "bg-teal-50 text-teal-700" : "bg-white/20 text-white")
+        }
+      >
+        {count}
+      </span>
+    </button>
+  );
+}
+
 // Square checkbox — matches po-page.tsx's multi-select row checkbox exactly
 // (rounded-[6px], border-2, teal-600 fill + white check svg when selected),
 // per docs/mockups/picking/supervisor-assign-board.html (the approved design).
@@ -74,13 +143,24 @@ export function PickingBoardMobile(): React.JSX.Element {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // The supervisor's two jobs, as top-bar tabs. Client-side split over the
+  // SAME already-loaded queue data — no second fetch, no new endpoint.
+  const [activeTab, setActiveTab] = useState<"assign" | "check">("assign");
+
   const [searching, setSearching] = useState(false);
   const [query, setQuery] = useState("");
   const [activeType, setActiveType] = useState<TypeFilter>("All");
   const [activeRoute, setActiveRoute] = useState<string | null>(null); // null = "All routes"
   const [routeSheetOpen, setRouteSheetOpen] = useState(false);
-  const [assignedOpen, setAssignedOpen] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
+
+  // Live clock for the Check tab's elapsed pill — ticks independently of any
+  // data fetch so "4m" keeps advancing toward "5m" without a refetch.
+  const [nowTick, setNowTick] = useState<number>(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNowTick(Date.now()), 30_000);
+    return () => clearInterval(id);
+  }, []);
 
   const [pickers, setPickers] = useState<Picker[]>([]);
   const [pickersLoading, setPickersLoading] = useState(true);
@@ -420,23 +500,34 @@ export function PickingBoardMobile(): React.JSX.Element {
         className="bg-teal-600 px-4 pb-3 flex items-center justify-between gap-2.5 sticky top-0 z-20"
         style={{ paddingTop: "max(env(safe-area-inset-top, 0px), 12px)" }}
       >
-        <div className="flex items-center gap-2 min-w-0">
-          <h1 className="text-[19px] font-extrabold text-white tracking-tight">Assign</h1>
-          <span className="text-[11px] font-bold text-white bg-white/20 rounded-full px-2.5 py-[3px] whitespace-nowrap">
-            {waitingRows.length} waiting
-          </span>
+        <div className="flex items-center gap-1.5 min-w-0">
+          <TopBarTab
+            label="Assign"
+            count={waitingRows.length}
+            active={activeTab === "assign"}
+            onClick={() => setActiveTab("assign")}
+          />
+          <TopBarTab
+            label="Check"
+            count={assignedRows.length}
+            active={activeTab === "check"}
+            onClick={() => setActiveTab("check")}
+          />
         </div>
-        <button
-          type="button"
-          onClick={() => setSearching((v) => !v)}
-          aria-label="Search"
-          className="w-[34px] h-[34px] rounded-[10px] flex items-center justify-center text-white active:bg-white/15 shrink-0"
-        >
-          <Search size={19} />
-        </button>
+        {activeTab === "assign" && (
+          <button
+            type="button"
+            onClick={() => setSearching((v) => !v)}
+            aria-label="Search"
+            className="w-[34px] h-[34px] rounded-[10px] flex items-center justify-center text-white active:bg-white/15 shrink-0"
+          >
+            <Search size={19} />
+          </button>
+        )}
       </div>
 
-      {/* Filter row + lane strip (swaps for search when active) */}
+      {/* Filter row + lane strip (swaps for search when active) — Assign tab only */}
+      {activeTab === "assign" && (
       <div className="bg-white border-b border-gray-200 px-4 pt-2.5">
         {searching ? (
           <div className="flex items-center gap-2 pb-2.5">
@@ -506,8 +597,10 @@ export function PickingBoardMobile(): React.JSX.Element {
           </>
         )}
       </div>
+      )}
 
-      {/* Card list */}
+      {/* Card list — Assign tab: waiting bills, unchanged from before the tab split */}
+      {activeTab === "assign" && (
       <div className="px-4 py-2.5">
         {loading && <p className="text-[13px] text-gray-400 text-center py-16">Loading queue&hellip;</p>}
 
@@ -585,59 +678,111 @@ export function PickingBoardMobile(): React.JSX.Element {
               );
             })
           ))}
-
-        {/* Collapsed assigned strip — Undo wired below; detail screen (stage 7) still not built */}
-        {!loading && !error && data && assignedRows.length > 0 && (
-          <div className="mt-1.5 border-t border-gray-200 pt-0.5">
-            <button
-              type="button"
-              onClick={() => setAssignedOpen((v) => !v)}
-              className="flex items-center gap-[7px] py-3 px-[3px] w-full text-left"
-            >
-              <span
-                className="text-[10px] text-gray-400 inline-block transition-transform"
-                style={{ transform: assignedOpen ? "rotate(90deg)" : "none" }}
-              >
-                &#9656;
-              </span>
-              <span className="text-[12px] font-semibold text-gray-500">{assignedRows.length} assigned</span>
-            </button>
-            {assignedOpen && (
-              <div>
-                {assignedRows.map((row) => {
-                  const isUndoing = unassigningIds.has(row.orderId);
-                  return (
-                    <div
-                      key={row.orderId}
-                      className="flex items-center justify-between gap-2 py-2.5 px-[3px] border-b border-gray-100 last:border-b-0 opacity-70"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <div className="text-[12.5px] font-semibold text-gray-700 truncate">{row.dealerName}</div>
-                        <div className="text-[11px] text-gray-400 font-mono">{row.obdNumber}</div>
-                        <div className="text-[11px] text-teal-700 font-semibold">
-                          &rarr; {row.assignedToName ?? "—"}
-                        </div>
-                      </div>
-                      {/* Padding + negative margins expand the tap target well past the
-                          visible underlined text — finger-sized, and clearly separated
-                          from the row body above so it can't be hit by accident. */}
-                      <button
-                        type="button"
-                        onClick={() => void handleUndo(row)}
-                        disabled={isUndoing}
-                        aria-label={`Undo assignment for ${row.dealerName}`}
-                        className="shrink-0 -my-2 -mr-1 px-3 py-3 text-[11px] font-semibold text-gray-600 underline decoration-gray-400 underline-offset-2 disabled:opacity-40 disabled:no-underline"
-                      >
-                        {isUndoing ? "…" : "Undo"}
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
       </div>
+      )}
+
+      {/* Card list — Check tab: EVERY assigned bill, unfiltered by the Assign
+          tab's type/route filters (mirrors desktop). Proper cards, same DNA
+          as the waiting card, plus an elapsed pill and a picker footer. */}
+      {activeTab === "check" && (
+      <div className="px-4 py-2.5">
+        {loading && <p className="text-[13px] text-gray-400 text-center py-16">Loading queue&hellip;</p>}
+
+        {!loading && error && (
+          <p className="text-[13px] text-red-600 text-center py-16">
+            Couldn&apos;t load the picking queue: {error}
+          </p>
+        )}
+
+        {!loading &&
+          !error &&
+          data &&
+          (assignedRows.length === 0 ? (
+            <p className="text-[13px] text-gray-400 text-center py-16">No bills currently assigned.</p>
+          ) : (
+            assignedRows.map((row) => {
+              const isUndoing = unassigningIds.has(row.orderId);
+              const pill = elapsedSinceAssigned(row.assignedAt, nowTick);
+              const assignTime = formatAssignedTime(row.assignedAt);
+              return (
+                <div
+                  key={row.orderId}
+                  className="bg-white rounded-[14px] mb-[9px] overflow-hidden"
+                  style={{ boxShadow: SOFT_CARD_SHADOW }}
+                >
+                  <div className="p-[13px] cursor-pointer" onClick={() => openDetail(row.orderId)}>
+                    <div className="flex items-center justify-between gap-2 mb-[5px]">
+                      <span className="flex items-baseline gap-[5px] min-w-0">
+                        <span className="font-mono text-[11px] text-gray-400 whitespace-nowrap">
+                          {row.obdNumber}
+                        </span>
+                        {row.windowTime !== null && (
+                          <span className="text-[10.5px] text-gray-300 whitespace-nowrap">
+                            &middot;{row.windowTime}
+                          </span>
+                        )}
+                      </span>
+                      {pill && (
+                        <span
+                          className={
+                            "text-[10.5px] font-bold px-2 py-[3px] rounded-full shrink-0 " + ELAPSED_PILL_CLASS[pill.tier]
+                          }
+                        >
+                          {pill.label}
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-[15px] font-bold text-gray-900 leading-tight mb-[3px] truncate">
+                      {row.dealerName}
+                    </div>
+                    <div className="text-[12px] text-gray-500 truncate">
+                      {row.area !== null ? (
+                        <>
+                          {row.area}
+                          {row.articleTag !== null && (
+                            <>
+                              <span className="text-gray-300 mx-[5px]">&middot;</span>
+                              {row.articleTag}
+                            </>
+                          )}
+                        </>
+                      ) : (
+                        (row.articleTag ?? "—")
+                      )}
+                    </div>
+                  </div>
+                  {/* Footer strip — picker identity + assign time, Undo on the right.
+                      Finger-sized button (min tap target well past the visible label). */}
+                  <div className="flex items-center justify-between gap-2 px-[13px] py-2.5 bg-[#f9fafb] border-t border-gray-100">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="w-7 h-7 rounded-full bg-teal-600 text-white text-[11px] font-bold flex items-center justify-center shrink-0">
+                        {pickerInitials(row.assignedToName ?? "—")}
+                      </span>
+                      <div className="min-w-0">
+                        <div className="text-[12px] font-semibold text-gray-700 truncate">
+                          {row.assignedToName ?? "—"}
+                        </div>
+                        {assignTime !== null && (
+                          <div className="text-[10.5px] text-gray-400">{assignTime}</div>
+                        )}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void handleUndo(row)}
+                      disabled={isUndoing}
+                      aria-label={`Undo assignment for ${row.dealerName}`}
+                      className="shrink-0 px-3.5 py-2.5 rounded-[10px] bg-white border border-gray-200 text-[12px] font-semibold text-gray-600 active:bg-gray-100 disabled:opacity-40"
+                    >
+                      {isUndoing ? "…" : "Undo"}
+                    </button>
+                  </div>
+                </div>
+              );
+            })
+          ))}
+      </div>
+      )}
 
       {/* Route bottom sheet */}
       {routeSheetOpen && (
