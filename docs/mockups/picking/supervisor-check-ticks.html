@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Picking — Supervisor Check, Line Ticks (mockup v2)</title>
+<!--
+  STATIC REVIEW MOCKUP — not wired to app code / DB. Throwaway artifact.
+  v2 — de-weight pass. See docs/mockups/picking/STAGE2-NOTES.md.
+  Fidelity source unchanged: components/picking/picking-board-mobile.tsx:1083-1267
+  (teal header, stat strip, pack chips, pack-tile/SKU-hero/qty line items —
+  all copied as-is; QTY column's reserved gutter, board.tsx:1242-1246, is
+  where the tick box goes, unchanged from v1).
+
+  v2 CHANGES:
+    - Progress band (fill bar + track + hint) DELETED. Replaced by one small
+      "4 / 9 checked" line tucked into the stat strip, under the volume.
+    - Tick column's left border DELETED — it's a tap zone, not a compartment.
+    - Ticked-card inset teal ring DELETED. The filled circle alone signals
+      "ticked" — SKU/name mute slightly instead, quiet, not loud.
+    - Undo — considered for this screen (small text button, top-right,
+      opposite the back arrow), then DELETED before build (see
+      STAGE2-NOTES.md): the build brief settled it as "no Undo on this
+      screen, deliberate — a picked bill goes forward only." This mockup
+      file has been updated to match; do not re-add the button.
+    - Ticks stay freely toggleable (tap again to un-tick) — a one-way tick
+      was considered and rejected: it's a forcing function, not a lock, and
+      a one-way tick just adds a trap for an honest re-check.
+    - Tick shrunk (v3): circle 28px→20px, border 2.5px→2px, check icon
+      scaled to match. Tap column stays ~44px (generous target); the
+      visible mark is now a normal checkbox size, not the loudest thing on
+      the row.
+-->
+<style>
+  :root{
+    --teal:#0d9488; --teal-dark:#0f766e; --teal-700:#0f766e;
+    --app-bg:#f9fafb; --ink:#111827; --faint:#9ca3af; --line2:#e5e7eb;
+    --card-shadow: 0 1px 2px rgba(16,24,40,.04), 0 3px 12px rgba(16,24,40,.05);
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0; height:100%; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; background:#e9edf1; color:var(--ink);}
+  body{display:flex; flex-direction:column; align-items:center; padding:24px 12px 40px;}
+
+  .devbar{width:100%; max-width:390px; margin-bottom:14px; background:#1f2937; color:#e5e7eb; border-radius:12px; padding:10px 14px; font-size:12px; line-height:1.5;}
+  .devbar b{color:#fff;}
+  .devbar .tag{display:inline-block; background:#f59e0b; color:#1f2937; font-weight:700; font-size:10px; letter-spacing:.04em; padding:2px 6px; border-radius:5px; margin-right:8px; vertical-align:middle;}
+
+  .phone{width:390px; height:800px; background:#000; border-radius:44px; padding:11px; box-shadow:0 24px 60px rgba(0,0,0,.28); position:relative;}
+  .screen{width:100%; height:100%; background:var(--app-bg); border-radius:34px; overflow:hidden; position:relative; display:flex; flex-direction:column;}
+  .notch{position:absolute; top:11px; left:50%; transform:translateX(-50%); width:126px; height:30px; background:#000; border-radius:0 0 18px 18px; z-index:70;}
+  .safe-top{height:22px; flex:0 0 22px; background:var(--teal);}
+
+  .dtop{flex:0 0 auto; background:var(--teal); padding:0 14px 14px; display:flex; align-items:center; gap:11px;}
+  .dtop .back{width:32px; height:32px; border-radius:9px; display:flex; align-items:center; justify-content:center; background:rgba(255,255,255,.16); border:none; color:#fff; cursor:pointer; flex:0 0 auto; text-decoration:none;}
+  .dtop .dtext{min-width:0; flex:1;}
+  .dtop .dname{font-size:16px; font-weight:800; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .dtop .dsub{font-size:12px; color:rgba(255,255,255,.75); margin-top:1px;}
+
+  .statstrip{flex:0 0 auto; display:flex; align-items:flex-end; justify-content:space-between; gap:12px; background:#fff; border-bottom:1px solid var(--line2); padding:12px 14px;}
+  .statstrip .hero{min-width:0; font-size:16px; font-weight:800; color:#111827; line-height:1.3;}
+  .statstrip .right{flex:0 0 auto; text-align:right;}
+  .statstrip .vol{font-size:13px; font-weight:600; color:#6b7280;}
+  .statstrip .checked{font-size:11.5px; color:#9ca3af; font-variant-numeric:tabular-nums; margin-top:2px;}
+
+  .packrow{flex:0 0 auto; background:#fff; border-bottom:1px solid var(--line2); padding:10px 14px; display:flex; align-items:center; gap:6px; overflow-x:auto;}
+  .packchip{font-size:12.5px; font-weight:500; padding:6px 12px; border-radius:999px; border:1px solid var(--line2); background:#fff; color:#374151; white-space:nowrap; cursor:pointer; flex:0 0 auto;}
+  .packchip.on{background:#111827; border-color:#111827; color:#fff; font-weight:600;}
+
+  .dlist{flex:1; overflow-y:auto; padding:12px 14px 100px;}
+  .litem{display:flex; align-items:stretch; background:#fff; border-radius:14px; box-shadow:var(--card-shadow); margin-bottom:8px; overflow:hidden;}
+  .ptile{width:56px; flex:0 0 56px; background:#f8fafa; border-right:1px solid var(--line2); display:flex; align-items:center; justify-content:center; padding:10px 4px;}
+  .ptile span{font-size:13px; font-weight:700; text-align:center;}
+  .ptile.known span{color:var(--teal-700);}
+  .ptile.unknown span{color:var(--faint);}
+  .lbody{flex:1; min-width:0; padding:10px 12px; display:flex; flex-direction:column; justify-content:center; transition:opacity .12s;}
+  .lbody .sku{font-family:"SF Mono",ui-monospace,Menlo,monospace; font-size:17px; font-weight:700; color:#111827; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .lbody .name{font-size:12px; color:#6b7280; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:2px;}
+  .litem.checked .lbody{opacity:.55;}
+  .lqty{flex:0 0 auto; display:flex; align-items:center; justify-content:center; padding:0 12px;}
+  .lqty span{font-size:26px; font-weight:800; color:#111827;}
+
+  /* Tick column — a tap zone, not a compartment: no border, no fill.
+     Column stays ~44px (generous tap target); the visible mark is a normal
+     ~20px checkbox, not the loudest thing on the row. */
+  .ltick{flex:0 0 44px; display:flex; align-items:center; justify-content:center; cursor:pointer;}
+  .tickbox{width:20px; height:20px; border-radius:999px; border:2px solid #d1d5db; background:#fff; display:flex; align-items:center; justify-content:center; transition:background .12s, border-color .12s;}
+  .tickbox svg{opacity:0; transition:opacity .1s;}
+  .litem.checked .tickbox{background:var(--teal); border-color:var(--teal);}
+  .litem.checked .tickbox svg{opacity:1;}
+
+  .dcta{position:absolute; left:14px; right:14px; bottom:16px; z-index:20;}
+  .dcta button{width:100%; height:48px; border-radius:999px; border:none; font-size:14.5px; font-weight:700; cursor:pointer; transition:background .15s, box-shadow .15s, color .15s;}
+  .dcta button.disabled{background:#e5e7eb; color:#9ca3af; box-shadow:none; cursor:not-allowed;}
+  .dcta button.enabled{background:var(--teal); color:#fff; box-shadow:0 8px 22px rgba(13,148,136,.42);}
+  .dcta button.enabled:active{background:var(--teal-dark);}
+
+  .toast{position:absolute; left:50%; bottom:88px; transform:translate(-50%,12px); background:#111827; color:#fff; font-size:13px; font-weight:600; padding:11px 18px; border-radius:11px; box-shadow:0 10px 24px rgba(0,0,0,.3); opacity:0; pointer-events:none; transition:opacity .18s, transform .18s; z-index:100; display:flex; align-items:center; gap:7px; white-space:nowrap;}
+  .toast.show{opacity:1; transform:translate(-50%,0);}
+
+  .hint{max-width:390px; margin-top:16px; font-size:12px; color:#6b7280; text-align:center; line-height:1.6;}
+</style>
+</head>
+<body>
+
+<div class="devbar">
+  <span class="tag">MOCKUP v2</span><b>Supervisor — Check, Line Ticks</b> — static HTML, review only.
+  No progress bar, no border on the tick column, no ring on ticked cards. No Undo on this screen —
+  a picked bill goes forward only. Starts at 4/9 — tap remaining lines to enable Approve.
+</div>
+
+<div class="phone">
+  <div class="notch"></div>
+  <div class="screen">
+    <div class="safe-top"></div>
+
+    <div class="dtop">
+      <a class="back" href="supervisor-check-split.html" aria-label="Back">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 19l-7-7 7-7"/></svg>
+      </a>
+      <div class="dtext">
+        <div class="dname">Adarsh Paint Depot</div>
+        <div class="dsub">9108271109 · Adajan · 16:00</div>
+      </div>
+    </div>
+
+    <div class="statstrip">
+      <div class="hero">1 Drum, 6 Carton, 2 Tin</div>
+      <div class="right">
+        <div class="vol">265 L</div>
+        <div class="checked"><span id="progN">4</span> / <span id="progTotal">9</span> checked</div>
+      </div>
+    </div>
+
+    <div class="packrow" id="packRow">
+      <button class="packchip on" data-pack="ALL">All</button>
+      <button class="packchip" data-pack="20 L">20 L</button>
+      <button class="packchip" data-pack="10 L">10 L</button>
+      <button class="packchip" data-pack="4 L">4 L</button>
+      <button class="packchip" data-pack="1 L">1 L</button>
+      <button class="packchip" data-pack="No pack">No pack</button>
+    </div>
+
+    <div class="dlist" id="dlist"></div>
+
+    <div class="dcta">
+      <button id="approveBtn" class="disabled" disabled>Approve</button>
+    </div>
+
+    <div class="toast" id="toast">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
+      <span id="toastMsg">Approved — cleared for dispatch</span>
+    </div>
+  </div>
+</div>
+
+<p class="hint">Reference: components/picking/picking-board-mobile.tsx:1083-1267 +
+:1242-1246 (reserved gutter). See STAGE2-NOTES.md.</p>
+
+<script>
+  const LINES = [
+    { sku:"IN20109672", name:"Weathershield Max — Brilliant White",        pack:"20 L", qty:2, checked:true },
+    { sku:"IN10300573", name:"Velvet Touch Emulsion — Ivory",              pack:"10 L", qty:3, checked:true },
+    { sku:"IN10300572", name:"Weathershield Powerflexx Primer",            pack:"4 L",  qty:5, checked:true },
+    { sku:"IN20881145", name:"Promise SmartChoice Emulsion — Tile Red",    pack:"10 L", qty:1, checked:true },
+    { sku:"IN30217790", name:"Super Clean Emulsion — Brilliant White",     pack:"4 L",  qty:6, checked:false },
+    { sku:"IN10944120", name:"Sadolin Superdec — Teak",                    pack:"1 L",  qty:4, checked:false },
+    { sku:"IN20553381", name:"Aquatech Waterproofing Compound",            pack:"20 L", qty:1, checked:false },
+    { sku:"IN40219098", name:"Super Cover Emulsion — Ivory",               pack:"4 L",  qty:3, checked:false },
+    { sku:"5961032",    name:"DN WS Metallic Gold 0.5L",                   pack:null,   qty:1, checked:false },
+  ];
+
+  function itemHtml(l, i){
+    const packLabel = l.pack ?? "No pack";
+    return `
+      <div class="litem ${l.checked ? "checked" : ""}" data-pack="${packLabel}" data-idx="${i}">
+        <div class="ptile ${l.pack ? "known" : "unknown"}"><span>${l.pack ?? "—"}</span></div>
+        <div class="lbody"><div class="sku">${l.sku}</div><div class="name">${l.name}</div></div>
+        <div class="lqty"><span>${l.qty}</span></div>
+        <div class="ltick" data-tick="${i}">
+          <div class="tickbox">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="white" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderList(){
+    document.getElementById("dlist").innerHTML = LINES.map(itemHtml).join("");
+    document.querySelectorAll("[data-tick]").forEach(el => {
+      el.addEventListener("click", () => {
+        const idx = Number(el.dataset.tick);
+        LINES[idx].checked = !LINES[idx].checked;
+        renderList();
+        renderProgress();
+        applyPackFilter();
+      });
+    });
+    applyPackFilter();
+  }
+
+  function renderProgress(){
+    const total = LINES.length;
+    const done = LINES.filter(l => l.checked).length;
+    document.getElementById("progN").textContent = done;
+    document.getElementById("progTotal").textContent = total;
+
+    const btn = document.getElementById("approveBtn");
+    const allDone = done === total;
+    btn.disabled = !allDone;
+    btn.classList.toggle("enabled", allDone);
+    btn.classList.toggle("disabled", !allDone);
+  }
+
+  let activePack = "ALL";
+  function applyPackFilter(){
+    document.querySelectorAll(".litem").forEach(li => {
+      li.style.display = (activePack === "ALL" || li.dataset.pack === activePack) ? "flex" : "none";
+    });
+  }
+  document.getElementById("packRow").addEventListener("click", (e) => {
+    const btn = e.target.closest(".packchip");
+    if (!btn) return;
+    document.querySelectorAll(".packchip").forEach(c => c.classList.remove("on"));
+    btn.classList.add("on");
+    activePack = btn.dataset.pack;
+    applyPackFilter();
+  });
+
+  document.getElementById("approveBtn").addEventListener("click", () => {
+    if (document.getElementById("approveBtn").disabled) return;
+    document.getElementById("toastMsg").textContent = "Approved — cleared for dispatch";
+    const t = document.getElementById("toast");
+    t.classList.add("show");
+    setTimeout(() => t.classList.remove("show"), 2200);
+  });
+
+  renderList();
+  renderProgress();
+</script>
+
+</body>
+</html>

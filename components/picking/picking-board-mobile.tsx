@@ -428,6 +428,16 @@ export function PickingBoardMobile(): React.JSX.Element {
   const [detailQuery, setDetailQuery] = useState("");
   const [activePackFilter, setActivePackFilter] = useState<string>("ALL");
 
+  // Check tab's tick state (step 6) — EPHEMERAL, plain component state, by
+  // design (discovery §D3): a forcing function, not an audit trail. Nothing
+  // persists it, nothing reads it once this screen closes. Keyed by line
+  // item id so a pack-chip filter hiding some lines never lets the Approve
+  // gate check anything but the FULL line set (see allLinesChecked below).
+  // Reset in openDetail() and again in the detailOrderId-keyed fetch effect
+  // so ticks never bleed from one bill into the next.
+  const [checkedLineIds, setCheckedLineIds] = useState<Set<number>>(new Set());
+  const [approving, setApproving] = useState(false);
+
   // Which rows the OPEN picker sheet will act on — bulk (floating bar, from
   // the current selection) or single (detail screen's own CTA). Decoupled
   // from `selected` so the two flows never fight over the same state.
@@ -492,6 +502,7 @@ export function PickingBoardMobile(): React.JSX.Element {
     setLineItemsLoading(true);
     setLineItemsError(null);
     setLineItems(null);
+    setCheckedLineIds(new Set());
     async function load() {
       try {
         const res = await fetch(`/api/picking/order/${detailOrderId}`);
@@ -689,11 +700,32 @@ export function PickingBoardMobile(): React.JSX.Element {
     setDetailSearching(false);
     setDetailQuery("");
     setActivePackFilter("ALL");
+    setCheckedLineIds(new Set());
   }
 
   function closeDetail(): void {
     setDetailOpen(false);
   }
+
+  function toggleLineChecked(lineId: number): void {
+    setCheckedLineIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(lineId)) next.delete(lineId);
+      else next.add(lineId);
+      return next;
+    });
+  }
+
+  // Approve gate — checks the FULL line set, never filteredLineItems, so an
+  // active pack-chip filter hiding some lines can never let a partially-
+  // ticked bill through (task brief: "Approve must still require ALL lines
+  // ticked, not just visible ones"). A zero-line bill stays permanently
+  // disabled rather than vacuously passing `.every()` on an empty array —
+  // a bill with no lines shouldn't be in picking at all.
+  const allLinesChecked = useMemo(() => {
+    if (!lineItems || lineItems.length === 0) return false;
+    return lineItems.every((li) => checkedLineIds.has(li.id));
+  }, [lineItems, checkedLineIds]);
 
   // Distinct packs present on this bill, for the pack-filter chip row.
   // Sorted alphabetically with "No pack" trailing last (an exception
@@ -811,6 +843,40 @@ export function PickingBoardMobile(): React.JSX.Element {
       }
     },
     [unassigningIds, refetchQueue],
+  );
+
+  // Approve — step 6. Single-order payload, refetch-after-action (never
+  // patch rows locally), same 409 handling as handleUndo/handleAssign above.
+  const handleApprove = useCallback(
+    async (row: PickingQueueRow) => {
+      if (approving) return;
+      setApproving(true);
+      try {
+        const res = await fetch("/api/picking/approve", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ orderId: row.orderId }),
+        });
+        const json = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+        if (!res.ok) {
+          if (res.status === 409) {
+            toast("Already changed — refreshed.");
+            await refetchQueue();
+          } else {
+            toast.error(json.error ?? `Request failed (${res.status})`);
+          }
+          return;
+        }
+        toast.success(`${row.dealerName} approved`);
+        setDetailOpen(false);
+        await refetchQueue();
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Approve failed");
+      } finally {
+        setApproving(false);
+      }
+    },
+    [approving, refetchQueue],
   );
 
   return (
@@ -1217,8 +1283,15 @@ export function PickingBoardMobile(): React.JSX.Element {
               <div className="min-w-0 text-[16px] font-extrabold text-gray-900 leading-snug">
                 {detailRow?.articleTag ?? "—"}
               </div>
-              <div className="shrink-0 text-[13px] font-semibold text-gray-500">
-                {detailRow?.volumeLitres != null ? formatLitres(detailRow.volumeLitres) : "—"} L
+              <div className="shrink-0 flex flex-col items-end gap-0.5">
+                <div className="text-[13px] font-semibold text-gray-500">
+                  {detailRow?.volumeLitres != null ? formatLitres(detailRow.volumeLitres) : "—"} L
+                </div>
+                {detailRow?.isDone && lineItems !== null && (
+                  <div className="text-[11.5px] text-gray-400 tabular-nums">
+                    {checkedLineIds.size} / {lineItems.length} checked
+                  </div>
+                )}
               </div>
             </div>
 
@@ -1274,7 +1347,9 @@ export function PickingBoardMobile(): React.JSX.Element {
               <p className="text-[13px] text-gray-400 text-center py-10">No lines match.</p>
             ) : (
               // Flat — filtered, never restructured or grouped by pack.
-              filteredLineItems.map((li) => (
+              filteredLineItems.map((li) => {
+                const isChecked = detailRow?.isDone === true && checkedLineIds.has(li.id);
+                return (
                 <div
                   key={li.id}
                   className="flex bg-white rounded-[14px] overflow-hidden mb-2"
@@ -1294,18 +1369,54 @@ export function PickingBoardMobile(): React.JSX.Element {
                     </span>
                   </div>
                   {/* BODY — SKU is the loudest thing on the card; product name
-                      is muted confirmation underneath. */}
-                  <div className="flex-1 min-w-0 px-3 py-2.5">
+                      is muted confirmation underneath. Mutes slightly once
+                      ticked (Check tab only) — per the approved mockup, no
+                      ring, no left border, just a quiet row. */}
+                  <div className={"flex-1 min-w-0 px-3 py-2.5 transition-opacity " + (isChecked ? "opacity-55" : "")}>
                     <div className="font-mono text-[17px] font-bold text-gray-900 truncate">{li.sku}</div>
                     <div className="text-[12px] text-gray-500 truncate mt-0.5">{li.name ?? "—"}</div>
                   </div>
-                  {/* QTY — fixed, plain, no "x" prefix. Space to the right of
-                      this column is reserved for a future tick-off checkbox. */}
+                  {/* QTY — fixed, plain, no "x" prefix. */}
                   <div className="shrink-0 flex items-center justify-center px-3.5">
                     <span className="text-[26px] font-extrabold text-gray-900">{li.qty}</span>
                   </div>
+                  {/* TICK — Check tab only (detailRow.isDone), in the gutter
+                      the QTY column already reserved. 44px tap zone, 20px/
+                      2px-border circle, filled teal + white check when
+                      ticked — no border on the column itself (a tap zone,
+                      not a compartment), per the approved mockup
+                      (docs/mockups/picking/supervisor-check-ticks.html).
+                      Freely toggleable — a forcing function, not a lock. */}
+                  {detailRow?.isDone && (
+                    <button
+                      type="button"
+                      onClick={() => toggleLineChecked(li.id)}
+                      aria-label={isChecked ? "Mark line unchecked" : "Mark line checked"}
+                      className="w-11 shrink-0 flex items-center justify-center"
+                    >
+                      <span
+                        className={
+                          "w-5 h-5 rounded-full border-2 flex items-center justify-center " +
+                          (isChecked ? "bg-teal-600 border-teal-600" : "bg-white border-gray-300")
+                        }
+                      >
+                        {isChecked && (
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none">
+                            <path
+                              d="M5 13l4 4L19 7"
+                              stroke="white"
+                              strokeWidth={3.5}
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                        )}
+                      </span>
+                    </button>
+                  )}
                 </div>
-              ))
+                );
+              })
             )
           )}
         </div>
@@ -1354,6 +1465,32 @@ export function PickingBoardMobile(): React.JSX.Element {
               className="w-full h-12 rounded-full bg-white border border-gray-200 active:bg-gray-50 text-gray-700 text-[14.5px] font-bold disabled:opacity-50"
             >
               {unassigningIds.has(detailRow.orderId) ? "Undoing…" : "Undo"}
+            </button>
+          </div>
+        )}
+
+        {/* Step 6 — Approve. Renders only for "Needs check" (PICK_DONE)
+            rows. Disabled until allLinesChecked (every line ticked, gated
+            against the FULL line set — see that memo's comment for the
+            pack-filter interaction). No Undo on this screen, deliberately —
+            a picked bill goes forward only; see the build-session notes. */}
+        {detailRow && detailRow.isDone && (
+          <div
+            className="shrink-0 px-3.5 pb-3.5"
+            style={{ paddingBottom: MOBILE_NAV_CLEARANCE }}
+          >
+            <button
+              type="button"
+              onClick={() => void handleApprove(detailRow)}
+              disabled={!allLinesChecked || approving}
+              className={
+                "w-full h-12 rounded-full text-[14.5px] font-bold " +
+                (allLinesChecked
+                  ? "bg-teal-600 active:bg-teal-700 text-white shadow-[0_8px_22px_rgba(13,148,136,0.42)]"
+                  : "bg-gray-200 text-gray-400")
+              }
+            >
+              {approving ? "Approving…" : "Approve"}
             </button>
           </div>
         )}
