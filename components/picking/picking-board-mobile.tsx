@@ -470,8 +470,15 @@ export function PickingBoardMobile(): React.JSX.Element {
   // data.rows arrives already sorted server-side (lib/picking/sort.ts
   // PICKING_SPINE — assigned-sink leads, window next). Array.filter preserves
   // that order; NOTHING here re-sorts or re-groups.
+  //
+  // `&& !r.isDone` — a PICK_DONE row has isAssigned: false (that boolean is
+  // strictly PICK_ASSIGNED-only, see lib/picking/queue.ts's KNOWN GAP
+  // comment), so without this it would wrongly reappear here as if
+  // untouched and re-offerable to Assign. It does NOT need the equivalent
+  // guard on the assigned/Check side — assignedRows below already excludes
+  // it correctly, since isAssigned is false for it either way.
   const waitingRows: PickingQueueRow[] = useMemo(
-    () => (data ? data.rows.filter((r) => !r.isAssigned) : []),
+    () => (data ? data.rows.filter((r) => !r.isAssigned && !r.isDone) : []),
     [data],
   );
   const assignedRows: PickingQueueRow[] = useMemo(
@@ -1267,7 +1274,11 @@ export function PickingBoardMobile(): React.JSX.Element {
           )}
         </div>
 
-        {detailRow && !detailRow.isAssigned && (
+        {/* !detailRow.isDone — defense-in-depth: a PICK_DONE row is already
+            excluded from waitingRows above (so its card won't normally be
+            tapped into), but this stops the "Assign to picker" CTA from
+            ever rendering for one if this screen is reached some other way. */}
+        {detailRow && !detailRow.isAssigned && !detailRow.isDone && (
           <div
             className="shrink-0 px-3.5 pb-3.5"
             style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 14px)" }}

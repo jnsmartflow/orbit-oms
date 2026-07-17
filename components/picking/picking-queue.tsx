@@ -287,8 +287,14 @@ function PickingTable({
   // View-only route narrowing — sort order (already applied server-side) is
   // preserved, this only filters which already-sorted rows render. Assigned
   // rows are untouched by routeFilter — the done bar always shows everything.
+  //
+  // `&& !r.isDone` — a PICK_DONE row has isAssigned: false (that boolean is
+  // strictly PICK_ASSIGNED-only, see lib/picking/queue.ts's doc comment),
+  // so without this it would wrongly render here as if untouched and
+  // re-selectable for bulk-assign. assignedRows below needs no matching
+  // fix — it already excludes PICK_DONE rows correctly either way.
   const unassignedRows = useMemo(() => {
-    const waiting = rows.filter((r) => !r.isAssigned);
+    const waiting = rows.filter((r) => !r.isAssigned && !r.isDone);
     return routeFilter === null ? waiting : waiting.filter((r) => r.route === routeFilter);
   }, [rows, routeFilter]);
   const assignedRows = useMemo(() => rows.filter((r) => r.isAssigned), [rows]);
@@ -621,20 +627,25 @@ export function PickingQueue() {
   // Route filter options — distinct row.route values PRESENT in the current
   // tab's waiting rows, alphabetical. Derived client-side from already-loaded
   // rows, no new fetch. Assigned rows never contribute (they're not part of
-  // "the waiting list" the filter narrows).
+  // "the waiting list" the filter narrows) — nor do PICK_DONE rows
+  // (`!r.isDone`), else this could offer a route with nothing real behind
+  // it once PickingTable's own unassignedRows excludes them (see there).
   const availableRoutes = useMemo(() => {
     const set = new Set<string>();
     for (const r of visibleRows) {
-      if (!r.isAssigned && r.route !== null) set.add(r.route);
+      if (!r.isAssigned && !r.isDone && r.route !== null) set.add(r.route);
     }
     return Array.from(set).sort((a, b) => a.localeCompare(b, "en", { sensitivity: "base" }));
   }, [visibleRows]);
 
   // Selection scope — UNASSIGNED rows in the CURRENT TAB, narrowed by the
   // route filter — matches exactly what PickingTable renders as selectable,
-  // so "Select All" never silently selects a row hidden by the route filter.
+  // so "Select All" never silently selects a row hidden by the route filter
+  // (including a PICK_DONE row, `!r.isDone` — it has no checkbox rendered
+  // in the table at all, so without this Select All would over-count and
+  // include a phantom orderId that never appeared on screen).
   const selectableIdsInTab = useMemo(() => {
-    const waiting = visibleRows.filter((r) => !r.isAssigned);
+    const waiting = visibleRows.filter((r) => !r.isAssigned && !r.isDone);
     const filtered = routeFilter === null ? waiting : waiting.filter((r) => r.route === routeFilter);
     return filtered.map((r) => r.orderId);
   }, [visibleRows, routeFilter]);

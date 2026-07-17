@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { ChevronLeft } from "lucide-react";
+import { toast } from "sonner";
 import type { PickingQueueRow } from "@/lib/picking/types";
 import type { PickerRosterEntry } from "@/lib/picking/picker-roster";
 
@@ -85,11 +86,13 @@ function TopBarTab({
 }
 
 /**
- * The picker's own list — READ-ONLY this stage. No Mark done CTA, no
- * writes, no state changes. `pending`/`done` arrive already scoped
- * server-side (page.tsx filters lib/picking/queue.ts's rows by pickerId
- * before this component ever sees them) — this component does not widen
- * that scope itself.
+ * The picker's own list. `pending`/`done` arrive already scoped server-side
+ * (page.tsx filters lib/picking/queue.ts's rows by pickerId before this
+ * component ever sees them) — this component does not widen that scope
+ * itself, including for the Mark Done write below (POSTs the same
+ * server-resolved `activePickerId`, never a client-invented identity).
+ * Mark Done is fire-and-forget — toast, then back to the list via
+ * router.refresh(); no confirm sheet (the Done tab is the safety net).
  */
 export function PickerMyPicksBoard({
   pending, done, viewerName, isAdmin, pickers, activePickerId,
@@ -109,6 +112,10 @@ export function PickerMyPicksBoard({
   const [lineItemsLoading, setLineItemsLoading] = useState(false);
   const [lineItemsError, setLineItemsError] = useState<string | null>(null);
   const [activePackFilter, setActivePackFilter] = useState<string>("ALL");
+  // In-flight guard — disables the CTA so a double-tap can't fire two
+  // overlapping POSTs (the server's own PICK_ASSIGNED guard would 409 the
+  // second one anyway, but this avoids firing it at all).
+  const [marking, setMarking] = useState(false);
 
   useEffect(() => {
     if (detailOrderId === null) return;
@@ -149,6 +156,38 @@ export function PickerMyPicksBoard({
     if (detailOrderId === null) return null;
     return [...pending, ...done].find((r) => r.orderId === detailOrderId) ?? null;
   }, [pending, done, detailOrderId]);
+
+  // Fire-and-forget: toast, close, router.refresh() — no confirm sheet.
+  // Sends the server-resolved activePickerId (never a client-invented
+  // value); the API's own ownership check re-verifies it against the
+  // order's real pick_assignments row regardless (see app/api/picking/
+  // done/route.ts's file-top comment).
+  const handleMarkDone = useCallback(async () => {
+    if (detailRow === null || activePickerId === null || marking) return;
+    setMarking(true);
+    try {
+      const res = await fetch("/api/picking/done", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId: detailRow.orderId, pickerId: activePickerId }),
+      });
+      const json = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!res.ok) {
+        toast.error(json.error ?? `Request failed (${res.status})`);
+        return;
+      }
+      toast.success(`${detailRow.dealerName} marked done`);
+      closeDetail();
+      // Re-runs page.tsx's server-side fetch+filter for this picker — the
+      // bill moves from Pending to Done via fresh server props, never a
+      // client-side patch of the arrays passed in.
+      router.refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Mark done failed");
+    } finally {
+      setMarking(false);
+    }
+  }, [detailRow, activePickerId, marking, router]);
 
   const distinctPackKeys = useMemo(() => {
     if (!lineItems) return [];
@@ -270,8 +309,10 @@ export function PickerMyPicksBoard({
       {/* Detail screen — reuses the live board's detail-screen pattern
           (board.tsx:1083-1267): teal header, articleTag+volume stat strip,
           pack chips (only when ≥2 distinct packs), pack-tile/SKU-hero/qty
-          line items. NO tick boxes, NO Mark done CTA — both are later
-          stages; the bottom of this screen is deliberately empty. */}
+          line items, plus a Mark done CTA below (fire-and-forget, no
+          confirm — see handleMarkDone). NO tick boxes — that's a
+          supervisor-side, later stage. CTA only renders for pending
+          (non-done) rows — a Done-tab bill's detail screen has no CTA. */}
       <div
         className={
           "fixed inset-0 z-[35] bg-[#f9fafb] flex flex-col transition-transform duration-200 ease-out " +
@@ -387,6 +428,22 @@ export function PickerMyPicksBoard({
             )
           )}
         </div>
+
+        {detailRow && !detailRow.isDone && (
+          <div
+            className="shrink-0 px-3.5 pb-3.5"
+            style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 14px)" }}
+          >
+            <button
+              type="button"
+              onClick={() => void handleMarkDone()}
+              disabled={marking}
+              className="w-full h-12 rounded-full bg-teal-600 active:bg-teal-700 text-white text-[14.5px] font-bold shadow-[0_8px_22px_rgba(13,148,136,0.42)] disabled:opacity-60"
+            >
+              {marking ? "Marking done…" : "Mark done"}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

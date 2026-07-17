@@ -104,30 +104,28 @@ const DEALER_SELECT = {
  * No writes. No orderBy in the Prisma query — sorting is entirely
  * sortPickingQueue()'s job (byAssigned sinks assigned rows to the bottom).
  *
- * KNOWN GAP (reported, not fixed, 2026-07-17): `isAssigned` below is
- * strictly `workflowStage === PICK_ASSIGNED` — a PICK_DONE row gets
- * `isAssigned: false`. The moment something starts writing PICK_DONE
- * (step 4), those rows will be fetched here but then:
- *   - components/picking/picking-queue.tsx (desktop): render in the
- *     UNASSIGNED table section (`rows.filter(r => !r.isAssigned)`,
- *     picking-queue.tsx:291), re-selectable via its own checkbox
- *     (`selectableIdsInTab`, picking-queue.tsx:637) and re-offerable to
- *     bulk-assign — the assign API's own guard would reject the write
- *     (`workflowStage !== SUPPORT_DONE_OUTPUT`), but the row visually
- *     reappears as if untouched.
+ * `isAssigned` below is strictly `workflowStage === PICK_ASSIGNED` — a
+ * PICK_DONE row gets `isAssigned: false`, on purpose, and stays that way.
+ * That is NOT a bug on its own: it only breaks something for a consumer
+ * that treats "!isAssigned" as "waiting/unassigned" without ALSO excluding
+ * `isDone`. Since 2026-07-17 (the stage that started writing PICK_DONE via
+ * app/api/picking/done/route.ts), both real consumers guard for this at
+ * their own "waiting" filter:
+ *   - components/picking/picking-queue.tsx (desktop): `unassignedRows`
+ *     inside `PickingTable`, plus the parent's `availableRoutes` and
+ *     `selectableIdsInTab` — all now `!r.isAssigned && !r.isDone`.
  *   - components/picking/picking-board-mobile.tsx (mobile Assign tab):
- *     same story — `waitingRows = data.rows.filter(r => !r.isAssigned)`
- *     (board.tsx:456-459) — a picked-but-not-checked bill reappears in the
- *     Assign list. The mobile Check tab (`assignedRows = ...filter(r =>
- *     r.isAssigned)`, board.tsx:460-463) would then NOT show it either.
- *   - lib/picking/sort.ts's `byAssigned` rule sinks `isAssigned === true`
- *     rows to the bottom; a PICK_DONE row (isAssigned: false) sorts
- *     normally among genuinely-untouched rows instead, anywhere in the list.
- * Fix belongs to whichever stage starts writing PICK_DONE — likely widening
- * what counts as "assigned" on desktop/mobile-Assign to rank >= 70, and
- * building the Check-tab split (already mocked in
- * docs/mockups/picking/supervisor-check-split.html) so Check, not Assign,
- * is where a PICK_DONE row belongs. Not touched here — report only.
+ *     `waitingRows` and the detail screen's Assign-CTA gate — same
+ *     `&& !r.isDone` addition.
+ * The "assigned"/Check-tab side (`r.isAssigned`) never needed a matching
+ * fix — it was already correctly excluding PICK_DONE rows, since
+ * `isAssigned` is false for them on that side too. A PICK_DONE row is
+ * therefore currently invisible on BOTH boards — that's intentional until
+ * a later stage builds the Check-tab split (already mocked in
+ * docs/mockups/picking/supervisor-check-split.html) to give it a home;
+ * do not build a temporary one here. lib/picking/sort.ts's `byAssigned`
+ * rule itself was never touched — only what feeds it (the filtered row
+ * sets above) changed.
  */
 export async function getPickingQueue(dateStr?: string): Promise<PickingQueueResult> {
   const { isoDate, dateOnly } = resolveTargetDate(dateStr);
@@ -137,10 +135,12 @@ export async function getPickingQueue(dateStr?: string): Promise<PickingQueueRes
     where: {
       dispatchStatus: "dispatch",
       dispatchTargetDate: dateOnly,
-      // Unassigned, assigned, AND picked current stages — the queue shows
-      // assigned/picked bills too (sunk to the bottom by sort.ts's
-      // byAssigned rule for PICK_ASSIGNED; see the KNOWN GAP note above this
-      // function for PICK_DONE's current byAssigned/isAssigned mismatch).
+      // Unassigned, assigned, AND picked current stages. Assigned
+      // (PICK_ASSIGNED) rows are sunk to the bottom by sort.ts's
+      // byAssigned rule; picked (PICK_DONE) rows are NOT (isAssigned is
+      // false for them too — see the doc comment above this function) —
+      // harmless, since both board consumers filter PICK_DONE rows out of
+      // their rendered lists entirely rather than relying on sort position.
       // Never the historical 'closed' union — see lib/workflow-stages.ts and
       // CLAUDE_SUPPORT.md §3 (parking-stage flip).
       workflowStage: { in: [SUPPORT_DONE_OUTPUT, PICK_ASSIGNED, PICK_DONE] },
