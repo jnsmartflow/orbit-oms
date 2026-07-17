@@ -7,6 +7,7 @@ import type { RoleSidebarRole } from "@/components/shared/role-sidebar";
 import { PickingQueue } from "@/components/picking/picking-queue";
 import { PickingBoardMobile } from "@/components/picking/picking-board-mobile";
 import { PickerMyPicksBoard } from "@/components/picking/picker-my-picks-board";
+import { ROLES } from "@/lib/rbac";
 import { getPickingQueue } from "@/lib/picking/queue";
 import { getActivePickers, type PickerRosterEntry } from "@/lib/picking/picker-roster";
 import type { PickingQueueRow } from "@/lib/picking/types";
@@ -58,9 +59,14 @@ export default async function PickingPage({ searchParams }: PickingPageProps) {
   // The only live way in this stage is the admin-only `?view=picker` test
   // hook (discovery §E5), mirroring the `?draft=on`-style gating already
   // used elsewhere in this codebase (CLAUDE_UI.md §55).
-  const isAdmin         = roles.includes("admin");
+  // TEST HOOK — temporary. Widened 2026-07-17 from admin-only to admin OR
+  // operations so both can preview the picker face without a real grant.
+  // Narrow this back (or remove it) once picker/floor_supervisor get actual
+  // role_permissions rows for "picking" — this is scaffolding, not the
+  // real access model.
+  const canUseTestHook  = roles.includes(ROLES.ADMIN) || roles.includes(ROLES.OPERATIONS);
   const isPickerRole    = primaryRole === "picker";
-  const showPickerFace  = isPickerRole || (isAdmin && searchParams?.view === "picker");
+  const showPickerFace  = isPickerRole || (canUseTestHook && searchParams?.view === "picker");
 
   let pickerFaceData: {
     pending: PickingQueueRow[];
@@ -72,7 +78,7 @@ export default async function PickingPage({ searchParams }: PickingPageProps) {
 
   if (showPickerFace) {
     // Sequential awaits only — never prisma.$transaction (CORE §3).
-    const pickers = isAdmin ? await getActivePickers() : [];
+    const pickers = canUseTestHook ? await getActivePickers() : [];
 
     let viewerId: number | null;
     let viewerName: string;
@@ -123,7 +129,7 @@ export default async function PickingPage({ searchParams }: PickingPageProps) {
               pending={pickerFaceData.pending}
               done={pickerFaceData.done}
               viewerName={pickerFaceData.viewerName}
-              isAdmin={isAdmin}
+              isAdmin={canUseTestHook}
               pickers={pickerFaceData.pickers}
               activePickerId={pickerFaceData.activePickerId}
             />
