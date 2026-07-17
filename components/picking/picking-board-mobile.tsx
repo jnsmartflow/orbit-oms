@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Search, ChevronDown, Check, Star, Zap, ArrowRight, ChevronLeft } from "lucide-react";
 import { toast } from "sonner";
 import { getTodayIST } from "@/lib/dates";
+import { MOBILE_NAV_CLEARANCE } from "@/components/shared/mobile-shell";
 import type { PickingQueueRow } from "@/lib/picking/types";
 import type { PickingQueueResult } from "@/lib/picking/queue";
 
@@ -210,16 +211,11 @@ function TypeFilterPills({
 // under the mobile shell's fixed bottom nav while FilterBottomSheet's
 // sheets, patched once already for the identical symptom, stayed correct.
 //
-// bottomOffset — decisively above components/shared/mobile-shell.tsx's
-// fixed bottom nav (z-40). Root cause of the Check picker sheet being cut
-// off (the original bug this constant fixed): a sheet anchored at
-// `bottom: 0` with only ~20px of bottom padding never reserved the
-// mobile-shell's 76px footprint, unlike every other bottom-pinned element
-// on this board (the floating assign bar, the scroll region's own
-// pb-[76px]). On a SHORT option list (few pickers) that missing 76px
-// swallowed almost the whole sheet; on a longer list it only ever clipped
-// the last row or two — easy to miss in testing, easy to reintroduce by
-// hand-copying a slightly different value.
+// bottomOffset reads MOBILE_NAV_CLEARANCE (components/shared/mobile-shell.tsx)
+// rather than hand-copying the "76px + safe-area" figure again — that
+// number has now been missed three times as a local literal (this
+// component's own two sheets, then both detail-screen CTAs below); it has
+// exactly one source from here on, in the file that renders the nav itself.
 // z-index — 65/75 were chosen to clear mobile-shell's OWN full stack (nav
 // z-40 → its own scrim z-50 → menu/you sheets z-[60] → sign-out confirm
 // z-[70]), not just to out-rank the nav alone. A sheet that lands on the
@@ -229,7 +225,7 @@ const SHEET_GEOMETRY = {
   scrimZ: "z-[65]",
   panelZ: "z-[75]",
   maxHeight: "max-h-[70vh]",
-  bottomOffset: "calc(76px + env(safe-area-inset-bottom, 0px))",
+  bottomOffset: MOBILE_NAV_CLEARANCE,
 } as const;
 
 // Single-select bottom sheet — the Route dropdown's exact UI, generalised so
@@ -1277,11 +1273,16 @@ export function PickingBoardMobile(): React.JSX.Element {
         {/* !detailRow.isDone — defense-in-depth: a PICK_DONE row is already
             excluded from waitingRows above (so its card won't normally be
             tapped into), but this stops the "Assign to picker" CTA from
-            ever rendering for one if this screen is reached some other way. */}
+            ever rendering for one if this screen is reached some other way.
+            paddingBottom reads MOBILE_NAV_CLEARANCE — this CTA used to be
+            pinned at just `max(safe-area, 14px)`, no mobile-shell-nav
+            reservation, so it rendered behind the fixed bottom nav with
+            only a sliver visible above it (the exact bug class SHEET_
+            GEOMETRY above already fixed twice for the sheets). */}
         {detailRow && !detailRow.isAssigned && !detailRow.isDone && (
           <div
             className="shrink-0 px-3.5 pb-3.5"
-            style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 14px)" }}
+            style={{ paddingBottom: MOBILE_NAV_CLEARANCE }}
           >
             <button
               type="button"

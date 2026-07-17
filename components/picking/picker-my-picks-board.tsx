@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { ChevronLeft } from "lucide-react";
 import { toast } from "sonner";
+import { MOBILE_NAV_CLEARANCE } from "@/components/shared/mobile-shell";
 import type { PickingQueueRow } from "@/lib/picking/types";
 import type { PickerRosterEntry } from "@/lib/picking/picker-roster";
 
@@ -429,10 +430,18 @@ export function PickerMyPicksBoard({
           )}
         </div>
 
+        {/* paddingBottom reads MOBILE_NAV_CLEARANCE (components/shared/
+            mobile-shell.tsx) — this CTA used to be pinned at just
+            `max(safe-area, 14px)`, no reservation for the mobile shell's
+            fixed bottom nav, so it rendered behind it with only a sliver
+            tappable above the Home/Menu/You bar. Same fix as
+            picking-board-mobile.tsx's "Assign to picker" CTA and
+            SHEET_GEOMETRY there — one shared constant, not a fourth
+            hand-copy of "76px + safe area". */}
         {detailRow && !detailRow.isDone && (
           <div
             className="shrink-0 px-3.5 pb-3.5"
-            style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 14px)" }}
+            style={{ paddingBottom: MOBILE_NAV_CLEARANCE }}
           >
             <button
               type="button"

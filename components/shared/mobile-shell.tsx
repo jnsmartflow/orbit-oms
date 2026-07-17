@@ -9,6 +9,21 @@ import { cn } from "@/lib/utils";
 import { ICON_MAP, DEFAULT_ICON } from "./role-sidebar";
 import type { NavItemConfig } from "@/lib/permissions";
 
+// Single source of truth for "how much space does the fixed bottom nav
+// below actually take up" — every bottom-pinned sheet or CTA anywhere in
+// the app MUST reserve at least this much, or it renders (partially)
+// behind the nav. Missed three times before this constant existed
+// (FilterBottomSheet, the Assign-to-picker sheet, both detail-screen
+// CTAs) because the figure was hand-copied as a literal "76px" in each
+// consumer instead of read from one place. 76px is an empirical figure
+// for the <nav> below (icon h-6/w-6 + gap-1 + text-[11px] + py-2 padding,
+// ~58px content, rounded up) — NOT computed from its classes, so if that
+// JSX's sizing ever changes, this constant must be updated to match by
+// hand. env(safe-area-inset-bottom) is added on top for the iOS home-
+// indicator gesture bar, separate from the nav's own already-included
+// safe-area padding below.
+export const MOBILE_NAV_CLEARANCE = "calc(76px + env(safe-area-inset-bottom, 0px))";
+
 interface MobileShellProps {
   role:         string;
   navItems:     NavItemConfig[];
