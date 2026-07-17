@@ -202,6 +202,36 @@ function TypeFilterPills({
   );
 }
 
+// ── Shared bottom-sheet geometry — SINGLE SOURCE for every bottom sheet on
+// this board (FilterBottomSheet's Route/Picker-filter sheets AND the
+// Assign-to-picker sheet further down this file). Read from here, never
+// hand-copied — two sheets each picking their own numbers is exactly how
+// the Assign-to-picker sheet drifted out of sync and ended up rendering
+// under the mobile shell's fixed bottom nav while FilterBottomSheet's
+// sheets, patched once already for the identical symptom, stayed correct.
+//
+// bottomOffset — decisively above components/shared/mobile-shell.tsx's
+// fixed bottom nav (z-40). Root cause of the Check picker sheet being cut
+// off (the original bug this constant fixed): a sheet anchored at
+// `bottom: 0` with only ~20px of bottom padding never reserved the
+// mobile-shell's 76px footprint, unlike every other bottom-pinned element
+// on this board (the floating assign bar, the scroll region's own
+// pb-[76px]). On a SHORT option list (few pickers) that missing 76px
+// swallowed almost the whole sheet; on a longer list it only ever clipped
+// the last row or two — easy to miss in testing, easy to reintroduce by
+// hand-copying a slightly different value.
+// z-index — 65/75 were chosen to clear mobile-shell's OWN full stack (nav
+// z-40 → its own scrim z-50 → menu/you sheets z-[60] → sign-out confirm
+// z-[70]), not just to out-rank the nav alone. A sheet that lands on the
+// SAME number as one of mobile-shell's own layers is a landmine even when
+// today's DOM order happens to paint it correctly.
+const SHEET_GEOMETRY = {
+  scrimZ: "z-[65]",
+  panelZ: "z-[75]",
+  maxHeight: "max-h-[70vh]",
+  bottomOffset: "calc(76px + env(safe-area-inset-bottom, 0px))",
+} as const;
+
 // Single-select bottom sheet — the Route dropdown's exact UI, generalised so
 // FIX 3's picker filter can reuse it verbatim rather than a second copy.
 // value === null means "all" (the first, un-narrowed row).
@@ -226,23 +256,10 @@ function FilterBottomSheet({
   if (!open) return null;
   return (
     <>
-      {/* z-[65]/z-[75] — decisively above components/shared/mobile-shell.tsx's
-          fixed bottom nav (z-40). Root cause of the Check picker sheet being
-          cut off: this sheet's `bottom: 0` + only 20px of bottom padding never
-          reserved the mobile-shell's 76px footprint, unlike every other
-          bottom-pinned element on this board (the floating assign bar, the
-          scroll region's own pb-[76px]) — this was the ONE exception, present
-          since this sheet's very first version (the inline Route sheet, long
-          before Check/mobile-shell-awareness existed). On a SHORT option list
-          (few pickers) that missing 76px swallowed almost the whole sheet; on
-          the usually-longer route list it only ever clipped the last row or
-          two, easy to miss in testing. Both the z-index and the bottom offset
-          are fixed here, in the ONE shared component both sheets already use
-          — so this can't drift back apart between them. */}
-      <div className="fixed inset-0 bg-black/40 z-[65]" onClick={onClose} aria-hidden="true" />
+      <div className={`fixed inset-0 bg-black/40 ${SHEET_GEOMETRY.scrimZ}`} onClick={onClose} aria-hidden="true" />
       <div
-        className="fixed left-0 right-0 z-[75] bg-white rounded-t-[18px] p-5 max-h-[70vh] overflow-y-auto"
-        style={{ bottom: "calc(76px + env(safe-area-inset-bottom, 0px))" }}
+        className={`fixed left-0 right-0 ${SHEET_GEOMETRY.panelZ} bg-white rounded-t-[18px] p-5 ${SHEET_GEOMETRY.maxHeight} overflow-y-auto`}
+        style={{ bottom: SHEET_GEOMETRY.bottomOffset }}
       >
         <div className="w-9 h-1 rounded-full bg-gray-300 mx-auto mb-3.5" />
         <h3 className="text-[16px] font-extrabold text-gray-900">{title}</h3>
@@ -1304,19 +1321,25 @@ export function PickingBoardMobile(): React.JSX.Element {
       )}
 
       {/* Picker sheet — tap a row to fire the assign immediately (no separate
-          confirm step), per the approved mockup. */}
+          confirm step), per the approved mockup. Geometry (bottom offset,
+          max-height/scroll, z-index) reads from SHEET_GEOMETRY — the same
+          single source FilterBottomSheet above uses, so this sheet can't
+          drift out of sync with it again (see that constant's comment for
+          the bug this fixes: this sheet used to be pinned at `bottom: 0`
+          with no mobile-shell-nav reservation and no internal scroll,
+          rendering its last row under the fixed bottom nav). */}
       {pickerSheetOpen && (
         <>
           <div
-            className="fixed inset-0 bg-black/40 z-40"
+            className={`fixed inset-0 bg-black/40 ${SHEET_GEOMETRY.scrimZ}`}
             onClick={() => {
               if (!assigning) setPickerSheetOpen(false);
             }}
             aria-hidden="true"
           />
           <div
-            className="fixed left-0 right-0 bottom-0 z-50 bg-white rounded-t-[18px] p-5"
-            style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 20px)" }}
+            className={`fixed left-0 right-0 ${SHEET_GEOMETRY.panelZ} bg-white rounded-t-[18px] p-5 ${SHEET_GEOMETRY.maxHeight} overflow-y-auto`}
+            style={{ bottom: SHEET_GEOMETRY.bottomOffset }}
           >
             <div className="w-9 h-1 rounded-full bg-gray-300 mx-auto mb-3.5" />
             <h3 className="text-[16px] font-extrabold text-gray-900">Assign to picker</h3>
