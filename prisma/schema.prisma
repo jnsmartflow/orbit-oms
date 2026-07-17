@@ -154,6 +154,7 @@ model users {
   ordersPickedBy            orders[]                 @relation("OrderPickedBy")
   pickAssignmentsAsPicker   pick_assignments[]       @relation("PickAssignmentPicker")
   pickAssignmentsAssigned   pick_assignments[]       @relation("PickAssignmentAssignedBy")
+  pickAssignmentsChecked    pick_assignments[]       @relation("PickAssignmentCheckedBy")
   // Mail Order back-relations
   mailOrdersPunched         mo_orders[]              @relation("MoOrderPunchedBy")
   lineStatuses              mo_line_status[]
@@ -1064,6 +1065,9 @@ model pick_assignments {
   assignedBy   users     @relation("PickAssignmentAssignedBy", fields: [assignedById], references: [id])
   status       String    @default("assigned")
   pickedAt     DateTime? @map("picked_at")
+  checkedAt    DateTime? @map("checked_at")
+  checkedById  Int?      @map("checked_by_id")
+  checkedBy    users?    @relation("PickAssignmentCheckedBy", fields: [checkedById], references: [id])
   notes        String?
   clearedAt    DateTime? @db.Timestamptz
 }

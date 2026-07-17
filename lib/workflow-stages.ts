@@ -23,8 +23,11 @@ export type StageDef = {
   supportMayEdit: boolean; // a PLAIN FLAG per stage — never derived from rank
 };
 
-// Ranks are spaced by ten so a future stage (e.g. pick_done at 80) slots in
-// without renumbering. 'pending_picking' and 'closed' deliberately SHARE
+// Ranks are spaced by ten so a future stage slots in without renumbering —
+// pick_done (80) and pick_checked (90) landed exactly that way on
+// 2026-07-17, pushing dispatched from 90 to 100 with no other file needing
+// a change (see the export list below for why). 'pending_picking' and
+// 'closed' deliberately SHARE
 // rank 60 — a legacy order must behave identically to a new one. 'closed' is
 // legacy only: nothing writes it any more (see SUPPORT_DONE_OUTPUT below).
 //
@@ -41,7 +44,13 @@ export const STAGE_LADDER: StageDef[] = [
   { stage: "pending_picking",         rank: 60, label: "In Picking Queue",       supportMayEdit: true },
   { stage: "closed",                  rank: 60, label: "In Picking Queue (old)", supportMayEdit: true },
   { stage: "pick_assigned",           rank: 70, label: "Assigned to Picker",     supportMayEdit: false },
-  { stage: "dispatched",              rank: 90, label: "Dispatched",            supportMayEdit: false },
+  // Stage 2 foundation (2026-07-17) — schema columns exist (pick_assignments
+  // .checkedAt/.checkedById) but nothing writes these stages yet. Both are
+  // hand-set false, NOT inherited from rank (see the file-top comment) —
+  // Support must stay locked out of a bill the picker is physically holding.
+  { stage: "pick_done",               rank: 80, label: "Picked",                 supportMayEdit: false },
+  { stage: "pick_checked",            rank: 90, label: "Checked",                supportMayEdit: false },
+  { stage: "dispatched",              rank: 100, label: "Dispatched",            supportMayEdit: false },
   { stage: "cancelled", rank: null, label: "Cancelled", terminal: true, supportMayEdit: false },
 ];
 
@@ -53,6 +62,12 @@ export const SUPPORT_DONE_OUTPUT = "pending_picking";
 
 /** The stage the (not-yet-built) Assigned button will write. */
 export const PICK_ASSIGNED = "pick_assigned";
+
+/** The stage the (not-yet-built) picker Done action will write. */
+export const PICK_DONE = "pick_done";
+
+/** The stage the (not-yet-built) supervisor Approve action will write. */
+export const PICK_CHECKED = "pick_checked";
 
 /** Position of a stage on the ladder. null for BOTH unknown stages and
  *  explicitly off-ladder terminal stages ('cancelled') — callers must not
@@ -108,8 +123,8 @@ export const SUPPORT_DONE_STAGE_NAMES: string[] = STAGE_LADDER
 
 /**
  * NARROWER than SUPPORT_DONE_STAGE_NAMES — exactly rank 60 (pending_picking,
- * closed), excluding 'dispatched' (rank 90). Also derived from the ladder,
- * never hand-written.
+ * closed), excluding 'pick_done'/'pick_checked'/'dispatched' (ranks 80/90/100).
+ * Also derived from the ladder, never hand-written.
  *
  * Exists because a handful of call sites' ORIGINAL arrays never included
  * "dispatched" alongside SUPPORT_DONE_STAGES, unlike every other consumer,
