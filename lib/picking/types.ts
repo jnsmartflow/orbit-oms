@@ -19,7 +19,18 @@ export interface PickingQueueRow {
   weightKg: number | null;
   obdDateTime: Date | string | null;
   isAssigned: boolean;
+  // True at exactly PICK_DONE. Added 2026-07-17 for the picker "My Picks"
+  // Done tab — NOT part of the byAssigned sort signal (isAssigned above is
+  // unchanged, still strictly PICK_ASSIGNED-only). See queue.ts's WHERE
+  // clause comment for the known gap this leaves in the desktop board,
+  // the mobile Assign/Check tabs, and lib/picking/sort.ts once PICK_DONE
+  // starts being written.
+  isDone: boolean;
   assignedAt: Date | string | null;
+  // Numeric FK, added 2026-07-17 for server-side "my bills only" scoping
+  // (picker "My Picks") — a display-name match is not a scope boundary.
+  // null when the row has no pick_assignments row at all.
+  pickerId: number | null;
   assignedToName: string | null;
   assignedByName: string | null;
 }

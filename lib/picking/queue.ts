@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { sortPickingQueue } from "./sort";
-import { SUPPORT_DONE_OUTPUT, PICK_ASSIGNED } from "@/lib/workflow-stages";
+import { SUPPORT_DONE_OUTPUT, PICK_ASSIGNED, PICK_DONE } from "@/lib/workflow-stages";
 import type { PickingQueueRow } from "./types";
 
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
@@ -97,10 +97,37 @@ const DEALER_SELECT = {
 
 /**
  * Live derived read — SELECT only. Fetches today's dispatch-stamped OBDs —
- * both unassigned (SUPPORT_DONE_OUTPUT) and assigned (PICK_ASSIGNED) — resolves
- * the effective dealer per row, and hands the result to the pure sort module.
+ * unassigned (SUPPORT_DONE_OUTPUT), assigned (PICK_ASSIGNED), and picked
+ * (PICK_DONE, added 2026-07-17 for the picker "My Picks" Done tab — nothing
+ * writes this stage yet, so today it's a no-op inclusion) — resolves the
+ * effective dealer per row, and hands the result to the pure sort module.
  * No writes. No orderBy in the Prisma query — sorting is entirely
  * sortPickingQueue()'s job (byAssigned sinks assigned rows to the bottom).
+ *
+ * KNOWN GAP (reported, not fixed, 2026-07-17): `isAssigned` below is
+ * strictly `workflowStage === PICK_ASSIGNED` — a PICK_DONE row gets
+ * `isAssigned: false`. The moment something starts writing PICK_DONE
+ * (step 4), those rows will be fetched here but then:
+ *   - components/picking/picking-queue.tsx (desktop): render in the
+ *     UNASSIGNED table section (`rows.filter(r => !r.isAssigned)`,
+ *     picking-queue.tsx:291), re-selectable via its own checkbox
+ *     (`selectableIdsInTab`, picking-queue.tsx:637) and re-offerable to
+ *     bulk-assign — the assign API's own guard would reject the write
+ *     (`workflowStage !== SUPPORT_DONE_OUTPUT`), but the row visually
+ *     reappears as if untouched.
+ *   - components/picking/picking-board-mobile.tsx (mobile Assign tab):
+ *     same story — `waitingRows = data.rows.filter(r => !r.isAssigned)`
+ *     (board.tsx:456-459) — a picked-but-not-checked bill reappears in the
+ *     Assign list. The mobile Check tab (`assignedRows = ...filter(r =>
+ *     r.isAssigned)`, board.tsx:460-463) would then NOT show it either.
+ *   - lib/picking/sort.ts's `byAssigned` rule sinks `isAssigned === true`
+ *     rows to the bottom; a PICK_DONE row (isAssigned: false) sorts
+ *     normally among genuinely-untouched rows instead, anywhere in the list.
+ * Fix belongs to whichever stage starts writing PICK_DONE — likely widening
+ * what counts as "assigned" on desktop/mobile-Assign to rank >= 70, and
+ * building the Check-tab split (already mocked in
+ * docs/mockups/picking/supervisor-check-split.html) so Check, not Assign,
+ * is where a PICK_DONE row belongs. Not touched here — report only.
  */
 export async function getPickingQueue(dateStr?: string): Promise<PickingQueueResult> {
   const { isoDate, dateOnly } = resolveTargetDate(dateStr);
@@ -110,11 +137,13 @@ export async function getPickingQueue(dateStr?: string): Promise<PickingQueueRes
     where: {
       dispatchStatus: "dispatch",
       dispatchTargetDate: dateOnly,
-      // Both the unassigned and assigned current stages — the queue shows
-      // assigned bills too (sunk to the bottom), it just doesn't count them
-      // as remaining work. Never the historical 'closed' union — see
-      // lib/workflow-stages.ts and CLAUDE_SUPPORT.md §3 (parking-stage flip).
-      workflowStage: { in: [SUPPORT_DONE_OUTPUT, PICK_ASSIGNED] },
+      // Unassigned, assigned, AND picked current stages — the queue shows
+      // assigned/picked bills too (sunk to the bottom by sort.ts's
+      // byAssigned rule for PICK_ASSIGNED; see the KNOWN GAP note above this
+      // function for PICK_DONE's current byAssigned/isAssigned mismatch).
+      // Never the historical 'closed' union — see lib/workflow-stages.ts and
+      // CLAUDE_SUPPORT.md §3 (parking-stage flip).
+      workflowStage: { in: [SUPPORT_DONE_OUTPUT, PICK_ASSIGNED, PICK_DONE] },
       isRemoved: false,
     },
     include: {
@@ -123,9 +152,12 @@ export async function getPickingQueue(dateStr?: string): Promise<PickingQueueRes
       dispatchWindow: { select: { id: true, windowTime: true, sortOrder: true } },
       // 1:1, optional — an order may have no snapshot row. Source: CLAUDE_SUPPORT.md §4.19.
       querySnapshot: { select: { articleTag: true, totalVolume: true, totalWeight: true } },
-      // 1:1, optional — present only once the order is PICK_ASSIGNED.
+      // 1:1, optional — present only once the order is PICK_ASSIGNED (or later).
+      // pickerId added 2026-07-17 for server-side "my bills only" scoping on
+      // the picker "My Picks" face — a real FK, not a display-name match.
       pickAssignment: {
         select: {
+          pickerId: true,
           assignedAt: true,
           picker: { select: { name: true } },
           assignedBy: { select: { name: true } },
@@ -169,7 +201,9 @@ export async function getPickingQueue(dateStr?: string): Promise<PickingQueueRes
       // returns all base-model scalars alongside the named relations.
       obdDateTime: order.orderDateTime ?? order.obdEmailDate ?? null,
       isAssigned: order.workflowStage === PICK_ASSIGNED,
+      isDone: order.workflowStage === PICK_DONE,
       assignedAt: order.pickAssignment?.assignedAt ?? null,
+      pickerId: order.pickAssignment?.pickerId ?? null,
       assignedToName: order.pickAssignment?.picker?.name ?? null,
       assignedByName: order.pickAssignment?.assignedBy?.name ?? null,
     };

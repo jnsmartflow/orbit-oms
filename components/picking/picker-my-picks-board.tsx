@@ -1,0 +1,393 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import { useRouter, usePathname } from "next/navigation";
+import { ChevronLeft } from "lucide-react";
+import type { PickingQueueRow } from "@/lib/picking/types";
+import type { PickerRosterEntry } from "@/lib/picking/picker-roster";
+
+// Card shell shadow — lifted verbatim from picking-board-mobile.tsx's
+// SOFT_CARD_SHADOW, the fidelity source for this whole face
+// (docs/mockups/picking/picker-my-bills.html is the approved design; the
+// live component is the source of truth wherever the two would disagree).
+const SOFT_CARD_SHADOW = "0 1px 2px rgba(16,24,40,0.04), 0 3px 12px rgba(16,24,40,0.05)";
+
+// Same sentinel/convention as picking-board-mobile.tsx's detail screen —
+// kept out of the "ALL" bucket so a null-pack line stays isolable.
+const NO_PACK_KEY = "__no_pack__";
+
+// Real GET /api/picking/order/[orderId] response shape — see that route.
+// Duplicated from picking-board-mobile.tsx rather than imported: that file
+// is untouched this stage (per constraints), and this shape is small/stable.
+interface LineItem {
+  id: number;
+  name: string | null;
+  sku: string;
+  pack: string | null;
+  qty: number;
+}
+
+interface PickerMyPicksBoardProps {
+  pending: PickingQueueRow[];
+  done: PickingQueueRow[];
+  viewerName: string;
+  isAdmin: boolean;
+  pickers: PickerRosterEntry[];
+  activePickerId: number | null;
+}
+
+// Same rounding/formatting rule as picking-board-mobile.tsx's formatLitres —
+// duplicated (see file-top note), not imported.
+function formatLitres(n: number): string {
+  const rounded = Math.round(n * 10) / 10;
+  const isWhole = Number.isInteger(rounded);
+  return rounded.toLocaleString("en-US", {
+    minimumFractionDigits: isWhole ? 0 : 1,
+    maximumFractionDigits: 1,
+  });
+}
+
+// Plain-text tab, exact copy of picking-board-mobile.tsx's TopBarTab
+// (board.tsx:119-150) — label + count, 3px white underline, no pill
+// container. Duplicated per the approved plan (§2: duplicate a third time
+// rather than extract from the untouched live board).
+function TopBarTab({
+  label, count, active, onClick,
+}: {
+  label: string; count: number; active: boolean; onClick: () => void;
+}): React.JSX.Element {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="relative flex items-baseline gap-[7px] min-h-[40px] py-2"
+    >
+      <span className={"text-[15.5px] whitespace-nowrap " + (active ? "text-white font-bold" : "text-white/60 font-medium")}>
+        {label}
+      </span>
+      <span
+        className={
+          "text-[13px] font-semibold tabular-nums whitespace-nowrap " +
+          (active ? "text-white" : "text-white/45")
+        }
+      >
+        {count}
+      </span>
+      <span
+        aria-hidden="true"
+        className={
+          "absolute left-0 right-0 -bottom-px h-[3px] rounded-full bg-white " +
+          (active ? "opacity-100" : "opacity-0")
+        }
+      />
+    </button>
+  );
+}
+
+/**
+ * The picker's own list — READ-ONLY this stage. No Mark done CTA, no
+ * writes, no state changes. `pending`/`done` arrive already scoped
+ * server-side (page.tsx filters lib/picking/queue.ts's rows by pickerId
+ * before this component ever sees them) — this component does not widen
+ * that scope itself.
+ */
+export function PickerMyPicksBoard({
+  pending, done, viewerName, isAdmin, pickers, activePickerId,
+}: PickerMyPicksBoardProps): React.JSX.Element {
+  const router = useRouter();
+  const pathname = usePathname();
+
+  const [activeTab, setActiveTab] = useState<"pending" | "done">("pending");
+
+  // Detail overlay — always-mounted, translateX slide, same pattern as
+  // picking-board-mobile.tsx's detail screen (board.tsx:1083-1267) so the
+  // list underneath is never torn down. NO tick boxes, NO Mark done CTA —
+  // both are later stages.
+  const [detailOrderId, setDetailOrderId] = useState<number | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [lineItems, setLineItems] = useState<LineItem[] | null>(null);
+  const [lineItemsLoading, setLineItemsLoading] = useState(false);
+  const [lineItemsError, setLineItemsError] = useState<string | null>(null);
+  const [activePackFilter, setActivePackFilter] = useState<string>("ALL");
+
+  useEffect(() => {
+    if (detailOrderId === null) return;
+    let cancelled = false;
+    setLineItemsLoading(true);
+    setLineItemsError(null);
+    setLineItems(null);
+    async function load() {
+      try {
+        const res = await fetch(`/api/picking/order/${detailOrderId}`);
+        if (!res.ok) throw new Error(`Request failed (${res.status})`);
+        const json = (await res.json()) as { lines?: LineItem[] };
+        if (!cancelled) setLineItems(json.lines ?? []);
+      } catch (err) {
+        if (!cancelled) setLineItemsError(err instanceof Error ? err.message : "Failed to load line items");
+      } finally {
+        if (!cancelled) setLineItemsLoading(false);
+      }
+    }
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [detailOrderId]);
+
+  function openDetail(orderId: number): void {
+    setDetailOrderId(orderId);
+    setDetailOpen(true);
+    setActivePackFilter("ALL");
+  }
+  function closeDetail(): void {
+    setDetailOpen(false);
+  }
+
+  const rows = activeTab === "pending" ? pending : done;
+
+  const detailRow: PickingQueueRow | null = useMemo(() => {
+    if (detailOrderId === null) return null;
+    return [...pending, ...done].find((r) => r.orderId === detailOrderId) ?? null;
+  }, [pending, done, detailOrderId]);
+
+  const distinctPackKeys = useMemo(() => {
+    if (!lineItems) return [];
+    const set = new Set<string>();
+    for (const li of lineItems) set.add(li.pack ?? NO_PACK_KEY);
+    const keys = Array.from(set);
+    const real = keys.filter((k) => k !== NO_PACK_KEY).sort((a, b) => a.localeCompare(b));
+    return keys.includes(NO_PACK_KEY) ? [...real, NO_PACK_KEY] : real;
+  }, [lineItems]);
+
+  const filteredLineItems = useMemo(() => {
+    if (!lineItems) return [];
+    if (activePackFilter === "ALL") return lineItems;
+    return lineItems.filter((li) => (li.pack ?? NO_PACK_KEY) === activePackFilter);
+  }, [lineItems, activePackFilter]);
+
+  // Admin "view as" — re-runs the server component's scoped fetch for the
+  // newly chosen picker via a query-param navigation. No client-side
+  // fetch of another picker's data ever happens here.
+  function handleViewAsChange(newPickerId: string): void {
+    const params = new URLSearchParams();
+    params.set("view", "picker");
+    params.set("as", newPickerId);
+    router.push(`${pathname}?${params.toString()}`);
+  }
+
+  return (
+    <div className="fixed inset-0 flex flex-col overflow-hidden bg-[#f9fafb]">
+      {/* Admin-only debug strip — deliberately outside the app's visual
+          language (dark, dashed amber border, monospace) so it never reads
+          as something a real picker would see. Matches
+          docs/mockups/picking/picker-my-bills.html's debugstrip. */}
+      {isAdmin && (
+        <div className="flex-shrink-0 bg-gray-900 border-b-2 border-dashed border-amber-500 px-3.5 py-2 flex items-center gap-2">
+          <span className="font-mono text-[9.5px] font-bold text-amber-500 uppercase tracking-wide whitespace-nowrap">
+            ⚙ Admin — view as
+          </span>
+          <select
+            value={activePickerId ?? ""}
+            onChange={(e) => handleViewAsChange(e.target.value)}
+            className="flex-1 min-w-0 bg-gray-800 text-white border border-gray-600 rounded-[6px] px-2 py-1 text-[12px] font-semibold font-mono"
+          >
+            {pickers.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      <div
+        className="flex-shrink-0 bg-teal-600 px-4 pb-3"
+        style={{ paddingTop: "max(env(safe-area-inset-top, 0px), 12px)" }}
+      >
+        <h1 className="text-[19px] font-extrabold text-white tracking-tight mb-[3px]">My Picks</h1>
+        <div className="text-[12.5px] text-white/75 font-medium mb-2.5">{viewerName}</div>
+        <div className="flex items-center gap-6">
+          <TopBarTab label="Pending" count={pending.length} active={activeTab === "pending"} onClick={() => setActiveTab("pending")} />
+          <TopBarTab label="Done" count={done.length} active={activeTab === "done"} onClick={() => setActiveTab("done")} />
+        </div>
+      </div>
+
+      {/* Card list — three lines only, no checkbox, no flags, no elapsed
+          pill, no avatar, no footer. Reserves 76px for the global mobile
+          shell (components/shared/mobile-shell.tsx), same convention as
+          picking-board-mobile.tsx. */}
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain pb-[76px] bg-white border-b border-gray-200 px-4 py-2.5">
+        {rows.length === 0 ? (
+          <p className="text-[13px] text-gray-400 text-center py-16">
+            {activeTab === "pending" ? "Nothing pending." : "Nothing marked done yet today."}
+          </p>
+        ) : (
+          rows.map((row) => (
+            <button
+              key={row.orderId}
+              type="button"
+              onClick={() => openDetail(row.orderId)}
+              className="block w-full text-left bg-white rounded-[14px] p-[13px] mb-[9px] active:bg-gray-50"
+              style={{ boxShadow: SOFT_CARD_SHADOW }}
+            >
+              <div className="flex items-center justify-between gap-2 mb-[5px]">
+                <span className="flex items-baseline gap-[5px] min-w-0">
+                  <span className="font-mono text-[11px] text-gray-400 whitespace-nowrap">{row.obdNumber}</span>
+                  {row.windowTime !== null && (
+                    <span className="text-[10.5px] text-gray-300 whitespace-nowrap">&middot;{row.windowTime}</span>
+                  )}
+                </span>
+                {/* Done tab: muted "Done" label, no accent — pick_assignments
+                    exposes no done-timestamp field yet (only assignedAt is
+                    selected in queue.ts), so no time is shown rather than
+                    fabricating one. This tab is unreachable in practice this
+                    stage (nothing writes PICK_DONE yet). */}
+                {activeTab === "done" && (
+                  <span className="text-[11px] font-semibold text-gray-400 whitespace-nowrap">Done</span>
+                )}
+              </div>
+              <div className="text-[15px] font-bold text-gray-900 leading-tight mb-[3px] truncate">{row.dealerName}</div>
+              <div className="text-[12px] text-gray-500 truncate">
+                {row.area !== null ? (
+                  <>
+                    {row.area}
+                    {row.articleTag !== null && (
+                      <>
+                        <span className="text-gray-300 mx-[5px]">&middot;</span>
+                        {row.articleTag}
+                      </>
+                    )}
+                  </>
+                ) : (
+                  (row.articleTag ?? "—")
+                )}
+              </div>
+            </button>
+          ))
+        )}
+      </div>
+
+      {/* Detail screen — reuses the live board's detail-screen pattern
+          (board.tsx:1083-1267): teal header, articleTag+volume stat strip,
+          pack chips (only when ≥2 distinct packs), pack-tile/SKU-hero/qty
+          line items. NO tick boxes, NO Mark done CTA — both are later
+          stages; the bottom of this screen is deliberately empty. */}
+      <div
+        className={
+          "fixed inset-0 z-[35] bg-[#f9fafb] flex flex-col transition-transform duration-200 ease-out " +
+          (detailOpen ? "translate-x-0" : "translate-x-full")
+        }
+      >
+        <div
+          className="bg-teal-600 px-3.5 pb-3.5 flex items-center gap-2.5 shrink-0"
+          style={{ paddingTop: "max(env(safe-area-inset-top, 0px), 12px)" }}
+        >
+          <button
+            type="button"
+            onClick={closeDetail}
+            aria-label="Back"
+            className="w-8 h-8 rounded-[9px] bg-white/15 flex items-center justify-center text-white shrink-0"
+          >
+            <ChevronLeft size={17} />
+          </button>
+          <div className="min-w-0 flex-1">
+            <div className="text-[16px] font-extrabold text-white truncate">
+              {detailRow?.dealerName ?? "—"}
+            </div>
+            <div className="text-[12px] text-white/75 truncate">
+              {detailRow
+                ? `${detailRow.obdNumber} · ${detailRow.area ?? "Unmatched"}${
+                    detailRow.windowTime !== null ? ` · ${detailRow.windowTime}` : ""
+                  }`
+                : "—"}
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white border-b border-gray-200 px-3.5 py-3 flex items-end justify-between gap-3 shrink-0">
+          <div className="min-w-0 text-[16px] font-extrabold text-gray-900 leading-snug">
+            {detailRow?.articleTag ?? "—"}
+          </div>
+          <div className="shrink-0 text-[13px] font-semibold text-gray-500">
+            {detailRow?.volumeLitres != null ? formatLitres(detailRow.volumeLitres) : "—"} L
+          </div>
+        </div>
+
+        {distinctPackKeys.length >= 2 && (
+          <div className="bg-white border-b border-gray-200 px-3.5 py-2.5 flex items-center gap-1.5 overflow-x-auto shrink-0">
+            <button
+              type="button"
+              onClick={() => setActivePackFilter("ALL")}
+              className={
+                "text-[12.5px] font-medium px-3 py-1.5 rounded-full border whitespace-nowrap shrink-0 " +
+                (activePackFilter === "ALL"
+                  ? "bg-gray-900 border-gray-900 text-white font-semibold"
+                  : "bg-white border-gray-200 text-gray-700")
+              }
+            >
+              All
+            </button>
+            {distinctPackKeys.map((key) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setActivePackFilter(key)}
+                className={
+                  "text-[12.5px] font-medium px-3 py-1.5 rounded-full border whitespace-nowrap shrink-0 " +
+                  (activePackFilter === key
+                    ? "bg-gray-900 border-gray-900 text-white font-semibold"
+                    : "bg-white border-gray-200 text-gray-700")
+                }
+              >
+                {key === NO_PACK_KEY ? "No pack" : key}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className="flex-1 overflow-y-auto px-3.5 pt-3 pb-8">
+          {lineItemsLoading && (
+            <p className="text-[13px] text-gray-400 text-center py-10">Loading line items&hellip;</p>
+          )}
+          {!lineItemsLoading && lineItemsError && (
+            <p className="text-[13px] text-red-600 text-center py-10">
+              Couldn&apos;t load line items: {lineItemsError}
+            </p>
+          )}
+          {!lineItemsLoading && !lineItemsError && lineItems !== null && (
+            lineItems.length === 0 ? (
+              <p className="text-[13px] text-gray-400 text-center py-10">No line items found for this bill.</p>
+            ) : filteredLineItems.length === 0 ? (
+              <p className="text-[13px] text-gray-400 text-center py-10">No lines match.</p>
+            ) : (
+              filteredLineItems.map((li) => (
+                <div
+                  key={li.id}
+                  className="flex bg-white rounded-[14px] overflow-hidden mb-2"
+                  style={{ boxShadow: SOFT_CARD_SHADOW }}
+                >
+                  <div className="w-14 shrink-0 bg-[#f8fafa] border-r border-gray-200 flex items-center justify-center px-1 py-2.5">
+                    <span
+                      className={
+                        "text-[13px] font-bold text-center " + (li.pack !== null ? "text-teal-700" : "text-gray-400")
+                      }
+                    >
+                      {li.pack ?? "—"}
+                    </span>
+                  </div>
+                  <div className="flex-1 min-w-0 px-3 py-2.5">
+                    <div className="font-mono text-[17px] font-bold text-gray-900 truncate">{li.sku}</div>
+                    <div className="text-[12px] text-gray-500 truncate mt-0.5">{li.name ?? "—"}</div>
+                  </div>
+                  <div className="shrink-0 flex items-center justify-center px-3.5">
+                    <span className="text-[26px] font-extrabold text-gray-900">{li.qty}</span>
+                  </div>
+                </div>
+              ))
+            )
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
