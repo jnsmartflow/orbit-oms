@@ -67,14 +67,6 @@ function formatLitres(n: number): string {
   });
 }
 
-// First letters of the first two words, uppercased — same algorithm as
-// po-page.tsx's initials() (desktop recents avatar), reused here for the
-// Check tab's picker avatar.
-function pickerInitials(name: string): string {
-  const words = name.trim().split(/\s+/).filter(Boolean);
-  return ((words[0]?.[0] ?? "") + (words[1]?.[0] ?? "")).toUpperCase();
-}
-
 // Elapsed time since assignedAt, bucketed into the three urgency tiers a
 // supervisor scans for at a glance. Returns null when assignedAt is missing
 // (Step 1 report — never fake this value; the pill is simply omitted).
@@ -102,13 +94,80 @@ const ELAPSED_PILL_CLASS: Record<ElapsedTier, string> = {
   red: "bg-red-50 text-red-700 border border-red-200",
 };
 
-// "10:42 AM" in IST — the assign-time line under the picker name on a Check
-// tab card. Returns null when assignedAt is missing (line is omitted, not faked).
-function formatAssignedTime(assignedAt: Date | string | null): string | null {
-  if (assignedAt === null) return null;
-  const d = new Date(assignedAt);
-  if (Number.isNaN(d.getTime())) return null;
-  return d.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "numeric", minute: "2-digit", hour12: true });
+// Check tab's ONE right-side pill (step 5 split) — "Still picking" keeps the
+// existing grey/amber/red elapsed-since-assigned pill unchanged; "Needs
+// check" gets a flat green "Picked Xm ago" pill (no tiering — it's not an
+// urgency signal the way the assign-elapsed pill is, just a receipt of when
+// the picker finished). Reuses elapsedSinceAssigned's minute/hour label
+// formatting for both — only the source timestamp and the pill style differ.
+function checkCardPill(row: PickingQueueRow, section: "needs" | "still", nowTick: number): React.ReactNode {
+  if (section === "needs") {
+    const p = elapsedSinceAssigned(row.pickedAt, nowTick);
+    if (!p) return null;
+    return (
+      <span className="text-[10.5px] font-bold px-2 py-[3px] rounded-full shrink-0 bg-green-50 text-green-700 border border-green-200">
+        Picked {p.label} ago
+      </span>
+    );
+  }
+  const p = elapsedSinceAssigned(row.assignedAt, nowTick);
+  if (!p) return null;
+  return (
+    <span className={"text-[10.5px] font-bold px-2 py-[3px] rounded-full shrink-0 " + ELAPSED_PILL_CLASS[p.tier]}>
+      {p.label}
+    </span>
+  );
+}
+
+// Check tab card — step 5: ONE identical block for both sections (no left
+// accent, no footer strip, no avatar). Picker's name folds into the same
+// grey meta line the Assign card uses for area+articleTag — here it's
+// area+pickerName instead. `muted` is the ONLY section-level visual
+// distinction beyond the section header itself, per the approved mockup
+// (docs/mockups/picking/supervisor-check-split.html) — both sections open
+// the detail screen on tap (task brief: "Still picking" keeps today's
+// existing tap-to-open behaviour, unchanged by the split).
+function CheckCard({
+  row, muted, pill, onOpen,
+}: {
+  row: PickingQueueRow;
+  muted: boolean;
+  pill: React.ReactNode;
+  onOpen: () => void;
+}): React.JSX.Element {
+  return (
+    <div
+      className={"bg-white rounded-[14px] p-[13px] mb-[9px] cursor-pointer " + (muted ? "opacity-75" : "")}
+      style={{ boxShadow: SOFT_CARD_SHADOW }}
+      onClick={onOpen}
+    >
+      <div className="flex items-center justify-between gap-2 mb-[5px]">
+        <span className="flex items-baseline gap-[5px] min-w-0">
+          <span className="font-mono text-[11px] text-gray-400 whitespace-nowrap">{row.obdNumber}</span>
+          {row.windowTime !== null && (
+            <span className="text-[10.5px] text-gray-300 whitespace-nowrap">&middot;{row.windowTime}</span>
+          )}
+        </span>
+        {pill}
+      </div>
+      <div className="text-[15px] font-bold text-gray-900 leading-tight mb-[3px] truncate">{row.dealerName}</div>
+      <div className="text-[12px] text-gray-500 truncate">
+        {row.area !== null ? (
+          <>
+            {row.area}
+            {row.assignedToName !== null && (
+              <>
+                <span className="text-gray-300 mx-[5px]">&middot;</span>
+                {row.assignedToName}
+              </>
+            )}
+          </>
+        ) : (
+          row.assignedToName ?? "—"
+        )}
+      </div>
+    </div>
+  );
 }
 
 // Teal top bar tab — Assign / Check. Underline style (2026-07-16 restyle):
@@ -481,6 +540,13 @@ export function PickingBoardMobile(): React.JSX.Element {
     () => (data ? data.rows.filter((r) => r.isAssigned) : []),
     [data],
   );
+  // "Needs check" pool for the Check tab's split (step 5) — bills the
+  // picker has marked done. Parallel to assignedRows above, same source
+  // data, no new fetch.
+  const doneRows: PickingQueueRow[] = useMemo(
+    () => (data ? data.rows.filter((r) => r.isDone) : []),
+    [data],
+  );
 
   // Route list — distinct non-null `route` across ALL waiting rows (stable,
   // not narrowed by the Type pill). Counts DO reflect the current Type pill
@@ -516,22 +582,24 @@ export function PickingBoardMobile(): React.JSX.Element {
   const totalLitres = filteredWaiting.reduce((sum, r) => sum + (r.volumeLitres ?? 0), 0);
   const allRoutesCount = Array.from(routeCounts.values()).reduce((a, b) => a + b, 0);
 
-  // FIX 3 — pickers who currently have assigned bills, client-derived from
-  // the same loaded assignedRows (no new fetch). Counts reflect the current
-  // Check type pill (live) — same convention as routeCounts reflecting
-  // activeType above. Rows with a null assignedToName (shouldn't happen for
-  // an assigned bill, but the field is nullable) are skipped from the option
-  // list — they still show up under "All pickers", just never become a
-  // selectable filter value.
+  // FIX 3 — pickers who currently have assigned OR done bills, client-derived
+  // from the same loaded assignedRows/doneRows (no new fetch) — step 5 widened
+  // this from assignedRows alone so the dropdown/counts cover both Check
+  // sections, not just "Still picking". Counts reflect the current Check
+  // type pill (live) — same convention as routeCounts reflecting activeType
+  // above. Rows with a null assignedToName (shouldn't happen for an
+  // assigned/done bill, but the field is nullable) are skipped from the
+  // option list — they still show up under "All pickers", just never become
+  // a selectable filter value.
   const pickerCounts = useMemo(() => {
     const map = new Map<string, number>();
-    for (const r of assignedRows) {
+    for (const r of [...assignedRows, ...doneRows]) {
       if (checkTypeFilter !== "All" && r.deliveryType !== checkTypeFilter) continue;
       if (r.assignedToName === null) continue;
       map.set(r.assignedToName, (map.get(r.assignedToName) ?? 0) + 1);
     }
     return map;
-  }, [assignedRows, checkTypeFilter]);
+  }, [assignedRows, doneRows, checkTypeFilter]);
   const pickerOptions: FilterSheetOption[] = useMemo(() => {
     return Array.from(pickerCounts.keys())
       .sort((a, b) => a.localeCompare(b, "en", { sensitivity: "base" }))
@@ -539,11 +607,14 @@ export function PickingBoardMobile(): React.JSX.Element {
   }, [pickerCounts]);
   const allPickersCount = Array.from(pickerCounts.values()).reduce((a, b) => a + b, 0);
 
-  // FIX 2 + FIX 3 — Check tab list, narrowed by type, picker, and the SAME
+  // FIX 2 + FIX 3 — Check tab lists, narrowed by type, picker, and the SAME
   // search query the Assign tab uses (`q`, defined above). Type + picker +
-  // search all STACK (AND, not OR) — Check now has the same two-axis filter
-  // shape as Assign (type pills + one dropdown), just picker instead of route.
-  const filteredAssigned: PickingQueueRow[] = useMemo(() => {
+  // search all STACK (AND, not OR) — Check has the same two-axis filter
+  // shape as Assign (type pills + one dropdown), just picker instead of
+  // route. Step 5 split the single "assigned" list into two sections
+  // sharing this SAME filter state — "one filter state, two rendered
+  // slices" — rather than giving each section its own type/picker/search.
+  const filteredStillPicking: PickingQueueRow[] = useMemo(() => {
     return assignedRows.filter((r) => {
       if (checkTypeFilter !== "All" && r.deliveryType !== checkTypeFilter) return false;
       if (activePicker !== null && r.assignedToName !== activePicker) return false;
@@ -552,16 +623,29 @@ export function PickingBoardMobile(): React.JSX.Element {
     });
   }, [assignedRows, checkTypeFilter, activePicker, q]);
 
-  // FIX 4 — count of the CURRENTLY VISIBLE (filtered) assigned bills whose
-  // elapsed time has crossed the amber threshold. Reuses elapsedSinceAssigned
-  // (and therefore ELAPSED_AMBER_MINUTES) rather than re-deriving elapsed
-  // time with a second, possibly-drifting calculation.
+  const filteredNeedsCheck: PickingQueueRow[] = useMemo(() => {
+    return doneRows.filter((r) => {
+      if (checkTypeFilter !== "All" && r.deliveryType !== checkTypeFilter) return false;
+      if (activePicker !== null && r.assignedToName !== activePicker) return false;
+      if (q && !(r.dealerName.toLowerCase().includes(q) || r.obdNumber.toLowerCase().includes(q))) return false;
+      return true;
+    });
+  }, [doneRows, checkTypeFilter, activePicker, q]);
+
+  // FIX 4 — count of the CURRENTLY VISIBLE (filtered) "Still picking" bills
+  // whose elapsed-since-assigned time has crossed the amber threshold.
+  // Needs-check rows are deliberately excluded — their pill counts minutes
+  // since PICKED, a different clock, and the summary strip's "over 30m"
+  // has only ever meant "still picking too long," unchanged by the split.
+  // Reuses elapsedSinceAssigned (and therefore ELAPSED_AMBER_MINUTES)
+  // rather than re-deriving elapsed time with a second, possibly-drifting
+  // calculation.
   const overThresholdCount = useMemo(() => {
-    return filteredAssigned.filter((r) => {
+    return filteredStillPicking.filter((r) => {
       const e = elapsedSinceAssigned(r.assignedAt, nowTick);
       return e !== null && e.minutes >= ELAPSED_AMBER_MINUTES;
     }).length;
-  }, [filteredAssigned, nowTick]);
+  }, [filteredStillPicking, nowTick]);
 
   function toggleSelect(orderId: number): void {
     setSelected((prev) => {
@@ -767,7 +851,7 @@ export function PickingBoardMobile(): React.JSX.Element {
           />
           <TopBarTab
             label="Check"
-            count={assignedRows.length}
+            count={assignedRows.length + doneRows.length}
             active={activeTab === "check"}
             onClick={() => setActiveTab("check")}
           />
@@ -859,13 +943,15 @@ export function PickingBoardMobile(): React.JSX.Element {
             </div>
 
             {/* FIX 4 — Check summary strip, same teal-tint style as the lane
-                strip, reflecting ALL active filters (type + picker + search
-                via filteredAssigned/overThresholdCount below). "over 30m"
-                segment omitted entirely when the count is 0. */}
+                strip, reflecting ALL active filters (type + picker + search).
+                Step 5: "N assigned" now counts BOTH sections combined
+                (matches the approved mockup's summary line); "over 30m"
+                stays scoped to "Still picking" only (see overThresholdCount).
+                Segment omitted entirely when the count is 0. */}
             <div className="mx-[-16px] bg-teal-50 border-t border-teal-200 px-4 py-2 text-[12px] font-medium text-teal-700 flex items-center gap-1">
               <b className="font-bold">{activePicker ?? "All pickers"}</b>
               <span>
-                &nbsp;·&nbsp;{filteredAssigned.length} assigned
+                &nbsp;·&nbsp;{filteredNeedsCheck.length + filteredStillPicking.length} assigned
                 {overThresholdCount > 0 && (
                   <>&nbsp;·&nbsp;{overThresholdCount} over {ELAPSED_AMBER_MINUTES}m</>
                 )}
@@ -957,10 +1043,16 @@ export function PickingBoardMobile(): React.JSX.Element {
       </div>
       )}
 
-      {/* Card list — Check tab: assigned bills narrowed by the picker filter
-          (FIX 3) and search (FIX 2) — NOT by the Assign tab's type/route
-          filters (mirrors desktop). Proper cards, same DNA as the waiting
-          card, plus an elapsed pill and a picker footer. */}
+      {/* Card list — Check tab: step 5 split into two sections sharing the
+          SAME filter state (type + picker + search) — "one filter state,
+          two rendered slices" per the approved mockup
+          (docs/mockups/picking/supervisor-check-split.html). "Needs check"
+          (picker marked done) on top; "Still picking" below, muted. Both
+          use the IDENTICAL CheckCard — no left accent, no colour-coding;
+          the section header + "Still picking"'s opacity are the only
+          distinction. Undo is NOT on either card (moved to the detail
+          screen below, for "Still picking" rows only — see the CTA there
+          and its comment for why "Needs check" has no Undo path yet). */}
       {activeTab === "check" && (
       <div className="px-4 py-2.5">
         {loading && <p className="text-[13px] text-gray-400 text-center py-16">Loading queue&hellip;</p>}
@@ -971,99 +1063,47 @@ export function PickingBoardMobile(): React.JSX.Element {
           </p>
         )}
 
-        {!loading &&
-          !error &&
-          data &&
-          (filteredAssigned.length === 0 ? (
-            <p className="text-[13px] text-gray-400 text-center py-16">
-              {assignedRows.length === 0 ? "No bills currently assigned." : "No bills match."}
-            </p>
-          ) : (
-            filteredAssigned.map((row) => {
-              const isUndoing = unassigningIds.has(row.orderId);
-              const pill = elapsedSinceAssigned(row.assignedAt, nowTick);
-              const assignTime = formatAssignedTime(row.assignedAt);
-              return (
-                <div
+        {!loading && !error && data && (
+          <>
+            <div className="text-[11.5px] font-bold uppercase tracking-wider text-gray-700 mb-2 px-[2px]">
+              Needs check<span className="tabular-nums ml-1.5">{filteredNeedsCheck.length}</span>
+            </div>
+            {filteredNeedsCheck.length === 0 ? (
+              <p className="text-[12.5px] text-gray-400 text-center py-6">
+                {doneRows.length === 0 ? "Nothing waiting on a check right now." : "No bills match."}
+              </p>
+            ) : (
+              filteredNeedsCheck.map((row) => (
+                <CheckCard
                   key={row.orderId}
-                  className="bg-white rounded-[14px] mb-[9px] overflow-hidden"
-                  style={{ boxShadow: SOFT_CARD_SHADOW }}
-                >
-                  <div className="p-[13px] cursor-pointer" onClick={() => openDetail(row.orderId)}>
-                    <div className="flex items-center justify-between gap-2 mb-[5px]">
-                      <span className="flex items-baseline gap-[5px] min-w-0">
-                        <span className="font-mono text-[11px] text-gray-400 whitespace-nowrap">
-                          {row.obdNumber}
-                        </span>
-                        {row.windowTime !== null && (
-                          <span className="text-[10.5px] text-gray-300 whitespace-nowrap">
-                            &middot;{row.windowTime}
-                          </span>
-                        )}
-                      </span>
-                      {pill && (
-                        <span
-                          className={
-                            "text-[10.5px] font-bold px-2 py-[3px] rounded-full shrink-0 " + ELAPSED_PILL_CLASS[pill.tier]
-                          }
-                        >
-                          {pill.label}
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-[15px] font-bold text-gray-900 leading-tight mb-[3px] truncate">
-                      {row.dealerName}
-                    </div>
-                    <div className="text-[12px] text-gray-500 truncate">
-                      {row.area !== null ? (
-                        <>
-                          {row.area}
-                          {row.articleTag !== null && (
-                            <>
-                              <span className="text-gray-300 mx-[5px]">&middot;</span>
-                              {row.articleTag}
-                            </>
-                          )}
-                        </>
-                      ) : (
-                        (row.articleTag ?? "—")
-                      )}
-                    </div>
-                  </div>
-                  {/* Footer strip — picker identity + assign time, Undo on the right.
-                      Finger-sized button (min tap target well past the visible label). */}
-                  <div className="flex items-center justify-between gap-2 px-[13px] py-2.5 bg-[#f9fafb] border-t border-gray-100">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="w-7 h-7 rounded-full bg-teal-600 text-white text-[11px] font-bold flex items-center justify-center shrink-0">
-                        {pickerInitials(row.assignedToName ?? "—")}
-                      </span>
-                      <div className="min-w-0">
-                        <div className="text-[12px] font-semibold text-gray-700 truncate">
-                          {row.assignedToName ?? "—"}
-                        </div>
-                        {(row.assignedByName !== null || assignTime !== null) && (
-                          <div className="text-[10.5px] text-gray-400 truncate">
-                            {row.assignedByName !== null
-                              ? `by ${row.assignedByName}${assignTime !== null ? ` · ${assignTime}` : ""}`
-                              : assignTime}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => void handleUndo(row)}
-                      disabled={isUndoing}
-                      aria-label={`Undo assignment for ${row.dealerName}`}
-                      className="shrink-0 px-3.5 py-2.5 rounded-[10px] bg-white border border-gray-200 text-[12px] font-semibold text-gray-600 active:bg-gray-100 disabled:opacity-40"
-                    >
-                      {isUndoing ? "…" : "Undo"}
-                    </button>
-                  </div>
-                </div>
-              );
-            })
-          ))}
+                  row={row}
+                  muted={false}
+                  pill={checkCardPill(row, "needs", nowTick)}
+                  onOpen={() => openDetail(row.orderId)}
+                />
+              ))
+            )}
+
+            <div className="text-[11.5px] font-semibold uppercase tracking-wider text-gray-400 mt-[18px] mb-2 px-[2px]">
+              Still picking<span className="tabular-nums ml-1.5">{filteredStillPicking.length}</span>
+            </div>
+            {filteredStillPicking.length === 0 ? (
+              <p className="text-[12.5px] text-gray-400 text-center py-6">
+                {assignedRows.length === 0 ? "Nobody is still picking." : "No bills match."}
+              </p>
+            ) : (
+              filteredStillPicking.map((row) => (
+                <CheckCard
+                  key={row.orderId}
+                  row={row}
+                  muted={true}
+                  pill={checkCardPill(row, "still", nowTick)}
+                  onOpen={() => openDetail(row.orderId)}
+                />
+              ))
+            )}
+          </>
+        )}
       </div>
       )}
 
@@ -1290,6 +1330,30 @@ export function PickingBoardMobile(): React.JSX.Element {
               className="w-full h-12 rounded-full bg-teal-600 active:bg-teal-700 text-white text-[14.5px] font-bold shadow-[0_8px_22px_rgba(13,148,136,0.42)]"
             >
               Assign to picker
+            </button>
+          </div>
+        )}
+
+        {/* Step 5 — Undo, moved off the Check-tab card onto this screen
+            (task brief: "keep Undo reachable somehow" until step 6's tick
+            screen). detailRow.isAssigned is true ONLY for "Still picking"
+            rows — that's deliberate, not an oversight: /api/picking/
+            unassign's own guard requires workflowStage === PICK_ASSIGNED,
+            so a "Needs check" (PICK_DONE) row would 409 on this exact call.
+            No Undo CTA renders for those; step 6 widens that guard on
+            purpose and gives them their own Undo there. */}
+        {detailRow && detailRow.isAssigned && (
+          <div
+            className="shrink-0 px-3.5 pb-3.5"
+            style={{ paddingBottom: MOBILE_NAV_CLEARANCE }}
+          >
+            <button
+              type="button"
+              onClick={() => void handleUndo(detailRow)}
+              disabled={unassigningIds.has(detailRow.orderId)}
+              className="w-full h-12 rounded-full bg-white border border-gray-200 active:bg-gray-50 text-gray-700 text-[14.5px] font-bold disabled:opacity-50"
+            >
+              {unassigningIds.has(detailRow.orderId) ? "Undoing…" : "Undo"}
             </button>
           </div>
         )}

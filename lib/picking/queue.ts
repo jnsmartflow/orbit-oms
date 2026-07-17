@@ -155,10 +155,13 @@ export async function getPickingQueue(dateStr?: string): Promise<PickingQueueRes
       // 1:1, optional — present only once the order is PICK_ASSIGNED (or later).
       // pickerId added 2026-07-17 for server-side "my bills only" scoping on
       // the picker "My Picks" face — a real FK, not a display-name match.
+      // pickedAt added same day (step 5) for the Check tab's "Needs check"
+      // pill and the picker Done card's timestamp — null until PICK_DONE.
       pickAssignment: {
         select: {
           pickerId: true,
           assignedAt: true,
+          pickedAt: true,
           picker: { select: { name: true } },
           assignedBy: { select: { name: true } },
         },
@@ -203,6 +206,7 @@ export async function getPickingQueue(dateStr?: string): Promise<PickingQueueRes
       isAssigned: order.workflowStage === PICK_ASSIGNED,
       isDone: order.workflowStage === PICK_DONE,
       assignedAt: order.pickAssignment?.assignedAt ?? null,
+      pickedAt: order.pickAssignment?.pickedAt ?? null,
       pickerId: order.pickAssignment?.pickerId ?? null,
       assignedToName: order.pickAssignment?.picker?.name ?? null,
       assignedByName: order.pickAssignment?.assignedBy?.name ?? null,

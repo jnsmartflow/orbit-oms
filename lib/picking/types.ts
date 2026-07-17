@@ -27,6 +27,10 @@ export interface PickingQueueRow {
   // starts being written.
   isDone: boolean;
   assignedAt: Date | string | null;
+  // pick_assignments.pickedAt — set by POST /api/picking/done. Added
+  // 2026-07-17 for the "Needs check" pill ("Picked Xm ago") and the picker
+  // "My Picks" Done card's timestamp. null until PICK_DONE is written.
+  pickedAt: Date | string | null;
   // Numeric FK, added 2026-07-17 for server-side "my bills only" scoping
   // (picker "My Picks") — a display-name match is not a scope boundary.
   // null when the row has no pick_assignments row at all.

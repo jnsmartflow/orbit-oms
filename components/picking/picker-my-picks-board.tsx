@@ -38,6 +38,18 @@ interface PickerMyPicksBoardProps {
   activePickerId: number | null;
 }
 
+// Same locale/timezone/format as picking-board-mobile.tsx's
+// formatAssignedTime — duplicated (see file-top note), not imported.
+// Returns null when pickedAt is missing (the "Done" tab card omits the
+// time rather than fabricating one) — matches this file's own convention
+// for every other nullable-timestamp display.
+function formatPickedTime(pickedAt: Date | string | null): string | null {
+  if (pickedAt === null) return null;
+  const d = new Date(pickedAt);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "numeric", minute: "2-digit", hour12: true });
+}
+
 // Same rounding/formatting rule as picking-board-mobile.tsx's formatLitres —
 // duplicated (see file-top note), not imported.
 function formatLitres(n: number): string {
@@ -277,13 +289,15 @@ export function PickerMyPicksBoard({
                     <span className="text-[10.5px] text-gray-300 whitespace-nowrap">&middot;{row.windowTime}</span>
                   )}
                 </span>
-                {/* Done tab: muted "Done" label, no accent — pick_assignments
-                    exposes no done-timestamp field yet (only assignedAt is
-                    selected in queue.ts), so no time is shown rather than
-                    fabricating one. This tab is unreachable in practice this
-                    stage (nothing writes PICK_DONE yet). */}
-                {activeTab === "done" && (
-                  <span className="text-[11px] font-semibold text-gray-400 whitespace-nowrap">Done</span>
+                {/* Done tab: muted done-time label, no accent — this is his
+                    receipt, per the mockup, so the time IS the point.
+                    pickedAt now flows through lib/picking/queue.ts (step 5);
+                    omits the time (never fabricates one) on the rare row
+                    with no pickedAt. */}
+                {activeTab === "done" && formatPickedTime(row.pickedAt) !== null && (
+                  <span className="text-[11px] font-semibold text-gray-400 whitespace-nowrap">
+                    done {formatPickedTime(row.pickedAt)}
+                  </span>
                 )}
               </div>
               <div className="text-[15px] font-bold text-gray-900 leading-tight mb-[3px] truncate">{row.dealerName}</div>
