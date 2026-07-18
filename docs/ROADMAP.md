@@ -339,7 +339,13 @@ New OPEN items surfaced while consolidating the 17 drafts (Jul 8–16) into cano
 
 ### Picking
 - **`floor_supervisor` cannot open `/picking`.** SQL + a seed row are prepared, not run. (`CLAUDE_PICKING.md §7`, `CLAUDE_CORE.md §13`)
-- **Floor workflow (Picked/Approved states).** Designed, not built. (`CLAUDE_PICKING.md §6`)
+- **Floor workflow (Picked/Approved states) — ✅ LIVE (Stage 2, shipped through commit `bae3d182`).**
+  Remaining: Stage 3 — supervisor findings (qty-short, remarks, billing-visible message), tracked
+  inline in `CLAUDE_PICKING.md §7`.
+- **SEED FRAGILITY (P1).** Operations has a live `canView` grant for `/picking` in the production DB
+  but NO matching `pageKey: "picking"` seed row (for any role). Next wipe-and-reseed silently revokes
+  Operations' `/picking` access. Add the seed row(s) to match live grants. (`CLAUDE_PICKING.md §7`,
+  CORE §3 "seed is source of truth")
 
 ### Import
 - **Arrival-slot same-day/different-day rule.** Designed, not built — the live fork still uses the old `receivedAt` vs `punchedAt` comparison. (`CLAUDE_IMPORT.md §12.2`)

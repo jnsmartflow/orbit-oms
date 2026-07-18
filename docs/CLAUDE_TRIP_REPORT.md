@@ -1,5 +1,5 @@
 # CLAUDE_TRIP_REPORT.md — Trip Report Module
-# v1.0 · Schema v27.9 · July 2026
+# v1.0 · Schema v27.10 · July 2026
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md
 
@@ -199,4 +199,4 @@ Renders `<TripSheetDocument>` into a hidden **same-document** div from in-memory
 
 ---
 
-*Trip Report v1.0 · Schema v27.9 · OrbitOMS*
+*Trip Report v1.0 · Schema v27.10 · OrbitOMS*

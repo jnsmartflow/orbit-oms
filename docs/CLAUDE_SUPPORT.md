@@ -1,5 +1,5 @@
 # CLAUDE_SUPPORT.md — Support Module
-# v1.6 · Schema v27.9 · July 2026 · updated 2026-07-11
+# v1.6 · Schema v27.10 · July 2026 · updated 2026-07-11
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md
 

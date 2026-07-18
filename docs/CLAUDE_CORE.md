@@ -1,5 +1,5 @@
 # CLAUDE_CORE.md — OrbitOMS Core
-# v79 · Schema v27.9 · July 2026 · Lives in: orbit-oms/docs/
+# v80 · Schema v27.10 · July 2026 · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_UI.md
 
 ---
@@ -186,9 +186,9 @@ Primary role drives login redirect and href overrides. Additional rows add nav i
 
 ---
 
-## 7. Database schema — v27.9
+## 7. Database schema — v27.10
 
-Versions: v21 base → v22 (mo_*) → v23 (orders dispatch) → v24 (customer match) → v25 (split) → v26 (mo_order_remarks) → v26.1 (isLocked) → v26.2 (mo_line_status) → v26.3 (carton + piecesPerCarton) → v26.4 (mo_learned_customers) → v26.5 (orders.orderDateTime) → v26.6 (user_roles + manual_tint_entries + users.phone + mo_sku_lookup.refDescription) → v27.0 (attendance foundation) → v27.1 (attendance settings hardening) → v27.2 (OT workflow + 2026-05-13 place-order v2 tables) → v27.3 (sampling_register + sampling_recipes + sampling_usage_log; orders.isRemoved + delivery_challans.isVoided; tint_skip_events + tint_pause_events; tint_assignments + import_raw_line_items netWeight/totalWeight) → v27.4 (sampling_usage_log.deliveryNumber backfill + tinter_issue_entries.samplingNo/shadeName) → v27.5 (customer_sales_officers + linkedSalesOfficerId on delivery_point_contacts + 3 columns on delivery_challan_formulas + sampling_recipes.packCode nullable with NULLS NOT DISTINCT + mo_sku_lookup_v2.isPrimary + mo_order_form_index_v2.mobileFamily) → v27.6 (mo_order_form_index_v2.region; Hide feature: `obd_visibility_rules` + `app_tag_settings` tables + orders.isHidden/hiddenById/hiddenReason/hiddenAt — §7.10) → v27.7 (Support gatekeeper + Hold/Dispatch-Target: orders.mailMatched; orders.heldAt, dispatchTargetDate, dispatchWindowId, arrivalSlotId; new `dispatch_slot_master` table — §7.4) → **v27.8** (Trip Report module, 2026-07-04/06: new standalone `trip_report` table — full columns → `CLAUDE_TRIP_REPORT.md §3`, §7.11 pointer here; `trip_report_delivery_no_dis_date_key` UNIQUE(deliveryNo, disDate); `mirror_trip_report_today` Postgres function) → **v27.9** (Support ship-to override, 2026-07-07: `orders.shipToOverrideCustomerId` Int? FK → `delivery_point_master`, relation `shipToOverrideCustomer` / `@relation("OrderShipToOverride")` — see dual-relation note in §7.3; `mo_orders.shipToOverrideCustomerId` Int? FK → `delivery_point_master`, relation `shipToOverrideCustomer` / `@relation("MoOrderShipToOverride")` — mo_orders' first relation to that table, no dual-relation trap).
+Versions: v21 base → v22 (mo_*) → v23 (orders dispatch) → v24 (customer match) → v25 (split) → v26 (mo_order_remarks) → v26.1 (isLocked) → v26.2 (mo_line_status) → v26.3 (carton + piecesPerCarton) → v26.4 (mo_learned_customers) → v26.5 (orders.orderDateTime) → v26.6 (user_roles + manual_tint_entries + users.phone + mo_sku_lookup.refDescription) → v27.0 (attendance foundation) → v27.1 (attendance settings hardening) → v27.2 (OT workflow + 2026-05-13 place-order v2 tables) → v27.3 (sampling_register + sampling_recipes + sampling_usage_log; orders.isRemoved + delivery_challans.isVoided; tint_skip_events + tint_pause_events; tint_assignments + import_raw_line_items netWeight/totalWeight) → v27.4 (sampling_usage_log.deliveryNumber backfill + tinter_issue_entries.samplingNo/shadeName) → v27.5 (customer_sales_officers + linkedSalesOfficerId on delivery_point_contacts + 3 columns on delivery_challan_formulas + sampling_recipes.packCode nullable with NULLS NOT DISTINCT + mo_sku_lookup_v2.isPrimary + mo_order_form_index_v2.mobileFamily) → v27.6 (mo_order_form_index_v2.region; Hide feature: `obd_visibility_rules` + `app_tag_settings` tables + orders.isHidden/hiddenById/hiddenReason/hiddenAt — §7.10) → v27.7 (Support gatekeeper + Hold/Dispatch-Target: orders.mailMatched; orders.heldAt, dispatchTargetDate, dispatchWindowId, arrivalSlotId; new `dispatch_slot_master` table — §7.4) → **v27.8** (Trip Report module, 2026-07-04/06: new standalone `trip_report` table — full columns → `CLAUDE_TRIP_REPORT.md §3`, §7.11 pointer here; `trip_report_delivery_no_dis_date_key` UNIQUE(deliveryNo, disDate); `mirror_trip_report_today` Postgres function) → **v27.9** (Support ship-to override, 2026-07-07: `orders.shipToOverrideCustomerId` Int? FK → `delivery_point_master`, relation `shipToOverrideCustomer` / `@relation("OrderShipToOverride")` — see dual-relation note in §7.3; `mo_orders.shipToOverrideCustomerId` Int? FK → `delivery_point_master`, relation `shipToOverrideCustomer` / `@relation("MoOrderShipToOverride")` — mo_orders' first relation to that table, no dual-relation trap) → **v27.10** (Picking Stage 2 — 2026-07-17/18 sessions, already shipped in code: `pick_assignments.checkedAt` DateTime? `@map("checked_at")` + `checkedById` Int? `@map("checked_by_id")`, relation `checkedBy` / `@relation("PickAssignmentCheckedBy")` — THIRD named relation from `pick_assignments` to `users`, alongside `picker`/`PickAssignmentPicker` and `assignedBy`/`PickAssignmentAssignedBy`, all correctly named on both sides today — no ambiguity. Supports the supervisor Approve step of the picking floor workflow — `CLAUDE_PICKING.md §6`).
 
 ### 7.1 Setup / Master
 
@@ -335,6 +335,30 @@ manual_tint_entries        Manual override: orderId FK, lineIds JSON, reason, cr
 dispatch_plans             UNIQUE (planDate, slotId, vehicleId, tripNumber)
 dispatch_plan_orders       Order-level. clearedAt TIMESTAMPTZ.
 pick_assignments           Picker assignments. orderId FK unique per active.
+                           CHECKED columns (v27.10 — Picking Stage 2, 2026-07-17/18 sessions):
+                           checkedAt DateTime? @map("checked_at"); checkedById Int?
+                           @map("checked_by_id"), relation checkedBy /
+                           @relation("PickAssignmentCheckedBy") — THIRD named relation to
+                           `users` on this table, alongside picker/PickAssignmentPicker and
+                           assignedBy/PickAssignmentAssignedBy. All three are correctly named
+                           on both sides today (users model: pickAssignmentsAsPicker /
+                           pickAssignmentsAssigned / pickAssignmentsChecked) — no Prisma
+                           ambiguity. Any FUTURE 4th relation to `users` on this table must
+                           follow the same explicit-naming discipline (§7.3's dual-relation-
+                           trap pattern, same underlying rule).
+                           HIDDEN CONSTRAINT: the live DB has `CHECK chk_pick_assignments_status`
+                           restricting `status` to exactly `'assigned'` / `'picked'` —
+                           invisible in this schema (no `@db` annotation surfaces Postgres
+                           CHECK constraints; same pattern as `users.phone`'s CHECK, §5). A
+                           third status string needs a SQL ALTER on this constraint FIRST
+                           (Supabase SQL Editor, §3) — never just add a new value in
+                           application code. This is exactly why Checked/Approved was modeled
+                           as new `checkedAt`/`checkedById` columns instead of a third status
+                           value — `CLAUDE_PICKING.md §6/§7`.
+                           This table uses `@map` snake_case on every column (order_id,
+                           picker_id, assigned_at, assigned_by_id, picked_at, checked_at,
+                           checked_by_id) — predates and is EXEMPT from the camelCase-no-`@map`
+                           rule (§3); an older table from the Phase 4 pick-list build.
 pick_lists, pick_list_items
 dispatch_change_queue
 
@@ -710,4 +734,4 @@ Engineering note: a parallel session owns `scripts/_*` scratch files (sampling/r
 
 ---
 
-*CORE v79 · Schema v27.9 · OrbitOMS*
+*CORE v80 · Schema v27.10 · OrbitOMS*
