@@ -1,5 +1,5 @@
 # CLAUDE_PICKING.md — Picking Module
-# v1.0 · Schema v27.9 · July 2026
+# v1.1 · Schema v27.9 · July 2026
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -49,23 +49,30 @@ hand-written array but not another).
 | `pending_picking` | 60 | yes |
 | `closed` (legacy alias, same rank) | 60 | yes |
 | `pick_assigned` | 70 | **no** |
-| `dispatched` | 90 | **no** |
+| `pick_done` | 80 | **no** |
+| `pick_checked` | 90 | **no** |
+| `dispatched` | 100 | **no** |
 | `cancelled` | null (terminal) | **no** |
 
-Ranks are spaced by ten so a future stage (e.g. a planned `pick_done` at 80, §6) slots in without
-renumbering. `supportMayEdit` is a **per-row flag, not a rank threshold** — Support is unlocked at
-10-20 and 50-60, locked at 30-40 (mid-tint) and again from 70 onward (picker has it) — a genuine hole
-in the middle that a simple `rank >= X` test would get wrong.
+Ranks are spaced by ten so a future stage slots in without renumbering — `pick_done` (80) and
+`pick_checked` (90) landed exactly that way, pushing `dispatched` from 90 to 100 with no other file
+needing a change. `supportMayEdit` is a **per-row flag, not a rank threshold** — Support is unlocked
+at 10-20 and 50-60, locked at 30-40 (mid-tint) and again from 70 onward (picker has it) — a genuine
+hole in the middle that a simple `rank >= X` test would get wrong.
 
-**The two constants that matter here:**
+**The constants that matter here:**
 - `SUPPORT_DONE_OUTPUT = "pending_picking"` — the ONE current value Support's done-action writes.
   `closed` is legacy-only; nothing writes it anymore, but old rows at that rank must still behave
   identically (hence the shared rank 60).
 - `PICK_ASSIGNED = "pick_assigned"` — what the Assign action writes.
+- `PICK_DONE = "pick_done"` — what the picker's Mark Done action writes (`POST /api/picking/done`).
+- `PICK_CHECKED = "pick_checked"` — what the supervisor's Approve action writes
+  (`POST /api/picking/approve`). Both are live, not planned — see §5/§6.
 
-**Today's live ladder (Support → Picking handoff):**
+**Today's live ladder (Support → Picking → Checked):**
 ```
-pending_support → [Support Done] → pending_picking → [Assign] → pick_assigned → (planned, §6)
+pending_support → [Support Done] → pending_picking → [Assign] → pick_assigned
+  → [Picker Mark Done] → pick_done → [Supervisor Approve] → pick_checked → (dispatch, unbuilt)
 ```
 `pick_assigned` has `supportMayEdit: false` — this is the enforcement point for "Support is locked
 out of orders being physically worked": once a bill is assigned to a picker, Support's hold/cancel/
@@ -150,21 +157,39 @@ and the mobile board's Assign tab (§5) both drive the same `/api/picking/assign
 `app/picking/page.tsx`. Live in production on `/picking`'s mobile viewport, **test-mode assign** (see
 §4 — every assignment is tagged and reversible).
 
-**Two tabs, two jobs** — not two stages. "Picking" (waiting) was explicitly rejected as a third tab:
-waiting isn't a job you do, and today nothing moves a bill out of it automatically.
+**Three tabs, three jobs** — not three stages. "Picking" (waiting) was explicitly rejected as its own
+tab: waiting isn't a job you do, and today nothing moves a bill out of it automatically.
 
 - **Assign tab** — flat list in **server sort order** (§3), no client re-sort or grouping. Route
   dropdown (client-derived from loaded rows) + delivery-type pills, both stack with search. Select
   (checkbox) → floating bar → picker sheet → `POST /api/picking/assign`.
-- **Check tab** — every assigned bill, flat, **not narrowed by the Assign tab's route filter**
-  (mirrors desktop, where assigned rows ignore the route filter). Filtered by **picker**, not route —
-  at the dispatch point supervisors think in people, not lanes. Elapsed-time pill (grey <30m, amber
-  30m+, red 60m+) ticks off a local clock every 30s, no refetch. Proper **Undo** button per card
-  (calls `/api/picking/unassign`).
+- **Check tab** — split into "Needs check" (`pick_done`, picker finished) and "Still picking"
+  (`pick_assigned`), **not narrowed by the Assign tab's route filter** (mirrors desktop, where
+  assigned rows ignore the route filter). Filtered by **picker**, not route — at the dispatch point
+  supervisors think in people, not lanes. Elapsed-time pill (grey <30m, amber 30m+, red 60m+) on
+  "Still picking" ticks off a local clock every 30s, no refetch; "Needs check" gets a flat green
+  "Picked Xm ago" pill instead (not tiered — a receipt, not an urgency signal). Undo lives on the
+  detail screen, not the card, for "Still picking" rows only. Tapping a "Needs check" card opens the
+  per-line tick screen; ticking every line unlocks **Approve** (`POST /api/picking/approve`), which
+  writes `pick_checked` + `pick_assignments.checkedAt`/`checkedById`.
+- **Checked tab [LIVE, 2026-07-18]** — every bill at `pick_checked`, today's dispatch-target date
+  only (same `dispatchTargetDate` scope every other row already uses — no separate "today" concept
+  was introduced). Flat list, **re-sorted newest-checked-first** (the one place this board deviates
+  from `PICKING_SPINE` — a display-only re-order of an already-filtered slice; `sort.ts` itself is
+  untouched). Own type-pill filter + own picker-filter dropdown (filters by **picker**, the same
+  semantic as the Check tab's dropdown — the checker's identity is a display concern on the card, not
+  a filter axis). Card: right of line 1 shows plain grey `checked {time}` (not a pill — finished,
+  nothing ticking); a dedicated line below the area/picker line reads `✓ Checked by {name}` — **its
+  own line, never folded into the area/picker line**, because a long area name + a long
+  picker/checker name measured out to overflow the card and the checker's identity — the entire
+  point of this tab — must never be the thing a `truncate` ellipsis silently clips. Tap → the same
+  detail screen, fully read-only for these rows (no ticks, no Approve, no Undo, no Assign-to-picker —
+  all four CTAs/affordances gate on `!isChecked` alongside their existing `isDone`/`isAssigned`
+  checks).
 
-**Card DNA (shared by both tabs):** OBD (mono) + window tag · ★ `isKeyCustomer` · ⚡
-`priorityLevel === 1` (strict equality) · dealer name as hero · area + `articleTag` rendered
-**verbatim** (no client-side drum/carton parsing).
+**Card DNA (shared by all three tabs):** OBD (mono) + window tag · ★ `isKeyCustomer` · ⚡
+`priorityLevel === 1` (strict equality) · dealer name as hero · area + `articleTag` (Assign tab) or
+area + picker name (Check/Checked tabs) rendered **verbatim** (no client-side drum/carton parsing).
 
 **Detail screen + new route:** `GET /api/picking/order/[orderId]/route.ts` — on-demand line items,
 not part of the main queue payload (`PickingQueueRow` only carries order-level aggregates). There is
@@ -175,25 +200,32 @@ silently disappears from what the picker sees. Pack code renders in a fixed-widt
 container word (the picker matches pack size against the shelf, not container type) — a deliberate
 column-scan design (SKU is the matching key; product name is confirmation after).
 
-**Desktop untouched:** `picking-queue.tsx` and the existing `queue`/`assign`/`unassign` API routes
-were not modified building this — only additive (`assignedByName` exposed on `PickingQueueRow`).
+**Desktop untouched (behaviour-wise):** `picking-queue.tsx`'s rendered rows/counts/selection are
+unchanged by the Checked tab. Because `lib/picking/queue.ts`'s WHERE clause is shared, widening it to
+include `pick_checked` (2026-07-18) required additive guards in THREE desktop call sites
+(`unassignedRows`, `availableRoutes`, `selectableIdsInTab` — all gained `&& !r.isChecked`) purely to
+keep a checked bill from reappearing there as if untouched. No desktop Checked view was built — a
+pick_checked row has no home on desktop, by design (§7).
 
 ---
 
-## 6. Floor workflow [NEXT] — designed, NOT built
+## 6. Floor workflow [LIVE] — all 4 states built
 
-Everything downstream of Assign is unbuilt. Locked design, from the 2026-07-13 session, for a future
-build:
+Locked design from the 2026-07-13 session; all four states are now built (as of the 2026-07-17/18
+sessions — picker Mark Done, supervisor Approve + tick screen, and the Checked tab).
 
 **State ladder (4 states, one bill at a time):**
 1. Waiting — `pending_picking` [built]
 2. Picking — `pick_assigned` [built]
-3. **Picked** — picker taps Done, material on floor **[NEXT]**
-4. **Approved** — supervisor checks + taps Approve, bill exits picking **[NEXT]**
+3. **Picked** — picker taps Mark Done, material on floor — `pick_done` [built,
+   `POST /api/picking/done`, stamps `pick_assignments.pickedAt`]
+4. **Approved** — supervisor ticks every line + taps Approve — `pick_checked` [built,
+   `POST /api/picking/approve`, stamps `pick_assignments.checkedAt`/`checkedById`]
 
-`pick_assignments.pickedAt` (currently always null) becomes the Done timestamp. State 4 needs a new
-`approved` timestamp + `approvedBy` — not yet added to schema (would slot into the rank-by-10 ladder,
-e.g. `pick_done` at rank 80, without renumbering anything — see §2).
+State 4 does **not** make the bill "exit picking" in the sense of disappearing — it moves to the
+supervisor board's **Checked tab** (§5), which is its permanent same-day record. Nothing today moves
+an order past `pick_checked` to `dispatched` (§7 — that write path doesn't exist yet), so a checked
+bill simply stays visible there for the rest of the day.
 
 **Roles (locked):** all 3 supervisors can assign — equal power, no single-assigner bottleneck. **Any**
 supervisor can approve **any** Done bill (v1 — no "only the assigner approves" rule).
@@ -208,11 +240,12 @@ filter before deciding whether to re-add a "serve from the top" restriction. **W
 it:** double-assign is already prevented at the DB level (`pick_assignments` has an effectively
 one-row-per-order constraint) — the guard only ever enforced "start from the top," not data safety.
 
-**Next-session build order:** (1) floor app mockup first — HTML in `docs/mockups/picking/`, approved
-before any React (supervisor Assign/Check zones + picker Android view); (2) build states 3+4 —
-schema add (`approved` timestamp + `approvedBy`), picker Done API, supervisor Approve API, the two new
-UI zones; (3) settle the picker-login question first — own phone/login each, or a shared terminal
-where the picker taps their name.
+**Build history (all done):** (1) floor app mockups in `docs/mockups/picking/`, approved before any
+React; (2) states 3+4 built (`pick_done`/`pick_checked` reused the existing rank-by-10 String column —
+no `approved`/`approvedBy` schema add was needed, `pick_assignments.checkedAt`/`checkedById` cover
+it), picker Done API, supervisor Approve API + tick screen, the Checked tab; (3) the picker-login
+question (own phone/login each, vs. a shared terminal) remains open — still V1 test-mode assign, no
+picker-facing login flow shipped yet.
 
 ---
 
@@ -258,6 +291,16 @@ where the picker taps their name.
   unrelated commit sat un-pushed on the depot PC and rode along with this work. Every build prompt for
   this module from the 2026-07-16 session onward carries `git push origin main` in its exit criteria —
   worth keeping for any future Picking session.
+- **`windows[].count` and `totalCount` don't exclude done/checked rows** [LANDMINE, 2026-07-18] —
+  `lib/picking/queue.ts`'s `getPickingQueue()` computes `windows[].count` as
+  `sortedRows.filter(r => r.windowId === w.id && !r.isAssigned).length` and `totalCount` as
+  `sortedRows.length - assignedCount`. Neither excludes `isDone` or `isChecked` rows, so both desktop
+  stats (`picking-queue.tsx`'s per-window header badges and the "OBDs"/"All" segment count) over-count
+  "still queued" bills by however many are done or checked that day. Pre-existing for `isDone` (never
+  patched when `pick_done` went live); `isChecked` just compounds it. Not fixed here on purpose — a
+  correction would itself be a desktop-visible behaviour change, out of scope for an additive build.
+  Fix both together in one pass someday (`&& !r.isDone && !r.isChecked` on both formulas), not
+  piecemeal.
 
 ---
 
@@ -265,20 +308,24 @@ where the picker taps their name.
 
 | File | Role |
 |---|---|
-| `app/picking/page.tsx` | Responsive switch (desktop queue `hidden md:block` vs mobile board `block md:hidden`); same `canView`/admin-bypass gate as the API routes |
-| `components/picking/picking-queue.tsx` | Desktop board — untouched by the 2026-07-16 mobile build |
-| `components/picking/picking-board-mobile.tsx` | Mobile supervisor board — Assign/Check tabs, shared card, detail screen (§5) |
+| `app/picking/page.tsx` | Responsive switch (desktop queue `hidden md:block` vs mobile board `block md:hidden`); also builds the picker "My Picks" `pending`/`done` split (excludes/includes `isChecked` — 2026-07-18) |
+| `components/picking/picking-queue.tsx` | Desktop board — visually untouched; gained `&& !r.isChecked` guards (2026-07-18) in 3 call sites so a checked bill can't leak into the unassigned table/route filter/select-all |
+| `components/picking/picking-board-mobile.tsx` | Mobile supervisor board — Assign/Check/**Checked** tabs, shared `CheckCard`, detail screen (§5) |
+| `components/picking/picker-my-picks-board.tsx` | Picker's own board — untouched this cycle; its `pending` prop is now pre-filtered upstream (page.tsx) so an approved bill never reaches its "Mark done" CTA |
 | `app/api/picking/queue/route.ts` | GET — `getPickingQueue(dateParam)`, `canView` gate |
 | `app/api/picking/assign/route.ts` | POST — batch assign, sequential two-write pair per bill, never `$transaction`, test-mode notes |
 | `app/api/picking/unassign/route.ts` | POST — single-bill undo, mirrors Support's undo-dispatch two-write order |
+| `app/api/picking/done/route.ts` | POST — picker Mark Done, writes `pick_done` + `pick_assignments.pickedAt` |
+| `app/api/picking/approve/route.ts` | POST — supervisor Approve, writes `pick_checked` + `pick_assignments.checkedAt`/`checkedById` (real session user, never request-body-trusted) |
 | `app/api/picking/order/[orderId]/route.ts` | GET — on-demand line items for the mobile detail screen; no FK, matches on `obdNumber` |
-| `lib/picking/queue.ts` | `getPickingQueue()` — builds `PickingQueueRow[]` from `orders` + `querySnapshot` |
-| `lib/picking/sort.ts` | `PICKING_SPINE` + `sortPickingQueue()` — the flat sort spine, §3 |
-| `lib/picking/types.ts` | `PickingQueueRow`, `SortRule` shapes |
+| `lib/picking/queue.ts` | `getPickingQueue()` — builds `PickingQueueRow[]` from `orders` + `querySnapshot`; WHERE clause now includes `pick_checked`, select includes `checkedAt`/`checkedBy` |
+| `lib/picking/sort.ts` | `PICKING_SPINE` + `sortPickingQueue()` — the flat sort spine, §3 — untouched |
+| `lib/picking/types.ts` | `PickingQueueRow`, `SortRule` shapes — `isChecked`/`checkedAt`/`checkedByName` added 2026-07-18 |
 | `lib/picking/validate-assign.ts` | DORMANT — the no-jump guard, unused, kept on disk (§7) |
-| `lib/workflow-stages.ts` | Central stage-ladder registry — `STAGE_LADDER`, `SUPPORT_DONE_OUTPUT`, `PICK_ASSIGNED`, `stageRank()`, `supportMayEdit()`, `isSupportDone()` (§2) |
+| `lib/workflow-stages.ts` | Central stage-ladder registry — `STAGE_LADDER`, `SUPPORT_DONE_OUTPUT`, `PICK_ASSIGNED`, `PICK_DONE`, `PICK_CHECKED`, `stageRank()`, `supportMayEdit()`, `isSupportDone()` (§2) |
 | `docs/mockups/picking/supervisor-assign-board.html` | Approved mobile board mockup |
+| `docs/mockups/picking/supervisor-check-split.html` | Approved Check-tab split mockup (Needs check / Still picking) |
 
 ---
 
-*CLAUDE_PICKING.md v1.0 · Picking Module · July 2026*
+*CLAUDE_PICKING.md v1.1 · Picking Module · July 2026*

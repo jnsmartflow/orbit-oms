@@ -100,7 +100,11 @@ const ELAPSED_PILL_CLASS: Record<ElapsedTier, string> = {
 // urgency signal the way the assign-elapsed pill is, just a receipt of when
 // the picker finished). Reuses elapsedSinceAssigned's minute/hour label
 // formatting for both — only the source timestamp and the pill style differ.
-function checkCardPill(row: PickingQueueRow, section: "needs" | "still", nowTick: number): React.ReactNode {
+function checkCardPill(
+  row: PickingQueueRow,
+  section: "needs" | "still" | "checked",
+  nowTick: number,
+): React.ReactNode {
   if (section === "needs") {
     const p = elapsedSinceAssigned(row.pickedAt, nowTick);
     if (!p) return null;
@@ -110,6 +114,14 @@ function checkCardPill(row: PickingQueueRow, section: "needs" | "still", nowTick
       </span>
     );
   }
+  if (section === "checked") {
+    // Plain grey text, not a pill — this bill is finished, nothing is
+    // ticking, so it gets a timestamp (like the picker Done tab's "done
+    // {time}"), never an elapsed clock.
+    const t = formatCheckedTime(row.checkedAt);
+    if (t === null) return null;
+    return <span className="text-[11px] font-semibold text-gray-400 whitespace-nowrap">checked {t}</span>;
+  }
   const p = elapsedSinceAssigned(row.assignedAt, nowTick);
   if (!p) return null;
   return (
@@ -117,6 +129,17 @@ function checkCardPill(row: PickingQueueRow, section: "needs" | "still", nowTick
       {p.label}
     </span>
   );
+}
+
+// Same locale/timezone convention as picker-my-picks-board.tsx's
+// formatPickedTime — duplicated (that function is private to that file, and
+// this board already duplicates its own copies of formatLitres etc. from
+// there for the same reason) — operates on checkedAt instead of pickedAt.
+function formatCheckedTime(checkedAt: Date | string | null): string | null {
+  if (checkedAt === null) return null;
+  const d = new Date(checkedAt);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "numeric", minute: "2-digit", hour12: true });
 }
 
 // Check tab card — step 5: ONE identical block for both sections (no left
@@ -128,12 +151,23 @@ function checkCardPill(row: PickingQueueRow, section: "needs" | "still", nowTick
 // the detail screen on tap (task brief: "Still picking" keeps today's
 // existing tap-to-open behaviour, unchanged by the split).
 function CheckCard({
-  row, muted, pill, onOpen,
+  row, muted, pill, onOpen, checkerName,
 }: {
   row: PickingQueueRow;
   muted: boolean;
   pill: React.ReactNode;
   onOpen: () => void;
+  // Checked tab only (2026-07-18) — renders as its OWN line below the
+  // area/picker line (never folded into it — a long area name + a long
+  // picker/checker name measured out to overflow the card's 332px content
+  // width, and since this segment would've been appended last, it was
+  // exactly the piece the `truncate` ellipsis clipped first. The checker's
+  // identity is the entire point of this tab, so it gets a line that can
+  // never be silently cut — "who picked" (line above) and "who checked"
+  // (this line) are two different facts, not one crowded line). Undefined/
+  // null everywhere else, so the Needs check / Still picking cards render
+  // byte-identical to before (no extra line, no height change).
+  checkerName?: string | null;
 }): React.JSX.Element {
   return (
     <div
@@ -166,6 +200,14 @@ function CheckCard({
           row.assignedToName ?? "—"
         )}
       </div>
+      {checkerName != null && (
+        // No `truncate` here on purpose — this is the one fact the tab
+        // exists to show, so it wraps rather than silently clipping behind
+        // an ellipsis on an unusually long name.
+        <div className="text-[12px] text-gray-500 mt-[3px]">
+          &#10003; Checked by {checkerName}
+        </div>
+      )}
     </div>
   );
 }
@@ -374,9 +416,11 @@ export function PickingBoardMobile(): React.JSX.Element {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // The supervisor's two jobs, as top-bar tabs. Client-side split over the
-  // SAME already-loaded queue data — no second fetch, no new endpoint.
-  const [activeTab, setActiveTab] = useState<"assign" | "check">("assign");
+  // The supervisor's jobs, as top-bar tabs. Client-side split over the SAME
+  // already-loaded queue data — no second fetch, no new endpoint. "checked"
+  // added 2026-07-18 — bills at PICK_CHECKED, invisible before this (see
+  // lib/picking/queue.ts's doc comment).
+  const [activeTab, setActiveTab] = useState<"assign" | "check" | "checked">("assign");
 
   const [searching, setSearching] = useState(false);
   const [query, setQuery] = useState("");
@@ -394,6 +438,16 @@ export function PickingBoardMobile(): React.JSX.Element {
   // never silently change what the other tab shows (no behaviour change to
   // Assign, per constraints).
   const [checkTypeFilter, setCheckTypeFilter] = useState<TypeFilter>("All");
+
+  // Checked tab (2026-07-18) — its OWN type filter + picker filter, same
+  // "never share state across tabs" rule as Check's own filters above. The
+  // picker dropdown here filters by PICKER (assignedToName), the same
+  // semantic Check already uses — not by checker — so the one dropdown
+  // control means the same thing on every tab; the checker's identity is a
+  // display concern (the card's grey line), not a filter axis.
+  const [checkedTypeFilter, setCheckedTypeFilter] = useState<TypeFilter>("All");
+  const [activeCheckedPicker, setActiveCheckedPicker] = useState<string | null>(null);
+  const [checkedPickerFilterSheetOpen, setCheckedPickerFilterSheetOpen] = useState(false);
 
   // Live clock for the Check tab's elapsed pill — ticks independently of any
   // data fetch so "4m" keeps advancing toward "5m" without a refetch.
@@ -537,14 +591,15 @@ export function PickingBoardMobile(): React.JSX.Element {
   // PICKING_SPINE — assigned-sink leads, window next). Array.filter preserves
   // that order; NOTHING here re-sorts or re-groups.
   //
-  // `&& !r.isDone` — a PICK_DONE row has isAssigned: false (that boolean is
-  // strictly PICK_ASSIGNED-only, see lib/picking/queue.ts's KNOWN GAP
-  // comment), so without this it would wrongly reappear here as if
-  // untouched and re-offerable to Assign. It does NOT need the equivalent
-  // guard on the assigned/Check side — assignedRows below already excludes
-  // it correctly, since isAssigned is false for it either way.
+  // `&& !r.isDone && !r.isChecked` — a PICK_DONE or PICK_CHECKED row has
+  // isAssigned: false (that boolean is strictly PICK_ASSIGNED-only, see
+  // lib/picking/queue.ts's KNOWN GAP comment), so without this it would
+  // wrongly reappear here as if untouched and re-offerable to Assign. It
+  // does NOT need the equivalent guard on the assigned/Check side —
+  // assignedRows below already excludes both correctly, since isAssigned
+  // is false for them either way.
   const waitingRows: PickingQueueRow[] = useMemo(
-    () => (data ? data.rows.filter((r) => !r.isAssigned && !r.isDone) : []),
+    () => (data ? data.rows.filter((r) => !r.isAssigned && !r.isDone && !r.isChecked) : []),
     [data],
   );
   const assignedRows: PickingQueueRow[] = useMemo(
@@ -553,9 +608,16 @@ export function PickingBoardMobile(): React.JSX.Element {
   );
   // "Needs check" pool for the Check tab's split (step 5) — bills the
   // picker has marked done. Parallel to assignedRows above, same source
-  // data, no new fetch.
+  // data, no new fetch. isDone is strict-per-stage (=== PICK_DONE), so a
+  // PICK_CHECKED row is false here on its own — no !isChecked guard needed,
+  // it already has its own home (checkedRows below).
   const doneRows: PickingQueueRow[] = useMemo(
     () => (data ? data.rows.filter((r) => r.isDone) : []),
+    [data],
+  );
+  // Checked tab pool (2026-07-18) — bills the supervisor has approved.
+  const checkedRows: PickingQueueRow[] = useMemo(
+    () => (data ? data.rows.filter((r) => r.isChecked) : []),
     [data],
   );
 
@@ -618,6 +680,24 @@ export function PickingBoardMobile(): React.JSX.Element {
   }, [pickerCounts]);
   const allPickersCount = Array.from(pickerCounts.values()).reduce((a, b) => a + b, 0);
 
+  // Checked tab's OWN picker filter (2026-07-18) — same shape as pickerCounts
+  // above, scoped to checkedRows only (its own tab, its own dropdown state).
+  const checkedPickerCounts = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const r of checkedRows) {
+      if (checkedTypeFilter !== "All" && r.deliveryType !== checkedTypeFilter) continue;
+      if (r.assignedToName === null) continue;
+      map.set(r.assignedToName, (map.get(r.assignedToName) ?? 0) + 1);
+    }
+    return map;
+  }, [checkedRows, checkedTypeFilter]);
+  const checkedPickerOptions: FilterSheetOption[] = useMemo(() => {
+    return Array.from(checkedPickerCounts.keys())
+      .sort((a, b) => a.localeCompare(b, "en", { sensitivity: "base" }))
+      .map((name) => ({ value: name, label: name, count: checkedPickerCounts.get(name) ?? 0 }));
+  }, [checkedPickerCounts]);
+  const allCheckedPickersCount = Array.from(checkedPickerCounts.values()).reduce((a, b) => a + b, 0);
+
   // FIX 2 + FIX 3 — Check tab lists, narrowed by type, picker, and the SAME
   // search query the Assign tab uses (`q`, defined above). Type + picker +
   // search all STACK (AND, not OR) — Check has the same two-axis filter
@@ -642,6 +722,27 @@ export function PickingBoardMobile(): React.JSX.Element {
       return true;
     });
   }, [doneRows, checkTypeFilter, activePicker, q]);
+
+  // Checked tab (2026-07-18) — own type/picker filters + the shared search
+  // query, same AND-stacking shape as filteredStillPicking/filteredNeedsCheck
+  // above. Unlike those (which keep server sort order), this is explicitly
+  // re-sorted newest-first by checkedAt — a flat activity record, not a
+  // work queue, so "most recently approved on top" is the useful order, not
+  // PICKING_SPINE's window/route ranking. sort.ts itself is untouched; this
+  // is a display-only re-order of an already-filtered slice.
+  const filteredChecked: PickingQueueRow[] = useMemo(() => {
+    const filtered = checkedRows.filter((r) => {
+      if (checkedTypeFilter !== "All" && r.deliveryType !== checkedTypeFilter) return false;
+      if (activeCheckedPicker !== null && r.assignedToName !== activeCheckedPicker) return false;
+      if (q && !(r.dealerName.toLowerCase().includes(q) || r.obdNumber.toLowerCase().includes(q))) return false;
+      return true;
+    });
+    return filtered.slice().sort((a, b) => {
+      const at = a.checkedAt !== null ? new Date(a.checkedAt).getTime() : 0;
+      const bt = b.checkedAt !== null ? new Date(b.checkedAt).getTime() : 0;
+      return bt - at;
+    });
+  }, [checkedRows, checkedTypeFilter, activeCheckedPicker, q]);
 
   // FIX 4 — count of the CURRENTLY VISIBLE (filtered) "Still picking" bills
   // whose elapsed-since-assigned time has crossed the amber threshold.
@@ -921,6 +1022,12 @@ export function PickingBoardMobile(): React.JSX.Element {
             active={activeTab === "check"}
             onClick={() => setActiveTab("check")}
           />
+          <TopBarTab
+            label="Checked"
+            count={checkedRows.length}
+            active={activeTab === "checked"}
+            onClick={() => setActiveTab("checked")}
+          />
         </div>
       </div>
 
@@ -985,7 +1092,7 @@ export function PickingBoardMobile(): React.JSX.Element {
               </span>
             </div>
           </>
-        ) : (
+        ) : activeTab === "check" ? (
           <>
             {/* FIX 3 (reversed decision) — SAME type pills as Assign (reused
                 component, own independent state) on the left, picker dropdown
@@ -1022,6 +1129,33 @@ export function PickingBoardMobile(): React.JSX.Element {
                   <>&nbsp;·&nbsp;{overThresholdCount} over {ELAPSED_AMBER_MINUTES}m</>
                 )}
               </span>
+            </div>
+          </>
+        ) : (
+          <>
+            {/* Checked tab (2026-07-18) — same row shape as Check: type pills
+                left, its OWN picker dropdown right (filters by picker, same
+                semantic as Check's dropdown — see state comment above). */}
+            <div className="flex items-center justify-between gap-2 pb-2.5">
+              <TypeFilterPills value={checkedTypeFilter} onChange={setCheckedTypeFilter} />
+              <button
+                type="button"
+                onClick={() => setCheckedPickerFilterSheetOpen(true)}
+                className={
+                  "flex-1 min-w-0 max-w-[150px] flex items-center justify-between gap-1.5 text-[12.5px] font-medium px-3 py-1.5 rounded-full border " +
+                  (activeCheckedPicker !== null
+                    ? "border-teal-500 bg-teal-50 text-teal-700"
+                    : "border-gray-200 bg-white text-gray-500")
+                }
+              >
+                <span className="truncate">{activeCheckedPicker ?? "All pickers"}</span>
+                <ChevronDown size={13} className="shrink-0" />
+              </button>
+            </div>
+
+            <div className="mx-[-16px] bg-teal-50 border-t border-teal-200 px-4 py-2 text-[12px] font-medium text-teal-700 flex items-center gap-1">
+              <b className="font-bold">{activeCheckedPicker ?? "All pickers"}</b>
+              <span>&nbsp;·&nbsp;{filteredChecked.length} checked today</span>
             </div>
           </>
         )}
@@ -1173,6 +1307,45 @@ export function PickingBoardMobile(): React.JSX.Element {
       </div>
       )}
 
+      {/* Card list — Checked tab (2026-07-18): flat list, newest-checked
+          first, no sections. Bills at PICK_CHECKED had no home before this —
+          approving one made it vanish. Same CheckCard as Check tab, plain
+          (not muted) — this is the supervisor's day record, not a triage
+          queue, so nothing here needs the "de-emphasised" treatment. Tap →
+          same read-only detail screen (no ticks/Approve/Undo render for an
+          isChecked row — see the CTA guards below). */}
+      {activeTab === "checked" && (
+      <div className="px-4 py-2.5">
+        {loading && <p className="text-[13px] text-gray-400 text-center py-16">Loading queue&hellip;</p>}
+
+        {!loading && error && (
+          <p className="text-[13px] text-red-600 text-center py-16">
+            Couldn&apos;t load the picking queue: {error}
+          </p>
+        )}
+
+        {!loading &&
+          !error &&
+          data &&
+          (filteredChecked.length === 0 ? (
+            <p className="text-[13px] text-gray-400 text-center py-16">
+              {checkedRows.length === 0 ? "Nothing checked today yet." : "No bills match."}
+            </p>
+          ) : (
+            filteredChecked.map((row) => (
+              <CheckCard
+                key={row.orderId}
+                row={row}
+                muted={false}
+                pill={checkCardPill(row, "checked", nowTick)}
+                checkerName={row.checkedByName}
+                onOpen={() => openDetail(row.orderId)}
+              />
+            ))
+          ))}
+      </div>
+      )}
+
       </div>
       {/* ^ closes the flex-1 overflow-y-auto scroll region opened above the
           filter row. Everything below is a fixed-position overlay (sheets,
@@ -1204,6 +1377,21 @@ export function PickingBoardMobile(): React.JSX.Element {
         options={pickerOptions}
         value={activePicker}
         onChange={setActivePicker}
+      />
+
+      {/* Picker filter sheet (Checked tab, 2026-07-18) — SAME reused sheet,
+          own data/state — this dropdown filters by picker (who picked the
+          bill), same semantic as Check's dropdown above. */}
+      <FilterBottomSheet
+        open={checkedPickerFilterSheetOpen}
+        onClose={() => setCheckedPickerFilterSheetOpen(false)}
+        title="Filter by picker"
+        subtitle="Single-select · counts reflect the current Type filter"
+        allLabel="All pickers"
+        allCount={allCheckedPickersCount}
+        options={checkedPickerOptions}
+        value={activeCheckedPicker}
+        onChange={setActiveCheckedPicker}
       />
 
       {/* Detail screen — always mounted, slides in via translate-x so the
@@ -1421,16 +1609,19 @@ export function PickingBoardMobile(): React.JSX.Element {
           )}
         </div>
 
-        {/* !detailRow.isDone — defense-in-depth: a PICK_DONE row is already
-            excluded from waitingRows above (so its card won't normally be
-            tapped into), but this stops the "Assign to picker" CTA from
-            ever rendering for one if this screen is reached some other way.
+        {/* !detailRow.isDone && !detailRow.isChecked — defense-in-depth: a
+            PICK_DONE or PICK_CHECKED row is already excluded from
+            waitingRows above (so its card won't normally be tapped into),
+            but this stops the "Assign to picker" CTA from ever rendering
+            for one if this screen is reached some other way (2026-07-18:
+            !isChecked added — a checked/approved bill must never offer to
+            re-assign itself, same reasoning as the isDone guard it joins).
             paddingBottom reads MOBILE_NAV_CLEARANCE — this CTA used to be
             pinned at just `max(safe-area, 14px)`, no mobile-shell-nav
             reservation, so it rendered behind the fixed bottom nav with
             only a sliver visible above it (the exact bug class SHEET_
             GEOMETRY above already fixed twice for the sheets). */}
-        {detailRow && !detailRow.isAssigned && !detailRow.isDone && (
+        {detailRow && !detailRow.isAssigned && !detailRow.isDone && !detailRow.isChecked && (
           <div
             className="shrink-0 px-3.5 pb-3.5"
             style={{ paddingBottom: MOBILE_NAV_CLEARANCE }}

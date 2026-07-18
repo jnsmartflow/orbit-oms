@@ -26,11 +26,24 @@ export interface PickingQueueRow {
   // the mobile Assign/Check tabs, and lib/picking/sort.ts once PICK_DONE
   // starts being written.
   isDone: boolean;
+  // True at exactly PICK_CHECKED. Added 2026-07-18 for the supervisor
+  // board's Checked tab. Same strict-per-stage shape as isDone above — a
+  // consumer that filters "waiting" on !isAssigned && !isDone must ALSO
+  // exclude !isChecked, or a checked bill reappears as if untouched (the
+  // same leak class isDone caused before every "waiting" filter was
+  // patched — see lib/picking/queue.ts's doc comment).
+  isChecked: boolean;
   assignedAt: Date | string | null;
   // pick_assignments.pickedAt — set by POST /api/picking/done. Added
   // 2026-07-17 for the "Needs check" pill ("Picked Xm ago") and the picker
   // "My Picks" Done card's timestamp. null until PICK_DONE is written.
   pickedAt: Date | string | null;
+  // pick_assignments.checkedAt / checkedBy.name — set by POST
+  // /api/picking/approve. Added 2026-07-18 for the Checked tab's "checked
+  // {time}" line and its newest-first ordering. Both null until
+  // PICK_CHECKED is written.
+  checkedAt: Date | string | null;
+  checkedByName: string | null;
   // Numeric FK, added 2026-07-17 for server-side "my bills only" scoping
   // (picker "My Picks") — a display-name match is not a scope boundary.
   // null when the row has no pick_assignments row at all.

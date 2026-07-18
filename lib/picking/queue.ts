@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { sortPickingQueue } from "./sort";
-import { SUPPORT_DONE_OUTPUT, PICK_ASSIGNED, PICK_DONE } from "@/lib/workflow-stages";
+import { SUPPORT_DONE_OUTPUT, PICK_ASSIGNED, PICK_DONE, PICK_CHECKED } from "@/lib/workflow-stages";
 import type { PickingQueueRow } from "./types";
 
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
@@ -97,35 +97,43 @@ const DEALER_SELECT = {
 
 /**
  * Live derived read — SELECT only. Fetches today's dispatch-stamped OBDs —
- * unassigned (SUPPORT_DONE_OUTPUT), assigned (PICK_ASSIGNED), and picked
- * (PICK_DONE, added 2026-07-17 for the picker "My Picks" Done tab — nothing
- * writes this stage yet, so today it's a no-op inclusion) — resolves the
- * effective dealer per row, and hands the result to the pure sort module.
- * No writes. No orderBy in the Prisma query — sorting is entirely
- * sortPickingQueue()'s job (byAssigned sinks assigned rows to the bottom).
+ * unassigned (SUPPORT_DONE_OUTPUT), assigned (PICK_ASSIGNED), picked
+ * (PICK_DONE), and checked (PICK_CHECKED, added 2026-07-18 for the
+ * supervisor board's Checked tab) — resolves the effective dealer per row,
+ * and hands the result to the pure sort module. No writes. No orderBy in
+ * the Prisma query — sorting is entirely sortPickingQueue()'s job
+ * (byAssigned sinks assigned rows to the bottom).
  *
  * `isAssigned` below is strictly `workflowStage === PICK_ASSIGNED` — a
- * PICK_DONE row gets `isAssigned: false`, on purpose, and stays that way.
- * That is NOT a bug on its own: it only breaks something for a consumer
- * that treats "!isAssigned" as "waiting/unassigned" without ALSO excluding
- * `isDone`. Since 2026-07-17 (the stage that started writing PICK_DONE via
- * app/api/picking/done/route.ts), both real consumers guard for this at
- * their own "waiting" filter:
+ * PICK_DONE or PICK_CHECKED row gets `isAssigned: false`, on purpose, and
+ * stays that way. That is NOT a bug on its own: it only breaks something
+ * for a consumer that treats "!isAssigned" as "waiting/unassigned" without
+ * ALSO excluding `isDone` AND `isChecked`. Every "waiting" filter across
+ * both boards guards for this:
  *   - components/picking/picking-queue.tsx (desktop): `unassignedRows`
  *     inside `PickingTable`, plus the parent's `availableRoutes` and
- *     `selectableIdsInTab` — all now `!r.isAssigned && !r.isDone`.
+ *     `selectableIdsInTab` — all `!r.isAssigned && !r.isDone && !r.isChecked`.
  *   - components/picking/picking-board-mobile.tsx (mobile Assign tab):
- *     `waitingRows` and the detail screen's Assign-CTA gate — same
- *     `&& !r.isDone` addition.
+ *     `waitingRows` and the detail screen's Assign-CTA gate — same guard.
+ *   - app/picking/page.tsx (picker "My Picks" split): `pending` excludes
+ *     both `isDone` and `isChecked`; `done` now includes either (an
+ *     approved bill stays in the picker's own Done tab, it doesn't
+ *     disappear from his history just because a supervisor later checked it).
  * The "assigned"/Check-tab side (`r.isAssigned`) never needed a matching
- * fix — it was already correctly excluding PICK_DONE rows, since
- * `isAssigned` is false for them on that side too. A PICK_DONE row is
- * therefore currently invisible on BOTH boards — that's intentional until
- * a later stage builds the Check-tab split (already mocked in
- * docs/mockups/picking/supervisor-check-split.html) to give it a home;
- * do not build a temporary one here. lib/picking/sort.ts's `byAssigned`
- * rule itself was never touched — only what feeds it (the filtered row
- * sets above) changed.
+ * fix — it was already correctly excluding PICK_DONE/PICK_CHECKED rows,
+ * since `isAssigned` is false for them on that side too. `isDone` is
+ * likewise strict-per-stage (`=== PICK_DONE`), so a PICK_CHECKED row does
+ * NOT reappear in the Check tab's "Needs check" section — it has its own
+ * home now (the Checked tab, `isChecked`). lib/picking/sort.ts's
+ * `byAssigned` rule itself was never touched — only what feeds it (the
+ * filtered row sets above) changed.
+ *
+ * KNOWN GAP (not fixed here — would change desktop's displayed numbers,
+ * out of scope for this addition): `windows[].count` below (line ~`!r.isAssigned`)
+ * and `totalCount`'s `sortedRows.length - assignedCount` do NOT exclude
+ * `isDone`/`isChecked` rows, so both desktop stats over-count "still
+ * queued" bills by however many are done or checked today. Pre-existing
+ * for `isDone`; `isChecked` just compounds it. See CLAUDE_PICKING.md §7.
  */
 export async function getPickingQueue(dateStr?: string): Promise<PickingQueueResult> {
   const { isoDate, dateOnly } = resolveTargetDate(dateStr);
@@ -143,7 +151,7 @@ export async function getPickingQueue(dateStr?: string): Promise<PickingQueueRes
       // their rendered lists entirely rather than relying on sort position.
       // Never the historical 'closed' union — see lib/workflow-stages.ts and
       // CLAUDE_SUPPORT.md §3 (parking-stage flip).
-      workflowStage: { in: [SUPPORT_DONE_OUTPUT, PICK_ASSIGNED, PICK_DONE] },
+      workflowStage: { in: [SUPPORT_DONE_OUTPUT, PICK_ASSIGNED, PICK_DONE, PICK_CHECKED] },
       isRemoved: false,
     },
     include: {
@@ -162,6 +170,10 @@ export async function getPickingQueue(dateStr?: string): Promise<PickingQueueRes
           pickerId: true,
           assignedAt: true,
           pickedAt: true,
+          // checkedAt/checkedBy added 2026-07-18 for the Checked tab's
+          // "checked {time}" line and the checker-name traceability segment.
+          checkedAt: true,
+          checkedBy: { select: { name: true } },
           picker: { select: { name: true } },
           assignedBy: { select: { name: true } },
         },
@@ -205,8 +217,11 @@ export async function getPickingQueue(dateStr?: string): Promise<PickingQueueRes
       obdDateTime: order.orderDateTime ?? order.obdEmailDate ?? null,
       isAssigned: order.workflowStage === PICK_ASSIGNED,
       isDone: order.workflowStage === PICK_DONE,
+      isChecked: order.workflowStage === PICK_CHECKED,
       assignedAt: order.pickAssignment?.assignedAt ?? null,
       pickedAt: order.pickAssignment?.pickedAt ?? null,
+      checkedAt: order.pickAssignment?.checkedAt ?? null,
+      checkedByName: order.pickAssignment?.checkedBy?.name ?? null,
       pickerId: order.pickAssignment?.pickerId ?? null,
       assignedToName: order.pickAssignment?.picker?.name ?? null,
       assignedByName: order.pickAssignment?.assignedBy?.name ?? null,

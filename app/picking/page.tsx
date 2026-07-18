@@ -101,8 +101,13 @@ export default async function PickingPage({ searchParams }: PickingPageProps) {
     const myRows = viewerId === null ? [] : queue.rows.filter((r) => r.pickerId === viewerId);
 
     pickerFaceData = {
-      pending: myRows.filter((r) => !r.isDone),
-      done: myRows.filter((r) => r.isDone),
+      // isChecked excluded from pending / included in done (2026-07-18) —
+      // without this, an approved (PICK_CHECKED) bill has isDone: false and
+      // would fall back into "pending" with a live-looking Mark Done CTA on
+      // a bill the supervisor already finished. It stays in his own Done
+      // tab regardless of what the supervisor does with it afterward.
+      pending: myRows.filter((r) => !r.isDone && !r.isChecked),
+      done: myRows.filter((r) => r.isDone || r.isChecked),
       viewerName,
       pickers,
       activePickerId: viewerId,
