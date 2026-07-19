@@ -1044,7 +1044,14 @@ async function handleConfirm(req: Request, session: Session): Promise<NextRespon
     .map((l) => l.skuCodeRaw)
     .filter((c): c is string => Boolean(c));
 
-  const [customers, skus] = await Promise.all([
+  // Catalog recognition reads sku_master_v2 by `material` (the SAP code) — the
+  // SAME source and semantics as the preview gate above, so preview and confirm
+  // now agree on what counts as a known SKU. The OLD sku_master lookup that used
+  // to live here was removed on 2026-07-19: its sole consumer was the
+  // `skuId` write below, and that column is no longer written (see STEP D5).
+  // No isPrimary filter — enrichment must recognise ANY real SAP code,
+  // including a duplicate twin. Sequential/Promise.all, no $transaction (CORE §3).
+  const [customers, existingSkus] = await Promise.all([
     prisma.delivery_point_master.findMany({
       where:  { customerCode: { in: allCustomerCodes } },
       select: {
@@ -1056,21 +1063,14 @@ async function handleConfirm(req: Request, session: Session): Promise<NextRespon
         area: { select: { deliveryTypeId: true } },
       },
     }),
-    // ⚠ DELIBERATELY still OLD sku_master — do NOT "finish the job" and point
-    // this at sku_master_v2. Its sole consumer is the skuId write below, and
-    // import_enriched_line_items.skuId is FK'd to sku_master(id). The two
-    // tables share NO id space: verified 2026-07-19, 0 of 1,051 old ids hold
-    // the same material code in v2 (477 collide, 574 absent). Swinging this
-    // read would silently write v2 ids into a column pointing at sku_master.
-    // Full reasoning: docs/prompts/drafts/code-discovery-2026-07-19b-catalog-repoint.md
-    prisma.sku_master.findMany({
-      where:  { skuCode: { in: allSkuCodes } },
-      select: { id: true, skuCode: true },
+    prisma.sku_master_v2.findMany({
+      where:  { material: { in: allSkuCodes } },
+      select: { material: true },
     }),
   ]);
 
   const customerByCode = new Map(customers.map((c) => [c.customerCode, c]));
-  const skuByCode      = new Map(skus.map((s) => [s.skuCode, s]));
+  const knownSkuSet    = new Set(existingSkus.map((s) => s.material));
 
   // ── STEP C — Build all data arrays in memory ─────────────────────────────
 
@@ -1327,20 +1327,33 @@ async function handleConfirm(req: Request, session: Session): Promise<NextRespon
   }
 
   // ── STEP D5 — Bulk create import_enriched_line_items ─────────────────────
-  // Best-effort enrichment: unknown SKUs get skuId=null rather than being skipped.
-  // NOTE: lineWeight stored as 0 — sku_master.grossWeightPerUnit not yet in schema
+  // Best-effort enrichment: unrecognised SKUs are noted, never skipped.
+  //
+  // `skuId` is written NULL unconditionally (2026-07-19). It was a row-number
+  // bookmark into the OLD sku_master; sweep 19h confirmed no live reader
+  // remains, so nothing consults it. The column and its relation stay in the
+  // schema for now — dropping them is bundled with the future
+  // "retire old sku_master + rename v2" session.
+  //
+  // `lineWeight` and `note` both key off catalog RECOGNITION, which now comes
+  // from sku_master_v2 by `material` instead of the old table. lineWeight has
+  // never held a real mass — a recognised line stores literal 0 (there is no
+  // grossWeightPerUnit column on either table), so this field is in practice a
+  // "was this code recognised" flag. v2 recognises more codes (~73% vs ~57%),
+  // so fewer lines are flagged Unknown — the intended improvement, and it makes
+  // this agree with the preview gate, which already used v2.
   const enrichedData: Prisma.import_enriched_line_itemsCreateManyInput[] = [];
   for (const o of orderInterims) {
     for (const line of o.validLines) {
-      const sku = skuByCode.get(line.skuCodeRaw);
+      const known = knownSkuSet.has(line.skuCodeRaw);
       enrichedData.push({
         rawLineItemId: line.id,
-        skuId:         sku?.id ?? null,
+        skuId:         null,
         unitQty:       line.unitQty,
         volumeLine:    line.volumeLine,
-        lineWeight:    sku ? 0 : null,
+        lineWeight:    known ? 0 : null,
         isTinting:     line.isTinting,
-        note:          sku ? null : "Unknown SKU — manual mapping required",
+        note:          known ? null : "Unknown SKU — manual mapping required",
       });
       linesEnriched++;
     }
@@ -2856,12 +2869,12 @@ async function processAutoImportRows(
     .map((s) => s.shipToCustomerId)
     .filter((c): c is string => c !== null);
 
-  const confirmSkuCodes = autoRawSummaries
-    .flatMap((s) => s.rawLineItems)
-    .map((l) => l.skuCodeRaw)
-    .filter((c): c is string => Boolean(c));
-
-  const [confirmCustomers, confirmSkus] = await Promise.all([
+  // The OLD sku_master lookup that used to sit alongside this was removed on
+  // 2026-07-19 — its sole consumer was the `skuId` write below, which now
+  // writes null. Catalog recognition for this path reuses `existingSkuSet`,
+  // already built from sku_master_v2 by `material` at STEP C above and still in
+  // scope here — no second query. See CONFIRM D5 below.
+  const [confirmCustomers] = await Promise.all([
     prisma.delivery_point_master.findMany({
       where:  { customerCode: { in: confirmCustomerCodes } },
       select: {
@@ -2873,17 +2886,9 @@ async function processAutoImportRows(
         area: { select: { deliveryTypeId: true } },
       },
     }),
-    // ⚠ DELIBERATELY still OLD sku_master — feeds the skuId write below, which
-    // is FK'd to sku_master(id). Same id-space hazard as the manual-SAP confirm
-    // path above; see that comment before changing this.
-    prisma.sku_master.findMany({
-      where:  { skuCode: { in: confirmSkuCodes } },
-      select: { id: true, skuCode: true },
-    }),
   ]);
 
   const confirmCustomerByCode = new Map(confirmCustomers.map((c) => [c.customerCode, c]));
-  const confirmSkuByCode      = new Map(confirmSkus.map((s) => [s.skuCode, s]));
 
   // ── CONFIRM — build order interims ────────────────────────────────────────
   interface AutoOrderInterim {
@@ -3134,18 +3139,22 @@ async function processAutoImportRows(
   }
 
   // ── CONFIRM D5 — Bulk create import_enriched_line_items ──────────────────
+  // Mirror of the legacy-confirm STEP D5 (see that comment for the full
+  // reasoning): `skuId` is written NULL unconditionally, and lineWeight/note
+  // key off sku_master_v2 recognition. Reuses `existingSkuSet` from STEP C —
+  // no extra query on this path.
   const enrichedData: Prisma.import_enriched_line_itemsCreateManyInput[] = [];
   for (const o of autoOrderInterims) {
     for (const line of o.validLines) {
-      const sku = confirmSkuByCode.get(line.skuCodeRaw);
+      const known = existingSkuSet.has(line.skuCodeRaw);
       enrichedData.push({
         rawLineItemId: line.id,
-        skuId:         sku?.id ?? null,
+        skuId:         null,
         unitQty:       line.unitQty,
         volumeLine:    line.volumeLine,
-        lineWeight:    sku ? 0 : null,
+        lineWeight:    known ? 0 : null,
         isTinting:     line.isTinting,
-        note:          sku ? null : "Unknown SKU — manual mapping required",
+        note:          known ? null : "Unknown SKU — manual mapping required",
       });
       linesEnriched++;
     }
