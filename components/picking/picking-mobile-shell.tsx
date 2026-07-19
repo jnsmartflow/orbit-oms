@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { Inbox, ClipboardCheck, CheckCircle2 } from "lucide-react";
 import { getTodayIST } from "@/lib/dates";
 import { RoleLayoutClient } from "@/components/shared/role-layout-client";
 import type { RoleSidebarRole } from "@/components/shared/role-sidebar";
@@ -130,6 +131,12 @@ function SupervisorPickingShell({
   // waitingRows/assignedRows/doneRows/checkedRows memos (§ that file), just
   // re-derived here from the same shared `data` for the bottom-bar labels.
   // Cheap (a few array scans over the day's queue), not a second fetch.
+  //
+  // Stage 4/4 — icons added, third tab's LABEL renamed "Checked" -> "Done"
+  // (visual only). The KEY stays "checked" — PickingBoardMobile's activeTab
+  // union, its `activeTab === "checked"` branch, and PickingMobileShell's
+  // own onTabChange cast all still key off this exact string; renaming it
+  // would silently break tab switching for zero visible reason.
   const workflowTabs = useMemo<WorkflowTab[]>(() => {
     const rows: PickingQueueRow[] = data?.rows ?? [];
     const waitingCount = rows.filter((r) => !r.isAssigned && !r.isDone && !r.isChecked).length;
@@ -137,9 +144,9 @@ function SupervisorPickingShell({
     const doneCount = rows.filter((r) => r.isDone).length;
     const checkedCount = rows.filter((r) => r.isChecked).length;
     return [
-      { key: "assign", label: "Assign", count: waitingCount },
-      { key: "check", label: "Check", count: assignedCount + doneCount },
-      { key: "checked", label: "Checked", count: checkedCount },
+      { key: "assign", label: "Assign", count: waitingCount, icon: Inbox },
+      { key: "check", label: "Check", count: assignedCount + doneCount, icon: ClipboardCheck },
+      { key: "checked", label: "Done", count: checkedCount, icon: CheckCircle2 },
     ];
   }, [data]);
 
