@@ -2,8 +2,8 @@ import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { checkAnyPermission, getAllPermissionsForRoles, buildNavItems } from "@/lib/permissions";
 import { RoleSidebarProvider } from "@/components/shared/role-sidebar-provider";
-import { RoleLayoutClient } from "@/components/shared/role-layout-client";
 import type { RoleSidebarRole } from "@/components/shared/role-sidebar";
+import { PickingMobileShell } from "@/components/picking/picking-mobile-shell";
 import { PickingQueue } from "@/components/picking/picking-queue";
 import { PickingBoardMobile } from "@/components/picking/picking-board-mobile";
 import { PickerMyPicksBoard } from "@/components/picking/picker-my-picks-board";
@@ -116,11 +116,12 @@ export default async function PickingPage({ searchParams }: PickingPageProps) {
 
   return (
     <RoleSidebarProvider>
-      <RoleLayoutClient
+      <PickingMobileShell
         role={primaryRole as RoleSidebarRole}
         userName={userName}
         userInitials={userInitials}
         navItems={dedupedNavItems}
+        showPickerFace={showPickerFace}
       >
         {/* Same route, two faces — desktop table vs. mobile card board.
             Desktop is untouched regardless of role; only the mobile slot
@@ -142,7 +143,7 @@ export default async function PickingPage({ searchParams }: PickingPageProps) {
             <PickingBoardMobile />
           )}
         </div>
-      </RoleLayoutClient>
+      </PickingMobileShell>
     </RoleSidebarProvider>
   );
 }

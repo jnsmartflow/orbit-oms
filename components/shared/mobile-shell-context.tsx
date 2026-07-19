@@ -28,6 +28,13 @@ export interface MobileShellContextValue {
   openYou:            () => void;
   openSignoutConfirm: () => void;
   closeAll:           () => void;
+  // Stage 3/4 (2026-07-19) — read-only identity, mirrored from the provider's
+  // own props so a module-native header (e.g. Picking's Direction-A avatar
+  // button) can render the signed-in user's initials without new
+  // prop-drilling from role-layout-client.tsx down through the page tree.
+  role:         string;
+  userName:     string;
+  userInitials: string;
 }
 
 const MobileShellContext = createContext<MobileShellContextValue | null>(null);
@@ -91,7 +98,10 @@ export function MobileShellProvider({
 
   return (
     <MobileShellContext.Provider
-      value={{ sheet, confirmOpen, filter, setFilter, openMenu, openYou, openSignoutConfirm, closeAll }}
+      value={{
+        sheet, confirmOpen, filter, setFilter, openMenu, openYou, openSignoutConfirm, closeAll,
+        role, userName, userInitials,
+      }}
     >
       {children}
 

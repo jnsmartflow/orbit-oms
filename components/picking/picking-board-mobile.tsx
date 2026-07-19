@@ -1,12 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Search, ChevronDown, Check, Star, Zap, ArrowRight, ChevronLeft } from "lucide-react";
+import { Search, ChevronDown, Check, Star, Zap, ArrowRight, ChevronLeft, LayoutGrid } from "lucide-react";
 import { toast } from "sonner";
-import { getTodayIST } from "@/lib/dates";
 import { MOBILE_NAV_CLEARANCE } from "@/components/shared/mobile-shell";
+import { useMobileShell } from "@/components/shared/mobile-shell-context";
+import { usePickingBoard } from "./picking-mobile-shell";
 import type { PickingQueueRow } from "@/lib/picking/types";
-import type { PickingQueueResult } from "@/lib/picking/queue";
 
 // Real /api/warehouse/pickers response shape — do not invent fields.
 interface Picker {
@@ -212,45 +212,6 @@ function CheckCard({
   );
 }
 
-// Teal top bar tab — Assign / Check. Underline style (2026-07-16 restyle):
-// label + count are both PLAIN TEXT, no pill/badge container of any kind, so
-// a count's digit count changing (72 -> 8 -> 140) never resizes a shape —
-// only the text itself (and, following it, the underline) shifts. Count uses
-// tabular-nums so same-digit-count changes (e.g. 71 -> 72) don't jitter.
-// Tap target: min-h-[40px] regardless of the lighter visual weight.
-function TopBarTab({
-  label, count, active, onClick,
-}: {
-  label: string; count: number; active: boolean; onClick: () => void;
-}): React.JSX.Element {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="relative flex items-baseline gap-[7px] min-h-[40px] py-2"
-    >
-      <span className={"text-[15.5px] whitespace-nowrap " + (active ? "text-white font-bold" : "text-white/60 font-medium")}>
-        {label}
-      </span>
-      <span
-        className={
-          "text-[13px] font-semibold tabular-nums whitespace-nowrap " +
-          (active ? "text-white" : "text-white/45")
-        }
-      >
-        {count}
-      </span>
-      <span
-        aria-hidden="true"
-        className={
-          "absolute left-0 right-0 -bottom-px h-[3px] rounded-full bg-white " +
-          (active ? "opacity-100" : "opacity-0")
-        }
-      />
-    </button>
-  );
-}
-
 // Square checkbox — matches po-page.tsx's multi-select row checkbox exactly
 // (rounded-[6px], border-2, teal-600 fill + white check svg when selected),
 // per docs/mockups/picking/supervisor-assign-board.html (the approved design).
@@ -408,19 +369,17 @@ function FilterBottomSheet({
 }
 
 export function PickingBoardMobile(): React.JSX.Element {
-  // Same fetch-on-date-change shape as components/picking/picking-queue.tsx —
-  // no date UI in this stage, so this never changes, but the pattern stays
-  // date-driven for whenever a date control is added.
-  const [selectedDate] = useState<string>(() => getTodayIST());
-  const [data, setData] = useState<PickingQueueResult | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  // The supervisor's jobs, as top-bar tabs. Client-side split over the SAME
-  // already-loaded queue data — no second fetch, no new endpoint. "checked"
-  // added 2026-07-18 — bills at PICK_CHECKED, invisible before this (see
-  // lib/picking/queue.ts's doc comment).
-  const [activeTab, setActiveTab] = useState<"assign" | "check" | "checked">("assign");
+  // Stage 3/4 (2026-07-19) — data/loading/error/activeTab/refetchQueue now
+  // live in PickingMobileShell (an ancestor — RoleLayoutClient's workflow-tab
+  // slot needs them one level up; see that file's header comment for why).
+  // Shared via context so the bottom-bar tab counts and this board's cards
+  // read the exact same fetch and can never drift. Same identifier names as
+  // the pre-Stage-3 local state, so every usage below is unchanged.
+  const { data, loading, error, activeTab, refetchQueue } = usePickingBoard();
+  // Direction-A header (avatar/grid/search) reaches the shared Menu/You
+  // sheets + the signed-in user's initials via the Stage-1 provider —
+  // userInitials is a Stage-3/4 addition to that context's value.
+  const { openMenu, openYou, userInitials } = useMobileShell();
 
   const [searching, setSearching] = useState(false);
   const [query, setQuery] = useState("");
@@ -497,34 +456,6 @@ export function PickingBoardMobile(): React.JSX.Element {
   // from `selected` so the two flows never fight over the same state.
   const [assignTarget, setAssignTarget] = useState<PickingQueueRow[]>([]);
 
-  const fetchQueue = useCallback(async (): Promise<PickingQueueResult> => {
-    const res = await fetch(`/api/picking/queue?date=${selectedDate}`);
-    if (!res.ok) {
-      throw new Error(`Request failed (${res.status})`);
-    }
-    return res.json();
-  }, [selectedDate]);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      setLoading(true);
-      setError(null);
-      try {
-        const json = await fetchQueue();
-        if (!cancelled) setData(json);
-      } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load picking queue");
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-    void load();
-    return () => {
-      cancelled = true;
-    };
-  }, [fetchQueue]);
-
   // Picker roster for the assign sheet — same endpoint desktop uses, fetched
   // once (the picker roster doesn't change within a session).
   useEffect(() => {
@@ -574,18 +505,6 @@ export function PickingBoardMobile(): React.JSX.Element {
       cancelled = true;
     };
   }, [detailOrderId]);
-
-  // Post-assign refetch — never patch rows locally. Mirrors
-  // picking-queue.tsx's refetchAfterAction: does not touch loading/error UI,
-  // just replaces data with a fresh server read.
-  const refetchQueue = useCallback(async () => {
-    try {
-      const json = await fetchQueue();
-      setData(json);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to refresh picking queue");
-    }
-  }, [fetchQueue]);
 
   // data.rows arrives already sorted server-side (lib/picking/sort.ts
   // PICKING_SPINE — assigned-sink leads, window next). Array.filter preserves
@@ -982,59 +901,55 @@ export function PickingBoardMobile(): React.JSX.Element {
 
   return (
     <div className="fixed inset-0 flex flex-col overflow-hidden bg-[#f9fafb]">
-      {/* Teal top bar — matches app/po/po-page.tsx's pinned brand bar, and
-          its STRUCTURE: a flex-shrink-0 sibling of the scroll area below,
-          never a "sticky" element in normal document flow. This board is
-          nested inside RoleLayoutClient's `min-h-screen overflow-hidden`
-          wrappers, which are NOT actual scroll containers — the real scroll
-          was happening on the page body, outside this element's sticky
-          reference frame, which is why the header used to scroll away and
-          cards rendered under the iOS status bar. `fixed inset-0` on this
-          root escapes that ancestor chain entirely (the same technique the
-          detail screen below already uses successfully); the header/body
-          split below it mirrors po-page.tsx's flex-col + flex-shrink-0
-          header + flex-1 overflow-y-auto body shape. */}
+      {/* Direction-A slim header (Stage 3/4, 2026-07-19) — replaces the old
+          Assign/Check/Checked TopBarTab strip, which now lives in the shared
+          bottom bar (workflow-tab-bar.tsx, driven by PickingMobileShell).
+          Same STRUCTURE as before: a flex-shrink-0 sibling of the scroll
+          area below; `fixed inset-0` on the root still escapes
+          RoleLayoutClient's non-scrolling ancestor chain exactly as it did
+          pre-Stage-3 — only this header's CONTENT changed. Avatar (left,
+          opens the shared You sheet) · title (center) · grid (opens the
+          shared Menu sheet) + search (right) — per
+          docs/mockups/picking/mobile-shell-v1.html. */}
       <div
-        className="flex-shrink-0 bg-teal-600 px-4 pb-2"
-        style={{ paddingTop: "max(env(safe-area-inset-top, 0px), 12px)" }}
+        className="flex-shrink-0 bg-teal-600 flex items-center justify-between gap-2.5 px-3.5"
+        style={{ paddingTop: "max(env(safe-area-inset-top, 0px), 11px)", paddingBottom: "10px" }}
       >
-        <div className="flex items-center justify-between gap-2.5 pb-2.5">
-          <h1 className="text-[19px] font-extrabold text-white tracking-tight">Picking</h1>
+        <button
+          type="button"
+          onClick={openYou}
+          aria-label="Open account menu"
+          className="w-10 h-10 min-w-[44px] min-h-[44px] rounded-full bg-white/20 active:bg-white/30 flex items-center justify-center text-white text-[13px] font-bold shrink-0"
+        >
+          {userInitials}
+        </button>
+        <h1 className="text-[19px] font-extrabold text-white tracking-tight">Picking</h1>
+        <div className="flex items-center gap-0.5 shrink-0">
+          <button
+            type="button"
+            onClick={openMenu}
+            aria-label="Open all pages menu"
+            className="w-11 h-11 rounded-[10px] flex items-center justify-center text-white active:bg-white/15"
+          >
+            <LayoutGrid size={21} />
+          </button>
           <button
             type="button"
             onClick={() => setSearching((v) => !v)}
             aria-label="Search"
-            className="w-[34px] h-[34px] rounded-[10px] flex items-center justify-center text-white active:bg-white/15 shrink-0"
+            className="w-11 h-11 rounded-[10px] flex items-center justify-center text-white active:bg-white/15"
           >
-            <Search size={19} />
+            <Search size={20} />
           </button>
-        </div>
-        <div className="flex items-center gap-6">
-          <TopBarTab
-            label="Assign"
-            count={waitingRows.length}
-            active={activeTab === "assign"}
-            onClick={() => setActiveTab("assign")}
-          />
-          <TopBarTab
-            label="Check"
-            count={assignedRows.length + doneRows.length}
-            active={activeTab === "check"}
-            onClick={() => setActiveTab("check")}
-          />
-          <TopBarTab
-            label="Checked"
-            count={checkedRows.length}
-            active={activeTab === "checked"}
-            onClick={() => setActiveTab("checked")}
-          />
         </div>
       </div>
 
       {/* Scrollable content area — flex-1, ONLY this scrolls. Reserves 76px
-          at the bottom for the fixed mobile-shell nav bar (the same "76px"
-          convention the floating assign bar already uses below), since this
-          root no longer benefits from RoleLayoutClient's own pb-[76px]. */}
+          at the bottom for the fixed mobile-shell bar (WorkflowTabBar now,
+          not the default Home/Menu/You nav — same MOBILE_NAV_CLEARANCE
+          height either way, see workflow-tab-bar.tsx's own height-rule
+          comment), since this root no longer benefits from
+          RoleLayoutClient's own pb-[76px]. */}
       <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain pb-[76px]">
 
       {/* Filter row (swaps for search when active) — shared by both tabs.
