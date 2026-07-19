@@ -22,7 +22,10 @@ export default async function AdminDashboard() {
   ] = await Promise.all([
     prisma.users.count({ where: { isActive: true } }),
     prisma.route_master.count({ where: { isActive: true } }),
-    prisma.sku_master.count({ where: { isActive: true } }),
+    // sku_master_v2 (flat catalog) — its isActive carries real discontinued
+    // semantics (25 retired TOOLS 645xxxx rows excluded), unlike the old
+    // normalised table's near-universally-true flag. 2026-07-19b repoint.
+    prisma.sku_master_v2.count({ where: { isActive: true } }),
     prisma.delivery_point_master.count({ where: { isActive: true } }),
     prisma.transporter_master.count({ where: { isActive: true } }),
     prisma.sales_officer_group.count({ where: { isActive: true } }),

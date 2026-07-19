@@ -40,8 +40,9 @@ export async function GET(
     }
 
     // Read raw lines directly (lineStatus column lives here, not on the
-    // enriched table). Join enriched + sku via include to get the resolved
-    // skuCode/skuName, mirroring the detail-endpoint shape.
+    // enriched table). `lineWeight` still comes off the enriched row; the
+    // product NAME now resolves against sku_master_v2 by `material` instead of
+    // the enrichedLineItem.sku relation (see the catalog lookup below).
     const rawLines = await prisma.import_raw_line_items.findMany({
       where: {
         obdNumber:  order.obdNumber,
@@ -57,18 +58,35 @@ export async function GET(
         removedAt:         true,
         removedReason:     true,
         enrichedLineItem: {
-          select: {
-            lineWeight: true,
-            sku:        { select: { skuCode: true, skuName: true } },
-          },
+          select: { lineWeight: true },
         },
       },
       orderBy: { id: "asc" },
     });
 
+    // Catalog resolution by `material` (the SAP code), NOT via the skuId FK —
+    // that still points at the OLD sku_master, which shares no id space with
+    // sku_master_v2, so following it would show a wrong product description.
+    // No isPrimary filter. Sequential await, no $transaction (CORE §3).
+    // Reasoning: docs/prompts/drafts/code-discovery-2026-07-19b-catalog-repoint.md
+    const codes = Array.from(
+      new Set(rawLines.map((r) => r.skuCodeRaw).filter((c): c is string => Boolean(c))),
+    );
+    const catalogRows =
+      codes.length > 0
+        ? await prisma.sku_master_v2.findMany({
+            where:  { material: { in: codes } },
+            select: { material: true, description: true },
+          })
+        : [];
+    const catalogByCode = new Map(catalogRows.map((c) => [c.material, c]));
+
     const lines = rawLines.map((r) => ({
-      skuCode:        r.enrichedLineItem?.sku?.skuCode ?? r.skuCodeRaw,
-      skuDescription: r.enrichedLineItem?.sku?.skuName ?? r.skuDescriptionRaw ?? "—",
+      // skuCode stays the RAW SAP code — it already was (the old relation
+      // resolved to the same string), and it is the code the operator matches.
+      skuCode:        r.skuCodeRaw,
+      skuDescription:
+        catalogByCode.get(r.skuCodeRaw)?.description ?? r.skuDescriptionRaw ?? "—",
       unitQty:        r.unitQty,
       lineWeight:     r.enrichedLineItem?.lineWeight ?? null,
       volumeLine:     r.volumeLine,

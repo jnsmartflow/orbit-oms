@@ -677,15 +677,19 @@ async function handlePreview(req: Request, session: Session): Promise<NextRespon
   const existingCustSet = new Set(existingCustomers.map((c) => c.customerCode));
 
   // ── STEP C — Validate line items (1 bulk query, skipped if no line file) ──
+  // Coverage gate reads sku_master_v2 by `material` (the SAP code) — the flat
+  // catalog resolves ~73% of active raw codes vs ~57% on old sku_master, so
+  // fewer lines get flagged "Unknown SKU". No isPrimary filter: enrichment must
+  // recognise ANY real SAP code, duplicate twins included (2026-07-19b §7).
   let existingSkuSet = new Set<string>();
 
   if (lineRows.length > 0) {
     const allSkuCodes = lineRows.map((r) => toStr(r["sku_codes"])).filter(Boolean);
-    const existingSkus = await prisma.sku_master.findMany({
-      where:  { skuCode: { in: allSkuCodes } },
-      select: { skuCode: true },
+    const existingSkus = await prisma.sku_master_v2.findMany({
+      where:  { material: { in: allSkuCodes } },
+      select: { material: true },
     });
-    existingSkuSet = new Set(existingSkus.map((s) => s.skuCode));
+    existingSkuSet = new Set(existingSkus.map((s) => s.material));
   }
 
   // Group line rows by obdNumber for fast lookup
@@ -1052,6 +1056,13 @@ async function handleConfirm(req: Request, session: Session): Promise<NextRespon
         area: { select: { deliveryTypeId: true } },
       },
     }),
+    // ⚠ DELIBERATELY still OLD sku_master — do NOT "finish the job" and point
+    // this at sku_master_v2. Its sole consumer is the skuId write below, and
+    // import_enriched_line_items.skuId is FK'd to sku_master(id). The two
+    // tables share NO id space: verified 2026-07-19, 0 of 1,051 old ids hold
+    // the same material code in v2 (477 collide, 574 absent). Swinging this
+    // read would silently write v2 ids into a column pointing at sku_master.
+    // Full reasoning: docs/prompts/drafts/code-discovery-2026-07-19b-catalog-repoint.md
     prisma.sku_master.findMany({
       where:  { skuCode: { in: allSkuCodes } },
       select: { id: true, skuCode: true },
@@ -1451,17 +1462,19 @@ async function handleManualSapPreview(_req: Request, _session: Session): Promise
           select: { customerCode: true },
         })
       : Promise.resolve([] as { customerCode: string }[]),
+    // Coverage gate — sku_master_v2 by `material`, no isPrimary filter (see
+    // STEP C above and 2026-07-19b §7).
     skuCodes.length > 0
-      ? prisma.sku_master.findMany({
-          where:  { skuCode: { in: skuCodes } },
-          select: { skuCode: true },
+      ? prisma.sku_master_v2.findMany({
+          where:  { material: { in: skuCodes } },
+          select: { material: true },
         })
-      : Promise.resolve([] as { skuCode: string }[]),
+      : Promise.resolve([] as { material: string }[]),
   ]);
 
   const existingObdSet  = new Set(existingOrders.map((o) => o.obdNumber));
   const existingCustSet = new Set(existingCustomers.map((c) => c.customerCode));
-  const existingSkuSet  = new Set(existingSkus.map((s) => s.skuCode));
+  const existingSkuSet  = new Set(existingSkus.map((s) => s.material));
 
   // Group warnings by delivery for per-OBD `issues[]` annotation.
   const warningsByObd = new Map<string, string[]>();
@@ -2512,15 +2525,17 @@ async function processAutoImportRows(
   const existingCustSet = new Set(existingCustomers.map((c) => c.customerCode));
 
   // ── STEP C — Validate line items (1 bulk query) ───────────────────────────
+  // Coverage gate — sku_master_v2 by `material`, no isPrimary filter (see the
+  // manual-SAP STEP C above and 2026-07-19b §7).
   let existingSkuSet = new Set<string>();
 
   if (lineRows.length > 0) {
     const allSkuCodes = lineRows.map((r) => toStr(r["sku_codes"])).filter(Boolean);
-    const existingSkus = await prisma.sku_master.findMany({
-      where:  { skuCode: { in: allSkuCodes } },
-      select: { skuCode: true },
+    const existingSkus = await prisma.sku_master_v2.findMany({
+      where:  { material: { in: allSkuCodes } },
+      select: { material: true },
     });
-    existingSkuSet = new Set(existingSkus.map((s) => s.skuCode));
+    existingSkuSet = new Set(existingSkus.map((s) => s.material));
   }
 
   const linesByObd = new Map<string, RawLineRow[]>();
@@ -2858,6 +2873,9 @@ async function processAutoImportRows(
         area: { select: { deliveryTypeId: true } },
       },
     }),
+    // ⚠ DELIBERATELY still OLD sku_master — feeds the skuId write below, which
+    // is FK'd to sku_master(id). Same id-space hazard as the manual-SAP confirm
+    // path above; see that comment before changing this.
     prisma.sku_master.findMany({
       where:  { skuCode: { in: confirmSkuCodes } },
       select: { id: true, skuCode: true },
