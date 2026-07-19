@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Search, ChevronDown, Check, Star, Zap, ArrowRight, ChevronLeft, LayoutGrid } from "lucide-react";
+import { Search, ChevronDown, Check, Star, Zap, ArrowRight, ChevronLeft, ChevronRight, LayoutGrid } from "lucide-react";
 import { toast } from "sonner";
 import { MOBILE_NAV_CLEARANCE } from "@/components/shared/mobile-shell";
 import { useMobileShell } from "@/components/shared/mobile-shell-context";
@@ -66,6 +66,18 @@ type DetailListKey = "waiting" | "needsCheck" | "stillPicking" | "checked";
 const SWIPE_EDGE_EXCLUSION_PX = 24;
 const SWIPE_DEADZONE_PX = 10;
 const SWIPE_THRESHOLD_PX = 80;
+
+// Detail-polish Build B (2026-07-19) — Option-1 slide animation on top of
+// Build A's gesture gate above (unchanged: edge exclusion, deadzone, axis
+// lock, threshold — this only adds a visual transform once those already
+// decided a horizontal drag is happening).
+// DRAG_FOLLOW: fraction of raw finger delta the content translates by while
+// dragging — under 1.0 so the content feels anchored/weighted rather than
+// glued 1:1 to the finger.
+// SLIDE_MS: duration of EACH half of the commit animation (exit, then
+// enter) — ~260ms total end to end, per the approved spec.
+const SLIDE_DRAG_FOLLOW = 0.65;
+const SLIDE_MS = 130;
 
 // Fixed locale — same rationale as picking-queue.tsx (the desktop sibling):
 // identical thousands-separator output depot PC vs Vercel, regardless of
@@ -787,6 +799,11 @@ export function PickingBoardMobile(): React.JSX.Element {
   // Pushes ONE history entry for the whole detail "session" — see pushScreen.
   function openDetail(orderId: number, listKey: DetailListKey): void {
     switchDetailTo(orderId, listKey);
+    // Defensive reset (Build B) — a fresh open from a card tap must always
+    // start at rest, in case a prior session's gesture left the ref mid-
+    // transform. triggerPageTransition's own paging flow deliberately does
+    // NOT reset here — it manages the transform itself across its 3 phases.
+    setContentTransform(0, false);
     pushScreen();
   }
 
@@ -815,17 +832,82 @@ export function PickingBoardMobile(): React.JSX.Element {
     [activeDetailList, detailOrderId],
   );
 
-  // No push/pop here on purpose (approved plan) — paging through several
-  // bills via swipe still costs exactly ONE history entry for the whole
-  // detail session; a single Back press from bill #3 returns straight to
-  // the list, not to bill #2. No-ops past either end of the list.
+  // ── Detail-polish Build B — Option-1 slide animation ─────────────────────
+  // detailContentRef wraps everything below the detail header (stat strip /
+  // pack filter / line items / the 3 CTAs) — the header itself does NOT
+  // slide (its dealer-name/OBD text just updates at the swap instant,
+  // matching how the counter's "N of M" and the stat strip update too;
+  // conventional for mobile page-transition UI, e.g. Mail's conversation
+  // swipe). Style writes go straight to the DOM node via this ref, never
+  // through React state — the same reason po-page.tsx's --vvh updater
+  // avoids state for the equally high-frequency touchmove case (a setState
+  // per touchmove would be a render storm for zero visual benefit, since
+  // nothing else in the tree needs to react to the live drag position).
+  const detailContentRef = useRef<HTMLDivElement>(null);
+
+  function prefersReducedMotion(): boolean {
+    return typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  }
+
+  function setContentTransform(px: number, animated: boolean): void {
+    const el = detailContentRef.current;
+    if (!el) return;
+    el.style.transition = animated && !prefersReducedMotion() ? `transform ${SLIDE_MS}ms ease-out` : "none";
+    el.style.transform = px === 0 ? "" : `translateX(${px}px)`;
+  }
+
+  // Below-threshold release (or a boundary drag with nothing to page to) —
+  // animate back to rest from wherever the finger left the content.
+  function snapContentBack(): void {
+    setContentTransform(0, true);
+  }
+
+  // THE single entry point for a bill change — called identically by the
+  // swipe release (below) and the counter arrows (JSX below). No push/pop
+  // here on purpose (approved plan) — paging through several bills still
+  // costs exactly ONE history entry for the whole detail session; a single
+  // Back press from bill #3 returns straight to the list, not to bill #2.
+  // No-ops past either end of the list (no wrap).
+  function triggerPageTransition(direction: "next" | "prev"): void {
+    const nextIndex = detailIndex + (direction === "next" ? 1 : -1);
+    if (detailIndex === -1 || nextIndex < 0 || nextIndex >= activeDetailList.length) return;
+    const target = activeDetailList[nextIndex];
+    if (prefersReducedMotion()) {
+      switchDetailTo(target.orderId, detailListKey);
+      setContentTransform(0, false);
+      return;
+    }
+    const vw = window.innerWidth;
+    const exitPx = direction === "next" ? -vw : vw;
+    // Phase 1 — exit: slide the CURRENT content fully off-screen, animated
+    // from wherever it already sits (0 at rest, or a live drag offset).
+    setContentTransform(exitPx, true);
+    window.setTimeout(() => {
+      // Phase boundary — swap the data (Build A's unchanged mechanism; the
+      // line-items effect keyed on detailOrderId refires on its own).
+      switchDetailTo(target.orderId, detailListKey);
+      // Instant, un-animated snap to the OPPOSITE off-screen edge — this is
+      // the "next bill slides in from the other side" half. No transition
+      // on this write, or the browser would animate the snap itself.
+      setContentTransform(-exitPx, false);
+      // Double rAF (same style-flush trick /po's own touch/scroll code
+      // uses) — guarantees the browser has committed the un-animated snap
+      // above as a separate paint before Phase 2's transition is armed, or
+      // it can coalesce the snap and the entrance into one no-op jump.
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          // Phase 2 — enter: animate from the opposite edge back to rest.
+          setContentTransform(0, true);
+        });
+      });
+    }, SLIDE_MS);
+  }
+
   function goNextBill(): void {
-    if (detailIndex === -1 || detailIndex >= activeDetailList.length - 1) return;
-    switchDetailTo(activeDetailList[detailIndex + 1].orderId, detailListKey);
+    triggerPageTransition("next");
   }
   function goPrevBill(): void {
-    if (detailIndex <= 0) return;
-    switchDetailTo(activeDetailList[detailIndex - 1].orderId, detailListKey);
+    triggerPageTransition("prev");
   }
 
   // ── Swipe-between-bills touch handlers ───────────────────────────────────
@@ -870,6 +952,9 @@ export function PickingBoardMobile(): React.JSX.Element {
     }
     // Locked horizontal — suppress the page's own scroll/bounce while paging.
     e.preventDefault();
+    // Option-1 finger-tracking — un-animated (transition:none), instant
+    // 1:1-minus-follow so the content reads as attached to the finger.
+    setContentTransform(dx * SLIDE_DRAG_FOLLOW, false);
   }
 
   function handleDetailTouchEnd(e: React.TouchEvent<HTMLDivElement>): void {
@@ -879,9 +964,18 @@ export function PickingBoardMobile(): React.JSX.Element {
     const t = e.changedTouches[0];
     if (!t) return;
     const dx = t.clientX - state.startX;
-    if (Math.abs(dx) < SWIPE_THRESHOLD_PX) return;
-    if (dx < 0) goNextBill();
-    else goPrevBill();
+    const direction: "next" | "prev" = dx < 0 ? "next" : "prev";
+    const pastThreshold = Math.abs(dx) >= SWIPE_THRESHOLD_PX;
+    const withinBounds = direction === "next" ? detailIndex < activeDetailList.length - 1 : detailIndex > 0;
+    if (pastThreshold && withinBounds) {
+      triggerPageTransition(direction);
+    } else {
+      // Below threshold, OR past it but already at the list's edge (no
+      // wrap) — snap back rather than calling triggerPageTransition, whose
+      // own bounds guard would otherwise leave the content stranded
+      // off-screen with nothing having been committed.
+      snapContentBack();
+    }
   }
 
   // ── Detail-interactions Build A — the ONE popstate authority ─────────────
@@ -1556,6 +1650,13 @@ export function PickingBoardMobile(): React.JSX.Element {
           </button>
         </div>
 
+        {/* Detail-polish Build B — everything below the header (stat strip /
+            pack filter / line items / CTAs) is wrapped in ONE ref'd
+            container so triggerPageTransition can translate it as a single
+            unit. The header itself sits OUTSIDE this wrapper and does not
+            slide — its dealer-name/OBD text just updates at the swap
+            instant, same as the stat strip and counter below it. */}
+        <div ref={detailContentRef} className="flex-1 min-h-0 flex flex-col">
         {detailSearching ? (
           <div className="bg-white border-b border-gray-200 px-3.5 pt-2.5 pb-2.5 flex items-center gap-2 shrink-0">
             <div className="flex-1 flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-[10px] px-3 py-2.5">
@@ -1582,23 +1683,59 @@ export function PickingBoardMobile(): React.JSX.Element {
           </div>
         ) : (
           <>
-            {/* Stat strip — articleTag is the hero; volume is small and
-                supporting, right-aligned. Weight/KG and any line count are
-                deliberately gone — a picker doesn't need them here. */}
-            <div className="bg-white border-b border-gray-200 px-3.5 py-3 flex items-end justify-between gap-3 shrink-0">
-              <div className="min-w-0 text-[16px] font-extrabold text-gray-900 leading-snug">
-                {detailRow?.articleTag ?? "—"}
-              </div>
-              <div className="shrink-0 flex flex-col items-end gap-0.5">
-                <div className="text-[13px] font-semibold text-gray-500">
-                  {detailRow?.volumeLitres != null ? formatLitres(detailRow.volumeLitres) : "—"} L
+            {/* Stat strip — Detail-polish Build B (Option-F): LEFT now
+                combines packs (articleTag) + volume into one line ("2 Drum ·
+                20 L") instead of two separately-aligned blocks; RIGHT is the
+                bill-position counter, omitted entirely when this list has
+                only one bill (nothing to page between). Weight/KG and any
+                line count are deliberately gone — a picker doesn't need
+                them here. */}
+            <div className="bg-white border-b border-gray-200 px-3.5 py-3 flex items-center justify-between gap-3 shrink-0">
+              <div className="min-w-0">
+                <div className="text-[16px] font-extrabold text-gray-900 leading-snug truncate">
+                  {detailRow?.articleTag ?? "—"}
+                  {detailRow?.volumeLitres != null && (
+                    <span className="text-gray-400 font-semibold">
+                      {" "}&middot; {formatLitres(detailRow.volumeLitres)} L
+                    </span>
+                  )}
                 </div>
                 {detailRow?.isDone && lineItems !== null && (
-                  <div className="text-[11.5px] text-gray-400 tabular-nums">
+                  <div className="text-[11.5px] text-gray-400 tabular-nums mt-0.5">
                     {checkedLineIds.size} / {lineItems.length} checked
                   </div>
                 )}
               </div>
+              {/* Neutral gray throughout (CLAUDE_UI §1) — teal stays
+                  reserved for the Assign CTA only; this is navigation, not
+                  a primary action. Both arrows call the SAME
+                  triggerPageTransition the swipe gesture uses, so arrow taps
+                  and swipes produce an identical slide. */}
+              {activeDetailList.length > 1 && (
+                <div className="flex items-center gap-0.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={goPrevBill}
+                    disabled={detailIndex <= 0}
+                    aria-label="Previous bill"
+                    className="w-11 h-11 flex items-center justify-center rounded-[9px] text-gray-500 active:bg-gray-100 disabled:opacity-30 disabled:pointer-events-none"
+                  >
+                    <ChevronLeft size={18} />
+                  </button>
+                  <span className="text-[12.5px] font-medium text-gray-500 tabular-nums px-0.5 whitespace-nowrap">
+                    {detailIndex + 1} of {activeDetailList.length}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={goNextBill}
+                    disabled={detailIndex >= activeDetailList.length - 1}
+                    aria-label="Next bill"
+                    className="w-11 h-11 flex items-center justify-center rounded-[9px] text-gray-500 active:bg-gray-100 disabled:opacity-30 disabled:pointer-events-none"
+                  >
+                    <ChevronRight size={18} />
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Pack filter — only when the bill actually has more than one
@@ -1734,15 +1871,17 @@ export function PickingBoardMobile(): React.JSX.Element {
             for one if this screen is reached some other way (2026-07-18:
             !isChecked added — a checked/approved bill must never offer to
             re-assign itself, same reasoning as the isDone guard it joins).
-            paddingBottom reads MOBILE_NAV_CLEARANCE — this CTA used to be
-            pinned at just `max(safe-area, 14px)`, no mobile-shell-nav
-            reservation, so it rendered behind the fixed bottom nav with
-            only a sliver visible above it (the exact bug class SHEET_
-            GEOMETRY above already fixed twice for the sheets). */}
+            Detail-polish Build B (2026-07-19) — paddingBottom switched from
+            MOBILE_NAV_CLEARANCE to the plain /po safe-area floor. It read
+            MOBILE_NAV_CLEARANCE only because the shared bottom bar used to
+            paint OVER the open detail screen (z-40 above this screen's
+            z-[35]); Build A's hideBar now removes that bar entirely while
+            detail is open, so reserving its height here was excess space —
+            the button floated well above the true bottom edge. */}
         {detailRow && !detailRow.isAssigned && !detailRow.isDone && !detailRow.isChecked && (
           <div
             className="shrink-0 px-3.5 pb-3.5"
-            style={{ paddingBottom: MOBILE_NAV_CLEARANCE }}
+            style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 16px)" }}
           >
             <button
               type="button"
@@ -1761,11 +1900,13 @@ export function PickingBoardMobile(): React.JSX.Element {
             unassign's own guard requires workflowStage === PICK_ASSIGNED,
             so a "Needs check" (PICK_DONE) row would 409 on this exact call.
             No Undo CTA renders for those; step 6 widens that guard on
-            purpose and gives them their own Undo there. */}
+            purpose and gives them their own Undo there. Detail-polish Build
+            B — paddingBottom is the plain /po safe-area floor, see the
+            Assign CTA's comment above for why. */}
         {detailRow && detailRow.isAssigned && (
           <div
             className="shrink-0 px-3.5 pb-3.5"
-            style={{ paddingBottom: MOBILE_NAV_CLEARANCE }}
+            style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 16px)" }}
           >
             <button
               type="button"
@@ -1782,11 +1923,13 @@ export function PickingBoardMobile(): React.JSX.Element {
             rows. Disabled until allLinesChecked (every line ticked, gated
             against the FULL line set — see that memo's comment for the
             pack-filter interaction). No Undo on this screen, deliberately —
-            a picked bill goes forward only; see the build-session notes. */}
+            a picked bill goes forward only; see the build-session notes.
+            Detail-polish Build B — paddingBottom is the plain /po safe-area
+            floor, see the Assign CTA's comment above for why. */}
         {detailRow && detailRow.isDone && (
           <div
             className="shrink-0 px-3.5 pb-3.5"
-            style={{ paddingBottom: MOBILE_NAV_CLEARANCE }}
+            style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 16px)" }}
           >
             <button
               type="button"
@@ -1803,6 +1946,10 @@ export function PickingBoardMobile(): React.JSX.Element {
             </button>
           </div>
         )}
+        </div>
+        {/* ^ closes the Detail-polish Build B sliding content wrapper
+            (ref={detailContentRef}) opened above the stat-strip/search
+            block. */}
       </div>
 
       {/* Floating assign bar — matches docs/mockups/picking/supervisor-assign-board.html's
