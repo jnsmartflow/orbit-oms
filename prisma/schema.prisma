@@ -1481,6 +1481,46 @@ model mo_sku_lookup_v2 {
   @@map("mo_sku_lookup_v2")
 }
 
+// NEW FLAT catalog table (v27.11) — built + verified live 2026-07-19 via
+// docs/prompts/drafts/build-sku-master-v2-2026-07-19.sql (1,743 rows poured
+// from mo_sku_lookup_v2; 25 retired TOOLS 645xxxx rows marked isActive=false).
+//
+// Shaped like mo_sku_lookup_v2 above, deliberately FLAT — no FKs, no helper
+// tables. Intended to replace the old normalised `sku_master` (+ its
+// product_category / product_name / base_colour helpers) in a later session.
+//
+// Column names match the live table exactly → no @map / @@map anywhere.
+// Both timestamps are timestamptz in the DDL — @db.Timestamptz(6) is required
+// or Prisma would emit plain `timestamp` and mismatch the live column.
+//
+// Two flags, deliberately separate (they answer different questions):
+//   isPrimary = duplicate-twin flag (carried from mo_sku_lookup_v2)
+//   isActive  = discontinued/lifecycle flag (new on this table)
+//
+// `updatedAt` is nullable with NO @updatedAt directive — the catalog is
+// hand-maintained by SQL, not auto-stamped by Prisma writes. Keep it manual.
+//
+// No readers repointed yet — that is a separate session.
+model sku_master_v2 {
+  id              Int       @id @default(autoincrement())
+  material        String    @unique
+  description     String
+  category        String
+  product         String
+  baseColour      String
+  packCode        String
+  unit            String?
+  refMaterial     String?
+  refDescription  String?
+  paintType       String?
+  materialType    String?
+  piecesPerCarton Int?
+  isPrimary       Boolean   @default(true)
+  isActive        Boolean   @default(true)
+  createdAt       DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime? @db.Timestamptz(6)
+}
+
 model mo_customer_keywords {
   id           Int      @id @default(autoincrement())
   customerCode String
