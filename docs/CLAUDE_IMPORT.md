@@ -1,5 +1,5 @@
 # CLAUDE_IMPORT.md — OrbitOMS Import Pipeline
-# v1.4 · Schema v27.10 · July 2026 · Lives in: orbit-oms/docs/
+# v1.5 · Schema v27.11 · July 2026 · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
 Covers the SAP/OBD import pipeline end-to-end: manual SAP upload, Auto-Import (currently paused), the shared upsert utility that both paths funnel through, schema, filters, and downstream consumers.
@@ -171,6 +171,10 @@ unitQty, volumeLine, lineWeight, isTinting
 note, createdAt
 ```
 
+⚠ **`skuId` is now written `null` on every import** and is read by nothing live (2026-07-19 —
+§8.1). The column and its `sku_master` relation still physically exist in `schema.prisma`; dropping
+them is bundled with the future retire-old-table step. `lineWeight` is **not a weight** — see §8.1.
+
 ### import_obd_query_summary
 
 Cached per-OBD aggregate. `obdNumber UNIQUE`, `orderId UNIQUE`. Rebuilt by `rebuildQuerySummaryForOrder()` whenever the upsert plan reports line-level or header changes.
@@ -331,7 +335,68 @@ In order of application (parser side):
 9. **ZINR breadcrumb** → row included; emits `zinr-article-tag-pending`. Placeholder for future `articleTag` rule.
 10. **D.3 — no surviving lines.** Skipped with `"no-valid-lines"`.
 
-**Unknown SKU is NOT dropped at import.** Line lands with `skuCodeRaw` set; `import_enriched_line_items.skuId` is null. Surfaced in mail-orders enrichment + order detail UI.
+**Unknown SKU is NOT dropped at import.** Line lands with `skuCodeRaw` set and is flagged via the
+`note` field (§8.1), never discarded. Surfaced in mail-orders enrichment + order detail UI.
+
+### 8.1 Catalog recognition + the enrichment write [LIVE, 2026-07-19, commit `b91b7381`]
+
+**`prisma.sku_master` no longer appears in `app/api/import/obd/route.ts` at all.** Recognition — and
+everything that keys off it — now resolves against **`sku_master_v2` by `material`** (the SAP code,
+matched against `skuCodeRaw`). The catalog itself is documented in `CLAUDE_CORE.md`; this section
+covers only what import does with it.
+
+### The single truthiness check
+
+Every read builds a `Set<string>` of recognised material codes; **three** enrichment fields then key
+off one boolean (`known`) derived from it. All three used to key off the old-table lookup:
+
+| Field | Written |
+|---|---|
+| `skuId` | **`null`** — outright, unconditionally |
+| `lineWeight` | `known ? 0 : null` |
+| `note` | `known ? null : "Unknown SKU — manual mapping required"` |
+
+**It was three fields, not two.** Anyone re-deriving this and finding only `skuId`/`lineWeight` has
+missed the `note`, which is the one the operator actually sees.
+
+### Both confirm paths were cut over
+
+| Path | Handler | How it gets the v2 set |
+|---|---|---|
+| **Auto** | `handleAutoImport` | **Reuses** the in-scope `existingSkuSet` already built at STEP C — no second query |
+| **Legacy `?action=confirm`** | `handleConfirm` | Adds ONE `sku_master_v2.findMany` **inside the existing `Promise.all`** — no extra round trip, no `$transaction` (CORE §3) |
+
+The live manual-SAP path (`handleManualSapConfirm`) delegates to `upsertObd()` and **never wrote the
+bookmark** — nothing to cut there. `?action=confirm` is the legacy handler kept for backwards compat
+(§9); it was cut over anyway so the two paths cannot drift.
+
+### RESOLVED BUG — preview and confirm now agree
+
+The preview gates already read `sku_master_v2`; confirm still read the old `sku_master`. **The two
+disagreed about what counted as a known SKU** — an operator could see a clean preview and get
+"Unknown SKU — manual mapping required" notes after confirming, or the reverse. Both now read the
+same table with the same semantics, so **preview and confirm agree for the first time.** This came
+free with the cut-over; do not re-introduce a second recognition source on either side.
+
+### Coverage — what actually changed
+
+Measured across 703 distinct active SAP codes at cut-over: **119 GAINED** (v2 knows them, the old
+table didn't → `lineWeight` null→0, note cleared), **0 LOST**. On the measured set v2 is a strict
+superset — nothing that resolved before stopped resolving, so the change is purely additive.
+
+Against the wider population of distinct ACTIVE raw SAP import codes (~1,152): old `sku_master`
+~57%, `sku_master_v2` ~73%, **~309 codes (~27%) in NEITHER** → those keep getting the Unknown-SKU
+note and fall back to raw SAP text downstream. Cleanup is tracked in `docs/ROADMAP.md`.
+
+> ⚠ **The "~99% coverage" figure does NOT apply here.** That number is Table C's coverage of
+> **app-format email lines** (`CLAUDE_MAIL_ORDERS.md §4.1`) — a completely different population from
+> SAP import codes. Do not quote it when reasoning about import recognition.
+
+### No `isPrimary` filter
+
+Enrichment must recognise **any** real SAP code, including a duplicate twin. Filtering
+`isPrimary = true` here would re-introduce resolution gaps. Only the order-entry surfaces filter on
+it (`CLAUDE_PLACE_ORDER.md`).
 
 ---
 
@@ -601,6 +666,25 @@ flows through, as the acceptance check.
 - **Storage Location (col 3)** is read into `RawSapRow` but never written anywhere. Intentionally inert.
 - **Mail-order enrichment match is by `soNumber` only.** When SAP emits two separate OBDs for the same mail order's split bills, both get the same `soNumber` and both inherit the same enrichment payload (`updateMany` 1:N). Usually desired; flag if a future use case needs per-OBD targeting.
 - **Soft-removed OBDs in re-import.** If a removed OBD comes back, preview shows it as `skipped: previously_removed` and AUTO path skips silently via the existing `existingObdSet.has(...) → continue`. Admin restore is the only path back.
+- **`lineWeight` is NOT a weight.** It has never held a mass — a recognised line stores literal `0`,
+  an unrecognised one stores `null`. There is no `grossWeightPerUnit` column on either catalog table
+  and never was. In practice it is a **"was this code recognised?" flag** (§8.1). Every reader is
+  display-only and tolerates null; nothing sums, averages, or otherwise does arithmetic on it — do
+  not start, and do not "fix" the zeros by populating them with real weights without auditing every
+  consumer first. The name is the trap.
+- **`import_enriched_line_items.skuId` is written `null` and read by nothing live** [2026-07-19
+  sweep, `code-discovery-2026-07-19h`]. Zero live runtime paths read the column, traverse the `sku`
+  relation off an enriched line, or filter on it. The only readers anywhere are **two
+  underscore-prefixed scratch diagnostics** (`_diagnose-sku-5961032.ts`,
+  `_diagnose-skuid-collision.ts`) — outside the `tsc --noEmit` gate, never imported by the app, kept
+  on disk per CORE §3. They matter only at the eventual DROP-column step, not before. **This does
+  NOT authorise dropping the column or removing the relation** — that stays bundled with the future
+  "retire old `sku_master` + rename v2" session.
+- **⚠ Do NOT "finish the migration" by repointing the `skuId` FK to `sku_master_v2`.** The two
+  tables assign different id numbers to the same material code — verified zero overlap. The bookmark
+  is retired by **resolving via `material`**, never by moving the FK. Full evidence and the id-space
+  detail live in `CLAUDE_CORE.md`'s SKU-catalog section — read it before touching this, and do not
+  restate it from memory. Inline warning comments sit at the former read sites; leave them there.
 - **Two date/time fields written from two different sources in `handleAutoImportPatchHeaders` is a repeatable mistake class.** `orderDateTime` and `obdEmailDate` must both be written from the same merged `newDT` value (§12.1) — a raw/unmerged source on one of the pair silently strips its time back to midnight. Fixed once (commit `3c0cd366`); watch for the same pattern if this function is edited again.
 
 ---
@@ -623,4 +707,4 @@ flows through, as the acceptance check.
 
 ---
 
-*Import v1.4 · Schema v27.10 · OrbitOMS*
+*Import v1.5 · Schema v27.11 · OrbitOMS*

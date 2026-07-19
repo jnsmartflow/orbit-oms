@@ -1,5 +1,5 @@
 # CLAUDE_ATTENDANCE.md — Attendance + OT Module
-# v1.1 · Schema v27.10
+# v1.1 · Schema v27.11
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -560,4 +560,4 @@ Originally specced at 10 chars trimmed. Lowered after first depot test — too s
 
 ---
 
-*Attendance v1.1 · Schema v27.10 · OrbitOMS*
+*Attendance v1.1 · Schema v27.11 · OrbitOMS*

@@ -1,5 +1,5 @@
 # CLAUDE_UI.md — OrbitOMS UI Design System
-# v5.8 · July 2026 · Lives in: orbit-oms/docs/
+# v5.9 · July 2026 · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md
 
 Single source of truth for visual styling across all screens.
@@ -1268,36 +1268,93 @@ PRIORITY · ACTION` + checkbox.
 
 ---
 
-## 59. Mobile app shell — shared bottom bar (Home / Menu / You) [LIVE]
+## 59. Mobile app shell — provider + slotted bottom bar [LIVE]
 
-A shared, role-aware mobile app shell: a fixed bottom bar with three anchors **identical for every user** — **Home · Menu · You**. Not a per-role tab bar (rejected mid-design — see design history below); the bottom anchors themselves never change, only the Menu list's contents do.
+The mobile shell is **three separable pieces**, not one welded block (rebuilt 2026-07-19, Direction A, commits `5eb0fd7e` → `6bdaff19`). Entirely scoped `block md:hidden` — mobile only; the desktop sidebar (§7) stays `hidden md:flex`, completely untouched by any of this.
 
-- **Home** — navigates to `navItems[0]?.href ?? "/"` (the user's primary page). Active-teal when `pathname === that href`.
-- **Menu** (center) — slide-up sheet listing every page the user can view, with a "Find a page…" filter (`text-[16px]`). Active row: `bg-teal-50 text-teal-700 border-l-teal-600`. Reuses the **exact same** `ICON_MAP` / `DEFAULT_ICON` (keyed by `pageKey`, exported from `role-sidebar.tsx`) as the desktop sidebar (§7) — icons always match between the two.
-- **You** — slide-up sheet: teal avatar (initials) + userName + role label + red Sign out row → confirm dialog → `signOut({ callbackUrl: "/login" })` (reuses the sidebar's existing sign-out, not reinvented).
+### 59.1 `MobileShellProvider` — the sheets [LIVE]
 
-One sheet open at a time; scrim closes. Safe-area padding via `env(safe-area-inset-bottom)`.
+`components/shared/mobile-shell-context.tsx`. Owns the **Menu sheet, You sheet, sign-out confirm, and scrim**, plus their state (`sheet` / `confirmOpen` / `filter`). Mounted **once**, in `role-layout-client.tsx`, wrapping the whole role-shelled subtree.
 
-**Component:** `components/shared/mobile-shell.tsx`. Entirely scoped `block md:hidden` — mobile only.
+- **Menu sheet** — `z-[60]`, `rounded-t-[22px]`, slides via `translate-y-full`→`translate-y-0`. Lists every page the user can view + a "Find a page…" filter (`text-[16px]`, iOS zoom guard). Active row `bg-teal-50 text-teal-700 border-l-teal-600`. Reuses the **exact same** `ICON_MAP` / `DEFAULT_ICON` (keyed by `pageKey`, exported from `role-sidebar.tsx`) as the desktop sidebar (§7) — icons always match between the two.
+- **You sheet** — same `z-[60]` shape: teal avatar (initials) + userName + role label + red Sign out row → confirm dialog (`z-[70]`) → `signOut({ callbackUrl: "/login" })`.
+- **Scrim** — `z-50`, closes whatever is open. One sheet open at a time.
 
-**Mounting — one global insertion point:** `components/shared/role-layout-client.tsx` mounts `<MobileShell>` as a sibling to `<RoleSidebar>`. `role-layout-client.tsx` is the single shared wrapper for every role-shelled page, so every page that wraps itself in it inherits the shell automatically with no per-page work — confirmed live on `/trips` and `/place-order`; other role pages are "future adopters" of the same wrapper.
+**The point of the lift:** `useMobileShell()` exposes `openMenu()` / `openYou()` / `closeAll()` **to any descendant**, so a module's own header can open the same sheet instances without re-mounting a second copy of the markup. The context also carries read-only `role` / `userName` / `userInitials` so a module-native header can render the signed-in avatar with no new prop-drilling.
 
-**Desktop untouched, mobile-only split:**
-- The existing desktop sidebar (§7) stays `hidden md:flex` — completely unchanged.
-- The page content wrapper gets `pb-[76px] md:pb-0` so mobile content clears the fixed bottom bar; no effect on desktop.
-- **Pages that don't route through `role-layout-client.tsx` don't inherit the shell.** Attendance, for instance, has its own full-screen wrapper with no sidebar (`app/attendance/layout.tsx`, `CLAUDE_ATTENDANCE.md §13`) and is unaffected by this shell.
+### 59.2 The three-way bottom-bar SLOT [LIVE]
 
-**Design history:** rejected per-role bottom tabs → rejected drawer-only → landed on the fixed Home/Menu/You anchors (variable pages live behind Menu, not as their own tabs).
+`components/shared/mobile-shell.tsx` is now **only the bottom bar**. It renders exactly one of three things, checked in this order:
+
+| # | Branch | Trigger | Renders |
+|---|---|---|---|
+| 1 | **Hidden** | `hideBar` prop is true | nothing — no bar at all |
+| 2 | **Module tabs** | `workflowTabs` supplied AND non-empty | that module's `<WorkflowTabBar>` |
+| 3 | **Default** | neither of the above | the standard **Home · Menu · You** `<nav>` |
+
+Branch 3 is unchanged from the original shell: **Home** → `navItems[0]?.href ?? "/"` (active-teal when `pathname === that href`), **Menu** → `openMenu()`, **You** → `openYou()`.
+
+**Threading:** all four props (`workflowTabs`, `activeTabKey`, `onTabChange`, `hideBar`) are optional pass-throughs on `<RoleLayoutClient>` — the same shape `navItems` already uses. Undefined on every call site that hasn't opted in, so **every existing page is pixel-identical by construction**.
+
+**⚠️ LANDMINE — `workflowTabs={[]}` does NOT hide the bar.** An empty array is falsy in the `hasWorkflowTabs` check, so it falls through to the **default Home/Menu/You bar**, not to nothing. Hiding requires the explicit `hideBar` prop, which is deliberately a separate named prop checked *before* `hasWorkflowTabs`. Reusing the empty array for "hidden" would silently break the fallback semantic.
+
+### 59.3 `WorkflowTabBar` — the reusable per-module primitive [LIVE]
+
+`components/shared/workflow-tab-bar.tsx`. Generic and module-agnostic: `tabs: {key, label, count?, icon}[]` + `activeKey` + `onChange`.
+
+- Icon-on-top layout, count badge top-right of the icon, teal underline pill on the active tab.
+- **Count badge hides at 0** — a "0" badge is noise, not information. `>99` renders `99+`.
+- **One-teal (§1):** only the ACTIVE tab's badge is teal; an inactive tab's badge stays `bg-gray-400`, matching its icon and label.
+
+**⚠️ LANDMINE — its height is copied from the default nav ON PURPOSE.** It reuses the default `<nav>`'s exact classes (`fixed bottom-0 … z-40`, `flex-1 flex flex-col items-center gap-1 py-2 text-[11px] font-semibold`, `h-6 w-6` icon, bare `env(safe-area-inset-bottom)`) so the two bars are the same height **by construction**. An earlier `min-h-[58px]` guess was removed — **do not reintroduce a fixed height number**; it drifts out of sync with the real content and invalidates `MOBILE_NAV_CLEARANCE`.
+
+### 59.4 How a future module plugs in [LIVE — sanctioned extension point]
+
+Every future module (**Tint Operator, Support, Warehouse, Trip Report**) now has a supported way to mount its own bottom tabs. **Do not rebuild the shell** — the frame, both sheets, and the wiring already exist. A module supplies only its own tabs and its own page contents:
+
+1. Supply `workflowTabs` + `activeTabKey` + `onTabChange` through `<RoleLayoutClient>`.
+2. For a Direction-A header, call `openMenu()` / `openYou()` from `useMobileShell()` on the header's grid icon / avatar.
+3. Pass `hideBar` when a full-screen sub-view (e.g. a detail screen) should own the whole viewport.
+
+**Picking is the first consumer** — `components/picking/picking-mobile-shell.tsx`. Its `SupervisorPickingShell` is the reference implementation and the pattern to copy: tab state and the queue fetch that drives the live counts are **owned one level above the board** (they must reach `RoleLayoutClient`, which renders above the board in the tree), and are handed back down to the page via the module's own context. One fetch, so the cards and the tab counts can never drift. Picking's screen-level detail is `CLAUDE_PICKING.md §5` — not repeated here.
+
+**⚠️ Label ≠ key.** Picking's third tab reads **"Done"** but its key stays `"checked"`. A visible relabel must never rename the state key — the `activeTab` union, the tab-switch branch, and the workflow-stage values all key off the literal.
+
+### 59.5 Per-ROLE tabs vs per-MODULE tabs — the distinction that matters
+
+These are different ideas and only one was rejected. Read both lines before proposing either:
+
+- **Per-ROLE bottom tabs — still REJECTED.** The bottom anchors must not change identity depending on who signed in. Variable pages live behind **Menu**, not as their own tabs. This was rejected in the original design and that decision stands.
+- **Per-MODULE workflow tabs — SANCTIONED, and LIVE.** A module may replace the bottom bar with its own **workflow-stage** tabs (Picking: Assign · Check · Done) for the duration of that module's screens. Opt-in per page; the default for every page that says nothing stays Home/Menu/You.
+
+The difference is what the tabs *are*: a role is an identity (the bar must not fork per user), a workflow stage is a step in the task the user is currently doing (the bar is the right place for it — the thumb zone). **Menu/You are not lost** when a module takes the bar; they demote to the module's own header, because module-switching is the less frequent action.
+
+**Design history:** rejected per-role bottom tabs → rejected drawer-only → fixed Home/Menu/You anchors → **(2026-07-19)** kept those as the default, added the per-module slot beside them. Direction A (module-native bottom bar) was chosen over Direction B (split bar) and Direction C (floating FAB).
+
+### 59.6 Mounting, clearance, and mechanics
+
+**One global insertion point:** `components/shared/role-layout-client.tsx` mounts `<MobileShellProvider>` around `<RoleSidebar>` + `<MobileShell>` + the page content. Every page that wraps itself in it inherits the shell with no per-page work — live on `/trips`, `/place-order`, `/picking`.
+
+- The page content wrapper carries `pb-[76px] md:pb-0` so mobile content clears the fixed bar; no effect on desktop.
+- **Pages that don't route through `role-layout-client.tsx` don't inherit the shell.** Attendance has its own full-screen wrapper with no sidebar (`app/attendance/layout.tsx`, `CLAUDE_ATTENDANCE.md §13`) and is unaffected.
+- **`/po` is NOT a consumer of this shell** — it builds its own Home/Drafts/Sent bar inline in `po-page.tsx`. Shell changes never touch `/po`; do not add "protect /po" guards, it is not on the circuit.
+
+**`MOBILE_NAV_CLEARANCE`** (exported from `mobile-shell.tsx`) = `calc(76px + env(safe-area-inset-bottom, 0px))`. Single source of truth for "how much room the fixed bar needs" — every bottom-pinned sheet or CTA must reserve at least this much. It is an **empirical** figure, not computed from the nav's classes: if that JSX's sizing changes, update the constant by hand. It was hand-copied as a bare `76px` literal three times before centralization, each time producing a render-behind-the-nav bug — **import it, never retype the number**.
+
+**Mechanics landmines — cross-ref §55, do not re-derive:**
+- **Floating footers gate on `keyboardOpen` (measured Visual Viewport height drop), never `inputFocused`.** Android can dismiss the keyboard without blurring the input, so a footer gated on focus stays stuck hidden. §55.
+- **Safe-area floors:** §55's convention for page-level footers and sheets is `max(env(safe-area-inset-…), Npx)` — **never a bare `env()`**. Both bars in this section (default nav and `WorkflowTabBar`) deliberately use a **bare** `env(safe-area-inset-bottom)` with no floor — they match each other by construction (59.3), which is the stronger constraint here. Known, intentional divergence: do not "fix" one bar to the §55 floor without the other, and do not use the bars as the precedent for new page-level footers.
+- **Dual shadow tokens:** `SOFT_CARD_SHADOW` and `ENRICHED_ROW_SHADOW` read almost identically but are pixel-matched to two different approved mocks (plain cards vs. enriched rows). **Do not merge them.** §55.
 
 **Reference mobile user:** Praveen (`logistics` role, primary landing → Trip Report — `CLAUDE_TRIP_REPORT.md §1`).
 
-**Approved mockup:** `docs/mockups/mobile/index.html` (v3 — the Home/Menu/You version). The grey role-switcher shown in that mockup is a demo aid only, not part of the shipped app.
+**Approved mockups:** `docs/mockups/mobile/index.html` (v3 — the default Home/Menu/You shell; its grey role-switcher is a demo aid, not shipped) and `docs/mockups/picking/mobile-shell-v1.html` (the approved Direction-A shell, 6 states).
 
 **[DEFERRED]**
-- Shared minimal header + big search component (from the mockup) — to be rolled in page by page; each page currently keeps its own header (why `/trips` still looks right and wasn't disturbed).
-- Shell rollout/polish across other role pages.
+- **Shared minimal header + big search — now PARTLY [LIVE].** Realized as Picking's Direction-A header (title + search toggle + grid/avatar triggers into the shared sheets). Not yet extracted to a shared component, so each other page still keeps its own header — which is why `/trips` still looks right and was never disturbed. Extracting it is the remaining work.
+- Shell rollout/polish across the other role pages.
 - PWA install (add-to-home-screen). Manifest + icons + root-layout metadata already exist (`public/manifest.json`, `app/layout.tsx` metadata + `appleWebApp` + viewport); **no service worker exists** (never built). Do NOT reintroduce a middleware-level redirect toward `/attendance` (the retired attendance auto-check-in gate — see `CLAUDE_TRIP_REPORT.md §7`) when building this.
 
 ---
 
-*UI v5.8 · OrbitOMS*
+*UI v5.9 · OrbitOMS*

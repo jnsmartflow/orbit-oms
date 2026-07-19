@@ -358,6 +358,84 @@ New OPEN items surfaced while consolidating the 17 drafts (Jul 8–16) into cano
 
 ---
 
+## Consolidation follow-ups (opened 2026-07-19)
+
+From the flat-SKU-catalog migration + the Direction-A mobile shell batch. Canonical detail:
+`CLAUDE_CORE.md §7.1.c` + `§13`, `CLAUDE_IMPORT.md §8.1`, `CLAUDE_PICKING.md §5`, `CLAUDE_UI.md §59`.
+
+### Catalog cleanup (P1 — blocks the friendly-name build)
+
+- [ ] **~309 unknown SAP codes.** Active on real bills but present in NEITHER catalog table (old
+  `sku_master` ~57% coverage, `sku_master_v2` ~73%, ~27% in neither). They fall back to raw SAP text
+  with a blank pack. Export by frequency:
+  `docs/prompts/drafts/unknown-sku-codes-2026-07-19.csv` (309 rows + header — leave it where it is).
+  Owner review needed: genuinely obsolete vs. never-mastered — **needs Chandresh/depot input.**
+  Overlaps the blank-pack landmine in `CLAUDE_PICKING.md §7` (reduced 2026-07-19, NOT closed).
+- [ ] **7 odd Promise/duplicate rows**, surfaced by the friendly-name generation: 3 pre-existing
+  Promise SmartChoice duplicate identities whose names collide (Int Primer, Ext Primer, Acrylic
+  Distemper), a bare "Promise" row with no product identity (family `PROMISE INTERIOR`, product
+  `PROMISE`, base `PROMISE`), and 2 stutter rows ("Promise Primer Promise Primer", "Acrylic
+  Distemper Duwel Acrylic Distemper"). Harmless clumsy names today. Its own careful data pass with
+  its own rollback — not bundled with anything else.
+
+### Friendly product name on the picking card (P2 — DEFERRED, designed + proven)
+
+- [ ] Deferred by Smart Flow 2026-07-19: unwilling to risk any misleading name on a picking card
+  until the catalog odd-rows above are cleaned. **Nothing was built** — no column, no picking code.
+  Recipe is fully proven and preserved (stored `skuDisplayName String?`, built from `category` /
+  `product` / `baseColour` with NO menu-table join, `emailCase()` not `smartTitleCase`, gentle
+  de-double only, SKU code stays the hero and the name is a muted reference line):
+  `docs/prompts/drafts/web-update-2026-07-19-sku-master-v2-project-v2.md §5` + the per-family samples
+  in `code-discovery-2026-07-19d-picking-name-samples.md`. **Resume order:** clean the catalog → re-run
+  the 19d sampling to confirm zero misleading names → build in two steps (fill via reviewable SQL,
+  then show on the card).
+
+### Retire old `sku_master` — the final swap (P2 — one dedicated session)
+
+- [ ] Drop old `sku_master` + its 3 FK helper tables (`product_category`, `product_name`,
+  `base_colour`); drop `import_enriched_line_items.skuId` + its relation; retire the admin SKU-CRUD
+  surface (`/api/admin/skus/*` + the 4 `skus/page.tsx` browse pages — the only live readers left);
+  rename `sku_master_v2` → `sku_master`. **Read `CLAUDE_CORE.md §13`'s id-space landmine first.**
+- [ ] **Blocker to handle IN that session:** `scripts/normalise-sampling-data.ts:313` reads old
+  `sku_master` and has no underscore prefix, so it is INSIDE the `tsc --noEmit` gate — it will fail
+  to compile at the DROP and block every commit until fixed (`CLAUDE_SAMPLING_LIBRARY.md §3`).
+- [ ] Remove the 2 scratch diagnostics that read the bookmark (`scripts/_diagnose-sku-5961032.ts`,
+  `scripts/_diagnose-skuid-collision.ts`) — outside the gate, so they block nothing, but they are the
+  only remaining readers.
+
+### Picking (P2)
+
+- [ ] **Slide-to-done control** — designed + approved 2026-07-19, **not built** (the batch stopped
+  before it by choice). Replace the detail screen's **Approve** button with a drag-to-confirm control
+  firing the *same* `handleApprove(detailRow)` → `POST /api/picking/approve` `{orderId}`. The
+  `allLinesChecked` gate and the API are unchanged — only the input mechanism changes. **Green**, not
+  teal (separates "finish" from teal "assign").
+- [ ] **Four detail-area sheets ship with no Back affordance** — route filter, check-picker filter,
+  checked-picker filter, and the bulk-bar assign sheet. They push no history entry, so Android
+  hardware back / iOS edge-swipe navigates the *browser* instead of closing them. Same gap class the
+  detail screen had pre-Build-A; copy the `/po` single-authority popstate model
+  (`CLAUDE_PLACE_ORDER.md §25`). The nested assign sheet opened *from* the detail screen is already
+  handled — not on this list.
+- [ ] **Feel-tuning pending real-device use:** the 0.65× drag-follow and ~260ms slide are subjective
+  one-number tweaks if the floor wants faster/stiffer.
+
+### UI (P2)
+
+- [ ] **Extract the Direction-A header to a shared component** — the remaining half of `CLAUDE_UI.md
+  §59`'s partly-live deferred item. Picking has the working header (title + search toggle + grid /
+  avatar triggers into the shared sheets via `useMobileShell()`); it is not yet extracted, so every
+  other page still keeps its own header. Extract when a second module adopts Direction A, not before.
+
+### Code cleanup (P2 — one line)
+
+- [ ] **Stale comment in `prisma/schema.prisma`** above `model sku_master_v2`: it ends
+  `// No readers repointed yet — that is a separate session.` — true when `916fcd39` landed, but
+  three later commits (`8f606a88`, `a227fb13`, `b91b7381`) repointed every operational reader. A
+  future reader taking it at face value would conclude the migration never happened. Fix the line
+  next time `schema.prisma` is edited — not worth its own commit.
+
+---
+
 ## Documentation hygiene
 
 ### Schema docs consolidation cadence

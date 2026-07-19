@@ -1,5 +1,5 @@
 # CLAUDE_PICKING.md — Picking Module
-# v1.2 · Schema v27.10 · July 2026
+# v1.3 · Schema v27.11 · July 2026
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -16,9 +16,13 @@ both boards (shipped across the 2026-07-17/18 sessions; full state ladder in §6
 - **Desktop queue** (`hidden md:block`, `components/picking/picking-queue.tsx`) — table view.
 - **Mobile** (`block md:hidden`, `components/picking/picking-board-mobile.tsx` OR
   `components/picking/picker-my-picks-board.tsx`) — branches by role: the **supervisor board**
-  (Assign / Check / Checked — three tabs — + a detail screen. [LIVE], §5) for supervisors, or the
-  picker's own **"My Picks"** board (Pending / Done. [LIVE], §5) when the viewer is a picker — or,
+  (Assign / Check / Done — three **bottom** tabs — + a detail screen. [LIVE], §5) for supervisors, or
+  the picker's own **"My Picks"** board (Pending / Done. [LIVE], §5) when the viewer is a picker — or,
   today, an admin/operations session using the `?view=picker&as=<id>` test hook (§7).
+
+  Both mobile faces mount through `components/picking/picking-mobile-shell.tsx`, which wraps
+  `<RoleLayoutClient>` — Picking is the **first and reference consumer** of the shared shell's
+  per-module bottom-tab slot (`CLAUDE_UI.md §59`).
 
 **Who can use it — access reality:** page + every API route gate on `checkAnyPermission(roles,
 "picking", "canView")` with an `admin` bypass. **Today that's effectively admin + operations only** —
@@ -162,8 +166,63 @@ and the mobile board's Assign tab (§5) both drive the same `/api/picking/assign
 `app/picking/page.tsx`. Live in production on `/picking`'s mobile viewport, **test-mode assign** (see
 §4 — every assignment is tagged and reversible).
 
-**Three tabs, three jobs** — not three stages. "Picking" (waiting) was explicitly rejected as its own
-tab: waiting isn't a job you do, and today nothing moves a bill out of it automatically.
+### 5.1 Direction-A shell — tabs moved to the BOTTOM [LIVE, 2026-07-19]
+
+The three workflow tabs were **relocated from the top teal header to the bottom bar** — they now
+render through the shared `WorkflowTabBar` slot, not Picking's own `TopBarTab` strip. Rationale:
+workflow tabs belong in the thumb zone; Menu/You demote to the header because module-switching is the
+less frequent action.
+
+**The shell mechanics live in `CLAUDE_UI.md §59` — read that, not this section, for how the slot
+works.** What is Picking-specific:
+
+- `components/picking/picking-mobile-shell.tsx` is the **owner** of the tab state and the queue
+  fetch. Both had to move ONE level up from `PickingBoardMobile`, because `RoleLayoutClient` (which
+  carries the slot props) renders *above* the board in the tree. `SupervisorPickingShell` owns
+  `data`/`loading`/`error`/`activeTab`/`refetchQueue`/`detailOpen`, computes the three tab counts, and
+  hands them back down through `PickingBoardContext` (`usePickingBoard()`).
+- **One fetch, no drift.** Every consumer of `refetchQueue()` (assign / undo / approve, still inside
+  `PickingBoardMobile`) updates the SAME `data` the bottom-bar counts read — the cards and the tab
+  counts cannot disagree.
+- **The picker face gets the DEFAULT bar.** `PickingMobileShell` only mounts the tab/fetch machinery
+  when `!showPickerFace`; the picker's "My Picks" board and the desktop queue leave `workflowTabs`
+  undefined, so they keep the standard Home/Menu/You bar untouched.
+- Tab icons (lucide): `Inbox` (Assign) · `ClipboardCheck` (Check) · `CheckCircle2` (Done). Count badge
+  hidden at 0.
+- The top teal header keeps the "Picking" title + search toggle, and gained the grid/avatar triggers
+  that open the shared Menu/You sheets via `useMobileShell()`.
+
+**⚠️ "Done" is a SCREEN LABEL ONLY — no new stage exists.** The third tab's visible text changed
+`Checked` → `Done` (Stage 4/4). Everything underneath is unchanged:
+
+| Layer | Value |
+|---|---|
+| Visible tab label | **"Done"** |
+| Tab `key` / `activeTab` literal | `"checked"` |
+| `orders.workflowStage` (DB) | **`pick_checked`** — unchanged, §2 |
+| Constant | `PICK_CHECKED` — unchanged |
+| Row flag | `isChecked` — unchanged |
+
+Renaming the KEY would silently break tab switching, the Check-tab split, and the Done-list render.
+**Label ≠ key ≠ stage.** No migration happened, no ladder entry was added — if you are looking for a
+`pick_done`-vs-`pick_checked` distinction, §2 still governs.
+
+**⚠️ Two different things are called "Done" on this module — keep them apart:**
+
+| | Supervisor board — **Done** tab (§5.2) | Picker "My Picks" — **Done** tab (§5.4) |
+|---|---|---|
+| Who sees it | supervisor | the picker himself |
+| Stage shown | `pick_checked` only | `pick_done` **OR** `pick_checked` (either) |
+| Means | "I approved this bill" | "I finished fetching this bill" |
+| Renamed 2026-07-19? | **yes** (was "Checked") | **no** — always been "Done" |
+
+The picker's Done tab deliberately includes approved bills, so a bill stays in his own history instead
+of vanishing the moment a supervisor checks it.
+
+### 5.2 Three tabs, three jobs
+
+Not three stages. "Picking" (waiting) was explicitly rejected as its own tab: waiting isn't a job you
+do, and today nothing moves a bill out of it automatically.
 
 - **Assign tab** — flat list in **server sort order** (§3), no client re-sort or grouping. Route
   dropdown (client-derived from loaded rows) + delivery-type pills, both stack with search. Select
@@ -177,7 +236,8 @@ tab: waiting isn't a job you do, and today nothing moves a bill out of it automa
   detail screen, not the card, for "Still picking" rows only. Tapping a "Needs check" card opens the
   per-line tick screen; ticking every line unlocks **Approve** (`POST /api/picking/approve`), which
   writes `pick_checked` + `pick_assignments.checkedAt`/`checkedById`.
-- **Checked tab [LIVE, 2026-07-18]** — every bill at `pick_checked`, today's dispatch-target date
+- **Done tab** (labelled "Checked" until 2026-07-19 — same tab, same `"checked"` key, see 5.1)
+  **[LIVE, 2026-07-18]** — every bill at `pick_checked`, today's dispatch-target date
   only (same `dispatchTargetDate` scope every other row already uses — no separate "today" concept
   was introduced). Flat list, **re-sorted newest-checked-first** (the one place this board deviates
   from `PICKING_SPINE` — a display-only re-order of an already-filtered slice; `sort.ts` itself is
@@ -194,16 +254,78 @@ tab: waiting isn't a job you do, and today nothing moves a bill out of it automa
 
 **Card DNA (shared by all three tabs):** OBD (mono) + window tag · ★ `isKeyCustomer` · ⚡
 `priorityLevel === 1` (strict equality) · dealer name as hero · area + `articleTag` (Assign tab) or
-area + picker name (Check/Checked tabs) rendered **verbatim** (no client-side drum/carton parsing).
+area + picker name (Check/Done tabs) rendered **verbatim** (no client-side drum/carton parsing).
 
-**Detail screen + new route:** `GET /api/picking/order/[orderId]/route.ts` — on-demand line items,
-not part of the main queue payload (`PickingQueueRow` only carries order-level aggregates). There is
-**no FK from `orders` to line items** — matched via the order's own `obdNumber` against
-`import_raw_line_items`. Reads the **full active line set**, not just the enriched subset, falling
-back to the raw SAP description/code when a line never enriched against `sku_master` — nothing
-silently disappears from what the picker sees. Pack code renders in a fixed-width tile with no
-container word (the picker matches pack size against the shelf, not container type) — a deliberate
-column-scan design (SKU is the matching key; product name is confirmation after).
+### 5.3 Detail screen
+
+**Route:** `GET /api/picking/order/[orderId]/route.ts` — on-demand line items, not part of the main
+queue payload (`PickingQueueRow` only carries order-level aggregates). There is **no FK from `orders`
+to line items** — matched via the order's own `obdNumber` against `import_raw_line_items`. Reads the
+**full active line set**, not just the subset the catalog can resolve — nothing silently disappears
+from what the picker sees. Pack code renders in a fixed-width tile with no container word (the picker
+matches pack size against the shelf, not container type) — a deliberate column-scan design (SKU is
+the matching key; product name is confirmation after).
+
+**Catalog source — `sku_master_v2` by `material` [LIVE, 2026-07-19, commit `8f606a88`]:** line name
+and pack now resolve against **`sku_master_v2`**, batch-matched on `material` ∈ the bill's
+`skuCodeRaw` set. `name` ← `description`; `pack` ← `formatPack(packCode, unit)`. Raw-text fallback is
+preserved exactly (`skuDescriptionRaw`, and a blank pack stays blank rather than guessing). No
+`isPrimary` filter — a duplicate twin is still a real SAP code the picker may be holding.
+
+> **⚠️ Do NOT resolve the catalog via `enrichedLineItem.sku`.** That relation rides `skuId`, which
+> still points at the OLD `sku_master` and **shares no id space** with `sku_master_v2` — following it
+> renders a confidently WRONG product name and pack on a live picking bill. `skuCodeRaw` is the
+> stable natural key, never null, identical across both tables. Full reasoning and the id-space
+> evidence: the SKU-catalog section of `CLAUDE_CORE.md`. An inline warning comment sits at the lookup
+> in the route file — leave it there.
+
+**Phone-native navigation [LIVE, 2026-07-19, commits `30fbb9fc` + `6bdaff19`]:**
+
+- **Back stays in the module.** Android hardware back and iOS edge-swipe now **close the bill and
+  return to the list** instead of navigating out of `/picking`. A minimal subset of `/po`'s
+  single-authority popstate model (`CLAUDE_PLACE_ORDER.md §25`): `openDetail()` pushes **ONE** history
+  entry for the whole detail *session*, and one `popstate` handler owns every close.
+  `depthRef`/`navStateRef` are present; **`suppressPopRef` was deliberately NOT ported** — every close
+  path here converges on the same outcome (close detail, stay on `/picking`), so there is nothing to
+  disambiguate.
+- **Paging does NOT stack history entries.** Swiping or arrow-tapping through twelve bills still
+  leaves exactly one entry — a single Back returns to the list, not through every bill visited.
+- **⚠️ Three non-header exit paths must stay handled.** `handleAssign` success routes through
+  `history.back()` **guarded on `detailOpen`** (so the bulk-bar assign path, which never pushed an
+  entry, doesn't misfire one); `handleApprove` success calls it **unconditionally**; `handleUndo`
+  is unchanged and deliberately leaves the detail open. Orphan any of them and Back depth desyncs.
+- **⚠️ Nested picker sheet closes FIRST.** A back-press while the Assign-to-picker sheet floats over
+  the detail closes the **sheet**, then re-pushes to keep the single detail entry — it does not close
+  the detail underneath. Guarded on `pickerSheetOpen && detailOpen`.
+- **The bottom bar hides on the detail screen** via the shell's `hideBar` branch (`CLAUDE_UI.md §59`)
+  — `detailOpen` is lifted into `PickingBoardContext` so `SupervisorPickingShell` can pass it up. This
+  also removes the mistap risk of switching Assign/Check/Done while reading one bill. Because the bar
+  is gone, the three detail CTAs use `max(env(safe-area-inset-bottom, 0px), 16px)` (the `/po` footer
+  convention) and sit flush — they no longer pad by `MOBILE_NAV_CLEARANCE`.
+  **`MOBILE_NAV_CLEARANCE` is still imported and still used by `SHEET_GEOMETRY` for the list-view
+  sheets — do NOT remove it.**
+
+**Swipe between bills + the "N of M" counter [LIVE]:**
+
+- `openDetail(orderId, listKey)` — the signature carries a **`listKey`** (`waiting` | `needsCheck` |
+  `stillPicking` | `checked`) because the Check tab has two sections; prev/next must page the RIGHT
+  list. All four call sites pass it.
+- The index is derived **live on every render** from `activeDetailList` + `detailOrderId`, never
+  frozen at open time — `handleUndo` refetches while the detail is open, so a captured array would go
+  stale.
+- Counter is **Option F**: merged into the existing "packs · volume" summary row (already pinned,
+  never scrolls) as `‹ N of M ›`, neutral gray, with tap arrows. **Hidden when the list has one
+  item.** Teal stays reserved for the Assign CTA — this is navigation, not a primary action. Reuse
+  `detailIndex`/`activeDetailList`; do not compute a parallel index.
+- **⚠️ Gesture rules — the back gesture and the paging gesture SHARE the touch region and were
+  designed together. Do not tune one without the other:** 24px edge exclusion (an edge-start touch is
+  always the OS back gesture, never a bill change), 10px deadzone, 1.5× axis-dominance lock (so
+  vertical scrolling in the line list coexists), 80px commit threshold, **no wrap at the boundaries**.
+- Slide animation (Build B): Option-1 "slide across", `SLIDE_DRAG_FOLLOW = 0.65` finger-follow,
+  `SLIDE_MS = 130` per half (~260ms end to end). Arrow taps and swipes call the same transition, so
+  both produce an identical slide. Option 3 "card deck" was rejected — it reads as "dismissed this
+  bill" on a work tool. **Feel-tuning of these two numbers is pending real-device confirmation on the
+  floor** — they are one-number tweaks, not a redesign.
 
 **Desktop untouched (behaviour-wise):** `picking-queue.tsx`'s rendered rows/counts/selection are
 unchanged by the Checked tab. Because `lib/picking/queue.ts`'s WHERE clause is shared, widening it to
@@ -212,11 +334,16 @@ include `pick_checked` (2026-07-18) required additive guards in THREE desktop ca
 keep a checked bill from reappearing there as if untouched. No desktop Checked view was built — a
 pick_checked row has no home on desktop, by design (§7).
 
-**Picker face — "My Picks" board [LIVE]:** `components/picking/picker-my-picks-board.tsx`, mounted by
+### 5.4 Picker face — "My Picks" board
+
+**[LIVE]** `components/picking/picker-my-picks-board.tsx`, mounted by
 `app/picking/page.tsx` on the SAME mobile route when the viewer's primary role is `picker` — or,
 today, an admin/operations session using the `?view=picker&as=<id>` test hook, since no real
-picker-facing login flow has shipped yet (§7). Two tabs, **Pending / Done** — `TopBarTab` styling
-reused verbatim from the supervisor board. Three-line card only (OBD+window · dealer name ·
+picker-facing login flow has shipped yet (§7). Two tabs, **Pending / Done**, still a **TOP** strip —
+this face was NOT moved to Direction A (5.1), it keeps the shared shell's default Home/Menu/You bar.
+Its `TopBarTab` is now a **local copy** living in this file: the supervisor board's original was
+removed when its strip moved to the bottom bar, so there is no longer a shared original to point at —
+if this face is ever converted to bottom tabs, that copy goes with it. Three-line card only (OBD+window · dealer name ·
 area+articleTag) — no clock, no avatar, no footer; the Done tab additionally shows the pick time as
 his receipt. `pending`/`done` are computed server-side in `page.tsx` from the SAME `getPickingQueue()`
 rows, scoped to `pickerId` (a real FK, never a display-name match) — `pending` excludes both `isDone`
@@ -243,7 +370,8 @@ sessions — picker Mark Done, supervisor Approve + tick screen, and the Checked
    `POST /api/picking/approve`, stamps `pick_assignments.checkedAt`/`checkedById`]
 
 State 4 does **not** make the bill "exit picking" in the sense of disappearing — it moves to the
-supervisor board's **Checked tab** (§5), which is its permanent same-day record. Nothing today moves
+supervisor board's **Done tab** (§5.2 — labelled "Checked" until 2026-07-19; the stage is still
+`pick_checked`), which is its permanent same-day record. Nothing today moves
 an order past `pick_checked` to `dispatched` (§7 — that write path doesn't exist yet), so a checked
 bill simply stays visible there for the rest of the day.
 
@@ -324,15 +452,26 @@ picker-facing login flow shipped yet.
   anywhere. Kept per CORE §3 (never delete files unless instructed) specifically so the no-jump guard
   is a one-line re-wire if a future session needs it back.
 - **Cross / IGT delivery types have no pill on the mobile board** — reachable only via "All".
-- **SKU `5961032`** (`DN WS Metallic Gold 0.5L`) renders with a **null pack** on the detail screen
-  while IN-prefixed SKUs resolve fine — **confirmed a whole class, not a stray** (2026-07-17
-  discovery): sampled 500 distinct non-`IN`-prefixed raw SKU codes across active import line items,
-  **222 (44%) are missing from `sku_master` entirely**, including this one and `5911947` (one of the
-  8 already-known deleted GEN SKUs, `CLAUDE_CORE.md §13`). A blank pack is exactly the thing that
-  prevents a mis-pick — this is a real master-data coverage gap for legacy numeric SAP codes, likely a
-  `CLAUDE_IMPORT.md`-side follow-up (import a batch of legacy codes, or confirm with Chandresh/depot
-  which of the 222 are genuinely obsolete vs. just never-mastered) — not fixed here, now evidence-based
-  rather than an open guess.
+- **Blank pack on the detail screen** [LANDMINE — **REDUCED 2026-07-19, still OPEN**] — the class
+  survives; only its size changed. **Do not close this.**
+  - **Was** (2026-07-17 discovery): SKU `5961032` (`DN WS Metallic Gold 0.5L`) rendered with a null
+    pack while IN-prefixed SKUs resolved fine — confirmed a whole class, not a stray: of 500 sampled
+    distinct non-`IN`-prefixed raw SKU codes, **222 (44%) were missing from `sku_master` entirely**,
+    including `5911947` (one of the 8 known deleted GEN SKUs, `CLAUDE_CORE.md §13`).
+  - **Now** (after the `sku_master_v2` repoint, §5.3): `5961032` **resolves to 500ML — fixed**, and
+    catalog coverage of distinct ACTIVE raw SAP import codes rose from **~57% → ~73%** (0 codes lost;
+    the new table is a strict superset on the measured set). Smoke-tested: order 9909 resolved 14/14
+    lines with no blanks.
+  - **Still broken:** **~309 distinct SAP codes (~27%) resolve in NEITHER catalog table** and fall
+    back to raw SAP text with a blank pack. Same failure mode, smaller population. A blank pack is
+    exactly the thing that prevents a mis-pick — the fallback is correct behaviour, not a bug; the
+    missing master data is the bug.
+  - **Owner:** the catalog-cleanup backlog, not a Picking fix. The 309 codes are exported by
+    frequency to `docs/prompts/drafts/unknown-sku-codes-2026-07-19.csv`; the question (genuinely
+    obsolete vs. never-mastered) needs Chandresh/depot input. Tracked in `docs/ROADMAP.md`; catalog
+    detail in the SKU-catalog section of `CLAUDE_CORE.md`.
+  - **Anyone reading the repoint as "the blank-pack problem is solved" is wrong** — set that
+    expectation before shipping anything that depends on near-total resolution.
 - **`articleTag` is null on some bills** — **confirmed a real, ongoing minority pattern, not a
   handful of strays** (2026-07-17 discovery): **17% of the live picking-queue set** (111 of 663
   orders — 105 non-tint, 6 tint) have a null `articleTag`, layered on a much larger **69%
@@ -385,6 +524,8 @@ picker-facing login flow shipped yet.
   `components/shared/mobile-shell.tsx` (the file that renders the nav itself) and reused via
   `SHEET_GEOMETRY` and every bottom-pinned element. Fixed now, kept as a standing note — a repeat
   layout constant that isn't centralized on first use tends to get re-copied wrong at least once more.
+  **Still required** (2026-07-19): the detail-screen CTAs stopped using it when the bar started
+  hiding there (§5.3), but `SHEET_GEOMETRY` and the list-view sheets still do — do not remove it.
 
 **Deferred to Stage 3 [NEXT]:** supervisor recording **what he actually found** on a Checked bill —
 qty short (e.g. 8 of 10), remarks, and a message the billing operator sees so he can fix it in SAP.
@@ -400,10 +541,13 @@ on the floor for a while — nothing else in the system changes, it's a note, no
 |---|---|
 | `app/picking/page.tsx` | Responsive switch (desktop queue `hidden md:block` vs mobile board `block md:hidden`); also builds the picker "My Picks" `pending`/`done` split (excludes/includes `isChecked` — 2026-07-18) |
 | `components/picking/picking-queue.tsx` | Desktop board — visually untouched; gained `&& !r.isChecked` guards (2026-07-18) in 3 call sites so a checked bill can't leak into the unassigned table/route filter/select-all |
-| `components/picking/picking-board-mobile.tsx` | Mobile supervisor board — Assign/Check/**Checked** tabs, shared `CheckCard`, detail screen (§5) |
-| `components/picking/picker-my-picks-board.tsx` | Picker's own "My Picks" board (§5) — Pending/Done tabs; its `pending` prop is pre-filtered upstream (page.tsx) so an approved bill never reaches its "Mark done" CTA |
+| `components/picking/picking-mobile-shell.tsx` | **Direction-A wrapper (2026-07-19)** — owns `data`/`activeTab`/`refetchQueue`/`detailOpen`, computes the bottom-tab counts, fills `RoleLayoutClient`'s `workflowTabs`/`hideBar` slots; exposes `usePickingBoard()` (§5.1) |
+| `components/picking/picking-board-mobile.tsx` | Mobile supervisor board — Assign/Check/**Done** tab CONTENT (the tab strip itself now lives in the bottom bar), shared `CheckCard`, detail screen + its popstate/swipe machinery (§5.2-§5.3) |
+| `components/picking/picker-my-picks-board.tsx` | Picker's own "My Picks" board (§5.4) — Pending/Done **top** tabs, own local `TopBarTab` copy, default shell bar; its `pending` prop is pre-filtered upstream (page.tsx) so an approved bill never reaches its "Mark done" CTA |
 | `lib/picking/picker-roster.ts` | Roster/lookup for the admin "view as picker" dropdown (new file, 2026-07-17/18 build) |
-| `components/shared/mobile-shell.tsx` | Not picking-specific, but load-bearing here — exports `MOBILE_NAV_CLEARANCE`, the fixed bottom-nav clearance every bottom-pinned sheet/CTA on both mobile picking boards reads from (§7) |
+| `components/shared/mobile-shell.tsx` | Not picking-specific, but load-bearing here — the three-way bottom-bar slot (`CLAUDE_UI.md §59`) and the `MOBILE_NAV_CLEARANCE` export every bottom-pinned sheet reads from (§7) |
+| `components/shared/workflow-tab-bar.tsx` | The generic per-module bottom-tab bar Picking's three tabs render through (`CLAUDE_UI.md §59.3`) |
+| `components/shared/mobile-shell-context.tsx` | Menu/You sheets + `useMobileShell()` — how Picking's own header opens them (`CLAUDE_UI.md §59.1`) |
 | `app/api/picking/queue/route.ts` | GET — `getPickingQueue(dateParam)`, `canView` gate |
 | `app/api/picking/assign/route.ts` | POST — batch assign, sequential two-write pair per bill, never `$transaction`, test-mode notes |
 | `app/api/picking/unassign/route.ts` | POST — single-bill undo, mirrors Support's undo-dispatch two-write order |
@@ -420,4 +564,4 @@ on the floor for a while — nothing else in the system changes, it's a note, no
 
 ---
 
-*CLAUDE_PICKING.md v1.2 · Picking Module · July 2026*
+*CLAUDE_PICKING.md v1.3 · Picking Module · July 2026*

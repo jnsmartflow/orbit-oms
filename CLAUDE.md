@@ -1,7 +1,13 @@
 # CLAUDE.md — Orbit OMS Router
-# v1.3 · Entry point · Read this first · July 2026
+# v1.4 · Entry point · Read this first · July 2026 · Lives in: repo root (auto-loaded by Claude Code)
+
+**OrbitOMS — depot operations management for JSW Dulux paint distribution, Surat depot. Live at https://orbitoms.in.**
 
 This file tells you which context files to load for the work in front of you. Load the files. Confirm each by name. Then work.
+
+> **This is the ONLY router.** A duplicate at `docs/CLAUDE.md` was retired on 2026-07-19 — it had
+> drifted (stale schema version, a different domain table) and was never auto-loaded. Do not
+> recreate it; a second router only ever drifts from this one.
 
 ---
 
@@ -44,7 +50,15 @@ All context files live in `docs/` relative to repo root.
 | `/support`, `/operations/support` — gatekeeper, workflow pipeline, closed parking-stage, hold/dispatch-target, history board | `docs/CLAUDE_SUPPORT.md` |
 | `/trips`, `trip_report`, NTS trip mirror, puller/mirror function, A4 trip sheet, WhatsApp share, logistics role | `docs/CLAUDE_TRIP_REPORT.md` |
 | `/picking`, picking queue, mobile supervisor board (Assign/Check tabs), `pick_assignments`, stage ladder (`pending_picking`→`pick_assigned`), sort spine | `docs/CLAUDE_PICKING.md` |
-| `/planning`, `/warehouse`, `/admin` (incl. **Settings → Hide**), `/operations/*` (non-support) | Core only — stubs in `docs/CLAUDE_CORE.md §11-§12` |
+| `/admin` **Settings → Hide** (rules / hidden orders / tags), `obd_visibility_rules`, `app_tag_settings`, `orders.isHidden` | `docs/CLAUDE_CORE.md §7.10` + `docs/CLAUDE_UI.md §57` (+ `docs/CLAUDE_MAIL_ORDERS.md §21` for tag-gating) |
+| SKU catalog — `sku_master_v2`, old `sku_master`, which of the THREE sku-ish tables you actually mean | `docs/CLAUDE_CORE.md §7.1.c` (+ the id-space landmine in `§13` — read it before any repoint) |
+| `/planning`, `/warehouse`, `/admin` (other), `/operations/*` (non-support) | Core only — stubs in `docs/CLAUDE_CORE.md §11-§12` |
+
+If unsure which domain a task belongs to, **ask before loading** rather than guessing.
+
+**`docs/ROADMAP.md` is NOT auto-loaded.** It holds planned/deferred work, grouped by module. Attach
+it manually when planning a future feature — and add to it rather than parking future work in a
+canonical file.
 
 **Cross-cutting work** (SAP import enrichment touches MO + imports; dispatch data from MO flows to orders table; the Hide feature spans CORE schema + UI + MAIL_ORDERS): load both relevant domain files.
 
@@ -54,8 +68,14 @@ All context files live in `docs/` relative to repo root.
 
 1. Read every file listed above for your task. `CLAUDE.md` at repo root, the rest at `docs/CLAUDE_*.md`.
 2. Respond with "Files read: CLAUDE.md, docs/CLAUDE_CORE.md, docs/CLAUDE_UI.md, [others]." before any other output.
-3. Confirm schema version (v27.9), parser version (v6.5 if MO work), UI version (v5.8).
-4. If any referenced file is missing or seems out of date, stop and ask.
+3. **State the versions you actually READ — do not quote them from this router.** Every canonical
+   file carries its own version in its header (line 2) and repeats it in its footer. `CLAUDE_CORE.md`'s
+   header is the authority for the current **schema** version; the domain files carry the same stamp,
+   plus their own file version (and parser/enrichment versions in `CLAUDE_MAIL_ORDERS.md`, UI version
+   in `CLAUDE_UI.md`). A number hardcoded here goes stale every cycle — read it live, every session.
+4. If any referenced file is missing, or its header disagrees with `CLAUDE_CORE.md`'s schema stamp,
+   stop and ask.
+5. Wait for the task instruction before generating any code.
 
 ---
 

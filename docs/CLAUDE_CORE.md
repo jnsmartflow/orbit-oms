@@ -1,5 +1,5 @@
 # CLAUDE_CORE.md — OrbitOMS Core
-# v80 · Schema v27.10 · July 2026 · Lives in: orbit-oms/docs/
+# v81 · Schema v27.11 · July 2026 · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_UI.md
 
 ---
@@ -186,9 +186,9 @@ Primary role drives login redirect and href overrides. Additional rows add nav i
 
 ---
 
-## 7. Database schema — v27.10
+## 7. Database schema — v27.11
 
-Versions: v21 base → v22 (mo_*) → v23 (orders dispatch) → v24 (customer match) → v25 (split) → v26 (mo_order_remarks) → v26.1 (isLocked) → v26.2 (mo_line_status) → v26.3 (carton + piecesPerCarton) → v26.4 (mo_learned_customers) → v26.5 (orders.orderDateTime) → v26.6 (user_roles + manual_tint_entries + users.phone + mo_sku_lookup.refDescription) → v27.0 (attendance foundation) → v27.1 (attendance settings hardening) → v27.2 (OT workflow + 2026-05-13 place-order v2 tables) → v27.3 (sampling_register + sampling_recipes + sampling_usage_log; orders.isRemoved + delivery_challans.isVoided; tint_skip_events + tint_pause_events; tint_assignments + import_raw_line_items netWeight/totalWeight) → v27.4 (sampling_usage_log.deliveryNumber backfill + tinter_issue_entries.samplingNo/shadeName) → v27.5 (customer_sales_officers + linkedSalesOfficerId on delivery_point_contacts + 3 columns on delivery_challan_formulas + sampling_recipes.packCode nullable with NULLS NOT DISTINCT + mo_sku_lookup_v2.isPrimary + mo_order_form_index_v2.mobileFamily) → v27.6 (mo_order_form_index_v2.region; Hide feature: `obd_visibility_rules` + `app_tag_settings` tables + orders.isHidden/hiddenById/hiddenReason/hiddenAt — §7.10) → v27.7 (Support gatekeeper + Hold/Dispatch-Target: orders.mailMatched; orders.heldAt, dispatchTargetDate, dispatchWindowId, arrivalSlotId; new `dispatch_slot_master` table — §7.4) → **v27.8** (Trip Report module, 2026-07-04/06: new standalone `trip_report` table — full columns → `CLAUDE_TRIP_REPORT.md §3`, §7.11 pointer here; `trip_report_delivery_no_dis_date_key` UNIQUE(deliveryNo, disDate); `mirror_trip_report_today` Postgres function) → **v27.9** (Support ship-to override, 2026-07-07: `orders.shipToOverrideCustomerId` Int? FK → `delivery_point_master`, relation `shipToOverrideCustomer` / `@relation("OrderShipToOverride")` — see dual-relation note in §7.3; `mo_orders.shipToOverrideCustomerId` Int? FK → `delivery_point_master`, relation `shipToOverrideCustomer` / `@relation("MoOrderShipToOverride")` — mo_orders' first relation to that table, no dual-relation trap) → **v27.10** (Picking Stage 2 — 2026-07-17/18 sessions, already shipped in code: `pick_assignments.checkedAt` DateTime? `@map("checked_at")` + `checkedById` Int? `@map("checked_by_id")`, relation `checkedBy` / `@relation("PickAssignmentCheckedBy")` — THIRD named relation from `pick_assignments` to `users`, alongside `picker`/`PickAssignmentPicker` and `assignedBy`/`PickAssignmentAssignedBy`, all correctly named on both sides today — no ambiguity. Supports the supervisor Approve step of the picking floor workflow — `CLAUDE_PICKING.md §6`).
+Versions: v21 base → v22 (mo_*) → v23 (orders dispatch) → v24 (customer match) → v25 (split) → v26 (mo_order_remarks) → v26.1 (isLocked) → v26.2 (mo_line_status) → v26.3 (carton + piecesPerCarton) → v26.4 (mo_learned_customers) → v26.5 (orders.orderDateTime) → v26.6 (user_roles + manual_tint_entries + users.phone + mo_sku_lookup.refDescription) → v27.0 (attendance foundation) → v27.1 (attendance settings hardening) → v27.2 (OT workflow + 2026-05-13 place-order v2 tables) → v27.3 (sampling_register + sampling_recipes + sampling_usage_log; orders.isRemoved + delivery_challans.isVoided; tint_skip_events + tint_pause_events; tint_assignments + import_raw_line_items netWeight/totalWeight) → v27.4 (sampling_usage_log.deliveryNumber backfill + tinter_issue_entries.samplingNo/shadeName) → v27.5 (customer_sales_officers + linkedSalesOfficerId on delivery_point_contacts + 3 columns on delivery_challan_formulas + sampling_recipes.packCode nullable with NULLS NOT DISTINCT + mo_sku_lookup_v2.isPrimary + mo_order_form_index_v2.mobileFamily) → v27.6 (mo_order_form_index_v2.region; Hide feature: `obd_visibility_rules` + `app_tag_settings` tables + orders.isHidden/hiddenById/hiddenReason/hiddenAt — §7.10) → v27.7 (Support gatekeeper + Hold/Dispatch-Target: orders.mailMatched; orders.heldAt, dispatchTargetDate, dispatchWindowId, arrivalSlotId; new `dispatch_slot_master` table — §7.4) → **v27.8** (Trip Report module, 2026-07-04/06: new standalone `trip_report` table — full columns → `CLAUDE_TRIP_REPORT.md §3`, §7.11 pointer here; `trip_report_delivery_no_dis_date_key` UNIQUE(deliveryNo, disDate); `mirror_trip_report_today` Postgres function) → **v27.9** (Support ship-to override, 2026-07-07: `orders.shipToOverrideCustomerId` Int? FK → `delivery_point_master`, relation `shipToOverrideCustomer` / `@relation("OrderShipToOverride")` — see dual-relation note in §7.3; `mo_orders.shipToOverrideCustomerId` Int? FK → `delivery_point_master`, relation `shipToOverrideCustomer` / `@relation("MoOrderShipToOverride")` — mo_orders' first relation to that table, no dual-relation trap) → **v27.10** (Picking Stage 2 — 2026-07-17/18 sessions, already shipped in code: `pick_assignments.checkedAt` DateTime? `@map("checked_at")` + `checkedById` Int? `@map("checked_by_id")`, relation `checkedBy` / `@relation("PickAssignmentCheckedBy")` — THIRD named relation from `pick_assignments` to `users`, alongside `picker`/`PickAssignmentPicker` and `assignedBy`/`PickAssignmentAssignedBy`, all correctly named on both sides today — no ambiguity. Supports the supervisor Approve step of the picking floor workflow — `CLAUDE_PICKING.md §6`) → **v27.11** (Flat SKU catalog, 2026-07-19, commit `916fcd39`: new standalone `sku_master_v2` table — 17 columns, FLAT, zero relations, `material` `@unique` as the natural key; mirrors `mo_sku_lookup_v2` MINUS `containerType`, PLUS `isActive` (new lifecycle flag) and `updatedAt` (`DateTime?`, hand-maintained, deliberately NO `@updatedAt`). Both timestamps carry `@db.Timestamptz(6)` — required, or Prisma emits plain `timestamp` and mismatches the live column. Built + poured via `docs/prompts/drafts/build-sku-master-v2-2026-07-19.sql`: 1,743 rows, 25 retired TOOLS `645xxxx` rows marked `isActive=false`. Old `sku_master` + its 3 FK helpers are now dead to operations, pending drop — §7.1.c).
 
 ### 7.1 Setup / Master
 
@@ -203,6 +203,8 @@ users                      Depot staff. bcryptjs 10 rounds. roleId FK. phone TEX
                            attendanceExempt, attendanceTestUser.
 
 product_category, product_name, base_colour, sku_master
+                           ⚠ ALL FOUR DEAD to operations, pending drop — see §7.1.c
+sku_master_v2              THE live operational SKU catalog (v27.11). FLAT, keyed by `material`.
 transporter_master, vehicle_master
 delivery_type_master       Local | Upcountry | IGT | Cross
 slot_master                Slots 1-5
@@ -241,6 +243,89 @@ PackCode                   L_1 | L_4 | L_10 | L_20 | L_18 | L_18_5 | L_3_7 | ML_
 TinterType                 TINTER | ACOTONE
 ```
 
+### 7.1.c SKU catalog — THREE tables, keep them straight [v27.11, 2026-07-19]
+
+The single most confused area in this app. **Three different SKU-ish tables exist and they are not
+versions of each other.** Read this before touching anything with "sku" in its name.
+
+| # | Table | Whose engine | Status |
+|---|---|---|---|
+| 1 | `mo_sku_lookup` (v1) + the keyword tables | The **EMAIL PARSER** — normal typed customer emails | **OUT OF SCOPE. Never touched. Stays.** |
+| 2 | `mo_sku_lookup_v2` | **Order entry** — `/po`, `/place-order`, `/order` + the app-email fast lane | Live, unchanged |
+| 3 | **`sku_master_v2`** | **Operations** — the live operational catalog | **[LIVE]** since 2026-07-19 |
+| — | `sku_master` (OLD, normalised) + `product_category` + `product_name` + `base_colour` | formerly operations | **DEAD to operations. Pending drop.** |
+
+> ⚠ **Naming trap:** the owner sometimes calls the OLD `sku_master` "version one". That is **NOT**
+> `mo_sku_lookup` (v1). Table 1 belongs to the email parser and is not part of this story at all.
+> Confirm which table is meant before acting on the phrase.
+
+**`sku_master_v2` — 17 columns** (`prisma/schema.prisma`, no `@map`/`@@map` anywhere):
+
+```
+id               Int       PK autoincrement (surrogate — the machine pointer)
+material         String    @unique   ← THE NATURAL KEY (SAP material code)
+description      String              (serves old sku_master.skuName)
+category         String              (family: WS / GLOSS / TOOLS … — replaces product_category FK)
+product          String              (SAP-clean name — replaces product_name FK)
+baseColour       String              ('' when none, never NULL — replaces base_colour FK)
+packCode         String              TEXT, not the PackCode enum ("1", "500", "12")
+unit             String?             "L" | "ML" | "KG" | "GM" | "PC"
+refMaterial      String?
+refDescription   String?
+paintType        String?
+materialType     String?
+piecesPerCarton  Int?                (serves old sku_master.unitsPerCarton)
+isPrimary        Boolean  @default(true)   duplicate-twin flag
+isActive         Boolean  @default(true)   NEW — lifecycle/discontinued flag
+createdAt        DateTime @default(now()) @db.Timestamptz(6)
+updatedAt        DateTime?              @db.Timestamptz(6)
+```
+
+- **Zero Prisma relations.** Deliberately flat — no FKs, no helper tables. The catalog is maintained
+  by a single admin via SQL/CSV, so form-dropdown FKs bought nothing and added friction.
+- **`isPrimary` vs `isActive` answer DIFFERENT questions — do not conflate.** `isPrimary=false` =
+  "another row is the one to show for this product" (duplicate twin). `isActive=false` =
+  "discontinued, no longer sellable". The 25 retired TOOLS `645xxxx` codes are the known case where
+  live v2 data had conflated them (they were switched off via `isPrimary` only, because v2 had no
+  lifecycle flag); they now carry `isActive=false` with `isPrimary` left as-is.
+- **`updatedAt` has NO `@updatedAt` directive** — hand-maintained by SQL, not auto-stamped. Keep it
+  manual.
+- **`containerType` was NOT carried forward** from old `sku_master` — it had no operational reader,
+  only the retiring admin CRUD form.
+- **`skuDisplayName` deliberately does NOT exist yet.** The friendly-name-on-picking-card feature is
+  designed and proven but **deferred** — see `docs/ROADMAP.md`. Do not add the column speculatively.
+
+**`material` (the SAP code) is the natural key for every repoint — never an internal row id.** It is
+identical across both tables, never null on a raw line (`import_raw_line_items.skuCodeRaw`), and is
+the ONLY safe join. This is the spine of the whole migration; see the id-space landmine in §13.
+
+**Live readers of `sku_master_v2`** (all resolve by `material`, all keep a raw-text fallback):
+
+| Reader | File |
+|---|---|
+| Import — recognition gates (preview + confirm, both paths) | `app/api/import/obd/route.ts` |
+| Picking detail screen | `app/api/picking/order/[orderId]/route.ts` |
+| Order-detail panel (shared by **Tint Manager + Support**) | `app/api/orders/[id]/detail/route.ts` |
+| Removed-lines view | `app/api/orders/[id]/removed-lines/route.ts` |
+| Support order GET | `app/api/support/orders/[id]/route.ts` |
+| Admin dashboard count tile (`isActive` count) | `app/(admin)/admin/page.tsx` |
+
+**The ONLY live readers of old `sku_master`** are the admin SKU-edit CRUD pages — `/api/admin/skus/*`
+plus the four `skus/page.tsx` browse pages (admin, support, tint-manager, dispatcher). They read
+their own table and never the bookmark; they retire **with** the table. Confirmed non-readers of the
+catalog entirely (they read the raw imported line, `skuDescriptionRaw`): Tint Manager, Tint Operator,
+Delivery Challan, Sampling Library, the Support board list, Warehouse, Trip Report.
+
+**Coverage reality — set expectations before quoting a number.** Against distinct ACTIVE raw SAP
+import codes (~1,152): old `sku_master` ~57%, `sku_master_v2` ~73%, **~309 codes (~27%) in NEITHER**
+→ raw-text fallback. The often-quoted **"~99%" figure is WRONG for this population** — it belongs to
+Table C's coverage of app-format **email** lines (`CLAUDE_MAIL_ORDERS.md §4.1`). The 309-code cleanup
+is a ROADMAP item.
+
+**Still open (future "retire old table" session):** drop old `sku_master` + its 3 FK helpers, drop the
+`skuId` column + relation, retire the admin CRUD surface, rename `sku_master_v2` → `sku_master`. Read
+every §13 landmine below before starting it.
+
 ### 7.2 Import (full detail → `CLAUDE_IMPORT.md`)
 
 ```
@@ -248,7 +333,9 @@ import_batches             One per import session
 import_raw_summary         One per OBD. smuNumber, soNumber, obdEmailDate, obdEmailTime
 import_raw_line_items      Per line. lineId, skuCodeRaw, batchCode, netWeight, totalWeight
                            lineStatus 'active'|'removed_by_import', removedAt, removedReason
-import_enriched_line_items Lines joined with sku_master
+import_enriched_line_items Per raw line. skuId Int? — ⚠ VESTIGIAL: written null since 2026-07-19,
+                           read by nothing live. Catalog now resolved by `material`, NOT this FK.
+                           lineWeight is a "recognised?" flag (0/null), NOT a mass. See §13.
 import_obd_query_summary   Per-OBD totals
 import_shadow_log          INSERT-ONLY shadow log
 ```
@@ -674,6 +761,66 @@ Full detail in domain files. Cross-reference only here.
 
 Existing in code but intentionally disabled, broken, or stale. Do not "fix" without explicit instruction.
 
+### 🚨 THE ID-SPACE LANDMINE — read before touching the SKU catalog
+
+> ## DO NOT repoint `import_enriched_line_items.skuId` to `sku_master_v2`.
+>
+> **The two tables assign COMPLETELY DIFFERENT id numbers to the same material code.** This is not
+> "a few collisions" — it is **zero overlap**, verified read-only against production, not reasoned:
+>
+> ```
+> === ID-SPACE COMPARISON (old id → what lives at that id in NEW) ===
+>   same id, SAME material code  :     0     ← not one. anywhere.
+>   same id, DIFFERENT material  :   477     ← silent mispoint
+>   old id absent from new table :   574     ← FK would dangle
+>
+> === Weighted by live pointers (5,000-row sample) ===
+>   pointer would still be CORRECT :     0
+>   pointer would MISPOINT         : 2,065
+>   pointer would DANGLE           : 2,935
+> ```
+>
+> These are not near-misses — `IN28916271` vs `5906723` are different *products*. A naive FK repoint
+> turns **every historical enriched line** into a confidently-WRONG product name and pack size on a
+> live picking bill and the removed-lines view. That is far worse than the current blank, which at
+> least reads as "unknown" (`CLAUDE_PICKING.md §7` treats a blank pack as a mis-pick **preventer**).
+>
+> **The bookmark is retired by RESOLVING VIA `material` — never by moving the FK.** Every repointed
+> reader batch-matches `sku_master_v2.material` against `import_raw_line_items.skuCodeRaw`. Inline
+> warning comments were left at all four former read sites — **leave them there.**
+>
+> Cause: the pour ordered rows by `mo_sku_lookup_v2`'s own sequence, which has no relationship to the
+> order `sku_master` was built in over the preceding years. Evidence:
+> `docs/prompts/drafts/code-discovery-2026-07-19b-catalog-repoint.md`.
+
+Supporting facts for the same area:
+
+- **`import_enriched_line_items.skuId` is write-only** — written `null` since 2026-07-19, read by
+  **nothing live**: zero runtime paths read the column, traverse the `sku` relation off an enriched
+  line, or filter on it (four-vector sweep, `code-discovery-2026-07-19h`). The only readers anywhere
+  are two underscore-prefixed scratch diagnostics (`_diagnose-sku-5961032.ts`,
+  `_diagnose-skuid-collision.ts`) — outside the `tsc` gate, never imported by the app. **This does
+  NOT authorise dropping the column or the relation** — that is bundled with the retire-old-table
+  session. Keeping the column is what makes rollback a one-commit revert.
+- **`lineWeight` is NOT a weight.** It has never held a mass — a recognised line stores literal `0`,
+  an unrecognised one `null`. There is no `grossWeightPerUnit` column on either catalog table. It is
+  in practice a "was this code recognised?" flag; every reader is display-only and tolerates null,
+  and nothing does arithmetic on it. The name is the trap. Detail: `CLAUDE_IMPORT.md §8.1`.
+- **Tint's `skuId` is a FALSE POSITIVE — never repoint tint.** The `skuId` identifiers throughout
+  tint code **alias `rawLineItemId`**, not a catalog id — proven at
+  `components/tint/tint-operator-content.tsx:2479`/`:2503` (`skuId: li.rawLineItemId as number`) and
+  compared back against `rawLineItemId` at `:1728`. The value round-trips through
+  `tint_assignments.currentProgress`/`lastProgressSnapshot` JSONB as `{ items: [{ skuId, doneQty }] }`.
+  No tint path contains a single `sku_master` reference. A grep for `skuId` WILL light up tint — it
+  is noise, every time.
+- **`scripts/normalise-sampling-data.ts:313` still reads old `sku_master`** and — unlike the
+  underscore scratch scripts — has **no underscore prefix**, so `tsconfig.json`'s `exclude`
+  (`scripts/_*.ts`) does not cover it: **it is inside the `tsc --noEmit` gate.** At the DROP step it
+  will fail to compile and block every commit until dealt with. Known pre-DROP risk, not a bug today.
+  Cross-ref `CLAUDE_SAMPLING_LIBRARY.md §3`.
+
+---
+
 - **`lib/slot-cascade.ts`, `lib/day-boundary.ts`** — present but never called. If re-enabled, must skip tint orders.
 - **`operatorSequence` field** on `tint_assignments`/`order_splits` — exists in schema, no longer used for sorting. Sort by `sequenceOrder` only.
 - **`delivery_type_slot_config` table** — exists but not consumed anywhere.
@@ -734,4 +881,4 @@ Engineering note: a parallel session owns `scripts/_*` scratch files (sampling/r
 
 ---
 
-*CORE v80 · Schema v27.10 · OrbitOMS*
+*CORE v81 · Schema v27.11 · OrbitOMS*

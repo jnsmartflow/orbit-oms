@@ -1,5 +1,5 @@
 # CLAUDE_SAMPLING_LIBRARY.md — Sampling Library Module
-# v1.3 · Schema v27.10 · June 2026 · Phase 4 shipped 2026-05-25 · Cohort A+B restore 2026-05-27
+# v1.4 · Schema v27.11 · July 2026 · Phase 4 shipped 2026-05-25 · Cohort A+B restore 2026-05-27
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -145,7 +145,27 @@ INDEX (siteNameRaw)
 - Schema v27.4 column `sampling_usage_log.deliveryNumber` added
 - Data normalisation: case-variant deduplication on SKUs / dealer names / site names
 - Confidence-banded approach: high (case-only) auto-applied; medium (whitespace/hyphen variants) suggested; low (Levenshtein ≤ 2) manual review
-- Source of truth: `sku_master.materialCode` for SKUs; `delivery_point_master.customerName` for dealer/site
+- Source of truth: `sku_master.skuCode` for SKUs; `delivery_point_master.customerName` for dealer/site
+
+> **Correction (2026-07-19 docs pass) — two errors were in this line:**
+>
+> 1. **There is no `materialCode` column on `sku_master`.** The column is and always was
+>    **`skuCode`** (`String @unique`, verified in `prisma/schema.prisma`). Corrected above.
+> 2. **This was a ONE-TIME offline normalisation input, not a live dependency.** No Sampling Library
+>    runtime code reads `sku_master` — grep-confirmed. The live module reads the **raw imported
+>    line** (`skuCodeRaw` on `sampling_usage_log`, and `import_raw_line_items` upstream), never the
+>    operational catalog. Sampling is a confirmed **non-reader** of the catalog, alongside Tint
+>    Manager/Operator, Delivery Challan, the Support board, Warehouse, and Trip Report.
+>
+> **⚠ PRE-DROP RISK — `scripts/normalise-sampling-data.ts:313`.** This is the ONE remaining reader
+> of old `sku_master` in this module: `prisma.sku_master.findMany({ select: { skuCode: true } })`.
+> Unlike the underscore-prefixed scratch diagnostics, it is a **committed script with no underscore
+> prefix**, so `tsconfig.json`'s `exclude` (`scripts/_*.ts`) does **not** cover it — **it is inside
+> the `tsc --noEmit` gate.** When old `sku_master` is eventually dropped and its Prisma model
+> removed, this file **will fail to compile** and block every commit until it is dealt with.
+>
+> Recorded as a known risk for that future session, **not a fix** — do not touch the script now. The
+> old table still exists and the script still compiles; there is nothing broken today.
 
 ### Phase 4 — Live operator integration (SHIPPED 2026-05-25)
 
@@ -518,4 +538,4 @@ Sampling Library is **operator-created runtime data, NOT CSV-seeded** — merges
 
 ---
 
-*Sampling Library v1.3 · Schema v27.10 · Phase 4 shipped + Cohort A+B restored · OrbitOMS*
+*Sampling Library v1.4 · Schema v27.11 · July 2026 · Phase 4 shipped + Cohort A+B restored · OrbitOMS*
