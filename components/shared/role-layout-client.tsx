@@ -20,6 +20,10 @@ interface RoleLayoutClientProps {
   workflowTabs?: WorkflowTab[];
   activeTabKey?: string;
   onTabChange?: (key: string) => void;
+  // Detail-interactions Build A (2026-07-19) — optional pass-through to
+  // MobileShell's hideBar slot. Undefined on every current call site except
+  // Picking's detail screen.
+  hideBar?: boolean;
 }
 
 export function RoleLayoutClient({
@@ -31,6 +35,7 @@ export function RoleLayoutClient({
   workflowTabs,
   activeTabKey,
   onTabChange,
+  hideBar,
 }: RoleLayoutClientProps) {
   return (
     <div className="min-h-screen bg-white overflow-hidden">
@@ -50,6 +55,7 @@ export function RoleLayoutClient({
           workflowTabs={workflowTabs}
           activeTabKey={activeTabKey}
           onTabChange={onTabChange}
+          hideBar={hideBar}
         />
         <div className="min-h-screen overflow-hidden pb-[76px] md:pb-0 md:ml-[72px] md:max-w-[calc(100vw-72px)]">
           {children}

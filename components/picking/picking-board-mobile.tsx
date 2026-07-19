@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Search, ChevronDown, Check, Star, Zap, ArrowRight, ChevronLeft, LayoutGrid } from "lucide-react";
 import { toast } from "sonner";
 import { MOBILE_NAV_CLEARANCE } from "@/components/shared/mobile-shell";
@@ -45,6 +45,27 @@ const SOFT_CARD_SHADOW = "0 1px 2px rgba(16,24,40,0.04), 0 3px 12px rgba(16,24,4
 const NO_PACK_KEY = "__no_pack__";
 
 type TypeFilter = "All" | "Local" | "Upcountry";
+
+// Detail-interactions Build A (2026-07-19) — which of the four already-
+// memoized lists (waitingRows/needsCheck/stillPicking/checked) a bill's
+// detail was opened from. Needed so goNext/goPrev page through the SAME
+// list the tapped card came from — the Check tab has two sections sharing
+// one activeTab value, so activeTab alone can't disambiguate.
+type DetailListKey = "waiting" | "needsCheck" | "stillPicking" | "checked";
+
+// Swipe tuning for the detail screen's prev/next-bill gesture.
+// EDGE_EXCLUSION: touches starting within this many px of either screen
+// edge are never claimed — leaves the OS's own edge-swipe-back untouched.
+// DEADZONE: movement below this (on both axes) is ignored, so ordinary taps
+// never trigger axis-lock. Once past it, the gesture locks to whichever axis
+// dominates (horizontal only if dx > dy * 1.5) — a vertical drag inside the
+// line-items list hands off to the browser's native scroll immediately.
+// THRESHOLD: total horizontal drag needed at touchend to commit to a page
+// change; short of it, the gesture is a no-op (no snap-back animation needed
+// since nothing ever visually followed the finger — see the touch handlers).
+const SWIPE_EDGE_EXCLUSION_PX = 24;
+const SWIPE_DEADZONE_PX = 10;
+const SWIPE_THRESHOLD_PX = 80;
 
 // Fixed locale — same rationale as picking-queue.tsx (the desktop sibling):
 // identical thousands-separator output depot PC vs Vercel, regardless of
@@ -375,7 +396,11 @@ export function PickingBoardMobile(): React.JSX.Element {
   // Shared via context so the bottom-bar tab counts and this board's cards
   // read the exact same fetch and can never drift. Same identifier names as
   // the pre-Stage-3 local state, so every usage below is unchanged.
-  const { data, loading, error, activeTab, refetchQueue } = usePickingBoard();
+  // Detail-interactions Build A — detailOpen/setDetailOpen now also come
+  // from context (lifted up to SupervisorPickingShell, which needs the
+  // boolean to drive RoleLayoutClient's hideBar). Same identifier names as
+  // before, so every existing usage below is unchanged.
+  const { data, loading, error, activeTab, refetchQueue, detailOpen, setDetailOpen } = usePickingBoard();
   // Direction-A header (avatar/grid/search) reaches the shared Menu/You
   // sheets + the signed-in user's initials via the Stage-1 provider —
   // userInitials is a Stage-3/4 addition to that context's value.
@@ -431,7 +456,8 @@ export function PickingBoardMobile(): React.JSX.Element {
   // slide, per the approved mockup) rather than conditionally rendered, so
   // the board underneath (filters + scroll position) is never torn down.
   const [detailOrderId, setDetailOrderId] = useState<number | null>(null);
-  const [detailOpen, setDetailOpen] = useState(false);
+  // Which list this bill's detail was opened from — see DetailListKey.
+  const [detailListKey, setDetailListKey] = useState<DetailListKey>("waiting");
   const [lineItems, setLineItems] = useState<LineItem[] | null>(null);
   const [lineItemsLoading, setLineItemsLoading] = useState(false);
   const [lineItemsError, setLineItemsError] = useState<string | null>(null);
@@ -455,6 +481,34 @@ export function PickingBoardMobile(): React.JSX.Element {
   // the current selection) or single (detail screen's own CTA). Decoupled
   // from `selected` so the two flows never fight over the same state.
   const [assignTarget, setAssignTarget] = useState<PickingQueueRow[]>([]);
+
+  // ── Detail-interactions Build A — in-module back navigation ─────────────
+  // Copies the ESSENCE of /po's single-authority popstate model (discovery
+  // 2026-07-19 "po-mobile-mechanics" §3), deliberately scaled down: this
+  // board has exactly ONE history-aware overlay (the detail screen) plus one
+  // narrow nested case (the Assign-to-picker sheet opened FROM detail), so
+  // there's no need for /po's full suppressPopRef machinery — every
+  // history.back() call here (button tap or real gesture) is meant to
+  // trigger the exact same close logic, with nothing to disambiguate.
+  //
+  // depthRef counts entries WE pushed above the base /picking URL — kept
+  // (rather than dropped, since this build only ever pushes 0 or 1) so a
+  // future session extending back-nav to the other 4 sheets can reuse it.
+  // navStateRef mirrors detailOpen/pickerSheetOpen for the popstate handler
+  // to read live, never a stale closure (same reason /po uses navStateRef).
+  const depthRef = useRef(0);
+  const navStateRef = useRef({ detailOpen: false, pickerSheetOpen: false });
+
+  // Push one entry at the CURRENT url (pushState with no url arg navigates
+  // nowhere) — a "back" from it is purely an in-app state change, never a
+  // real page transition. Only openDetail() calls this; goNext/goPrev swap
+  // detailOrderId WITHOUT pushing, so paging through several bills still
+  // costs exactly one history entry for the whole detail "session".
+  function pushScreen(): void {
+    if (typeof window === "undefined") return;
+    window.history.pushState({ pickingScreen: "detail" }, "");
+    depthRef.current += 1;
+  }
 
   // Picker roster for the assign sheet — same endpoint desktop uses, fetched
   // once (the picker roster doesn't change within a session).
@@ -712,20 +766,156 @@ export function PickingBoardMobile(): React.JSX.Element {
     return data.rows.find((r) => r.orderId === detailOrderId) ?? null;
   }, [data, detailOrderId]);
 
-  function openDetail(orderId: number): void {
+  // Shared reset used by BOTH the original open (openDetail, below) and
+  // paging to a neighbour bill (goNext/goPrev) — same per-bill ephemeral
+  // state (search/pack-filter/ticks) must never carry from one bill to the
+  // next either way. Re-setting detailOpen(true) on every call is harmless
+  // (already true during goNext/goPrev).
+  function switchDetailTo(orderId: number, listKey: DetailListKey): void {
     setDetailOrderId(orderId);
+    setDetailListKey(listKey);
     setDetailOpen(true);
-    // Fresh screen, fresh filters — a stale search/pack filter from a
-    // previously-viewed bill must never carry into this one.
     setDetailSearching(false);
     setDetailQuery("");
     setActivePackFilter("ALL");
     setCheckedLineIds(new Set());
   }
 
+  // Detail-interactions Build A — `listKey` says which of the four already-
+  // memoized lists this bill's card came from (Check tab has two sections
+  // sharing one activeTab value, so activeTab alone can't disambiguate).
+  // Pushes ONE history entry for the whole detail "session" — see pushScreen.
+  function openDetail(orderId: number, listKey: DetailListKey): void {
+    switchDetailTo(orderId, listKey);
+    pushScreen();
+  }
+
+  // The REAL close — only ever called from the popstate handler below, so
+  // every close path (header Back tap, Android back, iOS edge-swipe) runs
+  // through this exact same logic, never a direct setDetailOpen(false).
   function closeDetail(): void {
     setDetailOpen(false);
   }
+
+  // Live-resolved list for the open detail's prev/next paging — re-picked
+  // every render from `detailListKey`, off the SAME already-memoized arrays
+  // the board itself renders, so a post-Undo refetch is reflected
+  // automatically (never a frozen snapshot captured at open time).
+  const activeDetailList: PickingQueueRow[] = useMemo(() => {
+    switch (detailListKey) {
+      case "waiting": return filteredWaiting;
+      case "needsCheck": return filteredNeedsCheck;
+      case "stillPicking": return filteredStillPicking;
+      case "checked": return filteredChecked;
+    }
+  }, [detailListKey, filteredWaiting, filteredNeedsCheck, filteredStillPicking, filteredChecked]);
+
+  const detailIndex = useMemo(
+    () => activeDetailList.findIndex((r) => r.orderId === detailOrderId),
+    [activeDetailList, detailOrderId],
+  );
+
+  // No push/pop here on purpose (approved plan) — paging through several
+  // bills via swipe still costs exactly ONE history entry for the whole
+  // detail session; a single Back press from bill #3 returns straight to
+  // the list, not to bill #2. No-ops past either end of the list.
+  function goNextBill(): void {
+    if (detailIndex === -1 || detailIndex >= activeDetailList.length - 1) return;
+    switchDetailTo(activeDetailList[detailIndex + 1].orderId, detailListKey);
+  }
+  function goPrevBill(): void {
+    if (detailIndex <= 0) return;
+    switchDetailTo(activeDetailList[detailIndex - 1].orderId, detailListKey);
+  }
+
+  // ── Swipe-between-bills touch handlers ───────────────────────────────────
+  // Attached to the detail screen's root. A plain tap (movement under
+  // SWIPE_DEADZONE_PX on both axes) never reaches the axis-lock branch, so
+  // preventDefault() never fires for taps — every button inside the swipe
+  // zone (Back, search toggle, Assign/Undo/Approve, line-item ticks) keeps
+  // working untouched. touchStateRef is a plain ref, not state — this is a
+  // per-gesture scratchpad, re-render would just be wasted work.
+  const touchStateRef = useRef<{ startX: number; startY: number; tracking: boolean; locked: boolean } | null>(null);
+
+  function handleDetailTouchStart(e: React.TouchEvent<HTMLDivElement>): void {
+    const t = e.touches[0];
+    if (!t) return;
+    const vw = window.innerWidth;
+    if (t.clientX < SWIPE_EDGE_EXCLUSION_PX || t.clientX > vw - SWIPE_EDGE_EXCLUSION_PX) {
+      // Starts inside the edge-exclusion strip — leave it entirely to the
+      // OS's own edge-swipe-back gesture; never claim or track it.
+      touchStateRef.current = null;
+      return;
+    }
+    touchStateRef.current = { startX: t.clientX, startY: t.clientY, tracking: true, locked: false };
+  }
+
+  function handleDetailTouchMove(e: React.TouchEvent<HTMLDivElement>): void {
+    const state = touchStateRef.current;
+    if (!state || !state.tracking) return;
+    const t = e.touches[0];
+    if (!t) return;
+    const dx = t.clientX - state.startX;
+    const dy = t.clientY - state.startY;
+    if (!state.locked) {
+      if (Math.abs(dx) < SWIPE_DEADZONE_PX && Math.abs(dy) < SWIPE_DEADZONE_PX) return;
+      if (Math.abs(dx) > Math.abs(dy) * 1.5) {
+        state.locked = true;
+      } else {
+        // Vertical-dominant — hand off to the line-items list's own native
+        // scroll; stop tracking so later touchmove events are a no-op.
+        state.tracking = false;
+        return;
+      }
+    }
+    // Locked horizontal — suppress the page's own scroll/bounce while paging.
+    e.preventDefault();
+  }
+
+  function handleDetailTouchEnd(e: React.TouchEvent<HTMLDivElement>): void {
+    const state = touchStateRef.current;
+    touchStateRef.current = null;
+    if (!state || !state.locked) return;
+    const t = e.changedTouches[0];
+    if (!t) return;
+    const dx = t.clientX - state.startX;
+    if (Math.abs(dx) < SWIPE_THRESHOLD_PX) return;
+    if (dx < 0) goNextBill();
+    else goPrevBill();
+  }
+
+  // ── Detail-interactions Build A — the ONE popstate authority ─────────────
+  // Keeps navStateRef synced to live detailOpen/pickerSheetOpen so the
+  // handler (registered once below) never reads a stale closure.
+  useEffect(() => {
+    navStateRef.current = { detailOpen, pickerSheetOpen };
+  }, [detailOpen, pickerSheetOpen]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    function onPop(): void {
+      depthRef.current = Math.max(0, depthRef.current - 1);
+      // Topmost layer is the Assign-to-picker sheet opened FROM detail
+      // (openPickerForRow, below) — approved minimal guard: close just the
+      // sheet and re-push, so the single "detail" entry this build relies on
+      // stays available for the NEXT back-press to actually close detail.
+      // The sheet itself never pushes its own entry (out of scope — the
+      // other 4 sheets + the bulk-bar opening of this same sheet are a
+      // separate, later cleanup); this only intercepts the nested case.
+      if (navStateRef.current.pickerSheetOpen && navStateRef.current.detailOpen) {
+        setPickerSheetOpen(false);
+        pushScreen();
+        return;
+      }
+      if (navStateRef.current.detailOpen) {
+        closeDetail();
+      }
+      // Nothing tracked open (depth already 0) — let the pop fall through:
+      // the browser's real previous entry, whatever that is.
+    }
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
 
   function toggleLineChecked(lineId: number): void {
     setCheckedLineIds((prev) => {
@@ -811,11 +1001,19 @@ export function PickingBoardMobile(): React.JSX.Element {
           toast.success(`${assignedCount} ${assignedCount === 1 ? "bill" : "bills"} → ${pickerName}`);
         }
         setSelected(new Set());
+        // The sheet itself isn't history-tracked (approved plan — out of
+        // scope this build), so it always closes via plain state, never
+        // history.back().
         setPickerSheetOpen(false);
-        // Closes the detail screen too when the assign came from its own
-        // CTA — a harmless no-op when it came from the bulk floating bar,
-        // since detail isn't open in that case.
-        setDetailOpen(false);
+        // Detail-interactions Build A — only route through history.back()
+        // when this assign actually came from the detail screen's own CTA
+        // (detailOpen true). From the bulk floating bar, detail was never
+        // open and never pushed an entry, so calling history.back()
+        // unconditionally here would incorrectly pop/exit instead of being
+        // the harmless no-op this comment used to describe.
+        if (detailOpen) {
+          window.history.back();
+        }
         await refetchQueue();
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Assign failed");
@@ -823,7 +1021,7 @@ export function PickingBoardMobile(): React.JSX.Element {
         setAssigning(false);
       }
     },
-    [assignTarget, assigning, refetchQueue],
+    [assignTarget, assigning, refetchQueue, detailOpen],
   );
 
   // Undo — mirrors picking-queue.tsx's handleUnassign: single-order payload
@@ -888,7 +1086,9 @@ export function PickingBoardMobile(): React.JSX.Element {
           return;
         }
         toast.success(`${row.dealerName} approved`);
-        setDetailOpen(false);
+        // Approve only ever renders inside the detail screen (no bulk
+        // equivalent) — unconditional history.back(), unlike handleAssign.
+        window.history.back();
         await refetchQueue();
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Approve failed");
@@ -1114,7 +1314,7 @@ export function PickingBoardMobile(): React.JSX.Element {
                   </button>
                   <div
                     className="flex-1 min-w-0 cursor-pointer"
-                    onClick={() => openDetail(row.orderId)}
+                    onClick={() => openDetail(row.orderId, "waiting")}
                   >
                     <div className="flex items-center justify-between gap-2 mb-[5px]">
                       <span className="flex items-baseline gap-[5px] min-w-0">
@@ -1194,7 +1394,7 @@ export function PickingBoardMobile(): React.JSX.Element {
                   row={row}
                   muted={false}
                   pill={checkCardPill(row, "needs", nowTick)}
-                  onOpen={() => openDetail(row.orderId)}
+                  onOpen={() => openDetail(row.orderId, "needsCheck")}
                 />
               ))
             )}
@@ -1213,7 +1413,7 @@ export function PickingBoardMobile(): React.JSX.Element {
                   row={row}
                   muted={true}
                   pill={checkCardPill(row, "still", nowTick)}
-                  onOpen={() => openDetail(row.orderId)}
+                  onOpen={() => openDetail(row.orderId, "stillPicking")}
                 />
               ))
             )}
@@ -1254,7 +1454,7 @@ export function PickingBoardMobile(): React.JSX.Element {
                 muted={false}
                 pill={checkCardPill(row, "checked", nowTick)}
                 checkerName={row.checkedByName}
-                onOpen={() => openDetail(row.orderId)}
+                onOpen={() => openDetail(row.orderId, "checked")}
               />
             ))
           ))}
@@ -1318,6 +1518,9 @@ export function PickingBoardMobile(): React.JSX.Element {
           "fixed inset-0 z-[35] bg-[#f9fafb] flex flex-col transition-transform duration-200 ease-out " +
           (detailOpen ? "translate-x-0" : "translate-x-full")
         }
+        onTouchStart={handleDetailTouchStart}
+        onTouchMove={handleDetailTouchMove}
+        onTouchEnd={handleDetailTouchEnd}
       >
         <div
           className="bg-teal-600 px-3.5 pb-3.5 flex items-center gap-2.5 shrink-0"
@@ -1325,7 +1528,7 @@ export function PickingBoardMobile(): React.JSX.Element {
         >
           <button
             type="button"
-            onClick={closeDetail}
+            onClick={() => window.history.back()}
             aria-label="Back"
             className="w-8 h-8 rounded-[9px] bg-white/15 flex items-center justify-center text-white shrink-0"
           >

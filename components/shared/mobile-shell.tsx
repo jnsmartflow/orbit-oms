@@ -36,6 +36,14 @@ interface MobileShellProps {
   workflowTabs?: WorkflowTab[];
   activeTabKey?: string;
   onTabChange?: (key: string) => void;
+  // Detail-interactions Build A (2026-07-19) — OPTIONAL, checked BEFORE
+  // hasWorkflowTabs. Absent (or false) on every current caller except
+  // Picking's own detail screen, so every existing page + Picking's own list
+  // view are unaffected. Deliberately a real named prop, not a
+  // `workflowTabs={[]}` shortcut — an empty array already means something
+  // else (falls through to the DEFAULT bar, per hasWorkflowTabs below), so
+  // reusing it for "hidden" would silently break that fallback semantic.
+  hideBar?: boolean;
 }
 
 // Stage 1/4 (2026-07-19): the Menu sheet, You sheet, sign-out confirm, and
@@ -46,7 +54,7 @@ interface MobileShellProps {
 // module-native header) can open the same sheets via useMobileShell()
 // without re-mounting a second copy of them. This component is now just the
 // three fixed anchors — same markup, classes, and behaviour as before.
-export function MobileShell({ navItems, workflowTabs, activeTabKey, onTabChange }: MobileShellProps) {
+export function MobileShell({ navItems, workflowTabs, activeTabKey, onTabChange, hideBar }: MobileShellProps) {
   const pathname = usePathname();
   const { openMenu, openYou, closeAll } = useMobileShell();
 
@@ -60,7 +68,7 @@ export function MobileShell({ navItems, workflowTabs, activeTabKey, onTabChange 
 
   return (
     <div className="block md:hidden">
-      {hasWorkflowTabs ? (
+      {hideBar ? null : hasWorkflowTabs ? (
         <WorkflowTabBar
           tabs={workflowTabs}
           activeKey={activeTabKey ?? workflowTabs[0].key}

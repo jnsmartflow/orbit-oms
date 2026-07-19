@@ -38,6 +38,14 @@ interface PickingBoardContextValue {
   error:        string | null;
   activeTab:    "assign" | "check" | "checked";
   refetchQueue: () => Promise<void>;
+  // Detail-interactions Build A (2026-07-19) — lifted from PickingBoardMobile
+  // for the same reason activeTab/data were lifted in Stage 3: RoleLayoutClient's
+  // hideBar slot needs this one level up, at SupervisorPickingShell, which
+  // only a descendant (PickingBoardMobile, where every open/close call site
+  // lives) knows when to flip. PickingBoardMobile now reads AND writes this
+  // through context instead of owning local state for it.
+  detailOpen:    boolean;
+  setDetailOpen: (open: boolean) => void;
 }
 
 const PickingBoardContext = createContext<PickingBoardContextValue | null>(null);
@@ -89,6 +97,8 @@ function SupervisorPickingShell({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"assign" | "check" | "checked">("assign");
+  // Detail-interactions Build A — see PickingBoardContextValue's comment.
+  const [detailOpen, setDetailOpen] = useState(false);
 
   const fetchQueue = useCallback(async (): Promise<PickingQueueResult> => {
     const res = await fetch(`/api/picking/queue?date=${selectedDate}`);
@@ -151,8 +161,8 @@ function SupervisorPickingShell({
   }, [data]);
 
   const contextValue = useMemo<PickingBoardContextValue>(
-    () => ({ data, loading, error, activeTab, refetchQueue }),
-    [data, loading, error, activeTab, refetchQueue],
+    () => ({ data, loading, error, activeTab, refetchQueue, detailOpen, setDetailOpen }),
+    [data, loading, error, activeTab, refetchQueue, detailOpen],
   );
 
   return (
@@ -164,6 +174,7 @@ function SupervisorPickingShell({
       workflowTabs={workflowTabs}
       activeTabKey={activeTab}
       onTabChange={(key) => setActiveTab(key as "assign" | "check" | "checked")}
+      hideBar={detailOpen}
     >
       <PickingBoardContext.Provider value={contextValue}>
         {children}
