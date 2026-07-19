@@ -4,6 +4,7 @@ import { RoleSidebar } from "./role-sidebar";
 import type { RoleSidebarRole } from "./role-sidebar";
 import { MobileShell } from "./mobile-shell";
 import { MobileShellProvider } from "./mobile-shell-context";
+import type { WorkflowTab } from "./workflow-tab-bar";
 import type { NavItemConfig } from "@/lib/permissions";
 
 interface RoleLayoutClientProps {
@@ -12,6 +13,13 @@ interface RoleLayoutClientProps {
   userInitials: string;
   navItems:     NavItemConfig[];
   children:     React.ReactNode;
+  // Stage 2/4 (2026-07-19) — optional pass-through to MobileShell's
+  // workflow-tab slot (components/shared/workflow-tab-bar.tsx). Undefined on
+  // every current call site; no page supplies these yet — adding one is a
+  // future stage, not this one.
+  workflowTabs?: WorkflowTab[];
+  activeTabKey?: string;
+  onTabChange?: (key: string) => void;
 }
 
 export function RoleLayoutClient({
@@ -20,6 +28,9 @@ export function RoleLayoutClient({
   userInitials,
   navItems,
   children,
+  workflowTabs,
+  activeTabKey,
+  onTabChange,
 }: RoleLayoutClientProps) {
   return (
     <div className="min-h-screen bg-white overflow-hidden">
@@ -34,7 +45,12 @@ export function RoleLayoutClient({
           userInitials={userInitials}
           navItems={navItems}
         />
-        <MobileShell navItems={navItems} />
+        <MobileShell
+          navItems={navItems}
+          workflowTabs={workflowTabs}
+          activeTabKey={activeTabKey}
+          onTabChange={onTabChange}
+        />
         <div className="min-h-screen overflow-hidden pb-[76px] md:pb-0 md:ml-[72px] md:max-w-[calc(100vw-72px)]">
           {children}
         </div>
