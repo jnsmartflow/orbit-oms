@@ -67,10 +67,52 @@ export async function GET(
     return NextResponse.json({ error: "Order not found" }, { status: 404 });
   }
 
-  // Fetch enriched line items separately
-  const lineItems = await prisma.import_enriched_line_items.findMany({
-    where:   { rawLineItem: { obdNumber: order.obdNumber } },
-    include: { sku: { select: { skuCode: true, skuName: true } } },
+  // Fetch enriched line items separately. `lineStatus` is deliberately NOT
+  // filtered here (pre-existing behaviour — this route returns removed lines
+  // too); do not add a filter without checking callers.
+  const enrichedItems = await prisma.import_enriched_line_items.findMany({
+    where:  { rawLineItem: { obdNumber: order.obdNumber } },
+    include: {
+      rawLineItem: { select: { skuCodeRaw: true, skuDescriptionRaw: true } },
+    },
+  });
+
+  // Catalog resolution goes through sku_master_v2 keyed on `material` (the SAP
+  // code), NOT through the enrichedLineItem.sku relation — that relation rides
+  // `skuId`, which still points at the OLD sku_master and shares no id space
+  // with v2, so following it would return a confidently WRONG product name.
+  // Reasoning: docs/prompts/drafts/code-discovery-2026-07-19b-catalog-repoint.md
+  //
+  // The RESPONSE SHAPE is deliberately unchanged: `sku` stays a nested
+  // { skuCode, skuName } object, null when the code doesn't resolve — exactly
+  // what the old relation returned. Only the data SOURCE moved. This endpoint
+  // has no known UI caller today but is reachable by URL, so its contract is
+  // preserved rather than reshaped.
+  //
+  // No isPrimary filter — a duplicate twin is still a real SAP code.
+  // Sequential await, no $transaction (CORE §3).
+  const codes = Array.from(
+    new Set(
+      enrichedItems
+        .map((e) => e.rawLineItem.skuCodeRaw)
+        .filter((c): c is string => Boolean(c)),
+    ),
+  );
+  const catalogRows =
+    codes.length > 0
+      ? await prisma.sku_master_v2.findMany({
+          where:  { material: { in: codes } },
+          select: { material: true, description: true },
+        })
+      : [];
+  const catalogByCode = new Map(catalogRows.map((r) => [r.material, r]));
+
+  const lineItems = enrichedItems.map((e) => {
+    const cat = catalogByCode.get(e.rawLineItem.skuCodeRaw);
+    return {
+      ...e,
+      sku: cat ? { skuCode: cat.material, skuName: cat.description } : null,
+    };
   });
 
   return NextResponse.json({ order, lineItems });

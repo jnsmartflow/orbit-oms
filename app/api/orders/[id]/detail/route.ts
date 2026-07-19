@@ -100,7 +100,8 @@ export async function GET(
       // Column doesn't exist yet — ignore
     }
 
-    // Line items — enriched join raw join sku.
+    // Line items — enriched join raw. The catalog is resolved separately, by
+    // SAP code, NOT through the enrichedLineItem.sku relation (see below).
     // lineStatus filter on rawLineItem closes the Step 3 gap: only active
     // raw lines feed the detail panel's lineItems list.
     const enrichedItems = await prisma.import_enriched_line_items.findMany({
@@ -112,12 +113,6 @@ export async function GET(
         lineWeight: true,
         volumeLine: true,
         isTinting: true,
-        sku: {
-          select: {
-            skuCode: true,
-            skuName: true,
-          },
-        },
         rawLineItem: {
           select: {
             skuCodeRaw: true,
@@ -128,20 +123,53 @@ export async function GET(
       orderBy: { id: "asc" },
     });
 
+    // Catalog resolution goes through sku_master_v2 keyed on `material` (the
+    // SAP code), NOT through the enrichedLineItem.sku relation. That relation
+    // rides `skuId`, which still points at the OLD sku_master and shares no id
+    // space with v2 — following it here would render a confidently WRONG
+    // product name on a live Support / Tint Manager detail panel.
+    // `skuCodeRaw` is the stable natural key, never null, identical across
+    // both tables.
+    // Reasoning: docs/prompts/drafts/code-discovery-2026-07-19b-catalog-repoint.md
+    //
+    // No isPrimary filter — a duplicate twin is still a real SAP code that
+    // must resolve. Sequential await, no $transaction (CORE §3).
+    const codes = Array.from(
+      new Set(
+        enrichedItems
+          .map((e) => e.rawLineItem.skuCodeRaw)
+          .filter((c): c is string => Boolean(c)),
+      ),
+    );
+    const catalogRows =
+      codes.length > 0
+        ? await prisma.sku_master_v2.findMany({
+            where: { material: { in: codes } },
+            select: { material: true, description: true },
+          })
+        : [];
+    const catalogByCode = new Map(catalogRows.map((r) => [r.material, r]));
+
     // Count soft-removed lines (any status other than "active") for the
     // detail panel's "Show removed (N)" toggle. Cheap — single COUNT.
     const removedLineCount = await prisma.import_raw_line_items.count({
       where: { obdNumber: order.obdNumber, lineStatus: { not: "active" } },
     });
 
-    const lineItems = enrichedItems.map((e) => ({
-      skuCode: e.sku?.skuCode ?? e.rawLineItem.skuCodeRaw,
-      skuDescription: e.sku?.skuName ?? e.rawLineItem.skuDescriptionRaw ?? "—",
-      unitQty: e.unitQty,
-      lineWeight: e.lineWeight,
-      volumeLine: e.volumeLine,
-      isTinting: e.isTinting,
-    }));
+    // Fallbacks preserved exactly as before — an unresolved code still shows
+    // its raw SAP code and description, never a blank.
+    const lineItems = enrichedItems.map((e) => {
+      const cat = catalogByCode.get(e.rawLineItem.skuCodeRaw);
+      return {
+        skuCode: cat?.material ?? e.rawLineItem.skuCodeRaw,
+        skuDescription:
+          cat?.description ?? e.rawLineItem.skuDescriptionRaw ?? "—",
+        unitQty: e.unitQty,
+        lineWeight: e.lineWeight,
+        volumeLine: e.volumeLine,
+        isTinting: e.isTinting,
+      };
+    });
 
     return NextResponse.json({
       order,
