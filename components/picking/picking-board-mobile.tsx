@@ -49,8 +49,16 @@ type TypeFilter = "All" | "Local" | "Upcountry";
 // Detail-interactions Build A (2026-07-19) — which of the four already-
 // memoized lists (waitingRows/needsCheck/stillPicking/checked) a bill's
 // detail was opened from. Needed so goNext/goPrev page through the SAME
-// list the tapped card came from — the Check tab has two sections sharing
-// one activeTab value, so activeTab alone can't disambiguate.
+// list the tapped card came from — one tab renders two sections, so
+// activeTab alone can't disambiguate. (That tab was Check until the
+// 2026-07-20 re-slot; it is now Done — "Check now" + "Checked".)
+//
+// ⚠ These are LIST identities, NOT tab identities, and that distinction is
+// load-bearing: it is exactly why the 2026-07-20 tab re-slot needed no change
+// here. Each openDetail(id, key) call site sits inside the band that renders
+// that array, so a band carries its key with it when it moves tabs. Keep it
+// that way — deriving a DetailListKey from activeTab would re-couple them and
+// break paging the next time a band moves.
 type DetailListKey = "waiting" | "needsCheck" | "stillPicking" | "checked";
 
 // Swipe tuning for the detail screen's prev/next-bill gesture.
@@ -127,7 +135,11 @@ const ELAPSED_PILL_CLASS: Record<ElapsedTier, string> = {
   red: "bg-red-50 text-red-700 border border-red-200",
 };
 
-// Check tab's ONE right-side pill (step 5 split) — "Still picking" keeps the
+// The ONE right-side pill for every CheckCard, whichever tab renders it
+// (2026-07-20: "still" now sits on the Picking tab, "needs"/"checked" on the
+// Done tab; this helper was written when all three shared one tab and is
+// unchanged by that move — it keys off the SECTION, never the tab).
+// "Still picking" keeps the
 // existing grey/amber/red elapsed-since-assigned pill unchanged; "Needs
 // check" gets a flat green "Picked Xm ago" pill (no tiering — it's not an
 // urgency signal the way the assign-elapsed pill is, just a receipt of when
@@ -242,6 +254,104 @@ function CheckCard({
         </div>
       )}
     </div>
+  );
+}
+
+// ── Assign-tab date zones (2026-07-20, step 5a) ──────────────────────────
+// Fidelity source: docs/mockups/picking/assign-two-zones.html +
+// assign-stale-and-nodate.html + locked-bill-open.html (all approved).
+
+/**
+ * "2026-07-23" → "Thu 23 Jul". Parses the ISO date-only string the
+ * PARTS way — split on "-", rebuild via Date.UTC(y, m-1, d) — never
+ * `new Date(str)`, the documented footgun lib/picking/queue.ts's
+ * resolveTargetDate() avoids for the identical reason.
+ *
+ * Formatted at timeZone "UTC" against the same UTC-midnight anchor the
+ * column itself uses, so no offset can shift the rendered day. Locale is
+ * pinned to "en-GB" for the same reason sort.ts pins its collator: the
+ * depot phone and Vercel must produce identical text regardless of device
+ * locale. Weekday/day/month are read as separate parts and re-joined, so
+ * no locale's comma or day-month order can leak into the output.
+ *
+ * Returns null on a malformed string rather than rendering "Invalid Date"
+ * on a live bill — the caller drops the badge entirely in that case.
+ */
+function formatDispatchDay(iso: string | null): string | null {
+  if (iso === null) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!m) return null;
+  const [, y, mo, d] = m;
+  const dt = new Date(Date.UTC(Number(y), Number(mo) - 1, Number(d)));
+  if (Number.isNaN(dt.getTime())) return null;
+  const opts = { timeZone: "UTC" } as const;
+  const weekday = dt.toLocaleDateString("en-GB", { ...opts, weekday: "short" });
+  const month = dt.toLocaleDateString("en-GB", { ...opts, month: "short" });
+  return `${weekday} ${d} ${month}`;
+}
+
+// Age badge for the Due-now zone. Reads `ageDays` straight off the row
+// (computed server-side in queue.ts) — never recomputed here, so the board
+// and the server can never disagree about how stale a bill is.
+//
+// The scale, per the approved mockups:
+//   0d   → NOTHING. Absence IS the "fresh" signal; a grey "0d" chip on the
+//          majority of cards would bury the amber ones it exists to surface.
+//   1d   → subtle amber, no border (a nudge; yesterday is not a crisis)
+//   2-3d → solid amber + border (ONE band, not two — the eye cannot resolve
+//          a separate 2d and 3d treatment at card scale)
+//   4d+  → red. The forgotten pick, and the only red on this board.
+//
+// noDispatchDate wins over all of it: a missing date is a DATA GAP, not
+// staleness, so it gets a NEUTRAL grey chip. Amber would assert an urgency
+// the data cannot support, and would make ageDays:null look like ageDays:999.
+function AgeBadge({ row }: { row: PickingQueueRow }): React.JSX.Element | null {
+  if (row.noDispatchDate) {
+    return (
+      <span className="text-[10.5px] font-semibold px-2 py-[3px] rounded-full shrink-0 whitespace-nowrap bg-gray-100 text-gray-500">
+        no date
+      </span>
+    );
+  }
+  const days = row.ageDays;
+  if (days === null || days <= 0) return null;
+  const cls =
+    days >= 4
+      ? "bg-red-50 text-red-700 border border-red-200"
+      : days >= 2
+        ? "bg-amber-100 text-amber-800 border border-amber-300"
+        : "bg-amber-50 text-amber-700";
+  return (
+    <span
+      className={
+        "text-[10.5px] font-bold px-2 py-[3px] rounded-full shrink-0 whitespace-nowrap tabular-nums " + cls
+      }
+    >
+      {days}d
+    </span>
+  );
+}
+
+// Neutral "for Thu 23 Jul" badge for the Upcoming (locked) zone. Slate, NOT
+// amber and NOT red: a bill scheduled for Thursday is EARLY, not late.
+// Colouring it on the staleness scale would teach the floor to discount
+// amber everywhere else on the board.
+function UpcomingDayBadge({ row }: { row: PickingQueueRow }): React.JSX.Element | null {
+  const label = formatDispatchDay(row.dispatchTargetDate);
+  if (label === null) return null;
+  return (
+    <span className="text-[10.5px] font-semibold px-2 py-[3px] rounded-full shrink-0 whitespace-nowrap bg-slate-100 text-slate-600 border border-slate-200">
+      for {label}
+    </span>
+  );
+}
+
+function LockGlyph({ className }: { className: string }): React.JSX.Element {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <rect x="4" y="10.5" width="16" height="10" rx="2" />
+      <path d="M8 10.5V7a4 4 0 0 1 8 0v3.5" />
+    </svg>
   );
 }
 
@@ -489,6 +599,15 @@ export function PickingBoardMobile(): React.JSX.Element {
   const [checkedLineIds, setCheckedLineIds] = useState<Set<number>>(new Set());
   const [approving, setApproving] = useState(false);
 
+  // Early-release (5b) — which locked bill the confirm sheet is asking about
+  // (null = closed), plus an in-flight guard so a double-tap can't fire two
+  // overlapping POSTs. Deliberately its OWN state, not folded into
+  // assignTarget: the two flows target different zones and must never share
+  // a slot (the same reasoning that keeps assignTarget separate from
+  // `selected`).
+  const [releaseTarget, setReleaseTarget] = useState<PickingQueueRow | null>(null);
+  const [releasing, setReleasing] = useState(false);
+
   // Which rows the OPEN picker sheet will act on — bulk (floating bar, from
   // the current selection) or single (detail screen's own CTA). Decoupled
   // from `selected` so the two flows never fight over the same state.
@@ -591,7 +710,8 @@ export function PickingBoardMobile(): React.JSX.Element {
     () => (data ? data.rows.filter((r) => r.isAssigned) : []),
     [data],
   );
-  // "Needs check" pool for the Check tab's split (step 5) — bills the
+  // "Check now" pool — the Done tab's top band since the 2026-07-20 re-slot
+  // (it was the Check tab's "Needs check" band, step 5) — bills the
   // picker has marked done. Parallel to assignedRows above, same source
   // data, no new fetch. isDone is strict-per-stage (=== PICK_DONE), so a
   // PICK_CHECKED row is false here on its own — no !isChecked guard needed,
@@ -628,7 +748,7 @@ export function PickingBoardMobile(): React.JSX.Element {
   }, [waitingRows, activeType]);
 
   const q = query.trim().toLowerCase();
-  const filteredWaiting: PickingQueueRow[] = useMemo(() => {
+  const filteredWaitingAll: PickingQueueRow[] = useMemo(() => {
     return waitingRows.filter((r) => {
       if (activeType !== "All" && r.deliveryType !== activeType) return false;
       if (activeRoute !== null && r.route !== activeRoute) return false;
@@ -637,27 +757,58 @@ export function PickingBoardMobile(): React.JSX.Element {
     });
   }, [waitingRows, activeType, activeRoute, q]);
 
-  const totalLitres = filteredWaiting.reduce((sum, r) => sum + (r.volumeLitres ?? 0), 0);
+  // ── Zone partition (step 5a) ─────────────────────────────────────────────
+  // A DISPLAY partition, not a sort. Array.filter preserves the server's
+  // PICKING_SPINE order inside each zone, and lib/picking/sort.ts is
+  // untouched — zone is a grouping the UI applies, never a spine rule (that
+  // was a locked decision in step 3; do not add a byZone rule to the spine).
+  const filteredWaitingDue: PickingQueueRow[] = useMemo(
+    () => filteredWaitingAll.filter((r) => r.zone === "due"),
+    [filteredWaitingAll],
+  );
+  const filteredWaitingUpcoming: PickingQueueRow[] = useMemo(
+    () => filteredWaitingAll.filter((r) => r.zone === "upcoming"),
+    [filteredWaitingAll],
+  );
+  // Due-then-upcoming, matching what is actually on screen. This — NOT
+  // filteredWaitingAll — is what the detail screen's prev/next pager walks
+  // (DetailListKey "waiting" → activeDetailList), so paging order and visual
+  // order cannot diverge. Paging deliberately crosses INTO the upcoming zone:
+  // reading a locked bill is allowed, so the pager must not be stricter than
+  // a tap, and the Assign CTA is gated per-ROW (on `zone`) rather than per
+  // list, so it correctly swaps to the locked variant mid-page.
+  const filteredWaiting: PickingQueueRow[] = useMemo(
+    () => [...filteredWaitingDue, ...filteredWaitingUpcoming],
+    [filteredWaitingDue, filteredWaitingUpcoming],
+  );
+
+  // Lane strip counts the WORKING list only. An upcoming bill is not "ready
+  // to load" — folding it in would overstate the floor's actual workload.
+  const totalLitres = filteredWaitingDue.reduce((sum, r) => sum + (r.volumeLitres ?? 0), 0);
   const allRoutesCount = Array.from(routeCounts.values()).reduce((a, b) => a + b, 0);
 
-  // FIX 3 — pickers who currently have assigned OR done bills, client-derived
-  // from the same loaded assignedRows/doneRows (no new fetch) — step 5 widened
-  // this from assignedRows alone so the dropdown/counts cover both Check
-  // sections, not just "Still picking". Counts reflect the current Check
-  // type pill (live) — same convention as routeCounts reflecting activeType
-  // above. Rows with a null assignedToName (shouldn't happen for an
-  // assigned/done bill, but the field is nullable) are skipped from the
-  // option list — they still show up under "All pickers", just never become
-  // a selectable filter value.
+  // FIX 3 — pickers who currently have bills out on the floor, client-derived
+  // from the already-loaded rows (no new fetch). Counts reflect the current
+  // Picking-tab type pill (live) — same convention as routeCounts reflecting
+  // activeType above. Rows with a null assignedToName (shouldn't happen for an
+  // assigned bill, but the field is nullable) are skipped from the option
+  // list — they still show up under "All pickers", just never become a
+  // selectable filter value.
+  // Tab re-slot (2026-07-20) — NARROWED from [...assignedRows, ...doneRows] to
+  // assignedRows alone. This dropdown now belongs to the Picking tab, which
+  // holds exactly one band (pick_assigned); the done rows it used to cover
+  // moved to the Done tab and are counted by checkedPickerCounts below.
+  // Leaving the old union here would show picker counts higher than the
+  // number of cards actually on screen.
   const pickerCounts = useMemo(() => {
     const map = new Map<string, number>();
-    for (const r of [...assignedRows, ...doneRows]) {
+    for (const r of assignedRows) {
       if (checkTypeFilter !== "All" && r.deliveryType !== checkTypeFilter) continue;
       if (r.assignedToName === null) continue;
       map.set(r.assignedToName, (map.get(r.assignedToName) ?? 0) + 1);
     }
     return map;
-  }, [assignedRows, doneRows, checkTypeFilter]);
+  }, [assignedRows, checkTypeFilter]);
   const pickerOptions: FilterSheetOption[] = useMemo(() => {
     return Array.from(pickerCounts.keys())
       .sort((a, b) => a.localeCompare(b, "en", { sensitivity: "base" }))
@@ -665,17 +816,22 @@ export function PickingBoardMobile(): React.JSX.Element {
   }, [pickerCounts]);
   const allPickersCount = Array.from(pickerCounts.values()).reduce((a, b) => a + b, 0);
 
-  // Checked tab's OWN picker filter (2026-07-18) — same shape as pickerCounts
-  // above, scoped to checkedRows only (its own tab, its own dropdown state).
+  // Done tab's picker filter (2026-07-18, WIDENED 2026-07-20) — same shape as
+  // pickerCounts above. Was scoped to checkedRows alone when "Checked" was its
+  // own single-band tab; the re-slot gave that tab a second band on top
+  // (needs-check / pick_done), so this dropdown must cover BOTH bands or its
+  // counts undercount what the tab actually shows. Still filters by PICKER
+  // (who fetched the bill), never by checker — one dropdown, one meaning,
+  // every tab.
   const checkedPickerCounts = useMemo(() => {
     const map = new Map<string, number>();
-    for (const r of checkedRows) {
+    for (const r of [...doneRows, ...checkedRows]) {
       if (checkedTypeFilter !== "All" && r.deliveryType !== checkedTypeFilter) continue;
       if (r.assignedToName === null) continue;
       map.set(r.assignedToName, (map.get(r.assignedToName) ?? 0) + 1);
     }
     return map;
-  }, [checkedRows, checkedTypeFilter]);
+  }, [doneRows, checkedRows, checkedTypeFilter]);
   const checkedPickerOptions: FilterSheetOption[] = useMemo(() => {
     return Array.from(checkedPickerCounts.keys())
       .sort((a, b) => a.localeCompare(b, "en", { sensitivity: "base" }))
@@ -699,14 +855,21 @@ export function PickingBoardMobile(): React.JSX.Element {
     });
   }, [assignedRows, checkTypeFilter, activePicker, q]);
 
+  // REPOINTED 2026-07-20 — was driven by checkTypeFilter/activePicker (the
+  // Check tab's filter state) back when this band lived there. The re-slot
+  // moved it into the Done tab, so it must obey the DONE tab's filter row
+  // (checkedTypeFilter/activeCheckedPicker) — the controls actually visible
+  // above it. Left on the old state it would render silently narrowed by a
+  // dropdown sitting one tab away, with no on-screen explanation for the
+  // missing cards. Same AND-stacking shape as before, same shared `q`.
   const filteredNeedsCheck: PickingQueueRow[] = useMemo(() => {
     return doneRows.filter((r) => {
-      if (checkTypeFilter !== "All" && r.deliveryType !== checkTypeFilter) return false;
-      if (activePicker !== null && r.assignedToName !== activePicker) return false;
+      if (checkedTypeFilter !== "All" && r.deliveryType !== checkedTypeFilter) return false;
+      if (activeCheckedPicker !== null && r.assignedToName !== activeCheckedPicker) return false;
       if (q && !(r.dealerName.toLowerCase().includes(q) || r.obdNumber.toLowerCase().includes(q))) return false;
       return true;
     });
-  }, [doneRows, checkTypeFilter, activePicker, q]);
+  }, [doneRows, checkedTypeFilter, activeCheckedPicker, q]);
 
   // Checked tab (2026-07-18) — own type/picker filters + the shared search
   // query, same AND-stacking shape as filteredStillPicking/filteredNeedsCheck
@@ -763,7 +926,17 @@ export function PickingBoardMobile(): React.JSX.Element {
   // out of the bar/assign payload rather than silently riding along
   // uncounted (its checkbox still shows checked if the filter is reverted;
   // it just doesn't count or get submitted while hidden).
-  const selectedRows = filteredWaiting.filter((r) => selected.has(r.orderId));
+  //
+  // ⚠ DUE ZONE ONLY (step 5a) — this is THE chokepoint that enforces the
+  // lock on the bulk path. Both the floating bar's count and `assignTarget`
+  // (and therefore the POST /api/picking/assign body) read this one array,
+  // so an upcoming bill cannot reach either even if its id somehow entered
+  // the `selected` Set. That is defence at the layer that matters, not at
+  // the checkbox: the locked card renders a lock INSTEAD of a checkbox, so
+  // toggleSelect is already unreachable for it — this is the second,
+  // independent guard, and the one that would still hold if the card markup
+  // were ever changed. Derived from filteredWaitingDue, NOT filteredWaiting.
+  const selectedRows = filteredWaitingDue.filter((r) => selected.has(r.orderId));
   const selectedLitres = selectedRows.reduce((sum, r) => sum + (r.volumeLitres ?? 0), 0);
   const pickerSheetSubtitle =
     assignTarget.length === 1
@@ -794,7 +967,7 @@ export function PickingBoardMobile(): React.JSX.Element {
   }
 
   // Detail-interactions Build A — `listKey` says which of the four already-
-  // memoized lists this bill's card came from (Check tab has two sections
+  // memoized lists this bill's card came from (the Done tab has two sections
   // sharing one activeTab value, so activeTab alone can't disambiguate).
   // Pushes ONE history entry for the whole detail "session" — see pushScreen.
   function openDetail(orderId: number, listKey: DetailListKey): void {
@@ -1157,6 +1330,47 @@ export function PickingBoardMobile(): React.JSX.Element {
     [unassigningIds, refetchQueue],
   );
 
+  // Early release (5b) — single-order payload, refetch-after-action, same
+  // 409 handling as handleUndo/handleApprove. The released bill re-renders
+  // under "Due now" purely because the server sends it back with
+  // zone: "due" — there is NO client-side move and no optimistic patch, so
+  // the board can never show a bill as released that the write didn't
+  // actually persist.
+  const handleRelease = useCallback(
+    async (row: PickingQueueRow) => {
+      if (releasing) return;
+      setReleasing(true);
+      try {
+        const res = await fetch("/api/picking/release", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ orderId: row.orderId }),
+        });
+        const json = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+        if (!res.ok) {
+          if (res.status === 409) {
+            // Someone else released it, or its date rolled over to today
+            // while this screen sat open — refetch and say so honestly
+            // rather than reporting a generic failure.
+            toast("Already changed — refreshed.");
+            await refetchQueue();
+          } else {
+            toast.error(json.error ?? `Request failed (${res.status})`);
+          }
+          return;
+        }
+        toast.success(`${row.dealerName} released for picking`);
+        setReleaseTarget(null);
+        await refetchQueue();
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Release failed");
+      } finally {
+        setReleasing(false);
+      }
+    },
+    [releasing, refetchQueue],
+  );
+
   // Approve — step 6. Single-order payload, refetch-after-action (never
   // patch rows locally), same 409 handling as handleUndo/handleAssign above.
   const handleApprove = useCallback(
@@ -1297,16 +1511,18 @@ export function PickingBoardMobile(): React.JSX.Element {
             <div className="mx-[-16px] bg-teal-50 border-t border-teal-200 px-4 py-2 text-[12px] font-medium text-teal-700 flex items-center gap-1">
               <b className="font-bold">{laneLabel}</b>
               <span>
-                &nbsp;·&nbsp;{filteredWaiting.length} waiting&nbsp;·&nbsp;{formatLitres(totalLitres)} L ready to load
+                &nbsp;·&nbsp;{filteredWaitingDue.length} due&nbsp;·&nbsp;{formatLitres(totalLitres)} L ready to load
               </span>
             </div>
           </>
-        ) : activeTab === "check" ? (
+        ) : activeTab === "picking" ? (
           <>
             {/* FIX 3 (reversed decision) — SAME type pills as Assign (reused
                 component, own independent state) on the left, picker dropdown
                 on the right — same position/styling as the route dropdown.
-                Mirrors Assign's row exactly; fixes BUG 2's lopsided layout. */}
+                Mirrors Assign's row exactly; fixes BUG 2's lopsided layout.
+                2026-07-20: this row followed the "Still picking" band to the
+                Picking tab; it now filters ONE band, not two. */}
             <div className="flex items-center justify-between gap-2 pb-2.5">
               <TypeFilterPills value={checkTypeFilter} onChange={setCheckTypeFilter} />
               <button
@@ -1324,16 +1540,18 @@ export function PickingBoardMobile(): React.JSX.Element {
               </button>
             </div>
 
-            {/* FIX 4 — Check summary strip, same teal-tint style as the lane
-                strip, reflecting ALL active filters (type + picker + search).
-                Step 5: "N assigned" now counts BOTH sections combined
-                (matches the approved mockup's summary line); "over 30m"
-                stays scoped to "Still picking" only (see overThresholdCount).
-                Segment omitted entirely when the count is 0. */}
+            {/* FIX 4 — summary strip, same teal-tint style as the lane strip,
+                reflecting ALL active filters (type + picker + search).
+                2026-07-20: reverted to counting ONE band. Step 5 had widened
+                this to needsCheck + stillPicking because the tab held both;
+                needs-check has now moved to the Done tab, so counting it here
+                would describe cards that aren't on this screen. "over 30m"
+                was always scoped to still-picking (see overThresholdCount) and
+                is unchanged. Segment omitted entirely when the count is 0. */}
             <div className="mx-[-16px] bg-teal-50 border-t border-teal-200 px-4 py-2 text-[12px] font-medium text-teal-700 flex items-center gap-1">
               <b className="font-bold">{activePicker ?? "All pickers"}</b>
               <span>
-                &nbsp;·&nbsp;{filteredNeedsCheck.length + filteredStillPicking.length} assigned
+                &nbsp;·&nbsp;{filteredStillPicking.length} picking
                 {overThresholdCount > 0 && (
                   <>&nbsp;·&nbsp;{overThresholdCount} over {ELAPSED_AMBER_MINUTES}m</>
                 )}
@@ -1342,9 +1560,12 @@ export function PickingBoardMobile(): React.JSX.Element {
           </>
         ) : (
           <>
-            {/* Checked tab (2026-07-18) — same row shape as Check: type pills
-                left, its OWN picker dropdown right (filters by picker, same
-                semantic as Check's dropdown — see state comment above). */}
+            {/* Done tab (2026-07-18, re-slotted 2026-07-20) — same row shape as
+                Picking: type pills left, its OWN picker dropdown right (filters
+                by picker, same semantic as Picking's dropdown — see state
+                comment above). This row now drives BOTH of the tab's bands
+                ("Check now" + "Checked"), which is why filteredNeedsCheck was
+                repointed onto this state. */}
             <div className="flex items-center justify-between gap-2 pb-2.5">
               <TypeFilterPills value={checkedTypeFilter} onChange={setCheckedTypeFilter} />
               <button
@@ -1362,16 +1583,259 @@ export function PickingBoardMobile(): React.JSX.Element {
               </button>
             </div>
 
+            {/* Two counts now — the actionable one first. "checked today" keeps
+                its explicit "today" wording because that band alone is
+                date-fenced (queue.ts's openPending scope); needs-check spans
+                all dates, so it deliberately carries no day qualifier. */}
             <div className="mx-[-16px] bg-teal-50 border-t border-teal-200 px-4 py-2 text-[12px] font-medium text-teal-700 flex items-center gap-1">
               <b className="font-bold">{activeCheckedPicker ?? "All pickers"}</b>
-              <span>&nbsp;·&nbsp;{filteredChecked.length} checked today</span>
+              <span>
+                &nbsp;·&nbsp;{filteredNeedsCheck.length} to check
+                &nbsp;·&nbsp;{filteredChecked.length} checked today
+              </span>
             </div>
           </>
         )}
       </div>
 
-      {/* Card list — Assign tab: waiting bills, unchanged from before the tab split */}
+      {/* Card list — Assign tab, TWO ZONES (step 5a, 2026-07-20).
+          Fidelity source: docs/mockups/picking/assign-two-zones.html.
+
+          Zone 1 "Due now"  — dispatch date <= today, PLUS null-date bills
+                              (the locked null→due rule in queue.ts). The
+                              working list: checkbox, tap-to-open, assignable.
+          Zone 2 "Upcoming" — dispatch date > today. Visible and READABLE but
+                              not assignable; auto-graduates into Zone 1 when
+                              the IST day rolls over (no job, no write — the
+                              server recomputes `zone` on every fetch).
+
+          The Due header is intentionally rendered ONLY when the Upcoming
+          section is also present. With no upcoming bills the tab is a single
+          flat list exactly as before, and a lone "DUE NOW" header over the
+          whole screen would be chrome labelling the obvious. */}
       {activeTab === "assign" && (
+      <div className="px-4 py-2.5">
+        {loading && <p className="text-[13px] text-gray-400 text-center py-16">Loading queue&hellip;</p>}
+
+        {!loading && error && (
+          <p className="text-[13px] text-red-600 text-center py-16">
+            Couldn&apos;t load the picking queue: {error}
+          </p>
+        )}
+
+        {!loading && !error && data && (
+          filteredWaitingDue.length === 0 && filteredWaitingUpcoming.length === 0 ? (
+            <p className="text-[13px] text-gray-400 text-center py-16">No bills here right now.</p>
+          ) : (
+            <>
+              {filteredWaitingUpcoming.length > 0 && (
+                <div className="text-[11.5px] font-bold uppercase tracking-wider text-gray-700 mb-2 px-[2px]">
+                  Due now<span className="tabular-nums ml-1.5">{filteredWaitingDue.length}</span>
+                </div>
+              )}
+
+              {/* Due-empty but upcoming-present: say so gently and still show
+                  the locked section below, so "nothing to do" and "nothing
+                  exists" never look the same. */}
+              {filteredWaitingDue.length === 0 ? (
+                <p className="text-[12.5px] text-gray-400 text-center py-6">
+                  Nothing to assign right now.
+                </p>
+              ) : (
+                filteredWaitingDue.map((row) => {
+                  const isSel = selected.has(row.orderId);
+                  return (
+                    <div
+                      key={row.orderId}
+                      className={
+                        "flex items-start gap-[11px] bg-white rounded-[14px] p-[13px] mb-[9px] border-[1.5px] " +
+                        (isSel ? "border-teal-600 bg-teal-50" : "border-transparent")
+                      }
+                      style={{ boxShadow: SOFT_CARD_SHADOW }}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => toggleSelect(row.orderId)}
+                        aria-label={isSel ? "Deselect" : "Select"}
+                        className="w-11 shrink-0 flex items-center justify-center pt-px"
+                      >
+                        <SelectBox checked={isSel} />
+                      </button>
+                      <div
+                        className="flex-1 min-w-0 cursor-pointer"
+                        onClick={() => openDetail(row.orderId, "waiting")}
+                      >
+                        <div className="flex items-center justify-between gap-2 mb-[5px]">
+                          <span className="flex items-baseline gap-[5px] min-w-0">
+                            <span className="font-mono text-[11px] text-gray-400 whitespace-nowrap">
+                              {row.obdNumber}
+                            </span>
+                            {row.windowTime !== null && (
+                              <span className="text-[10.5px] text-gray-300 whitespace-nowrap">
+                                &middot;{row.windowTime}
+                              </span>
+                            )}
+                          </span>
+                          <span className="flex items-center gap-1.5 shrink-0">
+                            {row.isKeyCustomer && <Star size={14} className="text-amber-500 fill-amber-500" />}
+                            {row.priorityLevel === 1 && <Zap size={14} className="text-amber-500 fill-amber-500" />}
+                            {/* Early-released bills sit in Due now as ordinary
+                                assignable work, but their own date still says
+                                they aren't due yet — so they carry a quiet
+                                neutral chip saying how they got here. Neutral,
+                                never amber: this is provenance, not urgency.
+                                Cross-supervisor visibility is the whole reason
+                                the release is persisted (5b). */}
+                            {row.isEarlyReleased && (
+                              <span
+                                className="text-[10.5px] font-semibold px-2 py-[3px] rounded-full shrink-0 whitespace-nowrap bg-slate-100 text-slate-600 border border-slate-200"
+                                title={
+                                  row.earlyReleasedByName !== null
+                                    ? `Released early by ${row.earlyReleasedByName}`
+                                    : "Released early"
+                                }
+                              >
+                                released
+                              </span>
+                            )}
+                            <AgeBadge row={row} />
+                          </span>
+                        </div>
+                        <div className="text-[15px] font-bold text-gray-900 leading-tight mb-[3px] truncate">
+                          {row.dealerName}
+                        </div>
+                        <div className="text-[12px] text-gray-500 truncate">
+                          {row.area !== null ? (
+                            <>
+                              {row.area}
+                              {row.articleTag !== null && (
+                                <>
+                                  <span className="text-gray-300 mx-[5px]">&middot;</span>
+                                  {row.articleTag}
+                                </>
+                              )}
+                            </>
+                          ) : (
+                            (row.articleTag ?? "—")
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+
+              {/* ── ZONE 2 · UPCOMING (LOCKED) ──────────────────────────────
+                  Header is NEUTRAL grey, never amber: a bill scheduled for
+                  Thursday is early, not late. Painting it on the staleness
+                  scale would teach the floor to discount amber elsewhere. */}
+              {filteredWaitingUpcoming.length > 0 && (
+                <>
+                  <div className="flex items-center gap-1.5 text-[11.5px] font-semibold uppercase tracking-wider text-gray-400 mt-[22px] mb-2 px-[2px] pt-[14px] border-t border-gray-200">
+                    <LockGlyph className="w-[13px] h-[13px]" />
+                    Upcoming<span className="tabular-nums ml-1.5">{filteredWaitingUpcoming.length}</span>
+                  </div>
+
+                  {filteredWaitingUpcoming.map((row) => (
+                    <div
+                      key={row.orderId}
+                      className="flex items-start gap-[11px] bg-[#fcfcfd] rounded-[14px] p-[13px] mb-[9px] border-[1.5px] border-transparent"
+                      style={{ boxShadow: SOFT_CARD_SHADOW }}
+                    >
+                      {/* Lock REPLACES the checkbox in the same 44px gutter —
+                          the row rhythm is unbroken and "you cannot tick
+                          this" lands exactly where the thumb goes. Rendering
+                          no checkbox is the first of two guards on the bulk
+                          path (the second, and the load-bearing one, is
+                          selectedRows deriving from filteredWaitingDue). */}
+                      {/* 5b — the lock is now a real 44px tap target that
+                          opens the early-release confirm sheet. Two targets
+                          in one row: the LOCK releases, the BODY opens the
+                          bill to read. stopPropagation is essential — the
+                          body's onClick sits on the sibling below, and
+                          without it a lock tap would also open the detail
+                          screen behind the sheet. */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setReleaseTarget(row);
+                        }}
+                        aria-label={`Locked until ${formatDispatchDay(row.dispatchTargetDate) ?? "its dispatch date"} — tap to release early`}
+                        className="w-11 shrink-0 flex items-center justify-center pt-px self-stretch min-h-[44px] active:opacity-60"
+                      >
+                        <LockGlyph className="w-5 h-5 text-gray-400" />
+                      </button>
+                      {/* Body stays FULLY tappable and at full contrast — the
+                          lock governs sequence, not secrecy. Grey out the
+                          content and supervisors learn to release bills early
+                          just to read them, which is the behaviour the lock
+                          exists to prevent. */}
+                      <div
+                        className="flex-1 min-w-0 cursor-pointer"
+                        onClick={() => openDetail(row.orderId, "waiting")}
+                      >
+                        <div className="flex items-center justify-between gap-2 mb-[5px]">
+                          <span className="flex items-baseline gap-[5px] min-w-0">
+                            <span className="font-mono text-[11px] text-gray-400 whitespace-nowrap">
+                              {row.obdNumber}
+                            </span>
+                            {row.windowTime !== null && (
+                              <span className="text-[10.5px] text-gray-300 whitespace-nowrap">
+                                &middot;{row.windowTime}
+                              </span>
+                            )}
+                          </span>
+                          <span className="flex items-center gap-1.5 shrink-0">
+                            {row.isKeyCustomer && <Star size={14} className="text-amber-500 fill-amber-500" />}
+                            <UpcomingDayBadge row={row} />
+                          </span>
+                        </div>
+                        <div className="text-[15px] font-bold text-gray-800 leading-tight mb-[3px] truncate">
+                          {row.dealerName}
+                        </div>
+                        <div className="text-[12px] text-gray-400 truncate">
+                          {row.area !== null ? (
+                            <>
+                              {row.area}
+                              {row.articleTag !== null && (
+                                <>
+                                  <span className="text-gray-300 mx-[5px]">&middot;</span>
+                                  {row.articleTag}
+                                </>
+                              )}
+                            </>
+                          ) : (
+                            (row.articleTag ?? "—")
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </>
+              )}
+            </>
+          )
+        )}
+      </div>
+      )}
+
+      {/* Card list — Picking tab (re-slotted 2026-07-20): the former "Still
+          picking" band, now the tab's ONLY content. Bills a picker is
+          physically fetching (pick_assigned).
+
+          Three things deliberately dropped in the move, all consequences of
+          being alone on a tab rather than the lower half of a split:
+            - the section header (nothing to distinguish it FROM),
+            - `muted` (it was de-emphasised relative to needs-check; with no
+              sibling band there is nothing to de-emphasise against, and a
+              whole tab rendered at 75% opacity just looks broken),
+            - the "N assigned" wording in the strip above (now "N picking").
+          Everything else is untouched: same CheckCard, the same grey<30m /
+          amber30m+ / red60m+ elapsed pill via checkCardPill(row,"still"), the
+          same "stillPicking" DetailListKey, and Undo still living on the
+          detail screen (gated on the ROW's isAssigned, not on this tab). */}
+      {activeTab === "picking" && (
       <div className="px-4 py-2.5">
         {loading && <p className="text-[13px] text-gray-400 text-center py-16">Loading queue&hellip;</p>}
 
@@ -1384,85 +1848,45 @@ export function PickingBoardMobile(): React.JSX.Element {
         {!loading &&
           !error &&
           data &&
-          (filteredWaiting.length === 0 ? (
-            <p className="text-[13px] text-gray-400 text-center py-16">No bills here right now.</p>
+          (filteredStillPicking.length === 0 ? (
+            <p className="text-[13px] text-gray-400 text-center py-16">
+              {assignedRows.length === 0 ? "Nobody is picking right now." : "No bills match."}
+            </p>
           ) : (
-            filteredWaiting.map((row) => {
-              const isSel = selected.has(row.orderId);
-              return (
-                <div
-                  key={row.orderId}
-                  className={
-                    "flex items-start gap-[11px] bg-white rounded-[14px] p-[13px] mb-[9px] border-[1.5px] " +
-                    (isSel ? "border-teal-600 bg-teal-50" : "border-transparent")
-                  }
-                  style={{ boxShadow: SOFT_CARD_SHADOW }}
-                >
-                  <button
-                    type="button"
-                    onClick={() => toggleSelect(row.orderId)}
-                    aria-label={isSel ? "Deselect" : "Select"}
-                    className="w-11 shrink-0 flex items-center justify-center pt-px"
-                  >
-                    <SelectBox checked={isSel} />
-                  </button>
-                  <div
-                    className="flex-1 min-w-0 cursor-pointer"
-                    onClick={() => openDetail(row.orderId, "waiting")}
-                  >
-                    <div className="flex items-center justify-between gap-2 mb-[5px]">
-                      <span className="flex items-baseline gap-[5px] min-w-0">
-                        <span className="font-mono text-[11px] text-gray-400 whitespace-nowrap">
-                          {row.obdNumber}
-                        </span>
-                        {row.windowTime !== null && (
-                          <span className="text-[10.5px] text-gray-300 whitespace-nowrap">
-                            &middot;{row.windowTime}
-                          </span>
-                        )}
-                      </span>
-                      <span className="flex items-center gap-1.5 shrink-0">
-                        {row.isKeyCustomer && <Star size={14} className="text-amber-500 fill-amber-500" />}
-                        {row.priorityLevel === 1 && <Zap size={14} className="text-amber-500 fill-amber-500" />}
-                      </span>
-                    </div>
-                    <div className="text-[15px] font-bold text-gray-900 leading-tight mb-[3px] truncate">
-                      {row.dealerName}
-                    </div>
-                    <div className="text-[12px] text-gray-500 truncate">
-                      {row.area !== null ? (
-                        <>
-                          {row.area}
-                          {row.articleTag !== null && (
-                            <>
-                              <span className="text-gray-300 mx-[5px]">&middot;</span>
-                              {row.articleTag}
-                            </>
-                          )}
-                        </>
-                      ) : (
-                        (row.articleTag ?? "—")
-                      )}
-                    </div>
-                  </div>
-                </div>
-              );
-            })
+            filteredStillPicking.map((row) => (
+              <CheckCard
+                key={row.orderId}
+                row={row}
+                muted={false}
+                pill={checkCardPill(row, "still", nowTick)}
+                onOpen={() => openDetail(row.orderId, "stillPicking")}
+              />
+            ))
           ))}
       </div>
       )}
 
-      {/* Card list — Check tab: step 5 split into two sections sharing the
-          SAME filter state (type + picker + search) — "one filter state,
-          two rendered slices" per the approved mockup
-          (docs/mockups/picking/supervisor-check-split.html). "Needs check"
-          (picker marked done) on top; "Still picking" below, muted. Both
-          use the IDENTICAL CheckCard — no left accent, no colour-coding;
-          the section header + "Still picking"'s opacity are the only
-          distinction. Undo is NOT on either card (moved to the detail
-          screen below, for "Still picking" rows only — see the CTA there
-          and its comment for why "Needs check" has no Undo path yet). */}
-      {activeTab === "check" && (
+      {/* Card list — Done tab (re-slotted 2026-07-20): TWO bands, replacing
+          what was a flat checked-only list. The split mirrors the one the
+          Check tab used to own — same "one filter state, two rendered slices"
+          shape, same section-header + muted-lower-band treatment — only the
+          membership changed.
+
+            "Check now" (top, plain)  = filteredNeedsCheck (pick_done),
+                                        ALL dates — nothing unchecked is ever
+                                        aged out and lost.
+            "Checked"   (below, muted) = filteredChecked (pick_checked),
+                                        TODAY only (fenced server-side by
+                                        queue.ts's openPending scope), already
+                                        sorted newest-checked-first.
+
+          Approving a bill moves it from the top band to the bottom one
+          without leaving this tab — the "collapse" the locked design
+          describes. Both bands use the same CheckCard; only the lower one
+          passes checkerName, so "✓ Checked by {name}" keeps its own
+          never-truncated line and the upper band renders byte-identically to
+          how it did on the old Check tab. */}
+      {activeTab === "done" && (
       <div className="px-4 py-2.5">
         {loading && <p className="text-[13px] text-gray-400 text-center py-16">Loading queue&hellip;</p>}
 
@@ -1475,7 +1899,7 @@ export function PickingBoardMobile(): React.JSX.Element {
         {!loading && !error && data && (
           <>
             <div className="text-[11.5px] font-bold uppercase tracking-wider text-gray-700 mb-2 px-[2px]">
-              Needs check<span className="tabular-nums ml-1.5">{filteredNeedsCheck.length}</span>
+              Check now<span className="tabular-nums ml-1.5">{filteredNeedsCheck.length}</span>
             </div>
             {filteredNeedsCheck.length === 0 ? (
               <p className="text-[12.5px] text-gray-400 text-center py-6">
@@ -1494,64 +1918,26 @@ export function PickingBoardMobile(): React.JSX.Element {
             )}
 
             <div className="text-[11.5px] font-semibold uppercase tracking-wider text-gray-400 mt-[18px] mb-2 px-[2px]">
-              Still picking<span className="tabular-nums ml-1.5">{filteredStillPicking.length}</span>
+              Checked<span className="tabular-nums ml-1.5">{filteredChecked.length}</span>
             </div>
-            {filteredStillPicking.length === 0 ? (
+            {filteredChecked.length === 0 ? (
               <p className="text-[12.5px] text-gray-400 text-center py-6">
-                {assignedRows.length === 0 ? "Nobody is still picking." : "No bills match."}
+                {checkedRows.length === 0 ? "Nothing checked today yet." : "No bills match."}
               </p>
             ) : (
-              filteredStillPicking.map((row) => (
+              filteredChecked.map((row) => (
                 <CheckCard
                   key={row.orderId}
                   row={row}
                   muted={true}
-                  pill={checkCardPill(row, "still", nowTick)}
-                  onOpen={() => openDetail(row.orderId, "stillPicking")}
+                  pill={checkCardPill(row, "checked", nowTick)}
+                  checkerName={row.checkedByName}
+                  onOpen={() => openDetail(row.orderId, "checked")}
                 />
               ))
             )}
           </>
         )}
-      </div>
-      )}
-
-      {/* Card list — Checked tab (2026-07-18): flat list, newest-checked
-          first, no sections. Bills at PICK_CHECKED had no home before this —
-          approving one made it vanish. Same CheckCard as Check tab, plain
-          (not muted) — this is the supervisor's day record, not a triage
-          queue, so nothing here needs the "de-emphasised" treatment. Tap →
-          same read-only detail screen (no ticks/Approve/Undo render for an
-          isChecked row — see the CTA guards below). */}
-      {activeTab === "checked" && (
-      <div className="px-4 py-2.5">
-        {loading && <p className="text-[13px] text-gray-400 text-center py-16">Loading queue&hellip;</p>}
-
-        {!loading && error && (
-          <p className="text-[13px] text-red-600 text-center py-16">
-            Couldn&apos;t load the picking queue: {error}
-          </p>
-        )}
-
-        {!loading &&
-          !error &&
-          data &&
-          (filteredChecked.length === 0 ? (
-            <p className="text-[13px] text-gray-400 text-center py-16">
-              {checkedRows.length === 0 ? "Nothing checked today yet." : "No bills match."}
-            </p>
-          ) : (
-            filteredChecked.map((row) => (
-              <CheckCard
-                key={row.orderId}
-                row={row}
-                muted={false}
-                pill={checkCardPill(row, "checked", nowTick)}
-                checkerName={row.checkedByName}
-                onOpen={() => openDetail(row.orderId, "checked")}
-              />
-            ))
-          ))}
       </div>
       )}
 
@@ -1602,6 +1988,78 @@ export function PickingBoardMobile(): React.JSX.Element {
         value={activeCheckedPicker}
         onChange={setActiveCheckedPicker}
       />
+
+      {/* Early-release confirm sheet (5b) — docs/mockups/picking/
+          release-early-confirm.html. Reuses SHEET_GEOMETRY rather than
+          hand-picking z-indexes and a bottom offset: that constant exists
+          precisely because this figure was re-copied wrong three times
+          before it was centralised (§7). Conditionally rendered (not an
+          always-mounted slide) to match FilterBottomSheet's own pattern.
+
+          This is the ONLY confirm on the whole board — assign, undo, mark
+          done and approve are all fire-and-forget by design
+          (CLAUDE_PICKING.md §6). Early release earns one because it is the
+          single action that overrides a date Support set deliberately, it is
+          rare, and it has no Undo. The sheet names the bill AND its
+          scheduled date so the supervisor can verify he has the right one; a
+          bare "Are you sure?" would give him nothing to check against. */}
+      {releaseTarget !== null && (
+        <>
+          <div
+            className={`fixed inset-0 bg-black/40 ${SHEET_GEOMETRY.scrimZ}`}
+            onClick={() => {
+              if (!releasing) setReleaseTarget(null);
+            }}
+            aria-hidden="true"
+          />
+          <div
+            className={`fixed left-0 right-0 ${SHEET_GEOMETRY.panelZ} bg-white rounded-t-[18px] p-5`}
+            style={{ bottom: SHEET_GEOMETRY.bottomOffset }}
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className="w-9 h-1 rounded-full bg-gray-300 mx-auto mb-3.5" />
+            <h3 className="text-[17px] font-extrabold text-gray-900 leading-snug">
+              Release this bill for picking early?
+            </h3>
+            <p className="text-[13px] text-gray-500 mt-2 leading-relaxed">
+              <b className="text-gray-700 font-bold">{releaseTarget.dealerName}</b>
+              <span className="text-gray-400"> · {releaseTarget.obdNumber}</span>
+              <br />
+              {formatDispatchDay(releaseTarget.dispatchTargetDate) !== null && (
+                <>
+                  Scheduled for{" "}
+                  <b className="text-gray-700 font-bold">
+                    {formatDispatchDay(releaseTarget.dispatchTargetDate)}
+                    {releaseTarget.windowTime !== null ? `, ${releaseTarget.windowTime}` : ""}
+                  </b>
+                  .{" "}
+                </>
+              )}
+              Releasing moves it into <b className="text-gray-700 font-bold">Due now</b> so it can be
+              assigned today.
+            </p>
+            <div className="flex gap-2.5 mt-[18px]">
+              <button
+                type="button"
+                onClick={() => setReleaseTarget(null)}
+                disabled={releasing}
+                className="flex-1 h-12 rounded-full bg-white border border-gray-200 active:bg-gray-50 text-gray-700 text-[14.5px] font-bold disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleRelease(releaseTarget)}
+                disabled={releasing}
+                className="flex-1 h-12 rounded-full bg-teal-600 active:bg-teal-700 text-white text-[14.5px] font-bold shadow-[0_8px_22px_rgba(13,148,136,0.42)] disabled:opacity-60"
+              >
+                {releasing ? "Releasing…" : "Release"}
+              </button>
+            </div>
+          </div>
+        </>
+      )}
 
       {/* Detail screen — always mounted, slides in via translate-x so the
           board underneath (filters + scroll) is never torn down. Redesigned
@@ -1823,7 +2281,8 @@ export function PickingBoardMobile(): React.JSX.Element {
                   <div className="shrink-0 flex items-center justify-center px-3.5">
                     <span className="text-[26px] font-extrabold text-gray-900">{li.qty}</span>
                   </div>
-                  {/* TICK — Check tab only (detailRow.isDone), in the gutter
+                  {/* TICK — needs-check rows only (detailRow.isDone; the Done
+                      tab's top band since 2026-07-20), in the gutter
                       the QTY column already reserved. 44px tap zone, 20px/
                       2px-border circle, filled teal + white check when
                       ticked — no border on the column itself (a tap zone,
@@ -1877,8 +2336,20 @@ export function PickingBoardMobile(): React.JSX.Element {
             paint OVER the open detail screen (z-40 above this screen's
             z-[35]); Build A's hideBar now removes that bar entirely while
             detail is open, so reserving its height here was excess space —
-            the button floated well above the true bottom edge. */}
-        {detailRow && !detailRow.isAssigned && !detailRow.isDone && !detailRow.isChecked && (
+            the button floated well above the true bottom edge.
+
+            ⚠ `zone !== "upcoming"` (step 5a, 2026-07-20) is NOT
+            defense-in-depth like the three guards above it — it is the ONLY
+            thing shutting this path for a locked bill, and without it the
+            lock is one tap from defeat. An upcoming row is genuinely
+            pending: isAssigned/isDone/isChecked are all false, so it passes
+            every other guard here. Its card is deliberately tappable (read
+            access is allowed), which means this screen is a NORMAL
+            destination for a locked bill, not an unreachable edge case. The
+            card-level guards — no checkbox, and selectedRows deriving from
+            filteredWaitingDue — cover the bulk path only; they do nothing
+            here. Locked bills get the disabled variant below instead. */}
+        {detailRow && !detailRow.isAssigned && !detailRow.isDone && !detailRow.isChecked && detailRow.zone !== "upcoming" && (
           <div
             className="shrink-0 px-3.5 pb-3.5"
             style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 16px)" }}
@@ -1890,6 +2361,35 @@ export function PickingBoardMobile(): React.JSX.Element {
             >
               Assign to picker
             </button>
+          </div>
+        )}
+
+        {/* Locked variant — an upcoming bill, opened to read. Everything
+            above this is at full contrast; only the verb is shut. The hint
+            answers the obvious next question ("then when?") rather than just
+            refusing, so nobody has to go hunting for the dispatch date they
+            were denied. Fidelity source:
+            docs/mockups/picking/locked-bill-open.html.
+            `disabled` is real, not cosmetic — a greyed button that still
+            fires would be the same bypass with extra steps. */}
+        {detailRow && detailRow.zone === "upcoming" && !detailRow.isAssigned && !detailRow.isDone && !detailRow.isChecked && (
+          <div
+            className="shrink-0 px-3.5 pb-3.5"
+            style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 16px)" }}
+          >
+            <button
+              type="button"
+              disabled
+              className="w-full h-12 rounded-full bg-gray-100 text-gray-400 text-[14.5px] font-bold flex items-center justify-center gap-2 cursor-not-allowed"
+            >
+              <LockGlyph className="w-[17px] h-[17px]" />
+              Assign to picker
+            </button>
+            {formatDispatchDay(detailRow.dispatchTargetDate) !== null && (
+              <p className="text-center text-[12px] text-gray-400 mt-2">
+                Opens {formatDispatchDay(detailRow.dispatchTargetDate)}
+              </p>
+            )}
           </div>
         )}
 

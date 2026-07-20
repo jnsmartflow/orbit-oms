@@ -8,6 +8,7 @@ import { PickingQueue } from "@/components/picking/picking-queue";
 import { PickingBoardMobile } from "@/components/picking/picking-board-mobile";
 import { PickerMyPicksBoard } from "@/components/picking/picker-my-picks-board";
 import { ROLES } from "@/lib/rbac";
+import { getISTDayRange } from "@/lib/dates";
 import { getPickingQueue } from "@/lib/picking/queue";
 import { getActivePickers, type PickerRosterEntry } from "@/lib/picking/picker-roster";
 import type { PickingQueueRow } from "@/lib/picking/types";
@@ -16,6 +17,36 @@ export const dynamic = "force-dynamic";
 
 function getInitials(name: string): string {
   return name.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2);
+}
+
+/**
+ * Did the picker finish this bill during TODAY in IST?
+ *
+ * The window comes from lib/dates.ts's getISTDayRange() — the same
+ * Date.now()+IST-offset → read-UTC-parts → Date.UTC(...) derivation
+ * lib/picking/queue.ts:getISTTodayDate() uses, never a naive local midnight.
+ * That helper is preferred here over queue.ts's own (which is private, and
+ * returns a date-ONLY anchor shaped for @db.Date equality): `pickedAt` is a
+ * timestamptz, so it needs a half-open INSTANT window [start, end), not a
+ * calendar-day value. Half-open also means a bill finished exactly at IST
+ * midnight lands in the new day only — never counted twice.
+ *
+ * `pickedAt` is typed `Date | string | null` because PickingQueueRow crosses
+ * a JSON boundary on the client path; on this server path it arrives as a
+ * real Date. Both are handled. Date.parse() here operates on a full ISO
+ * timestamp (spec-defined), NOT a bare "YYYY-MM-DD" — that is the parse
+ * queue.ts warns against, and it is not this one.
+ *
+ * Returns FALSE on null or unparseable input. A done bill always has
+ * pickedAt (POST /api/picking/done stamps it), so null means something is
+ * wrong — and a bill we cannot date must not silently drift into a receipt
+ * that claims it was finished today.
+ */
+function isPickedTodayIST(pickedAt: Date | string | null, start: Date, end: Date): boolean {
+  if (pickedAt === null) return false;
+  const ms = pickedAt instanceof Date ? pickedAt.getTime() : Date.parse(pickedAt);
+  if (Number.isNaN(ms)) return false;
+  return ms >= start.getTime() && ms < end.getTime();
 }
 
 interface PickingPageProps {
@@ -97,17 +128,34 @@ export default async function PickingPage({ searchParams }: PickingPageProps) {
     // pickerId (a real FK), never on assignedToName (a display string, not
     // a scope boundary). No new API route; getPickingQueue() is the exact
     // function app/api/picking/queue/route.ts already calls.
-    const queue = await getPickingQueue();
+    // scope=openPending (2026-07-20 date-zones redesign) — the picker's own
+    // board is a mobile face too, so his Pending tab must show carry-over
+    // bills from earlier days, not just today's.
+    // Done = today only (daily receipt), fenced on pickedAt IST — see picking
+    // design 2026-07-20.
+    const queue = await getPickingQueue({ scope: "openPending" });
+    const { start: istDayStart, end: istDayEnd } = getISTDayRange();
     const myRows = viewerId === null ? [] : queue.rows.filter((r) => r.pickerId === viewerId);
 
     pickerFaceData = {
-      // isChecked excluded from pending / included in done (2026-07-18) —
-      // without this, an approved (PICK_CHECKED) bill has isDone: false and
-      // would fall back into "pending" with a live-looking Mark Done CTA on
-      // a bill the supervisor already finished. It stays in his own Done
-      // tab regardless of what the supervisor does with it afterward.
+      // PENDING — all dates, unchanged. isChecked excluded alongside isDone
+      // (2026-07-18): without it an approved (PICK_CHECKED) bill has
+      // isDone: false and would fall back into "pending" with a live-looking
+      // Mark Done CTA on a bill the supervisor already finished. A bill he
+      // has not finished carries over here indefinitely — deliberately NOT
+      // date-fenced, so work left mid-shift is still waiting next morning.
       pending: myRows.filter((r) => !r.isDone && !r.isChecked),
-      done: myRows.filter((r) => r.isDone || r.isChecked),
+      // DONE — today only. The stage test is unchanged (either finished
+      // state counts, so a bill does not vanish from his own history the
+      // moment a supervisor approves it); the new fence is on WHEN he
+      // finished it. Fenced on pickedAt, NOT dispatchTargetDate: this tab is
+      // his daily receipt — "what did I finish today" — so the day he did
+      // the work is the only thing that decides membership. A bill he picked
+      // yesterday evening for today's dispatch therefore belongs to
+      // YESTERDAY's receipt, even though it is dispatching today.
+      done: myRows.filter(
+        (r) => (r.isDone || r.isChecked) && isPickedTodayIST(r.pickedAt, istDayStart, istDayEnd),
+      ),
       viewerName,
       pickers,
       activePickerId: viewerId,

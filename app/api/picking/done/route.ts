@@ -26,15 +26,19 @@ export async function POST(req: Request): Promise<NextResponse> {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Same gate as every other picking route — admin bypass, else canView on
-  // 'picking'. picker/floor_supervisor still have zero grants (unchanged);
-  // today only admin/operations can ever reach this route at all.
+  // canView — DELIBERATELY NOT canEdit, and the one write route left on it
+  // (2026-07-20 gate correction). assign/unassign/approve/release all moved
+  // to canEdit because they are SUPERVISOR actions; Mark Done is the
+  // PICKER's own action, and `picker` holds canView only. Gating this on
+  // canEdit would lock pickers out of the single write their board exists to
+  // perform. The boundary that matters here is not the role flag but the
+  // pickerId ownership check further down (see this route's doc comment) —
+  // that is what stops "mark someone else's bill done", and it applies
+  // equally to a supervisor or admin using the view-as-picker hook.
   const roles = session.user.roles ?? [session.user.role];
-  if (!roles.includes("admin")) {
-    const allowed = await checkAnyPermission(roles, "picking", "canView");
-    if (!allowed) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+  const allowed = await checkAnyPermission(roles, "picking", "canView");
+  if (!allowed) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   // Who actually performed this — the real session, never the request

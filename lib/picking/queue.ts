@@ -1,7 +1,15 @@
 import { prisma } from "@/lib/prisma";
 import { sortPickingQueue } from "./sort";
-import { SUPPORT_DONE_OUTPUT, PICK_ASSIGNED, PICK_DONE, PICK_CHECKED } from "@/lib/workflow-stages";
+import {
+  PICK_ASSIGNED,
+  PICK_DONE,
+  PICK_CHECKED,
+  PICKING_ACTIVE_STAGES,
+  PICKING_OPEN_STAGES,
+} from "@/lib/workflow-stages";
 import type { PickingQueueRow } from "./types";
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
 
@@ -59,6 +67,43 @@ function resolveTargetDate(dateStr?: string): { isoDate: string; dateOnly: Date 
   return { isoDate, dateOnly };
 }
 
+/**
+ * Which slice of the picking pipeline a caller wants.
+ *
+ * 'single'      — DEFAULT and unchanged since this module was written: every
+ *                 stage in PICKING_ACTIVE_STAGES, fenced to ONE dispatch-target
+ *                 date by equality. The desktop board (components/picking/
+ *                 picking-queue.tsx) depends on this exactly as-is: its date
+ *                 stepper, its per-window header segments and its "All"/"OBDs"
+ *                 counts are all built on a single-date slice.
+ *
+ * 'openPending' — the mobile boards (2026-07-20 date-zones redesign). Pending
+ *                 and in-progress work across ALL dates (no dispatchTargetDate
+ *                 fence), PLUS today's checked bills only. Both arms keep
+ *                 dispatchStatus='dispatch' and isRemoved=false.
+ *
+ * ⚠ NAME CAVEAT — 'openPending' is slightly narrower than what it returns: it
+ * also carries the today-fenced PICK_CHECKED band. Kept as-is deliberately
+ * (the locked design's vocabulary; renaming costs churn across the design doc
+ * and the board). Read this contract, not the name. Precedent for the trap in
+ * this module: CLAUDE_PICKING.md §5.1's "Done" tab, whose LABEL, KEY and DB
+ * STAGE are three different strings.
+ *
+ * Why checked rides along in the same query rather than a second today-scoped
+ * call: components/picking/picking-mobile-shell.tsx owns ONE fetch whose
+ * result feeds both the cards and the bottom-bar tab counts ("one fetch, no
+ * drift", CLAUDE_PICKING.md §5.1). A second fetch would reintroduce exactly
+ * the drift that invariant exists to prevent.
+ */
+export type PickingQueueScope = "single" | "openPending";
+
+export interface PickingQueueOptions {
+  /** YYYY-MM-DD. Meaningful in 'single' scope only; omitted → today in IST. */
+  date?: string;
+  /** Defaults to 'single' — today's behaviour for every pre-existing caller. */
+  scope?: PickingQueueScope;
+}
+
 export interface PickingWindowSummary {
   id: number;
   windowTime: string;
@@ -67,6 +112,8 @@ export interface PickingWindowSummary {
 }
 
 export interface PickingQueueResult {
+  // 'single': the date the payload is fenced to. 'openPending': the IST day
+  // used as the zone/ageDays anchor (rows themselves span many dates).
   date: string;
   rows: PickingQueueRow[];
   windows: PickingWindowSummary[];
@@ -96,13 +143,22 @@ const DEALER_SELECT = {
 } as const;
 
 /**
- * Live derived read — SELECT only. Fetches today's dispatch-stamped OBDs —
+ * Live derived read — SELECT only. Fetches dispatch-stamped OBDs —
  * unassigned (SUPPORT_DONE_OUTPUT), assigned (PICK_ASSIGNED), picked
  * (PICK_DONE), and checked (PICK_CHECKED, added 2026-07-18 for the
  * supervisor board's Checked tab) — resolves the effective dealer per row,
  * and hands the result to the pure sort module. No writes. No orderBy in
  * the Prisma query — sorting is entirely sortPickingQueue()'s job
  * (byAssigned sinks assigned rows to the bottom).
+ *
+ * DATE SCOPE is chosen by `options.scope` (see PickingQueueScope above);
+ * 'single' is the default and is behaviourally identical to this function's
+ * pre-2026-07-20 form. Rows carry `zone`/`noDispatchDate`/`ageDays` in both
+ * scopes, but they only vary meaningfully under 'openPending'.
+ *
+ * SORTING IS UNTOUCHED by the scope. lib/picking/sort.ts's PICKING_SPINE has
+ * no zone rule and must not gain one — zone is a GROUPING the UI applies, and
+ * inside each zone the existing spine order holds unchanged.
  *
  * `isAssigned` below is strictly `workflowStage === PICK_ASSIGNED` — a
  * PICK_DONE or PICK_CHECKED row gets `isAssigned: false`, on purpose, and
@@ -134,30 +190,67 @@ const DEALER_SELECT = {
  * `isDone`/`isChecked` rows, so both desktop stats over-count "still
  * queued" bills by however many are done or checked today. Pre-existing
  * for `isDone`; `isChecked` just compounds it. See CLAUDE_PICKING.md §7.
+ * Scope of the damage, verified by grep 2026-07-20: `windows`/`totalCount`/
+ * `unmatchedCount` are read ONLY by components/picking/picking-queue.tsx
+ * (:539, :608, :613, :615, :715). No mobile file reads them — the bottom-bar
+ * tab counts are computed independently and correctly in
+ * picking-mobile-shell.tsx. So this over-count is desktop-only, and the
+ * 'openPending' scope cannot worsen it (desktop never uses that scope).
  */
-export async function getPickingQueue(dateStr?: string): Promise<PickingQueueResult> {
+export async function getPickingQueue(
+  options: PickingQueueOptions = {},
+): Promise<PickingQueueResult> {
+  const { date: dateStr, scope = "single" } = options;
   const { isoDate, dateOnly } = resolveTargetDate(dateStr);
+
+  // Today in IST, always — the anchor for zone/ageDays in BOTH scopes, and
+  // the fence for 'openPending''s checked arm. Independent of `dateOnly`,
+  // which in 'single' scope may be any day the desktop stepper landed on.
+  const { dateOnly: todayDateOnly } = getISTTodayDate();
+
+  // Two shapes, one stage universe. PICKING_OPEN_STAGES ⊂ PICKING_ACTIVE_STAGES
+  // by construction (lib/workflow-stages.ts), so the scopes cannot drift into
+  // showing different bills on desktop vs. mobile. Neither admits 'closed' —
+  // see that file for the 572-row evidence behind that exclusion.
+  const where =
+    scope === "openPending"
+      ? {
+          dispatchStatus: "dispatch",
+          isRemoved: false,
+          // NO dispatchTargetDate fence on the open arm — that is the whole
+          // point of this scope. The checked arm keeps its own today-fence,
+          // per the locked design ("only the Checked band stays on today").
+          OR: [
+            { workflowStage: { in: PICKING_OPEN_STAGES } },
+            { workflowStage: PICK_CHECKED, dispatchTargetDate: todayDateOnly },
+          ],
+        }
+      : {
+          dispatchStatus: "dispatch",
+          dispatchTargetDate: dateOnly,
+          // Unassigned, assigned, AND picked current stages. Assigned
+          // (PICK_ASSIGNED) rows are sunk to the bottom by sort.ts's
+          // byAssigned rule; picked (PICK_DONE) rows are NOT (isAssigned is
+          // false for them too — see the doc comment above this function) —
+          // harmless, since both board consumers filter PICK_DONE rows out of
+          // their rendered lists entirely rather than relying on sort position.
+          // Never the historical 'closed' union — see lib/workflow-stages.ts and
+          // CLAUDE_SUPPORT.md §3 (parking-stage flip).
+          workflowStage: { in: PICKING_ACTIVE_STAGES },
+          isRemoved: false,
+        };
 
   // Sequential awaits only — never prisma.$transaction (CORE §3).
   const orders = await prisma.orders.findMany({
-    where: {
-      dispatchStatus: "dispatch",
-      dispatchTargetDate: dateOnly,
-      // Unassigned, assigned, AND picked current stages. Assigned
-      // (PICK_ASSIGNED) rows are sunk to the bottom by sort.ts's
-      // byAssigned rule; picked (PICK_DONE) rows are NOT (isAssigned is
-      // false for them too — see the doc comment above this function) —
-      // harmless, since both board consumers filter PICK_DONE rows out of
-      // their rendered lists entirely rather than relying on sort position.
-      // Never the historical 'closed' union — see lib/workflow-stages.ts and
-      // CLAUDE_SUPPORT.md §3 (parking-stage flip).
-      workflowStage: { in: [SUPPORT_DONE_OUTPUT, PICK_ASSIGNED, PICK_DONE, PICK_CHECKED] },
-      isRemoved: false,
-    },
+    where,
     include: {
       customer: { select: DEALER_SELECT },
       shipToOverrideCustomer: { select: DEALER_SELECT },
       dispatchWindow: { select: { id: true, windowTime: true, sortOrder: true } },
+      // Early-release actor (5b) — name only, for the "released" chip's
+      // provenance. The timestamp itself is a base scalar and arrives via
+      // `include` without being named here.
+      pickEarlyReleasedBy: { select: { name: true } },
       // 1:1, optional — an order may have no snapshot row. Source: CLAUDE_SUPPORT.md §4.19.
       querySnapshot: { select: { articleTag: true, totalVolume: true, totalWeight: true } },
       // 1:1, optional — present only once the order is PICK_ASSIGNED (or later).
@@ -189,11 +282,46 @@ export async function getPickingQueue(dateStr?: string): Promise<PickingQueueRes
 
   let unmatchedCount = 0;
 
+  const todayMs = todayDateOnly.getTime();
+
   const rows: PickingQueueRow[] = orders.map((order) => {
     const effectiveDealer = order.shipToOverrideCustomer ?? order.customer;
     if (!effectiveDealer) unmatchedCount++;
 
+    // Zone / age. Both dispatchTargetDate (@db.Date) and todayDateOnly are
+    // UTC-midnight anchored, so the millisecond delta is an exact whole
+    // number of days — no rounding drift, no timezone arithmetic here.
+    // Never new Date(str) and never a string compare (see resolveTargetDate).
+    const targetDate = order.dispatchTargetDate;
+    const noDispatchDate = targetDate === null;
+    // Manual early release (5b) — a supervisor unlocked this future-dated
+    // bill so it can be picked TODAY. Persisted on the order, so the
+    // unlock survives refresh and every supervisor sees the same board.
+    const isEarlyReleased = order.pickEarlyReleasedAt !== null;
+    // Locked rule: a null date is 'due', never 'upcoming' — unscheduled work
+    // must never hide behind the lock. noDispatchDate lets the UI say so.
+    //
+    // `!isEarlyReleased` is the ONLY thing 5b added here. Everything else is
+    // unchanged, and the automatic midnight unlock still works exactly as
+    // before: zone is recomputed from scratch on every fetch, so once
+    // dispatchTargetDate <= today the bill graduates on its own with no job,
+    // no write, and no dependence on this flag.
+    const zone: "due" | "upcoming" =
+      !noDispatchDate && targetDate.getTime() > todayMs && !isEarlyReleased ? "upcoming" : "due";
+    const ageDays = noDispatchDate
+      ? null
+      : Math.max(0, Math.floor((todayMs - targetDate.getTime()) / MS_PER_DAY));
+
     return {
+      zone,
+      noDispatchDate,
+      ageDays,
+      // Pass-through of the existing column, not a derived value: @db.Date is
+      // UTC-midnight anchored, so slicing the ISO string yields the correct
+      // calendar day with no timezone maths (same basis as `isoDate` above).
+      dispatchTargetDate: targetDate === null ? null : targetDate.toISOString().slice(0, 10),
+      isEarlyReleased,
+      earlyReleasedByName: order.pickEarlyReleasedBy?.name ?? null,
       orderId: order.id,
       obdNumber: order.obdNumber,
       dealerName: effectiveDealer?.customerName ?? "(Unmatched)",

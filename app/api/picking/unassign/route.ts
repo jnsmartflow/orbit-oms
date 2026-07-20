@@ -12,13 +12,13 @@ export async function POST(req: Request): Promise<NextResponse> {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Same gate as app/api/picking/queue/route.ts and assign/route.ts.
+  // canEdit, NOT canView (corrected 2026-07-20) — supervisor action. Full
+  // reasoning at the identical gate in app/api/picking/assign/route.ts.
+  // Admin bypass lives inside checkAnyPermission, so no wrapper is needed.
   const roles = session.user.roles ?? [session.user.role];
-  if (!roles.includes("admin")) {
-    const allowed = await checkAnyPermission(roles, "picking", "canView");
-    if (!allowed) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+  const allowed = await checkAnyPermission(roles, "picking", "canEdit");
+  if (!allowed) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   // Same non-empty-string guard as assign/route.ts — Number.isFinite alone

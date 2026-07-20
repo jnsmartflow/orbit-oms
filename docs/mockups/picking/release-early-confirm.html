@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Picking — release early, confirm (mockup)</title>
+<link rel="stylesheet" href="_zones-shared.css">
+<!--
+  STATIC REVIEW MOCKUP — not wired to app code / DB. Throwaway artifact.
+  SCREEN 4 of 4 — the manual early-release interaction.
+
+  SCOPE: this mocks the INTERACTION only. WHO is permitted to release a bill
+  early is explicitly DEFERRED (design doc §7 open item 2), and nothing here
+  asserts an answer. If the permission model later restricts this, the lock
+  simply stops being tappable for that user — the sheet is unchanged.
+
+  THE GESTURE
+  Tapping the LOCK opens this sheet. Tapping the card body still opens the
+  bill (screen 3). Two targets, two outcomes, both in the same row — which is
+  why the lock keeps the full 44px gutter to itself rather than being a small
+  glyph tucked beside the dealer name.
+
+  WHY A CONFIRM AT ALL
+  Everything else on this board is fire-and-forget (assign, mark done,
+  approve — CLAUDE_PICKING.md §6). This one is not, deliberately:
+    - It is the ONLY action that overrides a decision Support made
+      deliberately (they set 23 Jul on purpose).
+    - It is genuinely rare — most days nobody releases anything early.
+    - There is no Undo designed for it yet, and the board's stated position
+      is not to invent exception paths before the floor has used the screen
+      (§6, "no Undo on a picked/checked bill"). A confirm is the cheap
+      substitute for an undo that does not exist.
+  A confirm on a frequent action is friction; on a rare, unreversible,
+  override action it is the correct cost.
+
+  COPY
+  The sheet names the bill and the date it was scheduled for, because the
+  supervisor needs to confirm he is releasing the bill he MEANT to — a
+  generic "Are you sure?" gives him nothing to check against.
+
+  ONE-TEAL: "Release" is the single teal action on the screen. The locked
+  cards behind the scrim carry no teal.
+-->
+</head>
+<body>
+
+<div class="devbar">
+  <span class="tag">MOCKUP 4/4</span><b>Release early — confirm sheet</b><br>
+  Tapping the <b>lock</b> (not the card) opens this. The sheet names the bill and its scheduled
+  date so he can check he has the right one. Who may do this is <b>deferred</b> — interaction only.
+</div>
+
+<div class="phone">
+  <div class="notch"></div>
+  <div class="screen">
+    <div class="safe-top"></div>
+
+    <div class="topbar">
+      <button class="avatar">SF</button>
+      <h1>Picking</h1>
+      <div class="topicons">
+        <button class="iconbtn" aria-label="All pages">
+          <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+        </button>
+        <button class="iconbtn" aria-label="Search">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="controls">
+      <div class="filterrow">
+        <div class="typepills">
+          <button class="typepill on">All</button>
+          <button class="typepill">Local</button>
+          <button class="typepill">UPC</button>
+        </div>
+        <button class="routedd">
+          <span>All routes</span>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+      </div>
+      <div class="lanestrip">
+        <b>All routes</b><span>&nbsp;·&nbsp;7 due&nbsp;·&nbsp;284 L ready to load</span>
+      </div>
+    </div>
+
+    <div class="list">
+
+      <div class="zonehead due">
+        Due now <span class="sep">·</span> <span class="n">7</span>
+      </div>
+
+      <div class="card">
+        <button class="gutter"><span class="selbox"></span></button>
+        <div class="body">
+          <div class="l1">
+            <span class="l1left"><span class="obd">9108324156</span><span class="wintag">·16:00</span></span>
+            <span class="l1right"></span>
+          </div>
+          <div class="l2">Shakti Sales</div>
+          <div class="l3">Bhatar<span class="dot">·</span>5 BOX</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <button class="gutter"><span class="selbox"></span></button>
+        <div class="body">
+          <div class="l1">
+            <span class="l1left"><span class="obd">9108323612</span><span class="wintag">·18:00</span></span>
+            <span class="l1right"><span class="age d1">1d</span></span>
+          </div>
+          <div class="l2">Shree Rang Sarita</div>
+          <div class="l3">Adajan<span class="dot">·</span>6 DRUM</div>
+        </div>
+      </div>
+
+      <div class="zonehead upcoming">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10.5" width="16" height="10" rx="2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/></svg>
+        Upcoming <span class="sep">·</span> <span class="n">3</span>
+      </div>
+
+      <!-- The tapped card. Lock gutter shown in its pressed state. -->
+      <div class="card locked" style="background:#f4f6f8;">
+        <button class="gutter lockgutter" aria-label="Locked — release early">
+          <svg class="lockicon" style="color:#6b7280;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10.5" width="16" height="10" rx="2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/></svg>
+        </button>
+        <div class="body">
+          <div class="l1">
+            <span class="l1left"><span class="obd">9108324285</span><span class="wintag">·12:30</span></span>
+            <span class="l1right"><span class="forday">for Thu 23 Jul</span></span>
+          </div>
+          <div class="l2">Lakhani Paints</div>
+          <div class="l3">Adajan<span class="dot">·</span>8 DRUM 3 BOX</div>
+        </div>
+      </div>
+
+      <div class="card locked">
+        <button class="gutter lockgutter" aria-label="Locked — release early">
+          <svg class="lockicon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10.5" width="16" height="10" rx="2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/></svg>
+        </button>
+        <div class="body">
+          <div class="l1">
+            <span class="l1left"><span class="obd">9108324301</span><span class="wintag">·10:30</span></span>
+            <span class="l1right"><span class="forday">for Thu 23 Jul</span></span>
+          </div>
+          <div class="l2">Polishwala Trading</div>
+          <div class="l3">Adajan<span class="dot">·</span>4 BOX</div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="tabbar">
+      <button class="tab on">
+        <span class="iconwrap">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
+          <span class="badge">7</span>
+        </span>
+        Assign
+        <span class="ul"></span>
+      </button>
+      <button class="tab">
+        <span class="iconwrap">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16.5 9.4L7.5 4.21"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05"/><path d="M12 22.08V12"/></svg>
+          <span class="badge">2</span>
+        </span>
+        Picking
+        <span class="ul"></span>
+      </button>
+      <button class="tab">
+        <span class="iconwrap">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg>
+          <span class="badge">1</span>
+        </span>
+        Done
+        <span class="ul"></span>
+      </button>
+    </div>
+
+    <div class="scrim"></div>
+
+    <div class="sheet">
+      <div class="grip"></div>
+      <h3>Release this bill for picking early?</h3>
+      <div class="subt">
+        <b>Lakhani Paints</b> · 9108324285<br>
+        Scheduled for <b>Thu 23 Jul, 12:30</b>. Releasing moves it into
+        <b>Due now</b> so it can be assigned today.
+      </div>
+      <div class="sheetbtns">
+        <button class="btn-cancel">Cancel</button>
+        <button class="btn-release">Release</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<p class="hint">
+  Interaction only — the permission question ("who may release early") is deferred per
+  design doc §7. Confirm is deliberate here and nowhere else on the board: this is the one
+  action that overrides Support, and it has no Undo.
+</p>
+
+</body>
+</html>

@@ -1,0 +1,209 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   SHARED STYLES — Assign-tab zone mockups (2026-07-20)
+   Referenced by: assign-two-zones.html, assign-stale-and-nodate.html,
+                  locked-bill-open.html, release-early-confirm.html
+
+   STATIC REVIEW ARTIFACT — not wired to app code or the DB.
+
+   Fidelity sources (match these, do not invent):
+     - Assign card markup .......... components/picking/picking-board-mobile.tsx
+     - Bottom workflow tab bar ..... components/shared/workflow-tab-bar.tsx
+     - Detail screen ............... picking-board-mobile.tsx (detail overlay)
+     - Colour tokens ............... docs/CLAUDE_UI.md §2-§3
+
+   NOTE ON TEXT SIZE: card text is 15px dealer / 12px subline, copied from the
+   live component. CLAUDE_UI.md's "16px" rule is an INPUT rule (iOS zoom
+   guard, §59.1), not a body-text floor — raising card text here would make
+   the mockup diverge from the component it exists to drive.
+   ───────────────────────────────────────────────────────────────────────── */
+
+:root{
+  --teal:#0d9488; --teal-700:#0f766e; --teal-50:#f0fdfa; --teal-200:#99f6e4;
+  --app-bg:#f9fafb; --ink:#111827; --muted:#6b7280; --faint:#9ca3af;
+  --line2:#e5e7eb;
+  --card-shadow: 0 1px 2px rgba(16,24,40,.04), 0 3px 12px rgba(16,24,40,.05);
+}
+*{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+html,body{margin:0; height:100%;
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  background:#e9edf1; color:var(--ink);}
+body{display:flex; flex-direction:column; align-items:center; padding:24px 12px 40px;}
+
+/* Dev annotation bar — deliberately outside the app's visual language */
+.devbar{width:100%; max-width:390px; margin-bottom:14px; background:#1f2937;
+  color:#e5e7eb; border-radius:12px; padding:10px 14px; font-size:12px; line-height:1.55;}
+.devbar b{color:#fff;}
+.devbar .tag{display:inline-block; background:#f59e0b; color:#1f2937; font-weight:700;
+  font-size:10px; letter-spacing:.04em; padding:2px 6px; border-radius:5px;
+  margin-right:8px; vertical-align:middle;}
+
+.phone{width:390px; height:820px; background:#000; border-radius:44px; padding:11px;
+  box-shadow:0 24px 60px rgba(0,0,0,.28); position:relative;}
+.screen{width:100%; height:100%; background:var(--app-bg); border-radius:34px;
+  overflow:hidden; position:relative; display:flex; flex-direction:column;}
+.notch{position:absolute; top:11px; left:50%; transform:translateX(-50%);
+  width:126px; height:30px; background:#000; border-radius:0 0 18px 18px; z-index:70;}
+.safe-top{height:14px; flex:0 0 14px;}
+
+/* ── Direction-A teal header: avatar · title · grid + search ─────────────── */
+.topbar{flex:0 0 auto; background:var(--teal); display:flex; align-items:center;
+  justify-content:space-between; gap:10px; padding:11px 14px 10px;}
+.topbar h1{font-size:19px; font-weight:800; color:#fff; margin:0; letter-spacing:-.01em;}
+.avatar{width:40px; height:40px; min-width:44px; min-height:44px; border-radius:999px;
+  background:rgba(255,255,255,.2); color:#fff; font-size:13px; font-weight:700;
+  display:flex; align-items:center; justify-content:center; border:none; flex:0 0 auto;}
+.topicons{display:flex; align-items:center; gap:2px; flex:0 0 auto;}
+.iconbtn{width:44px; height:44px; border-radius:10px; display:flex; align-items:center;
+  justify-content:center; color:#fff; background:transparent; border:none; cursor:pointer;}
+
+/* ── Filter row + lane strip ─────────────────────────────────────────────── */
+.controls{flex:0 0 auto; background:#fff; border-bottom:1px solid var(--line2); padding:10px 16px 0;}
+.filterrow{display:flex; align-items:center; justify-content:space-between; gap:8px; padding-bottom:10px;}
+.typepills{display:flex; gap:6px; flex:0 0 auto;}
+.typepill{border:1px solid var(--line2); background:#fff; color:#374151; font-size:12.5px;
+  font-weight:500; padding:8px 12px; border-radius:999px; cursor:pointer; white-space:nowrap; min-height:36px;}
+.typepill.on{background:#111827; border-color:#111827; color:#fff; font-weight:600;}
+.routedd{flex:1 1 auto; min-width:0; max-width:150px; display:flex; align-items:center;
+  justify-content:space-between; gap:6px; border:1px solid var(--line2); background:#fff;
+  color:var(--muted); font-size:12.5px; font-weight:500; padding:8px 10px 8px 13px;
+  border-radius:999px; cursor:pointer; min-height:36px;}
+.routedd span{white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.lanestrip{margin:0 -16px; background:var(--teal-50); border-top:1px solid var(--teal-200);
+  padding:8px 16px; font-size:12px; font-weight:500; color:var(--teal-700);
+  display:flex; align-items:center; gap:5px;}
+.lanestrip b{font-weight:700;}
+
+.list{flex:1 1 auto; overflow-y:auto; padding:12px 16px 100px;}
+
+/* ── Zone headers — BOTH neutral. Upcoming must never read as an alarm. ──── */
+.zonehead{font-size:11.5px; font-weight:700; text-transform:uppercase; letter-spacing:.05em;
+  margin:0 0 8px; padding:0 2px; display:flex; align-items:center; gap:6px;}
+.zonehead.due{color:#374151;}
+.zonehead.upcoming{color:#9ca3af; font-weight:600; margin-top:22px;}
+.zonehead .n{font-variant-numeric:tabular-nums;}
+.zonehead .sep{color:#d1d5db;}
+.zonehead svg{width:13px; height:13px; opacity:.85;}
+/* Hairline above Upcoming — separation without a heavy divider */
+.zonehead.upcoming::before{content:""; position:absolute; left:16px; right:16px;
+  margin-top:-13px; height:1px; background:var(--line2);}
+
+/* ── Card (mirrors the live Assign card) ─────────────────────────────────── */
+.card{display:flex; align-items:flex-start; gap:11px; background:#fff; border-radius:14px;
+  padding:13px; margin-bottom:9px; border:1.5px solid transparent; box-shadow:var(--card-shadow);}
+.card.sel{border-color:var(--teal); background:var(--teal-50);}
+.gutter{width:44px; min-height:44px; flex:0 0 auto; display:flex; align-items:center;
+  justify-content:center; padding-top:1px; background:none; border:none; cursor:pointer;}
+.selbox{width:20px; height:20px; border-radius:6px; border:2px solid #d1d5db; background:#fff;
+  display:flex; align-items:center; justify-content:center; flex:0 0 auto;}
+.card.sel .selbox{background:var(--teal); border-color:var(--teal);}
+.body{flex:1 1 auto; min-width:0; cursor:pointer;}
+.l1{display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:5px;}
+.l1left{display:flex; align-items:baseline; gap:5px; min-width:0;}
+.l1right{display:flex; align-items:center; gap:6px; flex:0 0 auto;}
+.obd{font-family:"SF Mono",ui-monospace,Menlo,monospace; font-size:11px; color:#9ca3af; white-space:nowrap;}
+.wintag{font-size:10.5px; color:#c2c7cf; white-space:nowrap;}
+.l2{font-size:15px; font-weight:700; color:#111827; line-height:1.25; margin-bottom:3px;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.l3{font-size:12px; color:#6b7280; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.l3 .dot{color:#d1d5db; margin:0 5px;}
+.star{width:14px; height:14px; color:#f59e0b; fill:#f59e0b;}
+
+/* ── Age badges — AMBER IS RESERVED FOR STALENESS (CLAUDE_UI §1) ─────────── */
+.age{font-size:10.5px; font-weight:700; padding:3px 8px; border-radius:999px;
+  flex:0 0 auto; white-space:nowrap; font-variant-numeric:tabular-nums;}
+.age.d1{background:#fffbeb; color:#b45309;}                              /* 1d  subtle */
+.age.d2{background:#fef3c7; color:#92400e; border:1px solid #fcd34d;}    /* 2-3d solid */
+.age.d4{background:#fef2f2; color:#b91c1c; border:1px solid #fecaca;}    /* 4d+  red   */
+/* 0d renders NOTHING — absence of a badge is the "fresh" signal. */
+
+/* No-date chip — a DATA GAP, not staleness. Neutral grey, never amber. */
+.nodate{font-size:10.5px; font-weight:600; padding:3px 8px; border-radius:999px;
+  background:#f3f4f6; color:#6b7280; flex:0 0 auto; white-space:nowrap;}
+
+/* ── Zone 2 locked treatment — muted + neutral, never amber/red ──────────── */
+.card.locked{background:#fcfcfd;}
+.card.locked .l2{color:#374151;}
+.card.locked .l3{color:#9ca3af;}
+.card.locked .obd{color:#b6bcc6;}
+.lockicon{width:20px; height:20px; color:#c2c7cf; flex:0 0 auto;}
+.gutter.lockgutter{cursor:pointer;}
+/* Neutral slate date badge — a heads-up, deliberately NOT the amber age scale */
+.forday{font-size:10.5px; font-weight:600; padding:3px 8px; border-radius:999px;
+  background:#eef2f7; color:#5b6675; border:1px solid #dde3ec;
+  flex:0 0 auto; white-space:nowrap;}
+
+/* ── Bottom workflow tab bar (workflow-tab-bar.tsx) ──────────────────────── */
+.tabbar{position:absolute; left:0; right:0; bottom:0; background:#fff;
+  border-top:1px solid var(--line2); display:flex; z-index:50; padding-bottom:6px;}
+.tab{position:relative; flex:1; display:flex; flex-direction:column; align-items:center;
+  gap:4px; padding:8px 0; font-size:11px; font-weight:600; color:var(--faint);
+  background:none; border:none; cursor:pointer; min-height:48px;}
+.tab.on{color:var(--teal-700);}
+.tab .iconwrap{position:relative; display:flex; align-items:center; justify-content:center;}
+.tab svg{width:24px; height:24px;}
+.tab .badge{position:absolute; top:-4px; right:-6px; min-width:16px; height:16px; padding:0 3px;
+  border-radius:999px; background:#9ca3af; color:#fff; font-size:9px; font-weight:700;
+  display:flex; align-items:center; justify-content:center; font-variant-numeric:tabular-nums;}
+.tab.on .badge{background:var(--teal);}
+.tab .ul{position:absolute; left:50%; transform:translateX(-50%); bottom:0; height:3px;
+  width:32px; border-radius:999px; background:var(--teal); opacity:0;}
+.tab.on .ul{opacity:1;}
+
+/* ── Detail screen ───────────────────────────────────────────────────────── */
+.dhead{flex:0 0 auto; background:var(--teal); padding:12px 14px 14px; display:flex;
+  align-items:center; gap:10px;}
+.backbtn{width:44px; height:44px; border-radius:9px; background:rgba(255,255,255,.15);
+  display:flex; align-items:center; justify-content:center; color:#fff; border:none;
+  flex:0 0 auto; cursor:pointer;}
+.dtitle{min-width:0; flex:1 1 auto;}
+.dtitle .dn{font-size:16px; font-weight:800; color:#fff; white-space:nowrap;
+  overflow:hidden; text-overflow:ellipsis;}
+.dtitle .dm{font-size:12px; color:rgba(255,255,255,.75); white-space:nowrap;
+  overflow:hidden; text-overflow:ellipsis;}
+.statstrip{flex:0 0 auto; background:#fff; border-bottom:1px solid var(--line2);
+  padding:12px 14px; display:flex; align-items:flex-end; justify-content:space-between; gap:12px;}
+.statstrip .tagname{font-size:16px; font-weight:800; color:#111827; line-height:1.3; min-width:0;}
+.statstrip .vol{font-size:13px; font-weight:600; color:#6b7280; flex:0 0 auto;}
+.packchips{flex:0 0 auto; background:#fff; border-bottom:1px solid var(--line2);
+  padding:10px 14px; display:flex; align-items:center; gap:6px; overflow-x:auto;}
+.chip{font-size:12.5px; font-weight:500; padding:7px 12px; border-radius:999px;
+  border:1px solid var(--line2); background:#fff; color:#374151; white-space:nowrap; flex:0 0 auto;}
+.chip.on{background:#111827; border-color:#111827; color:#fff; font-weight:600;}
+.lines{flex:1 1 auto; overflow-y:auto; padding:12px 14px 16px;}
+.lrow{display:flex; background:#fff; border-radius:14px; overflow:hidden; margin-bottom:8px;
+  box-shadow:var(--card-shadow);}
+.lpack{width:56px; flex:0 0 auto; background:#f8fafa; border-right:1px solid var(--line2);
+  display:flex; align-items:center; justify-content:center; padding:10px 4px;
+  font-size:13px; font-weight:700; color:var(--teal-700); text-align:center;}
+.lmid{flex:1 1 auto; min-width:0; padding:10px 12px;}
+.lsku{font-family:"SF Mono",ui-monospace,Menlo,monospace; font-size:17px; font-weight:700;
+  color:#111827; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.lname{font-size:12px; color:#6b7280; margin-top:2px; white-space:nowrap;
+  overflow:hidden; text-overflow:ellipsis;}
+.lqty{flex:0 0 auto; display:flex; align-items:center; justify-content:center; padding:0 14px;
+  font-size:26px; font-weight:800; color:#111827;}
+.ctawrap{flex:0 0 auto; padding:12px 14px 16px;}
+.cta{width:100%; min-height:48px; height:48px; border-radius:999px; border:none;
+  font-size:14.5px; font-weight:700; cursor:pointer;}
+.cta.primary{background:var(--teal); color:#fff; box-shadow:0 8px 22px rgba(13,148,136,.42);}
+.cta.locked{background:#eef0f3; color:#9aa2ad; display:flex; align-items:center;
+  justify-content:center; gap:8px; cursor:not-allowed;}
+.ctahint{text-align:center; font-size:12px; color:#9ca3af; margin-top:8px;}
+
+/* ── Sheet + scrim ───────────────────────────────────────────────────────── */
+.scrim{position:absolute; inset:0; background:rgba(0,0,0,.4); z-index:80;}
+.sheet{position:absolute; left:0; right:0; bottom:0; z-index:90; background:#fff;
+  border-radius:18px 18px 0 0; padding:18px 18px 22px;}
+.sheet .grip{width:36px; height:4px; border-radius:2px; background:#d1d5db; margin:0 auto 14px;}
+.sheet h3{margin:0; font-size:17px; font-weight:800; color:#111827; line-height:1.35;}
+.sheet .subt{font-size:13px; color:#6b7280; margin-top:8px; line-height:1.5;}
+.sheet .subt b{color:#374151; font-weight:700;}
+.sheetbtns{display:flex; gap:10px; margin-top:18px;}
+.sheetbtns button{flex:1; min-height:48px; height:48px; border-radius:999px; font-size:14.5px;
+  font-weight:700; cursor:pointer;}
+.btn-cancel{background:#fff; border:1px solid var(--line2); color:#374151;}
+.btn-release{background:var(--teal); border:none; color:#fff; box-shadow:0 8px 22px rgba(13,148,136,.42);}
+
+.hint{max-width:390px; margin-top:16px; font-size:12px; color:#6b7280;
+  text-align:center; line-height:1.65;}
+.hint code{background:#dfe4ea; padding:1px 5px; border-radius:4px; font-size:11px;}

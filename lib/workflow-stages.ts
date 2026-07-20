@@ -144,3 +144,52 @@ export const SUPPORT_DONE_STAGE_NAMES: string[] = STAGE_LADDER
 export const SUPPORT_PICKING_QUEUE_STAGE_NAMES: string[] = STAGE_LADDER
   .filter((d) => d.rank === 60)
   .map((d) => d.stage);
+
+/**
+ * The stages /picking's queue reads, split into the two sets its two scopes
+ * need. Composed from the constants above so the single-date and all-dates
+ * scopes in lib/picking/queue.ts can never drift apart by construction —
+ * PICKING_OPEN_STAGES is a strict subset of PICKING_ACTIVE_STAGES.
+ *
+ * ⚠ DELIBERATELY EXCLUDES 'closed', and this is NOT the hand-written-array
+ * bug class the file-top comment warns about — it is the exact exclusion
+ * SUPPORT_DONE_OUTPUT above exists to enforce ("consumers like /picking must
+ * see only NEW dispatches, not resurrect old 'closed' rows"). Do NOT "fix"
+ * this by deriving it from rank: 'closed' shares rank 60 with
+ * 'pending_picking', so any rank-based derivation silently readmits it.
+ *
+ * The reason is DATA-VERIFIED, not an inference from the stage's name.
+ * Read-only production census, 2026-07-20 — non-removed 'closed' rows with
+ * dispatchStatus='dispatch' (i.e. board-eligible on every other predicate):
+ *
+ *     5,071 total   =   4,499 with dispatchTargetDate NULL
+ *                     +   572 past-dated
+ *                     +     0 today
+ *                     +     0 future
+ *
+ * All 5,071 are legacy COMPLETED orders. None is live floor work: a NULL
+ * dispatch date means the row never passed through the modern Support
+ * dispatch flow at all (that flow requires dispatchTargetDate +
+ * dispatchWindowId), and the 572 dated ones are all in the past. Scale
+ * baseline from the same day: 18 'pending_picking' rows existed in total.
+ *
+ * Why this bites HARDER under the all-dates 'openPending' scope than under
+ * the old single-date filter: the date fence used to hide every one of them.
+ * Remove the fence and they are admitted en masse — and note the interaction
+ * with the locked null-date rule in lib/picking/queue.ts, which maps a NULL
+ * dispatchTargetDate to zone 'due' (unscheduled work must never hide behind
+ * the lock). So the 4,499 null-date rows would not sit quietly in the
+ * 'upcoming' zone; they would land directly in the DUE zone, on top of the
+ * floor's live work, at roughly 250x the volume of the real queue.
+ */
+export const PICKING_OPEN_STAGES: string[] = [
+  SUPPORT_DONE_OUTPUT,
+  PICK_ASSIGNED,
+  PICK_DONE,
+];
+
+/** PICKING_OPEN_STAGES + the terminal-for-picking checked stage. */
+export const PICKING_ACTIVE_STAGES: string[] = [
+  ...PICKING_OPEN_STAGES,
+  PICK_CHECKED,
+];

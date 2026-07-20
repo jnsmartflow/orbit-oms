@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Picking — Assign tab, two zones (mockup)</title>
+<link rel="stylesheet" href="_zones-shared.css">
+<!--
+  STATIC REVIEW MOCKUP — not wired to app code / DB. Throwaway artifact.
+  SCREEN 1 of 4 — the primary screen for the zone split.
+
+  Fidelity source: components/picking/picking-board-mobile.tsx (Assign tab,
+  post-2026-07-20 tab re-slot) + components/shared/workflow-tab-bar.tsx.
+
+  WHAT THIS SCREEN PROVES
+    - Zone 1 "Due now"  = dispatchTargetDate <= today, PLUS null-date bills.
+      Flat, in the EXISTING server sort order (PICKING_SPINE: window →
+      delivery type → key customer → priority → FIFO). No new sort invented.
+    - Zone 2 "Upcoming" = dispatchTargetDate > today. Visible, readable,
+      tappable — but not assignable.
+
+  COLOUR DISCIPLINE (CLAUDE_UI.md §1)
+    - AMBER means staleness and nothing else. It appears ONLY on the Zone 1
+      age badges.
+    - Both zone headers are NEUTRAL grey. "Upcoming" is deliberately NOT
+      amber: a bill scheduled for Thursday is early, not late. Colouring it
+      would teach the supervisor to ignore amber.
+    - ONE TEAL ACTION: none on this screen, by design. Nothing is selected,
+      so no assign bar is up. Teal appears only as chrome (header bar) and
+      nav state (active tab + its badge) — both sanctioned by §2/§59.3.
+
+  DATE: "today" is Mon 20 Jul 2026. 23 Jul is a THURSDAY (the brief's
+  "Wed 23 Jul" was illustrative; corrected here because this mockup names a
+  real bill — OBD 9108324285, Lakhani Paints — that is live on the board).
+-->
+</head>
+<body>
+
+<div class="devbar">
+  <span class="tag">MOCKUP 1/4</span><b>Assign tab — Due now + Upcoming (locked)</b><br>
+  The whole point of the step. 7 due bills (one 2d amber), then 3 future-dated bills locked below.
+  Amber = staleness only. Upcoming header is neutral grey, never an alarm.
+</div>
+
+<div class="phone">
+  <div class="notch"></div>
+  <div class="screen">
+    <div class="safe-top"></div>
+
+    <div class="topbar">
+      <button class="avatar">SF</button>
+      <h1>Picking</h1>
+      <div class="topicons">
+        <button class="iconbtn" aria-label="All pages">
+          <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+        </button>
+        <button class="iconbtn" aria-label="Search">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="controls">
+      <div class="filterrow">
+        <div class="typepills">
+          <button class="typepill on">All</button>
+          <button class="typepill">Local</button>
+          <button class="typepill">UPC</button>
+        </div>
+        <button class="routedd">
+          <span>All routes</span>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+      </div>
+      <!-- Lane strip counts the WORKING list only (Zone 1). Upcoming bills
+           are not "ready to load" — folding them in would overstate the
+           floor's actual workload. -->
+      <div class="lanestrip">
+        <b>All routes</b><span>&nbsp;·&nbsp;7 due&nbsp;·&nbsp;284 L ready to load</span>
+      </div>
+    </div>
+
+    <div class="list">
+
+      <!-- ══ ZONE 1 · DUE NOW ══ -->
+      <div class="zonehead due">
+        Due now <span class="sep">·</span> <span class="n">7</span>
+      </div>
+
+      <div class="card">
+        <button class="gutter"><span class="selbox"></span></button>
+        <div class="body">
+          <div class="l1">
+            <span class="l1left"><span class="obd">9108324102</span><span class="wintag">·10:30</span></span>
+            <span class="l1right">
+              <svg class="star" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.9L12 17.8 5.8 21.1 7 14.2l-5-4.9 6.9-1z"/></svg>
+            </span>
+          </div>
+          <div class="l2">Maruti Paints</div>
+          <div class="l3">Parle Point<span class="dot">·</span>12 DRUM 4 BOX</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <button class="gutter"><span class="selbox"></span></button>
+        <div class="body">
+          <div class="l1">
+            <span class="l1left"><span class="obd">9108324118</span><span class="wintag">·10:30</span></span>
+            <span class="l1right"></span>
+          </div>
+          <div class="l2">Sarita Colours</div>
+          <div class="l3">Adajan<span class="dot">·</span>4 BOX</div>
+        </div>
+      </div>
+
+      <!-- 1d — SUBTLE amber (no border). First rung of the scale. -->
+      <div class="card">
+        <button class="gutter"><span class="selbox"></span></button>
+        <div class="body">
+          <div class="l1">
+            <span class="l1left"><span class="obd">9108323944</span><span class="wintag">·12:30</span></span>
+            <span class="l1right"><span class="age d1">1d</span></span>
+          </div>
+          <div class="l2">Nakoda Colours</div>
+          <div class="l3">Bamroli<span class="dot">·</span>7 DRUM</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <button class="gutter"><span class="selbox"></span></button>
+        <div class="body">
+          <div class="l1">
+            <span class="l1left"><span class="obd">9108324077</span><span class="wintag">·12:30</span></span>
+            <span class="l1right"></span>
+          </div>
+          <div class="l2">Ambika Paints</div>
+          <div class="l3">Parle Point<span class="dot">·</span>3 BOX</div>
+        </div>
+      </div>
+
+      <!-- 2d — SOLID amber (filled + border). The escalation step. -->
+      <div class="card">
+        <button class="gutter"><span class="selbox"></span></button>
+        <div class="body">
+          <div class="l1">
+            <span class="l1left"><span class="obd">9108323801</span><span class="wintag">·16:00</span></span>
+            <span class="l1right"><span class="age d2">2d</span></span>
+          </div>
+          <div class="l2">Mohan Colour Co</div>
+          <div class="l3">Adajan<span class="dot">·</span>9 DRUM 2 BOX</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <button class="gutter"><span class="selbox"></span></button>
+        <div class="body">
+          <div class="l1">
+            <span class="l1left"><span class="obd">9108324156</span><span class="wintag">·16:00</span></span>
+            <span class="l1right"></span>
+          </div>
+          <div class="l2">Shakti Sales</div>
+          <div class="l3">Bhatar<span class="dot">·</span>5 BOX</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <button class="gutter"><span class="selbox"></span></button>
+        <div class="body">
+          <div class="l1">
+            <span class="l1left"><span class="obd">9108323612</span><span class="wintag">·18:00</span></span>
+            <span class="l1right"><span class="age d1">1d</span></span>
+          </div>
+          <div class="l2">Shree Rang Sarita</div>
+          <div class="l3">Adajan<span class="dot">·</span>6 DRUM</div>
+        </div>
+      </div>
+
+      <!-- ══ ZONE 2 · UPCOMING (LOCKED) ══
+           Neutral grey header + hairline. The lock replaces the checkbox in
+           the SAME 44px gutter, so the row rhythm is unbroken and the
+           "you cannot tick this" message lands exactly where the thumb goes.
+           Cards stay tappable — see locked-bill-open.html. -->
+      <div class="zonehead upcoming">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10.5" width="16" height="10" rx="2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/></svg>
+        Upcoming <span class="sep">·</span> <span class="n">3</span>
+      </div>
+
+      <div class="card locked">
+        <button class="gutter lockgutter" aria-label="Locked — tap to release early">
+          <svg class="lockicon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10.5" width="16" height="10" rx="2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/></svg>
+        </button>
+        <div class="body">
+          <div class="l1">
+            <span class="l1left"><span class="obd">9108324285</span><span class="wintag">·12:30</span></span>
+            <span class="l1right"><span class="forday">for Thu 23 Jul</span></span>
+          </div>
+          <div class="l2">Lakhani Paints</div>
+          <div class="l3">Adajan<span class="dot">·</span>8 DRUM 3 BOX</div>
+        </div>
+      </div>
+
+      <div class="card locked">
+        <button class="gutter lockgutter" aria-label="Locked — tap to release early">
+          <svg class="lockicon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10.5" width="16" height="10" rx="2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/></svg>
+        </button>
+        <div class="body">
+          <div class="l1">
+            <span class="l1left"><span class="obd">9108324301</span><span class="wintag">·10:30</span></span>
+            <span class="l1right"><span class="forday">for Thu 23 Jul</span></span>
+          </div>
+          <div class="l2">Polishwala Trading</div>
+          <div class="l3">Adajan<span class="dot">·</span>4 BOX</div>
+        </div>
+      </div>
+
+      <div class="card locked">
+        <button class="gutter lockgutter" aria-label="Locked — tap to release early">
+          <svg class="lockicon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10.5" width="16" height="10" rx="2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/></svg>
+        </button>
+        <div class="body">
+          <div class="l1">
+            <span class="l1left"><span class="obd">9108324340</span><span class="wintag">·16:00</span></span>
+            <span class="l1right"><span class="forday">in 4d</span></span>
+          </div>
+          <div class="l2">Nakoda Colours</div>
+          <div class="l3">Bamroli<span class="dot">·</span>11 DRUM</div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Bottom bar: Assign badge counts ZONE 1 ONLY (7), not 10. A locked
+         bill is not work the supervisor can act on, so it must not inflate
+         the actionable number — same principle that keeps isChecked out of
+         the Done badge. -->
+    <div class="tabbar">
+      <button class="tab on">
+        <span class="iconwrap">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
+          <span class="badge">7</span>
+        </span>
+        Assign
+        <span class="ul"></span>
+      </button>
+      <button class="tab">
+        <span class="iconwrap">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16.5 9.4L7.5 4.21"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05"/><path d="M12 22.08V12"/></svg>
+          <span class="badge">2</span>
+        </span>
+        Picking
+        <span class="ul"></span>
+      </button>
+      <button class="tab">
+        <span class="iconwrap">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg>
+          <span class="badge">1</span>
+        </span>
+        Done
+        <span class="ul"></span>
+      </button>
+    </div>
+
+  </div>
+</div>
+
+<p class="hint">
+  Zone membership comes from the data layer already shipped: <code>zone</code>,
+  <code>ageDays</code>, <code>noDispatchDate</code> on <code>PickingQueueRow</code>.
+  Sort inside Zone 1 is untouched <code>PICKING_SPINE</code>.
+</p>
+
+</body>
+</html>

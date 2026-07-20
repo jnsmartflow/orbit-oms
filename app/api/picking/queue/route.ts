@@ -26,9 +26,30 @@ export async function GET(req: Request): Promise<NextResponse> {
   // trim, empty string treated as absent (falls through to today in queue.ts).
   const { searchParams } = new URL(req.url);
   const dateParam = searchParams.get("date")?.trim() || undefined;
+  const scopeParam = searchParams.get("scope")?.trim() || undefined;
+
+  // Validate rather than coerce, matching queue.ts's own stance on a malformed
+  // `date` (it THROWS instead of falling back to today, so a scripted caller
+  // gets a clear 400 instead of a silently-different answer). An unrecognised
+  // scope must not quietly degrade to 'single' — that would hand a mobile
+  // caller a one-day payload while it renders an all-dates board.
+  if (scopeParam !== undefined && scopeParam !== "single" && scopeParam !== "openPending") {
+    return NextResponse.json(
+      { error: `Invalid scope "${scopeParam}" — expected "single" or "openPending"` },
+      { status: 400 },
+    );
+  }
+  // Contradictory request: 'openPending' spans all dates, so a `date` would be
+  // silently ignored. Same reasoning as above — reject, don't quietly drop it.
+  if (scopeParam === "openPending" && dateParam !== undefined) {
+    return NextResponse.json(
+      { error: "`date` is not accepted with scope=openPending (it spans all dates)" },
+      { status: 400 },
+    );
+  }
 
   try {
-    const result = await getPickingQueue(dateParam);
+    const result = await getPickingQueue({ date: dateParam, scope: scopeParam });
     return NextResponse.json(result);
   } catch (err) {
     return NextResponse.json(

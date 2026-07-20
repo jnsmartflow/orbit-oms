@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Picking — Assign, stale + no-date edge cases (mockup)</title>
+<link rel="stylesheet" href="_zones-shared.css">
+<!--
+  STATIC REVIEW MOCKUP — not wired to app code / DB. Throwaway artifact.
+  SCREEN 2 of 4 — the age scale at full stretch, plus the null-date case.
+
+  WHY THIS SCREEN EXISTS
+  Screen 1 shows the zone split in a normal day. This one deliberately stacks
+  every rung of the age scale in one list so the steps can be judged against
+  each other — the thing you cannot assess from a single 2d badge in
+  isolation. Ordered 4d → 0d here FOR REVIEW LEGIBILITY ONLY; the live list
+  keeps PICKING_SPINE order (window first), where ages will be interleaved.
+
+  THE SCALE (top to bottom)
+    4d+   red     — a pick that has been forgotten. The only red on the board.
+    3d    amber solid
+    2d    amber solid   — same treatment as 3d; the 2-3d band is one step.
+    1d    amber subtle  — a nudge, no border. Yesterday is not a crisis.
+    0d    NO BADGE      — absence IS the signal. Adding a grey "0d" chip to
+                          every fresh card would put noise on the majority of
+                          rows and make the amber ones harder to spot.
+
+  THE NULL-DATE CASE — the one that needed a decision
+    A bill with no dispatchTargetDate sits in DUE NOW (locked rule in
+    lib/picking/queue.ts: null → zone "due", never "upcoming" — unscheduled
+    work must never hide behind a lock). It is fully assignable.
+    Its chip is NEUTRAL GREY, never amber: a missing date is a DATA GAP, not
+    staleness. We do not know that it is late — we know we cannot tell. Amber
+    would assert an urgency the data does not support, and would also make
+    ageDays: null look like ageDays: 999.
+    Production count today: ZERO such rows. This is future-proofing for
+    imports that omit the date — design it now, not during an incident.
+-->
+</head>
+<body>
+
+<div class="devbar">
+  <span class="tag">MOCKUP 2/4</span><b>Assign — age scale extremes + no-date</b><br>
+  Every rung stacked for comparison: 4d red → 3d/2d solid amber → 1d subtle → 0d bare.
+  Plus the neutral grey <b>no date</b> chip (a data gap, not staleness — and still assignable).
+</div>
+
+<div class="phone">
+  <div class="notch"></div>
+  <div class="screen">
+    <div class="safe-top"></div>
+
+    <div class="topbar">
+      <button class="avatar">SF</button>
+      <h1>Picking</h1>
+      <div class="topicons">
+        <button class="iconbtn" aria-label="All pages">
+          <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+        </button>
+        <button class="iconbtn" aria-label="Search">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="controls">
+      <div class="filterrow">
+        <div class="typepills">
+          <button class="typepill on">All</button>
+          <button class="typepill">Local</button>
+          <button class="typepill">UPC</button>
+        </div>
+        <button class="routedd">
+          <span>All routes</span>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+      </div>
+      <div class="lanestrip">
+        <b>All routes</b><span>&nbsp;·&nbsp;6 due&nbsp;·&nbsp;319 L ready to load</span>
+      </div>
+    </div>
+
+    <div class="list">
+
+      <div class="zonehead due">
+        Due now <span class="sep">·</span> <span class="n">6</span>
+      </div>
+
+      <!-- 4d — RED. The forgotten pick. Deliberately the only red on the
+           board so it cannot be confused with anything else. -->
+      <div class="card">
+        <button class="gutter"><span class="selbox"></span></button>
+        <div class="body">
+          <div class="l1">
+            <span class="l1left"><span class="obd">9108322870</span><span class="wintag">·10:30</span></span>
+            <span class="l1right"><span class="age d4">4d</span></span>
+          </div>
+          <div class="l2">Polishwala Trading</div>
+          <div class="l3">Adajan<span class="dot">·</span>15 DRUM 6 BOX</div>
+        </div>
+      </div>
+
+      <!-- 3d and 2d share ONE treatment — the "2-3d" band is a single step,
+           not two. Splitting them would add a rung the eye cannot resolve. -->
+      <div class="card">
+        <button class="gutter"><span class="selbox"></span></button>
+        <div class="body">
+          <div class="l1">
+            <span class="l1left"><span class="obd">9108323105</span><span class="wintag">·12:30</span></span>
+            <span class="l1right"><span class="age d2">3d</span></span>
+          </div>
+          <div class="l2">Shakti Sales</div>
+          <div class="l3">Bhatar<span class="dot">·</span>2 BOX</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <button class="gutter"><span class="selbox"></span></button>
+        <div class="body">
+          <div class="l1">
+            <span class="l1left"><span class="obd">9108323801</span><span class="wintag">·16:00</span></span>
+            <span class="l1right"><span class="age d2">2d</span></span>
+          </div>
+          <div class="l2">Mohan Colour Co</div>
+          <div class="l3">Adajan<span class="dot">·</span>9 DRUM 2 BOX</div>
+        </div>
+      </div>
+
+      <!-- 1d — subtle amber, no border. A nudge, not an alarm. -->
+      <div class="card">
+        <button class="gutter"><span class="selbox"></span></button>
+        <div class="body">
+          <div class="l1">
+            <span class="l1left"><span class="obd">9108323944</span><span class="wintag">·12:30</span></span>
+            <span class="l1right"><span class="age d1">1d</span></span>
+          </div>
+          <div class="l2">Nakoda Colours</div>
+          <div class="l3">Bamroli<span class="dot">·</span>7 DRUM</div>
+        </div>
+      </div>
+
+      <!-- NO DATE — neutral grey chip, normal checkbox, fully assignable.
+           Sits in Due now by the locked null→due rule. -->
+      <div class="card">
+        <button class="gutter"><span class="selbox"></span></button>
+        <div class="body">
+          <div class="l1">
+            <span class="l1left"><span class="obd">9108324044</span><span class="wintag">·10:30</span></span>
+            <span class="l1right"><span class="nodate">no date</span></span>
+          </div>
+          <div class="l2">Ambika Paints</div>
+          <div class="l3">Parle Point<span class="dot">·</span>6 BOX</div>
+        </div>
+      </div>
+
+      <!-- 0d — nothing at all in the badge slot. -->
+      <div class="card">
+        <button class="gutter"><span class="selbox"></span></button>
+        <div class="body">
+          <div class="l1">
+            <span class="l1left"><span class="obd">9108324118</span><span class="wintag">·10:30</span></span>
+            <span class="l1right">
+              <svg class="star" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.9L12 17.8 5.8 21.1 7 14.2l-5-4.9 6.9-1z"/></svg>
+            </span>
+          </div>
+          <div class="l2">Sarita Colours</div>
+          <div class="l3">Adajan<span class="dot">·</span>4 BOX</div>
+        </div>
+      </div>
+
+      <div class="zonehead upcoming">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10.5" width="16" height="10" rx="2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/></svg>
+        Upcoming <span class="sep">·</span> <span class="n">1</span>
+      </div>
+
+      <div class="card locked">
+        <button class="gutter lockgutter" aria-label="Locked — tap to release early">
+          <svg class="lockicon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10.5" width="16" height="10" rx="2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/></svg>
+        </button>
+        <div class="body">
+          <div class="l1">
+            <span class="l1left"><span class="obd">9108324285</span><span class="wintag">·12:30</span></span>
+            <span class="l1right"><span class="forday">for Thu 23 Jul</span></span>
+          </div>
+          <div class="l2">Lakhani Paints</div>
+          <div class="l3">Adajan<span class="dot">·</span>8 DRUM 3 BOX</div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="tabbar">
+      <button class="tab on">
+        <span class="iconwrap">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
+          <span class="badge">6</span>
+        </span>
+        Assign
+        <span class="ul"></span>
+      </button>
+      <button class="tab">
+        <span class="iconwrap">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16.5 9.4L7.5 4.21"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05"/><path d="M12 22.08V12"/></svg>
+        </span>
+        Picking
+        <span class="ul"></span>
+      </button>
+      <button class="tab">
+        <span class="iconwrap">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg>
+        </span>
+        Done
+        <span class="ul"></span>
+      </button>
+    </div>
+
+  </div>
+</div>
+
+<p class="hint">
+  Rows ordered 4d→0d for review only — the live list keeps <code>PICKING_SPINE</code>
+  order, so ages interleave. Zero null-date rows exist in production today; the
+  chip is designed ahead of need.
+</p>
+
+</body>
+</html>

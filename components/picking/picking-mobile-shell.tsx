@@ -1,8 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { Inbox, ClipboardCheck, CheckCircle2 } from "lucide-react";
-import { getTodayIST } from "@/lib/dates";
+import { Inbox, Package, CheckCircle2 } from "lucide-react";
 import { RoleLayoutClient } from "@/components/shared/role-layout-client";
 import type { RoleSidebarRole } from "@/components/shared/role-sidebar";
 import type { WorkflowTab } from "@/components/shared/workflow-tab-bar";
@@ -36,7 +35,17 @@ interface PickingBoardContextValue {
   data:         PickingQueueResult | null;
   loading:      boolean;
   error:        string | null;
-  activeTab:    "assign" | "check" | "checked";
+  // Tab keys renamed 2026-07-20 ("check"→"picking", "checked"→"done") as part
+  // of the one-state-per-tab re-slot. Unlike the 2026-07-19 rename that
+  // CLAUDE_PICKING.md §5.1 warns about (label changed, key deliberately did
+  // NOT), this one moves BOTH together — because the old keys had become
+  // actively inverted: post-re-slot, "check" would hold pick_assigned (no
+  // checking) while "checked" holds the actual needs-check work. This union
+  // is what makes the rename safe: tsc flags every stale comparison in
+  // PickingBoardMobile. Nothing persists these keys (plain useState below, no
+  // localStorage, no URL param, and WorkflowTab.key is a bare string), so
+  // there is no stored value to migrate.
+  activeTab:    "assign" | "picking" | "done";
   refetchQueue: () => Promise<void>;
   // Detail-interactions Build A (2026-07-19) — lifted from PickingBoardMobile
   // for the same reason activeTab/data were lifted in Stage 3: RoleLayoutClient's
@@ -92,21 +101,27 @@ function SupervisorPickingShell({
   // Lifted verbatim from PickingBoardMobile's pre-Stage-3 fetch (same shape,
   // same endpoint, same date-driven pattern as picking-queue.tsx's desktop
   // sibling) — only the OWNER moved.
-  const [selectedDate] = useState<string>(() => getTodayIST());
   const [data, setData] = useState<PickingQueueResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"assign" | "check" | "checked">("assign");
+  const [activeTab, setActiveTab] = useState<"assign" | "picking" | "done">("assign");
   // Detail-interactions Build A — see PickingBoardContextValue's comment.
   const [detailOpen, setDetailOpen] = useState(false);
 
+  // scope=openPending (2026-07-20 date-zones redesign) — pending and
+  // in-progress bills across ALL dates, plus today's checked band. Replaces
+  // the previous `?date=<today>` call, which fenced the WHOLE board to one
+  // day and hid carry-over work. Deliberately sends NO `date` param: the
+  // route 400s on the contradictory combination rather than ignoring it.
+  // Desktop (picking-queue.tsx) still sends `?date=` and no scope, so it
+  // keeps the unchanged 'single' path.
   const fetchQueue = useCallback(async (): Promise<PickingQueueResult> => {
-    const res = await fetch(`/api/picking/queue?date=${selectedDate}`);
+    const res = await fetch(`/api/picking/queue?scope=openPending`);
     if (!res.ok) {
       throw new Error(`Request failed (${res.status})`);
     }
     return res.json();
-  }, [selectedDate]);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -142,21 +157,40 @@ function SupervisorPickingShell({
   // re-derived here from the same shared `data` for the bottom-bar labels.
   // Cheap (a few array scans over the day's queue), not a second fetch.
   //
-  // Stage 4/4 — icons added, third tab's LABEL renamed "Checked" -> "Done"
-  // (visual only). The KEY stays "checked" — PickingBoardMobile's activeTab
-  // union, its `activeTab === "checked"` branch, and PickingMobileShell's
-  // own onTabChange cast all still key off this exact string; renaming it
-  // would silently break tab switching for zero visible reason.
+  // BADGE RE-CUT (2026-07-20) — each badge now counts exactly ONE state, the
+  // whole point of the tab re-slot. Previously the middle tab showed
+  // `assignedCount + doneCount`, a mixed number that told the supervisor
+  // nothing actionable ("is that bills being picked, or bills waiting on me?").
+  //
+  //   Assign  = waiting, DUE ZONE ONLY (pending_picking, dispatch date <=
+  //             today or absent). Narrowed 2026-07-20 (step 5a): an
+  //             "upcoming" bill is visible on the Assign tab but LOCKED —
+  //             it cannot be selected or assigned — so counting it would
+  //             promise the supervisor work he is not allowed to do. Same
+  //             principle that keeps isChecked out of the Done badge below.
+  //   Picking = assigned       (pick_assigned)    — out on the floor now
+  //   Done    = done ONLY      (pick_done)        — waiting on YOUR check
+  //
+  // ⚠ `isChecked` is deliberately absent from every badge. A checked bill is
+  // settled history; folding it into the Done badge would inflate the one
+  // number that is supposed to mean "work still requiring you". The Done tab
+  // still RENDERS checked bills (its lower band) — it just doesn't count them.
+  // Icons: Inbox (incoming work) → Package (goods being fetched) → CheckCircle2
+  // (finished). ClipboardCheck was dropped from the middle tab on 2026-07-20:
+  // a low-literacy floor user reads the icon before the word, and a
+  // clipboard-with-tick on the "Picking" tab said "check" — the exact state
+  // that tab no longer holds.
   const workflowTabs = useMemo<WorkflowTab[]>(() => {
     const rows: PickingQueueRow[] = data?.rows ?? [];
-    const waitingCount = rows.filter((r) => !r.isAssigned && !r.isDone && !r.isChecked).length;
+    const waitingDueCount = rows.filter(
+      (r) => !r.isAssigned && !r.isDone && !r.isChecked && r.zone === "due",
+    ).length;
     const assignedCount = rows.filter((r) => r.isAssigned).length;
     const doneCount = rows.filter((r) => r.isDone).length;
-    const checkedCount = rows.filter((r) => r.isChecked).length;
     return [
-      { key: "assign", label: "Assign", count: waitingCount, icon: Inbox },
-      { key: "check", label: "Check", count: assignedCount + doneCount, icon: ClipboardCheck },
-      { key: "checked", label: "Done", count: checkedCount, icon: CheckCircle2 },
+      { key: "assign", label: "Assign", count: waitingDueCount, icon: Inbox },
+      { key: "picking", label: "Picking", count: assignedCount, icon: Package },
+      { key: "done", label: "Done", count: doneCount, icon: CheckCircle2 },
     ];
   }, [data]);
 
@@ -173,7 +207,7 @@ function SupervisorPickingShell({
       navItems={navItems}
       workflowTabs={workflowTabs}
       activeTabKey={activeTab}
-      onTabChange={(key) => setActiveTab(key as "assign" | "check" | "checked")}
+      onTabChange={(key) => setActiveTab(key as "assign" | "picking" | "done")}
       hideBar={detailOpen}
     >
       <PickingBoardContext.Provider value={contextValue}>

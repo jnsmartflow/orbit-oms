@@ -93,6 +93,23 @@ async function main() {
     // floor_supervisor + picker — warehouse access only
     { roleSlug: "floor_supervisor", pageKey: "warehouse",  canView: true,  canEdit: true,  canImport: false, canExport: false, canDelete: false },
     { roleSlug: "picker",           pageKey: "warehouse",  canView: true,  canEdit: true,  canImport: false, canExport: false, canDelete: false },
+
+    // ── /picking (added 2026-07-20) ───────────────────────────────────────
+    // canView  = may open /picking (BOTH faces: the supervisor board and the
+    //            picker's own "My Picks").
+    // canEdit  = supervisor write actions — assign / unassign / approve /
+    //            release-early. `picker` is canEdit:FALSE on purpose: it must
+    //            be able to open its board and Mark Done (that route gates on
+    //            canView plus its own pickerId ownership check) but must never
+    //            assign, approve, or unlock a future-dated bill.
+    //
+    // These three rows also close a live seed-fragility landmine
+    // (CLAUDE_PICKING.md §7): `operations` had a picking grant in the live DB
+    // with NO matching seed row, so the next wipe-and-reseed would have
+    // silently revoked its /picking access. It is now seeded like the rest.
+    { roleSlug: "floor_supervisor", pageKey: "picking",    canView: true,  canEdit: true,  canImport: false, canExport: false, canDelete: false },
+    { roleSlug: "picker",           pageKey: "picking",    canView: true,  canEdit: false, canImport: false, canExport: false, canDelete: false },
+    { roleSlug: "operations",       pageKey: "picking",    canView: true,  canEdit: true,  canImport: false, canExport: false, canDelete: false },
   ];
 
   for (const row of permRows) {

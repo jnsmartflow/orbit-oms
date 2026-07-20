@@ -50,6 +50,53 @@ export interface PickingQueueRow {
   pickerId: number | null;
   assignedToName: string | null;
   assignedByName: string | null;
+  // ── Date-zone fields (2026-07-20) ─────────────────────────────────────────
+  // Added for the mobile board's locked/unlocked zone split. Computed
+  // server-side in lib/picking/queue.ts against today in IST, and populated
+  // in BOTH scopes (they are non-optional) — but only MEANINGFUL in the
+  // all-dates 'openPending' scope. In the single-date scope every row shares
+  // one dispatchTargetDate, so zone/ageDays are constant across the payload
+  // and the desktop board ignores all three.
+  //
+  // 'due'      = dispatchTargetDate <= today (IST), OR the date is null
+  // 'upcoming' = dispatchTargetDate  > today (IST) — the LOCKED zone, which
+  //              auto-unlocks when the IST day rolls over into its date
+  zone: "due" | "upcoming";
+  // True when dispatchTargetDate IS NULL. Locked rule: a null date sorts to
+  // 'due', never 'upcoming' — unscheduled work must never hide behind a lock.
+  // This flag exists so the UI can still mark it ("no date" chip) rather than
+  // silently presenting it as due today. Zero such rows existed in production
+  // on 2026-07-20; this is future-proofing for imports that omit the date.
+  noDispatchDate: boolean;
+  // Whole days between dispatchTargetDate and today (IST), floored at 0 — so
+  // a future-dated ('upcoming') row is 0, not negative. null when there is no
+  // dispatch date (noDispatchDate: true), because "how stale" is unanswerable
+  // without one — never 0, which would read as "fresh".
+  ageDays: number | null;
+  // The raw dispatch-target day as an ISO date-only string ("2026-07-23"),
+  // or null when there is none. Added 2026-07-20 for the Assign tab's
+  // Upcoming zone, whose badge reads "for Thu 23 Jul" — a label that is
+  // NOT derivable from ageDays above, because ageDays is floored at 0 and
+  // therefore reads 0 for EVERY future row regardless of distance.
+  //
+  // Deliberately a string, not a Date: this crosses a JSON boundary to a
+  // client component, where a Date would arrive as a string anyway but with
+  // a misleading type. Date-only (no time), so the consumer must parse it
+  // the Date.UTC(y, m-1, d) way — never new Date(str). See
+  // formatDispatchDay() in components/picking/picking-board-mobile.tsx.
+  dispatchTargetDate: string | null;
+  // Manual early release (5b, 2026-07-20) — true when a supervisor unlocked
+  // this future-dated bill for picking today (orders.pickEarlyReleasedAt is
+  // set). Such a row reports zone "due", NOT "upcoming": it behaves as
+  // ordinary assignable work everywhere. This flag exists only so the UI can
+  // still SHOW that it arrived there by override rather than by its date —
+  // do not re-derive lock state from it, `zone` is the single authority.
+  isEarlyReleased: boolean;
+  // Who released it. Cross-supervisor provenance is the entire reason the
+  // release is persisted rather than session-local: any of the three
+  // supervisors may find a bill in Due now that its own date says is not due
+  // yet, and needs to see whose call that was. null when never released.
+  earlyReleasedByName: string | null;
 }
 
 export type SortRule = {

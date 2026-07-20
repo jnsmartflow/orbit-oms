@@ -17,15 +17,24 @@ export async function POST(req: Request): Promise<NextResponse> {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Same gate as app/api/picking/queue/route.ts — admin bypass, else
-  // canView on 'picking'. This is a write, so page-level gating alone would
-  // not be enough even if it existed; mirror the read route's check exactly.
+  // canEdit, NOT canView (corrected 2026-07-20). This route previously
+  // gated on canView, the same flag the READ route uses — the standing
+  // landmine in CLAUDE_PICKING.md §7 ("canView gates writes, not canEdit").
+  // It became load-bearing when `picker` was granted canView on 'picking' so
+  // its own board could render: under the old gate that grant also handed
+  // pickers assign/unassign/approve by direct API call. The four supervisor
+  // write routes now require canEdit; the read route keeps canView; and
+  // done/route.ts deliberately stays on canView because it is the PICKER's
+  // own action, bounded by its own pickerId ownership check rather than by
+  // a role flag.
+  //
+  // The explicit `roles.includes("admin")` wrapper is gone: checkAnyPermission
+  // already short-circuits admin internally (lib/permissions.ts), so the
+  // wrapper was redundant and made the real gate harder to read.
   const roles = session.user.roles ?? [session.user.role];
-  if (!roles.includes("admin")) {
-    const allowed = await checkAnyPermission(roles, "picking", "canView");
-    if (!allowed) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+  const allowed = await checkAnyPermission(roles, "picking", "canEdit");
+  if (!allowed) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   // session.user.id is a string (see lib/auth.ts: `id: user.id.toString()`).

@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Picking — locked upcoming bill, opened (mockup)</title>
+<link rel="stylesheet" href="_zones-shared.css">
+<!--
+  STATIC REVIEW MOCKUP — not wired to app code / DB. Throwaway artifact.
+  SCREEN 3 of 4 — proves VIEW-OPEN / ASSIGN-SHUT.
+
+  Real bill: OBD 9108324285, Lakhani Paints, Adajan, dispatch Thu 23 Jul,
+  window 12:30. This is the actual future-dated bill on the live test board.
+
+  THE POINT OF THIS SCREEN
+  The lock restricts ONE verb — assign. It restricts nothing else. Everything
+  a supervisor might want to know is fully readable at full contrast: every
+  line item, SKU, pack, quantity, the article tag, the volume, the area, the
+  window. No blur, no truncation, no "unlock to view". A supervisor planning
+  tomorrow's lanes must be able to read Thursday's work today.
+
+  Design rule this encodes: the lock is about SEQUENCE, not SECRECY. If we
+  had greyed the content too, supervisors would learn to release bills early
+  just to read them — which is precisely the behaviour the lock exists to
+  prevent. Making the content free removes the incentive to defeat the lock.
+
+  FIDELITY — matches the live detail screen (picking-board-mobile.tsx):
+    - teal header: back · dealer name · "OBD · area · window"
+    - stat strip: articleTag (left) + volume in litres (right)
+    - "N of M" pager merged into the stat strip (Option F), hidden at M=1
+    - pack filter chips (only when >= 2 distinct packs)
+    - line rows: fixed pack tile | SKU hero + name | qty
+    - NO bottom bar — the shell's hideBar branch owns the viewport here
+      (CLAUDE_UI.md §59.2). Do not draw the tab bar on this screen.
+
+  ONE-TEAL: the primary CTA is DISABLED, so there is no teal action at all —
+  teal appears only as header chrome and the pack-tile numerals. That absence
+  is the message.
+-->
+</head>
+<body>
+
+<div class="devbar">
+  <span class="tag">MOCKUP 3/4</span><b>Locked bill — opened, fully readable</b><br>
+  Every line item at full contrast; only the Assign button is shut, with a lock and
+  <b>"Opens Thu 23 Jul"</b>. The lock governs sequence, not secrecy — so nobody needs to
+  release a bill early just to read it.
+</div>
+
+<div class="phone">
+  <div class="notch"></div>
+  <div class="screen">
+    <div class="safe-top"></div>
+
+    <div class="dhead">
+      <button class="backbtn" aria-label="Back">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
+      <div class="dtitle">
+        <div class="dn">Lakhani Paints</div>
+        <div class="dm">9108324285 · Adajan · 12:30</div>
+      </div>
+    </div>
+
+    <!-- Stat strip with the merged "N of M" pager (Option F) — neutral grey,
+         never teal: this is navigation, not a primary action. -->
+    <div class="statstrip">
+      <div class="tagname">8 DRUM 3 BOX</div>
+      <div class="vol">148 L</div>
+    </div>
+
+    <div class="packchips">
+      <button class="chip on">All</button>
+      <button class="chip">1L</button>
+      <button class="chip">4L</button>
+      <button class="chip">10L</button>
+      <button class="chip">20L</button>
+    </div>
+
+    <div class="lines">
+
+      <div class="lrow">
+        <div class="lpack">20L</div>
+        <div class="lmid">
+          <div class="lsku">IN29184402</div>
+          <div class="lname">Dulux Weathershield Max — Brilliant White</div>
+        </div>
+        <div class="lqty">2</div>
+      </div>
+
+      <div class="lrow">
+        <div class="lpack">20L</div>
+        <div class="lmid">
+          <div class="lsku">IN29184419</div>
+          <div class="lname">Dulux Weathershield Max — 90 Base</div>
+        </div>
+        <div class="lqty">1</div>
+      </div>
+
+      <div class="lrow">
+        <div class="lpack">10L</div>
+        <div class="lmid">
+          <div class="lsku">IN29184355</div>
+          <div class="lname">Dulux Weathershield Max — Brilliant White</div>
+        </div>
+        <div class="lqty">4</div>
+      </div>
+
+      <div class="lrow">
+        <div class="lpack">10L</div>
+        <div class="lmid">
+          <div class="lsku">IN28916271</div>
+          <div class="lname">Dulux Superclean 3in1 — Brilliant White</div>
+        </div>
+        <div class="lqty">3</div>
+      </div>
+
+      <div class="lrow">
+        <div class="lpack">4L</div>
+        <div class="lmid">
+          <div class="lsku">IN28916288</div>
+          <div class="lname">Dulux Superclean 3in1 — 90 Base</div>
+        </div>
+        <div class="lqty">6</div>
+      </div>
+
+      <div class="lrow">
+        <div class="lpack">4L</div>
+        <div class="lmid">
+          <div class="lsku">IN27740155</div>
+          <div class="lname">Dulux Velvet Touch Pearl Glo — 20 Base</div>
+        </div>
+        <div class="lqty">2</div>
+      </div>
+
+      <div class="lrow">
+        <div class="lpack">1L</div>
+        <div class="lmid">
+          <div class="lsku">5961032</div>
+          <div class="lname">DN WS Metallic Gold</div>
+        </div>
+        <div class="lqty">3</div>
+      </div>
+
+      <div class="lrow">
+        <div class="lpack">1L</div>
+        <div class="lmid">
+          <div class="lsku">IN27740162</div>
+          <div class="lname">Dulux Velvet Touch Pearl Glo — 10 Base</div>
+        </div>
+        <div class="lqty">4</div>
+      </div>
+
+    </div>
+
+    <!-- The ONLY restricted element on the screen. Disabled fill, lock glyph,
+         and a hint that answers the obvious next question ("then when?")
+         rather than just refusing. -->
+    <div class="ctawrap">
+      <button class="cta locked" disabled>
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10.5" width="16" height="10" rx="2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/></svg>
+        Assign to picker
+      </button>
+      <div class="ctahint">Opens Thu 23 Jul</div>
+    </div>
+
+  </div>
+</div>
+
+<p class="hint">
+  No bottom tab bar by design — the detail screen takes the whole viewport via the
+  shell's <code>hideBar</code> branch (CLAUDE_UI.md §59.2).
+</p>
+
+</body>
+</html>
