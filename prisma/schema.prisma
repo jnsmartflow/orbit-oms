@@ -1527,6 +1527,10 @@ model sku_master_v2 {
   material        String    @unique
   description     String
   category        String
+  // Deferred friendly-name override (Picking card redesign). Currently
+  // empty, not yet read by any code — see docs/CLAUDE_PICKING.md.
+  displayCategory String?
+  displayName     String?
   product         String
   baseColour      String
   packCode        String
