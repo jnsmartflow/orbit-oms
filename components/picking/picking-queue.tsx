@@ -1,12 +1,20 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, Star, Zap } from "lucide-react";
 import { UniversalHeader, type HeaderSegment } from "@/components/universal-header";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { getTodayIST } from "@/lib/dates";
+import {
+  sortPickingQueue,
+  byWindow,
+  byDeliveryType,
+  byKeyCustomer,
+  byPriority,
+  byFifo,
+} from "@/lib/picking/sort";
 import type { PickingQueueRow } from "@/lib/picking/types";
 import type { PickingQueueResult } from "@/lib/picking/queue";
 
@@ -33,10 +41,15 @@ function formatNullableNumber(n: number | null): string {
 }
 
 // §27 fixed-table standard — percentage widths, must sum to 100.
-// Checkbox(4) #(3) OBD(13) Dealer(20) Area(11) Article(14) LT(6) KG(6) Flags(7) Picker(10) Actions(6) = 100
-// Matches the approved mock (docs/mockups/picking/bulk-assign.html) column-for-column.
-const COLUMN_WIDTHS = [4, 3, 13, 20, 11, 14, 6, 6, 7, 10, 6] as const;
-const COLUMN_COUNT = COLUMN_WIDTHS.length;
+// Checkbox(4) #(3) OBD(19) Dealer(27) Route(14) LT(7) Flags(9) Status(17) = 100
+// Matches docs/mockups/picking/desktop-picking-v9.html (List view) column-for-column.
+const COLUMN_WIDTHS = [4, 3, 19, 27, 14, 7, 9, 17] as const;
+
+// Desktop display order = the shared pick spine MINUS byAssigned (design §4), so
+// an order keeps its slot position — and its # — as it moves Waiting → Assigned
+// → Picked → Ready. Rules are imported individually from lib/picking/sort.ts;
+// that file and PICKING_SPINE are NEVER edited — this is a client-side re-sort.
+const DISPLAY_RULES = [byWindow, byDeliveryType, byKeyCustomer, byPriority, byFifo];
 
 const DATA_ROW_HEIGHT = 44; // grown to fit the OBD cell's two stacked lines (this table only)
 
@@ -74,22 +87,6 @@ function dataCellStyle(align: Align, tone: CellTone, extra?: CSSProperties): CSS
           ? { fontSize: 11, color: "#9ca3af" }
           : { fontSize: 11, color: "#4b5563" };
   return { ...CELL_BASE, textAlign: align, ...toneStyle, ...extra };
-}
-
-function badgeStyle(tone: "red" | "amber" | "green"): CSSProperties {
-  const palette: CSSProperties =
-    tone === "red"
-      ? { background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca" }
-      : tone === "amber"
-        ? { background: "#fffbeb", color: "#b45309", border: "1px solid #fde68a" }
-        : { background: "#dcfce7", color: "#15803d", border: "1px solid #bbf7d0" };
-  return {
-    fontSize: 10.5,
-    fontWeight: 600,
-    padding: "1px 6px",
-    borderRadius: 4,
-    ...palette,
-  };
 }
 
 // CLAUDE_SUPPORT.md §4.5: displayed value = orderDateTime ?? obdEmailDate,
@@ -130,17 +127,65 @@ function NullableText({ value }: { value: string | null }) {
   return <>{value}</>;
 }
 
-function FlagBadges({ row }: { row: PickingQueueRow }) {
+// Flags as icons (design §2) — ★ key customer (amber), ⚡ P1 urgent (red), the
+// same glyphs the mobile card uses. Both if both; em-dash when neither. Never
+// the old "P1"/"KEY" text badges.
+function FlagIcons({ row }: { row: PickingQueueRow }) {
   const isP1 = row.priorityLevel === 1;
   if (!isP1 && !row.isKeyCustomer) {
-    return <span style={{ color: "#9ca3af" }}>{EM_DASH}</span>;
+    return <span style={{ color: "#d1d5db" }}>{EM_DASH}</span>;
   }
   return (
-    <span style={{ display: "inline-flex", gap: 4 }}>
-      {isP1 && <span style={badgeStyle("red")}>P1</span>}
-      {row.isKeyCustomer && <span style={badgeStyle("amber")}>KEY</span>}
+    <span style={{ display: "inline-flex", gap: 8, alignItems: "center" }}>
+      {row.isKeyCustomer && <Star size={13} fill="#f59e0b" style={{ color: "#f59e0b" }} />}
+      {isP1 && <Zap size={13} fill="#ef4444" style={{ color: "#ef4444" }} />}
     </span>
   );
+}
+
+// Status pill — the row's verdict, derived from the stage booleans in priority
+// order (design §1). Teal is NEVER used here (one-teal rule reserves it for the
+// active slot tab).
+type StatusLabel = "Ready" | "Picked" | "Assigned" | "Waiting";
+const STATUS_STYLES: Record<StatusLabel, { bg: string; color: string; border: string; dot: string }> = {
+  Ready:    { bg: "#f0fdf4", color: "#15803d", border: "#bbf7d0", dot: "#16a34a" },
+  Picked:   { bg: "#fffbeb", color: "#b45309", border: "#fde68a", dot: "#d97706" },
+  Assigned: { bg: "#f3f4f6", color: "#374151", border: "#e5e7eb", dot: "#374151" },
+  Waiting:  { bg: "#f3f4f6", color: "#6b7280", border: "#e5e7eb", dot: "#9ca3af" },
+};
+function rowStatus(row: PickingQueueRow): StatusLabel {
+  if (row.isChecked) return "Ready";
+  if (row.isDone) return "Picked";
+  if (row.isAssigned) return "Assigned";
+  return "Waiting";
+}
+function StatusPill({ row }: { row: PickingQueueRow }) {
+  const label = rowStatus(row);
+  const s = STATUS_STYLES[label];
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        height: 22,
+        padding: "0 10px",
+        borderRadius: 6,
+        fontSize: 11,
+        fontWeight: 600,
+        background: s.bg,
+        color: s.color,
+        border: `1px solid ${s.border}`,
+      }}
+    >
+      <span style={{ width: 6, height: 6, borderRadius: "50%", background: s.dot }} />
+      {label}
+    </span>
+  );
+}
+
+function isWaiting(row: PickingQueueRow): boolean {
+  return !row.isAssigned && !row.isDone && !row.isChecked;
 }
 
 // ── Undo (per-row, assigned rows only) ──────────────────────────────────────
@@ -155,21 +200,6 @@ const UNDO_LINK_STYLE: CSSProperties = {
   background: "none",
   border: "none",
   padding: 0,
-};
-
-// Collapse bar for assigned rows — mirrors Support's done-group pattern
-// (CLAUDE_SUPPORT.md §4.2 / components/support/support-orders-table.tsx):
-// collapsed by default, a "▸ N assigned" bar, click to expand.
-const ASSIGNED_BAR_STYLE: CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  gap: 8,
-  padding: "10px 14px",
-  cursor: "pointer",
-  background: "#f9fafb",
-  borderTop: "1px solid #f0f0f0",
-  borderBottom: "1px solid #f0f0f0",
-  userSelect: "none",
 };
 
 // ── Route filter (view-only) ────────────────────────────────────────────────
@@ -262,6 +292,7 @@ function RouteFilterControl({
 interface PickingTableProps {
   rows: PickingQueueRow[];
   routeFilter: string | null;
+  sequenceByOrderId: Map<number, number>;
   selected: Set<number>;
   onToggleOne: (orderId: number) => void;
   allSelectedInTab: boolean;
@@ -275,6 +306,7 @@ interface PickingTableProps {
 function PickingTable({
   rows,
   routeFilter,
+  sequenceByOrderId,
   selected,
   onToggleOne,
   allSelectedInTab,
@@ -284,23 +316,14 @@ function PickingTable({
   unassignError,
   onUnassign,
 }: PickingTableProps) {
-  // View-only route narrowing — sort order (already applied server-side) is
-  // preserved, this only filters which already-sorted rows render. Assigned
-  // rows are untouched by routeFilter — the done bar always shows everything.
-  //
-  // `&& !r.isDone && !r.isChecked` — a PICK_DONE or PICK_CHECKED row has
-  // isAssigned: false (that boolean is strictly PICK_ASSIGNED-only, see
-  // lib/picking/queue.ts's doc comment), so without this it would wrongly
-  // render here as if untouched and re-selectable for bulk-assign.
-  // assignedRows below needs no matching fix — it already excludes both
-  // correctly either way.
-  const unassignedRows = useMemo(() => {
-    const waiting = rows.filter((r) => !r.isAssigned && !r.isDone && !r.isChecked);
-    return routeFilter === null ? waiting : waiting.filter((r) => r.route === routeFilter);
-  }, [rows, routeFilter]);
-  const assignedRows = useMemo(() => rows.filter((r) => r.isAssigned), [rows]);
-
-  const [assignedExpanded, setAssignedExpanded] = useState(false);
+  // Every state now renders INLINE (design §3) — the old "N assigned" collapse
+  // drawer is gone. View-only route narrowing preserves the display order (the
+  // spine minus byAssigned, applied by the parent) and just filters which rows
+  // show. The checkbox + Select-All still gate on isWaiting() only (guard G).
+  const renderRows = useMemo(
+    () => (routeFilter === null ? rows : rows.filter((r) => r.route === routeFilter)),
+    [rows, routeFilter],
+  );
 
   return (
     <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
@@ -321,24 +344,32 @@ function PickingTable({
           <th style={headerCellStyle("center")}>#</th>
           <th style={headerCellStyle("left")}>OBD</th>
           <th style={headerCellStyle("left")}>Dealer</th>
-          <th style={headerCellStyle("left")}>Area</th>
-          <th style={headerCellStyle("left")}>Article</th>
+          <th style={headerCellStyle("left")}>Route</th>
           <th style={headerCellStyle("right")}>LT</th>
-          <th style={headerCellStyle("right")}>KG</th>
           <th style={headerCellStyle("left")}>Flags</th>
-          <th style={headerCellStyle("left")}>Picker</th>
-          <th style={headerCellStyle("center", { paddingRight: 12 })} />
+          <th style={headerCellStyle("left", { paddingRight: 12 })}>Status</th>
         </tr>
       </thead>
       <tbody>
-        {unassignedRows.map((row, i) => {
+        {renderRows.map((row) => {
           const obdDateTimeLabel = formatObdDateTime(row.obdDateTime);
+          const waiting = isWaiting(row);
+          const isRowBusy = unassigningOrderId === row.orderId;
+          const errorForRow = unassignError?.orderId === row.orderId ? unassignError.message : null;
           return (
-            <tr key={row.orderId} style={{ height: DATA_ROW_HEIGHT, borderBottom: "1px solid #f0f0f0" }}>
+            <tr
+              key={row.orderId}
+              className="group hover:bg-gray-50"
+              style={{ height: DATA_ROW_HEIGHT, borderBottom: "1px solid #f0f0f0" }}
+            >
               <td style={dataCellStyle("center", "muted", { paddingLeft: 10, paddingRight: 4 })}>
-                <Checkbox checked={selected.has(row.orderId)} onCheckedChange={() => onToggleOne(row.orderId)} />
+                {waiting && (
+                  <Checkbox checked={selected.has(row.orderId)} onCheckedChange={() => onToggleOne(row.orderId)} />
+                )}
               </td>
-              <td style={dataCellStyle("center", "muted")}>{i + 1}</td>
+              <td style={dataCellStyle("center", "muted", { fontWeight: 600 })}>
+                {sequenceByOrderId.get(row.orderId) ?? EM_DASH}
+              </td>
               <td style={OBD_CELL_STYLE}>
                 <div
                   style={{
@@ -356,104 +387,53 @@ function PickingTable({
                   </div>
                 )}
               </td>
-              <td style={dataCellStyle("left", "primary")}>
-                {row.dealerName}
+              <td style={OBD_CELL_STYLE}>
+                <div style={{ ...OBD_LINE_STYLE, fontSize: 11.5, fontWeight: 600, color: "#111827" }}>
+                  {row.dealerName}
+                </div>
                 {row.isShipToOverride && (
-                  <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 400, color: "#9ca3af" }}>
+                  <div style={{ ...OBD_LINE_STYLE, fontSize: 10, color: "#9ca3af", marginTop: 1 }}>
                     &rarr; ship-to
-                  </span>
+                  </div>
                 )}
               </td>
               <td style={dataCellStyle("left", "secondary")}>
-                <NullableText value={row.area} />
+                <NullableText value={row.route} />
+              </td>
+              <td
+                style={dataCellStyle("right", "secondary", {
+                  fontVariantNumeric: "tabular-nums",
+                  fontWeight: 600,
+                  color: "#1f2937",
+                })}
+              >
+                {formatNullableNumber(row.volumeLitres)}
               </td>
               <td style={dataCellStyle("left", "secondary")}>
-                <NullableText value={row.articleTag} />
+                <FlagIcons row={row} />
               </td>
-              <td style={dataCellStyle("right", "secondary")}>{formatNullableNumber(row.volumeLitres)}</td>
-              <td style={dataCellStyle("right", "secondary")}>{formatNullableNumber(row.weightKg)}</td>
-              <td style={dataCellStyle("left", "secondary")}>
-                <FlagBadges row={row} />
+              <td style={dataCellStyle("left", "secondary", { paddingRight: 12 })}>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                  <StatusPill row={row} />
+                  {row.isAssigned && (
+                    <button
+                      type="button"
+                      disabled={isRowBusy}
+                      onClick={() => onUnassign(row.orderId)}
+                      className={isRowBusy ? "opacity-100" : "opacity-0 group-hover:opacity-100 transition-opacity"}
+                      style={{ ...UNDO_LINK_STYLE, cursor: isRowBusy ? "default" : "pointer" }}
+                    >
+                      {isRowBusy ? "…" : "Undo"}
+                    </button>
+                  )}
+                </span>
+                {errorForRow !== null && (
+                  <div style={{ fontSize: 9.5, color: "#dc2626", marginTop: 2, whiteSpace: "normal" }}>{errorForRow}</div>
+                )}
               </td>
-              <td style={dataCellStyle("left", "muted")}>{EM_DASH}</td>
-              <td style={dataCellStyle("center", "secondary", { paddingRight: 12 })} />
             </tr>
           );
         })}
-
-        {assignedRows.length > 0 && (
-          <>
-            <tr>
-              <td colSpan={COLUMN_COUNT} style={{ padding: 0 }}>
-                <div style={ASSIGNED_BAR_STYLE} onClick={() => setAssignedExpanded((v) => !v)}>
-                  <span
-                    style={{
-                      fontSize: 10,
-                      color: "#6b7280",
-                      display: "inline-block",
-                      transform: assignedExpanded ? "rotate(90deg)" : "none",
-                      transition: "transform 150ms",
-                    }}
-                  >
-                    ▸
-                  </span>
-                  <span style={{ fontSize: 11, fontWeight: 600, color: "#6b7280" }}>
-                    {assignedRows.length} assigned
-                  </span>
-                </div>
-              </td>
-            </tr>
-            {assignedExpanded &&
-              assignedRows.map((row, i) => {
-                const isRowBusy = unassigningOrderId === row.orderId;
-                const errorForRow = unassignError?.orderId === row.orderId ? unassignError.message : null;
-                return (
-                  <tr key={row.orderId} style={{ height: DATA_ROW_HEIGHT, borderBottom: "1px solid #f0f0f0", opacity: 0.6 }}>
-                    <td style={dataCellStyle("center", "muted", { paddingLeft: 10, paddingRight: 4 })} />
-                    <td style={dataCellStyle("center", "muted")} />
-                    <td style={OBD_CELL_STYLE}>
-                      <div
-                        style={{
-                          ...OBD_LINE_STYLE,
-                          fontSize: 11,
-                          color: "#6b7280",
-                          fontFamily: '"SF Mono", ui-monospace, Menlo, monospace',
-                        }}
-                      >
-                        {row.obdNumber}
-                      </div>
-                    </td>
-                    <td style={dataCellStyle("left", "muted")}>{row.dealerName}</td>
-                    <td style={dataCellStyle("left", "muted")}>
-                      <NullableText value={row.area} />
-                    </td>
-                    <td style={dataCellStyle("left", "muted")}>
-                      <NullableText value={row.articleTag} />
-                    </td>
-                    <td style={dataCellStyle("right", "muted")}>{formatNullableNumber(row.volumeLitres)}</td>
-                    <td style={dataCellStyle("right", "muted")}>{formatNullableNumber(row.weightKg)}</td>
-                    <td style={dataCellStyle("left", "muted")}>
-                      <FlagBadges row={row} />
-                    </td>
-                    <td style={dataCellStyle("left", "muted")}>{row.assignedToName ?? EM_DASH}</td>
-                    <td style={dataCellStyle("center", "secondary", { paddingRight: 12 })}>
-                      <button
-                        type="button"
-                        disabled={isRowBusy}
-                        onClick={() => onUnassign(row.orderId)}
-                        style={{ ...UNDO_LINK_STYLE, opacity: isRowBusy ? 0.6 : 1, cursor: isRowBusy ? "default" : "pointer" }}
-                      >
-                        {isRowBusy ? "…" : "Undo"}
-                      </button>
-                      {errorForRow !== null && (
-                        <div style={{ fontSize: 9.5, color: "#dc2626", marginTop: 2, whiteSpace: "normal" }}>{errorForRow}</div>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-          </>
-        )}
       </tbody>
     </table>
   );
@@ -618,12 +598,30 @@ export function PickingQueue() {
     return [...windowSegments, allSegment, ...unmatchedSegment];
   }, [data]);
 
+  // Desktop display order = the pick spine MINUS byAssigned (design §4), applied
+  // client-side. sort.ts is never touched. Assigned/Picked/Ready rows keep their
+  // slot position instead of sinking, so a row's # never jumps as its status
+  // changes.
+  const displayRows: PickingQueueRow[] = useMemo(
+    () => (data ? sortPickingQueue(data.rows, DISPLAY_RULES) : []),
+    [data],
+  );
+
+  // Global pick-sequence #: 1-based over the WHOLE day's display order, so a row
+  // shows the same # in every slot tab (design §5). Computed once from
+  // displayRows; unaffected by status changes (byAssigned is not in the rules).
+  const sequenceByOrderId = useMemo(() => {
+    const m = new Map<number, number>();
+    displayRows.forEach((r, i) => m.set(r.orderId, i + 1));
+    return m;
+  }, [displayRows]);
+
   const visibleRows: PickingQueueRow[] = useMemo(() => {
     if (!data || activeTab === null) return [];
-    if (activeTab === "all") return data.rows;
-    if (activeTab === "unmatched") return data.rows.filter(isUnmatchedRow);
-    return data.rows.filter((r) => r.windowId === activeTab);
-  }, [data, activeTab]);
+    if (activeTab === "all") return displayRows;
+    if (activeTab === "unmatched") return displayRows.filter(isUnmatchedRow);
+    return displayRows.filter((r) => r.windowId === activeTab);
+  }, [data, displayRows, activeTab]);
 
   // Route filter options — distinct row.route values PRESENT in the current
   // tab's waiting rows, alphabetical. Derived client-side from already-loaded
@@ -766,6 +764,7 @@ export function PickingQueue() {
               <PickingTable
                 rows={visibleRows}
                 routeFilter={routeFilter}
+                sequenceByOrderId={sequenceByOrderId}
                 selected={selected}
                 onToggleOne={toggleOne}
                 allSelectedInTab={allSelectedInTab}
