@@ -154,7 +154,7 @@ function checkCardPill(
     const p = elapsedSinceAssigned(row.pickedAt, nowTick);
     if (!p) return null;
     return (
-      <span className="text-[10.5px] font-bold px-2 py-[3px] rounded-full shrink-0 bg-green-50 text-green-700 border border-green-200">
+      <span className="text-[10.5px] font-semibold px-2 py-[3px] rounded-full shrink-0 bg-green-50 text-green-700 border border-green-200">
         Picked {p.label} ago
       </span>
     );
@@ -170,7 +170,7 @@ function checkCardPill(
   const p = elapsedSinceAssigned(row.assignedAt, nowTick);
   if (!p) return null;
   return (
-    <span className={"text-[10.5px] font-bold px-2 py-[3px] rounded-full shrink-0 " + ELAPSED_PILL_CLASS[p.tier]}>
+    <span className={"text-[10.5px] font-semibold px-2 py-[3px] rounded-full shrink-0 " + ELAPSED_PILL_CLASS[p.tier]}>
       {p.label}
     </span>
   );
@@ -225,26 +225,28 @@ function RouteDot({ deliveryType }: { deliveryType: string | null }): React.JSX.
 // Distinct from SOFT_CARD_SHADOW, which the detail line-item rows still use.
 const CARD_SHADOW_V2 = "0 1px 2px rgba(16,24,40,.03), 0 14px 26px -20px rgba(16,24,40,.2)";
 
-// Rich-card shelf — FAMILY CHIPS + (Assign only) a right-pinned "View items ›"
-// link. The old goods/breakdown line (articleTag + volume) is gone (Option G,
-// 2026-07-21); volume moved to the route line. Chips are ONE horizontally-
-// scrollable line that NEVER wraps (flex-nowrap + per-chip shrink-0) so every
-// card keeps a uniform height; a right-edge fade cues the overflow, fading the
-// chips into the link (or the card edge on Picking, which has no link).
+// Rich-card shelf — FAMILY CHIPS + (Assign only) a right-pinned soft round
+// arrow button that opens detail. The old goods/breakdown line (articleTag +
+// volume) is gone (Option G, 2026-07-21); volume moved to the route line. Chips
+// are ONE horizontally-scrollable line that NEVER wraps (flex-nowrap + per-chip
+// shrink-0) so every card keeps a uniform height; a right-edge fade cues the
+// overflow, fading the chips into the arrow (or the card edge on Picking, which
+// has no arrow).
 //
-// Layout: a flex row — [chips: flex-1 min-w-0, scrolling] + [View items ›:
-// shrink-0, thin left divider]. `families` arrives already display-resolved +
-// alpha-sorted from lib/picking/queue.ts — rendered AS-IS. The "+N unlisted"
-// chip trails only when unresolvedLineCount > 0.
+// Layout: a flex row — [chips: flex-1 min-w-0, scrolling] + [arrow: shrink-0].
+// `families` arrives already display-resolved + alpha-sorted from
+// lib/picking/queue.ts — rendered AS-IS. The "+N unlisted" chip trails only when
+// unresolvedLineCount > 0.
 //
-// showViewItems (Assign only, 2026-07-21): renders the link AND forces the
-// shelf to render even with zero chips, so "View items ›" is always reachable
-// now that a card-body tap toggles SELECTION instead of opening detail. The
-// link stopPropagation()s and calls onViewItems (the card's own open handler,
-// = openDetail) — it must NEVER toggle selection, and it sits at the right edge,
+// showViewItems (Assign only, 2026-07-21): renders the arrow AND forces the
+// shelf to render even with zero chips, so detail is always reachable now that a
+// card-body tap toggles SELECTION instead of opening detail. The arrow
+// stopPropagation()s and calls onViewItems (the card's own open handler, =
+// openDetail) — it must NEVER toggle selection, and it sits at the right edge,
 // away from the card centre, so rapid select-taps don't land on it. The button
-// owns a 48px min tap target and drives the shelf height. Picking cards pass
-// showViewItems=false and keep the null-when-empty behaviour (no link, and a
+// owns a 44px min tap target. NOT teal (one-teal rule reserves teal for the
+// selected tint) — a quiet slate #eceff3 circle. Picking cards pass
+// showViewItems=false and keep the null-when-empty behaviour (no arrow, and a
 // Picking card-body tap still opens detail as before — unchanged).
 function CardShelf({
   row,
@@ -260,7 +262,7 @@ function CardShelf({
   const hasStrip = row.families.length > 0 || row.unresolvedLineCount > 0;
   if (!hasStrip && !showViewItems) return null;
   return (
-    <div className="border-t px-[14px] flex items-stretch gap-2.5" style={{ background: "#f6f8fa", borderColor: "#eef1f4" }}>
+    <div className="border-t px-[14px] flex items-stretch gap-1" style={{ background: "#f6f8fa", borderColor: "#eef1f4" }}>
       <div className="relative flex-1 min-w-0 flex items-center py-[10px]">
         <div
           className="flex flex-nowrap gap-1.5 overflow-x-auto pr-[26px] w-full [&::-webkit-scrollbar]:hidden"
@@ -269,8 +271,8 @@ function CardShelf({
           {row.families.map((f) => (
             <span
               key={f}
-              className="shrink-0 whitespace-nowrap text-[10.5px] font-bold rounded-[7px] py-[3px] px-[8px]"
-              style={{ color: muted ? "#8a929c" : "#6b7480", background: muted ? "#f1f3f6" : "#eef1f5" }}
+              className="shrink-0 whitespace-nowrap text-[10.5px] font-semibold rounded-[7px] py-[3px] px-[8px]"
+              style={{ color: muted ? "#8a929c" : "#667085", background: muted ? "#f1f3f6" : "#eef1f5" }}
             >
               {f}
             </span>
@@ -294,9 +296,9 @@ function CardShelf({
         />
       </div>
       {showViewItems && (
-        // Stops the tap bubbling to the card body (which would toggle select) and
-        // opens detail instead. NOT teal — the one-teal rule reserves teal for
-        // the Assign CTA; this is a quiet slate affordance.
+        // Soft round arrow → open detail. Stops the tap bubbling to the card
+        // body (which would toggle select). 30px slate circle inside a ≥44px
+        // tap target; NOT teal (one-teal rule).
         <button
           type="button"
           onClick={(e) => {
@@ -304,11 +306,14 @@ function CardShelf({
             onViewItems();
           }}
           aria-label="View items"
-          className="shrink-0 self-stretch min-h-[48px] pl-3 pr-0.5 flex items-center gap-0.5 text-[12px] font-bold whitespace-nowrap border-l active:opacity-60"
-          style={{ color: "#5a6675", borderColor: "#e4e8ec" }}
+          className="shrink-0 self-stretch min-h-[44px] min-w-[44px] pl-1.5 flex items-center justify-center active:opacity-60"
         >
-          View items
-          <ChevronRight size={14} className="mt-px" style={{ color: "#9aa2ac" }} />
+          <span
+            className="w-[30px] h-[30px] rounded-full flex items-center justify-center shrink-0"
+            style={{ background: "#eceff3" }}
+          >
+            <ChevronRight size={16} style={{ color: "#8b93a0" }} />
+          </span>
         </button>
       )}
     </div>
@@ -391,26 +396,23 @@ function PickingCard({
 
   const whereRight =
     (variant === "picking" || variant === "doneCheck" || variant === "doneChecked") && row.assignedToName !== null ? (
-      <span className="text-[12px] font-bold shrink-0" style={{ color: "#8a929c" }}>
+      <span className="text-[12px] font-semibold shrink-0" style={{ color: "#8a929c" }}>
         {row.assignedToName}
       </span>
     ) : null;
 
   // Lead gutter (self-stretch to card height).
-  //   assign       — the tick is now DISPLAY-ONLY (2026-07-21): the whole card
-  //                  body owns the select toggle, so this has no onClick and
-  //                  never toggles independently — a tap on it bubbles to the
-  //                  card and toggles exactly once (no double-fire). Its
-  //                  selected/unselected appearance is unchanged.
-  //   assignLocked — still a real button: stopPropagation so a lock tap never
-  //                  also fires the card's own onOpen (locked cards keep
+  //   assign       — NO lead anymore (2026-07-21): the checkbox was removed so
+  //                  the name row runs full-width to the card's left edge.
+  //                  Selection now shows as the card teal tint + a floating teal
+  //                  check badge in the top-left corner (rendered on the card
+  //                  wrapper below), only when selected. Tapping the card body
+  //                  still toggles selection — logic unchanged.
+  //   assignLocked — still a real lock button here: stopPropagation so a lock
+  //                  tap never fires the card's own onOpen (locked cards keep
   //                  body-tap → open detail; they are NOT selectable).
   const lead =
-    variant === "assign" ? (
-      <div className="w-11 shrink-0 self-stretch min-h-[48px] flex items-center justify-center pt-px">
-        <SelectBox checked={selected} />
-      </div>
-    ) : variant === "assignLocked" ? (
+    variant === "assignLocked" ? (
       <button
         type="button"
         onClick={(e) => {
@@ -425,19 +427,39 @@ function PickingCard({
     ) : null;
 
   return (
-    <div
-      className={
-        "rounded-[20px] mb-[11px] overflow-hidden cursor-pointer border-[1.5px] " +
-        (selected ? "bg-teal-50 border-teal-600 " : "bg-white border-[#eceef2] ") +
-        (variant === "doneChecked" ? "opacity-75" : "")
-      }
-      style={{ boxShadow: CARD_SHADOW_V2, ...(variant === "assignLocked" ? { background: "#fcfcfd" } : null) }}
-      // Assign (unlocked) card body toggles SELECTION (2026-07-21) — detail
-      // opens only via the "View items ›" link in the shelf. Every OTHER
-      // variant (picking, doneCheck, doneChecked, assignLocked) keeps
-      // body-tap → open detail, unchanged.
-      onClick={variant === "assign" ? () => onToggleSelect?.() : onOpen}
-    >
+    <div className="relative mb-[11px]">
+      {/* Selected badge — floating teal check in the top-left corner, shown
+          ONLY when this Assign card is selected. Replaces the old inline
+          checkbox: same teal-600 + white-tick language, now a ~20px round badge
+          overhanging the corner (white ring separates it from the card's teal
+          tint). Sits on this overflow-visible wrapper (the card itself keeps
+          overflow-hidden for its shelf), and is pointer-events-none so a tap
+          still hits the card body and toggles. Never rendered for
+          locked/picking/done variants. */}
+      {variant === "assign" && selected && (
+        <span
+          className="absolute -top-[7px] -left-[7px] z-10 w-5 h-5 rounded-full bg-teal-600 flex items-center justify-center pointer-events-none"
+          style={{ boxShadow: "0 0 0 2px #fff" }}
+          aria-hidden="true"
+        >
+          <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
+            <path d="M2 6l3 3 5-5" stroke="white" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </span>
+      )}
+      <div
+        className={
+          "rounded-[20px] overflow-hidden cursor-pointer border-[1.5px] " +
+          (selected ? "bg-teal-50 border-teal-600 " : "bg-white border-[#eceef2] ") +
+          (variant === "doneChecked" ? "opacity-75" : "")
+        }
+        style={{ boxShadow: CARD_SHADOW_V2, ...(variant === "assignLocked" ? { background: "#fcfcfd" } : null) }}
+        // Assign (unlocked) card body toggles SELECTION (2026-07-21) — detail
+        // opens only via the arrow button in the shelf. Every OTHER variant
+        // (picking, doneCheck, doneChecked, assignLocked) keeps body-tap → open
+        // detail, unchanged.
+        onClick={variant === "assign" ? () => onToggleSelect?.() : onOpen}
+      >
       <div className={"flex items-start gap-3 " + (lead ? "pl-3.5 pr-4 pt-3.5 pb-3" : "px-4 pt-3.5 pb-3")}>
         {lead}
         <div className="flex-1 min-w-0">
@@ -445,7 +467,7 @@ function PickingCard({
           <div className="flex items-center justify-between gap-2.5 mb-1.5">
             <span
               className="flex items-center gap-1.5 min-w-0 text-[11.5px] overflow-hidden whitespace-nowrap"
-              style={{ color: "#aab2bb" }}
+              style={{ color: "#98a2b3" }}
             >
               <span className="font-mono shrink-0" style={{ color: "#98a0aa" }}>
                 {row.obdNumber}
@@ -464,13 +486,13 @@ function PickingCard({
           {/* Title: customer name (truncates, never pushes the slot) + slot hero */}
           <div className="flex items-baseline justify-between gap-3">
             <span
-              className="text-[18px] font-bold leading-[1.18] tracking-[-0.022em] truncate min-w-0"
-              style={{ color: "#1e2733" }}
+              className="text-[16px] font-semibold leading-[1.25] truncate min-w-0"
+              style={{ color: "#1d2939" }}
             >
               {row.dealerName}
             </span>
             {showSlotHero && (
-              <span className="text-[16px] font-bold tabular-nums shrink-0" style={{ color: "#2f3a47" }}>
+              <span className="text-[15px] font-semibold tabular-nums shrink-0" style={{ color: "#475467" }}>
                 {row.windowTime}
               </span>
             )}
@@ -482,7 +504,7 @@ function PickingCard({
           <div className="flex items-center justify-between gap-2.5 mt-1.5">
             <span className="flex items-center gap-2 min-w-0">
               <RouteDot deliveryType={row.deliveryType} />
-              <span className="text-[12.5px] font-semibold truncate min-w-0" style={{ color: "#7e8792" }}>
+              <span className="text-[12px] font-medium truncate min-w-0" style={{ color: "#667085" }}>
                 {row.area ?? "—"}
               </span>
               {rich && row.volumeLitres != null && (
@@ -491,10 +513,10 @@ function PickingCard({
                     &middot;
                   </span>
                   <span className="flex items-baseline gap-[3px] shrink-0">
-                    <span className="text-[12.5px] font-bold tabular-nums" style={{ color: "#6b7480" }}>
+                    <span className="text-[12px] font-semibold tabular-nums" style={{ color: "#667085" }}>
                       {formatLitres(row.volumeLitres)}
                     </span>
-                    <span className="text-[10.5px] font-semibold" style={{ color: "#a2aab4" }}>
+                    <span className="text-[10.5px] font-medium" style={{ color: "#98a2b3" }}>
                       L
                     </span>
                   </span>
@@ -525,6 +547,7 @@ function PickingCard({
           )}
         </div>
       )}
+      </div>
     </div>
   );
 }
@@ -596,7 +619,7 @@ function AgeBadge({ row }: { row: PickingQueueRow }): React.JSX.Element | null {
   return (
     <span
       className={
-        "text-[10.5px] font-bold px-2 py-[3px] rounded-full shrink-0 whitespace-nowrap tabular-nums " + cls
+        "text-[10.5px] font-semibold px-2 py-[3px] rounded-full shrink-0 whitespace-nowrap tabular-nums " + cls
       }
     >
       {days}d
@@ -624,26 +647,6 @@ function LockGlyph({ className }: { className: string }): React.JSX.Element {
       <rect x="4" y="10.5" width="16" height="10" rx="2" />
       <path d="M8 10.5V7a4 4 0 0 1 8 0v3.5" />
     </svg>
-  );
-}
-
-// Square checkbox — matches po-page.tsx's multi-select row checkbox exactly
-// (rounded-[6px], border-2, teal-600 fill + white check svg when selected),
-// per docs/mockups/picking/supervisor-assign-board.html (the approved design).
-function SelectBox({ checked }: { checked: boolean }) {
-  return (
-    <div
-      className={
-        "w-5 h-5 rounded-[6px] border-2 flex items-center justify-center shrink-0 " +
-        (checked ? "bg-teal-600 border-teal-600" : "bg-white border-gray-300")
-      }
-    >
-      {checked && (
-        <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
-          <path d="M2 6l3 3 5-5" stroke="white" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      )}
-    </div>
   );
 }
 
