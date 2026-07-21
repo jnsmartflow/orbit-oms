@@ -225,74 +225,55 @@ function RouteDot({ deliveryType }: { deliveryType: string | null }): React.JSX.
 // Distinct from SOFT_CARD_SHADOW, which the detail line-item rows still use.
 const CARD_SHADOW_V2 = "0 1px 2px rgba(16,24,40,.03), 0 14px 26px -20px rgba(16,24,40,.2)";
 
-// Rich-card shelf — goods line (articleTag rendered VERBATIM + volume) then the
-// family chip strip. The strip is ONE horizontally-scrollable line that NEVER
-// wraps (flex-nowrap + per-chip shrink-0 + whitespace-nowrap) so every card
-// keeps a uniform height; a right-edge fade cues the overflow. `families`
-// arrives already display-resolved + alpha-sorted from lib/picking/queue.ts —
-// rendered AS-IS, never re-sorted or re-resolved here. The "+N unlisted" chip
-// trails only when unresolvedLineCount > 0 (active lines whose SKU code matched
-// no family — the honesty chip from the mockup).
-function CardShelf({ row, muted }: { row: PickingQueueRow; muted: boolean }): React.JSX.Element {
+// Rich-card shelf — FAMILY CHIPS ONLY (Option G, 2026-07-21). The old
+// goods/breakdown line (articleTag + volume) that sat above the chips is GONE
+// from the card face: articleTag is no longer rendered here at all (it stays in
+// the payload + on the detail screen's scope strip), and volume moved up onto
+// the route line inside PickingCard. The strip is ONE horizontally-scrollable
+// line that NEVER wraps (flex-nowrap + per-chip shrink-0 + whitespace-nowrap) so
+// every card keeps a uniform height; a right-edge fade cues the overflow.
+// `families` arrives already display-resolved + alpha-sorted from
+// lib/picking/queue.ts — rendered AS-IS, never re-sorted or re-resolved here.
+// The "+N unlisted" chip trails only when unresolvedLineCount > 0 (active lines
+// whose SKU code matched no family — the honesty chip from the mockup).
+// Renders nothing when there are no chips at all — an empty gray partition would
+// be dead space now that the goods line no longer guarantees content.
+function CardShelf({ row, muted }: { row: PickingQueueRow; muted: boolean }): React.JSX.Element | null {
   const hasStrip = row.families.length > 0 || row.unresolvedLineCount > 0;
+  if (!hasStrip) return null;
   return (
-    <div className="border-t pt-[9px] pr-[15px] pb-[11px] pl-[14px]" style={{ background: "#f7f9fb", borderColor: "#eef1f4" }}>
-      <div className="text-[12px] font-semibold tabular-nums mb-2" style={{ color: muted ? "#a2aab4" : "#8a929c" }}>
-        {row.articleTag !== null && (
-          <span className="font-bold" style={{ color: muted ? "#8a929c" : "#6b7480" }}>
-            {row.articleTag}
-          </span>
-        )}
-        {row.articleTag !== null && row.volumeLitres != null && (
-          <span className="mx-[7px]" style={{ color: "#d3d8de" }}>
-            &middot;
-          </span>
-        )}
-        {row.volumeLitres != null && (
-          <>
-            <span className="font-bold" style={{ color: muted ? "#8a929c" : "#6b7480" }}>
-              {formatLitres(row.volumeLitres)}
-            </span>{" "}
-            <span className="text-[10.5px] font-semibold" style={{ color: "#aab2bb" }}>
-              L
+    <div className="border-t pt-[9px] pr-[15px] pb-[10px] pl-[14px]" style={{ background: "#f6f8fa", borderColor: "#eef1f4" }}>
+      <div className="relative">
+        <div
+          className="flex flex-nowrap gap-1.5 overflow-x-auto pr-[26px] [&::-webkit-scrollbar]:hidden"
+          style={{ scrollbarWidth: "none" }}
+        >
+          {row.families.map((f) => (
+            <span
+              key={f}
+              className="shrink-0 whitespace-nowrap text-[10.5px] font-bold rounded-[7px] py-[3px] px-[8px]"
+              style={{ color: muted ? "#8a929c" : "#6b7480", background: muted ? "#f1f3f6" : "#eef1f5" }}
+            >
+              {f}
             </span>
-          </>
-        )}
-        {row.articleTag === null && row.volumeLitres == null && <span style={{ color: "#a2aab4" }}>&mdash;</span>}
-      </div>
-      {hasStrip && (
-        <div className="relative">
-          <div
-            className="flex flex-nowrap gap-1.5 overflow-x-auto pr-[26px] [&::-webkit-scrollbar]:hidden"
-            style={{ scrollbarWidth: "none" }}
-          >
-            {row.families.map((f) => (
-              <span
-                key={f}
-                className="shrink-0 whitespace-nowrap text-[10.5px] font-bold rounded-[7px] py-[3px] px-[8px]"
-                style={{ color: muted ? "#8a929c" : "#6b7480", background: muted ? "#f1f3f6" : "#eef1f5" }}
-              >
-                {f}
-              </span>
-            ))}
-            {row.unresolvedLineCount > 0 && (
-              <span
-                key="__unlisted"
-                className="shrink-0 whitespace-nowrap text-[11.5px] font-semibold rounded-[8px] px-[9px] py-1 border border-dashed"
-                style={{ color: "#9aa2ac", borderColor: "#d8dce1" }}
-              >
-                +{row.unresolvedLineCount} unlisted
-              </span>
-            )}
-          </div>
-          {/* Fade cue — matches the shelf bg so chips dissolve under it. */}
-          <div
-            className="absolute top-0 right-0 w-[30px] h-full pointer-events-none"
-            style={{ background: "linear-gradient(90deg, rgba(247,249,251,0), #f7f9fb 72%)" }}
-            aria-hidden="true"
-          />
+          ))}
+          {row.unresolvedLineCount > 0 && (
+            <span
+              key="__unlisted"
+              className="shrink-0 whitespace-nowrap text-[11.5px] font-semibold rounded-[8px] px-[9px] py-1 border border-dashed"
+              style={{ color: "#9aa2ac", borderColor: "#d8dce1" }}
+            >
+              +{row.unresolvedLineCount} unlisted
+            </span>
+          )}
         </div>
-      )}
+        {/* Fade cue — matches the shelf bg so chips dissolve under it. */}
+        <div
+          className="absolute top-0 right-0 w-[30px] h-full pointer-events-none"
+          style={{ background: "linear-gradient(90deg, rgba(246,248,250,0), #f6f8fa 72%)" }}
+          aria-hidden="true"
+        />
+      </div>
     </div>
   );
 }
@@ -444,24 +425,42 @@ function PickingCard({
           {/* Title: customer name (truncates, never pushes the slot) + slot hero */}
           <div className="flex items-baseline justify-between gap-3">
             <span
-              className="text-[18px] font-bold leading-[1.18] tracking-[-0.022em] truncate min-w-0"
-              style={{ color: "#2a323c" }}
+              className="text-[18px] font-semibold leading-[1.18] tracking-[-0.022em] truncate min-w-0"
+              style={{ color: "#3b4450" }}
             >
               {row.dealerName}
             </span>
             {showSlotHero && (
-              <span className="text-[16px] font-bold tabular-nums shrink-0" style={{ color: "#3d4650" }}>
+              <span className="text-[16px] font-semibold tabular-nums shrink-0" style={{ color: "#4c5661" }}>
                 {row.windowTime}
               </span>
             )}
           </div>
-          {/* Where: route dot + area (truncates) — picker on the right */}
+          {/* Where: route dot + area (truncates) · volume (rich only) — picker
+              on the right. Volume moved here from the shelf (Option G): it sits
+              inline after the area, shrink-0 so it is NEVER clipped, while the
+              area truncates first when the line is tight. */}
           <div className="flex items-center justify-between gap-2.5 mt-1.5">
             <span className="flex items-center gap-2 min-w-0">
               <RouteDot deliveryType={row.deliveryType} />
-              <span className="text-[12.5px] font-semibold truncate" style={{ color: "#7e8792" }}>
+              <span className="text-[12.5px] font-semibold truncate min-w-0" style={{ color: "#7e8792" }}>
                 {row.area ?? "—"}
               </span>
+              {rich && row.volumeLitres != null && (
+                <>
+                  <span className="shrink-0" style={{ color: "#d3d8de" }}>
+                    &middot;
+                  </span>
+                  <span className="flex items-baseline gap-[3px] shrink-0">
+                    <span className="text-[12.5px] font-bold tabular-nums" style={{ color: "#6b7480" }}>
+                      {formatLitres(row.volumeLitres)}
+                    </span>
+                    <span className="text-[10.5px] font-semibold" style={{ color: "#a2aab4" }}>
+                      L
+                    </span>
+                  </span>
+                </>
+              )}
             </span>
             {whereRight}
           </div>

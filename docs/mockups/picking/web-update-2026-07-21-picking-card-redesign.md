@@ -25,8 +25,8 @@ All cards share the same top zone. Only a few slots change per tab.
 
 ### Shared top zone (every tab)
 - **Caption line:** `OBD` (mono, muted) · a secondary time · right side = tab-specific marks/badge
-- **Name line:** customer name (hero, ~19px 800) · right side = tab-specific primary signal
-- **Where line:** route colour-dot + area · right side = picker name (when assigned)
+- **Name line:** customer name (hero, 18px 600) · right side = tab-specific primary signal
+- **Where line:** route colour-dot + area · **volume `· {N} L` inline after the area (rich cards only)** · right side = picker name (when assigned)
 
 ### Route dot (no text — colour only)
 - Local = blue `#2563eb`
@@ -39,16 +39,16 @@ All cards share the same top zone. Only a few slots change per tab.
 - 🎨 **Tint** (the same tint indicator used in Support)
 Rendered small, top-right of the caption. No age/other icons on the card face.
 
-### ASSIGN card (rich)
+### ASSIGN card (rich) — Option G (2026-07-21)
 - Lead: **checkbox** (bulk select)
 - Caption: `OBD · order date-time` + flags
 - Name-right: **slot time** (e.g. `18:00`) — the hero (when it dispatches = the decision)
-- Where: route dot + area
-- **Shelf** (tonal `#f7f9fb`, no divider line): goods line `3 Carton, 6 Tin · 210 L` + **family chips** on ONE horizontally-scrollable line (never wrap — keeps every card the same height; fade cue on the right edge)
+- Where: route dot + area **· `{N} L` inline after the area** (12.5px/700 `#6b7480`; `L` unit 10.5px `#a2aab4`; separator middot `#d3d8de`; volume `shrink-0`, never clipped — the area truncates first when tight)
+- **Shelf** (tonal `#f6f8fa`, no divider line): **FAMILY CHIPS ONLY** — the old goods/breakdown line (`articleTag` + volume) above the chips is REMOVED from the card face (see Deferred note below; volume moved up to the where-line). Chips on ONE horizontally-scrollable line (never wrap — keeps every card the same height; fade cue on the right edge). `+N unlisted` trailing chip when `unresolvedLineCount > 0`. The shelf renders nothing when a card has no chips at all.
 - States: default · **selected** (teal ring + filled teal check) · **assigned** (checkbox → picker avatar, picker pill on where-line) · **locked/upcoming** (lock glyph replaces checkbox, card desaturated)
 
 ### PICKING card (same rich card, read-only)
-Identical to Assign **including the shelf + family chips**, minus:
+Identical to Assign **including the family-chip shelf + inline volume**, minus:
 - **No checkbox** (full-width content)
 - Caption-right = **elapsed badge** instead of flags: grey `<30m`, amber `30m+`, red `60m+` (e.g. red `1h 12m`)
 - Where-right = **picker name**
@@ -120,25 +120,35 @@ Check-now and Checked. No goods/families (the checker opens line items anyway).
 
 ## 5. Design tokens used
 
-> **Final shipped values after the 2026-07-21 polish passes** (softened name +
-> slot, quieted goods line, smaller chips, tighter shelf, slate pack tile). Do
-> NOT revert to the heavier originals from the earlier `picking-cards-final-v2`
-> mock — these superseded them. Reference: `picking-card-polish2.html`.
+> **Final shipped values after the 2026-07-21 Option G refinement** (volume on
+> the route line, family-only gray partition, softened name + slot). Do NOT
+> revert to the heavier originals from the earlier `picking-cards-final-v2` mock
+> or the interim `picking-card-polish2.html` goods-line values — Option G
+> superseded them.
 
 - Card: white, `border #eceef2`, radius 20, soft diffused shadow
-- Name: `#2a323c` **700**, `18px`, tracking −0.022em (was `#0f151c` 800 / 19px)
-- Slot hero: `#3d4650` **700**, `16px`, tabular (was `#242c35` 800 / 17px)
+- Name: `#3b4450` **600**, `18px`, tracking −0.022em (was `#2a323c` 700; before that `#0f151c` 800 / 19px)
+- Slot hero: `#4c5661` **600**, `16px`, tabular (was `#3d4650` 700; before that `#242c35` 800 / 17px)
 - Caption: `#aab2bb`; OBD mono `#98a0aa`
 - Area: `#7e8792` 600 · Picker: `#8a929c` 700
-- Shelf: bg `#f7f9fb`, top border `#eef1f4`, padding `9/15/11/14`
-- Goods line: base `12px/600 #8a929c`; numeric counts `700 #6b7480`; `L` unit
-  `10.5px #aab2bb`; separator `#d3d8de`
+- **Volume (route line, rich cards only):** count `12.5px/700 #6b7480`; `L` unit
+  `10.5px/600 #a2aab4`; separator middot `#d3d8de`; count group `shrink-0` so it
+  is never clipped (area truncates first)
+- Shelf: bg `#f6f8fa`, top border `#eef1f4`, padding `9/15/10/14` — **family
+  chips only**, no goods line
 - Family chip: `10.5px/700`, padding `3px 8px`, radius 7, text `#6b7480`, bg `#eef1f5`
 - `+N unlisted` chip: `11.5px`, dashed `#d8dce1` border, text `#9aa2ac`
 - Detail scope strip: load `15px/700 #2a323c`; volume `#8a929c`; `L` `10.5px #aab2bb`
 - Detail pack tile: slate `#3d4650` (missing `#9ca3af`); pack-filter selected `#2a323c`
 - Badges: elapsed grey `#7c8590/#f3f5f7`, red `#dc2626/#fef2f2`; picked green `#1a8f52/#eefaf1`; checked plain `#9aa2ac`
 - Age (if used elsewhere): amber `#b06a0a/#fdf3e3`
+
+### Deferred
+- **Full container breakdown (`articleTag`, e.g. `5 Drum, 2 Carton, 3 Tin`) intentionally
+  removed from the card face 2026-07-21** — available on the detail screen; revisit adding it
+  back as its own line after floor use if the container count proves needed at assign-time. The
+  value is still carried on the queue row / payload (nothing was removed from the data), only the
+  card-face render was dropped.
 
 ---
 
