@@ -33,9 +33,14 @@ export async function GET(req: Request): Promise<NextResponse> {
   // gets a clear 400 instead of a silently-different answer). An unrecognised
   // scope must not quietly degrade to 'single' — that would hand a mobile
   // caller a one-day payload while it renders an all-dates board.
-  if (scopeParam !== undefined && scopeParam !== "single" && scopeParam !== "openPending") {
+  if (
+    scopeParam !== undefined &&
+    scopeParam !== "single" &&
+    scopeParam !== "openPending" &&
+    scopeParam !== "rolling"
+  ) {
     return NextResponse.json(
-      { error: `Invalid scope "${scopeParam}" — expected "single" or "openPending"` },
+      { error: `Invalid scope "${scopeParam}" — expected "single", "openPending", or "rolling"` },
       { status: 400 },
     );
   }

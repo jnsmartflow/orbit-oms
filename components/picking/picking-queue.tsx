@@ -530,7 +530,9 @@ export function PickingQueue() {
 
   const fetchQueue = useCallback(async (): Promise<PickingQueueResult> => {
     // Row counts change between days — never cache across dates, always refetch.
-    const res = await fetch(`/api/picking/queue?date=${selectedDate}`);
+    // scope=rolling (step 5): today's + overdue active rows + future (fetched for
+    // the step-6 locked Upcoming section). `date` is the anchor D for zone/age.
+    const res = await fetch(`/api/picking/queue?scope=rolling&date=${selectedDate}`);
     if (!res.ok) {
       throw new Error(`Request failed (${res.status})`);
     }
@@ -659,7 +661,11 @@ export function PickingQueue() {
   // slot position instead of sinking, so a row's # never jumps as its status
   // changes.
   const displayRows: PickingQueueRow[] = useMemo(
-    () => (data ? sortPickingQueue(data.rows, DISPLAY_RULES) : []),
+    // Exclude UPCOMING (future-dated) rows from the ACTIVE list — and therefore
+    // from the global #, visibleRows, and all 3 guards (step 5C). They are
+    // fetched (in data.rows) for step 6's locked Upcoming section but must not
+    // render in, be numbered by, or be assignable from the active table.
+    () => (data ? sortPickingQueue(data.rows.filter((r) => r.zone !== "upcoming"), DISPLAY_RULES) : []),
     [data],
   );
 

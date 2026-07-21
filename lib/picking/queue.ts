@@ -95,7 +95,12 @@ function resolveTargetDate(dateStr?: string): { isoDate: string; dateOnly: Date 
  * drift", CLAUDE_PICKING.md §5.1). A second fetch would reintroduce exactly
  * the drift that invariant exists to prevent.
  */
-export type PickingQueueScope = "single" | "openPending";
+// 'rolling' — the desktop day-board (step 5, 2026-07-21). Active picking-stage
+// rows across ALL dates (NO date fence), split by `zone` (computed vs the
+// requested date D): due = dispatchTargetDate <= D or null; upcoming = > D.
+// Overdue leftovers from earlier days are included, unbounded. Distinct from
+// 'single' (strict one-day equality, kept for backward-compat) — do NOT conflate.
+export type PickingQueueScope = "single" | "openPending" | "rolling";
 
 export interface PickingQueueOptions {
   /** YYYY-MM-DD. Meaningful in 'single' scope only; omitted → today in IST. */
@@ -225,20 +230,32 @@ export async function getPickingQueue(
             { workflowStage: PICK_CHECKED, dispatchTargetDate: todayDateOnly },
           ],
         }
-      : {
-          dispatchStatus: "dispatch",
-          dispatchTargetDate: dateOnly,
-          // Unassigned, assigned, AND picked current stages. Assigned
-          // (PICK_ASSIGNED) rows are sunk to the bottom by sort.ts's
-          // byAssigned rule; picked (PICK_DONE) rows are NOT (isAssigned is
-          // false for them too — see the doc comment above this function) —
-          // harmless, since both board consumers filter PICK_DONE rows out of
-          // their rendered lists entirely rather than relying on sort position.
-          // Never the historical 'closed' union — see lib/workflow-stages.ts and
-          // CLAUDE_SUPPORT.md §3 (parking-stage flip).
-          workflowStage: { in: PICKING_ACTIVE_STAGES },
-          isRemoved: false,
-        };
+      : scope === "rolling"
+        ? {
+            // Desktop day-board (step 5). Active picking stages across ALL dates
+            // — NO date fence — so overdue leftovers (dispatchTargetDate < D) and
+            // future bills (> D) both come back. `zone` (computed vs the requested
+            // date D below) classifies them; the desktop renders due rows inline
+            // and holds upcoming for its locked section (step 6). Same stage set +
+            // closed-exclusion as 'single'; only the date fence differs.
+            dispatchStatus: "dispatch",
+            isRemoved: false,
+            workflowStage: { in: PICKING_ACTIVE_STAGES },
+          }
+        : {
+            dispatchStatus: "dispatch",
+            dispatchTargetDate: dateOnly,
+            // Unassigned, assigned, AND picked current stages. Assigned
+            // (PICK_ASSIGNED) rows are sunk to the bottom by sort.ts's
+            // byAssigned rule; picked (PICK_DONE) rows are NOT (isAssigned is
+            // false for them too — see the doc comment above this function) —
+            // harmless, since both board consumers filter PICK_DONE rows out of
+            // their rendered lists entirely rather than relying on sort position.
+            // Never the historical 'closed' union — see lib/workflow-stages.ts and
+            // CLAUDE_SUPPORT.md §3 (parking-stage flip).
+            workflowStage: { in: PICKING_ACTIVE_STAGES },
+            isRemoved: false,
+          };
 
   // Sequential awaits only — never prisma.$transaction (CORE §3).
   const orders = await prisma.orders.findMany({
@@ -351,7 +368,13 @@ export async function getPickingQueue(
 
   let unmatchedCount = 0;
 
-  const todayMs = todayDateOnly.getTime();
+  // Zone/age anchor = the REQUESTED date D (not literal today), so on the rolling
+  // desktop board a bill dated for D reads as due, later as upcoming, and ageDays
+  // is days-overdue relative to D. For 'openPending'/'single' the resolved
+  // dateOnly IS today (they never carry a date param), so this is a no-op for
+  // them — their zone/ageDays are unchanged. `todayDateOnly` is still used, above,
+  // ONLY for openPending's checked-arm today-fence.
+  const anchorMs = dateOnly.getTime();
 
   const rows: PickingQueueRow[] = orders.map((order) => {
     const effectiveDealer = order.shipToOverrideCustomer ?? order.customer;
@@ -376,10 +399,10 @@ export async function getPickingQueue(
     // dispatchTargetDate <= today the bill graduates on its own with no job,
     // no write, and no dependence on this flag.
     const zone: "due" | "upcoming" =
-      !noDispatchDate && targetDate.getTime() > todayMs && !isEarlyReleased ? "upcoming" : "due";
+      !noDispatchDate && targetDate.getTime() > anchorMs && !isEarlyReleased ? "upcoming" : "due";
     const ageDays = noDispatchDate
       ? null
-      : Math.max(0, Math.floor((todayMs - targetDate.getTime()) / MS_PER_DAY));
+      : Math.max(0, Math.floor((anchorMs - targetDate.getTime()) / MS_PER_DAY));
 
     return {
       zone,
@@ -437,13 +460,20 @@ export async function getPickingQueue(
 
   const sortedRows = sortPickingQueue(rows);
 
-  // Tab badges and totalCount show work REMAINING — assigned rows are still
-  // in `rows` (rendered, sunk to the bottom by byAssigned) but excluded here.
+  // Count landmine fix (step 5B) — a slot badge and the total must mean "still
+  // needs a picker in this slot today," so exclude assigned/done/checked AND
+  // upcoming (future-dated) rows from BOTH formulas. Done/checked rows and the
+  // assigned pile still ride in `rows` (rendered inline on desktop) — just not
+  // counted. Desktop-only in effect: mobile computes its own counts and never
+  // reads windows[].count / totalCount (see this function's doc comment).
+  const isStillWaiting = (r: PickingQueueRow): boolean =>
+    !r.isAssigned && !r.isDone && !r.isChecked && r.zone !== "upcoming";
+
   const windows: PickingWindowSummary[] = activeWindows.map((w) => ({
     id: w.id,
     windowTime: w.windowTime,
     sortOrder: w.sortOrder,
-    count: sortedRows.filter((r) => r.windowId === w.id && !r.isAssigned).length,
+    count: sortedRows.filter((r) => r.windowId === w.id && isStillWaiting(r)).length,
   }));
 
   const assignedCount = sortedRows.filter((r) => r.isAssigned).length;
@@ -453,7 +483,7 @@ export async function getPickingQueue(
     rows: sortedRows,
     windows,
     unmatchedCount,
-    totalCount: sortedRows.length - assignedCount,
+    totalCount: sortedRows.filter(isStillWaiting).length,
     assignedCount,
   };
 }
