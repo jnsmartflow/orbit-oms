@@ -593,6 +593,8 @@ model import_raw_line_items {
   challanFormulas     delivery_challan_formulas[]
   tinterIssueEntries  tinter_issue_entries[]
   tinterIssueEntriesB tinter_issue_entries_b[]
+
+  @@index([obdNumber, lineStatus])
 }
 
 model import_enriched_line_items {

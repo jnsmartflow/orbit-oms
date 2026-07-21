@@ -17,6 +17,24 @@ export interface PickingQueueRow {
   articleTag: string | null;
   volumeLitres: number | null;
   weightKg: number | null;
+  // ── Product-family fields (Picking card redesign, 2026-07-21) ──────────────
+  // True when the whole OBD is a tint order. Sourced from orders.orderType
+  // === 'tint' (the canonical order-type set at import) — NOT from any tint
+  // skuId, which aliases rawLineItemId and is a known false positive
+  // (CLAUDE_CORE.md §13). Order-level, so it is the same value on every tab.
+  isTint: boolean;
+  // Distinct product families on the bill, display-resolved and stable
+  // alpha-sorted (locale "en") so chip order never shuffles across refreshes.
+  // Each family is COALESCE(sku_master_v2.displayCategory, category), matched
+  // import_raw_line_items.skuCodeRaw -> sku_master_v2.material (the natural
+  // key, never the skuId FK — CLAUDE_CORE.md §13 id-space landmine). Empty
+  // array when no active line resolved to a family; never null.
+  families: string[];
+  // Raw count of ACTIVE + VALID lines whose skuCodeRaw matched no family
+  // (unmastered code, or a resolved-blank family) — a LINE count, not a
+  // distinct-code count (2 unmatched tins on one OBD = 2). Powers the
+  // mockup's "+N unlisted" honesty chip. 0 when every active line resolved.
+  unresolvedLineCount: number;
   obdDateTime: Date | string | null;
   isAssigned: boolean;
   // True at exactly PICK_DONE. Added 2026-07-17 for the picker "My Picks"

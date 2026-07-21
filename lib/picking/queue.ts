@@ -280,6 +280,75 @@ export async function getPickingQueue(
     select: { id: true, windowTime: true, sortOrder: true },
   });
 
+  // ── Product-family aggregation (Picking card redesign, 2026-07-21) ─────────
+  // TWO bulk reads for the WHOLE page (never per-order — no N+1), then group
+  // in memory. Sequential awaits only, never prisma.$transaction (CORE §3).
+  //
+  // There is no FK from orders to its line items — matched on the plain
+  // obdNumber string, the same key the detail screen route uses. Family
+  // resolves via sku_master_v2.material (the SAP natural key), NOT the
+  // enrichedLineItem.skuId FK — that shares no id space with v2 and would
+  // mispoint every line (CLAUDE_CORE.md §13 id-space landmine).
+  const obdNumbers = Array.from(new Set(orders.map((o) => o.obdNumber)));
+
+  // 1. Active + valid raw lines for every loaded OBD, one query. lineStatus
+  //    'active' drops import-removed lines; rowStatus 'valid' drops parse-
+  //    rejected rows — only lines a picker would actually handle.
+  const rawLines =
+    obdNumbers.length > 0
+      ? await prisma.import_raw_line_items.findMany({
+          where: {
+            obdNumber: { in: obdNumbers },
+            lineStatus: "active",
+            rowStatus: "valid",
+          },
+          select: { obdNumber: true, skuCodeRaw: true },
+        })
+      : [];
+
+  // 2. Catalog rows for the distinct codes seen above, one query.
+  const codes = Array.from(
+    new Set(rawLines.map((l) => l.skuCodeRaw).filter((c): c is string => Boolean(c))),
+  );
+  const catalogRows =
+    codes.length > 0
+      ? await prisma.sku_master_v2.findMany({
+          where: { material: { in: codes } },
+          select: { material: true, category: true, displayCategory: true },
+        })
+      : [];
+
+  // family = COALESCE(displayCategory, category) — the SINGLE resolution point,
+  // so the deferred friendly-name swap is data-only later (displayCategory is
+  // empty today, so family === category for now). Trim-guarded: a resolved-but-
+  // blank family is treated as "no family" downstream (COALESCE only falls back
+  // on NULL, and category is NOT NULL, so this is belt-and-braces — a blank
+  // chip is worse than counting the line as unlisted).
+  const familyByCode = new Map<string, string>();
+  for (const c of catalogRows) {
+    const resolved = (c.displayCategory ?? c.category ?? "").trim();
+    if (resolved !== "") familyByCode.set(c.material, resolved);
+  }
+
+  // Group per OBD in one pass: distinct families (Set) + a raw count of active
+  // lines that matched no family. unresolvedLineCount counts LINES, not
+  // distinct codes — 2 unmatched tins on one OBD = 2.
+  const familiesByObd = new Map<string, Set<string>>();
+  const unresolvedByObd = new Map<string, number>();
+  for (const l of rawLines) {
+    const family = l.skuCodeRaw ? familyByCode.get(l.skuCodeRaw) : undefined;
+    if (family !== undefined) {
+      let set = familiesByObd.get(l.obdNumber);
+      if (!set) {
+        set = new Set<string>();
+        familiesByObd.set(l.obdNumber, set);
+      }
+      set.add(family);
+    } else {
+      unresolvedByObd.set(l.obdNumber, (unresolvedByObd.get(l.obdNumber) ?? 0) + 1);
+    }
+  }
+
   let unmatchedCount = 0;
 
   const todayMs = todayDateOnly.getTime();
@@ -337,6 +406,16 @@ export async function getPickingQueue(
       articleTag: order.querySnapshot?.articleTag ?? null,
       volumeLitres: order.querySnapshot?.totalVolume ?? null,
       weightKg: order.querySnapshot?.totalWeight ?? null,
+      // Tint is order-level — orders.orderType is the canonical source (set at
+      // import), already present via `include`. Never a tint skuId (§13).
+      isTint: order.orderType === "tint",
+      // Distinct families, display-resolved, stable alpha-sorted (locale "en"
+      // — same depot-PC-vs-Vercel determinism basis as the sort spine). Empty
+      // array when nothing resolved; never null.
+      families: Array.from(familiesByObd.get(order.obdNumber) ?? []).sort((a, b) =>
+        a.localeCompare(b, "en", { sensitivity: "base" }),
+      ),
+      unresolvedLineCount: unresolvedByObd.get(order.obdNumber) ?? 0,
       // CLAUDE_SUPPORT.md §4.5 — orderDateTime is never null in practice (set
       // at SAP import, overwritten by enrichment on a mail match); the
       // obdEmailDate fallback is a seatbelt, not a common path. Both scalars
