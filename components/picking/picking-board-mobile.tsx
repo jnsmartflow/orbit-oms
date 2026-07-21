@@ -187,70 +187,302 @@ function formatCheckedTime(checkedAt: Date | string | null): string | null {
   return d.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "numeric", minute: "2-digit", hour12: true });
 }
 
-// Check tab card — step 5: ONE identical block for both sections (no left
-// accent, no footer strip, no avatar). Picker's name folds into the same
-// grey meta line the Assign card uses for area+articleTag — here it's
-// area+pickerName instead. `muted` is the ONLY section-level visual
-// distinction beyond the section header itself, per the approved mockup
-// (docs/mockups/picking/supervisor-check-split.html) — both sections open
-// the detail screen on tap (task brief: "Still picking" keeps today's
-// existing tap-to-open behaviour, unchanged by the split).
-function CheckCard({
-  row, muted, pill, onOpen, checkerName,
+// Order date-time for the caption line (Assign / Picking) — "19 Jul, 4:05 PM"
+// in IST. Date part en-GB (day-then-month order), time part en-US (uppercase
+// AM/PM), both pinned to Asia/Kolkata so the depot phone and Vercel render the
+// same text regardless of device locale. Null on a missing/invalid timestamp —
+// the caller drops the segment rather than printing "Invalid Date".
+function formatObdDateTime(v: Date | string | null): string | null {
+  if (v === null) return null;
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return null;
+  const date = d.toLocaleDateString("en-GB", { timeZone: "Asia/Kolkata", day: "numeric", month: "short" });
+  const time = d.toLocaleTimeString("en-US", {
+    timeZone: "Asia/Kolkata",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+  return `${date}, ${time}`;
+}
+
+// Route colour dot — colour ONLY, no text (CLAUDE_CORE.md §3 delivery dots +
+// design spec §2). Local blue, Upcountry orange, Cross rose; IGT / unknown /
+// null → neutral grey. Deliberately NO teal here — the one-teal rule reserves
+// teal for the Assign CTA, so a teal IGT dot (UI §3's nominal colour) is
+// overridden to grey on this card.
+const ROUTE_DOT_COLOR: Record<string, string> = {
+  Local: "#2563eb",
+  Upcountry: "#ea580c",
+  Cross: "#e11d48",
+};
+function RouteDot({ deliveryType }: { deliveryType: string | null }): React.JSX.Element {
+  const color = (deliveryType !== null && ROUTE_DOT_COLOR[deliveryType]) || "#9ca3af";
+  return <span className="w-2 h-2 rounded-full shrink-0" style={{ background: color }} aria-hidden="true" />;
+}
+
+// Card shadow — the locked v2 look (docs/mockups/picking/picking-cards-final-v2.html).
+// Distinct from SOFT_CARD_SHADOW, which the detail line-item rows still use.
+const CARD_SHADOW_V2 = "0 1px 2px rgba(16,24,40,.03), 0 14px 26px -20px rgba(16,24,40,.2)";
+
+// Rich-card shelf — goods line (articleTag rendered VERBATIM + volume) then the
+// family chip strip. The strip is ONE horizontally-scrollable line that NEVER
+// wraps (flex-nowrap + per-chip shrink-0 + whitespace-nowrap) so every card
+// keeps a uniform height; a right-edge fade cues the overflow. `families`
+// arrives already display-resolved + alpha-sorted from lib/picking/queue.ts —
+// rendered AS-IS, never re-sorted or re-resolved here. The "+N unlisted" chip
+// trails only when unresolvedLineCount > 0 (active lines whose SKU code matched
+// no family — the honesty chip from the mockup).
+function CardShelf({ row, muted }: { row: PickingQueueRow; muted: boolean }): React.JSX.Element {
+  const hasStrip = row.families.length > 0 || row.unresolvedLineCount > 0;
+  return (
+    <div className="border-t pt-[9px] pr-[15px] pb-[11px] pl-[14px]" style={{ background: "#f7f9fb", borderColor: "#eef1f4" }}>
+      <div className="text-[12px] font-semibold tabular-nums mb-2" style={{ color: muted ? "#a2aab4" : "#8a929c" }}>
+        {row.articleTag !== null && (
+          <span className="font-bold" style={{ color: muted ? "#8a929c" : "#6b7480" }}>
+            {row.articleTag}
+          </span>
+        )}
+        {row.articleTag !== null && row.volumeLitres != null && (
+          <span className="mx-[7px]" style={{ color: "#d3d8de" }}>
+            &middot;
+          </span>
+        )}
+        {row.volumeLitres != null && (
+          <>
+            <span className="font-bold" style={{ color: muted ? "#8a929c" : "#6b7480" }}>
+              {formatLitres(row.volumeLitres)}
+            </span>{" "}
+            <span className="text-[10.5px] font-semibold" style={{ color: "#aab2bb" }}>
+              L
+            </span>
+          </>
+        )}
+        {row.articleTag === null && row.volumeLitres == null && <span style={{ color: "#a2aab4" }}>&mdash;</span>}
+      </div>
+      {hasStrip && (
+        <div className="relative">
+          <div
+            className="flex flex-nowrap gap-1.5 overflow-x-auto pr-[26px] [&::-webkit-scrollbar]:hidden"
+            style={{ scrollbarWidth: "none" }}
+          >
+            {row.families.map((f) => (
+              <span
+                key={f}
+                className="shrink-0 whitespace-nowrap text-[10.5px] font-bold rounded-[7px] py-[3px] px-[8px]"
+                style={{ color: muted ? "#8a929c" : "#6b7480", background: muted ? "#f1f3f6" : "#eef1f5" }}
+              >
+                {f}
+              </span>
+            ))}
+            {row.unresolvedLineCount > 0 && (
+              <span
+                key="__unlisted"
+                className="shrink-0 whitespace-nowrap text-[11.5px] font-semibold rounded-[8px] px-[9px] py-1 border border-dashed"
+                style={{ color: "#9aa2ac", borderColor: "#d8dce1" }}
+              >
+                +{row.unresolvedLineCount} unlisted
+              </span>
+            )}
+          </div>
+          {/* Fade cue — matches the shelf bg so chips dissolve under it. */}
+          <div
+            className="absolute top-0 right-0 w-[30px] h-full pointer-events-none"
+            style={{ background: "linear-gradient(90deg, rgba(247,249,251,0), #f7f9fb 72%)" }}
+            aria-hidden="true"
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── The ONE shared Picking card ────────────────────────────────────────────
+// Every tab renders THIS — the four-way fork (inline Assign card + CheckCard)
+// is gone. Variants differ only by SLOTS, per the locked design
+// (docs/mockups/picking/picking-cards-final-v2.html +
+//  web-update-2026-07-21-picking-card-redesign.md §2):
+//   lead          — checkbox (assign) / lock (assignLocked) / none
+//   caption 2nd   — order date-time (assign/picking) / slot (done)
+//   caption-right — flags (assign) / elapsed pill (picking) / green (doneCheck) / none
+//   name-right    — slot hero (assign/picking) / none (done)
+//   where-right   — picker (picking/done) / none (assign)
+//   shelf         — RICH on assign + picking; LEAN (no shelf) on done
+//   checker line  — doneChecked only ("✓ Checked by {name} · {time}")
+type PickingCardVariant = "assign" | "assignLocked" | "picking" | "doneCheck" | "doneChecked";
+
+function PickingCard({
+  row,
+  variant,
+  nowTick = 0,
+  selected = false,
+  onOpen,
+  onToggleSelect,
+  onLockTap,
 }: {
   row: PickingQueueRow;
-  muted: boolean;
-  pill: React.ReactNode;
+  variant: PickingCardVariant;
+  nowTick?: number;
+  selected?: boolean;
   onOpen: () => void;
-  // Checked tab only (2026-07-18) — renders as its OWN line below the
-  // area/picker line (never folded into it — a long area name + a long
-  // picker/checker name measured out to overflow the card's 332px content
-  // width, and since this segment would've been appended last, it was
-  // exactly the piece the `truncate` ellipsis clipped first. The checker's
-  // identity is the entire point of this tab, so it gets a line that can
-  // never be silently cut — "who picked" (line above) and "who checked"
-  // (this line) are two different facts, not one crowded line). Undefined/
-  // null everywhere else, so the Needs check / Still picking cards render
-  // byte-identical to before (no extra line, no height change).
-  checkerName?: string | null;
+  onToggleSelect?: () => void;
+  onLockTap?: () => void;
 }): React.JSX.Element {
+  const rich = variant === "assign" || variant === "assignLocked" || variant === "picking";
+  const muted = variant === "assignLocked" || variant === "doneChecked";
+  const showSlotHero = rich && row.windowTime !== null;
+  const secondary =
+    variant === "doneCheck" || variant === "doneChecked" ? row.windowTime : formatObdDateTime(row.obdDateTime);
+
+  // Caption-right cluster by variant. Tint reuses Support's exact indicator
+  // (🎨 in purple — components/support/shared/table-cells.tsx CustomerCell) so
+  // the two boards read identically; field is row.isTint (orders.orderType).
+  // Urgent bolt stays AMBER (not the mockup's red) — red already means
+  // "overdue" on the Picking elapsed badge; a second red would collide.
+  let captionRight: React.ReactNode = null;
+  if (variant === "assign") {
+    captionRight = (
+      <span className="flex items-center gap-[7px] shrink-0">
+        {row.isKeyCustomer && <Star size={14} className="text-amber-500 fill-amber-500" />}
+        {row.priorityLevel === 1 && <Zap size={14} className="text-amber-500 fill-amber-500" />}
+        {row.isTint && <span className="text-[13px] text-purple-500 leading-none shrink-0">🎨</span>}
+        {row.isEarlyReleased && (
+          <span
+            className="text-[10.5px] font-semibold px-2 py-[3px] rounded-full shrink-0 whitespace-nowrap bg-slate-100 text-slate-600 border border-slate-200"
+            title={row.earlyReleasedByName !== null ? `Released early by ${row.earlyReleasedByName}` : "Released early"}
+          >
+            released
+          </span>
+        )}
+        <AgeBadge row={row} />
+      </span>
+    );
+  } else if (variant === "assignLocked") {
+    captionRight = (
+      <span className="flex items-center gap-1.5 shrink-0">
+        {row.isKeyCustomer && <Star size={14} className="text-amber-500 fill-amber-500" />}
+        {row.isTint && <span className="text-[13px] text-purple-500 leading-none shrink-0">🎨</span>}
+        <UpcomingDayBadge row={row} />
+      </span>
+    );
+  } else if (variant === "picking") {
+    captionRight = checkCardPill(row, "still", nowTick);
+  } else if (variant === "doneCheck") {
+    captionRight = checkCardPill(row, "needs", nowTick);
+  } // doneChecked: none — the checked time moves down to the checker line.
+
+  const whereRight =
+    (variant === "picking" || variant === "doneCheck" || variant === "doneChecked") && row.assignedToName !== null ? (
+      <span className="text-[12px] font-bold shrink-0" style={{ color: "#8a929c" }}>
+        {row.assignedToName}
+      </span>
+    ) : null;
+
+  // Lead gutter — a real 48px-tall tap target (self-stretch to card height).
+  // stopPropagation so a checkbox/lock tap never also fires the card's own
+  // onOpen (they sit on the same card, per the two-target design).
+  const lead =
+    variant === "assign" ? (
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggleSelect?.();
+        }}
+        aria-label={selected ? "Deselect" : "Select"}
+        className="w-11 shrink-0 self-stretch min-h-[48px] flex items-center justify-center pt-px"
+      >
+        <SelectBox checked={selected} />
+      </button>
+    ) : variant === "assignLocked" ? (
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onLockTap?.();
+        }}
+        aria-label={`Locked until ${formatDispatchDay(row.dispatchTargetDate) ?? "its dispatch date"} — tap to release early`}
+        className="w-11 shrink-0 self-stretch min-h-[48px] flex items-center justify-center pt-px active:opacity-60"
+      >
+        <LockGlyph className="w-5 h-5 text-gray-400" />
+      </button>
+    ) : null;
+
   return (
     <div
-      className={"bg-white rounded-[14px] p-[13px] mb-[9px] cursor-pointer " + (muted ? "opacity-75" : "")}
-      style={{ boxShadow: SOFT_CARD_SHADOW }}
+      className={
+        "rounded-[20px] mb-[11px] overflow-hidden cursor-pointer border-[1.5px] " +
+        (selected ? "bg-teal-50 border-teal-600 " : "bg-white border-[#eceef2] ") +
+        (variant === "doneChecked" ? "opacity-75" : "")
+      }
+      style={{ boxShadow: CARD_SHADOW_V2, ...(variant === "assignLocked" ? { background: "#fcfcfd" } : null) }}
       onClick={onOpen}
     >
-      <div className="flex items-center justify-between gap-2 mb-[5px]">
-        <span className="flex items-baseline gap-[5px] min-w-0">
-          <span className="font-mono text-[11px] text-gray-400 whitespace-nowrap">{row.obdNumber}</span>
-          {row.windowTime !== null && (
-            <span className="text-[10.5px] text-gray-300 whitespace-nowrap">&middot;{row.windowTime}</span>
-          )}
-        </span>
-        {pill}
-      </div>
-      <div className="text-[15px] font-bold text-gray-900 leading-tight mb-[3px] truncate">{row.dealerName}</div>
-      <div className="text-[12px] text-gray-500 truncate">
-        {row.area !== null ? (
-          <>
-            {row.area}
-            {row.assignedToName !== null && (
-              <>
-                <span className="text-gray-300 mx-[5px]">&middot;</span>
-                {row.assignedToName}
-              </>
+      <div className={"flex items-start gap-3 " + (lead ? "pl-3.5 pr-4 pt-3.5 pb-3" : "px-4 pt-3.5 pb-3")}>
+        {lead}
+        <div className="flex-1 min-w-0">
+          {/* Caption: OBD (mono) · secondary (date-time or slot) — right cluster */}
+          <div className="flex items-center justify-between gap-2.5 mb-1.5">
+            <span
+              className="flex items-center gap-1.5 min-w-0 text-[11.5px] overflow-hidden whitespace-nowrap"
+              style={{ color: "#aab2bb" }}
+            >
+              <span className="font-mono shrink-0" style={{ color: "#98a0aa" }}>
+                {row.obdNumber}
+              </span>
+              {secondary !== null && (
+                <>
+                  <span className="shrink-0" style={{ color: "#d8dce1" }}>
+                    &middot;
+                  </span>
+                  <span className="truncate">{secondary}</span>
+                </>
+              )}
+            </span>
+            {captionRight}
+          </div>
+          {/* Title: customer name (truncates, never pushes the slot) + slot hero */}
+          <div className="flex items-baseline justify-between gap-3">
+            <span
+              className="text-[18px] font-bold leading-[1.18] tracking-[-0.022em] truncate min-w-0"
+              style={{ color: "#2a323c" }}
+            >
+              {row.dealerName}
+            </span>
+            {showSlotHero && (
+              <span className="text-[16px] font-bold tabular-nums shrink-0" style={{ color: "#3d4650" }}>
+                {row.windowTime}
+              </span>
             )}
-          </>
-        ) : (
-          row.assignedToName ?? "—"
-        )}
+          </div>
+          {/* Where: route dot + area (truncates) — picker on the right */}
+          <div className="flex items-center justify-between gap-2.5 mt-1.5">
+            <span className="flex items-center gap-2 min-w-0">
+              <RouteDot deliveryType={row.deliveryType} />
+              <span className="text-[12.5px] font-semibold truncate" style={{ color: "#7e8792" }}>
+                {row.area ?? "—"}
+              </span>
+            </span>
+            {whereRight}
+          </div>
+        </div>
       </div>
-      {checkerName != null && (
-        // No `truncate` here on purpose — this is the one fact the tab
-        // exists to show, so it wraps rather than silently clipping behind
-        // an ellipsis on an unusually long name.
-        <div className="text-[12px] text-gray-500 mt-[3px]">
-          &#10003; Checked by {checkerName}
+      {rich && <CardShelf row={row} muted={muted} />}
+      {variant === "doneChecked" && row.checkedByName !== null && (
+        // Its OWN line, never folded into the where line (a long area + long
+        // checker name overflow the card; this is the fact the tab exists to
+        // show, so it must never be the piece a truncate silently clips).
+        <div className="px-4 pb-3.5 flex items-center gap-1.5 text-[12px] font-semibold" style={{ color: "#8a929c" }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#22a06b" strokeWidth={2.4} className="shrink-0">
+            <path d="M5 13l4 4L19 7" />
+          </svg>
+          <span>Checked by {row.checkedByName}</span>
+          {formatCheckedTime(row.checkedAt) !== null && (
+            <>
+              <span style={{ color: "#d0d5db" }}>&middot;</span>
+              <span style={{ color: "#a2aab4" }}>{formatCheckedTime(row.checkedAt)}</span>
+            </>
+          )}
         </div>
       )}
     </div>
@@ -1642,87 +1874,16 @@ export function PickingBoardMobile(): React.JSX.Element {
                   Nothing to assign right now.
                 </p>
               ) : (
-                filteredWaitingDue.map((row) => {
-                  const isSel = selected.has(row.orderId);
-                  return (
-                    <div
-                      key={row.orderId}
-                      className={
-                        "flex items-start gap-[11px] bg-white rounded-[14px] p-[13px] mb-[9px] border-[1.5px] " +
-                        (isSel ? "border-teal-600 bg-teal-50" : "border-transparent")
-                      }
-                      style={{ boxShadow: SOFT_CARD_SHADOW }}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => toggleSelect(row.orderId)}
-                        aria-label={isSel ? "Deselect" : "Select"}
-                        className="w-11 shrink-0 flex items-center justify-center pt-px"
-                      >
-                        <SelectBox checked={isSel} />
-                      </button>
-                      <div
-                        className="flex-1 min-w-0 cursor-pointer"
-                        onClick={() => openDetail(row.orderId, "waiting")}
-                      >
-                        <div className="flex items-center justify-between gap-2 mb-[5px]">
-                          <span className="flex items-baseline gap-[5px] min-w-0">
-                            <span className="font-mono text-[11px] text-gray-400 whitespace-nowrap">
-                              {row.obdNumber}
-                            </span>
-                            {row.windowTime !== null && (
-                              <span className="text-[10.5px] text-gray-300 whitespace-nowrap">
-                                &middot;{row.windowTime}
-                              </span>
-                            )}
-                          </span>
-                          <span className="flex items-center gap-1.5 shrink-0">
-                            {row.isKeyCustomer && <Star size={14} className="text-amber-500 fill-amber-500" />}
-                            {row.priorityLevel === 1 && <Zap size={14} className="text-amber-500 fill-amber-500" />}
-                            {/* Early-released bills sit in Due now as ordinary
-                                assignable work, but their own date still says
-                                they aren't due yet — so they carry a quiet
-                                neutral chip saying how they got here. Neutral,
-                                never amber: this is provenance, not urgency.
-                                Cross-supervisor visibility is the whole reason
-                                the release is persisted (5b). */}
-                            {row.isEarlyReleased && (
-                              <span
-                                className="text-[10.5px] font-semibold px-2 py-[3px] rounded-full shrink-0 whitespace-nowrap bg-slate-100 text-slate-600 border border-slate-200"
-                                title={
-                                  row.earlyReleasedByName !== null
-                                    ? `Released early by ${row.earlyReleasedByName}`
-                                    : "Released early"
-                                }
-                              >
-                                released
-                              </span>
-                            )}
-                            <AgeBadge row={row} />
-                          </span>
-                        </div>
-                        <div className="text-[15px] font-bold text-gray-900 leading-tight mb-[3px] truncate">
-                          {row.dealerName}
-                        </div>
-                        <div className="text-[12px] text-gray-500 truncate">
-                          {row.area !== null ? (
-                            <>
-                              {row.area}
-                              {row.articleTag !== null && (
-                                <>
-                                  <span className="text-gray-300 mx-[5px]">&middot;</span>
-                                  {row.articleTag}
-                                </>
-                              )}
-                            </>
-                          ) : (
-                            (row.articleTag ?? "—")
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })
+                filteredWaitingDue.map((row) => (
+                  <PickingCard
+                    key={row.orderId}
+                    row={row}
+                    variant="assign"
+                    selected={selected.has(row.orderId)}
+                    onOpen={() => openDetail(row.orderId, "waiting")}
+                    onToggleSelect={() => toggleSelect(row.orderId)}
+                  />
+                ))
               )}
 
               {/* ── ZONE 2 · UPCOMING (LOCKED) ──────────────────────────────
@@ -1737,80 +1898,13 @@ export function PickingBoardMobile(): React.JSX.Element {
                   </div>
 
                   {filteredWaitingUpcoming.map((row) => (
-                    <div
+                    <PickingCard
                       key={row.orderId}
-                      className="flex items-start gap-[11px] bg-[#fcfcfd] rounded-[14px] p-[13px] mb-[9px] border-[1.5px] border-transparent"
-                      style={{ boxShadow: SOFT_CARD_SHADOW }}
-                    >
-                      {/* Lock REPLACES the checkbox in the same 44px gutter —
-                          the row rhythm is unbroken and "you cannot tick
-                          this" lands exactly where the thumb goes. Rendering
-                          no checkbox is the first of two guards on the bulk
-                          path (the second, and the load-bearing one, is
-                          selectedRows deriving from filteredWaitingDue). */}
-                      {/* 5b — the lock is now a real 44px tap target that
-                          opens the early-release confirm sheet. Two targets
-                          in one row: the LOCK releases, the BODY opens the
-                          bill to read. stopPropagation is essential — the
-                          body's onClick sits on the sibling below, and
-                          without it a lock tap would also open the detail
-                          screen behind the sheet. */}
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setReleaseTarget(row);
-                        }}
-                        aria-label={`Locked until ${formatDispatchDay(row.dispatchTargetDate) ?? "its dispatch date"} — tap to release early`}
-                        className="w-11 shrink-0 flex items-center justify-center pt-px self-stretch min-h-[44px] active:opacity-60"
-                      >
-                        <LockGlyph className="w-5 h-5 text-gray-400" />
-                      </button>
-                      {/* Body stays FULLY tappable and at full contrast — the
-                          lock governs sequence, not secrecy. Grey out the
-                          content and supervisors learn to release bills early
-                          just to read them, which is the behaviour the lock
-                          exists to prevent. */}
-                      <div
-                        className="flex-1 min-w-0 cursor-pointer"
-                        onClick={() => openDetail(row.orderId, "waiting")}
-                      >
-                        <div className="flex items-center justify-between gap-2 mb-[5px]">
-                          <span className="flex items-baseline gap-[5px] min-w-0">
-                            <span className="font-mono text-[11px] text-gray-400 whitespace-nowrap">
-                              {row.obdNumber}
-                            </span>
-                            {row.windowTime !== null && (
-                              <span className="text-[10.5px] text-gray-300 whitespace-nowrap">
-                                &middot;{row.windowTime}
-                              </span>
-                            )}
-                          </span>
-                          <span className="flex items-center gap-1.5 shrink-0">
-                            {row.isKeyCustomer && <Star size={14} className="text-amber-500 fill-amber-500" />}
-                            <UpcomingDayBadge row={row} />
-                          </span>
-                        </div>
-                        <div className="text-[15px] font-bold text-gray-800 leading-tight mb-[3px] truncate">
-                          {row.dealerName}
-                        </div>
-                        <div className="text-[12px] text-gray-400 truncate">
-                          {row.area !== null ? (
-                            <>
-                              {row.area}
-                              {row.articleTag !== null && (
-                                <>
-                                  <span className="text-gray-300 mx-[5px]">&middot;</span>
-                                  {row.articleTag}
-                                </>
-                              )}
-                            </>
-                          ) : (
-                            (row.articleTag ?? "—")
-                          )}
-                        </div>
-                      </div>
-                    </div>
+                      row={row}
+                      variant="assignLocked"
+                      onOpen={() => openDetail(row.orderId, "waiting")}
+                      onLockTap={() => setReleaseTarget(row)}
+                    />
                   ))}
                 </>
               )}
@@ -1854,11 +1948,11 @@ export function PickingBoardMobile(): React.JSX.Element {
             </p>
           ) : (
             filteredStillPicking.map((row) => (
-              <CheckCard
+              <PickingCard
                 key={row.orderId}
                 row={row}
-                muted={false}
-                pill={checkCardPill(row, "still", nowTick)}
+                variant="picking"
+                nowTick={nowTick}
                 onOpen={() => openDetail(row.orderId, "stillPicking")}
               />
             ))
@@ -1907,11 +2001,11 @@ export function PickingBoardMobile(): React.JSX.Element {
               </p>
             ) : (
               filteredNeedsCheck.map((row) => (
-                <CheckCard
+                <PickingCard
                   key={row.orderId}
                   row={row}
-                  muted={false}
-                  pill={checkCardPill(row, "needs", nowTick)}
+                  variant="doneCheck"
+                  nowTick={nowTick}
                   onOpen={() => openDetail(row.orderId, "needsCheck")}
                 />
               ))
@@ -1926,12 +2020,11 @@ export function PickingBoardMobile(): React.JSX.Element {
               </p>
             ) : (
               filteredChecked.map((row) => (
-                <CheckCard
+                <PickingCard
                   key={row.orderId}
                   row={row}
-                  muted={true}
-                  pill={checkCardPill(row, "checked", nowTick)}
-                  checkerName={row.checkedByName}
+                  variant="doneChecked"
+                  nowTick={nowTick}
                   onOpen={() => openDetail(row.orderId, "checked")}
                 />
               ))
@@ -2075,7 +2168,7 @@ export function PickingBoardMobile(): React.JSX.Element {
         onTouchEnd={handleDetailTouchEnd}
       >
         <div
-          className="bg-teal-600 px-3.5 pb-3.5 flex items-center gap-2.5 shrink-0"
+          className="bg-teal-600 px-3.5 pb-3.5 flex items-start gap-2.5 shrink-0"
           style={{ paddingTop: "max(env(safe-area-inset-top, 0px), 12px)" }}
         >
           <button
@@ -2097,6 +2190,35 @@ export function PickingBoardMobile(): React.JSX.Element {
                   }`
                 : "—"}
             </div>
+            {/* Row 3 — flag chips (frosted pills), each shown only when its
+                field is true; the whole row is omitted when none are, so there
+                is no empty gap. Reuses the CARD's EXACT glyphs (amber star,
+                amber urgent bolt — NOT red, avoids clashing with any red;
+                Support's purple 🎨) so a bill's flags survive from the card
+                into the detail. All fields come from detailRow — already in
+                memory, no fetch. */}
+            {detailRow && (detailRow.isKeyCustomer || detailRow.priorityLevel === 1 || detailRow.isTint) && (
+              <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                {detailRow.isKeyCustomer && (
+                  <span className="inline-flex items-center gap-1 bg-white/[0.16] rounded-full pl-1.5 pr-2 py-[3px] text-[11px] font-semibold text-white">
+                    <Star size={11} className="text-amber-500 fill-amber-500" />
+                    Key dealer
+                  </span>
+                )}
+                {detailRow.priorityLevel === 1 && (
+                  <span className="inline-flex items-center gap-1 bg-white/[0.16] rounded-full pl-1.5 pr-2 py-[3px] text-[11px] font-semibold text-white">
+                    <Zap size={11} className="text-amber-500 fill-amber-500" />
+                    Urgent
+                  </span>
+                )}
+                {detailRow.isTint && (
+                  <span className="inline-flex items-center gap-1 bg-white/[0.16] rounded-full px-2 py-[3px] text-[11px] font-semibold text-white">
+                    <span className="text-[11px] leading-none">🎨</span>
+                    Tint
+                  </span>
+                )}
+              </div>
+            )}
           </div>
           <button
             type="button"
@@ -2150,11 +2272,14 @@ export function PickingBoardMobile(): React.JSX.Element {
                 them here. */}
             <div className="bg-white border-b border-gray-200 px-3.5 py-3 flex items-center justify-between gap-3 shrink-0">
               <div className="min-w-0">
-                <div className="text-[16px] font-extrabold text-gray-900 leading-snug truncate">
+                <div className="text-[15px] font-bold leading-snug truncate" style={{ color: "#2a323c" }}>
                   {detailRow?.articleTag ?? "—"}
                   {detailRow?.volumeLitres != null && (
-                    <span className="text-gray-400 font-semibold">
-                      {" "}&middot; {formatLitres(detailRow.volumeLitres)} L
+                    <span className="font-semibold" style={{ color: "#8a929c" }}>
+                      {" "}&middot; {formatLitres(detailRow.volumeLitres)}{" "}
+                      <span className="text-[11px]" style={{ color: "#aab2bb" }}>
+                        L
+                      </span>
                     </span>
                   )}
                 </div>
@@ -2206,8 +2331,8 @@ export function PickingBoardMobile(): React.JSX.Element {
                   className={
                     "text-[12.5px] font-medium px-3 py-1.5 rounded-full border whitespace-nowrap shrink-0 " +
                     (activePackFilter === "ALL"
-                      ? "bg-gray-900 border-gray-900 text-white font-semibold"
-                      : "bg-white border-gray-200 text-gray-700")
+                      ? "bg-[#2a323c] border-[#2a323c] text-white font-semibold"
+                      : "bg-white border-gray-200 text-[#6b7480]")
                   }
                 >
                   All
@@ -2220,8 +2345,8 @@ export function PickingBoardMobile(): React.JSX.Element {
                     className={
                       "text-[12.5px] font-medium px-3 py-1.5 rounded-full border whitespace-nowrap shrink-0 " +
                       (activePackFilter === key
-                        ? "bg-gray-900 border-gray-900 text-white font-semibold"
-                        : "bg-white border-gray-200 text-gray-700")
+                        ? "bg-[#2a323c] border-[#2a323c] text-white font-semibold"
+                        : "bg-white border-gray-200 text-[#6b7480]")
                     }
                   >
                     {key === NO_PACK_KEY ? "No pack" : key}
@@ -2257,14 +2382,15 @@ export function PickingBoardMobile(): React.JSX.Element {
                   style={{ boxShadow: SOFT_CARD_SHADOW }}
                 >
                   {/* PACK TILE — fixed 56px, full card height (flex stretch),
-                      teal when known, muted em-dash when missing (never an
-                      error/chip style). This column is what makes packs
-                      align down the left edge — must not flex. */}
+                      SLATE when known (was teal — recoloured 2026-07-21 so the
+                      teal 'Assign to picker' CTA is the only teal on screen,
+                      one-teal rule CLAUDE_UI §1/§6), muted em-dash when missing
+                      (never an error/chip style). This column is what makes
+                      packs align down the left edge — must not flex. */}
                   <div className="w-14 shrink-0 bg-[#f8fafa] border-r border-gray-200 flex items-center justify-center px-1 py-2.5">
                     <span
-                      className={
-                        "text-[13px] font-bold text-center " + (li.pack !== null ? "text-teal-700" : "text-gray-400")
-                      }
+                      className="text-[13px] font-bold text-center"
+                      style={{ color: li.pack !== null ? "#3d4650" : "#9ca3af" }}
                     >
                       {li.pack ?? "—"}
                     </span>

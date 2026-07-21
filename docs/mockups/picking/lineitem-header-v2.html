@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Line-item detail header — v2 (shipped 2026-07-21)</title>
+<!--
+  RECREATED 2026-07-21 to match the SHIPPED detail screen in
+  components/picking/picking-board-mobile.tsx (the original of this file was
+  designed in a claude.ai session and never committed — this is now the repo's
+  source of truth). Palette follows docs/mockups/picking/picking-card-polish2.html
+  so the detail screen and the cards read as one product.
+
+  Header layout (teal identity bar, top to bottom):
+    Row 1  back · customer name (hero) · search
+    Row 2  subline  OBD · area · slot
+    Row 3  flag chips UNDER the subline — frosted white/16 pills, glyph + FULL
+           label, each only when its field is true; row omitted when none are.
+  Below the bar (white):
+    Scope strip  load (articleTag verbatim) · volume LEFT · ‹ N of M › pager RIGHT
+    Pack filter  All / packs — dark selected pill (#2a323c), logic unchanged
+  Line rows:
+    Pack tile SLATE (#3d4650), not teal — the teal 'Assign to picker' CTA is
+    the only teal on screen (one-teal rule). SKU/desc/qty unchanged.
+-->
+<style>
+  * { box-sizing:border-box; margin:0; padding:0; -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility; }
+  body { font-family:-apple-system,"SF Pro Text","Segoe UI",Roboto,sans-serif; background:#edeff2; color:#0f151c; display:flex; justify-content:center; }
+  .phone { width:390px; min-height:100vh; background:#f9fafb; display:flex; flex-direction:column; }
+
+  /* ── Teal identity bar ── */
+  .bar { background:#0d9488; padding:14px 14px 14px; display:flex; align-items:flex-start; gap:10px; }
+  .icon { width:32px; height:32px; border-radius:9px; display:flex; align-items:center; justify-content:center; color:#fff; flex-shrink:0; }
+  .icon.frost { background:rgba(255,255,255,.15); }
+  .icon svg { display:block; }
+  .idz { flex:1; min-width:0; }
+  .name { font-size:16px; font-weight:800; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .sub { font-size:12px; color:rgba(255,255,255,.75); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:1px; }
+  .chips { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:8px; }
+  .chip { display:inline-flex; align-items:center; gap:4px; background:rgba(255,255,255,.16); border-radius:999px; padding:3px 8px; font-size:11px; font-weight:600; color:#fff; }
+  .chip svg { display:block; }
+
+  /* ── Scope strip ── */
+  .scope { background:#fff; border-bottom:1px solid #e5e7eb; padding:12px 14px; display:flex; align-items:center; justify-content:space-between; gap:12px; }
+  .load { font-size:15px; font-weight:700; color:#2a323c; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
+  .load .vol { font-weight:600; color:#8a929c; }
+  .load .u { font-size:11px; color:#aab2bb; }
+  .pager { display:flex; align-items:center; gap:2px; flex-shrink:0; color:#6b7280; }
+  .pager button { width:44px; height:44px; border:none; background:none; display:flex; align-items:center; justify-content:center; color:#6b7280; }
+  .pager .n { font-size:12.5px; font-weight:500; color:#6b7280; font-variant-numeric:tabular-nums; white-space:nowrap; padding:0 2px; }
+
+  /* ── Pack filter ── */
+  .packs { background:#fff; border-bottom:1px solid #e5e7eb; padding:10px 14px; display:flex; gap:6px; overflow-x:auto; }
+  .pk { font-size:12.5px; font-weight:500; padding:6px 12px; border-radius:999px; border:1px solid #e5e7eb; background:#fff; color:#6b7480; white-space:nowrap; flex-shrink:0; }
+  .pk.on { background:#2a323c; border-color:#2a323c; color:#fff; font-weight:600; }
+
+  /* ── Line rows ── */
+  .rows { flex:1; padding:12px 14px 90px; }
+  .row { display:flex; background:#fff; border-radius:14px; overflow:hidden; margin-bottom:8px; box-shadow:0 1px 2px rgba(16,24,40,.04), 0 3px 12px rgba(16,24,40,.05); }
+  .tile { width:56px; flex-shrink:0; background:#f8fafa; border-right:1px solid #e5e7eb; display:flex; align-items:center; justify-content:center; padding:10px 4px; }
+  .tile span { font-size:13px; font-weight:700; color:#3d4650; text-align:center; }   /* SLATE, not teal */
+  .tile.none span { color:#9ca3af; }
+  .body { flex:1; min-width:0; padding:10px 12px; }
+  .sku { font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:17px; font-weight:700; color:#111827; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .desc { font-size:12px; color:#6b7280; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:2px; }
+  .qty { flex-shrink:0; display:flex; align-items:center; justify-content:center; padding:0 14px; font-size:26px; font-weight:800; color:#111827; }
+
+  /* ── Only teal on screen: the primary CTA ── */
+  .cta { position:sticky; bottom:0; padding:14px; background:linear-gradient(#f9fafb00,#f9fafb 30%); }
+  .cta button { width:100%; height:48px; border:none; border-radius:999px; background:#0d9488; color:#fff; font-size:14.5px; font-weight:700; box-shadow:0 8px 22px rgba(13,148,136,.42); }
+</style>
+</head>
+<body>
+<div class="phone">
+
+  <!-- Teal identity bar -->
+  <div class="bar">
+    <div class="icon frost">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+    </div>
+    <div class="idz">
+      <div class="name">S. Mohanlal &amp; Sons</div>
+      <div class="sub">9108370341 · Bhagal · 16:00</div>
+      <div class="chips">
+        <span class="chip"><svg width="11" height="11" viewBox="0 0 24 24" fill="#f59e0b"><path d="M12 2.5l2.9 6.1 6.6.9-4.8 4.6 1.2 6.6L12 18.6 6 21.3l1.2-6.6L2.4 9.5l6.6-.9z"/></svg>Key dealer</span>
+        <span class="chip"><svg width="11" height="11" viewBox="0 0 24 24" fill="#f59e0b"><path d="M13 2L4.5 13.5H11l-1 8.5L19.5 10H13z"/></svg>Urgent</span>
+        <span class="chip"><span style="font-size:11px;line-height:1">🎨</span>Tint</span>
+      </div>
+    </div>
+    <div class="icon">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+    </div>
+  </div>
+
+  <!-- Scope strip: load · volume LEFT, pager RIGHT -->
+  <div class="scope">
+    <div class="load">3 Drum, 1 Carton <span class="vol">· 46 <span class="u">L</span></span></div>
+    <div class="pager">
+      <button aria-label="Previous bill"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg></button>
+      <span class="n">2 of 25</span>
+      <button aria-label="Next bill"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>
+    </div>
+  </div>
+
+  <!-- Pack filter -->
+  <div class="packs">
+    <span class="pk on">All</span>
+    <span class="pk">20L</span>
+    <span class="pk">5L</span>
+    <span class="pk">1L</span>
+  </div>
+
+  <!-- Line rows -->
+  <div class="rows">
+    <div class="row">
+      <div class="tile"><span>20L</span></div>
+      <div class="body"><div class="sku">IN12839471</div><div class="desc">Satin Enamel — Brilliant White</div></div>
+      <div class="qty">2</div>
+    </div>
+    <div class="row">
+      <div class="tile"><span>5L</span></div>
+      <div class="body"><div class="sku">IN29471120</div><div class="desc">SuperCover Interior — 90 Base</div></div>
+      <div class="qty">1</div>
+    </div>
+    <div class="row">
+      <div class="tile none"><span>—</span></div>
+      <div class="body"><div class="sku">5961032</div><div class="desc">DN WS Metallic Gold 0.5L</div></div>
+      <div class="qty">6</div>
+    </div>
+  </div>
+
+  <!-- The one teal element on the screen -->
+  <div class="cta"><button>Assign to picker</button></div>
+
+</div>
+</body>
+</html>
