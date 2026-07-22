@@ -311,6 +311,139 @@ const GROUP_ROW_STYLE: CSSProperties = {
   borderBottom: "1px solid #e5e7eb",
 };
 
+// Age tag (design §6) — days OVERDUE relative to the dispatch date, taken
+// STRAIGHT from row.ageDays (server-computed vs the requested date D). NOT
+// recomputed from creation date. Styling copied from the Tint age badge
+// (components/tint/tint-table-view.tsx getAgeBadge). No tag at 0 or null.
+function AgePill({ ageDays }: { ageDays: number | null }) {
+  if (ageDays === null || ageDays < 1) return null;
+  const cls =
+    ageDays === 1
+      ? "bg-amber-50 text-amber-700 border-amber-200"
+      : "bg-red-50 text-red-700 border-red-200";
+  return (
+    <span
+      className={`ml-1.5 inline-flex items-center align-middle text-[9px] font-semibold border rounded px-1 py-[0.5px] ${cls}`}
+    >
+      {ageDays}d
+    </span>
+  );
+}
+
+// "2026-07-23" → "Wed 23 Jul". Parsed the PARTS way (split → Date.UTC), never
+// new Date(str), and formatted at UTC/en-GB so the depot PC and Vercel agree —
+// the same convention as the mobile board's formatDispatchDay(). Null on a
+// malformed string; the caller drops the chip.
+function formatUpcomingDate(iso: string | null): string | null {
+  if (iso === null) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!m) return null;
+  const [, y, mo, d] = m;
+  const dt = new Date(Date.UTC(Number(y), Number(mo) - 1, Number(d)));
+  if (Number.isNaN(dt.getTime())) return null;
+  const opts = { timeZone: "UTC" } as const;
+  const weekday = dt.toLocaleDateString("en-GB", { ...opts, weekday: "short" });
+  const day = dt.toLocaleDateString("en-GB", { ...opts, day: "2-digit" });
+  const month = dt.toLocaleDateString("en-GB", { ...opts, month: "short" });
+  return `${weekday} ${day} ${month}`;
+}
+
+// Locked Upcoming section (design §7) — future-dated rows in their OWN table
+// below the active one, so they never mix with the numbered active list.
+// Collapsed by default. Read-only: a lock glyph instead of a checkbox, "—" for
+// #, and a "for {date}" chip in the Status cell. Slot tabs / filters / search
+// do NOT narrow this section (see the parent's upcomingRows). Calm slate palette
+// per the mock.
+function UpcomingSection({
+  rows,
+  expanded,
+  onToggle,
+}: {
+  rows: PickingQueueRow[];
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div className="rounded-lg border border-gray-200 overflow-hidden mt-3">
+      <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
+        <colgroup>
+          {COLUMN_WIDTHS.map((w, i) => (
+            <col key={i} style={{ width: `${w}%` }} />
+          ))}
+        </colgroup>
+        <tbody>
+          {/* Collapsible bar — full width, click to toggle. */}
+          <tr style={{ cursor: "pointer", background: "#f8fafc" }} onClick={onToggle}>
+            <td colSpan={COLUMN_WIDTHS.length} style={{ padding: "0 14px", height: 40 }}>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 9 }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: "#475569" }}>🔒 Upcoming</span>
+                <span
+                  style={{ fontSize: 10, fontWeight: 600, color: "#475569", background: "#e2e8f0", borderRadius: 10, padding: "1px 8px" }}
+                >
+                  {rows.length}
+                </span>
+                <span style={{ fontSize: 11, fontWeight: 500, color: "#94a3b8" }}>— locked until dispatch day</span>
+                <span
+                  style={{ marginLeft: 4, fontSize: 11, color: "#64748b", display: "inline-block", transform: expanded ? "rotate(180deg)" : "none", transition: "transform 150ms" }}
+                >
+                  ▾
+                </span>
+              </span>
+            </td>
+          </tr>
+          {expanded &&
+            rows.map((row) => {
+              const obdDateTimeLabel = formatObdDateTime(row.obdDateTime);
+              const dateChip = formatUpcomingDate(row.dispatchTargetDate);
+              return (
+                <tr key={row.orderId} style={{ height: DATA_ROW_HEIGHT, borderTop: "1px solid #f0f0f0" }}>
+                  {/* Lock glyph — NO checkbox (upcoming rows are never selectable). */}
+                  <td style={dataCellStyle("center", "muted", { paddingLeft: 10, paddingRight: 4 })}>
+                    <span style={{ color: "#94a3b8", fontSize: 12 }}>🔒</span>
+                  </td>
+                  <td style={dataCellStyle("center", "muted")}>{EM_DASH}</td>
+                  <td style={OBD_CELL_STYLE}>
+                    <div style={{ ...OBD_LINE_STYLE, fontSize: 11, color: "#475569", fontFamily: '"SF Mono", ui-monospace, Menlo, monospace' }}>
+                      {row.obdNumber}
+                    </div>
+                    {obdDateTimeLabel !== null && (
+                      <div style={{ ...OBD_LINE_STYLE, fontSize: 10, color: "#94a3b8", marginTop: 1 }}>{obdDateTimeLabel}</div>
+                    )}
+                  </td>
+                  <td style={OBD_CELL_STYLE}>
+                    <div style={{ ...OBD_LINE_STYLE, fontSize: 11.5, fontWeight: 600, color: "#475569" }}>{row.dealerName}</div>
+                    {row.isShipToOverride && (
+                      <div style={{ ...OBD_LINE_STYLE, fontSize: 10, color: "#94a3b8", marginTop: 1 }}>&rarr; ship-to</div>
+                    )}
+                  </td>
+                  <td style={dataCellStyle("left", "muted")}>
+                    <NullableText value={row.route} />
+                  </td>
+                  <td style={dataCellStyle("right", "muted", { fontVariantNumeric: "tabular-nums" })}>
+                    {formatNullableNumber(row.volumeLitres)}
+                  </td>
+                  <td style={dataCellStyle("left", "muted")}>
+                    <FlagIcons row={row} />
+                  </td>
+                  <td style={dataCellStyle("left", "secondary", { paddingRight: 12 })}>
+                    {dateChip !== null && (
+                      <span
+                        style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 10, fontWeight: 600, padding: "3px 8px", borderRadius: 6, background: "#f1f5f9", color: "#475569", border: "1px solid #e2e8f0", whiteSpace: "nowrap" }}
+                      >
+                        for {dateChip}
+                        {row.windowTime !== null ? ` · ${row.windowTime}` : ""}
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 interface PickingTableProps {
   rows: PickingQueueRow[];
   view: ViewMode;
@@ -429,6 +562,7 @@ function PickingTable({
                   }}
                 >
                   {row.obdNumber}
+                  <AgePill ageDays={row.ageDays} />
                 </div>
                 {obdDateTimeLabel !== null && (
                   <div style={{ ...OBD_LINE_STYLE, fontSize: 10, color: "#9ca3af", marginTop: 1 }}>
@@ -513,6 +647,8 @@ export function PickingQueue() {
   const [searchQuery, setSearchQuery] = useState("");
   // List ⇄ By Route display lens (design §9). DEFAULT "list". Client-side only.
   const [view, setView] = useState<ViewMode>("list");
+  // Locked Upcoming section (step 6) — collapsed by default.
+  const [upcomingExpanded, setUpcomingExpanded] = useState(false);
   const [pickers, setPickers] = useState<Picker[]>([]);
   const [pickersLoading, setPickersLoading] = useState(true);
   const [chosenPickerId, setChosenPickerId] = useState<number | null>(null);
@@ -668,6 +804,25 @@ export function PickingQueue() {
     () => (data ? sortPickingQueue(data.rows.filter((r) => r.zone !== "upcoming"), DISPLAY_RULES) : []),
     [data],
   );
+
+  // Upcoming (future-dated) rows for the locked section (step 6). Derived from
+  // data.rows — NOT displayRows (which drops them) — and DELIBERATELY not
+  // narrowed by slot tab, filters, or search (design §7: the section always
+  // shows every upcoming order). Sorted by dispatch date, then window order.
+  const upcomingRows = useMemo(() => {
+    if (!data) return [];
+    return data.rows
+      .filter((r) => r.zone === "upcoming")
+      .sort((a, b) => {
+        const da = a.dispatchTargetDate ?? "";
+        const db = b.dispatchTargetDate ?? "";
+        if (da !== db) return da < db ? -1 : 1;
+        const wa = a.windowSortOrder ?? Number.MAX_SAFE_INTEGER;
+        const wb = b.windowSortOrder ?? Number.MAX_SAFE_INTEGER;
+        if (wa !== wb) return wa - wb;
+        return a.obdNumber.localeCompare(b.obdNumber, "en", { sensitivity: "base" });
+      });
+  }, [data]);
 
   // Global pick-sequence #: 1-based over the WHOLE day's display order, so a row
   // shows the same # in every slot tab (design §5). Computed once from
@@ -904,28 +1059,40 @@ export function PickingQueue() {
         )}
 
         {!loading && !error && data && (
-          visibleRows.length === 0 ? (
-            <p className="text-[13px] text-gray-400 text-center py-16">
-              No orders in this window.
-            </p>
-          ) : (
-            <div className="rounded-lg border border-gray-200 overflow-hidden">
-              <PickingTable
-                rows={visibleRows}
-                view={view}
-                showSlotBands={activeTab === "all"}
-                sequenceByOrderId={sequenceByOrderId}
-                selected={selected}
-                onToggleOne={toggleOne}
-                allSelectedInTab={allSelectedInTab}
-                someSelectedInTab={someSelectedInTab}
-                onToggleAllInTab={toggleAllInTab}
-                unassigningOrderId={unassigningOrderId}
-                unassignError={unassignError}
-                onUnassign={handleUnassign}
+          <>
+            {visibleRows.length === 0 ? (
+              <p className="text-[13px] text-gray-400 text-center py-16">
+                No orders in this window.
+              </p>
+            ) : (
+              <div className="rounded-lg border border-gray-200 overflow-hidden">
+                <PickingTable
+                  rows={visibleRows}
+                  view={view}
+                  showSlotBands={activeTab === "all"}
+                  sequenceByOrderId={sequenceByOrderId}
+                  selected={selected}
+                  onToggleOne={toggleOne}
+                  allSelectedInTab={allSelectedInTab}
+                  someSelectedInTab={someSelectedInTab}
+                  onToggleAllInTab={toggleAllInTab}
+                  unassigningOrderId={unassigningOrderId}
+                  unassignError={unassignError}
+                  onUnassign={handleUnassign}
+                />
+              </div>
+            )}
+
+            {/* Locked Upcoming section (step 6) — below the active list in BOTH
+                views; never numbered, selectable, or slot/filter-narrowed. */}
+            {upcomingRows.length > 0 && (
+              <UpcomingSection
+                rows={upcomingRows}
+                expanded={upcomingExpanded}
+                onToggle={() => setUpcomingExpanded((v) => !v)}
               />
-            </div>
-          )
+            )}
+          </>
         )}
       </div>
 
