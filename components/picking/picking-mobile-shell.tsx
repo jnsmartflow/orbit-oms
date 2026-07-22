@@ -8,6 +8,7 @@ import type { WorkflowTab } from "@/components/shared/workflow-tab-bar";
 import type { NavItemConfig } from "@/lib/permissions";
 import type { PickingQueueRow } from "@/lib/picking/types";
 import type { PickingQueueResult } from "@/lib/picking/queue";
+import { usePickingMarker } from "@/lib/hooks/use-picking-marker";
 
 // Stage 3/4 (2026-07-19) — Direction A. `workflowTabs`/`activeTabKey`/
 // `onTabChange` (the Stage-2 slot on MobileShell) must reach
@@ -55,6 +56,12 @@ interface PickingBoardContextValue {
   // through context instead of owning local state for it.
   detailOpen:    boolean;
   setDetailOpen: (open: boolean) => void;
+  // Mid-action signal the board reports UP so the live-sync poll (owned here in
+  // the shell) can pause onChange while a picker sheet / release-confirm floats
+  // over the LIST view — the one mid-action state detailOpen does NOT already
+  // cover (a sheet over the detail screen is already covered by detailOpen).
+  // Same lift-to-shell pattern as detailOpen above.
+  setOverlayBusy: (busy: boolean) => void;
 }
 
 const PickingBoardContext = createContext<PickingBoardContextValue | null>(null);
@@ -107,6 +114,9 @@ function SupervisorPickingShell({
   const [activeTab, setActiveTab] = useState<"assign" | "picking" | "done">("assign");
   // Detail-interactions Build A — see PickingBoardContextValue's comment.
   const [detailOpen, setDetailOpen] = useState(false);
+  // Reported up by the board (picker sheet / release confirm over the LIST) —
+  // see PickingBoardContextValue.setOverlayBusy. Feeds the live-sync pause.
+  const [overlayBusy, setOverlayBusy] = useState(false);
 
   // scope=openPending (2026-07-20 date-zones redesign) — pending and
   // in-progress bills across ALL dates, plus today's checked band. Replaces
@@ -143,14 +153,34 @@ function SupervisorPickingShell({
     };
   }, [fetchQueue]);
 
+  // A REFRESH of already-loaded data — deliberately silent on failure: keep the
+  // last good board (the error SCREEN is owned only by the initial load() above)
+  // and never toggle `loading` (no spinner, no flicker). This is what makes it
+  // safe for the 15s background poll to drive, and is also strictly better for
+  // the foreground assign/undo/approve callers — a bill already persisted, so a
+  // failed follow-up refresh must not wipe the board. The next marker tick or
+  // user action recovers the data.
   const refetchQueue = useCallback(async () => {
     try {
       const json = await fetchQueue();
       setData(json);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to refresh picking queue");
+    } catch {
+      // silent — keep last good data, retry on the next trigger
     }
   }, [fetchQueue]);
+
+  // Live sync (2026-07-22) — poll the cheap marker every 15s; on a real change,
+  // do the ONE full refetch (refetchQueue above). scope MUST match fetchQueue's
+  // ("openPending") so the marker watches the same rows buildPickingWhere() does
+  // server-side. Paused while the user is mid-action: detailOpen (detail /
+  // line-tick / Approve screen) OR overlayBusy (picker sheet / release confirm
+  // floating over the list) — a background refetch must never move the ground
+  // under an in-progress assignment or approval.
+  usePickingMarker({
+    scope: "openPending",
+    onChange: refetchQueue,
+    paused: detailOpen || overlayBusy,
+  });
 
   // Tab counts — same filter semantics as PickingBoardMobile's own
   // waitingRows/assignedRows/doneRows/checkedRows memos (§ that file), just
@@ -195,7 +225,7 @@ function SupervisorPickingShell({
   }, [data]);
 
   const contextValue = useMemo<PickingBoardContextValue>(
-    () => ({ data, loading, error, activeTab, refetchQueue, detailOpen, setDetailOpen }),
+    () => ({ data, loading, error, activeTab, refetchQueue, detailOpen, setDetailOpen, setOverlayBusy }),
     [data, loading, error, activeTab, refetchQueue, detailOpen],
   );
 

@@ -797,7 +797,7 @@ export function PickingBoardMobile(): React.JSX.Element {
   // from context (lifted up to SupervisorPickingShell, which needs the
   // boolean to drive RoleLayoutClient's hideBar). Same identifier names as
   // before, so every existing usage below is unchanged.
-  const { data, loading, error, activeTab, refetchQueue, detailOpen, setDetailOpen } = usePickingBoard();
+  const { data, loading, error, activeTab, refetchQueue, detailOpen, setDetailOpen, setOverlayBusy } = usePickingBoard();
   // Direction-A header (avatar/grid/search) reaches the shared Menu/You
   // sheets + the signed-in user's initials via the Stage-1 provider —
   // userInitials is a Stage-3/4 addition to that context's value.
@@ -887,6 +887,17 @@ export function PickingBoardMobile(): React.JSX.Element {
   // the current selection) or single (detail screen's own CTA). Decoupled
   // from `selected` so the two flows never fight over the same state.
   const [assignTarget, setAssignTarget] = useState<PickingQueueRow[]>([]);
+
+  // Report list-view mid-action state UP to the shell so its 15s live-sync poll
+  // pauses onChange while the user is committing to specific rows: the picker
+  // sheet (bulk/single assign) or the release-confirm sheet. detailOpen already
+  // covers the detail / line-tick / Approve screen (and any sheet floating over
+  // it), so it is NOT re-included here. View-only filter sheets (route/picker
+  // filters) are deliberately excluded — a background refresh behind a filter is
+  // harmless and pausing on them would only starve the board of updates.
+  useEffect(() => {
+    setOverlayBusy(pickerSheetOpen || releaseTarget !== null);
+  }, [pickerSheetOpen, releaseTarget, setOverlayBusy]);
 
   // ── Detail-interactions Build A — in-module back navigation ─────────────
   // Copies the ESSENCE of /po's single-authority popstate model (discovery
