@@ -87,6 +87,14 @@ export function usePickingMarker({
     let cancelled = false;
     let intervalId: ReturnType<typeof setInterval> | null = null;
 
+    // A new (scope, date) subscription watches a DIFFERENT row set — reset the
+    // baseline so its first response is stored, never fired (e.g. the desktop
+    // queue stepping selectedDate). No-op for a caller whose scope/date never
+    // change (the mobile shell): this effect only re-runs when they do, and on
+    // first mount lastSeenRef is already null.
+    lastSeenRef.current = null;
+    pendingChangeRef.current = false;
+
     const url = `/api/picking/marker?scope=${encodeURIComponent(scope)}${
       date ? `&date=${encodeURIComponent(date)}` : ""
     }`;

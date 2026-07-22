@@ -17,6 +17,7 @@ import {
 } from "@/lib/picking/sort";
 import type { PickingQueueRow } from "@/lib/picking/types";
 import type { PickingQueueResult } from "@/lib/picking/queue";
+import { usePickingMarker } from "@/lib/hooks/use-picking-marker";
 
 const EM_DASH = "—";
 const NUMBER_LOCALE = "en-US"; // fixed locale — identical thousands-separator output depot PC vs Vercel
@@ -736,18 +737,67 @@ export function PickingQueue() {
     setChosenPickerId(null);
   }, [activeTab]);
 
-  // Post-action refetch — deliberately does NOT reset activeTab. The
-  // date-driven effect above owns "reset on load"; after the operator's own
-  // Undo/Assign we want to keep them exactly where they were, even if the
-  // tab they're looking at now has fewer (or zero) rows.
+  // Post-action / background refetch — deliberately does NOT reset activeTab
+  // (the date-driven load() above owns "reset on load", :711-715); after the
+  // operator's own Undo/Assign — or a background marker tick — we keep them
+  // exactly where they were, even if the tab now has fewer (or zero) rows.
+  // SILENT on failure: keep the last good board (the error SCREEN is owned only
+  // by load(), :1055-1059) and never toggle `loading` (no spinner, no flicker).
+  // This is what makes it safe for the 15s background poll to drive, and is also
+  // better for the foreground callers — a persisted mutation must not blank the
+  // board on a failed follow-up refresh. The next marker tick / action recovers.
   const refetchAfterAction = useCallback(async () => {
     try {
       const json = await fetchQueue();
       setData(json);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to refresh picking queue");
+    } catch {
+      // silent — keep last good data, retry on the next trigger
     }
   }, [fetchQueue]);
+
+  // Live sync (2026-07-22) — poll the cheap marker every 15s; on a real change,
+  // route through refetchAfterAction (NOT the mount load path, which resets
+  // activeTab). scope + date MUST match fetchQueue's ("rolling" + selectedDate)
+  // so the marker watches the SAME rows buildPickingWhere() does server-side,
+  // for the day the user is actually viewing — never "today".
+  //
+  // Paused only while the user is committing to specific rows: an in-flight
+  // unassign, an in-flight bulk assign, or an ARMED assign (a picker chosen in
+  // the bulk bar, one click from Assign). Merely having rows ticked does NOT
+  // pause — a supervisor may select 10 bills over a minute and this all-day
+  // control-tower view must stay live; stale selections are pruned instead
+  // (below), not frozen out.
+  usePickingMarker({
+    scope: "rolling",
+    date: selectedDate,
+    onChange: refetchAfterAction,
+    paused: unassigningOrderId !== null || bulkAssigning || chosenPickerId !== null,
+  });
+
+  // Prune stale selections after any refresh — a ticked bill that left the
+  // waiting set (assigned by another supervisor, picked, removed, or rolled to
+  // a future day) drops out of `selected`, so the bulk bar's "N selected" count
+  // never lies and Assign never targets a bill that is no longer assignable.
+  // Runs on every `data` change (background poll AND foreground refetch); a
+  // no-op when nothing is selected, and it never re-runs itself (deps [data],
+  // and it returns the same Set ref when nothing changed).
+  useEffect(() => {
+    if (!data) return;
+    setSelected((prev) => {
+      if (prev.size === 0) return prev;
+      const selectable = new Set(
+        data.rows.filter((r) => r.zone !== "upcoming" && isWaiting(r)).map((r) => r.orderId),
+      );
+      let changed = false;
+      const next = new Set<number>();
+      // Array.from() around the Set iterator — target < ES2015 (CORE §3).
+      for (const id of Array.from(prev)) {
+        if (selectable.has(id)) next.add(id);
+        else changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [data]);
 
   const handleUnassign = useCallback(
     async (orderId: number) => {
