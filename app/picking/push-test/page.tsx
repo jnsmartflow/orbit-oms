@@ -1,10 +1,12 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { checkAnyPermission } from "@/lib/permissions";
+import { prisma } from "@/lib/prisma";
 import { PushTestClient } from "./push-test-client";
 
 // Force runtime render so process.env is read per-request (the public VAPID key
-// takes effect as soon as it is set in Vercel — no rebuild needed).
+// takes effect as soon as it is set in Vercel — no rebuild needed) and the
+// saved-device count is always fresh.
 export const dynamic = "force-dynamic";
 
 export default async function PushTestPage() {
@@ -20,5 +22,10 @@ export default async function PushTestPage() {
 
   const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? null;
 
-  return <PushTestClient vapidPublicKey={vapidPublicKey} />;
+  const userId = Number(session.user.id);
+  const initialSavedCount = Number.isFinite(userId)
+    ? await prisma.push_subscriptions.count({ where: { userId, isActive: true } })
+    : 0;
+
+  return <PushTestClient vapidPublicKey={vapidPublicKey} initialSavedCount={initialSavedCount} />;
 }

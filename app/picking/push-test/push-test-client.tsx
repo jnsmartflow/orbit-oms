@@ -19,9 +19,11 @@ interface PushTestClientProps {
   /** Read server-side from process.env and passed down (works at runtime, no
    *  build-time inlining dependency). Null when the env var is unset. */
   vapidPublicKey: string | null;
+  /** Count of this user's active saved devices at page-load (from the DB). */
+  initialSavedCount: number;
 }
 
-export function PushTestClient({ vapidPublicKey }: PushTestClientProps) {
+export function PushTestClient({ vapidPublicKey, initialSavedCount }: PushTestClientProps) {
   const [supported, setSupported] = useState(false);
   const [standalone, setStandalone] = useState(false);
   const [isIOS, setIsIOS] = useState(false);
@@ -31,6 +33,9 @@ export function PushTestClient({ vapidPublicKey }: PushTestClientProps) {
   const [busy, setBusy] = useState(false);
   const [sending, setSending] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
+  const [savedCount, setSavedCount] = useState(initialSavedCount);
+  const [saveStatus, setSaveStatus] = useState<string | null>(null);
+  const [sendingSaved, setSendingSaved] = useState(false);
 
   // Environment probe + service-worker registration (this page only — the SW is
   // NOT registered app-wide yet).
@@ -80,12 +85,66 @@ export function PushTestClient({ vapidPublicKey }: PushTestClientProps) {
       setSubscription(sub);
       setEndpoint(sub.endpoint);
       setStatus("Subscribed ✓");
+
+      // Persist to the account — the server takes userId from the SESSION, so
+      // the browser subscription alone means nothing until this saves.
+      try {
+        const saveRes = await fetch("/api/push/subscribe", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ subscription: sub, userAgent: navigator.userAgent }),
+        });
+        const saveJson = (await saveRes.json().catch(() => ({}))) as {
+          savedDeviceCount?: number;
+          error?: string;
+        };
+        if (!saveRes.ok) {
+          setSaveStatus(`Subscribed in browser, but NOT saved to your account (HTTP ${saveRes.status}): ${saveJson.error ?? "unknown"}`);
+        } else {
+          setSaveStatus("Saved to your account ✓");
+          if (typeof saveJson.savedDeviceCount === "number") setSavedCount(saveJson.savedDeviceCount);
+        }
+      } catch (e: unknown) {
+        setSaveStatus("Save to account failed: " + (e instanceof Error ? e.message : String(e)));
+      }
     } catch (e: unknown) {
       setStatus("Subscribe failed: " + (e instanceof Error ? e.message : String(e)));
     } finally {
       setBusy(false);
     }
   }, [vapidPublicKey]);
+
+  // Button C — the REAL storage proof: send with NO subscription in the body;
+  // the server sends to whatever it has saved for this session user.
+  const handleSendSaved = useCallback(async () => {
+    setSendingSaved(true);
+    setStatus(null);
+    try {
+      const res = await fetch("/api/push/test-saved", { method: "POST" });
+      const json = (await res.json().catch(() => ({}))) as {
+        total?: number;
+        sent?: number;
+        failed?: number;
+        fatalError?: string;
+        error?: string;
+      };
+      if (!res.ok) {
+        setStatus(`Saved-phone send failed (HTTP ${res.status}): ${json.error ?? "unknown error"}`);
+        return;
+      }
+      if (json.fatalError) {
+        setStatus(`Saved-phone send could not run: ${json.fatalError}`);
+        return;
+      }
+      setStatus(
+        `Saved-phone send: ${json.sent ?? 0} sent / ${json.failed ?? 0} failed of ${json.total ?? 0} saved device(s). Lock the phone and wait for the buzz.`,
+      );
+    } catch (e: unknown) {
+      setStatus("Saved-phone send error: " + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      setSendingSaved(false);
+    }
+  }, []);
 
   // Button B — POST the full subscription; server sends one push.
   const handleSend = useCallback(async () => {
@@ -129,6 +188,12 @@ export function PushTestClient({ vapidPublicKey }: PushTestClientProps) {
           value={permission}
           ok={permission === "granted"}
           warn={permission === "default"}
+        />
+        <StateRow
+          label="Saved devices (this account)"
+          value={String(savedCount)}
+          ok={savedCount > 0}
+          warn={savedCount === 0}
         />
       </div>
 
@@ -178,7 +243,24 @@ export function PushTestClient({ vapidPublicKey }: PushTestClientProps) {
         >
           {sending ? "Sending…" : "Send test buzz"}
         </button>
+
+        {/* Storage proof — dark (NOT teal; teal is spent on "Turn on
+            notifications"). Sends to SAVED devices with no subscription in the
+            request. Works even after a full app close + reopen, no re-subscribe. */}
+        <button
+          type="button"
+          onClick={handleSendSaved}
+          disabled={savedCount === 0 || sendingSaved}
+          className="h-[42px] rounded-lg bg-gray-700 hover:bg-gray-800 text-white text-[14px] font-semibold disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed transition-colors"
+        >
+          {sendingSaved ? "Sending…" : "Send to saved phone"}
+        </button>
       </div>
+
+      {/* Save-to-account status */}
+      {saveStatus && (
+        <p className="mt-4 text-[13px] text-gray-700">{saveStatus}</p>
+      )}
 
       {/* Confirmed subscription endpoint (truncated) */}
       {endpoint && (

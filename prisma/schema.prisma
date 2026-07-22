@@ -185,6 +185,29 @@ model users {
   // Sampling Library back-relations
   samplingRegisterCreated      sampling_register[]   @relation("SamplingRegisterCreatedBy")
   samplingUsageEntries         sampling_usage_log[]  @relation("SamplingUsageOperator")
+  // Web Push — one user → many devices. Single FK to users, so no named relation.
+  pushSubscriptions            push_subscriptions[]
+}
+
+// Web Push device subscriptions. Table created by hand in Supabase (11 cols,
+// endpoint UNIQUE). camelCase columns, no @map. Timestamps carry
+// @db.Timestamptz(6) or Prisma emits plain `timestamp` and mismatches the live
+// column (CLAUDE_CORE.md §7.1.c). `updatedAt` has a DB DEFAULT now() but NO
+// trigger — it is a PLAIN field (NOT @updatedAt); every write sets it
+// explicitly (see lib/push/send.ts + the subscribe/unsubscribe routes).
+model push_subscriptions {
+  id           Int       @id @default(autoincrement())
+  userId       Int
+  user         users     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint     String    @unique(map: "push_subscriptions_endpoint_key")
+  p256dh       String
+  auth         String
+  userAgent    String?
+  isActive     Boolean   @default(true)
+  failureCount Int       @default(0)
+  lastSeenAt   DateTime? @db.Timestamptz(6)
+  createdAt    DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt    DateTime  @default(now()) @db.Timestamptz(6)
 }
 
 model status_master {
