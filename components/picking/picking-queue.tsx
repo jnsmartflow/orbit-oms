@@ -623,7 +623,7 @@ function PickingTable({
   );
 }
 
-export function PickingQueue() {
+export function PickingQueue({ isAdmin = false }: { isAdmin?: boolean }) {
   // "YYYY-MM-DD" in IST — same shape/convention as Support's `date` state.
   const [selectedDate, setSelectedDate] = useState<string>(() => getTodayIST());
   const [data, setData] = useState<PickingQueueResult | null>(null);
@@ -1096,6 +1096,17 @@ export function PickingQueue() {
             {allSelectedInTab ? "Deselect All" : "Select All"}
           </button>
           <p className="text-[11px] text-gray-400">Test mode — tagged &amp; reversible.</p>
+          {/* ⚠️ TEMPORARY SCAFFOLDING — REMOVE after the push-notification
+              rollout. Admin-only link to the /picking/push-test proof page.
+              Gray, NOT teal (one-teal rule; teal is the active slot tab). */}
+          {isAdmin && (
+            <a
+              href="/picking/push-test"
+              className="text-[11px] text-gray-400 hover:text-gray-600 underline"
+            >
+              Push test (temporary)
+            </a>
+          )}
         </div>
 
         {loading && (

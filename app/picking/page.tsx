@@ -65,6 +65,10 @@ export default async function PickingPage({ searchParams }: PickingPageProps) {
     if (!allowed) redirect("/unauthorized");
   }
 
+  // Reuse the SAME admin check as the gate above — gates the temporary
+  // push-test link (scaffolding, removed after the push rollout).
+  const isAdmin = roles.includes("admin");
+
   const allPerms = await getAllPermissionsForRoles(roles);
   const navItems = buildNavItems(allPerms, primaryRole, {
     attendanceTestUser: session.user.attendanceTestUser,
@@ -170,12 +174,13 @@ export default async function PickingPage({ searchParams }: PickingPageProps) {
         userInitials={userInitials}
         navItems={dedupedNavItems}
         showPickerFace={showPickerFace}
+        isAdmin={isAdmin}
       >
         {/* Same route, two faces — desktop table vs. mobile card board.
             Desktop is untouched regardless of role; only the mobile slot
             branches to the picker face. */}
         <div className="hidden md:block">
-          <PickingQueue />
+          <PickingQueue isAdmin={isAdmin} />
         </div>
         <div className="block md:hidden">
           {showPickerFace && pickerFaceData ? (
