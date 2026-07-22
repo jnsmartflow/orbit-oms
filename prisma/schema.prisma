@@ -735,6 +735,12 @@ model orders {
   pickEarlyReleasedAt   DateTime?                @db.Timestamptz(6)
   pickEarlyReleasedById Int?
   pickEarlyReleasedBy   users?                   @relation("OrderPickEarlyReleasedBy", fields: [pickEarlyReleasedById], references: [id])
+
+  // Created directly in Supabase (orders_updatedAt_idx, "updatedAt" DESC).
+  // Backs the picking change-marker's MAX(updatedAt) probe (app/api/picking/
+  // marker/route.ts). Recorded here by hand — db pull cannot run on this
+  // machine (CORE §3). Do NOT db push/pull.
+  @@index([updatedAt(sort: Desc)])
 }
 
 // ─────────────────────────────────────────────

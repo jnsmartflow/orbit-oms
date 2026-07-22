@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { sortPickingQueue } from "./sort";
 import {
@@ -149,63 +150,20 @@ const DEALER_SELECT = {
 } as const;
 
 /**
- * Live derived read — SELECT only. Fetches dispatch-stamped OBDs —
- * unassigned (SUPPORT_DONE_OUTPUT), assigned (PICK_ASSIGNED), picked
- * (PICK_DONE), and checked (PICK_CHECKED, added 2026-07-18 for the
- * supervisor board's Checked tab) — resolves the effective dealer per row,
- * and hands the result to the pure sort module. No writes. No orderBy in
- * the Prisma query — sorting is entirely sortPickingQueue()'s job
- * (byAssigned sinks assigned rows to the bottom).
+ * Builds the exact Prisma `where` the picking queue filters on, plus the
+ * resolved `isoDate`/`dateOnly` anchors, for a given scope+date.
  *
- * DATE SCOPE is chosen by `options.scope` (see PickingQueueScope above);
- * 'single' is the default and is behaviourally identical to this function's
- * pre-2026-07-20 form. Rows carry `zone`/`noDispatchDate`/`ageDays` in both
- * scopes, but they only vary meaningfully under 'openPending'.
- *
- * SORTING IS UNTOUCHED by the scope. lib/picking/sort.ts's PICKING_SPINE has
- * no zone rule and must not gain one — zone is a GROUPING the UI applies, and
- * inside each zone the existing spine order holds unchanged.
- *
- * `isAssigned` below is strictly `workflowStage === PICK_ASSIGNED` — a
- * PICK_DONE or PICK_CHECKED row gets `isAssigned: false`, on purpose, and
- * stays that way. That is NOT a bug on its own: it only breaks something
- * for a consumer that treats "!isAssigned" as "waiting/unassigned" without
- * ALSO excluding `isDone` AND `isChecked`. Every "waiting" filter across
- * both boards guards for this:
- *   - components/picking/picking-queue.tsx (desktop): `unassignedRows`
- *     inside `PickingTable`, plus the parent's `availableRoutes` and
- *     `selectableIdsInTab` — all `!r.isAssigned && !r.isDone && !r.isChecked`.
- *   - components/picking/picking-board-mobile.tsx (mobile Assign tab):
- *     `waitingRows` and the detail screen's Assign-CTA gate — same guard.
- *   - app/picking/page.tsx (picker "My Picks" split): `pending` excludes
- *     both `isDone` and `isChecked`; `done` now includes either (an
- *     approved bill stays in the picker's own Done tab, it doesn't
- *     disappear from his history just because a supervisor later checked it).
- * The "assigned"/Check-tab side (`r.isAssigned`) never needed a matching
- * fix — it was already correctly excluding PICK_DONE/PICK_CHECKED rows,
- * since `isAssigned` is false for them on that side too. `isDone` is
- * likewise strict-per-stage (`=== PICK_DONE`), so a PICK_CHECKED row does
- * NOT reappear in the Check tab's "Needs check" section — it has its own
- * home now (the Checked tab, `isChecked`). lib/picking/sort.ts's
- * `byAssigned` rule itself was never touched — only what feeds it (the
- * filtered row sets above) changed.
- *
- * KNOWN GAP (not fixed here — would change desktop's displayed numbers,
- * out of scope for this addition): `windows[].count` below (line ~`!r.isAssigned`)
- * and `totalCount`'s `sortedRows.length - assignedCount` do NOT exclude
- * `isDone`/`isChecked` rows, so both desktop stats over-count "still
- * queued" bills by however many are done or checked today. Pre-existing
- * for `isDone`; `isChecked` just compounds it. See CLAUDE_PICKING.md §7.
- * Scope of the damage, verified by grep 2026-07-20: `windows`/`totalCount`/
- * `unmatchedCount` are read ONLY by components/picking/picking-queue.tsx
- * (:539, :608, :613, :615, :715). No mobile file reads them — the bottom-bar
- * tab counts are computed independently and correctly in
- * picking-mobile-shell.tsx. So this over-count is desktop-only, and the
- * 'openPending' scope cannot worsen it (desktop never uses that scope).
+ * Extracted from getPickingQueue() (2026-07-22) as the SINGLE source of the
+ * picking scope filter, so the lightweight change-marker endpoint
+ * (app/api/picking/marker/route.ts) can count/aggregate over the IDENTICAL row
+ * set the queue renders — the two cannot drift into watching different sets,
+ * which would miss updates on the floor. getPickingQueue() now calls this and
+ * is otherwise byte-identical to its pre-extraction form: the same scope/date
+ * semantics, the same `where`, the same comments — only relocated here.
  */
-export async function getPickingQueue(
+export function buildPickingWhere(
   options: PickingQueueOptions = {},
-): Promise<PickingQueueResult> {
+): { where: Prisma.ordersWhereInput; isoDate: string; dateOnly: Date } {
   const { date: dateStr, scope = "single" } = options;
   const { isoDate, dateOnly } = resolveTargetDate(dateStr);
 
@@ -218,7 +176,7 @@ export async function getPickingQueue(
   // by construction (lib/workflow-stages.ts), so the scopes cannot drift into
   // showing different bills on desktop vs. mobile. Neither admits 'closed' —
   // see that file for the 572-row evidence behind that exclusion.
-  const where =
+  const where: Prisma.ordersWhereInput =
     scope === "openPending"
       ? {
           dispatchStatus: "dispatch",
@@ -271,6 +229,72 @@ export async function getPickingQueue(
             workflowStage: { in: PICKING_ACTIVE_STAGES },
             isRemoved: false,
           };
+
+  return { where, isoDate, dateOnly };
+}
+
+/**
+ * Live derived read — SELECT only. Fetches dispatch-stamped OBDs —
+ * unassigned (SUPPORT_DONE_OUTPUT), assigned (PICK_ASSIGNED), picked
+ * (PICK_DONE), and checked (PICK_CHECKED, added 2026-07-18 for the
+ * supervisor board's Checked tab) — resolves the effective dealer per row,
+ * and hands the result to the pure sort module. No writes. No orderBy in
+ * the Prisma query — sorting is entirely sortPickingQueue()'s job
+ * (byAssigned sinks assigned rows to the bottom). The scope filter itself is
+ * built by buildPickingWhere() (above) — the marker endpoint reuses it.
+ *
+ * DATE SCOPE is chosen by `options.scope` (see PickingQueueScope above);
+ * 'single' is the default and is behaviourally identical to this function's
+ * pre-2026-07-20 form. Rows carry `zone`/`noDispatchDate`/`ageDays` in both
+ * scopes, but they only vary meaningfully under 'openPending'.
+ *
+ * SORTING IS UNTOUCHED by the scope. lib/picking/sort.ts's PICKING_SPINE has
+ * no zone rule and must not gain one — zone is a GROUPING the UI applies, and
+ * inside each zone the existing spine order holds unchanged.
+ *
+ * `isAssigned` below is strictly `workflowStage === PICK_ASSIGNED` — a
+ * PICK_DONE or PICK_CHECKED row gets `isAssigned: false`, on purpose, and
+ * stays that way. That is NOT a bug on its own: it only breaks something
+ * for a consumer that treats "!isAssigned" as "waiting/unassigned" without
+ * ALSO excluding `isDone` AND `isChecked`. Every "waiting" filter across
+ * both boards guards for this:
+ *   - components/picking/picking-queue.tsx (desktop): `unassignedRows`
+ *     inside `PickingTable`, plus the parent's `availableRoutes` and
+ *     `selectableIdsInTab` — all `!r.isAssigned && !r.isDone && !r.isChecked`.
+ *   - components/picking/picking-board-mobile.tsx (mobile Assign tab):
+ *     `waitingRows` and the detail screen's Assign-CTA gate — same guard.
+ *   - app/picking/page.tsx (picker "My Picks" split): `pending` excludes
+ *     both `isDone` and `isChecked`; `done` now includes either (an
+ *     approved bill stays in the picker's own Done tab, it doesn't
+ *     disappear from his history just because a supervisor later checked it).
+ * The "assigned"/Check-tab side (`r.isAssigned`) never needed a matching
+ * fix — it was already correctly excluding PICK_DONE/PICK_CHECKED rows,
+ * since `isAssigned` is false for them on that side too. `isDone` is
+ * likewise strict-per-stage (`=== PICK_DONE`), so a PICK_CHECKED row does
+ * NOT reappear in the Check tab's "Needs check" section — it has its own
+ * home now (the Checked tab, `isChecked`). lib/picking/sort.ts's
+ * `byAssigned` rule itself was never touched — only what feeds it (the
+ * filtered row sets above) changed.
+ *
+ * KNOWN GAP (not fixed here — would change desktop's displayed numbers,
+ * out of scope for this addition): `windows[].count` below (line ~`!r.isAssigned`)
+ * and `totalCount`'s `sortedRows.length - assignedCount` do NOT exclude
+ * `isDone`/`isChecked` rows, so both desktop stats over-count "still
+ * queued" bills by however many are done or checked today. Pre-existing
+ * for `isDone`; `isChecked` just compounds it. See CLAUDE_PICKING.md §7.
+ * Scope of the damage, verified by grep 2026-07-20: `windows`/`totalCount`/
+ * `unmatchedCount` are read ONLY by components/picking/picking-queue.tsx
+ * (:539, :608, :613, :615, :715). No mobile file reads them — the bottom-bar
+ * tab counts are computed independently and correctly in
+ * picking-mobile-shell.tsx. So this over-count is desktop-only, and the
+ * 'openPending' scope cannot worsen it (desktop never uses that scope).
+ */
+export async function getPickingQueue(
+  options: PickingQueueOptions = {},
+): Promise<PickingQueueResult> {
+  // Scope filter + date anchors come from the shared builder (see above) — the
+  // marker endpoint reuses the SAME `where`, so the two never drift.
+  const { where, isoDate, dateOnly } = buildPickingWhere(options);
 
   // Sequential awaits only — never prisma.$transaction (CORE §3).
   const orders = await prisma.orders.findMany({
