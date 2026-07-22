@@ -3,6 +3,8 @@ import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { SUPPORT_DONE_OUTPUT, PICK_ASSIGNED } from "@/lib/workflow-stages";
+import { sendToUser } from "@/lib/push/send";
+import { isWithinDepotHours } from "@/lib/push/quiet-hours";
 
 export const dynamic = "force-dynamic";
 
@@ -79,6 +81,9 @@ export async function POST(req: Request): Promise<NextResponse> {
   // reappears as unassigned on the next fetch — no reconciliation needed.
   let assigned = 0;
   const failed: FailedBill[] = [];
+  // Order ids that fully succeeded — used ONLY for the best-effort push below,
+  // after the loop. Not part of the response.
+  const assignedOrderIds: number[] = [];
 
   for (const orderId of orderIds) {
     try {
@@ -152,10 +157,51 @@ export async function POST(req: Request): Promise<NextResponse> {
       });
 
       assigned++;
+      assignedOrderIds.push(orderId);
     } catch (err) {
       // Catch-all so one bill's unexpected throw (e.g. a transient DB error
       // on the initial fetch) can never abort the rest of the batch.
       failed.push({ orderId, error: err instanceof Error ? err.message : "Unexpected error" });
+    }
+  }
+
+  // ── Best-effort push notify the PICKER — never affects the response ─────────
+  // Fully wrapped/swallowed: the `{ assigned, failed }` body + status are
+  // byte-identical whether push succeeds, fails, or is skipped. No orders write
+  // here (the live-sync marker keys on MAX(orders.updatedAt); an extra write
+  // would fire a false change on every board) — only a read for names + the
+  // sends (which touch push_subscriptions, not orders).
+  //
+  // Skipped when the supervisor assigned to themselves, or outside depot hours.
+  // Awaited (Vercel freezes the function after the response, so un-awaited work
+  // is unreliable) but sent in PARALLEL via allSettled, so the added latency is
+  // ~one push round-trip regardless of batch size, not N× — keeps the assign
+  // action snappy. Each notification is per-bill (its own tag), as specced.
+  if (assignedOrderIds.length > 0 && assignedById !== pickerId && isWithinDepotHours(new Date())) {
+    try {
+      const notifyOrders = await prisma.orders.findMany({
+        where: { id: { in: assignedOrderIds } },
+        select: {
+          id: true,
+          obdNumber: true,
+          customer: { select: { customerName: true } },
+          shipToOverrideCustomer: { select: { customerName: true } },
+        },
+      });
+      await Promise.allSettled(
+        notifyOrders.map((o) => {
+          const dealerName =
+            o.shipToOverrideCustomer?.customerName ?? o.customer?.customerName ?? "(Unmatched)";
+          return sendToUser(pickerId, {
+            title: "New pick assigned",
+            body: `${dealerName} · ${o.obdNumber}`,
+            tag: `pick-assigned-${o.id}`,
+            url: "/picking",
+          });
+        }),
+      );
+    } catch (err) {
+      console.error("[picking/assign] push notify failed (non-fatal):", err);
     }
   }
 

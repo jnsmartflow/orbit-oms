@@ -3,6 +3,9 @@ import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { PICK_ASSIGNED, PICK_DONE } from "@/lib/workflow-stages";
+import { sendToUser } from "@/lib/push/send";
+import { isWithinDepotHours } from "@/lib/push/quiet-hours";
+import { getPickingSupervisorUserIds } from "@/lib/push/recipients";
 
 export const dynamic = "force-dynamic";
 
@@ -65,7 +68,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   // assign/route.ts runs before touching any bill.
   const picker = await prisma.users.findFirst({
     where: { id: pickerId, role: { name: "picker" }, isActive: true },
-    select: { id: true },
+    select: { id: true, name: true }, // name: for the completion notification body
   });
   if (!picker) {
     return NextResponse.json({ error: "pickerId does not resolve to an active picker" }, { status: 400 });
@@ -73,7 +76,15 @@ export async function POST(req: Request): Promise<NextResponse> {
 
   const order = await prisma.orders.findFirst({
     where: { id: orderId },
-    select: { id: true, workflowStage: true },
+    // obdNumber + dealer relations added for the completion notification body
+    // (reads only — no extra write; the marker keys on MAX(orders.updatedAt)).
+    select: {
+      id: true,
+      workflowStage: true,
+      obdNumber: true,
+      customer: { select: { customerName: true } },
+      shipToOverrideCustomer: { select: { customerName: true } },
+    },
   });
   if (!order) {
     return NextResponse.json({ error: "Order not found" }, { status: 404 });
@@ -135,6 +146,36 @@ export async function POST(req: Request): Promise<NextResponse> {
       note: `Marked done by picker #${pickerId}`,
     },
   });
+
+  // ── Best-effort push notify the SUPERVISORS — never affects the response ────
+  // Fully wrapped/swallowed: the `{ ok: true, orderId }` body + status are
+  // byte-identical whether push succeeds, fails, or is skipped. Reads only for
+  // the recipient list — no orders write (an extra one would fire a false
+  // live-sync change on every board).
+  //
+  // Skipped outside depot hours. Sequential awaits over the recipient list
+  // (CORE §3; the list is small — supervisors only) and never notifies the
+  // actor about their own tap. Awaited before the response because Vercel
+  // freezes the function afterwards, so un-awaited pushes are unreliable; the
+  // supervisor set is small enough that the added latency stays modest.
+  if (isWithinDepotHours(new Date())) {
+    try {
+      const dealerName =
+        order.shipToOverrideCustomer?.customerName ?? order.customer?.customerName ?? "(Unmatched)";
+      const recipients = await getPickingSupervisorUserIds();
+      for (const userId of recipients) {
+        if (userId === changedById) continue; // never notify the actor
+        await sendToUser(userId, {
+          title: "Pick completed",
+          body: `${picker.name} finished ${dealerName} · ${order.obdNumber}`,
+          tag: `pick-done-${orderId}`,
+          url: "/picking",
+        });
+      }
+    } catch (err) {
+      console.error("[picking/done] push notify failed (non-fatal):", err);
+    }
+  }
 
   return NextResponse.json({ ok: true, orderId });
 }
