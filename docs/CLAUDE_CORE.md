@@ -1,5 +1,5 @@
 # CLAUDE_CORE.md — OrbitOMS Core
-# v81 · Schema v27.11 · July 2026 · Lives in: orbit-oms/docs/
+# v82 · Schema v27.12 · July 2026 · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_UI.md
 
 ---
@@ -71,6 +71,7 @@ Never introduce new libraries without being asked.
 - **Never fuzzy-match site names.** Site name suffixes like "FACE" / phase numbers distinguish genuinely different sites. Stripping or fuzzy-matching risks linking the wrong site. For backfill, prefer OBD→order→customerId resolution over name-based matches.
 - **OneDrive + Next.js stale `.next` symptom:** `Error: Cannot find module './NNNN.js'` + `missing required error components, refreshing...`. Fix: stop the dev server, `taskkill /F /IM node.exe`, `rmdir /s /q .next`, restart. Pause OneDrive sync if `rmdir` hits a permission error.
 - **Stop the dev server before any git operation in this repo.** Same OneDrive file-lock reason as above.
+- **Picking live-sync is READ-ONLY — it adds no `orders.update`.** The 15s change-marker (`CLAUDE_PICKING.md §10`) only READS (`COUNT` + `MAX(orders.updatedAt)` via `buildPickingWhere`); do not assume the poll writes. And **never add a second `orders.update` to any picking path** (e.g. a notification trigger) — the marker keys on `MAX(orders.updatedAt)`, so an extra write fires a false "changed" on every board.
 
 ---
 
@@ -96,7 +97,9 @@ Never introduce new libraries without being asked.
 
 **Auto-Import v2 state files** (in `Master\`): `yesterday-recovery-state.txt`, `pending-upload.txt`, `last-spec-call.txt`, `last-noise-call.txt`, `obd-tally-<date>.txt`, `session-cookie.txt` (4-hour cache), `daily-state.txt`. ExecutionTimeLimit on `2_Auto_Import` scheduler task is `PT5M`. Repetition interval `PT10M`, `StopAtDurationEnd=false`.
 
-**Monitoring:** `/api/health` for manual checks. `vercel.json` has 2 cron schedules (attendance rollover + photo purge, Hobby tier cap).
+**Monitoring:** `/api/health` for manual checks. `vercel.json` currently defines **2 daily cron jobs** — attendance rollover (`35 18 * * *`) + photo purge (`30 20 * * *`), both `/api/cron/*`, bearer-auth via `lib/cron-auth.ts`.
+
+**Vercel cron limits — CORRECTED 2026-07-22 (Vercel docs + Jan-2026 changelog):** the old "2 cron schedules, Hobby tier cap" wording was wrong on both count and cap. The per-project job COUNT cap was lifted to **100 on all plans** (the per-team "2 on Hobby" cap is GONE) — **count is no longer the constraint.** The binding constraint on **Hobby is CADENCE: crons run at most ONCE PER DAY** — any more-frequent expression **FAILS AT DEPLOY**, and firing is only guaranteed within the specified hour (a `01:00` job may fire any time before `02:00`), UTC only. **Consequence: freeing a "slot" does NOT enable a frequent job.** A sub-daily schedule (e.g. the deferred 10-minute picking-supervisor timer, `CLAUDE_NOTIFICATIONS.md §7`) needs an **EXTERNAL trigger** — the planned depot-PC PowerShell doorbell — or Vercel Pro. Do not re-attempt a frequent Vercel cron on Hobby.
 
 ---
 
@@ -163,6 +166,7 @@ Primary role drives login redirect and href overrides. Additional rows add nav i
 | `settings_hide` | admin only (v27.6). In `PageKey` union + `ALL_PAGE_KEYS` (admin auto-ALL_TRUE), **NOT** in `PAGE_NAV_MAP` (that feeds operational sidebars; would duplicate the admin entry). |
 | `trip_report` | logistics (view only) + the 4 named secondary-role users above (§5). `operations` role NOT granted. → `CLAUDE_TRIP_REPORT.md §1`. |
 | `mail_orders` | billing_operator (view + edit), operations (view + edit — **granted 2026-07-10**, one additive DB row, no code deploy), operation_manager (view + edit), tint_manager (**view only**, previously undocumented). Zero rows in `prisma/seed.ts` — DB-only, wiped on reseed. → `CLAUDE_MAIL_ORDERS.md §22`. |
+| `picking` | floor_supervisor (view + edit), picker (**view only**), operations (view + edit); admin via bypass. **Seeded 2026-07-20** (`prisma/seed.ts:110-112`) — resolves the prior "no picking rows / seed-fragile operations grant" landmine (§13). ⚠ **Granted in SEED; live-prod DB NOT yet SELECT-verified this cycle** — do not assert prod access works until a live check confirms it (the prior cycle's failure was the mirror: a live grant with no seed row). → `CLAUDE_PICKING.md §1/§7`. |
 
 **Sidebar:** Layout files pass `session.user.role as RoleSidebarRole` (not hardcoded). For **operational / role-based** sidebars, nav items come from `buildNavItems()` in `lib/permissions.ts` only — no manual appending. ⚠️ The **admin panel** sidebar is the separate `components/admin/admin-sidebar.tsx` (`NAV_SECTIONS` array: OVERVIEW / MASTER DATA / PEOPLE / OPERATIONS / PERSONAL / SETTINGS) — `buildNavItems()`/`PAGE_NAV_MAP` do NOT feed it. New admin items (e.g. Settings → Hide) are added there.
 
@@ -186,9 +190,9 @@ Primary role drives login redirect and href overrides. Additional rows add nav i
 
 ---
 
-## 7. Database schema — v27.11
+## 7. Database schema — v27.12
 
-Versions: v21 base → v22 (mo_*) → v23 (orders dispatch) → v24 (customer match) → v25 (split) → v26 (mo_order_remarks) → v26.1 (isLocked) → v26.2 (mo_line_status) → v26.3 (carton + piecesPerCarton) → v26.4 (mo_learned_customers) → v26.5 (orders.orderDateTime) → v26.6 (user_roles + manual_tint_entries + users.phone + mo_sku_lookup.refDescription) → v27.0 (attendance foundation) → v27.1 (attendance settings hardening) → v27.2 (OT workflow + 2026-05-13 place-order v2 tables) → v27.3 (sampling_register + sampling_recipes + sampling_usage_log; orders.isRemoved + delivery_challans.isVoided; tint_skip_events + tint_pause_events; tint_assignments + import_raw_line_items netWeight/totalWeight) → v27.4 (sampling_usage_log.deliveryNumber backfill + tinter_issue_entries.samplingNo/shadeName) → v27.5 (customer_sales_officers + linkedSalesOfficerId on delivery_point_contacts + 3 columns on delivery_challan_formulas + sampling_recipes.packCode nullable with NULLS NOT DISTINCT + mo_sku_lookup_v2.isPrimary + mo_order_form_index_v2.mobileFamily) → v27.6 (mo_order_form_index_v2.region; Hide feature: `obd_visibility_rules` + `app_tag_settings` tables + orders.isHidden/hiddenById/hiddenReason/hiddenAt — §7.10) → v27.7 (Support gatekeeper + Hold/Dispatch-Target: orders.mailMatched; orders.heldAt, dispatchTargetDate, dispatchWindowId, arrivalSlotId; new `dispatch_slot_master` table — §7.4) → **v27.8** (Trip Report module, 2026-07-04/06: new standalone `trip_report` table — full columns → `CLAUDE_TRIP_REPORT.md §3`, §7.11 pointer here; `trip_report_delivery_no_dis_date_key` UNIQUE(deliveryNo, disDate); `mirror_trip_report_today` Postgres function) → **v27.9** (Support ship-to override, 2026-07-07: `orders.shipToOverrideCustomerId` Int? FK → `delivery_point_master`, relation `shipToOverrideCustomer` / `@relation("OrderShipToOverride")` — see dual-relation note in §7.3; `mo_orders.shipToOverrideCustomerId` Int? FK → `delivery_point_master`, relation `shipToOverrideCustomer` / `@relation("MoOrderShipToOverride")` — mo_orders' first relation to that table, no dual-relation trap) → **v27.10** (Picking Stage 2 — 2026-07-17/18 sessions, already shipped in code: `pick_assignments.checkedAt` DateTime? `@map("checked_at")` + `checkedById` Int? `@map("checked_by_id")`, relation `checkedBy` / `@relation("PickAssignmentCheckedBy")` — THIRD named relation from `pick_assignments` to `users`, alongside `picker`/`PickAssignmentPicker` and `assignedBy`/`PickAssignmentAssignedBy`, all correctly named on both sides today — no ambiguity. Supports the supervisor Approve step of the picking floor workflow — `CLAUDE_PICKING.md §6`) → **v27.11** (Flat SKU catalog, 2026-07-19, commit `916fcd39`: new standalone `sku_master_v2` table — 17 columns, FLAT, zero relations, `material` `@unique` as the natural key; mirrors `mo_sku_lookup_v2` MINUS `containerType`, PLUS `isActive` (new lifecycle flag) and `updatedAt` (`DateTime?`, hand-maintained, deliberately NO `@updatedAt`). Both timestamps carry `@db.Timestamptz(6)` — required, or Prisma emits plain `timestamp` and mismatches the live column. Built + poured via `docs/prompts/drafts/build-sku-master-v2-2026-07-19.sql`: 1,743 rows, 25 retired TOOLS `645xxxx` rows marked `isActive=false`. Old `sku_master` + its 3 FK helpers are now dead to operations, pending drop — §7.1.c).
+Versions: v21 base → v22 (mo_*) → v23 (orders dispatch) → v24 (customer match) → v25 (split) → v26 (mo_order_remarks) → v26.1 (isLocked) → v26.2 (mo_line_status) → v26.3 (carton + piecesPerCarton) → v26.4 (mo_learned_customers) → v26.5 (orders.orderDateTime) → v26.6 (user_roles + manual_tint_entries + users.phone + mo_sku_lookup.refDescription) → v27.0 (attendance foundation) → v27.1 (attendance settings hardening) → v27.2 (OT workflow + 2026-05-13 place-order v2 tables) → v27.3 (sampling_register + sampling_recipes + sampling_usage_log; orders.isRemoved + delivery_challans.isVoided; tint_skip_events + tint_pause_events; tint_assignments + import_raw_line_items netWeight/totalWeight) → v27.4 (sampling_usage_log.deliveryNumber backfill + tinter_issue_entries.samplingNo/shadeName) → v27.5 (customer_sales_officers + linkedSalesOfficerId on delivery_point_contacts + 3 columns on delivery_challan_formulas + sampling_recipes.packCode nullable with NULLS NOT DISTINCT + mo_sku_lookup_v2.isPrimary + mo_order_form_index_v2.mobileFamily) → v27.6 (mo_order_form_index_v2.region; Hide feature: `obd_visibility_rules` + `app_tag_settings` tables + orders.isHidden/hiddenById/hiddenReason/hiddenAt — §7.10) → v27.7 (Support gatekeeper + Hold/Dispatch-Target: orders.mailMatched; orders.heldAt, dispatchTargetDate, dispatchWindowId, arrivalSlotId; new `dispatch_slot_master` table — §7.4) → **v27.8** (Trip Report module, 2026-07-04/06: new standalone `trip_report` table — full columns → `CLAUDE_TRIP_REPORT.md §3`, §7.11 pointer here; `trip_report_delivery_no_dis_date_key` UNIQUE(deliveryNo, disDate); `mirror_trip_report_today` Postgres function) → **v27.9** (Support ship-to override, 2026-07-07: `orders.shipToOverrideCustomerId` Int? FK → `delivery_point_master`, relation `shipToOverrideCustomer` / `@relation("OrderShipToOverride")` — see dual-relation note in §7.3; `mo_orders.shipToOverrideCustomerId` Int? FK → `delivery_point_master`, relation `shipToOverrideCustomer` / `@relation("MoOrderShipToOverride")` — mo_orders' first relation to that table, no dual-relation trap) → **v27.10** (Picking Stage 2 — 2026-07-17/18 sessions, already shipped in code: `pick_assignments.checkedAt` DateTime? `@map("checked_at")` + `checkedById` Int? `@map("checked_by_id")`, relation `checkedBy` / `@relation("PickAssignmentCheckedBy")` — THIRD named relation from `pick_assignments` to `users`, alongside `picker`/`PickAssignmentPicker` and `assignedBy`/`PickAssignmentAssignedBy`, all correctly named on both sides today — no ambiguity. Supports the supervisor Approve step of the picking floor workflow — `CLAUDE_PICKING.md §6`) → **v27.11** (Flat SKU catalog, 2026-07-19, commit `916fcd39`: new standalone `sku_master_v2` table — 17 columns, FLAT, zero relations, `material` `@unique` as the natural key; mirrors `mo_sku_lookup_v2` MINUS `containerType`, PLUS `isActive` (new lifecycle flag) and `updatedAt` (`DateTime?`, hand-maintained, deliberately NO `@updatedAt`). Both timestamps carry `@db.Timestamptz(6)` — required, or Prisma emits plain `timestamp` and mismatches the live column. Built + poured via `docs/prompts/drafts/build-sku-master-v2-2026-07-19.sql`: 1,743 rows, 25 retired TOOLS `645xxxx` rows marked `isActive=false`. Old `sku_master` + its 3 FK helpers are now dead to operations, pending drop — §7.1.c) → **v27.12** (Push notifications + Picking live-sync, 2026-07-22: new standalone `push_subscriptions` table — 11 cols, `endpoint` UNIQUE `push_subscriptions_endpoint_key`, FK `userId`→users ON DELETE CASCADE, `updatedAt` a PLAIN `@default(now())` NOT `@updatedAt`; PLUS new index `orders_updatedAt_idx` on `orders("updatedAt" DESC)` backing the live-sync marker — §7.12).
 
 ### 7.1 Setup / Master
 
@@ -624,6 +628,34 @@ trip_report                Standalone Supabase mirror of NTS trip/delivery data 
 
 Full ~38-column list: `CLAUDE_TRIP_REPORT.md §3`. Populated by an external PowerShell puller (outside the repo) via the `mirror_trip_report_today(rows jsonb)` Postgres function — an atomic per-day delete+insert, not a row-level upsert (see `CLAUDE_TRIP_REPORT.md §2` for why). `/trips` access: `CLAUDE_TRIP_REPORT.md §1`; roles: §5 above.
 
+### 7.12 Push notifications + live-sync (v27.12)
+
+Behaviour lives in `CLAUDE_NOTIFICATIONS.md` (push) + `CLAUDE_PICKING.md §10` (live-sync). CORE carries the schema only. Both objects were created by hand in Supabase and hand-mirrored into `prisma/schema.prisma` (db pull cannot run here — §3).
+
+```
+push_subscriptions         Web Push device subscriptions — ONE row per device endpoint.
+                           camelCase, no @map. 11 columns:
+                           id            Int PK autoincrement
+                           userId        Int FK → users.id ON DELETE CASCADE
+                           endpoint      String UNIQUE — push_subscriptions_endpoint_key
+                           p256dh        String
+                           auth          String
+                           userAgent     String?
+                           isActive      Boolean DEFAULT true
+                           failureCount  Int     DEFAULT 0
+                           lastSeenAt     DateTime? @db.Timestamptz(6)
+                           createdAt      DateTime  @default(now()) @db.Timestamptz(6)
+                           updatedAt      DateTime  @default(now()) @db.Timestamptz(6)
+                           ⚠ updatedAt is a PLAIN @default(now()) — NOT @updatedAt, NO DB
+                           trigger. Every write MUST set it explicitly (§13 landmine).
+
+orders — NEW index         orders_updatedAt_idx  =  @@index([updatedAt(sort: Desc)])
+                           on orders("updatedAt" DESC). Backs the Picking live-sync
+                           change-marker's MAX(updatedAt) probe (CLAUDE_PICKING.md §10).
+                           NOTE: orders otherwise has NO secondary indexes beyond its
+                           PK + the obdNumber UNIQUE.
+```
+
 ---
 
 ## 8. Key business rules (cross-cutting)
@@ -848,7 +880,8 @@ Supporting facts for the same area:
 - **MO badges are centralized in `getOrderSignals()`** (one emit point — easy to tag-gate, §MAIL_ORDERS §21). **Tint badges are NOT centralized** (hardcoded across 3 components, `getAgeBadge` duplicated) — gating them needs a shared badge registry first (the deferred "hard part").
 - **Hide does NOT delete.** Rules + manual hide are reversible; rule-hidden orders have no per-order un-hide in v1 (Hidden Orders shows "Managed by rule"); only manual hides get an Un-hide button.
 - **Orphaned `components/support/ship-to-override-modal.tsx`** — dead code predating the 2026-07-07 inline ship-to override picker (`CLAUDE_SUPPORT.md §4.18`). No trigger opens it, its form is free-text (not the search picker), its `onSave` is a no-op. Left untouched (never delete files unless instructed) — the live feature is the inline cell, fully independent of this file.
-- **`floor_supervisor` cannot open `/picking`** — the intended primary user has no `role_permissions` row (nor a `prisma/seed.ts` row) for `pageKey='picking'`. SQL + a matching seed row are prepared but **not yet run** — diagnosed and ready, not a design question, hence a landmine rather than a ROADMAP item. Full detail + the SQL: `CLAUDE_PICKING.md §7`.
+- **Picking role grants — RESOLVED IN SEED 2026-07-20** (was: "`floor_supervisor` cannot open `/picking`" / seed-fragile operations grant) — `prisma/seed.ts:110-112` now grants `floor_supervisor` (view+edit), `picker` (**view only**), `operations` (view+edit) on `pageKey='picking'`. All three live in the seed (source of truth), so a reseed no longer revokes them. ⚠ **Caveat — confirmed in the SEED FILE only; NOT SELECT-verified against live production this cycle.** Record as "granted in seed; live-prod verification pending"; do not assert prod access works (the prior cycle's failure was the mirror — a live grant with no seed row). Detail: `CLAUDE_PICKING.md §1/§7`.
+- **`push_subscriptions.updatedAt` is a PLAIN `@default(now())` — NOT `@updatedAt`, no DB trigger** [LANDMINE, v27.12] — the column defaults only on INSERT; an UPDATE that omits it leaves a **stale** timestamp. EVERY write must pass `updatedAt: new Date()` explicitly (`lib/push/send.ts` + the subscribe/unsubscribe routes). Same trap class as a NOT-NULL-no-default column — the *name* misleads you into expecting auto-stamping. Schema §7.12; behaviour `CLAUDE_NOTIFICATIONS.md`.
 - **SECURITY — `GET /api/mail-orders/backfill-enrich` is fully unauthenticated** — no session check, no HMAC. Marked `TEMPORARY — delete after backfill` in its own source but still live. Performs a bulk write across `mo_order_lines`. Reachable by anyone with the URL. Surfaced 2026-07-10, not fixed.
 - **SECURITY — broad no-role-check gap across `app/api/mail-orders/**`** — most routes check only "is there a valid session," never role/permission (full route list: `CLAUDE_MAIL_ORDERS.md §18`). Any logged-in user of any role can PATCH/POST Mail Orders data by calling these directly. Consequence: a view-only (`canEdit=false`) grant on this module — e.g. `tint_manager`'s — is currently a UI illusion only, not server-enforced.
 - **Mail Orders write routes gate on `canView`, not `canEdit`** — same pattern independently found on `/picking`'s write routes (`assign`/`unassign` both check `canView`). There is no distinct read-only access on either module today; a real write probably should check `canEdit`. Pre-existing on both, not introduced by any one session.
@@ -881,4 +914,4 @@ Engineering note: a parallel session owns `scripts/_*` scratch files (sampling/r
 
 ---
 
-*CORE v81 · Schema v27.11 · OrbitOMS*
+*CORE v82 · Schema v27.12 · OrbitOMS*

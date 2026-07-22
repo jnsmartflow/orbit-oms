@@ -1,5 +1,5 @@
 # CLAUDE_UI.md — OrbitOMS UI Design System
-# v5.9 · July 2026 · Lives in: orbit-oms/docs/
+# v5.10 · July 2026 · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md
 
 Single source of truth for visual styling across all screens.
@@ -467,6 +467,7 @@ All data tables use `table-layout: fixed` with `<colgroup>` percentage widths.
 - Admin OT pending queue
 - Admin OT audit user table
 - Sampling Library recipe table
+- Picking desktop board (`§61`): `4/3/19/27/14/7/9/17%` — conforms to this standard
 - Any future data table in any module
 
 **Support does NOT belong on this list.** Support's tables are CSS Grid, not `<table>` — see the
@@ -965,7 +966,7 @@ Full-screen, no sidebar. 480px max column, centred on tablet/desktop.
 
 **Admin photo viewer:** lazy fetch signed URL (5min expiry) from `GET /api/admin/attendance/photo?recordId=N`.
 
-**PWA manifest:** start_url `/attendance`. Icons: orbit logo on teal-600 bg, 192/512px PNG + apple-touch-icon.
+**PWA manifest:** start_url `/` (the real `public/manifest.json` says `/`, NOT `/attendance` — corrected 2026-07-22; the installed app launches at root and the auth/role redirect takes over. `CLAUDE_ATTENDANCE.md §14`). Icons: orbit logo on teal-600 bg, 192/512px PNG + apple-touch-icon.
 
 ---
 
@@ -1357,4 +1358,77 @@ The difference is what the tabs *are*: a role is an identity (the bar must not f
 
 ---
 
-*UI v5.9 · OrbitOMS*
+## 60. Mobile card type scale + 390px viewport (reusable standard)
+
+Records the /po-derived type discipline so this is never re-discovered. **Reusable across any mobile card**, not Picking-only. Shipped 2026-07-21.
+
+**App font (shared everywhere):** `Plus Jakarta Sans` via `--font-sans` (`app/layout.tsx`, next/font). Mono = `JetBrains Mono` via `--font-mono` (OBD numbers only). Cards and `/po` share this font — **there is no family difference; WEIGHT is the "heavy vs refined" lever, not the typeface.**
+
+**The /po refinement principle:** exactly ONE line carries weight (the hero); everything else stays light (400–500). Making every line heavy (700 name + 600 area + 700 volume + 700 chips) is what read dense.
+
+**Mobile card type tokens (as shipped):**
+
+| Element | Size | Weight | Colour | Notes |
+|---|---|---|---|---|
+| Customer name (hero) | 16px | 600 | `#1d2939` | letter-spacing ~0 (NOT negative), line-height 1.25, `truncate` |
+| Slot / time | 15px | 600 | `#475467` | keep `tabular-nums` |
+| Area | 12px | 500 | `#667085` | |
+| Volume count | 12px | 600 | `#667085` | `tabular-nums` |
+| Volume "L" unit | 10.5px | 500 | `#98a2b3` | |
+| Caption date | 11.5px | 400 | `#98a2b3` | middot `#d8dce1` |
+| Caption OBD | 11.5px | 400 | `#98a0aa` | **mono** |
+| Family chips | 10.5px | 600 | `#667085` on `#eef1f5` | |
+| Route dot | 8px | — | Local `#2563eb` / Upcountry `#ea580c` / Cross `#e11d48` / else grey | colour only, no text |
+
+**Hard rules (so discovery isn't needed again):**
+- **Never CSS-uppercase customer names** — uppercase comes from SAP source data, not `text-transform` (would break `smartTitleCase`, §15).
+- **Keep `tabular-nums`** on slot + volume (numbers align across stacked cards).
+- **Weight, not colour, is the "heavy" dial.** If a card reads heavy, drop weights (700→600/500) and remove negative tracking before touching colour. Nothing on the card is 700; only the hero name is 600; chips/volume/area cap at 600.
+
+**Viewport:** design + phone-verify target **390px** wide (iPhone reference); must stay **320px-safe** — hero name uses `truncate min-w-0`, slot + arrow are `shrink-0` and never clip. Tap targets **min 44–48px** for interactive controls.
+
+---
+
+## 61. Picking — desktop board (table · filters · List/By-Route · Upcoming)
+
+Desktop `/picking` (`components/picking/picking-queue.tsx`, the `hidden md:block` face). UI-only redesign shipped 2026-07-22 (6 steps); workflow unchanged. Where the shipped build differed from the 2026-07-21 locked design, the **shipped** build is recorded here.
+
+**Table — conforms to §27** (`tableLayout: "fixed"` + `<colgroup>` percentage `<col>`s; `COLUMN_WIDTHS` sums to 100; data rows 36px). Columns (8): `☐ · # · OBD · Dealer · Route · LT · Flags · Status` — `4/3/19/27/14/7/9/17%`.
+- **OBD**: number (mono) with the **created date-time stacked below** (house standard).
+- **Dealer**: name + `→ ship-to` line when `isShipToOverride`.
+- **Route**: **plain text, NO route dot** — a deliberate departure from the locked design's "route dot + name": no route→colour data exists in the payload (`RouteDot` on mobile keys on `deliveryType`, not route). Add a route-master colour later if wanted.
+- **LT**: litres, right-aligned, tabular.
+- **Flags**: **icons only** — ★ `isKeyCustomer` (amber `#f59e0b`), ⚡ `priorityLevel === 1` (red `#ef4444`). No "P1"/"KEY" text badges.
+- **Status pill** (rightmost — status reads as the row's verdict), derived in order: `isChecked`→**Ready** (green) / `isDone`→**Picked** (amber) / `isAssigned`→**Assigned** (grey-700) / else **Waiting** (grey-500). **Never teal** (teal is spent on the active slot tab).
+- **All four states render inline** — the old "▸ N assigned" collapse drawer is gone (Picked/Ready rows were already in the payload but rendered nowhere; now visible).
+- **Dropped columns:** Area (Route covers it), Article, KG, and the Picker column (picker moves to the deferred row-click detail).
+- **Stable global `#`:** the day's pick-sequence position, preserved across List/By-Route and as status changes (rows never re-sort). Applied client-side as the spine **minus `byAssigned`**; `sort.ts` untouched.
+- **Temporary inline Undo** on assigned rows (hover-revealed) — stopgap until the detail panel; remove when that lands.
+
+**Filter panel + search** (matches Mail Orders / Support): wired via **UniversalHeader props** (`filterGroups` / `activeFilters` / `onFilterChange`) — there is no standalone FilterButton to import. Three groups: **Route** (runtime-distinct), **Status** (Waiting/Assigned/Picked/Ready), **Delivery type**; applied-filter pills row. **Search** (`searchValue`/`onSearchChange`) on `dealerName` OR `obdNumber`, case-insensitive. **Filters persist across slot-tab switches** (a global lens, deliberate).
+
+**List ⇄ By Route toggle** (UniversalHeader `rightExtra`, default **List**, **not teal** — white active segment). **By Route** groups `visibleRows` by route (alphabetical, trailing "No route"); header = route · `{N} orders` · `{sum} L`. **No route progress bar, no "Ready to load"** (loading depends on vehicle/space, which the system doesn't know — rejected).
+
+**Slot bands** under the **All** tab only (`windowTime · N · litres`, trailing "No slot"). None under a single slot tab; not collapsible.
+
+**Age tags** next to the OBD for `ageDays >= 1`: **`1d`** amber, **`{n}d`** red (2+). Uses `row.ageDays` from the payload — **not** recomputed from creation date (the §8 Tint age-badge PILL STYLING is reused; its day math is not).
+
+**Locked Upcoming section** (bottom of both views, collapsed by default): `🔒 Upcoming · {N} — locked until dispatch day`. Rows muted, **lock glyph instead of checkbox**, `—` for `#`, and a `for {Day} {DD} {Mon} · {time}` chip in the Status cell. Excluded from `displayRows`, the global `#`, Select-All and all guards; slot tabs never filter it; renders nothing when empty. Mirrors the mobile Assign board's Upcoming section.
+
+**Removed/rejected (do not reintroduce):** header "% ready for dispatch" bar, per-route progress roll-up, auto "Ready to load" status, header status-count stats.
+
+> Header structure (slot tabs teal-active) unchanged — this redesign repainted the body, not the UniversalHeader. Behaviour / tab semantics / date-zone scope are in `CLAUDE_PICKING.md`, not here.
+
+---
+
+## 62. Picking — mobile card visual states (tap-select · arrow-to-detail)
+
+**Visual treatment only** — the interaction behaviour (what a tap does, variant gating) lives in `CLAUDE_PICKING.md`. Shipped 2026-07-21. Type scale is §60.
+
+- **Selected (Assign card):** card teal tint (`bg-teal-50` / `border-teal-600`) + a small **teal check badge, top-left corner**, only when selected. Unselected = clean, no box, no placeholder.
+- **Arrow-to-detail:** a **soft round arrow** to the right of the family chips — `~30px` circle, `bg #eceff3`, chevron `#8b93a0`. Pinned; families scroll to its left; **always rendered on Assign cards even with zero families** (detail is always reachable).
+- **One-teal on the card:** the only teal is the selected tint/check; the arrow and family chips are slate. (Locked/Upcoming + `1d/2d` age treatment mirror §61.)
+
+---
+
+*UI v5.10 · OrbitOMS*

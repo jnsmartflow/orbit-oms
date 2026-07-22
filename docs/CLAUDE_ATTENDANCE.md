@@ -1,5 +1,5 @@
 # CLAUDE_ATTENDANCE.md — Attendance + OT Module
-# v1.1 · Schema v27.11
+# v1.2 · Schema v27.12
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -357,7 +357,7 @@ Month parsing + clamping in `lib/attendance/calendar.ts`.
 
 ## 11. Cron jobs
 
-`vercel.json` configures 2 schedules (Hobby tier cap):
+`vercel.json` configures 2 **daily** schedules (the binding Hobby limit is CADENCE — crons run at most once/day; the old "tier cap"/count framing is stale — see `CLAUDE_CORE.md §4`):
 
 | Path | Schedule (UTC) | Purpose |
 |---|---|---|
@@ -459,7 +459,7 @@ api/cron/attendance-purge/route.ts
 
 ## 14. PWA setup
 
-`public/manifest.json` — start_url `/attendance` (end-user primary task).
+`public/manifest.json` — **start_url `/`** [CORRECTED 2026-07-22 — the real file says `/`, NOT `/attendance` (code wins)]. The installed app therefore launches at **root**, where the auth + role redirect takes over — it does **not** land straight on the punch screen. ⚠ **`name` is currently `"Orbit"`** (`short_name` still `"OrbitOMS"`) — a **deliberate in-flight experiment**, not a bug: does iOS read the two separately, so a push notification's "from …" line could read *Orbit* while the home-screen icon label stays *OrbitOMS*? **Do NOT "fix" it back** — result only shows after deleting + re-adding the icon; finish-or-revert is a ROADMAP item. Detail: `CLAUDE_NOTIFICATIONS.md §8`.
 
 Icons generated from `public/icon-source.svg` (512×512 source: teal bg + scaled orbit composition):
 - `public/icon-192.png`
@@ -560,4 +560,4 @@ Originally specced at 10 chars trimmed. Lowered after first depot test — too s
 
 ---
 
-*Attendance v1.1 · Schema v27.11 · OrbitOMS*
+*Attendance v1.2 · Schema v27.12 · OrbitOMS*

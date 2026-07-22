@@ -1,5 +1,5 @@
 # CLAUDE_PLACE_ORDER.md — Place Order Module
-# v1.5 · Schema v27.11 · July 2026
+# v1.5 · Schema v27.12 · July 2026
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -1121,4 +1121,4 @@ Manifest `display_override: ["standalone"]`; `html,body { overscroll-behavior: n
 
 ---
 
-*Place Order v1.5 · Schema v27.11 · OrbitOMS*
+*Place Order v1.5 · Schema v27.12 · OrbitOMS*

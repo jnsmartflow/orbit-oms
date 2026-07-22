@@ -1,5 +1,5 @@
 # CLAUDE.md — Orbit OMS Router
-# v1.4 · Entry point · Read this first · July 2026 · Lives in: repo root (auto-loaded by Claude Code)
+# v1.5 · Entry point · Read this first · July 2026 · Lives in: repo root (auto-loaded by Claude Code)
 
 **OrbitOMS — depot operations management for JSW Dulux paint distribution, Surat depot. Live at https://orbitoms.in.**
 
@@ -49,7 +49,8 @@ All context files live in `docs/` relative to repo root.
 | `/admin/import`, SAP parser, upsert brain, Auto-Import, `import_*` tables | `docs/CLAUDE_IMPORT.md` |
 | `/support`, `/operations/support` — gatekeeper, workflow pipeline, closed parking-stage, hold/dispatch-target, history board | `docs/CLAUDE_SUPPORT.md` |
 | `/trips`, `trip_report`, NTS trip mirror, puller/mirror function, A4 trip sheet, WhatsApp share, logistics role | `docs/CLAUDE_TRIP_REPORT.md` |
-| `/picking`, picking queue, mobile supervisor board (Assign/Check tabs), `pick_assignments`, stage ladder (`pending_picking`→`pick_assigned`), sort spine | `docs/CLAUDE_PICKING.md` |
+| `/picking`, picking queue, desktop + mobile supervisor board (Assign/Picking/Done tabs), picker "My Picks", `pick_assignments`, stage ladder, sort spine, live-sync marker | `docs/CLAUDE_PICKING.md` |
+| Push notifications — Web Push, `/api/push/*`, `public/sw.js`, `push_subscriptions`, quiet hours (IST), the device on/off toggle, assign/done buzz triggers, VAPID | `docs/CLAUDE_NOTIFICATIONS.md` |
 | `/admin` **Settings → Hide** (rules / hidden orders / tags), `obd_visibility_rules`, `app_tag_settings`, `orders.isHidden` | `docs/CLAUDE_CORE.md §7.10` + `docs/CLAUDE_UI.md §57` (+ `docs/CLAUDE_MAIL_ORDERS.md §21` for tag-gating) |
 | SKU catalog — `sku_master_v2`, old `sku_master`, which of the THREE sku-ish tables you actually mean | `docs/CLAUDE_CORE.md §7.1.c` (+ the id-space landmine in `§13` — read it before any repoint) |
 | `/planning`, `/warehouse`, `/admin` (other), `/operations/*` (non-support) | Core only — stubs in `docs/CLAUDE_CORE.md §11-§12` |
@@ -95,4 +96,4 @@ When extracting, update §3 decision table in this file.
 
 ---
 
-*Router v1.3 · Orbit OMS · July 2026*
+*Router v1.5 · Orbit OMS · July 2026*

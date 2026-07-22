@@ -1,5 +1,5 @@
 # CLAUDE_PICKING.md — Picking Module
-# v1.3 · Schema v27.11 · July 2026
+# v1.4 · Schema v27.12 · July 2026
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -25,12 +25,15 @@ both boards (shipped across the 2026-07-17/18 sessions; full state ladder in §6
   per-module bottom-tab slot (`CLAUDE_UI.md §59`).
 
 **Who can use it — access reality:** page + every API route gate on `checkAnyPermission(roles,
-"picking", "canView")` with an `admin` bypass. **Today that's effectively admin + operations only** —
-`floor_supervisor` AND `picker`, the intended primary users (supervisors and pickers on the floor),
-both have **no `picking` row in `role_permissions` or `prisma/seed.ts`** (confirmed by grep — zero
-matches for either role, or in fact for ANY role). SQL + seed rows are prepared for `floor_supervisor`
-but not yet run, and `picker` needs its own separate grant. Operations' own live grant has a separate,
-sharper problem — it isn't in the seed file at all. Full detail: §7.
+"picking", "canView")` with an `admin` bypass. **Access is now SEEDED** [RESOLVED 2026-07-20,
+`prisma/seed.ts:110-112`]: `floor_supervisor` (canView + canEdit), `picker` (canView **only** — his
+board renders but he cannot assign/approve by API), `operations` (canView + canEdit); plus `admin` via
+bypass. This reverses the 2026-07-17 "zero picking rows / cannot open" finding.
+> **Nuance — seed ≠ prod.** These grants are confirmed in the SEED FILE only; **live-production DB
+> verification is still pending** (no `SELECT` run this cycle). Do NOT claim floor logins actually
+> work on prod without evidence — the prior cycle surfaced the mirror problem (a live grant with no
+> seed row); this is the opposite risk (seeded, but prod unconfirmed). Full detail + the standing
+> "canView gates writes, not canEdit" caveat: §7.
 
 **Team on the floor (per the 2026-07-13 design session):** ~3 supervisors, ~9-10 pickers. Floor team
 uses an Android phone app only — the mobile board is not a nice-to-have, it's the real surface.
@@ -187,74 +190,100 @@ works.** What is Picking-specific:
 - **The picker face gets the DEFAULT bar.** `PickingMobileShell` only mounts the tab/fetch machinery
   when `!showPickerFace`; the picker's "My Picks" board and the desktop queue leave `workflowTabs`
   undefined, so they keep the standard Home/Menu/You bar untouched.
-- Tab icons (lucide): `Inbox` (Assign) · `ClipboardCheck` (Check) · `CheckCircle2` (Done). Count badge
+- Tab icons (lucide): `Inbox` (Assign) · `Package` (Picking) · `CheckCircle2` (Done). Count badge
   hidden at 0.
 - The top teal header keeps the "Picking" title + search toggle, and gained the grid/avatar triggers
   that open the shared Menu/You sheets via `useMobileShell()`.
 
-**⚠️ "Done" is a SCREEN LABEL ONLY — no new stage exists.** The third tab's visible text changed
-`Checked` → `Done` (Stage 4/4). Everything underneath is unchanged:
+**⚠️ Tab keys were RENAMED 2026-07-20 (the board re-cut, §5.2) — keys now MATCH labels.** The keys are
+`"assign" | "picking" | "done"`. This supersedes the 2026-07-19 label-only change (which had left key
+`"checked"` under the "Done" label): the re-cut made the old keys actively inverted (old `"check"`
+would have held `pick_assigned` with no checking; old `"checked"` held the real needs-check work), so
+label AND key moved together this time.
 
 | Layer | Value |
 |---|---|
-| Visible tab label | **"Done"** |
-| Tab `key` / `activeTab` literal | `"checked"` |
-| `orders.workflowStage` (DB) | **`pick_checked`** — unchanged, §2 |
-| Constant | `PICK_CHECKED` — unchanged |
-| Row flag | `isChecked` — unchanged |
+| Tab labels / keys | **`assign` / `picking` / `done`** (label == key) |
+| `orders.workflowStage` (DB) | unchanged — `pending_picking` / `pick_assigned` / `pick_done` / `pick_checked` (§2) |
+| Row flags | `isAssigned` / `isDone` / `isChecked` — unchanged |
 
-Renaming the KEY would silently break tab switching, the Check-tab split, and the Done-list render.
-**Label ≠ key ≠ stage.** No migration happened, no ladder entry was added — if you are looking for a
-`pick_done`-vs-`pick_checked` distinction, §2 still governs.
+**Label == key now, but neither is the STAGE.** Four DB stages still map onto three tabs (§5.2); the
+rename touched only the UI literals — no migration, no ladder entry. Nothing persists these keys
+(plain `useState`, no localStorage/URL), so there was no stored value to migrate.
 
-**⚠️ Two different things are called "Done" on this module — keep them apart:**
+**⚠️ Two different "Done" tabs on this module — keep them apart:**
 
 | | Supervisor board — **Done** tab (§5.2) | Picker "My Picks" — **Done** tab (§5.4) |
 |---|---|---|
 | Who sees it | supervisor | the picker himself |
-| Stage shown | `pick_checked` only | `pick_done` **OR** `pick_checked` (either) |
-| Means | "I approved this bill" | "I finished fetching this bill" |
-| Renamed 2026-07-19? | **yes** (was "Checked") | **no** — always been "Done" |
+| Stages shown | `pick_done` (Needs-check band) + `pick_checked`-today (Checked band) | `pick_done` **OR** `pick_checked` (either) |
+| Means | "needs my check / I approved it" | "I finished fetching this bill" |
+| Renamed 2026-07-20? | **yes** — key + label `checked`→`done` | **no** — always been "Done" |
 
 The picker's Done tab deliberately includes approved bills, so a bill stays in his own history instead
 of vanishing the moment a supervisor checks it.
 
-### 5.2 Three tabs, three jobs
+### 5.2 Three tabs, three jobs [RE-CUT 2026-07-20 — date zones + tab restructure]
 
-Not three stages. "Picking" (waiting) was explicitly rejected as its own tab: waiting isn't a job you
-do, and today nothing moves a bill out of it automatically.
+Each tab now means exactly ONE thing (mirrors the Tint supervisor board): **waiting-to-assign →
+being-picked → done**. Only "done" cares about dates; the first two are status-only. The dividing line
+moved one state right — **`pick_done` LEFT the middle tab and joined Done** — so every badge counts one
+clean thing. (Superseded: the old Assign / Check / Done split, where Check merged `pick_assigned` +
+`pick_done` into a mixed, meaningless badge.)
 
-- **Assign tab** — flat list in **server sort order** (§3), no client re-sort or grouping. Route
-  dropdown (client-derived from loaded rows) + delivery-type pills, both stack with search. Select
-  (checkbox) → floating bar → picker sheet → `POST /api/picking/assign`.
-- **Check tab** — split into "Needs check" (`pick_done`, picker finished) and "Still picking"
-  (`pick_assigned`), **not narrowed by the Assign tab's route filter** (mirrors desktop, where
-  assigned rows ignore the route filter). Filtered by **picker**, not route — at the dispatch point
-  supervisors think in people, not lanes. Elapsed-time pill (grey <30m, amber 30m+, red 60m+) on
-  "Still picking" ticks off a local clock every 30s, no refetch; "Needs check" gets a flat green
-  "Picked Xm ago" pill instead (not tiered — a receipt, not an urgency signal). Undo lives on the
-  detail screen, not the card, for "Still picking" rows only. Tapping a "Needs check" card opens the
-  per-line tick screen; ticking every line unlocks **Approve** (`POST /api/picking/approve`), which
-  writes `pick_checked` + `pick_assignments.checkedAt`/`checkedById`.
-- **Done tab** (labelled "Checked" until 2026-07-19 — same tab, same `"checked"` key, see 5.1)
-  **[LIVE, 2026-07-18]** — every bill at `pick_checked`, today's dispatch-target date
-  only (same `dispatchTargetDate` scope every other row already uses — no separate "today" concept
-  was introduced). Flat list, **re-sorted newest-checked-first** (the one place this board deviates
-  from `PICKING_SPINE` — a display-only re-order of an already-filtered slice; `sort.ts` itself is
-  untouched). Own type-pill filter + own picker-filter dropdown (filters by **picker**, the same
-  semantic as the Check tab's dropdown — the checker's identity is a display concern on the card, not
-  a filter axis). Card: right of line 1 shows plain grey `checked {time}` (not a pill — finished,
-  nothing ticking); a dedicated line below the area/picker line reads `✓ Checked by {name}` — **its
-  own line, never folded into the area/picker line**, because a long area name + a long
-  picker/checker name measured out to overflow the card and the checker's identity — the entire
-  point of this tab — must never be the thing a `truncate` ellipsis silently clips. Tap → the same
-  detail screen, fully read-only for these rows (no ticks, no Approve, no Undo, no Assign-to-picker —
-  all four CTAs/affordances gate on `!isChecked` alongside their existing `isDone`/`isAssigned`
-  checks).
+**Stage → tab map (shipped truth, `picking-board-mobile.tsx`):**
+
+| Tab (key) | Stage(s) held | Badge counts |
+|---|---|---|
+| **Assign** (`assign`) | `pending_picking`, split into Zone 1 / Zone 2 ↓ | **Zone-1 (Due) bills only** |
+| **Picking** (`picking`) | `pick_assigned` | bills out on the floor now |
+| **Done** (`done`) | `pick_done` (Needs-check band) + `pick_checked`-today (Checked band) | **Needs-check only** — `isChecked` deliberately excluded from the badge |
+
+**Mobile fetch scope (`openPending`, `getPickingQueue`):** all-dates `pending_picking` + `pick_assigned`
++ `pick_done`, PLUS `pick_checked` for **today only** (`dispatchStatus='dispatch'`, `isRemoved=false`).
+So waiting / picking / needs-check never drop off by date; only the Checked band is date-fenced. Each
+row's `zone` (`due` | `upcoming`) is computed from `dispatchTargetDate` vs today in `lib/picking/queue.ts`
+(future date ⇒ `upcoming`; ≤ today or NULL ⇒ `due`; an early-released bill is forced `due`), with a
+`ageDays` for the age tag.
+
+- **Assign tab** — `pending_picking`, in two DATE ZONES:
+  - **Zone 1 · Due** — dispatch date ≤ today (or NULL): today + overdue carry-over. The flat working
+    list, server sort order (§3), selectable/assignable. Overdue bills carry a `1d`/`2d` **age tag**
+    so work never silently vanishes at midnight (visual: `CLAUDE_UI.md §61`).
+  - **Zone 2 · Upcoming** — dispatch date > today. **Visible + readable but LOCKED** (`assignLocked`
+    card): the supervisor can open the bill and read line items, but Assign is disabled behind a lock +
+    a neutral "for {Day}" badge — never selectable, never in Select-All. Opens automatically at
+    midnight of its dispatch date (date ≤ today ⇒ graduates to Zone 1), OR via **manual early-release**
+    (tap 🔒 → confirm → jumps to Zone 1; `POST /api/picking/release` stamps `orders.pickEarlyReleasedAt`
+    / `pickEarlyReleasedById`, persisted so every supervisor sees the same board).
+  - **Card interaction (behaviour; visuals in `CLAUDE_UI.md §62`):** **tap anywhere on an unlocked
+    Assign card toggles select** — no checkbox (precise tapping was the floor pain point); 1 or many
+    identically. A **soft arrow** right of the family chips opens the line-item detail (`stopPropagation`
+    then `openDetail`). ≥1 selected → floating bar → picker sheet → `POST /api/picking/assign`.
+    **Variant gating (one shared `PickingCard`):** only `variant==="assign"` gets tap-select + arrow;
+    `assignLocked` is NOT selectable (tap = open detail); `picking` / `doneCheck` / `doneChecked` →
+    tap = open detail, no select, no arrow. Rejected, do NOT re-add: long-press, swipe-to-open (Android
+    users read swipe as delete/archive).
+- **Picking tab** — `pick_assigned` (the "Still picking" list). Filtered by **picker**, not route (at
+  the dispatch point supervisors think in people, not lanes). Elapsed-time pill (grey <30m / amber
+  30m+ / red 60m+) ticks off a LOCAL 30s clock, no refetch. Undo lives on the detail screen, not the
+  card.
+- **Done tab** — two bands:
+  - **Needs check** (top, amber) — `pick_done`, **all dates** (nothing unchecked is ever lost). Tapping
+    a card opens the **per-line tick screen**; ticking every line unlocks **Approve**
+    (`POST /api/picking/approve` → writes `pick_checked` + `pick_assignments.checkedAt`/`checkedById`).
+    Flat green "Picked Xm ago" pill (a receipt, not a tiered urgency signal).
+  - **Checked** (below, quiet) — `pick_checked`, **today only** (the day's settled receipt), re-sorted
+    newest-checked-first (the one display-only deviation from `PICKING_SPINE`, on an already-filtered
+    slice; `sort.ts` untouched). Own picker-filter dropdown. Fully read-only (no ticks/Approve/Undo/
+    Assign — all gate on `!isChecked`). `✓ Checked by {name}` renders on its OWN line, never folded
+    into the area/picker line (a long area + long checker name overflows, and `truncate` would clip the
+    checker identity — the whole point of this tab).
 
 **Card DNA (shared by all three tabs):** OBD (mono) + window tag · ★ `isKeyCustomer` · ⚡
-`priorityLevel === 1` (strict equality) · dealer name as hero · area + `articleTag` (Assign tab) or
-area + picker name (Check/Done tabs) rendered **verbatim** (no client-side drum/carton parsing).
+`priorityLevel === 1` (strict equality) · dealer name as hero · area + `articleTag` (Assign) or area +
+picker name (Picking/Done) rendered **verbatim** (no client-side drum/carton parsing). Type scale:
+`CLAUDE_UI.md §60`.
 
 ### 5.3 Detail screen
 
@@ -414,36 +443,26 @@ picker-facing login flow shipped yet.
 
 ## 7. Open / deferred + landmines
 
-- **`floor_supervisor` AND `picker` both cannot open `/picking` today** [LANDMINE / access gap] —
-  confirmed via `prisma/seed.ts` grep: **zero rows for `pageKey: "picking"` for any role at all** —
-  not `floor_supervisor`, not `picker` (2026-07-17 discovery — a second, previously-undocumented
-  instance of the same gap), not even `operations` (see the next bullet). SQL + a seed row are
-  prepared for `floor_supervisor` (from the 2026-07-16 session) but **not yet run**:
-  ```sql
-  INSERT INTO role_permissions
-    ("roleSlug", "pageKey", "canView", "canEdit", "canImport", "canExport", "canDelete", "updatedAt")
-  VALUES
-    ('floor_supervisor', 'picking', true, false, false, false, false, now())
-  ON CONFLICT ("roleSlug", "pageKey")
-  DO UPDATE SET "canView" = EXCLUDED."canView", "updatedAt" = now();
-  ```
-  `picker` needs its **own separate INSERT** — the SQL above only covers one of the two intended real
-  floor users. Must land **both** the SQL row AND the matching `prisma/seed.ts` row, for EACH role — a
-  live-only grant dies on the next reseed (CORE §3 seed-is-source-of-truth rule; see the next bullet
-  for a live example of exactly that already having happened). 2 real picker-role users exist today
-  for testing: Ramesh K. (id 8) and Sunil P. (id 9) — seed/test accounts, not real depot staff yet.
-- **Operations' `/picking` grant is itself seed-fragile** [LANDMINE, 2026-07-19 discovery] —
-  `role_permissions` has exactly one live row for `pageKey: "picking"` today:
-  `roleSlug: "operations", canView: true`. **This row does not exist in `prisma/seed.ts` at all**
-  (confirmed by grep — zero matches for `"picking"` as a `pageKey` anywhere in the seed file, for any
-  role). Direct violation of CORE §3's "seed is source of truth" rule: the grant was made live-only,
-  with no matching seed edit. **The next wipe-and-reseed silently revokes Operations' `/picking`
-  access** — no error, no warning, it just stops working. Needs its own seed row, landed as its own
-  fix rather than silently bundled into the `floor_supervisor`/`picker` grant above.
-- **`canView` gates writes, not `canEdit`** [LANDMINE] — confirmed live: `assign/route.ts` and
-  `unassign/route.ts` both check `checkAnyPermission(roles, "picking", "canView")`, the identical
-  flag the read route and the page use. There is no read-only picking access today; a real write
-  probably should check `canEdit` instead. Pre-existing, not introduced by any one session.
+- **Picking access is now SEEDED** [RESOLVED 2026-07-20 — was the standing "cannot open /picking"
+  LANDMINE] — `prisma/seed.ts:110-112` grants, on `pageKey: "picking"`: `floor_supervisor`
+  (canView + canEdit), `picker` (canView **only**), `operations` (canView + canEdit). This closes BOTH
+  prior gaps in one place: the 2026-07-17 "zero picking rows for floor_supervisor/picker" finding AND
+  the 2026-07-19 seed-fragile live-only `operations` grant. All three now live in the SEED (source of
+  truth), so a reseed no longer revokes them.
+  > **Seed ≠ prod — verification PENDING.** Confirmed in the seed file only; **no `SELECT` was run
+  > against live production this cycle**, so whether prod currently holds these rows is unverified.
+  > Do NOT claim floor logins work on prod without a live check — the prior cycle's failure was the
+  > exact mirror (live grant, no seed row). 2 real picker-role test users exist: Ramesh K. (id 8),
+  > Sunil P. (id 9) — test accounts, not depot staff yet.
+- **Write-route gating — mostly RESOLVED 2026-07-20; one deliberate exception** — the four SUPERVISOR
+  write routes now gate on **`canEdit`** (`assign`, `unassign`, `approve`, `release`), corrected when
+  `picker` was granted `canView` so its board could render (under the old `canView` gate that grant
+  also handed pickers assign/approve by direct API call). The read route + page keep `canView`.
+  **`done/route.ts` deliberately stays on `canView`** — it is the PICKER's own action, bounded by its
+  own `pickerId`-ownership check (§5.4/§6), not by a role flag; gating it on `canEdit` would lock
+  pickers (who hold `canView` only) out of the single write their board exists to perform. So "canView
+  gates writes" is no longer the blanket landmine it was — it now applies by design to exactly one
+  route.
 - **A vehicle/load-aware sort was designed, then deliberately removed in V1 (2026-07-13).** Do not
   rediscover a `>= 950kg` / `grossWeight` "truck-ready" ranking as new — it was tried, fully
   implemented, and stripped in favour of the flat spine in §3. If load-awareness returns, it re-enters
@@ -566,4 +585,105 @@ on the floor for a while — nothing else in the system changes, it's a note, no
 
 ---
 
-*CLAUDE_PICKING.md v1.3 · Picking Module · July 2026*
+## 9. Desktop board [LIVE — redesigned 2026-07-22]
+
+Desktop `/picking` (`components/picking/picking-queue.tsx`, the `hidden md:block` face). A UI-only
+redesign shipped in 6 steps (`2df2dc62` → `0d44ab00`). **The WORKFLOW was NOT changed** — the
+assign → pick → check ladder, the stage constants, and the assign/unassign/done/approve/pickers APIs
+are all untouched; only presentation + one scoped data change. Read a desktop change as repainting,
+never a pipeline change. **All visuals live in `CLAUDE_UI.md §61`; this section is behaviour + scope.**
+
+- **All four statuses render in ONE list** (the old "▸ N assigned" collapse drawer is gone). Waiting /
+  Assigned / Picked / Ready each show inline with a status pill; assign/undo behaviour unchanged
+  (assigned rows just stopped being hidden). Rows do NOT re-sort on a status change — a stable global
+  `#` (the spine minus `byAssigned`, applied client-side) keeps each order's place across List/By-Route
+  and across status changes.
+- **Filter panel + search + List ⇄ By Route toggle** (default List), wired via UniversalHeader props;
+  filters persist across slot-tab switches (a global lens). `sort.ts` untouched (desktop re-sorts
+  client-side).
+- **Rolling day-board scope** — a NEW `rolling` scope in `lib/picking/queue.ts` (the mobile
+  `openPending` arm left byte-identical). The desktop ACTIVE list = **today's dispatch orders + overdue
+  still-unfinished orders from earlier days**; future orders are NOT in the active list. Scoped on
+  `dispatchTargetDate` (dispatch day, not creation day). Precise WHERE (the step-5b bug fix):
+  `= D` → all four active stages; **`< D` → only `pending_picking` + `pick_assigned`** (unfinished
+  carry-over; old Picked/Ready deliberately excluded so finished history doesn't flood today);
+  `> D` → active stages for the upcoming zone; NULL date → "due". Overdue rows get a `1d/2d` age tag
+  (`row.ageDays`, not recomputed). The date stepper is now a look-back-at-a-past-day tool only.
+- **Locked "Upcoming" section** (bottom, collapsed, `🔒 Upcoming · N`): future-dated rows, not
+  assignable, excluded from the `#`, Select-All and the three waiting guards; slot tabs never filter it.
+  Mirrors the mobile Assign board's Zone 2.
+- **Shipped departure from the locked design:** Route renders as **plain text, no route dot** — no
+  route→colour data in the payload (`CLAUDE_UI.md §61`).
+- **Temporary inline Undo** on assigned rows — a stopgap until the row-click detail panel (deferred);
+  remove when that lands.
+- **⚠️ Workflow-hole surfaced (not a UI bug) → ROADMAP:** there is **no `dispatched` stage to drain
+  `pick_checked`**. `pick_checked` accumulates forever with nothing to move it on — this is exactly
+  what forced the step-5b carry-over exclusion (a workaround, not a fix). A real design session, not a
+  doc note.
+
+---
+
+## 10. Live sync [LIVE — 2026-07-22]
+
+All three picking surfaces self-refresh **with no manual refresh, pull-to-refresh or app restart**.
+Previously each surface fetched once and never again — the acting device saw its own change, every
+other device stayed stale until the app was closed and reopened.
+
+| Surface | Refresh call | Marker scope |
+|---|---|---|
+| Supervisor desktop (`picking-queue.tsx`) | `refetchAfterAction()` | `rolling` + `selectedDate` |
+| Supervisor mobile (`picking-mobile-shell.tsx`) | `refetchQueue()` | `openPending` |
+| Picker "My Picks" (`picker-my-picks-board.tsx`) | `router.refresh()` | `openPending` + own `pickerId` |
+
+**Marker-gated, not a blind poll.** Every 15s (`PICKING_MARKER_POLL_MS`, `lib/hooks/use-picking-marker.ts`)
+the client hits a cheap endpoint — `GET /api/picking/marker?scope=…[&date=…][&pickerId=…]` →
+`{ count, latest }` — and does the real (expensive) queue refetch **only when that pair MOVED**. This is
+**lighter than the Mail Orders 30s auto-refresh** (which refetches the whole list every tick). The
+marker is built by `buildPickingWhere()` — the SAME filter the queue uses, so it can never watch a
+different set — and is backed by the `orders_updatedAt_idx` index (schema entry lives in CORE §7, not
+restated here).
+
+**Why the marker is TWO numbers, both load-bearing:** `latest` = `MAX(orders.updatedAt)` catches
+in-place edits; `count` = `COUNT(*)` catches DEPARTURES — an unassigned/reassigned-away bill leaves the
+set, so its `updatedAt` is outside the aggregate and only the count drops. Verified across all four
+transitions (assign-to / mark-done / approve / unassign-away).
+
+**Hook contract:** first response is the baseline (never fires on mount); fires `onChange` once per
+`{count,latest}` change; **PAUSES the interval entirely while the tab is hidden** (one immediate check
+on becoming visible); skips overlapping requests; **fails silently** (no toast/UI/console spam); while
+`paused` keeps tracking but defers `onChange`, firing once on unpause; re-baselines when
+`[scope, date, pickerId]` change.
+
+**Pause rule — a background refresh must never move the ground under a hand:**
+
+| Surface | `paused` resolves to |
+|---|---|
+| Desktop | `unassigningOrderId !== null \|\| bulkAssigning \|\| chosenPickerId !== null` |
+| Supervisor mobile | `detailOpen \|\| overlayBusy` (= `pickerSheetOpen \|\| releaseTarget !== null`) |
+| Picker | `detailOpen \|\| marking` |
+
+**Live-sync landmines (READ BEFORE TOUCHING PICKING):**
+- **`pick_assignments` has NO `updatedAt`.** The marker watches `orders.updatedAt` only — a complete
+  proxy TODAY solely because every picking mutation pairs its `pick_assignments` write with an
+  `orders.update`. **Any future assignment-only write — a note, a sequence, a picker swap that does not
+  touch `orders` — silently escapes the marker and reaches no screen.** Bump `orders.updatedAt`
+  alongside it, or add `@updatedAt` to `pick_assignments` and fold it in.
+- **Never add a SECOND `orders.update` to a trigger** — the marker keys on `MAX(orders.updatedAt)`; an
+  extra write fires a false change on every board.
+- **`detailOrderId` is never reset to null** (`closeDetail` flips `detailOpen` only). Gate on
+  `detailOpen`, never `detailOrderId !== null`, or you pause forever after the first bill is opened.
+- **Marker ⊇ queue, never ⊂.** A marker watching a WIDER set = harmless extra refetches; a NARROWER
+  set = missed updates on the floor. Never re-declare the filter — always `buildPickingWhere()`.
+- **The picker's refresh is the expensive one** — `router.refresh()` re-runs the whole server page
+  (`auth`, permissions, `getActivePickers`, `getPickingQueue`), which is why the picker marker is
+  narrowed to his own `pickerId`. Do not widen it back.
+- **Desktop selection is pruned, not frozen** — on each background refresh `selected` is pruned to ids
+  still in the waiting set (pausing while `selected.size > 0` was rejected: it would blind the
+  control-tower view while a supervisor ticks bills).
+- **Silent background failures:** `refetchQueue`/`refetchAfterAction` swallow errors and keep last-good
+  data (the full-screen error screen is owned SOLELY by the initial `load()`), so a network blip on a
+  board refreshing every 15s all day can't wipe it to an error screen.
+
+---
+
+*CLAUDE_PICKING.md v1.4 · Picking Module · July 2026*

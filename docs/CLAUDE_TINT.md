@@ -1,5 +1,5 @@
 # CLAUDE_TINT.md — Tint Module
-# v1.6 · Schema v27.11 · July 2026
+# v1.6 · Schema v27.12 · July 2026
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -697,4 +697,4 @@ Layout uses `buildNavItems()` only.
 
 ---
 
-*Tint v1.6 · Schema v27.11*
+*Tint v1.6 · Schema v27.12*

@@ -1,5 +1,5 @@
 # CLAUDE_MAIL_ORDERS.md — Mail Orders Module
-# v1.7 · Schema v27.11 · Parser v6.5 · Enrichment v3 · July 2026
+# v1.7 · Schema v27.12 · Parser v6.5 · Enrichment v3 · July 2026
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -882,4 +882,4 @@ Mail Orders access for everyone except `admin`. All four rows above should be ad
 
 ---
 
-*Mail Orders v1.7 · Schema v27.11 · Parser v6.5 · Enrichment v3*
+*Mail Orders v1.7 · Schema v27.12 · Parser v6.5 · Enrichment v3*

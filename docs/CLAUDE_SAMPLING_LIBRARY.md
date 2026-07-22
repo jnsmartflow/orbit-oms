@@ -1,5 +1,5 @@
 # CLAUDE_SAMPLING_LIBRARY.md — Sampling Library Module
-# v1.4 · Schema v27.11 · July 2026 · Phase 4 shipped 2026-05-25 · Cohort A+B restore 2026-05-27
+# v1.4 · Schema v27.12 · July 2026 · Phase 4 shipped 2026-05-25 · Cohort A+B restore 2026-05-27
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -538,4 +538,4 @@ Sampling Library is **operator-created runtime data, NOT CSV-seeded** — merges
 
 ---
 
-*Sampling Library v1.4 · Schema v27.11 · July 2026 · Phase 4 shipped + Cohort A+B restored · OrbitOMS*
+*Sampling Library v1.4 · Schema v27.12 · July 2026 · Phase 4 shipped + Cohort A+B restored · OrbitOMS*

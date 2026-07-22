@@ -1,5 +1,5 @@
 # ROADMAP.md — OrbitOMS Planned Work
-# Updated 2026-06-19 · Lives in: orbit-oms/docs/ (manual attach — NOT auto-loaded)
+# Updated 2026-07-22 · Lives in: orbit-oms/docs/ (manual attach — NOT auto-loaded)
 
 Attach this file when planning the next phase of any module. Live "what's next" list, separated from canonical docs.
 
@@ -338,14 +338,32 @@ New OPEN items surfaced while consolidating the 17 drafts (Jul 8–16) into cano
 - **App-format orders lose all product lines before enrichment.** Headers parse correctly (Bill To/Ship To/Dispatch), but zero product lines reach enrichment on a real test order. Live, unresolved, undocumented until this line. Surfaced 2026-07-15.
 
 ### Picking
-- **`floor_supervisor` cannot open `/picking`.** SQL + a seed row are prepared, not run. (`CLAUDE_PICKING.md §7`, `CLAUDE_CORE.md §13`)
+- **Picking role grants — SEEDED 2026-07-20; VERIFY ON LIVE PROD (P1).** `floor_supervisor` (view+edit),
+  `picker` (view only), `operations` (view+edit) now in `prisma/seed.ts:110-112`. Confirmed in seed
+  ONLY — run a `SELECT` to confirm `floor_supervisor` + `picker` can actually open `/picking` on
+  production (grant-vs-prod not yet verified). (`CLAUDE_PICKING.md §1/§7`, `CLAUDE_CORE.md §5/§13`)
+- **SEED FRAGILITY — ✅ RESOLVED 2026-07-20.** The operations `/picking` grant (+ floor_supervisor +
+  picker) now have matching `prisma/seed.ts:110-112` rows, so a reseed no longer revokes them. Prod
+  verification folded into the item above.
 - **Floor workflow (Picked/Approved states) — ✅ LIVE (Stage 2, shipped through commit `bae3d182`).**
   Remaining: Stage 3 — supervisor findings (qty-short, remarks, billing-visible message), tracked
   inline in `CLAUDE_PICKING.md §7`.
-- **SEED FRAGILITY (P1).** Operations has a live `canView` grant for `/picking` in the production DB
-  but NO matching `pageKey: "picking"` seed row (for any role). Next wipe-and-reseed silently revokes
-  Operations' `/picking` access. Add the seed row(s) to match live grants. (`CLAUDE_PICKING.md §7`,
-  CORE §3 "seed is source of truth")
+- **Supervisor 10-min "N picks waiting" reminder — DEFERRED.** Not event-driven; Vercel Hobby crons are
+  once-per-day (CADENCE, not count — CORE §4). Planned trigger: a small depot-PC PowerShell "doorbell"
+  (committed to `scripts/`) hitting a cron-auth'd route. (`CLAUDE_NOTIFICATIONS.md §7`)
+- **MISSING `dispatched` stage (P1 — workflow hole).** Nothing drains `pick_checked`; it accumulates
+  forever, which forced the desktop step-5b carry-over workaround. Needs a real design session, not a
+  doc note. (`CLAUDE_PICKING.md §9`)
+- **Verify "New pick assigned" push on a real device.** Code is live; device-verification pending until
+  a real picker has a login + subscribed phone. (`CLAUDE_NOTIFICATIONS.md §6`)
+- **Remove push-test scaffolding** — the `/picking/push-test` page + the gray admin/ops pill on
+  `/picking`, after floor rollout. (`CLAUDE_NOTIFICATIONS.md §9`)
+- **Deferred row-click detail panel** — picker name, assign/pick/check times, who-checked, line items,
+  permanent Undo; remove the temporary inline Undo when it lands. Plus the picker-login flow (own phone
+  vs shared terminal). (`CLAUDE_PICKING.md §9`)
+- **Manifest name experiment — finish or revert.** `manifest.json` `name="Orbit"` / `short_name="OrbitOMS"`
+  is an in-flight test (does iOS read them separately for the notification "from …" line?). Result
+  visible only after reinstall. (`CLAUDE_NOTIFICATIONS.md §8`, `CLAUDE_ATTENDANCE.md §14`)
 
 ### Import
 - **Arrival-slot same-day/different-day rule.** Designed, not built — the live fork still uses the old `receivedAt` vs `punchedAt` comparison. (`CLAUDE_IMPORT.md §12.2`)
