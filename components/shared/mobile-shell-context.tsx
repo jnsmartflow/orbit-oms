@@ -7,6 +7,7 @@ import { signOut } from "next-auth/react";
 import { Search, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ICON_MAP, DEFAULT_ICON } from "./role-sidebar";
+import { PushToggle } from "@/components/push/push-toggle";
 import type { NavItemConfig } from "@/lib/permissions";
 
 // Lifted out of mobile-shell.tsx (Stage 1/4, 2026-07-19) so the Menu/You
@@ -173,7 +174,10 @@ export function MobileShellProvider({
         >
           <div className="mx-auto mt-2 h-1 w-9 rounded-full bg-gray-300" />
           <div className="flex items-center gap-3 px-5 pt-2.5 pb-3.5">
-            <div className="flex h-[46px] w-[46px] flex-shrink-0 items-center justify-center rounded-full bg-teal-600 text-[17px] font-bold text-white">
+            {/* Neutral gray — the ONE teal in this sheet is the Notifications
+                ON switch below (avatar was bg-teal-600; a second teal would
+                break the one-teal rule once the switch was added). */}
+            <div className="flex h-[46px] w-[46px] flex-shrink-0 items-center justify-center rounded-full bg-gray-800 text-[17px] font-bold text-white">
               {userInitials}
             </div>
             <div className="min-w-0">
@@ -183,6 +187,8 @@ export function MobileShellProvider({
           </div>
           <div className="mx-5 h-px bg-gray-100" />
           <div className="px-3 pt-1 pb-[calc(16px+env(safe-area-inset-bottom))]">
+            {/* Notifications — above Sign out. Per-device push toggle. */}
+            <PushToggle />
             <button
               type="button"
               onClick={openSignoutConfirm}
