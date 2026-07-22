@@ -20,6 +20,10 @@ interface UsePickingMarkerOptions {
   scope: MarkerScope;
   /** Only meaningful for scope="single"/"rolling"; omit for "openPending". */
   date?: string;
+  /** Optional per-picker narrowing — the marker then only moves when THIS
+   *  picker's rows change (assigned-to / done / approved / unassigned-away).
+   *  Omit for the board-wide marker (supervisor surfaces). */
+  pickerId?: number;
   /** Fired once each time the marker moves off the last-seen baseline. */
   onChange: () => void;
   /**
@@ -54,6 +58,7 @@ interface UsePickingMarkerOptions {
 export function usePickingMarker({
   scope,
   date,
+  pickerId,
   onChange,
   paused = false,
 }: UsePickingMarkerOptions): void {
@@ -87,9 +92,9 @@ export function usePickingMarker({
     let cancelled = false;
     let intervalId: ReturnType<typeof setInterval> | null = null;
 
-    // A new (scope, date) subscription watches a DIFFERENT row set — reset the
-    // baseline so its first response is stored, never fired (e.g. the desktop
-    // queue stepping selectedDate). No-op for a caller whose scope/date never
+    // A new (scope, date, pickerId) subscription watches a DIFFERENT row set —
+    // reset the baseline so its first response is stored, never fired (e.g. the
+    // desktop queue stepping selectedDate). No-op for a caller whose inputs never
     // change (the mobile shell): this effect only re-runs when they do, and on
     // first mount lastSeenRef is already null.
     lastSeenRef.current = null;
@@ -97,7 +102,7 @@ export function usePickingMarker({
 
     const url = `/api/picking/marker?scope=${encodeURIComponent(scope)}${
       date ? `&date=${encodeURIComponent(date)}` : ""
-    }`;
+    }${pickerId !== undefined ? `&pickerId=${pickerId}` : ""}`;
 
     async function check(): Promise<void> {
       // Skip if unmounted, a request is already open, or the tab is hidden.
@@ -165,5 +170,5 @@ export function usePickingMarker({
         document.removeEventListener("visibilitychange", handleVisibility);
       }
     };
-  }, [scope, date]);
+  }, [scope, date, pickerId]);
 }

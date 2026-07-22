@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { MOBILE_NAV_CLEARANCE } from "@/components/shared/mobile-shell";
 import type { PickingQueueRow } from "@/lib/picking/types";
 import type { PickerRosterEntry } from "@/lib/picking/picker-roster";
+import { usePickingMarker } from "@/lib/hooks/use-picking-marker";
 
 // Card shell shadow — lifted verbatim from picking-board-mobile.tsx's
 // SOFT_CARD_SHADOW, the fidelity source for this whole face
@@ -129,6 +130,38 @@ export function PickerMyPicksBoard({
   // overlapping POSTs (the server's own PICK_ASSIGNED guard would 409 the
   // second one anyway, but this avoids firing it at all).
   const [marking, setMarking] = useState(false);
+
+  // Live sync (2026-07-22) — poll the cheap marker every 15s; on a real change,
+  // router.refresh() re-runs the server page (app/picking/page.tsx) for fresh
+  // pending/done props. The marker GATE is load-bearing here: router.refresh()
+  // is materially heavier than the other two surfaces' client refetches (it
+  // re-runs auth + permissions + getActivePickers + getPickingQueue), so it must
+  // fire ONLY when the board actually moved, never on a bare timer.
+  //
+  // scope="openPending" — the SAME scope page.tsx derives this board from
+  // (page.tsx:136 getPickingQueue({ scope: "openPending" }), then filters rows
+  // by pickerId). pickerId=activePickerId NARROWS the marker to THIS picker's
+  // rows (page.tsx:138 filters r.pickerId === viewerId; activePickerId is that
+  // same server-resolved identity, already a prop — not a new one). So his phone
+  // only refreshes when HIS bills change — assigned-to-him, his mark-done, a
+  // supervisor approving his bill, or a bill leaving his set (unassign/reassign-
+  // away drops the marker COUNT) — never on a board-wide edit that isn't his.
+  // Falls back to board-wide (undefined) only when no picker is resolved, when
+  // the board is empty anyway.
+  //
+  // paused = detailOpen || marking. detailOpen — NOT detailOrderId, which never
+  // resets to null once a bill has been opened (closeDetail only flips
+  // detailOpen), so it would pause forever after the first open — is the true
+  // "detail visibly open" signal. A refresh while a bill is open could shift or
+  // blank detailRow ([...pending,...done].find, below) if the bill left his
+  // scope; deferring until he backs out avoids that. On unpause, if the marker
+  // moved meanwhile, the hook fires router.refresh() once.
+  usePickingMarker({
+    scope: "openPending",
+    pickerId: activePickerId ?? undefined,
+    onChange: () => router.refresh(),
+    paused: detailOpen || marking,
+  });
 
   useEffect(() => {
     if (detailOrderId === null) return;
