@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { sortPickingQueue } from "./sort";
 import {
+  SUPPORT_DONE_OUTPUT,
   PICK_ASSIGNED,
   PICK_DONE,
   PICK_CHECKED,
@@ -232,15 +233,29 @@ export async function getPickingQueue(
         }
       : scope === "rolling"
         ? {
-            // Desktop day-board (step 5). Active picking stages across ALL dates
-            // — NO date fence — so overdue leftovers (dispatchTargetDate < D) and
-            // future bills (> D) both come back. `zone` (computed vs the requested
-            // date D below) classifies them; the desktop renders due rows inline
-            // and holds upcoming for its locked section (step 6). Same stage set +
-            // closed-exclusion as 'single'; only the date fence differs.
+            // Desktop day-board (step 5b — date-bounded PER STAGE). Carry-over is
+            // status-aware so finished work from earlier days does NOT flood the
+            // board: a Ready/Picked order never leaves an active stage (no
+            // 'dispatched' stage drains it yet), so an unbounded fetch pours every
+            // historical done/checked row onto today. zone/ageDays stay anchored on
+            // D below. Never the historical 'closed' union (PICKING_ACTIVE_STAGES).
             dispatchStatus: "dispatch",
             isRemoved: false,
-            workflowStage: { in: PICKING_ACTIVE_STAGES },
+            OR: [
+              // (a) exactly D → all four active statuses; today shows the full
+              //     Waiting/Assigned/Picked/Ready spread.
+              { dispatchTargetDate: dateOnly, workflowStage: { in: PICKING_ACTIVE_STAGES } },
+              // (b) before D → ONLY still-unfinished (pending_picking, pick_assigned).
+              //     Older Picked/Checked rows are finished work from a previous day
+              //     and are deliberately excluded — this is the step-5b fix.
+              { dispatchTargetDate: { lt: dateOnly }, workflowStage: { in: [SUPPORT_DONE_OUTPUT, PICK_ASSIGNED] } },
+              // (c) after D → active stages, for the (step-6) upcoming zone; rendered
+              //     nowhere until then, but fetched so that section has its data.
+              { dispatchTargetDate: { gt: dateOnly }, workflowStage: { in: PICKING_ACTIVE_STAGES } },
+              // Null date → keep current behaviour: included, zoned "due" (a date
+              // comparison never matches NULL, so this needs its own explicit arm).
+              { dispatchTargetDate: null, workflowStage: { in: PICKING_ACTIVE_STAGES } },
+            ],
           }
         : {
             dispatchStatus: "dispatch",
