@@ -276,18 +276,12 @@ export function buildPickingWhere(
  * `byAssigned` rule itself was never touched — only what feeds it (the
  * filtered row sets above) changed.
  *
- * KNOWN GAP (not fixed here — would change desktop's displayed numbers,
- * out of scope for this addition): `windows[].count` below (line ~`!r.isAssigned`)
- * and `totalCount`'s `sortedRows.length - assignedCount` do NOT exclude
- * `isDone`/`isChecked` rows, so both desktop stats over-count "still
- * queued" bills by however many are done or checked today. Pre-existing
- * for `isDone`; `isChecked` just compounds it. See CLAUDE_PICKING.md §7.
- * Scope of the damage, verified by grep 2026-07-20: `windows`/`totalCount`/
- * `unmatchedCount` are read ONLY by components/picking/picking-queue.tsx
- * (:539, :608, :613, :615, :715). No mobile file reads them — the bottom-bar
- * tab counts are computed independently and correctly in
- * picking-mobile-shell.tsx. So this over-count is desktop-only, and the
- * 'openPending' scope cannot worsen it (desktop never uses that scope).
+ * TAB COUNTS (fixed 2026-07-21, step 5B): `windows[].count` and `totalCount`
+ * below BOTH gate on the `isStillWaiting` predicate — `!isAssigned && !isDone
+ * && !isChecked && zone !== "upcoming"` — so they count only bills that still
+ * need a picker today. Assigned/done/checked and future-dated (upcoming) rows
+ * still ride in `rows` (rendered inline on desktop) but are excluded from the
+ * counts. These stats are desktop-only; mobile computes its own counts.
  */
 export async function getPickingQueue(
   options: PickingQueueOptions = {},

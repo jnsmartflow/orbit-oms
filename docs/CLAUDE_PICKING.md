@@ -489,16 +489,18 @@ picker-facing login flow shipped yet.
   unrelated commit sat un-pushed on the depot PC and rode along with this work. Every build prompt for
   this module from the 2026-07-16 session onward carries `git push origin main` in its exit criteria —
   worth keeping for any future Picking session.
-- **`windows[].count` and `totalCount` don't exclude done/checked rows** [LANDMINE, 2026-07-18] —
-  `lib/picking/queue.ts`'s `getPickingQueue()` computes `windows[].count` as
-  `sortedRows.filter(r => r.windowId === w.id && !r.isAssigned).length` and `totalCount` as
-  `sortedRows.length - assignedCount`. Neither excludes `isDone` or `isChecked` rows, so both desktop
-  stats (`picking-queue.tsx`'s per-window header badges and the "OBDs"/"All" segment count) over-count
-  "still queued" bills by however many are done or checked that day. Pre-existing for `isDone` (never
-  patched when `pick_done` went live); `isChecked` just compounds it. Not fixed here on purpose — a
-  correction would itself be a desktop-visible behaviour change, out of scope for an additive build.
-  Fix both together in one pass someday (`&& !r.isDone && !r.isChecked` on both formulas), not
-  piecemeal.
+- **`windows[].count` and `totalCount` excluding done/checked rows** [WAS LANDMINE 2026-07-18 →
+  FIXED 2026-07-21, step 5B] — historically `lib/picking/queue.ts`'s `getPickingQueue()` computed
+  `windows[].count` as `sortedRows.filter(r => r.windowId === w.id && !r.isAssigned).length` and
+  `totalCount` as `sortedRows.length - assignedCount`, neither excluding `isDone`/`isChecked`, so both
+  desktop stats (`picking-queue.tsx`'s per-window header badges and the "OBDs"/"All" segment count)
+  over-counted "still queued" bills by however many were done or checked that day. **Now fixed:** both
+  formulas gate on a shared `isStillWaiting` predicate — `!r.isAssigned && !r.isDone && !r.isChecked
+  && r.zone !== "upcoming"` (`queue.ts` ~`:508`; `windows[].count` ~`:515`, `totalCount` ~`:525`). The
+  fix went slightly **beyond** what this note originally described (`&& !r.isDone && !r.isChecked`): it
+  also excludes `zone === "upcoming"` (future-dated rows), so the counts mean "still needs a picker
+  **today**." Done/checked/upcoming rows still ride in `rows` (rendered inline on desktop) — just not
+  counted. Desktop-only stats; mobile computes its own counts.
 - **`pick_assignments.status` has a live CHECK constraint invisible in `schema.prisma`**
   [LANDMINE] — `chk_pick_assignments_status` restricts `status` to exactly `'assigned'` or `'picked'`
   at the DB layer, confirmed via a direct `pg_constraint` query (2026-07-17 discovery) — it does not
