@@ -80,12 +80,12 @@ interface PickingMobileShellProps {
   userInitials:    string;
   navItems:        NavItemConfig[];
   showPickerFace:  boolean;
-  isAdmin:         boolean;
+  canSeePushTest:  boolean;
   children:        React.ReactNode;
 }
 
 export function PickingMobileShell({
-  role, userName, userInitials, navItems, showPickerFace, isAdmin, children,
+  role, userName, userInitials, navItems, showPickerFace, canSeePushTest, children,
 }: PickingMobileShellProps): React.JSX.Element {
   // Picker face (or a future non-supervisor mobile face): no workflow tabs,
   // no queue fetch here — RoleLayoutClient renders with its default bar.
@@ -108,7 +108,7 @@ export function PickingMobileShell({
           manifest start_url "/", so this is the only way to reach push-test from
           inside the installed app. Fixed (out of flow — disturbs no layout),
           bottom-left above the nav clearance. Gray, NOT teal (one-teal rule). */}
-      {isAdmin && (
+      {canSeePushTest && (
         <a
           href="/picking/push-test"
           className="fixed left-3 z-40 block md:hidden rounded bg-white/90 px-2 py-1 text-[11px] text-gray-400 underline shadow-sm"
@@ -123,7 +123,7 @@ export function PickingMobileShell({
 
 function SupervisorPickingShell({
   role, userName, userInitials, navItems, children,
-}: Omit<PickingMobileShellProps, "showPickerFace" | "isAdmin">): React.JSX.Element {
+}: Omit<PickingMobileShellProps, "showPickerFace" | "canSeePushTest">): React.JSX.Element {
   // Lifted verbatim from PickingBoardMobile's pre-Stage-3 fetch (same shape,
   // same endpoint, same date-driven pattern as picking-queue.tsx's desktop
   // sibling) — only the OWNER moved.

@@ -623,7 +623,7 @@ function PickingTable({
   );
 }
 
-export function PickingQueue({ isAdmin = false }: { isAdmin?: boolean }) {
+export function PickingQueue({ canSeePushTest = false }: { canSeePushTest?: boolean }) {
   // "YYYY-MM-DD" in IST — same shape/convention as Support's `date` state.
   const [selectedDate, setSelectedDate] = useState<string>(() => getTodayIST());
   const [data, setData] = useState<PickingQueueResult | null>(null);
@@ -1099,7 +1099,7 @@ export function PickingQueue({ isAdmin = false }: { isAdmin?: boolean }) {
           {/* ⚠️ TEMPORARY SCAFFOLDING — REMOVE after the push-notification
               rollout. Admin-only link to the /picking/push-test proof page.
               Gray, NOT teal (one-teal rule; teal is the active slot tab). */}
-          {isAdmin && (
+          {canSeePushTest && (
             <a
               href="/picking/push-test"
               className="text-[11px] text-gray-400 hover:text-gray-600 underline"

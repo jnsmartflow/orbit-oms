@@ -65,9 +65,11 @@ export default async function PickingPage({ searchParams }: PickingPageProps) {
     if (!allowed) redirect("/unauthorized");
   }
 
-  // Reuse the SAME admin check as the gate above — gates the temporary
-  // push-test link (scaffolding, removed after the push rollout).
-  const isAdmin = roles.includes("admin");
+  // Gates the temporary push-test link (scaffolding, removed after the push
+  // rollout). admin OR operations — operations already has picking.canView and
+  // is the account actually used to test on mobile; admin's surface isn't
+  // mobile-friendly. Reuses the same `roles` array the gate above uses.
+  const canSeePushTest = roles.includes("admin") || roles.includes("operations");
 
   const allPerms = await getAllPermissionsForRoles(roles);
   const navItems = buildNavItems(allPerms, primaryRole, {
@@ -174,13 +176,13 @@ export default async function PickingPage({ searchParams }: PickingPageProps) {
         userInitials={userInitials}
         navItems={dedupedNavItems}
         showPickerFace={showPickerFace}
-        isAdmin={isAdmin}
+        canSeePushTest={canSeePushTest}
       >
         {/* Same route, two faces — desktop table vs. mobile card board.
             Desktop is untouched regardless of role; only the mobile slot
             branches to the picker face. */}
         <div className="hidden md:block">
-          <PickingQueue isAdmin={isAdmin} />
+          <PickingQueue canSeePushTest={canSeePushTest} />
         </div>
         <div className="block md:hidden">
           {showPickerFace && pickerFaceData ? (
