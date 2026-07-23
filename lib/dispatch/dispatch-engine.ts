@@ -90,6 +90,17 @@ function dateOnlyUTC(y: number, m: number, d: number): Date {
   return new Date(Date.UTC(y, m - 1, d));
 }
 
+/** Next calendar date after (y, m, d) as a date-only UTC Date, skipping Sunday
+ *  only. The depot is closed on Sunday, so a late Saturday bill must roll to
+ *  Monday rather than Sunday; Saturday itself is a working day. Holidays are
+ *  deliberately NOT modelled — one day, one rule. Pure and deterministic: no
+ *  Date.now(), no timezone lookup beyond the existing date-only UTC handling.
+ *  getUTCDay() === 0 is Sunday; Date.UTC normalises the d+1/d+2 overflow. */
+function nextWorkingDateOnlyUTC(y: number, m: number, d: number): Date {
+  const candidate = dateOnlyUTC(y, m, d + 1);
+  return candidate.getUTCDay() === 0 ? dateOnlyUTC(y, m, d + 2) : candidate;
+}
+
 /** Pick which of the two candidate clocks feeds the window rule.
  *  Same IST calendar date → earlier of the two. Different IST
  *  calendar date → later of the two. Either clock missing → the
@@ -149,7 +160,7 @@ export function evaluateDispatchSlot(input: DispatchSlotInput): DispatchSlotResu
   const mins = istMinutes(effectiveDateTime);
   const { y, m, d } = istDateParts(effectiveDateTime);
   const today = dateOnlyUTC(y, m, d);
-  const nextDay = dateOnlyUTC(y, m, d + 1);
+  const nextDay = nextWorkingDateOnlyUTC(y, m, d);
 
   if (deliveryType === "Local") {
     if (mins <= 630) {
