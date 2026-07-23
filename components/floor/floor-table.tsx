@@ -5,29 +5,30 @@
 // view, inside each slot band (All), inside each route row (By route), and by
 // the Upcoming strip — one component, three `variant`s.
 //
-// READ-ONLY this step. The checkbox and the ⚡/⋯ row actions are RENDERED but
-// wired to NOTHING — Step 5 owns the assignment bar and the actions route.
+// Step 5: the checkbox and the ⚡ row action are now LIVE (selection + urgent
+// toggle). The ⋯ (details) button stays INERT — the detail panel is a later
+// step. On history/upcoming variants everything stays read-only.
 //
 // COLUMNS: ☐ · # · OBD+date · Ship to · Route · Vol · Article · Picker · Status
 //  - There is NO per-row Slot column: on All the slot is carried by the band
-//    header, on a slot tab by the active tab — a per-row column would repeat one
-//    value on every row (design §7.1's own reasoning). This matches the mockup,
-//    which never renders a Slot column. See the Step-4 handoff notes.
-//  - Vol right-aligned, plain litres. Gift lines are OUT OF SCOPE — no gift icon,
-//    no gift-excluded total.
+//    header, on a slot tab by the active tab (design §7.1). Matches the mockup.
+//  - Vol right-aligned, plain litres. Gift lines are OUT OF SCOPE.
 //  - Article reuses formatArticleTag (D/C/T/B), CLAUDE_SUPPORT §4.19.
+//  - The ☐ and # columns use NARROW padding so the row number never truncates
+//    (Step-5 bug fix — 3% + 28px padding was clipping "1" to "1…").
 
 import type { ReactNode } from "react";
 import { Building2, Droplet, MoreHorizontal, Zap } from "lucide-react";
 import { formatArticleTag } from "@/components/support/shared/table-cells";
 import { StatusPill, rowStatus } from "./status-pill";
+import { isAllSelected, type FloorSelection } from "@/lib/floor/selection";
 import type { FloorBoardRow } from "@/lib/floor/types";
 
 export type FloorTableVariant = "live" | "history" | "upcoming";
 
-// Retail Offtake / Decorative Projects = "goes to a site" SMUs (CORE §8 challan
-// eligibility). ⚠ design §7.5 flags these exact strings for build confirmation —
-// they are the DIVISION_TO_SMU values (77 / 74) from the import parser.
+// Retail Offtake / Decorative Projects = "goes to a site" SMUs (CORE §8; site
+// set CONFIRMED against live data 2026-07). "Deco" (9 rows) is a known parked
+// data issue — deliberately NOT handled here.
 const PROJECT_SMUS = new Set(["Retail Offtake", "Decorative Projects"]);
 
 const WD = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -76,8 +77,8 @@ function fmtDay(dateOnly: string | null): string {
 }
 
 // Live elapsed by status (design §7.7). Waiting has NO anchor in the payload —
-// there is no release/updated timestamp on FloorBoardRow — so it shows no time;
-// an honest blank beats a wrong duration (see Step-4 handoff notes).
+// no release/updated timestamp on FloorBoardRow — so it shows no time; an honest
+// blank beats a wrong duration (deferred follow-up needs releasedAt).
 function liveTime(row: FloorBoardRow, nowMs: number): string | null {
   const st = rowStatus(row);
   if (st === "done") return hhmm(asStr(row.checkedAt));
@@ -86,29 +87,41 @@ function liveTime(row: FloorBoardRow, nowMs: number): string | null {
   return null;
 }
 
-// Ship-to flags/sub-line (design §7.5) — LIMITED by the payload: FloorBoardRow
-// carries only the EFFECTIVE dealer (override ?? customer), not the original
-// ship-to. So a redirect shows a violet marker, not the "Original → Redirect"
-// name pair the mockup draws. The site marker + "billed to {dealer}" is exact.
+// Ship-to flags (design §7.5) — LIMITED by the payload: FloorBoardRow carries
+// only the EFFECTIVE dealer (override ?? customer). So a redirect shows a violet
+// marker, not the "Original → Redirect" pair. The site marker is exact.
 function shipInfo(row: FloorBoardRow) {
   const isSite = row.smu !== null && PROJECT_SMUS.has(row.smu) && !row.isShipToOverride;
   return { isSite, isRedirect: row.isShipToOverride };
 }
 
 const HEAD_TH = "h-[31px] border-b border-[#ebebeb] px-3.5 text-left text-[10px] font-medium uppercase tracking-[0.05em] text-[#9ca3af]";
+const HEAD_TH_NARROW = "h-[31px] border-b border-[#ebebeb] px-1 text-center text-[10px] font-medium uppercase tracking-[0.05em] text-[#9ca3af]";
 const TD = "border-b border-[#f0f0f0] px-3.5 py-2 text-[11px] text-[#4b5563] whitespace-nowrap overflow-hidden text-ellipsis";
+const TD_NARROW = "border-b border-[#f0f0f0] px-1 py-2 text-center text-[11px] text-[#4b5563]";
 
 export function FloorTable({
   rows,
   nowMs,
   variant = "live",
+  selection,
+  onToggleRow,
+  onToggleAll,
+  onMarkUrgent,
 }: {
   rows: FloorBoardRow[];
   nowMs: number;
   variant?: FloorTableVariant;
+  // Wired only on the live variant; undefined on history/upcoming.
+  selection?: FloorSelection;
+  onToggleRow?: (id: number) => void;
+  onToggleAll?: (rows: FloorBoardRow[]) => void;
+  onMarkUrgent?: (id: number) => void;
 }) {
   const interactive = variant === "live";
-  const widths = interactive ? [3, 3, 15, 21, 11, 7, 12, 9, 19] : [16, 24, 12, 7, 13, 9, 19];
+  // ☐ 4 · # 4 · OBD 14 · Ship 20 · Route 10 · Vol 7 · Article 12 · Picker 9 · Status 20.
+  const widths = interactive ? [4, 4, 14, 20, 10, 7, 12, 9, 20] : [16, 24, 12, 7, 13, 9, 19];
+  const allOn = interactive && selection ? isAllSelected(selection, rows) : false;
 
   return (
     <table className="w-full table-fixed border-collapse">
@@ -119,8 +132,18 @@ export function FloorTable({
       </colgroup>
       <thead>
         <tr>
-          {interactive && <th className={`${HEAD_TH} text-center`} />}
-          {interactive && <th className={`${HEAD_TH} text-center`}>#</th>}
+          {interactive && (
+            <th className={HEAD_TH_NARROW}>
+              <input
+                type="checkbox"
+                aria-label="Select all rows in this group"
+                className="h-[13px] w-[13px] cursor-pointer align-middle accent-teal-600"
+                checked={allOn}
+                onChange={() => onToggleAll?.(rows)}
+              />
+            </th>
+          )}
+          {interactive && <th className={HEAD_TH_NARROW}>#</th>}
           <th className={HEAD_TH}>OBD</th>
           <th className={HEAD_TH}>Ship to</th>
           <th className={HEAD_TH}>Route</th>
@@ -138,7 +161,6 @@ export function FloorTable({
           const obd = asStr(row.obdDateTime);
           const target = row.dispatchTargetDate;
 
-          // Status cell content by variant.
           let statusCell: ReactNode;
           if (variant === "upcoming") {
             statusCell = (
@@ -168,15 +190,21 @@ export function FloorTable({
             }
           } else {
             // live
+            const urgent = row.priorityLevel === 1;
             statusCell = (
               <span className="inline-flex items-center gap-2">
                 <StatusPill status={st} time={liveTime(row, nowMs)} />
-                {/* Row hover actions (design §7.10) — INERT this step. */}
+                {/* Row hover actions (design §7.10). ⚡ is LIVE (instant urgent
+                    toggle, lights red when urgent); ⋯ is INERT (detail panel is
+                    a later step). */}
                 <span className="hidden items-center gap-1 group-hover:inline-flex">
                   <button
                     type="button"
-                    title="Mark urgent — coming in a later step"
-                    className="inline-flex h-[23px] w-[23px] items-center justify-center rounded-[5px] border border-gray-200 bg-white text-gray-400 hover:border-gray-300 hover:text-gray-600"
+                    title={urgent ? "Clear urgent" : "Mark urgent"}
+                    onClick={() => onMarkUrgent?.(row.orderId)}
+                    className={`inline-flex h-[23px] w-[23px] items-center justify-center rounded-[5px] border ${
+                      urgent ? "border-red-200 bg-red-50 text-red-500" : "border-gray-200 bg-white text-gray-400 hover:border-gray-300 hover:text-gray-600"
+                    }`}
                   >
                     <Zap size={12} />
                   </button>
@@ -195,19 +223,21 @@ export function FloorTable({
           return (
             <tr key={row.orderId} className="group hover:bg-[#fafafa]">
               {interactive && (
-                <td className={`${TD} text-center`}>
-                  {/* INERT checkbox — waiting/with-picker only (design §7.8). */}
+                <td className={TD_NARROW}>
+                  {/* Checkbox on Waiting / With-picker rows only (design §7.8). */}
                   {pickable && (
                     <input
                       type="checkbox"
                       aria-label={`Select ${row.obdNumber}`}
                       className="h-[13px] w-[13px] cursor-pointer align-middle accent-teal-600"
+                      checked={selection?.has(row.orderId) ?? false}
+                      onChange={() => onToggleRow?.(row.orderId)}
                     />
                   )}
                 </td>
               )}
               {interactive && (
-                <td className={`${TD} text-center text-[10.5px] text-[#9ca3af] tabular-nums`}>{st === "waiting" ? i + 1 : ""}</td>
+                <td className={`${TD_NARROW} text-[10.5px] text-[#9ca3af] tabular-nums`}>{st === "waiting" ? i + 1 : ""}</td>
               )}
               <td className={TD}>
                 <span className="font-mono text-[11.5px] font-medium text-[#111827]">{row.obdNumber}</span>

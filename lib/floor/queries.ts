@@ -33,6 +33,7 @@ import type {
   FloorBoardResult,
   FloorHoldRow,
   FloorCancelledRow,
+  FloorPicker,
   TintState,
   TintStage,
 } from "./types";
@@ -125,6 +126,29 @@ async function billToByObd(obdNumbers: string[]): Promise<Map<string, string | n
     if (!map.has(r.obdNumber)) map.set(r.obdNumber, r.billToCustomerName);
   }
   return map;
+}
+
+// ── 0. PICKERS — active roster + current load, for the assignment bar ────────
+
+/** Active picker-role users with their current "on hand" count (bills at
+ *  pick_assigned). Read-only; drives the assign-bar dropdown (design §7.8).
+ *  Two sequential reads, never $transaction (CORE §3). */
+export async function getFloorPickers(): Promise<FloorPicker[]> {
+  const pickers = await prisma.users.findMany({
+    where: { role: { name: "picker" }, isActive: true },
+    select: { id: true, name: true },
+    orderBy: { name: "asc" },
+  });
+  if (pickers.length === 0) return [];
+
+  const loads = await prisma.pick_assignments.groupBy({
+    by: ["pickerId"],
+    where: { order: { workflowStage: PICK_ASSIGNED, isRemoved: false } },
+    _count: { _all: true },
+  });
+  const loadById = new Map(loads.map((l) => [l.pickerId, l._count._all]));
+
+  return pickers.map((p) => ({ id: p.id, name: p.name, onHand: loadById.get(p.id) ?? 0 }));
 }
 
 // ── 1. RAIL — "needs your decision" ──────────────────────────────────────────

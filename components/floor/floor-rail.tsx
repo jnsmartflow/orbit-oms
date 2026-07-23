@@ -19,6 +19,8 @@ export function FloorRail({
   floorTotal,
   windows,
   onRelease,
+  onHold,
+  onCancel,
   onShowAll,
 }: {
   cards: FloorRailCard[] | null;
@@ -28,6 +30,8 @@ export function FloorRail({
   floorTotal: number;
   windows: DispatchWindow[];
   onRelease: (orderId: number, slot: RailReleaseSlot) => void;
+  onHold: (orderId: number) => void;
+  onCancel: (orderId: number) => void;
   onShowAll: () => void;
 }) {
   const count = cards?.length ?? 0;
@@ -57,7 +61,7 @@ export function FloorRail({
         ) : (
           <div className="p-2.5">
             {cards!.map((c) => (
-              <RailCard key={c.orderId} card={c} windows={windows} onRelease={onRelease} />
+              <RailCard key={c.orderId} card={c} windows={windows} onRelease={onRelease} onHold={onHold} onCancel={onCancel} />
             ))}
           </div>
         )}

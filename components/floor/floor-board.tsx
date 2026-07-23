@@ -18,6 +18,7 @@ import { RouteRow } from "./route-row";
 import { CarryoverBanner } from "./carryover-banner";
 import { UpcomingStrip } from "./upcoming-strip";
 import { countByStatus, sumLitres } from "./status-pill";
+import type { FloorSelection } from "@/lib/floor/selection";
 import type { FloorBoardResult, FloorBoardRow } from "@/lib/floor/types";
 
 const WD = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -54,6 +55,10 @@ export function FloorBoard({
   onEnterHistory,
   onExitHistory,
   onStepHistory,
+  selection,
+  onToggleRow,
+  onToggleAll,
+  onMarkUrgent,
 }: {
   floor: FloorBoardResult;
   slotTab: SlotTabKey;
@@ -63,6 +68,10 @@ export function FloorBoard({
   onEnterHistory: () => void;
   onExitHistory: () => void;
   onStepHistory: (delta: number) => void;
+  selection: FloorSelection;
+  onToggleRow: (id: number) => void;
+  onToggleAll: (rows: FloorBoardRow[]) => void;
+  onMarkUrgent: (id: number) => void;
 }) {
   const [openBands, setOpenBands] = useState<Record<string, boolean>>({});
   const [openRoute, setOpenRoute] = useState<string | null>(null);
@@ -71,6 +80,10 @@ export function FloorBoard({
   const variant = isHistory ? "history" : "live";
   const rows = floor.rows;
   const nowMs = Date.now();
+
+  // Selection/urgent wiring forwarded to every leaf table (live only — the
+  // table ignores them on history/upcoming variants).
+  const selProps = { selection, onToggleRow, onToggleAll, onMarkUrgent };
 
   const dueRows = rows.filter((r) => r.zone !== "upcoming");
   const upcomingRows = isHistory ? [] : rows.filter((r) => r.zone === "upcoming");
@@ -164,11 +177,12 @@ export function FloorBoard({
               open={bandOpen(w.windowTime)}
               onToggle={() => toggleBand(w.windowTime)}
               variant={variant}
+              {...selProps}
             />
           );
         })}
         {noSlot.length > 0 && (
-          <SlotBand label="No slot" rows={noSlot} nowMs={nowMs} open={bandOpen("No slot")} onToggle={() => toggleBand("No slot")} variant={variant} />
+          <SlotBand label="No slot" rows={noSlot} nowMs={nowMs} open={bandOpen("No slot")} onToggle={() => toggleBand("No slot")} variant={variant} {...selProps} />
         )}
       </>
     );
@@ -201,6 +215,7 @@ export function FloorBoard({
             open={openRoute === name}
             onToggle={() => setOpenRoute((cur) => (cur === name ? null : name))}
             variant={variant}
+            {...selProps}
           />
         ))}
       </>
@@ -209,7 +224,7 @@ export function FloorBoard({
     body = (
       <>
         {carried.length > 0 && <CarryoverBanner rows={carried} />}
-        <FloorTable rows={sort(tabRows)} nowMs={nowMs} variant={variant} />
+        <FloorTable rows={sort(tabRows)} nowMs={nowMs} variant={variant} {...selProps} />
       </>
     );
   }

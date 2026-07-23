@@ -6,8 +6,9 @@
 // reserved for the floor's status pills (design §6.2).
 //
 // Buttons: [ pick slot ] / Hold / ✕ — every card renders the SAME row.
-//  - LIVE this step: the slot picker — picking a slot releases the bill.
-//  - INERT this step: Hold and ✕ — Step 5 owns the actions route.
+//  - LIVE: the slot picker (picking a slot releases the bill), Hold, and ✕.
+//  - Hold → /api/floor/actions "hold" (dispatchStatus 'hold' + heldAt).
+//    ✕ → /api/floor/actions "cancel" (workflowStage 'cancelled'). Wired Step 5.
 //  - The slot picker is components/support/dispatch-slot-picker.tsx reused AS-IS
 //    (its own "pick slot" pill is the whole slot control — not forked).
 //  - The render-time "Release to {slot}" suggestion button is DEFERRED to Step 10
@@ -45,10 +46,14 @@ export function RailCard({
   card,
   windows,
   onRelease,
+  onHold,
+  onCancel,
 }: {
   card: RailCardData;
   windows: DispatchWindow[];
   onRelease: (orderId: number, slot: RailReleaseSlot) => void;
+  onHold: (orderId: number) => void;
+  onCancel: (orderId: number) => void;
 }) {
   const releasable = card.workflowStage === "pending_support";
   const dropletReady = card.tint?.stage === "ready";
@@ -109,18 +114,20 @@ export function RailCard({
           disabled={!releasable}
         />
 
-        {/* Inert this step — Step 5 owns the actions route */}
+        {/* Hold + ✕ (cancel) — wired to /api/floor/actions (Step 5). */}
         <button
           type="button"
-          title="Hold — coming in a later step"
+          title="Hold — remove from decisions to the hold list"
+          onClick={() => onHold(card.orderId)}
           className="h-[30px] rounded-md border border-gray-200 bg-white px-2.5 text-[11px] text-gray-500 hover:border-gray-300"
         >
           Hold
         </button>
         <button
           type="button"
-          title="Cancel — coming in a later step"
-          className="h-[30px] rounded-md border border-gray-200 bg-white px-2.5 text-[11px] text-gray-500 hover:border-gray-300"
+          title="Cancel this bill"
+          onClick={() => onCancel(card.orderId)}
+          className="h-[30px] rounded-md border border-gray-200 bg-white px-2.5 text-[11px] text-gray-500 hover:border-red-200 hover:text-red-600"
         >
           &#10005;
         </button>

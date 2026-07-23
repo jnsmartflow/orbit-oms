@@ -78,6 +78,15 @@ export interface FloorWindowCount {
   count: number; // due-zone rows in this window
 }
 
+// Active picker + current load, for the assignment bar's dropdown (design §7.8:
+// "Ramesh - 3 on hand, Dinesh - free"). `onHand` = bills the picker is actively
+// picking now (workflowStage === pick_assigned).
+export interface FloorPicker {
+  id: number;
+  name: string;
+  onHand: number;
+}
+
 export interface FloorBoardResult {
   mode: "live" | "history";
   date: string; // anchor day (today for live; the viewed day for history)

@@ -9,6 +9,7 @@
 import { ProgressBar } from "./progress-bar";
 import { FloorTable, type FloorTableVariant } from "./floor-table";
 import { countByStatus, sumLitres } from "./status-pill";
+import type { FloorSelection } from "@/lib/floor/selection";
 import type { FloorBoardRow } from "@/lib/floor/types";
 
 export function SlotBand({
@@ -18,6 +19,10 @@ export function SlotBand({
   open,
   onToggle,
   variant,
+  selection,
+  onToggleRow,
+  onToggleAll,
+  onMarkUrgent,
 }: {
   label: string; // "10:30" | … | "No slot"
   rows: FloorBoardRow[];
@@ -25,6 +30,10 @@ export function SlotBand({
   open: boolean;
   onToggle: () => void;
   variant: FloorTableVariant;
+  selection?: FloorSelection;
+  onToggleRow?: (id: number) => void;
+  onToggleAll?: (rows: FloorBoardRow[]) => void;
+  onMarkUrgent?: (id: number) => void;
 }) {
   const counts = countByStatus(rows);
   const litres = sumLitres(rows);
@@ -46,7 +55,17 @@ export function SlotBand({
           {counts.done} of {rows.length} done
         </span>
       </button>
-      {open && <FloorTable rows={rows} nowMs={nowMs} variant={variant} />}
+      {open && (
+        <FloorTable
+          rows={rows}
+          nowMs={nowMs}
+          variant={variant}
+          selection={selection}
+          onToggleRow={onToggleRow}
+          onToggleAll={onToggleAll}
+          onMarkUrgent={onMarkUrgent}
+        />
+      )}
     </>
   );
 }

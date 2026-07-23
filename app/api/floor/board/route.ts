@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
-import { getFloorRail, getFloorBoard } from "@/lib/floor/queries";
+import { getFloorRail, getFloorBoard, getFloorPickers } from "@/lib/floor/queries";
 import type { FloorScope } from "@/lib/floor/types";
 
 export const dynamic = "force-dynamic";
@@ -31,7 +31,8 @@ export async function GET(req: Request) {
     // Sequential awaits only — never prisma.$transaction (CORE §3).
     const rail = await getFloorRail(scope);
     const floor = await getFloorBoard({ mode, date, scope });
-    return NextResponse.json({ scope, rail, railCount: rail.length, floor });
+    const pickers = await getFloorPickers();
+    return NextResponse.json({ scope, rail, railCount: rail.length, floor, pickers });
   } catch (e) {
     // parseFloorDate throws on a malformed/impossible history date.
     return NextResponse.json({ error: e instanceof Error ? e.message : "Bad request" }, { status: 400 });
