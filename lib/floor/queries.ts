@@ -48,6 +48,16 @@ const RAIL_STAGES: string[] = STAGE_LADDER
   .filter((d) => d.rank !== null && d.rank < 60)
   .map((d) => d.stage);
 
+// Step 3b — the render-time slot SUGGESTION is DEFERRED to Step 10 (after live
+// sync), so the whole workflow can be tested before deciding what a good
+// suggestion looks like. Flip this ONE constant to `true` to re-enable it;
+// lib/floor/suggest.ts and the suggestSlot() call below are otherwise
+// untouched, so Step 10 is a one-line switch, not a rewrite. Disabling it also
+// removes the 23-Jul stale-date bug ("Release to Wed 16:00" on a Thursday)
+// without patching it. The dispatch engine still auto-slots at enrichment —
+// only this render-time rail hint is off.
+const RAIL_SUGGESTIONS_ENABLED = false;
+
 // Shared dealer projection — route/area/delivery-type/key-customer all come
 // from the effective dealer's AREA (design §D3 / matches lib/picking/queue.ts).
 const FLOOR_DEALER_SELECT = {
@@ -190,13 +200,15 @@ export async function getFloorRail(scope: FloorScope = "All"): Promise<FloorRail
       obdDateTime: (order.orderDateTime ?? order.obdEmailDate)?.toISOString() ?? null,
       ageDays: arrivalAgeDays(order.obdEmailDate ?? order.orderDateTime, todayMs),
       tint,
-      suggestion: suggestSlot({
-        smu: order.smu,
-        deliveryType,
-        emailDateTime: order.orderDateTime,
-        punchDateTime: order.obdEmailDate,
-        now,
-      }),
+      suggestion: RAIL_SUGGESTIONS_ENABLED
+        ? suggestSlot({
+            smu: order.smu,
+            deliveryType,
+            emailDateTime: order.orderDateTime,
+            punchDateTime: order.obdEmailDate,
+            now,
+          })
+        : null,
       presetWindowTime: order.dispatchWindow?.windowTime ?? null,
       presetTargetDate: order.dispatchTargetDate ? order.dispatchTargetDate.toISOString().slice(0, 10) : null,
     });
