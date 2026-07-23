@@ -49,6 +49,12 @@ export interface FloorRailCard extends FloorPartyFields {
   orderId: number;
   obdNumber: string;
   workflowStage: string;
+  // The card headline is the ORIGINAL ship-to (orders.customer), and the
+  // ship line is the override target (shipToOverrideCustomer) — distinct from
+  // FloorPartyFields.dealerName, which is the EFFECTIVE dealer (override ??
+  // customer) and would lose the original name on a redirect (04-card-spec §4).
+  customerName: string | null;
+  shipToOverrideName: string | null;
   ageDays: number;            // days since arrival (carried-over tag); 0 = today
   tint: TintState | null;
   suggestion: SlotSuggestion | null;

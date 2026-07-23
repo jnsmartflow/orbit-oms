@@ -173,6 +173,8 @@ export async function getFloorRail(scope: FloorScope = "All"): Promise<FloorRail
       orderId: order.id,
       obdNumber: order.obdNumber,
       workflowStage: order.workflowStage,
+      customerName: order.customer?.customerName ?? null,
+      shipToOverrideName: order.shipToOverrideCustomer?.customerName ?? null,
       dealerName: dealer?.customerName ?? "(Unmatched)",
       billToName: billTo.get(order.obdNumber) ?? null,
       isShipToOverride: order.shipToOverrideCustomerId !== null,
