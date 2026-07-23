@@ -110,6 +110,14 @@ async function main() {
     { roleSlug: "floor_supervisor", pageKey: "picking",    canView: true,  canEdit: true,  canImport: false, canExport: false, canDelete: false },
     { roleSlug: "picker",           pageKey: "picking",    canView: true,  canEdit: false, canImport: false, canExport: false, canDelete: false },
     { roleSlug: "operations",       pageKey: "picking",    canView: true,  canEdit: true,  canImport: false, canExport: false, canDelete: false },
+
+    // ── /floor — Floor Control (added 2026-07-23) ─────────────────────────
+    // New unified desk board (merges Support's "decide" + Picking's "watch").
+    // v1 access is intentionally admin + operations ONLY — dispatch planner
+    // and telecaller are deferred. `admin` also bypasses this table in code;
+    // the row is kept so the seed remains a complete source of truth (CORE §3).
+    { roleSlug: "admin",            pageKey: "floor",      canView: true,  canEdit: true,  canImport: false, canExport: false, canDelete: false },
+    { roleSlug: "operations",       pageKey: "floor",      canView: true,  canEdit: true,  canImport: false, canExport: false, canDelete: false },
   ];
 
   for (const row of permRows) {

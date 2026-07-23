@@ -21,6 +21,7 @@ const PAGE_NAV_MAP: NavItemConfig[] = [
   { pageKey: "operations_dispatch",      label: "Dispatch",      href: "/operations/dispatch" },
   { pageKey: "operations_warehouse", label: "Warehouse", href: "/operations/warehouse" },
   { pageKey: "picking",       label: "Picking",       href: "/picking" },
+  { pageKey: "floor",         label: "Floor",         href: "/floor" },
   { pageKey: "import_obd",    label: "Import OBDs",   href: "/import" },
   { pageKey: "support_queue",  label: "Support Queue",   href: "/support" },
   { pageKey: "planning_board", label: "Planning Board",  href: "/planning" },
@@ -118,6 +119,7 @@ export type PageKey =
   | "operations_dispatch"
   | "operations_warehouse"
   | "picking"
+  | "floor"
   | "dashboard"
   | "users"
   | "system_config"
@@ -178,7 +180,7 @@ const ALL_FALSE: PagePermissions = {
 const ALL_PAGE_KEYS: PageKey[] = [
   "attendance", "attendance_admin",
   "operations_support", "operations_tinting", "operations_tint_operator", "operations_dispatch", "operations_warehouse",
-  "picking",
+  "picking", "floor",
   "dashboard", "users", "system_config", "permissions",
   "customers", "skus", "routes_areas", "vehicles",
   "import_obd", "support_queue", "planning_board", "tint_manager", "tint_operator",
