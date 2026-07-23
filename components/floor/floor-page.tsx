@@ -1,26 +1,38 @@
 "use client";
 
-// Floor Control composition root. Step 3 wires the LEFT RAIL only: fetches
-// /api/floor/board, lifts the delivery-type scope, mounts <FloorRail/>, and
-// owns the release handler. The hand-rolled header (Step 1) and the right main
-// pane (still skeleton until Step 4) are unchanged in structure — additive
-// wiring only. Layout/copy authority: docs/mockups/floor-control/01-board.html.
+// Floor Control composition root. Step 4 wires the RIGHT PANE (the floor board)
+// alongside the Step-3 left rail. Additive only: the hand-rolled header (Step 1)
+// and the left rail are unchanged in structure. floor-page owns the view state
+// the board reads — the slot tab, the Flat/By-route toggle, and the Live/History
+// date mode — and mounts <FloorBoard/>. Layout/copy authority:
+// docs/mockups/floor-control/01-board.html.
+//
+// On hold + Cancelled are LATER STEPS: their tabs render inert (no onClick, no
+// count) — do not read them as built.
 
 import { useState, useEffect, useCallback } from "react";
 import { Search, Filter } from "lucide-react";
 import { FloorRail } from "./floor-rail";
+import { FloorBoard } from "./floor-board";
 import { FloorSkeleton } from "./floor-skeleton";
 import type { RailReleaseSlot } from "./rail-card";
 import type { DispatchWindow } from "@/components/support/dispatch-slot-picker";
-import type { FloorRailCard, FloorScope, FloorWindowCount } from "@/lib/floor/types";
+import type { FloorRailCard, FloorScope, FloorBoardResult } from "@/lib/floor/types";
+import type { SlotTabKey } from "./floor-tabs";
 
 const SCOPES: FloorScope[] = ["All", "Local", "Upcountry", "IGT"];
-const TABS = ["Floor", "On hold", "Cancelled"] as const;
 
 interface BoardData {
   rail: FloorRailCard[];
-  windows: FloorWindowCount[];
-  floorTotal: number;
+  floor: FloorBoardResult;
+}
+
+function istTodayIso(): string {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+}
+function addDaysIso(iso: string, delta: number): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + delta)).toISOString().slice(0, 10);
 }
 
 export function FloorPage() {
@@ -29,21 +41,32 @@ export function FloorPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // View state the board reads (design §7). Client-only — no refetch on tab/mode.
+  const [slotTab, setSlotTab] = useState<SlotTabKey>("10:30");
+  const [mode, setMode] = useState<"flat" | "route">("flat");
+  const [viewMode, setViewMode] = useState<"live" | "history">("live");
+  const [histDate, setHistDate] = useState<string | null>(null);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/floor/board?scope=${scope}`, { cache: "no-store" });
+      const params = new URLSearchParams({ scope });
+      if (viewMode === "history" && histDate) {
+        params.set("mode", "history");
+        params.set("date", histDate);
+      }
+      const res = await fetch(`/api/floor/board?${params.toString()}`, { cache: "no-store" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
-      setData({ rail: json.rail ?? [], windows: json.floor?.windows ?? [], floorTotal: json.floor?.total ?? 0 });
+      setData({ rail: json.rail ?? [], floor: json.floor });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load");
       setData(null);
     } finally {
       setLoading(false);
     }
-  }, [scope]);
+  }, [scope, viewMode, histDate]);
 
   useEffect(() => {
     void load();
@@ -65,7 +88,24 @@ export function FloorPage() {
     [load],
   );
 
-  const dispatchWindows: DispatchWindow[] = (data?.windows ?? []).map((w) => ({
+  // History navigation (design §4.3/§13). History is past-only: forward never
+  // steps into today (that is Live).
+  const enterHistory = useCallback(() => {
+    setHistDate(addDaysIso(istTodayIso(), -1));
+    setViewMode("history");
+  }, []);
+  const exitHistory = useCallback(() => setViewMode("live"), []);
+  const stepHistory = useCallback((delta: number) => {
+    setHistDate((cur) => {
+      if (!cur) return cur;
+      const next = addDaysIso(cur, delta);
+      const yesterday = addDaysIso(istTodayIso(), -1);
+      if (delta > 0 && next > yesterday) return cur;
+      return next;
+    });
+  }, []);
+
+  const dispatchWindows: DispatchWindow[] = (data?.floor.windows ?? []).map((w) => ({
     id: w.id,
     windowTime: w.windowTime,
     label: null,
@@ -133,29 +173,59 @@ export function FloorPage() {
           loading={loading}
           error={error}
           scope={scope}
-          floorTotal={data?.floorTotal ?? 0}
+          floorTotal={data?.floor.total ?? 0}
           windows={dispatchWindows}
           onRelease={handleRelease}
           onShowAll={() => setScope("All")}
         />
 
-        {/* Right main — floor / hold / cancelled (still skeleton until Step 4). */}
+        {/* Right main — Floor / On hold / Cancelled tabs + the board. */}
         <div className="flex min-h-0 flex-col overflow-hidden">
           <div className="flex items-center gap-[18px] border-b border-gray-200 bg-white px-3.5">
-            {TABS.map((t, i) => (
-              <span
-                key={t}
-                className={`border-b-2 py-3 text-[12px] ${
-                  i === 0 ? "border-gray-900 font-bold text-gray-900" : "border-transparent text-gray-500"
-                }`}
-              >
-                {t}
+            {/* Floor — the built pane. */}
+            <span className="flex items-center gap-1.5 border-b-2 border-gray-900 py-3 text-[12px] font-bold text-gray-900">
+              Floor
+              <span className="rounded bg-gray-900 px-1.5 py-px text-[10px] font-bold text-white">{data?.floor.total ?? 0}</span>
+            </span>
+            {/* On hold / Cancelled — LATER STEPS, rendered inert. */}
+            <span className="border-b-2 border-transparent py-3 text-[12px] text-gray-400">On hold</span>
+            <span className="border-b-2 border-transparent py-3 text-[12px] text-gray-400">Cancelled</span>
+
+            {/* Flat / By route toggle — only on a slot tab (design §7.1). */}
+            {slotTab !== "all" && (
+              <span className="ml-auto flex h-[27px] overflow-hidden rounded-[6px] border border-gray-200 bg-gray-50">
+                {(["flat", "route"] as const).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setMode(m)}
+                    className={`px-[11px] text-[11px] ${mode === m ? "bg-white font-semibold text-gray-900" : "text-gray-500"}`}
+                  >
+                    {m === "flat" ? "Flat" : "By route"}
+                  </button>
+                ))}
               </span>
-            ))}
+            )}
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            <FloorSkeleton variant="floor" />
-          </div>
+
+          {loading && !data ? (
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <FloorSkeleton variant="floor" />
+            </div>
+          ) : error && !data ? (
+            <div className="px-5 py-14 text-center text-[11.5px] text-gray-400">Couldn&rsquo;t load the floor. {error}</div>
+          ) : data ? (
+            <FloorBoard
+              floor={data.floor}
+              slotTab={slotTab}
+              onSlotTab={setSlotTab}
+              mode={mode}
+              histDate={histDate}
+              onEnterHistory={enterHistory}
+              onExitHistory={exitHistory}
+              onStepHistory={stepHistory}
+            />
+          ) : null}
         </div>
       </div>
     </div>
