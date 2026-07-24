@@ -1,7 +1,17 @@
 # CLAUDE_PICKING.md — Picking Module
-# v1.4 · Schema v27.12 · July 2026
+# v1.5 · Schema v27.12 · July 2026 · updated 2026-07-24
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
+
+> **The DESKTOP board is superseded by Floor Control (`/floor`), but STILL LIVE.**
+> `/floor` now consolidates the Picking desktop board with the Support board into
+> one screen (`docs/CLAUDE_FLOOR.md`). `/picking` is fully reachable and in use —
+> nothing was switched off. **The MOBILE supervisor board and picker face are NOT
+> superseded — they stay;** only the DESKTOP board is in scope for eventual
+> retirement, which is INTENDED but NOT actioned and has no plan yet (a dependency
+> list is required first — ROADMAP). Floor REUSES this module **as a caller**:
+> assign/unassign (§4) and the sort spine (§3) stay OWNED HERE — Floor
+> cross-references them; do not move or duplicate them into `CLAUDE_FLOOR.md`.
 
 ---
 
@@ -616,10 +626,23 @@ never a pipeline change. **All visuals live in `CLAUDE_UI.md §61`; this section
   route→colour data in the payload (`CLAUDE_UI.md §61`).
 - **Temporary inline Undo** on assigned rows — a stopgap until the row-click detail panel (deferred);
   remove when that lands.
-- **⚠️ Workflow-hole surfaced (not a UI bug) → ROADMAP:** there is **no `dispatched` stage to drain
-  `pick_checked`**. `pick_checked` accumulates forever with nothing to move it on — this is exactly
-  what forced the step-5b carry-over exclusion (a workaround, not a fix). A real design session, not a
-  doc note.
+- **⚠️ Workflow-hole — CORRECTED 2026-07-24, still open [NEXT]:** the old claim here ("there is **no
+  `dispatched` stage** / nothing ever writes to it") was **WRONG**. Orders DO reach `dispatched`.
+  Live SELECT (2026-07-24, authoritative):
+
+  | workflowStage | total | dispatchSlotSource='auto' | oldest | newest |
+  |---|---|---|---|---|
+  | `dispatched` | 1,051 | 662 | 2026-06-26 | 2026-07-21 |
+  | `pick_checked` | 195 | 180 | 2026-07-17 | 2026-07-24 |
+
+  **But the drain is NOT automatic.** `dispatched` stops at 21 Jul while `pick_checked` is still
+  growing (newest 24 Jul, 195 sitting there). The bulk of the `dispatched` rows came from a **one-time
+  MANUAL sweep** during the Floor Control build (23 Jul, 238 rows) — **not** a code path
+  (`CLAUDE_FLOOR.md §7`; do not treat it as a repeatable procedure). So the genuine gap survives,
+  restated accurately: **there is still NO automatic transition draining `pick_checked` → `dispatched`.**
+  This is exactly what forced the step-5b carry-over exclusion (a workaround, not a fix). A real design
+  session, not a doc note. *(The 662-of-1,051 `auto` share = the live dispatch engine doing the
+  majority of slotting — owned by `CLAUDE_CORE.md §7.4`, not re-described here.)*
 
 ---
 
@@ -683,7 +706,10 @@ on becoming visible); skips overlapping requests; **fails silently** (no toast/U
 - **Silent background failures:** `refetchQueue`/`refetchAfterAction` swallow errors and keep last-good
   data (the full-screen error screen is owned SOLELY by the initial `load()`), so a network blip on a
   board refreshing every 15s all day can't wipe it to an error screen.
+- **`use-picking-marker` gained OPTIONAL `url` + `onProbe` params (2026-07-24)** so Floor Control can
+  reuse the hook against its own `/api/floor/marker`. **All three Picking call sites pass neither and
+  are byte-identical** — Picking's behaviour is unchanged. `url` defaults to `/api/picking/marker`.
 
 ---
 
-*CLAUDE_PICKING.md v1.4 · Picking Module · July 2026*
+*CLAUDE_PICKING.md v1.5 · Picking Module · July 2026*

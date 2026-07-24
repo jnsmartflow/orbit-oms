@@ -351,9 +351,12 @@ New OPEN items surfaced while consolidating the 17 drafts (Jul 8–16) into cano
 - **Supervisor 10-min "N picks waiting" reminder — DEFERRED.** Not event-driven; Vercel Hobby crons are
   once-per-day (CADENCE, not count — CORE §4). Planned trigger: a small depot-PC PowerShell "doorbell"
   (committed to `scripts/`) hitting a cron-auth'd route. (`CLAUDE_NOTIFICATIONS.md §7`)
-- **MISSING `dispatched` stage (P1 — workflow hole).** Nothing drains `pick_checked`; it accumulates
-  forever, which forced the desktop step-5b carry-over workaround. Needs a real design session, not a
-  doc note. (`CLAUDE_PICKING.md §9`)
+- **NO AUTOMATIC DRAIN `pick_checked` → `dispatched` (P1 — workflow hole).** Orders DO reach
+  `dispatched` (the old "nothing writes to it" claim was WRONG — corrected 2026-07-24), but there is
+  no automatic transition. Verified 2026-07-24: **1,051** at `dispatched` (662 auto-slotted) but it
+  stops at **21 Jul** while `pick_checked` keeps growing (**195**, newest 24 Jul). The 238-row move
+  was a ONE-TIME manual sweep (Floor build, 23 Jul), NOT a code path. Forced the desktop step-5b
+  carry-over workaround. Needs a real design session. (`CLAUDE_PICKING.md §9`, `CLAUDE_FLOOR.md §7`)
 - **Verify "New pick assigned" push on a real device.** Code is live; device-verification pending until
   a real picker has a login + subscribed phone. (`CLAUDE_NOTIFICATIONS.md §6`)
 - **Remove push-test scaffolding** — the `/picking/push-test` page + the gray admin/ops pill on
@@ -364,6 +367,30 @@ New OPEN items surfaced while consolidating the 17 drafts (Jul 8–16) into cano
 - **Manifest name experiment — finish or revert.** `manifest.json` `name="Orbit"` / `short_name="OrbitOMS"`
   is an in-flight test (does iOS read them separately for the notification "from …" line?). Result
   visible only after reinstall. (`CLAUDE_NOTIFICATIONS.md §8`, `CLAUDE_ATTENDANCE.md §14`)
+
+### Floor Control
+- **RETIREMENT DEPENDENCY LIST (P0 — blocks any switch-off).** Before `/support` or the Picking
+  DESKTOP board can be retired, enumerate everything Floor borrows from them: the Picking
+  assign/unassign endpoints, the sort spine, the Support dispatch-slot-picker, `formatArticleTag`, and
+  the `use-picking-marker` hook. No tab is switched off until this list exists AND a trigger is agreed.
+  ⚠ Picking's MOBILE boards are NOT in scope for retirement. (`CLAUDE_FLOOR.md §9`)
+- **Floor Control v2 — re-enable slot suggestion (Step 10 of the build).** `lib/floor/suggest.ts` is
+  gated behind `RAIL_SUGGESTIONS_ENABLED=false`. Two fixes first: (1) the staleness check must compare
+  the full moment (date + time) vs now, not minutes-since-midnight (the bug that caused removal);
+  (2) carry date AND time. (`CLAUDE_FLOOR.md §8`)
+- **v1 gaps (P2 — from the build draft §7; carried across individually):**
+  - `Waiting` pills show no elapsed time — needs a `releasedAt` on the floor payload.
+  - Ship-to original→redirect name pair missing on the floor table — needs the original name on the floor feed (the rail already has it).
+  - Assigned rows sink to the bottom of the board — decide whether `byAssigned` is right for this screen.
+  - Rail button reads lowercase "pick slot"; mockup says "Set slot" — copy fix without forking the Support picker.
+  - Assign bar reads "Change slot" beside a "pick slot" button — one label, one action.
+  - No picker search — search matches customer / route / OBD only.
+  - Detail-panel header pill shows no elapsed time — the panel is not a live surface.
+  (`CLAUDE_FLOOR.md §8`)
+- **Parked data issues (diagnose — open observations, not module state):** 103 Deco Retail bills reached
+  `pending_support` with `dispatchStatus` NULL (the engine fires only on `='dispatch'` — an upstream
+  diagnosis); the `Deco` 9-row un-mapped SMU leak (should be `Deco Retail`, so those bills never
+  auto-slot). (`CLAUDE_FLOOR.md §10`, `CLAUDE_CORE.md §7.4`)
 
 ### Import
 - **Arrival-slot same-day/different-day rule.** Designed, not built — the live fork still uses the old `receivedAt` vs `punchedAt` comparison. (`CLAUDE_IMPORT.md §12.2`)

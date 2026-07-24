@@ -1,5 +1,5 @@
 # CLAUDE_CORE.md — OrbitOMS Core
-# v82 · Schema v27.12 · July 2026 · Lives in: orbit-oms/docs/
+# v83 · Schema v27.12 · July 2026 · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_UI.md
 
 ---
@@ -167,6 +167,7 @@ Primary role drives login redirect and href overrides. Additional rows add nav i
 | `trip_report` | logistics (view only) + the 4 named secondary-role users above (§5). `operations` role NOT granted. → `CLAUDE_TRIP_REPORT.md §1`. |
 | `mail_orders` | billing_operator (view + edit), operations (view + edit — **granted 2026-07-10**, one additive DB row, no code deploy), operation_manager (view + edit), tint_manager (**view only**, previously undocumented). Zero rows in `prisma/seed.ts` — DB-only, wiped on reseed. → `CLAUDE_MAIL_ORDERS.md §22`. |
 | `picking` | floor_supervisor (view + edit), picker (**view only**), operations (view + edit); admin via bypass. **Seeded 2026-07-20** (`prisma/seed.ts:110-112`) — resolves the prior "no picking rows / seed-fragile operations grant" landmine (§13). ⚠ **Granted in SEED; live-prod DB NOT yet SELECT-verified this cycle** — do not assert prod access works until a live check confirms it (the prior cycle's failure was the mirror: a live grant with no seed row). → `CLAUDE_PICKING.md §1/§7`. |
+| `floor` | admin + operations (view + edit); admin via bypass. New pageKey (2026-07-24) for Floor Control (`/floor`) — in `PageKey` union, `ALL_PAGE_KEYS`, and `PAGE_NAV_MAP` (→ `/floor`). **Present in BOTH `prisma/seed.ts` AND live `role_permissions` (SQL 2026-07-23) — verified both sides**, unlike the `picking` grant above. `dispatch planner` / `telecaller` (design-named) deferred — no matching slug / does not exist. → `CLAUDE_FLOOR.md §1`. |
 
 **Sidebar:** Layout files pass `session.user.role as RoleSidebarRole` (not hardcoded). For **operational / role-based** sidebars, nav items come from `buildNavItems()` in `lib/permissions.ts` only — no manual appending. ⚠️ The **admin panel** sidebar is the separate `components/admin/admin-sidebar.tsx` (`NAV_SECTIONS` array: OVERVIEW / MASTER DATA / PEOPLE / OPERATIONS / PERSONAL / SETTINGS) — `buildNavItems()`/`PAGE_NAV_MAP` do NOT feed it. New admin items (e.g. Settings → Hide) are added there.
 
@@ -374,6 +375,15 @@ orders                     workflowStage, slotId, originalSlotId, dispatchSlotDe
                            arrivalSlotId INT? FK → slot_master.id — arrival-day slot; used for history grouping
                            (dispatchWindow is a Prisma relation on dispatchWindowId, not an extra column)
 
+                           DISPATCH-ENGINE columns (documentation backfill 2026-07-24 — pre-existing, NOT a
+                           migration; present in schema.prisma, landed with the dispatch-engine build,
+                           version not recorded — no version-history entry cites them):
+                           dispatchSlotSource String? — WHO set the slot: 'auto' (the engine) | 'manual'
+                             (a human). The engine SKIPS any order already 'manual' — the guard that stops
+                             it overwriting a person's decision (§7.4).
+                           dispatchSlotRuleId String? — which engine rule produced the slot (e.g.
+                             R1_LOCAL_1230). Engine + rule ids owned by §7.4.
+
                            SHIP-TO OVERRIDE column (v27.9 — 2026-07-07 session, CLAUDE_SUPPORT.md §4.18):
                            shipToOverrideCustomerId INT? FK → delivery_point_master.id
                            relation `shipToOverrideCustomer`, @relation("OrderShipToOverride")
@@ -457,9 +467,39 @@ dispatch_slot_master       v27.7. Dispatch TIME windows — DISTINCT from arriva
                            id INT PK, windowTime TEXT (e.g. "10:30"), label TEXT?,
                            sortOrder INT, isActive BOOL, createdAt TIMESTAMPTZ, updatedAt TIMESTAMPTZ.
                            Seeded 4 windows: 10:30 / 12:30 / 16:00 / 18:00.
-                           FK target for orders.dispatchWindowId. Will drive auto-slot-assignment
-                           + downstream picking/planning when those layers are built.
+                           FK target for orders.dispatchWindowId. Drives the LIVE dispatch engine
+                           (auto-slot-assignment) below.
 ```
+
+**Dispatch engine — auto-slot at enrichment [LIVE].** CORE owns this; `CLAUDE_SUPPORT.md §4.13`
+and `CLAUDE_FLOOR.md §6` point here rather than re-describing it.
+
+- **Status [LIVE].** `evaluateDispatchSlot()` (`lib/dispatch/dispatch-engine.ts`) is imported
+  (`app/api/import/obd/route.ts:22`) and wired into `applyMailOrderEnrichment` — it auto-assigns a
+  dispatch **date + window** at enrichment, per-`soNumber` (never a full-table scan). Pure function,
+  no I/O, no `Date.now()` — every decision derives from its inputs (deterministic, backfill-safe).
+- **What it writes** (`route.ts:368-376`): `dispatchTargetDate`, `dispatchWindowId`,
+  `dispatchSlotSource='auto'`, `dispatchSlotRuleId` (§7.3).
+- **Manual-skip guard** (`route.ts:344`): it SKIPS any order already `dispatchSlotSource='manual'` —
+  a human's chosen slot is never overwritten (this is why Floor/Support write `'manual'` on their
+  Release/change-slot paths).
+- **Scope — deliberately narrow.** Fires only for `smu='Deco Retail'` and `dispatchStatus='dispatch'`,
+  delivery type Local or Upcountry. Decorative Projects / Retail Offtake / Distributor / IGT never
+  auto-slot — they reach the operator to decide. Reviewed and approved, not an oversight.
+- **The window rule (6 rules).** Local: arrive ≤10:30 → today 10:30 · ≤12:30 → 12:30 · ≤16:00 →
+  16:00 · after 16:00 → next working day 10:30. Upcountry: ≤17:00 → today 18:00 · after 17:00 →
+  next working day 18:00. Rule ids `R1_LOCAL_1030 / _1230 / _1600 / _NEXT_1030`, `R1_UPC_1800 /
+  _NEXT_1800` (stored in `dispatchSlotRuleId`).
+- **The Sunday rule.** "Next working day" skips **Sunday only** (depot closed; Saturday is a working
+  day; holidays not modelled), via `nextWorkingDateOnlyUTC()`. It previously rolled a late bill to the
+  next **calendar** day, so a Saturday-evening Local/Upcountry bill was scheduled into Sunday —
+  **FIXED in the Floor Control build** (→ `CLAUDE_FLOOR.md §6`). This was a live enrichment bug,
+  independent of Floor.
+- **Live evidence (SELECT 2026-07-24).** Of **1,051** orders at `workflowStage='dispatched'`, **662**
+  carry `dispatchSlotSource='auto'` — the engine does the majority of slotting, not a trial.
+- **Parked (not the engine's fault):** the `Deco` (9 rows) un-mapped SMU never matches `Deco Retail`
+  so never auto-slots; and 103 Deco Retail bills reached `pending_support` with `dispatchStatus` NULL
+  (the engine fires only on `='dispatch'`) — an upstream diagnosis, `CLAUDE_FLOOR.md §10`.
 
 ### 7.5 Delivery Challan
 
@@ -777,6 +817,9 @@ Full detail in domain files. Cross-reference only here.
 ### Picking
 `/picking`. Desktop queue + mobile supervisor board (Assign/Check tabs), one route/responsive split. admin, operations today — `floor_supervisor` (the intended primary user) currently CANNOT open it, see §13 landmine. → `CLAUDE_PICKING.md`.
 
+### Floor Control
+`/floor`. admin, operations. One unified desk screen consolidating the Support board + the Picking **desktop** board (left rail = undecided bills / right = Floor / On-hold / Cancelled + detail panel). Hand-rolled header (UI §6 named exception). **Support (`/support`) and Picking (`/picking`) are BOTH still live** — nothing switched off; desktop retirement intended but unplanned. → `CLAUDE_FLOOR.md`.
+
 ### Operations View
 `/operations/support|tinting|tint-operator|dispatch|warehouse`. operations, ops_admin, admin.
 
@@ -786,6 +829,8 @@ Full detail in domain files. Cross-reference only here.
 - `/login`, `/not-ready`, `/unauthorized`.
 
 `middleware.ts` public paths: `/login`, `/unauthorized`, `/not-ready`, `/api/auth`, `/api/health`, `/order`, `/api/order`, `/demo`, `/order-demo.html`, `/api/cron/*` (bearer auth).
+
+`middleware.ts` `PHASE1_BLOCKED` is currently **`[]`** (§5) — `/support`, `/picking` and `/floor` are ALL reachable today; none of the three has been switched off.
 
 ---
 
@@ -914,4 +959,4 @@ Engineering note: a parallel session owns `scripts/_*` scratch files (sampling/r
 
 ---
 
-*CORE v82 · Schema v27.12 · OrbitOMS*
+*CORE v83 · Schema v27.12 · OrbitOMS*

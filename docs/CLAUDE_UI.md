@@ -1,5 +1,5 @@
 # CLAUDE_UI.md — OrbitOMS UI Design System
-# v5.10 · July 2026 · Lives in: orbit-oms/docs/
+# v5.11 · July 2026 · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md
 
 Single source of truth for visual styling across all screens.
@@ -154,6 +154,8 @@ If either layer is missing, scroll breaks. Took 2 iterations to land — don't t
 
 All boards use `<UniversalHeader />` from `components/universal-header.tsx`. Never custom.
 
+**Named exception — `/floor` (Floor Control) is hand-rolled, deliberately.** `app/(floor)/floor/page.tsx` → `components/floor/floor-page.tsx` renders its OWN two-row header (Row 1: "Floor Control" title + IST date/time; Row 2: delivery-type scope chips + one search box + one filter) — no `<UniversalHeader />` anywhere in the floor tree. Reason: an approved divergence hand-rolled to the locked mockup `docs/mockups/floor-control/01-board.html` (scope chips + search/filter, a different shape from UniversalHeader's segmented control). This is ONE named exception, not a loosening of the rule — every other board still uses `<UniversalHeader />`. The screen itself is documented in `CLAUDE_FLOOR.md`; do not restate its layout here. Do not "fix" `/floor` back to `<UniversalHeader />`.
+
 ### Row 1 (52px sticky top-0, z-30)
 Title (14px semibold) · Stats (11px gray-400) — left.
 Clock IST HH:MM | ⌨ Shortcuts | [Download] | Search bar (180→260px) — right.
@@ -204,6 +206,7 @@ Per-board wiring summary:
 | Admin Import | — | — | Stepper | Upload |
 | OT Pending | — | — | None | Status filter |
 | OT Audit | — | — | Month | — |
+| **Floor Control** | Scope chips (+ slot tabs in body) | Status / Flags | None | Search · **⚠ HAND-ROLLED, NOT `<UniversalHeader />`** — named exception above; → `CLAUDE_FLOOR.md` |
 
 ---
 
@@ -1431,4 +1434,4 @@ Desktop `/picking` (`components/picking/picking-queue.tsx`, the `hidden md:block
 
 ---
 
-*UI v5.10 · OrbitOMS*
+*UI v5.11 · OrbitOMS*

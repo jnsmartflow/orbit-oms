@@ -1,7 +1,16 @@
 # CLAUDE_SUPPORT.md — Support Module
-# v1.6 · Schema v27.12 · July 2026 · updated 2026-07-11
+# v1.7 · Schema v27.12 · July 2026 · updated 2026-07-24
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md
+
+> **Superseded by Floor Control (`/floor`), but STILL LIVE.** `/floor` now
+> consolidates this board with the Picking desktop board into one screen
+> (`docs/CLAUDE_FLOOR.md`). Nothing was switched off — `/support` is fully
+> reachable and in use. Retiring this desktop board is INTENDED but NOT actioned
+> and has no plan yet; a retirement dependency list is required first (ROADMAP).
+> Floor REUSES this module **as a caller**: ship-to override (§4.18) and the
+> dispatch-slot-picker (§4.10) stay OWNED HERE — Floor cross-references them; do
+> not move or duplicate them into `CLAUDE_FLOOR.md`.
 
 ---
 
@@ -236,8 +245,13 @@ The sticky bottom bar appears when ≥1 row is selected. It mirrors a row: `[set
 - Both idle triggers `border-gray-200` (#e5e7eb). Picked slot pill: `bg-green-50 border-green-200 text-green-700`, format "DD Mon · HH:MM", × clear.
 - "STATUS" / "DISPATCH SLOT" text labels removed (triggers are self-describing).
 
-**On the horizon — Task 2 (NOT built):**
-Auto-assign dispatch slot at enrichment ("the brain") [NEXT]: auto-dispatched OBDs currently get no `dispatchTargetDate`/`dispatchWindowId`. Task 2 will assign a date+window automatically. Smart Flow noted multiple conditions may require one or more prep changes before the auto-assign logic is wired. This is interim-safe (no break, just inconsistent labels until built). **Distinct from §4.16 below** — §4.16 is a human pre-set on an individual tint row, not the automatic enrichment-time assignment described here.
+**Auto-assign dispatch slot at enrichment ("the brain") — [LIVE].** The dispatch
+engine (`evaluateDispatchSlot`) IS built and wired into `applyMailOrderEnrichment`
+(`app/api/import/obd/route.ts`), auto-assigning a date+window at enrichment and
+writing `dispatchSlotSource='auto'` + `dispatchSlotRuleId`. Engine owned by
+**`CLAUDE_CORE.md §7.4`** — not re-described here. (**Distinct from §4.16 below** —
+that is a human pre-set on an individual tint row, not the automatic
+enrichment-time assignment.)
 
 ### §4.14 Tint orders visible on Support board [LIVE]
 **Shipped:** 2026-06-29 (commit `c901d6`).
@@ -528,7 +542,7 @@ If an order is held AND released on the **same calendar day**, it shows ONCE as 
 ### Support view build [NEXT]
 - **Board-slot rule (06-24 design) — PARTIALLY SUPERSEDED (2026-06-29)** — the carry-over/dual-date portion of this locked spec (dual-date card, "⚠ rec. {date} · {N}d" flag) was superseded by a different design: the "pending from earlier" badge + flat list (§4.17), not a dual-date card on each row. The 5-slot structure (incl. Late Evening) and the `≤` vs `<` cutoff fix described in this spec are unrelated to carry-over and already exist in code (`lib/slots/slot-ruler.ts` — confirmed by discovery, not built as part of this item). See `docs/prompts/drafts/code-update-2026-06-24-support-board-slot-rule.md` for the original full spec (kept for history; carry-over section is stale).
 - **Hold auto-route** [NEXT] — enriched holds currently appear in the pending list AND the Hold tab (Hold is an overlay, doesn't remove from pending). Goal: enriched holds auto-route to the Hold tab with zero human touch, mirroring auto-done but for hold. Separate build.
-- **Auto-assign dispatch slot at enrichment ("the brain")** [NEXT] — Task 2 of the dispatch-slot work. Auto-dispatched OBDs get no `dispatchTargetDate`/`dispatchWindowId` today. Multiple conditions; may need prep changes first. See §4.13 "On the horizon" (distinct from the tint-row pre-set at §4.16, which is a human action).
+- **Auto-assign dispatch slot at enrichment ("the brain")** — **[LIVE]**, no longer [NEXT]. The engine (`evaluateDispatchSlot`) is wired into `applyMailOrderEnrichment` and doing the majority of slotting — verified on live data (SELECT 2026-07-24): of **1,051** orders at `workflowStage='dispatched'`, **662** carry `dispatchSlotSource='auto'`. Engine owned by **`CLAUDE_CORE.md §7.4`**; see §4.13 above. (Distinct from the tint-row pre-set at §4.16, a human action.)
 - **CSS Grid → `<table>` §27 cleanup** [DEFERRED] — the Support table uses CSS Grid, not `<table>`. Agent proposed a full rewrite (UI §27); REJECTED as scope creep. Own session when ready.
 - **Mail indicator placement polish** [DEFERRED] — ship a clearer indicator than the current trailing gray envelope. Leading gray envelope (Option A) is the recommended safe choice. Teal options ruled out (collision with row-selection teal edge). Mockups: `docs/mockups/support/mail-time-symbol.html`, `docs/mockups/support/mail-indicator-placement.html`, `docs/mockups/support/mail-indicator-options-EFGH.html`.
 - **Mail punched time (Piece 2)** [DEFERRED] — store `mo_orders.punchedAt` on the order (new column), decide display placement (detail panel vs tooltip vs separate column). Piece 1 (received time) is live; Piece 2 needs new column + enrichment copy + display.
@@ -632,4 +646,4 @@ All added via Supabase SQL Editor + hand-edit `prisma/schema.prisma` + `npx pris
 
 ---
 
-*CLAUDE_SUPPORT.md v1.6 · Support Module · July 2026*
+*CLAUDE_SUPPORT.md v1.7 · Support Module · July 2026*
