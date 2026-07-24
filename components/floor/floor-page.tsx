@@ -11,6 +11,7 @@
 // go through /api/floor/actions. Rail Hold/✕ and the row ⚡ are wired here too.
 
 import { useState, useEffect, useCallback } from "react";
+import { toast } from "sonner";
 import { Search, Filter } from "lucide-react";
 import { FloorRail } from "./floor-rail";
 import { FloorBoard } from "./floor-board";
@@ -43,8 +44,46 @@ function addDaysIso(iso: string, delta: number): string {
   return new Date(Date.UTC(y, m - 1, d + delta)).toISOString().slice(0, 10);
 }
 
-async function postJson(url: string, payload: unknown): Promise<void> {
-  await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+// Every write route returns one of these shapes: { failed:[…] } for the batch
+// routes (release/actions/picking-assign) or { error } for a hard reject. We read
+// BOTH — a write that skipped silently must never look like success (the bug that
+// hid the Hold-tab release no-op).
+interface WriteBody {
+  error?: string;
+  failed?: Array<{ error?: string }>;
+}
+
+async function postJson(url: string, payload: unknown): Promise<{ ok: boolean; body: WriteBody }> {
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const body = (await res.json().catch(() => ({}))) as WriteBody;
+    return { ok: res.ok, body };
+  } catch {
+    return { ok: false, body: { error: "Network error — check your connection." } };
+  }
+}
+
+// Surface a write result to the operator. Returns true ONLY on a clean,
+// fully-applied write. A non-2xx response, a hard `error`, OR a non-empty
+// `failed[]` (partial or total failure) raises a toast and returns false — the
+// response is never discarded. Success is intentionally silent (the board reload
+// is the confirmation).
+function reportWrite(label: string, r: { ok: boolean; body: WriteBody }): boolean {
+  const failed = Array.isArray(r.body.failed) ? r.body.failed : [];
+  if (!r.ok) {
+    toast.error(r.body.error ? `${label} failed — ${r.body.error}` : `${label} failed.`);
+    return false;
+  }
+  if (failed.length > 0) {
+    const reason = failed[0]?.error ?? "not valid at its current state";
+    toast.error(`${label}: ${failed.length} bill${failed.length === 1 ? "" : "s"} not updated — ${reason}`);
+    return false;
+  }
+  return true;
 }
 
 export function FloorPage() {
@@ -128,24 +167,24 @@ export function FloorPage() {
   // ── Release + rail actions ────────────────────────────────────────────────
   const handleRelease = useCallback(
     async (orderId: number, slot: RailReleaseSlot) => {
-      try {
-        await postJson("/api/floor/release", { releases: [{ orderId, ...slot }] });
-      } finally {
-        void load();
-      }
+      const r = await postJson("/api/floor/release", { releases: [{ orderId, ...slot }] });
+      reportWrite("Release", r);
+      await load();
     },
     [load],
   );
   const railHold = useCallback(
     async (orderId: number) => {
-      await postJson("/api/floor/actions", { action: "hold", orderIds: [orderId] });
+      const r = await postJson("/api/floor/actions", { action: "hold", orderIds: [orderId] });
+      reportWrite("Hold", r);
       await load();
     },
     [load],
   );
   const railCancel = useCallback(
     async (orderId: number) => {
-      await postJson("/api/floor/actions", { action: "cancel", orderIds: [orderId] });
+      const r = await postJson("/api/floor/actions", { action: "cancel", orderIds: [orderId] });
+      reportWrite("Cancel", r);
       await load();
     },
     [load],
@@ -154,7 +193,8 @@ export function FloorPage() {
   // Row ⚡ — per-bill urgent TOGGLE (no `urgent` field → route flips it).
   const rowMarkUrgent = useCallback(
     async (orderId: number) => {
-      await postJson("/api/floor/actions", { action: "mark-urgent", orderIds: [orderId] });
+      const r = await postJson("/api/floor/actions", { action: "mark-urgent", orderIds: [orderId] });
+      reportWrite("Urgent", r);
       await load();
     },
     [load],
@@ -166,19 +206,22 @@ export function FloorPage() {
   // ── Bulk bar actions ──────────────────────────────────────────────────────
   const bulkMarkUrgent = async () => {
     if (selectedIds.length === 0) return;
-    await postJson("/api/floor/actions", { action: "mark-urgent", orderIds: selectedIds, urgent: true });
+    const r = await postJson("/api/floor/actions", { action: "mark-urgent", orderIds: selectedIds, urgent: true });
+    reportWrite("Urgent", r);
     clearSelection();
     await load();
   };
   const bulkHold = async () => {
     if (selectedIds.length === 0) return;
-    await postJson("/api/floor/actions", { action: "hold", orderIds: selectedIds });
+    const r = await postJson("/api/floor/actions", { action: "hold", orderIds: selectedIds });
+    reportWrite("Hold", r);
     clearSelection();
     await load();
   };
   const bulkChangeSlot = async (date: string, windowId: number) => {
     if (selectedIds.length === 0) return;
-    await postJson("/api/floor/actions", { action: "change-slot", orderIds: selectedIds, dispatchTargetDate: date, dispatchWindowId: windowId });
+    const r = await postJson("/api/floor/actions", { action: "change-slot", orderIds: selectedIds, dispatchTargetDate: date, dispatchWindowId: windowId });
+    reportWrite("Change slot", r);
     clearSelection();
     await load();
   };
@@ -190,29 +233,31 @@ export function FloorPage() {
     if (selectedRows.length === 0) return;
     const alreadyAssigned = selectedRows.filter((r) => r.isAssigned).map((r) => r.orderId);
     for (const orderId of alreadyAssigned) {
-      await postJson("/api/picking/unassign", { orderId });
+      reportWrite("Unassign", await postJson("/api/picking/unassign", { orderId }));
     }
-    await postJson("/api/picking/assign", { orderIds: selectedIds, pickerId });
+    reportWrite("Assign", await postJson("/api/picking/assign", { orderIds: selectedIds, pickerId }));
     clearSelection();
     await load();
   };
   const bulkUnassign = async () => {
     const alreadyAssigned = selectedRows.filter((r) => r.isAssigned).map((r) => r.orderId);
     for (const orderId of alreadyAssigned) {
-      await postJson("/api/picking/unassign", { orderId });
+      reportWrite("Unassign", await postJson("/api/picking/unassign", { orderId }));
     }
     clearSelection();
     await load();
   };
 
   // ── Hold tab: bulk release → the floor (reuses the Step-3 release route). ──
-  // Each ticked bill gets the SAME chosen date+window; the route closes it to
+  // Each ticked bill gets the SAME chosen date+window; the route advances it to
   // pending_picking with dispatchStatus="dispatch", so it leaves Hold and lands
-  // on the floor like any other released bill.
+  // on the floor like any other released bill. A held-after-auto-dispatch bill is
+  // already at pending_picking — accepted via FLOOR_RELEASABLE_STAGES.
   const holdRelease = useCallback(
     async (orderIds: number[], date: string, windowId: number) => {
       const releases = orderIds.map((orderId) => ({ orderId, dispatchTargetDate: date, dispatchWindowId: windowId }));
-      await postJson("/api/floor/release", { releases });
+      const r = await postJson("/api/floor/release", { releases });
+      reportWrite("Release", r);
       await load();
     },
     [load],
@@ -221,7 +266,8 @@ export function FloorPage() {
   // ── Cancelled tab: bulk restore → back to the left rail (Step-5 actions). ──
   const cancelledRestore = useCallback(
     async (orderIds: number[]) => {
-      await postJson("/api/floor/actions", { action: "restore", orderIds });
+      const r = await postJson("/api/floor/actions", { action: "restore", orderIds });
+      reportWrite("Restore", r);
       await load();
     },
     [load],

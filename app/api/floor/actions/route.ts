@@ -157,5 +157,9 @@ export async function POST(req: Request): Promise<NextResponse> {
     }
   }
 
-  return NextResponse.json({ done, failed });
+  // Nothing changed at all → 422 so a fully-skipped action cannot be read as
+  // success by the client. A partial success stays 200 but always carries the
+  // `failed` list to be surfaced (the swallowed-response bug this closes).
+  const status = done.length === 0 && failed.length > 0 ? 422 : 200;
+  return NextResponse.json({ done, failed }, { status });
 }

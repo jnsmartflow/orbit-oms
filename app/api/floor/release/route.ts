@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { SUPPORT_DONE_OUTPUT } from "@/lib/workflow-stages";
+import { FLOOR_RELEASABLE_STAGES } from "@/lib/floor/release-stages";
 
 export const dynamic = "force-dynamic";
 
@@ -25,9 +26,14 @@ function parseDateOnly(s: string): Date | null {
   return dt.toISOString().slice(0, 10) === s ? dt : null;
 }
 
-// POST /api/floor/release — release one or more rail bills to the floor.
+// POST /api/floor/release — release one or more bills to the floor. Serves BOTH
+// the left rail (bills at pending_support) and the Hold tab (bills held after
+// auto-dispatch, at pending_picking) — see FLOOR_RELEASABLE_STAGES.
 // Body: { releases: [{ orderId, dispatchTargetDate, dispatchWindowId }] }.
 // Single = an array of one; bulk = each bill with its own suggested slot.
+// Returns 422 when EVERY requested bill failed (nothing written); a partial
+// success stays 200 but always carries the `failed` list so the client can
+// surface it — a write that skips silently must never look like success.
 export async function POST(req: Request): Promise<NextResponse> {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -81,10 +87,13 @@ export async function POST(req: Request): Promise<NextResponse> {
       failed.push({ orderId: r.orderId, error: "Order not found" });
       continue;
     }
-    // Only a bill at pending_support is releasable: a non-tint bill, or a tint
-    // bill whose splits are all done. A mid-tint bill must never be released —
-    // a picker sent to a rack with no shade (design §6.3).
-    if (order.workflowStage !== "pending_support") {
+    // Releasable from the rail (pending_support: a non-tint bill or a tint bill
+    // whose splits are all done) OR from Hold (pending_picking: auto-dispatched
+    // then held). Floor's own explicit list, NOT Support's supportMayEdit — see
+    // lib/floor/release-stages.ts. A mid-tint bill (tint_assigned /
+    // tinting_in_progress) is absent, so it can never be released to a rack with
+    // no shade (design §6.3).
+    if (!FLOOR_RELEASABLE_STAGES.includes(order.workflowStage)) {
       failed.push({ orderId: r.orderId, error: `Not releasable at stage ${order.workflowStage}` });
       continue;
     }
@@ -108,7 +117,10 @@ export async function POST(req: Request): Promise<NextResponse> {
     await prisma.order_status_logs.create({
       data: {
         orderId: r.orderId,
-        fromStage: "pending_support",
+        // The real prior stage — pending_support (rail) or pending_picking
+        // (held-from-floor). Hardcoding "pending_support" here would mislabel a
+        // Hold-tab release's audit trail.
+        fromStage: order.workflowStage,
         toStage: SUPPORT_DONE_OUTPUT,
         changedById,
         note: `Released to floor · ${r.dispatchTargetDate} ${winLabel}`,
@@ -118,5 +130,8 @@ export async function POST(req: Request): Promise<NextResponse> {
     released.push(r.orderId);
   }
 
-  return NextResponse.json({ released, failed });
+  // Nothing written at all → 422 so the failure cannot be read as success. A
+  // partial success stays 200 but always carries `failed` for the client.
+  const status = released.length === 0 && failed.length > 0 ? 422 : 200;
+  return NextResponse.json({ released, failed }, { status });
 }
