@@ -21,6 +21,9 @@ import { CancelledTab } from "./cancelled-tab";
 import { DetailPanel, type DetailActions } from "./detail-panel";
 import { SearchBox, SearchHits } from "./search-box";
 import { FilterSheet } from "./filter-sheet";
+import { ConnectionStrip } from "./connection-strip";
+import { usePickingMarker } from "@/lib/hooks/use-picking-marker";
+import { useFloorRailPoll } from "@/lib/floor/use-floor-rail-poll";
 import { toggleOne, toggleAll as toggleAllRows, isSelectable, type FloorSelection } from "@/lib/floor/selection";
 import { parseSearch, applySearch, searchReport, type Searchable } from "@/lib/floor/search";
 import { applyFloorFilters, applyFlagFilters, EMPTY_FILTERS, type FloorFilters } from "@/lib/floor/filter";
@@ -101,6 +104,12 @@ export function FloorPage() {
   const [holdRows, setHoldRows] = useState<FloorHoldRow[] | null>(null);
   const [cancelledRows, setCancelledRows] = useState<FloorCancelledRow[] | null>(null);
   const [sideError, setSideError] = useState<string | null>(null);
+  // Time of the last successful board load — shown by the connection strip as
+  // "last update HH:MM" when the server becomes unreachable (design §13).
+  const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
+  // Server reachability, driven off the SAME /api/floor/marker probe the board's
+  // live-sync runs (use-picking-marker onProbe) — one poll, no second fetch.
+  const [connected, setConnected] = useState(true);
 
   // Search (committed on Enter) + filters. Both are client-side over already-
   // loaded data (design §5.2/§5.3) — no refetch, no new route.
@@ -146,6 +155,7 @@ export function FloorPage() {
       else { setHoldRows([]); setSideError(`Hold feed HTTP ${holdRes.status}`); }
       if (cancRes.ok) setCancelledRows(((await cancRes.json()).rows ?? []) as FloorCancelledRow[]);
       else { setCancelledRows([]); setSideError((prev) => prev ?? `Cancelled feed HTTP ${cancRes.status}`); }
+      setLastSyncedAt(new Date());
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load");
       setData(null);
@@ -432,6 +442,71 @@ export function FloorPage() {
     });
   }, []);
 
+  // ── Live sync (design §13) — TWO different mechanisms, no shared abstraction ─
+  const detailOpen = detail !== null;
+  const isLive = viewMode === "live";
+
+  // Reconcile the floor SELECTION against fresh data WITHOUT moving the visible
+  // board (design §13 rules 2 + 3): drop the tick on any selected row that
+  // changed elsewhere and say so, but never re-render/re-sort the rows he is
+  // reaching for. A read-only GET — no orders.update anywhere.
+  const reconcileSelection = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/floor/board?${new URLSearchParams({ scope }).toString()}`, { cache: "no-store" });
+      if (!res.ok) return;
+      const board = await res.json();
+      const stillSelectable = new Set<number>(
+        (board.floor?.rows ?? [])
+          .filter((r: FloorBoardRow) => r.zone !== "upcoming" && isSelectable(r))
+          .map((r: FloorBoardRow) => r.orderId),
+      );
+      setSelection((prev) => {
+        const next = new Set<number>();
+        let dropped = 0;
+        for (const id of Array.from(prev)) {
+          if (stillSelectable.has(id)) next.add(id);
+          else dropped++;
+        }
+        if (dropped > 0) {
+          toast.info(`${dropped} selected bill${dropped === 1 ? "" : "s"} changed elsewhere — unticked`);
+          return next;
+        }
+        return prev;
+      });
+      setLastSyncedAt(new Date());
+    } catch {
+      /* silent — the connection strip owns the "not connected" surface */
+    }
+  }, [scope]);
+
+  // FLOOR — the Picking pattern: use-picking-marker, pointed at the floor's OWN
+  // marker (/api/floor/marker) via the optional `url` param, so it watches the
+  // floor's EXACT set (getFloorLiveMarkerWhere) — no silent dependence on what
+  // picking's openPending scope means. `scope` is required by the hook's type but
+  // ignored by the floor marker route (fixed set). `onProbe` feeds the connection
+  // strip off this same 15s poll — one probe powers both. Deferred while the
+  // detail panel is open or in read-only history.
+  usePickingMarker({
+    scope: "openPending",
+    url: "/api/floor/marker",
+    paused: !isLive || detailOpen,
+    onProbe: setConnected,
+    onChange: () => {
+      if (!isLive) return;
+      // Rule 2: never move the ground while rows are selected — reconcile the
+      // ticks only. Rule 1: otherwise refresh in place (rows keyed by orderId).
+      if (selection.size > 0) void reconcileSelection();
+      else void load();
+    },
+  });
+
+  // RAIL — the Mail Orders pattern: a 30s full refetch. Paused while a selection
+  // is up or the panel is open (a refetch would move the floor ground) or history.
+  useFloorRailPoll({
+    paused: !isLive || detailOpen || selection.size > 0,
+    onTick: () => void load(),
+  });
+
   const dispatchWindows: DispatchWindow[] = (data?.floor.windows ?? []).map((w) => ({
     id: w.id,
     windowTime: w.windowTime,
@@ -507,6 +582,10 @@ export function FloorPage() {
 
       {/* Search results strip (design §5.2) — describes the OPEN tab's matches. */}
       <SearchHits parsed={parsed} report={tabSearchReport} onClear={clearSearch} />
+
+      {/* Connection strip (design §13) — only in live mode; renders only when the
+          server is unreachable. A strip, never a modal — the board stays readable. */}
+      {isLive && <ConnectionStrip connected={connected} lastSyncedAt={lastSyncedAt} />}
 
       {/* ── Body — left rail (344px) + right main. ───────────────────────── */}
       <div className="grid min-h-0 flex-1 overflow-hidden" style={{ gridTemplateColumns: "344px 1fr" }}>

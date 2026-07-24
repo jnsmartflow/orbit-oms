@@ -111,6 +111,33 @@ function inScope(deliveryType: string | null, scope: FloorScope): boolean {
   return scope === "All" || deliveryType === scope;
 }
 
+// ── Floor LIVE where — shared by the board and the live-sync marker ──────────
+// ONE encoding of "what is on the floor right now", so the marker
+// (app/api/floor/marker) can never watch a different set than getFloorBoard's
+// live branch renders — the exact drift the Picking §10 landmine warns about.
+// Delivery-type scope is applied CLIENT-side (getFloorBoard filters in JS), so
+// it is deliberately absent here: the marker watches all scopes, a superset of
+// any single scope (safe direction — marker ⊇ queue).
+
+/** The status/stage predicate for the live floor board (no hide, no scope). */
+export function floorLiveBaseWhere(todayDateOnly: Date): Prisma.ordersWhereInput {
+  return {
+    dispatchStatus: "dispatch",
+    isRemoved: false,
+    OR: [
+      { workflowStage: { in: PICKING_OPEN_STAGES } },
+      { workflowStage: PICK_CHECKED, dispatchTargetDate: todayDateOnly },
+    ],
+  };
+}
+
+/** The full live WHERE (base AND the admin hide-exclusion) — what the marker
+ *  aggregates over. Sequential await, never $transaction (CORE §3). */
+export async function getFloorLiveMarkerWhere(): Promise<Prisma.ordersWhereInput> {
+  const hide = await getHideExclusion();
+  return { AND: [floorLiveBaseWhere(getISTTodayDateOnly()), hide] };
+}
+
 // ── Shared per-obd lookups ───────────────────────────────────────────────────
 
 /** Bill-to dealer name per OBD, from import_raw_summary (latest row wins). Used
@@ -311,18 +338,12 @@ export async function getFloorBoard(
           dispatchTargetDate: anchorDate,
           workflowStage: { in: PICKING_ACTIVE_STAGES },
         }
-      : {
-          // Live: everything NOT yet pick_checked, whatever day it was due
-          // (carry-over — Floor's fix over picking's rolling scope, design §4.2),
-          // PLUS today's checked. Future-dated not-yet-checked rides along and
-          // is separated by `zone` = upcoming per row.
-          dispatchStatus: "dispatch",
-          isRemoved: false,
-          OR: [
-            { workflowStage: { in: PICKING_OPEN_STAGES } },
-            { workflowStage: PICK_CHECKED, dispatchTargetDate: todayDateOnly },
-          ],
-        };
+      : // Live: everything NOT yet pick_checked, whatever day it was due
+        // (carry-over — Floor's fix over picking's rolling scope, design §4.2),
+        // PLUS today's checked. Future-dated not-yet-checked rides along and is
+        // separated by `zone` = upcoming per row. Shared with the live-sync
+        // marker via floorLiveBaseWhere() so the two can never drift.
+        floorLiveBaseWhere(todayDateOnly);
 
   const orders = await prisma.orders.findMany({
     where: { AND: [base, hide] },

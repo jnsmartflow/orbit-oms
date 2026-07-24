@@ -33,6 +33,21 @@ interface UsePickingMarkerOptions {
    * moved during the pause, onChange fires exactly ONCE.
    */
   paused?: boolean;
+  /**
+   * Marker endpoint. Defaults to `/api/picking/marker` — Picking passes nothing
+   * and is byte-identical. Another board (Floor) points this at its OWN marker
+   * route (`/api/floor/marker`) so it watches its own exact set rather than
+   * silently depending on what picking's scope means. The `?scope=…&date=…` query
+   * is still appended; a route that doesn't use those params simply ignores them.
+   */
+  url?: string;
+  /**
+   * Optional: called after EACH completed probe with whether the server was
+   * reached (res.ok, no throw). Lets a caller drive a connection indicator off
+   * the SAME poll instead of a second fetch. Not called on skipped ticks (tab
+   * hidden / overlapping request). Picking passes nothing → no behaviour change.
+   */
+  onProbe?: (ok: boolean) => void;
 }
 
 /**
@@ -61,10 +76,13 @@ export function usePickingMarker({
   pickerId,
   onChange,
   paused = false,
+  url,
+  onProbe,
 }: UsePickingMarkerOptions): void {
   // Refs let the poll effect stay mounted for the component's life without
   // re-subscribing every render when onChange/paused identities change.
   const onChangeRef = useRef(onChange);
+  const onProbeRef = useRef(onProbe);
   const pausedRef = useRef(paused);
   // Last marker value accepted as baseline. null until the first successful
   // response (which is stored, never fired).
@@ -77,6 +95,10 @@ export function usePickingMarker({
   useEffect(() => {
     onChangeRef.current = onChange;
   }, [onChange]);
+
+  useEffect(() => {
+    onProbeRef.current = onProbe;
+  }, [onProbe]);
 
   // On unpause, flush a change that landed during the pause — exactly once.
   useEffect(() => {
@@ -100,7 +122,8 @@ export function usePickingMarker({
     lastSeenRef.current = null;
     pendingChangeRef.current = false;
 
-    const url = `/api/picking/marker?scope=${encodeURIComponent(scope)}${
+    const markerBase = url ?? "/api/picking/marker";
+    const requestUrl = `${markerBase}?scope=${encodeURIComponent(scope)}${
       date ? `&date=${encodeURIComponent(date)}` : ""
     }${pickerId !== undefined ? `&pickerId=${pickerId}` : ""}`;
 
@@ -110,8 +133,12 @@ export function usePickingMarker({
       if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
       inFlightRef.current = true;
       try {
-        const res = await fetch(url, { cache: "no-store" });
-        if (!res.ok) return; // fail silently — retry next tick
+        const res = await fetch(requestUrl, { cache: "no-store" });
+        if (!res.ok) {
+          onProbeRef.current?.(false); // reached the server, but it errored
+          return; // fail silently — retry next tick
+        }
+        onProbeRef.current?.(true);
         const marker = (await res.json()) as MarkerResponse;
         if (cancelled) return;
         const next = { count: marker.count, latest: marker.latest };
@@ -129,7 +156,8 @@ export function usePickingMarker({
         }
         onChangeRef.current();
       } catch {
-        // network blip — swallow, retry next tick
+        onProbeRef.current?.(false); // network blip — could not reach the server
+        // swallow, retry next tick
       } finally {
         inFlightRef.current = false;
       }
@@ -170,5 +198,5 @@ export function usePickingMarker({
         document.removeEventListener("visibilitychange", handleVisibility);
       }
     };
-  }, [scope, date, pickerId]);
+  }, [scope, date, pickerId, url]);
 }
