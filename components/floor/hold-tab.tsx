@@ -47,12 +47,14 @@ function HoldRows({
   selection,
   onToggleRow,
   onToggleAll,
+  onOpenDetail,
 }: {
   rows: FloorHoldRow[];
   now: Date;
   selection: FloorSelection;
   onToggleRow: (id: number) => void;
   onToggleAll: (rows: FloorHoldRow[]) => void;
+  onOpenDetail: (id: number) => void;
 }) {
   const allOn = isAllIdsSelected(selection, rows);
   return (
@@ -86,8 +88,8 @@ function HoldRows({
           const approx = row.heldSinceSource === "approx";
           const unknown = row.heldSinceSource === "unknown";
           return (
-            <tr key={row.orderId} className="hover:bg-[#fafafa]">
-              <td className={TD_C}>
+            <tr key={row.orderId} className="cursor-pointer hover:bg-[#fafafa]" onClick={() => onOpenDetail(row.orderId)}>
+              <td className={TD_C} onClick={(e) => e.stopPropagation()}>
                 <input
                   type="checkbox"
                   aria-label={`Select ${row.obdNumber}`}
@@ -132,6 +134,7 @@ export function HoldTab({
   scope,
   windows,
   onRelease,
+  onOpenDetail,
 }: {
   rows: FloorHoldRow[] | null;
   loading: boolean;
@@ -139,6 +142,7 @@ export function HoldTab({
   scope: string;
   windows: DispatchWindow[];
   onRelease: (orderIds: number[], date: string, windowId: number) => Promise<void>;
+  onOpenDetail: (id: number) => void;
 }) {
   const [oldestFirst, setOldestFirst] = useState(false);
   const [selection, setSelection] = useState<FloorSelection>(new Set());
@@ -223,6 +227,7 @@ export function HoldTab({
                 selection={selection}
                 onToggleRow={(id) => setSelection((s) => toggleOne(s, id))}
                 onToggleAll={(rs) => setSelection((s) => toggleAllIds(s, rs))}
+                onOpenDetail={onOpenDetail}
               />
             </div>
           ))

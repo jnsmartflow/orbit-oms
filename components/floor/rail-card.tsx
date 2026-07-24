@@ -48,18 +48,31 @@ export function RailCard({
   onRelease,
   onHold,
   onCancel,
+  onOpenDetail,
 }: {
   card: RailCardData;
   windows: DispatchWindow[];
   onRelease: (orderId: number, slot: RailReleaseSlot) => void;
   onHold: (orderId: number) => void;
   onCancel: (orderId: number) => void;
+  onOpenDetail: (orderId: number) => void;
 }) {
   const releasable = card.workflowStage === "pending_support";
   const dropletReady = card.tint?.stage === "ready";
 
   return (
-    <div className="mb-2 rounded-lg border border-gray-200 bg-white px-3 py-[11px] transition-colors hover:border-gray-300">
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={() => onOpenDetail(card.orderId)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onOpenDetail(card.orderId);
+        }
+      }}
+      className="mb-2 cursor-pointer rounded-lg border border-gray-200 bg-white px-3 py-[11px] transition-colors hover:border-gray-300"
+    >
       {/* OBD · time · icons (fixed order: age → ★ → ⚡ → droplet) */}
       <div className="flex items-center gap-2">
         <span className="font-mono text-[11.5px] tracking-[-0.01em] text-gray-700">{card.obdNumber}</span>
@@ -103,8 +116,10 @@ export function RailCard({
           Picking a slot still releases the bill (unchanged). On a mid-tint bill
           whose shades are not ready the picker is DISABLED — that is the dimmed
           state; there is no separate greyed Release button. */}
-      <div className="mt-2.5 flex items-center gap-1.5">
-        {/* Slot / Set-slot — reused picker; picking a slot releases the bill */}
+      <div className="mt-2.5 flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+        {/* Slot / Set-slot — reused picker; picking a slot releases the bill.
+            Wrapper stops click-through so the action row never also opens the
+            detail panel (the card body opens it). */}
         <DispatchSlotPicker
           value={null}
           onChange={(v) => {

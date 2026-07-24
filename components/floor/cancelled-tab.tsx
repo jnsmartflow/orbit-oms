@@ -45,12 +45,14 @@ export function CancelledTab({
   error,
   scope,
   onRestore,
+  onOpenDetail,
 }: {
   rows: FloorCancelledRow[] | null;
   loading: boolean;
   error: string | null;
   scope: string;
   onRestore: (orderIds: number[]) => Promise<void>;
+  onOpenDetail: (id: number) => void;
 }) {
   const [selection, setSelection] = useState<FloorSelection>(new Set());
   const [busy, setBusy] = useState(false);
@@ -115,8 +117,8 @@ export function CancelledTab({
               {list.map((row) => {
                 const { isSite, isRedirect } = shipMarkers(row);
                 return (
-                  <tr key={row.orderId} className="hover:bg-[#fafafa]">
-                    <td className={TD_C}>
+                  <tr key={row.orderId} className="cursor-pointer hover:bg-[#fafafa]" onClick={() => onOpenDetail(row.orderId)}>
+                    <td className={TD_C} onClick={(e) => e.stopPropagation()}>
                       <input
                         type="checkbox"
                         aria-label={`Select ${row.obdNumber}`}

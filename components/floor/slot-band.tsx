@@ -23,6 +23,7 @@ export function SlotBand({
   onToggleRow,
   onToggleAll,
   onMarkUrgent,
+  onOpenDetail,
 }: {
   label: string; // "10:30" | … | "No slot"
   rows: FloorBoardRow[];
@@ -34,6 +35,7 @@ export function SlotBand({
   onToggleRow?: (id: number) => void;
   onToggleAll?: (rows: FloorBoardRow[]) => void;
   onMarkUrgent?: (id: number) => void;
+  onOpenDetail?: (id: number) => void;
 }) {
   const counts = countByStatus(rows);
   const litres = sumLitres(rows);
@@ -64,6 +66,7 @@ export function SlotBand({
           onToggleRow={onToggleRow}
           onToggleAll={onToggleAll}
           onMarkUrgent={onMarkUrgent}
+          onOpenDetail={onOpenDetail}
         />
       )}
     </>

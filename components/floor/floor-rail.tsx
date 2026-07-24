@@ -22,6 +22,7 @@ export function FloorRail({
   onHold,
   onCancel,
   onShowAll,
+  onOpenDetail,
 }: {
   cards: FloorRailCard[] | null;
   loading: boolean;
@@ -33,6 +34,7 @@ export function FloorRail({
   onHold: (orderId: number) => void;
   onCancel: (orderId: number) => void;
   onShowAll: () => void;
+  onOpenDetail: (orderId: number) => void;
 }) {
   const count = cards?.length ?? 0;
   // Scoped-and-empty vs all-clear vs before-first-import: if the floor is
@@ -61,7 +63,7 @@ export function FloorRail({
         ) : (
           <div className="p-2.5">
             {cards!.map((c) => (
-              <RailCard key={c.orderId} card={c} windows={windows} onRelease={onRelease} onHold={onHold} onCancel={onCancel} />
+              <RailCard key={c.orderId} card={c} windows={windows} onRelease={onRelease} onHold={onHold} onCancel={onCancel} onOpenDetail={onOpenDetail} />
             ))}
           </div>
         )}

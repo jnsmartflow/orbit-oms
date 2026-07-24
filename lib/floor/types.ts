@@ -119,3 +119,93 @@ export interface FloorCancelledRow extends FloorPartyFields {
   cancelledByName: string | null;
   reason: string | null;        // cancel-log note
 }
+
+// ── Detail panel (design §10) ────────────────────────────────────────────────
+// Which surface the panel was opened FROM — drives the context-primary action
+// and which list Prev/Next walks (design §10.3 / §10.5).
+export type FloorDetailSource = "rail" | "floor" | "hold" | "cancelled";
+
+// One line item on the Items tab. Pack resolves via sku_master_v2 on
+// material === skuCodeRaw (CORE §13); raw-text fallback preserved. Gift lines
+// are OUT OF SCOPE — no gift tag, no gift-excluded totals.
+export interface FloorDetailLine {
+  id: number;
+  sku: string;
+  name: string | null;   // sku_master_v2.description ?? raw SAP description
+  pack: string | null;   // formatPack(...) ?? null (blank stays blank)
+  qty: number;
+  litres: number;        // import_raw_line_items.volumeLine, 0 when null
+  isTint: boolean;
+}
+
+// One Activity-tab entry. Real rows come from order_status_logs; the single
+// synthetic entry (auto-slot) is flagged so the component labels it as coming
+// from enrichment (design §10.4 — the engine writes no log).
+export interface FloorActivityEntry {
+  at: string | null;     // ISO; null on the synthetic enrichment line (no log ts)
+  note: string | null;
+  fromStage: string | null;
+  toStage: string | null;
+  actorName: string | null;
+  synthetic?: boolean;   // true = derived (auto-slot), not a real log row
+}
+
+// The whole detail payload for one order — header + Details groups + Items +
+// Activity, in ONE GET (app/api/floor/order/[orderId]).
+export interface FloorDetail {
+  orderId: number;
+  obdNumber: string;
+  obdDateTime: string | null;
+  orderType: string;
+  workflowStage: string;
+  dispatchStatus: string | null;
+
+  // Header / effective ship-to
+  shipToName: string;          // effective dealer (override ?? customer)
+  shipToCode: string | null;
+  isShipToOverride: boolean;
+  isKeyCustomer: boolean;
+  priorityLevel: number;
+  isTint: boolean;
+  isSite: boolean;             // Retail Offtake / Decorative Projects, not overridden
+
+  // Picking status (for the floor-source header pill + Details picker line)
+  isAssigned: boolean;
+  isDone: boolean;
+  isChecked: boolean;
+  pickerName: string | null;
+  checkedByName: string | null;
+
+  // Details — Parties
+  billToName: string | null;
+  billToCode: string | null;
+  overrideName: string | null; // shipToOverrideCustomer.customerName (when set)
+  overrideCode: string | null;
+  customerName: string | null; // the resolved ship-to customer (pre-override)
+  customerCode: string | null;
+
+  // Details — Reference
+  soNumber: string | null;
+  invoiceNo: string | null;
+  invoiceDate: string | null;
+
+  // Details — Classification
+  deliveryType: string | null;
+  smu: string | null;
+  route: string | null;
+  area: string | null;
+
+  // Details — Planning
+  dispatchTargetDate: string | null; // YYYY-MM-DD
+  dispatchWindowTime: string | null;
+  dispatchWindowId: number | null;
+  materialType: string | null;
+
+  // Auto-slot provenance (the Activity synthetic line, design §10.4)
+  dispatchSlotSource: string | null;
+  dispatchSlotRuleId: string | null;
+
+  lines: FloorDetailLine[];
+  totalLitres: number;
+  activity: FloorActivityEntry[];
+}

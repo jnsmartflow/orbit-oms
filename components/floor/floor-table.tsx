@@ -120,6 +120,7 @@ export function FloorTable({
   onToggleRow,
   onToggleAll,
   onMarkUrgent,
+  onOpenDetail,
 }: {
   rows: FloorBoardRow[];
   nowMs: number;
@@ -129,6 +130,7 @@ export function FloorTable({
   onToggleRow?: (id: number) => void;
   onToggleAll?: (rows: FloorBoardRow[]) => void;
   onMarkUrgent?: (id: number) => void;
+  onOpenDetail?: (id: number) => void;
 }) {
   const interactive = variant === "live";
   // ☐ 4 · # 4 · OBD 14 · Ship 20 · Route 10 · Vol 7 · Article 12 · Picker 9 · Status 20.
@@ -222,7 +224,8 @@ export function FloorTable({
                   </button>
                   <button
                     type="button"
-                    title="Details — coming in a later step"
+                    title="Open details"
+                    onClick={() => onOpenDetail?.(row.orderId)}
                     className="inline-flex h-[23px] w-[23px] items-center justify-center rounded-[5px] border border-gray-200 bg-white text-gray-400 hover:border-gray-300 hover:text-gray-600"
                   >
                     <MoreHorizontal size={12} />

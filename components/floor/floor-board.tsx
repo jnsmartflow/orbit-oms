@@ -59,6 +59,7 @@ export function FloorBoard({
   onToggleRow,
   onToggleAll,
   onMarkUrgent,
+  onOpenDetail,
 }: {
   floor: FloorBoardResult;
   slotTab: SlotTabKey;
@@ -72,6 +73,7 @@ export function FloorBoard({
   onToggleRow: (id: number) => void;
   onToggleAll: (rows: FloorBoardRow[]) => void;
   onMarkUrgent: (id: number) => void;
+  onOpenDetail: (id: number) => void;
 }) {
   const [openBands, setOpenBands] = useState<Record<string, boolean>>({});
   const [openRoute, setOpenRoute] = useState<string | null>(null);
@@ -81,9 +83,9 @@ export function FloorBoard({
   const rows = floor.rows;
   const nowMs = Date.now();
 
-  // Selection/urgent wiring forwarded to every leaf table (live only — the
-  // table ignores them on history/upcoming variants).
-  const selProps = { selection, onToggleRow, onToggleAll, onMarkUrgent };
+  // Selection/urgent/detail wiring forwarded to every leaf table (live only —
+  // the table ignores them on history/upcoming variants).
+  const selProps = { selection, onToggleRow, onToggleAll, onMarkUrgent, onOpenDetail };
 
   const dueRows = rows.filter((r) => r.zone !== "upcoming");
   const upcomingRows = isHistory ? [] : rows.filter((r) => r.zone === "upcoming");

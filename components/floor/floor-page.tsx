@@ -10,7 +10,7 @@
 // The five state actions (mark-urgent · change-slot · hold · cancel · restore)
 // go through /api/floor/actions. Rail Hold/✕ and the row ⚡ are wired here too.
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { toast } from "sonner";
 import { Search, Filter } from "lucide-react";
 import { FloorRail } from "./floor-rail";
@@ -19,10 +19,11 @@ import { FloorSkeleton } from "./floor-skeleton";
 import { AssignBar } from "./assign-bar";
 import { HoldTab } from "./hold-tab";
 import { CancelledTab } from "./cancelled-tab";
+import { DetailPanel, type DetailActions } from "./detail-panel";
 import { toggleOne, toggleAll as toggleAllRows, type FloorSelection } from "@/lib/floor/selection";
 import type { RailReleaseSlot } from "./rail-card";
 import type { DispatchWindow } from "@/components/support/dispatch-slot-picker";
-import type { FloorRailCard, FloorScope, FloorBoardResult, FloorBoardRow, FloorPicker, FloorHoldRow, FloorCancelledRow } from "@/lib/floor/types";
+import type { FloorRailCard, FloorScope, FloorBoardResult, FloorBoardRow, FloorPicker, FloorHoldRow, FloorCancelledRow, FloorDetailSource } from "@/lib/floor/types";
 import type { SlotTabKey } from "./floor-tabs";
 
 const SCOPES: FloorScope[] = ["All", "Local", "Upcountry", "IGT"];
@@ -53,10 +54,10 @@ interface WriteBody {
   failed?: Array<{ error?: string }>;
 }
 
-async function postJson(url: string, payload: unknown): Promise<{ ok: boolean; body: WriteBody }> {
+async function postJson(url: string, payload: unknown, method: "POST" | "PATCH" = "POST"): Promise<{ ok: boolean; body: WriteBody }> {
   try {
     const res = await fetch(url, {
-      method: "POST",
+      method,
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
@@ -273,6 +274,81 @@ export function FloorPage() {
     [load],
   );
 
+  // ── Detail panel (design §10) — open state + single-bill action handlers ──
+  // Additive wiring only: the panel is mounted at the end; every write REUSES an
+  // existing route through reportWrite (no swallowed response, no new route).
+  const [detail, setDetail] = useState<{ orderId: number; source: FloorDetailSource } | null>(null);
+  const openDetail = useCallback((orderId: number, src: FloorDetailSource) => setDetail({ orderId, source: src }), []);
+  const closeDetail = useCallback(() => setDetail(null), []);
+  const navigateDetail = useCallback((orderId: number) => setDetail((d) => (d ? { ...d, orderId } : d)), []);
+
+  // The list Prev/Next walks — whichever source the panel was opened from
+  // (design §10.5). Rebuilt on every board reload so it tracks the live order.
+  const detailList = useMemo<number[]>(() => {
+    if (!detail) return [];
+    switch (detail.source) {
+      case "rail":
+        return (data?.rail ?? []).map((c) => c.orderId);
+      case "floor":
+        return (data?.floor.rows ?? []).filter((r) => r.zone !== "upcoming").map((r) => r.orderId);
+      case "hold":
+        return (holdRows ?? []).map((r) => r.orderId);
+      case "cancelled":
+        return (cancelledRows ?? []).map((r) => r.orderId);
+    }
+  }, [detail, data, holdRows, cancelledRows]);
+
+  const detailActions: DetailActions = useMemo(
+    () => ({
+      onRelease: async (orderId, date, windowId) => {
+        const r = await postJson("/api/floor/release", { releases: [{ orderId, dispatchTargetDate: date, dispatchWindowId: windowId }] });
+        reportWrite("Release", r);
+        await load();
+      },
+      // Ship-to change REUSES Support's override write as a CALLER — that route
+      // uses $transaction (CORE §3), but this Floor file does not. Floor v1 users
+      // (admin + operations) both pass Support's route gate.
+      onChangeShipTo: async (orderId, customerId) => {
+        const r = await postJson(`/api/support/orders/${orderId}`, { shipToOverrideCustomerId: customerId }, "PATCH");
+        reportWrite("Change ship-to", r);
+        await load();
+      },
+      onUpdateSlot: async (orderId, date, windowId) => {
+        const r = await postJson("/api/floor/actions", { action: "change-slot", orderIds: [orderId], dispatchTargetDate: date, dispatchWindowId: windowId });
+        reportWrite("Update slot", r);
+        await load();
+      },
+      // Reassign = unassign (only if the bill already has a picker) then assign,
+      // reusing the Picking endpoints. The current assignment is read from the
+      // live floor rows so a Waiting bill isn't sent a spurious unassign (409).
+      onReassign: async (orderId, pickerId) => {
+        const row = (data?.floor.rows ?? []).find((x) => x.orderId === orderId);
+        if (row?.isAssigned) {
+          reportWrite("Unassign", await postJson("/api/picking/unassign", { orderId }));
+        }
+        reportWrite("Assign", await postJson("/api/picking/assign", { orderIds: [orderId], pickerId }));
+        await load();
+      },
+      onRestore: async (orderId) => {
+        reportWrite("Restore", await postJson("/api/floor/actions", { action: "restore", orderIds: [orderId] }));
+        await load();
+      },
+      onHold: async (orderId) => {
+        reportWrite("Hold", await postJson("/api/floor/actions", { action: "hold", orderIds: [orderId] }));
+        await load();
+      },
+      onCancel: async (orderId) => {
+        reportWrite("Cancel", await postJson("/api/floor/actions", { action: "cancel", orderIds: [orderId] }));
+        await load();
+      },
+      onUnassign: async (orderId) => {
+        reportWrite("Unassign", await postJson("/api/picking/unassign", { orderId }));
+        await load();
+      },
+    }),
+    [load, data],
+  );
+
   // ── History navigation ────────────────────────────────────────────────────
   const enterHistory = useCallback(() => {
     setHistDate(addDaysIso(istTodayIso(), -1));
@@ -378,6 +454,7 @@ export function FloorPage() {
           onHold={railHold}
           onCancel={railCancel}
           onShowAll={() => setScope("All")}
+          onOpenDetail={(id) => openDetail(id, "rail")}
         />
 
         {/* Right main — tabs + board + (bulk bar overlay). */}
@@ -424,6 +501,7 @@ export function FloorPage() {
                 onToggleRow={onToggleRow}
                 onToggleAll={onToggleAll}
                 onMarkUrgent={rowMarkUrgent}
+                onOpenDetail={(id) => openDetail(id, "floor")}
               />
             ) : null
           ) : topTab === "hold" ? (
@@ -434,6 +512,7 @@ export function FloorPage() {
               scope={scope}
               windows={dispatchWindows}
               onRelease={holdRelease}
+              onOpenDetail={(id) => openDetail(id, "hold")}
             />
           ) : (
             <CancelledTab
@@ -442,6 +521,7 @@ export function FloorPage() {
               error={error ?? sideError}
               scope={scope}
               onRestore={cancelledRestore}
+              onOpenDetail={(id) => openDetail(id, "cancelled")}
             />
           )}
 
@@ -460,6 +540,20 @@ export function FloorPage() {
           )}
         </div>
       </div>
+
+      {/* Detail panel (design §10) — slides over the board from any surface. */}
+      {detail && (
+        <DetailPanel
+          orderId={detail.orderId}
+          source={detail.source}
+          list={detailList}
+          windows={dispatchWindows}
+          pickers={data?.pickers ?? []}
+          actions={detailActions}
+          onClose={closeDetail}
+          onNavigate={navigateDetail}
+        />
+      )}
     </div>
   );
 }

@@ -22,6 +22,7 @@ export function RouteRow({
   onToggleRow,
   onToggleAll,
   onMarkUrgent,
+  onOpenDetail,
 }: {
   name: string;
   rows: FloorBoardRow[];
@@ -33,6 +34,7 @@ export function RouteRow({
   onToggleRow?: (id: number) => void;
   onToggleAll?: (rows: FloorBoardRow[]) => void;
   onMarkUrgent?: (id: number) => void;
+  onOpenDetail?: (id: number) => void;
 }) {
   const counts = countByStatus(rows);
   const litres = sumLitres(rows);
@@ -69,6 +71,7 @@ export function RouteRow({
           onToggleRow={onToggleRow}
           onToggleAll={onToggleAll}
           onMarkUrgent={onMarkUrgent}
+          onOpenDetail={onOpenDetail}
         />
       )}
     </>
