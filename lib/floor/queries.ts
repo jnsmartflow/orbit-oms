@@ -16,6 +16,7 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getHideExclusion } from "@/lib/hide/visibility";
+import { getISTDayRange } from "@/lib/dates";
 import { sortPickingQueue } from "@/lib/picking/sort";
 import {
   STAGE_LADDER,
@@ -119,23 +120,37 @@ function inScope(deliveryType: string | null, scope: FloorScope): boolean {
 // it is deliberately absent here: the marker watches all scopes, a superset of
 // any single scope (safe direction — marker ⊇ queue).
 
-/** The status/stage predicate for the live floor board (no hide, no scope). */
-export function floorLiveBaseWhere(todayDateOnly: Date): Prisma.ordersWhereInput {
+/** The status/stage predicate for the live floor board (no hide, no scope).
+ *  Two arms:
+ *   1. everything still OPEN (pending_picking / pick_assigned / pick_done),
+ *      ANY dispatch date — the carry-over arm (design §4.2). Unchanged.
+ *   2. everything the floor CHECKED TODAY, whatever day it was due — fenced on
+ *      `pick_assignments.checkedAt` within today's IST range, NOT on
+ *      `dispatchTargetDate`. Keying the checked arm on the promise day made a
+ *      carried-over bill (due earlier, checked today) fail BOTH arms and vanish
+ *      at the instant of completion. A bill must never disappear when finished.
+ *  `todayRange` is passed in (getISTDayRange, lib/dates) so this stays pure. */
+export function floorLiveBaseWhere(todayRange: { start: Date; end: Date }): Prisma.ordersWhereInput {
   return {
     dispatchStatus: "dispatch",
     isRemoved: false,
     OR: [
       { workflowStage: { in: PICKING_OPEN_STAGES } },
-      { workflowStage: PICK_CHECKED, dispatchTargetDate: todayDateOnly },
+      {
+        workflowStage: PICK_CHECKED,
+        pickAssignment: { checkedAt: { gte: todayRange.start, lt: todayRange.end } },
+      },
     ],
   };
 }
 
 /** The full live WHERE (base AND the admin hide-exclusion) — what the marker
- *  aggregates over. Sequential await, never $transaction (CORE §3). */
+ *  aggregates over. Uses getISTDayRange() (today), the SAME helper the board
+ *  passes, so the two predicates can never drift. Sequential await, never
+ *  $transaction (CORE §3). */
 export async function getFloorLiveMarkerWhere(): Promise<Prisma.ordersWhereInput> {
   const hide = await getHideExclusion();
-  return { AND: [floorLiveBaseWhere(getISTTodayDateOnly()), hide] };
+  return { AND: [floorLiveBaseWhere(getISTDayRange()), hide] };
 }
 
 // ── Shared per-obd lookups ───────────────────────────────────────────────────
@@ -338,12 +353,14 @@ export async function getFloorBoard(
           dispatchTargetDate: anchorDate,
           workflowStage: { in: PICKING_ACTIVE_STAGES },
         }
-      : // Live: everything NOT yet pick_checked, whatever day it was due
-        // (carry-over — Floor's fix over picking's rolling scope, design §4.2),
-        // PLUS today's checked. Future-dated not-yet-checked rides along and is
-        // separated by `zone` = upcoming per row. Shared with the live-sync
-        // marker via floorLiveBaseWhere() so the two can never drift.
-        floorLiveBaseWhere(todayDateOnly);
+      : // Live: everything still open, whatever day it was due (carry-over —
+        // Floor's fix over picking's rolling scope, design §4.2), PLUS everything
+        // CHECKED TODAY whatever day it was due (fenced on checkedAt, not the
+        // promise day — so a completed carry-over never vanishes). Future-dated
+        // not-yet-checked rides along, separated by `zone` = upcoming per row.
+        // Shared with the live-sync marker via floorLiveBaseWhere() (both pass
+        // getISTDayRange) so the two can never drift.
+        floorLiveBaseWhere(getISTDayRange());
 
   const orders = await prisma.orders.findMany({
     where: { AND: [base, hide] },
