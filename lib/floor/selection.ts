@@ -49,3 +49,25 @@ export function toggleAll(sel: FloorSelection, rows: SelectableRow[]): FloorSele
   }
   return next;
 }
+
+// ── Hold / Cancelled: every row is selectable ────────────────────────────────
+// Those tabs have no "off the shelf" cutoff — a held or cancelled bill is always
+// a valid target — so they select by plain id, not the isDone/isChecked rule.
+
+type IdRow = { orderId: number };
+
+export function isAllIdsSelected(sel: FloorSelection, rows: IdRow[]): boolean {
+  return rows.length > 0 && rows.every((r) => sel.has(r.orderId));
+}
+
+// Toggle every row in THIS band. Adds all when not all-selected, else clears
+// them; other bands' selections are carried by the Set.
+export function toggleAllIds(sel: FloorSelection, rows: IdRow[]): FloorSelection {
+  const next = new Set(sel);
+  if (isAllIdsSelected(sel, rows)) {
+    for (const r of rows) next.delete(r.orderId);
+  } else {
+    for (const r of rows) next.add(r.orderId);
+  }
+  return next;
+}

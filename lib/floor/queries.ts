@@ -26,6 +26,7 @@ import {
   PICK_CHECKED,
 } from "@/lib/workflow-stages";
 import { suggestSlot } from "./suggest";
+import { HOLD_LOG_NOTES, type HeldSinceSource } from "./hold-log";
 import type {
   FloorScope,
   FloorRailCard,
@@ -424,11 +425,40 @@ export async function getFloorHold(scope: FloorScope = "All"): Promise<FloorHold
 
   const billTo = await billToByObd(orders.map((o) => o.obdNumber));
 
+  // "Held since" = the hold EVENT's wall-clock time, not orders.heldAt (which is
+  // the arrival date — see lib/floor/hold-log.ts). Identified by NOTE, never by a
+  // sentinel toStage. Latest hold log per order wins, so a re-held bill reports
+  // its most recent hold rather than a stale first one.
+  const heldIds = orders.map((o) => o.id);
+  const holdLogs =
+    heldIds.length > 0
+      ? await prisma.order_status_logs.findMany({
+          where: { orderId: { in: heldIds }, note: { in: HOLD_LOG_NOTES } },
+          orderBy: { createdAt: "desc" },
+          select: { orderId: true, createdAt: true },
+        })
+      : [];
+  const latestHoldLog = new Map<number, Date>();
+  for (const log of holdLogs) {
+    if (!latestHoldLog.has(log.orderId)) latestHoldLog.set(log.orderId, log.createdAt);
+  }
+
   const rows: FloorHoldRow[] = [];
   for (const order of orders) {
     const dealer = order.shipToOverrideCustomer ?? order.customer;
     const deliveryType = dealer?.area?.deliveryType?.name ?? null;
     if (!inScope(deliveryType, scope)) continue;
+
+    // Fallback ladder. A bill with no hold log at all is almost always an
+    // ENRICHMENT hold (app/api/import/obd/route.ts stamps heldAt but writes no
+    // order_status_logs row), where the hold is applied at import time — so the
+    // arrival date is a genuinely close approximation, not a guess. It is still
+    // tagged `approx` and rendered with a "~" so it can never silently read as a
+    // recorded "held today". Neither available → `unknown`, its own trailing band.
+    const logAt = latestHoldLog.get(order.id) ?? null;
+    const heldSinceSource: HeldSinceSource = logAt ? "log" : order.heldAt ? "approx" : "unknown";
+    const heldSince = (logAt ?? order.heldAt)?.toISOString() ?? null;
+
     rows.push({
       orderId: order.id,
       obdNumber: order.obdNumber,
@@ -446,15 +476,18 @@ export async function getFloorHold(scope: FloorScope = "All"): Promise<FloorHold
       articleTag: order.querySnapshot?.articleTag ?? null,
       obdDateTime: (order.orderDateTime ?? order.obdEmailDate)?.toISOString() ?? null,
       heldAt: order.heldAt?.toISOString() ?? null,
+      heldSince,
+      heldSinceSource,
     });
   }
 
-  // Recent first by default (design §8). Null heldAt sinks last.
+  // Recent first by default (design §8) — on heldSince, the real hold moment.
+  // Unknown-held rows sink last (the tab bands them separately anyway).
   rows.sort((a, b) => {
-    if (a.heldAt === b.heldAt) return 0;
-    if (a.heldAt === null) return 1;
-    if (b.heldAt === null) return -1;
-    return a.heldAt < b.heldAt ? 1 : -1;
+    if (a.heldSince === b.heldSince) return 0;
+    if (a.heldSince === null) return 1;
+    if (b.heldSince === null) return -1;
+    return a.heldSince < b.heldSince ? 1 : -1;
   });
 
   return rows;

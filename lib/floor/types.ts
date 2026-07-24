@@ -4,6 +4,7 @@
 // their own shapes. No component or DB code here — pure types.
 
 import type { PickingQueueRow, SortRule } from "@/lib/picking/types";
+import type { HeldSinceSource } from "./hold-log";
 
 export type { SortRule };
 
@@ -99,7 +100,14 @@ export interface FloorBoardResult {
 export interface FloorHoldRow extends FloorPartyFields {
   orderId: number;
   obdNumber: string;
+  // `heldAt` is the raw column — the bill's ARRIVAL date, not the moment it was
+  // held (CLAUDE_SUPPORT §4.9). Kept on the row for reference; the Hold tab's
+  // age banding reads `heldSince` instead.
   heldAt: string | null; // ISO
+  // Wall-clock "on hold since", derived on the read side from the hold event's
+  // order_status_logs.createdAt — see lib/floor/hold-log.ts for why.
+  heldSince: string | null; // ISO
+  heldSinceSource: HeldSinceSource;
 }
 
 // Cancelled tab row (design §9) — cancel time + actor come from the

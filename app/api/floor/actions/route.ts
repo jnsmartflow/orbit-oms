@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { FLOOR_HOLD_NOTE } from "@/lib/floor/hold-log";
 
 export const dynamic = "force-dynamic";
 
@@ -117,7 +118,10 @@ export async function POST(req: Request): Promise<NextResponse> {
         // heldAt anchors the hold footprint to the ARRIVAL date, not wall-clock
         // (CLAUDE_SUPPORT §4.9 / §5). Same convention every hold path uses.
         updateData = { dispatchStatus: "hold", heldAt: order.obdEmailDate ?? new Date() };
-        note = "Held from floor";
+        // The note is the ONLY thing that identifies this as a hold event —
+        // toStage deliberately stays the order's unchanged workflowStage. Shared
+        // constant with the reader (getFloorHold) so the two cannot drift.
+        note = FLOOR_HOLD_NOTE;
       } else if (action === "cancel") {
         if (order.workflowStage === "cancelled") {
           failed.push({ orderId, error: "Already cancelled" });

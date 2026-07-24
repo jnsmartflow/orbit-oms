@@ -16,13 +16,18 @@ import { FloorRail } from "./floor-rail";
 import { FloorBoard } from "./floor-board";
 import { FloorSkeleton } from "./floor-skeleton";
 import { AssignBar } from "./assign-bar";
+import { HoldTab } from "./hold-tab";
+import { CancelledTab } from "./cancelled-tab";
 import { toggleOne, toggleAll as toggleAllRows, type FloorSelection } from "@/lib/floor/selection";
 import type { RailReleaseSlot } from "./rail-card";
 import type { DispatchWindow } from "@/components/support/dispatch-slot-picker";
-import type { FloorRailCard, FloorScope, FloorBoardResult, FloorBoardRow, FloorPicker } from "@/lib/floor/types";
+import type { FloorRailCard, FloorScope, FloorBoardResult, FloorBoardRow, FloorPicker, FloorHoldRow, FloorCancelledRow } from "@/lib/floor/types";
 import type { SlotTabKey } from "./floor-tabs";
 
 const SCOPES: FloorScope[] = ["All", "Local", "Upcountry", "IGT"];
+
+// The three top tabs (design §3 — Floor / On hold / Cancelled).
+type TopTab = "floor" | "hold" | "cancelled";
 
 interface BoardData {
   rail: FloorRailCard[];
@@ -48,6 +53,13 @@ export function FloorPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Hold + Cancelled feeds. Fetched alongside the board so the tab counts are
+  // always live regardless of which tab is open (design §5.4 / §3).
+  const [holdRows, setHoldRows] = useState<FloorHoldRow[] | null>(null);
+  const [cancelledRows, setCancelledRows] = useState<FloorCancelledRow[] | null>(null);
+  const [sideError, setSideError] = useState<string | null>(null);
+
+  const [topTab, setTopTab] = useState<TopTab>("floor");
   const [slotTab, setSlotTab] = useState<SlotTabKey>("10:30");
   const [mode, setMode] = useState<"flat" | "route">("flat");
   const [viewMode, setViewMode] = useState<"live" | "history">("live");
@@ -60,19 +72,37 @@ export function FloorPage() {
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setSideError(null);
     try {
       const params = new URLSearchParams({ scope });
       if (viewMode === "history" && histDate) {
         params.set("mode", "history");
         params.set("date", histDate);
       }
-      const res = await fetch(`/api/floor/board?${params.toString()}`, { cache: "no-store" });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = await res.json();
-      setData({ rail: json.rail ?? [], floor: json.floor, pickers: json.pickers ?? [] });
+      // Board + hold + cancelled — three independent GET routes, fetched together
+      // (parallel client fetches, not a prisma $transaction). Hold/Cancelled are
+      // pure open states (no date anchor), so they ignore the history params.
+      const scopeQs = new URLSearchParams({ scope }).toString();
+      const [boardRes, holdRes, cancRes] = await Promise.all([
+        fetch(`/api/floor/board?${params.toString()}`, { cache: "no-store" }),
+        fetch(`/api/floor/hold?${scopeQs}`, { cache: "no-store" }),
+        fetch(`/api/floor/cancelled?${scopeQs}`, { cache: "no-store" }),
+      ]);
+      if (!boardRes.ok) throw new Error(`HTTP ${boardRes.status}`);
+      const board = await boardRes.json();
+      setData({ rail: board.rail ?? [], floor: board.floor, pickers: board.pickers ?? [] });
+
+      // A failed side feed must not blank the board — surface its own error and
+      // leave the tab empty rather than throwing the whole page away.
+      if (holdRes.ok) setHoldRows(((await holdRes.json()).rows ?? []) as FloorHoldRow[]);
+      else { setHoldRows([]); setSideError(`Hold feed HTTP ${holdRes.status}`); }
+      if (cancRes.ok) setCancelledRows(((await cancRes.json()).rows ?? []) as FloorCancelledRow[]);
+      else { setCancelledRows([]); setSideError((prev) => prev ?? `Cancelled feed HTTP ${cancRes.status}`); }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load");
       setData(null);
+      setHoldRows(null);
+      setCancelledRows(null);
     } finally {
       setLoading(false);
     }
@@ -82,10 +112,12 @@ export function FloorPage() {
     void load();
   }, [load]);
 
-  // Selection does NOT survive a tab/scope/date change (design §7.8).
+  // Selection does NOT survive a tab/scope/date change (design §7.8). Includes
+  // the top tab: switching away from Floor drops the floor selection (Hold and
+  // Cancelled own their own selection internally).
   useEffect(() => {
     setSelection(new Set());
-  }, [slotTab, scope, viewMode, histDate]);
+  }, [slotTab, scope, viewMode, histDate, topTab]);
 
   const clearSelection = () => setSelection(new Set());
 
@@ -173,6 +205,28 @@ export function FloorPage() {
     await load();
   };
 
+  // ── Hold tab: bulk release → the floor (reuses the Step-3 release route). ──
+  // Each ticked bill gets the SAME chosen date+window; the route closes it to
+  // pending_picking with dispatchStatus="dispatch", so it leaves Hold and lands
+  // on the floor like any other released bill.
+  const holdRelease = useCallback(
+    async (orderIds: number[], date: string, windowId: number) => {
+      const releases = orderIds.map((orderId) => ({ orderId, dispatchTargetDate: date, dispatchWindowId: windowId }));
+      await postJson("/api/floor/release", { releases });
+      await load();
+    },
+    [load],
+  );
+
+  // ── Cancelled tab: bulk restore → back to the left rail (Step-5 actions). ──
+  const cancelledRestore = useCallback(
+    async (orderIds: number[]) => {
+      await postJson("/api/floor/actions", { action: "restore", orderIds });
+      await load();
+    },
+    [load],
+  );
+
   // ── History navigation ────────────────────────────────────────────────────
   const enterHistory = useCallback(() => {
     setHistDate(addDaysIso(istTodayIso(), -1));
@@ -201,7 +255,30 @@ export function FloorPage() {
     .replace(",", "");
   const timeStr = now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata" });
 
-  const barVisible = viewMode === "live" && selection.size > 0 && data !== null;
+  const barVisible = topTab === "floor" && viewMode === "live" && selection.size > 0 && data !== null;
+
+  const holdCount = holdRows?.length ?? 0;
+  const cancelledCount = cancelledRows?.length ?? 0;
+
+  // Tab pill (Floor / On hold / Cancelled) — active is dark-underlined; the count
+  // badge is dark on the active tab, grey otherwise.
+  function tabPill(key: TopTab, label: string, count: number) {
+    const on = topTab === key;
+    return (
+      <button
+        type="button"
+        onClick={() => setTopTab(key)}
+        className={`flex items-center gap-1.5 border-b-2 py-3 text-[12px] ${
+          on ? "border-gray-900 font-bold text-gray-900" : "border-transparent text-gray-400 hover:text-gray-600"
+        }`}
+      >
+        {label}
+        <span className={`rounded px-1.5 py-px text-[10px] font-bold ${on ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-500"}`}>
+          {count}
+        </span>
+      </button>
+    );
+  }
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-white">
@@ -260,14 +337,11 @@ export function FloorPage() {
         {/* Right main — tabs + board + (bulk bar overlay). */}
         <div className="relative flex min-h-0 flex-col overflow-hidden">
           <div className="flex items-center gap-[18px] border-b border-gray-200 bg-white px-3.5">
-            <span className="flex items-center gap-1.5 border-b-2 border-gray-900 py-3 text-[12px] font-bold text-gray-900">
-              Floor
-              <span className="rounded bg-gray-900 px-1.5 py-px text-[10px] font-bold text-white">{data?.floor.total ?? 0}</span>
-            </span>
-            <span className="border-b-2 border-transparent py-3 text-[12px] text-gray-400">On hold</span>
-            <span className="border-b-2 border-transparent py-3 text-[12px] text-gray-400">Cancelled</span>
+            {tabPill("floor", "Floor", data?.floor.total ?? 0)}
+            {tabPill("hold", "On hold", holdCount)}
+            {tabPill("cancelled", "Cancelled", cancelledCount)}
 
-            {slotTab !== "all" && (
+            {topTab === "floor" && slotTab !== "all" && (
               <span className="ml-auto flex h-[27px] overflow-hidden rounded-[6px] border border-gray-200 bg-gray-50">
                 {(["flat", "route"] as const).map((m) => (
                   <button
@@ -283,28 +357,47 @@ export function FloorPage() {
             )}
           </div>
 
-          {loading && !data ? (
-            <div className="min-h-0 flex-1 overflow-y-auto">
-              <FloorSkeleton variant="floor" />
-            </div>
-          ) : error && !data ? (
-            <div className="px-5 py-14 text-center text-[11.5px] text-gray-400">Couldn&rsquo;t load the floor. {error}</div>
-          ) : data ? (
-            <FloorBoard
-              floor={data.floor}
-              slotTab={slotTab}
-              onSlotTab={setSlotTab}
-              mode={mode}
-              histDate={histDate}
-              onEnterHistory={enterHistory}
-              onExitHistory={exitHistory}
-              onStepHistory={stepHistory}
-              selection={selection}
-              onToggleRow={onToggleRow}
-              onToggleAll={onToggleAll}
-              onMarkUrgent={rowMarkUrgent}
+          {topTab === "floor" ? (
+            loading && !data ? (
+              <div className="min-h-0 flex-1 overflow-y-auto">
+                <FloorSkeleton variant="floor" />
+              </div>
+            ) : error && !data ? (
+              <div className="px-5 py-14 text-center text-[11.5px] text-gray-400">Couldn&rsquo;t load the floor. {error}</div>
+            ) : data ? (
+              <FloorBoard
+                floor={data.floor}
+                slotTab={slotTab}
+                onSlotTab={setSlotTab}
+                mode={mode}
+                histDate={histDate}
+                onEnterHistory={enterHistory}
+                onExitHistory={exitHistory}
+                onStepHistory={stepHistory}
+                selection={selection}
+                onToggleRow={onToggleRow}
+                onToggleAll={onToggleAll}
+                onMarkUrgent={rowMarkUrgent}
+              />
+            ) : null
+          ) : topTab === "hold" ? (
+            <HoldTab
+              rows={holdRows}
+              loading={loading && holdRows === null}
+              error={error ?? sideError}
+              scope={scope}
+              windows={dispatchWindows}
+              onRelease={holdRelease}
             />
-          ) : null}
+          ) : (
+            <CancelledTab
+              rows={cancelledRows}
+              loading={loading && cancelledRows === null}
+              error={error ?? sideError}
+              scope={scope}
+              onRestore={cancelledRestore}
+            />
+          )}
 
           {barVisible && (
             <AssignBar

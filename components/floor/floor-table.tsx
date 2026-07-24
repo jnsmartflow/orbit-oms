@@ -31,6 +31,19 @@ export type FloorTableVariant = "live" | "history" | "upcoming";
 // data issue — deliberately NOT handled here.
 const PROJECT_SMUS = new Set(["Retail Offtake", "Decorative Projects"]);
 
+// Exported so the Hold and Cancelled tabs mark a site bill / a redirect by the
+// SAME rule the floor table uses (design §7.5). Shared predicate, not shared
+// markup — each table owns its own cell, but the rule can never drift.
+export function shipMarkers(row: { smu: string | null; isShipToOverride: boolean }): {
+  isSite: boolean;
+  isRedirect: boolean;
+} {
+  return {
+    isSite: row.smu !== null && PROJECT_SMUS.has(row.smu) && !row.isShipToOverride,
+    isRedirect: row.isShipToOverride,
+  };
+}
+
 const WD = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -91,8 +104,7 @@ function liveTime(row: FloorBoardRow, nowMs: number): string | null {
 // only the EFFECTIVE dealer (override ?? customer). So a redirect shows a violet
 // marker, not the "Original → Redirect" pair. The site marker is exact.
 function shipInfo(row: FloorBoardRow) {
-  const isSite = row.smu !== null && PROJECT_SMUS.has(row.smu) && !row.isShipToOverride;
-  return { isSite, isRedirect: row.isShipToOverride };
+  return shipMarkers(row);
 }
 
 const HEAD_TH = "h-[31px] border-b border-[#ebebeb] px-3.5 text-left text-[10px] font-medium uppercase tracking-[0.05em] text-[#9ca3af]";

@@ -688,3 +688,36 @@ html, body { overscroll-behavior: none; }
     page-break-inside: avoid;
   }
 }
+
+/* ═════════════════════════════════════════════
+   Floor Control — Hold report print isolation
+   (challan block above already sets `body * { visibility: hidden }` in print;
+   here we reveal only the hold sheet's print area. NO named @page — the sheet
+   is plain A4 portrait 10mm, which is exactly the default top-level `@page`
+   at the head of this file. Per CORE §3, no @page is nested inside @media
+   print. id-scoped so challan / tint-report / trip-sheet prints are untouched.
+   The sheet lives inside a fixed modal on screen; in print it is lifted to the
+   page top-left, matching the other print areas above.)
+   ═════════════════════════════════════════════ */
+@media print {
+  #floor-hold-print-area,
+  #floor-hold-print-area * {
+    visibility: visible !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  #floor-hold-print-area {
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+  }
+
+  /* Never split a band's header row-group across a page. */
+  #floor-hold-print-area tr { page-break-inside: avoid; }
+}
