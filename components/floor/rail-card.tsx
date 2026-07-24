@@ -49,6 +49,7 @@ export function RailCard({
   onHold,
   onCancel,
   onOpenDetail,
+  highlighted = false,
 }: {
   card: RailCardData;
   windows: DispatchWindow[];
@@ -56,6 +57,8 @@ export function RailCard({
   onHold: (orderId: number) => void;
   onCancel: (orderId: number) => void;
   onOpenDetail: (orderId: number) => void;
+  // Search match — a subtle teal accent. The card is NEVER hidden by search.
+  highlighted?: boolean;
 }) {
   const releasable = card.workflowStage === "pending_support";
   const dropletReady = card.tint?.stage === "ready";
@@ -71,7 +74,9 @@ export function RailCard({
           onOpenDetail(card.orderId);
         }
       }}
-      className="mb-2 cursor-pointer rounded-lg border border-gray-200 bg-white px-3 py-[11px] transition-colors hover:border-gray-300"
+      className={`mb-2 cursor-pointer rounded-lg border bg-white px-3 py-[11px] transition-colors ${
+        highlighted ? "border-teal-400 ring-2 ring-teal-400/25" : "border-gray-200 hover:border-gray-300"
+      }`}
     >
       {/* OBD · time · icons (fixed order: age → ★ → ⚡ → droplet) */}
       <div className="flex items-center gap-2">

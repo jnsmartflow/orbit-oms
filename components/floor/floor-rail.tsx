@@ -23,6 +23,7 @@ export function FloorRail({
   onCancel,
   onShowAll,
   onOpenDetail,
+  highlightIds,
 }: {
   cards: FloorRailCard[] | null;
   loading: boolean;
@@ -35,6 +36,9 @@ export function FloorRail({
   onCancel: (orderId: number) => void;
   onShowAll: () => void;
   onOpenDetail: (orderId: number) => void;
+  // Search HIGHLIGHTS matching rail cards but NEVER hides any (design §6.1) —
+  // the rail is the undecided pile and must stay complete. Empty when no search.
+  highlightIds: Set<number>;
 }) {
   const count = cards?.length ?? 0;
   // Scoped-and-empty vs all-clear vs before-first-import: if the floor is
@@ -63,7 +67,16 @@ export function FloorRail({
         ) : (
           <div className="p-2.5">
             {cards!.map((c) => (
-              <RailCard key={c.orderId} card={c} windows={windows} onRelease={onRelease} onHold={onHold} onCancel={onCancel} onOpenDetail={onOpenDetail} />
+              <RailCard
+                key={c.orderId}
+                card={c}
+                windows={windows}
+                onRelease={onRelease}
+                onHold={onHold}
+                onCancel={onCancel}
+                onOpenDetail={onOpenDetail}
+                highlighted={highlightIds.has(c.orderId)}
+              />
             ))}
           </div>
         )}

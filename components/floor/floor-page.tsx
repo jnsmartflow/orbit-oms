@@ -12,7 +12,6 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { toast } from "sonner";
-import { Search, Filter } from "lucide-react";
 import { FloorRail } from "./floor-rail";
 import { FloorBoard } from "./floor-board";
 import { FloorSkeleton } from "./floor-skeleton";
@@ -20,7 +19,11 @@ import { AssignBar } from "./assign-bar";
 import { HoldTab } from "./hold-tab";
 import { CancelledTab } from "./cancelled-tab";
 import { DetailPanel, type DetailActions } from "./detail-panel";
-import { toggleOne, toggleAll as toggleAllRows, type FloorSelection } from "@/lib/floor/selection";
+import { SearchBox, SearchHits } from "./search-box";
+import { FilterSheet } from "./filter-sheet";
+import { toggleOne, toggleAll as toggleAllRows, isSelectable, type FloorSelection } from "@/lib/floor/selection";
+import { parseSearch, applySearch, searchReport, type Searchable } from "@/lib/floor/search";
+import { applyFloorFilters, applyFlagFilters, EMPTY_FILTERS, type FloorFilters } from "@/lib/floor/filter";
 import type { RailReleaseSlot } from "./rail-card";
 import type { DispatchWindow } from "@/components/support/dispatch-slot-picker";
 import type { FloorRailCard, FloorScope, FloorBoardResult, FloorBoardRow, FloorPicker, FloorHoldRow, FloorCancelledRow, FloorDetailSource } from "@/lib/floor/types";
@@ -98,6 +101,11 @@ export function FloorPage() {
   const [holdRows, setHoldRows] = useState<FloorHoldRow[] | null>(null);
   const [cancelledRows, setCancelledRows] = useState<FloorCancelledRow[] | null>(null);
   const [sideError, setSideError] = useState<string | null>(null);
+
+  // Search (committed on Enter) + filters. Both are client-side over already-
+  // loaded data (design §5.2/§5.3) — no refetch, no new route.
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filters, setFilters] = useState<FloorFilters>(EMPTY_FILTERS);
 
   const [topTab, setTopTab] = useState<TopTab>("floor");
   const [slotTab, setSlotTab] = useState<SlotTabKey>("10:30");
@@ -274,6 +282,63 @@ export function FloorPage() {
     [load],
   );
 
+  // ── Search + filter (client-side, design §5.2/§5.3) ─────────────────────────
+  const parsed = useMemo(() => parseSearch(searchQuery), [searchQuery]);
+
+  // Floor: search + Status/Flags filter. Rows re-derived and windows/total
+  // recomputed so the slot tabs + Floor count reflect exactly what is shown.
+  const filteredFloor = useMemo<FloorBoardResult | null>(() => {
+    if (!data) return null;
+    const fRows = applyFloorFilters(applySearch(data.floor.rows, parsed), filters);
+    const due = fRows.filter((r) => r.zone !== "upcoming");
+    const windows = data.floor.windows.map((w) => ({ ...w, count: due.filter((r) => r.windowId === w.id).length }));
+    return { ...data.floor, rows: fRows, windows, total: due.length };
+  }, [data, parsed, filters]);
+
+  // Hold / Cancelled: search + Flags only (Status is a floor-only concept).
+  const filteredHold = useMemo<FloorHoldRow[] | null>(
+    () => (holdRows ? applyFlagFilters(applySearch(holdRows, parsed), filters) : null),
+    [holdRows, parsed, filters],
+  );
+  const filteredCancelled = useMemo<FloorCancelledRow[] | null>(
+    () => (cancelledRows ? applyFlagFilters(applySearch(cancelledRows, parsed), filters) : null),
+    [cancelledRows, parsed, filters],
+  );
+
+  // The rail is NEVER filtered (design §6.1) — it is the undecided pile and must
+  // stay complete. Search only HIGHLIGHTS matching rail cards.
+  const railHighlightIds = useMemo<Set<number>>(() => {
+    if (parsed.mode === "none" || !data) return new Set<number>();
+    return new Set(applySearch(data.rail, parsed).map((c) => c.orderId));
+  }, [parsed, data]);
+
+  // The open tab's pool + report for the hits strip (chips / summary).
+  const dueFloorRows = useMemo(() => (data?.floor.rows ?? []).filter((r) => r.zone !== "upcoming"), [data]);
+  const activePool: Searchable[] = topTab === "floor" ? dueFloorRows : topTab === "hold" ? holdRows ?? [] : cancelledRows ?? [];
+  const tabSearchReport = useMemo(() => searchReport(activePool, parsed), [activePool, parsed]);
+
+  const commitSearch = useCallback(
+    (raw: string) => {
+      setSearchQuery(raw);
+      const p = parseSearch(raw);
+      // Auto-tick (design §5.2) — ONLY on the Floor tab, and ONLY selectable rows
+      // (Waiting / With picker, Step 5). A pasted number matching a Done or
+      // Needs-check row is still found + shown, but never ticked.
+      if (p.mode === "numbers" && topTab === "floor" && data) {
+        const due = data.floor.rows.filter((r) => r.zone !== "upcoming");
+        const ids = applySearch(due, p).filter(isSelectable).map((r) => r.orderId);
+        setSelection(new Set(ids));
+      } else {
+        setSelection(new Set());
+      }
+    },
+    [topTab, data],
+  );
+  const clearSearch = useCallback(() => {
+    setSearchQuery("");
+    setSelection(new Set());
+  }, []);
+
   // ── Detail panel (design §10) — open state + single-bill action handlers ──
   // Additive wiring only: the panel is mounted at the end; every write REUSES an
   // existing route through reportWrite (no swallowed response, no new route).
@@ -284,19 +349,21 @@ export function FloorPage() {
 
   // The list Prev/Next walks — whichever source the panel was opened from
   // (design §10.5). Rebuilt on every board reload so it tracks the live order.
+  // Prev/Next walks the VISIBLE (searched/filtered) list of the source surface,
+  // except the rail which is never filtered (design §6.1).
   const detailList = useMemo<number[]>(() => {
     if (!detail) return [];
     switch (detail.source) {
       case "rail":
         return (data?.rail ?? []).map((c) => c.orderId);
       case "floor":
-        return (data?.floor.rows ?? []).filter((r) => r.zone !== "upcoming").map((r) => r.orderId);
+        return (filteredFloor?.rows ?? []).filter((r) => r.zone !== "upcoming").map((r) => r.orderId);
       case "hold":
-        return (holdRows ?? []).map((r) => r.orderId);
+        return (filteredHold ?? []).map((r) => r.orderId);
       case "cancelled":
-        return (cancelledRows ?? []).map((r) => r.orderId);
+        return (filteredCancelled ?? []).map((r) => r.orderId);
     }
-  }, [detail, data, holdRows, cancelledRows]);
+  }, [detail, data, filteredFloor, filteredHold, filteredCancelled]);
 
   const detailActions: DetailActions = useMemo(
     () => ({
@@ -379,8 +446,11 @@ export function FloorPage() {
 
   const barVisible = topTab === "floor" && viewMode === "live" && selection.size > 0 && data !== null;
 
-  const holdCount = holdRows?.length ?? 0;
-  const cancelledCount = cancelledRows?.length ?? 0;
+  // Tab counts reflect the searched/filtered set of each surface (they equal the
+  // full totals when no search/filter is active).
+  const floorCount = filteredFloor?.total ?? 0;
+  const holdCount = filteredHold?.length ?? 0;
+  const cancelledCount = filteredCancelled?.length ?? 0;
 
   // Tab pill (Floor / On hold / Cancelled) — active is dark-underlined; the count
   // badge is dark on the active tab, grey otherwise.
@@ -430,16 +500,13 @@ export function FloorPage() {
         </div>
 
         <div className="ml-auto flex items-center gap-2">
-          <div className="flex h-[30px] w-[260px] items-center gap-[7px] rounded-[7px] border border-gray-200 bg-white px-[9px] text-[11.5px] text-gray-400">
-            <Search size={13} className="flex-shrink-0 text-gray-400" />
-            <span>Search name, or paste numbers</span>
-          </div>
-          <button type="button" className="flex h-[30px] items-center gap-1.5 rounded-[7px] border border-gray-200 bg-white px-[11px] text-[11.5px] text-gray-500">
-            <Filter size={13} />
-            Filter
-          </button>
+          <SearchBox committed={searchQuery} onSearch={commitSearch} onClear={clearSearch} />
+          <FilterSheet filters={filters} onChange={setFilters} showStatus={topTab === "floor"} />
         </div>
       </div>
+
+      {/* Search results strip (design §5.2) — describes the OPEN tab's matches. */}
+      <SearchHits parsed={parsed} report={tabSearchReport} onClear={clearSearch} />
 
       {/* ── Body — left rail (344px) + right main. ───────────────────────── */}
       <div className="grid min-h-0 flex-1 overflow-hidden" style={{ gridTemplateColumns: "344px 1fr" }}>
@@ -455,12 +522,13 @@ export function FloorPage() {
           onCancel={railCancel}
           onShowAll={() => setScope("All")}
           onOpenDetail={(id) => openDetail(id, "rail")}
+          highlightIds={railHighlightIds}
         />
 
         {/* Right main — tabs + board + (bulk bar overlay). */}
         <div className="relative flex min-h-0 flex-col overflow-hidden">
           <div className="flex items-center gap-[18px] border-b border-gray-200 bg-white px-3.5">
-            {tabPill("floor", "Floor", data?.floor.total ?? 0)}
+            {tabPill("floor", "Floor", floorCount)}
             {tabPill("hold", "On hold", holdCount)}
             {tabPill("cancelled", "Cancelled", cancelledCount)}
 
@@ -487,9 +555,9 @@ export function FloorPage() {
               </div>
             ) : error && !data ? (
               <div className="px-5 py-14 text-center text-[11.5px] text-gray-400">Couldn&rsquo;t load the floor. {error}</div>
-            ) : data ? (
+            ) : filteredFloor ? (
               <FloorBoard
-                floor={data.floor}
+                floor={filteredFloor}
                 slotTab={slotTab}
                 onSlotTab={setSlotTab}
                 mode={mode}
@@ -506,8 +574,8 @@ export function FloorPage() {
             ) : null
           ) : topTab === "hold" ? (
             <HoldTab
-              rows={holdRows}
-              loading={loading && holdRows === null}
+              rows={filteredHold}
+              loading={loading && filteredHold === null}
               error={error ?? sideError}
               scope={scope}
               windows={dispatchWindows}
@@ -516,8 +584,8 @@ export function FloorPage() {
             />
           ) : (
             <CancelledTab
-              rows={cancelledRows}
-              loading={loading && cancelledRows === null}
+              rows={filteredCancelled}
+              loading={loading && filteredCancelled === null}
               error={error ?? sideError}
               scope={scope}
               onRestore={cancelledRestore}
