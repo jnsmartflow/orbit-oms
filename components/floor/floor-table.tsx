@@ -252,7 +252,7 @@ export function FloorTable({
                 </td>
               )}
               {interactive && (
-                <td className={`${TD_NARROW} text-[10.5px] text-[#9ca3af] tabular-nums`}>{st === "waiting" ? i + 1 : ""}</td>
+                <td className={`${TD_NARROW} text-[10.5px] text-[#9ca3af] tabular-nums`}>{i + 1}</td>
               )}
               <td className={TD}>
                 <span className="font-mono text-[11.5px] font-medium text-[#111827]">{row.obdNumber}</span>

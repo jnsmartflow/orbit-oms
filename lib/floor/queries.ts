@@ -18,6 +18,7 @@ import { prisma } from "@/lib/prisma";
 import { getHideExclusion } from "@/lib/hide/visibility";
 import { getISTDayRange } from "@/lib/dates";
 import { sortPickingQueue } from "@/lib/picking/sort";
+import { FLOOR_SPINE } from "@/lib/floor/sort";
 import {
   STAGE_LADDER,
   PICKING_OPEN_STAGES,
@@ -434,8 +435,9 @@ export async function getFloorBoard(
     });
   }
 
-  // Spine sort (reused, never copied). Cast back — sort returns the same objects.
-  rows = sortPickingQueue(rows) as FloorBoardRow[];
+  // Spine sort (reused, never copied), MINUS byAssigned via FLOOR_SPINE so
+  // Assigned/Done rows hold their place. Cast back — sort returns the same objects.
+  rows = sortPickingQueue(rows, FLOOR_SPINE) as FloorBoardRow[];
 
   const dueRows = rows.filter((r) => r.zone !== "upcoming");
   const windows = activeWindows.map((w) => ({

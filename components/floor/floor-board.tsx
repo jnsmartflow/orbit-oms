@@ -11,6 +11,7 @@
 
 import { useState, type ReactNode } from "react";
 import { sortPickingQueue } from "@/lib/picking/sort";
+import { FLOOR_SPINE } from "@/lib/floor/sort";
 import { FloorTabs, type SlotTabKey } from "./floor-tabs";
 import { FloorTable } from "./floor-table";
 import { SlotBand } from "./slot-band";
@@ -44,7 +45,7 @@ function asStr(v: string | Date | null): string | null {
 function hhmm(ms: number): string {
   return new Date(ms).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata" });
 }
-const sort = (rows: FloorBoardRow[]) => sortPickingQueue(rows) as FloorBoardRow[];
+const sort = (rows: FloorBoardRow[]) => sortPickingQueue(rows, FLOOR_SPINE) as FloorBoardRow[];
 
 export function FloorBoard({
   floor,
