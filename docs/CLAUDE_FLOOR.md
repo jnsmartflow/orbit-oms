@@ -1,5 +1,5 @@
 # CLAUDE_FLOOR.md — Floor Control
-# v1.0 · Schema v27.12 · July 2026
+# v1.1 · Schema v27.12 · July 2026 · updated 2026-07-25
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -21,7 +21,7 @@ Floor Control **reuses Support and Picking as a CALLER**. It did NOT fork or mod
 
 | This file OWNS | This file does NOT own — cross-reference only, never restate |
 |---|---|
-| the left/right split (§2) | assign / unassign + the sort spine → **`CLAUDE_PICKING.md §3/§4`** |
+| the left/right split (§2) · Floor's `FLOOR_SPINE` sort LIST (`lib/floor/sort.ts`, §3) | assign / unassign + the sort rule OBJECTS + `sortPickingQueue` → **`CLAUDE_PICKING.md §3/§4`** |
 | the 4 read feeds (§3) | ship-to override + `dispatch-slot-picker` → **`CLAUDE_SUPPORT.md §4.18/§4.10`** |
 | floor routes: hold / cancel / release / change-slot (§4) | the dispatch engine (`evaluateDispatchSlot`) → **`CLAUDE_CORE.md §7.4`** |
 | the detail panel (§4.6) | |
@@ -70,7 +70,7 @@ Plain English: everything still open whatever day it was due, plus everything th
 
 ⚠ **Floor's carry-over is its OWN scope — NOT `lib/picking/queue.ts`'s WHERE.** Picking's carry-over deliberately excludes `pick_done`/`pick_checked` (a documented "workaround, not a fix"). Floor's arm 1 keeps anything not-yet-checked. Do not "align" the two.
 
-Per row: `zone` (`due` | `upcoming`, from `dispatchTargetDate` vs today) and `ageDays`. Rows are spine-sorted by **`lib/picking/sort.ts`** (reused, never copied — the spine is owned by `CLAUDE_PICKING.md §3`).
+Per row: `zone` (`due` | `upcoming`, from `dispatchTargetDate` vs today) and `ageDays`. Rows are sorted with Floor's OWN **`FLOOR_SPINE`** (`lib/floor/sort.ts`) = the picking spine **minus `byAssigned`**, so Assigned/Done rows HOLD their position instead of sinking on assign and rising on done (matches the Picking desktop board — `CLAUDE_PICKING.md §9`). ⚠ **Ownership boundary:** the rule OBJECTS (`byWindow`/`byDeliveryType`/`byKeyCustomer`/`byPriority`/`byFifo`) and `sortPickingQueue()` are IMPORTED from `lib/picking/sort.ts` (never copied — that file stays owned by `CLAUDE_PICKING.md §3`); only the Floor rule LIST is Floor's own. `FLOOR_SPINE` is applied in the TWO places that sort and must stay identical or the board flickers on refetch — the server sort (`getFloorBoard`, `lib/floor/queries.ts`) and the client re-sort helper (`components/floor/floor-board.tsx`), both importing the one constant. Shipped commit `661e4e61`.
 
 ---
 
@@ -150,14 +150,15 @@ This is a **completed one-off**, not a runbook. (It is also the source of the `d
 ## 8. Deferred / not built [DEFERRED]
 
 - **v2 slot suggestion (Step 10).** `lib/floor/suggest.ts` is intact but gated behind `RAIL_SUGGESTIONS_ENABLED = false` in `lib/floor/queries.ts` — flip that one constant to re-enable. Every rail card renders `[ pick slot ] [ Hold ] [ ✕ ]`; the operator always picks the slot. Two things must change first: (1) the staleness check must compare the **full moment (date + time)** vs now, not minutes-since-midnight (the bug that caused removal — §10); (2) the suggestion must carry date AND time. Deferred until v1 has been used.
-- **§7-gap follow-ups:** `Waiting` pills show no elapsed time (needs `releasedAt` on the floor payload); the ship-to original→redirect name pair is missing on the floor table (rail already has it); assigned rows sink to the bottom (decide whether `byAssigned` is right for this screen); rail button reads lowercase "pick slot" vs mockup "Set slot"; assign bar reads "Change slot" beside a "pick slot" button; no picker search (matches customer/route/OBD only); detail-panel header pill shows no elapsed time (not a live surface).
+- **`byAssigned` on Floor — RESOLVED + SHIPPED (commit `661e4e61`, this session).** Formerly an open question ("decide whether `byAssigned` is right for this screen"). Decided: it is deliberately **excluded** from Floor's sort — Floor sorts with `FLOOR_SPINE` (the picking spine **minus `byAssigned`**, `lib/floor/sort.ts`), so Assigned/Done rows hold their place instead of sinking/rising on each status change, and the `#` column now numbers **every** row, not just Waiting. Full detail: §3.
+- **§7-gap follow-ups:** `Waiting` pills show no elapsed time (needs `releasedAt` on the floor payload); the ship-to original→redirect name pair is missing on the floor table (rail already has it); rail button reads lowercase "pick slot" vs mockup "Set slot"; assign bar reads "Change slot" beside a "pick slot" button; no picker search (matches customer/route/OBD only); detail-panel header pill shows no elapsed time (not a live surface).
 - **Out of scope for v1 (deliberate):** gift lines (no identifier exists anywhere in the codebase — no heuristic invented); free-text ship-to (needs a schema decision); a per-row Slot column on the All view (the band header carries it); the stats line / "pickers free" tile / floor-idle alarm (removed per design §7.13).
 
 ---
 
 ## 9. Retirement of the old tabs [NEXT]
 
-Retiring `/support` and the Picking **desktop** board is **INTENDED but unplanned** — nothing is switched off, no trigger is set. Draft §8 #6 requires a **retirement DEPENDENCY LIST first**: exactly what Floor leans on before anything is turned off — the Picking assign/unassign endpoints, the sort spine, the Support dispatch-slot-picker, `formatArticleTag`, and the `use-picking-marker` hook — so the retirement is deliberate, not a surprise breakage. → **ROADMAP** (dependency list + a concrete trigger).
+Retiring `/support` and the Picking **desktop** board is **INTENDED but unplanned** — nothing is switched off, no trigger is set. Draft §8 #6 requires a **retirement DEPENDENCY LIST first**: exactly what Floor leans on before anything is turned off — the Picking assign/unassign endpoints, the sort rule objects + `sortPickingQueue` in `lib/picking/sort.ts` (imported by Floor's own `FLOOR_SPINE`), the Support dispatch-slot-picker, `formatArticleTag`, and the `use-picking-marker` hook — so the retirement is deliberate, not a surprise breakage. → **ROADMAP** (dependency list + a concrete trigger).
 
 ---
 
@@ -197,4 +198,4 @@ Retiring `/support` and the Picking **desktop** board is **INTENDED but unplanne
 
 ---
 
-*CLAUDE_FLOOR.md v1.0 · Schema v27.12 · OrbitOMS*
+*CLAUDE_FLOOR.md v1.1 · Schema v27.12 · OrbitOMS*

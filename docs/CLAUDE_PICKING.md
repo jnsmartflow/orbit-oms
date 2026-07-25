@@ -1,5 +1,5 @@
 # CLAUDE_PICKING.md — Picking Module
-# v1.5 · Schema v27.12 · July 2026 · updated 2026-07-24
+# v1.6 · Schema v27.12 · July 2026 · updated 2026-07-25
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -10,8 +10,11 @@
 > superseded — they stay;** only the DESKTOP board is in scope for eventual
 > retirement, which is INTENDED but NOT actioned and has no plan yet (a dependency
 > list is required first — ROADMAP). Floor REUSES this module **as a caller**:
-> assign/unassign (§4) and the sort spine (§3) stay OWNED HERE — Floor
-> cross-references them; do not move or duplicate them into `CLAUDE_FLOOR.md`.
+> assign/unassign (§4) and the sort **rule objects** + `sortPickingQueue` (§3) stay
+> OWNED HERE — Floor cross-references them and composes its OWN `FLOOR_SPINE` (the
+> picking spine **minus `byAssigned`**, `lib/floor/sort.ts`) by IMPORTING these
+> objects; do not copy the rule objects or `PICKING_SPINE` into `CLAUDE_FLOOR.md`.
+> (Floor's exclusion of `byAssigned` is the one deliberate divergence — `CLAUDE_FLOOR.md §3`.)
 
 ---
 
@@ -712,4 +715,4 @@ on becoming visible); skips overlapping requests; **fails silently** (no toast/U
 
 ---
 
-*CLAUDE_PICKING.md v1.5 · Picking Module · July 2026*
+*CLAUDE_PICKING.md v1.6 · Picking Module · July 2026*
