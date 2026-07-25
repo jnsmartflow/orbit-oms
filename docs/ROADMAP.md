@@ -1,5 +1,5 @@
 # ROADMAP.md — OrbitOMS Planned Work
-# Updated 2026-07-22 · Lives in: orbit-oms/docs/ (manual attach — NOT auto-loaded)
+# Updated 2026-07-25 · Lives in: orbit-oms/docs/ (manual attach — NOT auto-loaded)
 
 Attach this file when planning the next phase of any module. Live "what's next" list, separated from canonical docs.
 
@@ -381,7 +381,7 @@ New OPEN items surfaced while consolidating the 17 drafts (Jul 8–16) into cano
 - **v1 gaps (P2 — from the build draft §7; carried across individually):**
   - `Waiting` pills show no elapsed time — needs a `releasedAt` on the floor payload.
   - Ship-to original→redirect name pair missing on the floor table — needs the original name on the floor feed (the rail already has it).
-  - Assigned rows sink to the bottom of the board — decide whether `byAssigned` is right for this screen.
+  - Assigned rows sink to the bottom of the board — **✅ RESOLVED + SHIPPED (`661e4e61`, 2026-07-25):** `byAssigned` excluded from Floor's sort (Floor now uses `FLOOR_SPINE` = spine minus `byAssigned`, `lib/floor/sort.ts`), so Assigned/Done rows hold their place. The residual new/urgent-bill slide above a picker's row is parked separately → **"Floor Control — carry-over + stable positions (opened 2026-07-25)"** below.
   - Rail button reads lowercase "pick slot"; mockup says "Set slot" — copy fix without forking the Support picker.
   - Assign bar reads "Change slot" beside a "pick slot" button — one label, one action.
   - No picker search — search matches customer / route / OBD only.
@@ -478,6 +478,83 @@ From the flat-SKU-catalog migration + the Direction-A mobile shell batch. Canoni
   three later commits (`8f606a88`, `a227fb13`, `b91b7381`) repointed every operational reader. A
   future reader taking it at face value would conclude the migration never happened. Fix the line
   next time `schema.prisma` is edited — not worth its own commit.
+
+---
+
+## Floor Control — carry-over + stable positions (opened 2026-07-25)
+
+Two designed-but-unbuilt items from the Floor sort work (commit `661e4e61` — the session that
+excluded `byAssigned` from Floor's sort, `CLAUDE_FLOOR.md §3`). Parked with enough spec that a future
+session builds without re-deciding anything.
+
+**Shared landmine — respect on BOTH.** Any `orders` write MUST ride the existing single
+`orders.update` on that path — never a second update. The live-sync marker keys on
+`MAX(orders.updatedAt)`; a second write fires a false "changed" on every open board
+(`CLAUDE_FLOOR.md §4` / `CLAUDE_CORE.md §3` / `CLAUDE_PICKING.md §10`).
+
+### P1 — Floor carry-over (LOCAL only) — DESIGNED, NOT BUILT
+
+**The problem.** A local bill left unpicked/unchecked at day's end stays filed under yesterday's dead
+dispatch slot (e.g. 16:00 Thursday). Come the new day that slot's vehicle is gone, so the bill should
+go on the FIRST van out that morning — not wait for the same slot again. Today nothing moves it; it
+sits in the stale slot with only a 1d age badge.
+
+**The decision (LOCKED this session).**
+- **LOCAL bills only.** A local bill still unchecked at the nightly roll moves to the FIRST dispatch
+  slot of the new day.
+- **UP-COUNTRY is explicitly OUT — do not build a roll for it.** Up-country always dispatches at a
+  fixed 18:00 (engine rule `R1_UPC_NEXT_1800`), so rolling yesterday's 18:00 to today's 18:00 changes
+  nothing on screen. Reason recorded so a future session does not re-add it: there is ALSO no
+  per-destination departure timetable in OrbitOMS to roll to — only geography, never a schedule.
+- **Preserve the ORIGINAL dispatch slot before overwriting it**, so history shows the truth ("was
+  16:00, Thu"). Today only `originalSlotId` exists and that is the ARRIVAL slot, not the dispatch
+  slot — confirmed absent.
+- **One `order_status_logs` row per roll** (the same log that already records hold/cancel).
+- **The 1d / 2d age badge already works** (`floor-table.tsx` `ageDays`) — no change needed there.
+
+**What must be added (from discovery, this session).**
+- Two new columns on `orders`:
+  - `originalDispatchTargetDate  DateTime? @db.Date`
+  - `originalDispatchWindowId    Int?`
+  — to preserve the first-assigned dispatch slot.
+- A nightly cron: new route `/api/cron/floor-carryover`, one line in `vercel.json`. Runs once per day
+  (Vercel Hobby = once daily, UTC only, fires anywhere within the specified hour — `CLAUDE_CORE.md §4`).
+  Midnight IST ≈ 18:30 UTC; exact fire time drifts within that hour — acceptable, nobody picks at
+  12:30am.
+- The roll writes `dispatchTargetDate` + `dispatchWindowId` to the new day's first slot, copies the
+  old values into `originalDispatch*` the FIRST time only (never overwrite an already-set original),
+  and writes the log row — all folded into the ONE `orders.update` (shared landmine above).
+
+**Build order (separate sessions).**
+- **Session B** — add the two columns via Supabase SQL Editor, `npx prisma generate`, backfill
+  `originalDispatch*` for bills already on the floor. No UI change.
+- **Session C** — build the cron route + `vercel.json` line; test by MANUAL trigger BEFORE letting it
+  run on a schedule.
+- **Session D** — watch the real board for a few mornings: confirm leftover local bills land in the
+  first slot, the original slot survived, history reads right.
+
+### P2 — Floor frozen row number — DEFERRED (answer the open question from real use first)
+
+**The issue.** After this session's sort fix, rows no longer jump on assign/done. But a row already in
+a picker's hands can still be pushed DOWN a number when a NEW or MARK-URGENT bill sorts in above it
+(seen live: MAHALAXMI marked urgent pushed Swami Colour Co from #6 to #7 while Sunil was picking it).
+The desk operator walks the list top to bottom, so work re-appearing above where he has already
+scanned is the concern.
+
+**Why deferred (not broken).** The constant shuffle — on every assign and every done — is fixed and
+shipped (`661e4e61`). What remains is a rare, deliberate, operator-initiated slide. Not worth building
+blind; real floor use will show whether it matters, and will answer the open question below.
+
+**The fix if built.** Freeze a row's position the moment a picker is assigned: stamp its current
+number into a new nullable column (e.g. `orders.floorSequence Int?`), held across assign/done/check,
+cleared on unassign/hold/cancel. New and urgent bills then shuffle only among WAITING rows, filling
+leftover positions — never above a picker's row. Confirmed this needs a NEW column: `sequenceOrder`
+(tint queue) and `pick_assignments.sequence` (only exists after assign) cannot be reused. Same single-
+`orders.update` landmine applies.
+
+**Open question to answer FIRST (from real use).** When a bill is DONE and CHECKED, does it KEEP its
+frozen number, or RELEASE it back so waiting bills can use that position? Cannot be answered from a
+screenshot — needs a few days watching a real end-of-day board. Answer this before building.
 
 ---
 
