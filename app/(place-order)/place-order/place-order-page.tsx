@@ -142,12 +142,15 @@ export default function PlaceOrderPage(): React.JSX.Element {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCustomer?.code]);
 
-  // < 1024px viewport → redirect to mobile /order. Runs on mount + resize.
+  // < 1024px viewport → redirect to mobile /po. Runs on mount + resize.
+  // Repointed from /order 2026-07-27: /order is being retired with NO redirect
+  // left behind, so this must not send anyone there. /po is the going-forward
+  // mobile PO page and is public (middleware.ts), so no login prompt appears.
   useEffect(() => {
     if (typeof window === "undefined") return;
     const mql = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX - 1}px)`);
     function check(matches: boolean): void {
-      if (matches) window.location.href = "/order";
+      if (matches) window.location.href = "/po";
     }
     check(mql.matches);
     function onChange(e: MediaQueryListEvent): void { check(e.matches); }
