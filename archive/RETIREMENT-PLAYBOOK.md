@@ -151,6 +151,40 @@ Short and honest. All of these actually happened.
   still works from the other, but the loss was found in the *final* sweep, not
   planned for. **Ask what the screen is the only entry point to.**
 
+### Added after the /order retirement (2026-07-27)
+
+- **The search trap is WIDER than the entry above.** It is not only terms that
+  *start* with `/`. A pattern **containing quote-then-slash** (`"/`) is rewritten too,
+  before `rg.exe` or `git.exe` ever see it — MSYS-native `grep` is unaffected. Real
+  case: `rg '"/order"'` reported **NO MATCH** in `middleware.ts`, while `grep` found
+  line 14 and `od -c` showed the bytes plainly. Dodge it with a char-class:
+  `["][/]order["]`. Two more traps in the same family, both hit this session:
+  `[/]order` has **no word boundary** and silently matches `/orders` — cross-check
+  with `grep '/order\b'`; and **never exclude a lookalike token** — filtering out
+  `mo_order` to reduce noise hid a real hit. **Run every address sweep two ways and
+  reconcile the line numbers, not the raw output.**
+
+- **AN IMPORT IS NOT A CALL.** A session grepped for a module name, found `import`
+  lines in two route files, and wrote "these **ARE** called" into canon — overturning
+  a statement that had been right. The calls sat **four lines below**, commented out,
+  headed `// DISABLED`. The wrong claim shipped to `main` and survived two more
+  sessions before anyone opened the call site. **Grep finds the name; only the call
+  site tells you whether it runs.**
+
+- **Stale CODE COMMENTS mislead exactly like stale docs — and no docs sweep sees
+  them.** `lib/workflow-stages.ts` claimed "zero production order has ever reached
+  `'dispatched'`" — a claim ROADMAP had corrected **three days earlier**. A discovery
+  report cited the comment and repeated it as fact, then drew a conclusion from it.
+  **When a code comment states a fact about live data, verify it against the data.**
+
+- **The successor-parity gate earned its keep.** Retiring `/order` looked trivial —
+  one file, zero importers, a clean type-check. The parity gate caught that `/order`
+  offered a **Hold** dispatch option `/po` does not (`Normal|Hold|Urgent` vs
+  `Normal|Urgent|Call`). No build, type-check or link sweep would ever surface that.
+  The owner accepted the loss knowingly, which is exactly the point: **a gate that has
+  only ever passed is not evidence it is unnecessary — it is evidence it has not yet
+  met the case it exists for.**
+
 ---
 
 ## 5. Archive layout

@@ -1,5 +1,5 @@
 # CLAUDE_PLACE_ORDER.md — Place Order Module
-# v1.6 · Schema v27.12 · July 2026 · updated 2026-07-27
+# v1.7 · Schema v27.12 · July 2026 · updated 2026-07-27
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -14,7 +14,7 @@ Routes:
 
 DB `pageKey` stays `place_order`.
 
-Primary users: admin, billing_operator, tint_manager. Restricted-view users: support, dispatcher (`/place-order` is their only authorised page until real dispatch/support screens go live).
+Primary users: admin, billing_operator, tint_manager. Restricted-view users: support, dispatcher — `/place-order` is their only authorised page. ⚠ This used to say "until real dispatch/support screens go live"; **that premise is dead** — the Support board was retired 2026-07-27 (`archive/2026-07-support/`). The grants are unchanged; only the stated reason was wrong.
 
 ---
 
@@ -747,7 +747,7 @@ retirement story** — why it went, the accepted capability loss, why the middle
 and the KEEP list of shared modules that must never be archived with it. Do not restate any of
 that here.
 
-`/po`'s own spec is **§25**. Its visual patterns are `CLAUDE_UI.md §47`.
+`/po`'s own spec is **§25**. Its visual patterns are `CLAUDE_UI.md §55` — **not §47**, which is now a retirement stub; the live material moved to §55 on 2026-07-27.
 
 ---
 
@@ -1058,4 +1058,4 @@ Manifest `display_override: ["standalone"]`; `html,body { overscroll-behavior: n
 
 ---
 
-*Place Order v1.5 · Schema v27.12 · OrbitOMS*
+*Place Order v1.7 · Schema v27.12 · OrbitOMS*

@@ -1,5 +1,5 @@
 # CLAUDE_CORE.md — OrbitOMS Core
-# v85 · Schema v27.12 · July 2026 · updated 2026-07-27 · Lives in: orbit-oms/docs/
+# v86 · Schema v27.12 · July 2026 · updated 2026-07-27 · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_UI.md
 
 ---
@@ -128,7 +128,7 @@ Never introduce new libraries without being asked.
 
 **Trip Report secondary-role grants:** 4 existing users were added to `logistics` as a **secondary** role via `user_roles` (primary roles kept, unaffected): Ajay Vansiya (dispatcher), Dhanraj Shah (dispatcher), Priya Chaudhari (support), Operations User (operations). The `operations` role itself is NOT granted `trip_report` — only these 5 named users (the 4 above + Praveen).
 
-**Dispatcher / support gated permissions:** these roles have `role_permissions.canView = true` only for `pageKey = 'place_order'`. All other pageKeys are `canView = false` until the real dispatcher/support screens go live.
+**Dispatcher / support gated permissions:** these roles have `role_permissions.canView = true` only for `pageKey = 'place_order'`; all other pageKeys are `canView = false`. ⚠ This used to read "until the real dispatcher/support screens go live" — **that premise is dead**: the Support board was retired 2026-07-27 (`archive/2026-07-support/`), so no such screen is coming. The grants are unchanged; only the stated reason was wrong.
 
 **Multi-role users (`user_roles` table):**
 
@@ -166,7 +166,7 @@ Primary role drives login redirect and href overrides. Additional rows add nav i
 | `settings_hide` | admin only (v27.6). In `PageKey` union + `ALL_PAGE_KEYS` (admin auto-ALL_TRUE), **NOT** in `PAGE_NAV_MAP` (that feeds operational sidebars; would duplicate the admin entry). |
 | `trip_report` | logistics (view only) + the 4 named secondary-role users above (§5). `operations` role NOT granted. → `CLAUDE_TRIP_REPORT.md §1`. |
 | `mail_orders` | billing_operator (view + edit), operations (view + edit — **granted 2026-07-10**, one additive DB row, no code deploy), operation_manager (view + edit), tint_manager (**view only**, previously undocumented). Zero rows in `prisma/seed.ts` — DB-only, wiped on reseed. → `CLAUDE_MAIL_ORDERS.md §22`. |
-| `picking` | floor_supervisor (view + edit), picker (**view only**), operations (view + edit); admin via bypass. **Seeded 2026-07-20** (`prisma/seed.ts:110-112`) — resolves the prior "no picking rows / seed-fragile operations grant" landmine (§13). ⚠ **Granted in SEED; live-prod DB NOT yet SELECT-verified this cycle** — do not assert prod access works until a live check confirms it (the prior cycle's failure was the mirror: a live grant with no seed row). → `CLAUDE_PICKING.md §1/§7`. |
+| `picking` | floor_supervisor (view + edit), picker (**view only**), operations (view + edit); admin via bypass. **Seeded 2026-07-20** (`prisma/seed.ts:110-112`) — resolves the prior "no picking rows / seed-fragile operations grant" landmine (§13). ✅ **RESOLVED 2026-07-27 — live-prod SELECT-verified, and seed and live AGREE**: `picker` view=true edit=**false**; `floor_supervisor` view=true edit=true; `operations` view=true edit=true. The "granted in seed, prod unverified" caveat that stood from 2026-07-20 is retired. → `CLAUDE_PICKING.md §1/§7`. |
 | `floor` | admin + operations (view + edit); admin via bypass. New pageKey (2026-07-24) for Floor Control (`/floor`) — in `PageKey` union, `ALL_PAGE_KEYS`, and `PAGE_NAV_MAP` (→ `/floor`). **Present in BOTH `prisma/seed.ts` AND live `role_permissions` (SQL 2026-07-23) — verified both sides**, unlike the `picking` grant above. `dispatch planner` / `telecaller` (design-named) deferred — no matching slug / does not exist. → `CLAUDE_FLOOR.md §1`. |
 
 **Sidebar:** Layout files pass `session.user.role as RoleSidebarRole` (not hardcoded). For **operational / role-based** sidebars, nav items come from `buildNavItems()` in `lib/permissions.ts` only — no manual appending. ⚠️ The **admin panel** sidebar is the separate `components/admin/admin-sidebar.tsx` (`NAV_SECTIONS` array: OVERVIEW / MASTER DATA / PEOPLE / OPERATIONS / PERSONAL / SETTINGS) — `buildNavItems()`/`PAGE_NAV_MAP` do NOT feed it. New admin items (e.g. Settings → Hide) are added there.
@@ -970,4 +970,4 @@ Engineering note: a parallel session owns `scripts/_*` scratch files (sampling/r
 
 ---
 
-*CORE v85 · Schema v27.12 · OrbitOMS*
+*CORE v86 · Schema v27.12 · OrbitOMS*

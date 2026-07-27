@@ -91,7 +91,8 @@ const CROSS_DEPOTS = ["Dahisar", "Ahmedabad", "Rajkot", "Pune"] as const;
 const NOTE_PRESETS = ["Pls share DPL", "Pls send stickers"] as const;
 
 // Email recipient — orders go to the AkzoNobel depot inbox, which forwards to the
-// parser inbox (surat.order@outlook.com). No longer identical to /order (frozen).
+// parser inbox (surat.order@outlook.com). Diverged from /order before that page
+// was retired 2026-07-27 — /order sent to the parser inbox directly.
 const ORDER_TO = "surat.depot@akzonobel.com";
 
 // Sort pack entries KG-last, then by ML magnitude — the SAME comparator the

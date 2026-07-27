@@ -9,6 +9,7 @@ do it in, the checks that stop you breaking the app, and the mistakes already ma
 | Module | Retired | Superseded by | Folder |
 |---|---|---|---|
 | Support board — screens *and* API routes | 2026-07-27 | Floor Control (`/floor`) | `2026-07-support/` |
+| `/order` — public no-login mobile order page | 2026-07-27 | `/po` (also public) | `2026-07-order/` |
 
 **How this folder works.** Everything here was moved with `git mv`, so each file
 keeps its full history — `git log --follow` on any archived file still shows every

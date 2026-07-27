@@ -358,8 +358,12 @@ New OPEN items surfaced while consolidating the 17 drafts (Jul 8–16) into cano
   (committed to `scripts/`) hitting a cron-auth'd route. (`CLAUDE_NOTIFICATIONS.md §7`)
 - **NO AUTOMATIC DRAIN `pick_checked` → `dispatched` (P1 — workflow hole).** Orders DO reach
   `dispatched` (the old "nothing writes to it" claim was WRONG — corrected 2026-07-24), but there is
-  no automatic transition. Verified 2026-07-24: **1,051** at `dispatched` (662 auto-slotted) but it
-  stops at **21 Jul** while `pick_checked` keeps growing (**195**, newest 24 Jul). The 238-row move
+  no automatic transition. Verified 2026-07-24: **1,051** at `dispatched` (662 auto-slotted), stopping
+  at **21 Jul** while `pick_checked` kept growing (**195**, newest 24 Jul).
+  ⚠ **Recount 2026-07-27: 1,546 at `dispatched`** — roughly **500 rows moved in three days**, and the
+  "stops at 21 Jul" observation above no longer holds. **How they moved is not understood**: either the
+  one-time manual sweep was repeated, or a drain path exists that canon does not know about. Establishing
+  which is the first task when this item is picked up — not investigated 2026-07-27. The 238-row move
   was a ONE-TIME manual sweep (Floor build, 23 Jul), NOT a code path. Forced the desktop step-5b
   carry-over workaround. Needs a real design session. (`CLAUDE_PICKING.md §9`, `CLAUDE_FLOOR.md §7`)
 - **Verify "New pick assigned" push on a real device.** Code is live; device-verification pending until
