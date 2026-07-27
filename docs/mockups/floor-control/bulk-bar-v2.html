@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Floor Control — Bulk action bar v2</title>
+<style>
+  :root{
+    --teal:#0d9488; --teal-700:#0f766e;
+    --g900:#111827; --g700:#374151; --g600:#4b5563; --g500:#6b7280;
+    --g400:#9ca3af; --g300:#d1d5db; --g200:#e5e7eb; --g100:#f3f4f6; --g50:#f9fafb;
+    --red:#dc2626; --red-50:#fef2f2; --red-200:#fecaca;
+    --amber-50:#fffbeb; --amber-200:#fde68a; --amber-700:#b45309;
+    --green-50:#f0fdf4; --green-200:#bbf7d0; --green-700:#15803d;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif;
+    background:#eef0f3; color:var(--g900); padding:32px 24px 80px;
+    -webkit-font-smoothing:antialiased;
+  }
+  .page{max-width:1440px;margin:0 auto}
+  .doc-h{font-size:15px;font-weight:600;margin-bottom:4px}
+  .doc-sub{font-size:12px;color:var(--g500);margin-bottom:28px}
+
+  .label{font-size:11px;font-weight:600;color:var(--g500);text-transform:uppercase;
+    letter-spacing:.06em;margin:34px 0 8px}
+  .note{font-size:11.5px;color:var(--g500);margin:0 0 10px;line-height:1.5}
+
+  .frame{background:#fff;border:1px solid var(--g200);border-radius:10px;overflow:hidden;
+    box-shadow:0 1px 2px rgba(0,0,0,.04)}
+
+  /* ---------- table stub ---------- */
+  table{width:100%;border-collapse:collapse}
+  thead th{
+    font-size:10px;font-weight:500;color:var(--g400);text-transform:uppercase;
+    letter-spacing:.08em;text-align:left;padding:11px 12px;
+    border-bottom:1px solid var(--g200);background:#fff;
+  }
+  tbody td{padding:11px 12px;border-bottom:1px solid var(--g100);font-size:11px;
+    color:var(--g600);vertical-align:middle}
+  tbody tr:hover{background:var(--g50)}
+  tbody tr.sel{background:#f0fdfa}
+  tbody tr.sel:hover{background:#e6fbf8}
+  .obd{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;
+    color:var(--g900);font-weight:600;letter-spacing:.2px}
+  .date{font-size:10px;color:var(--g400);margin-top:2px}
+  .cust{font-size:12px;color:var(--g900);font-weight:600}
+  .num{text-align:right;font-variant-numeric:tabular-nums}
+  .idx{color:var(--g400);font-size:10.5px;width:28px;text-align:right}
+
+  .cb{width:15px;height:15px;border:1.5px solid var(--g300);border-radius:4px;
+    display:inline-block;vertical-align:middle;background:#fff;cursor:pointer}
+  .cb.on{background:var(--teal);border-color:var(--teal);position:relative}
+  .cb.on:after{content:"";position:absolute;left:4.5px;top:1.5px;width:4px;height:8px;
+    border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg)}
+
+  /* ---------- the new urgent bolt ---------- */
+  .bolt{width:22px;height:22px;border-radius:5px;border:1px solid transparent;
+    display:inline-flex;align-items:center;justify-content:center;cursor:pointer;
+    background:transparent}
+  .bolt svg{width:12px;height:12px}
+  .bolt svg path{fill:var(--g300)}
+  .bolt:hover{background:var(--g100)}
+  .bolt:hover svg path{fill:var(--g500)}
+  .bolt.on{background:var(--red-50);border-color:var(--red-200)}
+  .bolt.on svg path{fill:var(--red)}
+
+  .pill{display:inline-block;padding:2.5px 8px;border-radius:5px;font-size:10.5px;
+    font-weight:600;border:1px solid}
+  .p-wait{background:var(--g50);border-color:var(--g200);color:var(--g500)}
+  .p-done{background:var(--green-50);border-color:var(--green-200);color:var(--green-700)}
+  .star{color:#f59e0b;font-size:10px}
+
+  /* ---------- BULK BAR ---------- */
+  .bar{
+    display:flex;align-items:center;gap:0;
+    height:60px;padding:0 18px;background:#fff;
+    border-top:1px solid var(--g200);
+    box-shadow:0 -6px 18px -12px rgba(0,0,0,.25);
+  }
+  .bar-left{display:flex;align-items:baseline;gap:7px;min-width:0}
+  .sel-n{font-size:13px;font-weight:600;color:var(--g900);white-space:nowrap}
+  .sel-meta{font-size:11px;color:var(--g400);white-space:nowrap;overflow:hidden;
+    text-overflow:ellipsis}
+  .spacer{flex:1}
+
+  .bar-right{display:flex;align-items:center;gap:14px}
+
+  .btn{height:34px;padding:0 13px;border-radius:7px;border:1px solid var(--g300);
+    background:#fff;font-size:12px;color:var(--g700);font-weight:500;cursor:pointer;
+    display:inline-flex;align-items:center;gap:7px;font-family:inherit;white-space:nowrap}
+  .btn:hover{background:var(--g50);border-color:var(--g400)}
+  .btn svg{width:13px;height:13px;stroke:var(--g500);fill:none;stroke-width:1.6}
+
+  .divider{width:1px;height:22px;background:var(--g200)}
+
+  /* joined assign unit */
+  .assign-unit{display:flex;align-items:stretch;height:34px}
+  .assign-unit select{
+    height:34px;min-width:168px;padding:0 30px 0 12px;
+    border:1px solid var(--g300);border-right:none;
+    border-radius:7px 0 0 7px;background:#fff;font-size:12px;color:var(--g700);
+    font-family:inherit;cursor:pointer;appearance:none;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'><path d='M2 4l3 3 3-3' stroke='%239ca3af' stroke-width='1.4' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+    background-repeat:no-repeat;background-position:right 11px center;
+  }
+  .assign-unit select:focus{outline:none;border-color:var(--teal);
+    box-shadow:0 0 0 2px rgba(13,148,136,.10)}
+  .assign-btn{
+    height:34px;padding:0 20px;border:1px solid var(--teal);background:var(--teal);
+    color:#fff;font-size:12px;font-weight:600;border-radius:0 7px 7px 0;cursor:pointer;
+    font-family:inherit;white-space:nowrap}
+  .assign-btn:hover{background:var(--teal-700);border-color:var(--teal-700)}
+  .assign-btn:disabled{background:#99e0d8;border-color:#99e0d8;cursor:not-allowed}
+
+  .clear{background:none;border:none;font-size:12px;color:var(--g500);cursor:pointer;
+    font-family:inherit;padding:6px 2px}
+  .clear:hover{color:var(--g900);text-decoration:underline}
+  .kbd{display:inline-block;padding:1px 5px;border:1px solid var(--g200);border-bottom-width:2px;
+    border-radius:4px;font-size:9.5px;color:var(--g400);font-family:inherit;margin-left:5px}
+
+  /* ---------- slot popover ---------- */
+  .pop-wrap{position:relative}
+  .pop{
+    position:absolute;bottom:46px;right:0;width:290px;background:#fff;
+    border:1px solid var(--g200);border-radius:10px;
+    box-shadow:0 12px 32px -8px rgba(0,0,0,.22);padding:14px;
+  }
+  .pop-h{font-size:12px;font-weight:600;color:var(--g900);margin-bottom:3px}
+  .pop-sub{font-size:11px;color:var(--g400);margin-bottom:12px}
+  .pop-row{display:flex;gap:7px;margin-bottom:12px}
+  .slot-opt{flex:1;height:34px;border:1px solid var(--g300);border-radius:7px;background:#fff;
+    font-size:11.5px;color:var(--g700);cursor:pointer;font-family:inherit;font-weight:500}
+  .slot-opt:hover{background:var(--g50)}
+  .slot-opt.on{border-color:var(--teal);background:#f0fdfa;color:var(--teal-700);font-weight:600}
+  .date-row{display:flex;gap:7px;align-items:center;margin-bottom:13px}
+  .date-row label{font-size:11px;color:var(--g500);width:38px}
+  .date-in{flex:1;height:32px;border:1px solid var(--g300);border-radius:7px;padding:0 10px;
+    font-size:11.5px;color:var(--g700);font-family:inherit}
+  .warn{display:flex;gap:7px;background:var(--amber-50);border:1px solid var(--amber-200);
+    border-radius:7px;padding:8px 10px;font-size:11px;color:var(--amber-700);
+    line-height:1.45;margin-bottom:12px}
+  .pop-foot{display:flex;justify-content:flex-end;gap:8px}
+  .pop-apply{height:32px;padding:0 16px;background:var(--teal);border:1px solid var(--teal);
+    color:#fff;border-radius:7px;font-size:11.5px;font-weight:600;cursor:pointer;font-family:inherit}
+  .pop-cancel{height:32px;padding:0 12px;background:#fff;border:1px solid var(--g300);
+    color:var(--g600);border-radius:7px;font-size:11.5px;cursor:pointer;font-family:inherit}
+
+  .callout{background:#fff;border:1px solid var(--g200);border-left:3px solid var(--teal);
+    border-radius:8px;padding:14px 16px;font-size:12px;color:var(--g600);line-height:1.65;
+    margin-top:30px}
+  .callout b{color:var(--g900)}
+  .callout ul{margin:8px 0 0 16px}
+  .callout li{margin-bottom:5px}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="doc-h">Floor Control — bulk action bar v2</div>
+  <div class="doc-sub">Assign is the primary job. Change slot is secondary. Urgent moved to a per-row bolt. Hold moved to the detail panel.</div>
+
+  <!-- ============ STATE 1 ============ -->
+  <div class="label">State 1 — 3 rows selected (matches the live screenshot)</div>
+  <p class="note">Read left to right: what you picked → the one correction you might make → the job you came to do.
+     Only one teal element on the surface: <b>Assign</b>.</p>
+  <div class="frame">
+    <table>
+      <thead>
+        <tr>
+          <th style="width:36px"></th>
+          <th style="width:30px"></th>
+          <th style="width:28px"></th>
+          <th style="width:150px">OBD</th>
+          <th>Ship to</th>
+          <th style="width:110px">Route</th>
+          <th style="width:60px" class="num">Vol</th>
+          <th style="width:130px">Article</th>
+          <th style="width:110px">Picker</th>
+          <th style="width:120px">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><span class="cb"></span></td><td class="idx">1</td>
+          <td><span class="bolt" title="Mark urgent"><svg viewBox="0 0 24 24"><path d="M13 2L4.5 13.5H11l-1 8.5 8.5-11.5H12l1-8.5z"/></svg></span></td>
+          <td><div class="obd">9108461855</div><div class="date">25 Jul 10:38</div></td>
+          <td><span class="cust">Mohan Colour Co</span> <span class="star">★</span></td>
+          <td>Adajan</td><td class="num">350</td><td>18 D · 1 T</td><td>Ramesh K.</td>
+          <td><span class="pill p-done">Done 11:35</span></td>
+        </tr>
+        <tr>
+          <td><span class="cb"></span></td><td class="idx">2</td>
+          <td><span class="bolt on" title="Urgent — click to clear"><svg viewBox="0 0 24 24"><path d="M13 2L4.5 13.5H11l-1 8.5 8.5-11.5H12l1-8.5z"/></svg></span></td>
+          <td><div class="obd">9108470087</div><div class="date">25 Jul 11:06</div></td>
+          <td><span class="cust">Mohan Colour Co</span> <span class="star">★</span></td>
+          <td>Adajan</td><td class="num">41</td><td>2 C</td><td>Ramesh K.</td>
+          <td><span class="pill p-done">Done 11:35</span></td>
+        </tr>
+        <tr class="sel">
+          <td><span class="cb on"></span></td><td class="idx">3</td>
+          <td><span class="bolt" title="Mark urgent"><svg viewBox="0 0 24 24"><path d="M13 2L4.5 13.5H11l-1 8.5 8.5-11.5H12l1-8.5z"/></svg></span></td>
+          <td><div class="obd">9108454362</div><div class="date">25 Jul 11:32</div></td>
+          <td><span class="cust">Arihant Paints</span> <span class="star">★</span></td>
+          <td>Ghod Dod</td><td class="num">12</td><td>2 C</td><td>—</td>
+          <td><span class="pill p-wait">Waiting</span></td>
+        </tr>
+        <tr class="sel">
+          <td><span class="cb on"></span></td><td class="idx">4</td>
+          <td><span class="bolt" title="Mark urgent"><svg viewBox="0 0 24 24"><path d="M13 2L4.5 13.5H11l-1 8.5 8.5-11.5H12l1-8.5z"/></svg></span></td>
+          <td><div class="obd">9108497024</div><div class="date">25 Jul 11:46</div></td>
+          <td><span class="cust">Ambika Enterprise</span> <span class="star">★</span></td>
+          <td>Ghod Dod</td><td class="num">297</td><td>8 D · 11 C · 8 T</td><td>—</td>
+          <td><span class="pill p-wait">Waiting</span></td>
+        </tr>
+        <tr class="sel">
+          <td><span class="cb on"></span></td><td class="idx">5</td>
+          <td><span class="bolt" title="Mark urgent"><svg viewBox="0 0 24 24"><path d="M13 2L4.5 13.5H11l-1 8.5 8.5-11.5H12l1-8.5z"/></svg></span></td>
+          <td><div class="obd">9108452671</div><div class="date">24 Jul 15:54</div></td>
+          <td><span class="cust">Ambika Ocean</span></td>
+          <td>Adajan</td><td class="num">6</td><td>1 C</td><td>—</td>
+          <td><span class="pill p-wait">Waiting</span></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="bar">
+      <div class="bar-left">
+        <span class="sel-n">3 selected</span>
+        <span class="sel-meta">315 L · 2 routes</span>
+      </div>
+      <div class="spacer"></div>
+      <div class="bar-right">
+        <button class="btn">
+          <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg>
+          Change slot
+        </button>
+        <div class="divider"></div>
+        <div class="assign-unit">
+          <select><option>Choose picker</option><option>Ramesh K.</option><option>Sunil P.</option><option>Deepak V.</option></select>
+          <button class="assign-btn" disabled>Assign</button>
+        </div>
+        <button class="clear">Clear <span class="kbd">Esc</span></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ STATE 2 ============ -->
+  <div class="label">State 2 — picker chosen, Assign now live</div>
+  <p class="note">Assign stays faded until a picker is picked, so the button itself teaches the order of operations.</p>
+  <div class="frame">
+    <div class="bar">
+      <div class="bar-left">
+        <span class="sel-n">3 selected</span>
+        <span class="sel-meta">315 L · 2 routes</span>
+      </div>
+      <div class="spacer"></div>
+      <div class="bar-right">
+        <button class="btn">
+          <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg>
+          Change slot
+        </button>
+        <div class="divider"></div>
+        <div class="assign-unit">
+          <select><option selected>Ramesh K.</option><option>Sunil P.</option><option>Deepak V.</option></select>
+          <button class="assign-btn">Assign</button>
+        </div>
+        <button class="clear">Clear <span class="kbd">Esc</span></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ STATE 3 ============ -->
+  <div class="label">State 3 — 1 selected</div>
+  <p class="note">With a single row the summary shows the customer name instead of a route count — confirms you ticked the right bill without looking back up.</p>
+  <div class="frame">
+    <div class="bar">
+      <div class="bar-left">
+        <span class="sel-n">1 selected</span>
+        <span class="sel-meta">Ambika Ocean · 6 L</span>
+      </div>
+      <div class="spacer"></div>
+      <div class="bar-right">
+        <button class="btn">
+          <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg>
+          Change slot
+        </button>
+        <div class="divider"></div>
+        <div class="assign-unit">
+          <select><option>Choose picker</option><option>Ramesh K.</option><option>Sunil P.</option></select>
+          <button class="assign-btn" disabled>Assign</button>
+        </div>
+        <button class="clear">Clear <span class="kbd">Esc</span></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ STATE 4 ============ -->
+  <div class="label">State 4 — 10 selected, some already have a picker</div>
+  <p class="note">When some of the ticked rows are already assigned, the button says <b>Reassign</b> and the summary says how many will change hands. Nothing else moves.</p>
+  <div class="frame">
+    <div class="bar">
+      <div class="bar-left">
+        <span class="sel-n">10 selected</span>
+        <span class="sel-meta">1,204 L · 4 routes · 6 already assigned</span>
+      </div>
+      <div class="spacer"></div>
+      <div class="bar-right">
+        <button class="btn">
+          <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg>
+          Change slot
+        </button>
+        <div class="divider"></div>
+        <div class="assign-unit">
+          <select><option selected>Sunil P.</option><option>Ramesh K.</option><option>Deepak V.</option></select>
+          <button class="assign-btn">Reassign all 10</button>
+        </div>
+        <button class="clear">Clear <span class="kbd">Esc</span></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ STATE 5 ============ -->
+  <div class="label">State 5 — Change slot popover open</div>
+  <p class="note">One click on Change slot. Date and time in one small card, right above the button. Nothing leaves the screen, the table stays visible behind it.</p>
+  <div class="frame" style="padding-top:150px">
+    <div class="bar">
+      <div class="bar-left">
+        <span class="sel-n">3 selected</span>
+        <span class="sel-meta">315 L · 2 routes</span>
+      </div>
+      <div class="spacer"></div>
+      <div class="bar-right">
+        <div class="pop-wrap">
+          <button class="btn" style="border-color:var(--g400);background:var(--g50)">
+            <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg>
+            Change slot
+          </button>
+          <div class="pop">
+            <div class="pop-h">Move 3 bills to</div>
+            <div class="pop-sub">315 L · Arihant, Ambika Enterprise, Ambika Ocean</div>
+            <div class="date-row">
+              <label>Date</label>
+              <input class="date-in" type="text" value="25 Jul 2026">
+            </div>
+            <div class="pop-row">
+              <button class="slot-opt">10:30</button>
+              <button class="slot-opt on">12:30</button>
+              <button class="slot-opt">16:00</button>
+              <button class="slot-opt">18:00</button>
+            </div>
+            <div class="warn">
+              <span>These 3 bills are not all on the same slot right now. Applying will put all 3 on 12:30.</span>
+            </div>
+            <div class="pop-foot">
+              <button class="pop-cancel">Cancel</button>
+              <button class="pop-apply">Move to 12:30</button>
+            </div>
+          </div>
+        </div>
+        <div class="divider"></div>
+        <div class="assign-unit">
+          <select><option>Choose picker</option><option>Ramesh K.</option></select>
+          <button class="assign-btn" disabled>Assign</button>
+        </div>
+        <button class="clear">Clear <span class="kbd">Esc</span></button>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout">
+    <b>What changed vs today</b>
+    <ul>
+      <li><b>8 controls → 4.</b> Mark urgent, Hold, and the split "Change slot + pick slot" pair are gone from the bar.</li>
+      <li><b>Slot is now one control.</b> One button, one popover holding date + time together. Today it's a label sitting next to a separate button, which reads like two different things.</li>
+      <li><b>The assign group is one joined unit.</b> Dropdown and button touch, so the eye reads it as a single machine rather than two loose parts.</li>
+      <li><b>Urgent is a bolt on every row</b> — grey when normal, red when urgent, one click to toggle. Faster than tick-then-scroll-to-bar, and it shows you the current state without selecting anything.</li>
+      <li><b>Hold moves to the detail panel.</b> Holding is a one-bill decision with a reason behind it, not a sweep.</li>
+      <li><b>Assign is the only teal thing on the surface</b> — per the one-teal rule.</li>
+    </ul>
+  </div>
+
+</div>
+</body>
+</html>

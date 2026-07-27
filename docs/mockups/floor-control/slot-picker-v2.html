@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Slot picker — quiet redesign</title>
+<style>
+  :root{
+    --teal:#0d9488;--teal-700:#0f766e;--teal-50:#f0fdfa;--teal-200:#99f6e4;
+    --g900:#111827;--g800:#1f2937;--g700:#374151;--g600:#4b5563;--g500:#6b7280;
+    --g400:#9ca3af;--g300:#d1d5db;--g200:#e5e7eb;--g100:#f3f4f6;--g50:#f9fafb;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif;
+    background:#eef0f3;color:var(--g900);padding:32px 24px 90px;-webkit-font-smoothing:antialiased}
+  .page{max-width:1180px;margin:0 auto}
+  .doc-h{font-size:15px;font-weight:600;margin-bottom:4px}
+  .doc-sub{font-size:12px;color:var(--g500);margin-bottom:28px}
+  .label{font-size:11px;font-weight:600;color:var(--g500);text-transform:uppercase;
+    letter-spacing:.06em;margin:0 0 8px}
+  .note{font-size:11.5px;color:var(--g500);margin:0 0 12px;line-height:1.55;min-height:52px}
+  .grid{display:flex;flex-wrap:wrap;gap:26px;align-items:flex-start}
+  .cell{width:340px}
+
+  .card{background:#fff;border:1px solid var(--g200);border-radius:11px;
+    box-shadow:0 10px 28px -14px rgba(0,0,0,.30);padding:13px}
+
+  .cap{font-size:10.5px;color:var(--g400);margin-bottom:8px;letter-spacing:.01em}
+  .foot{display:flex;justify-content:flex-end;gap:7px;margin-top:13px;
+    border-top:1px solid var(--g100);padding-top:11px}
+  .apply{height:31px;padding:0 14px;background:var(--teal);border:1px solid var(--teal);color:#fff;
+    border-radius:7px;font-size:11.5px;font-weight:600;cursor:pointer;font-family:inherit}
+  .apply:hover{background:var(--teal-700)}
+  .cancel{height:31px;padding:0 11px;background:#fff;border:1px solid var(--g300);color:var(--g600);
+    border-radius:7px;font-size:11.5px;cursor:pointer;font-family:inherit}
+
+  /* ============ A — HAIRLINE ============ */
+  .a-days{display:flex;gap:0;border:1px solid var(--g200);border-radius:8px;overflow:hidden}
+  .a-day{flex:1;padding:7px 0 8px;text-align:center;cursor:pointer;background:#fff;
+    border-right:1px solid var(--g100);transition:background .12s}
+  .a-day:last-child{border-right:none}
+  .a-day:hover{background:var(--g50)}
+  .a-dow{font-size:9px;color:var(--g400);letter-spacing:.06em;text-transform:uppercase;
+    display:block;margin-bottom:2px}
+  .a-num{font-size:14.5px;font-weight:600;color:var(--g800);display:block;line-height:1.1;
+    font-variant-numeric:tabular-nums}
+  .a-day.on{background:var(--g900)}
+  .a-day.on .a-dow{color:rgba(255,255,255,.55)}
+  .a-day.on .a-num{color:#fff}
+  .a-cal{width:34px;flex:none;display:flex;align-items:center;justify-content:center;
+    border-left:1px solid var(--g200);background:var(--g50)}
+  .a-cal svg{width:13px;height:13px;stroke:var(--g400);fill:none;stroke-width:1.6}
+  .a-cal:hover svg{stroke:var(--g700)}
+
+  .a-win{display:flex;gap:6px;margin-top:10px}
+  .a-w{flex:1;height:31px;border:1px solid var(--g200);border-radius:7px;background:#fff;
+    font-size:11.5px;color:var(--g600);font-family:inherit;cursor:pointer;
+    font-variant-numeric:tabular-nums;transition:all .12s}
+  .a-w:hover{border-color:var(--g400);color:var(--g900)}
+  .a-w.on{background:var(--g900);border-color:var(--g900);color:#fff;font-weight:600}
+
+  /* ============ B — FILL-LESS ============ */
+  .b-days{display:flex;gap:2px}
+  .b-day{flex:1;padding:6px 0 9px;text-align:center;cursor:pointer;border-radius:7px;
+    border-bottom:2px solid transparent}
+  .b-day:hover{background:var(--g50)}
+  .b-dow{font-size:9px;color:var(--g400);letter-spacing:.06em;text-transform:uppercase;
+    display:block;margin-bottom:2px}
+  .b-num{font-size:14.5px;font-weight:600;color:var(--g500);display:block;line-height:1.1;
+    font-variant-numeric:tabular-nums}
+  .b-day.on{border-bottom-color:var(--teal)}
+  .b-day.on .b-num{color:var(--g900)}
+  .b-day.on .b-dow{color:var(--g600)}
+  .b-cal{width:30px;flex:none;display:flex;align-items:center;justify-content:center;cursor:pointer;
+    border-radius:7px}
+  .b-cal:hover{background:var(--g50)}
+  .b-cal svg{width:13px;height:13px;stroke:var(--g400);fill:none;stroke-width:1.6}
+
+  .b-sep{height:1px;background:var(--g100);margin:9px 0}
+  .b-win{display:flex;gap:14px;padding:0 3px}
+  .b-w{background:none;border:none;font-size:12px;color:var(--g500);cursor:pointer;
+    font-family:inherit;padding:5px 0;border-bottom:2px solid transparent;
+    font-variant-numeric:tabular-nums}
+  .b-w:hover{color:var(--g900)}
+  .b-w.on{color:var(--g900);font-weight:600;border-bottom-color:var(--teal)}
+
+  /* ============ C — SEGMENTED ============ */
+  .c-track{display:flex;gap:3px;background:var(--g100);border-radius:9px;padding:3px}
+  .c-day{flex:1;padding:6px 0 7px;text-align:center;cursor:pointer;border-radius:6px}
+  .c-day:hover{background:rgba(255,255,255,.6)}
+  .c-dow{font-size:9px;color:var(--g500);letter-spacing:.06em;text-transform:uppercase;
+    display:block;margin-bottom:1px}
+  .c-num{font-size:14px;font-weight:600;color:var(--g700);display:block;line-height:1.15;
+    font-variant-numeric:tabular-nums}
+  .c-day.on{background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.10)}
+  .c-day.on .c-num{color:var(--g900)}
+  .c-cal{width:30px;flex:none;display:flex;align-items:center;justify-content:center;
+    cursor:pointer;border-radius:6px}
+  .c-cal svg{width:13px;height:13px;stroke:var(--g500);fill:none;stroke-width:1.6}
+
+  .c-win{display:flex;gap:3px;background:var(--g100);border-radius:9px;padding:3px;margin-top:8px}
+  .c-w{flex:1;height:28px;border:none;background:none;border-radius:6px;font-size:11.5px;
+    color:var(--g600);cursor:pointer;font-family:inherit;font-variant-numeric:tabular-nums}
+  .c-w:hover{background:rgba(255,255,255,.6)}
+  .c-w.on{background:#fff;color:var(--g900);font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,.10)}
+
+
+  /* ---- context strip ---- */
+  .ctx{background:#fff;border:1px solid var(--g200);border-radius:10px;padding:16px;margin-top:12px}
+  .ctx-h{font-size:11.5px;font-weight:600;color:var(--g700);margin-bottom:3px}
+  .ctx-n{font-size:11px;color:var(--g500);line-height:1.5;margin-bottom:11px}
+  .btn{height:34px;padding:0 13px;border-radius:7px;border:1px solid var(--g300);background:#fff;
+    font-size:12px;color:var(--g700);font-weight:500;cursor:pointer;font-family:inherit;
+    display:inline-flex;align-items:center;gap:7px;white-space:nowrap}
+  .btn svg{width:13px;height:13px;stroke:var(--g500);fill:none;stroke-width:1.6}
+  .chip{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 9px;
+    border:1px solid var(--g300);border-radius:7px;background:#fff;font-size:11.5px;
+    color:var(--g700);font-weight:500;font-family:inherit;cursor:pointer}
+  .chip svg{width:12px;height:12px;stroke:var(--g400);fill:none;stroke-width:1.7}
+
+  .callout{background:#fff;border:1px solid var(--g200);border-left:3px solid var(--teal);
+    border-radius:8px;padding:14px 16px;font-size:12px;color:var(--g600);line-height:1.65;margin-top:32px}
+  .callout b{color:var(--g900)}
+  .callout ul{margin:8px 0 0 16px}.callout li{margin-bottom:6px}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="doc-h">Slot picker — quiet redesign</div>
+  <div class="doc-sub">Same layout, same taps. Less paint. One component reused in all four places that set a slot.</div>
+
+  <div class="grid">
+
+    <!-- A -->
+    <div class="cell">
+      <div class="label">A · Hairline</div>
+      <p class="note">Days sit in one bordered strip with thin dividers, like a ruler. Nothing is filled except the day you chose, and that fill is near-black, not teal. Teal is saved for the confirm button — the only thing that writes.</p>
+      <div class="card">
+        <div class="cap">Move 3 bills to</div>
+        <div class="a-days">
+          <div class="a-day on"><span class="a-dow">Sat</span><span class="a-num">25</span></div>
+          <div class="a-day"><span class="a-dow">Sun</span><span class="a-num">26</span></div>
+          <div class="a-day"><span class="a-dow">Mon</span><span class="a-num">27</span></div>
+          <div class="a-day"><span class="a-dow">Tue</span><span class="a-num">28</span></div>
+          <div class="a-day"><span class="a-dow">Wed</span><span class="a-num">29</span></div>
+          <div class="a-day"><span class="a-dow">Thu</span><span class="a-num">30</span></div>
+          <div class="a-cal"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg></div>
+        </div>
+        <div class="a-win">
+          <button class="a-w">10:30</button>
+          <button class="a-w on">12:30</button>
+          <button class="a-w">16:00</button>
+          <button class="a-w">18:00</button>
+        </div>
+        <div class="foot">
+          <button class="cancel">Cancel</button>
+          <button class="apply">Move to 12:30</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- B -->
+    <div class="cell">
+      <div class="label">B · Fill-less</div>
+      <p class="note">No boxes at all. Days and times are plain text; the chosen one gets a thin teal underline and darkens. The quietest of the three — but with nothing drawn around them, they read less like buttons.</p>
+      <div class="card">
+        <div class="cap">Move 3 bills to</div>
+        <div class="b-days">
+          <div class="b-day on"><span class="b-dow">Sat</span><span class="b-num">25</span></div>
+          <div class="b-day"><span class="b-dow">Sun</span><span class="b-num">26</span></div>
+          <div class="b-day"><span class="b-dow">Mon</span><span class="b-num">27</span></div>
+          <div class="b-day"><span class="b-dow">Tue</span><span class="b-num">28</span></div>
+          <div class="b-day"><span class="b-dow">Wed</span><span class="b-num">29</span></div>
+          <div class="b-day"><span class="b-dow">Thu</span><span class="b-num">30</span></div>
+          <div class="b-cal"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg></div>
+        </div>
+        <div class="b-sep"></div>
+        <div class="b-win">
+          <button class="b-w">10:30</button>
+          <button class="b-w on">12:30</button>
+          <button class="b-w">16:00</button>
+          <button class="b-w">18:00</button>
+        </div>
+        <div class="foot">
+          <button class="cancel">Cancel</button>
+          <button class="apply">Move to 12:30</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- C -->
+    <div class="cell">
+      <div class="label">C · Segmented</div>
+      <p class="note">Both rows sit on a light grey track, and the chosen one lifts out in white — like a switch. Very clear which is picked, but it brings back two grey blocks, which is close to the weight you already dislike.</p>
+      <div class="card">
+        <div class="cap">Move 3 bills to</div>
+        <div class="c-track">
+          <div class="c-day on"><span class="c-dow">Sat</span><span class="c-num">25</span></div>
+          <div class="c-day"><span class="c-dow">Sun</span><span class="c-num">26</span></div>
+          <div class="c-day"><span class="c-dow">Mon</span><span class="c-num">27</span></div>
+          <div class="c-day"><span class="c-dow">Tue</span><span class="c-num">28</span></div>
+          <div class="c-day"><span class="c-dow">Wed</span><span class="c-num">29</span></div>
+          <div class="c-day"><span class="c-dow">Thu</span><span class="c-num">30</span></div>
+          <div class="c-cal"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg></div>
+        </div>
+        <div class="c-win">
+          <button class="c-w">10:30</button>
+          <button class="c-w on">12:30</button>
+          <button class="c-w">16:00</button>
+          <button class="c-w">18:00</button>
+        </div>
+        <div class="foot">
+          <button class="cancel">Cancel</button>
+          <button class="apply">Move to 12:30</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ===== SIDE BY SIDE WITH TODAY ===== -->
+  <div class="label" style="margin-top:36px">Today's version, for comparison</div>
+  <p class="note" style="min-height:0;margin-bottom:12px">Eight grey boxes, a solid teal block, and a shouting label. Same information, three times the ink.</p>
+  <div class="card" style="width:340px">
+    <div style="display:flex;gap:6px">
+      <div style="flex:1;background:var(--teal);border-radius:7px;padding:8px 0;text-align:center">
+        <span style="font-size:9.5px;color:rgba(255,255,255,.8);display:block">Sat</span>
+        <span style="font-size:17px;font-weight:700;color:#fff;display:block;line-height:1.1">25</span>
+        <span style="font-size:9.5px;color:rgba(255,255,255,.8);display:block">Jul</span>
+      </div>
+      <div style="flex:1;background:var(--g100);border-radius:7px;padding:8px 0;text-align:center">
+        <span style="font-size:9.5px;color:var(--g500);display:block">Sun</span>
+        <span style="font-size:17px;font-weight:700;color:var(--g700);display:block;line-height:1.1">26</span>
+        <span style="font-size:9.5px;color:var(--g500);display:block">Jul</span>
+      </div>
+      <div style="flex:1;background:var(--g100);border-radius:7px;padding:8px 0;text-align:center">
+        <span style="font-size:9.5px;color:var(--g500);display:block">Mon</span>
+        <span style="font-size:17px;font-weight:700;color:var(--g700);display:block;line-height:1.1">27</span>
+        <span style="font-size:9.5px;color:var(--g500);display:block">Jul</span>
+      </div>
+      <div style="flex:1;background:var(--g100);border-radius:7px;padding:8px 0;text-align:center">
+        <span style="font-size:9.5px;color:var(--g500);display:block">Tue</span>
+        <span style="font-size:17px;font-weight:700;color:var(--g700);display:block;line-height:1.1">28</span>
+        <span style="font-size:9.5px;color:var(--g500);display:block">Jul</span>
+      </div>
+      <div style="flex:1;background:var(--g100);border-radius:7px;padding:8px 0;text-align:center">
+        <span style="font-size:9.5px;color:var(--g500);display:block">Wed</span>
+        <span style="font-size:17px;font-weight:700;color:var(--g700);display:block;line-height:1.1">29</span>
+        <span style="font-size:9.5px;color:var(--g500);display:block">Jul</span>
+      </div>
+      <div style="width:32px;border:1px solid var(--g200);border-radius:7px;display:flex;align-items:center;justify-content:center">
+        <svg style="width:13px;height:13px;stroke:var(--g400);fill:none;stroke-width:1.6" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg>
+      </div>
+    </div>
+    <div style="font-size:10px;color:var(--g400);letter-spacing:.1em;margin:14px 0 8px">WINDOW</div>
+    <div style="display:flex;gap:8px">
+      <div style="flex:1;border:1px solid var(--g200);border-radius:7px;padding:9px 0;text-align:center;font-size:13px;color:var(--g700)">10:30</div>
+      <div style="flex:1;border:1px solid var(--g200);border-radius:7px;padding:9px 0;text-align:center;font-size:13px;color:var(--g700)">12:30</div>
+      <div style="flex:1;border:1px solid var(--g200);border-radius:7px;padding:9px 0;text-align:center;font-size:13px;color:var(--g700)">16:00</div>
+      <div style="flex:1;border:1px solid var(--g200);border-radius:7px;padding:9px 0;text-align:center;font-size:13px;color:var(--g700)">18:00</div>
+    </div>
+  </div>
+
+  <!-- ===== SAME COMPONENT, FOUR PLACES ===== -->
+  <div class="label" style="margin-top:36px">One component, four openings (shown with A)</div>
+  <div class="grid">
+    <div class="cell">
+      <div class="ctx">
+        <div class="ctx-h">1 · Bulk bar — Change slot</div>
+        <div class="ctx-n">Opens upward from the bar. Caption: "Move 3 bills to". Confirm: "Move to 12:30".</div>
+        <button class="btn"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg> Change slot</button>
+      </div>
+    </div>
+    <div class="cell">
+      <div class="ctx">
+        <div class="ctx-h">2 · Panel — slot chip</div>
+        <div class="ctx-n">Opens downward under the chip. Caption: "Move this bill to". Confirm: "Move".</div>
+        <button class="chip"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg> 25-07 · 12:30 <svg viewBox="0 0 24 24"><path d="M16 3l5 5L8 21H3v-5L16 3z"/></svg></button>
+      </div>
+    </div>
+    <div class="cell">
+      <div class="ctx">
+        <div class="ctx-h">3 · Rail card — pick slot</div>
+        <div class="ctx-n">Caption: "Send to floor on". Confirm: "Release to 12:30" — this one both slots and releases.</div>
+        <button class="btn"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg> pick slot</button>
+      </div>
+    </div>
+    <div class="cell">
+      <div class="ctx">
+        <div class="ctx-h">4 · Panel — Release a held bill</div>
+        <div class="ctx-n">Caption: "Release to". Confirm: "Release to 12:30". No day pre-selected — a held bill has no slot to inherit.</div>
+        <button class="btn" style="border-color:var(--teal);color:var(--teal-700);font-weight:600">Release</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout">
+    <b>What changed, in all three options</b>
+    <ul>
+      <li><b>Unselected days lose their grey fill.</b> Grey fill on everything means nothing stands out. Now only the chosen day is painted.</li>
+      <li><b>The selected day is near-black, not teal.</b> Teal moves to the confirm button — the only control that actually writes to the bill. One teal per surface, and it lands on the thing that matters.</li>
+      <li><b>"WINDOW" in caps is gone.</b> Four times sitting under six dates explains itself.</li>
+      <li><b>"Jul" drops off each tile.</b> It was repeated six times to say one thing. The month lives in the caption line if the range ever crosses over.</li>
+      <li><b>No "Today" label.</b> Every tile is the same height and shape. The strip always starts at today and today is selected by default, so the first tile is today by definition — a label would only make one tile taller than the rest.</li>
+      <li><b>Same card everywhere.</b> Only the caption line and the confirm button's wording change per opening.</li>
+    </ul>
+  </div>
+
+  <div class="callout" style="border-left-color:var(--g400)">
+    <b>My pick: A.</b> "Sharp" is really about edges, and A is the only one with a crisp outer frame — it reads as one deliberate control rather than a scatter of tiles. B is quieter but the days stop looking tappable, which matters on a depot screen where nobody reads instructions. C is clear but puts the grey weight straight back.
+  </div>
+
+</div>
+</body>
+</html>
