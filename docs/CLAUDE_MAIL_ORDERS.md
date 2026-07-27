@@ -1,5 +1,5 @@
 # CLAUDE_MAIL_ORDERS.md — Mail Orders Module
-# v1.8 · Schema v27.12 · Parser v6.5 · Enrichment v3 · July 2026 · updated 2026-07-27
+# v1.9 · Schema v27.12 · Parser v6.5 · Enrichment v3 · July 2026 · updated 2026-07-27
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -77,7 +77,11 @@ mo_sku_lookup              ~1,599 rows. material UNIQUE. piecesPerCarton.
                            refMaterial (Generic/master), refDescription.
 mo_customer_keywords       Auto-grows on operator picks
 mo_learned_customers       Operator correction log
-mo_order_form_index        Legacy. Used by public /order. NOT used by /place-order.
+mo_order_form_index        Legacy. ⚠ READ BY THE PARSER + ENRICHMENT ONLY — no frontend
+                           reads it. Do NOT delete (see §20). Corrected 2026-07-27: this
+                           said "Used by public /order", which had been wrong since
+                           2026-05-29 when /order moved to the v2 tables — two months
+                           before /order itself retired.
 ```
 
 Index: `idx_mo_sku_lookup_ref_material` on `mo_sku_lookup.refMaterial`. Coverage: ~26.5%.
@@ -803,7 +807,7 @@ Submit POSTs to `/api/admin/customers` with the multi-SO payload (`salesOfficers
 
 ## 20. Pending — parser migration to v2 tables
 
-The mail order parser + enrichment still read the LEGACY `mo_order_form_index` + `mo_sku_lookup` tables. The frontend order entry surfaces (`/order` and `/place-order`) read v2 tables since 2026-05-29.
+The mail order parser + enrichment still read the LEGACY `mo_order_form_index` + `mo_sku_lookup` tables. The frontend order entry surfaces (`/po` and `/place-order`) read v2 tables — a switch made on 2026-05-29, when the then-live `/order` moved across too (`/order` retired 2026-07-27, `archive/2026-07-order/`).
 
 This split is intentional during the migration window. Full plan in `CLAUDE_PLACE_ORDER.md §19` (v2 single-source-of-truth — 3-stage plan). Until Stage 3 ships, do NOT delete the legacy tables.
 
@@ -882,4 +886,4 @@ Mail Orders access for everyone except `admin`. All four rows above should be ad
 
 ---
 
-*Mail Orders v1.8 · Schema v27.12 · Parser v6.5 · Enrichment v3*
+*Mail Orders v1.9 · Schema v27.12 · Parser v6.5 · Enrichment v3*

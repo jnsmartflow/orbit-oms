@@ -48,7 +48,7 @@ The big architectural arc. **Currently in Stage 1.** Full plan in `CLAUDE_PLACE_
 
 1. Fill canonical key (`product`) on all remaining rows (full hygiene)
 2. Build the one universal keyword layer in v2 (word→product + word→colour), seeded from legacy `mo_product_keywords` + `mo_base_keywords`
-3. Point `/order` + `/place-order` search at the shared layer
+3. Point `/po` + `/place-order` search at the shared layer
 4. Readiness check — confirm v2 carries everything the parser needs (packs, colour strategies DIRECT/FIXED/NUMBERED/COLOUR, carton multiply, no-match handling)
 5. Verify search + readiness
 
@@ -75,7 +75,7 @@ The catalog-restructure workstream is **done — all families folded** into the 
 
 ### P2 — Deferred / open
 
-- **Order email line-item reformat — ✅ SHIPPED 2026-06-19.** Plain text, NO HTML/bold (bold needs an HTML send-path — declined). Per-line format `{n}. {Product Name} - {pack}*{qty}`: numbered lines (`1.` `2.` `3.`); `" - "` (space-hyphen-space) after the product name; keep `*` and the comma multi-pack list (`1L*6, 4L*4, 10L*1, 20L*1`); customer header unchanged. e.g. `1. GLOSS Brilliant White - 1L*6` / `5. WS MAX Brilliant White - 1L*6, 4L*4, 10L*1, 20L*1`. Done via the **shared** `renderOrderBody` helper in `lib/place-order/email.ts` (the preferred no-divergence approach, like the `emailLineLabel` consolidation) — all 3 builders (`lib/place-order/email.ts`, `app/po/po-page.tsx`, `app/order/page.tsx`) call it. Plus refinements: header resequenced (Bill To → Ship To → Dispatch → Remark → Note), proper-case names (`emailCase`, codes/short/digit words stay caps), per-bill right-aligned line numbers with figure-space padding, and CC `surat.order@outlook.com` on desktop `/place-order` only. The app emitting this format is exactly what mail parser v7.2 (`Parse-AppBody`) reads. No email-builder shared-helper work pending. Code-only, no DB/reseed.
+- **Order email line-item reformat — ✅ SHIPPED 2026-06-19.** Plain text, NO HTML/bold (bold needs an HTML send-path — declined). Per-line format `{n}. {Product Name} - {pack}*{qty}`: numbered lines (`1.` `2.` `3.`); `" - "` (space-hyphen-space) after the product name; keep `*` and the comma multi-pack list (`1L*6, 4L*4, 10L*1, 20L*1`); customer header unchanged. e.g. `1. GLOSS Brilliant White - 1L*6` / `5. WS MAX Brilliant White - 1L*6, 4L*4, 10L*1, 20L*1`. Done via the **shared** `renderOrderBody` helper in `lib/place-order/email.ts` (the preferred no-divergence approach, like the `emailLineLabel` consolidation) — all 3 builders then live (`lib/place-order/email.ts`, `app/po/po-page.tsx`, and `app/order/page.tsx` — the last retired 2026-07-27, leaving two) call it. Plus refinements: header resequenced (Bill To → Ship To → Dispatch → Remark → Note), proper-case names (`emailCase`, codes/short/digit words stay caps), per-bill right-aligned line numbers with figure-space padding, and CC `surat.order@outlook.com` on desktop `/place-order` only. The app emitting this format is exactly what mail parser v7.2 (`Parse-AppBody`) reads. No email-builder shared-helper work pending. Code-only, no DB/reseed.
 
 - **5IN1 Phiroza — create SAP codes.** `IN56000473` (500ML) + `IN56000471` (4L) were injected into v2 (owner-approved, SAP-unverified). They will NOT bill until created in SAP. Once real in SAP they import naturally — then verify the injected rows still match (no duplicate).
 
@@ -298,7 +298,12 @@ New OPEN items surfaced while consolidating the 29 drafts. Grouped by module.
 - **Order email line-item reformat** — see the existing deferred bullet under "Place Order — email + catalog".
 
 ### /po (going-forward mobile)
-- **`/po` → `/order` cutover rename** — replace the frozen `/order` backup once `/po` is fully signed off.
+- **`/po` → `/order` cutover rename — NOW UNBLOCKED (2026-07-27).** `/order` was retired
+  (`de48357d`, `archive/2026-07-order/`) with **no redirect**, and the address was deliberately
+  **parked for exactly this rename** — nothing occupies it. The middleware `"/order"` public-path
+  entry was kept on purpose, so the address is already public and returns a clean 404 today; read
+  `archive/2026-07-order/README.md` before touching it. Remaining work is the rename itself, once
+  `/po` is fully signed off.
 - **Server-side per-user recents** — recents are device-local localStorage today; needs login-scoped storage.
 - **Orbit-bar collapse-on-scroll** — mockup approved, not built.
 - **Dispatch slot feature** (date + time window on `/po` review) — design agreed, build deferred by owner; mockup in `docs/mockups/dispatch-slot/`.

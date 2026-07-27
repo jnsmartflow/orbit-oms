@@ -1,5 +1,5 @@
 # CLAUDE_UI.md — OrbitOMS UI Design System
-# v5.12 · July 2026 · updated 2026-07-27 · Lives in: orbit-oms/docs/
+# v5.13 · July 2026 · updated 2026-07-27 · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md
 
 Single source of truth for visual styling across all screens.
@@ -241,7 +241,7 @@ Default: `h-[38px] px-3 text-[13px] border border-gray-200 rounded-lg`
 Focus: `focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10`
 Error: `border-red-300 ring-2 ring-red-500/6`
 
-**Mobile rule:** all `<input>` elements that may surface a keyboard must be `text-[16px]` minimum on `/order`. iOS WebKit auto-zooms anything smaller. Android Chrome doesn't but the rule applies for consistency.
+**Mobile rule:** all `<input>` elements that may surface a keyboard must be `text-[16px]` minimum on EVERY mobile surface (`/po`, and any future mobile page). iOS WebKit auto-zooms anything smaller. Android Chrome does not, but the rule applies for consistency. (Written as an `/order` rule until 2026-07-27; it was never specific to that page.)
 
 ---
 
@@ -868,8 +868,8 @@ Sub-product tabs · pack header row · base × pack matrix. Card never scrolls i
 Result rows and product headers can show a **muted second line** under the primary label: `text-[12px] text-gray-400 truncate mt-0.5`. Static map `lib/place-order/sub-product-descriptors.ts` (family|subProduct → descriptor) — no schema/seed field. Primary line is composed `"{displayName} — {baseColour}" + " · {alias}"`; the descriptor is a separate `<p>`.
 - e.g. Satin Finish primary `Satin Finish — <base> · <alias>`, descriptor `Super Satin · Oil Base`.
 - **Single-base / variant-qualifier tabs** (Promise SmartChoice/Primer): the per-variant qualifier moves to the second line via `getSecondLine(family, subProduct, qualifier)` (folds `{descriptor} · {qualifier}`, omits qualifier when null) and the line-1 alias suffix is suppressed; when the variant name already contains the tab word ("Primer"), the headline is the variant's own name.
-- `/po` + `/order` search rows fall back to `?? p.family` so plain products still show a grey line.
-- Render sites: mobile (`app/order/page.tsx`, `app/po/po-page.tsx`) search/selected/picked/active header; desktop `big-search-bar.tsx`, `variant-grid.tsx`, `sub-product-direct.tsx`. Cart has no family → no descriptor.
+- `/po` search rows fall back to `?? p.family` so plain products still show a grey line.
+- Render sites: mobile (`app/po/po-page.tsx`) search/selected/picked/active header; desktop `big-search-bar.tsx`, `variant-grid.tsx`, `sub-product-direct.tsx`. Cart has no family → no descriptor.
 
 ---
 
@@ -914,47 +914,27 @@ Cell stores **UNITS** in `cart.packQtys[pack]`.
 
 Fixed-height, no vertical scroll. Root `h-screen overflow-hidden flex flex-col`. Top bar `flex-shrink-0`. Content `flex-1 overflow-hidden`.
 
-Viewport guard: `< 1024px` redirects to `/order` on mount AND on `resize`.
+Viewport guard: `< 1024px` redirects to `/po` on mount AND on `resize` (repointed from `/order` 2026-07-27, commit `9dce858b`).
 
 ---
 
-## 47. /order public mobile patterns
+## 47. /order public mobile patterns — RETIRED 2026-07-27
 
-Single unified sticky header with 3 states:
+`/order` no longer exists; the page is archived at `archive/2026-07-order/`, and
+`archive/2026-07-order/README.md` owns the retirement story. Do not restate it here.
 
-| State | Trigger | Content |
-|---|---|---|
-| 1 — Branding | `selectedCust === null` | `[logo] Place Order / JSW Dulux · Surat Depot` |
-| 2 — Customer locked, browsing | `selectedCust && !anyBillInPicking` | `{customerName}` (16px semibold) / `{customerCode}` (12px gray) / `Change` button |
-| 3 — Customer locked, picking | `selectedCust && anyBillInPicking` | Row A: `{customerName}` (small gray) · `N of M` · Row B: `{productName}` (17px semibold) · Row C: `[Skip ghost] [Next →]` |
+**Most of this section was NOT `/order`-specific and has been MOVED, not deleted** — the
+Visual Viewport `--vvh` keyboard fix, the app-wide `app/layout.tsx` viewport export, the
+empty-state row, and the qty-input / desktop-autofocus rules are all still live in `/po`
+and now live in **§55** under "Mobile viewport, keyboard + input patterns".
 
-**Header is edge-to-edge** (no margin, no rounded corners), `sticky top-0 z-30`, `bg-white border-b border-gray-200`.
+What was genuinely `/order`-only, and is gone with it: its 3-state sticky header (`/po`'s
+merged customer header is a different design — §55), the `data-pack-row` +
+`scroll-mt-[140px]` picker-scroll target, the picker's ghost **Skip** / teal **Next**
+buttons, and the `BILL N · X products · Y units` summary chip. The archived page is the
+reference if any of it is ever wanted back.
 
-### Visual Viewport keyboard fix (Android Chrome)
-
-`<main>` has `style={{ height: "var(--vvh, 100vh)" }}` + `overflow-y-auto`. Mount-effect listens to `window.visualViewport.resize/scroll` and writes the visible height to `--vvh` via `documentElement.style.setProperty` (NOT React state — would cause render storm).
-
-`app/layout.tsx` Viewport export:
-```ts
-export const viewport: Viewport = {
-  width: "device-width", initialScale: 1, maximumScale: 1, userScalable: false,
-  interactiveWidget: "resizes-content",
-};
-```
-
-### Empty-state row
-
-Render gate uses `inMultiSel && bill.searchQuery.trim().length >= 2`. Zero-match queries show italic `"No products match {query}"` row instead of nothing.
-
-### Other patterns
-
-- Qty input: `text-[16px]` (iOS auto-zoom prevention).
-- Mode-transition auto-focus is desktop-only: `window.matchMedia("(min-width: 768px)").matches`.
-- Pack row has `data-pack-row` attribute + `scroll-mt-[140px]` for picker-entry auto-scroll target.
-- Picker Skip button: ghost (`text-gray-500 text-[13px] font-medium`, no bg). Next button: primary teal/green.
-- Single-pack products: `py-[18px]` + `text-[16px]` label (vs default `py-[10px]` + `text-[14px]`).
-- Qty input: `border-b border-dashed border-gray-300` when value is 0.
-- Bill summary chip: `BILL N · X products · Y units` when cart non-empty.
+`/po`'s visual spec is **§55**. Its behaviour is `CLAUDE_PLACE_ORDER.md §25`.
 
 ---
 
@@ -1121,6 +1101,50 @@ Behaviour + architecture: `CLAUDE_PLACE_ORDER.md §25`. Visual specifics:
 - **Duplicate control:** quiet grey button in the review per-bill card header beside Edit (`<Copy 15px> Duplicate`, `text-[14px] text-gray-500`).
 - **Dispatch pills** order **Normal · Urgent · Call** (Call last, red dot); label "Call" → "Call · SO" / "Call · Dealer" once a target is chosen.
 - **Dispatch slot** section (date Today/Tomorrow/Pick + window 9–12/12–3/3–6) — **deferred/planned**, mockup only (`docs/mockups/dispatch-slot/`); not built.
+
+### Mobile viewport, keyboard + input patterns [LIVE]
+
+*Moved here from §47 on 2026-07-27 when `/order` retired. These were never
+`/order`-specific — every one is live in `app/po/po-page.tsx` today, and the viewport
+export is app-wide. Verified against the code at the time of the move.*
+
+**Visual Viewport keyboard fix (Android Chrome).** `<main>` carries
+`style={{ height: "var(--vvh, 100vh)" }}` + `overflow-y-auto`. A mount-effect listens to
+`window.visualViewport` `resize`/`scroll` and writes the visible height into `--vvh` via
+`documentElement.style.setProperty` — **never React state**, which would cause a render
+storm. Live at `app/po/po-page.tsx:946` (writer) and `:2216` (consumer); the SSR fallback
+`html { --vvh: 100vh }` is in `app/globals.css`. Full `/po` scroll-architecture rules
+(the single `flex-1 min-h-0` scroll area, the `keyboardOpen` gate, the resize+scroll
+double listener) are in `CLAUDE_PLACE_ORDER.md §25` — not restated here.
+
+**`app/layout.tsx` viewport export — app-wide, not per-page:**
+
+```ts
+export const viewport: Viewport = {
+  themeColor: "#0d9488",
+  viewportFit: "cover",
+  width: "device-width", initialScale: 1, maximumScale: 1, userScalable: false,
+  interactiveWidget: "resizes-content",
+};
+```
+
+`interactiveWidget: "resizes-content"` tells Chromium 108+ to **shrink** the layout
+viewport when the soft keyboard opens rather than overlay it — that is what pairs with
+`--vvh`. iOS Safari already shrinks `visualViewport` natively. ⚠️ `themeColor` and
+`viewportFit` were missing from this block until 2026-07-27; the code has always had them.
+
+**Empty-state row.** Render gate is `inMultiSel && searchQuery.trim().length >= 2`. A
+zero-match query shows an italic `"No products match {query}"` row rather than nothing
+(`po-page.tsx:3229`).
+
+**Input + tap patterns:**
+- Qty input `text-[16px]` — iOS auto-zoom prevention (§ the general rule at §12).
+- Qty input gets `border-b border-dashed border-gray-300` while its value is 0.
+- Single-pack products render `py-[18px]` + `text-[16px]` label (vs the default
+  `py-[10px]` + `text-[14px]`).
+- Mount / mode-transition auto-focus is **desktop-only**, gated on
+  `window.matchMedia("(min-width: 768px)").matches` (`po-page.tsx:991, :1004, :1773`) —
+  focusing an input on a phone would spring the keyboard over the content.
 
 ### Favourites — replaces Recents on Home [LIVE, 2026-07-14]
 
@@ -1358,4 +1382,4 @@ Desktop `/picking` (`components/picking/picking-queue.tsx`, the `hidden md:block
 
 ---
 
-*UI v5.12 · OrbitOMS*
+*UI v5.13 · OrbitOMS*
