@@ -9,9 +9,9 @@
 // move so his hand learns one place.
 //
 // REUSE, never fork:
-//   - Change ship-to → Support's GET /api/support/ship-to-search + the override
-//     write on PATCH /api/support/orders/[id] (that route uses $transaction — we
-//     are a CALLER only; no $transaction in any Floor file).
+//   - Change ship-to → GET /api/floor/ship-to-search + the override write on
+//     POST /api/floor/ship-to. Both are Floor's own as of the Support
+//     retirement step 2/8; neither uses $transaction.
 //   - Update slot / release → components/floor/dispatch-slot-picker.tsx +
 //     the existing /api/floor routes.
 // Every write goes through floor-page's reportWrite() handlers, so a failure
@@ -579,7 +579,7 @@ function ShipToEditor({
     setSearching(true);
     timer.current = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/support/ship-to-search?q=${encodeURIComponent(query)}`, { cache: "no-store" });
+        const res = await fetch(`/api/floor/ship-to-search?q=${encodeURIComponent(query)}`, { cache: "no-store" });
         setResults(res.ok ? ((await res.json()) as ShipToResult[]) : []);
       } catch {
         setResults([]);

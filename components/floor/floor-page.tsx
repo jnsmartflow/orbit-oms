@@ -365,11 +365,11 @@ export function FloorPage() {
         reportWrite("Release", r);
         await load();
       },
-      // Ship-to change REUSES Support's override write as a CALLER — that route
-      // uses $transaction (CORE §3), but this Floor file does not. Floor v1 users
-      // (admin + operations) both pass Support's route gate.
+      // Ship-to change → Floor's OWN thin route (step 2/8 of the Support
+      // retirement). One job, sequential awaits, no $transaction, and an
+      // unchanged value writes nothing so the live-sync marker stays honest.
       onChangeShipTo: async (orderId, customerId) => {
-        const r = await postJson(`/api/support/orders/${orderId}`, { shipToOverrideCustomerId: customerId }, "PATCH");
+        const r = await postJson("/api/floor/ship-to", { orderId, customerId });
         reportWrite("Change ship-to", r);
         await load();
       },
