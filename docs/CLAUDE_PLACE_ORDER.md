@@ -1,16 +1,16 @@
 # CLAUDE_PLACE_ORDER.md — Place Order Module
-# v1.5 · Schema v27.12 · July 2026
+# v1.6 · Schema v27.12 · July 2026 · updated 2026-07-27
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
-Depot-facing phone-order entry (desktop + going-forward mobile) + public mobile equivalent. All surfaces output a `mailto:` link with the order body — same email path back to the mail order pipeline. No DB writes on submit.
+Depot-facing phone-order entry (desktop + going-forward mobile) + public mobile equivalent. Both surfaces output a `mailto:` link with the order body — same email path back to the mail order pipeline. No DB writes on submit.
 
 Routes:
 - **`/place-order`** — desktop, auth'd. Sidebar nav label: "Purchase Order (PO)". Brought to full `/po` feature parity 2026-06-09 (recents, multi-bill, options panel, unified email).
-- **`/po`** — **going-forward** depot mobile PO page (Orbit bar, multi-bill, recents, browser-history back-nav). See §25.
-- **`/order`** — public mobile, no login. Reads v2, same payload. Treated as a **frozen backup** since the `/po` build began (no new features land here; `/po` will eventually be renamed over it). ⚠️ Authoritative-status contradiction unresolved: this section historically called `/order` the "~99% of orders" page; both currently look live to different audiences — confirm with owner before any cutover.
+- **`/po`** — **going-forward** depot mobile PO page, **public (no login)** (Orbit bar, multi-bill, recents, browser-history back-nav). See §25.
+- ~~**`/order`**~~ — **RETIRED 2026-07-27** (commit `de48357d`). Was the public no-login mobile page; `/po` supersedes it and is also public. Full story: **`archive/2026-07-order/README.md`** — read that before touching anything named `/order`.
 
-**Order recipient (live):** `/po` and `/place-order` send to **`surat.depot@akzonobel.com`** (AkzoNobel inbox auto-forwards to `surat.order@outlook.com`, which the Mail Orders parser still watches). The frozen `/order` page still sends to the old `surat.order@outlook.com` until cutover. See §11.
+**Order recipient (live):** `/po` and `/place-order` send to **`surat.depot@akzonobel.com`** (AkzoNobel inbox auto-forwards to `surat.order@outlook.com`, which the Mail Orders parser still watches). `/order` sent to the old `surat.order@outlook.com` directly until its retirement — that is why the parser inbox is configured the way it is. See §11.
 
 DB `pageKey` stays `place_order`.
 
@@ -20,7 +20,7 @@ Primary users: admin, billing_operator, tint_manager. Restricted-view users: sup
 
 ## 1. What this page is
 
-Operator types a phone order quickly while a dealer is on the line. Output is a `mailto:` link. Desktop `/place-order` and public `/order` keep a byte-identical plain order body; `/po` intentionally diverges (carries Dispatch / Remark / Note / conditional Ship-to lines — §25). The email lands back in OrbitOMS and is parsed by `Parse-MailOrders-v6_5.ps1`.
+Operator types a phone order quickly while a dealer is on the line. Output is a `mailto:` link. Desktop `/place-order` emits the plain order body; `/po` intentionally diverges (carries Dispatch / Remark / Note / conditional Ship-to lines — §25), though a plain `/po` order is byte-identical to it. The retired `/order` shared that same plain body. The email lands back in OrbitOMS and is parsed by `Parse-MailOrders-v6_5.ps1`.
 
 Keep the page fast — no scroll, no nested popovers, keyboard-first on desktop, thumb-first on mobile.
 
@@ -30,7 +30,7 @@ Keep the page fast — no scroll, no nested popovers, keyboard-first on desktop,
 
 Both surfaces read the v2 catalog: `mo_order_form_index_v2` (menu) + `mo_sku_lookup_v2` (stock).
 
-**`/order` switched to v2 on 2026-05-29.** Before that it read the legacy `mo_order_form_index` / `mo_sku_lookup`. Both legacy tables are now ORPHANED by both order-entry surfaces but are STILL read by the mail parser + enrichment — do NOT delete them until the parser is migrated (Stage 3 of the v2 single-source plan, §19).
+**`/order` switched to v2 on 2026-05-29** (before its retirement). Before that it read the legacy `mo_order_form_index` / `mo_sku_lookup`. ⚠️ **Both legacy tables are STILL read by the mail parser + enrichment — do NOT delete them until the parser is migrated** (Stage 3 of the v2 single-source plan, §19). They are orphaned by every order-entry surface, but that is not the same as unused.
 
 ### mo_order_form_index_v2 (~454 active rows after the full catalog restructure)
 
@@ -57,7 +57,7 @@ mobileFamily    TEXT? — v27.5. Collapses Promise-family variants for mobile la
 region          TEXT? — optional grey-line qualifier (TOOLS 4" brushes: Delhi NCR /
                         UP Punjab / South). Null on every paint row. Selected by BOTH
                         data routes; rendered as an optional grey line (desktop grid +
-                        /order + /po). Added via Supabase SQL ALTER + hand-edited
+                        /po). Added via Supabase SQL ALTER + hand-edited
                         `schema.prisma` + `npx prisma generate` (never db push/pull).
 
 UNIQUE (family, subProduct, baseColour)
@@ -157,7 +157,7 @@ Sticky 52px top bar. Below: content + 340px right cart column. No vertical scrol
 
 Visual spec: `CLAUDE_UI.md §41-46`.
 
-Viewport guard: `< 1024px` width redirects to `/order` mobile page on mount AND on `resize`.
+Viewport guard: `< 1024px` width redirects to `/po` mobile page (repointed from `/order` 2026-07-27, commit `9dce858b`) on mount AND on `resize`.
 
 ---
 
@@ -172,7 +172,7 @@ Config: `lib/place-order/quick-tiles-config.ts`.
 **Tile shape:** `{ position, type: "family"|"section", label, parentLabel, familyName }`, plus an optional **`familyNames: string[]`** for a **multi-family tile** (one tile that combines several families' products under one card).
 
 - Single-family tile: `familyName` selects `family === tile.familyName`.
-- **Multi-family tile** (`familyNames`): the 3 desktop filter sites resolve `tile.familyNames ?? [tile.familyName]` and flat-map the filter; `familyName` stays for the highlight. The combined card's tabs come for free from the uiGroup-tab engine across the combined product set — no new tab/grid code. `headerLabel` shows the combined name. **Mobile (`/po`, `/order`) is search-first and ignores this** (untouched).
+- **Multi-family tile** (`familyNames`): the 3 desktop filter sites resolve `tile.familyNames ?? [tile.familyName]` and flat-map the filter; `familyName` stays for the highlight. The combined card's tabs come for free from the uiGroup-tab engine across the combined product set — no new tab/grid code. `headerLabel` shows the combined name. **Mobile (`/po`) is search-first and ignores this** (untouched).
   - **Tile 2 "Satin & PU"** = `["SATIN","PU ENAMEL"]` (+ a Lustre tab) → tabs: Satin Finish · Satin Stay Bright · PU Enamel · Lustre.
   - **Tile 8 "Putty & Primer"** = `["PRIMER","DISTEMPER","TEXTURE","PUTTY"]` → tabs: Primers · Distemper · Texture & Putty. Each family stays its own family in data; the grouping is UI/nav only.
 
@@ -218,7 +218,7 @@ Sub-product tabs (top) → pack header row → base × pack matrix.
 
 ## 8. Pack join mechanism
 
-`/order` and `/place-order` both resolve packs the same way:
+`/po` and `/place-order` both resolve packs the same way:
 
 ```
 join key = (form_index.product ?? form_index.subProduct) + "|||" + form_index.baseColour
@@ -250,7 +250,7 @@ list from **`mo_customer_keywords`**, NOT `delivery_point_master`:
 - Neither route touches `delivery_point_master` at all.
 
 **A customer needs a row in BOTH tables** to work end-to-end:
-- `mo_customer_keywords` → makes them **searchable** in `/po`, `/place-order`, `/order`.
+- `mo_customer_keywords` → makes them **searchable** in `/po` and `/place-order`.
 - `delivery_point_master` → the **official record** (admin CRUD, FK-linked area/route/type; used
   by tint, challans, reports).
 
@@ -317,7 +317,7 @@ Unlisted pack label → `?? 1` default.
 `25PC`→"box of 25", `12PC`→"box of 12", `500PC`→"pack of 500", `400ML`→"can". Helper
 `packContainerLabel(pack, productKey?)` returns one of these or `null`.
 
-`formatPack`, `packToMl`, `packStep`, `sortPacksForDisplay` are all in `lib/place-order/pack.ts`. The mobile `/order` page imports from there too (in-page copies removed in the 2026-05-29 v2 migration).
+`formatPack`, `packToMl`, `packStep`, `sortPacksForDisplay` are all in `lib/place-order/pack.ts`. The mobile `/po` page imports from there too (the retired `/order` did the same — in-page copies removed in the 2026-05-29 v2 migration).
 
 **Step and container label are deliberately decoupled** — `5KG` has step 1 but no
 `PACK_CONTAINER_MAP` key (no header suffix); the KG columns (1/2/5/10/15/20 KG) likewise have none.
@@ -416,9 +416,9 @@ Cart lines keyed by **v2 row `id`** (was `subProduct + baseColour` composite). v
 
 Plain-text body, units written directly (no box conversion). Send opens `mailto:{recipient}?subject=...&body=...` (URL-encoded). No POST, no DB row.
 
-**Recipient (live constants `ORDER_TO`):** `/po` (`app/po/po-page.tsx`) and `/place-order` (`lib/place-order/email.ts`) → **`surat.depot@akzonobel.com`** (AkzoNobel auto-forwards to the `surat.order@outlook.com` parser inbox — the parser `OutlookAccount` is unchanged). Frozen `/order` keeps `surat.order@outlook.com`. No env/config indirection.
+**Recipient (live constants `ORDER_TO`):** `/po` (`app/po/po-page.tsx`) and `/place-order` (`lib/place-order/email.ts`) → **`surat.depot@akzonobel.com`** (AkzoNobel auto-forwards to the `surat.order@outlook.com` parser inbox — the parser `OutlookAccount` is unchanged). The retired `/order` sent to `surat.order@outlook.com` directly. No env/config indirection.
 
-**THREE builders, ONE name source.** `lib/place-order/email.ts` (desktop), `app/po/po-page.tsx` (inline), `app/order/page.tsx` (inline) all route the product-line NAME through the shared exported helper **`emailLineLabel(product, baseColour, subProduct)`** for byte-parity. Edit the name once. (The pack/qty suffix is built per-surface.)
+**TWO builders, ONE name source.** `lib/place-order/email.ts` (desktop) and `app/po/po-page.tsx` (inline) both route the product-line NAME through the shared exported helper **`emailLineLabel(product, baseColour, subProduct)`** for byte-parity. Edit the name once. (The pack/qty suffix is built per-surface.)
 
 `emailLineLabel` rules, in order:
 1. **PROMISE PRIMER special-case:** `product==="PROMISE PRIMER" && baseColour` → `baseColour.startsWith("Promise") ? baseColour : "Promise "+baseColour"` (avoids "PROMISE PRIMER Promise Primer"; grid still labels by baseColour so a data rename was rejected).
@@ -451,7 +451,7 @@ padWidth = String(bill.lines.length).length
 - Serial number restarts per bill; `padWidth` is per-bill (its own line count). ≤9 lines → no pad; 10+ → pads to 2; 100+ → 3.
 - **Pad character MUST be ` ` (FIGURE SPACE), NOT a regular space.** A regular space lines up in the in-app preview (monospace font) but fails in the actual mail client — email bodies render in a proportional font (Outlook/Gmail) where a space is narrower than a digit, so ` 9.` never reaches the `10.` column. Figure space is exactly one digit wide and non-collapsing. **Always test column alignment in a real mail client, not the preview.** All three mailto builders URL-encode the body so ` ` → `%E2%80%87` and survives the handoff.
 
-**`renderOrderBody` is the single builder for all three surfaces:** `emailCase` + figure-space padding apply uniformly. Desktop `/place-order` goes via `buildEmail` → `renderOrderBody` → `buildMailtoUrl`; mobile `/po` goes via `buildEmailParts` → `renderOrderBody`; public `/order` goes via its local `buildEmail` closure → `renderOrderBody`. If `/po` looks unchanged after an email-format deploy, suspect **PWA cache** (force-close / reinstall), not the code.
+**`renderOrderBody` is the single builder for both surfaces:** `emailCase` + figure-space padding apply uniformly. Desktop `/place-order` goes via `buildEmail` → `renderOrderBody` → `buildMailtoUrl`; mobile `/po` goes via `buildEmailParts` → `renderOrderBody`. (The retired `/order` was the third caller, via its own local `buildEmail` closure.) If `/po` looks unchanged after an email-format deploy, suspect **PWA cache** (force-close / reinstall), not the code.
 
 **Two ways to fix an email name — pick by side-effect:**
 - **Product rename (structural):** bakes the name everywhere (email, recall, search subtitle, alias key). Needs the rename on **both** join sides (stock source CSV/overrides + `CONFIRMED_SUBPRODUCT_MAP`) **+ paired reseed**; and if the product carries numeric-base aliases, **re-key its `base-aliases.ts` block in the same change** (aliases are keyed on `product`) or the friendly names silently vanish. Use when the new name is the real product name (WS Tile/Metallic, VT ranges, Interior WBC).
@@ -478,7 +478,7 @@ at a time — no combine/priority logic; no date in the subject).
 | Cross (no depot) | `Cross Billing Order — {customer} {code}` *(defensive fallback only —*
 | | *`/po`'s `confirmCross()` always sets marker+depot together; not proven live on desktop)* |
 
-Email **body** is untouched — the remark already shows there as a `Remark:` line. `/order` (frozen)
+Email **body** is untouched — the remark already shows there as a `Remark:` line. `/order` (retired)
 does not carry this feature.
 
 ---
@@ -527,7 +527,7 @@ A muted `· {display}` span (`text-gray-400 font-normal`) rendered AFTER the bas
 
 | Screen | File |
 |--------|------|
-| Mobile search results, picker header, cart lines, selected list | `app/order/page.tsx` (via `aliasSuffix` helper) |
+| Mobile search results, picker header, cart lines, selected list | `app/po/po-page.tsx` (via `aliasSuffix` helper; the retired `/order` used the same) |
 | Desktop search results | `big-search-bar.tsx` |
 | Desktop variant-grid base column | `variant-grid.tsx` |
 | Desktop cart line | `cart-panel.tsx` |
@@ -566,7 +566,7 @@ Same AND-substring filter as before (so result SETS unchanged), PLUS scoring:
 | Token-start signal | small bump |
 | Stable secondary sort | catalog index |
 
-Mobile `getProductSuggestions` (in `app/order/page.tsx`) AND desktop `searchProducts` (`queries.ts`) both use the scoring.
+Mobile ranking (`rankProductsForQuery`, `mobile-search.ts`, used by `/po`) AND desktop `searchProducts` (`queries.ts`) both use the scoring.
 
 **Live behaviour:**
 - `protect` → Dustproof first, then Rainproof, then Damp Protect (DP/RP tokens *start* with "protect" = high; "Damp Protect" has it mid-name = lower)
@@ -585,7 +585,7 @@ Mobile `getProductSuggestions` (in `app/order/page.tsx`) AND desktop `searchProd
 
 **Symptom:** `brush 3` returned the Super Brush Double 2"; `brush 2` returned four unrelated rows.
 
-**Cause:** both matchers (`mobile-search.ts` for `/order`+`/po`, `queries.ts` for `/place-order`)
+**Cause:** both matchers (`mobile-search.ts` for `/po`, `queries.ts` for `/place-order`)
 fold filter + score into one function via `indexOf()` substring matching — score 0 excludes a row,
 any nonzero includes it. `searchTokens` has SAP material codes baked in (seed
 `v2-catalog-seed-from-preview.ts:1009-1019`), so a typed `3` matched the digit **inside**
@@ -738,81 +738,16 @@ constraint suitable for `ON CONFLICT` beyond `material`; `mo_order_form_index_v2
 
 ---
 
-## 15. Public mobile route — /order
+## 15. Public mobile route — RETIRED 2026-07-27
 
-Public, no login. Whitelisted in middleware. Same `/api/order/data` payload as desktop (now v2-backed).
+`/order` no longer exists. It was the public, no-login mobile order page; **`/po`** supersedes
+it and is also public. The page file is archived verbatim at
+`archive/2026-07-order/app/order/page.tsx`, and **`archive/2026-07-order/README.md` owns the
+retirement story** — why it went, the accepted capability loss, why the middleware entry stays,
+and the KEEP list of shared modules that must never be archived with it. Do not restate any of
+that here.
 
-Path: **`app/order/page.tsx`** (NOT under `app/(public)/`). Whitelist in middleware, not in a route group.
-
-### 15.1 Unified sticky header — 3 states
-
-Single edge-to-edge header element that swaps content based on state. See `CLAUDE_UI.md §47`.
-
-| State | Trigger | Content |
-|---|---|---|
-| 1 — Branding | `selectedCust === null` | `[logo] Purchase Order / JSW Dulux · Surat Depot` |
-| 2 — Customer locked, browsing | `selectedCust && !anyBillInPicking` | `{customerName}` (16px semibold) / `{customerCode}` (12px gray) / `Change` button |
-| 3 — Customer locked, picking | `selectedCust && anyBillInPicking` | Row A: `{customerName}` · `N of M` · Row B: `{productName}` (17px semibold, with `border-b border-gray-200`) · Row C: `[Skip ghost] [Next →]` |
-
-Header is `sticky top-0 z-30`, `bg-white border-b border-gray-200`, edge-to-edge (no margin, no rounded corners).
-
-Page heading text is **"Purchase Order"** (renamed from "Place Order" 2026-05-29). Route `/order` and DB `pageKey = 'place_order'` UNCHANGED — visible text only.
-
-**Key rule:** once a customer is locked, the page header disappears. The customer header IS the page identity from that point.
-
-### 15.2 Visual Viewport keyboard fix
-
-`<main>` has `style={{ height: "var(--vvh, 100vh)" }}` + `overflow-y-auto`. Mount-effect listens to `window.visualViewport.resize/scroll` and writes the visible height to `--vvh` via `documentElement.style.setProperty` (NOT React state — would cause render storm).
-
-`app/globals.css` fallback: `html { --vvh: 100vh; }` so it's never unset before JS runs.
-
-`app/layout.tsx` Viewport export uses Next.js 14.2.29 typed `Viewport`:
-```ts
-export const viewport: Viewport = {
-  width: "device-width",
-  initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
-  interactiveWidget: "resizes-content",
-};
-```
-
-Rules:
-- Write `--vvh` directly to DOM, not React state
-- No rate-limiting needed (iOS URL-bar collapse fires resize too — cosmetic only)
-- `overflow-y-auto` on `<main>` so scrolling happens inside `<main>` (keyboard-aware), not document body
-- Don't pin search input with sticky/fixed — creates a second scroll surface
-- Pick ONE viewport mechanism — typed export OR raw `<meta>` — never both
-
-### 15.3 Empty-state row
-
-Synchronous in-memory filter. Render gate uses `inMultiSel && bill.searchQuery.trim().length >= 2`. Zero-match queries render italic `"No products match {query}"` row instead of nothing.
-
-Mode flip logic: flip to `multi-select` whenever `query.trim().length >= 2`, regardless of match count.
-
-User input escaped via React text nodes — never `dangerouslySetInnerHTML`.
-
-### 15.4 Other mobile patterns
-
-- Qty input: `text-[16px]` (iOS auto-zoom prevention).
-- Mode-transition auto-focus to first qty input is **desktop-only**: `window.matchMedia("(min-width: 768px)").matches`. Mobile users get a calm Set Quantities screen with no keyboard. They tap +/− or tap the qty number to bring up keyboard on demand.
-- Pack row has `data-pack-row` attribute + `scroll-mt-[140px]` for picker-entry auto-scroll target.
-- Picker Skip button: ghost (`text-gray-500 text-[13px] font-medium`, no bg). Next button: primary teal/green.
-- Single-pack products: `py-[18px]` + `text-[16px]` label (vs default `py-[10px]` + `text-[14px]`).
-- Qty input: `border-b border-dashed border-gray-300` when value is 0. Dashed underline disappears when user enters a value. Subtle "tap to type" cue.
-- Bill summary chip: `BILL N · X products · Y units` when cart non-empty.
-- Auto-scroll on picker entry/advance: useEffect inside BillCard listens to `bill.mode === "picking" && bill.activeProduct?.id` changes. Calls `target.scrollIntoView({ block: "start", behavior: "smooth" })`. NO focus call.
-- Customer search rows show area: `{c.area && <span> · {c.area}</span>}` (gray suffix). Both Bill To and Ship To. 638/638 customers carry non-null area.
-
-### 15.5 Mobile UX rules (lessons banked)
-
-1. **Header collapses when customer locked.** Header chrome is only useful as page identity for first-time visitors.
-2. **No keyboard auto-open on Set Quantities (mobile).** Forcing keyboard up breaks the "tap to interact" promise.
-3. **Auto-scroll on picker entry/advance is scroll-only, not focus.** Avoids iOS scrollIntoView + keyboard race.
-4. **Sticky bar lives at page level (inside `<header>`), not inside cards.** Pinning to card top fails when card scrolls off-screen.
-5. **Edge-to-edge header, no rounded corners.** Rounded = content tiles. Edge-to-edge = app chrome.
-6. **Skip button is intentionally low-visual-weight.** Used <5% of the time. Next is primary action.
-7. **Dashed underline only on zero qty.** Subtle "tap to type" affordance that disappears once filled.
+`/po`'s own spec is **§25**. Its visual patterns are `CLAUDE_UI.md §47`.
 
 ---
 
@@ -849,8 +784,8 @@ app/(place-order)/place-order/
   big-search-bar.tsx                desktop search results
   send-button.tsx                   builds mailto
 
-app/order/
-  page.tsx                          public mobile route (single-file) — FROZEN backup
+archive/2026-07-order/app/order/
+  page.tsx                          RETIRED 2026-07-27 — was the public mobile route (single-file)
 app/po/
   po-page.tsx                       going-forward depot mobile PO (§25) — single-file
 
@@ -878,7 +813,7 @@ lib/place-order/
 api/place-order/quick-tiles/route.ts
 api/place-order/data/route.ts       desktop catalog payload
 api/place-order/last-order/route.ts
-api/order/data/route.ts             public mobile catalog payload — reads v2, isPrimary filter
+api/order/data/route.ts             public catalog payload (serves `/po`) — reads v2, isPrimary filter
 
 scripts/
   v2-catalog-seed-from-preview.ts   menu reseed (wipe-and-reseed from taxonomy-preview.json)
@@ -916,11 +851,11 @@ This was the root cause of the May-13 grouping outage (WS card went blank): the 
 - **The stable key (backend only):** every product+variant links menu→stock by a stable key (SAP `material` for per-pack codes; product name one level up). Never shown on the frontend.
 - **Friendly names + search on top:** `displayName` for people; `searchTokens` for the search box.
 - **One universal keyword brain:** a single curated word→product + word→colour layer, used by BOTH the search box AND the parser — so a word is taught once and both stay in step (no drift).
-- **Two doors, one catalogue:** `/order` orders arrive already clean (skip the parser); messy emails go through the keyword brain to be tidied; both then use the same catalogue → SAP code.
+- **Two doors, one catalogue:** app-built orders (`/po`, `/place-order`, and the retired `/order`) arrive already clean (skip the parser); messy emails go through the keyword brain to be tidied; both then use the same catalogue → SAP code.
 
 ### Stage 1 — urgent fix (production-safe) — IN PROGRESS
 
-Make `/order` packs work + restore `/place-order` grouping. **Mostly DONE.**
+Make mobile packs work + restore `/place-order` grouping. **Mostly DONE.**
 
 **Stage 1 remaining touch-ups (next session before Stage 2 starts):**
 - ~13 oddball rows still showing no packs (left with `product = null` on purpose):
@@ -932,14 +867,14 @@ Make `/order` packs work + restore `/place-order` grouping. **Mostly DONE.**
   - **WS Protect Brilliant White** (flagged — plain WS Protect has no BW SKU though Dustproof/Max cousins do)
   - WS Max Yellow Base; WS Protect 90/93/96/97 Base; WS Protect Dustproof Yellow Base / ROX
 - Stock-side gap: Acrylic Distemper / Interior Distemper SKU missing its `packCode` in `mo_sku_lookup_v2`
-- Optional cosmetic: WS rows carry `mobileFamily = MAX/POWERFLEXX/PROTECT/RAINPROOF`. Harmless on `/order` (it labels by `family = "WS"`); normalise to "WS" only if desired.
+- Optional cosmetic: WS rows carry `mobileFamily = MAX/POWERFLEXX/PROTECT/RAINPROOF`. Harmless on `/po` (it labels by `family = "WS"`); normalise to "WS" only if desired.
 
 ### Stage 2 — make v2 parser-ready (frontend lives on v2; legacy parser still runs untouched)
 
 Build everything the parser will eventually need, without switching it over:
 1. Fill the canonical key (`product`) on all remaining rows (full hygiene).
 2. Build the one universal keyword layer in v2 (word→product + word→colour), seeded from the legacy keyword tables (`mo_product_keywords`, `mo_base_keywords`).
-3. Point `/order` + `/place-order` search at the shared layer.
+3. Point `/po` + `/place-order` search at the shared layer.
 4. Readiness check — confirm v2 carries everything the parser needs (packs, colour strategies DIRECT/FIXED/NUMBERED/COLOUR, carton multiply, no-match handling).
 5. Verify search + readiness.
 
@@ -980,7 +915,7 @@ On every cart change: full cart object serialised. On mount: deserialise + valid
 
 ## 22. Landmines
 
-- **v2 tables are parallel to legacy.** `/order` + `/place-order` read v2; mail parser + enrichment read LEGACY. Diverging product/base names between the two will cause mail order enrichment misses on Place Order-originated emails. Spot-check after any taxonomy edit.
+- **v2 tables are parallel to legacy.** `/po` + `/place-order` read v2; mail parser + enrichment read LEGACY. Diverging product/base names between the two will cause mail order enrichment misses on Place Order-originated emails. Spot-check after any taxonomy edit.
 - **`product` and `baseColour` in v2 carry bucket+variant info, not real colour.** A row may have `baseColour="MATT"` or `baseColour="SEALER"` or numbered "90 BASE". Treat as opaque variant key.
 - **PROMISE appears cross-listed** — historically dropped to 1 spot per family via 2026-05-30 dedup. Watch for resurfacing on future reseeds.
 - **Tab order is `sortOrder`-driven** — NOT from any `WITHIN_SECTION_ORDER` constant. Earlier doc reference to that file was stale; it does not exist.
@@ -997,7 +932,7 @@ On every cart change: full cart object serialised. On mount: deserialise + valid
 - **Promise cross-listing risk** — if a product appears under both family `PROMISE` and `PROMISE INTERIOR/EXTERIOR/ENAMEL`, surfaces as a near-duplicate in flat mobile search. Family chip distinguishes.
 - **Phase 3 `visualViewport` JS fight failed** on the qty card sticky bar. Don't fight iOS's sticky-position quirks with JS math. Move the bar to a place that doesn't need lifting (skip auto-focus on mobile is the right pattern).
 - **Working-tree clutter risk** — pre-existing uncommitted drafts/SQL/scripts can sit in the working tree for days. Always `git status` at session start; commit clean before pushing the actual feature.
-- **THREE mobile/desktop order pages — change all the relevant ones.** `/order` (frozen public, no buckets), `/po` (going-forward depot, own `PackRows`, no buckets), `/place-order` (desktop, bucket columns). Each mobile page has its OWN `PackRows` + step call sites; a pack/render change must be repeated on every live surface. Mobile renders every pack straight from the API (no buckets); buckets are desktop-only.
+- **TWO order pages — change both relevant ones.** `/po` (going-forward depot mobile, own `PackRows`, no buckets) and `/place-order` (desktop, bucket columns). Each has its OWN `PackRows` + step call sites; a pack/render change must be repeated on every live surface. Mobile renders every pack straight from the API (no buckets); buckets are desktop-only. (Was three until `/order` retired 2026-07-27 — if you find a third `PackRows` in an old draft, that is why.)
 - **Desktop columns are a fixed bucket set, not the pack union** (§24). A pack whose `packCode+unit` key is missing from `PACK_TO_BUCKET` is **silently dropped on desktop only** — looks like "works on phone, blank on desktop". Two packs on one product that map to the same bucket **collide** (one hidden).
 - **Base aliases / shade codes / token-bake are gated on non-null `product`** (§12). Null-product families (join via `subProduct`) show no aliases until given a `CONFIRMED_SUBPRODUCT_MAP` identity key.
 - **Aliases are keyed on `product`.** A product rename that carries numeric-base aliases must re-key the `base-aliases.ts` block in the same change, or the friendly names silently vanish.
@@ -1040,7 +975,7 @@ Speed-dial tiles and their tabs (desktop). Mobile is search-first (ignores tabs/
 
 ## 24. Desktop pack buckets — `pack-buckets.ts`
 
-The desktop variant grid builds columns from a **fixed bucket set**, not the raw pack union (the route only sorts/dedups raw packs; bucketing is entirely frontend). Mobile `/order` + `/po` do NOT import this file — they render every pack via `formatPack`, which is why a missing bucket looks like "works on phone, blank on desktop".
+The desktop variant grid builds columns from a **fixed bucket set**, not the raw pack union (the route only sorts/dedups raw packs; bucketing is entirely frontend). Mobile `/po` does NOT import this file — they render every pack via `formatPack`, which is why a missing bucket looks like "works on phone, blank on desktop".
 
 - **`STANDARD_COLUMNS`** — fixed ordered set (`50ML … 20L, 25KG, 30KG, 40KG`, plus disjoint `400ML`, `25PC`, `12PC`).
 - **`PACK_TO_BUCKET`** — **global** map `packCode+normalisedUnit` → a standard column. A key NOT in the map returns `null` → **no column, no cell, silently dropped on desktop.** Global additions are safe only when the size belongs to a narrow set of products (e.g. `400GM→500ML`, `3KG→4L`, `15KG→20L`). Disjoint/identity buckets (`25PC`, `12PC`, `400ML`) map to themselves (lookupKey == bucket, no stray hint) so two carton sizes can coexist.
@@ -1054,7 +989,9 @@ The desktop variant grid builds columns from a **fixed bucket set**, not the raw
 
 ## 25. `/po` — going-forward depot mobile PO
 
-All work in **`app/po/po-page.tsx`** (single file). `/order` is the frozen reference. `/po` email intentionally diverges (§11). Eventual cutover: rename `/po` → `/order`.
+All work in **`app/po/po-page.tsx`** (single file). `/po` email intentionally diverges (§11). The archived `/order` page (`archive/2026-07-order/`) is the historical reference `/po` was modelled on — read-only, never a rollback.
+
+**Eventual cutover: rename `/po` → `/order` — now UNBLOCKED.** `/order` retired 2026-07-27 with **no redirect**, and the address was deliberately **parked for exactly this rename**. Nothing occupies it.
 
 ### Bills model
 `bills: Bill[]` where `Bill = { id, lines }`; `activeBillId`; `billCounter`. **Invariant: `id === position + 1`.** Anything touching the bills array must preserve it.
@@ -1117,7 +1054,7 @@ during testing).
 Device-local localStorage, saved **on Send** (not on select), dedupe by code, newest-first, cap 10. Desktop key `place_order_recent_customers`; `/po` key `po_recent_customers` (distinct). Grid shows only when no customer selected AND search empty AND recents non-empty. Server-side per-user recents deferred (ROADMAP). **On `/po` Home this is now superseded by Favourites** (above) — the mechanism still runs, just isn't rendered there.
 
 ### Android shell / polish
-Manifest `display_override: ["standalone"]`; `html,body { overscroll-behavior: none }` (kills pull-to-refresh); scroll container `overscroll-behavior: contain`; reset scroll on `[mode, view]` change; `.po-page` scoped `touch-action: manipulation` (tap-delay, scoped so the rest of the app incl. `/order` is untouched). Android "browser-feel/zoom" was a stale-install symptom — a clean PWA reinstall fixed it, not config.
+Manifest `display_override: ["standalone"]`; `html,body { overscroll-behavior: none }` (kills pull-to-refresh); scroll container `overscroll-behavior: contain`; reset scroll on `[mode, view]` change; `.po-page` scoped `touch-action: manipulation` (tap-delay, scoped so the rest of the app is untouched). Android "browser-feel/zoom" was a stale-install symptom — a clean PWA reinstall fixed it, not config.
 
 ---
 
