@@ -203,7 +203,7 @@ interface ImportPageContentProps {
   viewOrdersHref?: string;
 }
 
-export function ImportPageContent({ viewOrdersHref = "/support" }: ImportPageContentProps) {
+export function ImportPageContent({ viewOrdersHref = "/floor" }: ImportPageContentProps) {
   const [stage, setStage] = useState<Stage>("upload");
   const [templateId, setTemplateId] = useState<ImportTemplateId>(DEFAULT_TEMPLATE_ID);
   const [headerFile, setHeaderFile] = useState<File | null>(null);
