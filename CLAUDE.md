@@ -1,5 +1,5 @@
 # CLAUDE.md — Orbit OMS Router
-# v1.6 · Entry point · Read this first · July 2026 · Lives in: repo root (auto-loaded by Claude Code)
+# v1.7 · Entry point · Read this first · July 2026 · updated 2026-07-27 · Lives in: repo root (auto-loaded by Claude Code)
 
 **OrbitOMS — depot operations management for JSW Dulux paint distribution, Surat depot. Live at https://orbitoms.in.**
 
@@ -47,14 +47,15 @@ All context files live in `docs/` relative to repo root.
 | `/place-order`, `/po`, `/order`, `mo_order_form_index_v2`, `mo_sku_lookup_v2`, speed dial, cart, pack buckets, base aliases, catalog families, email builder | `docs/CLAUDE_PLACE_ORDER.md` |
 | `/attendance`, OT, `attendance_*`, admin OT pending/settings/audit | `docs/CLAUDE_ATTENDANCE.md` |
 | `/admin/import`, SAP parser, upsert brain, Auto-Import, `import_*` tables | `docs/CLAUDE_IMPORT.md` |
-| `/support`, `/operations/support` — gatekeeper, workflow pipeline, closed parking-stage, hold/dispatch-target, history board · **desktop superseded by `/floor` — both still live** | `docs/CLAUDE_SUPPORT.md` |
 | `/floor` — Floor Control: unified desk screen consolidating the Support board + Picking DESKTOP board; left rail (undecided bills) / right pane (Floor / On-hold / Cancelled + detail panel); floor actions (hold/cancel/release/change-slot); live sync + `/api/floor/marker` | `docs/CLAUDE_FLOOR.md` |
 | `/trips`, `trip_report`, NTS trip mirror, puller/mirror function, A4 trip sheet, WhatsApp share, logistics role | `docs/CLAUDE_TRIP_REPORT.md` |
 | `/picking`, picking queue, desktop + mobile supervisor board (Assign/Picking/Done tabs), picker "My Picks", `pick_assignments`, stage ladder, sort spine, live-sync marker · **DESKTOP superseded by `/floor` — both still live; mobile boards stay** | `docs/CLAUDE_PICKING.md` |
 | Push notifications — Web Push, `/api/push/*`, `public/sw.js`, `push_subscriptions`, quiet hours (IST), the device on/off toggle, assign/done buzz triggers, VAPID | `docs/CLAUDE_NOTIFICATIONS.md` |
 | `/admin` **Settings → Hide** (rules / hidden orders / tags), `obd_visibility_rules`, `app_tag_settings`, `orders.isHidden` | `docs/CLAUDE_CORE.md §7.10` + `docs/CLAUDE_UI.md §57` (+ `docs/CLAUDE_MAIL_ORDERS.md §21` for tag-gating) |
 | SKU catalog — `sku_master_v2`, old `sku_master`, which of the THREE sku-ish tables you actually mean | `docs/CLAUDE_CORE.md §7.1.c` (+ the id-space landmine in `§13` — read it before any repoint) |
-| `/planning`, `/warehouse`, `/admin` (other), `/operations/*` (non-support) | Core only — stubs in `docs/CLAUDE_CORE.md §11-§12` |
+| `/planning`, `/warehouse`, `/admin` (other), `/operations/*` | Core only — stubs in `docs/CLAUDE_CORE.md §11-§12` |
+
+Support module retired 2026-07-27, superseded by Floor Control. Historical spec: `archive/2026-07-support/`.
 
 If unsure which domain a task belongs to, **ask before loading** rather than guessing.
 
@@ -97,4 +98,4 @@ When extracting, update §3 decision table in this file.
 
 ---
 
-*Router v1.6 · Orbit OMS · July 2026*
+*Router v1.7 · Orbit OMS · July 2026*

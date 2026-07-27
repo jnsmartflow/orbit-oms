@@ -1,5 +1,5 @@
 # CLAUDE_MAIL_ORDERS.md — Mail Orders Module
-# v1.7 · Schema v27.12 · Parser v6.5 · Enrichment v3 · July 2026
+# v1.8 · Schema v27.12 · Parser v6.5 · Enrichment v3 · July 2026 · updated 2026-07-27
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -338,7 +338,7 @@ If guards fail but learned candidate exists → `unmatched` upgraded to `multipl
 
 ### Resolved id now carried through, alongside the existing text encoding (2026-07-07) [LIVE]
 
-Shipped alongside the Support-side inline picker (`CLAUDE_SUPPORT.md §4.18`) — this is the mail-order-side half of the same feature, mirroring how `dispatchStatus` already flows from `mo_orders` into `orders` via enrichment (§4 above).
+Shipped alongside the desk-side inline picker (then Support's; the live equivalent is Floor's, `CLAUDE_FLOOR.md §4.4`) — this is the mail-order-side half of the same feature, mirroring how `dispatchStatus` already flows from `mo_orders` into `orders` via enrichment (§4 above).
 
 - **`matchDeliveryCustomer()` widened:** the `findMany` on `delivery_point_master` now also selects `id: true` (previously fetched only `customerCode` + `customerName` — the id was queried but never returned). Return type widened to include `customerId: number`; an override-hit result now includes `customerId: match.id`. Null-return paths (not-found / same-customer) unchanged. **The `[→ Name (Code)]` suffix text encoding into `deliveryRemarks` is UNCHANGED** — the id is stored ALONGSIDE it, not instead of it.
 - **`app/api/mail-orders/ingest/route.ts` — the `mo_orders.create`:** on an override hit (`deliveryMatch && deliveryMatch.isOverride`), sets `shipToOverrideCustomerId: deliveryMatch.customerId`. Existing `shipToOverride` flag + `deliveryRemarks` suffix write unchanged.
@@ -351,7 +351,7 @@ Shipped alongside the Support-side inline picker (`CLAUDE_SUPPORT.md §4.18`) �
   Uses `!= null` (not truthiness) so a valid id is never dropped. Copies onto `orders` via the existing `orders.updateMany({ where: { soNumber }, data: updateData })` — the same path `dispatchStatus` already uses. No `mo_orders` `findFirst` select change was needed (the whole row is already fetched).
 - **`orders.shipToOverrideCustomerId` / `mo_orders.shipToOverrideCustomerId` are new FK columns** — now documented in `CLAUDE_CORE.md` §7.3 / §7.6 (schema v27.9).
 
-**Flag can be `true` with no id.** `shipToOverride = true` can still occur with NO resolvable `customerId` — free-text redirects that don't match a real `delivery_point_master` row (e.g. "as per challan", "Delivery on Challan copy"). "Flag true" does not imply "id present." Any consumer (Support board, future screens) must handle both states.
+**Flag can be `true` with no id.** `shipToOverride = true` can still occur with NO resolvable `customerId` — free-text redirects that don't match a real `delivery_point_master` row (e.g. "as per challan", "Delivery on Challan copy"). "Flag true" does not imply "id present." Any consumer (Floor's detail panel, future screens) must handle both states.
 
 **Verification pending (2b, not yet confirmed):** a real post-deploy mail order with a resolved redirect should fill `mo_orders.shipToOverrideCustomerId`, then flow to `orders.shipToOverrideCustomerId` via enrichment. Check via:
 ```sql
@@ -770,7 +770,7 @@ If "X" emails return Generic codes instead of Fini, root cause is Generic codes 
 
 ## 19. Missing customer resolver (multi-SO aware)
 
-Component: `components/shared/customer-missing-sheet.tsx`. Opens from the missing-customer badge on Tint Manager Kanban and Support board.
+Component: `components/shared/customer-missing-sheet.tsx`. Opens from the missing-customer badge on the Tint Manager Kanban. ⚠ It also opened from the Support board until that board was retired 2026-07-27 — **Floor has no equivalent entry point**, so an unmatched customer can currently only be resolved from Tint Manager. Gap, not a decision → ROADMAP.
 
 ### What it does
 
@@ -882,4 +882,4 @@ Mail Orders access for everyone except `admin`. All four rows above should be ad
 
 ---
 
-*Mail Orders v1.7 · Schema v27.12 · Parser v6.5 · Enrichment v3*
+*Mail Orders v1.8 · Schema v27.12 · Parser v6.5 · Enrichment v3*

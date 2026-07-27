@@ -1,5 +1,5 @@
 # CLAUDE_FLOOR.md — Floor Control
-# v1.1 · Schema v27.12 · July 2026 · updated 2026-07-25
+# v1.2 · Schema v27.12 · July 2026 · updated 2026-07-27
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -17,13 +17,14 @@ One desk screen that consolidates the **Support board** and the **Picking deskto
 
 ### Ownership boundary — READ BEFORE EDITING ANYTHING FLOOR
 
-Floor Control **reuses Support and Picking as a CALLER**. It did NOT fork or modify them — no Support/Picking component or API file was changed. The one shared edit was `lib/hooks/use-picking-marker` gaining **optional** params (`url`, `onProbe`); all three Picking call sites pass neither and are byte-identical.
+Floor Control **reuses Picking as a CALLER**. It did NOT fork or modify it — no Picking component or API file was changed. The one shared edit was `lib/hooks/use-picking-marker` gaining **optional** params (`url`, `onProbe`); all three Picking call sites pass neither and are byte-identical. Support was also a lender until its retirement; everything Floor borrowed from it now lives under `lib/floor/` or `app/api/floor/` and is **owned by this file** (§9).
 
 | This file OWNS | This file does NOT own — cross-reference only, never restate |
 |---|---|
 | the left/right split (§2) · Floor's `FLOOR_SPINE` sort LIST (`lib/floor/sort.ts`, §3) | assign / unassign + the sort rule OBJECTS + `sortPickingQueue` → **`CLAUDE_PICKING.md §3/§4`** |
-| the 4 read feeds (§3) | ship-to override + `dispatch-slot-picker` → **`CLAUDE_SUPPORT.md §4.18/§4.10`** |
-| floor routes: hold / cancel / release / change-slot (§4) | the dispatch engine (`evaluateDispatchSlot`) → **`CLAUDE_CORE.md §7.4`** |
+| the 4 read feeds (§3) | the dispatch engine (`evaluateDispatchSlot`) → **`CLAUDE_CORE.md §7.4`** |
+| floor routes: hold / cancel / release / change-slot (§4) | |
+| ship-to search + save (§4.4) · the dispatch-slot picker (`components/floor/dispatch-slot-picker.tsx`) · `formatArticleTag` (`lib/floor/format.ts`) | |
 | the detail panel (§4.6) | |
 | the held-since read-side rule (§4.5) | |
 | floor live-sync + `/api/floor/marker` (§5) | |
@@ -31,9 +32,9 @@ Floor Control **reuses Support and Picking as a CALLER**. It did NOT fork or mod
 
 If you find yourself explaining borrowed behaviour here, replace it with a pointer.
 
-### Both old surfaces are STILL LIVE
+### What is still live alongside Floor
 
-`/support` (`app/(support)/support/page.tsx`) and `/picking` (`app/picking/page.tsx`) are **both live and reachable today** — `middleware.ts` `PHASE1_BLOCKED` is `[]`, nothing is blocked. Picking's **mobile** supervisor + picker boards also stay. Retiring the DESKTOP tabs is **intended but NOT actioned and has no plan yet** — see §9.
+`/picking` (`app/picking/page.tsx`) is **live and reachable** — `middleware.ts` `PHASE1_BLOCKED` is `[]`. Its **mobile** supervisor + picker boards are NOT in scope for retirement and stay; retiring the Picking DESKTOP board is intended but unplanned (`CLAUDE_PICKING.md`, ROADMAP). **`/support` is gone** — retired 2026-07-27, §9.
 
 ---
 
@@ -93,20 +94,24 @@ Returns **422 when nothing was written** (every requested bill failed); a partia
 
 Body `{ releases: [{ orderId, dispatchTargetDate, dispatchWindowId }] }`. Writes the slot, `dispatchStatus="dispatch"`, `workflowStage=SUPPORT_DONE_OUTPUT` (pending_picking), `dispatchSlotSource="manual"`. Log `fromStage` = the bill's **real** prior stage.
 
-**Releasable stages — `FLOOR_RELEASABLE_STAGES = ["pending_support","pending_picking"]`** (`lib/floor/release-stages.ts`). Deliberately **NOT** Support's `supportMayEdit()` — borrowing it would couple Floor's release gate to Support's permission model. `pending_support` = a rail bill; `pending_picking` = a bill held after auto-dispatch (hold flips status only, never stage). Same 422/partial contract as §4.1.
+**Releasable stages — `FLOOR_RELEASABLE_STAGES = ["pending_support","pending_picking"]`** (`lib/floor/release-stages.ts`). Floor's own explicit list, deliberately **NOT** `supportMayEdit()` (`lib/workflow-stages.ts`) — that predicate encoded Support's permission model, and Floor's release gate answers a different question. It is now dead code with zero callers, kept pending a ROADMAP cleanup; do not wire it back in here. `pending_support` = a rail bill (the stage name is historical — nothing named Support writes it any more); `pending_picking` = a bill held after auto-dispatch (hold flips status only, never stage). Same 422/partial contract as §4.1.
 
 ### 4.3 Assign / unassign
 
 **Reused from Picking, unchanged** — Floor calls `POST /api/picking/assign` and `/api/picking/unassign` as a caller. Reassign = unassign (only if already assigned) then assign. → behaviour owned by **`CLAUDE_PICKING.md §4`**.
 
-### 4.4 Ship-to change (detail panel)
+### 4.4 Ship-to change (detail panel) [LIVE] — Floor's OWN routes
 
-**Reused from Support as a CALLER** — search `GET /api/support/ship-to-search`, write `PATCH /api/support/orders/[id]` with `{ shipToOverrideCustomerId }`. ⚠ That Support route uses `prisma.$transaction`; Floor is only a caller, no `$transaction` in any Floor file. → owned by **`CLAUDE_SUPPORT.md §4.18`**.
+Search `GET /api/floor/ship-to-search?q=` (min 2 chars, `take: 8`, gated on floor `canView`); write `POST /api/floor/ship-to` with `{ orderId, customerId }` — `customerId: null` clears the redirect. Both are Floor's own as of commit `316eec6b`; nothing here calls a Support route.
+
+The **save is a rewrite, not a copy**. Support's PATCH handled four unrelated fields at once and rode a `prisma.$transaction` (CORE §3). Floor's does one job, verifies the target customer exists, keeps the legacy `shipToOverride` boolean in sync, and **skips the write entirely when nothing changed** — sequential awaits, no `$transaction` in any Floor file.
+
+⚠ The **clear (✕)** affordance is not built on the panel yet — the route already accepts `customerId: null`. UI-only gap → ROADMAP.
 
 ### 4.5 Held-since — READ-SIDE rule [LIVE]
 
-`orders.heldAt` stores the bill's **arrival** date (`obdEmailDate`), NOT the moment it was held — matching Support (`CLAUDE_SUPPORT.md §4.9`), which anchors its amber hold footprint to arrival. **The write was NOT changed** (flipping it to `now` would move Support's footprint). The Hold tab needs the opposite, so "held since" is derived on the READ side in `getFloorHold()`:
-- Take the hold **event's** wall-clock `order_status_logs.createdAt`, identified by the log **NOTE** via the shared constant `HOLD_LOG_NOTES` (`lib/floor/hold-log.ts`) — never a sentinel `toStage` (which would pollute the stage ladder). Matches the Floor note AND Support's two hold notes (`"Placed on hold by support"`, `"Placed on hold by support (bulk)"`), so a Support-held bill groups correctly.
+`orders.heldAt` stores the bill's **arrival** date (`obdEmailDate`), NOT the moment it was held — a convention inherited from Support, which anchored its amber hold footprint to arrival. **The write was deliberately NOT changed** when Support retired: thousands of historical rows carry arrival dates, and flipping the write to `now` would make old and new rows mean different things in the same column. The Hold tab needs the opposite, so "held since" is derived on the READ side in `getFloorHold()`:
+- Take the hold **event's** wall-clock `order_status_logs.createdAt`, identified by the log **NOTE** via the shared constant `HOLD_LOG_NOTES` (`lib/floor/hold-log.ts`) — never a sentinel `toStage` (which would pollute the stage ladder). Matches the Floor note AND the two historical Support notes (`"Placed on hold by support"`, `"Placed on hold by support (bulk)"`). ⚠ **Keep both Support strings** — Support no longer writes them, but bills it held are still on hold today and would otherwise fall to the `~approximate` fallback.
 - Fallback ladder: hold log → `orders.heldAt` (rendered with a leading `~` + "approximate" tooltip; enrichment holds write no log) → unknown (banded separately under "Held date unknown"). Nothing can silently read as "held today".
 
 ### 4.6 Detail panel [LIVE]
@@ -156,16 +161,26 @@ This is a **completed one-off**, not a runbook. (It is also the source of the `d
 
 ---
 
-## 9. Retirement of the old tabs [NEXT]
+## 9. Support retirement — DONE 2026-07-27 [LIVE]
 
-Retiring `/support` and the Picking **desktop** board is **INTENDED but unplanned** — nothing is switched off, no trigger is set. Draft §8 #6 requires a **retirement DEPENDENCY LIST first**: exactly what Floor leans on before anything is turned off — the Picking assign/unassign endpoints, the sort rule objects + `sortPickingQueue` in `lib/picking/sort.ts` (imported by Floor's own `FLOOR_SPINE`), the Support dispatch-slot-picker, `formatArticleTag`, and the `use-picking-marker` hook — so the retirement is deliberate, not a surprise breakage. → **ROADMAP** (dependency list + a concrete trigger).
+`/support` is **retired**. Screens, API routes and its spec live at `archive/2026-07-support/` — nothing there is compiled, deployed or reachable. Commits `bc42a948` → `62a2928c` (8 steps: extract shared code → Floor's own ship-to routes → nav → screens → API routes + page keys → orphaned links → docs). Full story, including what stayed in the database and why: `archive/2026-07-support/README.md`.
+
+**What Floor absorbed** — all now owned by this file, not borrowed:
+
+| Was | Now |
+|---|---|
+| `components/support/dispatch-slot-picker.tsx` | `components/floor/dispatch-slot-picker.tsx` |
+| `formatArticleTag` (Support's shared table cells) | `lib/floor/format.ts` |
+| `GET /api/support/ship-to-search` · `PATCH /api/support/orders/[id]` | `GET /api/floor/ship-to-search` · `POST /api/floor/ship-to` (§4.4 — rewritten, not copied) |
+
+**The Picking DESKTOP board is a separate, still-open question** — intended for retirement, not actioned, no trigger set. Its remaining dependency list is the Picking assign/unassign endpoints, the sort rule objects + `sortPickingQueue` (`lib/picking/sort.ts`, imported by `FLOOR_SPINE`), and the `use-picking-marker` hook. ⚠ Picking's **mobile** boards are NOT in scope. → **ROADMAP**.
 
 ---
 
 ## 10. Landmines [LANDMINE]
 
 - **`RAIL_SUGGESTIONS_ENABLED = false`** (`lib/floor/queries.ts`) — the slot suggestion is gated OFF; `lib/floor/suggest.ts` (which calls the live `evaluateDispatchSlot`) is intact behind it. Flipping the constant re-enables it — but the staleness bug in §8 must be fixed first, or "Release to Wed 16:00" reappears on a Thursday.
-- **`heldAt` is the ARRIVAL date, not the hold time** — the write is intentional and shared with Support (§4.5). Do NOT "fix" it to wall-clock; the Hold tab already handles it on the read side. Reading `heldAt` as "held since" shows a 3-week-old bill held 5 min ago as "21 days".
+- **`heldAt` is the ARRIVAL date, not the hold time** — the write is intentional and inherited from Support (§4.5); thousands of historical rows depend on it. Do NOT "fix" it to wall-clock; the Hold tab already handles it on the read side. Reading `heldAt` as "held since" shows a 3-week-old bill held 5 min ago as "21 days".
 - **The board and the marker MUST stay on the one shared predicate** `floorLiveBaseWhere` (§3/§5). Re-declaring the WHERE in either place reintroduces the marker/queue drift the Picking §10 landmine warns about.
 - **Never add a second `orders.update` (or a log write to the dispatch engine)** in any floor path — the marker keys on `MAX(orders.updatedAt)`; a second write fires a false "changed" on every board.
 - **Delivery-type scope is applied CLIENT-SIDE in the feeds** — the DB queries return all types. A future "just filter in SQL" change would desync the marker (which watches all types) from the board.
@@ -198,4 +213,4 @@ Retiring `/support` and the Picking **desktop** board is **INTENDED but unplanne
 
 ---
 
-*CLAUDE_FLOOR.md v1.1 · Schema v27.12 · OrbitOMS*
+*CLAUDE_FLOOR.md v1.2 · Schema v27.12 · OrbitOMS*

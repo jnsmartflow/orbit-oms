@@ -1,5 +1,5 @@
 # CLAUDE_SAMPLING_LIBRARY.md — Sampling Library Module
-# v1.4 · Schema v27.12 · July 2026 · Phase 4 shipped 2026-05-25 · Cohort A+B restore 2026-05-27
+# v1.5 · Schema v27.12 · July 2026 · updated 2026-07-27 · Phase 4 shipped 2026-05-25 · Cohort A+B restore 2026-05-27
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -155,7 +155,7 @@ INDEX (siteNameRaw)
 >    runtime code reads `sku_master` — grep-confirmed. The live module reads the **raw imported
 >    line** (`skuCodeRaw` on `sampling_usage_log`, and `import_raw_line_items` upstream), never the
 >    operational catalog. Sampling is a confirmed **non-reader** of the catalog, alongside Tint
->    Manager/Operator, Delivery Challan, the Support board, Warehouse, and Trip Report.
+>    Manager/Operator, Delivery Challan, Warehouse, and Trip Report.
 >
 > **⚠ PRE-DROP RISK — `scripts/normalise-sampling-data.ts:313`.** This is the ONE remaining reader
 > of old `sku_master` in this module: `prisma.sku_master.findMany({ select: { skuCode: true } })`.
@@ -538,4 +538,4 @@ Sampling Library is **operator-created runtime data, NOT CSV-seeded** — merges
 
 ---
 
-*Sampling Library v1.4 · Schema v27.12 · July 2026 · Phase 4 shipped + Cohort A+B restored · OrbitOMS*
+*Sampling Library v1.5 · Schema v27.12 · July 2026 · Phase 4 shipped + Cohort A+B restored · OrbitOMS*

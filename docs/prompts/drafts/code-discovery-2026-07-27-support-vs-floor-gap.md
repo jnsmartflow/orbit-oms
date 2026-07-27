@@ -1,3 +1,11 @@
+> SUPERSEDED IN PART, 2026-07-27. §4 states Floor
+> calls /api/support/ship-to-search and PATCH
+> /api/support/orders/[id]. Fixed in commit 316eec6b
+> — Floor now has its own routes. §2 row 16 calls the
+> tint slot pre-set a GAP; that was wrong, Floor
+> covers it via the detail panel. Everything else
+> stands as written.
+
 # Support vs Floor — retirement gap discovery
 # 2026-07-27 · read-only · code-verified
 

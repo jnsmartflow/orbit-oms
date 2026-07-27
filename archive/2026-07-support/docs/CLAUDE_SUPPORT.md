@@ -1,3 +1,9 @@
+> ARCHIVED 2026-07-27. The Support module was retired
+> and replaced by Floor Control (/floor). This file
+> describes a module that no longer exists. Kept for
+> reference only — see ../README.md for the full story.
+> Nothing here reflects the current app.
+
 # CLAUDE_SUPPORT.md — Support Module
 # v1.7 · Schema v27.12 · July 2026 · updated 2026-07-24
 # Lives in: orbit-oms/docs/

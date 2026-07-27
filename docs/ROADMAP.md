@@ -1,5 +1,5 @@
 # ROADMAP.md — OrbitOMS Planned Work
-# Updated 2026-07-25 · Lives in: orbit-oms/docs/ (manual attach — NOT auto-loaded)
+# Updated 2026-07-27 · Lives in: orbit-oms/docs/ (manual attach — NOT auto-loaded)
 
 Attach this file when planning the next phase of any module. Live "what's next" list, separated from canonical docs.
 
@@ -369,11 +369,22 @@ New OPEN items surfaced while consolidating the 17 drafts (Jul 8–16) into cano
   visible only after reinstall. (`CLAUDE_NOTIFICATIONS.md §8`, `CLAUDE_ATTENDANCE.md §14`)
 
 ### Floor Control
-- **RETIREMENT DEPENDENCY LIST (P0 — blocks any switch-off).** Before `/support` or the Picking
-  DESKTOP board can be retired, enumerate everything Floor borrows from them: the Picking
-  assign/unassign endpoints, the sort spine, the Support dispatch-slot-picker, `formatArticleTag`, and
-  the `use-picking-marker` hook. No tab is switched off until this list exists AND a trigger is agreed.
+- **RETIREMENT DEPENDENCY LIST — ✅ DONE for `/support` (2026-07-27), still OPEN for the Picking
+  DESKTOP board (P0 — blocks any switch-off).** Support is retired (`archive/2026-07-support/`);
+  what Floor borrowed from it — the dispatch-slot picker, `formatArticleTag`, ship-to search + save —
+  was extracted into `components/floor/` · `lib/floor/format.ts` · `app/api/floor/` first and is now
+  Floor's own. The Picking half of the list is unchanged and still required before any desktop
+  switch-off: the assign/unassign endpoints, the sort rule objects + `sortPickingQueue`
+  (`lib/picking/sort.ts`), and the `use-picking-marker` hook — plus an agreed trigger.
   ⚠ Picking's MOBILE boards are NOT in scope for retirement. (`CLAUDE_FLOOR.md §9`)
+- **Ship-to CLEAR (✕) on the Floor detail panel (P2 — UI only).** `POST /api/floor/ship-to` already
+  accepts `customerId: null` and clears the redirect; the panel offers no ✕ to send it, so an
+  operator can change a ship-to but never remove one. No backend work. Deferred to the post-testing
+  polish round. (`CLAUDE_FLOOR.md §4.4`)
+- **Missing-customer resolver has no Floor entry point (P2).** `components/shared/customer-missing-sheet.tsx`
+  opened from the Support board and the Tint Manager Kanban; with Support retired, only Tint Manager
+  can resolve an unmatched customer. Decide whether Floor's detail panel should surface it.
+  (`CLAUDE_MAIL_ORDERS.md §19`)
 - **Floor Control v2 — re-enable slot suggestion (Step 10 of the build).** `lib/floor/suggest.ts` is
   gated behind `RAIL_SUGGESTIONS_ENABLED=false`. Two fixes first: (1) the staleness check must compare
   the full moment (date + time) vs now, not minutes-since-midnight (the bug that caused removal);
@@ -382,7 +393,7 @@ New OPEN items surfaced while consolidating the 17 drafts (Jul 8–16) into cano
   - `Waiting` pills show no elapsed time — needs a `releasedAt` on the floor payload.
   - Ship-to original→redirect name pair missing on the floor table — needs the original name on the floor feed (the rail already has it).
   - Assigned rows sink to the bottom of the board — **✅ RESOLVED + SHIPPED (`661e4e61`, 2026-07-25):** `byAssigned` excluded from Floor's sort (Floor now uses `FLOOR_SPINE` = spine minus `byAssigned`, `lib/floor/sort.ts`), so Assigned/Done rows hold their place. The residual new/urgent-bill slide above a picker's row is parked separately → **"Floor Control — carry-over + stable positions (opened 2026-07-25)"** below.
-  - Rail button reads lowercase "pick slot"; mockup says "Set slot" — copy fix without forking the Support picker.
+  - Rail button reads lowercase "pick slot"; mockup says "Set slot" — copy fix; the picker is Floor's own now (`components/floor/dispatch-slot-picker.tsx`), nothing to fork around.
   - Assign bar reads "Change slot" beside a "pick slot" button — one label, one action.
   - No picker search — search matches customer / route / OBD only.
   - Detail-panel header pill shows no elapsed time — the panel is not a live surface.
@@ -478,6 +489,42 @@ From the flat-SKU-catalog migration + the Direction-A mobile shell batch. Canoni
   three later commits (`8f606a88`, `a227fb13`, `b91b7381`) repointed every operational reader. A
   future reader taking it at face value would conclude the migration never happened. Fix the line
   next time `schema.prisma` is edited — not worth its own commit.
+
+---
+
+## Post-Support-retirement cleanup (opened 2026-07-27)
+
+Forward items left behind by the retirement (commits `bc42a948` → `62a2928c`). The retirement itself
+is done and recorded in `archive/2026-07-support/README.md` — these are the loose ends.
+
+- [ ] **`/orders` — delete it, or gate it (P2).** `app/orders/page.tsx` has **no permission gate**
+  (any authenticated role can load it) and its entire body is `redirect("/floor")`. Two commits in
+  its whole history: created March 2026, repointed at Floor in `62a2928c`. Because `/floor` is granted
+  to admin + operations only, every other role now lands on `/unauthorized` via a route nothing links
+  to. Decide: delete the route, or add a `floor` `canView` gate so the failure is honest.
+- [ ] **`dispatch_change_queue` — decide whether to drop the table (P2).** Support's edit route was
+  its ONLY writer in the entire codebase, and **nothing has ever read it**. Now frozen: no new rows,
+  existing rows are history. Dropping a table is a bigger decision than retiring a screen and was
+  deliberately not bundled into the retirement. (`CLAUDE_CORE.md §7.4`)
+- [ ] **Move the four master-data pages out of their old route group (P3 — cleanup only).**
+  Customers / SKUs / Routes / Vehicles sat under the Support route group and were archived with it.
+  Their `/admin/*` equivalents are live and a **superset** (`/admin/customers` uses the richer split
+  view), so nothing is lost — the `support` role now falls through to those. Low priority; the only
+  gain is that no future reader wonders where the Support-group copies went.
+- [ ] **Dead exports in `lib/workflow-stages.ts` (P3).** `supportMayEdit()`, `isSupportDone()` and
+  `stageRank()` now have **zero callers** (`stageRank` is called only by the dead `isSupportDone`).
+  The `supportMayEdit` flag on all fourteen `STAGE_LADDER` rows exists only to feed the dead function.
+  ⚠ **Do NOT bulk-delete by name:** `SUPPORT_DONE_OUTPUT`, `SUPPORT_DONE_STAGE_NAMES` and
+  `SUPPORT_PICKING_QUEUE_STAGE_NAMES` share the prefix and are **load-bearing** across Floor, Picking,
+  Import, Tint and two admin backfill tools. (`CLAUDE_PICKING.md §2`)
+- [ ] **The `SUPPORT_*` naming in `lib/workflow-stages.ts` (P3).** Four live constants and the
+  `pending_support` stage name still say "support" but belong to Floor/Picking/Import/Tint. Renaming
+  removes a real trap; it is a wide mechanical change (and `pending_support` would mean rewriting live
+  rows), so it needs its own session — or a deliberate decision to leave the names as historical.
+- [ ] **Five pre-existing unused files (P3 — NOT caused by the retirement).** Verified dead before it
+  began (`d08681e9`) and never referenced by Support: `components/shared/role-nav.tsx`,
+  `components/shared/sign-out-button.tsx`, `lib/mail-orders/enrich-v2.ts`,
+  `lib/picking/validate-assign.ts`, `lib/slot-history.ts`. Confirm and remove in one sweep.
 
 ---
 

@@ -1,3 +1,19 @@
+> SUPERSEDED IN PART, 2026-07-27. This was a PRE-MOVE
+> snapshot and is written in the present tense; the
+> move has since happened (commits bc42a948 →
+> 62a2928c). Its central warning — that
+> app/(support)/support/layout.tsx gated the
+> Customers / SKUs / Routes / Vehicles pages on
+> support_queue, so revoking that permission would
+> darken four unrelated pages — is RESOLVED, not
+> pending: those four pages were archived with the
+> board in f1166f94 and the support-role href
+> overrides it cites at lib/permissions.ts:55-59 were
+> removed in the same commit. The role now falls
+> through to the live /admin/* equivalents. Its own
+> §9 self-correction (the tint slot pre-set was not a
+> gap) stands. Everything else stands as written.
+
 # Support cut-loose — pre-move safety check
 # 2026-07-27 · read-only
 

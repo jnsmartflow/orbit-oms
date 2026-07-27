@@ -97,7 +97,7 @@ model user_roles {
 model role_permissions {
   id        Int      @id @default(autoincrement())
   roleSlug  String // matches ROLES constants: "admin","dispatcher","support","tint_manager","tint_operator","floor_supervisor","picker"
-  pageKey   String // e.g. "support_queue", "tint_manager", "import_obd", "customers", etc.
+  pageKey   String // e.g. "floor", "tint_manager", "import_obd", "customers", etc.
   canView   Boolean  @default(false)
   canImport Boolean  @default(false)
   canExport Boolean  @default(false)

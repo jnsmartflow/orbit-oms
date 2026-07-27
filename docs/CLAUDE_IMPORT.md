@@ -1,5 +1,5 @@
 # CLAUDE_IMPORT.md — OrbitOMS Import Pipeline
-# v1.5 · Schema v27.12 · July 2026 · Lives in: orbit-oms/docs/
+# v1.6 · Schema v27.12 · July 2026 · updated 2026-07-27 · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
 Covers the SAP/OBD import pipeline end-to-end: manual SAP upload, Auto-Import (currently paused), the shared upsert utility that both paths funnel through, schema, filters, and downstream consumers.
@@ -19,7 +19,7 @@ Both paths converge at `upsertObd()` (`lib/import-upsert.ts`) — the shared bra
 
 Scale: ~100–200 OBDs/day per CORE §1. Single-depot deployment.
 
-Downstream consumers: `orders` rollup, `import_obd_query_summary` cache, `applyMailOrderEnrichment()` hook (CLAUDE_MAIL_ORDERS.md §7), challan auto-creation (CLAUDE_TINT.md §9.1), Support board, Tint Manager Kanban, dispatch planning, warehouse picking.
+Downstream consumers: `orders` rollup, `import_obd_query_summary` cache, `applyMailOrderEnrichment()` hook (CLAUDE_MAIL_ORDERS.md §7), challan auto-creation (CLAUDE_TINT.md §9.1), Floor Control (CLAUDE_FLOOR.md), Tint Manager Kanban, dispatch planning, warehouse picking.
 
 ---
 
@@ -707,4 +707,4 @@ flows through, as the acceptance check.
 
 ---
 
-*Import v1.5 · Schema v27.12 · OrbitOMS*
+*Import v1.6 · Schema v27.12 · OrbitOMS*

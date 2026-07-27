@@ -1,5 +1,5 @@
 # CLAUDE_UI.md — OrbitOMS UI Design System
-# v5.11 · July 2026 · Lives in: orbit-oms/docs/
+# v5.12 · July 2026 · updated 2026-07-27 · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md
 
 Single source of truth for visual styling across all screens.
@@ -181,7 +181,8 @@ independent groups (e.g. View / SMU / Delivery Type / Priority), each rendering 
 toggleable chips — multiple chips per group may be active at once (options within a group OR
 together; groups AND together). The header count badge sums selections across **all** groups, not
 per-group. **"Clear all"** renders inside the panel only when the total badge count is **> 0** —
-hidden entirely at zero selections. Behaviour reference: `CLAUDE_SUPPORT.md §4.21`.
+hidden entirely at zero selections. (The pattern originated on the retired Support board; the
+behaviour reference is archived at `archive/2026-07-support/docs/CLAUDE_SUPPORT.md §4.21`.)
 
 ### Date control
 Click-to-open calendar popover. Format `‹ Today · 04 Apr ›`. Right arrow disabled when viewing today.
@@ -484,7 +485,7 @@ content-blind column sync can still be achieved: **percentage grid-template-colu
 one shared string constant read by both the header and every row.
 
 **Why this is the only scheme that works** (the reusable lesson — full narrative + measured drift
-numbers: `CLAUDE_SUPPORT.md §4.19`):
+numbers are archived at `archive/2026-07-support/docs/CLAUDE_SUPPORT.md §4.19`):
 - `fr` distributes *leftover* space, which depends on row content — one row's long value pools
   surplus into a column and shifts everything right, in that row only.
 - `minmax(0, Nfr)` stops one value inflating its own track but doesn't fix the pooled surplus.
@@ -1185,90 +1186,13 @@ New admin area under a **Settings** section in `components/admin/admin-sidebar.t
 
 ---
 
-## 58. Support board — column order, ship-to override, Vol cell, Hold tab
+## 58. Support board — RETIRED 2026-07-27
 
-Business behaviour: `CLAUDE_SUPPORT.md §4.18` (ship-to override), `§4.19` (column rework + GRID
-sizing), `§4.20` (Hold tab rebuild), `§4.21` (Filter + search rework).
-
-**Note on structure:** the Support board is **CSS Grid, not `<table>`** (`CLAUDE_SUPPORT.md §7`
-landmine — a full rewrite to the §27 fixed-table standard was proposed and rejected as scope creep).
-This spec is Grid-native, kept visually consistent with §27 (same typography, row heights) but
-structurally separate — do not conflate the two, and do not add Support to §27's "applies to" list.
-
-### Locked column order (11 + checkbox) — corrected 2026-07-09
-
-| # | Column | Header label | Align |
-|---|---|---|---|
-| 1 | checkbox | — | centre |
-| 2 | OBD | `OBD` | left |
-| 3 | CUSTOMER | `CUSTOMER` | left |
-| 4 | SHIP-TO | `SHIP-TO` | left |
-| 5 | AGE | `AGE` | centre (pill) |
-| 6 | ROUTE | `ROUTE` | left |
-| 7 | VOL | `VOL` | right |
-| 8 | ARTICLE | `ARTICLE` | left |
-| 9 | STATUS | `STATUS` | left |
-| 10 | SLOT | `SLOT` | left |
-| 11 | PRIORITY | `PRIORITY` | left |
-
-Header labels are shortened display strings only (`OBD / DATE`→`OBD`, `SHIP-TO OVERRIDE`→`SHIP-TO`,
-`ROUTE / TYPE`→`ROUTE`, `VOL (L)`→`VOL`, `DISPATCH SLOT`→`SLOT`) — no field/data rename underneath.
-MATERIAL TYPE is no longer its own column (folded into the VOL cell below).
-
-**Percentage GRID (both sum to 100, live in `components/support/shared/table-cells.tsx`):**
-
-```
-SUPPORT_GRID_COLUMNS       "3% 9% 19% 11% 5% 9% 5% 9% 9% 13% 8%"     (main board)
-SUPPORT_HOLD_GRID_COLUMNS  "3% 9% 20% 11% 6% 9% 5% 9% 13% 7% 8%"     (hold tab)
-```
-
-Content-blind percentage tracks — see the Grid-native equivalent rule in §27. One shared constant,
-read by header AND every row; inter-column spacing is per-cell padding (§27 standard, 14px L/R),
-grid `gap` is `0`.
-
-### Stacked VOL cell
-
-Two lines, both right-aligned: the volume number on top, `orders.materialType` as a **muted
-sub-line** underneath (`text-gray-400`, same weight as other muted table-data text, §4). `null`
-materialType → `—` sub-line. This is why VOL is right-aligned system-wide on this board — digits
-must stack by place value (a load-planning read), unlike Tint Manager's left-aligned `"60 L"`-style
-volume strings (§33).
-
-### Ship-to override cell (`components/support/ship-to-override-cell.tsx`)
-
-Inserted immediately after the CUSTOMER column. Three states:
-
-- **Empty** (no override) — faint gray "Set ship-to" text-only affordance (`text-gray-400`), no border/pill. Click enters editing.
-- **Editing** — autofocused text input (matches §9 form-input sizing), ~250ms-debounced search (skipped under 2 characters). Dropdown below the input lists ≤8 results: customer name as the primary line, area as a muted secondary line underneath (same two-line pattern as §18 Mail Orders customer column). Click a result commits the save and exits editing; Esc, blur (with a short delay to allow the click), or backdrop cancels with no save.
-- **Set** — compact **teal** pill (matches the brand-action usage in §2, not a semantic status colour) showing **customer name ONLY** — no area, per approved refinement — plus a small × to clear. Saving state disables the input/pill (matches the existing `savingSlot` optimistic-disable pattern used by the Dispatch Slot picker, `CLAUDE_SUPPORT.md §4.13`).
-
-Failure surfaces a toast (sonner, already used elsewhere on this board) — no inline error state.
-
-### Article cell
-
-Plain display-only text cell — no edit affordance, no hover state, no click target. Styled
-identically to the ROUTE text cell: `text-[11px] text-gray-600` data, `text-gray-400` for the empty
-`"—"` fallback. Rendered value is the render-time-abbreviated tag (`CLAUDE_SUPPORT.md §4.19` —
-`Drum→D`/`Carton→C`/`Tin→T`/`Bag→B`, joined `" · "`); the `title` tooltip carries the full original
-string.
-
-### Hold tab — visual spec (2026-07-09)
-
-Same Grid-native percentage discipline as the main board, own constant (`SUPPORT_HOLD_GRID_COLUMNS`
-above). Column order: `OBD · CUSTOMER · SHIP-TO · HOLD SINCE · ROUTE · VOL · ARTICLE · SLOT ·
-PRIORITY · ACTION` + checkbox.
-
-- **HOLD SINCE** replaces AGE at the same position — centre-aligned pill, same visual treatment as
-  the main board's AGE pill. `heldAt === null` (legacy rows) → grey `"—"` pill, not an error state.
-- **VOL** — same stacked-cell treatment as the main board (§ above), right-aligned.
-- **ACTION** — right-aligned (last column; trailing buttons anchor to the row's trailing edge,
-  matching the "actions come after the data that informs them" placement rule).
-- **STATUS is absent** on this tab (every row is `hold` — a column of identical cells carries no
-  information, so it's dropped rather than rendered).
-- Group-header bar (chevron + checkbox + name + count) is a **plain flex row, not a grid row** — its
-  checkbox does not land on the same x as a data row's checkbox (96px vs 106px). This is copied
-  verbatim from the main board's existing group-header and is exact parity with an intentional
-  existing design, not a Hold-specific misalignment — do not "fix" one board without the other.
+The Support board no longer exists; its visual spec (column order, ship-to override cell, stacked
+VOL cell, Hold tab) is archived verbatim at `archive/2026-07-support/docs/CLAUDE_SUPPORT.md`.
+The reusable lesson it carried — content-blind **percentage** `grid-template-columns` for
+Grid-native tables — is owned by **§27**, which remains the live rule. Floor Control's own surfaces
+are specified in `CLAUDE_FLOOR.md`; do not resurrect this section's prose there.
 
 ---
 
@@ -1434,4 +1358,4 @@ Desktop `/picking` (`components/picking/picking-queue.tsx`, the `hidden md:block
 
 ---
 
-*UI v5.11 · OrbitOMS*
+*UI v5.12 · OrbitOMS*

@@ -1,15 +1,16 @@
 # CLAUDE_PICKING.md — Picking Module
-# v1.6 · Schema v27.12 · July 2026 · updated 2026-07-25
+# v1.7 · Schema v27.12 · July 2026 · updated 2026-07-27
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
 > **The DESKTOP board is superseded by Floor Control (`/floor`), but STILL LIVE.**
-> `/floor` now consolidates the Picking desktop board with the Support board into
-> one screen (`docs/CLAUDE_FLOOR.md`). `/picking` is fully reachable and in use —
-> nothing was switched off. **The MOBILE supervisor board and picker face are NOT
-> superseded — they stay;** only the DESKTOP board is in scope for eventual
-> retirement, which is INTENDED but NOT actioned and has no plan yet (a dependency
-> list is required first — ROADMAP). Floor REUSES this module **as a caller**:
+> `/floor` consolidated the Picking desktop board with the Support board into one
+> screen (`docs/CLAUDE_FLOOR.md`). **Support was retired 2026-07-27**
+> (`archive/2026-07-support/`); **`/picking` was NOT** — it is fully reachable and
+> in use, nothing here was switched off. **The MOBILE supervisor board and picker
+> face are NOT superseded — they stay;** only the DESKTOP board is in scope for
+> eventual retirement, which is INTENDED but NOT actioned and has no plan yet (a
+> dependency list is required first — ROADMAP). Floor REUSES this module **as a caller**:
 > assign/unassign (§4) and the sort **rule objects** + `sortPickingQueue` (§3) stay
 > OWNED HERE — Floor cross-references them and composes its OWN `FLOOR_SPINE` (the
 > picking spine **minus `byAssigned`**, `lib/floor/sort.ts`) by IMPORTING these
@@ -20,8 +21,10 @@
 
 ## 1. What Picking is
 
-Picking sits between Support and physical dispatch: an order becomes pickable the instant Support's
-"done" action fires, and leaves Picking once a picker has been assigned to fetch it. **The full cycle
+Picking sits between the desk and physical dispatch: an order becomes pickable the instant Floor's
+**Release** fires (`CLAUDE_FLOOR.md §4.2`), and leaves Picking once a picker has been assigned to
+fetch it. (Until 2026-07-27 the trigger was Support's "done" action — same stage write, retired
+surface.) **The full cycle
 is built and live** — assign → pick → done → check → approve, every state visible and traceable on
 both boards (shipped across the 2026-07-17/18 sessions; full state ladder in §6).
 
@@ -81,12 +84,17 @@ hand-written array but not another).
 
 Ranks are spaced by ten so a future stage slots in without renumbering — `pick_done` (80) and
 `pick_checked` (90) landed exactly that way, pushing `dispatched` from 90 to 100 with no other file
-needing a change. `supportMayEdit` is a **per-row flag, not a rank threshold** — Support is unlocked
-at 10-20 and 50-60, locked at 30-40 (mid-tint) and again from 70 onward (picker has it) — a genuine
-hole in the middle that a simple `rank >= X` test would get wrong.
+needing a change. `supportMayEdit` is a **per-row flag, not a rank threshold** — unlocked at 10-20
+and 50-60, locked at 30-40 (mid-tint) and again from 70 onward (picker has it) — a genuine hole in
+the middle that a simple `rank >= X` test would get wrong. ⚠ **The flag and its `supportMayEdit()`
+reader are now DEAD** (zero callers since the 2026-07-27 Support retirement; Floor gates releases on
+its own `FLOOR_RELEASABLE_STAGES` — `CLAUDE_FLOOR.md §4.2`). The *shape* of the rule is documented
+here because it is the reason the ladder carries a per-row flag at all; removal is a ROADMAP item.
 
 **The constants that matter here:**
-- `SUPPORT_DONE_OUTPUT = "pending_picking"` — the ONE current value Support's done-action writes.
+- `SUPPORT_DONE_OUTPUT = "pending_picking"` — the ONE current value the desk's done-action writes
+  (Floor's Release today; the constant name is historical and still in wide live use — do not rename
+  it casually, seven files import it).
   `closed` is legacy-only; nothing writes it anymore, but old rows at that rank must still behave
   identically (hence the shared rank 60).
 - `PICK_ASSIGNED = "pick_assigned"` — what the Assign action writes.
@@ -94,16 +102,19 @@ hole in the middle that a simple `rank >= X` test would get wrong.
 - `PICK_CHECKED = "pick_checked"` — what the supervisor's Approve action writes
   (`POST /api/picking/approve`). Both are live, not planned — see §5/§6.
 
-**Today's live ladder (Support → Picking → Checked):**
+**Today's live ladder (Floor → Picking → Checked):**
 ```
-pending_support → [Support Done] → pending_picking → [Assign] → pick_assigned
+pending_support → [Floor Release] → pending_picking → [Assign] → pick_assigned
   → [Picker Mark Done] → pick_done → [Supervisor Approve] → pick_checked → (dispatch, unbuilt)
 ```
-`pick_assigned` has `supportMayEdit: false` — this is the enforcement point for "Support is locked
-out of orders being physically worked": once a bill is assigned to a picker, Support's hold/cancel/
-dispatch routes must treat it as untouchable. (The equivalent lock for the tint stages, 30-40, is
-Support-side work already documented in `CLAUDE_SUPPORT.md` §4.9/§4.15 — same registry, same
-principle, applied earlier in the ladder.)
+The `pending_support` stage NAME is historical — nothing called Support writes it any more; Floor's
+rail is where such a bill now waits (`CLAUDE_FLOOR.md §3`). Renaming the stage would mean rewriting
+live rows and is not proposed.
+
+`pick_assigned` carries `supportMayEdit: false`, which was the enforcement point for "the desk is
+locked out of orders being physically worked". With Support retired, the equivalent live guard is
+Floor's `FLOOR_RELEASABLE_STAGES` (`CLAUDE_FLOOR.md §4.2`), which admits only `pending_support` and
+`pending_picking` — an assigned bill is untouchable there by construction.
 
 ---
 
@@ -715,4 +726,4 @@ on becoming visible); skips overlapping requests; **fails silently** (no toast/U
 
 ---
 
-*CLAUDE_PICKING.md v1.6 · Picking Module · July 2026*
+*CLAUDE_PICKING.md v1.7 · Picking Module · July 2026*

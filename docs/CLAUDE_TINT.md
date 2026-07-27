@@ -1,5 +1,5 @@
 # CLAUDE_TINT.md — Tint Module
-# v1.6 · Schema v27.12 · July 2026
+# v1.7 · Schema v27.12 · July 2026 · updated 2026-07-27
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -109,7 +109,7 @@ See `CLAUDE_CORE.md §9` (⚠ CORE §9 has a pending update from this section �
 - At import: `orderType === "tint"` → `slotId = null`, `originalSlotId = null`
 - **`arrivalSlotId` — now stamped at import for tint orders too (2026-06-29) [LIVE].** Previously tint orders got `arrivalSlotId = null` at import (the `orderType !== "tint"` guard). That guard was removed from both import paths (`handleManualSapConfirm` and the auto-import confirm path in `app/api/import/obd/route.ts`) — tint orders now get `arrivalSlotId = resolveArrivalSlotId(emailDateTime)` (the 5-slot ruler), exactly like non-tint orders. This is separate from `slotId`/`originalSlotId`, which remain null until completion (unchanged, see below). No backfill was run — applies to NEW orders only. See CLAUDE_IMPORT.md §12 for the import-side detail.
 - At completion (whole order, `/api/tint/operator/done`): sets `slotId` + `originalSlotId` on order using `resolveSlot()` thresholds on current IST time
-- **Completion now branches on a pre-set dispatch slot (2026-06-29) [LIVE].** If `order.dispatchWindowId != null && order.dispatchTargetDate != null` (an operator pre-set a slot on the Support board while the order was still tinting — see `CLAUDE_SUPPORT.md §4.16`), completion additionally writes `workflowStage: "closed"`, `dispatchStatus: "dispatch"` — the order auto-flips to Dispatch and leaves the pending list, made actionable/visible on Support as a done row instead of landing back in `pending_support`. If no slot was pre-set, behaviour is unchanged: `workflowStage: "pending_support"`.
+- **Completion now branches on a pre-set dispatch slot (2026-06-29) [LIVE].** If `order.dispatchWindowId != null && order.dispatchTargetDate != null` (an operator pre-set a slot at the desk while the order was still tinting — today via Floor's **change-slot**, `CLAUDE_FLOOR.md §4.1`; until 2026-07-27 via the Support board), completion additionally writes `workflowStage: "closed"`, `dispatchStatus: "dispatch"` — the order auto-flips to Dispatch and leaves the pending list, landing on Floor as a released bill instead of returning to `pending_support`. If no slot was pre-set, behaviour is unchanged: `workflowStage: "pending_support"`.
 - At split completion (`/api/tint/operator/split/done`): sets slot on **parent** order. Latest completion wins. The same pre-set/auto-flip branch applies to the parent-bubble update (runs after the `$transaction`, not inside it — no new landmine interaction).
 - **Parent auto-advance (2026-06-25 fix):** after setting the slot, the route checks whether all non-cancelled splits are now `tinting_done`. If yes AND parent is still `tinting_in_progress`, it advances the parent to `workflowStage = "pending_support"` and writes an `order_status_logs` entry (`changedById: 1`, note `"Auto-advanced: all splits tinting_done"`). Guard is idempotent (`workflowStage === "tinting_in_progress"`). **Cancelled splits are excluded from the count — non-negotiable for correctness.**
 - No buffer before cutoff
@@ -697,4 +697,4 @@ Layout uses `buildNavItems()` only.
 
 ---
 
-*Tint v1.6 · Schema v27.12*
+*Tint v1.7 · Schema v27.12*
