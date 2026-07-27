@@ -58,12 +58,11 @@ const PAGE_NAV_MAP: NavItemConfig[] = [
 
 // Per-role href overrides: non-admin roles access shared pages via their own route group
 const ROLE_HREF_OVERRIDES: Record<string, Record<string, string>> = {
-  support: {
-    customers:    "/support/customers",
-    skus:         "/support/skus",
-    routes_areas: "/support/routes",
-    vehicles:     "/support/vehicles",
-  },
+  // The "support" overrides (→ /support/customers, /support/skus, /support/routes,
+  // /support/vehicles) were removed 2026-07-27, Support retirement step 4/8: those
+  // four pages were archived with the board (archive/2026-07-support/). The role
+  // now falls through to the default admin hrefs, which render the same data —
+  // /admin/customers uses the richer split view, the other three the same tables.
   tint_manager: {
     customers:    "/tint/manager/customers",
     skus:         "/tint/manager/skus",
