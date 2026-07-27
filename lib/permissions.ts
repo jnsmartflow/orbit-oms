@@ -25,8 +25,11 @@ const PAGE_NAV_MAP: NavItemConfig[] = [
   // there for what was retired, what replaced it, and what is still in the DB.
   { pageKey: "operations_tinting",       label: "Tinting",       href: "/operations/tinting" },
   { pageKey: "operations_tint_operator", label: "Tint Operator", href: "/operations/tint-operator" },
-  { pageKey: "operations_dispatch",      label: "Dispatch",      href: "/operations/dispatch" },
-  { pageKey: "operations_warehouse", label: "Warehouse", href: "/operations/warehouse" },
+  // "operations_dispatch" (→ /operations/dispatch) and "operations_warehouse"
+  // (→ /operations/warehouse) removed 2026-07-27: both were alternate mounts of
+  // the Planning and Warehouse boards and are archived at
+  // archive/2026-07-operations-pages/. The boards themselves stay live at
+  // /planning and /warehouse (their own retirement is a separate, later step).
   { pageKey: "picking",       label: "Picking",       href: "/picking" },
   { pageKey: "floor",         label: "Floor",         href: "/floor" },
   { pageKey: "import_obd",    label: "Import OBDs",   href: "/import" },
@@ -120,8 +123,6 @@ export function buildNavItems(
 export type PageKey =
   | "operations_tinting"
   | "operations_tint_operator"
-  | "operations_dispatch"
-  | "operations_warehouse"
   | "picking"
   | "floor"
   | "dashboard"
@@ -182,7 +183,7 @@ const ALL_FALSE: PagePermissions = {
 
 const ALL_PAGE_KEYS: PageKey[] = [
   "attendance", "attendance_admin",
-  "operations_tinting", "operations_tint_operator", "operations_dispatch", "operations_warehouse",
+  "operations_tinting", "operations_tint_operator",
   "picking", "floor",
   "dashboard", "users", "system_config", "permissions",
   "customers", "skus", "routes_areas", "vehicles",

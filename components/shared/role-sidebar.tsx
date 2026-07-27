@@ -39,8 +39,6 @@ export interface RoleSidebarProps {
 export const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   operations_tinting:       Layers,
   operations_tint_operator: Zap,
-  operations_dispatch:      LayoutDashboard,
-  operations_warehouse: Warehouse,
   picking:             PackageCheck,
   import_obd:          Upload,
   planning_board:      LayoutDashboard,
