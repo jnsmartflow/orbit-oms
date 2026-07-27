@@ -1,5 +1,5 @@
 # CLAUDE_CORE.md — OrbitOMS Core
-# v84 · Schema v27.12 · July 2026 · updated 2026-07-27 · Lives in: orbit-oms/docs/
+# v85 · Schema v27.12 · July 2026 · updated 2026-07-27 · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_UI.md
 
 ---
@@ -12,7 +12,7 @@ Depot-level order management for a paint distribution company (JSW Dulux, former
 - **Mail order pipeline:** Forwarded email parsing → SKU enrichment → SAP punching → SO number capture → dispatch data flows back to OBD
 
 Plus three standalone modules:
-- **Place Order** (`/place-order`) — depot phone-order entry; **`/order`** public mobile equivalent
+- **Place Order** (`/place-order`) — depot phone-order entry; **`/po`** public mobile equivalent (`/order`, the original public page, retired 2026-07-27 — `archive/2026-07-order/`)
 - **Attendance** (`/attendance`) — check-in/out PWA with OT workflow
 - **Sampling Library** (`/tint/sampling-library`) — digital paper register, shade recipes + usage history
 
@@ -256,7 +256,7 @@ versions of each other.** Read this before touching anything with "sku" in its n
 | # | Table | Whose engine | Status |
 |---|---|---|---|
 | 1 | `mo_sku_lookup` (v1) + the keyword tables | The **EMAIL PARSER** — normal typed customer emails | **OUT OF SCOPE. Never touched. Stays.** |
-| 2 | `mo_sku_lookup_v2` | **Order entry** — `/po`, `/place-order`, `/order` + the app-email fast lane | Live, unchanged |
+| 2 | `mo_sku_lookup_v2` | **Order entry** — `/po`, `/place-order` + the app-email fast lane | Live, unchanged |
 | 3 | **`sku_master_v2`** | **Operations** — the live operational catalog | **[LIVE]** since 2026-07-19 |
 | — | `sku_master` (OLD, normalised) + `product_category` + `product_name` + `base_colour` | formerly operations | **DEAD to operations. Pending drop.** |
 
@@ -498,6 +498,11 @@ here rather than re-describing it.
   independent of Floor.
 - **Live evidence (SELECT 2026-07-24).** Of **1,051** orders at `workflowStage='dispatched'`, **662**
   carry `dispatchSlotSource='auto'` — the engine does the majority of slotting, not a trial.
+- **Live recount (SELECT 2026-07-27): 1,546 at `dispatched`** — roughly **500 rows moved in three days**,
+  by a route **not currently understood**. Nothing in this codebase automatically drains
+  `pick_checked → dispatched`; that hole and its history are owned by `docs/ROADMAP.md` (P1) and
+  `CLAUDE_PICKING.md §9` — not restated here. **Not investigated** on 2026-07-27; flagged only. The
+  2026-07-24 line above stays as the dated snapshot it was.
 - **Parked (not the engine's fault):** the `Deco` (9 rows) un-mapped SMU never matches `Deco Retail`
   so never auto-slots; and 103 Deco Retail bills reached `pending_support` with `dispatchStatus` NULL
   (the engine fires only on `='dispatch'`) — an upstream diagnosis, `CLAUDE_FLOOR.md §10`.
@@ -713,7 +718,7 @@ orders — NEW index         orders_updatedAt_idx  =  @@index([updatedAt(sort: D
 - **UTC→IST for mail order timestamps:** `AssumeUniversal` + `ConvertTimeFromUtc`. Never `.ToUniversalTime()`.
 - **Keyword length sorting is critical** — shorter generic keywords override longer specific ones without DESC sort.
 - **Bill To = dealer / Ship To = site** terminology applies on challans and mail orders.
-- **Order recipient:** `/po` + `/place-order` send orders to **`surat.depot@akzonobel.com`** (AkzoNobel inbox auto-forwards to `surat.order@outlook.com`, the parser inbox — so the parser `OutlookAccount` config is unchanged). The frozen public `/order` page still sends to `surat.order@outlook.com`. (`CLAUDE_PLACE_ORDER.md §11`.)
+- **Order recipient:** `/po` + `/place-order` send orders to **`surat.depot@akzonobel.com`** (AkzoNobel inbox auto-forwards to `surat.order@outlook.com`, the parser inbox — so the parser `OutlookAccount` config is unchanged). The public `/order` page sent to `surat.order@outlook.com` **directly** until it retired 2026-07-27 — which is why the parser inbox is that address and stays that way. (`CLAUDE_PLACE_ORDER.md §11`.)
 - **Mobile external-scheme handoff:** on mobile, a synchronous `history.go()` in the same tick as a `mailto:` (or any external navigation) cancels the handoff — fire the external navigation first, defer any history reset via `setTimeout(…, 0)` (`CLAUDE_PLACE_ORDER.md §25`).
 
 ---
@@ -735,7 +740,9 @@ Time-based thresholds, IST.
 
 **`arrivalSlotId` (2026-06-29 — added v27.7 column, behaviour completed this consolidation):** stamped at import for ALL orders — tint and non-tint alike — via `resolveArrivalSlotId(emailDateTime)` (the 5-slot ruler in `lib/slots/slot-ruler.ts`: Morning/Afternoon/Evening/Late Evening/Night, distinct from the 4-slot table above). `slotId` stays null for tint until completion, unaffected by this. Full detail + landmines (manual-SAP no-time-column → Morning default, JSON auto-import re-stamp fix): `CLAUDE_IMPORT.md §12`.
 
-**Slot cascade and day-boundary reset — CORRECTED 2026-07-27.** `lib/slot-cascade.ts` and `lib/day-boundary.ts` are **called**, not dormant: `runSlotCascadeIfNeeded` / `runDailyCleanupIfNeeded` are imported by `app/api/planning/board/route.ts` and `app/api/warehouse/board/route.ts` and fire on each board load. Earlier text here said they "exist but are not called" — wrong; see §13.
+**Slot cascade and day-boundary reset are DISABLED — imported but never called.** `lib/slot-cascade.ts` and `lib/day-boundary.ts` both still exist and both are still *imported* — `app/api/planning/board/route.ts:5-6` and `app/api/warehouse/board/route.ts:5-6`. But **every invocation is commented out**: `planning/board:22-26` and `warehouse/board:64-68`, each headed `// DISABLED: slot cascade removed — slots are fixed by obdEmailTime`. **Neither function runs anywhere.** If they are ever re-enabled, they must skip tint orders. Full landmine entry: §13.
+
+⚠ **Do not "re-correct" this back.** An edit on 2026-07-27 (commit `f6ace5b8`) flipped this to "they ARE called" after reading only the `import` lines and never opening the call sites. Re-verified against both route files on 2026-07-27: **an import is not a call.**
 
 **`applyMailOrderEnrichment()`:** On SAP import, checks `mo_orders` for matching `soNumber`. If found, applies `dispatchStatus`, `priorityLevel`, `remarks`, overrides, and sets `orderDateTime` from `mo_orders.receivedAt`. Skips slot recalc for tint orders. One soNumber can map to many OBDs (`updateMany`).
 
@@ -768,9 +775,9 @@ Per-board wiring summary in `CLAUDE_UI.md §6`.
 
 Files: `components/shared/role-sidebar-provider.tsx`, `role-sidebar.tsx`, `role-layout-client.tsx`.
 
-`/place-order` uses the same sidebar. `/attendance` uses no sidebar (full-screen PWA layout). `/order` uses no sidebar (public mobile).
+`/place-order` uses the same sidebar. `/attendance` uses no sidebar (full-screen PWA layout). `/po` uses no sidebar (public mobile).
 
-**Mobile shell (2026-07-05/06):** `role-layout-client.tsx` now also mounts a shared mobile app shell (`components/shared/mobile-shell.tsx`) globally as a sibling to `<RoleSidebar>` — a fixed, mobile-only (`block md:hidden`) Home/Menu/You bottom bar. Every page that wraps itself in `role-layout-client.tsx` inherits it automatically, no per-page work. Desktop sidebar untouched. Pages with their own layout that bypasses this wrapper (Attendance, `/order`) don't get it. Full spec: `CLAUDE_UI.md §59`.
+**Mobile shell (2026-07-05/06):** `role-layout-client.tsx` now also mounts a shared mobile app shell (`components/shared/mobile-shell.tsx`) globally as a sibling to `<RoleSidebar>` — a fixed, mobile-only (`block md:hidden`) Home/Menu/You bottom bar. Every page that wraps itself in `role-layout-client.tsx` inherits it automatically, no per-page work. Desktop sidebar untouched. Pages with their own layout that bypasses this wrapper (Attendance, `/po`) don't get it — **verified in code 2026-07-27**: `app/po/` does not use `role-layout-client.tsx`, so `/po` builds its own Home/Drafts/Sent bar inline. Full spec: `CLAUDE_UI.md §59`.
 
 ---
 
@@ -800,7 +807,7 @@ Full detail in domain files. Cross-reference only here.
 `/trips` (list, per-trip detail), `/trips/[tripNo]/sheet` (A4 print). logistics + 4 named secondary-role users (§5). Read-only NTS trip mirror — standalone, not connected to the OBD pipeline. → `CLAUDE_TRIP_REPORT.md`
 
 ### Place Order
-`/place-order` (desktop, label "Purchase Order (PO)"). `/order` (public mobile). → `CLAUDE_PLACE_ORDER.md`
+`/place-order` (desktop, label "Purchase Order (PO)"). `/po` (public mobile, no login). → `CLAUDE_PLACE_ORDER.md`
 
 ### Import
 `/admin/import`. → `CLAUDE_IMPORT.md`
@@ -821,11 +828,11 @@ Full detail in domain files. Cross-reference only here.
 `/operations/tinting|tint-operator|dispatch|warehouse`. operations, ops_admin, admin. (`/operations/support` retired 2026-07-27 — operations now lands on `/floor`.)
 
 ### Public
-- `/order` — public mobile order form. No login. Generates mailto.
+- `/po` — public mobile order form. No login. Generates mailto. (Succeeded `/order`, retired 2026-07-27 — address **parked**, no redirect; story: `archive/2026-07-order/README.md`.)
 - `/demo` — animated tutorial. Rewrites to `/order-demo.html`.
 - `/login`, `/not-ready`, `/unauthorized`.
 
-`middleware.ts` public paths: `/login`, `/unauthorized`, `/not-ready`, `/api/auth`, `/api/health`, `/order`, `/api/order`, `/demo`, `/order-demo.html`, `/api/cron/*` (bearer auth).
+`middleware.ts` public paths: `/login`, `/unauthorized`, `/not-ready`, `/api/auth`, `/api/health`, `/order`, `/api/order`, `/po`, `/demo`, `/order-demo.html`, `/api/cron/*` (bearer auth). ⚠ **`/order` stays on purpose** even though its page is retired: the check at `middleware.ts:26` is `startsWith`, so removing it would (a) make the parked address return a **login prompt** instead of a 404, and (b) silently put **`/orders`** behind auth via the prefix match.
 
 `middleware.ts` `PHASE1_BLOCKED` is currently **`[]`** (§5) — `/picking` and `/floor` are both reachable today; neither has been switched off. `/support` is gone (retired 2026-07-27), removed at the route level rather than blocked here.
 
@@ -895,7 +902,14 @@ Supporting facts for the same area:
 
 ---
 
-- **`lib/slot-cascade.ts`, `lib/day-boundary.ts` — CORRECTED 2026-07-27: they ARE called.** This entry (and §9) previously said "present but never called" — false, and dangerous, because someone could delete them on that basis. Real callers: `runSlotCascadeIfNeeded` and `runDailyCleanupIfNeeded` are both imported by **`app/api/planning/board/route.ts:5-6`** and **`app/api/warehouse/board/route.ts:5-6`**, i.e. they run whenever the Planning or Warehouse board is loaded. The standing warning still applies: **if their behaviour is extended, they must skip tint orders.** Found during the Support-retirement doc sweep; unrelated to Support.
+- **`lib/slot-cascade.ts`, `lib/day-boundary.ts` — present, imported, but NEVER CALLED.** The exact state, verified against the files on 2026-07-27:
+  - **Imports are live** — `app/api/planning/board/route.ts:5-6`, `app/api/warehouse/board/route.ts:5-6`. This is why a grep for the module name looks like they are in use.
+  - **Every call is commented out** — `app/api/planning/board/route.ts:22-26` and `app/api/warehouse/board/route.ts:64-68`, both headed `// DISABLED: slot cascade removed — slots are fixed by obdEmailTime`. A repo-wide search finds **no uncommented invocation anywhere**.
+  - **Neither `runSlotCascadeIfNeeded` nor `runDailyCleanupIfNeeded` executes on any code path today.** Slots are fixed at import time from `obdEmailTime` and never cascade.
+  - The standing warning still applies: **if they are ever re-enabled, they must skip tint orders.**
+  - **Do not delete either file** (CORE §3 — never delete files unless instructed).
+
+  ⚠ **This entry was WRONG between 2026-07-27 (`f6ace5b8`) and its correction the same day.** That edit read the `import` lines, concluded "they ARE called … they run whenever the Planning or Warehouse board is loaded", and overwrote a statement that had been correct. The call sites sit four lines below the imports and are commented. **An import is not a call — open the call site.** Recorded here so the next session does not flip it back a third time.
 - **`operatorSequence` field** on `tint_assignments`/`order_splits` — exists in schema, no longer used for sorting. Sort by `sequenceOrder` only.
 - **`delivery_type_slot_config` table** — exists but not consumed anywhere.
 - **`SlotSummaryItem` interface** in `tint-manager-content.tsx` — defined but unused.
@@ -915,7 +929,7 @@ Supporting facts for the same area:
 - **`shade_master` deprecated.** Sampling Library Phase 4 shipped (2026-05-25). All new shade saves write to `sampling_register` + `sampling_recipes` + `sampling_usage_log`. `shade_master` table still exists with historical data but is no longer read or written by the live operator workflow. Scheduled for deletion after a retention window. Do not write to it.
 - **Split-done usage-log gap.** `app/api/tint/operator/split/done/route.ts` never writes a `sampling_usage_log` row. Split-completed tints never appear in the Sampling Library usage history or same-site suggestions. Pre-existing, separate from any other tint bug. ROADMAP item: decide whether splits should log usage.
 - **`/api/order/data` and `/api/place-order/data` carry duplicated v2 payload queries** — no shared helper yet. If you edit the v2 payload shape, edit BOTH or extract a shared builder.
-- **Legacy `mo_order_form_index` + `mo_sku_lookup` orphaned by `/order` and `/place-order`** — both frontends now read v2 tables. BUT the mail parser + enrichment still read the LEGACY tables. Do NOT delete the legacy tables until the parser is migrated to v2 (Stage 3 of the v2 single-source plan; see `CLAUDE_PLACE_ORDER.md`).
+- **Legacy `mo_order_form_index` + `mo_sku_lookup` orphaned by `/po` and `/place-order`** — both frontends read v2 tables (the retired `/order` moved across on 2026-05-29, before it went). BUT the mail parser + enrichment still read the LEGACY tables. Do NOT delete the legacy tables until the parser is migrated to v2 (Stage 3 of the v2 single-source plan; see `CLAUDE_PLACE_ORDER.md`).
 - **Pre-existing `prisma.$transaction` in admin customer routes** (`app/api/admin/customers/route.ts` lines 133 & 186) — flagged in multi-SO commit, left untouched. Refactor when convenient.
 - **NULL three-valued logic (Hide filter).** Prisma `NOT { field: value }` on a NULLABLE column DROPS NULL rows (a "hide if HOLD" rule hid every order whose `dispatchStatus` was null). For "exclude matching" filters build NULL-safe KEEP conditions: `{ OR: [ { field: null }, { field: { not: value } } ] }`, AND-combined. Implemented in `getHideExclusion()`. The hide filter is AND-merged into every order-display query (Tint Manager, TM missing-customers, Tint Operator my-orders, Support, Planning, Warehouse, Operations) — NOT into Hidden-Orders/restore views, challan audit OR, import internals, or `mo_orders` (out of v1 scope).
 - **`orders.dispatchStatus` Hold value is lowercase `"hold"`.** The capitalized `"Hold"` belongs to the mail-orders pipeline (`getOrderSignals` status badge), not the orders table.
@@ -956,4 +970,4 @@ Engineering note: a parallel session owns `scripts/_*` scratch files (sampling/r
 
 ---
 
-*CORE v84 · Schema v27.12 · OrbitOMS*
+*CORE v85 · Schema v27.12 · OrbitOMS*
