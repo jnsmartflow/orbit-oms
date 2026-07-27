@@ -10,7 +10,7 @@ import {
   Truck, Clock, CalendarClock, Map, MapPin, Layers,
   Tag, Palette, Package,
   Building2, UserCheck, ContactRound, Store,
-  Upload, ClipboardList, ClipboardCheck, CalendarCheck, Paintbrush, Briefcase,
+  Upload, ClipboardCheck, CalendarCheck, Paintbrush, Briefcase,
   EyeOff,
 } from "lucide-react";
 import { useSidebar } from "./sidebar-provider";
@@ -71,7 +71,6 @@ const NAV_SECTIONS: NavSection[] = [
     label: "Operations",
     items: [
       { label: "Import Orders", href: "/admin/import" },
-      { label: "Support Queue", href: "/admin/support" },
       { label: "Tint Manager",  href: "/admin/tint-manager" },
       { label: "Shade Master",  href: "/tint/shades" },
       // CalendarCheck icon distinguishes the admin all-users view from
@@ -121,7 +120,6 @@ const ICONS: Record<string, NavIcon> = {
   "Contact Roles":       ContactRound,
   "Customers":           Store,
   "Import Orders":       Upload,
-  "Support Queue":       ClipboardList,
   "Tint Manager":        Palette,
   "Shade Master":        Palette,
   "My Tint Jobs":        Paintbrush,

@@ -15,7 +15,9 @@ export interface NavUserFlags {
 }
 
 const PAGE_NAV_MAP: NavItemConfig[] = [
-  { pageKey: "operations_support",   label: "Support",   href: "/operations/support" },
+  // "operations_support" (→ /operations/support) removed from the nav 2026-07-27,
+  // Support retirement step 3/8 — Floor replaces it. The pageKey itself stays in
+  // PageKey + ALL_PAGE_KEYS until step 5; the route still resolves if typed.
   { pageKey: "operations_tinting",       label: "Tinting",       href: "/operations/tinting" },
   { pageKey: "operations_tint_operator", label: "Tint Operator", href: "/operations/tint-operator" },
   { pageKey: "operations_dispatch",      label: "Dispatch",      href: "/operations/dispatch" },
@@ -23,7 +25,11 @@ const PAGE_NAV_MAP: NavItemConfig[] = [
   { pageKey: "picking",       label: "Picking",       href: "/picking" },
   { pageKey: "floor",         label: "Floor",         href: "/floor" },
   { pageKey: "import_obd",    label: "Import OBDs",   href: "/import" },
-  { pageKey: "support_queue",  label: "Support Queue",   href: "/support" },
+  // "support_queue" (→ /support) removed from the nav 2026-07-27, Support
+  // retirement step 3/8. The pageKey itself stays in PageKey + ALL_PAGE_KEYS
+  // until step 5 — it still gates app/(support)/support/layout.tsx, which also
+  // shells the Customers / SKUs / Routes / Vehicles pages. Do not revoke the
+  // grant without moving those first.
   { pageKey: "planning_board", label: "Planning Board",  href: "/planning" },
   { pageKey: "tint_manager",   label: "Tint Manager",    href: "/tint/manager" },
   { pageKey: "tint_operator", label: "Tint Operator",  href: "/tint/operator" },

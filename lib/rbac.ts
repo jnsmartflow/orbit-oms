@@ -26,7 +26,7 @@ export const ROLE_REDIRECTS: Record<string, string> = {
   support: "/place-order",
   tint_manager: "/tint/manager",
   tint_operator: "/tint/operator",
-  operations: "/operations/support",
+  operations: "/floor",
   floor_supervisor: "/warehouse/supervisor",
   picker: "/warehouse/picker",
   billing_operator: "/mail-orders",
