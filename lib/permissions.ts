@@ -15,9 +15,14 @@ export interface NavUserFlags {
 }
 
 const PAGE_NAV_MAP: NavItemConfig[] = [
-  // "operations_support" (→ /operations/support) removed from the nav 2026-07-27,
-  // Support retirement step 3/8 — Floor replaces it. The pageKey itself stays in
-  // PageKey + ALL_PAGE_KEYS until step 5; the route still resolves if typed.
+  // 2026-07-27 — Support retired (steps 3-5/8), replaced by Floor Control (/floor).
+  // Both of its page keys, "support_queue" (→ /support) and "operations_support"
+  // (→ /operations/support), are gone from this file entirely: the nav entries
+  // here, the PageKey union, and ALL_PAGE_KEYS. Their seed grants are gone from
+  // prisma/seed.ts, and the dead ICON_MAP + admin-Permissions rows went with them
+  // (components/shared/role-sidebar.tsx, components/admin/permissions-manager.tsx).
+  // The screens and API routes live at archive/2026-07-support/ — see the README
+  // there for what was retired, what replaced it, and what is still in the DB.
   { pageKey: "operations_tinting",       label: "Tinting",       href: "/operations/tinting" },
   { pageKey: "operations_tint_operator", label: "Tint Operator", href: "/operations/tint-operator" },
   { pageKey: "operations_dispatch",      label: "Dispatch",      href: "/operations/dispatch" },
@@ -25,11 +30,6 @@ const PAGE_NAV_MAP: NavItemConfig[] = [
   { pageKey: "picking",       label: "Picking",       href: "/picking" },
   { pageKey: "floor",         label: "Floor",         href: "/floor" },
   { pageKey: "import_obd",    label: "Import OBDs",   href: "/import" },
-  // "support_queue" (→ /support) removed from the nav 2026-07-27, Support
-  // retirement step 3/8. The pageKey itself stays in PageKey + ALL_PAGE_KEYS
-  // until step 5 — it still gates app/(support)/support/layout.tsx, which also
-  // shells the Customers / SKUs / Routes / Vehicles pages. Do not revoke the
-  // grant without moving those first.
   { pageKey: "planning_board", label: "Planning Board",  href: "/planning" },
   { pageKey: "tint_manager",   label: "Tint Manager",    href: "/tint/manager" },
   { pageKey: "tint_operator", label: "Tint Operator",  href: "/tint/operator" },
@@ -118,7 +118,6 @@ export function buildNavItems(
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export type PageKey =
-  | "operations_support"
   | "operations_tinting"
   | "operations_tint_operator"
   | "operations_dispatch"
@@ -134,7 +133,6 @@ export type PageKey =
   | "routes_areas"
   | "vehicles"
   | "import_obd"
-  | "support_queue"
   | "tint_manager"
   | "tint_operator"
   | "planning_board"
@@ -184,11 +182,11 @@ const ALL_FALSE: PagePermissions = {
 
 const ALL_PAGE_KEYS: PageKey[] = [
   "attendance", "attendance_admin",
-  "operations_support", "operations_tinting", "operations_tint_operator", "operations_dispatch", "operations_warehouse",
+  "operations_tinting", "operations_tint_operator", "operations_dispatch", "operations_warehouse",
   "picking", "floor",
   "dashboard", "users", "system_config", "permissions",
   "customers", "skus", "routes_areas", "vehicles",
-  "import_obd", "support_queue", "planning_board", "tint_manager", "tint_operator",
+  "import_obd", "planning_board", "tint_manager", "tint_operator",
   "dispatcher", "warehouse", "place_order", "trip_report", "mail_orders",
   "delivery_challans", "shade_master", "sampling_library", "ti_report",
   "settings_hide",

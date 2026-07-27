@@ -5,7 +5,7 @@ compiled or deployed.
 
 | Module | Retired | Superseded by | Folder |
 |---|---|---|---|
-| Support board | 2026-07-27 | Floor Control (`/floor`) | `2026-07-support/` |
+| Support board — screens *and* API routes | 2026-07-27 | Floor Control (`/floor`) | `2026-07-support/` |
 
 **How this folder works.** Everything here was moved with `git mv`, so each file
 keeps its full history — `git log --follow` on any archived file still shows every

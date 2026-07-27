@@ -51,9 +51,10 @@ Retired across eight steps on **27 July 2026**. The steps that touched code:
 | — | `d08681e9` | Docs: the discovery reports behind the plan |
 | 2 | `316eec6b` | Gave Floor its own ship-to search + save routes |
 | 3 | `3ff717e5` | Repointed the operations login and both sidebars at Floor |
-| 4 | *(this archive)* | Moved the five screens here |
+| 4 | `f1166f94` | Moved the five screens here |
+| 5 | *(this commit)* | Moved the API routes here; removed the two page keys |
 
-Steps 5–8 (API routes, page keys, docs) follow after this one.
+Steps 6–8 (docs, and a deliberate database clean-up) follow after this one.
 
 ## What moved OUT of Support before the archive
 
@@ -72,25 +73,77 @@ hosting cannot safely run (`CLAUDE_CORE.md §3`). Floor's does one job, checks t
 target customer exists, and skips the write entirely when nothing actually
 changed.
 
-## What is NOT in this folder
+---
 
-- **The API routes** under `app/api/support/**` — still live at the time of this
-  archive; they go in step 5.
-- **`docs/CLAUDE_SUPPORT.md`** — the module's documentation; it goes in step 7.
+# Step 5 — the machinery behind the screens
 
-## What was deliberately LEFT in the live app
+Step 4 archived the **screens** — what a person looked at. Step 5 archives the
+**machinery underneath** — the part of the program the screens talked to when
+someone clicked Hold or Cancel. With the screens gone, nothing was calling it.
 
-Three things were **not** removed, on purpose:
+## The API routes are now in this folder too
 
-- **The `support_queue` permission row** (`prisma/seed.ts:78`). Removing it is a
-  database change, not a code change, and it was load-bearing until this archive:
-  the same permission gated the four master-data pages that shared this folder.
-- **The `support_queue` and `operations_support` page keys** in
-  `lib/permissions.ts`. Type-level only; they are removed in step 5.
-- **The `dispatch_change_queue` table.** Support's edit route was its only writer
-  in the entire codebase, and **nothing reads it anywhere**. It is now a frozen
-  table. Dropping it is a separate decision, deliberately not bundled into a code
-  retirement.
+All fifteen of them, under `api/support/` here. These were the instructions the
+server followed when Support asked it to do something: place a bill on hold,
+cancel one, send one out, undo any of those, look up a delivery address.
+
+**Nothing under `/api/support/` responds any more.** Those web addresses simply
+do not exist. Nothing was calling them — this was checked across the whole
+codebase before anything moved. Floor Control was given its own copies of the two
+it genuinely shared (the delivery-address search and save) back in step 2, so
+Floor never depended on Support's.
+
+## The two "page keys" are gone
+
+A page key is the short internal name the app uses to decide who is allowed to
+see which screen — a label like `support_queue` that ties a screen to a
+permission. Support had two of them: `support_queue` (for `/support`) and
+`operations_support` (for `/operations/support`).
+
+Both have been removed from the app's list of known screens, from the list used
+when setting up a brand-new database, and from the two places that still drew a
+menu icon and a permission-toggle row for them. That last one mattered: an
+administrator could otherwise still tick a box granting access to a screen that
+no longer exists, quietly re-creating the very leftovers described below.
+
+## What is still live in the DATABASE — and why
+
+Code and database are separate here. This commit changed only **code**. No SQL
+was run, and nothing in the database was touched. Two things are therefore still
+sitting there:
+
+**1. The old permission rows.** The database still holds rows saying "the support
+role may view the support queue" and, most likely, "the operations role may view
+the operations support screen." These now point at screens that no longer exist,
+so they do nothing at all — a key with no lock left to fit. They are harmless,
+but they are clutter, and they are being cleared **deliberately and separately**,
+in one reviewed SQL statement, rather than quietly as a side effect of a code
+change. Deleting rows from a live database is not something to bundle into a
+file move.
+
+**2. The `dispatch_change_queue` table.** Support's edit screen was the only thing
+in the entire codebase that ever wrote to this table, and **nothing anywhere has
+ever read from it**. It is now frozen: no new rows will arrive, and the existing
+ones are simply history. It has deliberately not been dropped. Removing a whole
+table is a bigger, riskier decision than retiring a screen, and it deserves its
+own moment rather than riding along inside this one.
+
+## Nothing in this folder runs
+
+Worth stating plainly, because it is the whole point of the `archive/` folder:
+
+**Nothing under `archive/` is compiled, deployed, or reachable.** The folder is
+listed in `tsconfig.json`'s exclude list, so the tooling that checks and packages
+the app skips it entirely. It is never uploaded to the live site. No web address
+leads to it. A visitor to orbitoms.in cannot reach any of it, and neither can a
+logged-in member of staff.
+
+It is text on disk, kept so a person can read it. That is all it is.
+
+## What is still NOT in this folder
+
+- **`docs/CLAUDE_SUPPORT.md`** — the module's written documentation. It goes in
+  step 7.
 
 ## Honest note on reinstating this
 
@@ -103,6 +156,12 @@ restyled and its behaviour altered (tapping only a time now keeps the bill's own
 day instead of jumping to today), and the ship-to save is a different route with a
 different address and a different request shape. The imports in these files point
 at paths that no longer hold what they expect.
+
+Step 5 added a second obstacle. The archived API routes still ask the app "may
+this person use the support queue?" — and after step 5 the app no longer knows
+what the support queue is. That question now fails to compile outright. Restoring
+this folder means restoring the page keys, the permission rows, and the seed
+entries as well; it is not a matter of moving files back.
 
 **Treat this folder as reference, not a rollback plan.** It is here so someone can
 read how a decision used to be made — the guard conditions, the wording, the

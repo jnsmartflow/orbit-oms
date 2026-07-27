@@ -35,7 +35,6 @@ const PAGES_CONFIG = [
   { key: "vehicles",      label: "Vehicles",       path: "/admin/vehicles",      section: "Master Data" },
   // Operations
   { key: "import_obd",    label: "Import OBD",     path: "/import",              section: "Operations" },
-  { key: "support_queue", label: "Support Queue",  path: "/support",             section: "Operations" },
   { key: "tint_manager",  label: "Tint Manager",   path: "/tint/manager",        section: "Operations" },
   { key: "tint_operator", label: "Tint Operator",  path: "/tint/operator",       section: "Operations" },
   { key: "dispatcher",    label: "Dispatcher",     path: "/dispatcher",          section: "Operations" },

@@ -74,8 +74,7 @@ async function main() {
     { roleSlug: "tint_manager",  pageKey: "routes_areas",  canView: true,  canEdit: false, canImport: false, canExport: false, canDelete: false },
     { roleSlug: "tint_manager",  pageKey: "vehicles",      canView: true,  canEdit: false, canImport: false, canExport: false, canDelete: false },
 
-    // support — full access to support queue + read-only shared pages
-    { roleSlug: "support",       pageKey: "support_queue", canView: true,  canEdit: true,  canImport: false, canExport: false, canDelete: false },
+    // support — read-only shared pages (its own board was retired 2026-07-27)
     { roleSlug: "support",       pageKey: "customers",     canView: true,  canEdit: false, canImport: false, canExport: false, canDelete: false },
     { roleSlug: "support",       pageKey: "skus",          canView: true,  canEdit: false, canImport: false, canExport: false, canDelete: false },
     { roleSlug: "support",       pageKey: "routes_areas",  canView: true,  canEdit: false, canImport: false, canExport: false, canDelete: false },
