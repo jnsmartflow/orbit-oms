@@ -1,0 +1,265 @@
+# How to retire a module
+
+How OrbitOMS takes a screen out of service without breaking the app around it.
+Written after retiring the Support board (27 July 2026, commits `bc42a948` →
+`f6ace5b8`) so the next one follows the same path.
+
+**This is the recipe, not the story.** What Support was and why it went is in
+`2026-07-support/README.md`. Read that for the example; read this for the method.
+
+A "module" here means one screen or group of screens plus the server code behind
+it — e.g. the Support board and its `/api/support/*` addresses.
+
+---
+
+## 1. When to retire a module
+
+Three things must be true. Not two.
+
+1. **A successor exists and is LIVE** — not designed, not in a branch. Deployed and
+   reachable today.
+2. **The successor has actually been used** for real work, not just demonstrated.
+3. **Nobody depends on the old screen.** Confirmed by the owner, out loud, before
+   any file moves.
+
+Then check parity honestly: **list what the old screen can do that the new one
+cannot**, and decide each one — build it, or accept the loss. Do not assume the
+successor covers everything because it looks similar. For Support this was a
+written gap analysis, and it found five real losses that were accepted on the
+record. Accepting a loss knowingly is fine; discovering it later is not.
+
+**Why Support went is worth repeating, because it is the usual reason.** Support
+was not broken. It worked. It was retired because a dead screen is a **standing
+tax**: every schema change, every shared-component edit, every bug fix has to be
+considered against it. In practice the tax was not being paid — improvements were
+going into Floor and not being mirrored back. Two screens claiming to do the same
+job, only one kept current, is worse than one screen. That is the trigger to
+watch for.
+
+**Not a reason to retire:** the code is old, or ugly, or you dislike it. If people
+use it, it stays.
+
+---
+
+## 2. The order — never change it
+
+Each step exists because of the one before it.
+
+| Step | What | Why HERE |
+|---|---|---|
+| **0** | **Read-only discovery.** Read every file. Change nothing. Write down what the module owns, what it borrows, and what borrows from it. | Everything below depends on this list being right. Two hours here saves a broken build later. |
+| **1** | **Cut the dependencies.** Any file the successor borrows from the module: move it INTO the successor now. | **The load-bearing step — see below.** |
+| **2** | **Replace shared server routes.** If the successor calls the module's addresses, give it its own. | Same reason as step 1, for server code. Rewrite rather than copy where the old one carried baggage. |
+| **3** | **Repoint every signpost.** Login landing pages, redirect maps, sidebars, navigation lists. | Do this while the old screen still works. If a signpost is wrong, the old screen catches the user instead of a "page not found". |
+| **4** | **Archive the screens.** `git mv` into `archive/`. | Only now is nothing pointing at them. |
+| **5** | **Archive the server routes, remove the permission keys, update the seed.** | The screens are gone, so nothing calls the routes. |
+| **5b** | **Clear the orphaned permission rows by hand (SQL).** | A separate, reviewed step — see §6. |
+| **6** | **Wide verification sweep across EVERY module.** Not just the successor. | Catches the links and leftovers the earlier steps missed. It found three. |
+| **7** | **Correct the documentation.** | Last, because only now do you know what is actually true. |
+
+### The load-bearing point
+
+**Dependencies come out first. Always.**
+
+A retiring module is rarely self-contained. Support owned a date-and-time-window
+picker, a text-formatting helper, and two server addresses that **Floor was still
+using**. Archive Support first and Floor's imports point into `archive/`, which is
+excluded from the build — the app fails to compile, or worse, builds and breaks at
+runtime.
+
+So: move the shared pieces into the successor **first**, prove the app still works,
+*then* archive what is left. Each extraction is its own commit, so if one is wrong
+you undo one thing.
+
+A useful test at step 1: **if you deleted the module right now, what breaks?** That
+list is your step-1 work. When the list is empty, you are ready for step 4.
+
+---
+
+## 3. The gates — stop, do not guess
+
+A gate is a question you answer **before** an irreversible move, and you stop if
+the answer is wrong. Each of these caught something real.
+
+**Before archiving a page: prove its replacement exists AND does at least as much.**
+Not "there is an admin page with the same name" — open both. Support's Customers
+page and the admin Customers page turned out to be *different components*; the
+admin one was richer, so the move was safe. Two minutes of checking. Had it been
+the other way round, archiving would have quietly removed a capability.
+
+**Before removing a permission key: trace every file that uses it, and predict the
+compile errors first.** Include the database seed file and any admin
+permissions-management screen. Write down the expected errors, then make the
+change and compare. For Support the prediction was five errors in three files; it
+was exactly five in exactly those three. A surprise error means the trace was
+incomplete — stop and re-trace rather than patching it.
+
+Also check for a **permissions grid in the admin UI**. Support had one, and leaving
+it would have let an administrator tick a box granting access to a screen that no
+longer exists — silently re-creating the very orphan rows step 5b removes.
+
+**Before repointing a link: check the target's permissions.**
+A "page not found" replaced by "you are not allowed" is **still a dead end**. When
+the three orphaned Support links were repointed at Floor, Floor was granted to only
+two roles — so for other roles the fix would have swapped one dead end for another.
+That needed a deliberate decision, not an assumption.
+
+**Check the LIVE database, never the seed file alone.**
+The seed file says what a *fresh* database would contain. The live one has years of
+hand-made changes. Seed predicted **2** orphaned permission rows. The live table had
+**8**. Same trap in reverse: a permission can exist live with no seed row, so a
+reseed silently revokes it.
+
+**A clean build proves less than it looks.** It proves every piece of code the app
+refers to exists. It does **not** prove any web address still leads anywhere —
+those are just text. Three dead links survived five clean builds.
+
+---
+
+## 4. Things that bit us
+
+Short and honest. All of these actually happened.
+
+- **A narrow link sweep missed three live links.** The first sweep searched only
+  `href=`, `redirect(` and `push(` patterns. The misses were a default function
+  argument and a component property — ordinary text. **Search for the address
+  itself as plain text, everywhere**, not for the ways you expect it to be used.
+  TypeScript cannot catch a wrong URL string; to the compiler `"/support"` is just
+  letters.
+- **The search tool lied once.** On this Windows setup, Git Bash rewrites any
+  search term starting with `/` into a file path before the search program sees it,
+  so looking for `/admin/support` silently searched somewhere else and reported "no
+  hits". It was caught only because a differently-worded search found something the
+  first had declared absent. **When a sweep returns a suspiciously clean result,
+  re-run it a second way.**
+- **A shared route group put unrelated pages behind the retiring module's gate.**
+  Four master-data pages (Customers, SKUs, Routes, Vehicles) lived inside Support's
+  folder and inherited its permission check. Revoking that permission would have
+  darkened all four. **Check the folder, not just the screen.**
+- **Two files held finished-but-uncommitted work, and a written brief said
+  "SHIPPED" when nothing had been committed.** `git log` and `git status` are the
+  truth; a status line in a document is a claim. **Verify before trusting it.**
+- **The archive folder MUST be excluded in `tsconfig.json`.** Otherwise the
+  type-checker keeps checking retired code and every stale reference in it blocks
+  every future commit. Add the exclusion in the same commit as the first archive.
+- **Use `git mv`, never copy-and-delete.** With `git mv` the file keeps its history
+  and `git log --follow` still shows every change ever made to it. Copy-and-delete
+  throws that away — the archive becomes a file with no past, which defeats the
+  point of keeping it.
+- **Retiring a screen can silently remove the only way into a shared component.**
+  The missing-customer resolver opened from two places; Support was one of them. It
+  still works from the other, but the loss was found in the *final* sweep, not
+  planned for. **Ask what the screen is the only entry point to.**
+
+---
+
+## 5. Archive layout
+
+```
+archive/
+├── README.md                  index of every retired module
+├── RETIREMENT-PLAYBOOK.md     this file
+└── {YYYY-MM}-{module}/        one folder per retirement
+    ├── README.md              REQUIRED — see below
+    ├── app/ · components/ · api/   the moved code, original paths preserved
+    └── docs/                  the module's own documentation
+```
+
+Folder name: year-month plus the module name — `2026-07-support`. Dated, so the
+order is obvious years later.
+
+Inside, **keep the original folder structure**. A reader should recognise where a
+file used to live without being told.
+
+**Every archive folder carries its own `README.md`**, and it must answer four
+questions in plain English:
+
+1. **What was it?** What the screen did, for a reader who never saw it.
+2. **Why did it go, and what replaced it?**
+3. **What moved OUT before the archive** — the shared pieces, and where they live
+   now. This is the section that stops someone re-adding a file that already exists
+   elsewhere under a different name.
+4. **What was deliberately left behind**, and why (§6).
+
+Add a row to `archive/README.md` in the same commit.
+
+---
+
+## 6. What stays behind on purpose
+
+**Database rows and tables are not part of a code archive.** Archiving code and
+changing a live database are different actions with different risks. Keep them in
+separate, clearly-labelled steps.
+
+- **Orphaned permission rows** — after the keys are gone from the code, rows
+  granting access to the dead screen sit in the database doing nothing: a key with
+  no lock left to fit. Harmless, but clutter. Clear them in **one reviewed SQL
+  statement of their own** (step 5b), never as a side effect of a file move. Look
+  at the live table first — the count will not match the seed file.
+- **Frozen tables** — a table only the retired module wrote to, that nothing reads,
+  is now frozen: no new rows, existing ones are history. **Dropping a table is a
+  separate decision** with its own risk, and it does not belong inside a
+  retirement. Park it and decide deliberately.
+- **Workflow stage strings are shared vocabulary — do not rename them.** OrbitOMS
+  still has a stage called `pending_support` and constants named `SUPPORT_DONE_*`
+  that are used by four other modules. The names are historical; the values are
+  live and written into thousands of database rows. Renaming would mean rewriting
+  live data for a cosmetic gain. **Leave them, and say in the docs that the name is
+  historical.** A future cleanup can rename them on purpose, with its own plan.
+
+The same caution applies to dead code the retirement leaves behind — unused
+functions, a now-pointless flag. Record them; remove them in their own pass. Above
+all, **do not delete by name-matching**: three functions with a `support` prefix
+were genuinely dead, while four constants sharing that prefix were load-bearing
+across Floor, Picking, Import and Tint.
+
+---
+
+## 7. Honest note on reinstating
+
+Moving a folder back is easy. Making it work is not.
+
+By the time a module is archived, its shared pieces have **moved and changed** —
+that was step 1. The archived files import from paths that no longer hold what they
+expect, and the permission keys they check no longer exist. Support's archived code
+does not merely need moving back; it needs the pickers, the routes, the page keys
+and the database rows restored too, in the versions it remembers, which no longer
+exist.
+
+**Treat an archive as reference, not a rollback plan.** It is kept so a person can
+read how a decision used to be made — the guard conditions, the wording, the edge
+cases someone thought hard about once.
+
+**If the successor falls short, build the missing behaviour INTO the successor.**
+Never revive the archive. Two screens doing one job is the problem the retirement
+solved.
+
+---
+
+## 8. Candidates for next retirement
+
+From what is visible in the repo and ROADMAP today. Nothing here is decided.
+
+| Candidate | Successor | Blocker |
+|---|---|---|
+| **Picking DESKTOP board** (`/picking`, desktop view) | Floor Control (`/floor`) | **Step 0/1 not done.** Floor still borrows from Picking at runtime: the assign/unassign endpoints, the sort rule objects + `sortPickingQueue` (`lib/picking/sort.ts`), and the `use-picking-marker` hook. Those must move or be duplicated first. No agreed trigger. ⚠ **Picking's MOBILE boards are NOT in scope — they stay.** (`CLAUDE_FLOOR.md §9`, ROADMAP → Floor Control) |
+| **Shade Master** (`/tint/manager/shades`, `/tint/shades`) | Sampling Library (`/tint/sampling-library`) | Furthest along of the three. `shade_master` has been deprecated since 2026-05-25 and is documented "do not write to it", but the screens are still in the navigation. ROADMAP wants four weeks of traffic audit plus a final CSV dump before the **table** drops — note the **screens** could retire earlier than the table. (ROADMAP → Sampling Library) |
+| **Admin SKU CRUD + the three `skus/page.tsx` browse pages** | `sku_master_v2` | These are the last live readers of the old `sku_master` table, so they retire *with* it. **Read the id-space landmine in `CLAUDE_CORE.md §13` first.** Known blocker: `scripts/normalise-sampling-data.ts:313` reads the old table and is inside the type-check gate, so it will block every commit at the drop. (ROADMAP → Retire old `sku_master`) |
+
+**Two file-level cleanups, not module retirements** — this playbook is overkill for
+them, but they are the same family:
+
+- **The two TI Report page files** are **unreachable** — `next.config.mjs` redirects
+  both addresses away before either page can render. Dead code hidden behind a
+  redirect: the kind a "who links here?" search will never find, because nothing
+  links to it and nothing needs to. **Worth learning as a class — when checking
+  whether a screen is still reachable, read the redirect and rewrite rules in
+  `next.config.mjs`, not just the links.** Tracked at ROADMAP → *Post-Support-retirement
+  cleanup*.
+- **`/orders`** — no permission gate, and its entire body forwards to `/floor`. Two
+  commits in its whole history. Delete it or gate it. (ROADMAP → Post-Support-retirement cleanup)
+
+---
+
+*Written 2026-07-27, after the Support retirement. Update it after the next one —
+especially §4, which is only useful if it keeps growing.*

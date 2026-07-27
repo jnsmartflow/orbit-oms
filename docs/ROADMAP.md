@@ -521,6 +521,14 @@ is done and recorded in `archive/2026-07-support/README.md` — these are the lo
   `pending_support` stage name still say "support" but belong to Floor/Picking/Import/Tint. Renaming
   removes a real trap; it is a wide mechanical change (and `pending_support` would mean rewriting live
   rows), so it needs its own session — or a deliberate decision to leave the names as historical.
+- [ ] **Two TI Report page files are unreachable — verify, then delete or restore (P2).**
+  `app/(tint)/ti-report/page.tsx` and `app/(tint)/tint/manager/ti-report/page.tsx` both render
+  `<TIReportContent />`, but `next.config.mjs` redirects **both** of their addresses to
+  `/reports?r=ti-report` before either page can run — so neither has been reachable since the
+  Reports hub landed. Confirm in the browser, then either delete the two files (the hub is the
+  intended surface) or drop the redirects if direct access was meant to survive. **Do not leave
+  both** — a page that cannot render is invisible dead code no link-search will find.
+  Found during the step-8 playbook write, 2026-07-27. (`CLAUDE_CORE.md §12`, `next.config.mjs:24-27`)
 - [ ] **Five pre-existing unused files (P3 — NOT caused by the retirement).** Verified dead before it
   began (`d08681e9`) and never referenced by Support: `components/shared/role-nav.tsx`,
   `components/shared/sign-out-button.tsx`, `lib/mail-orders/enrich-v2.ts`,

@@ -3,6 +3,9 @@
 Modules removed from the running app but kept for reference. Nothing in here is
 compiled or deployed.
 
+**Retiring something? Read [`RETIREMENT-PLAYBOOK.md`](RETIREMENT-PLAYBOOK.md) first** — the order to
+do it in, the checks that stop you breaking the app, and the mistakes already made once.
+
 | Module | Retired | Superseded by | Folder |
 |---|---|---|---|
 | Support board — screens *and* API routes | 2026-07-27 | Floor Control (`/floor`) | `2026-07-support/` |

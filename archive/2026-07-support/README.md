@@ -2,6 +2,9 @@
 
 Superseded by **Floor Control** (`/floor`).
 
+*This file is the STORY of one retirement. The METHOD it followed — reusable for the
+next module — is in [`../RETIREMENT-PLAYBOOK.md`](../RETIREMENT-PLAYBOOK.md).*
+
 ---
 
 ## What Support was
@@ -43,7 +46,7 @@ them turn out to be needed, build them into Floor** — do not revive this folde
 
 ## When, and which commits
 
-Retired across eight steps on **27 July 2026**. The steps that touched code:
+Retired across eight steps on **27 July 2026** — all of them now done.
 
 | Step | Commit | What it did |
 |---|---|---|
@@ -52,9 +55,14 @@ Retired across eight steps on **27 July 2026**. The steps that touched code:
 | 2 | `316eec6b` | Gave Floor its own ship-to search + save routes |
 | 3 | `3ff717e5` | Repointed the operations login and both sidebars at Floor |
 | 4 | `f1166f94` | Moved the five screens here |
-| 5 | *(this commit)* | Moved the API routes here; removed the two page keys |
+| 5 | `19b812a5` | Moved the API routes here; removed the two page keys |
+| 5b | *(SQL, no commit)* | Cleared the 8 orphaned permission rows by hand in Supabase |
+| 6 | *(read-only, no commit)* | Verification sweep across every module — found three dead links |
+| 6b | `62a2928c` | Repointed those three links at Floor |
+| 7 | `f6ace5b8` | Corrected every document that still called Support live; moved this spec here |
+| 8 | *(this commit)* | Wrote `../RETIREMENT-PLAYBOOK.md` — the method, so the next module follows it |
 
-Steps 6–8 (docs, and a deliberate database clean-up) follow after this one.
+**The retirement is complete.** Nothing further is planned or pending.
 
 ## What moved OUT of Support before the archive
 
@@ -106,22 +114,23 @@ menu icon and a permission-toggle row for them. That last one mattered: an
 administrator could otherwise still tick a box granting access to a screen that
 no longer exists, quietly re-creating the very leftovers described below.
 
-## What is still live in the DATABASE — and why
+## What happened in the DATABASE — and what is still there
 
-Code and database are separate here. This commit changed only **code**. No SQL
-was run, and nothing in the database was touched. Two things are therefore still
-sitting there:
+Code and database are separate here, and were kept in separate steps on purpose.
+Step 5 changed only **code** — no SQL ran with it.
 
-**1. The old permission rows.** The database still holds rows saying "the support
-role may view the support queue" and, most likely, "the operations role may view
-the operations support screen." These now point at screens that no longer exist,
-so they do nothing at all — a key with no lock left to fit. They are harmless,
-but they are clutter, and they are being cleared **deliberately and separately**,
-in one reviewed SQL statement, rather than quietly as a side effect of a code
-change. Deleting rows from a live database is not something to bundle into a
-file move.
+**1. The old permission rows — CLEARED (step 5b).** The database held rows saying
+"this role may view the support queue", pointing at screens that no longer exist —
+keys with no lock left to fit. They were deleted **by hand, in one reviewed SQL
+statement of their own**, rather than quietly as a side effect of a file move.
 
-**2. The `dispatch_change_queue` table.** Support's edit screen was the only thing
+Worth recording why that step was separate: the seed file — the script that builds
+a fresh database — predicted **2** such rows. The live table had **8**. Six had
+been added by hand over the years and existed nowhere in the code. Had the clean-up
+been guessed from the seed file instead of read from the live database, six would
+have been left behind.
+
+**2. The `dispatch_change_queue` table — still there, deliberately.** Support's edit screen was the only thing
 in the entire codebase that ever wrote to this table, and **nothing anywhere has
 ever read from it**. It is now frozen: no new rows will arrive, and the existing
 ones are simply history. It has deliberately not been dropped. Removing a whole
@@ -140,10 +149,12 @@ logged-in member of staff.
 
 It is text on disk, kept so a person can read it. That is all it is.
 
-## What is still NOT in this folder
+## The module's documentation is here too
 
-- **`docs/CLAUDE_SUPPORT.md`** — the module's written documentation. It goes in
-  step 7.
+`docs/CLAUDE_SUPPORT.md` — the full written spec of how Support worked — moved into
+this folder in step 7 (`f6ace5b8`) and carries its own archived banner. It is the
+most detailed record of the module that exists; every other document in the repo
+now points at it rather than describing Support itself.
 
 ## Honest note on reinstating this
 
