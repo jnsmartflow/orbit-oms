@@ -6,7 +6,8 @@ import PoPage from "./po-page";
 // the interactive UI lives in po-page.tsx. Mirrors the desktop /place-order
 // server/client split (CLAUDE_PLACE_ORDER §17).
 //
-// /order (app/order/page.tsx) is the FROZEN backup and is not touched.
+// /order was RETIRED 2026-07-27 (de48357d); the page it refers to now lives at
+// archive/2026-07-order/app/order/page.tsx. /po is the only public order page.
 
 export const dynamic = "force-dynamic";
 

@@ -1,6 +1,9 @@
 // Pack-size formatting + sorting + carton-step helpers for /place-order.
 //
-// Matches the mobile /order page byte-for-byte so:
+// ⚠ KEEP — shared module used by /po and /place-order.
+//
+// Matches the mobile /po page byte-for-byte (originally /order's format, which
+// /po inherited; /order retired 2026-07-27) so:
 //   (a) the email body the desktop page produces is parser-compatible
 //   (b) carton multiples (1L=6, 4L=4, 100ML=12) stay consistent across both
 //

@@ -45,7 +45,13 @@ function billsCountLabel(snapshot: Parameters<typeof draftSummary>[0]): string {
 // The visible cart bar / bill strip and the email send (cartToMailtoBody)
 // are intentionally NOT built here — Phase 3 / Phase 4.
 //
-// Modelled on app/order/page.tsx (the FROZEN backup, NOT edited here).
+// ⚠ /order WAS RETIRED 2026-07-27 (commit de48357d). Comments throughout this
+// file say "mirrors /order" / "modelled on /order" — those remain accurate as
+// PROVENANCE, but the file they point at has MOVED to:
+//     archive/2026-07-order/app/order/page.tsx
+// It is read-only reference, never a rollback. /po is now the only public
+// order-entry page. Story: archive/2026-07-order/README.md.
+// (Modelled on that page originally; it was the frozen backup at the time.)
 
 // ── SpeechRecognition types (not in default lib.dom.d.ts) ──────────────────
 interface SpeechRecognitionEventLike {
@@ -100,7 +106,8 @@ function sortPackEntries<T extends { packCode: string; unit: string | null }>(en
   });
 }
 
-// Email subject + body builder. MIRRORS app/order/page.tsx buildEmail()
+// Email subject + body builder. MIRRORS the retired app/order/page.tsx buildEmail()
+// (now archive/2026-07-order/app/order/page.tsx — reference only)
 // byte-for-byte (field order Customer/Dispatch/Marker/Ship To; blank line +
 // "Bill {b.id}" only when >1 active bill; "{product ?? subProduct} {baseColour}
 // {label}*{units}, …"; em-dash subject). Display aliases (§12/§13) are NEVER

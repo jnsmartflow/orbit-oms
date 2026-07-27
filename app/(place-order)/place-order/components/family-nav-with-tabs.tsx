@@ -41,7 +41,7 @@ export interface FamilyNavWithTabsProps {
 }
 
 // Desktop-only tab display overrides (UI render layer; the stored uiGroup,
-// searchTokens, displayName, and mobile /order are all untouched). Mapping two
+// searchTokens, displayName, and mobile /po are all untouched). Mapping two
 // uiGroups to the same string MERGES them into one tab (the Set below dedups);
 // mapping one to a shorter string RELABELS it. Applied to the tab grouping key.
 const TAB_DISPLAY: Record<string, string> = {

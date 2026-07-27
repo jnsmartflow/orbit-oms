@@ -1,8 +1,11 @@
 // Mailto body + subject builder for /place-order.
 //
-// Output shape matches mobile /order page byte-for-byte so the upstream
+// Output shape matches the mobile /po page byte-for-byte so the upstream
 // PowerShell parser (Parse-MailOrders-v6_5.ps1) accepts both. The parser
-// was trained on the mobile body format.
+// was trained on the mobile body format — originally /order's, which /po
+// inherited unchanged before /order retired 2026-07-27.
+//
+// ⚠ KEEP — this module is shared with /po (archive/2026-07-order/README.md).
 //
 // Cell qty on /place-order represents UNITS (2026-05-12 flip — supersedes
 // the prior boxes-semantics decision in memory note
@@ -57,8 +60,9 @@ export type EmailOutput = {
 
 export const ORDER_TO = "surat.depot@akzonobel.com";
 // Desktop /place-order CCs the parser inbox so app orders land there too.
-// Wired into buildMailtoUrl() ONLY (the desktop send path) — /po and /order
-// build their own mailto inline and intentionally do NOT carry this CC.
+// Wired into buildMailtoUrl() ONLY (the desktop send path) — /po builds its
+// own mailto inline and intentionally does NOT carry this CC. (The retired
+// /order did the same.)
 export const ORDER_CC = "surat.order@outlook.com";
 
 /** One product line in the rendered order body: full name + pack list. */
@@ -77,9 +81,10 @@ export type OrderBodyInput = {
 
 /**
  * SINGLE SOURCE for the order-email BODY (plain text — mailto, no HTML/bold).
- * All three surfaces (desktop /place-order, mobile /po, mobile /order) call
- * this so the body never diverges. Header lines render only when they carry a
- * value, in the locked sequence: Bill To → Ship To → Dispatch → Remark → Note.
+ * BOTH surfaces (desktop /place-order, mobile /po) call this so the body never
+ * diverges — three surfaces until /order retired 2026-07-27. Header lines render
+ * only when they carry a value, in the locked sequence:
+ * Bill To → Ship To → Dispatch → Remark → Note.
  * Each bill is preceded by a blank line and (multi-bill only) its "Bill N"
  * header; line items are 1-based and RESTART per bill, joined to their pack
  * list by " - " (space-hyphen-space). Pack list ("*", comma-separated) is
@@ -139,7 +144,7 @@ export function renderOrderBody(input: OrderBodyInput): string {
 
 /**
  * Full product-name + base label for one email/order line. Shared by the
- * desktop (this file) and mobile (/order page) builders so both stay
+ * desktop (this file) and mobile (/po page) builders so both stay
  * byte-identical. Scoped special case: PROMISE PRIMER's stored product name
  * overlaps its base ("PROMISE PRIMER" + "Promise Primer" → doubling), so we
  * print the clean variant name only — reproducing the menu displayName
@@ -168,7 +173,7 @@ export function emailLineLabel(
 
 /**
  * Order-email SUBJECT — shared by desktop /place-order and mobile /po (the
- * /order public page is frozen and keeps its own inline copy, out of scope).
+ * retired /order page kept its own inline copy, out of scope).
  * No-remark case is byte-identical to the pre-2026-07 subject ("Order —
  * {name} {code}"). Cross carries its source depot when one was picked;
  * falls back to the plain "Cross Billing Order" prefix otherwise. Only one

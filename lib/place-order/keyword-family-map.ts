@@ -1,5 +1,6 @@
-// Whole-query keyword → family default for the order-form search (mobile /order
-// + desktop /place-order). When an operator types a brand acronym / family name
+// Whole-query keyword → family default for the order-form search (mobile /po
+// + desktop /place-order; /order was the third until it retired 2026-07-27).
+// ⚠ KEEP — shared module. When an operator types a brand acronym / family name
 // that should surface a WHOLE family first (e.g. "VT" → the Velvet Touch line),
 // the rankers promote that family's rows to the top in natural tab order, with
 // every other match kept BELOW (promote-only — nothing is hidden).

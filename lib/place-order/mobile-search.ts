@@ -1,5 +1,9 @@
-// Mobile /order product ranking. Historically the mobile suggestion list was a
-// boolean AND-substring filter with NO ranking — it returned matches in catalog
+// Mobile /po product ranking (was /order's until that page retired 2026-07-27).
+// ⚠ KEEP — shared module, /po is now its ONLY consumer; /place-order uses
+// lib/place-order/queries.ts instead. See archive/2026-07-order/README.md.
+//
+// Historically the mobile suggestion list was a boolean AND-substring filter
+// with NO ranking — it returned matches in catalog
 // (sortOrder) order. This module adds a relevance score + STABLE sort while
 // keeping the exact same match SET, so existing queries return the same products
 // just better-ordered.

@@ -130,11 +130,24 @@ export const SUPPORT_DONE_STAGE_NAMES: string[] = STAGE_LADDER
  * "dispatched" alongside SUPPORT_DONE_STAGES, unlike every other consumer,
  * which always paired the spread with an explicit "dispatched" literal.
  * Migrating those sites to the wide SUPPORT_DONE_STAGE_NAMES would silently
- * widen their match to include 'dispatched' — a real (currently inert —
- * zero production order has ever reached 'dispatched'; the Planning pipeline
- * that writes it requires 'dispatch_confirmation', a stage nothing in this
- * codebase writes yet) behaviour change. Reviewed and accepted by Smart Flow
- * as an intentional, currently-inert divergence from the old ad-hoc arrays
+ * widen their match to include 'dispatched' — a real behaviour change.
+ *
+ * ⚠ CORRECTED 2026-07-27 — this comment previously claimed "zero production
+ * order has ever reached 'dispatched'" and that the change was therefore
+ * "currently inert". BOTH WERE FALSE, and the error propagated: a discovery
+ * report cited this comment and wrongly concluded the Warehouse AND Planning
+ * boards could only ever render empty. Verified counts:
+ *   - workflowStage 'dispatched'            = 1,546 rows (live SELECT 2026-07-27).
+ *     ROADMAP recorded 1,051 on 2026-07-24 — ~500 rows moved in three days and
+ *     HOW is not currently understood. Not investigated here.
+ *   - workflowStage 'dispatch_confirmation' = 0 rows. THAT half holds: nothing
+ *     in this codebase writes 'dispatch_confirmation'.
+ * So widening a match to include 'dispatched' would hit real rows today. Treat
+ * this divergence as LIVE, not inert, when touching any of the call sites below.
+ * The known workflow hole — no automatic drain pick_checked → dispatched — is
+ * owned by docs/ROADMAP.md and CLAUDE_PICKING.md §9; not restated here.
+ *
+ * The divergence itself was reviewed and accepted by Smart Flow as intentional
  * (2026-07 ladder migration). Used only at:
  *   - app/api/support/orders/route.ts — the "hold released" and
  *     "dispatch-target-date" history footprint arms (both the single-slot

@@ -1,5 +1,6 @@
 // Light secondary descriptor line shown under a product's display name on the
-// order surfaces (mobile /order + desktop /place-order). DISPLAY-ONLY:
+// order surfaces (mobile /po + desktop /place-order). ⚠ KEEP — shared module.
+// (/order was the third surface until it retired 2026-07-27.) DISPLAY-ONLY:
 //   - never written to the catalog, the search haystack, or the order email,
 //   - purely a UI subtitle that clarifies the sub-product (e.g. distinguishing
 //     the two Satin finishes by binder).

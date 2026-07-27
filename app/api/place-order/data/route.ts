@@ -5,24 +5,29 @@ import { packToMl, formatPack } from "@/lib/place-order/pack";
 
 // Endpoint serving customer + product data to the desktop Place Order page
 // at /place-order. The live endpoint /api/order/data continues to serve the
-// mobile /order page unchanged.
+// mobile /po page unchanged (it served /order too, until that page retired
+// 2026-07-27 — archive/2026-07-order/).
 //
 // Auth: requires authenticated session (no middleware whitelist needed). The
 // only caller is the authenticated /place-order page; middleware passes the
 // request through with a valid session cookie. /api/order/data is public
-// because /order is public; this endpoint does not need to be.
+// because /po is public; this endpoint does not need to be.
 //
 // Data sources (parallel v2 stack):
 //   - Catalog rows: mo_order_form_index_v2 — parallel v2 catalog under the
-//     May 6 33-family taxonomy redesign. Live mo_order_form_index drives
-//     /order (mobile).
+//     May 6 33-family taxonomy redesign. Legacy mo_order_form_index is now
+//     read ONLY by the mail parser + enrichment — no frontend reads it
+//     (CLAUDE_MAIL_ORDERS.md §20). Do NOT delete it.
 //   - Pack/SKU rows: mo_sku_lookup_v2 — parallel v2 SKU table with clean
 //     names matching mo_order_form_index_v2.subProduct. Live mo_sku_lookup
 //     continues to serve /api/order/data, the parser, and enrichment
 //     unchanged.
 //
-// After /place-order is approved on v2, /order will switch to v2 too and
-// the legacy tables can be dropped.
+// OVERTAKEN 2026-07-27: this said "/order will switch to v2 too and the legacy
+// tables can be dropped". /order switched to v2 on 2026-05-29 and retired on
+// 2026-07-27. The legacy tables still CANNOT be dropped — the mail parser and
+// enrichment remain their only readers, until Stage 3 of the v2 plan ships
+// (CLAUDE_PLACE_ORDER.md §19, CLAUDE_MAIL_ORDERS.md §20).
 // See: docs/prompts/drafts/session-end-2026-05-10-recovery-and-branch-hygiene.md
 //
 // Each v2 index row is one searchable entry; numbered-base variants (e.g.
