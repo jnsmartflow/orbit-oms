@@ -9,7 +9,7 @@
 //  - LIVE: the slot picker (picking a slot releases the bill), Hold, and ✕.
 //  - Hold → /api/floor/actions "hold" (dispatchStatus 'hold' + heldAt).
 //    ✕ → /api/floor/actions "cancel" (workflowStage 'cancelled'). Wired Step 5.
-//  - The slot picker is components/support/dispatch-slot-picker.tsx reused AS-IS
+//  - The slot picker is components/floor/dispatch-slot-picker.tsx, used AS-IS
 //    (its own "pick slot" pill is the whole slot control — not forked).
 //  - The render-time "Release to {slot}" suggestion button is DEFERRED to Step 10
 //    (see lib/floor/queries.ts RAIL_SUGGESTIONS_ENABLED). No teal/green Release
@@ -19,7 +19,7 @@
 //    (disabled) — that IS the dimmed state; there is no separate greyed button.
 
 import { Droplet } from "lucide-react";
-import { DispatchSlotPicker, type DispatchWindow } from "@/components/support/dispatch-slot-picker";
+import { DispatchSlotPicker, type DispatchWindow } from "@/components/floor/dispatch-slot-picker";
 import { TintStrip } from "./tint-strip";
 import type { FloorRailCard as RailCardData } from "@/lib/floor/types";
 

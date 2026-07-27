@@ -99,21 +99,50 @@ export function DispatchSlotPicker({
 
   const { today } = useMemo(() => getQuickDates(), []);
 
+  // Position the (body-portalled, position:fixed) popover, measured at open time.
+  // popoverDir is a PREFERENCE, not a command: open in the preferred direction if
+  // it fits, flip to the opposite if it doesn't, else use the roomier side and cap
+  // the height with internal scroll. Horizontal prefers popoverAlign, then clamps
+  // to the viewport. Re-run on scroll/resize/height-change keeps it glued.
   const updatePosition = useCallback(() => {
     const btn = triggerRef.current;
     if (!btn) return;
     const r = btn.getBoundingClientRect();
-    const style: React.CSSProperties = { position: "fixed", zIndex: 400, width: 284 };
-    if (popoverAlign === "right") {
-      style.right = window.innerWidth - r.right;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+
+    const WIDTH = 284;
+    const OFFSET = 5; // gap between trigger and popover (unchanged)
+    const EDGE = 8;   // min gap from the viewport edge
+
+    // Natural (uncapped) height — scrollHeight so a previously-capped measure can't
+    // feed back; estimate before first paint.
+    const h = popRef.current?.scrollHeight || 200;
+
+    const style: React.CSSProperties = { position: "fixed", zIndex: 400, width: WIDTH };
+
+    // ── Vertical: preferred dir if it fits, else flip, else the roomier side ──
+    const roomBelow = vh - r.bottom - OFFSET - EDGE;
+    const roomAbove = r.top - OFFSET - EDGE;
+    const fitsBelow = h <= roomBelow;
+    const fitsAbove = h <= roomAbove;
+    const openUp =
+      popoverDir === "up"
+        ? fitsAbove ? true : fitsBelow ? false : roomAbove >= roomBelow
+        : fitsBelow ? false : fitsAbove ? true : roomBelow < roomAbove;
+
+    if (openUp) {
+      style.bottom = vh - r.top + OFFSET;
+      if (h > roomAbove) { style.maxHeight = Math.max(0, roomAbove); style.overflowY = "auto"; }
     } else {
-      style.left = r.left;
+      style.top = r.bottom + OFFSET;
+      if (h > roomBelow) { style.maxHeight = Math.max(0, roomBelow); style.overflowY = "auto"; }
     }
-    if (popoverDir === "up") {
-      style.bottom = window.innerHeight - r.top + 5;
-    } else {
-      style.top = r.bottom + 5;
-    }
+
+    // ── Horizontal: prefer the aligned edge, clamp so it never crosses out ──
+    const anchorLeft = popoverAlign === "right" ? r.right - WIDTH : r.left;
+    style.left = Math.min(Math.max(EDGE, anchorLeft), vw - WIDTH - EDGE);
+
     setPopStyle(style);
   }, [popoverDir, popoverAlign]);
 
@@ -121,14 +150,31 @@ export function DispatchSlotPicker({
     if (!open) return;
     updatePosition();
 
+    function reposition() {
+      updatePosition();
+    }
     function onMousedown(e: MouseEvent) {
       const t = e.target as Node;
       if (triggerRef.current?.contains(t) || popRef.current?.contains(t)) return;
       setOpen(false);
     }
     document.addEventListener("mousedown", onMousedown);
-    return () => document.removeEventListener("mousedown", onMousedown);
+    // capture:true so scrolling ANY ancestor scroller (rail, table, panel) — not
+    // just window — keeps the portalled popover glued to its trigger.
+    window.addEventListener("scroll", reposition, true);
+    window.addEventListener("resize", reposition);
+    return () => {
+      document.removeEventListener("mousedown", onMousedown);
+      window.removeEventListener("scroll", reposition, true);
+      window.removeEventListener("resize", reposition);
+    };
   }, [open, updatePosition]);
+
+  // The far-date input changes the popover height — re-measure when it toggles so
+  // the flip/cap decision stays correct.
+  useEffect(() => {
+    if (open) updatePosition();
+  }, [calOpen, open, updatePosition]);
 
   function handleToggle() {
     if (disabled) return;
@@ -163,67 +209,85 @@ export function DispatchSlotPicker({
     "inline-flex items-center gap-1.5 h-[22px] px-[9px] rounded-full border text-[11px] font-medium whitespace-nowrap transition-all select-none",
     disabled ? "opacity-40 cursor-not-allowed" : "cursor-pointer",
     value
-      ? "border-teal-200 bg-teal-50 text-gray-800"
+      ? "border-gray-300 bg-gray-100 text-gray-800"
       : open
-      ? "border-teal-600 shadow-[0_0_0_3px_rgba(13,148,136,0.07)] text-gray-500"
+      ? "border-gray-900 shadow-[0_0_0_3px_rgba(17,24,39,0.06)] text-gray-500"
       : "border-gray-200 bg-white text-gray-400",
   ].join(" ");
 
   // ── Popover markup ────────────────────────────────────────────────────────
 
-  const activeDate = selDate || today;
+  const rail = getRailDates(today);
+  const railFirstMonth = rail[0]?.m;
+  // Highlight the bill's own slot day ONLY when it is visible in the rail; never
+  // fall back to today — highlighting today for a bill sitting on an off-rail date
+  // (or with no slot) is a guess dressed as a fact. "" ⇒ nothing highlighted.
+  const highlightDate = selDate || (value != null && rail.some((r) => r.iso === value.date) ? value.date : "");
+  // The day a bare window-tap commits to: the highlight if any, else today (a
+  // fresh pick defaults to today). handleSelect / commit-on-tap are unchanged.
+  const activeDate = highlightDate || today;
 
   const popover = (
     <div
       ref={popRef}
+      // Behaviour-neutral marker: present only while the popover is open (it is
+      // rendered only when open). Lets a host Esc handler detect an open picker
+      // and skip its own action — no effect on this component or /support.
+      data-slot-popover="open"
       style={{ ...popStyle, boxShadow: "0 8px 24px rgba(0,0,0,.11), 0 1px 4px rgba(0,0,0,.05)" }}
-      className="bg-white border border-slate-200 rounded-[11px] overflow-hidden"
+      className="bg-white border border-gray-200 rounded-xl p-[13px]"
       onClick={(e) => e.stopPropagation()}
     >
-      {/* DATE RAIL */}
-      <div
-        className="flex items-stretch gap-[3px] px-2.5 py-[8px] border-b border-gray-100 overflow-x-auto"
-        style={{ scrollbarWidth: "none" }}
-      >
-        {getRailDates(today).map(({ iso, wd, d, m }) => (
-          <button
-            key={iso}
-            type="button"
-            onClick={() => setSelDate(iso)}
-            className={[
-              "flex-shrink-0 flex flex-col items-center px-[9px] py-[5px] min-w-[38px]",
-              "rounded-[7px] text-center transition-colors border-0 outline-none",
-              activeDate === iso ? "bg-teal-600" : "bg-gray-100 hover:bg-gray-200",
-            ].join(" ")}
-          >
-            <span className={`text-[8.5px] font-medium leading-[1.2] ${activeDate === iso ? "text-white/70" : "text-gray-400"}`}>{wd}</span>
-            <span className={`text-[15px] font-bold leading-[1.1] ${activeDate === iso ? "text-white" : "text-gray-800"}`}>{d}</span>
-            <span className={`text-[8.5px] leading-[1.2] ${activeDate === iso ? "text-white/70" : "text-gray-400"}`}>{m}</span>
-          </button>
-        ))}
-        {/* Calendar icon — tap to toggle far-date input */}
+      {/* DAY STRIP — one hairline-bordered container, days flush edge to edge,
+          calendar escape hatch at the right end. Variant A of
+          docs/mockups/floor-control/slot-picker-v2.html. */}
+      <div className="flex items-stretch overflow-hidden rounded-lg border border-gray-200">
+        {rail.map(({ iso, wd, d, m }, i) => {
+          const on = highlightDate === iso;
+          const isLast = i === rail.length - 1;
+          // Month tag only on tiles in a NEW month (the 6-day range crossed a
+          // boundary), so "1 Aug" reads unambiguously; first-month tiles show
+          // the number alone.
+          const showMonth = m !== railFirstMonth;
+          return (
+            <button
+              key={iso}
+              type="button"
+              onClick={() => setSelDate(iso)}
+              className={[
+                "flex-1 flex flex-col items-center py-[7px] text-center transition-colors outline-none",
+                isLast ? "" : "border-r border-gray-100",
+                on ? "bg-gray-900" : "bg-white hover:bg-gray-50",
+              ].join(" ")}
+            >
+              <span className={`text-[9px] font-medium uppercase tracking-wide leading-[1.2] ${on ? "text-white/55" : "text-gray-400"}`}>{wd}</span>
+              <span className="flex items-baseline gap-[3px] leading-[1.1]">
+                <span className={`text-[14.5px] font-semibold tabular-nums ${on ? "text-white" : "text-gray-800"}`}>{d}</span>
+                {showMonth && <span className={`text-[9px] ${on ? "text-white/55" : "text-gray-400"}`}>{m}</span>}
+              </span>
+            </button>
+          );
+        })}
+        {/* Calendar icon — toggles the far-date input (unchanged behaviour). */}
         <button
           type="button"
           onClick={() => setCalOpen((v) => !v)}
           className={[
-            "flex-shrink-0 self-stretch flex items-center justify-center w-[30px]",
-            "rounded-[7px] border transition-colors outline-none",
-            calOpen
-              ? "border-teal-500 text-teal-500 bg-teal-50"
-              : "border-gray-200 text-gray-400 hover:border-teal-500 hover:text-teal-500",
+            "flex-none self-stretch flex w-[34px] items-center justify-center border-l border-gray-200 transition-colors outline-none",
+            calOpen ? "bg-gray-100 text-gray-700" : "bg-gray-50 text-gray-400 hover:text-gray-700",
           ].join(" ")}
           title="Pick another date"
         >
-          <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24">
+          <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 24 24">
             <rect x="3" y="4" width="18" height="18" rx="2" />
             <path d="M16 2v4M8 2v4M3 10h18" />
           </svg>
         </button>
       </div>
 
-      {/* FAR DATE INPUT */}
+      {/* FAR DATE INPUT — the calendar escape hatch (unchanged behaviour). */}
       {calOpen && (
-        <div className="px-2.5 py-2 bg-gray-50 border-b border-gray-100">
+        <div className="mt-2 rounded-lg bg-gray-50 px-2.5 py-2">
           <input
             type="date"
             min={today}
@@ -232,34 +296,28 @@ export function DispatchSlotPicker({
               setCalDate(e.target.value);
               if (e.target.value) setSelDate(e.target.value);
             }}
-            className="text-[11px] border border-gray-200 rounded-[6px] px-2 py-[3px] w-full focus:outline-none focus:border-teal-400 bg-white"
+            className="w-full rounded-[6px] border border-gray-200 bg-white px-2 py-[3px] text-[11px] focus:border-gray-400 focus:outline-none"
           />
         </div>
       )}
 
-      {/* WINDOW PILLS */}
-      <div className="px-2.5 pt-[7px] pb-[10px]">
-        <p className="text-[9px] font-semibold uppercase tracking-wide text-gray-400 mb-[6px]">
-          Window
-        </p>
-        <div className="flex gap-[5px]">
-          {windows.map((win) => (
-            <button
-              key={win.id}
-              type="button"
-              onClick={() => handleSelect(activeDate, win)}
-              className={[
-                "flex-1 flex items-center justify-center h-[32px] rounded-[7px]",
-                "text-[12px] font-bold transition-colors border outline-none",
-                isSelected(activeDate, win.id)
-                  ? "bg-teal-600 border-teal-600 text-white shadow-sm"
-                  : "bg-white border-gray-200 text-gray-700 hover:border-teal-500 hover:text-teal-500",
-              ].join(" ")}
-            >
-              {win.windowTime}
-            </button>
-          ))}
-        </div>
+      {/* WINDOW ROW — no caps label; selected pill is near-black, not teal. */}
+      <div className="mt-[10px] flex gap-1.5">
+        {windows.map((win) => (
+          <button
+            key={win.id}
+            type="button"
+            onClick={() => handleSelect(activeDate, win)}
+            className={[
+              "flex-1 flex items-center justify-center h-[31px] rounded-md border text-[11.5px] tabular-nums transition-colors outline-none",
+              isSelected(highlightDate, win.id)
+                ? "bg-gray-900 border-gray-900 text-white font-semibold"
+                : "border-gray-200 text-gray-600 hover:border-gray-400 hover:text-gray-900",
+            ].join(" ")}
+          >
+            {win.windowTime}
+          </button>
+        ))}
       </div>
     </div>
   );
@@ -277,7 +335,7 @@ export function DispatchSlotPicker({
       >
         {value ? (
           <>
-            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" className="text-teal-500 shrink-0">
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" className="text-gray-500 shrink-0">
               <path d="M1.5 5l2.5 2.5 4.5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
             <span>{fmtSlot(value)}</span>

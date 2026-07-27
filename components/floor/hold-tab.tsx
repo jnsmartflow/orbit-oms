@@ -24,7 +24,7 @@ import { shipMarkers } from "./floor-table";
 import { toggleOne, toggleAllIds, isAllIdsSelected, type FloorSelection } from "@/lib/floor/selection";
 import { groupByHoldBand, heldSinceLabel, holdAgeDays } from "@/lib/floor/hold-log";
 import type { FloorHoldRow } from "@/lib/floor/types";
-import type { DispatchWindow } from "@/components/support/dispatch-slot-picker";
+import type { DispatchWindow } from "@/components/floor/dispatch-slot-picker";
 
 function fmtDateTime(iso: string | null): string {
   if (!iso) return "";

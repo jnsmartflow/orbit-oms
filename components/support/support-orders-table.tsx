@@ -9,8 +9,8 @@ import {
   RotateCcw,
   Mail,
 } from "lucide-react";
-import { DispatchSlotPicker } from "@/components/support/dispatch-slot-picker";
-import type { DispatchSlotValue, DispatchWindow } from "@/components/support/dispatch-slot-picker";
+import { DispatchSlotPicker } from "@/components/floor/dispatch-slot-picker";
+import type { DispatchSlotValue, DispatchWindow } from "@/components/floor/dispatch-slot-picker";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -21,7 +21,8 @@ import { ShipToOverrideCell } from "@/components/support/ship-to-override-cell";
 import { CarriedOverBadge } from "@/components/shared/carried-over-badge";
 import { OrderDetailPanel } from "@/components/shared/order-detail-panel";
 import type { SlotNavItem } from "@/components/support/support-page-content";
-import { SUPPORT_GRID_COLUMNS, formatArticleTag, getPriLabel, VolCell, CustomerCell, groupOrders } from "@/components/support/shared/table-cells";
+import { SUPPORT_GRID_COLUMNS, getPriLabel, VolCell, CustomerCell, groupOrders } from "@/components/support/shared/table-cells";
+import { formatArticleTag } from "@/lib/floor/format";
 import type { GroupBy, OrderGroup } from "@/components/support/shared/table-cells";
 
 // ── Types ─────────────────────────────────────────────────────────────────────

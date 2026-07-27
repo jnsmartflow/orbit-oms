@@ -19,7 +19,7 @@
 
 import type { ReactNode } from "react";
 import { Building2, Droplet, MoreHorizontal, Zap } from "lucide-react";
-import { formatArticleTag } from "@/components/support/shared/table-cells";
+import { formatArticleTag } from "@/lib/floor/format";
 import { StatusPill, rowStatus } from "./status-pill";
 import { isAllSelected, type FloorSelection } from "@/lib/floor/selection";
 import type { FloorBoardRow } from "@/lib/floor/types";

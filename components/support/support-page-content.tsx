@@ -9,7 +9,7 @@ import type { SupportOrder } from "@/components/support/support-orders-table";
 import { getPriLabel } from "@/components/support/shared/table-cells";
 import { UniversalHeader } from "@/components/universal-header";
 import { useSession } from "next-auth/react";
-import type { DispatchWindow } from "@/components/support/dispatch-slot-picker";
+import type { DispatchWindow } from "@/components/floor/dispatch-slot-picker";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 

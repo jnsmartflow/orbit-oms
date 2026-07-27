@@ -21,26 +21,9 @@ export const SUPPORT_GRID_COLUMNS = "3% 9% 19% 11% 5% 9% 5% 9% 9% 13% 8%";
 export const SUPPORT_HOLD_GRID_COLUMNS = "3% 9% 20% 11% 6% 9% 5% 9% 13% 7% 8%";
 
 // ── Article pack-word abbreviation ───────────────────────────────────────────
-// articleTag is a comma-separated "{integer} {word}" list written at import
-// (e.g. "16 Drum, 14 Carton"). Abbreviates known words for display only —
-// never touches the stored value. Any group that fails to parse as
-// "{integer} {word}" bails the whole string back to the raw original,
-// verbatim, rather than partially formatting it.
-export const ARTICLE_WORD_ABBR: Record<string, string> = { Drum: "D", Carton: "C", Tin: "T", Bag: "B" };
-
-export function formatArticleTag(raw: string): string {
-  const groups = raw.split(",").map((g) => g.trim()).filter((g) => g.length > 0);
-  if (groups.length === 0) return raw;
-  const parts: string[] = [];
-  for (const g of groups) {
-    const m = g.match(/^(\d+)\s+(\S.*)$/);
-    if (!m) return raw;
-    const [, num, word] = m;
-    const short = ARTICLE_WORD_ABBR[word];
-    parts.push(short ? `${num} ${short}` : `${num} ${word}`);
-  }
-  return parts.join(" · ");
-}
+// MOVED 2026-07-27 → lib/floor/format.ts (ARTICLE_WORD_ABBR + formatArticleTag).
+// Step 1 of the Support retirement: Floor was the last cross-module consumer, so
+// the helper now lives in Floor. Both boards import it from @/lib/floor/format.
 
 // ── Group-by (SMU / Route) — pure data grouping, shared by both boards ───────
 // No entanglement with done-group collapse or footprintType: grouping only

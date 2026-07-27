@@ -7,17 +7,17 @@ import { cn } from "@/lib/utils";
 import { Checkbox } from "@/components/ui/checkbox";
 import { CancelOrderDialog } from "@/components/support/cancel-order-dialog";
 import { ShipToOverrideCell } from "@/components/support/ship-to-override-cell";
-import { DispatchSlotPicker } from "@/components/support/dispatch-slot-picker";
-import type { DispatchSlotValue, DispatchWindow } from "@/components/support/dispatch-slot-picker";
+import { DispatchSlotPicker } from "@/components/floor/dispatch-slot-picker";
+import type { DispatchSlotValue, DispatchWindow } from "@/components/floor/dispatch-slot-picker";
 import type { SupportOrder } from "@/components/support/support-orders-table";
 import {
   SUPPORT_HOLD_GRID_COLUMNS,
-  formatArticleTag,
   getPriLabel,
   VolCell,
   CustomerCell,
   groupOrders,
 } from "@/components/support/shared/table-cells";
+import { formatArticleTag } from "@/lib/floor/format";
 import type { GroupBy, OrderGroup } from "@/components/support/shared/table-cells";
 
 // ── CSS Grid constant — Hold's own percentage tracks (no Status column,

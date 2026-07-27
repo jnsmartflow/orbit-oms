@@ -28,7 +28,7 @@ import { toggleOne, toggleAll as toggleAllRows, isSelectable, type FloorSelectio
 import { parseSearch, applySearch, searchReport, type Searchable } from "@/lib/floor/search";
 import { applyFloorFilters, applyFlagFilters, EMPTY_FILTERS, type FloorFilters } from "@/lib/floor/filter";
 import type { RailReleaseSlot } from "./rail-card";
-import type { DispatchWindow } from "@/components/support/dispatch-slot-picker";
+import type { DispatchWindow } from "@/components/floor/dispatch-slot-picker";
 import type { FloorRailCard, FloorScope, FloorBoardResult, FloorBoardRow, FloorPicker, FloorHoldRow, FloorCancelledRow, FloorDetailSource } from "@/lib/floor/types";
 import type { SlotTabKey } from "./floor-tabs";
 
@@ -223,20 +223,9 @@ export function FloorPage() {
   const onToggleAll = useCallback((tableRows: FloorBoardRow[]) => setSelection((s) => toggleAllRows(s, tableRows)), []);
 
   // ── Bulk bar actions ──────────────────────────────────────────────────────
-  const bulkMarkUrgent = async () => {
-    if (selectedIds.length === 0) return;
-    const r = await postJson("/api/floor/actions", { action: "mark-urgent", orderIds: selectedIds, urgent: true });
-    reportWrite("Urgent", r);
-    clearSelection();
-    await load();
-  };
-  const bulkHold = async () => {
-    if (selectedIds.length === 0) return;
-    const r = await postJson("/api/floor/actions", { action: "hold", orderIds: selectedIds });
-    reportWrite("Hold", r);
-    clearSelection();
-    await load();
-  };
+  // Bulk mark-urgent + bulk hold were RETIRED with the bulk-bar v2 rebuild —
+  // urgent is now the per-row ⚡ (rowMarkUrgent → floor-table); hold is the detail
+  // panel's ⋯ menu. Do not re-add them to the bar.
   const bulkChangeSlot = async (date: string, windowId: number) => {
     if (selectedIds.length === 0) return;
     const r = await postJson("/api/floor/actions", { action: "change-slot", orderIds: selectedIds, dispatchTargetDate: date, dispatchWindowId: windowId });
@@ -258,14 +247,8 @@ export function FloorPage() {
     clearSelection();
     await load();
   };
-  const bulkUnassign = async () => {
-    const alreadyAssigned = selectedRows.filter((r) => r.isAssigned).map((r) => r.orderId);
-    for (const orderId of alreadyAssigned) {
-      reportWrite("Unassign", await postJson("/api/picking/unassign", { orderId }));
-    }
-    clearSelection();
-    await load();
-  };
+  // (bulkUnassign was retired with the bulk-bar v2 rebuild — the bar keeps
+  // reassign-to-picker via bulkAssign; per-bill Unassign stays in the panel ⋯.)
 
   // ── Hold tab: bulk release → the floor (reuses the Step-3 release route). ──
   // Each ticked bill gets the SAME chosen date+window; the route advances it to
@@ -445,6 +428,27 @@ export function FloorPage() {
   // ── Live sync (design §13) — TWO different mechanisms, no shared abstraction ─
   const detailOpen = detail !== null;
   const isLive = viewMode === "live";
+
+  // Single Esc owner — lifted out of detail-panel so exactly ONE action fires per
+  // press and only ONE listener exists: panel open → close it (selection kept);
+  // else a live selection → clear it; else nothing. Ignored while focus is in a
+  // field / native control so Esc never wipes a selection mid-type (ship-to
+  // search, far-date box, picker dropdown).
+  useEffect(() => {
+    function onEsc(e: KeyboardEvent) {
+      if (e.key !== "Escape") return;
+      // A DispatchSlotPicker popover is open (its portalled root carries this
+      // marker only while open) — leave it to outside-click, as today.
+      if (document.querySelector('[data-slot-popover="open"]')) return;
+      const el = document.activeElement as HTMLElement | null;
+      const tag = el?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el?.isContentEditable) return;
+      if (detailOpen) closeDetail();
+      else if (selection.size > 0) clearSelection();
+    }
+    window.addEventListener("keydown", onEsc);
+    return () => window.removeEventListener("keydown", onEsc);
+  }, [detailOpen, selection, closeDetail, clearSelection]);
 
   // Reconcile the floor SELECTION against fresh data WITHOUT moving the visible
   // board (design §13 rules 2 + 3): drop the tick on any selected row that
@@ -678,9 +682,6 @@ export function FloorPage() {
               pickers={data!.pickers}
               windows={dispatchWindows}
               onAssign={bulkAssign}
-              onUnassign={bulkUnassign}
-              onMarkUrgent={bulkMarkUrgent}
-              onHold={bulkHold}
               onChangeSlot={bulkChangeSlot}
               onClear={clearSelection}
             />

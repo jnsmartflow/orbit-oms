@@ -7,13 +7,13 @@
 // tick rows, the bottom bar rises with `release to [date ▾] [window ▾]`, then
 // Release. Same shape as Support." (design §8)
 //
-// The date+window control is components/support/dispatch-slot-picker.tsx REUSED
+// The date+window control is components/floor/dispatch-slot-picker.tsx USED
 // AS-IS — its one popover already carries both halves the mockup draws as two
 // selects, so there is nothing to fork. Release is disabled until a slot is
 // chosen; a held bill must never go to the floor without a dispatch promise.
 
 import { useState } from "react";
-import { DispatchSlotPicker, type DispatchWindow, type DispatchSlotValue } from "@/components/support/dispatch-slot-picker";
+import { DispatchSlotPicker, type DispatchWindow, type DispatchSlotValue } from "@/components/floor/dispatch-slot-picker";
 
 export function HoldBar({
   count,

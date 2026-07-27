@@ -9,7 +9,7 @@ import { FloorSkeleton } from "./floor-skeleton";
 import { RailCard, type RailReleaseSlot } from "./rail-card";
 import { RailEmpty, type RailEmptyVariant } from "./rail-empty";
 import type { FloorRailCard, FloorScope } from "@/lib/floor/types";
-import type { DispatchWindow } from "@/components/support/dispatch-slot-picker";
+import type { DispatchWindow } from "@/components/floor/dispatch-slot-picker";
 
 export function FloorRail({
   cards,

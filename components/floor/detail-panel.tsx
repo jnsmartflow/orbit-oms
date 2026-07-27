@@ -12,18 +12,82 @@
 //   - Change ship-to → Support's GET /api/support/ship-to-search + the override
 //     write on PATCH /api/support/orders/[id] (that route uses $transaction — we
 //     are a CALLER only; no $transaction in any Floor file).
-//   - Update slot / release → components/support/dispatch-slot-picker.tsx +
+//   - Update slot / release → components/floor/dispatch-slot-picker.tsx +
 //     the existing /api/floor routes.
 // Every write goes through floor-page's reportWrite() handlers, so a failure
 // surfaces — never a swallowed response.
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, type ReactNode } from "react";
 import { Building2, Droplet, X } from "lucide-react";
-import { DispatchSlotPicker, type DispatchWindow } from "@/components/support/dispatch-slot-picker";
+import { DispatchSlotPicker, type DispatchWindow, type DispatchSlotValue } from "@/components/floor/dispatch-slot-picker";
 import { DetailItems } from "./detail-items";
 import { DetailDetails } from "./detail-details";
 import { DetailActivity } from "./detail-activity";
 import type { FloorDetail, FloorDetailSource, FloorPicker } from "@/lib/floor/types";
+
+// ── Slot-chip / Release launcher — a custom trigger that opens the reused
+// DispatchSlotPicker via forceOpenGen, with the picker's own trigger overlaid
+// invisibly and stretched to this button's box only to anchor its portalled
+// popover. Same pattern as the assign bar; the shared picker is NOT modified. ──
+function SlotPickerButton({
+  value,
+  onPick,
+  windows,
+  className,
+  disabled,
+  popoverDir = "down",
+  popoverAlign = "right",
+  children,
+}: {
+  value: DispatchSlotValue | null;
+  onPick: (v: DispatchSlotValue) => void;
+  windows: DispatchWindow[];
+  className: string;
+  disabled?: boolean;
+  popoverDir?: "down" | "up";
+  popoverAlign?: "left" | "right";
+  children: ReactNode;
+}) {
+  const [gen, setGen] = useState(0);
+  return (
+    <div className="relative inline-flex">
+      <button type="button" disabled={disabled} onClick={() => setGen((g) => g + 1)} className={className}>
+        {children}
+      </button>
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 opacity-0 [&>div]:!block [&>div]:h-full [&>div]:w-full [&>div>button]:!h-full [&>div>button]:!w-full"
+      >
+        <DispatchSlotPicker
+          value={value}
+          onChange={(v) => v && onPick(v)}
+          windows={windows}
+          popoverDir={popoverDir}
+          popoverAlign={popoverAlign}
+          disabled={disabled}
+          forceOpenGen={gen || undefined}
+        />
+      </div>
+    </div>
+  );
+}
+
+function ClockIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" className="shrink-0 text-gray-400">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+    </svg>
+  );
+}
+
+function PencilIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" className="shrink-0 text-gray-400">
+      <path d="M16 3l5 5L8 21H3v-5L16 3z" />
+    </svg>
+  );
+}
 
 type Tab = "items" | "details" | "activity";
 
@@ -125,14 +189,9 @@ export function DetailPanel({
     setPickerId("");
   }, [orderId]);
 
-  // Esc closes the panel.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  // NOTE: Esc is owned by floor-page (single gated listener — panel-close vs
+  // selection-clear); the panel no longer registers its own Esc handler. onClose
+  // is still driven by the ✕ button and the backdrop click.
 
   // Run a write, then refetch this panel's detail (the board reload happens
   // inside the handler). `busy` guards against a double-fire mid-write.
@@ -255,7 +314,6 @@ function PanelBody({
   onClose: () => void;
 }) {
   const status = headerStatus(d, source);
-  const isDoneBill = source === "floor" && d.isChecked;
   const canReassign = source === "floor" && !d.isDone && !d.isChecked;
   const railReleasable = source === "rail" && d.workflowStage === "pending_support";
 
@@ -272,6 +330,10 @@ function PanelBody({
     d.dispatchTargetDate && d.dispatchWindowId && d.dispatchWindowTime
       ? { date: d.dispatchTargetDate, dispatchWindowId: d.dispatchWindowId, windowTime: d.dispatchWindowTime }
       : null;
+  // Slot chip label (line 1): "DD-MM · HH:MM" or a dashed "No slot".
+  const slotText = currentSlotValue
+    ? `${currentSlotValue.date.slice(8, 10)}-${currentSlotValue.date.slice(5, 7)} · ${currentSlotValue.windowTime}`
+    : "No slot";
 
   return (
     <>
@@ -280,12 +342,35 @@ function PanelBody({
         <div className="flex items-baseline gap-2.5">
           <span className="font-mono text-[19px] font-bold leading-none tracking-[-0.02em] text-gray-900">{d.obdNumber}</span>
           <span className="text-[11px] tabular-nums text-gray-400">{fmtDateTime(d.obdDateTime)}</span>
-          <button type="button" onClick={onClose} className="ml-auto self-center text-gray-400 hover:text-gray-600">
-            <X size={15} />
-          </button>
+          <div className="ml-auto flex items-center gap-2 self-center">
+            {/* Slot chip — moved up beside the date; a chip with a pencil so it
+                reads as editable. Opens the reused picker. Deleted the old grey
+                "Slot" label. Hidden on cancelled (no dispatch slot to set). */}
+            {source !== "cancelled" && (
+              <SlotPickerButton
+                value={currentSlotValue}
+                onPick={(v) => run(() => actions.onUpdateSlot(d.orderId, v.date, v.dispatchWindowId))}
+                windows={windows}
+                popoverDir="down"
+                popoverAlign="right"
+                className={`inline-flex h-[26px] items-center gap-1.5 rounded-md border bg-white px-2 text-[11.5px] transition-colors hover:border-gray-400 hover:bg-gray-50 ${
+                  currentSlotValue ? "border-gray-300 text-gray-700" : "border-dashed border-gray-300 text-gray-400"
+                }`}
+              >
+                <ClockIcon />
+                <span>{slotText}</span>
+                <span className="ml-0.5 flex items-center border-l border-gray-200 pl-1.5">
+                  <PencilIcon />
+                </span>
+              </SlotPickerButton>
+            )}
+            <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-600">
+              <X size={15} />
+            </button>
+          </div>
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
-          <span className="text-[14px] font-semibold text-gray-900">{d.shipToName}</span>
+          <span className="text-[16px] font-bold text-gray-900">{d.shipToName}</span>
           {d.shipToCode && <span className="font-mono text-[11.5px] text-gray-400">{d.shipToCode}</span>}
         </div>
         {/* Tags carry treatment facts only (design §10.2): status, key, urgent, site, tint. */}
@@ -319,26 +404,70 @@ function PanelBody({
           }
         />
       ) : (
-        <div className="flex items-center gap-1.5 border-b border-gray-200 bg-[#fcfcfd] px-5 py-2.5">
-          {/* Context-primary action (design §10.3). */}
+        <div className="flex items-center gap-2 border-y border-gray-200 bg-gray-50 px-4 py-2.5">
+          {/* Release (rail / hold) — teal primary; opens the reused picker and only
+              then releases (a held/rail bill has no slot, so this is the slot step
+              too). Wiring unchanged. */}
           {(source === "rail" || source === "hold") && (
-            <span className="flex items-center gap-1.5">
-              <span className="text-[11.5px] font-medium text-gray-600">{railReleasable || source === "hold" ? "Release to" : "Release"}</span>
-              <DispatchSlotPicker
+            <div className="flex items-center gap-1.5">
+              <SlotPickerButton
                 value={null}
-                onChange={(v) => v && run(() => actions.onRelease(d.orderId, v.date, v.dispatchWindowId))}
+                onPick={(v) => run(() => actions.onRelease(d.orderId, v.date, v.dispatchWindowId))}
                 windows={windows}
                 disabled={source === "rail" && !railReleasable}
-              />
+                popoverDir="down"
+                popoverAlign="left"
+                className="inline-flex h-[34px] items-center gap-1.5 rounded-md border border-teal-600 bg-teal-600 px-3.5 text-[12px] font-semibold text-white enabled:hover:bg-teal-700 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-100 disabled:text-gray-400"
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
+                  <path d="M5 12h14M13 6l6 6-6 6" />
+                </svg>
+                Release
+              </SlotPickerButton>
               {source === "rail" && !railReleasable && <span className="text-[10px] text-gray-400">shade not ready</span>}
-            </span>
+            </div>
           )}
+
+          {/* Restore (cancelled) — teal primary. */}
+          {source === "cancelled" && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => run(() => actions.onRestore(d.orderId))}
+              className="inline-flex h-[34px] items-center rounded-md border border-teal-600 bg-teal-600 px-3.5 text-[12px] font-semibold text-white enabled:hover:bg-teal-700 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-100 disabled:text-gray-400"
+            >
+              Restore to decisions
+            </button>
+          )}
+
+          {/* Change ship-to — teal on floor (its real job there), neutral elsewhere
+              (Release/Restore own the teal). Never disappears. Search + PATCH owned
+              by Support (§4.18); caller only. */}
+          <button
+            type="button"
+            onClick={() => setEditingShipTo(true)}
+            className={
+              source === "floor"
+                ? "inline-flex h-[34px] items-center gap-1.5 whitespace-nowrap rounded-md border border-teal-600 bg-teal-600 px-3.5 text-[12px] font-semibold text-white hover:bg-teal-700"
+                : "inline-flex h-[34px] items-center whitespace-nowrap rounded-md border border-gray-300 bg-white px-3.5 text-[12px] font-medium text-gray-700 hover:border-gray-400 hover:bg-gray-50"
+            }
+          >
+            {source === "floor" && (
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
+                <path d="M12 21s-7-5.5-7-11a7 7 0 1 1 14 0c0 5.5-7 11-7 11z" />
+                <circle cx="12" cy="10" r="2.4" />
+              </svg>
+            )}
+            Ship-to
+          </button>
+
+          {/* Assign / Reassign (floor waiting or assigned) — neutral joined unit. */}
           {canReassign && (
-            <span className="flex items-center gap-1.5">
+            <div className="flex h-[34px] items-stretch">
               <select
                 value={pickerId}
                 onChange={(e) => setPickerId(e.target.value === "" ? "" : Number(e.target.value))}
-                className="h-[30px] cursor-pointer rounded-[6px] border border-gray-300 bg-white px-2 text-[11.5px] text-gray-700"
+                className="h-[34px] min-w-[126px] cursor-pointer rounded-l-md border border-r-0 border-gray-300 bg-white pl-2.5 pr-6 text-[12px] text-gray-700"
               >
                 <option value="">{d.isAssigned ? "Reassign to…" : "Assign to…"}</option>
                 {pickers.map((p) => (
@@ -352,78 +481,46 @@ function PanelBody({
                 type="button"
                 disabled={pickerId === "" || busy}
                 onClick={() => pickerId !== "" && run(() => actions.onReassign(d.orderId, pickerId))}
-                className="h-[30px] rounded-[6px] bg-teal-600 px-3 text-[11.5px] font-semibold text-white hover:bg-teal-700 disabled:opacity-40"
+                className="h-[34px] rounded-r-md border border-gray-300 bg-white px-3 text-[12px] font-semibold text-gray-700 enabled:hover:bg-gray-100 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-100 disabled:text-gray-400"
               >
                 {d.isAssigned ? "Reassign" : "Assign"}
               </button>
-            </span>
+            </div>
           )}
-          {source === "cancelled" && (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => run(() => actions.onRestore(d.orderId))}
-              className="h-[30px] rounded-[6px] bg-teal-600 px-3 text-[11.5px] font-semibold text-white hover:bg-teal-700 disabled:opacity-40"
-            >
-              Restore to decisions
-            </button>
-          )}
-          {isDoneBill && <span className="text-[11.5px] text-gray-400">This bill is closed — ship-to still editable</span>}
 
-          {/* Change ship-to + Update slot — never move (design §10.3). Update slot
-              is hidden only on cancelled bills (no dispatch slot to set). */}
-          <div className="ml-auto flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={() => setEditingShipTo(true)}
-              className="h-[30px] rounded-[6px] border border-gray-200 bg-white px-2.5 text-[11px] text-gray-600 hover:border-teal-500 hover:text-teal-700"
-            >
-              Change ship-to
-            </button>
-            {source !== "cancelled" && (
-              <span className="flex items-center gap-1">
-                <span className="text-[10.5px] text-gray-400">Slot</span>
-                <DispatchSlotPicker
-                  value={currentSlotValue}
-                  onChange={(v) => v && run(() => actions.onUpdateSlot(d.orderId, v.date, v.dispatchWindowId))}
-                  windows={windows}
-                  popoverAlign="right"
-                />
-              </span>
-            )}
-            {overflow.length > 0 && (
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => setMenuOpen(!menuOpen)}
-                  className="h-[30px] rounded-[6px] border border-gray-200 bg-white px-2.5 text-[14px] leading-none text-gray-400 hover:border-gray-300 hover:text-gray-600"
-                >
-                  ⋯
-                </button>
-                {menuOpen && (
-                  <>
-                    <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
-                    <div className="absolute right-0 z-20 mt-1 w-[150px] overflow-hidden rounded-[8px] border border-gray-200 bg-white shadow-lg">
-                      {overflow.map((o) => (
-                        <button
-                          key={o.label}
-                          type="button"
-                          disabled={busy}
-                          onClick={() => {
-                            setMenuOpen(false);
-                            void run(o.fn);
-                          }}
-                          className={`block w-full px-3 py-2 text-left text-[11.5px] hover:bg-gray-50 disabled:opacity-40 ${o.danger ? "text-red-600" : "text-gray-700"}`}
-                        >
-                          {o.label}
-                        </button>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
-          </div>
+          {/* ⋯ overflow — contents UNCHANGED per state; pushed to the right. */}
+          {overflow.length > 0 && (
+            <div className="relative ml-auto">
+              <button
+                type="button"
+                onClick={() => setMenuOpen(!menuOpen)}
+                className="flex h-[34px] w-[34px] items-center justify-center rounded-md border border-gray-300 bg-white text-[14px] leading-none text-gray-500 hover:bg-gray-50"
+              >
+                ⋯
+              </button>
+              {menuOpen && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
+                  <div className="absolute right-0 z-20 mt-1 w-[150px] overflow-hidden rounded-[8px] border border-gray-200 bg-white shadow-lg">
+                    {overflow.map((o) => (
+                      <button
+                        key={o.label}
+                        type="button"
+                        disabled={busy}
+                        onClick={() => {
+                          setMenuOpen(false);
+                          void run(o.fn);
+                        }}
+                        className={`block w-full px-3 py-2 text-left text-[11.5px] hover:bg-gray-50 disabled:opacity-40 ${o.danger ? "text-red-600" : "text-gray-700"}`}
+                      >
+                        {o.label}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </div>
       )}
 
