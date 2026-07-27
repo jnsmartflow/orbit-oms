@@ -11,6 +11,16 @@ const PUBLIC_PATHS = [
   "/not-ready",
   "/api/auth",
   "/api/health",
+  // ⚠ KEEP — /order was RETIRED 2026-07-27 (archive/2026-07-order/), and the
+  // address is deliberately PARKED for possible future reuse with NO redirect.
+  // This entry stays for two separate reasons:
+  //   1. Middleware runs before the page. Without it, /order stops being public
+  //      and an anonymous visitor gets a LOGIN PROMPT instead of a clean 404 —
+  //      a dead end that reads as a broken login, not a retired page.
+  //   2. The check at line 26 is startsWith(), a PREFIX match — so this one
+  //      entry also keeps /orders (with an s) public. Deleting it would put
+  //      /orders behind auth as an unintended side effect.
+  // It looks like junk because its page is gone. It is not. See the archive README.
   "/order",
   "/api/order",
   "/po",              // new public mobile order page (Phase 1) — reuses /api/order/data (already public above)

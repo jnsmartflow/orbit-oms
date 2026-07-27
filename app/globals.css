@@ -26,10 +26,13 @@
   margin: 10mm;
 }
 
-/* --vvh fallback — /order's <main> consumes var(--vvh, 100vh) for keyboard-
-   aware sizing. The visualViewport useEffect overwrites this on mount, but
-   before JS runs (SSR first paint, or on browsers without visualViewport)
-   we want full viewport height so the page does not collapse to zero. */
+/* --vvh fallback — /po's <main> consumes var(--vvh, 100vh) for keyboard-
+   aware sizing (app/po/po-page.tsx:946 writes it, :2216 reads it). The
+   visualViewport useEffect overwrites this on mount, but before JS runs (SSR
+   first paint, or on browsers without visualViewport) we want full viewport
+   height so the page does not collapse to zero.
+   Comment corrected 2026-07-27: this said "/order", which was retired
+   (archive/2026-07-order/). The mechanism is unchanged and is /po's now. */
 html { --vvh: 100vh; }
 
 /* App-like scroll — kill Android pull-to-refresh + the rubber-band bounce at the

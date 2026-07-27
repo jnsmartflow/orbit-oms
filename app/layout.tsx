@@ -46,8 +46,10 @@ export const viewport: Viewport = {
   userScalable: false,
   // Tells Chromium 108+ to shrink the layout viewport when the soft keyboard
   // opens, instead of overlaying it. Pairs with the visualViewport-driven
-  // --vvh CSS variable in /order so <main> bottom aligns with the keyboard
+  // --vvh CSS variable in /po so <main> bottom aligns with the keyboard
   // top on Android. iOS Safari already shrinks visualViewport natively.
+  // (Said "/order" until 2026-07-27; that page was retired —
+  // archive/2026-07-order/. Behaviour unchanged, /po owns --vvh now.)
   interactiveWidget: "resizes-content",
 };
 
