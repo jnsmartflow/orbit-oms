@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=1280">
+<title>Picking — Desktop Redesign Mockup</title>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --teal:#0d9488; --teal700:#0f766e; --teal50:#f0fdfa; --teal200:#99f6e4;
+    --g900:#111827; --g800:#1f2937; --g700:#374151; --g500:#6b7280; --g400:#9ca3af;
+    --g300:#d1d5db; --g200:#e5e7eb; --g100:#f3f4f6; --g50:#f9fafb;
+    --green50:#f0fdf4; --green200:#bbf7d0; --green700:#15803d; --green600:#16a34a;
+    --amber50:#fffbeb; --amber200:#fde68a; --amber700:#b45309; --amber600:#d97706;
+    --red50:#fef2f2; --red200:#fecaca; --red600:#dc2626; --red700:#b91c1c;
+    --blueDot:#3b82f6; --violet:#7c3aed;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Plus Jakarta Sans',system-ui,sans-serif;background:#eef1f4;color:var(--g900);padding:24px}
+  .app{max-width:1280px;margin:0 auto;background:#fff;border:1px solid var(--g200);border-radius:12px;overflow:hidden}
+
+  /* ---- top bar ---- */
+  .topbar{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--g200)}
+  .title{font-size:15px;font-weight:700}
+  .title small{font-weight:500;color:var(--g400);font-size:11px;margin-left:8px}
+  .datestep{display:flex;align-items:center;gap:6px}
+  .datestep button{width:26px;height:26px;border:1px solid var(--g200);background:#fff;border-radius:7px;color:var(--g500);cursor:pointer;font-size:13px}
+  .datestep .today{font-size:11px;font-weight:600;color:var(--g700);padding:0 8px}
+
+  /* ---- status summary strip ---- */
+  .summary{display:flex;align-items:center;gap:8px;padding:12px 18px;border-bottom:1px solid var(--g200);background:var(--g50);flex-wrap:wrap}
+  .chip{display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 12px;border:1px solid var(--g200);background:#fff;border-radius:8px;font-size:11px;font-weight:600;color:var(--g700);cursor:pointer}
+  .chip .n{font-size:12px;font-weight:700;color:var(--g900)}
+  .chip .dot{width:7px;height:7px;border-radius:50%}
+  .chip.active{border-color:var(--g900);background:var(--g900);color:#fff}
+  .chip.active .n{color:#fff}
+  .dot-wait{background:var(--g400)} .dot-asgn{background:var(--g700)}
+  .dot-pick{background:var(--amber600)} .dot-ready{background:var(--green600)}
+  .spacer{flex:1}
+  .ready-readout{font-size:11px;color:var(--g500);font-weight:500}
+  .ready-readout b{color:var(--green700);font-weight:700}
+
+  /* ---- controls row ---- */
+  .controls{display:flex;align-items:center;gap:12px;padding:12px 18px;border-bottom:1px solid var(--g200)}
+  .search{position:relative;width:300px}
+  .search input{width:100%;height:32px;border:1px solid var(--g200);border-radius:8px;padding:0 10px 0 30px;font-size:11px;font-family:inherit;color:var(--g900)}
+  .search input::placeholder{color:var(--g400)}
+  .search svg{position:absolute;left:9px;top:8px;color:var(--g400)}
+  .route-sel{height:32px;border:1px solid var(--g200);border-radius:8px;padding:0 10px;font-size:11px;font-family:inherit;color:var(--g700);background:#fff}
+  .slot-tabs{display:flex;gap:4px;margin-left:auto;background:var(--g100);padding:3px;border-radius:9px}
+  .slot-tabs .seg{font-size:11px;font-weight:600;color:var(--g500);padding:5px 12px;border-radius:6px;cursor:pointer}
+  .slot-tabs .seg.active{background:var(--teal);color:#fff}  /* the ONE teal element */
+
+  /* ---- table ---- */
+  table{width:100%;border-collapse:collapse;table-layout:fixed}
+  thead th{font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:.05em;color:var(--g400);text-align:left;padding:9px 10px;border-bottom:1px solid var(--g200)}
+  th.r,td.r{text-align:right}
+  tbody td{padding:0 10px;border-bottom:1px solid var(--g100);height:46px;vertical-align:middle;font-size:11px}
+  tbody tr:hover{background:var(--g50)}
+  .cbx{width:14px;height:14px;border:1.5px solid var(--g300);border-radius:4px;display:inline-block;vertical-align:middle;cursor:pointer}
+  .cbx.on{background:var(--teal);border-color:var(--teal);position:relative}
+  .cbx.on:after{content:"";position:absolute;left:4px;top:1px;width:4px;height:8px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg)}
+  .idx{color:var(--g400);font-size:11px;font-weight:500}
+
+  /* status cell */
+  .st{display:flex;flex-direction:column;gap:3px}
+  .pill{display:inline-flex;align-items:center;gap:5px;height:20px;padding:0 9px;border-radius:6px;font-size:10.5px;font-weight:600;width:max-content}
+  .pill .pdot{width:6px;height:6px;border-radius:50%}
+  .pill-wait{background:var(--g100);color:var(--g600);border:1px solid var(--g200);color:var(--g500)}
+  .pill-asgn{background:var(--g100);color:var(--g700);border:1px solid var(--g200)}
+  .pill-pick{background:var(--amber50);color:var(--amber700);border:1px solid var(--amber200)}
+  .pill-ready{background:var(--green50);color:var(--green700);border:1px solid var(--green200)}
+  .sub{font-size:10px;color:var(--g400);font-weight:500;display:flex;align-items:center;gap:5px}
+  .clock{font-weight:600}
+  .clock.ok{color:var(--g500)} .clock.warn{color:var(--amber600)} .clock.late{color:var(--red600)}
+  .who{color:var(--g600);font-weight:600}
+
+  .obd{font-family:'SF Mono',ui-monospace,monospace;font-size:11px;color:var(--g800);font-weight:600}
+  .obd .t{display:block;font-family:'Plus Jakarta Sans';font-size:10px;color:var(--g400);font-weight:500;margin-top:1px}
+  .dealer{font-size:11.5px;color:var(--g900);font-weight:600}
+  .dealer .ship{display:block;font-size:10px;color:var(--g400);font-weight:500;margin-top:1px}
+  .area{color:var(--g700)}
+  .route{display:inline-flex;align-items:center;gap:6px;color:var(--g700)}
+  .rdot{width:7px;height:7px;border-radius:50%}
+  .art{color:var(--g600);font-size:10.5px}
+  .num{font-variant-numeric:tabular-nums;color:var(--g800);font-weight:600}
+  .num.muted{color:var(--g300)}
+  .flags{display:flex;gap:4px}
+  .fbadge{font-size:9.5px;font-weight:700;padding:2px 6px;border-radius:5px}
+  .f-p1{background:var(--red50);color:var(--red600);border:1px solid var(--red200)}
+  .f-key{background:var(--amber50);color:var(--amber700);border:1px solid var(--amber200)}
+  .dash{color:var(--g300)}
+  .act-assign{font-size:11px;font-weight:600;color:var(--teal700);cursor:pointer}
+  .act-undo{font-size:11px;font-weight:500;color:var(--g500);cursor:pointer}
+
+  /* legend */
+  .legend{display:flex;gap:18px;align-items:center;padding:10px 18px;border-top:1px solid var(--g200);background:var(--g50);font-size:10px;color:var(--g400)}
+  .legend b{color:var(--g600);font-weight:600}
+  .legend .lg{display:inline-flex;align-items:center;gap:5px}
+
+  /* sticky bulk bar */
+  .bulkbar{position:sticky;bottom:0;display:flex;align-items:center;gap:14px;padding:12px 18px;background:#fff;border-top:1px solid var(--g200);box-shadow:0 -6px 16px rgba(0,0,0,.04)}
+  .bulkbar .cnt{font-size:12px;font-weight:700;color:var(--g900)}
+  .bulkbar .cnt span{color:var(--g400);font-weight:500}
+  .picker-sel{height:34px;border:1px solid var(--g200);border-radius:8px;padding:0 12px;font-size:12px;font-family:inherit;color:var(--g700);background:#fff}
+  .btn-assign{height:34px;padding:0 18px;background:var(--teal);color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer}
+  .btn-clear{height:34px;padding:0 12px;background:#fff;border:1px solid var(--g200);border-radius:8px;font-size:12px;font-weight:500;color:var(--g500);cursor:pointer;margin-left:auto}
+  .testnote{font-size:10px;color:var(--amber600);font-weight:500}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- TOP BAR -->
+  <div class="topbar">
+    <div class="title">Picking <small>Surat depot · floor status</small></div>
+    <div class="datestep">
+      <button>‹</button>
+      <span class="today">Tue, 21 Jul</span>
+      <button>›</button>
+    </div>
+  </div>
+
+  <!-- STATUS SUMMARY STRIP (counts = clickable filters) -->
+  <div class="summary">
+    <div class="chip active"><span class="n">37</span> All</div>
+    <div class="chip"><span class="dot dot-wait"></span><span class="n">14</span> Waiting</div>
+    <div class="chip"><span class="dot dot-asgn"></span><span class="n">9</span> Assigned</div>
+    <div class="chip"><span class="dot dot-pick"></span><span class="n">5</span> Picked</div>
+    <div class="chip"><span class="dot dot-ready"></span><span class="n">9</span> Ready</div>
+    <div class="spacer"></div>
+    <div class="ready-readout">Ready to load: <b>412 LT · 1,180 KG</b> &nbsp;·&nbsp; in progress: 268 LT · 740 KG</div>
+  </div>
+
+  <!-- CONTROLS -->
+  <div class="controls">
+    <div class="search">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.5" y2="16.5"/></svg>
+      <input placeholder="Search dealer or OBD…">
+    </div>
+    <select class="route-sel">
+      <option>All routes</option><option>Varachha</option><option>Adajan</option><option>Katargam</option><option>Udhna</option>
+    </select>
+    <div class="slot-tabs">
+      <div class="seg active">10:30</div>
+      <div class="seg">12:30</div>
+      <div class="seg">16:00</div>
+      <div class="seg">18:00</div>
+      <div class="seg">All</div>
+    </div>
+  </div>
+
+  <!-- TABLE -->
+  <table>
+    <colgroup>
+      <col style="width:3%"><col style="width:15%"><col style="width:12%"><col style="width:18%">
+      <col style="width:9%"><col style="width:8%"><col style="width:12%"><col style="width:5%">
+      <col style="width:5%"><col style="width:7%"><col style="width:6%">
+    </colgroup>
+    <thead>
+      <tr>
+        <th><span class="cbx"></span></th>
+        <th>Status</th><th>OBD</th><th>Dealer</th><th>Area</th><th>Route</th>
+        <th>Article</th><th class="r">LT</th><th class="r">KG</th><th>Flags</th><th>Action</th>
+      </tr>
+    </thead>
+    <tbody>
+
+      <!-- WAITING (selectable) -->
+      <tr>
+        <td><span class="cbx on"></span></td>
+        <td><div class="st"><span class="pill pill-wait"><span class="pdot" style="background:var(--g400)"></span>Waiting</span></div></td>
+        <td><span class="obd">3300148821<span class="t">21 Jul · 09:12</span></span></td>
+        <td><div class="dealer">Shree Balaji Paints</div></td>
+        <td class="area">Varachha</td>
+        <td><span class="route"><span class="rdot" style="background:#22c55e"></span>Varachha</span></td>
+        <td class="art">Weathershield 20L</td>
+        <td class="r num">40.0</td><td class="r num">96</td>
+        <td><div class="flags"><span class="fbadge f-key">KEY</span></div></td>
+        <td><span class="act-assign">Assign ▾</span></td>
+      </tr>
+      <tr>
+        <td><span class="cbx on"></span></td>
+        <td><div class="st"><span class="pill pill-wait"><span class="pdot" style="background:var(--g400)"></span>Waiting</span></div></td>
+        <td><span class="obd">3300148834<span class="t">21 Jul · 09:20</span></span></td>
+        <td><div class="dealer">Krishna Hardware<span class="ship">→ Sai Enterprise</span></div></td>
+        <td class="area">Adajan</td>
+        <td><span class="route"><span class="rdot" style="background:#3b82f6"></span>Adajan</span></td>
+        <td class="art">Dulux Velvet Touch 10L</td>
+        <td class="r num">30.0</td><td class="r num">42</td>
+        <td><div class="flags"><span class="fbadge f-p1">P1</span></div></td>
+        <td><span class="act-assign">Assign ▾</span></td>
+      </tr>
+      <tr>
+        <td><span class="cbx on"></span></td>
+        <td><div class="st"><span class="pill pill-wait"><span class="pdot" style="background:var(--g400)"></span>Waiting</span></div></td>
+        <td><span class="obd">3300148850<span class="t">21 Jul · 09:34</span></span></td>
+        <td><div class="dealer">Maruti Colour World</div></td>
+        <td class="area">Katargam</td>
+        <td><span class="route"><span class="rdot" style="background:#f59e0b"></span>Katargam</span></td>
+        <td class="art">SuperGloss 4L</td>
+        <td class="r num">16.0</td><td class="r num">21</td>
+        <td><span class="dash">—</span></td>
+        <td><span class="act-assign">Assign ▾</span></td>
+      </tr>
+
+      <!-- ASSIGNED — grey clock (fresh) -->
+      <tr>
+        <td></td>
+        <td><div class="st">
+          <span class="pill pill-asgn"><span class="pdot" style="background:var(--g700)"></span>Assigned</span>
+          <span class="sub"><span class="who">Ramesh K.</span> · <span class="clock ok">12m</span></span>
+        </div></td>
+        <td><span class="obd">3300148799<span class="t">21 Jul · 08:55</span></span></td>
+        <td><div class="dealer">Ganesh Paint House</div></td>
+        <td class="area">Udhna</td>
+        <td><span class="route"><span class="rdot" style="background:#a855f7"></span>Udhna</span></td>
+        <td class="art">Weathershield 10L</td>
+        <td class="r num">20.0</td><td class="r num">48</td>
+        <td><span class="dash">—</span></td>
+        <td><span class="act-undo">Undo</span></td>
+      </tr>
+
+      <!-- ASSIGNED — amber clock (dragging) -->
+      <tr>
+        <td></td>
+        <td><div class="st">
+          <span class="pill pill-asgn"><span class="pdot" style="background:var(--g700)"></span>Assigned</span>
+          <span class="sub"><span class="who">Sunil P.</span> · <span class="clock warn">47m</span></span>
+        </div></td>
+        <td><span class="obd">3300148802<span class="t">21 Jul · 08:40</span></span></td>
+        <td><div class="dealer">Riddhi Siddhi Traders</div></td>
+        <td class="area">Varachha</td>
+        <td><span class="route"><span class="rdot" style="background:#22c55e"></span>Varachha</span></td>
+        <td class="art">Dulux Promise 20L</td>
+        <td class="r num">60.0</td><td class="r num">78</td>
+        <td><div class="flags"><span class="fbadge f-key">KEY</span></div></td>
+        <td><span class="act-undo">Undo</span></td>
+      </tr>
+
+      <!-- ASSIGNED — red clock (very late) -->
+      <tr>
+        <td></td>
+        <td><div class="st">
+          <span class="pill pill-asgn"><span class="pdot" style="background:var(--g700)"></span>Assigned</span>
+          <span class="sub"><span class="who">Ramesh K.</span> · <span class="clock late">1h 08m</span></span>
+        </div></td>
+        <td><span class="obd">3300148781<span class="t">21 Jul · 08:22</span></span></td>
+        <td><div class="dealer">New Amber Hardware</div></td>
+        <td class="area">Katargam</td>
+        <td><span class="route"><span class="rdot" style="background:#f59e0b"></span>Katargam</span></td>
+        <td class="art">SuperGloss 20L</td>
+        <td class="r num">40.0</td><td class="r num">52</td>
+        <td><div class="flags"><span class="fbadge f-p1">P1</span></div></td>
+        <td><span class="act-undo">Undo</span></td>
+      </tr>
+
+      <!-- PICKED — needs check (amber) -->
+      <tr>
+        <td></td>
+        <td><div class="st">
+          <span class="pill pill-pick"><span class="pdot" style="background:var(--amber600)"></span>Picked</span>
+          <span class="sub">by <span class="who">Sunil P.</span> · needs check · 8m ago</span>
+        </div></td>
+        <td><span class="obd">3300148770<span class="t">21 Jul · 08:05</span></span></td>
+        <td><div class="dealer">Deep Colour Centre</div></td>
+        <td class="area">Adajan</td>
+        <td><span class="route"><span class="rdot" style="background:#3b82f6"></span>Adajan</span></td>
+        <td class="art">Velvet Touch 4L</td>
+        <td class="r num">8.0</td><td class="r num">11</td>
+        <td><span class="dash">—</span></td>
+        <td><span class="dash">—</span></td>
+      </tr>
+      <tr>
+        <td></td>
+        <td><div class="st">
+          <span class="pill pill-pick"><span class="pdot" style="background:var(--amber600)"></span>Picked</span>
+          <span class="sub">by <span class="who">Ramesh K.</span> · needs check · 21m ago</span>
+        </div></td>
+        <td><span class="obd">3300148765<span class="t">21 Jul · 07:58</span></span></td>
+        <td><div class="dealer">Shivam Paint & Hardware</div></td>
+        <td class="area">Udhna</td>
+        <td><span class="route"><span class="rdot" style="background:#a855f7"></span>Udhna</span></td>
+        <td class="art">Weathershield 20L</td>
+        <td class="r num">40.0</td><td class="r num">96</td>
+        <td><span class="dash">—</span></td>
+        <td><span class="dash">—</span></td>
+      </tr>
+
+      <!-- READY — checked (green) -->
+      <tr>
+        <td></td>
+        <td><div class="st">
+          <span class="pill pill-ready"><span class="pdot" style="background:var(--green600)"></span>Ready</span>
+          <span class="sub">✓ checked by <span class="who">Deepak V.</span></span>
+        </div></td>
+        <td><span class="obd">3300148712<span class="t">21 Jul · 07:30</span></span></td>
+        <td><div class="dealer">Om Sai Paints</div></td>
+        <td class="area">Varachha</td>
+        <td><span class="route"><span class="rdot" style="background:#22c55e"></span>Varachha</span></td>
+        <td class="art">Dulux Promise 10L</td>
+        <td class="r num">30.0</td><td class="r num">39</td>
+        <td><div class="flags"><span class="fbadge f-key">KEY</span></div></td>
+        <td><span class="dash">—</span></td>
+      </tr>
+      <tr>
+        <td></td>
+        <td><div class="st">
+          <span class="pill pill-ready"><span class="pdot" style="background:var(--green600)"></span>Ready</span>
+          <span class="sub">✓ checked by <span class="who">Chandresh K.</span></span>
+        </div></td>
+        <td><span class="obd">3300148698<span class="t">21 Jul · 07:12</span></span></td>
+        <td><div class="dealer">Jay Ambe Hardware</div></td>
+        <td class="area">Adajan</td>
+        <td><span class="route"><span class="rdot" style="background:#3b82f6"></span>Adajan</span></td>
+        <td class="art">SuperGloss 10L</td>
+        <td class="r num">20.0</td><td class="r num">26</td>
+        <td><span class="dash">—</span></td>
+        <td><span class="dash">—</span></td>
+      </tr>
+
+    </tbody>
+  </table>
+
+  <!-- LEGEND -->
+  <div class="legend">
+    <span class="lg"><b>Elapsed clock</b> (Assigned):</span>
+    <span class="lg"><span class="clock ok">grey &lt;30m</span></span>
+    <span class="lg"><span class="clock warn">amber ≥30m</span></span>
+    <span class="lg"><span class="clock late">red ≥60m</span></span>
+    <span style="margin-left:auto">Only Waiting rows are tickable · one picker per bill · assignments test-tagged &amp; reversible</span>
+  </div>
+
+  <!-- STICKY BULK BAR (3 waiting rows selected) -->
+  <div class="bulkbar">
+    <div class="cnt">3 <span>waiting selected</span></div>
+    <span style="color:var(--g400);font-size:11px">assign to</span>
+    <select class="picker-sel">
+      <option>Choose picker…</option><option>Ramesh K.</option><option>Sunil P.</option><option>Deepak V.</option>
+    </select>
+    <button class="btn-assign">Assign 3</button>
+    <span class="testnote">Test mode — tagged &amp; reversible</span>
+    <button class="btn-clear">Clear</button>
+  </div>
+
+</div>
+</body>
+</html>

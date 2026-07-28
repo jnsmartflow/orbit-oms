@@ -343,13 +343,16 @@ New OPEN items surfaced while consolidating the 17 drafts (Jul 8–16) into cano
 - **App-format orders lose all product lines before enrichment.** Headers parse correctly (Bill To/Ship To/Dispatch), but zero product lines reach enrichment on a real test order. Live, unresolved, undocumented until this line. Surfaced 2026-07-15.
 
 ### Picking
-- **Picking role grants — SEEDED 2026-07-20; VERIFY ON LIVE PROD (P1).** `floor_supervisor` (view+edit),
-  `picker` (view only), `operations` (view+edit) now in `prisma/seed.ts:110-112`. Confirmed in seed
-  ONLY — run a `SELECT` to confirm `floor_supervisor` + `picker` can actually open `/picking` on
-  production (grant-vs-prod not yet verified). (`CLAUDE_PICKING.md §1/§7`, `CLAUDE_CORE.md §5/§13`)
-- **SEED FRAGILITY — ✅ RESOLVED 2026-07-20.** The operations `/picking` grant (+ floor_supervisor +
-  picker) now have matching `prisma/seed.ts:110-112` rows, so a reseed no longer revokes them. Prod
-  verification folded into the item above.
+- **Picking role grants — ✅ CLOSED 2026-07-28. Live-prod SELECT run; seed and live AGREE.** Both this
+  item and the seed-fragility item below are done. **`CLAUDE_CORE.md §5`'s `picking` page-key row now
+  OWNS the live-verified statement and carries the numbers** — do not restate them here or re-open
+  this. One consequence worth carrying forward: the same SELECT showed `floor_supervisor` and `picker`
+  hold `picking` but **NOT** `floor`, which is why the desktop retirement kept `/picking` live rather
+  than redirecting (`CLAUDE_FLOOR.md §9b`).
+- **SEED FRAGILITY — ✅ RESOLVED 2026-07-20, verification closed 2026-07-28.** The operations
+  `/picking` grant (+ floor_supervisor + picker) have matching `prisma/seed.ts:110-112` rows, so a
+  reseed no longer revokes them, and live now matches seed. Standing lesson kept: **seed is not live,
+  in BOTH directions** — it has now bitten each way once.
 - **Floor workflow (Picked/Approved states) — ✅ LIVE (Stage 2, shipped through commit `bae3d182`).**
   Remaining: Stage 3 — supervisor findings (qty-short, remarks, billing-visible message), tracked
   inline in `CLAUDE_PICKING.md §7`.
@@ -377,33 +380,71 @@ New OPEN items surfaced while consolidating the 17 drafts (Jul 8–16) into cano
   "stops at 21 Jul" observation above no longer holds. **How they moved is not understood**: either the
   one-time manual sweep was repeated, or a drain path exists that canon does not know about. Establishing
   which is the first task when this item is picked up — not investigated 2026-07-27. The 238-row move
-  was a ONE-TIME manual sweep (Floor build, 23 Jul), NOT a code path. Forced the desktop step-5b
-  carry-over workaround. Needs a real design session.
+  was a ONE-TIME manual sweep (Floor build, 23 Jul), NOT a code path. It also forced the desktop
+  board's carry-over exclusion — **that workaround is gone (the board was retired 2026-07-28), the
+  HOLE it worked around is not.** Needs a real design session.
   ⚠ **Changed 2026-07-28: nothing in the app reads or writes `dispatched` on a board any more.**
   `/planning` and `/warehouse` — the only two surfaces that queried that stage — are both retired
   (`639f8139`, `207e2a5c`). The ~500-row movement is **still unexplained**, and there is now one
   less place to observe it from. Priority unchanged. Pairs with the dispatched-bill lookup item
-  above. (`CLAUDE_PICKING.md §9`, `CLAUDE_FLOOR.md §7`)
+  above. (`CLAUDE_PICKING.md §7`, `CLAUDE_FLOOR.md §7`)
 - **Verify "New pick assigned" push on a real device.** Code is live; device-verification pending until
   a real picker has a login + subscribed phone. (`CLAUDE_NOTIFICATIONS.md §6`)
 - **Remove push-test scaffolding** — the `/picking/push-test` page + the gray admin/ops pill on
-  `/picking`, after floor rollout. (`CLAUDE_NOTIFICATIONS.md §9`)
+  `/picking`, after floor rollout. ⚠ **Updated 2026-07-28: only ONE door is left, and it is
+  phone-only.** The desktop pill lived in the archived board; the surviving link
+  (`picking-mobile-shell.tsx`) is `block md:hidden`, so **at desktop width there is now no link to
+  `/picking/push-test` at all** — the page still answers if you type the URL. Not worth building a
+  replacement link for scaffolding that is due to be deleted; noted so nobody hunts for a missing
+  pill. (`CLAUDE_NOTIFICATIONS.md §9`)
 - **Deferred row-click detail panel** — picker name, assign/pick/check times, who-checked, line items,
-  permanent Undo; remove the temporary inline Undo when it lands. Plus the picker-login flow (own phone
-  vs shared terminal). (`CLAUDE_PICKING.md §9`)
+  permanent Undo. ⚠ **Updated 2026-07-28: the "temporary inline Undo" this was to replace is GONE** —
+  it lived on the archived desktop board. Floor already has the detail panel this item describes
+  (`CLAUDE_FLOOR.md §4.6`), so what remains is whether the PHONE supervisor board wants one. Plus the
+  picker-login flow (own phone vs shared terminal). (`CLAUDE_PICKING.md §7`)
+- **Desktop supervisor → `/floor` redirect — PARKED, explicitly NOT built (P2).** Raised by the owner
+  as a future idea during the desktop retirement. **Blocked on a permission decision, not on code:**
+  `floor_supervisor` and `picker` hold `picking` but **NOT** `floor` (live SELECT 2026-07-28), so a
+  redirect today lands both roles — including both `/picking` login destinations — on
+  `/unauthorized`. That is the same dead end that ruled the redirect out at the time. Granting `floor`
+  to `floor_supervisor` hands the floor team Hold / Cancel / Release over the gatekeeper rail — an
+  authority decision, not a layout one. It would also break testing the card board by narrowing a
+  desktop window. (`CLAUDE_FLOOR.md §9b`, `CLAUDE_CORE.md §5`)
+- **Unmatched bills have no desktop home (P2).** The archived desktop board had an "Unmatched" header
+  segment listing bills whose customer never resolved. `/floor` shows "(Unmatched)" on a row but
+  offers no way to filter or find them, and the card boards have no equivalent. Tint Manager's
+  resolver can still FIX one — nothing now LISTS them. Pairs with the existing "missing-customer
+  resolver has no Floor entry point" item below. (`CLAUDE_FLOOR.md §9b`)
+- **Approve is phone-only — a STANDING gap, not a new loss (P2).** There is no way to approve a picked
+  bill from a PC. This was already true before the desktop retirement (that board never had Approve
+  either, and `/floor` has none — verified by a whole-folder search of `components/floor`,
+  `lib/floor`, `app/api/floor`). Recorded now because the phone is the only option, so if a supervisor
+  is ever at a desk without a phone the workflow stalls. (`CLAUDE_PICKING.md §6`)
+- **`PickingQueueResult.date` has no reader (P2 — trivial).** Surfaced while removing the four dead
+  counters 2026-07-28. `getPickingQueue()` returns `{ date, rows }`; no surface reads `date`. Left in
+  place deliberately — it was not on that step's approved removal list. Remove it in its own pass, or
+  leave it as a cheap debugging aid.
+- **`single` scope KEPT DELIBERATELY — do not re-derive it as dead code (owner decision 2026-07-28).**
+  `lib/picking/queue.ts`'s `single` scope has **no caller in app code**, and a future sweep will find
+  that and propose deleting it. It is kept because it is what a request with **no `?scope=`** resolves
+  to, and both public routes still accept it by name (`app/api/picking/queue/route.ts`,
+  `app/api/picking/marker/route.ts`) — removing it changes a live API contract for no benefit. The
+  only thing that ever exercised it was the untracked scratch script deleted at `b51cd14f`. The
+  reasoning is also recorded as a comment at the scope itself; read that before acting.
 - **Manifest name experiment — finish or revert.** `manifest.json` `name="Orbit"` / `short_name="OrbitOMS"`
   is an in-flight test (does iOS read them separately for the notification "from …" line?). Result
   visible only after reinstall. (`CLAUDE_NOTIFICATIONS.md §8`, `CLAUDE_ATTENDANCE.md §14`)
 
 ### Floor Control
-- **RETIREMENT DEPENDENCY LIST — ✅ DONE for `/support` (2026-07-27), still OPEN for the Picking
-  DESKTOP board (P0 — blocks any switch-off).** Support is retired (`archive/2026-07-support/`);
-  what Floor borrowed from it — the dispatch-slot picker, `formatArticleTag`, ship-to search + save —
-  was extracted into `components/floor/` · `lib/floor/format.ts` · `app/api/floor/` first and is now
-  Floor's own. The Picking half of the list is unchanged and still required before any desktop
-  switch-off: the assign/unassign endpoints, the sort rule objects + `sortPickingQueue`
-  (`lib/picking/sort.ts`), and the `use-picking-marker` hook — plus an agreed trigger.
-  ⚠ Picking's MOBILE boards are NOT in scope for retirement. (`CLAUDE_FLOOR.md §9`)
+- **RETIREMENT DEPENDENCY LIST — ✅ FULLY CLOSED. Both halves done.** `/support` retired 2026-07-27
+  (`archive/2026-07-support/`); what Floor borrowed from it was extracted into `components/floor/` ·
+  `lib/floor/format.ts` · `app/api/floor/` first. The **Picking DESKTOP board retired 2026-07-28**
+  (`archive/2026-07-picking-desktop/`) — and the Picking half of this list turned out to need **no
+  extraction at all**: the assign/unassign endpoints, the sort rule objects + `sortPickingQueue`, and
+  the `use-picking-marker` hook **all survived untouched and Floor still imports all three**. What
+  was removed (the `rolling` scope and four payload counters) was never Floor's. Full accounting:
+  **`CLAUDE_FLOOR.md §9b`**. ⚠ Picking's card boards were never in scope and are still live at every
+  width.
 - **Ship-to CLEAR (✕) on the Floor detail panel (P2 — UI only).** `POST /api/floor/ship-to` already
   accepts `customerId: null` and clears the redirect; the panel offers no ✕ to send it, so an
   operator can change a ship-to but never remove one. No backend work. Deferred to the post-testing
@@ -662,4 +703,4 @@ Lives at `docs/prompts/archive/drafts/2026-04-to-05/taxonomy-preview.json`. The 
 
 ---
 
-*Updated 2026-06-19 — reflects the full catalog restructure (all families folded, 9-tile dial), `/po` going-forward build, desktop `/place-order` parity, email single-source + AkzoNobel recipient, Hide feature shipped, tint sampling reuse + pack scaling + duplicate-merge runbook (3 groups merged), Tint Summary report + `/reports` hub, mail-orders 5 slots, **app-format order email (shared `renderOrderBody` + proper-case + line-number alignment) + mail parser v7.2 (`Parse-AppBody` reader, `Test-IsAppFormat` sorter, name-lock) + Table C exact-name enrichment fast-path (app orders → `mo_sku_lookup_v2`, ingest-only, 15 collisions excluded)**. Schema v27.6.*
+*Updated 2026-07-28 — Picking DESKTOP board retired (six steps, `90c9a865`→). Earlier: 2026-06-19 reflects the full catalog restructure (all families folded, 9-tile dial), `/po` going-forward build, desktop `/place-order` parity, email single-source + AkzoNobel recipient, Hide feature shipped, tint sampling reuse + pack scaling + duplicate-merge runbook (3 groups merged), Tint Summary report + `/reports` hub, mail-orders 5 slots, **app-format order email (shared `renderOrderBody` + proper-case + line-number alignment) + mail parser v7.2 (`Parse-AppBody` reader, `Test-IsAppFormat` sorter, name-lock) + Table C exact-name enrichment fast-path (app orders → `mo_sku_lookup_v2`, ingest-only, 15 collisions excluded)**. Schema v27.6.*

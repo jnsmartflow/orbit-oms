@@ -1,5 +1,5 @@
 # CLAUDE_PICKING.md — Picking Module
-# v1.9 · Schema v27.12 · July 2026 · updated 2026-07-28
+# v1.10 · Schema v27.12 · July 2026 · updated 2026-07-28
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -364,7 +364,7 @@ preserved exactly (`skuDescriptionRaw`, and a blank pack stays blank rather than
   the detail underneath. Guarded on `pickerSheetOpen && detailOpen`.
 - **The bottom bar hides on the detail screen** via the shell's `hideBar` branch (`CLAUDE_UI.md §59`)
   — `detailOpen` is lifted into `PickingBoardContext` so `SupervisorPickingShell` can pass it up. This
-  also removes the mistap risk of switching Assign/Check/Done while reading one bill. Because the bar
+  also removes the mistap risk of switching Assign/Picking/Done while reading one bill. Because the bar
   is gone, the three detail CTAs use `max(env(safe-area-inset-bottom, 0px), 16px)` (the `/po` footer
   convention) and sit flush — they no longer pad by `MOBILE_NAV_CLEARANCE`.
   **`MOBILE_NAV_CLEARANCE` is still imported and still used by `SHEET_GEOMETRY` for the list-view
@@ -626,7 +626,7 @@ on the floor for a while — nothing else in the system changes, it's a note, no
 | `app/picking/page.tsx` | Role branch — supervisor board vs the picker's "My Picks", one face at every width (the width switch went with the desktop board, 2026-07-28); also builds the picker `pending`/`done` split (excludes/includes `isChecked` — 2026-07-18) |
 | ~~`components/picking/picking-queue.tsx`~~ | **ARCHIVED 2026-07-28** → `archive/2026-07-picking-desktop/components/picking/picking-queue.tsx`. Nothing under `archive/` is compiled, deployed or reachable (`tsconfig.json` excludes it) |
 | `components/picking/picking-mobile-shell.tsx` | **Direction-A wrapper (2026-07-19)** — owns `data`/`activeTab`/`refetchQueue`/`detailOpen`, computes the bottom-tab counts, fills `RoleLayoutClient`'s `workflowTabs`/`hideBar` slots; exposes `usePickingBoard()` (§5.1) |
-| `components/picking/picking-board-mobile.tsx` | Mobile supervisor board — Assign/Check/**Done** tab CONTENT (the tab strip itself now lives in the bottom bar), shared `CheckCard`, detail screen + its popstate/swipe machinery (§5.2-§5.3) |
+| `components/picking/picking-board-mobile.tsx` | Supervisor board — Assign/Picking/**Done** tab CONTENT (the tab strip itself lives in the bottom bar), shared `CheckCard`, detail screen + its popstate/swipe machinery (§5.2-§5.3) |
 | `components/picking/picker-my-picks-board.tsx` | Picker's own "My Picks" board (§5.4) — Pending/Done **top** tabs, own local `TopBarTab` copy, default shell bar; its `pending` prop is pre-filtered upstream (page.tsx) so an approved bill never reaches its "Mark done" CTA |
 | `lib/picking/picker-roster.ts` | Roster/lookup for the admin "view as picker" dropdown (new file, 2026-07-17/18 build) |
 | `components/shared/mobile-shell.tsx` | Not picking-specific, but load-bearing here — the three-way bottom-bar slot (`CLAUDE_UI.md §59`) and the `MOBILE_NAV_CLEARANCE` export every bottom-pinned sheet reads from (§7) |
@@ -740,4 +740,4 @@ on becoming visible); skips overlapping requests; **fails silently** (no toast/U
 
 ---
 
-*CLAUDE_PICKING.md v1.9 · Picking Module · July 2026*
+*CLAUDE_PICKING.md v1.10 · Picking Module · July 2026*
