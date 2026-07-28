@@ -4,7 +4,6 @@ import { checkAnyPermission, getAllPermissionsForRoles, buildNavItems } from "@/
 import { RoleSidebarProvider } from "@/components/shared/role-sidebar-provider";
 import type { RoleSidebarRole } from "@/components/shared/role-sidebar";
 import { PickingMobileShell } from "@/components/picking/picking-mobile-shell";
-import { PickingQueue } from "@/components/picking/picking-queue";
 import { PickingBoardMobile } from "@/components/picking/picking-board-mobile";
 import { PickerMyPicksBoard } from "@/components/picking/picker-my-picks-board";
 import { ROLES } from "@/lib/rbac";
@@ -180,13 +179,12 @@ export default async function PickingPage({ searchParams }: PickingPageProps) {
         showPickerFace={showPickerFace}
         canSeePushTest={canSeePushTest}
       >
-        {/* Same route, two faces — desktop table vs. mobile card board.
-            Desktop is untouched regardless of role; only the mobile slot
-            branches to the picker face. */}
-        <div className="hidden md:block">
-          <PickingQueue canSeePushTest={canSeePushTest} />
-        </div>
-        <div className="block md:hidden">
+        {/* ONE face at every width — the card board (2026-07-28). The desktop
+            table that used to render here behind `hidden md:block` is retired;
+            it sits at archive/2026-07-picking-desktop/. A supervisor who wants
+            a desk screen uses /floor. Only the role branch is left: supervisor
+            board vs. the picker's own "My Picks". */}
+        <div className="block">
           {showPickerFace && pickerFaceData ? (
             <PickerMyPicksBoard
               pending={pickerFaceData.pending}
