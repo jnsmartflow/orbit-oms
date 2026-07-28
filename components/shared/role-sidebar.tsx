@@ -45,7 +45,6 @@ export const ICON_MAP: Record<string, React.ComponentType<{ className?: string }
   tint_manager:        Layers,
   tint_operator:       Zap,
   dispatcher:          Truck,
-  warehouse:           Warehouse,
   customers:           Users,
   skus:                Package,
   routes_areas:        MapPin,

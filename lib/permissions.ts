@@ -37,7 +37,12 @@ const PAGE_NAV_MAP: NavItemConfig[] = [
   { pageKey: "tint_manager",   label: "Tint Manager",    href: "/tint/manager" },
   { pageKey: "tint_operator", label: "Tint Operator",  href: "/tint/operator" },
   { pageKey: "dispatcher",    label: "Dispatcher",     href: "/dispatcher" },
-  { pageKey: "warehouse",     label: "Warehouse",       href: "/warehouse" },
+  // "warehouse" (→ /warehouse) removed 2026-07-28: the board was archived to
+  // archive/2026-07-warehouse-board/. It filtered on workflowStage
+  // 'dispatch_confirmation', which nothing in this codebase ever writes, so it
+  // always rendered empty. No successor — Picking and Floor were built on a
+  // different track. ⚠ app/api/warehouse/pickers/route.ts was NOT archived: it
+  // is called by the live Picking boards. Never archive app/api/warehouse/ whole.
   { pageKey: "customers",     label: "Customers",      href: "/admin/customers" },
   { pageKey: "skus",          label: "SKUs",           href: "/admin/skus" },
   { pageKey: "routes_areas",  label: "Routes",         href: "/admin/routes" },
@@ -138,7 +143,6 @@ export type PageKey =
   | "tint_operator"
   | "planning_board"
   | "dispatcher"
-  | "warehouse"
   | "place_order"
   | "trip_report"
   | "mail_orders"
@@ -188,7 +192,7 @@ const ALL_PAGE_KEYS: PageKey[] = [
   "dashboard", "users", "system_config", "permissions",
   "customers", "skus", "routes_areas", "vehicles",
   "import_obd", "planning_board", "tint_manager", "tint_operator",
-  "dispatcher", "warehouse", "place_order", "trip_report", "mail_orders",
+  "dispatcher", "place_order", "trip_report", "mail_orders",
   "delivery_challans", "shade_master", "sampling_library", "ti_report",
   "settings_hide",
 ];

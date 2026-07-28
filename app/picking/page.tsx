@@ -89,18 +89,20 @@ export default async function PickingPage({ searchParams }: PickingPageProps) {
 
   // ── Picker face — real conditional rendering, not a third CSS breakpoint
   // (discovery §F2: the existing hidden/block switch below has both boards
-  // always mounted; a role face needs an actual branch). `isPickerRole` is
-  // currently a dead path in practice: `picker` has no `role_permissions`
-  // row for `picking` yet (deliberate — see the gate above, which already
-  // redirects a real picker to /unauthorized before this line ever runs).
-  // The only live way in this stage is the admin-only `?view=picker` test
-  // hook (discovery §E5), mirroring the `?draft=on`-style gating already
-  // used elsewhere in this codebase (CLAUDE_UI.md §55).
-  // TEST HOOK — temporary. Widened 2026-07-17 from admin-only to admin OR
-  // operations so both can preview the picker face without a real grant.
-  // Narrow this back (or remove it) once picker/floor_supervisor get actual
-  // role_permissions rows for "picking" — this is scaffolding, not the
-  // real access model.
+  // always mounted; a role face needs an actual branch).
+  //
+  // ⚠ CORRECTED 2026-07-28. This comment used to say `isPickerRole` was "a dead
+  // path in practice: `picker` has no `role_permissions` row for `picking` yet",
+  // and that the test hook was the only way in. BOTH ARE FALSE and have been
+  // since 2026-07-20, when the grants were seeded (prisma/seed.ts) — confirmed
+  // against live on 2026-07-27: picker canView=true canEdit=false,
+  // floor_supervisor canView=true canEdit=true. `isPickerRole` is now THE LIVE
+  // PATH: a real picker passes the canView gate above and lands here. Step 5
+  // (commit c4323cd4) made it his login destination.
+  //
+  // The `?view=picker&as=<id>` hook below is admin-OR-operations only and is
+  // now purely a PREVIEW for people who are not pickers — it is no longer
+  // load-bearing for real access. Scaffolding; safe to narrow or remove.
   const canUseTestHook  = roles.includes(ROLES.ADMIN) || roles.includes(ROLES.OPERATIONS);
   const isPickerRole    = primaryRole === "picker";
   const showPickerFace  = isPickerRole || (canUseTestHook && searchParams?.view === "picker");

@@ -89,9 +89,9 @@ async function main() {
     { roleSlug: "dispatcher",    pageKey: "vehicles",      canView: true,  canEdit: false, canImport: false, canExport: false, canDelete: false },
     { roleSlug: "dispatcher",    pageKey: "import_obd",    canView: true,  canEdit: false, canImport: true,  canExport: false, canDelete: false },
 
-    // floor_supervisor + picker — warehouse access only
-    { roleSlug: "floor_supervisor", pageKey: "warehouse",  canView: true,  canEdit: true,  canImport: false, canExport: false, canDelete: false },
-    { roleSlug: "picker",           pageKey: "warehouse",  canView: true,  canEdit: true,  canImport: false, canExport: false, canDelete: false },
+    // The "warehouse" pageKey rows for floor_supervisor + picker were removed
+    // 2026-07-28: /warehouse was archived (archive/2026-07-warehouse-board/).
+    // Both roles now land on and work from /picking — see the rows below.
 
     // ── /picking (added 2026-07-20) ───────────────────────────────────────
     // canView  = may open /picking (BOTH faces: the supervisor board and the
