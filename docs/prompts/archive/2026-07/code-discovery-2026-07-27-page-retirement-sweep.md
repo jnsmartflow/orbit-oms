@@ -641,3 +641,62 @@ Everything else in this draft stands as written and is still the brief for steps
 The `/order` work (its step 3) is **done**; §4 is now history rather than a plan. The
 `~500 rows that moved to 'dispatched' between 2026-07-24 and 2026-07-27` are **not
 investigated here** — that belongs to ROADMAP's `pick_checked → dispatched` drain item.
+
+---
+
+# ✅ CLOSED — appended 2026-07-28
+
+**This brief is finished. Everything it proposed has been carried out.** It is archived
+here as the record of how the decisions were reached, not as a live plan. Do not work
+from it — work from `archive/RETIREMENT-PLAYBOOK.md` and the per-module READMEs, which
+describe what the tree actually looks like now.
+
+## 1. What shipped, in order
+
+| Commit | Date | What |
+|---|---|---|
+| `83ec3fc1` | 2026-07-27 | **Job A** — `/operations/warehouse` + `/operations/dispatch` archived to `archive/2026-07-operations-pages/`, page keys `operations_warehouse` / `operations_dispatch` removed from `lib/permissions.ts`. |
+| `c4323cd4` | 2026-07-28 | **The repoint, done first on purpose** — `ROLE_REDIRECTS` in `lib/rbac.ts` moved `floor_supervisor` and `picker` off the Warehouse stubs and onto `/picking`, **before** anything under Job B was archived. |
+| `207e2a5c` | 2026-07-28 | **Job B, part 1** — `/warehouse` + its two stubs + the board API + its components archived to `archive/2026-07-warehouse-board/`; page key `warehouse` removed. 🔴 `app/api/warehouse/pickers/route.ts` was **kept** — it is called by the two live Picking boards and is now the only file left under `app/api/warehouse/`. |
+| `639f8139` | 2026-07-28 | **Job B, part 2** — `/planning` + the `/dispatcher` index stub + all 8 `/api/planning/*` routes + components archived to `archive/2026-07-planning-board/`; page keys `planning_board` and `dispatcher` removed. 🔴 The **four live master-data pages** in `app/(dispatcher)/` (Customers / SKUs / Routes / Vehicles) were **kept** — a route group is not a module. |
+| `9dce858b` + `de48357d` | 2026-07-27 | **Job C** — `/order` archived to `archive/2026-07-order/`, no redirect, address parked. |
+
+Earlier in the same programme, before this brief was written: `bc42a948`→`63164ed2`
+(Support screens and API routes).
+
+**Permission rows.** Every page key removed from `lib/permissions.ts` above leaves
+orphaned `role_permissions` rows behind — the code stops reading them, the database
+keeps them. Those rows were cleared by the owner in the Supabase SQL editor, separately
+from these commits. No SQL was ever run from this session.
+
+## 2. 🔴 The correction block appended on 2026-07-27 was ITSELF WRONG
+
+The block at the top of this appendix — *"The 'both boards are always empty' claim is
+HALF FALSE"* — is **the third stale claim in this programme, and it is wrong in the same
+way as the two before it.**
+
+It argued that Planning is not always empty because
+`app/api/planning/board/route.ts:29-30` reads `['dispatch_confirmation','dispatched']`
+when `showDispatched=true`, and 1,546 rows sit at `'dispatched'`. That reading of the
+**handler** was accurate. The conclusion was not: `components/planning/planning-page.tsx:137`
+was the only caller, and it fetched the board with a date and nothing else. **No client
+ever set `showDispatched`.** The branch existed and could never be entered. The board
+rendered empty every time it was ever opened — the original claim was right, and the
+"correction" broke it.
+
+**The lesson, now in the playbook as its own entry: CAPABILITY IS NOT REACHABILITY.**
+Reading a handler tells you what *can* happen. Only the caller tells you what *does*.
+This is the sibling of *an import is not a call*, which had bitten this same programme
+a week earlier — and note where it landed: **inside a correction block written to fix a
+different stale claim.** Fixing one wrong claim is exactly when the next one gets in.
+
+The 1,546 rows are real and the data is intact. What was wrong was the idea that any
+screen ever showed them. They are **acknowledged and parked** — the owner intends a
+proper lookup as a **report** feature; see ROADMAP, "Dispatched bills have no lookup".
+
+## 3. Where the story lives now
+
+- Method, and every trap that bit: `archive/RETIREMENT-PLAYBOOK.md`
+- Index of all five retirements: `archive/README.md`
+- Per-module detail: the `README.md` inside each `archive/2026-07-*/` folder
+- Remaining follow-ups: `docs/ROADMAP.md`

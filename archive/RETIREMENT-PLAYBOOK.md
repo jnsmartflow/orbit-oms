@@ -164,6 +164,12 @@ Short and honest. All of these actually happened.
   `mo_order` to reduce noise hid a real hit. **Run every address sweep two ways and
   reconcile the line numbers, not the raw output.**
 
+  ⚠ **Third shape, 2026-07-28: the slash does not have to be at the START.** It fires
+  inside an **alternation** too — `'/warehouse|/planning|…'` was rewritten and silently
+  hid **four lines in a file that plainly contained them**. Put a char-class on **every
+  branch**: `'[/]warehouse|[/]planning|…'`. **This trap has now bitten three times in
+  one session, in three different shapes.** Assume it will find a fourth.
+
 - **AN IMPORT IS NOT A CALL.** A session grepped for a module name, found `import`
   lines in two route files, and wrote "these **ARE** called" into canon — overturning
   a statement that had been right. The calls sat **four lines below**, commented out,
@@ -184,6 +190,37 @@ Short and honest. All of these actually happened.
   The owner accepted the loss knowingly, which is exactly the point: **a gate that has
   only ever passed is not evidence it is unnecessary — it is evidence it has not yet
   met the case it exists for.**
+
+### Added after the Warehouse + Planning retirements (2026-07-28)
+
+- **CAPABILITY IS NOT REACHABILITY.** `app/api/planning/board/route.ts` had a
+  `showDispatched` branch reading `workflowStage 'dispatched'` — **1,546 live rows**. A
+  discovery draft read the handler and concluded the Planning board "is NOT always
+  empty". **No client code ever set that parameter**:
+  `components/planning/planning-page.tsx:137` fetched the board with a date and nothing
+  else. The board had **always** rendered empty. **Reading the handler tells you what
+  CAN happen; only the caller tells you what DOES.** This is the sibling of *an import
+  is not a call* — same failure, one layer up. And note where it happened: **inside a
+  correction block written to fix a different stale claim.** A correction can introduce
+  its own error; re-verify the fix, not just the bug.
+
+- **A ROUTE GROUP IS NOT A MODULE.** `app/(dispatcher)/` looked like it belonged to the
+  retiring `/dispatcher` page. It held **six** files — the stub, a layout, and **four
+  LIVE master-data pages** (customers, routes_areas, skus, vehicles). Archiving the
+  folder would have taken four working screens off the app. **Move named files only.
+  List a folder's contents before assuming what it contains.**
+
+- **A PAGE KEY AND A ROLE CAN SHARE A WORD.** `dispatcher` was simultaneously a retiring
+  **page key** and a live **role**. `lib/permissions.ts`'s `PageKey` and
+  `role-sidebar.tsx`'s `RoleSidebarRole` are **different unions**. Deleting from the
+  wrong one would have broken a live role. **Always state which union you are editing** —
+  in the plan, in the diff, and in the commit message.
+
+- **SEED IS NOT LIVE — three times in one week.** Support: seed predicted **2** orphaned
+  rows, live held **8**. Warehouse: seed held **2**, live held **7**. The dispatcher
+  role: seed grants it five pages, live has all five at `canView=false`. **Never plan a
+  permission change from `prisma/seed.ts`. SELECT first, every time** — and when they
+  disagree, say which one you are describing.
 
 ---
 
@@ -267,6 +304,27 @@ cases someone thought hard about once.
 **If the successor falls short, build the missing behaviour INTO the successor.**
 Never revive the archive. Two screens doing one job is the problem the retirement
 solved.
+
+---
+
+## 7b. Completed retirements
+
+Index only — `archive/README.md` carries the full table, each folder's README the story.
+
+| Date | What | Commit |
+|---|---|---|
+| 2026-07-27 | Support board — screens, API routes, spec | `bc42a948` → `63164ed2` |
+| 2026-07-27 | `/order` — public no-login order page | `9dce858b`, `de48357d` |
+| 2026-07-27 | `/operations/warehouse` + `/operations/dispatch` — alternate mounts | `83ec3fc1` |
+| **2026-07-28** | **login landings repointed to `/picking`** (floor_supervisor, picker) | **`c4323cd4`** |
+| 2026-07-28 | Warehouse board — `/warehouse` + 2 stubs + board API + components | `207e2a5c` |
+| 2026-07-28 | Planning board — `/planning` + `/dispatcher` stub + 8 API routes + components | `639f8139` |
+
+⚠ **The row in bold is the sequencing lesson.** Those two roles were moved onto `/picking`
+**before** the Warehouse board was archived — not after. Every login landing, redirect and
+link should be repointed and verified *first*; archiving comes last. **Move the people out
+before you demolish the building.** §2 already says dependencies come out first; this is the
+same rule applied to humans rather than imports.
 
 ---
 

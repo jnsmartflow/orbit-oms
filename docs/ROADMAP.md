@@ -1,5 +1,5 @@
 # ROADMAP.md — OrbitOMS Planned Work
-# Updated 2026-07-27 · Lives in: orbit-oms/docs/ (manual attach — NOT auto-loaded)
+# Updated 2026-07-28 · Lives in: orbit-oms/docs/ (manual attach — NOT auto-loaded)
 
 Attach this file when planning the next phase of any module. Live "what's next" list, separated from canonical docs.
 
@@ -356,6 +356,19 @@ New OPEN items surfaced while consolidating the 17 drafts (Jul 8–16) into cano
 - **Supervisor 10-min "N picks waiting" reminder — DEFERRED.** Not event-driven; Vercel Hobby crons are
   once-per-day (CADENCE, not count — CORE §4). Planned trigger: a small depot-PC PowerShell "doorbell"
   (committed to `scripts/`) hitting a cron-auth'd route. (`CLAUDE_NOTIFICATIONS.md §7`)
+- **🔴 LOOK UP A DISPATCHED BILL — no screen can (P2, owner-stated 2026-07-28).** All **1,546**
+  orders at `workflowStage 'dispatched'` are **invisible in every screen in the app**. Verified
+  2026-07-28 against every surface that reads `orders`: `/floor` and `/picking` filter to stage
+  sets that stop at `pick_checked`; `/trips` reads a different table; Tint Manager, Tint Summary
+  and the admin dashboard filter to their own stages; Mail Orders reads `mo_orders`. The only
+  surfaces without a stage filter reach them by accident — Hidden Orders (only if hidden),
+  Removed Orders (only if removed), and the order-detail panel (only if something links to it,
+  and nothing does).
+  **The data is intact — only the view is missing.** Nothing was deleted; this is a gap, not a loss.
+  The owner intends a proper **REPORT** feature, built once the workflow is complete end to end.
+  Deliberately deferred, not urgent.
+  ⚠ `/planning`'s `showDispatched` branch was **never** a substitute: no client ever set the
+  parameter, so that board always rendered empty (`archive/2026-07-planning-board/README.md`).
 - **NO AUTOMATIC DRAIN `pick_checked` → `dispatched` (P1 — workflow hole).** Orders DO reach
   `dispatched` (the old "nothing writes to it" claim was WRONG — corrected 2026-07-24), but there is
   no automatic transition. Verified 2026-07-24: **1,051** at `dispatched` (662 auto-slotted), stopping
@@ -365,7 +378,12 @@ New OPEN items surfaced while consolidating the 17 drafts (Jul 8–16) into cano
   one-time manual sweep was repeated, or a drain path exists that canon does not know about. Establishing
   which is the first task when this item is picked up — not investigated 2026-07-27. The 238-row move
   was a ONE-TIME manual sweep (Floor build, 23 Jul), NOT a code path. Forced the desktop step-5b
-  carry-over workaround. Needs a real design session. (`CLAUDE_PICKING.md §9`, `CLAUDE_FLOOR.md §7`)
+  carry-over workaround. Needs a real design session.
+  ⚠ **Changed 2026-07-28: nothing in the app reads or writes `dispatched` on a board any more.**
+  `/planning` and `/warehouse` — the only two surfaces that queried that stage — are both retired
+  (`639f8139`, `207e2a5c`). The ~500-row movement is **still unexplained**, and there is now one
+  less place to observe it from. Priority unchanged. Pairs with the dispatched-bill lookup item
+  above. (`CLAUDE_PICKING.md §9`, `CLAUDE_FLOOR.md §7`)
 - **Verify "New pick assigned" push on a real device.** Code is live; device-verification pending until
   a real picker has a login + subscribed phone. (`CLAUDE_NOTIFICATIONS.md §6`)
 - **Remove push-test scaffolding** — the `/picking/push-test` page + the gray admin/ops pill on
@@ -417,6 +435,12 @@ New OPEN items surfaced while consolidating the 17 drafts (Jul 8–16) into cano
 
 ### Dispatch / Planning
 - **Dispatch Planning Brain V2 — PARKED, fork unresolved.** The 6-slot sliding-capacity design conflicts with the live `vehicle_master` (flat-capacity, 6 rows, no sliding). No code written; the design-locked and fleet-mismatch-discovery drafts are kept as reference only — do NOT treat the locked design as settled. A `CLAUDE_PLANNING.md` gets created only when this ships.
+  ⚠ **Updated 2026-07-28: there is no longer a Planning screen to build onto.** `/planning`, the
+  `/dispatcher` stub and all 8 `/api/planning/*` routes were archived (`639f8139`,
+  `archive/2026-07-planning-board/`) — the half-built board this item implicitly assumed is gone.
+  That does not kill the item: it means V2 starts from a blank screen rather than an existing one,
+  which is arguably cleaner. The archived code is reference for what was tried, never a base to
+  restore. Still PARKED.
 
 ### Place Order
 - **Missing draft: `web-update-2026-07-14-po-save-draft-sent-feature.md`.** Referenced by the Favourites session as a companion but absent from `docs/prompts/drafts/`. The `/po` Drafts/Sent feature (draft list, receipt, resend) is live in code but undocumented in `CLAUDE_PLACE_ORDER.md`/`CLAUDE_UI.md` pending this draft's recovery or re-authoring.
@@ -520,6 +544,9 @@ is done and recorded in `archive/2026-07-support/README.md` — these are the lo
   Their `/admin/*` equivalents are live and a **superset** (`/admin/customers` uses the richer split
   view), so nothing is lost — the `support` role now falls through to those. Low priority; the only
   gain is that no future reader wonders where the Support-group copies went.
+  ⚠ **Do not confuse these with the `/dispatcher` four (2026-07-28).** `app/(dispatcher)/` also holds
+  Customers / SKUs / Routes / Vehicles pages — **those are LIVE and were deliberately kept** when the
+  `/dispatcher` index stub was archived. Same four names, different route group, opposite status.
 - [ ] **Dead exports in `lib/workflow-stages.ts` (P3).** `supportMayEdit()`, `isSupportDone()` and
   `stageRank()` now have **zero callers** (`stageRank` is called only by the dead `isSupportDone`).
   The `supportMayEdit` flag on all fourteen `STAGE_LADDER` rows exists only to feed the dead function.

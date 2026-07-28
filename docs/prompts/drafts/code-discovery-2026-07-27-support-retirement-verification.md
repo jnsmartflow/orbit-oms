@@ -99,6 +99,20 @@ Both files named in the brief are **still in active use** — neither was orphan
 | `lib/slot-cascade.ts` | `app/api/planning/board/route.ts`, `app/api/warehouse/board/route.ts` |
 | `lib/day-boundary.ts` | `app/api/planning/board/route.ts`, `app/api/warehouse/board/route.ts` |
 
+> 🔴 **CORRECTION 2026-07-28 — the table above is now history, and it was never quite
+> right.** Both users listed are **gone from the live tree**: `/api/planning/board` was
+> archived to `archive/2026-07-planning-board/` (`639f8139`) and `/api/warehouse/board`
+> to `archive/2026-07-warehouse-board/` (`207e2a5c`). `lib/slot-cascade.ts` and
+> `lib/day-boundary.ts` went with them.
+>
+> It also overstated "active use" at the time it was written. The imports were real,
+> but in `/api/warehouse/board` the calls four lines below were **commented out under a
+> `// DISABLED` header** — the file imported the helpers and never ran them. That is the
+> *an import is not a call* trap, and this table is where it first bit. It flipped the
+> claim once already; this note exists so it cannot flip a third time.
+>
+> Both traps are recorded in `archive/RETIREMENT-PLAYBOOK.md §4`.
+
 A wider scan of everything under `lib/` and `components/shared/` turned up five
 files with no users at all:
 

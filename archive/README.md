@@ -10,9 +10,19 @@ do it in, the checks that stop you breaking the app, and the mistakes already ma
 |---|---|---|---|
 | Support board — screens *and* API routes | 2026-07-27 | Floor Control (`/floor`) | `2026-07-support/` |
 | `/order` — public no-login mobile order page | 2026-07-27 | `/po` (also public) | `2026-07-order/` |
-| `/operations/warehouse` + `/operations/dispatch` — alternate mounts only | 2026-07-27 | `/warehouse` and `/planning` (both still live) | `2026-07-operations-pages/` |
+| `/operations/warehouse` + `/operations/dispatch` — alternate mounts only | 2026-07-27 | `/warehouse` and `/planning` — **both retired the next day, see below** | `2026-07-operations-pages/` |
 | Warehouse board — `/warehouse` + 2 stubs + board API + components | 2026-07-28 | **none** — always rendered empty; Picking/Floor built on a different track | `2026-07-warehouse-board/` |
 | Planning board — `/planning` + `/dispatcher` stub + 8 API routes + components | 2026-07-28 | **none** — never used end to end; always rendered empty | `2026-07-planning-board/` |
+
+**Commits, in order.** `bc42a948`→`63164ed2` Support · `9dce858b`+`de48357d` `/order` ·
+`83ec3fc1` the two operations mounts · **`c4323cd4` login landings repointed to `/picking`** ·
+`207e2a5c` Warehouse · `639f8139` Planning.
+
+⚠ **Note the position of `c4323cd4`.** `floor_supervisor` and `picker` were moved off the
+Warehouse stubs and onto `/picking` **before** those boards were archived — people were
+walked out of the building before it came down. **That ordering is the default this
+playbook recommends**, not an accident of scheduling: repoint every landing, redirect and
+link first, verify, and only then archive.
 
 **How this folder works.** Everything here was moved with `git mv`, so each file
 keeps its full history — `git log --follow` on any archived file still shows every
