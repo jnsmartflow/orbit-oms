@@ -355,7 +355,9 @@ export async function getFloorBoard(
           workflowStage: { in: PICKING_ACTIVE_STAGES },
         }
       : // Live: everything still open, whatever day it was due (carry-over —
-        // Floor's fix over picking's rolling scope, design §4.2), PLUS everything
+        // design §4.2; this was Floor's fix over the picking desktop board's
+        // `rolling` scope, which was removed with that board on 2026-07-28,
+        // so Floor is now the only surface with a carry-over arm), PLUS everything
         // CHECKED TODAY whatever day it was due (fenced on checkedAt, not the
         // promise day — so a completed carry-over never vanishes). Future-dated
         // not-yet-checked rides along, separated by `zone` = upcoming per row.

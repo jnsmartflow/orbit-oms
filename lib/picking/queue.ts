@@ -84,13 +84,12 @@ function resolveTargetDate(dateStr?: string): { isoDate: string; dateOnly: Date 
  *                 lib/hooks/use-picking-marker.ts). So nothing reaches this
  *                 default by omission. (The one caller that did name a
  *                 different scope was the desktop board, archived 2026-07-28.)
- *                 It is CALLER-LESS, NOT UNREACHABLE — both public routes still
- *                 accept scope=single by name (app/api/picking/queue/route.ts:38,
- *                 app/api/picking/marker/route.ts:66), and the one thing that
- *                 actually runs it is the scratch script
- *                 scripts/_chk-scope-parity.ts:35/:53, which omits `scope` and
- *                 lands here. That script is outside the type-check gate
- *                 (tsconfig.json:25 excludes scripts/_*.ts).
+ *                 It is CALLER-LESS, NOT UNREACHABLE, and is KEPT for that
+ *                 reason (owner decision 2026-07-28): both public routes accept
+ *                 scope=single by name (app/api/picking/queue/route.ts:38,
+ *                 app/api/picking/marker/route.ts:66) and it is what a request
+ *                 with no ?scope= resolves to, so removing it would change a
+ *                 live API contract. Do not delete it as "dead".
  *
  * 'openPending' — the mobile boards (2026-07-20 date-zones redesign). Pending
  *                 and in-progress work across ALL dates (no dispatchTargetDate
@@ -125,25 +124,24 @@ export interface PickingQueueOptions {
   scope?: PickingQueueScope;
 }
 
-export interface PickingWindowSummary {
-  id: number;
-  windowTime: string;
-  sortOrder: number;
-  count: number;
-}
-
+// This payload carried four aggregate counters until 2026-07-28 — `windows[]`
+// (a PickingWindowSummary[] of per-dispatch-window "still waiting" totals),
+// `totalCount`, `unmatchedCount` and `assignedCount`. All four existed for the
+// desktop board's header segments and stats line; that board is archived
+// (archive/2026-07-picking-desktop/) and every surviving surface derives its own
+// counts from `rows` instead. Removed with the board.
+//
+// ⚠ If a future consumer needs "how many still need a picker", the rule was:
+//     !isAssigned && !isDone && !isChecked && zone !== "upcoming"
+// applied to the sorted rows. Kept here verbatim because it is a real decision
+// (it excludes future-dated rows, which is NOT obvious) and because
+// CLAUDE_NOTIFICATIONS.md §7 points a future supervisor-reminder timer at it.
+// Derive it from `rows`; do not modify buildPickingWhere() to serve a count.
 export interface PickingQueueResult {
   // 'single': the date the payload is fenced to. 'openPending': the IST day
   // used as the zone/ageDays anchor (rows themselves span many dates).
   date: string;
   rows: PickingQueueRow[];
-  windows: PickingWindowSummary[];
-  unmatchedCount: number;
-  // Unassigned count only — the tab badge shows work remaining, not work
-  // done. Assigned rows are still present in `rows` (sunk to the bottom by
-  // byAssigned) but excluded from this and from windows[].count.
-  totalCount: number;
-  assignedCount: number;
 }
 
 // Shared shape for both dealer FKs (customer / shipToOverrideCustomer) —
@@ -264,12 +262,11 @@ export function buildPickingWhere(
  * `byAssigned` rule itself was never touched — only what feeds it (the
  * filtered row sets above) changed.
  *
- * TAB COUNTS (fixed 2026-07-21, step 5B): `windows[].count` and `totalCount`
- * below BOTH gate on the `isStillWaiting` predicate — `!isAssigned && !isDone
- * && !isChecked && zone !== "upcoming"` — so they count only bills that still
- * need a picker today. Assigned/done/checked and future-dated (upcoming) rows
- * still ride in `rows` (rendered inline on desktop) but are excluded from the
- * counts. These stats are desktop-only; mobile computes its own counts.
+ * COUNTS: this function returns none. It hands back `date` + `rows`, and each
+ * consumer counts what it needs off `rows` (the mobile shell's three tab badges
+ * are computed in components/picking/picking-mobile-shell.tsx). The four
+ * aggregate counters this payload used to carry are described, with the
+ * "still waiting" rule they used, above PickingQueueResult.
  */
 export async function getPickingQueue(
   options: PickingQueueOptions = {},
@@ -312,11 +309,10 @@ export async function getPickingQueue(
     },
   });
 
-  const activeWindows = await prisma.dispatch_slot_master.findMany({
-    where: { isActive: true },
-    orderBy: { sortOrder: "asc" },
-    select: { id: true, windowTime: true, sortOrder: true },
-  });
+  // (A dispatch_slot_master read used to sit here, purely to build the removed
+  // `windows[]` counters. It went with them 2026-07-28 — one fewer round trip
+  // per fetch. Each row still carries its own windowId/windowTime/windowSortOrder
+  // from the `dispatchWindow` include above, so nothing lost the slot data.)
 
   // ── Product-family aggregation (Picking card redesign, 2026-07-21) ─────────
   // TWO bulk reads for the WHOLE page (never per-order — no N+1), then group
@@ -387,8 +383,6 @@ export async function getPickingQueue(
     }
   }
 
-  let unmatchedCount = 0;
-
   // Zone/age anchor = the REQUESTED date D (not literal today), so on the rolling
   // desktop board a bill dated for D reads as due, later as upcoming, and ageDays
   // is days-overdue relative to D. For 'openPending'/'single' the resolved
@@ -399,7 +393,6 @@ export async function getPickingQueue(
 
   const rows: PickingQueueRow[] = orders.map((order) => {
     const effectiveDealer = order.shipToOverrideCustomer ?? order.customer;
-    if (!effectiveDealer) unmatchedCount++;
 
     // Zone / age. Both dispatchTargetDate (@db.Date) and todayDateOnly are
     // UTC-midnight anchored, so the millisecond delta is an exact whole
@@ -481,30 +474,8 @@ export async function getPickingQueue(
 
   const sortedRows = sortPickingQueue(rows);
 
-  // Count landmine fix (step 5B) — a slot badge and the total must mean "still
-  // needs a picker in this slot today," so exclude assigned/done/checked AND
-  // upcoming (future-dated) rows from BOTH formulas. Done/checked rows and the
-  // assigned pile still ride in `rows` (rendered inline on desktop) — just not
-  // counted. Desktop-only in effect: mobile computes its own counts and never
-  // reads windows[].count / totalCount (see this function's doc comment).
-  const isStillWaiting = (r: PickingQueueRow): boolean =>
-    !r.isAssigned && !r.isDone && !r.isChecked && r.zone !== "upcoming";
-
-  const windows: PickingWindowSummary[] = activeWindows.map((w) => ({
-    id: w.id,
-    windowTime: w.windowTime,
-    sortOrder: w.sortOrder,
-    count: sortedRows.filter((r) => r.windowId === w.id && isStillWaiting(r)).length,
-  }));
-
-  const assignedCount = sortedRows.filter((r) => r.isAssigned).length;
-
   return {
     date: isoDate,
     rows: sortedRows,
-    windows,
-    unmatchedCount,
-    totalCount: sortedRows.filter(isStillWaiting).length,
-    assignedCount,
   };
 }

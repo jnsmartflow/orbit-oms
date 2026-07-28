@@ -72,9 +72,9 @@ export interface PickingQueueRow {
   // Added for the mobile board's locked/unlocked zone split. Computed
   // server-side in lib/picking/queue.ts against today in IST, and populated
   // in BOTH scopes (they are non-optional) — but only MEANINGFUL in the
-  // all-dates 'openPending' scope. In the single-date scope every row shares
-  // one dispatchTargetDate, so zone/ageDays are constant across the payload
-  // and the desktop board ignores all three.
+  // all-dates 'openPending' scope, which is the one every live board uses. In
+  // the single-date scope every row shares one dispatchTargetDate, so
+  // zone/ageDays are constant across the payload and carry no information.
   //
   // 'due'      = dispatchTargetDate <= today (IST), OR the date is null
   // 'upcoming' = dispatchTargetDate  > today (IST) — the LOCKED zone, which
