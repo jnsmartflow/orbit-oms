@@ -74,10 +74,20 @@ function resolveTargetDate(dateStr?: string): { isoDate: string; dateOnly: Date 
  *
  * 'single'      — DEFAULT and unchanged since this module was written: every
  *                 stage in PICKING_ACTIVE_STAGES, fenced to ONE dispatch-target
- *                 date by equality. The desktop board (components/picking/
- *                 picking-queue.tsx) depends on this exactly as-is: its date
- *                 stepper, its per-window header segments and its "All"/"OBDs"
- *                 counts are all built on a single-date slice.
+ *                 date by equality.
+ *                 ⚠ NO APP CODE SELECTS IT. Every live caller names its scope
+ *                 explicitly: picking-queue.tsx:672 sends scope=rolling;
+ *                 picking-mobile-shell.tsx:148 and app/picking/page.tsx:144
+ *                 send openPending; the marker hook ALWAYS appends ?scope=
+ *                 (lib/hooks/use-picking-marker.ts:126, a required prop). So
+ *                 nothing reaches this default by omission.
+ *                 It is CALLER-LESS, NOT UNREACHABLE — both public routes still
+ *                 accept scope=single by name (app/api/picking/queue/route.ts:38,
+ *                 app/api/picking/marker/route.ts:66), and the one thing that
+ *                 actually runs it is the scratch script
+ *                 scripts/_chk-scope-parity.ts:35/:53, which omits `scope` and
+ *                 lands here. That script is outside the type-check gate
+ *                 (tsconfig.json:25 excludes scripts/_*.ts).
  *
  * 'openPending' — the mobile boards (2026-07-20 date-zones redesign). Pending
  *                 and in-progress work across ALL dates (no dispatchTargetDate
