@@ -33,10 +33,15 @@ const PAGE_NAV_MAP: NavItemConfig[] = [
   { pageKey: "picking",       label: "Picking",       href: "/picking" },
   { pageKey: "floor",         label: "Floor",         href: "/floor" },
   { pageKey: "import_obd",    label: "Import OBDs",   href: "/import" },
-  { pageKey: "planning_board", label: "Planning Board",  href: "/planning" },
+  // "planning_board" (→ /planning) and "dispatcher" (→ /dispatcher) removed
+  // 2026-07-28: both archived to archive/2026-07-planning-board/. The Planning
+  // board filtered workflowStage 'dispatch_confirmation' (live count 0) and its
+  // showDispatched branch was never set by any client, so it always rendered
+  // empty. /dispatcher was a 4-line stub redirecting into it. ⚠ The dispatcher
+  // ROLE and its four master-data pages (/dispatcher/customers, /skus, /routes,
+  // /vehicles) are UNAFFECTED — they gate on their own page keys.
   { pageKey: "tint_manager",   label: "Tint Manager",    href: "/tint/manager" },
   { pageKey: "tint_operator", label: "Tint Operator",  href: "/tint/operator" },
-  { pageKey: "dispatcher",    label: "Dispatcher",     href: "/dispatcher" },
   // "warehouse" (→ /warehouse) removed 2026-07-28: the board was archived to
   // archive/2026-07-warehouse-board/. It filtered on workflowStage
   // 'dispatch_confirmation', which nothing in this codebase ever writes, so it
@@ -141,8 +146,6 @@ export type PageKey =
   | "import_obd"
   | "tint_manager"
   | "tint_operator"
-  | "planning_board"
-  | "dispatcher"
   | "place_order"
   | "trip_report"
   | "mail_orders"
@@ -191,8 +194,8 @@ const ALL_PAGE_KEYS: PageKey[] = [
   "picking", "floor",
   "dashboard", "users", "system_config", "permissions",
   "customers", "skus", "routes_areas", "vehicles",
-  "import_obd", "planning_board", "tint_manager", "tint_operator",
-  "dispatcher", "place_order", "trip_report", "mail_orders",
+  "import_obd", "tint_manager", "tint_operator",
+  "place_order", "trip_report", "mail_orders",
   "delivery_challans", "shade_master", "sampling_library", "ti_report",
   "settings_hide",
 ];

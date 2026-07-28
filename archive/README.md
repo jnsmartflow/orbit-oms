@@ -12,6 +12,7 @@ do it in, the checks that stop you breaking the app, and the mistakes already ma
 | `/order` — public no-login mobile order page | 2026-07-27 | `/po` (also public) | `2026-07-order/` |
 | `/operations/warehouse` + `/operations/dispatch` — alternate mounts only | 2026-07-27 | `/warehouse` and `/planning` (both still live) | `2026-07-operations-pages/` |
 | Warehouse board — `/warehouse` + 2 stubs + board API + components | 2026-07-28 | **none** — always rendered empty; Picking/Floor built on a different track | `2026-07-warehouse-board/` |
+| Planning board — `/planning` + `/dispatcher` stub + 8 API routes + components | 2026-07-28 | **none** — never used end to end; always rendered empty | `2026-07-planning-board/` |
 
 **How this folder works.** Everything here was moved with `git mv`, so each file
 keeps its full history — `git log --follow` on any archived file still shows every

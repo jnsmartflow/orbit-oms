@@ -82,7 +82,6 @@ async function main() {
     { roleSlug: "support",       pageKey: "import_obd",    canView: true,  canEdit: false, canImport: true,  canExport: false, canDelete: false },
 
     // dispatcher — full access to dispatcher page + read-only shared pages
-    { roleSlug: "dispatcher",    pageKey: "dispatcher",    canView: true,  canEdit: true,  canImport: false, canExport: false, canDelete: false },
     { roleSlug: "dispatcher",    pageKey: "customers",     canView: true,  canEdit: false, canImport: false, canExport: false, canDelete: false },
     { roleSlug: "dispatcher",    pageKey: "skus",          canView: true,  canEdit: false, canImport: false, canExport: false, canDelete: false },
     { roleSlug: "dispatcher",    pageKey: "routes_areas",  canView: true,  canEdit: false, canImport: false, canExport: false, canDelete: false },
