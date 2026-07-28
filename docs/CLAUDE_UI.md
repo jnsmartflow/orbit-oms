@@ -1,5 +1,5 @@
 # CLAUDE_UI.md — OrbitOMS UI Design System
-# v5.13 · July 2026 · updated 2026-07-27 · Lives in: orbit-oms/docs/
+# v5.14 · July 2026 · updated 2026-07-28 · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md
 
 Single source of truth for visual styling across all screens.
@@ -1347,10 +1347,10 @@ Desktop `/picking` (`components/picking/picking-queue.tsx`, the `hidden md:block
 **Table — conforms to §27** (`tableLayout: "fixed"` + `<colgroup>` percentage `<col>`s; `COLUMN_WIDTHS` sums to 100; data rows 36px). Columns (8): `☐ · # · OBD · Dealer · Route · LT · Flags · Status` — `4/3/19/27/14/7/9/17%`.
 - **OBD**: number (mono) with the **created date-time stacked below** (house standard).
 - **Dealer**: name + `→ ship-to` line when `isShipToOverride`.
-- **Route**: **plain text, NO route dot** — a deliberate departure from the locked design's "route dot + name": no route→colour data exists in the payload (`RouteDot` on mobile keys on `deliveryType`, not route). Add a route-master colour later if wanted.
+- **Route**: **plain text, NO route dot** — a deliberate departure from the locked design's "route dot + name". The payload reason, and the `RouteDot`-keys-on-`deliveryType` fact behind it, now live in **§62.3** (they outlive this board).
 - **LT**: litres, right-aligned, tabular.
 - **Flags**: **icons only** — ★ `isKeyCustomer` (amber `#f59e0b`), ⚡ `priorityLevel === 1` (red `#ef4444`). No "P1"/"KEY" text badges.
-- **Status pill** (rightmost — status reads as the row's verdict), derived in order: `isChecked`→**Ready** (green) / `isDone`→**Picked** (amber) / `isAssigned`→**Assigned** (grey-700) / else **Waiting** (grey-500). **Never teal** (teal is spent on the active slot tab).
+- **Status pill** (rightmost — status reads as the row's verdict), derived in order: `isChecked`→**Ready** (green) / `isDone`→**Picked** (amber) / `isAssigned`→**Assigned** (grey-700) / else **Waiting** (grey-500). Never teal — the rule and its reason are **§1**.
 - **All four states render inline** — the old "▸ N assigned" collapse drawer is gone (Picked/Ready rows were already in the payload but rendered nowhere; now visible).
 - **Dropped columns:** Area (Route covers it), Article, KG, and the Picker column (picker moves to the deferred row-click detail).
 - **Stable global `#`:** the day's pick-sequence position, preserved across List/By-Route and as status changes (rows never re-sort). Applied client-side as the spine **minus `byAssigned`**; `sort.ts` untouched.
@@ -1358,15 +1358,15 @@ Desktop `/picking` (`components/picking/picking-queue.tsx`, the `hidden md:block
 
 **Filter panel + search** (matches Mail Orders / Support): wired via **UniversalHeader props** (`filterGroups` / `activeFilters` / `onFilterChange`) — there is no standalone FilterButton to import. Three groups: **Route** (runtime-distinct), **Status** (Waiting/Assigned/Picked/Ready), **Delivery type**; applied-filter pills row. **Search** (`searchValue`/`onSearchChange`) on `dealerName` OR `obdNumber`, case-insensitive. **Filters persist across slot-tab switches** (a global lens, deliberate).
 
-**List ⇄ By Route toggle** (UniversalHeader `rightExtra`, default **List**, **not teal** — white active segment). **By Route** groups `visibleRows` by route (alphabetical, trailing "No route"); header = route · `{N} orders` · `{sum} L`. **No route progress bar, no "Ready to load"** (loading depends on vehicle/space, which the system doesn't know — rejected).
+**List ⇄ By Route toggle** (UniversalHeader `rightExtra`, default **List**, **not teal** — white active segment). **By Route** groups `visibleRows` by route (alphabetical, trailing "No route"); header = route · `{N} orders` · `{sum} L`. No route progress bar and no "Ready to load" — the rejection and its reason are **§62.4**.
 
 **Slot bands** under the **All** tab only (`windowTime · N · litres`, trailing "No slot"). None under a single slot tab; not collapsible.
 
-**Age tags** next to the OBD for `ageDays >= 1`: **`1d`** amber, **`{n}d`** red (2+). Uses `row.ageDays` from the payload — **not** recomputed from creation date (the §8 Tint age-badge PILL STYLING is reused; its day math is not).
+**Age tags** next to the OBD — same treatment the mobile cards use; rule and provenance in **§62.1**.
 
-**Locked Upcoming section** (bottom of both views, collapsed by default): `🔒 Upcoming · {N} — locked until dispatch day`. Rows muted, **lock glyph instead of checkbox**, `—` for `#`, and a `for {Day} {DD} {Mon} · {time}` chip in the Status cell. Excluded from `displayRows`, the global `#`, Select-All and all guards; slot tabs never filter it; renders nothing when empty. Mirrors the mobile Assign board's Upcoming section.
+**Locked Upcoming section** (bottom of both views, collapsed by default): `🔒 Upcoming · {N} — locked until dispatch day`. Visual treatment is **§62.2**. Desktop-only mechanics: excluded from `displayRows`, the global `#`, Select-All and all guards; slot tabs never filter it; renders nothing when empty.
 
-**Removed/rejected (do not reintroduce):** header "% ready for dispatch" bar, per-route progress roll-up, auto "Ready to load" status, header status-count stats.
+**Removed/rejected:** the list is module-wide, not desktop-only — **§62.4**.
 
 > Header structure (slot tabs teal-active) unchanged — this redesign repainted the body, not the UniversalHeader. Behaviour / tab semantics / date-zone scope are in `CLAUDE_PICKING.md`, not here.
 
@@ -1378,8 +1378,51 @@ Desktop `/picking` (`components/picking/picking-queue.tsx`, the `hidden md:block
 
 - **Selected (Assign card):** card teal tint (`bg-teal-50` / `border-teal-600`) + a small **teal check badge, top-left corner**, only when selected. Unselected = clean, no box, no placeholder.
 - **Arrow-to-detail:** a **soft round arrow** to the right of the family chips — `~30px` circle, `bg #eceff3`, chevron `#8b93a0`. Pinned; families scroll to its left; **always rendered on Assign cards even with zero families** (detail is always reachable).
-- **One-teal on the card:** the only teal is the selected tint/check; the arrow and family chips are slate. (Locked/Upcoming + `1d/2d` age treatment mirror §61.)
+- **One-teal on the card:** the only teal is the selected tint/check; the arrow and family chips are slate. (Locked/Upcoming + the `1d`/`{n}d` age treatment are stated directly in §62.1-§62.2 below — they used to be a pointer at §61.)
+
+### 62.1 Age tags — `1d` / `{n}d` [module-wide]
+
+Moved here from §61 on 2026-07-28 (Picking desktop retirement, step 1). The rule was never
+desktop-only: the mobile boards render their own age badge from the same field
+(`components/picking/picking-board-mobile.tsx:588-628`).
+
+**Age tags** next to the OBD for `ageDays >= 1`: **`1d`** amber, **`{n}d`** red (2+). Uses
+`row.ageDays` from the payload — **not** recomputed from creation date (the §8 Tint age-badge
+PILL STYLING is reused; its day math is not).
+
+### 62.2 Locked / Upcoming treatment [module-wide]
+
+Moved here from §61 on 2026-07-28, same reason: the mobile Assign board has its own locked zone
+(`components/picking/picking-board-mobile.tsx:1947-1960`, day badge at `:634`).
+
+Rows muted, **lock glyph instead of checkbox**, `—` for `#`, and a `for {Day} {DD} {Mon} · {time}`
+chip in the Status cell. ⚠ The **time** half of that chip is a desktop detail — the mobile
+`UpcomingDayBadge` and Floor's Upcoming strip both render the day only.
+
+### 62.3 Route renders as plain text — no route dot
+
+Moved here from §61 on 2026-07-28. This is a fact about the **payload** and about the **mobile**
+`RouteDot`, so it survives the desktop board.
+
+No route→colour data exists in the payload (`RouteDot` on mobile keys on `deliveryType`, not
+route). Add a route-master colour later if wanted.
+
+### 62.4 Rejected on the Picking module — do not reintroduce
+
+Moved here from §61 on 2026-07-28. This is **decision history for the Picking module**, not for one
+file, so it must outlive the desktop board.
+
+Header "% ready for dispatch" bar · per-route progress roll-up · auto "Ready to load" status ·
+header status-count stats. **Reason:** loading depends on vehicle/space, which the system does not
+know.
+
+⚠ **Scoped to PICKING deliberately — Floor is NOT bound by it, and on one item Floor went the other
+way.** Floor Control ships a four-segment per-route/per-band progress roll-up
+(`components/floor/progress-bar.tsx`, used by `route-row.tsx` and `slot-band.tsx`) and sorts routes
+worst-first by completion (`components/floor/floor-board.tsx:201-208`). Only the last item —
+header status-count stats — matches Floor's own removal of the stats line (`CLAUDE_FLOOR.md §8`).
+Do not read this list as an app-wide ban.
 
 ---
 
-*UI v5.13 · OrbitOMS*
+*UI v5.14 · OrbitOMS*
