@@ -1,5 +1,5 @@
 # CLAUDE_NOTIFICATIONS.md — Push Notifications
-# v1.0 · Schema v27.12 · July 2026
+# v1.1 · Schema v27.12 · July 2026 · updated 2026-07-28
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md
 
@@ -197,10 +197,16 @@ attendance to know who's on duty); per-event supervisor buzzes (300+/day); a har
    — keep it, and reuse the exported constants (§2).
 5. **[LANDMINE] Push must never break the action it hangs off.** Both triggers swallow all errors; any
    future trigger must too (§2).
-6. **[LANDMINE] Counts are derivable by READING `buildPickingWhere()` — never modify it.** "Waiting to
-   assign" = `isStillWaiting` (`lib/picking/queue.ts`), surfaced as `windows[].count`/`totalCount`;
-   "ready to check" = rows where `isDone`. The marker route shows the AND-merge pattern. (For the
-   future supervisor timer.)
+6. **[LANDMINE] Counts are derivable by READING `buildPickingWhere()` — never modify it.** "Ready to
+   check" = rows where `isDone`. For "waiting to assign", `getPickingQueue()` no longer hands you a
+   number: it returns `{ date, rows }` and the four aggregate counters it used to carry
+   (`windows[]`/`totalCount`/`unmatchedCount`/`assignedCount`) plus the `isStillWaiting` predicate
+   were removed on 2026-07-28 with the Picking desktop board, their only consumer.
+   **The rule itself was deliberately preserved, verbatim, as a tombstone comment above
+   `PickingQueueResult` in `lib/picking/queue.ts` — read it there and count off `rows`.** It is not
+   restated here, and it is worth reading rather than guessing: it excludes future-dated rows, which
+   is the non-obvious part. The marker route shows the AND-merge pattern. (For the future supervisor
+   timer.)
 7. **[LANDMINE] Cron routes authenticate via `lib/cron-auth.ts`** — `Authorization: Bearer
    ${CRON_SECRET}`, **fail-closed** when the env var is unset. The future timer route MUST reuse
    `isCronAuthorized`, or it is an open public endpoint.
@@ -246,4 +252,4 @@ Both carry `⚠ TEMPORARY SCAFFOLDING` comments in code:
 
 ---
 
-*CLAUDE_NOTIFICATIONS.md v1.0 · Push Notifications · July 2026*
+*CLAUDE_NOTIFICATIONS.md v1.1 · Push Notifications · July 2026*

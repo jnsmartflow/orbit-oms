@@ -1,5 +1,5 @@
 # CLAUDE_FLOOR.md — Floor Control
-# v1.2 · Schema v27.12 · July 2026 · updated 2026-07-27
+# v1.3 · Schema v27.12 · July 2026 · updated 2026-07-28
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -9,11 +9,11 @@ Covers `/floor` — the desk operator's unified board: decide which bills go to 
 
 ## 1. What Floor Control is [LIVE]
 
-One desk screen that consolidates the **Support board** and the **Picking desktop board** into a single surface for one person — the operator who releases bills to the floor and watches them get assigned, picked and checked.
+One desk screen for one person — the operator who releases bills to the floor and watches them get assigned, picked and checked. It was built to consolidate the **Support board** and the **Picking desktop board**; both have since been retired (2026-07-27 and 2026-07-28, §9 / §9b), so Floor is not "the merged view" any more — it is the only desk view.
 
 **Route:** `/floor` (`app/(floor)/floor/page.tsx`). Hand-rolled shell, NOT `UniversalHeader` (§10).
 
-**Access:** pageKey `"floor"` in `lib/permissions.ts` (in the `PageKey` union, `ALL_PAGE_KEYS`, and `PAGE_NAV_MAP` → `/floor`). v1 grant = **admin + operations only**, `canView`+`canEdit`, present in BOTH `prisma/seed.ts` and live `role_permissions` (SQL, 2026-07-23). `dispatch planner` / `telecaller` (named in the design) are **[DEFERRED]** — `dispatch planner` has no matching slug, `telecaller` does not exist.
+**Access:** pageKey `"floor"` in `lib/permissions.ts` (in the `PageKey` union, `ALL_PAGE_KEYS`, and `PAGE_NAV_MAP` → `/floor`). v1 grant = **admin + operations only**, `canView`+`canEdit`, present in BOTH `prisma/seed.ts` and live `role_permissions` (SQL 2026-07-23, **re-confirmed live 2026-07-28** — still exactly those two roles). ⚠ **`floor_supervisor` and `picker` hold `picking` but NOT `floor`** (same 2026-07-28 SELECT) — so `/floor` is not a fallback for them; a redirect there would be a permission denial. That is why the Picking desktop retirement kept `/picking` live rather than redirecting (§9b). Grant table: `CLAUDE_CORE.md §5`. `dispatch planner` / `telecaller` (named in the design) are **[DEFERRED]** — `dispatch planner` has no matching slug, `telecaller` does not exist.
 
 ### Ownership boundary — READ BEFORE EDITING ANYTHING FLOOR
 
@@ -34,7 +34,7 @@ If you find yourself explaining borrowed behaviour here, replace it with a point
 
 ### What is still live alongside Floor
 
-`/picking` (`app/picking/page.tsx`) is **live and reachable** — `middleware.ts` `PHASE1_BLOCKED` is `[]`. Its **mobile** supervisor + picker boards are NOT in scope for retirement and stay; retiring the Picking DESKTOP board is intended but unplanned (`CLAUDE_PICKING.md`, ROADMAP). **`/support` is gone** — retired 2026-07-27, §9.
+`/picking` (`app/picking/page.tsx`) is **live and reachable** — `middleware.ts` `PHASE1_BLOCKED` is `[]`. Its supervisor + picker card boards were never in scope for retirement and stay; they now render at EVERY width. **The Picking DESKTOP board is RETIRED** — 2026-07-28, `archive/2026-07-picking-desktop/` (§9). **`/support` is gone** — retired 2026-07-27, §9.
 
 ---
 
@@ -71,7 +71,7 @@ Plain English: everything still open whatever day it was due, plus everything th
 
 ⚠ **Floor's carry-over is its OWN scope — NOT `lib/picking/queue.ts`'s WHERE.** Picking's carry-over deliberately excludes `pick_done`/`pick_checked` (a documented "workaround, not a fix"). Floor's arm 1 keeps anything not-yet-checked. Do not "align" the two.
 
-Per row: `zone` (`due` | `upcoming`, from `dispatchTargetDate` vs today) and `ageDays`. Rows are sorted with Floor's OWN **`FLOOR_SPINE`** (`lib/floor/sort.ts`) = the picking spine **minus `byAssigned`**, so Assigned/Done rows HOLD their position instead of sinking on assign and rising on done (matches the Picking desktop board — `CLAUDE_PICKING.md §9`). ⚠ **Ownership boundary:** the rule OBJECTS (`byWindow`/`byDeliveryType`/`byKeyCustomer`/`byPriority`/`byFifo`) and `sortPickingQueue()` are IMPORTED from `lib/picking/sort.ts` (never copied — that file stays owned by `CLAUDE_PICKING.md §3`); only the Floor rule LIST is Floor's own. `FLOOR_SPINE` is applied in the TWO places that sort and must stay identical or the board flickers on refetch — the server sort (`getFloorBoard`, `lib/floor/queries.ts`) and the client re-sort helper (`components/floor/floor-board.tsx`), both importing the one constant. Shipped commit `661e4e61`.
+Per row: `zone` (`due` | `upcoming`, from `dispatchTargetDate` vs today) and `ageDays`. Rows are sorted with Floor's OWN **`FLOOR_SPINE`** (`lib/floor/sort.ts`) = the picking spine **minus `byAssigned`**, so Assigned/Done rows HOLD their position instead of sinking on assign and rising on done (a convention Floor shared with the Picking desktop board, retired 2026-07-28 — §9b; Floor is now its only implementation). ⚠ **Ownership boundary:** the rule OBJECTS (`byWindow`/`byDeliveryType`/`byKeyCustomer`/`byPriority`/`byFifo`) and `sortPickingQueue()` are IMPORTED from `lib/picking/sort.ts` (never copied — that file stays owned by `CLAUDE_PICKING.md §3`); only the Floor rule LIST is Floor's own. `FLOOR_SPINE` is applied in the TWO places that sort and must stay identical or the board flickers on refetch — the server sort (`getFloorBoard`, `lib/floor/queries.ts`) and the client re-sort helper (`components/floor/floor-board.tsx`), both importing the one constant. Shipped commit `661e4e61`.
 
 ---
 
@@ -173,7 +173,29 @@ This is a **completed one-off**, not a runbook. (It is also the source of the `d
 | `formatArticleTag` (Support's shared table cells) | `lib/floor/format.ts` |
 | `GET /api/support/ship-to-search` · `PATCH /api/support/orders/[id]` | `GET /api/floor/ship-to-search` · `POST /api/floor/ship-to` (§4.4 — rewritten, not copied) |
 
-**The Picking DESKTOP board is a separate, still-open question** — intended for retirement, not actioned, no trigger set. Its remaining dependency list is the Picking assign/unassign endpoints, the sort rule objects + `sortPickingQueue` (`lib/picking/sort.ts`, imported by `FLOOR_SPINE`), and the `use-picking-marker` hook. ⚠ Picking's **mobile** boards are NOT in scope. → **ROADMAP**.
+## 9b. Picking DESKTOP retirement — DONE 2026-07-28 [LIVE]
+
+The Picking **desktop** board is retired. `components/picking/picking-queue.tsx` lives at
+`archive/2026-07-picking-desktop/`; commits `90c9a865` → `561368da`. Full story in that folder's
+README. **`/picking` itself STAYS LIVE** — same route, same permissions, same login landing for
+`floor_supervisor` and `picker`; it renders the card board at every width now, branching by role.
+Picking is hidden from the DESKTOP sidebar only; the phone Menu sheet keeps its entry.
+
+**Shape worth noting: this was NOT a route retirement.** One branch was removed from inside a live
+route — no page key removed, no permission row cleared, no orphaned DB rows to clean.
+
+**What Floor borrowed from Picking — the dependency list this section used to carry as a blocker.
+Nothing had to move: all three survived and Floor still imports them.**
+
+| Dependency | What happened |
+|---|---|
+| `POST /api/picking/assign` · `/unassign` | **Untouched, still called by Floor** (§4.3) and by the surviving supervisor board |
+| The sort rule objects + `sortPickingQueue()` (`lib/picking/sort.ts`) | **Untouched.** Still imported by `lib/floor/sort.ts` → `FLOOR_SPINE`, `lib/floor/queries.ts` and `components/floor/floor-board.tsx` |
+| `lib/hooks/use-picking-marker.ts` | **Untouched behaviourally.** Four call sites became three; Floor's (`floor-page.tsx`, via the `url` param) is one of them. Only the dead `"rolling"` value left its `MarkerScope` union |
+
+⚠ Two things DID go, and neither was Floor's: the `rolling` queue scope and the four payload
+counters (`windows[]`/`totalCount`/`unmatchedCount`/`assignedCount` + `isStillWaiting`). Floor never
+read either — it has its own predicate (`floorLiveBaseWhere`, §3) and counts off its own rows.
 
 ---
 
@@ -184,7 +206,7 @@ This is a **completed one-off**, not a runbook. (It is also the source of the `d
 - **The board and the marker MUST stay on the one shared predicate** `floorLiveBaseWhere` (§3/§5). Re-declaring the WHERE in either place reintroduces the marker/queue drift the Picking §10 landmine warns about.
 - **Never add a second `orders.update` (or a log write to the dispatch engine)** in any floor path — the marker keys on `MAX(orders.updatedAt)`; a second write fires a false "changed" on every board.
 - **Delivery-type scope is applied CLIENT-SIDE in the feeds** — the DB queries return all types. A future "just filter in SQL" change would desync the marker (which watches all types) from the board.
-- **`dispatched`-stage rows exist** — SELECT 2026-07-24: 1,051 at `workflowStage='dispatched'` (662 `dispatchSlotSource='auto'`), 195 at `pick_checked`; `dispatched` stops 21 Jul while `pick_checked` keeps growing. The §7 backfill (238 rows) was a one-time manual sweep, not a code path. The surviving gap — **no automatic drain `pick_checked` → `dispatched`** — is owned by `CLAUDE_PICKING.md §9`.
+- **`dispatched`-stage rows exist** — SELECT 2026-07-24: 1,051 at `workflowStage='dispatched'` (662 `dispatchSlotSource='auto'`), 195 at `pick_checked`; `dispatched` stops 21 Jul while `pick_checked` keeps growing. The §7 backfill (238 rows) was a one-time manual sweep, not a code path. The surviving gap — **no automatic drain `pick_checked` → `dispatched`** — is owned by `CLAUDE_PICKING.md §7` (it moved out of that file's §9 on 2026-07-28 when §9 collapsed; the gap is unrelated to the desktop board and is still open).
 - **Parked data issues (not Floor bugs):** `Deco` (9 rows) — un-mapped raw XLS SMU value that should be `Deco Retail`, so those bills silently never auto-slot; **103 Deco Retail bills reached `pending_support` with `dispatchStatus` NULL** (engine fires only on `='dispatch'` — something upstream isn't setting it; worth a diagnosis session); four identical `Shree Rang Sarita` bills (22 Jul 18:31, 140 L, different OBDs — dup import unconfirmed); a `SAT FIN 93 BASE 3.7L` line carries pack chip `4L` so litres compute 16 vs 14.8 (a catalog value, Chandresh's cleanup list); three test bills marked urgent 23 Jul (clear unless genuine).
 
 ---
@@ -213,4 +235,4 @@ This is a **completed one-off**, not a runbook. (It is also the source of the `d
 
 ---
 
-*CLAUDE_FLOOR.md v1.2 · Schema v27.12 · OrbitOMS*
+*CLAUDE_FLOOR.md v1.3 · Schema v27.12 · OrbitOMS*

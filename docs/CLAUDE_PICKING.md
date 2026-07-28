@@ -1,5 +1,5 @@
 # CLAUDE_PICKING.md — Picking Module
-# v1.8 · Schema v27.12 · July 2026 · updated 2026-07-28
+# v1.9 · Schema v27.12 · July 2026 · updated 2026-07-28
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -53,11 +53,12 @@ its `md:hidden` breakpoint, so the same board renders on a phone and on a PC.
 `prisma/seed.ts:110-112`]: `floor_supervisor` (canView + canEdit), `picker` (canView **only** — his
 board renders but he cannot assign/approve by API), `operations` (canView + canEdit); plus `admin` via
 bypass. This reverses the 2026-07-17 "zero picking rows / cannot open" finding.
-> **Nuance — seed ≠ prod.** These grants are confirmed in the SEED FILE only; **live-production DB
-> verification is still pending** (no `SELECT` run this cycle). Do NOT claim floor logins actually
-> work on prod without evidence — the prior cycle surfaced the mirror problem (a live grant with no
-> seed row); this is the opposite risk (seeded, but prod unconfirmed). Full detail + the standing
-> "canView gates writes, not canEdit" caveat: §7.
+> **✅ LIVE-VERIFIED 2026-07-28 — the "seed ≠ prod, verification pending" caveat is retired.** A
+> direct `role_permissions` SELECT against production confirmed all three grants, and seed and live
+> agree exactly. **`CLAUDE_CORE.md §5`'s page-key table owns those numbers** — read them there, they
+> are not restated here. One consequence worth carrying: `floor_supervisor` and `picker` hold
+> `picking` but **NOT** `floor`, so `/floor` is not a fallback for either role. The standing
+> "canView gates writes, not canEdit" caveat is unaffected — see §7.
 
 **Team on the floor (per the 2026-07-13 design session):** ~3 supervisors, ~9-10 pickers. Floor team
 uses an Android phone app only — the mobile board is not a nice-to-have, it's the real surface.
@@ -739,4 +740,4 @@ on becoming visible); skips overlapping requests; **fails silently** (no toast/U
 
 ---
 
-*CLAUDE_PICKING.md v1.8 · Picking Module · July 2026*
+*CLAUDE_PICKING.md v1.9 · Picking Module · July 2026*

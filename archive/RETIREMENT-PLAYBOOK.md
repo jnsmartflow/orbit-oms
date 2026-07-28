@@ -191,6 +191,43 @@ Short and honest. All of these actually happened.
   only ever passed is not evidence it is unnecessary — it is evidence it has not yet
   met the case it exists for.**
 
+### Added after the Picking DESKTOP retirement (2026-07-28)
+
+Five traps, all hit on a retirement that touched no route, no page key and no permission row —
+proof that "small" retirements bite in their own ways.
+
+- **`git log --follow` returns NOTHING until the rename is COMMITTED.** Staging a `git mv` is not
+  enough: `--follow` on the new path reports zero commits while the move sits in the index, which
+  reads exactly like history was lost. **Verify history at the OLD path first, commit, then
+  re-verify at the new one.** Check the rename similarity too — a clean move records `R100`.
+
+- **A removal can strand code that the type-checker will never mention.** `noUnusedLocals` is OFF in
+  this repo, so deleting a branch can orphan an import — or, worse, **an entire database
+  round-trip** — and `tsc --noEmit` stays green. One removal here left a
+  `prisma.dispatch_slot_master.findMany()` whose only purpose had been the deleted counters; nothing
+  flagged it. **After every removal, grep by hand for each symbol the deleted code was the sole user
+  of.** A clean type-check is not a clean removal.
+
+- **An UNTRACKED file can masquerade as a live reader and block a correct cleanup.** A local scratch
+  script was the only thing reading four payload fields, so the conservative rule ("if it has a
+  reader, leave it") halted a valid deletion for a whole step. The file was not in git, not in the
+  build, and not on any other machine. **Run `git ls-files` on a reader before treating it as real**,
+  and say plainly whether a blocker is in the repository or just on this disk.
+
+- **A NAME MATCH IS NOT A READER.** Searching for `windows`, `assignedCount` and friends also hit the
+  picker-roster payload — a completely different object that happens to share a word. Believing the
+  grep would have falsely blocked a correct removal, exactly inverting the previous trap. **Open the
+  call site and confirm WHICH object the property belongs to.** Sibling of *an import is not a call*
+  and *capability is not reachability*: three shapes of the same discipline.
+
+- **A DISCOVERY REPORT IS EVIDENCE, NOT AUTHORITY.** This programme's report was wrong three separate
+  times — it said Floor had no per-route progress roll-up (Floor ships one), it named the archived
+  desktop file as sole consumer of the counters, and it reported one counter as already reader-less.
+  Every error was caught downstream, and only by re-reading the code. **Re-verify every inherited
+  claim at the step that acts on it**, including claims from your own earlier steps. Commit the
+  report as a dated record, errors and all — corrections belong in the canonical files, not
+  retro-fitted into the draft.
+
 ### Added after the Warehouse + Planning retirements (2026-07-28)
 
 - **CAPABILITY IS NOT REACHABILITY.** `app/api/planning/board/route.ts` had a
@@ -319,6 +356,7 @@ Index only — `archive/README.md` carries the full table, each folder's README 
 | **2026-07-28** | **login landings repointed to `/picking`** (floor_supervisor, picker) | **`c4323cd4`** |
 | 2026-07-28 | Warehouse board — `/warehouse` + 2 stubs + board API + components | `207e2a5c` |
 | 2026-07-28 | Planning board — `/planning` + `/dispatcher` stub + 8 API routes + components | `639f8139` |
+| 2026-07-28 | **Picking DESKTOP board** — the wide-screen table only. **A branch removed from inside a LIVE route, not a route retirement:** `/picking` stays live and renders the card board at every width; no page key removed, no permission row cleared, no orphaned DB rows to clean, no SQL run at all. Six steps: extract live rules from the UI spec → track the discovery report → fix stale code comments → remove the face + archive the file → hide it from the desktop sidebar only → remove the dead scope, counters and docs | `90c9a865` → `561368da` |
 
 ⚠ **The row in bold is the sequencing lesson.** Those two roles were moved onto `/picking`
 **before** the Warehouse board was archived — not after. Every login landing, redirect and
@@ -334,7 +372,6 @@ From what is visible in the repo and ROADMAP today. Nothing here is decided.
 
 | Candidate | Successor | Blocker |
 |---|---|---|
-| **Picking DESKTOP board** (`/picking`, desktop view) | Floor Control (`/floor`) | **Step 0/1 not done.** Floor still borrows from Picking at runtime: the assign/unassign endpoints, the sort rule objects + `sortPickingQueue` (`lib/picking/sort.ts`), and the `use-picking-marker` hook. Those must move or be duplicated first. No agreed trigger. ⚠ **Picking's MOBILE boards are NOT in scope — they stay.** (`CLAUDE_FLOOR.md §9`, ROADMAP → Floor Control) |
 | **Shade Master** (`/tint/manager/shades`, `/tint/shades`) | Sampling Library (`/tint/sampling-library`) | Furthest along of the three. `shade_master` has been deprecated since 2026-05-25 and is documented "do not write to it", but the screens are still in the navigation. ROADMAP wants four weeks of traffic audit plus a final CSV dump before the **table** drops — note the **screens** could retire earlier than the table. (ROADMAP → Sampling Library) |
 | **Admin SKU CRUD + the three `skus/page.tsx` browse pages** | `sku_master_v2` | These are the last live readers of the old `sku_master` table, so they retire *with* it. **Read the id-space landmine in `CLAUDE_CORE.md §13` first.** Known blocker: `scripts/normalise-sampling-data.ts:313` reads the old table and is inside the type-check gate, so it will block every commit at the drop. (ROADMAP → Retire old `sku_master`) |
 
@@ -353,5 +390,6 @@ them, but they are the same family:
 
 ---
 
-*Written 2026-07-27, after the Support retirement. Update it after the next one —
+*Written 2026-07-27, after the Support retirement; last updated 2026-07-28, after the Picking
+DESKTOP retirement. Update it after the next one —
 especially §4, which is only useful if it keeps growing.*
