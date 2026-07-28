@@ -1,16 +1,23 @@
 # CLAUDE_PICKING.md — Picking Module
-# v1.7 · Schema v27.12 · July 2026 · updated 2026-07-27
+# v1.8 · Schema v27.12 · July 2026 · updated 2026-07-28
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
-> **The DESKTOP board is superseded by Floor Control (`/floor`), but STILL LIVE.**
-> `/floor` consolidated the Picking desktop board with the Support board into one
-> screen (`docs/CLAUDE_FLOOR.md`). **Support was retired 2026-07-27**
-> (`archive/2026-07-support/`); **`/picking` was NOT** — it is fully reachable and
-> in use, nothing here was switched off. **The MOBILE supervisor board and picker
-> face are NOT superseded — they stay;** only the DESKTOP board is in scope for
-> eventual retirement, which is INTENDED but NOT actioned and has no plan yet (a
-> dependency list is required first — ROADMAP). Floor REUSES this module **as a caller**:
+> **The DESKTOP board is RETIRED — 2026-07-28, commits `90c9a865` → `b51cd14f`.**
+> `components/picking/picking-queue.tsx` is archived at
+> `archive/2026-07-picking-desktop/`. `/floor` had consolidated it with the Support
+> board into one screen (`docs/CLAUDE_FLOOR.md`); Support went 2026-07-27
+> (`archive/2026-07-support/`), the desktop table a day later.
+>
+> **`/picking` ITSELF STAYS LIVE.** It is one route with ONE face now: the mobile
+> card board, rendered at EVERY screen width. **The MOBILE supervisor board and the
+> picker "My Picks" face are NOT retired, NOT superseded and NOT changed** — they
+> are the real working surface and always were (the floor team is Android-only).
+> Nothing about permissions changed: `/picking` is still fully granted and is still
+> the login landing for `floor_supervisor` and `picker` (`lib/rbac.ts`). It is only
+> hidden from the DESKTOP sidebar; the phone Menu sheet keeps its entry.
+>
+> Floor REUSES this module **as a caller**:
 > assign/unassign (§4) and the sort **rule objects** + `sortPickingQueue` (§3) stay
 > OWNED HERE — Floor cross-references them and composes its OWN `FLOOR_SPINE` (the
 > picking spine **minus `byAssigned`**, `lib/floor/sort.ts`) by IMPORTING these
@@ -28,13 +35,14 @@ surface.) **The full cycle
 is built and live** — assign → pick → done → check → approve, every state visible and traceable on
 both boards (shipped across the 2026-07-17/18 sessions; full state ladder in §6).
 
-**Route:** `/picking` — one route, two faces via a responsive switch (`app/picking/page.tsx`):
-- **Desktop queue** (`hidden md:block`, `components/picking/picking-queue.tsx`) — table view.
-- **Mobile** (`block md:hidden`, `components/picking/picking-board-mobile.tsx` OR
-  `components/picking/picker-my-picks-board.tsx`) — branches by role: the **supervisor board**
-  (Assign / Check / Done — three **bottom** tabs — + a detail screen. [LIVE], §5) for supervisors, or
-  the picker's own **"My Picks"** board (Pending / Done. [LIVE], §5) when the viewer is a picker — or,
-  today, an admin/operations session using the `?view=picker&as=<id>` test hook (§7).
+**Route:** `/picking` — one route, ONE face at every width (`app/picking/page.tsx`), branching only
+by ROLE. The width-based switch is gone: the desktop table went 2026-07-28 and the card board lost
+its `md:hidden` breakpoint, so the same board renders on a phone and on a PC.
+- **Supervisor board** — `components/picking/picking-board-mobile.tsx` (Assign / Picking / Done —
+  three **bottom** tabs — + a detail screen. [LIVE], §5).
+- **Picker's own "My Picks"** — `components/picking/picker-my-picks-board.tsx` (Pending / Done.
+  [LIVE], §5) when the viewer's primary role is `picker` — or an admin/operations session using the
+  `?view=picker&as=<id>` test hook (§7).
 
   Both mobile faces mount through `components/picking/picking-mobile-shell.tsx`, which wraps
   `<RoleLayoutClient>` — Picking is the **first and reference consumer** of the shared shell's
@@ -182,16 +190,19 @@ record — locked, no trace of who had it. Both routes write an `order_status_lo
 (`fromStage`/`toStage`/`changedById`/note).
 
 **Bulk-assign IS built and live** — `web-update-2026-07-11-picking-assign-shipped-bulk-assign-planned.md`
-called this "not built"; that was superseded within two days. The desktop `picking-queue.tsx` route
-and the mobile board's Assign tab (§5) both drive the same `/api/picking/assign` batch endpoint.
+called this "not built"; that was superseded within two days. The supervisor board's Assign tab (§5)
+drives the `/api/picking/assign` batch endpoint — as does Floor's assign bar (`CLAUDE_FLOOR.md §4.3`),
+and as did the desktop board before it was archived. One endpoint, every caller.
 
 ---
 
 ## 5. Mobile supervisor board [LIVE]
 
-`components/picking/picking-board-mobile.tsx`, mounted via the responsive switch in
-`app/picking/page.tsx`. Live in production on `/picking`'s mobile viewport, **test-mode assign** (see
-§4 — every assignment is tagged and reversible).
+`components/picking/picking-board-mobile.tsx`, mounted by the role branch in
+`app/picking/page.tsx`. Live in production on `/picking` at **every** width since 2026-07-28 (it was
+the mobile-viewport face until then), **test-mode assign** (see §4 — every assignment is tagged and
+reversible). The name stays `picking-board-mobile.tsx`: it is a phone-first card board that a PC now
+also gets, not a desktop board.
 
 ### 5.1 Direction-A shell — tabs moved to the BOTTOM [LIVE, 2026-07-19]
 
@@ -212,8 +223,8 @@ works.** What is Picking-specific:
   `PickingBoardMobile`) updates the SAME `data` the bottom-bar counts read — the cards and the tab
   counts cannot disagree.
 - **The picker face gets the DEFAULT bar.** `PickingMobileShell` only mounts the tab/fetch machinery
-  when `!showPickerFace`; the picker's "My Picks" board and the desktop queue leave `workflowTabs`
-  undefined, so they keep the standard Home/Menu/You bar untouched.
+  when `!showPickerFace`; the picker's "My Picks" board leaves `workflowTabs` undefined, so it keeps
+  the standard Home/Menu/You bar untouched. (The archived desktop queue did the same.)
 - Tab icons (lucide): `Inbox` (Assign) · `Package` (Picking) · `CheckCircle2` (Done). Count badge
   hidden at 0.
 - The top teal header keeps the "Picking" title + search toggle, and gained the grid/avatar triggers
@@ -273,7 +284,7 @@ row's `zone` (`due` | `upcoming`) is computed from `dispatchTargetDate` vs today
 - **Assign tab** — `pending_picking`, in two DATE ZONES:
   - **Zone 1 · Due** — dispatch date ≤ today (or NULL): today + overdue carry-over. The flat working
     list, server sort order (§3), selectable/assignable. Overdue bills carry a `1d`/`2d` **age tag**
-    so work never silently vanishes at midnight (visual: `CLAUDE_UI.md §61`).
+    so work never silently vanishes at midnight (visual: `CLAUDE_UI.md §62.1`).
   - **Zone 2 · Upcoming** — dispatch date > today. **Visible + readable but LOCKED** (`assignLocked`
     card): the supervisor can open the bill and read line items, but Assign is disabled behind a lock +
     a neutral "for {Day}" badge — never selectable, never in Select-All. Opens automatically at
@@ -380,12 +391,19 @@ preserved exactly (`skuDescriptionRaw`, and a blank pack stays blank rather than
   bill" on a work tool. **Feel-tuning of these two numbers is pending real-device confirmation on the
   floor** — they are one-number tweaks, not a redesign.
 
-**Desktop untouched (behaviour-wise):** `picking-queue.tsx`'s rendered rows/counts/selection are
-unchanged by the Checked tab. Because `lib/picking/queue.ts`'s WHERE clause is shared, widening it to
-include `pick_checked` (2026-07-18) required additive guards in THREE desktop call sites
-(`unassignedRows`, `availableRoutes`, `selectableIdsInTab` — all gained `&& !r.isChecked`) purely to
-keep a checked bill from reappearing there as if untouched. No desktop Checked view was built — a
-pick_checked row has no home on desktop, by design (§7).
+**Historical note — the shared-WHERE guard.** Widening `lib/picking/queue.ts`'s WHERE clause to
+include `pick_checked` (2026-07-18) forced additive `&& !r.isChecked` guards into the then-live
+desktop board's three call sites, purely to stop a checked bill reappearing there as if untouched.
+That board is archived (2026-07-28), so those guards are gone with it — but the CLASS is not: the
+standing rule in §7 ("every new stage must be grepped across every
+`isAssigned`/`isDone`/`isChecked` consumer") is what that episode produced, and it still binds.
+
+⚠ **A claim that used to sit here was STALE LONG BEFORE this retirement.** It read *"No desktop
+Checked view was built — a `pick_checked` row has no home on desktop, by design."* That stopped
+being true on **2026-07-22**, when the desktop redesign put all four states inline with a status
+pill — a checked bill showed a green **Ready** pill from that day until the board was archived. The
+line survived six days of doc passes because nothing forced a re-read. Recorded as a doc-drift
+example, not as a consequence of the retirement.
 
 ### 5.4 Picker face — "My Picks" board
 
@@ -532,18 +550,36 @@ picker-facing login flow shipped yet.
   unrelated commit sat un-pushed on the depot PC and rode along with this work. Every build prompt for
   this module from the 2026-07-16 session onward carries `git push origin main` in its exit criteria —
   worth keeping for any future Picking session.
-- **`windows[].count` and `totalCount` excluding done/checked rows** [WAS LANDMINE 2026-07-18 →
-  FIXED 2026-07-21, step 5B] — historically `lib/picking/queue.ts`'s `getPickingQueue()` computed
-  `windows[].count` as `sortedRows.filter(r => r.windowId === w.id && !r.isAssigned).length` and
-  `totalCount` as `sortedRows.length - assignedCount`, neither excluding `isDone`/`isChecked`, so both
-  desktop stats (`picking-queue.tsx`'s per-window header badges and the "OBDs"/"All" segment count)
-  over-counted "still queued" bills by however many were done or checked that day. **Now fixed:** both
-  formulas gate on a shared `isStillWaiting` predicate — `!r.isAssigned && !r.isDone && !r.isChecked
-  && r.zone !== "upcoming"` (`queue.ts` ~`:508`; `windows[].count` ~`:515`, `totalCount` ~`:525`). The
-  fix went slightly **beyond** what this note originally described (`&& !r.isDone && !r.isChecked`): it
-  also excludes `zone === "upcoming"` (future-dated rows), so the counts mean "still needs a picker
-  **today**." Done/checked/upcoming rows still ride in `rows` (rendered inline on desktop) — just not
-  counted. Desktop-only stats; mobile computes its own counts.
+- **~~`windows[].count` / `totalCount` over-counting~~ — GONE 2026-07-28, the counters no longer
+  exist.** `getPickingQueue()` used to return four aggregates (`windows[]`, `totalCount`,
+  `unmatchedCount`, `assignedCount`) that ONLY the desktop board consumed; they were removed with it
+  (`b51cd14f`), along with the `isStillWaiting` predicate and a `dispatch_slot_master` round-trip
+  that existed solely to build them. The payload is now `{ date, rows }` and every surface counts
+  what it needs off `rows`.
+  **The "still needs a picker" RULE was preserved verbatim as a tombstone comment above
+  `PickingQueueResult` in `lib/picking/queue.ts` — read it there, it is not restated here.** It
+  excludes future-dated rows, which is the non-obvious part, and `CLAUDE_NOTIFICATIONS.md §7` points
+  a future supervisor-reminder timer at it.
+- **⚠️ NO AUTOMATIC DRAIN `pick_checked` → `dispatched`** [OPEN, NEXT — moved here from §9 on
+  2026-07-28 when that section was collapsed; the retirement did not touch this and it is NOT a
+  desktop-board matter]. The old claim ("there is **no `dispatched` stage** / nothing ever writes to
+  it") was **WRONG** — corrected 2026-07-24. Orders DO reach `dispatched`. Live SELECT
+  (2026-07-24, authoritative):
+
+  | workflowStage | total | dispatchSlotSource='auto' | oldest | newest |
+  |---|---|---|---|---|
+  | `dispatched` | 1,051 | 662 | 2026-06-26 | 2026-07-21 |
+  | `pick_checked` | 195 | 180 | 2026-07-17 | 2026-07-24 |
+
+  **But the drain is NOT automatic.** `dispatched` stops at 21 Jul while `pick_checked` is still
+  growing (newest 24 Jul, 195 sitting there). The bulk of the `dispatched` rows came from a **one-time
+  MANUAL sweep** during the Floor Control build (23 Jul, 238 rows) — **not** a code path
+  (`CLAUDE_FLOOR.md §7`; do not treat it as a repeatable procedure). So the genuine gap survives,
+  restated accurately: **there is still NO automatic transition draining `pick_checked` → `dispatched`.**
+  It is what forced the desktop board's carry-over exclusion (a workaround, not a fix) — and that
+  workaround is gone with the board, while the hole it worked around is not. A real design session,
+  not a doc note. *(The 662-of-1,051 `auto` share = the live dispatch engine doing the majority of
+  slotting — owned by `CLAUDE_CORE.md §7.4`, not re-described here.)*
 - **`pick_assignments.status` has a live CHECK constraint invisible in `schema.prisma`**
   [LANDMINE] — `chk_pick_assignments_status` restricts `status` to exactly `'assigned'` or `'picked'`
   at the DB layer, confirmed via a direct `pg_constraint` query (2026-07-17 discovery) — it does not
@@ -556,13 +592,15 @@ picker-facing login flow shipped yet.
   ALTERing this constraint first. Flagged for a `CLAUDE_CORE.md §7.4` documentation pass (§7 pointer,
   not written here).
 - **Standing rule for any future picking stage:** every new stage added to the shared queue payload
-  must be grepped across every `isAssigned`/`isDone`/`isChecked` consumer on BOTH boards before
-  shipping. This has now bitten twice (`pick_done`, then `pick_checked`), always the same shape: a new
-  stage is `false` on every existing boolean, so filters shaped `!isAssigned && !isDone` silently treat
-  it as "still waiting." Call sites that needed a guard this round: mobile `waitingRows` + the detail
-  screen's "Assign to picker" CTA; desktop `unassignedRows` + `availableRoutes` +
-  `selectableIdsInTab`; and `app/picking/page.tsx`'s picker split (the worst one — an approved bill
-  fell into the picker's own Pending tab with a live-looking Mark Done CTA). Grep first, don't assume.
+  must be grepped across every `isAssigned`/`isDone`/`isChecked` consumer — **on every board, and
+  Floor is one of them** (`lib/floor/filter.ts` derives the same four states) — before shipping. This
+  has now bitten twice (`pick_done`, then `pick_checked`), always the same shape: a new stage is
+  `false` on every existing boolean, so filters shaped `!isAssigned && !isDone` silently treat it as
+  "still waiting." Call sites that needed a guard when `pick_checked` landed: mobile `waitingRows` +
+  the detail screen's "Assign to picker" CTA; three on the then-live desktop board (`unassignedRows`,
+  `availableRoutes`, `selectableIdsInTab` — archived with it); and `app/picking/page.tsx`'s picker
+  split (the worst one — an approved bill fell into the picker's own Pending tab with a live-looking
+  Mark Done CTA). Grep first, don't assume.
 - **`MOBILE_NAV_CLEARANCE` was missed 4 times before centralization** — the fixed bottom-nav clearance
   figure (76px + safe-area) was hand-copied separately into `FilterBottomSheet`, the Assign-to-picker
   sheet, and both detail-screen CTAs before it was pulled into one constant, exported from
@@ -584,8 +622,8 @@ on the floor for a while — nothing else in the system changes, it's a note, no
 
 | File | Role |
 |---|---|
-| `app/picking/page.tsx` | Responsive switch (desktop queue `hidden md:block` vs mobile board `block md:hidden`); also builds the picker "My Picks" `pending`/`done` split (excludes/includes `isChecked` — 2026-07-18) |
-| `components/picking/picking-queue.tsx` | Desktop board — visually untouched; gained `&& !r.isChecked` guards (2026-07-18) in 3 call sites so a checked bill can't leak into the unassigned table/route filter/select-all |
+| `app/picking/page.tsx` | Role branch — supervisor board vs the picker's "My Picks", one face at every width (the width switch went with the desktop board, 2026-07-28); also builds the picker `pending`/`done` split (excludes/includes `isChecked` — 2026-07-18) |
+| ~~`components/picking/picking-queue.tsx`~~ | **ARCHIVED 2026-07-28** → `archive/2026-07-picking-desktop/components/picking/picking-queue.tsx`. Nothing under `archive/` is compiled, deployed or reachable (`tsconfig.json` excludes it) |
 | `components/picking/picking-mobile-shell.tsx` | **Direction-A wrapper (2026-07-19)** — owns `data`/`activeTab`/`refetchQueue`/`detailOpen`, computes the bottom-tab counts, fills `RoleLayoutClient`'s `workflowTabs`/`hideBar` slots; exposes `usePickingBoard()` (§5.1) |
 | `components/picking/picking-board-mobile.tsx` | Mobile supervisor board — Assign/Check/**Done** tab CONTENT (the tab strip itself now lives in the bottom bar), shared `CheckCard`, detail screen + its popstate/swipe machinery (§5.2-§5.3) |
 | `components/picking/picker-my-picks-board.tsx` | Picker's own "My Picks" board (§5.4) — Pending/Done **top** tabs, own local `TopBarTab` copy, default shell bar; its `pending` prop is pre-filtered upstream (page.tsx) so an approved bill never reaches its "Mark done" CTA |
@@ -599,7 +637,7 @@ on the floor for a while — nothing else in the system changes, it's a note, no
 | `app/api/picking/done/route.ts` | POST — picker Mark Done, writes `pick_done` + `pick_assignments.pickedAt` |
 | `app/api/picking/approve/route.ts` | POST — supervisor Approve, writes `pick_checked` + `pick_assignments.checkedAt`/`checkedById` (real session user, never request-body-trusted) |
 | `app/api/picking/order/[orderId]/route.ts` | GET — on-demand line items for the mobile detail screen; no FK, matches on `obdNumber` |
-| `lib/picking/queue.ts` | `getPickingQueue()` — builds `PickingQueueRow[]` from `orders` + `querySnapshot`; WHERE clause now includes `pick_checked`, select includes `checkedAt`/`checkedBy` |
+| `lib/picking/queue.ts` | `getPickingQueue()` — builds `PickingQueueRow[]` from `orders` + `querySnapshot`; WHERE includes `pick_checked`, select includes `checkedAt`/`checkedBy`. Returns `{ date, rows }` — the four aggregate counters were removed 2026-07-28 (§7) |
 | `lib/picking/sort.ts` | `PICKING_SPINE` + `sortPickingQueue()` — the flat sort spine, §3 — untouched |
 | `lib/picking/types.ts` | `PickingQueueRow`, `SortRule` shapes — `isChecked`/`checkedAt`/`checkedByName` added 2026-07-18 |
 | `lib/picking/validate-assign.ts` | DORMANT — the no-jump guard, unused, kept on disk (§7) |
@@ -609,68 +647,42 @@ on the floor for a while — nothing else in the system changes, it's a note, no
 
 ---
 
-## 9. Desktop board [LIVE — redesigned 2026-07-22]
+## 9. Desktop board — RETIRED 2026-07-28
 
-Desktop `/picking` (`components/picking/picking-queue.tsx`, the `hidden md:block` face). A UI-only
-redesign shipped in 6 steps (`2df2dc62` → `0d44ab00`). **The WORKFLOW was NOT changed** — the
-assign → pick → check ladder, the stage constants, and the assign/unassign/done/approve/pickers APIs
-are all untouched; only presentation + one scoped data change. Read a desktop change as repainting,
-never a pipeline change. **All visuals live in `CLAUDE_UI.md §61`; this section is behaviour + scope.**
+The wide-screen table is gone. `components/picking/picking-queue.tsx` is archived at
+`archive/2026-07-picking-desktop/` (that folder's `README.md` owns the story; until it is written,
+the record is `docs/prompts/drafts/code-discovery-2026-07-28-picking-desktop-retirement.md`). Its
+visual spec was `CLAUDE_UI.md §61`, now collapsed to a banner — the parts of it that were never
+desktop-only were moved to `CLAUDE_UI.md §62.1-§62.4` and `§1` first.
 
-- **All four statuses render in ONE list** (the old "▸ N assigned" collapse drawer is gone). Waiting /
-  Assigned / Picked / Ready each show inline with a status pill; assign/undo behaviour unchanged
-  (assigned rows just stopped being hidden). Rows do NOT re-sort on a status change — a stable global
-  `#` (the spine minus `byAssigned`, applied client-side) keeps each order's place across List/By-Route
-  and across status changes.
-- **Filter panel + search + List ⇄ By Route toggle** (default List), wired via UniversalHeader props;
-  filters persist across slot-tab switches (a global lens). `sort.ts` untouched (desktop re-sorts
-  client-side).
-- **Rolling day-board scope** — a NEW `rolling` scope in `lib/picking/queue.ts` (the mobile
-  `openPending` arm left byte-identical). The desktop ACTIVE list = **today's dispatch orders + overdue
-  still-unfinished orders from earlier days**; future orders are NOT in the active list. Scoped on
-  `dispatchTargetDate` (dispatch day, not creation day). Precise WHERE (the step-5b bug fix):
-  `= D` → all four active stages; **`< D` → only `pending_picking` + `pick_assigned`** (unfinished
-  carry-over; old Picked/Ready deliberately excluded so finished history doesn't flood today);
-  `> D` → active stages for the upcoming zone; NULL date → "due". Overdue rows get a `1d/2d` age tag
-  (`row.ageDays`, not recomputed). The date stepper is now a look-back-at-a-past-day tool only.
-- **Locked "Upcoming" section** (bottom, collapsed, `🔒 Upcoming · N`): future-dated rows, not
-  assignable, excluded from the `#`, Select-All and the three waiting guards; slot tabs never filter it.
-  Mirrors the mobile Assign board's Zone 2.
-- **Shipped departure from the locked design:** Route renders as **plain text, no route dot** — no
-  route→colour data in the payload (`CLAUDE_UI.md §61`).
-- **Temporary inline Undo** on assigned rows — a stopgap until the row-click detail panel (deferred);
-  remove when that lands.
-- **⚠️ Workflow-hole — CORRECTED 2026-07-24, still open [NEXT]:** the old claim here ("there is **no
-  `dispatched` stage** / nothing ever writes to it") was **WRONG**. Orders DO reach `dispatched`.
-  Live SELECT (2026-07-24, authoritative):
+**`/picking` is unaffected** — same route, same permissions, same login landing; it just renders the
+card board (§5) at every width now.
 
-  | workflowStage | total | dispatchSlotSource='auto' | oldest | newest |
-  |---|---|---|---|---|
-  | `dispatched` | 1,051 | 662 | 2026-06-26 | 2026-07-21 |
-  | `pick_checked` | 195 | 180 | 2026-07-17 | 2026-07-24 |
+**Removed with it, so do not go looking:** the `rolling` queue scope (`47cc99f9`) and the four
+payload counters `windows[]` / `totalCount` / `unmatchedCount` / `assignedCount` plus the
+`isStillWaiting` predicate (`b51cd14f` — see §7). `single` and `openPending` remain; `openPending` is
+what every live board uses.
 
-  **But the drain is NOT automatic.** `dispatched` stops at 21 Jul while `pick_checked` is still
-  growing (newest 24 Jul, 195 sitting there). The bulk of the `dispatched` rows came from a **one-time
-  MANUAL sweep** during the Floor Control build (23 Jul, 238 rows) — **not** a code path
-  (`CLAUDE_FLOOR.md §7`; do not treat it as a repeatable procedure). So the genuine gap survives,
-  restated accurately: **there is still NO automatic transition draining `pick_checked` → `dispatched`.**
-  This is exactly what forced the step-5b carry-over exclusion (a workaround, not a fix). A real design
-  session, not a doc note. *(The 662-of-1,051 `auto` share = the live dispatch engine doing the
-  majority of slotting — owned by `CLAUDE_CORE.md §7.4`, not re-described here.)*
+**The workflow-hole that used to be documented in this section is NOT about the desktop board and
+has moved to §7** — see *"NO AUTOMATIC DRAIN `pick_checked` → `dispatched`"* there. It is still open.
+⚠ `CLAUDE_FLOOR.md §10` and `docs/ROADMAP.md` both point at "`CLAUDE_PICKING.md §9`" for it; those
+pointers need repointing at §7.
 
 ---
 
 ## 10. Live sync [LIVE — 2026-07-22]
 
-All three picking surfaces self-refresh **with no manual refresh, pull-to-refresh or app restart**.
+Both picking surfaces self-refresh **with no manual refresh, pull-to-refresh or app restart**.
 Previously each surface fetched once and never again — the acting device saw its own change, every
 other device stayed stale until the app was closed and reopened.
 
 | Surface | Refresh call | Marker scope |
 |---|---|---|
-| Supervisor desktop (`picking-queue.tsx`) | `refetchAfterAction()` | `rolling` + `selectedDate` |
-| Supervisor mobile (`picking-mobile-shell.tsx`) | `refetchQueue()` | `openPending` |
+| Supervisor board (`picking-mobile-shell.tsx`) | `refetchQueue()` | `openPending` |
 | Picker "My Picks" (`picker-my-picks-board.tsx`) | `router.refresh()` | `openPending` + own `pickerId` |
+
+*(A third row lived here until 2026-07-28 — the desktop queue on `rolling` + `selectedDate`. Board
+and scope were both retired; `openPending` is the only picking scope any live board uses.)*
 
 **Marker-gated, not a blind poll.** Every 15s (`PICKING_MARKER_POLL_MS`, `lib/hooks/use-picking-marker.ts`)
 the client hits a cheap endpoint — `GET /api/picking/marker?scope=…[&date=…][&pickerId=…]` →
@@ -695,8 +707,7 @@ on becoming visible); skips overlapping requests; **fails silently** (no toast/U
 
 | Surface | `paused` resolves to |
 |---|---|
-| Desktop | `unassigningOrderId !== null \|\| bulkAssigning \|\| chosenPickerId !== null` |
-| Supervisor mobile | `detailOpen \|\| overlayBusy` (= `pickerSheetOpen \|\| releaseTarget !== null`) |
+| Supervisor board | `detailOpen \|\| overlayBusy` (= `pickerSheetOpen \|\| releaseTarget !== null`) |
 | Picker | `detailOpen \|\| marking` |
 
 **Live-sync landmines (READ BEFORE TOUCHING PICKING):**
@@ -714,9 +725,11 @@ on becoming visible); skips overlapping requests; **fails silently** (no toast/U
 - **The picker's refresh is the expensive one** — `router.refresh()` re-runs the whole server page
   (`auth`, permissions, `getActivePickers`, `getPickingQueue`), which is why the picker marker is
   narrowed to his own `pickerId`. Do not widen it back.
-- **Desktop selection is pruned, not frozen** — on each background refresh `selected` is pruned to ids
-  still in the waiting set (pausing while `selected.size > 0` was rejected: it would blind the
-  control-tower view while a supervisor ticks bills).
+- **Selection is pruned, not frozen** — on each background refresh a ticked bill that has left the
+  waiting set drops out (pausing while a selection is up was rejected: it would blind a control-tower
+  view while a supervisor ticks bills). Proven on the desktop board, which is archived; **the rule
+  survives as the standing answer** and is what Floor's own reconcile-with-a-toast implements
+  (`CLAUDE_FLOOR.md §5`).
 - **Silent background failures:** `refetchQueue`/`refetchAfterAction` swallow errors and keep last-good
   data (the full-screen error screen is owned SOLELY by the initial `load()`), so a network blip on a
   board refreshing every 15s all day can't wipe it to an error screen.
@@ -726,4 +739,4 @@ on becoming visible); skips overlapping requests; **fails silently** (no toast/U
 
 ---
 
-*CLAUDE_PICKING.md v1.7 · Picking Module · July 2026*
+*CLAUDE_PICKING.md v1.8 · Picking Module · July 2026*

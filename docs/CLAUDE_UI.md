@@ -1,5 +1,5 @@
 # CLAUDE_UI.md — OrbitOMS UI Design System
-# v5.14 · July 2026 · updated 2026-07-28 · Lives in: orbit-oms/docs/
+# v5.15 · July 2026 · updated 2026-07-28 · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md
 
 Single source of truth for visual styling across all screens.
@@ -471,7 +471,6 @@ All data tables use `table-layout: fixed` with `<colgroup>` percentage widths.
 - Admin OT pending queue
 - Admin OT audit user table
 - Sampling Library recipe table
-- Picking desktop board (`§61`): `4/3/19/27/14/7/9/17%` — conforms to this standard
 - Any future data table in any module
 
 **Support does NOT belong on this list.** Support's tables are CSS Grid, not `<table>` — see the
@@ -1340,35 +1339,36 @@ Records the /po-derived type discipline so this is never re-discovered. **Reusab
 
 ---
 
-## 61. Picking — desktop board (table · filters · List/By-Route · Upcoming)
+## 61. Picking — desktop board — RETIRED 2026-07-28
 
-Desktop `/picking` (`components/picking/picking-queue.tsx`, the `hidden md:block` face). UI-only redesign shipped 2026-07-22 (6 steps); workflow unchanged. Where the shipped build differed from the 2026-07-21 locked design, the **shipped** build is recorded here.
+The desktop `/picking` table no longer exists. `components/picking/picking-queue.tsx` was archived to
+`archive/2026-07-picking-desktop/`; **`/picking` itself STAYS LIVE** and renders the mobile card
+board (§62) at every screen width. Its story — why it went, what replaced it, what moved out first —
+belongs to that folder's `README.md`. *(That README is written in a later step of this retirement; if
+it is not there yet, the discovery report
+`docs/prompts/drafts/code-discovery-2026-07-28-picking-desktop-retirement.md` is the record.)*
 
-**Table — conforms to §27** (`tableLayout: "fixed"` + `<colgroup>` percentage `<col>`s; `COLUMN_WIDTHS` sums to 100; data rows 36px). Columns (8): `☐ · # · OBD · Dealer · Route · LT · Flags · Status` — `4/3/19/27/14/7/9/17%`.
-- **OBD**: number (mono) with the **created date-time stacked below** (house standard).
-- **Dealer**: name + `→ ship-to` line when `isShipToOverride`.
-- **Route**: **plain text, NO route dot** — a deliberate departure from the locked design's "route dot + name". The payload reason, and the `RouteDot`-keys-on-`deliveryType` fact behind it, now live in **§62.3** (they outlive this board).
-- **LT**: litres, right-aligned, tabular.
-- **Flags**: **icons only** — ★ `isKeyCustomer` (amber `#f59e0b`), ⚡ `priorityLevel === 1` (red `#ef4444`). No "P1"/"KEY" text badges.
-- **Status pill** (rightmost — status reads as the row's verdict), derived in order: `isChecked`→**Ready** (green) / `isDone`→**Picked** (amber) / `isAssigned`→**Assigned** (grey-700) / else **Waiting** (grey-500). Never teal — the rule and its reason are **§1**.
-- **All four states render inline** — the old "▸ N assigned" collapse drawer is gone (Picked/Ready rows were already in the payload but rendered nowhere; now visible).
-- **Dropped columns:** Area (Route covers it), Article, KG, and the Picker column (picker moves to the deferred row-click detail).
-- **Stable global `#`:** the day's pick-sequence position, preserved across List/By-Route and as status changes (rows never re-sort). Applied client-side as the spine **minus `byAssigned`**; `sort.ts` untouched.
-- **Temporary inline Undo** on assigned rows (hover-revealed) — stopgap until the detail panel; remove when that lands.
+**Why:** Floor Control (`/floor`) was built to replace it, the floor team works on Android phones
+only, and a desk operator who needs a board uses `/floor`. Picking is also hidden from the desktop
+sidebar now — the phone Menu sheet keeps it, and no permission changed.
 
-**Filter panel + search** (matches Mail Orders / Support): wired via **UniversalHeader props** (`filterGroups` / `activeFilters` / `onFilterChange`) — there is no standalone FilterButton to import. Three groups: **Route** (runtime-distinct), **Status** (Waiting/Assigned/Picked/Ready), **Delivery type**; applied-filter pills row. **Search** (`searchValue`/`onSearchChange`) on `dealerName` OR `obdNumber`, case-insensitive. **Filters persist across slot-tab switches** (a global lens, deliberate).
+**What was NOT desktop-only was moved out BEFORE this collapsed, and is still live** — do not look
+for it here:
 
-**List ⇄ By Route toggle** (UniversalHeader `rightExtra`, default **List**, **not teal** — white active segment). **By Route** groups `visibleRows` by route (alphabetical, trailing "No route"); header = route · `{N} orders` · `{sum} L`. No route progress bar and no "Ready to load" — the rejection and its reason are **§62.4**.
+| Rule | Now owned by |
+|---|---|
+| Age tags `1d` / `{n}d`, from `row.ageDays`, + the §8 Tint pill-styling provenance | **§62.1** |
+| Locked / Upcoming visual treatment | **§62.2** |
+| Route as plain text, no route dot, and why (`RouteDot` keys on `deliveryType`) | **§62.3** |
+| The rejected-feature list + its reason | **§62.4** |
+| "Status pill is never teal" | **§1** |
 
-**Slot bands** under the **All** tab only (`windowTime · N · litres`, trailing "No slot"). None under a single slot tab; not collapsible.
+What collapsed with the section was genuinely desktop-only: the 8-column
+`4/3/19/27/14/7/9/17%` table layout, the four status-pill hex values, the List ⇄ By Route toggle
+styling, the slot-band styling, the UniversalHeader filter-panel wiring note, and the
+temporary-inline-Undo note. The archived file is the reference if any of it is ever wanted back.
 
-**Age tags** next to the OBD — same treatment the mobile cards use; rule and provenance in **§62.1**.
-
-**Locked Upcoming section** (bottom of both views, collapsed by default): `🔒 Upcoming · {N} — locked until dispatch day`. Visual treatment is **§62.2**. Desktop-only mechanics: excluded from `displayRows`, the global `#`, Select-All and all guards; slot tabs never filter it; renders nothing when empty.
-
-**Removed/rejected:** the list is module-wide, not desktop-only — **§62.4**.
-
-> Header structure (slot tabs teal-active) unchanged — this redesign repainted the body, not the UniversalHeader. Behaviour / tab semantics / date-zone scope are in `CLAUDE_PICKING.md`, not here.
+Behaviour, tab semantics and date-zone scope were always `CLAUDE_PICKING.md`'s, not this file's.
 
 ---
 
@@ -1425,4 +1425,4 @@ Do not read this list as an app-wide ban.
 
 ---
 
-*UI v5.14 · OrbitOMS*
+*UI v5.15 · OrbitOMS*
