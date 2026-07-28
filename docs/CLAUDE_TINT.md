@@ -1,5 +1,5 @@
 # CLAUDE_TINT.md — Tint Module
-# v1.7 · Schema v27.12 · July 2026 · updated 2026-07-27
+# v1.8 · Schema v27.12 · July 2026 · updated 2026-07-28
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -435,7 +435,7 @@ Every list endpoint adds `where: { isRemoved: false }` default. Every challan re
 - Admin `/removed-orders` list — explicitly filters `isRemoved: true`
 - Admin restore endpoint — must see soft-removed to restore them
 - `lib/import-upsert/state.ts` — internal to import flow
-- `lib/slot-cascade.ts`, `lib/day-boundary.ts` — disabled per landmines
+- `lib/slot-cascade.ts`, `lib/day-boundary.ts` — **archived 2026-07-28** (`archive/2026-07-planning-board/lib/`); they had been disabled long before that. If either is ever restored, it must skip tint orders.
 - Challan list/detail uses `OR: [{ isRemoved: false }, { isRemoved: true, challan: { isVoided: true } }]` so voided-challan rows on removed orders surface for audit
 
 ### UI
@@ -679,7 +679,7 @@ Layout uses `buildNavItems()` only.
 - **Shade Master `isActive` filter** — unverified in production.
 - **Challan lazy creation** — `[orderId]` detail API may still auto-create on click. Verify.
 - **Challan print CSS** — old class names (`ch-header`, `tint-yes`) may persist in `@media print`.
-- **`lib/slot-cascade.ts`** — disabled. If re-enabled, must skip tint orders.
+- **`lib/slot-cascade.ts`** — no longer in the live tree: archived 2026-07-28 with the Planning board (`archive/2026-07-planning-board/lib/`), after a long period disabled. **If it is ever restored, it must skip tint orders** — that condition outlives the archive.
 - **Customer master gaps:** Bill-To customers missing contacts → challan S5 CUSTOMER blanks.
 - **SKU master gap:** unknown SKUs (e.g. `5888558` DP M900 Gloss Enamel BW 20L) land but enrichment is null. Add via SKU master.
 - **Splits never get pause/resume.** Server rejects `splitId !== null` with 400. Acceptable for v1. Revisit if depot reality changes.
@@ -697,4 +697,4 @@ Layout uses `buildNavItems()` only.
 
 ---
 
-*Tint v1.7 · Schema v27.12*
+*Tint v1.8 · Schema v27.12*

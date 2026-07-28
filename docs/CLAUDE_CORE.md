@@ -1,5 +1,5 @@
 # CLAUDE_CORE.md — OrbitOMS Core
-# v86 · Schema v27.12 · July 2026 · updated 2026-07-27 · Lives in: orbit-oms/docs/
+# v87 · Schema v27.12 · July 2026 · updated 2026-07-28 · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_UI.md
 
 ---
@@ -114,21 +114,21 @@ Never introduce new libraries without being asked.
 | 3 | support | `/place-order` (gated) | Priya Chaudhari, Rahul |
 | 4 | tint_manager | `/tint/manager` | Chandresh Kolgha |
 | 5 | tint_operator | `/tint/operator` | Deepak Vasava, Chandrasing Valvi |
-| 6 | floor_supervisor | `/warehouse/supervisor` | — |
-| 7 | picker | `/warehouse/picker` | seeded |
+| 6 | floor_supervisor | `/picking` | — |
+| 7 | picker | `/picking` | seeded |
 | 12 | operations | `/floor` | operations@orbitoms.in |
 | 13 | billing_operator | `/mail-orders` | Deepanshu Thakur (id=25), Bankim (id=26) |
 | 14 | ops_admin | `/admin/attendance` | Dhruv (id=27), Kuldeep (id=28) |
 | 16 | logistics | `/trips` | Praveen (primary role — sees only Trip Report). Full detail: `CLAUDE_TRIP_REPORT.md §1`. |
 | — | operation_manager | `/tint/manager` | Undocumented role slug (2026-07-10 discovery) — exists live in `role_permissions`/`lib/rbac.ts` with NO confirmed `role_master` row/ID. Not invented here; may be a legacy slug or a real role missing from this table. Identify before relying on it. |
 
-**Login redirects** (`lib/rbac.ts` `ROLE_REDIRECTS` map — verified against live code 2026-07-16, three entries corrected): admin→`/admin`, dispatcher→`/place-order`, support→`/place-order`, tint_manager→`/tint/manager`, tint_operator→`/tint/operator`, **floor_supervisor→`/warehouse/supervisor`** (was wrongly `/warehouse`), **picker→`/warehouse/picker`** (was wrongly grouped with floor_supervisor under `/warehouse`), **operations→`/floor`** (was `/operations/support`; repointed 2026-07-27 with the Support retirement, commit `3ff717e5`), billing_operator→`/mail-orders`, **ops_admin→`/admin/attendance`** (was wrongly `/admin`), operation_manager→`/tint/manager` (previously missing from this map entirely), logistics→`/trips`.
+**Login redirects** (`lib/rbac.ts` `ROLE_REDIRECTS` map — verified against live code 2026-07-16, three entries corrected): admin→`/admin`, dispatcher→`/place-order`, support→`/place-order`, tint_manager→`/tint/manager`, tint_operator→`/tint/operator`, **floor_supervisor→`/picking`** and **picker→`/picking`** (both repointed 2026-07-28, commit `c4323cd4` — they previously landed on the `/warehouse/supervisor` and `/warehouse/picker` stubs, which forwarded to the now-archived, always-empty `/warehouse` board), **operations→`/floor`** (was `/operations/support`; repointed 2026-07-27 with the Support retirement, commit `3ff717e5`), billing_operator→`/mail-orders`, **ops_admin→`/admin/attendance`** (was wrongly `/admin`), operation_manager→`/tint/manager` (previously missing from this map entirely), logistics→`/trips`.
 
 **Middleware — no forced attendance redirect (fixed 2026-07-04).** `middleware.ts` previously had an attendance gate (~lines 69-96) that redirected EVERY authenticated request to `/attendance` until check-in — not mobile-specific, but fired right after the login redirect above, so it looked mobile-only. That entire `if` block + the unused `istDateString` import were removed. Login (mobile and desktop) now routes straight to the role's landing page via `ROLE_REDIRECTS`, with no forced detour. Attendance itself is unaffected — still reachable directly at `/attendance`. Only 3 test accounts (admin/ops_admin) ever had the flag; no operational role relied on it. Confirmed via `middleware.ts` — no attendance-gate or `istDateString` reference remains. Full detail: `CLAUDE_TRIP_REPORT.md §7` (this fix shipped alongside the Trip Report build).
 
 **Trip Report secondary-role grants:** 4 existing users were added to `logistics` as a **secondary** role via `user_roles` (primary roles kept, unaffected): Ajay Vansiya (dispatcher), Dhanraj Shah (dispatcher), Priya Chaudhari (support), Operations User (operations). The `operations` role itself is NOT granted `trip_report` — only these 5 named users (the 4 above + Praveen).
 
-**Dispatcher / support gated permissions:** these roles have `role_permissions.canView = true` only for `pageKey = 'place_order'`; all other pageKeys are `canView = false`. ⚠ This used to read "until the real dispatcher/support screens go live" — **that premise is dead**: the Support board was retired 2026-07-27 (`archive/2026-07-support/`), so no such screen is coming. The grants are unchanged; only the stated reason was wrong.
+**Dispatcher / support gated permissions:** these roles have `role_permissions.canView = true` only for `pageKey = 'place_order'`; all other pageKeys are `canView = false` — **confirmed LIVE by SELECT 2026-07-28.** ⚠ **`prisma/seed.ts` disagrees**: it seeds `dispatcher` and `support` rows for `customers`, `skus`, `routes_areas`, `vehicles` and `import_obd` with `canView: true`. **Live is the authority here; seed is stale.** A wipe-and-reseed would silently re-grant all five. Anywhere else in this file that lists these roles as holding another key is describing seed, not reality. ⚠ This used to read "until the real dispatcher/support screens go live" — **that premise is dead**: the Support board was retired 2026-07-27 (`archive/2026-07-support/`), so no such screen is coming. The grants are unchanged; only the stated reason was wrong.
 
 **Multi-role users (`user_roles` table):**
 
@@ -153,12 +153,12 @@ Primary role drives login redirect and href overrides. Additional rows add nav i
 
 | Page key | Granted to |
 |---|---|
-| `import_obd` | admin, dispatcher, support, billing_operator, tint_manager (canImport gated separately) |
+| `import_obd` | admin, billing_operator, tint_manager (canImport gated separately). ⚠ `dispatcher` and `support` appear in `prisma/seed.ts` for this key but are **`canView=false` LIVE** (SELECT 2026-07-28) — seed/live drift; see §5's gated-permissions note. |
 | `delivery_challans` | tint_manager (view + edit), admin |
 | `shade_master` | tint_manager (view), admin — DEPRECATED, retiring soon (see §13) |
 | `ti_report` | tint_manager (view + export), admin |
 | `sampling_library` | tint_manager (view + edit), tint_operator (view), admin |
-| `customer_master` | admin, ops_admin, tint_manager (view + edit), support, dispatcher (view) |
+| `customer_master` | admin, ops_admin, tint_manager (view + edit). ⚠ `support` and `dispatcher` are seeded but **`canView=false` LIVE** — same drift as `import_obd` above. |
 | `place_order` | admin, billing_operator, tint_manager, support, dispatcher |
 | `attendance` | all roles gated per rollout stage |
 | `removed_orders` | admin only |
@@ -740,9 +740,9 @@ Time-based thresholds, IST.
 
 **`arrivalSlotId` (2026-06-29 — added v27.7 column, behaviour completed this consolidation):** stamped at import for ALL orders — tint and non-tint alike — via `resolveArrivalSlotId(emailDateTime)` (the 5-slot ruler in `lib/slots/slot-ruler.ts`: Morning/Afternoon/Evening/Late Evening/Night, distinct from the 4-slot table above). `slotId` stays null for tint until completion, unaffected by this. Full detail + landmines (manual-SAP no-time-column → Morning default, JSON auto-import re-stamp fix): `CLAUDE_IMPORT.md §12`.
 
-**Slot cascade and day-boundary reset are DISABLED — imported but never called.** `lib/slot-cascade.ts` and `lib/day-boundary.ts` both still exist and both are still *imported* — `app/api/planning/board/route.ts:5-6` and `app/api/warehouse/board/route.ts:5-6`. But **every invocation is commented out**: `planning/board:22-26` and `warehouse/board:64-68`, each headed `// DISABLED: slot cascade removed — slots are fixed by obdEmailTime`. **Neither function runs anywhere.** If they are ever re-enabled, they must skip tint orders. Full landmine entry: §13.
+**Slot cascade and day-boundary reset — GONE from the live tree (2026-07-28).** `lib/slot-cascade.ts` and `lib/day-boundary.ts` no longer exist under `lib/`. They were archived with the Planning board (commit `639f8139`) to **`archive/2026-07-planning-board/lib/`**, because their last two importers went with it: `app/api/planning/board/route.ts` (step 7) and `app/api/warehouse/board/route.ts` (step 6). Their calls had been commented out — headed `// DISABLED: slot cascade removed — slots are fixed by obdEmailTime` — long before that, so **they had not run in production for a considerable time**; archiving them changed no behaviour. **If either is ever restored, it must skip tint orders.**
 
-⚠ **Do not "re-correct" this back.** An edit on 2026-07-27 (commit `f6ace5b8`) flipped this to "they ARE called" after reading only the `import` lines and never opening the call sites. Re-verified against both route files on 2026-07-27: **an import is not a call.**
+⚠ **This entry has been wrong twice — check the tree before rewriting it.** Originally "exist but are not called" (correct) → 2026-07-27 `f6ace5b8` flipped it to "they ARE called" after reading only the `import` lines (**wrong** — an import is not a call) → 2026-07-27 `a078289f` restored the truth → 2026-07-28 `639f8139` archived both files. Full landmine entry: §13.
 
 **`applyMailOrderEnrichment()`:** On SAP import, checks `mo_orders` for matching `soNumber`. If found, applies `dispatchStatus`, `priorityLevel`, `remarks`, overrides, and sets `orderDateTime` from `mo_orders.receivedAt`. Skips slot recalc for tint orders. One soNumber can map to many OBDs (`updateMany`).
 
@@ -758,7 +758,7 @@ Component: `components/universal-header.tsx`. Used by ALL boards.
 
 **Color rule:** ONE teal element = active slot segment. Everything else gray. *Per-screen exemption:* Sampling Library uses teal on multiple elements intentionally (`CLAUDE_UI.md §22`).
 
-**Slot segments:** depot-wide boards (Support / Planning / Warehouse, `slot_master`-driven) show **4** — filter out Next Day Morning, no "All" button. **Mail Orders is a separate system** (computed at render from `receivedAt`, hardcoded names in `lib/mail-orders/utils.ts`, cutoffs in `system_config`) and shows **5** since 2026-06-18 (added "Late Evening"; `CLAUDE_MAIL_ORDERS.md §9.1`). The two slot systems never share numbers.
+**Slot segments:** the depot-wide 4-segment rule (`slot_master`-driven, filter out Next Day Morning, no "All" button) was written for the Support / Planning / Warehouse boards — **all three retired 2026-07-27/28, so no board renders it today.** The rule is kept because `slot_master` itself is live: it is still read by the admin Slots and Slot-Rules screens, the operations summary, Tint Manager's order list, and `lib/slots/slot-ruler.ts` (which stamps `arrivalSlotId` at import). ⚠ Not to be confused with `dispatch_slot_master`, the separate dispatch-window table Floor and Picking use. **Mail Orders is a separate system** (computed at render from `receivedAt`, hardcoded names in `lib/mail-orders/utils.ts`, cutoffs in `system_config`) and shows **5** since 2026-06-18 (added "Late Evening"; `CLAUDE_MAIL_ORDERS.md §9.1`). The two slot systems never share numbers.
 
 Per-board wiring summary in `CLAUDE_UI.md §6`.
 
@@ -812,20 +812,33 @@ Full detail in domain files. Cross-reference only here.
 ### Import
 `/admin/import`. → `CLAUDE_IMPORT.md`
 
-### Dispatch Planning
-`/planning`. dispatcher, admin, operations. Planning at ORDER level. All splits of one OBD go to same vehicle.
-
-### Warehouse
-`/warehouse`. floor_supervisor, picker, admin, operations. 300px left (unassigned) / flex right (pickers).
-
 ### Picking
-`/picking`. Desktop queue + mobile supervisor board (Assign/Check tabs), one route/responsive split. admin, operations today — `floor_supervisor` (the intended primary user) currently CANNOT open it, see §13 landmine. → `CLAUDE_PICKING.md`.
+`/picking`. Desktop queue + mobile supervisor board (Assign/Check tabs), one route/responsive split. admin, operations, **floor_supervisor** (view+edit) and **picker** (view only) — all four verified live 2026-07-27. ⚠ The old "floor_supervisor currently CANNOT open it" caveat is **retired**: that was resolved when the grants were seeded 2026-07-20, and since 2026-07-28 (`c4323cd4`) this is where both roles **land at login**. → `CLAUDE_PICKING.md`.
 
 ### Floor Control
 `/floor`. admin, operations. One unified desk screen consolidating the Support board + the Picking **desktop** board (left rail = undecided bills / right = Floor / On-hold / Cancelled + detail panel). Hand-rolled header (UI §6 named exception). **Support is RETIRED** (2026-07-27 — screens, API routes and spec at `archive/2026-07-support/`; `CLAUDE_FLOOR.md §9`). **Picking (`/picking`) is still live** — its desktop retirement is intended but unplanned, its mobile boards stay. → `CLAUDE_FLOOR.md`.
 
 ### Operations View
-`/operations/tinting|tint-operator|dispatch|warehouse`. operations, ops_admin, admin. (`/operations/support` retired 2026-07-27 — operations now lands on `/floor`.)
+`/operations/tinting|tint-operator`. operations, ops_admin, admin. (Its other three children — `support`, `dispatch`, `warehouse` — are all retired; operations now lands on `/floor`.)
+
+### Retired 2026-07-27/28 — do not re-document these as live
+
+Five screens left the app across that week. **Each archive folder's README owns its story — point at it, never retell it here.**
+
+| Gone | Was | Archive |
+|---|---|---|
+| `/support`, `/operations/support`, `/admin/support` + `/api/support/*` | the gatekeeper desk | `archive/2026-07-support/` |
+| `/order` | the public no-login mobile order page (`/po` supersedes it; the address is **parked**, no redirect) | `archive/2026-07-order/` |
+| `/operations/warehouse`, `/operations/dispatch` | alternate mounts only — same components, different gate | `archive/2026-07-operations-pages/` |
+| `/warehouse`, `/warehouse/supervisor`, `/warehouse/picker` + `/api/warehouse/board` | the post-picking dispatch board — **always rendered empty** | `archive/2026-07-warehouse-board/` |
+| `/planning`, the `/dispatcher` stub + all 8 `/api/planning/*` | dispatch planning — **always rendered empty** | `archive/2026-07-planning-board/` |
+
+🔴 **Three things that survived and are routinely mistaken for casualties:**
+- **`app/api/warehouse/pickers/route.ts` is LIVE** — the Picking boards call it (`picking-board-mobile.tsx:936`, `picking-queue.tsx:686`). It is now the **only** route under `app/api/warehouse/`. **Never archive that folder wholesale.**
+- **`/dispatcher/customers`, `/dispatcher/skus`, `/dispatcher/routes`, `/dispatcher/vehicles` are LIVE** — only the `/dispatcher` index stub went. They gate on their own page keys.
+- **The `dispatcher` ROLE is LIVE** — only the `dispatcher` **page key** was retired. Role and page key are different things sharing a word.
+
+Page keys removed with them: `support_queue`, `operations_support`, `operations_warehouse`, `operations_dispatch`, `warehouse`, `planning_board`, `dispatcher`. All corresponding live `role_permissions` rows have been cleared.
 
 ### Public
 - `/po` — public mobile order form. No login. Generates mailto. (Succeeded `/order`, retired 2026-07-27 — address **parked**, no redirect; story: `archive/2026-07-order/README.md`.)
@@ -902,14 +915,7 @@ Supporting facts for the same area:
 
 ---
 
-- **`lib/slot-cascade.ts`, `lib/day-boundary.ts` — present, imported, but NEVER CALLED.** The exact state, verified against the files on 2026-07-27:
-  - **Imports are live** — `app/api/planning/board/route.ts:5-6`, `app/api/warehouse/board/route.ts:5-6`. This is why a grep for the module name looks like they are in use.
-  - **Every call is commented out** — `app/api/planning/board/route.ts:22-26` and `app/api/warehouse/board/route.ts:64-68`, both headed `// DISABLED: slot cascade removed — slots are fixed by obdEmailTime`. A repo-wide search finds **no uncommented invocation anywhere**.
-  - **Neither `runSlotCascadeIfNeeded` nor `runDailyCleanupIfNeeded` executes on any code path today.** Slots are fixed at import time from `obdEmailTime` and never cascade.
-  - The standing warning still applies: **if they are ever re-enabled, they must skip tint orders.**
-  - **Do not delete either file** (CORE §3 — never delete files unless instructed).
-
-  ⚠ **This entry was WRONG between 2026-07-27 (`f6ace5b8`) and its correction the same day.** That edit read the `import` lines, concluded "they ARE called … they run whenever the Planning or Warehouse board is loaded", and overwrote a statement that had been correct. The call sites sit four lines below the imports and are commented. **An import is not a call — open the call site.** Recorded here so the next session does not flip it back a third time.
+- **~~`lib/slot-cascade.ts`, `lib/day-boundary.ts`~~ — NO LONGER A LIVE TRAP (archived 2026-07-28).** Both files left `lib/` with the Planning board (`639f8139`) and now sit in `archive/2026-07-planning-board/lib/`. They cannot mislead a reader of the live tree any more, so the full landmine is retired to a pointer. Story: `archive/2026-07-planning-board/README.md`. **If either is ever restored, it must skip tint orders** — that condition survives the archive. ⚠ This entry flipped twice before it settled (`f6ace5b8` wrong → `a078289f` right → `639f8139` archived); the lesson it taught — **an import is not a call, open the call site** — is kept in `archive/RETIREMENT-PLAYBOOK.md §4`, which is where a live-trap lesson belongs once the trap itself is gone.
 - **`operatorSequence` field** on `tint_assignments`/`order_splits` — exists in schema, no longer used for sorting. Sort by `sequenceOrder` only.
 - **`delivery_type_slot_config` table** — exists but not consumed anywhere.
 - **`SlotSummaryItem` interface** in `tint-manager-content.tsx` — defined but unused.
@@ -970,4 +976,4 @@ Engineering note: a parallel session owns `scripts/_*` scratch files (sampling/r
 
 ---
 
-*CORE v86 · Schema v27.12 · OrbitOMS*
+*CORE v87 · Schema v27.12 · OrbitOMS*

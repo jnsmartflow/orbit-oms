@@ -1,5 +1,5 @@
 # CLAUDE_MAIL_ORDERS.md — Mail Orders Module
-# v1.9 · Schema v27.12 · Parser v6.5 · Enrichment v3 · July 2026 · updated 2026-07-27
+# v1.10 · Schema v27.12 · Parser v6.5 · Enrichment v3 · July 2026 · updated 2026-07-28
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -488,7 +488,9 @@ Toggle in UniversalHeader title. Visual spec in `CLAUDE_UI.md §21, §28-32`.
 
 No data migration — slots are computed at render from `receivedAt`, so existing orders re-bucket automatically. Cutoffs are DB-configurable in `system_config` (`"HH:MM"` strings parsed by `parseHHMM()`): `slot_morning_cutoff` 10:30 · `slot_afternoon_cutoff` 12:30 · `slot_evening_cutoff` 17:00 (was 15:30) · `slot_late_evening_cutoff` 20:00 (new). Hardcoded fallbacks in `getSlotFromTime()`: 630/750/1020/1200.
 
-> **Separate system:** this mail-orders bucketing is NOT the depot-wide `slot_master` (CORE §9) used by Support/Planning/Warehouse — different boundaries, no stored slot column on `mo_orders` (`slotToOverride` is dead/write-only, no reader). The two never share numbers.
+> **Separate system:** this mail-orders bucketing is NOT the depot-wide `slot_master` (CORE §9) — different boundaries, no stored slot column on `mo_orders` (`slotToOverride` is dead/write-only, no reader). The two never share numbers.
+>
+> ⚠ **Corrected 2026-07-28:** this used to say `slot_master` was "used by Support/Planning/Warehouse". **All three of those boards are now retired** (`archive/2026-07-support/`, `archive/2026-07-planning-board/`, `archive/2026-07-warehouse-board/`). `slot_master` itself is still live — its readers today are the admin Slots and Slot-Rules screens (`app/api/admin/slots/*`), the operations summary, Tint Manager's order list, and `lib/slots/slot-ruler.ts`, which stamps `arrivalSlotId` at import. The point of this note is unchanged: that table is not this bucketing.
 
 Punched orders: separated to bottom per slot. Collapsible divider. `T` toggles globally.
 
@@ -886,4 +888,4 @@ Mail Orders access for everyone except `admin`. All four rows above should be ad
 
 ---
 
-*Mail Orders v1.9 · Schema v27.12 · Parser v6.5 · Enrichment v3*
+*Mail Orders v1.10 · Schema v27.12 · Parser v6.5 · Enrichment v3*
