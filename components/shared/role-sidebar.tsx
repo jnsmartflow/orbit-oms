@@ -71,6 +71,24 @@ const ROLE_LABELS: Record<RoleSidebarRole, string> = {
   operation_manager: "Operation Manager",
 };
 
+// ── Desktop-only nav suppression ──────────────────────────────────────────────
+
+// Page keys hidden from the DESKTOP sidebar ONLY. This is a render-layer
+// filter, NOT a permission change: the page stays granted, reachable and
+// unchanged in role_permissions.
+//
+// The phone Menu sheet (mobile-shell-context.tsx:96) and the bottom bar's Home
+// target (mobile-shell.tsx:61) read the SAME navItems array from
+// role-layout-client.tsx and are deliberately untouched — Home resolves to
+// navItems[0], which IS Picking for floor_supervisor and picker, so this list
+// must never be applied to the shared array.
+//
+// picking — the desktop face of /picking was retired 2026-07-28
+// (archive/2026-07-picking-desktop/). The board is phone-only; the floor team
+// works on Android. A desk operator who needs a board uses /floor. /picking is
+// still the login landing for floor_supervisor and picker (lib/rbac.ts:38-39).
+const DESKTOP_HIDDEN_PAGE_KEYS = new Set(["picking"]);
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function RoleSidebar({ role, userName, userInitials, navItems }: RoleSidebarProps) {
@@ -78,6 +96,9 @@ export function RoleSidebar({ role, userName, userInitials, navItems }: RoleSide
   const { isExpanded, expand, collapse } = useRoleSidebar();
 
   const roleLabel = ROLE_LABELS[role];
+
+  // Applied here and nowhere else — see DESKTOP_HIDDEN_PAGE_KEYS above.
+  const visibleNavItems = navItems.filter((item) => !DESKTOP_HIDDEN_PAGE_KEYS.has(item.pageKey));
 
   function isActive(href: string) {
     return pathname === href;
@@ -91,7 +112,7 @@ export function RoleSidebar({ role, userName, userInitials, navItems }: RoleSide
         {roleLabel}
       </p>
       <div className="flex flex-col">
-        {navItems.map((item) => {
+        {visibleNavItems.map((item) => {
           const Icon   = ICON_MAP[item.pageKey] ?? DEFAULT_ICON;
           const active = isActive(item.href);
           return (
@@ -118,7 +139,7 @@ export function RoleSidebar({ role, userName, userInitials, navItems }: RoleSide
 
   const collapsedNav = (
     <nav className="flex flex-col py-2 overflow-y-auto flex-1 scrollbar-hide items-center">
-      {navItems.map((item) => {
+      {visibleNavItems.map((item) => {
         const Icon   = ICON_MAP[item.pageKey] ?? DEFAULT_ICON;
         const active = isActive(item.href);
         return (
