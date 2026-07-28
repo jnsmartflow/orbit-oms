@@ -27,8 +27,16 @@ export const ROLE_REDIRECTS: Record<string, string> = {
   tint_manager: "/tint/manager",
   tint_operator: "/tint/operator",
   operations: "/floor",
-  floor_supervisor: "/warehouse/supervisor",
-  picker: "/warehouse/picker",
+  // Repointed 2026-07-28 from "/warehouse/supervisor" and "/warehouse/picker".
+  // Those were 4-line stubs that redirected to /warehouse — a board filtering on
+  // workflowStage 'dispatch_confirmation', of which the live count is 0, so both
+  // roles landed on a permanently empty screen. /picking is their real board:
+  // floor_supervisor gets the supervisor face, picker gets his own "My Picks"
+  // face (app/picking/page.tsx branches on primaryRole). Both roles hold
+  // picking.canView live (SELECT 2026-07-27). /warehouse and its stubs are
+  // scheduled for retirement — they still exist today, just unlinked from here.
+  floor_supervisor: "/picking",
+  picker: "/picking",
   billing_operator: "/mail-orders",
   ops_admin: "/admin/attendance",
   operation_manager: "/tint/manager",
