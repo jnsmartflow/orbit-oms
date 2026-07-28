@@ -6,7 +6,10 @@ import { useEffect, useRef } from "react";
  */
 export const PICKING_MARKER_POLL_MS = 15_000;
 
-type MarkerScope = "single" | "openPending" | "rolling";
+// 'rolling' was a third value here until 2026-07-28; it belonged to the desktop
+// picking board, which is archived (archive/2026-07-picking-desktop/). Mirrors
+// PickingQueueScope in lib/picking/queue.ts — keep the two unions in step.
+type MarkerScope = "single" | "openPending";
 
 interface MarkerResponse {
   count: number;
@@ -18,7 +21,7 @@ interface UsePickingMarkerOptions {
   /** Must match the scope the caller's queue fetch uses, so the marker watches
    *  the SAME row set (buildPickingWhere is shared server-side). */
   scope: MarkerScope;
-  /** Only meaningful for scope="single"/"rolling"; omit for "openPending". */
+  /** Only meaningful for scope="single"; omit for "openPending". */
   date?: string;
   /** Optional per-picker narrowing — the marker then only moves when THIS
    *  picker's rows change (assigned-to / done / approved / unassigned-away).

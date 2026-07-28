@@ -2,7 +2,9 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { sortPickingQueue } from "./sort";
 import {
-  SUPPORT_DONE_OUTPUT,
+  // SUPPORT_DONE_OUTPUT was imported here for the 'rolling' arm's carry-over
+  // clause only, and went with it (2026-07-28). PICKING_OPEN_STAGES already
+  // contains that stage, so nothing here needs the bare constant.
   PICK_ASSIGNED,
   PICK_DONE,
   PICK_CHECKED,
@@ -108,12 +110,12 @@ function resolveTargetDate(dateStr?: string): { isoDate: string; dateOnly: Date 
  * drift", CLAUDE_PICKING.md §5.1). A second fetch would reintroduce exactly
  * the drift that invariant exists to prevent.
  */
-// 'rolling' — the desktop day-board (step 5, 2026-07-21). Active picking-stage
-// rows across ALL dates (NO date fence), split by `zone` (computed vs the
-// requested date D): due = dispatchTargetDate <= D or null; upcoming = > D.
-// Overdue leftovers from earlier days are included, unbounded. Distinct from
-// 'single' (strict one-day equality, kept for backward-compat) — do NOT conflate.
-export type PickingQueueScope = "single" | "openPending" | "rolling";
+// A third scope, 'rolling', existed from 2026-07-21 to 2026-07-28. It served the
+// desktop day-board and nothing else, and was removed with it — the board is at
+// archive/2026-07-picking-desktop/. Do not re-add it speculatively: it was an
+// all-dates, per-stage-date-bounded arm, and Floor already covers that shape with
+// its own predicate (lib/floor/queries.ts floorLiveBaseWhere).
+export type PickingQueueScope = "single" | "openPending";
 
 export interface PickingQueueOptions {
   /** YYYY-MM-DD. Meaningful in 'single' scope only; omitted → today in IST. */
@@ -201,46 +203,20 @@ export function buildPickingWhere(
             { workflowStage: PICK_CHECKED, dispatchTargetDate: todayDateOnly },
           ],
         }
-      : scope === "rolling"
-        ? {
-            // Desktop day-board (step 5b — date-bounded PER STAGE). Carry-over is
-            // status-aware so finished work from earlier days does NOT flood the
-            // board: a Ready/Picked order never leaves an active stage (no
-            // 'dispatched' stage drains it yet), so an unbounded fetch pours every
-            // historical done/checked row onto today. zone/ageDays stay anchored on
-            // D below. Never the historical 'closed' union (PICKING_ACTIVE_STAGES).
-            dispatchStatus: "dispatch",
-            isRemoved: false,
-            OR: [
-              // (a) exactly D → all four active statuses; today shows the full
-              //     Waiting/Assigned/Picked/Ready spread.
-              { dispatchTargetDate: dateOnly, workflowStage: { in: PICKING_ACTIVE_STAGES } },
-              // (b) before D → ONLY still-unfinished (pending_picking, pick_assigned).
-              //     Older Picked/Checked rows are finished work from a previous day
-              //     and are deliberately excluded — this is the step-5b fix.
-              { dispatchTargetDate: { lt: dateOnly }, workflowStage: { in: [SUPPORT_DONE_OUTPUT, PICK_ASSIGNED] } },
-              // (c) after D → active stages, for the (step-6) upcoming zone; rendered
-              //     nowhere until then, but fetched so that section has its data.
-              { dispatchTargetDate: { gt: dateOnly }, workflowStage: { in: PICKING_ACTIVE_STAGES } },
-              // Null date → keep current behaviour: included, zoned "due" (a date
-              // comparison never matches NULL, so this needs its own explicit arm).
-              { dispatchTargetDate: null, workflowStage: { in: PICKING_ACTIVE_STAGES } },
-            ],
-          }
-        : {
-            dispatchStatus: "dispatch",
-            dispatchTargetDate: dateOnly,
-            // Unassigned, assigned, AND picked current stages. Assigned
-            // (PICK_ASSIGNED) rows are sunk to the bottom by sort.ts's
-            // byAssigned rule; picked (PICK_DONE) rows are NOT (isAssigned is
-            // false for them too — see the doc comment above this function) —
-            // harmless, since both board consumers filter PICK_DONE rows out of
-            // their rendered lists entirely rather than relying on sort position.
-            // Never the historical 'closed' union — see lib/workflow-stages.ts and
-            // CLAUDE_SUPPORT.md §3 (parking-stage flip).
-            workflowStage: { in: PICKING_ACTIVE_STAGES },
-            isRemoved: false,
-          };
+      : {
+          dispatchStatus: "dispatch",
+          dispatchTargetDate: dateOnly,
+          // Unassigned, assigned, AND picked current stages. Assigned
+          // (PICK_ASSIGNED) rows are sunk to the bottom by sort.ts's
+          // byAssigned rule; picked (PICK_DONE) rows are NOT (isAssigned is
+          // false for them too — see the doc comment above this function) —
+          // harmless, since the board consumer filters PICK_DONE rows out of
+          // its rendered lists entirely rather than relying on sort position.
+          // Never the historical 'closed' union — see lib/workflow-stages.ts and
+          // CLAUDE_SUPPORT.md §3 (parking-stage flip).
+          workflowStage: { in: PICKING_ACTIVE_STAGES },
+          isRemoved: false,
+        };
 
   return { where, isoDate, dateOnly };
 }

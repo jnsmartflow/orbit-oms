@@ -64,11 +64,10 @@ export async function GET(req: Request): Promise<NextResponse> {
   if (
     scopeParam !== undefined &&
     scopeParam !== "single" &&
-    scopeParam !== "openPending" &&
-    scopeParam !== "rolling"
+    scopeParam !== "openPending"
   ) {
     return NextResponse.json(
-      { error: `Invalid scope "${scopeParam}" — expected "single", "openPending", or "rolling"` },
+      { error: `Invalid scope "${scopeParam}" — expected "single" or "openPending"` },
       { status: 400 },
     );
   }
