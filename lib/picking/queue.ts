@@ -76,11 +76,12 @@ function resolveTargetDate(dateStr?: string): { isoDate: string; dateOnly: Date 
  *                 stage in PICKING_ACTIVE_STAGES, fenced to ONE dispatch-target
  *                 date by equality.
  *                 ⚠ NO APP CODE SELECTS IT. Every live caller names its scope
- *                 explicitly: picking-queue.tsx:672 sends scope=rolling;
- *                 picking-mobile-shell.tsx:148 and app/picking/page.tsx:144
- *                 send openPending; the marker hook ALWAYS appends ?scope=
- *                 (lib/hooks/use-picking-marker.ts:126, a required prop). So
- *                 nothing reaches this default by omission.
+ *                 explicitly: picking-mobile-shell.tsx:150 and
+ *                 app/picking/page.tsx:143 send openPending, and the marker
+ *                 hook ALWAYS appends ?scope= (a required prop,
+ *                 lib/hooks/use-picking-marker.ts). So nothing reaches this
+ *                 default by omission. (The one caller that did name a
+ *                 different scope was the desktop board, archived 2026-07-28.)
  *                 It is CALLER-LESS, NOT UNREACHABLE — both public routes still
  *                 accept scope=single by name (app/api/picking/queue/route.ts:38,
  *                 app/api/picking/marker/route.ts:66), and the one thing that
@@ -117,7 +118,8 @@ export type PickingQueueScope = "single" | "openPending" | "rolling";
 export interface PickingQueueOptions {
   /** YYYY-MM-DD. Meaningful in 'single' scope only; omitted → today in IST. */
   date?: string;
-  /** Defaults to 'single' — today's behaviour for every pre-existing caller. */
+  /** Defaults to 'single'. NOTHING relies on that default — every app caller
+   *  names its scope explicitly (see PickingQueueScope above). */
   scope?: PickingQueueScope;
 }
 
@@ -179,7 +181,7 @@ export function buildPickingWhere(
 
   // Today in IST, always — the anchor for zone/ageDays in BOTH scopes, and
   // the fence for 'openPending''s checked arm. Independent of `dateOnly`,
-  // which in 'single' scope may be any day the desktop stepper landed on.
+  // which in 'single' scope is whatever day the caller asked for.
   const { dateOnly: todayDateOnly } = getISTTodayDate();
 
   // Two shapes, one stage universe. PICKING_OPEN_STAGES ⊂ PICKING_ACTIVE_STAGES
@@ -253,10 +255,10 @@ export function buildPickingWhere(
  * (byAssigned sinks assigned rows to the bottom). The scope filter itself is
  * built by buildPickingWhere() (above) — the marker endpoint reuses it.
  *
- * DATE SCOPE is chosen by `options.scope` (see PickingQueueScope above);
- * 'single' is the default and is behaviourally identical to this function's
- * pre-2026-07-20 form. Rows carry `zone`/`noDispatchDate`/`ageDays` in both
- * scopes, but they only vary meaningfully under 'openPending'.
+ * DATE SCOPE is chosen by `options.scope` (see PickingQueueScope above).
+ * 'single' is the DEFAULT but no app caller selects it. Rows carry
+ * `zone`/`noDispatchDate`/`ageDays` in both scopes, but they only vary
+ * meaningfully under 'openPending'.
  *
  * SORTING IS UNTOUCHED by the scope. lib/picking/sort.ts's PICKING_SPINE has
  * no zone rule and must not gain one — zone is a GROUPING the UI applies, and

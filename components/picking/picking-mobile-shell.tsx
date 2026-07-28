@@ -142,10 +142,10 @@ function SupervisorPickingShell({
   // the previous `?date=<today>` call, which fenced the WHOLE board to one
   // day and hid carry-over work. Deliberately sends NO `date` param: the
   // route 400s on the contradictory combination rather than ignoring it.
-  // Desktop is NOT on the 'single' path: components/picking/picking-queue.tsx:672
-  // sends `?scope=rolling&date=<D>` — its own scope, and its own `date` meaning
-  // (the zone/age anchor, not a fence). The two boards share this endpoint and
-  // nothing else about the query.
+  // This is now the ONLY board that fetches this endpoint from a browser. The
+  // desktop table that used to send its own `?scope=rolling&date=<D>` was
+  // archived 2026-07-28 (archive/2026-07-picking-desktop/); the picker face
+  // gets the same openPending rows server-side via app/picking/page.tsx:143.
   const fetchQueue = useCallback(async (): Promise<PickingQueueResult> => {
     const res = await fetch(`/api/picking/queue?scope=openPending`);
     if (!res.ok) {
