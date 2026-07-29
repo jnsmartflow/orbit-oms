@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { ChevronLeft, Star } from "lucide-react";
 import { toast } from "sonner";
@@ -175,11 +175,64 @@ export function PickerMyPicksBoard({
     };
   }, [detailOrderId]);
 
+  // ── In-module back navigation (2026-07-29) ───────────────────────────────
+  // Before this, a back press with a bill open was not intercepted at all: the
+  // browser popped whatever preceded /picking and the picker lost the whole
+  // board, not just the bill. Android back and iOS edge-swipe now close the
+  // bill and stay here.
+  //
+  // Deliberately this face's OWN minimal version, not a shared hook. The
+  // supervisor's authority (picking-board-mobile.tsx:1311-1330) carries a
+  // nested-sheet branch — close the sheet, re-push, keep the detail entry
+  // alive — and this face has no sheets. Sharing would mean growing a
+  // "did the caller handle this pop?" callback purely to carry the
+  // supervisor's sheet case into a common file. If this face ever gets its
+  // own sheets, the two shapes converge and extraction becomes worth it.
+  //
+  // navStateRef mirrors detailOpen so the listener — registered once — reads
+  // it live instead of through a stale closure (the same reason the
+  // supervisor keeps its own navStateRef).
+  const navStateRef = useRef(false);
+  useEffect(() => {
+    navStateRef.current = detailOpen;
+  }, [detailOpen]);
+
+  // Push one entry at the CURRENT url (pushState with no url arg navigates
+  // nowhere), so a back from it is a pure in-app state change and never a real
+  // page transition. Called ONLY by openDetail — one entry for the whole
+  // detail session, exactly like the supervisor's pushScreen.
+  function pushScreen(): void {
+    if (typeof window === "undefined") return;
+    window.history.pushState({ pickingScreen: "picker-detail" }, "");
+  }
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    function onPop(): void {
+      if (navStateRef.current) closeDetail();
+      // Nothing open — let the pop fall through to the browser's real
+      // previous entry, whatever that is.
+    }
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+    // setDetailOpen is a plain useState setter threaded through context, so its
+    // identity is stable — this registers once for the life of the board.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [setDetailOpen]);
+
   function openDetail(orderId: number): void {
     setDetailOrderId(orderId);
     setDetailOpen(true);
     setActivePackFilter("ALL");
+    pushScreen();
   }
+
+  // The REAL close — reachable ONLY from the popstate handler above, so every
+  // close path (header chevron, Mark Done success, Android back, iOS
+  // edge-swipe) runs the identical logic. Never call this directly: call
+  // window.history.back() and let the pop land here. Two close paths that
+  // disagree is precisely the desync the supervisor board documents at
+  // picking-board-mobile.tsx:1423-1428.
   function closeDetail(): void {
     setDetailOpen(false);
   }
@@ -207,11 +260,29 @@ export function PickerMyPicksBoard({
       });
       const json = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
       if (!res.ok) {
-        toast.error(json.error ?? `Request failed (${res.status})`);
+        // 409 = the bill moved out from under him while this screen sat open.
+        // POST /api/picking/done returns it for BOTH conflicts — the stage is
+        // no longer PICK_ASSIGNED (route.ts:98, e.g. a double-tap whose first
+        // call already landed) and the bill is assigned to someone else now
+        // (route.ts:109, a supervisor reassigned it). Neither is a failure to
+        // report as one: same wording and same refresh-and-move-on shape the
+        // supervisor board uses for its own 409s (picking-board-mobile.tsx:
+        // 1459/1503/1536), so the module says this one thing one way.
+        if (res.status === 409) {
+          toast("Already changed — refreshed.");
+          router.refresh();
+        } else {
+          toast.error(json.error ?? `Request failed (${res.status})`);
+        }
         return;
       }
       toast.success(`${detailRow.dealerName} marked done`);
-      closeDetail();
+      // Closes through history so the pushed entry is consumed and the ONE
+      // popstate authority does the closing — never setDetailOpen directly.
+      // Unconditional, like the supervisor's Approve (picking-board-mobile.tsx
+      // :1547) and unlike its Assign: this CTA renders only inside the detail
+      // screen, so an entry was always pushed. Nothing else can reach it.
+      window.history.back();
       // Re-runs page.tsx's server-side fetch+filter for this picker — the
       // bill moves from Pending to Done via fresh server props, never a
       // client-side patch of the arrays passed in.
@@ -441,9 +512,12 @@ export function PickerMyPicksBoard({
           className="bg-teal-600 px-3.5 pb-3.5 flex items-center gap-2.5 shrink-0"
           style={{ paddingTop: "max(env(safe-area-inset-top, 0px), 12px)" }}
         >
+          {/* Routes through history so the chevron, a hardware back press and
+              the Mark Done success path all close via the ONE popstate
+              authority — see closeDetail's comment. */}
           <button
             type="button"
-            onClick={closeDetail}
+            onClick={() => window.history.back()}
             aria-label="Back"
             className="w-8 h-8 rounded-[9px] bg-white/15 flex items-center justify-center text-white shrink-0"
           >
