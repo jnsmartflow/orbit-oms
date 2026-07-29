@@ -34,8 +34,10 @@ interface LineItem {
 }
 
 interface PickerMyPicksBoardProps {
-  pending: PickingQueueRow[];
-  done: PickingQueueRow[];
+  // `pending`/`done` are NOT props any more (2026-07-29) — they come from
+  // PickerBoardContext, because the shell now owns the rows and refetches them
+  // itself. Everything below is still passed down: it is identity and roster
+  // data the server resolved, not list data.
   isAdmin: boolean;
   pickers: PickerRosterEntry[];
   activePickerId: number | null;
@@ -82,7 +84,7 @@ function formatLitres(n: number): string {
  * confirm sheet (the Done tab is the safety net).
  */
 export function PickerMyPicksBoard({
-  pending, done, isAdmin, pickers, activePickerId,
+  isAdmin, pickers, activePickerId,
 }: PickerMyPicksBoardProps): React.JSX.Element {
   const router = useRouter();
   const pathname = usePathname();
@@ -104,7 +106,10 @@ export function PickerMyPicksBoard({
   // float over an open bill and a tab tap swapped the list underneath it. Read
   // AND written here — every open/close call site is in this file — and it
   // still drives the marker pause below exactly as before.
-  const { activeTab, detailOpen, setDetailOpen } = usePickerBoard();
+  // `pending`/`done`/`refetchQueue` joined this context on 2026-07-29 when the
+  // shell took ownership of the rows — see PickerPickingShell for why this face
+  // fetches rather than calling router.refresh().
+  const { activeTab, pending, done, refetchQueue, detailOpen, setDetailOpen } = usePickerBoard();
 
   // Detail overlay — always-mounted, translateX slide, same pattern as
   // picking-board-mobile.tsx's detail screen (board.tsx:1083-1267) so the
@@ -121,22 +126,22 @@ export function PickerMyPicksBoard({
   const [marking, setMarking] = useState(false);
 
   // Live sync (2026-07-22) — poll the cheap marker every 15s; on a real change,
-  // router.refresh() re-runs the server page (app/picking/page.tsx) for fresh
-  // pending/done props. The marker GATE is load-bearing here: router.refresh()
-  // is materially heavier than the other two surfaces' client refetches (it
-  // re-runs auth + permissions + getActivePickers + getPickingQueue), so it must
-  // fire ONLY when the board actually moved, never on a bare timer.
+  // refetch this picker's rows. The marker GATE is what keeps that cheap: the
+  // probe is ~84 bytes, the queue fetch behind it only fires when his board
+  // actually moved, never on a bare timer.
   //
-  // scope="openPending" — the SAME scope page.tsx derives this board from
-  // (page.tsx:136 getPickingQueue({ scope: "openPending" }), then filters rows
-  // by pickerId). pickerId=activePickerId NARROWS the marker to THIS picker's
-  // rows (page.tsx:138 filters r.pickerId === viewerId; activePickerId is that
-  // same server-resolved identity, already a prop — not a new one). So his phone
-  // only refreshes when HIS bills change — assigned-to-him, his mark-done, a
-  // supervisor approving his bill, or a bill leaving his set (unassign/reassign-
-  // away drops the marker COUNT) — never on a board-wide edit that isn't his.
-  // Falls back to board-wide (undefined) only when no picker is resolved, when
-  // the board is empty anyway.
+  // ⚠️ onChange was router.refresh() until 2026-07-29 and is now the shell's
+  // refetchQueue — see PickerPickingShell's comment for why a refresh cannot be
+  // trusted on this face (a history pop discards it).
+  //
+  // scope="openPending" — the SAME scope the rows are fetched with, on both the
+  // server (app/picking/page.tsx) and the shell's refetch. pickerId=
+  // activePickerId NARROWS the marker to THIS picker's rows, so his phone only
+  // wakes when HIS bills change — assigned-to-him, his mark-done, a supervisor
+  // approving his bill, or a bill leaving his set (unassign/reassign-away drops
+  // the marker COUNT) — never on a board-wide edit that isn't his. Falls back to
+  // board-wide (undefined) only when no picker is resolved, when the board is
+  // empty anyway.
   //
   // paused = detailOpen || marking. detailOpen — NOT detailOrderId, which never
   // resets to null once a bill has been opened (closeDetail only flips
@@ -144,11 +149,11 @@ export function PickerMyPicksBoard({
   // "detail visibly open" signal. A refresh while a bill is open could shift or
   // blank detailRow ([...pending,...done].find, below) if the bill left his
   // scope; deferring until he backs out avoids that. On unpause, if the marker
-  // moved meanwhile, the hook fires router.refresh() once.
+  // moved meanwhile, the hook fires onChange once.
   usePickingMarker({
     scope: "openPending",
     pickerId: activePickerId ?? undefined,
-    onChange: () => router.refresh(),
+    onChange: refetchQueue,
     paused: detailOpen || marking,
   });
 
@@ -238,47 +243,11 @@ export function PickerMyPicksBoard({
     setDetailOpen(false);
   }
 
-  // ── Deferred refresh (2026-07-29) ────────────────────────────────────────
-  // ⚠️ DO NOT "SIMPLIFY" THIS BACK INTO handleMarkDone. It was there, and it
-  // silently did nothing.
-  //
-  // A router.refresh() dispatched BEFORE or DURING a history pop is thrown
-  // away. Next's router action queue gives navigations priority: when
-  // ACTION_RESTORE (what a back press becomes) arrives while a REFRESH is
-  // still pending, it marks that pending action `discarded = true` so its
-  // result is never applied — node_modules/next/dist/shared/lib/router/
-  // action-queue.js:121-127. Only a discarded SERVER ACTION gets the
-  // `needsRefresh` rescue; a discarded REFRESH gets nothing and is never
-  // retried. The board then renders from the tree snapshot captured at
-  // pushState time — i.e. from BEFORE the write — and the bill only appears
-  // once the 15s marker poll fires a second, uncontested refresh.
-  //
-  // So on this face the refresh MUST be dispatched AFTER the restore has been
-  // committed. Not inside the popstate listener either: that can still land in
-  // the same tick as ACTION_RESTORE and be discarded again. This effect runs
-  // after React has committed the render in which detailOpen went false, by
-  // which point the (synchronous) restore is done and the queue is clear.
-  //
-  // ⚠️ NEITHER tsc NOR a production build can catch a regression here. The
-  // symptom is a ~15-second lag on a phone and nothing else.
-  //
-  // Edge-triggered on true→false, and ONLY when a write set the flag — the
-  // header chevron closes the same way and must not refresh. Same
-  // was-then-is shape as usePickingMarker's unpause flush
-  // (lib/hooks/use-picking-marker.ts:107-114).
-  const pendingRefreshRef = useRef(false);
-  const prevDetailOpenRef = useRef(detailOpen);
-  useEffect(() => {
-    const wasOpen = prevDetailOpenRef.current;
-    prevDetailOpenRef.current = detailOpen;
-    if (wasOpen && !detailOpen && pendingRefreshRef.current) {
-      pendingRefreshRef.current = false;
-      // Re-runs page.tsx's server-side fetch+filter for this picker — the bill
-      // moves between Pending and Done via fresh server props, never a
-      // client-side patch of the arrays passed in.
-      router.refresh();
-    }
-  }, [detailOpen, router]);
+  // (The deferred-refresh flag + edge effect that lived here between
+  // 9941bedb and 2026-07-29 are GONE — they existed only to dodge the router
+  // action queue, and this face no longer touches it. The knowledge they
+  // carried now sits with the mechanism that replaced them, in
+  // PickerPickingShell.)
 
   const rows = activeTab === "pending" ? pending : done;
 
@@ -287,9 +256,8 @@ export function PickerMyPicksBoard({
     return [...pending, ...done].find((r) => r.orderId === detailOrderId) ?? null;
   }, [pending, done, detailOrderId]);
 
-  // Fire-and-forget: toast, arm the deferred refresh, close via history — no
-  // confirm sheet. It does NOT call router.refresh() itself; the effect above
-  // does, once the pop has been committed (see that comment for why).
+  // Fire-and-forget: toast, close via history, then await the refetch — no
+  // confirm sheet. Same order the supervisor's Approve uses.
   // Sends the server-resolved activePickerId (never a client-invented
   // value); the API's own ownership check re-verifies it against the
   // order's real pick_assignments row regardless (see app/api/picking/
@@ -315,37 +283,36 @@ export function PickerMyPicksBoard({
         // 1459/1503/1536), so the module says this one thing one way.
         if (res.status === 409) {
           toast("Already changed — refreshed.");
-          // Same deferred path as the success case below — NOT its own
-          // router.refresh(), which had the identical discard problem waiting
-          // to happen. Closing matters here too: the bill is no longer his, so
-          // leaving the screen open would show line items for a bill that has
-          // left his list (detailRow resolves to null and the header blanks).
-          pendingRefreshRef.current = true;
+          // Close, then refetch — same order as the success path. Closing
+          // matters here too: the bill is no longer his, so leaving the screen
+          // open would show line items for a bill that has left his list
+          // (detailRow resolves to null and the header blanks).
           window.history.back();
+          await refetchQueue();
         } else {
           toast.error(json.error ?? `Request failed (${res.status})`);
         }
         return;
       }
       toast.success(`${detailRow.dealerName} marked done`);
-      // Arm the deferred refresh BEFORE the pop — the effect above reads this
-      // flag once detailOpen goes false. Dispatching router.refresh() here
-      // instead is what caused the 15s lag; see that effect's comment.
-      pendingRefreshRef.current = true;
       // Closes through history so the pushed entry is consumed and the ONE
       // popstate authority does the closing — never setDetailOpen directly.
       // Unconditional, like the supervisor's Approve (picking-board-mobile.tsx
       // :1547) and unlike its Assign: this CTA renders only inside the detail
       // screen, so an entry was always pushed. Nothing else can reach it.
       window.history.back();
+      // Then refetch — the exact shape of the supervisor's Approve
+      // (:1547-1548), which does this same pop and has never lagged. The pop
+      // cannot discard a plain fetch the way it discarded router.refresh().
+      await refetchQueue();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Mark done failed");
     } finally {
       setMarking(false);
     }
-    // `router` is deliberately absent now — this callback no longer touches it.
-    // The refresh moved to the detailOpen-edge effect above.
-  }, [detailRow, activePickerId, marking]);
+    // `router` is deliberately absent — this callback never touches it. The
+    // refresh is refetchQueue, owned by the shell.
+  }, [detailRow, activePickerId, marking, refetchQueue]);
 
   const distinctPackKeys = useMemo(() => {
     if (!lineItems) return [];

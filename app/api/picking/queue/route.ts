@@ -52,8 +52,26 @@ export async function GET(req: Request): Promise<NextResponse> {
     );
   }
 
+  // Optional per-picker narrowing (2026-07-29). Validation copied from
+  // app/api/picking/marker/route.ts so the two routes accept and reject the
+  // identical value — reject a malformed one with a 400 rather than silently
+  // widening back to the whole board (~202 KB) for a caller that asked for one
+  // picker's ~8 KB. Omitted → board-wide, exactly as before.
+  const pickerIdParam = searchParams.get("pickerId")?.trim() || undefined;
+  let pickerId: number | undefined;
+  if (pickerIdParam !== undefined) {
+    const n = Number(pickerIdParam);
+    if (!Number.isInteger(n) || n <= 0) {
+      return NextResponse.json(
+        { error: `Invalid pickerId "${pickerIdParam}" — expected a positive integer` },
+        { status: 400 },
+      );
+    }
+    pickerId = n;
+  }
+
   try {
-    const result = await getPickingQueue({ date: dateParam, scope: scopeParam });
+    const result = await getPickingQueue({ date: dateParam, scope: scopeParam, pickerId });
     return NextResponse.json(result);
   } catch (err) {
     return NextResponse.json(

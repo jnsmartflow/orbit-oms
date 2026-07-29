@@ -122,6 +122,20 @@ export interface PickingQueueOptions {
   /** Defaults to 'single'. NOTHING relies on that default — every app caller
    *  names its scope explicitly (see PickingQueueScope above). */
   scope?: PickingQueueScope;
+  /**
+   * Optional per-picker narrowing (2026-07-29) — returns ONLY the bills
+   * assigned to this picker. Added for the picker "My Picks" face, which
+   * fetches its own list client-side: unnarrowed the response is ~202 KB of
+   * whole-board rows for a phone that renders about ten of them, and it would
+   * put every other picker's bills on his device. Narrowed it is ~8 KB.
+   *
+   * Applied the SAME way app/api/picking/marker/route.ts applies its own
+   * pickerId — AND-merged onto buildPickingWhere()'s result inside
+   * getPickingQueue(), never into buildPickingWhere() itself, so the shared
+   * scope filter the marker and the supervisor board rely on stays untouched.
+   * Omitted → board-wide, byte-identical to before this option existed.
+   */
+  pickerId?: number;
 }
 
 // This payload carried four aggregate counters until 2026-07-28 — `windows[]`
@@ -275,9 +289,19 @@ export async function getPickingQueue(
   // marker endpoint reuses the SAME `where`, so the two never drift.
   const { where, isoDate, dateOnly } = buildPickingWhere(options);
 
+  // Optional per-picker narrowing (see PickingQueueOptions.pickerId). Merged
+  // HERE, not inside buildPickingWhere, so the shared scope filter stays
+  // byte-identical for the marker and every board-wide caller. A to-one
+  // relation filter: only orders whose pick_assignments row carries this
+  // pickerId — an unassigned bill, or one assigned to somebody else, is out.
+  const scopedWhere: Prisma.ordersWhereInput =
+    options.pickerId !== undefined
+      ? { ...where, pickAssignment: { pickerId: options.pickerId } }
+      : where;
+
   // Sequential awaits only — never prisma.$transaction (CORE §3).
   const orders = await prisma.orders.findMany({
-    where,
+    where: scopedWhere,
     include: {
       customer: { select: DEALER_SELECT },
       shipToOverrideCustomer: { select: DEALER_SELECT },

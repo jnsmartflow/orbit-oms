@@ -8,6 +8,7 @@ import type { WorkflowTab } from "@/components/shared/workflow-tab-bar";
 import type { NavItemConfig } from "@/lib/permissions";
 import type { PickingQueueRow } from "@/lib/picking/types";
 import type { PickingQueueResult } from "@/lib/picking/queue";
+import { splitPickerRows } from "@/lib/picking/picker-split";
 import { usePickingMarker } from "@/lib/hooks/use-picking-marker";
 
 // Stage 3/4 (2026-07-19) — Direction A. `workflowTabs`/`activeTabKey`/
@@ -90,6 +91,14 @@ interface PickerBoardContextValue {
   // Read-only in the board: its two writers were the TopBarTabs deleted with
   // the strip, and the bottom bar is the only writer now.
   activeTab: PickerTabKey;
+  // The picker's two lists, split from `rows` by the ONE shared rule
+  // (lib/picking/picker-split.ts). Owned here rather than passed as props from
+  // the server page, because this face now refetches its own rows.
+  pending: PickingQueueRow[];
+  done:    PickingQueueRow[];
+  // The ONE refresh path for this face. Called by the 15s marker and by Mark
+  // Done. See PickerPickingShell for why it is a fetch and not router.refresh().
+  refetchQueue: () => Promise<void>;
   // Lifted from the board 2026-07-29 for the SAME reason detailOpen was lifted
   // to SupervisorPickingShell: RoleLayoutClient carries the `hideBar` slot and
   // renders ABOVE the board, so the shell has to know when a bill is open.
@@ -115,18 +124,18 @@ interface PickingMobileShellProps {
   navItems:        NavItemConfig[];
   showPickerFace:  boolean;
   canSeePushTest:  boolean;
-  // Picker-face bottom-tab counts (2026-07-29). Two plain numbers, NOT the
-  // rows: app/picking/page.tsx already owns the only filter that decides
-  // pending vs done (its isDone/isChecked split + the today-IST pickedAt
-  // fence), so the counts are `.length` of the very arrays it hands the
-  // board. Re-deriving them here would be a second source of truth for the
-  // same question. Undefined on the supervisor path, where it is ignored.
-  pickerTabCounts?: { pending: number; done: number };
+  // Picker-face seed data (2026-07-29). The server page resolves this picker's
+  // rows and hands them over for FIRST PAINT only; from then on the shell
+  // refetches them itself. Already narrowed to him server-side, so this is a
+  // handful of rows in the RSC payload, not the whole board.
+  pickerRows?:     PickingQueueRow[];
+  pickerViewerId?: number | null;
   children:        React.ReactNode;
 }
 
 export function PickingMobileShell({
-  role, userName, userInitials, navItems, showPickerFace, canSeePushTest, pickerTabCounts, children,
+  role, userName, userInitials, navItems, showPickerFace, canSeePushTest,
+  pickerRows, pickerViewerId, children,
 }: PickingMobileShellProps): React.JSX.Element {
   // Picker face: its OWN two-tab bottom bar (Pending/Done) since 2026-07-29 —
   // it no longer falls through to the default Home/Menu/You nav. Menu and You
@@ -138,7 +147,8 @@ export function PickingMobileShell({
       userName={userName}
       userInitials={userInitials}
       navItems={navItems}
-      counts={pickerTabCounts ?? { pending: 0, done: 0 }}
+      initialRows={pickerRows ?? []}
+      viewerId={pickerViewerId ?? null}
     >
       {children}
     </PickerPickingShell>
@@ -175,18 +185,32 @@ interface PickerPickingShellProps {
   userName:     string;
   userInitials: string;
   navItems:     NavItemConfig[];
-  counts:       { pending: number; done: number };
+  initialRows:  PickingQueueRow[];
+  viewerId:     number | null;
   children:     React.ReactNode;
 }
 
 /**
- * The picker face's shell — owns ONLY the active tab.
+ * The picker face's shell — owns the active tab, the rows, and the refetch.
  *
- * No fetch, no marker, no refetch: this face's rows are resolved server-side
- * in app/picking/page.tsx and arrive as props, and its live sync (narrowed to
- * the picker's own pickerId) stays inside the board where it already lives.
- * So unlike SupervisorPickingShell below, nothing here needs lifting except
- * the one piece of state the bottom bar has to reach.
+ * ⚠️ WHY THIS FACE FETCHES INSTEAD OF CALLING router.refresh() (2026-07-29).
+ * It used router.refresh(), and the refresh was silently thrown away. Next's
+ * router action queue gives navigations priority: an ACTION_RESTORE — what the
+ * history pop that closes a bill becomes — marks any pending action
+ * `discarded = true` so its result is never applied
+ * (node_modules/next/dist/shared/lib/router/action-queue.js:121-127), and only
+ * a discarded SERVER ACTION gets the needsRefresh rescue. Mark Done therefore
+ * left the bill in Pending until the 15s marker fired a second, uncontested
+ * refresh. TWO attempts to fix that by timing failed, because the ordering is
+ * the scheduler's, not ours. A plain fetch + setState never enters that queue
+ * and cannot be discarded — which is why the supervisor board, doing the
+ * identical history pop on Approve, never had this bug. Do not "simplify" this
+ * back to router.refresh(): no build or type-check catches it, only a phone.
+ *
+ * Rows are SEEDED from the server render (initialRows) so first paint is
+ * unchanged, then the phone owns them. Both sides split with the same
+ * splitPickerRows() (lib/picking/picker-split.ts) — one rule, one place, so
+ * server and client can never disagree about which tab a bill belongs to.
  *
  * Two tabs, matching the DATA: the stages are pick_assigned / pick_done /
  * pick_checked, so "pending" and "done" is the whole picture — there is no
@@ -211,22 +235,52 @@ interface PickerPickingShellProps {
  * anything here changes.
  */
 function PickerPickingShell({
-  role, userName, userInitials, navItems, counts, children,
+  role, userName, userInitials, navItems, initialRows, viewerId, children,
 }: PickerPickingShellProps): React.JSX.Element {
   const [activeTab, setActiveTab] = useState<PickerTabKey>("pending");
   const [detailOpen, setDetailOpen] = useState(false);
+  // Seeded from the server render — first paint is byte-identical to before
+  // this face started fetching. The phone takes over only for UPDATES.
+  const [rows, setRows] = useState<PickingQueueRow[]>(initialRows);
 
+  // Narrowed server-side by pickerId: ~8 KB of his own bills instead of ~202 KB
+  // of the whole board, and no other picker's work reaches this device. Silent
+  // on failure, exactly like the supervisor's refetchQueue below — keep the
+  // last good rows, never blank the board on a network blip; the next marker
+  // tick or the next action retries.
+  const refetchQueue = useCallback(async () => {
+    if (viewerId === null) return;
+    try {
+      const res = await fetch(`/api/picking/queue?scope=openPending&pickerId=${viewerId}`);
+      if (!res.ok) return;
+      const json = (await res.json()) as PickingQueueResult;
+      setRows(json.rows);
+    } catch {
+      // silent — keep last good data, retry on the next trigger
+    }
+  }, [viewerId]);
+
+  // THE one split, shared with app/picking/page.tsx. The clock is passed in
+  // (never read inside), and the IST derivation there is host-independent —
+  // which matters now that this runs on a phone in Asia/Kolkata as well as on
+  // Vercel in UTC. Order is the server's PICKING_SPINE; this only filters.
+  const { pending, done } = useMemo(
+    () => splitPickerRows(rows, viewerId, new Date()),
+    [rows, viewerId],
+  );
+
+  // Badge on Pending only — `done` deliberately passes no count.
   const workflowTabs = useMemo<WorkflowTab[]>(
     () => [
-      { key: "pending", label: "Pending", count: counts.pending, icon: Package },
+      { key: "pending", label: "Pending", count: pending.length, icon: Package },
       { key: "done", label: "Done", icon: CheckCircle2 },
     ],
-    [counts.pending],
+    [pending.length],
   );
 
   const contextValue = useMemo<PickerBoardContextValue>(
-    () => ({ activeTab, detailOpen, setDetailOpen }),
-    [activeTab, detailOpen],
+    () => ({ activeTab, pending, done, refetchQueue, detailOpen, setDetailOpen }),
+    [activeTab, pending, done, refetchQueue, detailOpen],
   );
 
   return (
@@ -249,7 +303,10 @@ function PickerPickingShell({
 
 function SupervisorPickingShell({
   role, userName, userInitials, navItems, children,
-}: Omit<PickingMobileShellProps, "showPickerFace" | "canSeePushTest" | "pickerTabCounts">): React.JSX.Element {
+}: Omit<
+  PickingMobileShellProps,
+  "showPickerFace" | "canSeePushTest" | "pickerRows" | "pickerViewerId"
+>): React.JSX.Element {
   // Lifted verbatim from PickingBoardMobile's pre-Stage-3 fetch (same shape,
   // same endpoint, same date-driven pattern as picking-queue.tsx's desktop
   // sibling) — only the OWNER moved.

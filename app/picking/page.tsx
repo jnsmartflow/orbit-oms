@@ -8,7 +8,6 @@ import { PickingBoardMobile } from "@/components/picking/picking-board-mobile";
 import { PickerMyPicksBoard } from "@/components/picking/picker-my-picks-board";
 import { ROLES } from "@/lib/rbac";
 import { getPickingQueue } from "@/lib/picking/queue";
-import { splitPickerRows } from "@/lib/picking/picker-split";
 import { getActivePickers, type PickerRosterEntry } from "@/lib/picking/picker-roster";
 import type { PickingQueueRow } from "@/lib/picking/types";
 
@@ -18,11 +17,12 @@ function getInitials(name: string): string {
   return name.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2);
 }
 
-// isPickedTodayIST + the pending/done split moved to lib/picking/picker-split.ts
-// on 2026-07-29 (splitPickerRows). The rule is unchanged; it just needs to be
-// callable from the client too, because the picker face is moving off
-// router.refresh() onto a client fetch — and a rule that lives in a server
-// component cannot be shared. Its doc comments moved with it.
+// isPickedTodayIST + the pending/done split left this file on 2026-07-29 for
+// lib/picking/picker-split.ts (splitPickerRows), and the CALLER is now
+// PickerPickingShell, not this page: the picker face fetches its own rows
+// because a router.refresh() is discarded by the history pop that closes a
+// bill. This page still resolves the FIRST paint — it just hands over rows
+// instead of two pre-split lists.
 
 interface PickingPageProps {
   searchParams: { view?: string; as?: string };
@@ -83,8 +83,7 @@ export default async function PickingPage({ searchParams }: PickingPageProps) {
   const showPickerFace  = isPickerRole || (canUseTestHook && searchParams?.view === "picker");
 
   let pickerFaceData: {
-    pending: PickingQueueRow[];
-    done: PickingQueueRow[];
+    rows: PickingQueueRow[];
     pickers: PickerRosterEntry[];
     activePickerId: number | null;
   } | null = null;
@@ -118,16 +117,22 @@ export default async function PickingPage({ searchParams }: PickingPageProps) {
     // bills from earlier days, not just today's.
     // Done = today only (daily receipt), fenced on pickedAt IST — see picking
     // design 2026-07-20.
-    const queue = await getPickingQueue({ scope: "openPending" });
-    // The rule itself lives in lib/picking/picker-split.ts so the client refetch
-    // can call the SAME one. The clock is passed in rather than read inside, so
-    // both callers control it. Order is the server's PICKING_SPINE throughout —
-    // splitPickerRows only filters.
-    const { pending, done } = splitPickerRows(queue.rows, viewerId, new Date());
+    // Narrowed to HIS bills in the query itself (2026-07-29) rather than
+    // fetched board-wide and filtered after: the shell refetches this same
+    // shape client-side, where the whole board would be ~202 KB per fetch and
+    // would put every other picker's work on his phone. splitPickerRows still
+    // filters by pickerId on top — idempotent here, and it must keep doing so
+    // because it is the rule, not an optimisation.
+    const queue = await getPickingQueue({
+      scope: "openPending",
+      pickerId: viewerId ?? undefined,
+    });
 
     pickerFaceData = {
-      pending,
-      done,
+      // Rows, not the split: the shell owns the split now (one rule, both
+      // sides) and needs the raw rows to re-split after each refetch. This is
+      // his handful of bills, so the RSC payload is unchanged in practice.
+      rows: queue.rows,
       pickers,
       activePickerId: viewerId,
     };
@@ -142,15 +147,12 @@ export default async function PickingPage({ searchParams }: PickingPageProps) {
         navItems={dedupedNavItems}
         showPickerFace={showPickerFace}
         canSeePushTest={canSeePushTest}
-        /* Bottom-tab counts for the picker face. Derived from the SAME two
-           arrays handed to the board below — the filter that decides pending
-           vs done (isDone/isChecked + the today-IST pickedAt fence) stays the
-           one above, and is never repeated in the shell. */
-        pickerTabCounts={
-          pickerFaceData
-            ? { pending: pickerFaceData.pending.length, done: pickerFaceData.done.length }
-            : undefined
-        }
+        /* Seed data for the picker face — first paint only. The shell splits
+           these rows with splitPickerRows (the same rule this file used to
+           apply) for both lists AND the tab counts, then owns them: every
+           later update is its own fetch, not a re-render of this page. */
+        pickerRows={pickerFaceData?.rows}
+        pickerViewerId={pickerFaceData?.activePickerId}
       >
         {/* ONE face at every width — the card board (2026-07-28). The desktop
             table that used to render here behind `hidden md:block` is retired;
@@ -160,8 +162,6 @@ export default async function PickingPage({ searchParams }: PickingPageProps) {
         <div className="block">
           {showPickerFace && pickerFaceData ? (
             <PickerMyPicksBoard
-              pending={pickerFaceData.pending}
-              done={pickerFaceData.done}
               isAdmin={canUseTestHook}
               pickers={pickerFaceData.pickers}
               activePickerId={pickerFaceData.activePickerId}
