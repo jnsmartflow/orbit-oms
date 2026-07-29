@@ -77,8 +77,9 @@ function formatLitres(n: number): string {
  * component ever sees them) — this component does not widen that scope
  * itself, including for the Mark Done write below (POSTs the same
  * server-resolved `activePickerId`, never a client-invented identity).
- * Mark Done is fire-and-forget — toast, then back to the list via
- * router.refresh(); no confirm sheet (the Done tab is the safety net).
+ * Mark Done is fire-and-forget — toast, then back to the list via a history
+ * pop, with the server refresh DEFERRED until that pop has committed; no
+ * confirm sheet (the Done tab is the safety net).
  */
 export function PickerMyPicksBoard({
   pending, done, isAdmin, pickers, activePickerId,
@@ -237,6 +238,48 @@ export function PickerMyPicksBoard({
     setDetailOpen(false);
   }
 
+  // ── Deferred refresh (2026-07-29) ────────────────────────────────────────
+  // ⚠️ DO NOT "SIMPLIFY" THIS BACK INTO handleMarkDone. It was there, and it
+  // silently did nothing.
+  //
+  // A router.refresh() dispatched BEFORE or DURING a history pop is thrown
+  // away. Next's router action queue gives navigations priority: when
+  // ACTION_RESTORE (what a back press becomes) arrives while a REFRESH is
+  // still pending, it marks that pending action `discarded = true` so its
+  // result is never applied — node_modules/next/dist/shared/lib/router/
+  // action-queue.js:121-127. Only a discarded SERVER ACTION gets the
+  // `needsRefresh` rescue; a discarded REFRESH gets nothing and is never
+  // retried. The board then renders from the tree snapshot captured at
+  // pushState time — i.e. from BEFORE the write — and the bill only appears
+  // once the 15s marker poll fires a second, uncontested refresh.
+  //
+  // So on this face the refresh MUST be dispatched AFTER the restore has been
+  // committed. Not inside the popstate listener either: that can still land in
+  // the same tick as ACTION_RESTORE and be discarded again. This effect runs
+  // after React has committed the render in which detailOpen went false, by
+  // which point the (synchronous) restore is done and the queue is clear.
+  //
+  // ⚠️ NEITHER tsc NOR a production build can catch a regression here. The
+  // symptom is a ~15-second lag on a phone and nothing else.
+  //
+  // Edge-triggered on true→false, and ONLY when a write set the flag — the
+  // header chevron closes the same way and must not refresh. Same
+  // was-then-is shape as usePickingMarker's unpause flush
+  // (lib/hooks/use-picking-marker.ts:107-114).
+  const pendingRefreshRef = useRef(false);
+  const prevDetailOpenRef = useRef(detailOpen);
+  useEffect(() => {
+    const wasOpen = prevDetailOpenRef.current;
+    prevDetailOpenRef.current = detailOpen;
+    if (wasOpen && !detailOpen && pendingRefreshRef.current) {
+      pendingRefreshRef.current = false;
+      // Re-runs page.tsx's server-side fetch+filter for this picker — the bill
+      // moves between Pending and Done via fresh server props, never a
+      // client-side patch of the arrays passed in.
+      router.refresh();
+    }
+  }, [detailOpen, router]);
+
   const rows = activeTab === "pending" ? pending : done;
 
   const detailRow: PickingQueueRow | null = useMemo(() => {
@@ -244,7 +287,9 @@ export function PickerMyPicksBoard({
     return [...pending, ...done].find((r) => r.orderId === detailOrderId) ?? null;
   }, [pending, done, detailOrderId]);
 
-  // Fire-and-forget: toast, close, router.refresh() — no confirm sheet.
+  // Fire-and-forget: toast, arm the deferred refresh, close via history — no
+  // confirm sheet. It does NOT call router.refresh() itself; the effect above
+  // does, once the pop has been committed (see that comment for why).
   // Sends the server-resolved activePickerId (never a client-invented
   // value); the API's own ownership check re-verifies it against the
   // order's real pick_assignments row regardless (see app/api/picking/
@@ -270,29 +315,37 @@ export function PickerMyPicksBoard({
         // 1459/1503/1536), so the module says this one thing one way.
         if (res.status === 409) {
           toast("Already changed — refreshed.");
-          router.refresh();
+          // Same deferred path as the success case below — NOT its own
+          // router.refresh(), which had the identical discard problem waiting
+          // to happen. Closing matters here too: the bill is no longer his, so
+          // leaving the screen open would show line items for a bill that has
+          // left his list (detailRow resolves to null and the header blanks).
+          pendingRefreshRef.current = true;
+          window.history.back();
         } else {
           toast.error(json.error ?? `Request failed (${res.status})`);
         }
         return;
       }
       toast.success(`${detailRow.dealerName} marked done`);
+      // Arm the deferred refresh BEFORE the pop — the effect above reads this
+      // flag once detailOpen goes false. Dispatching router.refresh() here
+      // instead is what caused the 15s lag; see that effect's comment.
+      pendingRefreshRef.current = true;
       // Closes through history so the pushed entry is consumed and the ONE
       // popstate authority does the closing — never setDetailOpen directly.
       // Unconditional, like the supervisor's Approve (picking-board-mobile.tsx
       // :1547) and unlike its Assign: this CTA renders only inside the detail
       // screen, so an entry was always pushed. Nothing else can reach it.
       window.history.back();
-      // Re-runs page.tsx's server-side fetch+filter for this picker — the
-      // bill moves from Pending to Done via fresh server props, never a
-      // client-side patch of the arrays passed in.
-      router.refresh();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Mark done failed");
     } finally {
       setMarking(false);
     }
-  }, [detailRow, activePickerId, marking, router]);
+    // `router` is deliberately absent now — this callback no longer touches it.
+    // The refresh moved to the detailOpen-edge effect above.
+  }, [detailRow, activePickerId, marking]);
 
   const distinctPackKeys = useMemo(() => {
     if (!lineItems) return [];
