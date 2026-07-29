@@ -109,7 +109,6 @@ export default async function PickingPage({ searchParams }: PickingPageProps) {
   let pickerFaceData: {
     pending: PickingQueueRow[];
     done: PickingQueueRow[];
-    viewerName: string;
     pickers: PickerRosterEntry[];
     activePickerId: number | null;
   } | null = null;
@@ -118,17 +117,20 @@ export default async function PickingPage({ searchParams }: PickingPageProps) {
     // Sequential awaits only — never prisma.$transaction (CORE §3).
     const pickers = canUseTestHook ? await getActivePickers() : [];
 
+    // viewerName was dropped 2026-07-29 with the hand-rolled teal strip that
+    // was its only render site (the shared ModuleMobileHeader carries a title
+    // and an avatar, no subtitle). Identity is still visible: a real picker
+    // sees his own name in the You sheet, and an admin previewing someone
+    // else's board reads the name off the "view as" dropdown below, which is
+    // the authoritative control for that state anyway.
     let viewerId: number | null;
-    let viewerName: string;
     if (isPickerRole) {
       viewerId = Number(session.user.id);
-      viewerName = userName;
     } else {
       const requestedId = searchParams?.as ? Number(searchParams.as) : null;
       const viewedPicker =
         (requestedId !== null ? pickers.find((p) => p.id === requestedId) : undefined) ?? pickers[0];
       viewerId = viewedPicker?.id ?? null;
-      viewerName = viewedPicker?.name ?? "—";
     }
 
     // Scoped server-side, BEFORE anything reaches the client — filtering on
@@ -163,7 +165,6 @@ export default async function PickingPage({ searchParams }: PickingPageProps) {
       done: myRows.filter(
         (r) => (r.isDone || r.isChecked) && isPickedTodayIST(r.pickedAt, istDayStart, istDayEnd),
       ),
-      viewerName,
       pickers,
       activePickerId: viewerId,
     };
@@ -178,6 +179,15 @@ export default async function PickingPage({ searchParams }: PickingPageProps) {
         navItems={dedupedNavItems}
         showPickerFace={showPickerFace}
         canSeePushTest={canSeePushTest}
+        /* Bottom-tab counts for the picker face. Derived from the SAME two
+           arrays handed to the board below — the filter that decides pending
+           vs done (isDone/isChecked + the today-IST pickedAt fence) stays the
+           one above, and is never repeated in the shell. */
+        pickerTabCounts={
+          pickerFaceData
+            ? { pending: pickerFaceData.pending.length, done: pickerFaceData.done.length }
+            : undefined
+        }
       >
         {/* ONE face at every width — the card board (2026-07-28). The desktop
             table that used to render here behind `hidden md:block` is retired;
@@ -189,7 +199,6 @@ export default async function PickingPage({ searchParams }: PickingPageProps) {
             <PickerMyPicksBoard
               pending={pickerFaceData.pending}
               done={pickerFaceData.done}
-              viewerName={pickerFaceData.viewerName}
               isAdmin={canUseTestHook}
               pickers={pickerFaceData.pickers}
               activePickerId={pickerFaceData.activePickerId}

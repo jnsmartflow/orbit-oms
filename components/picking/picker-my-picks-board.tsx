@@ -5,6 +5,9 @@ import { useRouter, usePathname } from "next/navigation";
 import { ChevronLeft } from "lucide-react";
 import { toast } from "sonner";
 import { MOBILE_NAV_CLEARANCE } from "@/components/shared/mobile-shell";
+import { useMobileShell } from "@/components/shared/mobile-shell-context";
+import { ModuleMobileHeader } from "@/components/shared/module-mobile-header";
+import { usePickerBoard } from "./picking-mobile-shell";
 import type { PickingQueueRow } from "@/lib/picking/types";
 import type { PickerRosterEntry } from "@/lib/picking/picker-roster";
 import { usePickingMarker } from "@/lib/hooks/use-picking-marker";
@@ -33,7 +36,6 @@ interface LineItem {
 interface PickerMyPicksBoardProps {
   pending: PickingQueueRow[];
   done: PickingQueueRow[];
-  viewerName: string;
   isAdmin: boolean;
   pickers: PickerRosterEntry[];
   activePickerId: number | null;
@@ -62,42 +64,12 @@ function formatLitres(n: number): string {
   });
 }
 
-// Plain-text tab, exact copy of picking-board-mobile.tsx's TopBarTab
-// (board.tsx:119-150) — label + count, 3px white underline, no pill
-// container. Duplicated per the approved plan (§2: duplicate a third time
-// rather than extract from the untouched live board).
-function TopBarTab({
-  label, count, active, onClick,
-}: {
-  label: string; count: number; active: boolean; onClick: () => void;
-}): React.JSX.Element {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="relative flex items-baseline gap-[7px] min-h-[40px] py-2"
-    >
-      <span className={"text-[15.5px] whitespace-nowrap " + (active ? "text-white font-bold" : "text-white/60 font-medium")}>
-        {label}
-      </span>
-      <span
-        className={
-          "text-[13px] font-semibold tabular-nums whitespace-nowrap " +
-          (active ? "text-white" : "text-white/45")
-        }
-      >
-        {count}
-      </span>
-      <span
-        aria-hidden="true"
-        className={
-          "absolute left-0 right-0 -bottom-px h-[3px] rounded-full bg-white " +
-          (active ? "opacity-100" : "opacity-0")
-        }
-      />
-    </button>
-  );
-}
+// The local TopBarTab copy that used to live here (a self-declared third
+// copy of picking-board-mobile.tsx's original) was DELETED 2026-07-29: the
+// Pending/Done strip moved to the shared bottom bar (WorkflowTabBar, driven
+// by PickerPickingShell in picking-mobile-shell.tsx), the same Direction-A
+// move the supervisor board made on 2026-07-19. CLAUDE_PICKING.md §5.4's
+// note that this face "keeps a local TopBarTab copy" is now stale.
 
 /**
  * The picker's own list. `pending`/`done` arrive already scoped server-side
@@ -109,12 +81,23 @@ function TopBarTab({
  * router.refresh(); no confirm sheet (the Done tab is the safety net).
  */
 export function PickerMyPicksBoard({
-  pending, done, viewerName, isAdmin, pickers, activePickerId,
+  pending, done, isAdmin, pickers, activePickerId,
 }: PickerMyPicksBoardProps): React.JSX.Element {
   const router = useRouter();
   const pathname = usePathname();
 
-  const [activeTab, setActiveTab] = useState<"pending" | "done">("pending");
+  // Menu/You handlers + the signed-in user's initials for the shared header.
+  // The provider is already mounted globally by role-layout-client.tsx:46 —
+  // this face reaches the SAME sheet instances the bottom bar used to open,
+  // so no second copy of that markup is mounted.
+  const { openMenu, openYou, userInitials } = useMobileShell();
+
+  // Tab state now lives ONE level up, in PickerPickingShell — the bottom bar
+  // that switches it is rendered by RoleLayoutClient, which sits ABOVE this
+  // board in the tree (same reason the supervisor board's activeTab moved to
+  // SupervisorPickingShell in Stage 3). Read-only here: this face's only two
+  // writers were the TopBarTabs that just came out.
+  const { activeTab } = usePickerBoard();
 
   // Detail overlay — always-mounted, translateX slide, same pattern as
   // picking-board-mobile.tsx's detail screen (board.tsx:1083-1267) so the
@@ -285,17 +268,21 @@ export function PickerMyPicksBoard({
         </div>
       )}
 
-      <div
-        className="flex-shrink-0 bg-teal-600 px-4 pb-3"
-        style={{ paddingTop: "max(env(safe-area-inset-top, 0px), 12px)" }}
-      >
-        <h1 className="text-[19px] font-extrabold text-white tracking-tight mb-[3px]">My Picks</h1>
-        <div className="text-[12.5px] text-white/75 font-medium mb-2.5">{viewerName}</div>
-        <div className="flex items-center gap-6">
-          <TopBarTab label="Pending" count={pending.length} active={activeTab === "pending"} onClick={() => setActiveTab("pending")} />
-          <TopBarTab label="Done" count={done.length} active={activeTab === "done"} onClick={() => setActiveTab("done")} />
-        </div>
-      </div>
+      {/* Shared Direction-A header (2026-07-29) — the same component the
+          supervisor board uses (components/shared/module-mobile-header.tsx),
+          so the two picking faces stop drifting. showSearch={false}: this
+          face has no search, and the header leaves no gap where the icon
+          would be. Replaces the hand-rolled teal block that carried the
+          title, the viewer's name and the Pending/Done TopBarTab strip; the
+          tabs are now the bottom bar (PickerPickingShell) and identity lives
+          in the avatar → You sheet. */}
+      <ModuleMobileHeader
+        title="My Picks"
+        avatarInitials={userInitials}
+        onAvatarClick={openYou}
+        onMenuClick={openMenu}
+        showSearch={false}
+      />
 
       {/* Card list — three lines only, no checkbox, no flags, no elapsed
           pill, no avatar, no footer. Reserves 76px for the global mobile

@@ -74,6 +74,34 @@ export function usePickingBoard(): PickingBoardContextValue {
   return ctx;
 }
 
+// ── Picker face (2026-07-29) ────────────────────────────────────────────────
+// The picker's Pending/Done strip moved to the shared bottom bar, the same
+// Direction-A move the supervisor board made on 2026-07-19 — so its tab state
+// had to move up here too, for the identical reason: RoleLayoutClient carries
+// the `workflowTabs` slot and renders ABOVE the board in the tree.
+//
+// Deliberately SMALLER than PickingBoardContextValue above. This face fetches
+// nothing client-side (app/picking/page.tsx resolves its rows server-side and
+// passes them as props), so there is no data/loading/error/refetch to share —
+// only which tab is showing. It is read-only: the board's two writers were the
+// TopBarTabs that were deleted with the strip; the bottom bar is the only
+// writer now.
+export type PickerTabKey = "pending" | "done";
+
+interface PickerBoardContextValue {
+  activeTab: PickerTabKey;
+}
+
+const PickerBoardContext = createContext<PickerBoardContextValue | null>(null);
+
+export function usePickerBoard(): PickerBoardContextValue {
+  const ctx = useContext(PickerBoardContext);
+  if (!ctx) {
+    throw new Error("usePickerBoard must be used within a PickingMobileShell (picker face only)");
+  }
+  return ctx;
+}
+
 interface PickingMobileShellProps {
   role:            RoleSidebarRole;
   userName:        string;
@@ -81,18 +109,33 @@ interface PickingMobileShellProps {
   navItems:        NavItemConfig[];
   showPickerFace:  boolean;
   canSeePushTest:  boolean;
+  // Picker-face bottom-tab counts (2026-07-29). Two plain numbers, NOT the
+  // rows: app/picking/page.tsx already owns the only filter that decides
+  // pending vs done (its isDone/isChecked split + the today-IST pickedAt
+  // fence), so the counts are `.length` of the very arrays it hands the
+  // board. Re-deriving them here would be a second source of truth for the
+  // same question. Undefined on the supervisor path, where it is ignored.
+  pickerTabCounts?: { pending: number; done: number };
   children:        React.ReactNode;
 }
 
 export function PickingMobileShell({
-  role, userName, userInitials, navItems, showPickerFace, canSeePushTest, children,
+  role, userName, userInitials, navItems, showPickerFace, canSeePushTest, pickerTabCounts, children,
 }: PickingMobileShellProps): React.JSX.Element {
-  // Picker face (or a future non-supervisor mobile face): no workflow tabs,
-  // no queue fetch here — RoleLayoutClient renders with its default bar.
+  // Picker face: its OWN two-tab bottom bar (Pending/Done) since 2026-07-29 —
+  // it no longer falls through to the default Home/Menu/You nav. Menu and You
+  // did not disappear; they demoted to the face's own header, exactly as the
+  // supervisor board's did (CLAUDE_UI.md §59.5).
   const shell = showPickerFace ? (
-    <RoleLayoutClient role={role} userName={userName} userInitials={userInitials} navItems={navItems}>
+    <PickerPickingShell
+      role={role}
+      userName={userName}
+      userInitials={userInitials}
+      navItems={navItems}
+      counts={pickerTabCounts ?? { pending: 0, done: 0 }}
+    >
       {children}
-    </RoleLayoutClient>
+    </PickerPickingShell>
   ) : (
     <SupervisorPickingShell role={role} userName={userName} userInitials={userInitials} navItems={navItems}>
       {children}
@@ -118,6 +161,74 @@ export function PickingMobileShell({
         </a>
       )}
     </>
+  );
+}
+
+interface PickerPickingShellProps {
+  role:         RoleSidebarRole;
+  userName:     string;
+  userInitials: string;
+  navItems:     NavItemConfig[];
+  counts:       { pending: number; done: number };
+  children:     React.ReactNode;
+}
+
+/**
+ * The picker face's shell — owns ONLY the active tab.
+ *
+ * No fetch, no marker, no refetch: this face's rows are resolved server-side
+ * in app/picking/page.tsx and arrive as props, and its live sync (narrowed to
+ * the picker's own pickerId) stays inside the board where it already lives.
+ * So unlike SupervisorPickingShell below, nothing here needs lifting except
+ * the one piece of state the bottom bar has to reach.
+ *
+ * Two tabs, matching the DATA: the stages are pick_assigned / pick_done /
+ * pick_checked, so "pending" and "done" is the whole picture — there is no
+ * third state to add a third tab for.
+ *
+ * Icons reuse the supervisor board's vocabulary (§ the workflowTabs memo
+ * below in this file): Package = goods being fetched right now, CheckCircle2
+ * = finished. Inbox is deliberately NOT reused — it means "waiting to be
+ * assigned", which is a supervisor concept the picker never sees.
+ *
+ * Badge on Pending only. Done deliberately passes no `count`, so
+ * WorkflowTabBar's `showBadge` is false and it renders none: a picker's
+ * finished pile is a receipt, not work still requiring him — the same
+ * reasoning that keeps isChecked out of the supervisor's Done badge.
+ *
+ * No `hideBar`: the bar stays up on this face's detail screen (the Mark Done
+ * CTA already reserves MOBILE_NAV_CLEARANCE for it), unlike the supervisor's
+ * detail screen which claims the whole viewport.
+ */
+function PickerPickingShell({
+  role, userName, userInitials, navItems, counts, children,
+}: PickerPickingShellProps): React.JSX.Element {
+  const [activeTab, setActiveTab] = useState<PickerTabKey>("pending");
+
+  const workflowTabs = useMemo<WorkflowTab[]>(
+    () => [
+      { key: "pending", label: "Pending", count: counts.pending, icon: Package },
+      { key: "done", label: "Done", icon: CheckCircle2 },
+    ],
+    [counts.pending],
+  );
+
+  const contextValue = useMemo<PickerBoardContextValue>(() => ({ activeTab }), [activeTab]);
+
+  return (
+    <RoleLayoutClient
+      role={role}
+      userName={userName}
+      userInitials={userInitials}
+      navItems={navItems}
+      workflowTabs={workflowTabs}
+      activeTabKey={activeTab}
+      onTabChange={(key) => setActiveTab(key as PickerTabKey)}
+    >
+      <PickerBoardContext.Provider value={contextValue}>
+        {children}
+      </PickerBoardContext.Provider>
+    </RoleLayoutClient>
   );
 }
 
