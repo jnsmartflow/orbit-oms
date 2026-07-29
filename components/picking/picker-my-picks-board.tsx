@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { ChevronLeft, Star } from "lucide-react";
 import { toast } from "sonner";
-import { MOBILE_NAV_CLEARANCE } from "@/components/shared/mobile-shell";
 import { useMobileShell } from "@/components/shared/mobile-shell-context";
 import { ModuleMobileHeader } from "@/components/shared/module-mobile-header";
 import { AgeBadge, FamilyChip, UnlistedChip } from "./card-atoms";
@@ -528,18 +527,23 @@ export function PickerMyPicksBoard({
           )}
         </div>
 
-        {/* paddingBottom reads MOBILE_NAV_CLEARANCE (components/shared/
-            mobile-shell.tsx) — this CTA used to be pinned at just
-            `max(safe-area, 14px)`, no reservation for the mobile shell's
-            fixed bottom nav, so it rendered behind it with only a sliver
-            tappable above the Home/Menu/You bar. Same fix as
-            picking-board-mobile.tsx's "Assign to picker" CTA and
-            SHEET_GEOMETRY there — one shared constant, not a fourth
-            hand-copy of "76px + safe area". */}
+        {/* paddingBottom = the plain /po safe-area floor, NOT
+            MOBILE_NAV_CLEARANCE (2026-07-29). It read MOBILE_NAV_CLEARANCE
+            only because the shared bottom bar used to paint OVER this detail
+            screen (bar z-40 above this screen's z-[35]); the shell now passes
+            hideBar while a bill is open, so the bar is gone here and
+            reserving its 76px left the button floating well above the true
+            bottom edge. Same value, same reason, same commit-era as
+            picking-board-mobile.tsx's four detail CTAs — CLAUDE_PICKING.md
+            §5.3 is the owner of this rule.
+            ⚠ This does NOT generalise to the LIST view: the bar IS visible
+            there, so the list keeps pb-[76px], and MOBILE_NAV_CLEARANCE stays
+            the single source for every bottom-pinned element that still sits
+            under a live bar. */}
         {detailRow && !detailRow.isDone && (
           <div
             className="shrink-0 px-3.5 pb-3.5"
-            style={{ paddingBottom: MOBILE_NAV_CLEARANCE }}
+            style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 16px)" }}
           >
             <button
               type="button"
