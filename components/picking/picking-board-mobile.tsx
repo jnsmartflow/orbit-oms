@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { MOBILE_NAV_CLEARANCE } from "@/components/shared/mobile-shell";
 import { useMobileShell } from "@/components/shared/mobile-shell-context";
 import { ModuleMobileHeader } from "@/components/shared/module-mobile-header";
-import { AgeBadge, FamilyChip, UnlistedChip } from "./card-atoms";
+import { AgeBadge, CardShelf, CARD_SHADOW_V2, RouteDot } from "./card-atoms";
 import { usePickingBoard } from "./picking-mobile-shell";
 import type { PickingQueueRow } from "@/lib/picking/types";
 
@@ -208,109 +208,17 @@ function formatObdDateTime(v: Date | string | null): string | null {
   return `${date}, ${time}`;
 }
 
-// Route colour dot — colour ONLY, no text (CLAUDE_CORE.md §3 delivery dots +
-// design spec §2). Local blue, Upcountry orange, Cross rose; IGT / unknown /
-// null → neutral grey. Deliberately NO teal here — the one-teal rule reserves
-// teal for the Assign CTA, so a teal IGT dot (UI §3's nominal colour) is
-// overridden to grey on this card.
-const ROUTE_DOT_COLOR: Record<string, string> = {
-  Local: "#2563eb",
-  Upcountry: "#ea580c",
-  Cross: "#e11d48",
-};
-function RouteDot({ deliveryType }: { deliveryType: string | null }): React.JSX.Element {
-  const color = (deliveryType !== null && ROUTE_DOT_COLOR[deliveryType]) || "#9ca3af";
-  return <span className="w-2 h-2 rounded-full shrink-0" style={{ background: color }} aria-hidden="true" />;
-}
+// RouteDot (+ its colour map) and CARD_SHADOW_V2 moved to ./card-atoms.tsx
+// (2026-07-29) when the picker card adopted this card's language — colour
+// values live in exactly one place. Imported at the top of this file; every
+// call site below is unchanged.
 
-// Card shadow — the locked v2 look (docs/mockups/picking/picking-cards-final-v2.html).
-// Distinct from SOFT_CARD_SHADOW, which the detail line-item rows still use.
-const CARD_SHADOW_V2 = "0 1px 2px rgba(16,24,40,.03), 0 14px 26px -20px rgba(16,24,40,.2)";
-
-// Rich-card shelf — FAMILY CHIPS + (Assign only) a right-pinned soft round
-// arrow button that opens detail. The old goods/breakdown line (articleTag +
-// volume) is gone (Option G, 2026-07-21); volume moved to the route line. Chips
-// are ONE horizontally-scrollable line that NEVER wraps (flex-nowrap + per-chip
-// shrink-0) so every card keeps a uniform height; a right-edge fade cues the
-// overflow, fading the chips into the arrow (or the card edge on Picking, which
-// has no arrow).
-//
-// Layout: a flex row — [chips: flex-1 min-w-0, scrolling] + [arrow: shrink-0].
-// `families` arrives already display-resolved + alpha-sorted from
-// lib/picking/queue.ts — rendered AS-IS. The "+N unlisted" chip trails only when
-// unresolvedLineCount > 0.
-//
-// showViewItems (Assign only, 2026-07-21): renders the arrow AND forces the
-// shelf to render even with zero chips, so detail is always reachable now that a
-// card-body tap toggles SELECTION instead of opening detail. The arrow
-// stopPropagation()s and calls onViewItems (the card's own open handler, =
-// openDetail) — it must NEVER toggle selection, and it sits at the right edge,
-// away from the card centre, so rapid select-taps don't land on it. The button
-// owns a 44px min tap target. NOT teal (one-teal rule reserves teal for the
-// selected tint) — a quiet slate #eceff3 circle. Picking cards pass
-// showViewItems=false and keep the null-when-empty behaviour (no arrow, and a
-// Picking card-body tap still opens detail as before — unchanged).
-function CardShelf({
-  row,
-  muted,
-  showViewItems,
-  onViewItems,
-}: {
-  row: PickingQueueRow;
-  muted: boolean;
-  showViewItems: boolean;
-  onViewItems: () => void;
-}): React.JSX.Element | null {
-  const hasStrip = row.families.length > 0 || row.unresolvedLineCount > 0;
-  if (!hasStrip && !showViewItems) return null;
-  return (
-    <div className="border-t px-[14px] flex items-stretch gap-1" style={{ background: "#f6f8fa", borderColor: "#eef1f4" }}>
-      <div className="relative flex-1 min-w-0 flex items-center py-[10px]">
-        <div
-          className="flex flex-nowrap gap-1.5 overflow-x-auto pr-[26px] w-full [&::-webkit-scrollbar]:hidden"
-          style={{ scrollbarWidth: "none" }}
-        >
-          {/* Chips moved to ./card-atoms.tsx (2026-07-29) — same spans, same
-              classNames, same style objects; the picker card renders the very
-              same atoms. UnlistedChip returns null at 0, so its old
-              `> 0 &&` guard now lives inside it. */}
-          {row.families.map((f) => (
-            <FamilyChip key={f} label={f} muted={muted} />
-          ))}
-          <UnlistedChip key="__unlisted" count={row.unresolvedLineCount} />
-        </div>
-        {/* Fade cue — matches the shelf bg so chips dissolve under it, into the
-            link (or the card edge on Picking). */}
-        <div
-          className="absolute top-0 right-0 w-[30px] h-full pointer-events-none"
-          style={{ background: "linear-gradient(90deg, rgba(246,248,250,0), #f6f8fa 72%)" }}
-          aria-hidden="true"
-        />
-      </div>
-      {showViewItems && (
-        // Soft round arrow → open detail. Stops the tap bubbling to the card
-        // body (which would toggle select). 30px slate circle inside a ≥44px
-        // tap target; NOT teal (one-teal rule).
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onViewItems();
-          }}
-          aria-label="View items"
-          className="shrink-0 self-stretch min-h-[44px] min-w-[44px] pl-1.5 flex items-center justify-center active:opacity-60"
-        >
-          <span
-            className="w-[30px] h-[30px] rounded-full flex items-center justify-center shrink-0"
-            style={{ background: "#eceff3" }}
-          >
-            <ChevronRight size={16} style={{ color: "#8b93a0" }} />
-          </span>
-        </button>
-      )}
-    </div>
-  );
-}
+// CardShelf moved to ./card-atoms.tsx (2026-07-29) — the divider, the grey
+// band, the fade gradient and the chips are now ONE copy shared with the picker
+// card. Its props gained defaults (muted/showViewItems false, onViewItems
+// optional) plus an optional `trailing` slot the picker uses for its done-time
+// receipt; this board passes all three explicitly, exactly as before, so its
+// rendered shelf is unchanged.
 
 // ── The ONE shared Picking card ────────────────────────────────────────────
 // Every tab renders THIS — the four-way fork (inline Assign card + CheckCard)

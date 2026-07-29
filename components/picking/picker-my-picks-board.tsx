@@ -6,7 +6,7 @@ import { ChevronLeft, Star } from "lucide-react";
 import { toast } from "sonner";
 import { useMobileShell } from "@/components/shared/mobile-shell-context";
 import { ModuleMobileHeader } from "@/components/shared/module-mobile-header";
-import { AgeBadge, FamilyChip, UnlistedChip } from "./card-atoms";
+import { AgeBadge, CardShelf, CARD_SHADOW_V2, RouteDot } from "./card-atoms";
 import { usePickerBoard } from "./picking-mobile-shell";
 import type { PickingQueueRow } from "@/lib/picking/types";
 import type { PickerRosterEntry } from "@/lib/picking/picker-roster";
@@ -305,100 +305,120 @@ export function PickerMyPicksBoard({
               key={row.orderId}
               type="button"
               onClick={() => openDetail(row.orderId)}
-              className="block w-full text-left bg-white rounded-[14px] p-[13px] mb-[9px] active:bg-gray-50"
-              style={{ boxShadow: SOFT_CARD_SHADOW }}
+              className="block w-full text-left mb-[11px] rounded-[20px] overflow-hidden border-[1.5px] bg-white border-[#eceef2] active:bg-gray-50"
+              style={{ boxShadow: CARD_SHADOW_V2 }}
             >
-              {/* Row 1 — caption + signals. OBD truncates first (it is the
-                  least-scanned item here; the picker matches on the dealer
-                  name); the right cluster is shrink-0 so an age badge or star
-                  is never the thing that gets clipped. AgeBadge and the star
-                  are INFORMATION, not controls: they carry no border-radius
-                  button language, no active: state, and no handler — the whole
-                  card is the single tap target. */}
-              <div className="flex items-center justify-between gap-2 mb-[5px]">
-                <span className="font-mono text-[11px] text-gray-400 truncate min-w-0">{row.obdNumber}</span>
-                <span className="flex items-center gap-1.5 shrink-0">
-                  {/* Same days→colour scale as the supervisor board — the ONE
-                      copy lives in ./card-atoms.tsx. Renders nothing below 1
-                      day, so a fresh bill stays clean. */}
-                  <AgeBadge row={row} />
-                  {row.isKeyCustomer && <Star size={14} className="text-amber-500 fill-amber-500" />}
+              {/* Card body — the supervisor card's exact frame and rhythm
+                  (px-4 pt-3.5 pb-3, caption mb-1.5, where-row mt-1.5). The
+                  four deliberate divergences are marked below; everything else
+                  is the same language, so a supervisor and a picker looking at
+                  the same bill see the same card. */}
+              <div className="px-4 pt-3.5 pb-3">
+                {/* Caption row — bill number left, signals right. NO created
+                    timestamp: the supervisor's caption carries `· 19 Jul, 4:05
+                    PM` here, but a picker fetching goods has no use for when
+                    the order was raised (DIVERGENCE 2).
+                    Star BEFORE the age badge, matching the supervisor's
+                    cluster order and its gap-[7px]. Both are INFORMATION, not
+                    controls — no button language, no handler; the whole card
+                    is the single tap target. */}
+                <div className="flex items-center justify-between gap-2.5 mb-1.5">
+                  <span
+                    className="flex items-center gap-1.5 min-w-0 text-[11.5px] overflow-hidden whitespace-nowrap"
+                    style={{ color: "#98a2b3" }}
+                  >
+                    <span className="font-mono shrink-0" style={{ color: "#98a0aa" }}>
+                      {row.obdNumber}
+                    </span>
+                  </span>
+                  <span className="flex items-center gap-[7px] shrink-0">
+                    {row.isKeyCustomer && <Star size={14} className="text-amber-500 fill-amber-500" />}
+                    <AgeBadge row={row} />
+                  </span>
+                </div>
+
+                {/* Title row — customer name + the slot hero on its right, the
+                    supervisor's rich-variant treatment (15px/600 tabular-nums
+                    #475467). The name truncates; the slot never does. */}
+                <div className="flex items-baseline justify-between gap-3">
+                  <span
+                    className="text-[16px] font-semibold leading-[1.25] truncate min-w-0"
+                    style={{ color: "#1d2939" }}
+                  >
+                    {row.dealerName}
+                  </span>
                   {row.windowTime !== null && (
-                    <span className="text-[12px] font-semibold tabular-nums text-gray-500 whitespace-nowrap">
+                    <span className="text-[15px] font-semibold tabular-nums shrink-0" style={{ color: "#475467" }}>
                       {row.windowTime}
                     </span>
                   )}
-                  {/* Done tab: muted done-time label, no accent — this is his
-                      receipt, per the mockup, so the time IS the point.
-                      pickedAt flows through lib/picking/queue.ts; omits the
-                      time (never fabricates one) on the rare row with no
-                      pickedAt. */}
-                  {activeTab === "done" && formatPickedTime(row.pickedAt) !== null && (
-                    <span className="text-[11px] font-semibold text-gray-400 whitespace-nowrap">
-                      done {formatPickedTime(row.pickedAt)}
-                    </span>
-                  )}
-                </span>
-              </div>
-
-              {/* Row 2 — the hero. CLAUDE_UI.md §60 tokens: 16px / 600 /
-                  #1d2939. Exactly ONE line on this card carries weight. */}
-              <div
-                className="text-[16px] font-semibold leading-[1.25] mb-[3px] truncate"
-                style={{ color: "#1d2939" }}
-              >
-                {row.dealerName}
-              </div>
-
-              {/* Row 3 — where + how much. Area and articleTag truncate
-                  together on the left; volume is shrink-0 so the number the
-                  picker loads against is NEVER the part that gets clipped
-                  (the supervisor card makes the same call). */}
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-[12px] text-gray-500 truncate min-w-0">
-                  {row.area !== null ? (
-                    <>
-                      {row.area}
-                      {row.articleTag !== null && (
-                        <>
-                          <span className="text-gray-300 mx-[5px]">&middot;</span>
-                          {row.articleTag}
-                        </>
-                      )}
-                    </>
-                  ) : (
-                    (row.articleTag ?? "—")
-                  )}
-                </span>
-                {row.volumeLitres != null && (
-                  <span className="flex items-baseline gap-[3px] shrink-0">
-                    <span className="text-[12px] font-semibold tabular-nums" style={{ color: "#667085" }}>
-                      {formatLitres(row.volumeLitres)}
-                    </span>
-                    <span className="text-[10.5px] font-medium" style={{ color: "#98a2b3" }}>
-                      L
-                    </span>
-                  </span>
-                )}
-              </div>
-
-              {/* Row 4 — family chips. ONE non-wrapping scroll line, so every
-                  card keeps a uniform height however many families a bill has
-                  (the supervisor shelf's rule). No arrow and no shelf
-                  background here: this card has no competing action, so the
-                  chips sit directly on it. Rendered only when there is
-                  something to show. */}
-              {(row.families.length > 0 || row.unresolvedLineCount > 0) && (
-                <div
-                  className="mt-2 flex flex-nowrap gap-1.5 overflow-x-auto [&::-webkit-scrollbar]:hidden"
-                  style={{ scrollbarWidth: "none" }}
-                >
-                  {row.families.map((f) => (
-                    <FamilyChip key={f} label={f} />
-                  ))}
-                  <UnlistedChip count={row.unresolvedLineCount} />
                 </div>
-              )}
+
+                {/* Where row — dot · area · pack summary · volume. The pack
+                    summary (articleTag) is DIVERGENCE 1: the supervisor card
+                    dropped it in Option G, but it is what the picker actually
+                    loads against, so it stays — inserted between area and
+                    volume, sharing the truncating left span, with volume
+                    shrink-0 so the litres are never the part that clips.
+                    There is no picker-name slot on the right (DIVERGENCE 4):
+                    on his own board, the picker IS the viewer. */}
+                <div className="flex items-center justify-between gap-2.5 mt-1.5">
+                  <span className="flex items-center gap-2 min-w-0">
+                    <RouteDot deliveryType={row.deliveryType} />
+                    <span className="text-[12px] font-medium truncate min-w-0" style={{ color: "#667085" }}>
+                      {row.area ?? "—"}
+                    </span>
+                    {row.articleTag !== null && (
+                      <>
+                        <span className="shrink-0" style={{ color: "#d3d8de" }}>
+                          &middot;
+                        </span>
+                        <span className="text-[12px] font-medium truncate min-w-0" style={{ color: "#667085" }}>
+                          {row.articleTag}
+                        </span>
+                      </>
+                    )}
+                    {row.volumeLitres != null && (
+                      <>
+                        <span className="shrink-0" style={{ color: "#d3d8de" }}>
+                          &middot;
+                        </span>
+                        <span className="flex items-baseline gap-[3px] shrink-0">
+                          <span className="text-[12px] font-semibold tabular-nums" style={{ color: "#667085" }}>
+                            {formatLitres(row.volumeLitres)}
+                          </span>
+                          <span className="text-[10.5px] font-medium" style={{ color: "#98a2b3" }}>
+                            L
+                          </span>
+                        </span>
+                      </>
+                    )}
+                  </span>
+                </div>
+              </div>
+
+              {/* Shelf — the SHARED component (divider + grey band + chips +
+                  fade). No arrow: the whole card opens detail here, so the
+                  right slot carries the Done tab's receipt instead
+                  (DIVERGENCE 3 — the timestamp moved out of the top-right
+                  corner). Its typography mirrors the supervisor's own done
+                  line, `✓ Checked by … · {time}`: 12px/600, label #8a929c,
+                  time #a2aab4. Never fabricates a time — a row with no
+                  pickedAt passes null and the slot stays empty. */}
+              <CardShelf
+                row={row}
+                trailing={
+                  activeTab === "done" && formatPickedTime(row.pickedAt) !== null ? (
+                    <span
+                      className="shrink-0 self-stretch flex items-center gap-1 pl-1.5 text-[12px] font-semibold whitespace-nowrap"
+                      style={{ color: "#8a929c" }}
+                    >
+                      done
+                      <span style={{ color: "#a2aab4" }}>{formatPickedTime(row.pickedAt)}</span>
+                    </span>
+                  ) : null
+                }
+              />
             </button>
           ))
         )}

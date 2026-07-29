@@ -1,5 +1,6 @@
 "use client";
 
+import { ChevronRight } from "lucide-react";
 import type { PickingQueueRow } from "@/lib/picking/types";
 
 // ── Shared Picking card atoms ───────────────────────────────────────────────
@@ -112,5 +113,122 @@ export function UnlistedChip({ count }: { count: number }): React.JSX.Element | 
     >
       +{count} unlisted
     </span>
+  );
+}
+
+// Card shadow — the locked v2 look (docs/mockups/picking/picking-cards-final-v2.html).
+// Distinct from SOFT_CARD_SHADOW, which the detail line-item rows still use.
+export const CARD_SHADOW_V2 = "0 1px 2px rgba(16,24,40,.03), 0 14px 26px -20px rgba(16,24,40,.2)";
+
+// Route colour dot — colour ONLY, no text (CLAUDE_CORE.md §3 delivery dots +
+// design spec §2). Local blue, Upcountry orange, Cross rose; IGT / unknown /
+// null → neutral grey. Deliberately NO teal here — the one-teal rule reserves
+// teal for the Assign CTA, so a teal IGT dot (UI §3's nominal colour) is
+// overridden to grey on this card.
+//
+// ⚠ Keys on `deliveryType`, NOT on route — there is no route→colour data in the
+// payload at all (CLAUDE_UI.md §62.3). The name is the trap.
+const ROUTE_DOT_COLOR: Record<string, string> = {
+  Local: "#2563eb",
+  Upcountry: "#ea580c",
+  Cross: "#e11d48",
+};
+export function RouteDot({ deliveryType }: { deliveryType: string | null }): React.JSX.Element {
+  const color = (deliveryType !== null && ROUTE_DOT_COLOR[deliveryType]) || "#9ca3af";
+  return <span className="w-2 h-2 rounded-full shrink-0" style={{ background: color }} aria-hidden="true" />;
+}
+
+// Rich-card shelf — the DIVIDER + the grey band + FAMILY CHIPS, plus one
+// optional right-hand slot. Both boards render this; the band colour, the
+// divider and the fade gradient exist here and nowhere else.
+//
+// The old goods/breakdown line (articleTag + volume) is gone (Option G,
+// 2026-07-21); volume moved to the route line. Chips are ONE horizontally-
+// scrollable line that NEVER wraps (flex-nowrap + per-chip shrink-0) so every
+// card keeps a uniform height; a right-edge fade cues the overflow, fading the
+// chips into whatever occupies the right slot (or the card edge, when nothing
+// does).
+//
+// Layout: a flex row — [chips: flex-1 min-w-0, scrolling] + [right slot: shrink-0].
+// `families` arrives already display-resolved + alpha-sorted from
+// lib/picking/queue.ts — rendered AS-IS. The "+N unlisted" chip trails only when
+// unresolvedLineCount > 0 (UnlistedChip self-guards at 0).
+//
+// The right slot is filled by EITHER of two mutually-exclusive things:
+//
+// showViewItems (supervisor Assign only, 2026-07-21) — renders the arrow AND
+// forces the shelf to render even with zero chips, so detail stays reachable
+// now that a card-body tap toggles SELECTION instead of opening detail. The
+// arrow stopPropagation()s and calls onViewItems (= openDetail); it must NEVER
+// toggle selection, and it sits at the right edge, away from the card centre,
+// so rapid select-taps don't land on it. It owns a 44px min tap target and is
+// NOT teal (one-teal rule reserves teal for the selected tint) — a quiet slate
+// #eceff3 circle. Supervisor Picking cards pass false and keep the
+// null-when-empty behaviour (no arrow, card-body tap still opens detail).
+//
+// trailing (picker Done tab, 2026-07-29) — an arbitrary already-styled node,
+// used for the "done 6:18 PM" receipt. The picker card has no arrow (its whole
+// body opens detail, so a second control for the same action would be noise),
+// which is exactly why that slot is free for a timestamp. Like showViewItems it
+// forces the shelf to render, so a Done bill with no resolved families still
+// gets its receipt line.
+export function CardShelf({
+  row,
+  muted = false,
+  showViewItems = false,
+  onViewItems,
+  trailing = null,
+}: {
+  row: PickingQueueRow;
+  muted?: boolean;
+  showViewItems?: boolean;
+  onViewItems?: () => void;
+  trailing?: React.ReactNode;
+}): React.JSX.Element | null {
+  const hasStrip = row.families.length > 0 || row.unresolvedLineCount > 0;
+  if (!hasStrip && !showViewItems && trailing === null) return null;
+  return (
+    <div className="border-t px-[14px] flex items-stretch gap-1" style={{ background: "#f6f8fa", borderColor: "#eef1f4" }}>
+      <div className="relative flex-1 min-w-0 flex items-center py-[10px]">
+        <div
+          className="flex flex-nowrap gap-1.5 overflow-x-auto pr-[26px] w-full [&::-webkit-scrollbar]:hidden"
+          style={{ scrollbarWidth: "none" }}
+        >
+          {row.families.map((f) => (
+            <FamilyChip key={f} label={f} muted={muted} />
+          ))}
+          <UnlistedChip key="__unlisted" count={row.unresolvedLineCount} />
+        </div>
+        {/* Fade cue — matches the shelf bg so chips dissolve under it, into the
+            link (or the card edge on Picking). */}
+        <div
+          className="absolute top-0 right-0 w-[30px] h-full pointer-events-none"
+          style={{ background: "linear-gradient(90deg, rgba(246,248,250,0), #f6f8fa 72%)" }}
+          aria-hidden="true"
+        />
+      </div>
+      {showViewItems && (
+        // Soft round arrow → open detail. Stops the tap bubbling to the card
+        // body (which would toggle select). 30px slate circle inside a ≥44px
+        // tap target; NOT teal (one-teal rule).
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onViewItems?.();
+          }}
+          aria-label="View items"
+          className="shrink-0 self-stretch min-h-[44px] min-w-[44px] pl-1.5 flex items-center justify-center active:opacity-60"
+        >
+          <span
+            className="w-[30px] h-[30px] rounded-full flex items-center justify-center shrink-0"
+            style={{ background: "#eceff3" }}
+          >
+            <ChevronRight size={16} style={{ color: "#8b93a0" }} />
+          </span>
+        </button>
+      )}
+      {trailing}
+    </div>
   );
 }
