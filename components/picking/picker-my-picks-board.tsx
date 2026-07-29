@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { ChevronLeft } from "lucide-react";
+import { ChevronLeft, Star } from "lucide-react";
 import { toast } from "sonner";
 import { MOBILE_NAV_CLEARANCE } from "@/components/shared/mobile-shell";
 import { useMobileShell } from "@/components/shared/mobile-shell-context";
 import { ModuleMobileHeader } from "@/components/shared/module-mobile-header";
+import { AgeBadge, FamilyChip, UnlistedChip } from "./card-atoms";
 import { usePickerBoard } from "./picking-mobile-shell";
 import type { PickingQueueRow } from "@/lib/picking/types";
 import type { PickerRosterEntry } from "@/lib/picking/picker-roster";
@@ -95,16 +96,21 @@ export function PickerMyPicksBoard({
   // Tab state now lives ONE level up, in PickerPickingShell — the bottom bar
   // that switches it is rendered by RoleLayoutClient, which sits ABOVE this
   // board in the tree (same reason the supervisor board's activeTab moved to
-  // SupervisorPickingShell in Stage 3). Read-only here: this face's only two
-  // writers were the TopBarTabs that just came out.
-  const { activeTab } = usePickerBoard();
+  // SupervisorPickingShell in Stage 3). `activeTab` is read-only here — this
+  // face's only two writers were the TopBarTabs that came out with the strip.
+  //
+  // `detailOpen` moved up with it (2026-07-29) so the shell can pass hideBar:
+  // the bar is z-40 and this face's detail overlay is z-[35], so it used to
+  // float over an open bill and a tab tap swapped the list underneath it. Read
+  // AND written here — every open/close call site is in this file — and it
+  // still drives the marker pause below exactly as before.
+  const { activeTab, detailOpen, setDetailOpen } = usePickerBoard();
 
   // Detail overlay — always-mounted, translateX slide, same pattern as
   // picking-board-mobile.tsx's detail screen (board.tsx:1083-1267) so the
   // list underneath is never torn down. NO tick boxes, NO Mark done CTA —
   // both are later stages.
   const [detailOrderId, setDetailOrderId] = useState<number | null>(null);
-  const [detailOpen, setDetailOpen] = useState(false);
   const [lineItems, setLineItems] = useState<LineItem[] | null>(null);
   const [lineItemsLoading, setLineItemsLoading] = useState(false);
   const [lineItemsError, setLineItemsError] = useState<string | null>(null);
@@ -284,9 +290,10 @@ export function PickerMyPicksBoard({
         showSearch={false}
       />
 
-      {/* Card list — three lines only, no checkbox, no flags, no elapsed
-          pill, no avatar, no footer. Reserves 76px for the global mobile
-          shell (components/shared/mobile-shell.tsx), same convention as
+      {/* Card list. Four rows (2026-07-29): caption + flags · name · where ·
+          families. Still NO checkbox, NO elapsed pill, NO avatar, NO footer —
+          those are supervisor concerns. Reserves 76px for the shell's fixed
+          bottom bar (components/shared/mobile-shell.tsx), same convention as
           picking-board-mobile.tsx. */}
       <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain pb-[76px] bg-white border-b border-gray-200 px-4 py-2.5">
         {rows.length === 0 ? (
@@ -302,40 +309,97 @@ export function PickerMyPicksBoard({
               className="block w-full text-left bg-white rounded-[14px] p-[13px] mb-[9px] active:bg-gray-50"
               style={{ boxShadow: SOFT_CARD_SHADOW }}
             >
+              {/* Row 1 — caption + signals. OBD truncates first (it is the
+                  least-scanned item here; the picker matches on the dealer
+                  name); the right cluster is shrink-0 so an age badge or star
+                  is never the thing that gets clipped. AgeBadge and the star
+                  are INFORMATION, not controls: they carry no border-radius
+                  button language, no active: state, and no handler — the whole
+                  card is the single tap target. */}
               <div className="flex items-center justify-between gap-2 mb-[5px]">
-                <span className="flex items-baseline gap-[5px] min-w-0">
-                  <span className="font-mono text-[11px] text-gray-400 whitespace-nowrap">{row.obdNumber}</span>
+                <span className="font-mono text-[11px] text-gray-400 truncate min-w-0">{row.obdNumber}</span>
+                <span className="flex items-center gap-1.5 shrink-0">
+                  {/* Same days→colour scale as the supervisor board — the ONE
+                      copy lives in ./card-atoms.tsx. Renders nothing below 1
+                      day, so a fresh bill stays clean. */}
+                  <AgeBadge row={row} />
+                  {row.isKeyCustomer && <Star size={14} className="text-amber-500 fill-amber-500" />}
                   {row.windowTime !== null && (
-                    <span className="text-[10.5px] text-gray-300 whitespace-nowrap">&middot;{row.windowTime}</span>
+                    <span className="text-[12px] font-semibold tabular-nums text-gray-500 whitespace-nowrap">
+                      {row.windowTime}
+                    </span>
+                  )}
+                  {/* Done tab: muted done-time label, no accent — this is his
+                      receipt, per the mockup, so the time IS the point.
+                      pickedAt flows through lib/picking/queue.ts; omits the
+                      time (never fabricates one) on the rare row with no
+                      pickedAt. */}
+                  {activeTab === "done" && formatPickedTime(row.pickedAt) !== null && (
+                    <span className="text-[11px] font-semibold text-gray-400 whitespace-nowrap">
+                      done {formatPickedTime(row.pickedAt)}
+                    </span>
                   )}
                 </span>
-                {/* Done tab: muted done-time label, no accent — this is his
-                    receipt, per the mockup, so the time IS the point.
-                    pickedAt now flows through lib/picking/queue.ts (step 5);
-                    omits the time (never fabricates one) on the rare row
-                    with no pickedAt. */}
-                {activeTab === "done" && formatPickedTime(row.pickedAt) !== null && (
-                  <span className="text-[11px] font-semibold text-gray-400 whitespace-nowrap">
-                    done {formatPickedTime(row.pickedAt)}
+              </div>
+
+              {/* Row 2 — the hero. CLAUDE_UI.md §60 tokens: 16px / 600 /
+                  #1d2939. Exactly ONE line on this card carries weight. */}
+              <div
+                className="text-[16px] font-semibold leading-[1.25] mb-[3px] truncate"
+                style={{ color: "#1d2939" }}
+              >
+                {row.dealerName}
+              </div>
+
+              {/* Row 3 — where + how much. Area and articleTag truncate
+                  together on the left; volume is shrink-0 so the number the
+                  picker loads against is NEVER the part that gets clipped
+                  (the supervisor card makes the same call). */}
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[12px] text-gray-500 truncate min-w-0">
+                  {row.area !== null ? (
+                    <>
+                      {row.area}
+                      {row.articleTag !== null && (
+                        <>
+                          <span className="text-gray-300 mx-[5px]">&middot;</span>
+                          {row.articleTag}
+                        </>
+                      )}
+                    </>
+                  ) : (
+                    (row.articleTag ?? "—")
+                  )}
+                </span>
+                {row.volumeLitres != null && (
+                  <span className="flex items-baseline gap-[3px] shrink-0">
+                    <span className="text-[12px] font-semibold tabular-nums" style={{ color: "#667085" }}>
+                      {formatLitres(row.volumeLitres)}
+                    </span>
+                    <span className="text-[10.5px] font-medium" style={{ color: "#98a2b3" }}>
+                      L
+                    </span>
                   </span>
                 )}
               </div>
-              <div className="text-[15px] font-bold text-gray-900 leading-tight mb-[3px] truncate">{row.dealerName}</div>
-              <div className="text-[12px] text-gray-500 truncate">
-                {row.area !== null ? (
-                  <>
-                    {row.area}
-                    {row.articleTag !== null && (
-                      <>
-                        <span className="text-gray-300 mx-[5px]">&middot;</span>
-                        {row.articleTag}
-                      </>
-                    )}
-                  </>
-                ) : (
-                  (row.articleTag ?? "—")
-                )}
-              </div>
+
+              {/* Row 4 — family chips. ONE non-wrapping scroll line, so every
+                  card keeps a uniform height however many families a bill has
+                  (the supervisor shelf's rule). No arrow and no shelf
+                  background here: this card has no competing action, so the
+                  chips sit directly on it. Rendered only when there is
+                  something to show. */}
+              {(row.families.length > 0 || row.unresolvedLineCount > 0) && (
+                <div
+                  className="mt-2 flex flex-nowrap gap-1.5 overflow-x-auto [&::-webkit-scrollbar]:hidden"
+                  style={{ scrollbarWidth: "none" }}
+                >
+                  {row.families.map((f) => (
+                    <FamilyChip key={f} label={f} />
+                  ))}
+                  <UnlistedChip count={row.unresolvedLineCount} />
+                </div>
+              )}
             </button>
           ))
         )}

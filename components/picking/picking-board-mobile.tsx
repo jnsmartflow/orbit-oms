@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { MOBILE_NAV_CLEARANCE } from "@/components/shared/mobile-shell";
 import { useMobileShell } from "@/components/shared/mobile-shell-context";
 import { ModuleMobileHeader } from "@/components/shared/module-mobile-header";
+import { AgeBadge, FamilyChip, UnlistedChip } from "./card-atoms";
 import { usePickingBoard } from "./picking-mobile-shell";
 import type { PickingQueueRow } from "@/lib/picking/types";
 
@@ -269,24 +270,14 @@ function CardShelf({
           className="flex flex-nowrap gap-1.5 overflow-x-auto pr-[26px] w-full [&::-webkit-scrollbar]:hidden"
           style={{ scrollbarWidth: "none" }}
         >
+          {/* Chips moved to ./card-atoms.tsx (2026-07-29) — same spans, same
+              classNames, same style objects; the picker card renders the very
+              same atoms. UnlistedChip returns null at 0, so its old
+              `> 0 &&` guard now lives inside it. */}
           {row.families.map((f) => (
-            <span
-              key={f}
-              className="shrink-0 whitespace-nowrap text-[10.5px] font-semibold rounded-[7px] py-[3px] px-[8px]"
-              style={{ color: muted ? "#8a929c" : "#667085", background: muted ? "#f1f3f6" : "#eef1f5" }}
-            >
-              {f}
-            </span>
+            <FamilyChip key={f} label={f} muted={muted} />
           ))}
-          {row.unresolvedLineCount > 0 && (
-            <span
-              key="__unlisted"
-              className="shrink-0 whitespace-nowrap text-[11.5px] font-semibold rounded-[8px] px-[9px] py-1 border border-dashed"
-              style={{ color: "#9aa2ac", borderColor: "#d8dce1" }}
-            >
-              +{row.unresolvedLineCount} unlisted
-            </span>
-          )}
+          <UnlistedChip key="__unlisted" count={row.unresolvedLineCount} />
         </div>
         {/* Fade cue — matches the shelf bg so chips dissolve under it, into the
             link (or the card edge on Picking). */}
@@ -586,47 +577,9 @@ function formatDispatchDay(iso: string | null): string | null {
   return `${weekday} ${d} ${month}`;
 }
 
-// Age badge for the Due-now zone. Reads `ageDays` straight off the row
-// (computed server-side in queue.ts) — never recomputed here, so the board
-// and the server can never disagree about how stale a bill is.
-//
-// The scale, per the approved mockups:
-//   0d   → NOTHING. Absence IS the "fresh" signal; a grey "0d" chip on the
-//          majority of cards would bury the amber ones it exists to surface.
-//   1d   → subtle amber, no border (a nudge; yesterday is not a crisis)
-//   2-3d → solid amber + border (ONE band, not two — the eye cannot resolve
-//          a separate 2d and 3d treatment at card scale)
-//   4d+  → red. The forgotten pick, and the only red on this board.
-//
-// noDispatchDate wins over all of it: a missing date is a DATA GAP, not
-// staleness, so it gets a NEUTRAL grey chip. Amber would assert an urgency
-// the data cannot support, and would make ageDays:null look like ageDays:999.
-function AgeBadge({ row }: { row: PickingQueueRow }): React.JSX.Element | null {
-  if (row.noDispatchDate) {
-    return (
-      <span className="text-[10.5px] font-semibold px-2 py-[3px] rounded-full shrink-0 whitespace-nowrap bg-gray-100 text-gray-500">
-        no date
-      </span>
-    );
-  }
-  const days = row.ageDays;
-  if (days === null || days <= 0) return null;
-  const cls =
-    days >= 4
-      ? "bg-red-50 text-red-700 border border-red-200"
-      : days >= 2
-        ? "bg-amber-100 text-amber-800 border border-amber-300"
-        : "bg-amber-50 text-amber-700";
-  return (
-    <span
-      className={
-        "text-[10.5px] font-semibold px-2 py-[3px] rounded-full shrink-0 whitespace-nowrap tabular-nums " + cls
-      }
-    >
-      {days}d
-    </span>
-  );
-}
+// AgeBadge moved to ./card-atoms.tsx (2026-07-29) when the picker's "My Picks"
+// card gained the same badge — the days→colour scale must exist in exactly one
+// place. Imported at the top of this file; rendered unchanged at its call sites.
 
 // Neutral "for Thu 23 Jul" badge for the Upcoming (locked) zone. Slate, NOT
 // amber and NOT red: a bill scheduled for Thursday is EARLY, not late.

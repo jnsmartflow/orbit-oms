@@ -83,13 +83,19 @@ export function usePickingBoard(): PickingBoardContextValue {
 // Deliberately SMALLER than PickingBoardContextValue above. This face fetches
 // nothing client-side (app/picking/page.tsx resolves its rows server-side and
 // passes them as props), so there is no data/loading/error/refetch to share —
-// only which tab is showing. It is read-only: the board's two writers were the
-// TopBarTabs that were deleted with the strip; the bottom bar is the only
-// writer now.
+// only which tab is showing, plus whether a bill is open.
 export type PickerTabKey = "pending" | "done";
 
 interface PickerBoardContextValue {
+  // Read-only in the board: its two writers were the TopBarTabs deleted with
+  // the strip, and the bottom bar is the only writer now.
   activeTab: PickerTabKey;
+  // Lifted from the board 2026-07-29 for the SAME reason detailOpen was lifted
+  // to SupervisorPickingShell: RoleLayoutClient carries the `hideBar` slot and
+  // renders ABOVE the board, so the shell has to know when a bill is open.
+  // Read AND written by the board (every open/close call site lives there).
+  detailOpen:    boolean;
+  setDetailOpen: (open: boolean) => void;
 }
 
 const PickerBoardContext = createContext<PickerBoardContextValue | null>(null);
@@ -196,14 +202,19 @@ interface PickerPickingShellProps {
  * finished pile is a receipt, not work still requiring him — the same
  * reasoning that keeps isChecked out of the supervisor's Done badge.
  *
- * No `hideBar`: the bar stays up on this face's detail screen (the Mark Done
- * CTA already reserves MOBILE_NAV_CLEARANCE for it), unlike the supervisor's
- * detail screen which claims the whole viewport.
+ * `hideBar` while a bill is open (2026-07-29) — the same thing the supervisor
+ * shell does. Without it the bar (z-40) floats OVER the detail overlay
+ * (z-[35]), so a tab tap silently swapped the list underneath a bill that
+ * stayed on screen. The Mark Done CTA keeps its MOBILE_NAV_CLEARANCE padding:
+ * over-reserving costs a little dead space at the bottom of a screen that has
+ * room, while under-reserving would put the CTA back under the bar the moment
+ * anything here changes.
  */
 function PickerPickingShell({
   role, userName, userInitials, navItems, counts, children,
 }: PickerPickingShellProps): React.JSX.Element {
   const [activeTab, setActiveTab] = useState<PickerTabKey>("pending");
+  const [detailOpen, setDetailOpen] = useState(false);
 
   const workflowTabs = useMemo<WorkflowTab[]>(
     () => [
@@ -213,7 +224,10 @@ function PickerPickingShell({
     [counts.pending],
   );
 
-  const contextValue = useMemo<PickerBoardContextValue>(() => ({ activeTab }), [activeTab]);
+  const contextValue = useMemo<PickerBoardContextValue>(
+    () => ({ activeTab, detailOpen, setDetailOpen }),
+    [activeTab, detailOpen],
+  );
 
   return (
     <RoleLayoutClient
@@ -224,6 +238,7 @@ function PickerPickingShell({
       workflowTabs={workflowTabs}
       activeTabKey={activeTab}
       onTabChange={(key) => setActiveTab(key as PickerTabKey)}
+      hideBar={detailOpen}
     >
       <PickerBoardContext.Provider value={contextValue}>
         {children}
@@ -234,7 +249,7 @@ function PickerPickingShell({
 
 function SupervisorPickingShell({
   role, userName, userInitials, navItems, children,
-}: Omit<PickingMobileShellProps, "showPickerFace" | "canSeePushTest">): React.JSX.Element {
+}: Omit<PickingMobileShellProps, "showPickerFace" | "canSeePushTest" | "pickerTabCounts">): React.JSX.Element {
   // Lifted verbatim from PickingBoardMobile's pre-Stage-3 fetch (same shape,
   // same endpoint, same date-driven pattern as picking-queue.tsx's desktop
   // sibling) — only the OWNER moved.
