@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Search, ChevronDown, Check, Star, Zap, ArrowRight, ChevronLeft, ChevronRight, LayoutGrid } from "lucide-react";
+import { Search, ChevronDown, Check, Star, Zap, ArrowRight, ChevronLeft, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import { MOBILE_NAV_CLEARANCE } from "@/components/shared/mobile-shell";
 import { useMobileShell } from "@/components/shared/mobile-shell-context";
+import { ModuleMobileHeader } from "@/components/shared/module-mobile-header";
 import { usePickingBoard } from "./picking-mobile-shell";
 import type { PickingQueueRow } from "@/lib/picking/types";
 
@@ -1701,42 +1702,26 @@ export function PickingBoardMobile(): React.JSX.Element {
           Same STRUCTURE as before: a flex-shrink-0 sibling of the scroll
           area below; `fixed inset-0` on the root still escapes
           RoleLayoutClient's non-scrolling ancestor chain exactly as it did
-          pre-Stage-3 — only this header's CONTENT changed. Avatar (left,
-          opens the shared You sheet) · title (center) · grid (opens the
-          shared Menu sheet) + search (right) — per
-          docs/mockups/picking/mobile-shell-v1.html. */}
-      <div
-        className="flex-shrink-0 bg-teal-600 flex items-center justify-between gap-2.5 px-3.5"
-        style={{ paddingTop: "max(env(safe-area-inset-top, 0px), 11px)", paddingBottom: "10px" }}
-      >
-        <button
-          type="button"
-          onClick={openYou}
-          aria-label="Open account menu"
-          className="w-10 h-10 min-w-[44px] min-h-[44px] rounded-full bg-white/20 active:bg-white/30 flex items-center justify-center text-white text-[13px] font-bold shrink-0"
-        >
-          {userInitials}
-        </button>
-        <h1 className="text-[19px] font-extrabold text-white tracking-tight">Picking</h1>
-        <div className="flex items-center gap-0.5 shrink-0">
-          <button
-            type="button"
-            onClick={openMenu}
-            aria-label="Open all pages menu"
-            className="w-11 h-11 rounded-[10px] flex items-center justify-center text-white active:bg-white/15"
-          >
-            <LayoutGrid size={21} />
-          </button>
-          <button
-            type="button"
-            onClick={() => setSearching((v) => !v)}
-            aria-label="Search"
-            className="w-11 h-11 rounded-[10px] flex items-center justify-center text-white active:bg-white/15"
-          >
-            <Search size={20} />
-          </button>
-        </div>
-      </div>
+          pre-Stage-3. Avatar (left, opens the shared You sheet) · title
+          (center) · grid (opens the shared Menu sheet) + search (right) —
+          per docs/mockups/picking/mobile-shell-v1.html.
+
+          EXTRACTED 2026-07-29 to components/shared/module-mobile-header.tsx
+          (CLAUDE_UI.md §59.6's [DEFERRED] "shared minimal header"). The
+          markup moved verbatim — same classNames, aria-labels, tap targets,
+          icon sizes and safe-area padding; only the OWNER moved, exactly as
+          Stage 3 moved the tab state up to PickingMobileShell. The handlers
+          stay here: the header takes them as props and never calls
+          useMobileShell() itself, so a future module can point the avatar and
+          grid somewhere else. */}
+      <ModuleMobileHeader
+        title="Picking"
+        avatarInitials={userInitials}
+        onAvatarClick={openYou}
+        onMenuClick={openMenu}
+        searchActive={searching}
+        onSearchToggle={() => setSearching((v) => !v)}
+      />
 
       {/* Scrollable content area — flex-1, ONLY this scrolls. Reserves 76px
           at the bottom for the fixed mobile-shell bar (WorkflowTabBar now,
