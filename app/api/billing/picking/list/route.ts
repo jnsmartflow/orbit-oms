@@ -97,6 +97,11 @@ export async function GET(): Promise<NextResponse> {
   // and never Date.parse an offset-less string for this (CORE §3).
   const { start, end } = getISTDayRange();
 
+  // ⚠ NO getHideExclusion() HERE — the asymmetry with `pending` is DELIBERATE,
+  // do not "fix" it. Pending is a WORKLIST: a hidden bill should not be worked,
+  // so hide applies. Done is a RECEIPT of the operator's own action: they
+  // invoiced it regardless of a later hide, so hide does not apply. Done stays
+  // invoicedAt-window + isRemoved only.
   const doneRows = await prisma.orders.findMany({
     where: {
       invoicedAt: { gte: start, lt: end },
