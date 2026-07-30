@@ -45,6 +45,24 @@ const SWIPE_THRESHOLD_PX = 80;
 const SLIDE_DRAG_FOLLOW = 0.65;
 const SLIDE_MS = 130;
 
+/**
+ * Opt-out marker. A touch STARTING inside an element carrying this attribute
+ * is never claimed by the pager — the element keeps its own gesture.
+ *
+ * Why it exists (2026-07-30): the handlers sit on the detail screen's ROOT, so
+ * they claim every horizontal drag in the body. That is right for the line
+ * list, and wrong for a horizontally-SCROLLABLE strip inside it — the pack
+ * filter chips overflow the screen on a normal multi-pack bill, and the only
+ * way to reach the chips past the right edge is to scroll that strip. Without
+ * this, that scroll fights the pager and a long drag pages to the next bill
+ * instead, which makes every off-screen chip unreachable.
+ *
+ * Add it to any strip that owns its own horizontal scroll. Do NOT add it to
+ * the line list — vertical scrolling there is already handled by the axis lock,
+ * and swiping across the list is the primary way to change bills.
+ */
+export const NO_BILL_SWIPE_ATTR = "data-no-bill-swipe";
+
 /** Structural minimum — both faces pass full PickingQueueRow arrays. */
 interface PagerItem {
   orderId: number;
@@ -181,6 +199,14 @@ export function useBillPager<T extends PagerItem>({
   function handleTouchStart(e: React.TouchEvent<HTMLDivElement>): void {
     const t = e.touches[0];
     if (!t) return;
+    // Opted-out subtree (a strip that owns its own horizontal scroll) — never
+    // claim or track it. Checked BEFORE the edge strip so the two exclusions
+    // read in the order they matter: what the element owns, then what the OS
+    // owns. A caller with no such element pays one null `closest` per touch.
+    if (e.target instanceof Element && e.target.closest(`[${NO_BILL_SWIPE_ATTR}]`) !== null) {
+      touchStateRef.current = null;
+      return;
+    }
     const vw = window.innerWidth;
     if (t.clientX < SWIPE_EDGE_EXCLUSION_PX || t.clientX > vw - SWIPE_EDGE_EXCLUSION_PX) {
       // Starts inside the edge-exclusion strip — leave it entirely to the

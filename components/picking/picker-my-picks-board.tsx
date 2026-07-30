@@ -8,7 +8,7 @@ import { useMobileShell } from "@/components/shared/mobile-shell-context";
 import { ModuleMobileHeader } from "@/components/shared/module-mobile-header";
 import { AgeBadge, CardShelf, CARD_SHADOW_V2, RouteDot } from "./card-atoms";
 import { usePickerBoard } from "./picking-mobile-shell";
-import { useBillPager } from "./use-bill-pager";
+import { NO_BILL_SWIPE_ATTR, useBillPager } from "./use-bill-pager";
 import type { PickerTabKey } from "./picking-mobile-shell";
 import type { PickingQueueRow } from "@/lib/picking/types";
 import type { PickerRosterEntry } from "@/lib/picking/picker-roster";
@@ -23,6 +23,12 @@ const SOFT_CARD_SHADOW = "0 1px 2px rgba(16,24,40,0.04), 0 3px 12px rgba(16,24,4
 // Same sentinel/convention as picking-board-mobile.tsx's detail screen —
 // kept out of the "ALL" bucket so a null-pack line stays isolable.
 const NO_PACK_KEY = "__no_pack__";
+
+// Spread onto an element that must keep its OWN horizontal drag instead of
+// feeding the bill-swipe pager. Written as a spread of the exported attribute
+// name rather than a hand-typed string, so a rename in use-bill-pager.ts can
+// never silently orphan this call site into a no-op.
+const NO_BILL_SWIPE: Record<string, string> = { [NO_BILL_SWIPE_ATTR]: "" };
 
 // Real GET /api/picking/order/[orderId] response shape — see that route.
 // Duplicated from picking-board-mobile.tsx rather than imported: that file
@@ -820,8 +826,24 @@ export function PickerMyPicksBoard({
           </div>
         </div>
 
+        {/* Pack filter — unchanged in place and in styling (the supervisor's
+            exact treatment), but OPTED OUT of the bill-swipe gesture as of
+            2026-07-30. This strip scrolls horizontally, and a multi-pack bill
+            routinely has more chips than fit on a 390px screen; once the swipe
+            pager landed (dc32a476) its root-level handlers claimed the drag
+            that used to scroll this row, so every chip past the right edge
+            became unreachable — he would try to scroll to "1L" and get the
+            next bill instead. {...NO_BILL_SWIPE} hands this strip's horizontal
+            drag back to it. Swiping anywhere ELSE in the bill still pages.
+            ⚠ Still gated on >= 2 distinct packs — an original-build rule
+            (a114cff9), NOT this session's: a bill whose lines all share one
+            pack has never shown this row, because there is nothing to filter
+            between. */}
         {distinctPackKeys.length >= 2 && (
-          <div className="bg-white border-b border-gray-200 px-3.5 py-2.5 flex items-center gap-1.5 overflow-x-auto shrink-0">
+          <div
+            {...NO_BILL_SWIPE}
+            className="bg-white border-b border-gray-200 px-3.5 py-2.5 flex items-center gap-1.5 overflow-x-auto shrink-0"
+          >
             <button
               type="button"
               onClick={() => setActivePackFilter("ALL")}
