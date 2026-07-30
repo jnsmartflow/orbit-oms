@@ -189,6 +189,7 @@ model users {
   // All four MUST stay explicitly named on both sides: an unnamed relation
   // here is a Prisma ambiguity ERROR, not a warning (CLAUDE_CORE.md §7.3).
   ordersPickEarlyReleased      orders[]              @relation("OrderPickEarlyReleasedBy")
+  ordersInvoicedBy             orders[]              @relation("OrderInvoicedBy")
   tintSkipsAsActor             tint_skip_events[]    @relation("SkipActor")
   tintPausesAsOp               tint_pause_events[]   @relation("PauseOperator")
   tintPauseResumes             tint_pause_events[]   @relation("PauseResumer")
@@ -769,11 +770,30 @@ model orders {
   pickEarlyReleasedById Int?
   pickEarlyReleasedBy   users?                   @relation("OrderPickEarlyReleasedBy", fields: [pickEarlyReleasedById], references: [id])
 
+  // Billing · Picking tab mark-done marker (2026-07-30).
+  // Timestamp + actor, NOT a new workflowStage value — same call already
+  // made for pickedAt/ById, removedAt/ById, restoredAt/ById and
+  // pickEarlyReleasedAt/ById. A bill leaves the billing Pending list when
+  // invoicedAt is set; clearing it returns the bill to Pending (Undo).
+  // @db.Timestamptz(6) is REQUIRED (CORE §7.1.c). The @relation MUST be
+  // named — `orders` has many FKs to `users` and an unnamed one throws a
+  // Prisma ambiguity error.
+  invoicedAt            DateTime?                @db.Timestamptz(6)
+  invoicedById          Int?
+  invoicedBy            users?                   @relation("OrderInvoicedBy", fields: [invoicedById], references: [id])
+
   // Created directly in Supabase (orders_updatedAt_idx, "updatedAt" DESC).
   // Backs the picking change-marker's MAX(updatedAt) probe (app/api/picking/
   // marker/route.ts). Recorded here by hand — db pull cannot run on this
   // machine (CORE §3). Do NOT db push/pull.
   @@index([updatedAt(sort: Desc)])
+
+  // Partial index created directly in Supabase, NOT expressible in Prisma
+  // syntax — do NOT model it as @@index:
+  //   orders_billing_pending_idx ON orders ("workflowStage")
+  //   WHERE "invoicedAt" IS NULL AND "invoiceNo" IS NULL AND "isRemoved" = false
+  // Backs the billing Pending list + its polled count badge.
+  // Recorded by hand — db pull cannot run here (CORE §3).
 }
 
 // ─────────────────────────────────────────────
