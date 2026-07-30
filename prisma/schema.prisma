@@ -190,6 +190,7 @@ model users {
   // here is a Prisma ambiguity ERROR, not a warning (CLAUDE_CORE.md §7.3).
   ordersPickEarlyReleased      orders[]              @relation("OrderPickEarlyReleasedBy")
   ordersInvoicedBy             orders[]              @relation("OrderInvoicedBy")
+  billingSettingsUpdated       billing_settings[]    @relation("BillingSettingsUpdatedBy")
   tintSkipsAsActor             tint_skip_events[]    @relation("SkipActor")
   tintPausesAsOp               tint_pause_events[]   @relation("PauseOperator")
   tintPauseResumes             tint_pause_events[]   @relation("PauseResumer")
@@ -813,6 +814,34 @@ model obd_visibility_rules {
   updatedAt       DateTime? @db.Timestamptz(6)
 
   @@index([isActive])
+}
+
+// ─────────────────────────────────────────────
+// BILLING v2 ROLLOUT (Phase 0 — 2026-07-30)
+// ─────────────────────────────────────────────
+
+/// Singleton settings row holding the Billing v2 master switch. Mirrors
+/// attendance_settings' SHAPE (scope='GLOBAL' + rolloutStage) but is a SEPARATE
+/// table on purpose: Billing's rollout must be pullable without touching the
+/// attendance gate, and attendance_settings carries 20+ unrelated policy knobs.
+///
+/// `rolloutStage` is 'OFF' | 'TEST_USERS_ONLY' | 'ALL_USERS' — the same union as
+/// auth.config.ts's RolloutStage. Enforced live by a CHECK constraint
+/// (chk_billing_settings_rollout_stage), which Prisma cannot express — do NOT
+/// try to model it. `scope` is UNIQUE (billing_settings_scope_key): that is what
+/// keeps this a singleton and what the seed's ON CONFLICT targets.
+///
+/// Created by hand in the Supabase SQL Editor and hand-mirrored here — db pull
+/// cannot run on this machine (CORE §3). Do NOT db push/pull.
+model billing_settings {
+  id           Int      @id @default(autoincrement())
+  scope        String   @default("GLOBAL")
+  rolloutStage String   @default("OFF")
+  updatedAt    DateTime @updatedAt @db.Timestamptz(6)
+  updatedById  Int?
+  updatedBy    users?   @relation("BillingSettingsUpdatedBy", fields: [updatedById], references: [id])
+
+  @@unique([scope])
 }
 
 model app_tag_settings {

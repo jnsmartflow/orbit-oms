@@ -44,11 +44,14 @@ export default async function MailOrdersLayout({
   const userName     = session.user.name ?? "User";
   const userInitials = getInitials(userName);
 
-  // Billing v2 rollout (Phase 0) — per-user, read FRESH each load (never cached
-  // onto the JWT; see lib/billing/flag.ts for why). `session.user.id` is a
-  // string, so Number(...) + the helper's own Number.isFinite guard — the same
-  // shape app/picking/page.tsx uses. No extra fetch: the session is already
-  // resolved above. Fails closed, so this cannot break the page.
+  // Billing v2 rollout (Phase 0) — global stage (billing_settings.rolloutStage)
+  // AND the per-user opt-in, read FRESH each load (never cached onto the JWT;
+  // see lib/billing/flag.ts for why). Read ONCE here and branched from, so the
+  // whole module has a single gate rather than a check per screen.
+  // `session.user.id` is a string, so Number(...) + the helper's own
+  // Number.isFinite guard — the same shape app/picking/page.tsx uses. No extra
+  // fetch: the session is already resolved above. Fails closed, so this cannot
+  // break the page.
   const billingV2 = await isBillingV2Enabled(Number(session.user.id));
 
   return (
