@@ -8,6 +8,7 @@ import { useMobileShell } from "@/components/shared/mobile-shell-context";
 import { ModuleMobileHeader } from "@/components/shared/module-mobile-header";
 import { AgeBadge, CardShelf, CARD_SHADOW_V2, RouteDot } from "./card-atoms";
 import { usePickingBoard } from "./picking-mobile-shell";
+import { useBillPager } from "./use-bill-pager";
 import type { PickingQueueRow } from "@/lib/picking/types";
 
 // Real /api/warehouse/pickers response shape — do not invent fields.
@@ -63,31 +64,12 @@ type TypeFilter = "All" | "Local" | "Upcountry";
 // break paging the next time a band moves.
 type DetailListKey = "waiting" | "needsCheck" | "stillPicking" | "checked";
 
-// Swipe tuning for the detail screen's prev/next-bill gesture.
-// EDGE_EXCLUSION: touches starting within this many px of either screen
-// edge are never claimed — leaves the OS's own edge-swipe-back untouched.
-// DEADZONE: movement below this (on both axes) is ignored, so ordinary taps
-// never trigger axis-lock. Once past it, the gesture locks to whichever axis
-// dominates (horizontal only if dx > dy * 1.5) — a vertical drag inside the
-// line-items list hands off to the browser's native scroll immediately.
-// THRESHOLD: total horizontal drag needed at touchend to commit to a page
-// change; short of it, the gesture is a no-op (no snap-back animation needed
-// since nothing ever visually followed the finger — see the touch handlers).
-const SWIPE_EDGE_EXCLUSION_PX = 24;
-const SWIPE_DEADZONE_PX = 10;
-const SWIPE_THRESHOLD_PX = 80;
-
-// Detail-polish Build B (2026-07-19) — Option-1 slide animation on top of
-// Build A's gesture gate above (unchanged: edge exclusion, deadzone, axis
-// lock, threshold — this only adds a visual transform once those already
-// decided a horizontal drag is happening).
-// DRAG_FOLLOW: fraction of raw finger delta the content translates by while
-// dragging — under 1.0 so the content feels anchored/weighted rather than
-// glued 1:1 to the finger.
-// SLIDE_MS: duration of EACH half of the commit animation (exit, then
-// enter) — ~260ms total end to end, per the approved spec.
-const SLIDE_DRAG_FOLLOW = 0.65;
-const SLIDE_MS = 130;
+// The swipe/slide tuning constants that used to sit here (edge exclusion,
+// deadzone, axis-lock ratio, commit threshold, drag-follow, slide duration)
+// moved to ./use-bill-pager.ts on 2026-07-30, verbatim and unchanged, when the
+// picker face adopted the same gesture. They were tuned together as ONE
+// setting — that is exactly why they now live in one file. This board's
+// behaviour and rendering are unchanged: an import swap, nothing else.
 
 // Fixed locale — same rationale as picking-queue.tsx (the desktop sibling):
 // identical thousands-separator output depot PC vs Vercel, regardless of
@@ -1122,9 +1104,11 @@ export function PickingBoardMobile(): React.JSX.Element {
     switchDetailTo(orderId, listKey);
     // Defensive reset (Build B) — a fresh open from a card tap must always
     // start at rest, in case a prior session's gesture left the ref mid-
-    // transform. triggerPageTransition's own paging flow deliberately does
-    // NOT reset here — it manages the transform itself across its 3 phases.
-    setContentTransform(0, false);
+    // transform. The pager's own paging flow deliberately does NOT reset
+    // here — it manages the transform itself across its 3 phases.
+    // (`pager` is declared below; this only ever runs from a tap, long after
+    // the render that initialises it.)
+    pager.resetTransform();
     pushScreen();
   }
 
@@ -1148,156 +1132,28 @@ export function PickingBoardMobile(): React.JSX.Element {
     }
   }, [detailListKey, filteredWaiting, filteredNeedsCheck, filteredStillPicking, filteredChecked]);
 
-  const detailIndex = useMemo(
-    () => activeDetailList.findIndex((r) => r.orderId === detailOrderId),
-    [activeDetailList, detailOrderId],
-  );
-
-  // ── Detail-polish Build B — Option-1 slide animation ─────────────────────
-  // detailContentRef wraps everything below the detail header (stat strip /
+  // ── Swipe/slide paging — the SHARED hook (./use-bill-pager.ts) ───────────
+  // Build A's gesture gate + Build B's Option-1 slide animation moved there
+  // VERBATIM on 2026-07-30 when the picker face adopted the same gesture;
+  // this board's behaviour, timings and rendering are unchanged. What stayed
+  // here is exactly what is board-specific: WHICH list to page
+  // (activeDetailList, off detailListKey) and WHAT to reset on a swap
+  // (switchDetailTo — search, pack filter, line ticks).
+  //
+  // pager.contentRef wraps everything below the detail header (stat strip /
   // pack filter / line items / the 3 CTAs) — the header itself does NOT
-  // slide (its dealer-name/OBD text just updates at the swap instant,
-  // matching how the counter's "N of M" and the stat strip update too;
-  // conventional for mobile page-transition UI, e.g. Mail's conversation
-  // swipe). Style writes go straight to the DOM node via this ref, never
-  // through React state — the same reason po-page.tsx's --vvh updater
-  // avoids state for the equally high-frequency touchmove case (a setState
-  // per touchmove would be a render storm for zero visual benefit, since
-  // nothing else in the tree needs to react to the live drag position).
-  const detailContentRef = useRef<HTMLDivElement>(null);
-
-  function prefersReducedMotion(): boolean {
-    return typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  }
-
-  function setContentTransform(px: number, animated: boolean): void {
-    const el = detailContentRef.current;
-    if (!el) return;
-    el.style.transition = animated && !prefersReducedMotion() ? `transform ${SLIDE_MS}ms ease-out` : "none";
-    el.style.transform = px === 0 ? "" : `translateX(${px}px)`;
-  }
-
-  // Below-threshold release (or a boundary drag with nothing to page to) —
-  // animate back to rest from wherever the finger left the content.
-  function snapContentBack(): void {
-    setContentTransform(0, true);
-  }
-
-  // THE single entry point for a bill change — called identically by the
-  // swipe release (below) and the counter arrows (JSX below). No push/pop
-  // here on purpose (approved plan) — paging through several bills still
-  // costs exactly ONE history entry for the whole detail session; a single
-  // Back press from bill #3 returns straight to the list, not to bill #2.
-  // No-ops past either end of the list (no wrap).
-  function triggerPageTransition(direction: "next" | "prev"): void {
-    const nextIndex = detailIndex + (direction === "next" ? 1 : -1);
-    if (detailIndex === -1 || nextIndex < 0 || nextIndex >= activeDetailList.length) return;
-    const target = activeDetailList[nextIndex];
-    if (prefersReducedMotion()) {
-      switchDetailTo(target.orderId, detailListKey);
-      setContentTransform(0, false);
-      return;
-    }
-    const vw = window.innerWidth;
-    const exitPx = direction === "next" ? -vw : vw;
-    // Phase 1 — exit: slide the CURRENT content fully off-screen, animated
-    // from wherever it already sits (0 at rest, or a live drag offset).
-    setContentTransform(exitPx, true);
-    window.setTimeout(() => {
-      // Phase boundary — swap the data (Build A's unchanged mechanism; the
-      // line-items effect keyed on detailOrderId refires on its own).
-      switchDetailTo(target.orderId, detailListKey);
-      // Instant, un-animated snap to the OPPOSITE off-screen edge — this is
-      // the "next bill slides in from the other side" half. No transition
-      // on this write, or the browser would animate the snap itself.
-      setContentTransform(-exitPx, false);
-      // Double rAF (same style-flush trick /po's own touch/scroll code
-      // uses) — guarantees the browser has committed the un-animated snap
-      // above as a separate paint before Phase 2's transition is armed, or
-      // it can coalesce the snap and the entrance into one no-op jump.
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          // Phase 2 — enter: animate from the opposite edge back to rest.
-          setContentTransform(0, true);
-        });
-      });
-    }, SLIDE_MS);
-  }
-
-  function goNextBill(): void {
-    triggerPageTransition("next");
-  }
-  function goPrevBill(): void {
-    triggerPageTransition("prev");
-  }
-
-  // ── Swipe-between-bills touch handlers ───────────────────────────────────
-  // Attached to the detail screen's root. A plain tap (movement under
-  // SWIPE_DEADZONE_PX on both axes) never reaches the axis-lock branch, so
-  // preventDefault() never fires for taps — every button inside the swipe
-  // zone (Back, search toggle, Assign/Undo/Approve, line-item ticks) keeps
-  // working untouched. touchStateRef is a plain ref, not state — this is a
-  // per-gesture scratchpad, re-render would just be wasted work.
-  const touchStateRef = useRef<{ startX: number; startY: number; tracking: boolean; locked: boolean } | null>(null);
-
-  function handleDetailTouchStart(e: React.TouchEvent<HTMLDivElement>): void {
-    const t = e.touches[0];
-    if (!t) return;
-    const vw = window.innerWidth;
-    if (t.clientX < SWIPE_EDGE_EXCLUSION_PX || t.clientX > vw - SWIPE_EDGE_EXCLUSION_PX) {
-      // Starts inside the edge-exclusion strip — leave it entirely to the
-      // OS's own edge-swipe-back gesture; never claim or track it.
-      touchStateRef.current = null;
-      return;
-    }
-    touchStateRef.current = { startX: t.clientX, startY: t.clientY, tracking: true, locked: false };
-  }
-
-  function handleDetailTouchMove(e: React.TouchEvent<HTMLDivElement>): void {
-    const state = touchStateRef.current;
-    if (!state || !state.tracking) return;
-    const t = e.touches[0];
-    if (!t) return;
-    const dx = t.clientX - state.startX;
-    const dy = t.clientY - state.startY;
-    if (!state.locked) {
-      if (Math.abs(dx) < SWIPE_DEADZONE_PX && Math.abs(dy) < SWIPE_DEADZONE_PX) return;
-      if (Math.abs(dx) > Math.abs(dy) * 1.5) {
-        state.locked = true;
-      } else {
-        // Vertical-dominant — hand off to the line-items list's own native
-        // scroll; stop tracking so later touchmove events are a no-op.
-        state.tracking = false;
-        return;
-      }
-    }
-    // Locked horizontal — suppress the page's own scroll/bounce while paging.
-    e.preventDefault();
-    // Option-1 finger-tracking — un-animated (transition:none), instant
-    // 1:1-minus-follow so the content reads as attached to the finger.
-    setContentTransform(dx * SLIDE_DRAG_FOLLOW, false);
-  }
-
-  function handleDetailTouchEnd(e: React.TouchEvent<HTMLDivElement>): void {
-    const state = touchStateRef.current;
-    touchStateRef.current = null;
-    if (!state || !state.locked) return;
-    const t = e.changedTouches[0];
-    if (!t) return;
-    const dx = t.clientX - state.startX;
-    const direction: "next" | "prev" = dx < 0 ? "next" : "prev";
-    const pastThreshold = Math.abs(dx) >= SWIPE_THRESHOLD_PX;
-    const withinBounds = direction === "next" ? detailIndex < activeDetailList.length - 1 : detailIndex > 0;
-    if (pastThreshold && withinBounds) {
-      triggerPageTransition(direction);
-    } else {
-      // Below threshold, OR past it but already at the list's edge (no
-      // wrap) — snap back rather than calling triggerPageTransition, whose
-      // own bounds guard would otherwise leave the content stranded
-      // off-screen with nothing having been committed.
-      snapContentBack();
-    }
-  }
+  // slide; its dealer-name/OBD text just updates at the swap instant, as the
+  // counter's "N of M" and the stat strip do (conventional for mobile
+  // page-transition UI, e.g. Mail's conversation swipe).
+  //
+  // ⚠ NO history push/pop lives in the hook: paging through twelve bills
+  // still costs exactly ONE history entry for the whole detail session.
+  const pager = useBillPager({
+    list: activeDetailList,
+    currentOrderId: detailOrderId,
+    onSwitch: (orderId) => switchDetailTo(orderId, detailListKey),
+  });
+  const detailIndex = pager.index;
 
   // ── Detail-interactions Build A — the ONE popstate authority ─────────────
   // Keeps navStateRef synced to live detailOpen/pickerSheetOpen so the
@@ -2063,9 +1919,7 @@ export function PickingBoardMobile(): React.JSX.Element {
           "fixed inset-0 z-[35] bg-[#f9fafb] flex flex-col transition-transform duration-200 ease-out " +
           (detailOpen ? "translate-x-0" : "translate-x-full")
         }
-        onTouchStart={handleDetailTouchStart}
-        onTouchMove={handleDetailTouchMove}
-        onTouchEnd={handleDetailTouchEnd}
+        {...pager.touchHandlers}
       >
         <div
           className="bg-teal-600 px-3.5 pb-3.5 flex items-start gap-2.5 shrink-0"
@@ -2136,7 +1990,7 @@ export function PickingBoardMobile(): React.JSX.Element {
             unit. The header itself sits OUTSIDE this wrapper and does not
             slide — its dealer-name/OBD text just updates at the swap
             instant, same as the stat strip and counter below it. */}
-        <div ref={detailContentRef} className="flex-1 min-h-0 flex flex-col">
+        <div ref={pager.contentRef} className="flex-1 min-h-0 flex flex-col">
         {detailSearching ? (
           <div className="bg-white border-b border-gray-200 px-3.5 pt-2.5 pb-2.5 flex items-center gap-2 shrink-0">
             <div className="flex-1 flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-[10px] px-3 py-2.5">
@@ -2194,11 +2048,11 @@ export function PickingBoardMobile(): React.JSX.Element {
                   a primary action. Both arrows call the SAME
                   triggerPageTransition the swipe gesture uses, so arrow taps
                   and swipes produce an identical slide. */}
-              {activeDetailList.length > 1 && (
+              {pager.count > 1 && (
                 <div className="flex items-center gap-0.5 shrink-0">
                   <button
                     type="button"
-                    onClick={goPrevBill}
+                    onClick={pager.goPrev}
                     disabled={detailIndex <= 0}
                     aria-label="Previous bill"
                     className="w-11 h-11 flex items-center justify-center rounded-[9px] text-gray-500 active:bg-gray-100 disabled:opacity-30 disabled:pointer-events-none"
@@ -2206,12 +2060,12 @@ export function PickingBoardMobile(): React.JSX.Element {
                     <ChevronLeft size={18} />
                   </button>
                   <span className="text-[12.5px] font-medium text-gray-500 tabular-nums px-0.5 whitespace-nowrap">
-                    {detailIndex + 1} of {activeDetailList.length}
+                    {detailIndex + 1} of {pager.count}
                   </span>
                   <button
                     type="button"
-                    onClick={goNextBill}
-                    disabled={detailIndex >= activeDetailList.length - 1}
+                    onClick={pager.goNext}
+                    disabled={detailIndex >= pager.count - 1}
                     aria-label="Next bill"
                     className="w-11 h-11 flex items-center justify-center rounded-[9px] text-gray-500 active:bg-gray-100 disabled:opacity-30 disabled:pointer-events-none"
                   >
@@ -2474,7 +2328,7 @@ export function PickingBoardMobile(): React.JSX.Element {
         )}
         </div>
         {/* ^ closes the Detail-polish Build B sliding content wrapper
-            (ref={detailContentRef}) opened above the stat-strip/search
+            (ref={pager.contentRef}) opened above the stat-strip/search
             block. */}
       </div>
 

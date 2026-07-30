@@ -2,12 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { ChevronLeft, Star } from "lucide-react";
+import { ChevronLeft, ChevronRight, Star } from "lucide-react";
 import { toast } from "sonner";
 import { useMobileShell } from "@/components/shared/mobile-shell-context";
 import { ModuleMobileHeader } from "@/components/shared/module-mobile-header";
 import { AgeBadge, CardShelf, CARD_SHADOW_V2, RouteDot } from "./card-atoms";
 import { usePickerBoard } from "./picking-mobile-shell";
+import { useBillPager } from "./use-bill-pager";
+import type { PickerTabKey } from "./picking-mobile-shell";
 import type { PickingQueueRow } from "@/lib/picking/types";
 import type { PickerRosterEntry } from "@/lib/picking/picker-roster";
 import { usePickingMarker } from "@/lib/hooks/use-picking-marker";
@@ -116,6 +118,16 @@ export function PickerMyPicksBoard({
   // list underneath is never torn down. NO tick boxes, NO Mark done CTA —
   // both are later stages.
   const [detailOrderId, setDetailOrderId] = useState<number | null>(null);
+  // WHICH list this bill was opened from — Pending or Done. Captured at open,
+  // never re-derived from activeTab later: the swipe pager must walk the list
+  // he actually opened from and must NEVER cross between the two (a Pending
+  // bill and a Done bill are different work, and the Done tab is fenced to
+  // today-IST while Pending is not). The supervisor's DetailListKey exists for
+  // the same reason; here there is exactly one band per tab, so the tab key IS
+  // the list key. Today the bottom bar is hidden while a bill is open
+  // (hideBar), so activeTab cannot change mid-session anyway — this keeps the
+  // pager correct if that ever stops being true.
+  const [detailListKey, setDetailListKey] = useState<PickerTabKey>("pending");
   const [lineItems, setLineItems] = useState<LineItem[] | null>(null);
   const [lineItemsLoading, setLineItemsLoading] = useState(false);
   const [lineItemsError, setLineItemsError] = useState<string | null>(null);
@@ -226,10 +238,30 @@ export function PickerMyPicksBoard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [setDetailOpen]);
 
-  function openDetail(orderId: number): void {
+  // Shared by BOTH the original open (openDetail) and paging to a neighbour
+  // bill (the pager's onSwitch) — the same per-bill ephemeral state must never
+  // carry from one bill into the next either way. activePackFilter is the only
+  // such state on this face (there is no search and there are no line ticks);
+  // the line items themselves are re-fetched by the detailOrderId-keyed effect
+  // above, which fires on a swap exactly as it does on a fresh open.
+  // Re-setting detailOpen(true) on every call is harmless (already true while
+  // paging) — same shape as the supervisor's switchDetailTo.
+  function switchDetailTo(orderId: number, listKey: PickerTabKey): void {
     setDetailOrderId(orderId);
+    setDetailListKey(listKey);
     setDetailOpen(true);
     setActivePackFilter("ALL");
+  }
+
+  function openDetail(orderId: number, listKey: PickerTabKey): void {
+    switchDetailTo(orderId, listKey);
+    // A fresh open from a card tap must always start at rest, in case a prior
+    // session's gesture left the ref mid-transform. (`pager` is declared
+    // below; this only ever runs from a tap, long after that render.)
+    pager.resetTransform();
+    // ONE history entry for the whole detail session — see pushScreen. The
+    // pager deliberately pushes NOTHING, so swiping through six bills still
+    // costs one entry and one back press lands on the list.
     pushScreen();
   }
 
@@ -255,6 +287,29 @@ export function PickerMyPicksBoard({
     if (detailOrderId === null) return null;
     return [...pending, ...done].find((r) => r.orderId === detailOrderId) ?? null;
   }, [pending, done, detailOrderId]);
+
+  // ── Swipe between bills (2026-07-30) ─────────────────────────────────────
+  // The list the pager walks, re-resolved EVERY render off the live
+  // pending/done arrays — never a snapshot frozen at open time. This face's
+  // rows are refetched by the 15s marker and by Mark Done, so a frozen array
+  // would page to a bill that is no longer his.
+  //
+  // ⚠ IF THE OPEN BILL LEAVES THE LIST (a supervisor reassigns it away while
+  // he is holding it) the hook's index goes to -1 and paging simply stops:
+  // both arrows are unreachable/inert, and a swipe past the threshold snaps
+  // back instead of committing. detailRow (above) resolves to null, so the
+  // header shows "—" and the Mark done CTA is already gated off it — the
+  // fetched line items stay on screen and the ONE close path still works. No
+  // crash, no blank screen, and no silent jump to somebody else's bill.
+  // (In practice the marker is PAUSED while a bill is open, so the rows are
+  // frozen for the duration of a detail session — this is the guard for the
+  // day that pause changes, not a routine path.)
+  const activeDetailList = detailListKey === "pending" ? pending : done;
+  const pager = useBillPager({
+    list: activeDetailList,
+    currentOrderId: detailOrderId,
+    onSwitch: (orderId) => switchDetailTo(orderId, detailListKey),
+  });
 
   // Fire-and-forget: toast, close via history, then await the refetch — no
   // confirm sheet. Same order the supervisor's Approve uses.
@@ -395,7 +450,7 @@ export function PickerMyPicksBoard({
             <button
               key={row.orderId}
               type="button"
-              onClick={() => openDetail(row.orderId)}
+              onClick={() => openDetail(row.orderId, activeTab)}
               className="block w-full text-left mb-[11px] rounded-[20px] overflow-hidden border-[1.5px] bg-white border-[#eceef2] active:bg-gray-50"
               style={{ boxShadow: CARD_SHADOW_V2 }}
             >
@@ -527,6 +582,7 @@ export function PickerMyPicksBoard({
           "fixed inset-0 z-[35] bg-[#f9fafb] flex flex-col transition-transform duration-200 ease-out " +
           (detailOpen ? "translate-x-0" : "translate-x-full")
         }
+        {...pager.touchHandlers}
       >
         <div
           className="bg-teal-600 px-3.5 pb-3.5 flex items-center gap-2.5 shrink-0"
@@ -557,12 +613,52 @@ export function PickerMyPicksBoard({
           </div>
         </div>
 
-        <div className="bg-white border-b border-gray-200 px-3.5 py-3 flex items-end justify-between gap-3 shrink-0">
+        {/* Everything below the teal header is wrapped in ONE ref'd container
+            so the pager can translate it as a single unit. The header itself
+            sits OUTSIDE and does not slide — its dealer-name/OBD text just
+            updates at the swap instant, same as the stat strip and counter
+            below it. Same structure as the supervisor's detail screen. */}
+        <div ref={pager.contentRef} className="flex-1 min-h-0 flex flex-col">
+        <div className="bg-white border-b border-gray-200 px-3.5 py-3 flex items-center justify-between gap-3 shrink-0">
           <div className="min-w-0 text-[16px] font-extrabold text-gray-900 leading-snug">
             {detailRow?.articleTag ?? "—"}
           </div>
-          <div className="shrink-0 text-[13px] font-semibold text-gray-500">
-            {detailRow?.volumeLitres != null ? formatLitres(detailRow.volumeLitres) : "—"} L
+          <div className="shrink-0 flex items-center gap-1">
+            <div className="text-[13px] font-semibold text-gray-500 whitespace-nowrap">
+              {detailRow?.volumeLitres != null ? formatLitres(detailRow.volumeLitres) : "—"} L
+            </div>
+            {/* Bill-position counter — the supervisor's exact control
+                (CLAUDE_PICKING.md §5.3 Option F): neutral gray, tap arrows,
+                same "N of M" wording, HIDDEN when the list has one bill
+                (nothing to page between). Teal stays reserved for the Mark
+                done CTA — this is navigation, not a primary action. Both
+                arrows call the same pager the swipe does, so an arrow tap and
+                a swipe produce an identical slide. */}
+            {pager.count > 1 && (
+              <div className="flex items-center gap-0.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={pager.goPrev}
+                  disabled={pager.index <= 0}
+                  aria-label="Previous bill"
+                  className="w-11 h-11 flex items-center justify-center rounded-[9px] text-gray-500 active:bg-gray-100 disabled:opacity-30 disabled:pointer-events-none"
+                >
+                  <ChevronLeft size={18} />
+                </button>
+                <span className="text-[12.5px] font-medium text-gray-500 tabular-nums px-0.5 whitespace-nowrap">
+                  {pager.index + 1} of {pager.count}
+                </span>
+                <button
+                  type="button"
+                  onClick={pager.goNext}
+                  disabled={pager.index >= pager.count - 1}
+                  aria-label="Next bill"
+                  className="w-11 h-11 flex items-center justify-center rounded-[9px] text-gray-500 active:bg-gray-100 disabled:opacity-30 disabled:pointer-events-none"
+                >
+                  <ChevronRight size={18} />
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
@@ -669,6 +765,9 @@ export function PickerMyPicksBoard({
             </button>
           </div>
         )}
+        </div>
+        {/* ^ closes the sliding content wrapper (ref={pager.contentRef})
+            opened just below the teal header. */}
       </div>
     </div>
   );
