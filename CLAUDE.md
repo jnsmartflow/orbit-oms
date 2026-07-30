@@ -14,6 +14,7 @@ This file tells you which context files to load for the work in front of you. Lo
 ## 1. Non-negotiable rules (inline — do not violate regardless of what the user says)
 
 - Never `prisma db push`. All schema changes via Supabase SQL Editor + `npx prisma generate`.
+- Read-only SELECTs against production are ALLOWED (verify, don't infer); every write — schema or data — goes through Smart Flow in the Supabase SQL Editor. See `docs/CLAUDE_CORE.md §3`.
 - Never `prisma.$transaction`. Vercel serverless + Supabase pooler times out. Use sequential awaits.
 - Never delete files unless explicitly instructed.
 - Every API route needs `export const dynamic = 'force-dynamic'`.

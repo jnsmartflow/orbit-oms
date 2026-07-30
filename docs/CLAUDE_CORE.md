@@ -44,6 +44,7 @@ Never introduce new libraries without being asked.
 
 - Never `prisma db push`. Schema changes via Supabase SQL Editor + `npx prisma generate`.
 - `npx prisma db pull` fails locally with P1001 (Supabase direct host is IPv6-only; depot ISP is IPv4-only). Workflow: ALTER in Supabase SQL Editor → hand-edit `prisma/schema.prisma` to match → `npx prisma generate`.
+- **Read-only SELECTs against production are ALLOWED and encouraged** (`DATABASE_URL`, the pooler, works — only `db pull`'s DIRECT_URL host is unreachable): verify claims about live data instead of inferring them. `SELECT` / `information_schema` / `pg_catalog` only — **never** INSERT/UPDATE/DELETE/ALTER/DROP. Every write, schema or data, still goes through Smart Flow in the Supabase SQL Editor. Show the query and label it read-only.
 - Never `prisma.$transaction`. Use sequential awaits.
 - Never delete files unless explicitly instructed.
 - All API routes: `export const dynamic = 'force-dynamic'`
