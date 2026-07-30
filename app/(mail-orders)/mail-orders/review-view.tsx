@@ -23,6 +23,8 @@ import {
   formatVolume,
 } from "@/lib/mail-orders/utils";
 import { searchCustomers, saveLineStatus, searchSkus, resolveLine, saveNotes } from "@/lib/mail-orders/api";
+import { BillingTabBar, type BillingTab } from "@/components/billing/billing-tab-bar";
+import { BillingPickingTab } from "@/components/billing/billing-picking-tab";
 import { BillToCard } from "@/components/mail-orders/bill-to-card";
 import { ShipToCard } from "@/components/mail-orders/ship-to-card";
 import { MetaRibbon } from "@/components/mail-orders/meta-ribbon";
@@ -59,6 +61,19 @@ interface ReviewViewProps {
   onSplitComplete?: (orderAId: number) => void;
   /** Tag visibility (Feature B) — keys turned OFF; suppress matching badges. */
   disabledTagKeys?: Set<string>;
+  // ── Billing v2 (rollout-flagged) ──────────────────────────────────────────
+  // When `billingV2` is true this view grows an Orders | Picking tab bar at the
+  // TOP OF THE RIGHT PANE — structurally identical to Floor Control, whose
+  // Floor / On hold / Cancelled tabs sit in the same place
+  // (components/floor/floor-page.tsx:613). The LEFT rail is untouched and stays
+  // visible on both tabs, exactly as Floor's "needs your decision" rail does.
+  // Only the right pane's CONTENT switches. State is owned by the parent page
+  // so it survives this component re-rendering.
+  // All three are undefined for every user today → nothing renders, and this
+  // view behaves exactly as it always has.
+  billingV2?: boolean;
+  billingTab?: BillingTab;
+  onBillingTabChange?: (tab: BillingTab) => void;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -425,6 +440,9 @@ export function ReviewView({
   onSearchChange,
   onSplitComplete,
   disabledTagKeys,
+  billingV2 = false,
+  billingTab = "orders",
+  onBillingTabChange,
 }: ReviewViewProps) {
   // ── Local state ─────────────────────────────────────────────────
   const [soInput, setSoInput] = useState("");
@@ -1886,7 +1904,25 @@ export function ReviewView({
 
       {/* RIGHT PANEL */}
       <div id="mo-print-area" className="flex-1 flex flex-col overflow-hidden bg-gray-50">
-        {selectedOrder ? (
+        {/* Billing v2 — Orders | Picking, at the TOP OF THIS PANE. Same position
+            and spacing as Floor Control's Floor / On hold / Cancelled bar
+            (floor-page.tsx:613), so the two screens read identically. The left
+            rail above is NOT inside this div and is therefore untouched: it
+            stays visible on both tabs, like Floor's decision rail.
+            mo-print-hide — the tab bar is chrome, never printed. */}
+        {billingV2 && onBillingTabChange && (
+          <div className="mo-print-hide flex-shrink-0">
+            <BillingTabBar
+              active={billingTab}
+              onChange={onBillingTabChange}
+              ordersCount={orders.length}
+            />
+          </div>
+        )}
+
+        {billingV2 && billingTab === "picking" ? (
+          <BillingPickingTab />
+        ) : selectedOrder ? (
           <>
             {renderDetailHeader(selectedOrder)}
 

@@ -14,8 +14,7 @@ import { ReviewView } from "./review-view";
 import { TutorialOverlay } from "./tutorial-overlay";
 import { Check, Copy } from "lucide-react";
 import { useBillingV2 } from "@/components/billing/billing-v2-provider";
-import { BillingTabBar, type BillingTab } from "@/components/billing/billing-tab-bar";
-import { BillingPickingTab } from "@/components/billing/billing-picking-tab";
+import type { BillingTab } from "@/components/billing/billing-tab-bar";
 
 // ── Column Picker ──────────────────────────────────────────────────────────
 
@@ -156,13 +155,14 @@ export default function MailOrdersPage() {
   const [viewMode, setViewMode] = useState<"table" | "focus">("focus");
   const [slotCutoffs, setSlotCutoffs] = useState<SlotCutoffs | undefined>(undefined);
   // ── Billing v2 rollout ──────────────────────────────────────────────────────
-  // Flag resolved server-side once (layout.tsx) and couriered down. When it is
-  // false — everyone, today — `showOrders` is permanently true and this page
-  // behaves exactly as it always has. `billingTab` is local UI state only: it is
-  // not persisted, so a reload lands back on Orders.
+  // Flag resolved server-side once (layout.tsx) and couriered down. The tab bar
+  // itself lives at the top of ReviewView's RIGHT PANE — Floor Control's
+  // structure — so this page only OWNS the state and hands it down; it renders
+  // no billing chrome of its own. State lives here rather than inside
+  // ReviewView so the chosen tab survives that component re-mounting.
+  // `billingTab` is not persisted: a reload lands back on Orders.
   const billingV2 = useBillingV2();
   const [billingTab, setBillingTab] = useState<BillingTab>("orders");
-  const showOrders = !billingV2 || billingTab === "orders";
   // ── Smart copy state (Ctrl+C workflow for SAP) ──────────────────────────────
   const [smartCopyOrderId, setSmartCopyOrderId] = useState<number | null>(null);
   const [smartCopyLineIdx, setSmartCopyLineIdx] = useState(0);
@@ -1146,25 +1146,9 @@ export default function MailOrdersPage() {
         ]}
       />
 
-      {/* ── Billing v2: Orders | Picking tab bar ────────────────────────────────
-          Renders ONLY when the rollout flag is on for this user, so every other
-          user's Mail Orders screen is byte-identical to before. The bar sits
-          below the universal header and above the content — it replaces
-          nothing, and the Orders tab renders exactly what this page always
-          rendered. Flag comes from the layout's single server-side read. */}
-      {billingV2 && (
-        <BillingTabBar
-          active={billingTab}
-          onChange={setBillingTab}
-          ordersCount={totalOrders}
-        />
-      )}
-
-      {billingV2 && billingTab === "picking" && <BillingPickingTab />}
-
       {/* ── Content area ───────────────────────────────────────────────────────── */}
       {/* Focus mode — full bleed, manages own layout */}
-      {showOrders && !loading && !error && orders.length > 0 && viewMode === "focus" && (
+      {!loading && !error && orders.length > 0 && viewMode === "focus" && (
         <ReviewView
           orders={filteredOrders}
           allOrders={orders}
@@ -1186,11 +1170,14 @@ export default function MailOrdersPage() {
           onSearchChange={setSearchQuery}
           onSplitComplete={handleSplitComplete}
           disabledTagKeys={disabledTagKeys}
+          billingV2={billingV2}
+          billingTab={billingTab}
+          onBillingTabChange={setBillingTab}
         />
       )}
 
       {/* Table mode — padded wrapper. Also shows loading/error/empty for focus mode. */}
-      {showOrders && (viewMode !== "focus" || loading || error || orders.length === 0) && (
+      {(viewMode !== "focus" || loading || error || orders.length === 0) && (
         <div className="flex-1 overflow-y-auto px-4 py-3">
           {!loading && hasUrgentOrHold && viewMode === "table" && (
             <div className="sticky top-0 z-20 mb-2 -mx-0">
