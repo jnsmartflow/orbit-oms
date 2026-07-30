@@ -68,6 +68,111 @@ function formatLitres(n: number): string {
   });
 }
 
+// ── Private line ticks — DEVICE-LOCAL, AND THAT IS THE WHOLE POINT ────────
+// (2026-07-30) The picker can tick off lines as he fetches them. These are HIS
+// NOTES, not a record of him:
+//
+//   • They gate NOTHING. Mark done is always enabled — see the CTA below.
+//     There is deliberately no code path anywhere in this file that reads a
+//     tick to decide anything. If one ever appears, the feature has changed
+//     meaning and this comment is the thing that was violated.
+//   • They NEVER leave the device. No API call carries them, no column stores
+//     them, no supervisor screen can read them. The moment they are readable
+//     by someone else they stop being notes and become a record of him.
+//
+// ⚠ DO NOT "improve" this by moving them server-side, by folding them into the
+// POST /api/picking/done body, or by reusing them to pre-fill anything the
+// supervisor sees. The supervisor's OWN ticks (picking-board-mobile.tsx's
+// checkedLineIds) look identical on purpose and are a different feature: they
+// gate its Approve button. Same look, deliberately separate plumbing — the
+// supervisor's are in-memory component state that dies with the screen, these
+// are persisted per bill so a swipe away and back does not lose his place.
+//
+// SHAPE — one JSON blob under one key: { [orderId]: { t: lastTouchedMs, ids:
+// [lineItemId, …] }. Keyed by the line's STABLE id, never its position, so a
+// refetch that reorders or re-filters the lines can never move a tick onto a
+// different item. Entries are dropped when empty.
+//
+// PRUNING — applied on EVERY write, so the blob can never grow without bound:
+// last-touched older than 7 days is dropped, then the 50 most recently touched
+// bills are kept. 7 days is chosen against the real list rule: the picker's
+// Pending tab is deliberately NOT date-fenced (lib/picking/picker-split.ts), so
+// a bill left mid-shift is still his next morning and a 24h window would wipe
+// his notes on exactly the bill he is still holding. 50 is a backstop, not the
+// working limit — no picker holds anything near that many bills at once.
+//
+// Every access is wrapped: localStorage throws in private-mode Safari and on
+// quota, and notes are never worth breaking the screen for. Failure is silent
+// and the ticks simply behave as empty.
+const TICKS_STORAGE_KEY = "orbit.picking.picker-line-ticks.v1";
+const TICKS_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+const TICKS_MAX_BILLS = 50;
+
+interface TickEntry {
+  /** Epoch ms this bill's ticks were last written — the pruning clock. */
+  t: number;
+  ids: number[];
+}
+type TickStore = Record<string, TickEntry>;
+
+function readTickStore(): TickStore {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(TICKS_STORAGE_KEY);
+    if (raw === null) return {};
+    const parsed = JSON.parse(raw) as unknown;
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    // Shape-check each entry rather than trusting the blob: it is user-device
+    // storage, so a half-written or hand-edited value must degrade to "no
+    // ticks", never to a crash inside the detail screen.
+    const out: TickStore = {};
+    for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+      if (value === null || typeof value !== "object") continue;
+      const entry = value as { t?: unknown; ids?: unknown };
+      if (typeof entry.t !== "number" || !Array.isArray(entry.ids)) continue;
+      out[key] = { t: entry.t, ids: entry.ids.filter((n): n is number => typeof n === "number") };
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+/** Age prune, then most-recent cap. See the pruning note above. */
+function pruneTickStore(store: TickStore, nowMs: number): TickStore {
+  const fresh = Object.entries(store).filter(([, v]) => nowMs - v.t <= TICKS_MAX_AGE_MS);
+  fresh.sort((a, b) => b[1].t - a[1].t);
+  const out: TickStore = {};
+  for (const [key, value] of fresh.slice(0, TICKS_MAX_BILLS)) out[key] = value;
+  return out;
+}
+
+function writeTickStore(store: TickStore): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(TICKS_STORAGE_KEY, JSON.stringify(pruneTickStore(store, Date.now())));
+  } catch {
+    // Silent — a note that could not be saved must never interrupt picking.
+  }
+}
+
+function readTicks(orderId: number): Set<number> {
+  return new Set(readTickStore()[String(orderId)]?.ids ?? []);
+}
+
+/** Persist this bill's ticks. An empty set REMOVES the entry — unticking
+ *  everything leaves no residue to prune later. */
+function writeTicks(orderId: number, ids: Set<number>): void {
+  const store = readTickStore();
+  if (ids.size === 0) delete store[String(orderId)];
+  else store[String(orderId)] = { t: Date.now(), ids: Array.from(ids) };
+  writeTickStore(store);
+}
+
+function clearTicks(orderId: number): void {
+  writeTicks(orderId, new Set());
+}
+
 // The local TopBarTab copy that used to live here (a self-declared third
 // copy of picking-board-mobile.tsx's original) was DELETED 2026-07-29: the
 // Pending/Done strip moved to the shared bottom bar (WorkflowTabBar, driven
@@ -114,9 +219,8 @@ export function PickerMyPicksBoard({
   const { activeTab, pending, done, refetchQueue, detailOpen, setDetailOpen } = usePickerBoard();
 
   // Detail overlay — always-mounted, translateX slide, same pattern as
-  // picking-board-mobile.tsx's detail screen (board.tsx:1083-1267) so the
-  // list underneath is never torn down. NO tick boxes, NO Mark done CTA —
-  // both are later stages.
+  // picking-board-mobile.tsx's detail screen so the list underneath is never
+  // torn down.
   const [detailOrderId, setDetailOrderId] = useState<number | null>(null);
   // WHICH list this bill was opened from — Pending or Done. Captured at open,
   // never re-derived from activeTab later: the swipe pager must walk the list
@@ -132,6 +236,15 @@ export function PickerMyPicksBoard({
   const [lineItemsLoading, setLineItemsLoading] = useState(false);
   const [lineItemsError, setLineItemsError] = useState<string | null>(null);
   const [activePackFilter, setActivePackFilter] = useState<string>("ALL");
+  // The OPEN bill's private ticks, mirrored from device storage. Held as state
+  // so a tap re-renders; the storage blob is the durable copy. Loaded
+  // synchronously in switchDetailTo (not in an effect keyed on detailOrderId)
+  // so a swipe to a neighbour bill never renders one bill's lines against the
+  // previous bill's ticks, not even for a frame.
+  //
+  // ⚠ Nothing below reads this to decide anything. It feeds the tick circles
+  // and the counter, and nothing else. Mark done does not look at it.
+  const [tickedLineIds, setTickedLineIds] = useState<Set<number>>(new Set());
   // In-flight guard — disables the CTA so a double-tap can't fire two
   // overlapping POSTs (the server's own PICK_ASSIGNED guard would 409 the
   // second one anyway, but this avoids firing it at all).
@@ -239,18 +352,35 @@ export function PickerMyPicksBoard({
   }, [setDetailOpen]);
 
   // Shared by BOTH the original open (openDetail) and paging to a neighbour
-  // bill (the pager's onSwitch) — the same per-bill ephemeral state must never
-  // carry from one bill into the next either way. activePackFilter is the only
-  // such state on this face (there is no search and there are no line ticks);
-  // the line items themselves are re-fetched by the detailOrderId-keyed effect
-  // above, which fires on a swap exactly as it does on a fresh open.
-  // Re-setting detailOpen(true) on every call is harmless (already true while
-  // paging) — same shape as the supervisor's switchDetailTo.
+  // bill (the pager's onSwitch) — the same per-bill state must never carry from
+  // one bill into the next either way. activePackFilter RESETS (it is a view
+  // setting, meaningless on the next bill); the ticks are RE-READ for the bill
+  // being opened, because they belong to that bill and must come back exactly
+  // as he left them when he swipes away and returns. The line items themselves
+  // are re-fetched by the detailOrderId-keyed effect above, which fires on a
+  // swap exactly as it does on a fresh open. Re-setting detailOpen(true) on
+  // every call is harmless (already true while paging) — same shape as the
+  // supervisor's switchDetailTo.
   function switchDetailTo(orderId: number, listKey: PickerTabKey): void {
     setDetailOrderId(orderId);
     setDetailListKey(listKey);
     setDetailOpen(true);
     setActivePackFilter("ALL");
+    setTickedLineIds(readTicks(orderId));
+  }
+
+  // Tap toggles. Write-through to device storage on every tap, so nothing is
+  // lost if the phone sleeps or the tab is discarded mid-bill. Computed off the
+  // current state OUTSIDE the setState updater — the updater stays pure, and
+  // the storage write happens exactly once per tap.
+  function toggleLineTick(lineId: number): void {
+    const orderId = detailOrderId;
+    if (orderId === null) return;
+    const next = new Set(tickedLineIds);
+    if (next.has(lineId)) next.delete(lineId);
+    else next.add(lineId);
+    setTickedLineIds(next);
+    writeTicks(orderId, next);
   }
 
   function openDetail(orderId: number, listKey: PickerTabKey): void {
@@ -350,6 +480,13 @@ export function PickerMyPicksBoard({
         return;
       }
       toast.success(`${detailRow.dealerName} marked done`);
+      // The bill is finished, so his private notes on it have served their
+      // purpose — drop them now rather than leaving them for the pruner. This
+      // is the ONLY place Mark done touches the ticks, and it happens AFTER a
+      // successful write: it reads nothing, gates nothing, and would behave
+      // identically had he ticked every line or none.
+      clearTicks(detailRow.orderId);
+      setTickedLineIds(new Set());
       // Closes through history so the pushed entry is consumed and the ONE
       // popstate authority does the closing — never setDetailOpen directly.
       // Unconditional, like the supervisor's Approve (picking-board-mobile.tsx
@@ -383,6 +520,16 @@ export function PickerMyPicksBoard({
     if (activePackFilter === "ALL") return lineItems;
     return lineItems.filter((li) => (li.pack ?? NO_PACK_KEY) === activePackFilter);
   }, [lineItems, activePackFilter]);
+
+  // Counted against the FULL line set, never filteredLineItems — the pack chips
+  // are a view filter and his progress through the bill does not change when he
+  // narrows the view. Derived by intersecting with the lines actually present,
+  // so a stored tick for a line that is no longer on the bill cannot inflate
+  // the number. Purely informational: nothing branches on it.
+  const tickedCount = useMemo(
+    () => (lineItems ?? []).filter((li) => tickedLineIds.has(li.id)).length,
+    [lineItems, tickedLineIds],
+  );
 
   // Admin "view as" — re-runs the server component's scoped fetch for the
   // newly chosen picker via a query-param navigation. No client-side
@@ -570,12 +717,11 @@ export function PickerMyPicksBoard({
         )}
       </div>
 
-      {/* Detail screen — reuses the live board's detail-screen pattern
-          (board.tsx:1083-1267): teal header, articleTag+volume stat strip,
-          pack chips (only when ≥2 distinct packs), pack-tile/SKU-hero/qty
-          line items, plus a Mark done CTA below (fire-and-forget, no
-          confirm — see handleMarkDone). NO tick boxes — that's a
-          supervisor-side, later stage. CTA only renders for pending
+      {/* Detail screen — reuses the live board's detail-screen pattern: teal
+          header, articleTag+volume stat strip, pack chips (only when ≥2
+          distinct packs), pack-tile/SKU-hero/qty line items with a private
+          tick per line, plus a Mark done CTA below (fire-and-forget, no
+          confirm — see handleMarkDone). CTA only renders for pending
           (non-done) rows — a Done-tab bill's detail screen has no CTA. */}
       <div
         className={
@@ -620,8 +766,20 @@ export function PickerMyPicksBoard({
             below it. Same structure as the supervisor's detail screen. */}
         <div ref={pager.contentRef} className="flex-1 min-h-0 flex flex-col">
         <div className="bg-white border-b border-gray-200 px-3.5 py-3 flex items-center justify-between gap-3 shrink-0">
-          <div className="min-w-0 text-[16px] font-extrabold text-gray-900 leading-snug">
-            {detailRow?.articleTag ?? "—"}
+          <div className="min-w-0">
+            <div className="text-[16px] font-extrabold text-gray-900 leading-snug">
+              {detailRow?.articleTag ?? "—"}
+            </div>
+            {/* Tick progress — quiet, grey, informational, in the same slot the
+                supervisor uses for its own "N / M checked" line. Carries the
+                word "ticked" because the bill-position counter ("2 of 5") sits
+                on the SAME pinned row: two bare "N of M" strings side by side
+                would be read as one thing. Nothing branches on this number. */}
+            {lineItems !== null && lineItems.length > 0 && (
+              <div className="text-[11.5px] text-gray-400 tabular-nums mt-0.5">
+                {tickedCount} of {lineItems.length} ticked
+              </div>
+            )}
           </div>
           <div className="shrink-0 flex items-center gap-1">
             <div className="text-[13px] font-semibold text-gray-500 whitespace-nowrap">
@@ -670,7 +828,7 @@ export function PickerMyPicksBoard({
               className={
                 "text-[12.5px] font-medium px-3 py-1.5 rounded-full border whitespace-nowrap shrink-0 " +
                 (activePackFilter === "ALL"
-                  ? "bg-gray-900 border-gray-900 text-white font-semibold"
+                  ? "bg-[#2a323c] border-[#2a323c] text-white font-semibold"
                   : "bg-white border-gray-200 text-gray-700")
               }
             >
@@ -684,7 +842,7 @@ export function PickerMyPicksBoard({
                 className={
                   "text-[12.5px] font-medium px-3 py-1.5 rounded-full border whitespace-nowrap shrink-0 " +
                   (activePackFilter === key
-                    ? "bg-gray-900 border-gray-900 text-white font-semibold"
+                    ? "bg-[#2a323c] border-[#2a323c] text-white font-semibold"
                     : "bg-white border-gray-200 text-gray-700")
                 }
               >
@@ -709,30 +867,77 @@ export function PickerMyPicksBoard({
             ) : filteredLineItems.length === 0 ? (
               <p className="text-[13px] text-gray-400 text-center py-10">No lines match.</p>
             ) : (
-              filteredLineItems.map((li) => (
+              filteredLineItems.map((li) => {
+                const isTicked = tickedLineIds.has(li.id);
+                return (
                 <div
                   key={li.id}
                   className="flex bg-white rounded-[14px] overflow-hidden mb-2"
                   style={{ boxShadow: SOFT_CARD_SHADOW }}
                 >
+                  {/* PACK TILE — SLATE #3d4650, matching the supervisor's own
+                      tile. It was teal-700 here until 2026-07-30, which broke
+                      the one-teal rule (CLAUDE_UI §1) the supervisor had
+                      already recoloured for: teal belongs to the Mark done CTA
+                      alone on this screen. Muted em-dash when the pack is
+                      missing — never an error/chip style. */}
                   <div className="w-14 shrink-0 bg-[#f8fafa] border-r border-gray-200 flex items-center justify-center px-1 py-2.5">
                     <span
-                      className={
-                        "text-[13px] font-bold text-center " + (li.pack !== null ? "text-teal-700" : "text-gray-400")
-                      }
+                      className="text-[13px] font-bold text-center"
+                      style={{ color: li.pack !== null ? "#3d4650" : "#9ca3af" }}
                     >
                       {li.pack ?? "—"}
                     </span>
                   </div>
-                  <div className="flex-1 min-w-0 px-3 py-2.5">
+                  {/* BODY — mutes once ticked so his eye skips the line. Same
+                      quiet treatment as the supervisor's: no ring, no left
+                      border, no strikethrough. */}
+                  <div className={"flex-1 min-w-0 px-3 py-2.5 transition-opacity " + (isTicked ? "opacity-55" : "")}>
                     <div className="font-mono text-[17px] font-bold text-gray-900 truncate">{li.sku}</div>
                     <div className="text-[12px] text-gray-500 truncate mt-0.5">{li.name ?? "—"}</div>
                   </div>
                   <div className="shrink-0 flex items-center justify-center px-3.5">
                     <span className="text-[26px] font-extrabold text-gray-900">{li.qty}</span>
                   </div>
+                  {/* TICK — his private note that he has fetched this line.
+                      The supervisor's identical control is filled TEAL; this
+                      one is filled SLATE (#6b7480) because teal on this screen
+                      is reserved for Mark done (CLAUDE_UI §1) and a tick must
+                      never compete with the one button that matters. 44px tap
+                      zone, 20px/2px-border circle, no border on the column
+                      itself (a tap zone, not a compartment).
+                      Rendered on EVERY line of EVERY bill, unconditionally —
+                      no stage gate, no "only when pending". Toggling is free
+                      and reversible and costs nothing. */}
+                  <button
+                    type="button"
+                    onClick={() => toggleLineTick(li.id)}
+                    aria-label={isTicked ? "Remove tick from line" : "Tick line"}
+                    aria-pressed={isTicked}
+                    className="w-11 shrink-0 flex items-center justify-center"
+                  >
+                    <span
+                      className={
+                        "w-5 h-5 rounded-full border-2 flex items-center justify-center " +
+                        (isTicked ? "bg-[#6b7480] border-[#6b7480]" : "bg-white border-gray-300")
+                      }
+                    >
+                      {isTicked && (
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none">
+                          <path
+                            d="M5 13l4 4L19 7"
+                            stroke="white"
+                            strokeWidth={3.5}
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      )}
+                    </span>
+                  </button>
                 </div>
-              ))
+                );
+              })
             )
           )}
         </div>
@@ -755,6 +960,13 @@ export function PickerMyPicksBoard({
             className="shrink-0 px-3.5 pb-3.5"
             style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 16px)" }}
           >
+            {/* ⚠ NEVER GATED ON THE TICKS. `marking` is the in-flight
+                double-tap guard and is the ONLY thing that can disable this
+                button. There is no confirm dialog, no "you have 4 unticked
+                lines" warning, no colour change and no nudge — ticking nothing
+                and tapping Mark done is a normal day. The ticks are his notes;
+                if they ever became a precondition they would be a rule about
+                him instead. Do not add a check here. */}
             <button
               type="button"
               onClick={() => void handleMarkDone()}
