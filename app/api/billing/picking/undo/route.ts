@@ -34,6 +34,9 @@ const MAX_BATCH = 200;
  *
  * Idempotent for the same reason as mark-done: a second call finds invoicedAt
  * already null, matches 0 rows, and reports updated: 0.
+ *
+ * NO order_status_logs ROW, for the same deliberate/deferred reason as
+ * mark-done — see that route's header. v1 decision, 2026-07-30.
  */
 export async function POST(req: Request): Promise<NextResponse> {
   const session = await auth();

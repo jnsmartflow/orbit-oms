@@ -18,9 +18,15 @@ const MAX_BATCH = 200;
  * EXACTLY ONE WRITE: a single `orders.updateMany` stamping invoicedAt +
  * invoicedById. Bulk is the real shape of this action (the bulk bar selects N
  * bills and marks them together), and updateMany keeps N bills at ONE statement
- * rather than N. Never prisma.$transaction (CORE §3). No status-log row is
- * written: invoicedAt/invoicedById ARE the audit trail for this action, and the
- * Done strip reads them back directly.
+ * rather than N. Never prisma.$transaction (CORE §3).
+ *
+ * NO order_status_logs ROW — deliberate and DEFERRED, not an oversight (decided
+ * 2026-07-30, v1). invoicedAt/invoicedById already carry the who and the when,
+ * and the Done strip reads them back directly. A per-row log would also force a
+ * second query: updateMany returns a COUNT, not the ids it touched, so we would
+ * have to re-select the affected rows purely to log them — complicating exactly
+ * the clean single-statement design this route exists to keep. Revisit only if
+ * an audit requirement appears that invoicedAt/ById cannot answer.
  *
  * 🔒 THE PENDING PREDICATE IS PART OF THE WHERE, NOT JUST A PRE-CHECK.
  * buildBillingPendingWhere() is AND-ed into the update itself, so a bill can be

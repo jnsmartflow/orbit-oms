@@ -4,6 +4,7 @@ import { checkAnyPermission, getAllPermissionsForRoles, buildNavItems } from "@/
 import { RoleSidebarProvider } from "@/components/shared/role-sidebar-provider";
 import { RoleLayoutClient } from "@/components/shared/role-layout-client";
 import { isBillingV2Enabled } from "@/lib/billing/flag";
+import { BillingV2Provider } from "@/components/billing/billing-v2-provider";
 import type { RoleSidebarRole } from "@/components/shared/role-sidebar";
 
 export const dynamic = "force-dynamic";
@@ -76,7 +77,10 @@ export default async function MailOrdersLayout({
             Billing v2
           </div>
         )}
-        {children}
+        {/* One server-side flag read, couriered to the client tree. Nothing
+            below re-fetches it, and page.tsx keeps its bare <ComponentName />
+            shape (CORE §3). */}
+        <BillingV2Provider enabled={billingV2}>{children}</BillingV2Provider>
       </RoleLayoutClient>
     </RoleSidebarProvider>
   );
