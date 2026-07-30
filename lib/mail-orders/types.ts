@@ -66,7 +66,12 @@ export interface MoOrder {
   dispatchStatus?: string | null;
   dispatchPriority?: string | null;
   shipToOverride?: boolean;
+  shipToOverrideCustomerId?: number | null;
   slotToOverride?: boolean;
+  // Slot INTENT (Phase 2). Present on every mail order because the list route
+  // uses `include`, not `select`, so new scalars flow through automatically.
+  dispatchTargetDate?: string | null;
+  dispatchWindowId?: number | null;
   customerMatchStatus?: "exact" | "multiple" | "unmatched" | null;
   customerCandidates?: string | null;
   customerArea?: string | null;

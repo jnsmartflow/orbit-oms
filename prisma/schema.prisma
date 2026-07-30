@@ -341,6 +341,10 @@ model dispatch_slot_master {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
   orders     orders[] @relation("OrderDispatchWindow")
+  // Phase 2 slot intent on the mail order. A SECOND relation on this table, but
+  // to a DIFFERENT model, so there is no ambiguity trap — named on both sides
+  // anyway, matching the house pattern.
+  moOrders   mo_orders[] @relation("MoOrderDispatchWindow")
 }
 
 model delivery_type_slot_config {
@@ -1493,6 +1497,19 @@ model mo_orders {
   slotToOverride      Boolean?           @default(false)
   shipToOverrideCustomerId Int?
   shipToOverrideCustomer   delivery_point_master? @relation("MoOrderShipToOverride", fields: [shipToOverrideCustomerId], references: [id])
+  // Slot INTENT (Phase 2, 2026-07-30). The operator's dispatch-slot DECISION,
+  // taken on the mail order before any OBD exists. Enrichment copies these into
+  // orders.dispatchTargetDate/dispatchWindowId with dispatchSlotSource='manual'
+  // BEFORE the dispatch-engine loop, so the engine's manual guard
+  // (app/api/import/obd/route.ts:344) leaves the human's pick alone.
+  // Both are meaningless alone — a date with no window is not a slot — so the
+  // carry writes them together or not at all.
+  // @db.Date (NOT Timestamptz): this is a calendar day, matching
+  // orders.dispatchTargetDate. Live FK: mo_orders_dispatchwindowid_fkey
+  // (lowercase — Postgres folded the unquoted name) ON DELETE SET NULL.
+  dispatchTargetDate       DateTime?              @db.Date
+  dispatchWindowId         Int?
+  dispatchWindow           dispatch_slot_master?  @relation("MoOrderDispatchWindow", fields: [dispatchWindowId], references: [id])
   customerMatchStatus String?            @default("unmatched")
   customerCandidates  String?
   status              String             @default("pending")

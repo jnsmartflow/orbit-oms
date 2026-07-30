@@ -25,6 +25,9 @@ import {
 import { searchCustomers, saveLineStatus, searchSkus, resolveLine, saveNotes } from "@/lib/mail-orders/api";
 import { BillingTabBar, type BillingTab } from "@/components/billing/billing-tab-bar";
 import { BillingPickingTab } from "@/components/billing/billing-picking-tab";
+import { BillingActionRibbon } from "@/components/billing/billing-action-ribbon";
+import { BillingShipToPencil } from "@/components/billing/billing-ship-to-pencil";
+import type { DispatchWindow } from "@/components/floor/dispatch-slot-picker";
 import { BillToCard } from "@/components/mail-orders/bill-to-card";
 import { ShipToCard } from "@/components/mail-orders/ship-to-card";
 import { MetaRibbon } from "@/components/mail-orders/meta-ribbon";
@@ -74,6 +77,8 @@ interface ReviewViewProps {
   billingV2?: boolean;
   billingTab?: BillingTab;
   onBillingTabChange?: (tab: BillingTab) => void;
+  /** Phase 2 — reload the order list after a billing action writes mo_orders. */
+  onBillingActionSaved?: () => void;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -443,7 +448,28 @@ export function ReviewView({
   billingV2 = false,
   billingTab = "orders",
   onBillingTabChange,
+  onBillingActionSaved,
 }: ReviewViewProps) {
+  // Billing v2 (Phase 2) — dispatch windows for the reused Floor slot picker.
+  // Fetched ONLY when the flag is on: with it off this effect returns
+  // immediately, issues no request, and `billingWindows` stays [] and unused.
+  const [billingWindows, setBillingWindows] = useState<DispatchWindow[]>([]);
+  useEffect(() => {
+    if (!billingV2) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/api/billing/dispatch-windows", { cache: "no-store" });
+        if (!res.ok) return;
+        const body = (await res.json()) as { windows?: DispatchWindow[] };
+        if (!cancelled) setBillingWindows(body.windows ?? []);
+      } catch {
+        // Silent — the picker simply has no windows to offer, and the rest of
+        // the detail view is unaffected.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [billingV2]);
   // ── Local state ─────────────────────────────────────────────────
   const [soInput, setSoInput] = useState("");
   const [editingSoNumber, setEditingSoNumber] = useState(false);
@@ -1238,6 +1264,18 @@ export function ReviewView({
 
     const actionsSlot = (
       <div className="mo-print-hide" style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+        {/* Phase 2 — Slot / Hold / Urgent. Prepended as a SIBLING inside the
+            existing actions row: nothing here is wrapped, no style object is
+            changed, and with the flag off this expression is `false`, which
+            React renders as nothing at all. */}
+        {billingV2 && (
+          <BillingActionRibbon
+            order={order}
+            windows={billingWindows}
+            isPunched={isPunched}
+            onSaved={() => onBillingActionSaved?.()}
+          />
+        )}
         <button
           onClick={handleCopyClick}
           title="Copy · Ctrl+C"
@@ -1416,6 +1454,18 @@ export function ReviewView({
             isOverride={order.shipToOverride ?? false}
             signals={shipSignals}
             disabledTagKeys={disabledTagKeys}
+            // Phase 2 — undefined unless the flag is on, so the card renders
+            // nothing extra for every user today.
+            actionSlot={
+              billingV2 ? (
+                <BillingShipToPencil
+                  moOrderId={order.id}
+                  isPunched={isPunched}
+                  hasOverride={order.shipToOverride ?? false}
+                  onSaved={() => onBillingActionSaved?.()}
+                />
+              ) : undefined
+            }
             billToName={billToName}
             billToCode={order.customerCode}
             billToArea={order.customerArea ?? null}

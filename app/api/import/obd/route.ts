@@ -276,6 +276,28 @@ async function applyMailOrderEnrichment(soNumbers: (string | null)[]): Promise<v
       updateData.slotToOverride = true;
     }
 
+    // Slot INTENT carry (Phase 2, 2026-07-30) — the operator's dispatch-slot
+    // DECISION, taken on the mail order before any OBD existed.
+    //
+    // ⚠ POSITION IS LOAD-BEARING: this lands in `updateData`, which is written
+    // by the updateMany BELOW (:313) — i.e. BEFORE the dispatch-engine loop
+    // that starts at :318. The engine then reads dispatchSlotSource back and
+    // skips these rows at its manual guard (:344), so a human's pick is never
+    // overridden by the rules engine. Moving this after the engine loop, or
+    // dropping dispatchSlotSource, silently hands the slot back to the engine.
+    //
+    // Both fields required together — a target date with no window is not a
+    // slot, and would leave orders in a half-set state the engine would not fix
+    // (the guard keys on dispatchSlotSource, not on the date).
+    //
+    // Same shape Floor's own change-slot action writes
+    // (app/api/floor/actions/route.ts:111), so the target state is proven.
+    if (mailOrder.dispatchTargetDate && mailOrder.dispatchWindowId) {
+      updateData.dispatchTargetDate = mailOrder.dispatchTargetDate;
+      updateData.dispatchWindowId = mailOrder.dispatchWindowId;
+      updateData.dispatchSlotSource = "manual";
+    }
+
     // Order date/time enrichment: use mail order receivedAt as the true order time
     if (mailOrder.receivedAt) {
       updateData.orderDateTime = mailOrder.receivedAt;

@@ -1173,6 +1173,7 @@ export default function MailOrdersPage() {
           billingV2={billingV2}
           billingTab={billingTab}
           onBillingTabChange={setBillingTab}
+          onBillingActionSaved={loadOrders}
         />
       )}
 

@@ -20,6 +20,17 @@ interface ShipToCardProps {
   billToCode?: string | null;
   billToArea?: string | null;
   billToDeliveryType?: string | null;
+  /**
+   * Billing v2 (Phase 2) — an optional action affordance pinned top-right of
+   * the card (the ✎ ship-to pencil).
+   *
+   * ⚠ DEFAULTS TO `undefined`, NEVER null or an empty fragment. React renders
+   * `undefined` as nothing at all — no element, no comment node — so for every
+   * user without the billing flag this card is byte-identical to before this
+   * prop existed. It is rendered as a positioned sibling INSIDE the existing
+   * card div; no existing markup is wrapped and no className is changed.
+   */
+  actionSlot?: React.ReactNode;
 }
 
 function getDeliveryDotClass(type: string | null | undefined): string {
@@ -45,6 +56,7 @@ export function ShipToCard({
   billToCode,
   billToArea,
   billToDeliveryType,
+  actionSlot,
 }: ShipToCardProps): JSX.Element {
   const capturedDisabled = disabledTagKeys?.has(MO_TAG.captured) ?? false;
 
@@ -77,6 +89,9 @@ export function ShipToCard({
 
   return (
     <div className={cardClasses}>
+      {/* Billing v2 action affordance. `undefined` for every user without the
+          flag → React renders nothing, so this line contributes no DOM. */}
+      {actionSlot && <span className="absolute right-2 top-2 z-10">{actionSlot}</span>}
       <div className="mb-1 flex items-center gap-1.5">
         <span className="text-[9.5px] font-semibold tracking-[0.06em] uppercase text-gray-400">
           Ship to
