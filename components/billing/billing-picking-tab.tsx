@@ -12,9 +12,12 @@
 // <colgroup> percentages, 31px header / 36px rows, ellipsis on overflow — the
 // same constants Floor's tables use (components/floor/cancelled-tab.tsx).
 //
-// TEAL: the live dot in the tab bar is the one teal element of this screen
-// (CLAUDE_UI §1). The primary action here is gray-900, not teal. Row checkboxes
-// use accent-teal-600 to match every other data table in the app.
+// TEAL — two roles on this screen, and that is deliberate (confirmed
+// 2026-07-30, precedent: the mobile Picking board, CLAUDE_UI §59.3):
+//   1. the PRIMARY CTA, Copy OBDs (§10)
+//   2. the LIVE count/dot — the Picking tab badge and the "live" pip
+// The section-tab active pill stays gray-900 (Floor's tabPill), and row
+// checkboxes use accent-teal-600 like every other data table in the app.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePickingMarker } from "@/lib/hooks/use-picking-marker";
@@ -343,10 +346,14 @@ export function BillingPickingTab() {
           </div>
 
           <div className="ml-auto flex items-center gap-[10px]">
+            {/* Copy OBDs is the PRIMARY CTA and therefore teal (CLAUDE_UI §10),
+                matching the approved mockup's .btn.primary. Mark done is the
+                mockup's .btn.ghost — the operator copies into SAP first, then
+                marks done, so copy leads. */}
             <button
               type="button"
               onClick={copyObds}
-              className="inline-flex h-[34px] items-center gap-2 rounded-md border border-gray-300 bg-white px-[13px] text-[12px] font-medium text-gray-700 transition-colors hover:border-gray-400 hover:bg-gray-50"
+              className="inline-flex h-[34px] items-center gap-2 rounded-md bg-teal-600 px-[15px] text-[12px] font-semibold text-white transition-colors hover:bg-teal-700"
             >
               {copied ? "Copied" : "Copy OBDs"}
             </button>
@@ -354,7 +361,7 @@ export function BillingPickingTab() {
               type="button"
               onClick={markDone}
               disabled={busy}
-              className="inline-flex h-[34px] items-center gap-2 rounded-md bg-gray-900 px-[15px] text-[12px] font-semibold text-white transition-colors hover:bg-gray-800 disabled:opacity-50"
+              className="inline-flex h-[34px] items-center gap-2 rounded-md border border-gray-300 bg-white px-[13px] text-[12px] font-medium text-gray-700 transition-colors hover:border-gray-400 hover:bg-gray-50 disabled:opacity-50"
             >
               {busy ? "Marking…" : "Mark done"}
             </button>
