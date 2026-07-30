@@ -1,5 +1,5 @@
 # CLAUDE_PICKING.md — Picking Module
-# v1.10 · Schema v27.12 · July 2026 · updated 2026-07-28
+# v1.11 · Schema v27.12 · July 2026 · updated 2026-07-30
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -40,9 +40,9 @@ by ROLE. The width-based switch is gone: the desktop table went 2026-07-28 and t
 its `md:hidden` breakpoint, so the same board renders on a phone and on a PC.
 - **Supervisor board** — `components/picking/picking-board-mobile.tsx` (Assign / Picking / Done —
   three **bottom** tabs — + a detail screen. [LIVE], §5).
-- **Picker's own "My Picks"** — `components/picking/picker-my-picks-board.tsx` (Pending / Done.
-  [LIVE], §5) when the viewer's primary role is `picker` — or an admin/operations session using the
-  `?view=picker&as=<id>` test hook (§7).
+- **Picker's own "My Picks"** — `components/picking/picker-my-picks-board.tsx` (Pending / Done —
+  two **bottom** tabs — + a detail screen. [LIVE], §5.4) when the viewer's primary role is `picker` —
+  or an admin/operations session using the `?view=picker&as=<id>` test hook (§7).
 
   Both mobile faces mount through `components/picking/picking-mobile-shell.tsx`, which wraps
   `<RoleLayoutClient>` — Picking is the **first and reference consumer** of the shared shell's
@@ -167,8 +167,15 @@ what was tried and removed.
 
 ## 4. Assign / Undo + bulk assign [LIVE]
 
-**`GET /api/picking/queue`** — `getPickingQueue(dateParam)`; `date` optional (trim, empty→today).
-Same `canView` gate as the page.
+**`GET /api/picking/queue`** — `canView` gate + admin bypass, same shape as the page. Three optional
+params, all **validated rather than coerced**, because a silently-different answer is worse than a
+400: **`scope`** (`single` | `openPending`; an unrecognised value 400s rather than degrading to
+`single`, which would hand a mobile caller a one-day payload while it renders an all-dates board),
+**`date`** (trim, empty→today, and **rejected outright alongside `scope=openPending`** — that scope
+spans all dates and would silently ignore it), and **`pickerId`** (positive integer, added
+2026-07-29 — narrows to one picker's bills, §5.4; a malformed value 400s rather than widening back to
+the whole board). The `pickerId` validation is deliberately copied from
+`app/api/picking/marker/route.ts` so the two routes accept and reject the identical value.
 
 **`POST /api/picking/assign`** — batch `{ orderIds: number[], pickerId: number }`. The one rule that
 matters: **each bill runs its own fully sequential two-write pair, never `prisma.$transaction`,
@@ -223,9 +230,15 @@ works.** What is Picking-specific:
 - **One fetch, no drift.** Every consumer of `refetchQueue()` (assign / undo / approve, still inside
   `PickingBoardMobile`) updates the SAME `data` the bottom-bar counts read — the cards and the tab
   counts cannot disagree.
-- **The picker face gets the DEFAULT bar.** `PickingMobileShell` only mounts the tab/fetch machinery
-  when `!showPickerFace`; the picker's "My Picks" board leaves `workflowTabs` undefined, so it keeps
-  the standard Home/Menu/You bar untouched. (The archived desktop queue did the same.)
+- **BOTH faces have their own bottom bar now — `PickingMobileShell` is a two-way branch, not a
+  supervisor-only wrapper** [CHANGED 2026-07-29]. This bullet used to read *"the picker face gets the
+  DEFAULT bar … it keeps the standard Home/Menu/You bar untouched"*; that is no longer true.
+  `showPickerFace` now selects **`PickerPickingShell`** instead of `SupervisorPickingShell`, and the
+  picker shell is the full equivalent of the supervisor one for its own face: it owns its two tabs,
+  its rows, its refetch and `detailOpen`, and hands them down through a **separate** context,
+  `usePickerBoard()`. Two contexts, two hooks, deliberately different shapes — the picker's is
+  smaller because that face has no filters and no sheets (§5.4). The archived desktop queue *did*
+  leave `workflowTabs` undefined and take the default bar; **nothing live does any more.**
 - Tab icons (lucide): `Inbox` (Assign) · `Package` (Picking) · `CheckCircle2` (Done). Count badge
   hidden at 0.
 - The top teal header keeps the "Picking" title + search toggle, and gained the grid/avatar triggers
@@ -372,20 +385,50 @@ preserved exactly (`skuDescriptionRaw`, and a blank pack stays blank rather than
 
 **Swipe between bills + the "N of M" counter [LIVE]:**
 
+**⚠ THE GESTURE LIVES IN `components/picking/use-bill-pager.ts` — this section owns it, for BOTH
+faces.** Extracted 2026-07-30 when the picker's detail screen gained the same gesture (§5.4). The
+supervisor adopted it by **import swap**: the machinery came out of `picking-board-mobile.tsx`
+verbatim — same constants, same three-phase animation, same rendering — so nothing about how that
+board feels changed. The hook owns the index derivation, the exit/swap/enter sequence, the
+direct-DOM transform write, and every number below. What stays with each CALLER is exactly two
+things: **WHICH list to page** (`list`) and **WHAT per-bill state to reset on a swap** (`onSwitch`).
+That split is the whole reason it is shareable — the hook knows nothing about ticks, search, Approve
+or Mark done, and must not learn.
+
+> It sits under `components/picking/`, so it is a picking atom and this file documents it. **Moving
+> it to `components/shared/` is the trigger to give it a section in `CLAUDE_UI.md` instead** — at
+> that point delete the contract from here rather than letting both files carry it.
+
 - `openDetail(orderId, listKey)` — the signature carries a **`listKey`** (`waiting` | `needsCheck` |
   `stillPicking` | `checked`) because the Check tab has two sections; prev/next must page the RIGHT
-  list. All four call sites pass it.
-- The index is derived **live on every render** from `activeDetailList` + `detailOrderId`, never
+  list. All four call sites pass it. (The picker face has one band per tab, so its own list key is
+  just the tab — §5.4.)
+- The index is derived **live on every render** from the caller's list + the open bill's id, never
   frozen at open time — `handleUndo` refetches while the detail is open, so a captured array would go
-  stale.
+  stale. **If the open bill leaves the list entirely the index resolves to `-1`: paging goes inert,
+  both arrows are unreachable, and a past-threshold swipe SNAPS BACK rather than committing** — it
+  never strands the content off-screen and never jumps to somebody else's bill.
 - Counter is **Option F**: merged into the existing "packs · volume" summary row (already pinned,
   never scrolls) as `‹ N of M ›`, neutral gray, with tap arrows. **Hidden when the list has one
   item.** Teal stays reserved for the Assign CTA — this is navigation, not a primary action. Reuse
   `detailIndex`/`activeDetailList`; do not compute a parallel index.
 - **⚠️ Gesture rules — the back gesture and the paging gesture SHARE the touch region and were
-  designed together. Do not tune one without the other:** 24px edge exclusion (an edge-start touch is
-  always the OS back gesture, never a bill change), 10px deadzone, 1.5× axis-dominance lock (so
-  vertical scrolling in the line list coexists), 80px commit threshold, **no wrap at the boundaries**.
+  designed together. These four are ONE setting, not four numbers; do not tune one without the
+  others:** 24px edge exclusion (an edge-start touch is always the OS back gesture, never a bill
+  change), 10px deadzone, 1.5× axis-dominance lock (so vertical scrolling in the line list coexists),
+  80px commit threshold, **no wrap at the boundaries**. A partial port is how the gesture starts
+  feeling wrong in a way nobody can describe — which is exactly why they now live in one file.
+- **⚠️ `NO_BILL_SWIPE_ATTR` — the opt-out, and the bug that bought it** [2026-07-30]. The handlers
+  sit on the detail screen's **root**, so they claim every horizontal drag in the body. That is right
+  for the line list and wrong for a strip that owns its own horizontal scroll: the **pack-filter
+  chips** overflow the screen on an ordinary multi-pack bill, and reaching the chips past the right
+  edge means scrolling that strip — which the pager was stealing, so a long drag paged to the next
+  bill and every off-screen chip became unreachable. Field-reported as "the pack filter is missing";
+  the chips had never stopped rendering. A touch **starting** inside an element carrying the
+  attribute is never claimed, checked *before* the edge strip. Applied to the picker's chip row.
+  ⚠ **The supervisor's identical strip does NOT carry it** — same latent behaviour, deliberately left
+  untouched by the fix. Never put it on the line list: swiping across the list is the primary way to
+  change bills.
 - Slide animation (Build B): Option-1 "slide across", `SLIDE_DRAG_FOLLOW = 0.65` finger-follow,
   `SLIDE_MS = 130` per half (~260ms end to end). Arrow taps and swipes call the same transition, so
   both produce an identical slide. Option 3 "card deck" was rejected — it reads as "dismissed this
@@ -408,23 +451,134 @@ example, not as a consequence of the retirement.
 
 ### 5.4 Picker face — "My Picks" board
 
-**[LIVE]** `components/picking/picker-my-picks-board.tsx`, mounted by
-`app/picking/page.tsx` on the SAME mobile route when the viewer's primary role is `picker` — or,
-today, an admin/operations session using the `?view=picker&as=<id>` test hook, since no real
-picker-facing login flow has shipped yet (§7). Two tabs, **Pending / Done**, still a **TOP** strip —
-this face was NOT moved to Direction A (5.1), it keeps the shared shell's default Home/Menu/You bar.
-Its `TopBarTab` is now a **local copy** living in this file: the supervisor board's original was
-removed when its strip moved to the bottom bar, so there is no longer a shared original to point at —
-if this face is ever converted to bottom tabs, that copy goes with it. Three-line card only (OBD+window · dealer name ·
-area+articleTag) — no clock, no avatar, no footer; the Done tab additionally shows the pick time as
-his receipt. `pending`/`done` are computed server-side in `page.tsx` from the SAME `getPickingQueue()`
-rows, scoped to `pickerId` (a real FK, never a display-name match) — `pending` excludes both `isDone`
-and `isChecked`; `done` includes either, so an approved bill stays visible in his own history instead
-of vanishing the moment a supervisor checks it. Mark Done is fire-and-forget, no confirm sheet (see
-Design decisions, §6); `POST /api/picking/done` re-verifies `pickerId` ownership server-side even
-under the admin view-as hook — the coarse permission gate plus this ownership check are what stop
-"mark someone else's bill done" without a real grant. Roster data for the "view as" dropdown comes
-from `lib/picking/picker-roster.ts` (new file, 2026-07-17/18 build).
+**[LIVE]** `components/picking/picker-my-picks-board.tsx`, mounted by `app/picking/page.tsx` on the
+SAME route when the viewer's primary role is `picker` — or an admin/operations session using the
+`?view=picker&as=<id>` test hook, since no real picker-facing login flow has shipped yet (§7). Roster
+data for that dropdown comes from `lib/picking/picker-roster.ts`.
+
+> **REWRITTEN 2026-07-30.** This face was rebuilt across nine commits on 29-30 July
+> (`a2fb6889` → `28986d0a`). Everything the previous version of this section said about it — a TOP
+> tab strip, a local `TopBarTab` copy, the default Home/Menu/You bar, a three-line card, a
+> server-computed split arriving as props — **is now false in every clause**. It is recorded here
+> because that stack of wrong claims is what a doc pass is for, not as history worth preserving.
+
+**Two BOTTOM tabs — Pending / Done.** The face moved onto the shared shell's per-module slot
+(Direction A, `CLAUDE_UI.md §59`), the same move the supervisor board made on 2026-07-19. Owner is
+`PickerPickingShell` (§5.1), reached by `usePickerBoard()`. Its local `TopBarTab` copy was **deleted**
+with the strip — there is no third copy left in the module. Icons `Package` / `CheckCircle2`; `Inbox`
+is deliberately not reused, it means "waiting to be assigned", a supervisor concept the picker never
+sees. **Badge on Pending ONLY** — `done` passes no `count`, so `WorkflowTabBar` renders none: a
+picker's finished pile is a receipt, not work still requiring him. Same reasoning that keeps
+`isChecked` out of the supervisor's Done badge (§5.2).
+
+**The two lists are ONE rule, in `lib/picking/picker-split.ts`** (`splitPickerRows`, extracted
+2026-07-29). Scoping is on `pickerId` — a real FK, never `assignedToName`, which is a display string
+and not a scope boundary; a null viewer yields two empty lists. **Pending** = all dates, excluding
+both `isDone` and `isChecked` (without the second, an approved bill falls back into his Pending tab
+wearing a live Mark Done CTA — the worst instance of §7's stage-grep rule). Deliberately **not**
+date-fenced, so work left mid-shift is still waiting next morning. **Done** = either finished stage,
+fenced on **`pickedAt` within today-IST** — his daily receipt, so the day he did the work is the only
+thing that decides membership; a bill picked yesterday evening for today's dispatch belongs to
+*yesterday's* receipt. Including `pick_checked` is what keeps a bill in his own history instead of
+vanishing the moment a supervisor approves it.
+
+> ⚠ That module is imported by a server page **and** by a client component, which is why its
+> `pickedAt` parsing normalises an offset-less timestamp to UTC by hand. **The rule and its reasoning
+> belong to `CLAUDE_CORE.md §3`** — read it there before touching any date logic that runs on both
+> sides; it is not restated here.
+
+**First paint is seeded; the phone owns the rows after that.** `app/picking/page.tsx` resolves this
+picker's rows server-side (`getPickingQueue({ scope: "openPending", pickerId })` — narrowed in the
+QUERY, ~8 KB of his own bills rather than ~202 KB of the whole board) and hands them over as
+`pickerRows`. From then on `PickerPickingShell` refetches them itself and re-splits with the same
+`splitPickerRows`, so server and client can never disagree about which tab a bill is in. The page no
+longer computes or passes the two lists.
+
+**⚠ THE REFRESH IS A CLIENT FETCH, AND MUST STAY ONE.** It was `router.refresh()` until 2026-07-29,
+and the refresh was silently thrown away by the history pop that closes a bill — Mark Done left the
+bill sitting in Pending until the 15s marker fired a second, uncontested refresh. **The general rule,
+the evidence and the two failed timing fixes are owned by `CLAUDE_CORE.md §3` — read it there.** What
+belongs to Picking: this face calls `/api/picking/queue?scope=openPending&pickerId=<id>` and
+`setState`s the result, the supervisor board doing the identical pop on Approve never had the bug,
+and **no build or type-check catches a regression here — only a phone does.** Do not "simplify" it
+back.
+
+**Detail screen.** Same always-mounted `translateX` overlay as the supervisor's (§5.3), and it now
+carries the same three phone-native behaviours:
+
+- **`hideBar` while a bill is open.** The bar is `z-40` and this overlay is `z-[35]`, so before this
+  the bar floated OVER an open bill and a tab tap swapped the list underneath it. `detailOpen` is
+  lifted into `PickerBoardContext` so the shell can pass it up. Because the bar is gone there, the
+  Mark done CTA uses the plain `/po` safe-area floor, **not** `MOBILE_NAV_CLEARANCE` — same rule and
+  same reason as the supervisor's CTAs (§5.3). The LIST view keeps `pb-[76px]`: the bar IS visible
+  there.
+- **ONE close path.** `openDetail()` pushes exactly one history entry for the whole detail session;
+  a single `popstate` handler owns every close, and **`closeDetail()` is unreachable except from
+  it** — the header chevron, Android back, iOS edge-swipe, Mark Done success and the 409 path all
+  call `window.history.back()` and let the pop land. Never call `closeDetail()` directly; two close
+  paths that disagree is the desync the supervisor board documents in its own source. This face
+  keeps its **own minimal** popstate authority rather than sharing the supervisor's: that one carries
+  a nested-sheet branch (close the sheet, re-push, keep the detail entry alive) and this face has no
+  sheets. If it ever gets one, the two shapes converge and extraction becomes worth it.
+- **Swipe between bills** — the shared pager, contract in **§5.3**; not restated here. Picker
+  specifics only: the list key is just the tab (`pending` | `done`) since there is one band per tab,
+  and a swipe **never crosses between them** — Pending and Done are different work, and only Done is
+  date-fenced. Per-bill state reset on a swap is `activePackFilter`; the line items refetch on the
+  bill-id change. The pack-filter strip carries `NO_BILL_SWIPE_ATTR` (§5.3).
+
+**Card language is now SHARED with the supervisor** — `components/picking/card-atoms.tsx` (§8). Four
+rows, not three: caption + signals · dealer name + slot hero · route dot + area + `articleTag` +
+volume · the family-chip shelf. Four deliberate divergences from the supervisor card, all recorded in
+the source: no created timestamp (a picker fetching goods has no use for when the order was raised),
+`articleTag` KEPT on the where-row (it is what he loads against, while the supervisor card dropped it
+in Option G), no picker-name slot (on his own board he IS the viewer), and the shelf's right slot
+carries the Done tab's `done {time}` receipt instead of an arrow — the whole card opens detail, so a
+second control for the same action would be noise. Visual tokens are `CLAUDE_UI.md §60`/`§62`.
+
+**Mark Done** is fire-and-forget — toast, close through history, then await the refetch. No confirm
+sheet (§6). `POST /api/picking/done` re-verifies `pickerId` ownership server-side even under the
+admin view-as hook; the coarse permission gate plus that ownership check are what stop "mark someone
+else's bill done" without a real grant (`done/route.ts` is also the one write route deliberately left
+on `canView` — §7). A **409** means the bill moved out from under him (stage already advanced, or a
+supervisor reassigned it): it closes the screen, says *"Already changed — refreshed."* and refetches
+— the same wording and shape the supervisor board uses for its own 409s, so the module says this one
+thing one way.
+
+#### 5.4.1 Private line ticks [LIVE, 2026-07-30]
+
+A tick circle on every line of an open bill. Tap toggles; a ticked line's SKU/name mute so his eye
+skips it. A quiet **"N of M ticked"** sits above the list, counted against the FULL line set (the
+pack chips are a view filter, not progress).
+
+**⚠ THESE ARE HIS NOTES, NOT A RECORD OF HIM. Two properties, both load-bearing:**
+
+1. **They gate NOTHING.** Mark done is always enabled — the in-flight double-tap guard is the only
+   thing that can disable it. No confirm dialog, no "you have 4 unticked lines" warning, no colour
+   change, no nudge. **Ticking nothing and tapping Mark done is a normal day.** There is deliberately
+   no code path that reads a tick to decide anything; if one appears, the feature has changed meaning.
+2. **They never leave the device.** `localStorage` only. No API call carries them (`POST
+   /api/picking/done` still sends exactly `{ orderId, pickerId }`), no column stores them, no
+   supervisor surface can read them. The moment they are readable by someone else they stop being
+   notes and become a record of him.
+
+**Storage shape.** One JSON blob under one key: `{ [orderId]: { t: lastTouchedMs, ids: [lineItemId] } }`.
+Keyed by the line's **stable id, never its position**, so a refetch that reorders or re-filters lines
+cannot move a tick onto a different item. Read back synchronously when the open bill changes — not in
+an effect — so swiping to a neighbour bill and back restores his ticks with **no frame** of one
+bill's lines wearing another bill's ticks. Survives the 15s refetch (plain component state, untouched
+by row updates) and a phone sleeping mid-bill, which is what persistence buys over the supervisor's
+in-memory equivalent. Every access is wrapped: `localStorage` throws in private-mode Safari and on
+quota, and a note is never worth breaking the screen for — failure degrades to "no ticks", silently.
+
+**Lifecycle.** Cleared on a successful Mark Done. Pruned on **every write**: entries not touched in
+**7 days** are dropped, then the **50 most recently touched bills** are kept. 7 days rather than 24h
+because Pending is deliberately not date-fenced (above) — a 24h window would wipe his notes on
+exactly the bill he is still holding overnight. 50 is a backstop, not a working limit. An empty set
+deletes its entry outright, so unticking everything leaves no residue.
+
+**Not the supervisor's ticks.** They look identical on purpose and are a different feature with
+different plumbing — the supervisor's gate Approve and are ephemeral component state (§6). Do not
+merge them, do not reuse one for the other, and do not pre-fill anything a supervisor sees from these.
 
 ---
 
@@ -473,9 +627,13 @@ picker-facing login flow shipped yet.
   neighbour. Revisit only if a shared-terminal login model ever replaces one-picker-one-phone.
 - **`checkedById` DOES earn its own column.** Any of the 3 supervisors can approve any bill, so the
   checker routinely differs from the assigner and is nowhere else on the row.
-- **Ephemeral ticks, not persisted.** The tick screen is a forcing function, not an audit trail —
-  median live bill is 2 lines (72% ≤ 3), so a phone-lock mid-check costs re-scanning 2-3 lines, not
-  real data loss. Revisit only if floor usage proves phone-locks routinely hit the long tail.
+- **Ephemeral ticks, not persisted — THE SUPERVISOR'S.** Scoped 2026-07-30; this decision was made
+  when only one surface had ticks. The supervisor's tick screen is a forcing function, not an audit
+  trail — median live bill is 2 lines (72% ≤ 3), so a phone-lock mid-check costs re-scanning 2-3
+  lines, not real data loss. Revisit only if floor usage proves phone-locks routinely hit the long
+  tail. ⚠ **The PICKER's ticks are a different feature under an identical skin** — device-local,
+  persisted per bill, and gating nothing at all. Contract in **§5.4.1**; do not read this bullet as
+  covering them, and do not unify the two.
 - **No confirm sheet on Mark Done.** Fire-and-forget + toast, matching the existing assign/unassign
   pattern — the Done tab is the safety net; he can look and see it landed.
 - **No Undo on a picked/checked bill.** A wrong pick is fixed by the picker fetching the remaining
@@ -514,6 +672,31 @@ picker-facing login flow shipped yet.
   anywhere. Kept per CORE §3 (never delete files unless instructed) specifically so the no-jump guard
   is a one-line re-wire if a future session needs it back.
 - **Cross / IGT delivery types have no pill on the mobile board** — reachable only via "All".
+- **The picker's VIEWER NAME came off his header** [2026-07-29, deferred — a live dependency of §6's
+  picker-login question]. The hand-rolled teal strip that carried "you are Ramesh K." went with the
+  move to the shared `ModuleMobileHeader` (title + avatar, no subtitle), so `viewerName` was dropped
+  from `page.tsx` too. Identity is still reachable — a real picker sees his own name in the You
+  sheet, and an admin previewing reads it off the "view as" dropdown, which is the authoritative
+  control for that state anyway. **This is fine for one-picker-one-phone and NOT fine for a shared
+  terminal**, where the first question the screen must answer is "whose board is this?". If §6's open
+  login question resolves toward a shared terminal, restoring an always-visible viewer identity is a
+  dependency of that decision, not an afterthought.
+- **Pack-filter chips render only when a bill has ≥ 2 distinct pack sizes** [original rule,
+  `a114cff9`; field-reported 2026-07-30, NOT a regression]. Shared by both detail screens. A bill
+  whose lines all share one pack — or a single-line bill — shows no chip row at all, because there is
+  nothing to filter between. Reported once as "the pack filter is missing"; the investigation found
+  the chips rendering exactly where they always had, and a different, real bug alongside it (§5.3's
+  `NO_BILL_SWIPE_ATTR`). Flipping the gate to always-show — "All" plus a single chip — is a one-line
+  change and a deliberate rule, so it needs a decision, not a patch.
+- **The picker's pinned stat row now carries FOUR things and can read as one slab** [design call,
+  deferred 2026-07-30]. `articleTag` · "N of M ticked" · volume · `‹ N of M ›` bill arrows, with the
+  pack-chip row directly beneath it in the same white, same bottom border, similar pill shapes. Each
+  piece earned its place separately and nobody chose the combination. Not a bug — do not "fix" it
+  unilaterally. Three options, cheapest first: **(1)** tint the chip row (`bg-gray-50`) so it
+  separates — smallest change, diverges from the supervisor's treatment; **(2)** move the bill arrows
+  into the teal header's right slot, where the supervisor's search icon sits, freeing the whole right
+  half of the stat row; **(3)** move the tick counter down onto the chip row, right-aligned, leaving
+  the stat row as `articleTag · volume · arrows`.
 - **Blank pack on the detail screen** [LANDMINE — **REDUCED 2026-07-19, still OPEN**] — the class
   survives; only its size changed. **Do not close this.**
   - **Was** (2026-07-17 discovery): SKU `5961032` (`DN WS Metallic Gold 0.5L`) rendered with a null
@@ -623,22 +806,26 @@ on the floor for a while — nothing else in the system changes, it's a note, no
 
 | File | Role |
 |---|---|
-| `app/picking/page.tsx` | Role branch — supervisor board vs the picker's "My Picks", one face at every width (the width switch went with the desktop board, 2026-07-28); also builds the picker `pending`/`done` split (excludes/includes `isChecked` — 2026-07-18) |
+| `app/picking/page.tsx` | Role branch — supervisor board vs the picker's "My Picks", one face at every width (the width switch went with the desktop board, 2026-07-28). For the picker face it resolves **first-paint rows only**, already narrowed by `pickerId` in the query, and hands them to the shell; it no longer computes or passes the two lists (§5.4) |
 | ~~`components/picking/picking-queue.tsx`~~ | **ARCHIVED 2026-07-28** → `archive/2026-07-picking-desktop/components/picking/picking-queue.tsx`. Nothing under `archive/` is compiled, deployed or reachable (`tsconfig.json` excludes it) |
-| `components/picking/picking-mobile-shell.tsx` | **Direction-A wrapper (2026-07-19)** — owns `data`/`activeTab`/`refetchQueue`/`detailOpen`, computes the bottom-tab counts, fills `RoleLayoutClient`'s `workflowTabs`/`hideBar` slots; exposes `usePickingBoard()` (§5.1) |
-| `components/picking/picking-board-mobile.tsx` | Supervisor board — Assign/Picking/**Done** tab CONTENT (the tab strip itself lives in the bottom bar), shared `CheckCard`, detail screen + its popstate/swipe machinery (§5.2-§5.3) |
-| `components/picking/picker-my-picks-board.tsx` | Picker's own "My Picks" board (§5.4) — Pending/Done **top** tabs, own local `TopBarTab` copy, default shell bar; its `pending` prop is pre-filtered upstream (page.tsx) so an approved bill never reaches its "Mark done" CTA |
+| `components/picking/picking-mobile-shell.tsx` | **Direction-A wrapper — TWO shells since 2026-07-29** (§5.1). `SupervisorPickingShell` owns `data`/`activeTab`/`refetchQueue`/`detailOpen` + the three tab counts → `usePickingBoard()`. `PickerPickingShell` owns his rows, the `splitPickerRows` result, `refetchQueue`, `activeTab`, `detailOpen` → `usePickerBoard()`. Both fill `RoleLayoutClient`'s `workflowTabs`/`hideBar` slots |
+| `components/picking/picking-board-mobile.tsx` | Supervisor board — Assign/Picking/**Done** tab CONTENT (the tab strip itself lives in the bottom bar), shared `PickingCard`, detail screen + its **popstate** authority (§5.2-§5.3). The swipe/slide half moved out to `use-bill-pager.ts` on 2026-07-30 |
+| `components/picking/picker-my-picks-board.tsx` | Picker's own "My Picks" board (§5.4) — Pending/Done **bottom** tabs via `usePickerBoard()`, its own popstate authority, the shared pager, and the device-local line ticks (§5.4.1). Takes **no** row props: the shell owns the lists |
+| `components/picking/card-atoms.tsx` | The two boards' shared card language (2026-07-29). Both import exactly four: `AgeBadge` (the days→colour scale, here and nowhere else), `CardShelf`, `CARD_SHADOW_V2`, `RouteDot`. ⚠ `FamilyChip` and `UnlistedChip` are exported but are **shelf internals** — `CardShelf` is their only consumer; do not hunt for board-level call sites. The CARD itself is deliberately not shared (§5.4) |
+| `components/picking/use-bill-pager.ts` | The swipe/slide bill pager, shared by both detail screens (§5.3 owns the contract). Holds all four gesture constants + both slide constants, and exports `NO_BILL_SWIPE_ATTR`. Picking-scoped on purpose — moving it to `components/shared/` means re-homing its docs in `CLAUDE_UI.md` |
+| `components/shared/module-mobile-header.tsx` | The Direction-A header both faces render (extracted from the supervisor board, 2026-07-29). Not picking-specific — contract lives in `CLAUDE_UI.md §59` |
+| `lib/picking/picker-split.ts` | `splitPickerRows()` — THE Pending/Done + today-IST rule (§5.4), called by both the server page and the client shell so the two can never disagree. Pure; the clock is passed in, never read inside |
 | `lib/picking/picker-roster.ts` | Roster/lookup for the admin "view as picker" dropdown (new file, 2026-07-17/18 build) |
 | `components/shared/mobile-shell.tsx` | Not picking-specific, but load-bearing here — the three-way bottom-bar slot (`CLAUDE_UI.md §59`) and the `MOBILE_NAV_CLEARANCE` export every bottom-pinned sheet reads from (§7) |
 | `components/shared/workflow-tab-bar.tsx` | The generic per-module bottom-tab bar Picking's three tabs render through (`CLAUDE_UI.md §59.3`) |
 | `components/shared/mobile-shell-context.tsx` | Menu/You sheets + `useMobileShell()` — how Picking's own header opens them (`CLAUDE_UI.md §59.1`) |
-| `app/api/picking/queue/route.ts` | GET — `getPickingQueue(dateParam)`, `canView` gate |
+| `app/api/picking/queue/route.ts` | GET — `canView` gate + admin bypass; params `date` / `scope` / `pickerId`, all **validated, never coerced** (§4) |
 | `app/api/picking/assign/route.ts` | POST — batch assign, sequential two-write pair per bill, never `$transaction`, test-mode notes |
 | `app/api/picking/unassign/route.ts` | POST — single-bill undo, mirrors Support's undo-dispatch two-write order |
 | `app/api/picking/done/route.ts` | POST — picker Mark Done, writes `pick_done` + `pick_assignments.pickedAt` |
 | `app/api/picking/approve/route.ts` | POST — supervisor Approve, writes `pick_checked` + `pick_assignments.checkedAt`/`checkedById` (real session user, never request-body-trusted) |
 | `app/api/picking/order/[orderId]/route.ts` | GET — on-demand line items for the mobile detail screen; no FK, matches on `obdNumber` |
-| `lib/picking/queue.ts` | `getPickingQueue()` — builds `PickingQueueRow[]` from `orders` + `querySnapshot`; WHERE includes `pick_checked`, select includes `checkedAt`/`checkedBy`. Returns `{ date, rows }` — the four aggregate counters were removed 2026-07-28 (§7) |
+| `lib/picking/queue.ts` | `getPickingQueue()` — builds `PickingQueueRow[]` from `orders` + `querySnapshot`; WHERE includes `pick_checked`, select includes `checkedAt`/`checkedBy`. Takes an optional `pickerId` that narrows to one picker's bills **in the query** (2026-07-29, §5.4). Returns `{ date, rows }` — the four aggregate counters were removed 2026-07-28 (§7) |
 | `lib/picking/sort.ts` | `PICKING_SPINE` + `sortPickingQueue()` — the flat sort spine, §3 — untouched |
 | `lib/picking/types.ts` | `PickingQueueRow`, `SortRule` shapes — `isChecked`/`checkedAt`/`checkedByName` added 2026-07-18 |
 | `lib/picking/validate-assign.ts` | DORMANT — the no-jump guard, unused, kept on disk (§7) |
@@ -666,8 +853,12 @@ what every live board uses.
 
 **The workflow-hole that used to be documented in this section is NOT about the desktop board and
 has moved to §7** — see *"NO AUTOMATIC DRAIN `pick_checked` → `dispatched`"* there. It is still open.
-⚠ `CLAUDE_FLOOR.md §10` and `docs/ROADMAP.md` both point at "`CLAUDE_PICKING.md §9`" for it; those
-pointers need repointing at §7.
+⚠ **This note named the wrong files — corrected 2026-07-30.** It read: *"`CLAUDE_FLOOR.md §10` and
+`docs/ROADMAP.md` both point at `CLAUDE_PICKING.md §9` for it."* **Neither does.** A grep across
+`docs/` finds no `§9` pointer in either file — ROADMAP's picking pointers all resolve to §2 / §5 /
+§6 / §7 / §10, and FLOOR carries none at all. The one file still pointing at `§9` is
+**`CLAUDE_CORE.md §7.4`** — ✅ **repointed at §7 on 2026-07-30**, later in this same pass. No `§9`
+pointer to the drain hole survives anywhere in `docs/`.
 
 ---
 
@@ -680,7 +871,7 @@ other device stayed stale until the app was closed and reopened.
 | Surface | Refresh call | Marker scope |
 |---|---|---|
 | Supervisor board (`picking-mobile-shell.tsx`) | `refetchQueue()` | `openPending` |
-| Picker "My Picks" (`picker-my-picks-board.tsx`) | `router.refresh()` | `openPending` + own `pickerId` |
+| Picker "My Picks" (`picker-my-picks-board.tsx`) | `refetchQueue()` — the shell's own client fetch since 2026-07-29, **never `router.refresh()`** (§5.4) | `openPending` + own `pickerId` |
 
 *(A third row lived here until 2026-07-28 — the desktop queue on `rolling` + `selectedDate`. Board
 and scope were both retired; `openPending` is the only picking scope any live board uses.)*
@@ -723,9 +914,16 @@ on becoming visible); skips overlapping requests; **fails silently** (no toast/U
   `detailOpen`, never `detailOrderId !== null`, or you pause forever after the first bill is opened.
 - **Marker ⊇ queue, never ⊂.** A marker watching a WIDER set = harmless extra refetches; a NARROWER
   set = missed updates on the floor. Never re-declare the filter — always `buildPickingWhere()`.
-- **The picker's refresh is the expensive one** — `router.refresh()` re-runs the whole server page
-  (`auth`, permissions, `getActivePickers`, `getPickingQueue`), which is why the picker marker is
-  narrowed to his own `pickerId`. Do not widen it back.
+- **⚠️ Keep the picker marker narrowed to his own `pickerId` — the CONCLUSION outlived its reason**
+  [rewritten 2026-07-30]. The reason used to be that his refresh was `router.refresh()`, re-running
+  the whole server page (`auth`, permissions, `getActivePickers`, `getPickingQueue`). **That
+  mechanism is gone** — it had to go (§5.4), so the "whole page re-runs" argument no longer applies
+  and must not be quoted as if it did. **The narrowing still stands**, on the two reasons that were
+  always the stronger ones: his phone should wake only when HIS bills change — assigned-to-him, his
+  mark-done, a supervisor approving his bill, a bill leaving his set — and **never** on a board-wide
+  edit that is not his; and the fetch sitting behind the marker is `?pickerId=<id>`, his own handful
+  of bills, where the board-wide payload is ~202 KB and would put every other picker's work on his
+  device. Widening the marker widens the fetch. Do not widen it back.
 - **Selection is pruned, not frozen** — on each background refresh a ticked bill that has left the
   waiting set drops out (pausing while a selection is up was rejected: it would blind a control-tower
   view while a supervisor ticks bills). Proven on the desktop board, which is archived; **the rule
@@ -740,4 +938,4 @@ on becoming visible); skips overlapping requests; **fails silently** (no toast/U
 
 ---
 
-*CLAUDE_PICKING.md v1.10 · Picking Module · July 2026*
+*CLAUDE_PICKING.md v1.11 · Schema v27.12 · Picking Module · July 2026 · updated 2026-07-30*

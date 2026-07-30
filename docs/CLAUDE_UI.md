@@ -1,5 +1,5 @@
 # CLAUDE_UI.md — OrbitOMS UI Design System
-# v5.15 · July 2026 · updated 2026-07-28 · Lives in: orbit-oms/docs/
+# v5.16 · July 2026 · updated 2026-07-30 · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md
 
 Single source of truth for visual styling across all screens.
@@ -1269,14 +1269,18 @@ Every future module (**Tint Operator, Support, Warehouse, Trip Report**) now has
 
 **Picking is the first consumer** — `components/picking/picking-mobile-shell.tsx`. Its `SupervisorPickingShell` is the reference implementation and the pattern to copy: tab state and the queue fetch that drives the live counts are **owned one level above the board** (they must reach `RoleLayoutClient`, which renders above the board in the tree), and are handed back down to the page via the module's own context. One fetch, so the cards and the tab counts can never drift. Picking's screen-level detail is `CLAUDE_PICKING.md §5` — not repeated here.
 
-**⚠️ Label ≠ key.** Picking's third tab reads **"Done"** but its key stays `"checked"`. A visible relabel must never rename the state key — the `activeTab` union, the tab-switch branch, and the workflow-stage values all key off the literal.
+**⚠️ Label and key — CORRECTED 2026-07-30.** This warning used to read *"Picking's third tab reads **"Done"** but its key stays `"checked"`."* **That is false.** The live union is `"assign" | "picking" | "done"` (`components/picking/picking-mobile-shell.tsx`) — label == key on all three.
+
+The real rule is the one the correction demonstrates: **a relabel and a re-key are separate decisions, and each has to be made on purpose.** On 2026-07-19 Picking relabelled its third tab "Checked"→"Done" and deliberately did NOT touch the key — correct, because a visible label is not a state identifier. On 2026-07-20 the board re-cut moved label AND key **together**, because by then the old keys had *inverted against their labels*: `"check"` would have held `pick_assigned` (nothing is checked there) while `"checked"` held the actual needs-check work. **A key that lies is worse than a key that is merely ugly.** Two things made that second move safe, and both must be checked before re-keying anything: the keys are a TypeScript union, so `tsc` flagged every stale comparison; and nothing persists them (plain `useState` — no localStorage, no URL param, and `WorkflowTab.key` is a bare `string`), so there was no stored value to migrate. Tab semantics are `CLAUDE_PICKING.md §5.1`-§5.2's, not this file's.
+
+⚠ **This warning sat wrong HERE for ten days while `CLAUDE_PICKING.md §5.1` had it right the whole time.** The 2026-07-20 correction was written into the module file and never into the shell file, and nothing forced a re-read of the copy. **A stale claim is rarely in only one file** — when you correct one, grep the rest for the same sentence. This file was the copy nobody checked.
 
 ### 59.5 Per-ROLE tabs vs per-MODULE tabs — the distinction that matters
 
 These are different ideas and only one was rejected. Read both lines before proposing either:
 
 - **Per-ROLE bottom tabs — still REJECTED.** The bottom anchors must not change identity depending on who signed in. Variable pages live behind **Menu**, not as their own tabs. This was rejected in the original design and that decision stands.
-- **Per-MODULE workflow tabs — SANCTIONED, and LIVE.** A module may replace the bottom bar with its own **workflow-stage** tabs (Picking: Assign · Check · Done) for the duration of that module's screens. Opt-in per page; the default for every page that says nothing stays Home/Menu/You.
+- **Per-MODULE workflow tabs — SANCTIONED, and LIVE.** A module may replace the bottom bar with its own **workflow-stage** tabs (Picking's supervisor board: Assign · Picking · Done) for the duration of that module's screens. Opt-in per page; the default for every page that says nothing stays Home/Menu/You. *(This line said "Assign · Check · Done" until 2026-07-30 — the same 2026-07-20 rename, and the same ten-day miss, as §59.4's corrected warning above.)*
 
 The difference is what the tabs *are*: a role is an identity (the bar must not fork per user), a workflow stage is a step in the task the user is currently doing (the bar is the right place for it — the thumb zone). **Menu/You are not lost** when a module takes the bar; they demote to the module's own header, because module-switching is the less frequent action.
 
@@ -1284,7 +1288,7 @@ The difference is what the tabs *are*: a role is an identity (the bar must not f
 
 ### 59.6 Mounting, clearance, and mechanics
 
-**One global insertion point:** `components/shared/role-layout-client.tsx` mounts `<MobileShellProvider>` around `<RoleSidebar>` + `<MobileShell>` + the page content. Every page that wraps itself in it inherits the shell with no per-page work — live on `/trips`, `/place-order`, `/picking`.
+**One global insertion point:** `components/shared/role-layout-client.tsx` mounts `<MobileShellProvider>` around `<RoleSidebar>` + `<MobileShell>` + the page content. Every page that wraps itself in it inherits the shell with no per-page work — live on `/trips`, `/place-order`, `/picking`. **✅ Verified 2026-07-30** by reading the three call sites: `app/trips/page.tsx` and `app/(place-order)/layout.tsx` render `RoleLayoutClient` and pass **no** `workflowTabs`, so both take the default Home/Menu/You bar (branch 3); `/picking` supplies its own tabs through `picking-mobile-shell.tsx` (branch 2). Inheriting the shell and replacing the bar are different things — this list means the former.
 
 - The page content wrapper carries `pb-[76px] md:pb-0` so mobile content clears the fixed bar; no effect on desktop.
 - **Pages that don't route through `role-layout-client.tsx` don't inherit the shell.** Attendance has its own full-screen wrapper with no sidebar (`app/attendance/layout.tsx`, `CLAUDE_ATTENDANCE.md §13`) and is unaffected.
@@ -1302,9 +1306,33 @@ The difference is what the tabs *are*: a role is an identity (the bar must not f
 **Approved mockups:** `docs/mockups/mobile/index.html` (v3 — the default Home/Menu/You shell; its grey role-switcher is a demo aid, not shipped) and `docs/mockups/picking/mobile-shell-v1.html` (the approved Direction-A shell, 6 states).
 
 **[DEFERRED]**
-- **Shared minimal header + big search — now PARTLY [LIVE].** Realized as Picking's Direction-A header (title + search toggle + grid/avatar triggers into the shared sheets). Not yet extracted to a shared component, so each other page still keeps its own header — which is why `/trips` still looks right and was never disturbed. Extracting it is the remaining work.
+- **~~Shared minimal header — extraction~~ — DONE 2026-07-29, see §59.7.** Realized as Picking's Direction-A header, then extracted verbatim to `components/shared/module-mobile-header.tsx` (`a2fb6889`) when the picker face needed the same one. **The other half of this item survives and is still true:** every page outside Picking keeps its own header, which is why `/trips` still looks right and was never disturbed. Adopting the shared one elsewhere is opt-in, module by module — candidates in §59.7. The "big search" half was never built and is not part of §59.7.
 - Shell rollout/polish across the other role pages.
 - PWA install (add-to-home-screen). Manifest + icons + root-layout metadata already exist (`public/manifest.json`, `app/layout.tsx` metadata + `appleWebApp` + viewport); **no service worker exists** (never built). Do NOT reintroduce a middleware-level redirect toward `/attendance` (the retired attendance auto-check-in gate — see `CLAUDE_TRIP_REPORT.md §7`) when building this.
+
+### 59.7 `ModuleMobileHeader` — the shared Direction-A header [LIVE, 2026-07-29]
+
+`components/shared/module-mobile-header.tsx`. The fourth shared piece, alongside the provider (§59.1), the bar slot (§59.2) and `WorkflowTabBar` (§59.3). Extracted **verbatim** from `picking-board-mobile.tsx` (`a2fb6889`), where it had been the only implementation since Direction A shipped: every className, aria-label, tap target, icon size and the safe-area padding are byte-identical to the inline JSX it replaced. **Do not restyle it here** — a visual change belongs in its own commit, applied to every consumer at once.
+
+**Layout:** avatar (left) · title (centre) · grid + optional search (right). Teal-600 band, `flex-shrink-0`. It does **not** position itself: the root is intended as a sibling of a `flex-1` scroll area inside a `fixed inset-0 flex flex-col` screen root, so the consumer keeps ownership of the surrounding frame.
+
+| Prop | | Notes |
+|---|---|---|
+| `title` | `string` | The 19px extrabold centre label |
+| `avatarInitials` | `string` | Rendered in the left circle |
+| `onAvatarClick` | `() => void` | Required |
+| `onMenuClick` | `() => void` | Required — the grid icon |
+| `showSearch?` | `boolean` (default `true`) | When false the icon is omitted and **no gap is left behind**: it is the second child of a `gap-0.5` row, and a one-child flex row renders no gap, so the header stays balanced with no placeholder and no width change on the grid button |
+| `searchActive?` | `boolean` | ⚠ **Accepted, but drives NO styling** — see below |
+| `onSearchToggle?` | `() => void` | |
+
+**⚠️ THE DESIGN RULE — handlers stay with the CALLER.** The header deliberately does **not** call `useMobileShell()` itself. Picking wires `onAvatarClick`→`openYou` and `onMenuClick`→`openMenu`, but that is Picking's choice, passed in. A future module can point the avatar and the grid at something else entirely without forking the component. Nothing module-specific is imported inside it, and nothing should be.
+
+**⚠️ `searchActive` is inert — declared, never destructured, never read.** This is not an oversight and not a bug: the inline original rendered an identical search button in both states, and the extraction was pixel-for-pixel. Wiring an active-state look during that refactor would have smuggled a visual change into a commit whose entire claim was that nothing changed. It is a **one-className job** whenever the active treatment is actually designed — do it then, in its own commit, not as a side effect. A caller may pass its real state today; it just has no effect.
+
+**Consumers today: both Picking faces, and nothing else** — `picking-board-mobile.tsx` (supervisor, `showSearch` default true + `searchActive`/`onSearchToggle` wired to its own filter row) and `picker-my-picks-board.tsx` (picker, `showSearch={false}` — that face has no search). Behaviour and per-face detail: `CLAUDE_PICKING.md §5.3`-§5.4.
+
+**Future adopters — a swap, not a rebuild.** **Tint Operator mobile** and **Trip Report mobile** are the two named candidates (§59.4's "how a future module plugs in"); both already have a hand-rolled header, so adopting is replacing markup, not designing anything. Explicitly **NOT `/po`** — it builds its own Home/Drafts/Sent bar and header inline and is deliberately off this circuit (§59.6); do not add "protect /po" guards. Explicitly **NOT `/floor`** — desktop-first, with no mobile-shell usage at all (`CLAUDE_FLOOR.md` mentions none of this machinery, verified 2026-07-30).
 
 ---
 
@@ -1383,8 +1411,13 @@ Behaviour, tab semantics and date-zone scope were always `CLAUDE_PICKING.md`'s, 
 ### 62.1 Age tags — `1d` / `{n}d` [module-wide]
 
 Moved here from §61 on 2026-07-28 (Picking desktop retirement, step 1). The rule was never
-desktop-only: the mobile boards render their own age badge from the same field
-(`components/picking/picking-board-mobile.tsx:588-628`).
+desktop-only: **both** mobile boards render this badge from the same field, through one shared
+component — **`AgeBadge` in `components/picking/card-atoms.tsx`** (extracted 2026-07-29 when the
+picker card gained the same signals). The days→colour scale lives inside that component and **nowhere
+else**; never re-map days to colour at a call site.
+
+*(This pointer named `picking-board-mobile.tsx:588-628` until 2026-07-30. Line numbers have rotted
+twice on this section alone — name the file and the symbol, never the line.)*
 
 **Age tags** next to the OBD for `ageDays >= 1`: **`1d`** amber, **`{n}d`** red (2+). Uses
 `row.ageDays` from the payload — **not** recomputed from creation date (the §8 Tint age-badge
@@ -1392,8 +1425,12 @@ PILL STYLING is reused; its day math is not).
 
 ### 62.2 Locked / Upcoming treatment [module-wide]
 
-Moved here from §61 on 2026-07-28, same reason: the mobile Assign board has its own locked zone
-(`components/picking/picking-board-mobile.tsx:1947-1960`, day badge at `:634`).
+Moved here from §61 on 2026-07-28, same reason: the mobile Assign board has its own locked zone —
+the `assignLocked` card variant and its `UpcomingDayBadge`, both in
+`components/picking/picking-board-mobile.tsx`. Supervisor-only, so unlike `AgeBadge` above these did
+**not** move to `card-atoms.tsx`: the picker never sees a locked bill.
+
+*(Line numbers dropped here too, 2026-07-30 — same reason as §62.1.)*
 
 Rows muted, **lock glyph instead of checkbox**, `—` for `#`, and a `for {Day} {DD} {Mon} · {time}`
 chip in the Status cell. ⚠ The **time** half of that chip is a desktop detail — the mobile
@@ -1425,4 +1462,13 @@ Do not read this list as an app-wide ban.
 
 ---
 
-*UI v5.15 · OrbitOMS*
+**⚠ OPEN — this file carries NO `Schema` stamp, at either end.** `CLAUDE_CORE.md`, `CLAUDE_PICKING.md`
+and `CLAUDE_FLOOR.md` all carry `Schema v27.12` in their header; this file carries none in the header
+or the footer. That may well be *right* — a design-system file has no schema to be in step with — but
+it has never been decided, and `CLAUDE.md`'s session procedure tells every reader to check a file's
+header against CORE's schema stamp, which for this file silently checks nothing. **Deliberately left
+as-is on 2026-07-30 rather than quietly adding one:** a stamp creates an obligation to keep it
+current, and omitting one should be a decision on the record, not a drift nobody noticed. Resolve in
+whichever pass owns the doc-header convention.
+
+*UI v5.16 · OrbitOMS · updated 2026-07-30*

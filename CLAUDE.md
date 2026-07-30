@@ -1,5 +1,5 @@
 # CLAUDE.md — Orbit OMS Router
-# v1.8 · Entry point · Read this first · July 2026 · updated 2026-07-28 · Lives in: repo root (auto-loaded by Claude Code)
+# v1.9 · Entry point · Read this first · July 2026 · updated 2026-07-30 · Lives in: repo root (auto-loaded by Claude Code)
 
 **OrbitOMS — depot operations management for JSW Dulux paint distribution, Surat depot. Live at https://orbitoms.in.**
 
@@ -49,7 +49,7 @@ All context files live in `docs/` relative to repo root.
 | `/admin/import`, SAP parser, upsert brain, Auto-Import, `import_*` tables | `docs/CLAUDE_IMPORT.md` |
 | `/floor` — Floor Control: unified desk screen consolidating the Support board + Picking DESKTOP board; left rail (undecided bills) / right pane (Floor / On-hold / Cancelled + detail panel); floor actions (hold/cancel/release/change-slot); live sync + `/api/floor/marker` | `docs/CLAUDE_FLOOR.md` |
 | `/trips`, `trip_report`, NTS trip mirror, puller/mirror function, A4 trip sheet, WhatsApp share, logistics role | `docs/CLAUDE_TRIP_REPORT.md` |
-| `/picking`, picking queue, desktop + mobile supervisor board (Assign/Picking/Done tabs), picker "My Picks", `pick_assignments`, stage ladder, sort spine, live-sync marker · **DESKTOP superseded by `/floor` — both still live; mobile boards stay** | `docs/CLAUDE_PICKING.md` |
+| `/picking`, picking queue, mobile supervisor board (Assign/Picking/Done tabs), picker "My Picks" (Pending/Done), `pick_assignments`, stage ladder, sort spine, live-sync marker · **The DESKTOP board was RETIRED 2026-07-28** → `archive/2026-07-picking-desktop/`; `/floor` is the desk screen. `/picking` itself stays live and renders the card board at every width — the two MOBILE faces are the only live ones | `docs/CLAUDE_PICKING.md` |
 | Push notifications — Web Push, `/api/push/*`, `public/sw.js`, `push_subscriptions`, quiet hours (IST), the device on/off toggle, assign/done buzz triggers, VAPID | `docs/CLAUDE_NOTIFICATIONS.md` |
 | `/admin` **Settings → Hide** (rules / hidden orders / tags), `obd_visibility_rules`, `app_tag_settings`, `orders.isHidden` | `docs/CLAUDE_CORE.md §7.10` + `docs/CLAUDE_UI.md §57` (+ `docs/CLAUDE_MAIL_ORDERS.md §21` for tag-gating) |
 | SKU catalog — `sku_master_v2`, old `sku_master`, which of the THREE sku-ish tables you actually mean | `docs/CLAUDE_CORE.md §7.1.c` (+ the id-space landmine in `§13` — read it before any repoint) |
@@ -57,9 +57,12 @@ All context files live in `docs/` relative to repo root.
 
 ### Retired — do not go looking for these
 
-Five screens were retired in July 2026. **They are gone from the live tree**, so no domain
-file covers them and no address below resolves. Each has a plain-English README in its
-archive folder; the index is `archive/README.md`, the method is `archive/RETIREMENT-PLAYBOOK.md`.
+Five SCREENS were retired in July 2026, plus one BOARD inside a route that stayed live.
+**The five screens are gone from the live tree**, so no domain file covers them and none of
+their addresses resolve. **The sixth row is the exception and is marked as such** — its route
+is still live and still has a domain file; only the wide-screen board inside it went. Each has
+a plain-English README in its archive folder; the index is `archive/README.md`, the method is
+`archive/RETIREMENT-PLAYBOOK.md`.
 
 | Retired | When | Superseded by | Folder |
 |---|---|---|---|
@@ -68,6 +71,7 @@ archive folder; the index is `archive/README.md`, the method is `archive/RETIREM
 | `/operations/warehouse`, `/operations/dispatch` | 2026-07-27 | nothing — alternate mounts of two boards that were themselves retired the next day | `archive/2026-07-operations-pages/` |
 | `/warehouse` + 2 stubs + board API | 2026-07-28 | nothing — it always rendered empty | `archive/2026-07-warehouse-board/` |
 | `/planning` + `/dispatcher` index stub + 8 `/api/planning/*` routes | 2026-07-28 | nothing — never used end to end | `archive/2026-07-planning-board/` |
+| ⚠ **NOT a screen — a BOARD.** `/picking`'s desktop table (`components/picking/picking-queue.tsx`). **The `/picking` ROUTE stays live**, still resolves, still has a domain file | 2026-07-28 | `/floor` for a desk screen; `/picking` itself renders the mobile card board at every width — see its §3 row above | `archive/2026-07-picking-desktop/` |
 
 🔴 **Two survivors that look retired but are not.** `app/api/warehouse/pickers/route.ts`
 is **live** — the two Picking boards call it, and it is the only file left under
@@ -115,4 +119,4 @@ When extracting, update §3 decision table in this file.
 
 ---
 
-*Router v1.8 · Orbit OMS · July 2026*
+*Router v1.9 · Orbit OMS · July 2026 · updated 2026-07-30*

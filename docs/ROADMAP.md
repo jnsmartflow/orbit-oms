@@ -1,5 +1,5 @@
 # ROADMAP.md — OrbitOMS Planned Work
-# Updated 2026-07-28 · Lives in: orbit-oms/docs/ (manual attach — NOT auto-loaded)
+# Updated 2026-07-30 · Lives in: orbit-oms/docs/ (manual attach — NOT auto-loaded)
 
 Attach this file when planning the next phase of any module. Live "what's next" list, separated from canonical docs.
 
@@ -551,10 +551,17 @@ From the flat-SKU-catalog migration + the Direction-A mobile shell batch. Canoni
 
 ### UI (P2)
 
-- [ ] **Extract the Direction-A header to a shared component** — the remaining half of `CLAUDE_UI.md
-  §59`'s partly-live deferred item. Picking has the working header (title + search toggle + grid /
-  avatar triggers into the shared sheets via `useMobileShell()`); it is not yet extracted, so every
-  other page still keeps its own header. Extract when a second module adopts Direction A, not before.
+- **Extract the Direction-A header to a shared component — ✅ SHIPPED 2026-07-29 (`a2fb6889`).** Now
+  `components/shared/module-mobile-header.tsx`, extracted **verbatim** from the supervisor board:
+  every className, aria-label, tap target, icon size and the safe-area padding byte-identical to the
+  inline JSX it replaced. **Contract, props, design rule and adopters now live in `CLAUDE_UI.md
+  §59.7`** — the section this closure created; read it there, it is not restated here. The condition
+  this item set — *"extract when a second module adopts Direction A, not before"* — was met the same
+  day: the picker "My Picks" face adopted Direction A in `ee023b4a` and consumes the shared header
+  with `showSearch={false}`. Consumers today are those two picking faces and nothing else; **Tint
+  Operator mobile** and **Trip Report mobile** are the named next candidates, and adopting is a
+  markup swap rather than a design (§59.7). *(The "big search" half of `CLAUDE_UI.md §59.6`'s
+  original deferred bullet was never built and is NOT covered by §59.7 — it stays deferred there.)*
 
 ### Code cleanup (P2 — one line)
 
@@ -703,4 +710,4 @@ Lives at `docs/prompts/archive/drafts/2026-04-to-05/taxonomy-preview.json`. The 
 
 ---
 
-*Updated 2026-07-28 — Picking DESKTOP board retired (six steps, `90c9a865`→). Earlier: 2026-06-19 reflects the full catalog restructure (all families folded, 9-tile dial), `/po` going-forward build, desktop `/place-order` parity, email single-source + AkzoNobel recipient, Hide feature shipped, tint sampling reuse + pack scaling + duplicate-merge runbook (3 groups merged), Tint Summary report + `/reports` hub, mail-orders 5 slots, **app-format order email (shared `renderOrderBody` + proper-case + line-number alignment) + mail parser v7.2 (`Parse-AppBody` reader, `Test-IsAppFormat` sorter, name-lock) + Table C exact-name enrichment fast-path (app orders → `mo_sku_lookup_v2`, ingest-only, 15 collisions excluded)**. Schema v27.6.*
+*Updated 2026-07-30 — picker "My Picks" face rebuilt on the shared shell (`a2fb6889`→`28986d0a`, twelve commits) plus the canon pass that followed; the Direction-A header extraction above is CLOSED. 2026-07-28 — Picking DESKTOP board retired (six steps, `90c9a865`→). Earlier: 2026-06-19 reflects the full catalog restructure (all families folded, 9-tile dial), `/po` going-forward build, desktop `/place-order` parity, email single-source + AkzoNobel recipient, Hide feature shipped, tint sampling reuse + pack scaling + duplicate-merge runbook (3 groups merged), Tint Summary report + `/reports` hub, mail-orders 5 slots, **app-format order email (shared `renderOrderBody` + proper-case + line-number alignment) + mail parser v7.2 (`Parse-AppBody` reader, `Test-IsAppFormat` sorter, name-lock) + Table C exact-name enrichment fast-path (app orders → `mo_sku_lookup_v2`, ingest-only, 15 collisions excluded)**. Schema v27.6.*

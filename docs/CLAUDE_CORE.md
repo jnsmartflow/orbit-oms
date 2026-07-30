@@ -1,5 +1,5 @@
 # CLAUDE_CORE.md — OrbitOMS Core
-# v88 · Schema v27.12 · July 2026 · updated 2026-07-28 · Lives in: orbit-oms/docs/
+# v89 · Schema v27.12 · July 2026 · updated 2026-07-30 · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_UI.md
 
 ---
@@ -56,6 +56,7 @@ Never introduce new libraries without being asked.
 - `Array.from()` around Set/Map iterators.
 - All commits go directly to `main`. No feature branches, no PR workflow. Smoke-test locally before push.
 - **Commit ≠ deploy.** Vercel builds from `origin/main`. A local commit on `main` is NOT live until `git push origin main`. DB reseeds run against Supabase directly and are independent of code deploy — easy to land schema/data changes without the code that uses them. Always finish a session with both a code push AND a verification that the new behaviour shows on production.
+- **A `router.refresh()` is DISCARDED by a history pop — never pair the two.** Next's router action queue gives navigations priority: an `ACTION_NAVIGATE`/`ACTION_RESTORE` — which is what a `history.back()` becomes — marks any *pending* action `discarded = true`, so its result is never applied (`node_modules/next/dist/shared/lib/router/action-queue.js`). Only a discarded **server action** gets the `needsRefresh` rescue; a plain `router.refresh()` gets nothing. **Symptom:** any screen that closes an overlay via `history.back()` AND refreshes through the router silently loses that refresh, and shows stale data until some unrelated later refresh happens to win. **THE FIX IS NOT TIMING.** Two attempts to order the calls shipped — awaiting the pop, then a deferred flag plus an edge effect — and **both looked green in `tsc` and in the build while the bug stayed live on production**; the ordering belongs to React's and Next's schedulers, not to us, so no amount of re-sequencing at the call site can win it. **The fix is a client `fetch` + `setState`:** it never enters that queue and cannot be discarded — which is why a sibling screen doing the identical pop after its own write never had the bug at all. First hit: the picker "My Picks" face (`4f9d1324` introduced the pop, `9941bedb` failed to fix it, `570b7078` fixed it) — behaviour in `CLAUDE_PICKING.md §5.4`, not restated here. **No type-check, lint or build catches this. Only a device does.**
 - PowerShell on depot PC: PS 5.1. `[BitConverter]::ToString($h).Replace("-","").ToLower()` (not `[Convert]::ToHexString()`). `Invoke-WebRequest -UseBasicParsing` (not `Invoke-RestMethod`). `$x = default; try { $x = expr } catch { $x = fallback }` — never `$x = try {...} catch {...}` (PS7+ only).
 - Parser files UTF-8 with BOM for non-ASCII chars.
 - Google Maps URLs: `https://www.google.com/maps?q=LAT,LONG`. Never `place_id:` format.
@@ -69,6 +70,7 @@ Never introduce new libraries without being asked.
 - **Partial unique index reconcile pattern (P2002):** when a partial unique index enforces "exactly one row of a kind per parent" (e.g. one Primary SO per customer), reconcile loops MUST demote-then-promote, never promote-then-demote. Pre-clear all rows of the constrained kind to a non-conflicting state (one `updateMany`) before running the main upsert loop. Drops role-comparison optimisations — safer than carrying stale-cache bugs.
 - **Seed is source of truth.** Any structural/taxonomy/grouping change applied directly to a live DB will be wiped by the next wipe-and-reseed. All such changes must go into the seed script (the durable source). Direct-to-DB ALTERs are acceptable for hot fixes ONLY when paired with the matching seed edit.
 - **Never fuzzy-match site names.** Site name suffixes like "FACE" / phase numbers distinguish genuinely different sites. Stripping or fuzzy-matching risks linking the wrong site. For backfill, prefer OBD→order→customerId resolution over name-based matches.
+- **`Date.parse()` on an offset-less ISO date-time is read in the HOST's timezone — normalise before parsing.** Per the ES spec, `"2026-07-30T18:45:00"` (no `Z`, no `±HH:MM`) is **local** time, while a date-ONLY string (`"2026-07-30"`) is UTC. This is harmless while a date rule runs only on Vercel (UTC), and breaks the moment the same rule ALSO runs in a browser on a depot phone in **Asia/Kolkata**: the two hosts disagree by **5.5 hours**, so the same row lands in a different IST day depending on which one evaluated it — and **only near midnight**, so it passes every daytime test and every test written on one host. Safe inputs, which is why this is rare rather than constant: real `Date` objects (Prisma) and any string carrying `Z` or an offset (JSON and RSC payloads always emit one). An offset-less string must be normalised to UTC first — reference implementation `pickedAtMs()` in `lib/picking/picker-split.ts`. ⚠ **The trigger is "this logic now runs in two places", NOT "this logic is new"** — moving an existing, correct, server-side date rule to the client is exactly when it bites, and the rule itself will not have changed a character.
 - **OneDrive + Next.js stale `.next` symptom:** `Error: Cannot find module './NNNN.js'` + `missing required error components, refreshing...`. Fix: stop the dev server, `taskkill /F /IM node.exe`, `rmdir /s /q .next`, restart. Pause OneDrive sync if `rmdir` hits a permission error.
 - **Stop the dev server before any git operation in this repo.** Same OneDrive file-lock reason as above.
 - **Picking live-sync is READ-ONLY — it adds no `orders.update`.** The 15s change-marker (`CLAUDE_PICKING.md §10`) only READS (`COUNT` + `MAX(orders.updatedAt)` via `buildPickingWhere`); do not assume the poll writes. And **never add a second `orders.update` to any picking path** (e.g. a notification trigger) — the marker keys on `MAX(orders.updatedAt)`, so an extra write fires a false "changed" on every board.
@@ -501,7 +503,9 @@ here rather than re-describing it.
 - **Live recount (SELECT 2026-07-27): 1,546 at `dispatched`** — roughly **500 rows moved in three days**,
   by a route **not currently understood**. Nothing in this codebase automatically drains
   `pick_checked → dispatched`; that hole and its history are owned by `docs/ROADMAP.md` (P1) and
-  `CLAUDE_PICKING.md §9` — not restated here. **Not investigated** on 2026-07-27; flagged only. The
+  `CLAUDE_PICKING.md §7` — not restated here (**repointed 2026-07-30: this said `§9`, which is the
+  retired-desktop-board section; the drain hole moved to §7 on 2026-07-28 and CORE was the only file
+  still carrying the old pointer**). **Not investigated** on 2026-07-27; flagged only. The
   2026-07-24 line above stays as the dated snapshot it was.
 - **Parked (not the engine's fault):** the `Deco` (9 rows) un-mapped SMU never matches `Deco Retail`
   so never auto-slots; and 103 Deco Retail bills reached `pending_support` with `dispatchStatus` NULL
@@ -971,9 +975,10 @@ Quick index; full detail in domain file maps.
 | `lib/sampling/pack-litres.ts` | dose-litres map + `packDoseLitres`/`scalePigments`/`perLitreFingerprint` | SAMPLING §11 |
 | `lib/hide/*` | `visibility.ts`, `tag-settings.ts`, `tag-catalog.ts` (Hide feature) | §7.10, UI §57 |
 | `lib/reports/tint-summary-data.ts` | Tint Summary report data source-of-truth | TINT §12 |
+| `lib/picking/picker-split.ts` | `splitPickerRows()` — the picker's Pending/Done + today-IST rule, called by BOTH the server page and the client shell so the two can never disagree about which tab a bill is in. Pure: no I/O, and the clock is passed in rather than read inside. Also the reference implementation for the offset-less-`Date.parse` rule (§3) | PICKING §5.4 |
 
 Engineering note: a parallel session owns `scripts/_*` scratch files (sampling/report seed helpers) — they throw `tsc --noEmit` errors but are never committed; exclude `scripts/_*` from tsconfig or delete to keep the gate clean. Same treatment for `docs/dhruv-review/**` (added 2026-07-08) — a parked, untracked draft-review snapshot with its own stale/incomplete types; excluded from `tsconfig.json` for the same reason (never committed, not live code).
 
 ---
 
-*CORE v88 · Schema v27.12 · OrbitOMS*
+*CORE v89 · Schema v27.12 · OrbitOMS · updated 2026-07-30*
