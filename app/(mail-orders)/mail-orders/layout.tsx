@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { checkAnyPermission, getAllPermissionsForRoles, buildNavItems } from "@/lib/permissions";
 import { RoleSidebarProvider } from "@/components/shared/role-sidebar-provider";
 import { RoleLayoutClient } from "@/components/shared/role-layout-client";
+import { isBillingV2Enabled } from "@/lib/billing/flag";
 import type { RoleSidebarRole } from "@/components/shared/role-sidebar";
 
 export const dynamic = "force-dynamic";
@@ -43,6 +44,13 @@ export default async function MailOrdersLayout({
   const userName     = session.user.name ?? "User";
   const userInitials = getInitials(userName);
 
+  // Billing v2 rollout (Phase 0) — per-user, read FRESH each load (never cached
+  // onto the JWT; see lib/billing/flag.ts for why). `session.user.id` is a
+  // string, so Number(...) + the helper's own Number.isFinite guard — the same
+  // shape app/picking/page.tsx uses. No extra fetch: the session is already
+  // resolved above. Fails closed, so this cannot break the page.
+  const billingV2 = await isBillingV2Enabled(Number(session.user.id));
+
   return (
     <RoleSidebarProvider>
       <RoleLayoutClient
@@ -51,6 +59,20 @@ export default async function MailOrdersLayout({
         userInitials={userInitials}
         navItems={dedupedNavItems}
       >
+        {/* ⚠ TEMPORARY Phase-0 marker — DELETE IN PHASE 2. Proves the per-user
+            flag switches end to end. Renders NOTHING when the flag is false,
+            which is everyone today, so the page is byte-identical until a user
+            is opted in. Grey, never teal: this is debug scaffolding, not UI
+            (one-teal rule, CLAUDE_UI.md §1). Placed as a plain sibling above
+            {children} rather than inside a header — this layout owns no header
+            of its own, and RoleLayoutClient is shared with eight other modules
+            and must not be touched for this. */}
+        {billingV2 && (
+          <div className="px-2 py-0.5 rounded text-[11px] font-medium
+                          bg-gray-100 text-gray-600 border border-gray-200">
+            Billing v2
+          </div>
+        )}
         {children}
       </RoleLayoutClient>
     </RoleSidebarProvider>

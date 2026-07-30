@@ -124,6 +124,16 @@ model users {
   attendanceConsentVersion  String?
   attendanceExempt          Boolean                  @default(false)
   attendanceTestUser        Boolean                  @default(false)
+  // Billing v2 rollout (Phase 0, 2026-07-30) — per-USER opt-in for the new
+  // Billing UI on /mail-orders. Column was created in the Supabase SQL Editor
+  // and is hand-mirrored here; db push/pull are banned (CORE §3) and db pull
+  // additionally fails on this machine with P1001.
+  //
+  // Deliberately NOT cached onto the JWT the way attendanceTestUser is — it is
+  // read fresh per page load by lib/billing/flag.ts, so switching a user OFF
+  // takes effect immediately instead of after the 5-minute token stale window.
+  // See that file's header before "optimising" it into lib/auth.ts.
+  billingV2TestUser         Boolean                  @default(false)
   // Phase 2 back-relations
   importBatches             import_batches[]
   statusLogs                order_status_logs[]
