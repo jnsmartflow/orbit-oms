@@ -23,9 +23,12 @@ import { DispatchSlotPicker, type DispatchWindow, type DispatchSlotValue } from 
 import { postMailOrderAction } from "@/lib/billing/mo-actions";
 import type { MoOrder } from "@/lib/mail-orders/types";
 
-const BTN_BASE =
+// EXPORTED so the Billing ribbon's other icon+label buttons (Notes, ⓘ) match
+// Urgent/Hold/Slot exactly, rather than approximating them with a second set of
+// class strings that drifts. One source for the button shape.
+export const BTN_BASE =
   "inline-flex h-[27px] items-center gap-1.5 rounded-md border px-2 text-[10.5px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-40";
-const BTN_OFF = "border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50";
+export const BTN_OFF = "border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50";
 const BTN_HOLD_ON = "border-red-200 bg-red-50 text-red-700 hover:bg-red-100";
 const BTN_URGENT_ON = "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100";
 const BTN_SLOT_ON = "border-gray-300 bg-gray-100 text-gray-800 hover:bg-gray-200";
