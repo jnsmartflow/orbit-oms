@@ -260,20 +260,26 @@ export function UniversalHeader({
   // cannot drift between layouts; the Escape-to-clear and `/`-to-focus effect
   // above targets `searchInputRef` and is unaffected by where this lands.
   //
-  // The compact class string is character-for-character the one that was inline
-  // here before, focus transition included. Wide swaps ONLY the sizing: no
-  // transition, no fixed width — it fills its column instead.
+  // COMPACT is the original, character-for-character — grey pill, 11px text,
+  // focus width transition. Every non-billing consumer renders this and must
+  // keep rendering exactly it.
+  //
+  // WIDE is styled to sit beside Outlook: white fill on a thin border, gentle
+  // radius, fixed 38px height, roomier type. Not a pill and not grey-filled —
+  // the two modes share only the input's identity, never its look. Each element
+  // branches on `wideSearch` rather than sharing a base string, so a future
+  // tweak to one cannot leak into the other.
   const searchBox = (
     <div
       className={
         wideSearch
-          ? "bg-gray-50 rounded-[6px] px-[10px] py-[4px] flex items-center gap-[6px] w-full max-w-[600px]"
+          ? "flex items-center gap-2.5 w-full max-w-[460px] h-[38px] rounded-[7px] bg-white border border-gray-200 px-3.5 transition-colors hover:border-gray-300 focus-within:border-gray-300 focus-within:shadow-[0_1px_2px_rgba(17,24,39,0.06)]"
           : `bg-gray-50 rounded-[6px] px-[10px] py-[4px] flex items-center gap-[6px] transition-all duration-200 ${
               searchFocused || searchValue ? "w-[260px]" : "w-[180px]"
             }`
       }
     >
-      <Search size={13} className="text-gray-400 flex-shrink-0" />
+      <Search size={wideSearch ? 15 : 13} className="text-gray-400 flex-shrink-0" />
       <input
         ref={searchInputRef}
         type="text"
@@ -282,10 +288,23 @@ export function UniversalHeader({
         onChange={(e) => onSearchChange?.(e.target.value)}
         onFocus={() => setSearchFocused(true)}
         onBlur={() => setSearchFocused(false)}
-        className="bg-transparent border-none outline-none text-[11px] text-gray-900 placeholder:text-gray-400 flex-1 w-full"
+        // Wide: transparent input over the wrapper's white fill — giving the
+        // input its own background would double up and show a seam at the ends.
+        className={
+          wideSearch
+            ? "flex-1 bg-transparent outline-none border-0 text-[13.5px] text-gray-900 placeholder:text-gray-500"
+            : "bg-transparent border-none outline-none text-[11px] text-gray-900 placeholder:text-gray-400 flex-1 w-full"
+        }
       />
+      {/* `/` hint — same show/hide rule in both modes, only the chip restyled. */}
       {!searchFocused && !searchValue && (
-        <span className="text-[9px] text-gray-400 bg-white border border-gray-200 rounded-[3px] px-[4px] py-[1px] flex-shrink-0">
+        <span
+          className={
+            wideSearch
+              ? "text-[11px] text-gray-500 bg-gray-50 border border-gray-200 rounded-[5px] px-1.5 py-0.5 flex-shrink-0"
+              : "text-[9px] text-gray-400 bg-white border border-gray-200 rounded-[3px] px-[4px] py-[1px] flex-shrink-0"
+          }
+        >
           /
         </span>
       )}
@@ -334,7 +353,7 @@ export function UniversalHeader({
             padding, so the bar centres in the free space without an auto-margin
             fighting the row's justify-between. */}
         {wideSearch && (
-          <div className="flex flex-1 justify-center px-4">{searchBox}</div>
+          <div className="flex flex-1 justify-center px-6">{searchBox}</div>
         )}
 
         {/* Right: import, clock, shortcuts, download, search */}
