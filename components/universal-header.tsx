@@ -1,18 +1,20 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Search,
   Keyboard,
-  Filter,
   Download,
   Upload,
-  ChevronLeft,
-  ChevronRight,
-  ChevronDown,
 } from "lucide-react";
-import { DatePickerPopover } from "@/components/ui/date-picker-popover";
 import { ImportModal } from "@/components/import/import-modal";
+// Row 2's Filter and date stepper were extracted 2026-07-31 so the Billing tab
+// row can host the SAME controls rather than lookalikes. Both are verbatim
+// moves — see each file's header. This header still owns `filterOpen` and
+// passes it down, because its Escape handler runs a priority chain
+// (search → shortcuts → filter) that only the state owner can order.
+import { HeaderFilter } from "@/components/header-filter";
+import { HeaderDateStepper } from "@/components/header-date-stepper";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -69,6 +71,19 @@ export interface UniversalHeaderProps {
   onDateChange?: (date: Date) => void;
   showDatePicker?: boolean;
 
+  /**
+   * Suppress Row 2 (the filter bar) entirely — the row, its border, and its
+   * 40px of height. Default `false`, i.e. today's behaviour for every caller.
+   *
+   * Exists for a surface that has relocated Row 2's controls elsewhere and would
+   * otherwise be left with an empty 40px strip and a stray bottom rule. This
+   * header knows nothing about which surface that is; it just takes the flag.
+   *
+   * ⚠ Row 2 also hosts `rightExtra` and `leftExtra`. Suppressing it hides those
+   * too — a caller that passes either MUST NOT set this at the same time.
+   */
+  suppressFilterBar?: boolean;
+
   // Search
   searchPlaceholder?: string;
   searchValue?: string;
@@ -85,29 +100,9 @@ export interface UniversalHeaderProps {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-function getTodayIST(): Date {
-  const now = new Date();
-  const istStr = now.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
-  return new Date(istStr + "T00:00:00+05:30");
-}
-
-function toISTDateStr(d: Date): string {
-  return d.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
-}
-
-function formatDateShort(d: Date): string {
-  return d.toLocaleDateString("en-IN", {
-    day: "2-digit",
-    month: "short",
-    timeZone: "Asia/Kolkata",
-  });
-}
-
-function shiftDay(d: Date, days: number): Date {
-  const next = new Date(d);
-  next.setDate(next.getDate() + days);
-  return next;
-}
+// getTodayIST / toISTDateStr / formatDateShort / shiftDay moved to
+// components/header-date-stepper.tsx with the control they served (2026-07-31),
+// copied character-for-character. Nothing else in this file used them.
 
 // ── Component ────────────────────────────────────────────────────────────────
 
@@ -127,6 +122,7 @@ export function UniversalHeader({
   currentDate,
   onDateChange,
   showDatePicker = true,
+  suppressFilterBar = false,
   searchPlaceholder = "Search...",
   searchValue,
   onSearchChange,
@@ -141,7 +137,7 @@ export function UniversalHeader({
   const [importOpen, setImportOpen] = useState(false);
 
   const shortcutsRef = useRef<HTMLDivElement>(null);
-  const filterRef = useRef<HTMLDivElement>(null);
+  // filterRef moved into HeaderFilter with the outside-click effect it anchored.
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   // Clock
@@ -173,17 +169,10 @@ export function UniversalHeader({
     return () => document.removeEventListener("mousedown", handleClick);
   }, [shortcutsOpen]);
 
-  // Close filter on outside click
-  useEffect(() => {
-    if (!filterOpen) return;
-    function handleClick(e: MouseEvent) {
-      if (filterRef.current && !filterRef.current.contains(e.target as Node)) {
-        setFilterOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, [filterOpen]);
+  // The outside-click effect moved into HeaderFilter with this component
+  // (2026-07-31) — same mousedown/document pairing, same open-flag dependency.
+  // `filterOpen` STAYS here: the Escape chain below orders search → shortcuts →
+  // filter, and only the owner of all three can do that.
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -225,42 +214,14 @@ export function UniversalHeader({
   }, [searchFocused, shortcutsOpen, filterOpen, segments, activeSegment, onSegmentChange, onSearchChange]);
 
   // Date calculations
-  const todayIST = getTodayIST();
-  const todayStr = toISTDateStr(todayIST);
-  const currentStr = currentDate ? toISTDateStr(currentDate) : todayStr;
-  const yesterdayStr = toISTDateStr(shiftDay(todayIST, -1));
-  const isToday = currentStr === todayStr;
-
-  const dateLabel = !currentDate
-    ? ""
-    : isToday
-      ? `Today \u00b7 ${formatDateShort(currentDate)}`
-      : currentStr === yesterdayStr
-        ? `Yesterday \u00b7 ${formatDateShort(currentDate)}`
-        : formatDateShort(currentDate);
+  // The date label/isToday derivation moved into HeaderDateStepper with the
+  // control itself (2026-07-31) \u2014 it was only ever used by that block.
 
   const titleDisplay = title;
 
-  // Active filter count
-  const activeFilterCount = activeFilters
-    ? Object.values(activeFilters).reduce((s, arr) => s + arr.length, 0)
-    : 0;
-
-  const handleFilterToggle = useCallback((groupKey: string, value: string) => {
-    if (!activeFilters || !onFilterChange) return;
-    const current = activeFilters[groupKey] ?? [];
-    const next = current.includes(value)
-      ? current.filter((v) => v !== value)
-      : [...current, value];
-    onFilterChange({ ...activeFilters, [groupKey]: next });
-  }, [activeFilters, onFilterChange]);
-
-  const handleFilterClear = useCallback(() => {
-    if (!filterGroups || !onFilterChange) return;
-    const empty: Record<string, string[]> = {};
-    for (const g of filterGroups) empty[g.key] = [];
-    onFilterChange(empty);
-  }, [filterGroups, onFilterChange]);
+  // activeFilterCount + the toggle/clear handlers moved into HeaderFilter with
+  // the control (2026-07-31), verbatim — including that "clear" writes an EMPTY
+  // ARRAY per group rather than `{}`.
 
   // Universal shortcuts
   const universalShortcuts: ShortcutItem[] = [
@@ -407,6 +368,11 @@ export function UniversalHeader({
       </div>
 
       {/* ── Row 2 — Filter Bar ─────────────────────────────────────────────── */}
+      {/* `suppressFilterBar` defaults to false, so this renders for every caller
+          exactly as before. When set, the whole row goes — including its 40px
+          height and bottom border, which is the point: an emptied row would
+          otherwise leave a blank strip and a stray rule. */}
+      {!suppressFilterBar && (
       <div className="h-[40px] min-h-[40px] sticky top-[52px] z-30 bg-white border-b border-gray-200 flex items-center justify-between px-4">
         {/* Left: segmented control + leftExtra */}
         <div className="flex items-center gap-2">
@@ -440,120 +406,31 @@ export function UniversalHeader({
         <div className="flex items-center gap-2">
           {rightExtra}
           {rightExtra && <div className="w-px h-4 bg-gray-200" />}
-          {/* Filter button */}
-          {filterGroups && filterGroups.length > 0 && (
-            <div className="relative" ref={filterRef}>
-              <button
-                onClick={() => setFilterOpen((v) => !v)}
-                className={`border rounded-[5px] px-[7px] py-[3px] flex items-center gap-[4px] cursor-pointer transition-colors ${
-                  activeFilterCount > 0
-                    ? "border-gray-900"
-                    : "border-gray-200 hover:border-gray-300"
-                }`}
-              >
-                <Filter
-                  size={11}
-                  className={activeFilterCount > 0 ? "text-gray-900" : "text-gray-500"}
-                />
-                <span
-                  className={`text-[10px] ${
-                    activeFilterCount > 0
-                      ? "font-medium text-gray-900"
-                      : "text-gray-500"
-                  }`}
-                >
-                  Filter
-                </span>
-                {activeFilterCount > 0 && (
-                  <span className="bg-gray-900 text-white text-[8px] font-medium min-w-[14px] h-[14px] rounded-full flex items-center justify-center">
-                    {activeFilterCount}
-                  </span>
-                )}
-              </button>
+          {/* Filter — extracted 2026-07-31 (components/header-filter.tsx).
+              Same markup and behaviour; this header keeps owning `filterOpen`
+              so its Escape priority chain (search -> shortcuts -> filter)
+              still orders correctly. */}
+          <HeaderFilter
+            groups={filterGroups}
+            activeFilters={activeFilters}
+            onFilterChange={onFilterChange}
+            open={filterOpen}
+            onOpenChange={setFilterOpen}
+          />
 
-              {filterOpen && (
-                <div className="absolute right-0 top-full mt-1 z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-3 w-[260px]">
-                  {filterGroups.map((group, gi) => (
-                    <div key={group.key}>
-                      <p
-                        className={`text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-[6px] ${
-                          gi === 0 ? "" : "mt-[8px]"
-                        }`}
-                      >
-                        {group.label}
-                      </p>
-                      <div className="flex flex-wrap gap-[4px]">
-                        {group.options.map((opt) => {
-                          const isActive = activeFilters?.[group.key]?.includes(opt.value);
-                          return (
-                            <button
-                              key={opt.value}
-                              onClick={() => handleFilterToggle(group.key, opt.value)}
-                              className={`text-[10px] border rounded-[4px] px-[8px] py-[2px] cursor-pointer ${
-                                isActive
-                                  ? "bg-gray-900 text-white border-gray-900"
-                                  : "bg-white text-gray-500 border-gray-200 hover:border-gray-300"
-                              }`}
-                            >
-                              {opt.label}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ))}
-                  {activeFilterCount > 0 && (
-                    <div className="border-t border-gray-100 pt-[6px] mt-[8px]">
-                      <button
-                        onClick={handleFilterClear}
-                        className="text-[11px] text-gray-400 hover:text-gray-600 cursor-pointer"
-                      >
-                        Clear all
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Date stepper + picker */}
+          {/* Date stepper + picker — extracted 2026-07-31
+              (components/header-date-stepper.tsx). Same gate as before. */}
           {showDatePicker !== false && currentDate && onDateChange && (
             <>
               {filterGroups && filterGroups.length > 0 && (
                 <div className="w-px h-4 bg-gray-200" />
               )}
-              <div className="inline-flex items-center gap-0">
-                <button
-                  onClick={() => onDateChange(shiftDay(currentDate, -1))}
-                  className="px-[6px] py-[3px] text-[10px] text-gray-400 border border-gray-200 rounded-l-[4px] cursor-pointer hover:bg-gray-50"
-                >
-                  <ChevronLeft size={12} />
-                </button>
-                <DatePickerPopover value={currentDate} onChange={onDateChange}>
-                  <button
-                    type="button"
-                    className="px-[10px] py-[3px] text-[10px] font-medium text-gray-900 border-t border-b border-gray-200 hover:bg-gray-50 cursor-pointer inline-flex items-center gap-[3px]"
-                  >
-                    {dateLabel}
-                    <ChevronDown size={10} className="text-gray-400" />
-                  </button>
-                </DatePickerPopover>
-                <button
-                  onClick={() => !isToday && onDateChange(shiftDay(currentDate, 1))}
-                  className={`px-[6px] py-[3px] text-[10px] text-gray-400 border border-gray-200 rounded-r-[4px] ${
-                    isToday
-                      ? "opacity-40 cursor-not-allowed pointer-events-none"
-                      : "cursor-pointer hover:bg-gray-50"
-                  }`}
-                >
-                  <ChevronRight size={12} />
-                </button>
-              </div>
+              <HeaderDateStepper currentDate={currentDate} onDateChange={onDateChange} />
             </>
           )}
         </div>
       </div>
+      )}
 
       {/* Import modal — single instance, owned by the header. Only rendered
           when consumer opted in via showImport, to avoid mounting unused

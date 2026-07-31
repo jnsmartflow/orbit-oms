@@ -22,10 +22,18 @@ export function BillingTabBar({
   active,
   onChange,
   ordersCount,
+  rightSlot,
 }: {
   active: BillingTab;
   onChange: (tab: BillingTab) => void;
   ordersCount: number;
+  /**
+   * Right-aligned controls for this row — the date stepper and Filter, which on
+   * the billing face live here instead of the header's Row 2. Mirrors where
+   * Floor puts its own right-side row controls (floor-page.tsx:618, `ml-auto`).
+   * Omitted → the live caption keeps the right edge, exactly as before.
+   */
+  rightSlot?: React.ReactNode;
 }) {
   const [pendingCount, setPendingCount] = useState<number | null>(null);
   // Guards against a late response from a superseded request overwriting a
@@ -96,9 +104,13 @@ export function BillingTabBar({
     <div className="flex items-center gap-[18px] border-b border-gray-200 bg-white px-3.5">
       {pill("orders", "Orders", ordersCount, false)}
       {pill("picking", "Picking", pendingCount, true)}
+      {/* Caption keeps its place; `ml-auto` pushes the pair to the right edge so
+          the controls sit outermost and nothing overlaps. When rightSlot is
+          omitted the caption alone carries ml-auto, as before. */}
       <span className="ml-auto text-[11px] text-gray-400">
         updates live as picks are checked
       </span>
+      {rightSlot && <div className="flex items-center gap-2 py-1.5">{rightSlot}</div>}
     </div>
   );
 }

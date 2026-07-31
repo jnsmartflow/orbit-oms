@@ -79,6 +79,12 @@ interface ReviewViewProps {
   onBillingTabChange?: (tab: BillingTab) => void;
   /** Phase 2 — reload the order list after a billing action writes mo_orders. */
   onBillingActionSaved?: () => void;
+  /**
+   * Right-aligned controls for the Orders|Picking row — the date stepper and
+   * Filter, relocated from the header's Row 2 on the billing face. Passed
+   * straight through to BillingTabBar.rightSlot; this view never inspects it.
+   */
+  billingHeaderSlot?: React.ReactNode;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -449,6 +455,7 @@ export function ReviewView({
   billingTab = "orders",
   onBillingTabChange,
   onBillingActionSaved,
+  billingHeaderSlot,
 }: ReviewViewProps) {
   // Billing v2 (Phase 2) — dispatch windows for the reused Floor slot picker.
   // Fetched ONLY when the flag is on: with it off this effect returns
@@ -1993,6 +2000,7 @@ export function ReviewView({
               active={billingTab}
               onChange={onBillingTabChange}
               ordersCount={orders.length}
+              rightSlot={billingHeaderSlot}
             />
           </div>
         )}

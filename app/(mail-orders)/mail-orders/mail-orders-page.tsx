@@ -15,6 +15,20 @@ import { TutorialOverlay } from "./tutorial-overlay";
 import { Check, Copy } from "lucide-react";
 import { useBillingV2 } from "@/components/billing/billing-v2-provider";
 import type { BillingTab } from "@/components/billing/billing-tab-bar";
+import { HeaderFilter } from "@/components/header-filter";
+import { HeaderDateStepper } from "@/components/header-date-stepper";
+
+// The six header filter groups. Hoisted out of the JSX 2026-07-31 so the header
+// and the Billing tab row render the SAME array rather than two literals that
+// drift. Values are unchanged from the inline version.
+const MO_FILTER_GROUPS = [
+  { label: "Status", key: "status", options: [{ value: "pending", label: "Pending" }, { value: "punched", label: "Punched" }] },
+  { label: "Match", key: "matchStatus", options: [{ value: "exact", label: "Matched" }, { value: "multiple", label: "Multiple" }, { value: "unmatched", label: "Unmatched" }] },
+  { label: "Dispatch", key: "dispatch", options: [{ value: "Hold", label: "Hold" }, { value: "Dispatch", label: "Dispatch" }] },
+  { label: "Priority", key: "priority", options: [{ value: "Urgent", label: "Urgent" }, { value: "Normal", label: "Normal" }] },
+  { label: "Lock", key: "lock", options: [{ value: "locked", label: "Locked" }, { value: "unlocked", label: "Unlocked" }] },
+  { label: "Dealer", key: "keyDealer", options: [{ value: "key", label: "Key" }] },
+];
 
 // ── Column Picker ──────────────────────────────────────────────────────────
 
@@ -1056,6 +1070,29 @@ export default function MailOrdersPage() {
     setSelectedDate(d.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }));
   }, []);
 
+  // Billing face: the date stepper + Filter move OFF the header's Row 2 and onto
+  // the Orders|Picking tab row, mirroring where Floor puts its row controls.
+  // These are the SAME components the header renders — not lookalikes — so the
+  // two surfaces cannot drift. Built only when the flag is on; `undefined`
+  // otherwise, leaving ReviewView and BillingTabBar exactly as they were.
+  //
+  // ⚠ Declared here, AFTER headerDate/handleHeaderDateChange — they are const
+  // bindings, so building this any earlier is a temporal-dead-zone error.
+  //
+  // ⚠ The tab row lives inside ReviewView, which renders in FOCUS MODE ONLY.
+  // See the suppressFilterBar wiring for why that matters.
+  const billingHeaderSlot = billingV2 ? (
+    <>
+      <HeaderFilter
+        groups={MO_FILTER_GROUPS}
+        activeFilters={headerFilters}
+        onFilterChange={setHeaderFilters}
+      />
+      <div className="w-px h-4 bg-gray-200" />
+      <HeaderDateStepper currentDate={headerDate} onDateChange={handleHeaderDateChange} />
+    </>
+  ) : undefined;
+
   const punchPct = totalOrders > 0
     ? Math.round((punchedOrders / totalOrders) * 100) : 0;
 
@@ -1128,14 +1165,19 @@ export default function MailOrdersPage() {
         segments={billingV2 ? undefined : headerSegments}
         activeSegment={activeSlot}
         onSegmentChange={(id) => setActiveSlot(id as string | null)}
-        filterGroups={[
-          { label: "Status", key: "status", options: [{ value: "pending", label: "Pending" }, { value: "punched", label: "Punched" }] },
-          { label: "Match", key: "matchStatus", options: [{ value: "exact", label: "Matched" }, { value: "multiple", label: "Multiple" }, { value: "unmatched", label: "Unmatched" }] },
-          { label: "Dispatch", key: "dispatch", options: [{ value: "Hold", label: "Hold" }, { value: "Dispatch", label: "Dispatch" }] },
-          { label: "Priority", key: "priority", options: [{ value: "Urgent", label: "Urgent" }, { value: "Normal", label: "Normal" }] },
-          { label: "Lock", key: "lock", options: [{ value: "locked", label: "Locked" }, { value: "unlocked", label: "Unlocked" }] },
-          { label: "Dealer", key: "keyDealer", options: [{ value: "key", label: "Key" }] },
-        ]}
+        // Billing face in FOCUS mode only: Row 2's controls now live on the tab
+        // row, so the row itself would be an empty 40px strip with a stray
+        // bottom rule — suppress it.
+        //
+        // ⚠ NOT in table mode, and that is not a nicety. Row 2 also carries
+        // `rightExtra`, which on this page is the ColumnPicker — and the
+        // ColumnPicker only exists when viewMode === "table". Table mode also
+        // has no tab row (ReviewView renders in focus mode only), so it still
+        // needs the header's own Filter and date. Suppressing unconditionally
+        // would silently delete the column picker AND both controls from Table
+        // view. Flagged before building rather than dropped.
+        suppressFilterBar={billingV2 && viewMode === "focus"}
+        filterGroups={MO_FILTER_GROUPS}
         activeFilters={headerFilters}
         onFilterChange={setHeaderFilters}
         currentDate={headerDate}
@@ -1188,6 +1230,7 @@ export default function MailOrdersPage() {
           billingTab={billingTab}
           onBillingTabChange={setBillingTab}
           onBillingActionSaved={loadOrders}
+          billingHeaderSlot={billingHeaderSlot}
         />
       )}
 
