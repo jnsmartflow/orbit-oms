@@ -1272,7 +1272,6 @@ export function ReviewView({
           <BillingActionRibbon
             order={order}
             windows={billingWindows}
-            isPunched={isPunched}
             onSaved={() => onBillingActionSaved?.()}
           />
         )}
@@ -1473,7 +1472,6 @@ export function ReviewView({
               billingV2 ? (
                 <BillingShipToPencil
                   moOrderId={order.id}
-                  isPunched={isPunched}
                   hasOverride={order.shipToOverride ?? false}
                   onSaved={() => onBillingActionSaved?.()}
                 />

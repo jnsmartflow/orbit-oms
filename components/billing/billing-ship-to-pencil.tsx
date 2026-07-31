@@ -10,8 +10,9 @@
 // at all: no element, no comment node, no layout shift. The card's existing
 // markup is untouched.
 //
-// PUNCHED ORDERS: the pencil is disabled with the reason on the tooltip, for
-// the same non-propagation reason as the action ribbon.
+// ALWAYS ACTIVE — punched or not (2026-07-31). The server dual-writes, so a
+// ship-to change after punch reaches the live OBD (orders WHERE soNumber) as
+// well as the mail order. Do not reintroduce a punch-based disable.
 //
 // Search hits /api/billing/ship-to-search (mail_orders/canView), NOT Floor's —
 // billing_operator has no `floor` permission and Floor's route would 403 for
@@ -33,12 +34,10 @@ interface DealerHit {
 
 export function BillingShipToPencil({
   moOrderId,
-  isPunched,
   hasOverride,
   onSaved,
 }: {
   moOrderId: number;
-  isPunched: boolean;
   hasOverride: boolean;
   onSaved: () => void;
 }) {
@@ -106,9 +105,9 @@ export function BillingShipToPencil({
     <span ref={boxRef} className="mo-print-hide relative inline-flex">
       <button
         type="button"
-        disabled={isPunched || busy}
+        disabled={busy}
         onClick={() => setOpen((v) => !v)}
-        title={isPunched ? "Punched — manage on Floor Control." : "Change ship-to"}
+        title="Change ship-to"
         aria-label="Change ship-to"
         className="flex h-[26px] w-[26px] items-center justify-center rounded-[7px] border border-gray-200 bg-white text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-40"
       >

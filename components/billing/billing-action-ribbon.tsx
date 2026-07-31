@@ -9,12 +9,13 @@
 // around anything that already exists — it is appended as a sibling inside the
 // ribbon's existing actions slot.
 //
-// PUNCHED ORDERS: every button is DISABLED with the reason on the tooltip.
-// Enrichment is fire-once-per-import, so an edit made after the OBD exists
-// would not propagate — the server refuses it (409) and the UI must not invite
-// the click in the first place.
+// ALWAYS ACTIVE — punched or not (2026-07-31). The earlier "disabled once
+// punched" state is gone: the server now DUAL-WRITES (mo_orders for the intent,
+// orders WHERE soNumber for an OBD that already exists), so an edit after punch
+// reaches the live bill instead of being silently dropped. Nothing here should
+// consult punch state again.
 //
-// Each button = ONE write (one mo_orders.update). No local optimism: we post,
+// Each button = one action → one write per table. No local optimism: we post,
 // then ask the page to reload, so what is on screen is what is in the database.
 
 import { useState } from "react";
@@ -37,12 +38,10 @@ function toDateString(iso: string | null | undefined): string | null {
 export function BillingActionRibbon({
   order,
   windows,
-  isPunched,
   onSaved,
 }: {
   order: MoOrder;
   windows: DispatchWindow[];
-  isPunched: boolean;
   onSaved: () => void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -60,8 +59,9 @@ export function BillingActionRibbon({
       ? { date: slotDate, dispatchWindowId: slotWindow.id, windowTime: slotWindow.windowTime }
       : null;
 
-  const disabled = busy || isPunched;
-  const punchedTitle = isPunched ? "Punched — manage on Floor Control." : undefined;
+  // Busy is the ONLY reason a button is inert — it stops a double-post while a
+  // write is in flight. Punch state is deliberately not consulted.
+  const disabled = busy;
 
   async function run(payload: Parameters<typeof postMailOrderAction>[1]) {
     if (disabled) return;
@@ -87,7 +87,7 @@ export function BillingActionRibbon({
           type="button"
           disabled={disabled}
           onClick={() => setSlotGen((g) => g + 1)}
-          title={punchedTitle ?? "Set dispatch slot"}
+          title="Set dispatch slot"
           className={`${BTN_BASE} ${slotOn ? BTN_SLOT_ON : BTN_OFF}`}
         >
           <span className="text-gray-400">🕑</span>
@@ -120,7 +120,7 @@ export function BillingActionRibbon({
         type="button"
         disabled={disabled}
         onClick={() => void run({ action: "hold", on: !holdOn })}
-        title={punchedTitle ?? (holdOn ? "Release hold" : "Put on hold")}
+        title={holdOn ? "Release hold" : "Put on hold"}
         className={`${BTN_BASE} ${holdOn ? BTN_HOLD_ON : BTN_OFF}`}
       >
         <span className={holdOn ? "" : "text-gray-400"}>⚑</span> Hold
@@ -130,15 +130,12 @@ export function BillingActionRibbon({
         type="button"
         disabled={disabled}
         onClick={() => void run({ action: "urgent", on: !urgentOn })}
-        title={punchedTitle ?? (urgentOn ? "Clear urgent" : "Mark urgent")}
+        title={urgentOn ? "Clear urgent" : "Mark urgent"}
         className={`${BTN_BASE} ${urgentOn ? BTN_URGENT_ON : BTN_OFF}`}
       >
         <span className={urgentOn ? "" : "text-gray-400"}>⚡</span> Urgent
       </button>
 
-      {isPunched && (
-        <span className="text-[10px] text-gray-400">Punched — manage on Floor Control.</span>
-      )}
       {err && <span className="text-[10px] font-medium text-red-600">{err}</span>}
     </span>
   );
