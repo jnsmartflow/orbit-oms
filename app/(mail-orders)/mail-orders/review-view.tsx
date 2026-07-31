@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useRef } from "react";
-import { Check, Pencil, Copy, Mail, Flag, Search, Printer, StickyNote, Star } from "lucide-react";
+import { Check, Pencil, Copy, Mail, Flag, Search, Printer, StickyNote, Star, Droplet } from "lucide-react";
 import type { MoOrder, MoOrderLine, CustomerSearchResult } from "@/lib/mail-orders/types";
 import type { SlotCutoffs } from "@/lib/mail-orders/utils";
 import {
@@ -25,7 +25,7 @@ import {
 import { searchCustomers, saveLineStatus, searchSkus, resolveLine, saveNotes } from "@/lib/mail-orders/api";
 import { BillingTabBar, type BillingTab } from "@/components/billing/billing-tab-bar";
 import { BillingPickingTab } from "@/components/billing/billing-picking-tab";
-import { BillingActionRibbon } from "@/components/billing/billing-action-ribbon";
+import { BillingActionRibbon, BTN_BASE, BTN_OFF } from "@/components/billing/billing-action-ribbon";
 import { BillingShipToPencil } from "@/components/billing/billing-ship-to-pencil";
 import { BillingOrderInfo } from "@/components/billing/billing-order-info";
 import type { DispatchWindow } from "@/components/floor/dispatch-slot-picker";
@@ -1385,6 +1385,35 @@ export function ReviewView({
       </>
     );
 
+    // Billing-face Notes — a SEPARATE, LABELLED variant. `notesButton` above is
+    // still the icon-only version the OFF path renders; labelling that in place
+    // would change the non-billing ribbon. This one wears the same BTN_BASE the
+    // Urgent/Hold/Slot buttons use, so the four read as one row of controls.
+    // Same handler, same has-notes dot, same mo-print-hide.
+    const billingNotesButton = (() => {
+      const effective = getEffectiveNotes(order.id, order.notes ?? null);
+      const hasNotes = !!effective && effective.length > 0;
+      return (
+        <span className="relative inline-flex">
+          <button
+            type="button"
+            onClick={handleNotesOpen}
+            title={hasNotes ? "Notes (saved)" : "Notes"}
+            className={`${BTN_BASE} ${hasNotes ? "border-gray-300 bg-white text-gray-800 hover:bg-gray-50" : BTN_OFF}`}
+          >
+            <StickyNote size={12} className={hasNotes ? "" : "text-gray-400"} />
+            Notes
+          </button>
+          {hasNotes && (
+            <span
+              aria-hidden
+              className="pointer-events-none absolute -right-[2px] -top-[2px] h-2 w-2 rounded-full border-[1.5px] border-white bg-teal-600"
+            />
+          )}
+        </span>
+      );
+    })();
+
     // ── Billing v2 — the redesigned ribbon row ────────────────────────────
     // Replaces MetaRibbon's CONTENTS only (its outer row keeps the same padding,
     // top border and alignment). `undefined` when the flag is off, which makes
@@ -1413,7 +1442,7 @@ export function ReviewView({
             the operator DOES to this order, like Hold or Urgent — not a view
             control. Same handler and same "dot when notes exist" indicator. */}
         <span className="mo-print-hide inline-flex flex-shrink-0 items-center">
-          {notesButton}
+          {billingNotesButton}
         </span>
         <div className="flex-1" />
         <div className="flex flex-shrink-0 items-center gap-1.5">
@@ -1709,9 +1738,10 @@ export function ReviewView({
     //
     // NOT mo-print-hide, deliberately: these facts used to print as part of the
     // ribbon, and moving them must not quietly drop them from a printed sheet.
-    // Volume + readiness only. The line count was dropped 2026-07-31 — the row
-    // numbers in the table already say how many lines there are, and carrying
-    // it here only invited a singular/plural bug for the one-line case.
+    // Left: line count + readiness. Right: volume. Line count prefers the
+    // stored totalLines and falls back to the rendered rows; pluralised so the
+    // single-line case reads "1 line".
+    const captionLines = order.totalLines ?? order.lines.length;
     const captionVolume = volumeStringFor(order);
     const captionChip = getMatchChip(order.matchedLines, order.totalLines);
 
@@ -1719,24 +1749,33 @@ export function ReviewView({
       <>
       {billingV2 && (
         <div className="flex flex-shrink-0 items-center justify-between gap-2 border-b border-gray-100 px-3.5 py-[7px] text-[11px] text-gray-500">
-          {/* Caption text — NOT mo-print-hide. These facts printed as part of
-              the old ribbon summary line; moving them must not drop them from a
-              printed sheet. */}
+          {/* LEFT — line count + readiness. NOT mo-print-hide: these facts
+              printed as part of the old ribbon summary line, and moving them
+              must not drop them from a printed sheet. */}
           <div className="flex min-w-0 items-center gap-2">
-            {captionVolume && <span className="tabular-nums">{captionVolume}</span>}
-            {captionVolume && captionChip && <span className="text-gray-300">·</span>}
+            <span className="tabular-nums">
+              {captionLines} line{captionLines === 1 ? "" : "s"}
+            </span>
             {captionChip && (
-              <span className={`inline-flex items-center h-4 px-[5px] text-[10px] font-semibold rounded border ${captionChip.classes}`}>
-                {captionChip.label}
-              </span>
+              <>
+                <span className="text-gray-300">·</span>
+                <span className={`inline-flex items-center h-4 px-[5px] text-[10px] font-semibold rounded border ${captionChip.classes}`}>
+                  {captionChip.label}
+                </span>
+              </>
             )}
           </div>
-          {/* Print lives on this row now — beside the lines it puts on paper.
-              Still handlePrintClick (prints #mo-print-area) and still
-              mo-print-hide, so the button never prints itself. */}
-          <span className="mo-print-hide inline-flex flex-shrink-0 items-center">
-            {printButton}
-          </span>
+          {/* RIGHT — volume, with a droplet to read as liquid at a glance.
+              Renders NOTHING when the order has no measurable volume: a lone
+              icon with no number is worse than an empty right edge.
+              NOT mo-print-hide — volume printed as part of the old ribbon line
+              and must keep printing. */}
+          {captionVolume && (
+            <span className="flex flex-shrink-0 items-center gap-1 tabular-nums">
+              <Droplet size={12} className="text-gray-400" />
+              {captionVolume}
+            </span>
+          )}
         </div>
       )}
       <div data-tutorial="sku-table" className="flex-1 overflow-y-auto" style={{ padding: "0 6px" }}>

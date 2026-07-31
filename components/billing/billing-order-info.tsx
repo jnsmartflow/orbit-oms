@@ -17,6 +17,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Info } from "lucide-react";
+import { BTN_BASE, BTN_OFF } from "@/components/billing/billing-action-ribbon";
 
 export function BillingOrderInfo({
   soName,
@@ -59,13 +60,16 @@ export function BillingOrderInfo({
         onClick={() => setOpen((v) => !v)}
         title="Order details"
         aria-label="Order details"
-        className="flex h-[28px] w-[28px] items-center justify-center rounded-md border border-gray-200 bg-white text-gray-400 transition-colors hover:border-gray-300 hover:bg-gray-50 hover:text-gray-600"
+        // Same BTN_BASE/BTN_OFF the Urgent/Hold/Slot buttons use, minus the
+        // label — a square 27px icon button that sits on the same baseline as
+        // the rest of the ribbon's controls instead of being a hair taller.
+        className={`${BTN_BASE} ${BTN_OFF} w-[27px] justify-center px-0`}
       >
-        <Info size={14} />
+        <Info size={13} className="text-gray-400" />
       </button>
 
       {open && (
-        <div className="absolute right-0 top-[32px] z-50 w-[260px] rounded-lg border border-gray-200 bg-white p-3 shadow-lg">
+        <div className="absolute right-0 top-[31px] z-50 w-[260px] rounded-lg border border-gray-200 bg-white p-3 shadow-lg">
           <Row label="Ordered by" value={soName} />
           <Row label="Received" value={receivedAt} />
           {showPunched && <Row label="Punched by" value={`${punchedByName} · ${punchedAt}`} />}
