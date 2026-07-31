@@ -1934,7 +1934,22 @@ export function ReviewView({
     <div className="flex flex-1 overflow-hidden">
       {/* LEFT PANEL — 320px */}
       <div data-tutorial="order-list" className="w-[320px] flex-shrink-0 border-r border-gray-200 flex flex-col">
-        {/* Search input */}
+        {/* Rail head. On the BILLING face this slot carries the rail title; on
+            every other face it carries the filter input, exactly as before.
+            Same wrapper padding and the same 28px inner height in both, so the
+            order list starts at an identical offset either way — swapping one
+            for the other shifts nothing below it.
+            ⚠ The search STATE is untouched: `searchQuery`/`onSearchChange` are
+            props owned by mail-orders-page.tsx and shared with Table view. Only
+            the input is not rendered here, so batch-2 universal search can pick
+            the same state back up. Do not delete the OFF branch. */}
+        {billingV2 ? (
+          <div className="px-3 py-2 border-b border-gray-200">
+            <div className="flex h-[28px] items-center text-[12px] font-semibold tracking-[-0.01em] text-gray-900">
+              Mail Orders
+            </div>
+          </div>
+        ) : (
         <div className="px-3 py-2 border-b border-gray-200">
           <input
             type="text"
@@ -1944,6 +1959,7 @@ export function ReviewView({
             className="w-full h-[28px] border border-gray-200 rounded-md px-2.5 text-[11px] text-gray-600 outline-none placeholder:text-gray-300 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/10"
           />
         </div>
+        )}
 
         {/* Order list */}
         <div className="flex-1 overflow-y-auto">
