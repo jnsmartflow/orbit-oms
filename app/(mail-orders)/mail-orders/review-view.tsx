@@ -1276,6 +1276,18 @@ export function ReviewView({
             onSaved={() => onBillingActionSaved?.()}
           />
         )}
+        {/* Copy · Reply · Flag — hidden on the BILLING face only (2026-07-31).
+            Reply is unused there, Flag is not a billing concern, and Copy is
+            covered by Ctrl+C, which is a wholly separate document-level
+            listener in mail-orders-page.tsx (registered on `document`, active
+            in focus mode) — removing this button cannot affect it.
+            ⚠ Ctrl+C is a TWO-STATE machine: first press copies the CUSTOMER
+            CODE, second press the SKUs. This button copied SKUs in one click,
+            so on the billing face SKU copy now takes two presses.
+            A Fragment emits no DOM, so with the flag OFF these three render as
+            direct flex children of the same row, exactly as before. Print and
+            Notes are outside this guard and are unaffected on both faces. */}
+        {!billingV2 && (<>
         <button
           onClick={handleCopyClick}
           title="Copy · Ctrl+C"
@@ -1360,6 +1372,7 @@ export function ReviewView({
         >
           <Flag size={14} />
         </button>
+        </>)}
         <button
           onClick={handlePrintClick}
           title="Print order"
