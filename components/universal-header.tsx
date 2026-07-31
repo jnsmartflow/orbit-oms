@@ -89,6 +89,31 @@ export interface UniversalHeaderProps {
   searchValue?: string;
   onSearchChange?: (query: string) => void;
 
+  /**
+   * Where the search box sits in Row 1. Default `"compact"` — today's behaviour
+   * for every caller: a 180px pill in the right-hand cluster that widens to
+   * 260px on focus.
+   *
+   * `"wide"` promotes it to its OWN middle column — title left, search centred,
+   * icon cluster right. The INPUT and every behaviour attached to it are the
+   * same in both modes (same ref, same handlers, same `/`-to-focus and
+   * Escape-to-clear); only the wrapper's width and its position in the row
+   * change.
+   *
+   * ⚠ The focus width transition is deliberately NOT applied in wide mode — a
+   * fixed w-[180px]/w-[260px] fights the flex sizing and the bar would jump.
+   */
+  searchLayout?: "compact" | "wide";
+
+  /**
+   * Render the IST clock (and the divider that follows it). Default `true`.
+   *
+   * ⚠ Setting this false also stops the 1-second `setInterval` that drives it.
+   * Gating only the markup would leave every consumer re-rendering this header
+   * once a second to update a string nobody displays.
+   */
+  showClock?: boolean;
+
   // Shortcuts
   shortcuts?: ShortcutItem[];
 
@@ -126,6 +151,8 @@ export function UniversalHeader({
   searchPlaceholder = "Search...",
   searchValue,
   onSearchChange,
+  searchLayout = "compact",
+  showClock = true,
   shortcuts,
   showImport,
   segmentsDisabled,
@@ -140,8 +167,11 @@ export function UniversalHeader({
   // filterRef moved into HeaderFilter with the outside-click effect it anchored.
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // Clock
+  // Clock. Gated on showClock (default true → unchanged for every caller):
+  // when the clock is not rendered the interval must not run either, or the
+  // header re-renders once a second to update a string nobody sees.
   useEffect(() => {
+    if (!showClock) return;
     function tick() {
       setClock(
         new Date().toLocaleTimeString("en-IN", {
@@ -155,7 +185,7 @@ export function UniversalHeader({
     tick();
     const t = setInterval(tick, 1000);
     return () => clearInterval(t);
-  }, []);
+  }, [showClock]);
 
   // Close shortcuts on outside click
   useEffect(() => {
@@ -223,6 +253,45 @@ export function UniversalHeader({
   // the control (2026-07-31), verbatim — including that "clear" writes an EMPTY
   // ARRAY per group rather than `{}`.
 
+  const wideSearch = searchLayout === "wide";
+
+  // The search box — ONE definition, rendered in one of two positions. Hoisted
+  // rather than duplicated so the input, its ref, its handlers and the `/` hint
+  // cannot drift between layouts; the Escape-to-clear and `/`-to-focus effect
+  // above targets `searchInputRef` and is unaffected by where this lands.
+  //
+  // The compact class string is character-for-character the one that was inline
+  // here before, focus transition included. Wide swaps ONLY the sizing: no
+  // transition, no fixed width — it fills its column instead.
+  const searchBox = (
+    <div
+      className={
+        wideSearch
+          ? "bg-gray-50 rounded-[6px] px-[10px] py-[4px] flex items-center gap-[6px] w-full max-w-[600px]"
+          : `bg-gray-50 rounded-[6px] px-[10px] py-[4px] flex items-center gap-[6px] transition-all duration-200 ${
+              searchFocused || searchValue ? "w-[260px]" : "w-[180px]"
+            }`
+      }
+    >
+      <Search size={13} className="text-gray-400 flex-shrink-0" />
+      <input
+        ref={searchInputRef}
+        type="text"
+        placeholder={searchPlaceholder}
+        value={searchValue ?? ""}
+        onChange={(e) => onSearchChange?.(e.target.value)}
+        onFocus={() => setSearchFocused(true)}
+        onBlur={() => setSearchFocused(false)}
+        className="bg-transparent border-none outline-none text-[11px] text-gray-900 placeholder:text-gray-400 flex-1 w-full"
+      />
+      {!searchFocused && !searchValue && (
+        <span className="text-[9px] text-gray-400 bg-white border border-gray-200 rounded-[3px] px-[4px] py-[1px] flex-shrink-0">
+          /
+        </span>
+      )}
+    </div>
+  );
+
   // Universal shortcuts
   const universalShortcuts: ShortcutItem[] = [
     { key: "/", label: "Focus search" },
@@ -259,6 +328,15 @@ export function UniversalHeader({
           )}
         </div>
 
+        {/* MIDDLE column — wide search only. Absent in compact mode, so Row 1
+            stays the same two-child justify-between flex it has always been.
+            The wrapper (not the box itself) carries flex-1 + the horizontal
+            padding, so the bar centres in the free space without an auto-margin
+            fighting the row's justify-between. */}
+        {wideSearch && (
+          <div className="flex flex-1 justify-center px-4">{searchBox}</div>
+        )}
+
         {/* Right: import, clock, shortcuts, download, search */}
         <div className="flex items-center gap-2">
           {/* Import — leftmost, only when caller passes showImport=true */}
@@ -277,16 +355,21 @@ export function UniversalHeader({
             </>
           )}
 
-          {/* Clock */}
-          <span
-            suppressHydrationWarning
-            className="text-[11px] font-medium text-gray-400"
-            style={{ fontVariantNumeric: "tabular-nums", letterSpacing: "0.5px" }}
-          >
-            {clock}
-          </span>
+          {/* Clock — with its TRAILING DIVIDER. The two go together: dropping
+              the span alone would leave a separator with nothing before it. */}
+          {showClock && (
+            <>
+              <span
+                suppressHydrationWarning
+                className="text-[11px] font-medium text-gray-400"
+                style={{ fontVariantNumeric: "tabular-nums", letterSpacing: "0.5px" }}
+              >
+                {clock}
+              </span>
 
-          <div className="w-px h-4 bg-gray-200" />
+              <div className="w-px h-4 bg-gray-200" />
+            </>
+          )}
 
           {/* Shortcuts */}
           <div className="relative" ref={shortcutsRef}>
@@ -339,31 +422,16 @@ export function UniversalHeader({
             </>
           )}
 
-          <div className="w-px h-4 bg-gray-200" />
-
-          {/* Search */}
-          <div
-            className={`bg-gray-50 rounded-[6px] px-[10px] py-[4px] flex items-center gap-[6px] transition-all duration-200 ${
-              searchFocused || searchValue ? "w-[260px]" : "w-[180px]"
-            }`}
-          >
-            <Search size={13} className="text-gray-400 flex-shrink-0" />
-            <input
-              ref={searchInputRef}
-              type="text"
-              placeholder={searchPlaceholder}
-              value={searchValue ?? ""}
-              onChange={(e) => onSearchChange?.(e.target.value)}
-              onFocus={() => setSearchFocused(true)}
-              onBlur={() => setSearchFocused(false)}
-              className="bg-transparent border-none outline-none text-[11px] text-gray-900 placeholder:text-gray-400 flex-1 w-full"
-            />
-            {!searchFocused && !searchValue && (
-              <span className="text-[9px] text-gray-400 bg-white border border-gray-200 rounded-[3px] px-[4px] py-[1px] flex-shrink-0">
-                /
-              </span>
-            )}
-          </div>
+          {/* Search — compact only. In wide mode the box has already rendered
+              as the middle column above, and this divider goes with it: it is
+              the separator BEFORE the search, so leaving it would dangle at the
+              end of the cluster. */}
+          {!wideSearch && (
+            <>
+              <div className="w-px h-4 bg-gray-200" />
+              {searchBox}
+            </>
+          )}
         </div>
       </div>
 

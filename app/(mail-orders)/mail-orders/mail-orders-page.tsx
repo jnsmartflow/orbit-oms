@@ -1131,7 +1131,22 @@ export default function MailOrdersPage() {
       `}</style>
       <UniversalHeader
         showImport={canImportOBDs}
-        title={
+        // Billing face: the title is JUST the word. The Table/Focus toggle, the
+        // divider, the "% punched" chip and the `stats` "N orders" are all gone
+        // from the header — the Orders tab badge already carries the count that
+        // matters, and two differently-defined numbers in one eyeline is worse
+        // than one.
+        //
+        // Hiding the toggle is what pins the billing face to Focus: `viewMode`
+        // defaults to "focus" (:169) and those two buttons are its ONLY writers,
+        // so with them gone it can never leave. Table view is NOT archived —
+        // MailOrdersTable, ColumnPicker and every viewMode branch stay live and
+        // reachable for non-billing users.
+        //
+        // The OFF branch below is the original block, unchanged. Do not delete.
+        title={billingV2 ? (
+          <span className="text-[14px] font-semibold text-gray-900">Billing</span>
+        ) : (
           <div className="flex items-center gap-2.5">
             <span>Mail Orders</span>
             <div data-tutorial="view-toggle" className="flex border border-gray-300 rounded-[5px] overflow-hidden">
@@ -1165,8 +1180,10 @@ export default function MailOrdersPage() {
               {punchPct}% punched
             </span>
           </div>
-        }
-        stats={[
+        )}
+        // `stats` renders inside Row 1's left cluster beside the title. Dropped
+        // on the billing face for the same reason as the % chip above.
+        stats={billingV2 ? undefined : [
           { label: "orders", value: totalOrders },
         ]}
         // Billing face: no slot row. Passing `segments` as undefined hides it via
@@ -1197,6 +1214,12 @@ export default function MailOrdersPage() {
         searchPlaceholder="Search orders..."
         searchValue={searchQuery}
         onSearchChange={setSearchQuery}
+        // Billing face: search is promoted to its own centred column, and the
+        // clock goes (with its interval). Same `searchQuery` state and the same
+        // 19-field matcher (:438-472) either way — no new search logic, and the
+        // rail this filters is already driven by it.
+        searchLayout={billingV2 ? "wide" : "compact"}
+        showClock={!billingV2}
         rightExtra={viewMode === "table" ? (
           <ColumnPicker
             columns={ALL_COLUMNS}
