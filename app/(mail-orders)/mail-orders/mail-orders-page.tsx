@@ -331,6 +331,11 @@ export default function MailOrdersPage() {
 
   // ── Focus mode: auto-select first slot with orders ──────────────────────────
   useEffect(() => {
+    // Billing face: never auto-pick a slot. Without this the list would still be
+    // narrowed to one slot on load even though the slot row is not rendered —
+    // a filter the operator can see the effect of but not the control for.
+    // `activeSlot` stays null, which is what makes the list flat.
+    if (billingV2) return;
     if (viewMode === "focus" && activeSlot === null && orders.length > 0) {
       const slots = ["Morning", "Afternoon", "Evening", "Late Evening", "Night"] as const;
       for (const slot of slots) {
@@ -340,7 +345,7 @@ export default function MailOrdersPage() {
         }
       }
     }
-  }, [viewMode, activeSlot, orders, slotCutoffs]);
+  }, [viewMode, activeSlot, orders, slotCutoffs, billingV2]);
 
   // ── Derived stats ────────────────────────────────────────────────────────────
   const totalOrders = orders.length;
@@ -452,12 +457,16 @@ export default function MailOrdersPage() {
       });
     }
 
-    if (activeSlot) {
+    // Billing face: one flat list for the whole date — the slot narrowing is
+    // bypassed, not removed. Belt to the auto-select guard's braces: even if
+    // something set `activeSlot`, this keeps the list flat while the slot row is
+    // hidden. Header filters and the 19-field search above are UNAFFECTED.
+    if (!billingV2 && activeSlot) {
       result = result.filter((o) => getSlotFromTime(o.receivedAt, slotCutoffs) === activeSlot);
     }
 
     return result;
-  }, [orders, headerFilters, searchQuery, activeSlot, slotCutoffs]);
+  }, [orders, headerFilters, searchQuery, activeSlot, slotCutoffs, billingV2]);
 
   const groupedOrders = useMemo(() => groupOrdersBySlot(filteredOrders, slotCutoffs), [filteredOrders, slotCutoffs]);
 
@@ -1111,7 +1120,12 @@ export default function MailOrdersPage() {
         stats={[
           { label: "orders", value: totalOrders },
         ]}
-        segments={headerSegments}
+        // Billing face: no slot row. Passing `segments` as undefined hides it via
+        // UniversalHeader's own `segments && segments.length > 0` guard — NOT
+        // `segmentsDisabled`, which only greys it out. The header's 1-9 slot jumps
+        // and its "Jump to slot" shortcut line key off the same prop, so both fall
+        // away with it. Intended.
+        segments={billingV2 ? undefined : headerSegments}
         activeSegment={activeSlot}
         onSegmentChange={(id) => setActiveSlot(id as string | null)}
         filterGroups={[
