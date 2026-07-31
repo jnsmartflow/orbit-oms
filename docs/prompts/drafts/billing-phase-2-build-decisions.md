@@ -1,5 +1,6 @@
 # Billing v2 — Phase 2 build decisions
-# 2026-07-30 · Lives in: orbit-oms/docs/prompts/drafts/
+# 2026-07-30 · revised 2026-07-31 (§2-§3: the punch gate became a dual-write)
+# Lives in: orbit-oms/docs/prompts/drafts/
 
 **Why this file exists.** The Phase 2 design spec
 (`design-spec-2026-07-30-billing-picking.md`) is a **planning-project doc and is NOT in this repo** —
@@ -31,9 +32,10 @@ Ship-to, hold and urgent needed **no new column** — `shipToOverrideCustomerId`
 
 ## 2. The write target rule
 
-**All four actions write `mo_orders`, never `orders`.** When the operator is working the OBD does not
-exist yet: mail → `mo_orders` → punch → SAP export → `orders`. The edit is INTENT on the mail order;
-`applyMailOrderEnrichment` (`app/api/import/obd/route.ts`) carries it at import.
+**All four actions write `mo_orders` — and, since 2026-07-31, `orders` as well. See §3.** When the
+operator is working the OBD may not exist yet: mail → `mo_orders` → punch → SAP export → `orders`. The
+edit is recorded as INTENT on the mail order, and `applyMailOrderEnrichment`
+(`app/api/import/obd/route.ts`) carries it at import for bills whose OBD is still to come.
 
 | Action | `mo_orders` field | Carry line |
 |---|---|---|
@@ -54,19 +56,76 @@ the loop, or dropping `dispatchSlotSource`, hands the slot silently back to the 
 Both slot fields are written **together or not at all** — a target date with no window is not a slot,
 and the guard keys on `dispatchSlotSource`, not on the date, so a half-set state would not self-heal.
 
-## 3. 🔴 Post-import edits are REFUSED, not silently accepted
+## 3. 🔴 Post-import edits WORK — the actions dual-write
+
+**SUPERSEDED 2026-07-31.** This section previously specified the opposite: a 409 `ALREADY_PUNCHED`
+refusal plus disabled controls reading *"Punched — manage on Floor Control."* **That rule is gone** —
+no punch gate, no disabled state, no "manage on Floor" text. Design spec §4.5 carries the same change.
+Do not reintroduce any of it.
+
+### Why the old rule existed, and why it wasn't good enough
 
 `applyMailOrderEnrichment` is **fire-once-per-import, not a sync** (it runs only inside import handlers:
-`:1182`, `:1731`, `:2992`). Once the OBD exists, editing `mo_orders` changes nothing downstream unless
-that OBD is re-imported — which normally never happens.
+`:1182`, `:1731`, `:2992`). Once the OBD exists, editing `mo_orders` alone changes nothing downstream
+unless that OBD is re-imported, which normally never happens. Refusing was the honest response to that —
+but it left the actions usable only in the pre-punch window, and **every bill on the Picking tab is at
+`pick_checked`, so its OBD certainly exists.** The actions were unusable exactly where they were wanted.
 
-**Decision:** `/api/billing/mail-order/actions` returns **409 `ALREADY_PUNCHED`** for any punched order
-(`status === "punched" && soNumber`), and the UI renders all four controls **disabled** with
-*"Punched — manage on Floor Control."* Refusing is the honest behaviour; silently accepting an edit
-that cannot propagate is not. **Do not relax this guard to "make it work."**
+### The rule now: two writes, sequential, never `$transaction` (CORE §3)
 
-This matters more than it sounds: every bill on the Picking tab is at `pick_checked`, so its OBD
-certainly exists. The fuller post-import story belongs to the **data-audit session**.
+`/api/billing/mail-order/actions` writes **both sides** on every action:
+
+| # | Table | Where | Covers |
+|---|---|---|---|
+| 1 | `mo_orders` | `id = moOrderId` | the intent; carried at import for a bill with no OBD yet |
+| 2 | `orders` | `updateMany WHERE soNumber, isRemoved: false` | an OBD that **already exists**, updated in place |
+
+`orders` is written **second on purpose**: if it fails, the intent is already recorded on the mail order
+and a re-import would still carry it. The reverse order would leave `orders` changed with no record of
+why. The response returns `ordersUpdated` — **0 before import, 1 normally, >1 for a split bill** — which
+is information, not an error.
+
+### 🔴 The `soNumber`-blank guard is LOAD-BEARING
+
+The `orders` write is **skipped entirely** when `soNumber` is null or blank. `where: { soNumber: null }`
+matches **every un-punched order in the table** and would rewrite all of them from a single click. This
+guard is not defensive tidiness — without it the route is a mass-update bug.
+
+### ⚠ The field mapping DIFFERS between the two tables
+
+Both payloads are built in one block so a divergence is visible in review:
+
+| Action | → `mo_orders` | → `orders` |
+|---|---|---|
+| Slot (set) | `dispatchTargetDate` + `dispatchWindowId` | same **+ `dispatchSlotSource: "manual"`** |
+| Slot (clear) | both `null` | both `null` **+ `dispatchSlotSource: null`** — hands the bill back to the rules engine; leaving it `"manual"` would make the engine skip it forever |
+| Hold | `"Hold"` / `"Dispatch"` — **Capitalised** | `"hold"` / `"dispatch"` — **lowercase** |
+| Urgent | `dispatchPriority` — the **word** | `priorityLevel` — **1 / 3** |
+| Ship-to | `shipToOverride` + `shipToOverrideCustomerId` | identical |
+
+The hold case mapping is the one that bites: Floor's feeds filter on lowercase `dispatchStatus:
+"dispatch"`, so writing the wrong case to `orders` **silently drops the bill off the live floor board**.
+Same mapping `CLAUDE_CORE.md §13` warns about and enrichment performs at `:250-252`.
+
+### Split bills fan out, intended
+
+One `soNumber` can map to several OBDs. `updateMany` writes **all** of them — confirmed intended
+2026-07-31.
+
+### `heldAt` is NOT written — v1 decision, confirmed
+
+Floor's own hold anchors `heldAt` to each order's `obdEmailDate` (`floor/actions/route.ts:120`), which
+`updateMany` cannot do per row — enrichment needs a separate loop for exactly this reason. Rather than
+turn one write into N for a timestamp, billing holds leave `heldAt` alone. **Consequence:** Floor's
+"held since" falls back to `heldSinceSource: "unknown"` (`lib/floor/queries.ts:501`) for
+billing-originated holds. **Display only — the hold itself works.** Do NOT add the per-row N-write loop
+just for the timestamp; revisit only if the floor team asks.
+
+### Marker note
+
+The `orders` write moves `orders.updatedAt`, so the picking / floor / billing markers see a change and
+refetch. That is correct — the bill genuinely changed — and it is ONE write on a NEW path, not a second
+write bolted onto an existing one, which is what the marker landmine in `CLAUDE_CORE.md §3` forbids.
 
 ## 4. Ship-to search is Billing's own route, not Floor's
 
@@ -109,4 +168,5 @@ The dispatch-windows fetch is inside `if (!billingV2) return;` — flag-off issu
 
 ---
 
-*Phase 2 · 2026-07-30 · decisions as built. Verify against the code before trusting any line here.*
+*Phase 2 · 2026-07-30, §2-§3 revised 2026-07-31 (punch gate → dual-write) · decisions as built.
+Verify against the code before trusting any line here.*
