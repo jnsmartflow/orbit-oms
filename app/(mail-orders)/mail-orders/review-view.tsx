@@ -86,6 +86,18 @@ interface ReviewViewProps {
    * straight through to BillingTabBar.rightSlot; this view never inspects it.
    */
   billingHeaderSlot?: React.ReactNode;
+  /**
+   * Billing v2 — is any HEADER FILTER currently narrowing the list?
+   *
+   * `searchQuery` already arrives as a prop, but `headerFilters` is owned by
+   * mail-orders-page.tsx and never sent down. The empty states need to tell
+   * "nothing came in" apart from "your filter hid it", so the parent answers
+   * that one question rather than this view learning the filter shape.
+   *
+   * Defaults to false → a caller that does not pass it reads as "unfiltered",
+   * which is the pre-existing behaviour for every non-billing face.
+   */
+  hasHeaderFilter?: boolean;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -465,6 +477,7 @@ export function ReviewView({
   onBillingTabChange,
   onBillingActionSaved,
   billingHeaderSlot,
+  hasHeaderFilter = false,
 }: ReviewViewProps) {
   // Billing v2 (Phase 2) — dispatch windows for the reused Floor slot picker.
   // Fetched ONLY when the flag is on: with it off this effect returns
@@ -657,6 +670,18 @@ export function ReviewView({
     () => orders.filter(o => o.status !== "punched").length,
     [orders],
   );
+  // ── Billing v2 — empty-state discrimination ──────────────────────
+  // Two different facts, two different messages. "Nothing came in" is good
+  // news and says so; "your filter hid everything" is a dead end the operator
+  // has to get out of, and telling them "no new orders" while a filter is on
+  // would be a lie they act on.
+  //
+  // ⚠ `pendingOrders` keeps recently-punched rows for ~8s (the grace window
+  // above), so both states appear a beat AFTER the last punch, not instantly.
+  // That is deliberate and inherited — the rail must not empty under a hand.
+  const hasActiveFilter = searchQuery.trim().length > 0 || hasHeaderFilter;
+  const genuinelyEmpty = pendingOrders.length === 0 && !hasActiveFilter;
+
   const punchedOrders = useMemo(() => {
     const list = orders.filter(o => o.status === "punched" && !recentlyPunchedIds.has(o.id));
     return [...list].sort((a, b) => {
@@ -2149,6 +2174,30 @@ export function ReviewView({
         <div className="flex-1 overflow-y-auto">
           {pendingOrders.map(renderOrderRow)}
 
+          {/* Billing v2 — the pending group is empty. Sits ABOVE the punched
+              divider, which still renders below with its own count, so the
+              operator can always see (and open) what was already done today.
+              Classes replicated from components/floor/rail-empty.tsx rather
+              than importing RailEmpty: that component is owned by Floor
+              (CLAUDE_FLOOR.md §1) and none of its three variants carries this
+              copy. Same skeleton, same type scale — one look across screens. */}
+          {billingV2 && pendingOrders.length === 0 && (
+            genuinelyEmpty ? (
+              <div className="px-5 py-14 text-center">
+                <div className="text-[28px] leading-none text-gray-300">&#9675;</div>
+                <h4 className="mt-2 text-[13px] font-semibold text-gray-900">No new orders</h4>
+                <p className="mt-1.5 text-[11.5px] leading-relaxed text-gray-400">
+                  New orders appear here on their own.
+                </p>
+              </div>
+            ) : (
+              /* Filtered to nothing — Picking's quieter register (a single grey
+                 line, no icon, no headline): this is a transient consequence of
+                 a control the operator is holding, not a state of the day. */
+              <p className="text-[12px] text-gray-400 text-center py-6">No orders match.</p>
+            )
+          )}
+
           {punchedOrders.length > 0 && (
             <>
               <div
@@ -2184,6 +2233,31 @@ export function ReviewView({
 
         {billingV2 && billingTab === "picking" ? (
           <BillingPickingTab />
+        ) : billingV2 && pendingOrders.length === 0 ? (
+          /* Billing v2 — nothing left to work on. Deliberately placed BEFORE
+             the `selectedOrder` arm: a punched order stays selected (nothing
+             clears focusedId), so without this the pane would keep showing the
+             last bill as though it were still work. Selection state itself is
+             untouched — this only stops rendering it.
+             The tab bar above and the #mo-print-area wrapper are outside this
+             ternary and render regardless, so Orders|Picking still switches. */
+          genuinelyEmpty ? (
+            <div className="flex flex-1 items-center justify-center">
+              {/* Mirrors components/floor/floor-board.tsx:140-152 — the green
+                  tick "day is done" state, same type scale and spacing. */}
+              <div className="px-5 py-14 text-center">
+                <div className="text-[28px] leading-none text-[#22c55e]">&#10003;</div>
+                <h4 className="mt-2 text-[13px] font-semibold text-gray-900">All caught up</h4>
+                <p className="mt-1.5 text-[11.5px] leading-relaxed text-gray-400">
+                  Every order is punched. New ones show up here as they come in.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-1 items-center justify-center">
+              <p className="text-[12px] text-gray-400 text-center">No orders match your filter.</p>
+            </div>
+          )
         ) : selectedOrder ? (
           <>
             {renderDetailHeader(selectedOrder)}

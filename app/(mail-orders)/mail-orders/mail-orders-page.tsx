@@ -484,6 +484,18 @@ export default function MailOrdersPage() {
 
   const groupedOrders = useMemo(() => groupOrdersBySlot(filteredOrders, slotCutoffs), [filteredOrders, slotCutoffs]);
 
+  // Is any header filter narrowing the list? Read-only derivation over the
+  // SAME `headerFilters` object the filter block above consumes, so the two
+  // cannot disagree about whether a filter is on. Sent to ReviewView, which
+  // uses it (with `searchQuery`, which it already has) to tell "nothing came
+  // in" apart from "your filter hid it" in the billing empty states.
+  // `activeSlot` is deliberately NOT counted: on the billing face it is always
+  // null and its row is not rendered, so it can never be the cause.
+  const hasHeaderFilter = useMemo(
+    () => Object.values(headerFilters).some((vals) => (vals?.length ?? 0) > 0),
+    [headerFilters],
+  );
+
   // ── Slot counts (from all orders, before slot filter) ───────────────────────
   const slotCounts = useMemo(() => {
     const counts: Record<string, number> = { Morning: 0, Afternoon: 0, Evening: 0, "Late Evening": 0, Night: 0 };
@@ -1231,6 +1243,7 @@ export default function MailOrdersPage() {
           onBillingTabChange={setBillingTab}
           onBillingActionSaved={loadOrders}
           billingHeaderSlot={billingHeaderSlot}
+          hasHeaderFilter={hasHeaderFilter}
         />
       )}
 
