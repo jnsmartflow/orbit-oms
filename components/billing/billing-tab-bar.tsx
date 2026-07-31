@@ -26,6 +26,12 @@ export function BillingTabBar({
 }: {
   active: BillingTab;
   onChange: (tab: BillingTab) => void;
+  /**
+   * Orders still NEEDING ACTION — not punched. NOT a total, and not the rail's
+   * pending group either (that one keeps recently-punched rows visible and would
+   * make this badge overcount for a few seconds after each punch). Both tab
+   * counts read the same way: work outstanding, not rows on screen.
+   */
   ordersCount: number;
   /**
    * Right-aligned controls for this row — the date stepper and Filter, which on

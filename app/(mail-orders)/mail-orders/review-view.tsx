@@ -636,6 +636,18 @@ export function ReviewView({
       return (a.splitLabel ?? "").localeCompare(b.splitLabel ?? "");
     });
   }, [orders, recentlyPunchedIds]);
+  // Orders-tab badge: how many orders still NEED ACTION, i.e. not punched.
+  //
+  // ⚠ Deliberately NOT `pendingOrders.length`. That group keeps
+  // recently-punched rows VISIBLE (`|| recentlyPunchedIds.has(o.id)` above) so a
+  // row does not vanish from under the operator the moment they punch it —
+  // right for the list, wrong for a count. Using it would leave the badge
+  // reading one too many for a few seconds after every punch. The badge tracks
+  // the truth; the rail tracks the operator's place in it.
+  const pendingActionCount = useMemo(
+    () => orders.filter(o => o.status !== "punched").length,
+    [orders],
+  );
   const punchedOrders = useMemo(() => {
     const list = orders.filter(o => o.status === "punched" && !recentlyPunchedIds.has(o.id));
     return [...list].sort((a, b) => {
@@ -1999,7 +2011,7 @@ export function ReviewView({
             <BillingTabBar
               active={billingTab}
               onChange={onBillingTabChange}
-              ordersCount={orders.length}
+              ordersCount={pendingActionCount}
               rightSlot={billingHeaderSlot}
             />
           </div>
