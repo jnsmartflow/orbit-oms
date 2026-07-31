@@ -1111,6 +1111,37 @@ export function ReviewView({
   }, [selectedOrder, activeLineIndex, currentIndex, navigationList, onFocusChange, reasonDropdownLineId]);
 
   // ── Detail header (right panel) ──────────────────────────────────
+  // Print. Component-scope because BOTH renderDetailHeader (the OFF actions
+  // row) and renderSkuTable (the Billing caption row) render it, and it closes
+  // over nothing order-specific — only handlePrintClick, which prints the whole
+  // #mo-print-area container.
+  const printButton = (
+    <>
+      <button
+        onClick={handlePrintClick}
+        title="Print order"
+        style={{
+          width: 28, height: 28, borderRadius: 6,
+          border: "1px solid #e5e7eb", background: "#fff",
+          cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+          color: "#9ca3af", transition: "all 0.12s",
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.background = "#f9fafb";
+          e.currentTarget.style.borderColor = "#d1d5db";
+          e.currentTarget.style.color = "#6b7280";
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.background = "#fff";
+          e.currentTarget.style.borderColor = "#e5e7eb";
+          e.currentTarget.style.color = "#9ca3af";
+        }}
+      >
+        <Printer size={14} />
+      </button>
+    </>
+  );
+
   function renderDetailHeader(order: MoOrder) {
     const isPunched = order.status === "punched" && !!order.soNumber;
     const signals = getOrderSignals(order, { isPunched, disabledTagKeys });
@@ -1289,34 +1320,15 @@ export function ReviewView({
       </>
     );
 
-    // Print + Notes. Hoisted to a variable 2026-07-31 so BOTH the default
-    // actions row (flag OFF) and the Billing ribbon (flag ON) render the SAME
-    // buttons with the SAME handlers, rather than two copies that drift.
-    // A fragment emits no DOM, so the OFF path below is byte-identical.
-    const utilityButtons = (
+    // Notes. Hoisted separately from Print (2026-07-31) so the Billing ribbon
+    // can place the two independently — Notes beside the actions on the left,
+    // Print on the SKU caption row. The OFF path still renders both, in the
+    // original order, via `utilityButtons` below; a Fragment emits no DOM, so
+    // that row is byte-identical to before either hoist.
+    // Notes stays inside renderDetailHeader because it reads this order's notes;
+    // Print does not, and lives at component scope.
+    const notesButton = (
       <>
-        <button
-          onClick={handlePrintClick}
-          title="Print order"
-          style={{
-            width: 28, height: 28, borderRadius: 6,
-            border: "1px solid #e5e7eb", background: "#fff",
-            cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
-            color: "#9ca3af", transition: "all 0.12s",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = "#f9fafb";
-            e.currentTarget.style.borderColor = "#d1d5db";
-            e.currentTarget.style.color = "#6b7280";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = "#fff";
-            e.currentTarget.style.borderColor = "#e5e7eb";
-            e.currentTarget.style.color = "#9ca3af";
-          }}
-        >
-          <Printer size={14} />
-        </button>
         {(() => {
           const effective = getEffectiveNotes(order.id, order.notes ?? null);
           const hasNotes = !!effective && effective.length > 0;
@@ -1366,6 +1378,13 @@ export function ReviewView({
       </>
     );
 
+    const utilityButtons = (
+      <>
+        {printButton}
+        {notesButton}
+      </>
+    );
+
     // ── Billing v2 — the redesigned ribbon row ────────────────────────────
     // Replaces MetaRibbon's CONTENTS only (its outer row keeps the same padding,
     // top border and alignment). `undefined` when the flag is off, which makes
@@ -1390,12 +1409,19 @@ export function ReviewView({
           windows={billingWindows}
           onSaved={() => onBillingActionSaved?.()}
         />
+        {/* Notes sits with the actions, not with the utilities: it is something
+            the operator DOES to this order, like Hold or Urgent — not a view
+            control. Same handler and same "dot when notes exist" indicator. */}
+        <span className="mo-print-hide inline-flex flex-shrink-0 items-center">
+          {notesButton}
+        </span>
         <div className="flex-1" />
         <div className="flex flex-shrink-0 items-center gap-1.5">
           {soNumberSlot}
         </div>
+        {/* Right end: the ⓘ only. Print moved to the SKU caption row, where the
+            thing it prints actually lives. */}
         <div className="mo-print-hide flex flex-shrink-0 items-center gap-1">
-          {utilityButtons}
           <BillingOrderInfo
             soName={soNameFormatted}
             receivedAt={receivedAtFormatted}
@@ -1683,29 +1709,34 @@ export function ReviewView({
     //
     // NOT mo-print-hide, deliberately: these facts used to print as part of the
     // ribbon, and moving them must not quietly drop them from a printed sheet.
-    const captionLines = order.totalLines ?? order.lines.length;
+    // Volume + readiness only. The line count was dropped 2026-07-31 — the row
+    // numbers in the table already say how many lines there are, and carrying
+    // it here only invited a singular/plural bug for the one-line case.
     const captionVolume = volumeStringFor(order);
     const captionChip = getMatchChip(order.matchedLines, order.totalLines);
 
     return (
       <>
       {billingV2 && (
-        <div className="flex flex-shrink-0 items-center gap-2 border-b border-gray-100 px-3.5 py-[7px] text-[11px] text-gray-500">
-          <span className="tabular-nums">{captionLines} lines</span>
-          {captionVolume && (
-            <>
-              <span className="text-gray-300">·</span>
-              <span className="tabular-nums">{captionVolume}</span>
-            </>
-          )}
-          {captionChip && (
-            <>
-              <span className="text-gray-300">·</span>
+        <div className="flex flex-shrink-0 items-center justify-between gap-2 border-b border-gray-100 px-3.5 py-[7px] text-[11px] text-gray-500">
+          {/* Caption text — NOT mo-print-hide. These facts printed as part of
+              the old ribbon summary line; moving them must not drop them from a
+              printed sheet. */}
+          <div className="flex min-w-0 items-center gap-2">
+            {captionVolume && <span className="tabular-nums">{captionVolume}</span>}
+            {captionVolume && captionChip && <span className="text-gray-300">·</span>}
+            {captionChip && (
               <span className={`inline-flex items-center h-4 px-[5px] text-[10px] font-semibold rounded border ${captionChip.classes}`}>
                 {captionChip.label}
               </span>
-            </>
-          )}
+            )}
+          </div>
+          {/* Print lives on this row now — beside the lines it puts on paper.
+              Still handlePrintClick (prints #mo-print-area) and still
+              mo-print-hide, so the button never prints itself. */}
+          <span className="mo-print-hide inline-flex flex-shrink-0 items-center">
+            {printButton}
+          </span>
         </div>
       )}
       <div data-tutorial="sku-table" className="flex-1 overflow-y-auto" style={{ padding: "0 6px" }}>
