@@ -27,10 +27,11 @@ import { BillingTabBar, type BillingTab } from "@/components/billing/billing-tab
 import { BillingPickingTab } from "@/components/billing/billing-picking-tab";
 import { BillingActionRibbon } from "@/components/billing/billing-action-ribbon";
 import { BillingShipToPencil } from "@/components/billing/billing-ship-to-pencil";
+import { BillingOrderInfo } from "@/components/billing/billing-order-info";
 import type { DispatchWindow } from "@/components/floor/dispatch-slot-picker";
 import { BillToCard } from "@/components/mail-orders/bill-to-card";
 import { ShipToCard } from "@/components/mail-orders/ship-to-card";
-import { MetaRibbon } from "@/components/mail-orders/meta-ribbon";
+import { MetaRibbon, getMatchChip } from "@/components/mail-orders/meta-ribbon";
 import { InstructionsStrip } from "@/components/mail-orders/instructions-strip";
 import {
   Dialog,
@@ -88,6 +89,14 @@ interface ReviewViewProps {
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
+
+/** "56L", or "" when the order has no measurable volume. ONE derivation, used
+ *  by both the ribbon summary line and the Billing SKU caption — they must not
+ *  be able to disagree about the same number. */
+function volumeStringFor(order: MoOrder): string {
+  const vol = Math.round(getOrderVolume(order.lines));
+  return vol > 0 ? `${vol}L` : "";
+}
 
 function getDeliveryDotClass(type: string | null | undefined): string {
   switch ((type ?? "").toUpperCase()) {
@@ -1135,8 +1144,7 @@ export function ReviewView({
     const receivedAtFormatted = formatTime(order.receivedAt);
     const punchedAtFormatted = order.punchedAt ? formatTime(order.punchedAt) : null;
     const punchedByName = order.punchedBy?.name ? smartTitleCase(order.punchedBy.name) : null;
-    const vol = Math.round(getOrderVolume(order.lines));
-    const volumeString = vol > 0 ? `${vol}L` : "";
+    const volumeString = volumeStringFor(order);
     const soNameFormatted = smartTitleCase(cleanSubject(order.soName));
 
     // Picker integration: multi / unmatched orders get a clickable chip trigger
@@ -1281,6 +1289,123 @@ export function ReviewView({
       </>
     );
 
+    // Print + Notes. Hoisted to a variable 2026-07-31 so BOTH the default
+    // actions row (flag OFF) and the Billing ribbon (flag ON) render the SAME
+    // buttons with the SAME handlers, rather than two copies that drift.
+    // A fragment emits no DOM, so the OFF path below is byte-identical.
+    const utilityButtons = (
+      <>
+        <button
+          onClick={handlePrintClick}
+          title="Print order"
+          style={{
+            width: 28, height: 28, borderRadius: 6,
+            border: "1px solid #e5e7eb", background: "#fff",
+            cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+            color: "#9ca3af", transition: "all 0.12s",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = "#f9fafb";
+            e.currentTarget.style.borderColor = "#d1d5db";
+            e.currentTarget.style.color = "#6b7280";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = "#fff";
+            e.currentTarget.style.borderColor = "#e5e7eb";
+            e.currentTarget.style.color = "#9ca3af";
+          }}
+        >
+          <Printer size={14} />
+        </button>
+        {(() => {
+          const effective = getEffectiveNotes(order.id, order.notes ?? null);
+          const hasNotes = !!effective && effective.length > 0;
+          return (
+            <div style={{ position: "relative", display: "inline-flex" }}>
+              <button
+                onClick={handleNotesOpen}
+                title={hasNotes ? "Notes (saved)" : "Notes"}
+                style={{
+                  width: 28, height: 28, borderRadius: 6,
+                  border: "1px solid",
+                  cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+                  transition: "all 0.12s",
+                  ...(hasNotes
+                    ? { borderColor: "#d1d5db", background: "#fff", color: "#374151" }
+                    : { borderColor: "#e5e7eb", background: "#fff", color: "#9ca3af" }),
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "#f9fafb";
+                  e.currentTarget.style.borderColor = "#d1d5db";
+                  if (!hasNotes) e.currentTarget.style.color = "#6b7280";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "#fff";
+                  e.currentTarget.style.borderColor = hasNotes ? "#d1d5db" : "#e5e7eb";
+                  e.currentTarget.style.color = hasNotes ? "#374151" : "#9ca3af";
+                }}
+              >
+                <StickyNote size={14} />
+              </button>
+              {hasNotes && (
+                <span
+                  style={{
+                    position: "absolute",
+                    top: -2, right: -2,
+                    width: 8, height: 8,
+                    borderRadius: "50%",
+                    background: "#0d9488",
+                    border: "1.5px solid #fff",
+                    pointerEvents: "none",
+                  }}
+                />
+              )}
+            </div>
+          );
+        })()}
+      </>
+    );
+
+    // ── Billing v2 — the redesigned ribbon row ────────────────────────────
+    // Replaces MetaRibbon's CONTENTS only (its outer row keeps the same padding,
+    // top border and alignment). `undefined` when the flag is off, which makes
+    // MetaRibbon render its summary line + slots exactly as it always has.
+    //
+    // Left→right: the actions (Urgent · Hold · Slot) · spacer · Punch · the
+    // utility cluster (Print, Notes, then ⓘ last).
+    //
+    // The descriptive facts that used to sit on this line — ordered by, received,
+    // punched by — moved into the ⓘ popover. It is fed the SAME formatted
+    // strings MetaRibbon would have rendered (soNameFormatted /
+    // receivedAtFormatted / punchedByName / punchedAtFormatted), so the two
+    // faces cannot disagree. Readiness (✓ 6/6) and volume move to the SKU
+    // caption below, via the same getMatchChip() MetaRibbon uses.
+    //
+    // soNumberSlot is reused VERBATIM — the punch flow, its 10-digit gate, the
+    // edit pencil and the "Punched" badge are untouched.
+    const billingRibbonRow = billingV2 ? (
+      <div className="flex w-full items-center gap-2">
+        <BillingActionRibbon
+          order={order}
+          windows={billingWindows}
+          onSaved={() => onBillingActionSaved?.()}
+        />
+        <div className="flex-1" />
+        <div className="flex flex-shrink-0 items-center gap-1.5">
+          {soNumberSlot}
+        </div>
+        <div className="mo-print-hide flex flex-shrink-0 items-center gap-1">
+          {utilityButtons}
+          <BillingOrderInfo
+            soName={soNameFormatted}
+            receivedAt={receivedAtFormatted}
+            punchedByName={punchedByName}
+            punchedAt={punchedAtFormatted}
+          />
+        </div>
+      </div>
+    ) : undefined;
+
     const actionsSlot = (
       <div className="mo-print-hide" style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
         {/* Phase 2 — Slot / Hold / Urgent. Prepended as a SIBLING inside the
@@ -1391,74 +1516,7 @@ export function ReviewView({
           <Flag size={14} />
         </button>
         </>)}
-        <button
-          onClick={handlePrintClick}
-          title="Print order"
-          style={{
-            width: 28, height: 28, borderRadius: 6,
-            border: "1px solid #e5e7eb", background: "#fff",
-            cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
-            color: "#9ca3af", transition: "all 0.12s",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = "#f9fafb";
-            e.currentTarget.style.borderColor = "#d1d5db";
-            e.currentTarget.style.color = "#6b7280";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = "#fff";
-            e.currentTarget.style.borderColor = "#e5e7eb";
-            e.currentTarget.style.color = "#9ca3af";
-          }}
-        >
-          <Printer size={14} />
-        </button>
-        {(() => {
-          const effective = getEffectiveNotes(order.id, order.notes ?? null);
-          const hasNotes = !!effective && effective.length > 0;
-          return (
-            <div style={{ position: "relative", display: "inline-flex" }}>
-              <button
-                onClick={handleNotesOpen}
-                title={hasNotes ? "Notes (saved)" : "Notes"}
-                style={{
-                  width: 28, height: 28, borderRadius: 6,
-                  border: "1px solid",
-                  cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
-                  transition: "all 0.12s",
-                  ...(hasNotes
-                    ? { borderColor: "#d1d5db", background: "#fff", color: "#374151" }
-                    : { borderColor: "#e5e7eb", background: "#fff", color: "#9ca3af" }),
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = "#f9fafb";
-                  e.currentTarget.style.borderColor = "#d1d5db";
-                  if (!hasNotes) e.currentTarget.style.color = "#6b7280";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = "#fff";
-                  e.currentTarget.style.borderColor = hasNotes ? "#d1d5db" : "#e5e7eb";
-                  e.currentTarget.style.color = hasNotes ? "#374151" : "#9ca3af";
-                }}
-              >
-                <StickyNote size={14} />
-              </button>
-              {hasNotes && (
-                <span
-                  style={{
-                    position: "absolute",
-                    top: -2, right: -2,
-                    width: 8, height: 8,
-                    borderRadius: "50%",
-                    background: "#0d9488",
-                    border: "1.5px solid #fff",
-                    pointerEvents: "none",
-                  }}
-                />
-              )}
-            </div>
-          );
-        })()}
+        {utilityButtons}
       </div>
     );
 
@@ -1515,6 +1573,7 @@ export function ReviewView({
             actionsSlot={actionsSlot}
             soNumberSlot={soNumberSlot}
             punchButtonSlot={null}
+            contentOverride={billingRibbonRow}
           />
         </div>
 
@@ -1613,7 +1672,42 @@ export function ReviewView({
       );
     }
 
+    // Billing v2 — the caption that took over readiness + volume from the
+    // ribbon summary line. Sits ABOVE the scroll region (a sibling of it, not a
+    // child) so it stays put while the lines scroll.
+    //
+    // Reuses getMatchChip() from meta-ribbon — the SAME function that rendered
+    // the old "✓ 6/6" — so the two faces can never show a different readiness
+    // for the same order. Line count prefers the stored totalLines and falls
+    // back to the rendered rows.
+    //
+    // NOT mo-print-hide, deliberately: these facts used to print as part of the
+    // ribbon, and moving them must not quietly drop them from a printed sheet.
+    const captionLines = order.totalLines ?? order.lines.length;
+    const captionVolume = volumeStringFor(order);
+    const captionChip = getMatchChip(order.matchedLines, order.totalLines);
+
     return (
+      <>
+      {billingV2 && (
+        <div className="flex flex-shrink-0 items-center gap-2 border-b border-gray-100 px-3.5 py-[7px] text-[11px] text-gray-500">
+          <span className="tabular-nums">{captionLines} lines</span>
+          {captionVolume && (
+            <>
+              <span className="text-gray-300">·</span>
+              <span className="tabular-nums">{captionVolume}</span>
+            </>
+          )}
+          {captionChip && (
+            <>
+              <span className="text-gray-300">·</span>
+              <span className={`inline-flex items-center h-4 px-[5px] text-[10px] font-semibold rounded border ${captionChip.classes}`}>
+                {captionChip.label}
+              </span>
+            </>
+          )}
+        </div>
+      )}
       <div data-tutorial="sku-table" className="flex-1 overflow-y-auto" style={{ padding: "0 6px" }}>
         <table className="w-full border-collapse" style={{ tableLayout: "fixed" }}>
           <colgroup>
@@ -1945,6 +2039,7 @@ export function ReviewView({
           </DialogPortal>
         </Dialog>
       </div>
+      </>
     );
   }
 

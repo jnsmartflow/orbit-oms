@@ -14,9 +14,28 @@ interface MetaRibbonProps {
   actionsSlot: ReactNode;
   soNumberSlot: ReactNode;
   punchButtonSlot: ReactNode;
+  /**
+   * Replace the ROW CONTENTS wholesale — the summary-segment line and the
+   * actions/soNumber/punchButton arrangement — while keeping this component's
+   * outer row container (padding, top border, alignment) untouched.
+   *
+   * Default `undefined` → renders exactly as it always has, and every prop above
+   * is used exactly as before. Only the Billing face passes this.
+   *
+   * Deliberately ONE escape hatch rather than a restructure: the segment logic
+   * and getMatchChip below stay the single source of the ✓/⚠/✗ readiness chip,
+   * and a caller that wants a different layout composes it itself instead of
+   * this component growing modes.
+   */
+  contentOverride?: ReactNode;
 }
 
-function getMatchChip(
+/**
+ * The readiness chip — ✓ all matched / ⚠ partial / ✗ none, or null when there
+ * are no lines. EXPORTED so the Billing SKU caption renders the SAME chip
+ * rather than re-deriving it; two derivations would eventually disagree.
+ */
+export function getMatchChip(
   matched: number,
   total: number,
 ): { label: string; classes: string } | null {
@@ -50,6 +69,7 @@ export function MetaRibbon({
   actionsSlot,
   soNumberSlot,
   punchButtonSlot,
+  contentOverride,
 }: MetaRibbonProps): JSX.Element {
   const matchChip = getMatchChip(matchedLines, totalLines);
 
@@ -100,6 +120,8 @@ export function MetaRibbon({
 
   return (
     <div className="flex items-center justify-between gap-3 px-5 pt-2 pb-2.5 border-t border-gray-100">
+      {contentOverride ?? (
+        <>
       <div className="flex items-center gap-2 text-[11.5px] text-gray-500 flex-wrap min-w-0">
         {segments.map((s, i) => (
           <Fragment key={s.key}>
@@ -117,6 +139,8 @@ export function MetaRibbon({
         {soNumberSlot}
         {punchButtonSlot}
       </div>
+        </>
+      )}
     </div>
   );
 }

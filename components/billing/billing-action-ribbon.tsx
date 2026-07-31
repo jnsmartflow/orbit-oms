@@ -78,6 +78,26 @@ export function BillingActionRibbon({
 
   return (
     <span className="mo-print-hide inline-flex items-center gap-1.5">
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => void run({ action: "urgent", on: !urgentOn })}
+        title={urgentOn ? "Clear urgent" : "Mark urgent"}
+        className={`${BTN_BASE} ${urgentOn ? BTN_URGENT_ON : BTN_OFF}`}
+      >
+        <span className={urgentOn ? "" : "text-gray-400"}>⚡</span> Urgent
+      </button>
+
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => void run({ action: "hold", on: !holdOn })}
+        title={holdOn ? "Release hold" : "Put on hold"}
+        className={`${BTN_BASE} ${holdOn ? BTN_HOLD_ON : BTN_OFF}`}
+      >
+        <span className={holdOn ? "" : "text-gray-400"}>⚑</span> Hold
+      </button>
+
       {/* Slot — the reused Floor picker. Its own trigger is overlaid invisibly
           on our spec-styled button purely to anchor the (body-portalled)
           popover; the shared component is NOT modified. Same technique as
@@ -115,26 +135,6 @@ export function BillingActionRibbon({
           </span>
         )}
       </span>
-
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={() => void run({ action: "hold", on: !holdOn })}
-        title={holdOn ? "Release hold" : "Put on hold"}
-        className={`${BTN_BASE} ${holdOn ? BTN_HOLD_ON : BTN_OFF}`}
-      >
-        <span className={holdOn ? "" : "text-gray-400"}>⚑</span> Hold
-      </button>
-
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={() => void run({ action: "urgent", on: !urgentOn })}
-        title={urgentOn ? "Clear urgent" : "Mark urgent"}
-        className={`${BTN_BASE} ${urgentOn ? BTN_URGENT_ON : BTN_OFF}`}
-      >
-        <span className={urgentOn ? "" : "text-gray-400"}>⚡</span> Urgent
-      </button>
 
       {err && <span className="text-[10px] font-medium text-red-600">{err}</span>}
     </span>
