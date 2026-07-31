@@ -1177,12 +1177,48 @@ export function ReviewView({
     // Ship-to identity + delivery instruction parsing
     const parsed = splitDeliveryRemarks(order.deliveryRemarks, order.shipToOverride ?? false);
     const billToName = smartTitleCase(order.customerName ?? cleanSubject(order.subject));
+
+    // Billing v2 — resolve the override dealer through the FK relation instead
+    // of the `[→ Name (Code)]` text encoding, mirroring Floor's dealer coalesce
+    // (app/api/floor/order/[orderId]/route.ts:134/:145-146/:170-173).
+    //
+    // WHY: the billing ✎ pencil writes `shipToOverrideCustomerId` and nothing
+    // else — it never rewrites `deliveryRemarks` — so for an operator-set
+    // override the suffix the parse needs was never written. The parse then
+    // fell through to `order.customerName`, i.e. the BILL-TO name, or to "—".
+    // The relation is the field the save actually populates.
+    //
+    // `null` when the override is free text that matched no dealer (§6: the
+    // flag can be true with no id) — that case still uses the parse below, so
+    // nothing regresses for redirects like "as per challan".
+    //
+    // ⚠ Deliberately NOT writing the resolved name back into deliveryRemarks.
+    // Two encodings of one fact drift; the FK is the source of truth.
+    const overrideDealer =
+      billingV2 && order.shipToOverride ? (order.shipToOverrideCustomer ?? null) : null;
+
     const shipToName = order.shipToOverride
-      ? smartTitleCase(parsed.shipToName ?? order.deliveryRemarks?.trim() ?? order.customerName ?? "")
+      ? smartTitleCase(
+          overrideDealer?.customerName
+            ?? parsed.shipToName
+            ?? order.deliveryRemarks?.trim()
+            ?? order.customerName
+            ?? "",
+        )
       : billToName;
-    const shipToCode = order.shipToOverride ? parsed.shipToCode : (order.customerCode ?? null);
-    const shipToArea = order.shipToOverride ? (order.shipToArea ?? null) : (order.customerArea ?? null);
-    const shipToDeliveryType = order.shipToOverride ? (order.shipToDeliveryType ?? null) : (order.customerDeliveryType ?? null);
+    const shipToCode = order.shipToOverride
+      ? (overrideDealer?.customerCode ?? parsed.shipToCode)
+      : (order.customerCode ?? null);
+    // ⚠ Area/type come from a DIFFERENT SOURCE on each path and that is
+    // intended. `order.shipToArea` is joined from mo_customer_keywords on the
+    // PARSED code; the dealer's is master data (area_master → delivery_type_
+    // master). With the flag off only the keywords value is ever read.
+    const shipToArea = order.shipToOverride
+      ? (overrideDealer?.area?.name ?? order.shipToArea ?? null)
+      : (order.customerArea ?? null);
+    const shipToDeliveryType = order.shipToOverride
+      ? (overrideDealer?.area?.deliveryType?.name ?? order.shipToDeliveryType ?? null)
+      : (order.customerDeliveryType ?? null);
 
     // Signal routing
     const billSignals = signals.filter((s) => s.card === "bill");

@@ -71,6 +71,39 @@ export async function GET(req: Request): Promise<NextResponse> {
       },
       remarks_list: { orderBy: { lineNumber: "asc" } },
       punchedBy: { select: { id: true, name: true } },
+      // Ship-to override dealer, resolved through the FK (2026-07-31).
+      //
+      // ADDITIVE — nothing below changes. The deliveryRemarks parse (:78-90)
+      // and the mo_customer_keywords join (:115-131) stay exactly as they were:
+      // they still feed shipToArea/shipToDeliveryType and the OFF path and
+      // Table view still read only those. This relation is a NEW key on the
+      // payload that only the Billing face consumes.
+      //
+      // Why the relation and not more text parsing: the billing ✎ pencil writes
+      // shipToOverrideCustomerId and NOTHING ELSE — it never touches
+      // deliveryRemarks — so the `[→ Name (Code)]` suffix the parse depends on
+      // simply does not exist for an operator-set override. Same select shape as
+      // Floor's DEALER_SELECT (app/api/floor/order/[orderId]/route.ts:35-46) so
+      // the two screens resolve the same dealer the same way.
+      //
+      // `area` is a REQUIRED relation on delivery_point_master and
+      // area.deliveryTypeId is required too, so name/area/deliveryType are
+      // always present once the dealer resolves. isKeyCustomer is deliberately
+      // NOT selected — Mail Orders already derives its key-dealer flag from the
+      // BILL-TO code (:136-145) and a second source would only disagree.
+      shipToOverrideCustomer: {
+        select: {
+          customerName: true,
+          customerCode: true,
+          area: {
+            select: {
+              name: true,
+              deliveryType: { select: { name: true } },
+              primaryRoute: { select: { name: true } },
+            },
+          },
+        },
+      },
     },
     orderBy: { receivedAt: "desc" },
   });

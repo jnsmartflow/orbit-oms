@@ -80,6 +80,30 @@ export interface MoOrder {
   isKeyCustomer?: boolean;
   shipToArea?: string | null;          // Area of ship-to override customer (null otherwise)
   shipToDeliveryType?: string | null;  // Delivery type of ship-to override customer (null otherwise)
+  /**
+   * The ship-to override dealer, resolved through the FK relation
+   * (`mo_orders.shipToOverrideCustomer` → `delivery_point_master`), attached by
+   * the list route's `include`.
+   *
+   * ⚠ NOT the same source as `shipToArea` / `shipToDeliveryType` above. Those
+   * are joined from `mo_customer_keywords` on a code PARSED OUT OF
+   * `deliveryRemarks`; these come from master data. Both are kept: the parse
+   * feeds the non-billing faces unchanged, this feeds the Billing face.
+   *
+   * `null` is a REAL state, not an error — `shipToOverride` can be true with no
+   * resolvable dealer (free-text redirects like "as per challan"; see
+   * CLAUDE_MAIL_ORDERS.md §6). A consumer must handle both, and the Billing
+   * face falls back to the parse when this is absent.
+   */
+  shipToOverrideCustomer?: {
+    customerName: string;
+    customerCode: string;
+    area: {
+      name: string;
+      deliveryType: { name: string } | null;
+      primaryRoute: { name: string } | null;
+    } | null;
+  } | null;
   splitFromId?: number | null;
   splitLabel?: string | null;
   isLocked?: boolean;
