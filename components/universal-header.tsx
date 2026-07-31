@@ -273,7 +273,7 @@ export function UniversalHeader({
     <div
       className={
         wideSearch
-          ? "flex items-center gap-2.5 w-full max-w-[460px] h-[38px] rounded-[7px] bg-white border border-gray-200 px-3.5 transition-colors hover:border-gray-300 focus-within:border-gray-300 focus-within:shadow-[0_1px_2px_rgba(17,24,39,0.06)]"
+          ? "flex items-center gap-2.5 w-full max-w-[480px] h-[38px] rounded-[7px] bg-white border border-gray-200 px-3.5 transition-colors hover:border-gray-300 focus-within:border-gray-300 focus-within:shadow-[0_1px_2px_rgba(17,24,39,0.06)]"
           : `bg-gray-50 rounded-[6px] px-[10px] py-[4px] flex items-center gap-[6px] transition-all duration-200 ${
               searchFocused || searchValue ? "w-[260px]" : "w-[180px]"
             }`
@@ -311,6 +311,27 @@ export function UniversalHeader({
     </div>
   );
 
+  // The Import button — ONE definition, rendered in one of two clusters.
+  // Compact keeps it leftmost in the RIGHT cluster (unchanged); wide moves it
+  // into the LEFT cluster between the title and the search. Same handler, same
+  // `importOpen` state, same single ImportModal instance at the bottom of this
+  // component — only the render position differs.
+  //
+  // The trailing divider is NOT part of this: in compact it separates Import
+  // from the clock/shortcuts that follow it, and in wide nothing follows it in
+  // that cluster. It stays at the compact call site.
+  const importButton = (
+    <button
+      type="button"
+      title="Import OBDs"
+      onClick={() => setImportOpen(true)}
+      className="bg-gray-50 rounded-[5px] p-[4px_8px] cursor-pointer hover:bg-gray-100 transition-colors flex items-center gap-[4px]"
+    >
+      <Upload size={13} className="text-gray-400" />
+      <span className="text-[10px] text-gray-500 font-medium">Import</span>
+    </button>
+  );
+
   // Universal shortcuts
   const universalShortcuts: ShortcutItem[] = [
     { key: "/", label: "Focus search" },
@@ -326,8 +347,10 @@ export function UniversalHeader({
     <>
       {/* ── Row 1 — Title Bar ──────────────────────────────────────────────── */}
       <div className="h-[52px] min-h-[52px] sticky top-0 z-40 bg-white border-b border-gray-200 flex items-center justify-between px-4">
-        {/* Left: title + stats */}
-        <div className="flex items-center">
+        {/* Left: title + stats — and in WIDE mode also Import and the search,
+            so the row reads Billing · Import · search from the left edge.
+            Compact keeps the bare `flex items-center` it has always had. */}
+        <div className={wideSearch ? "flex items-center gap-3 min-w-0" : "flex items-center"}>
           <span className="text-[14px] font-semibold text-gray-900">
             {titleDisplay}
           </span>
@@ -345,31 +368,32 @@ export function UniversalHeader({
               ))}
             </span>
           )}
+
+          {/* WIDE only — Import then search, both inside the LEFT cluster.
+              Compact renders neither here; its Import stays in the right
+              cluster below and its search stays at the end of it. */}
+          {wideSearch && showImport && importButton}
+          {/* Sizing wrapper: searchBox is `w-full max-w-[480px]`, which needs a
+              parent with a definite width now that it is no longer inside the
+              old flex-1 centring column. 480px fixed, free to shrink when the
+              window is narrow. */}
+          {wideSearch && <div className="w-[480px] max-w-full min-w-0">{searchBox}</div>}
         </div>
 
-        {/* MIDDLE column — wide search only. Absent in compact mode, so Row 1
-            stays the same two-child justify-between flex it has always been.
-            The wrapper (not the box itself) carries flex-1 + the horizontal
-            padding, so the bar centres in the free space without an auto-margin
-            fighting the row's justify-between. */}
-        {wideSearch && (
-          <div className="flex flex-1 justify-center px-6">{searchBox}</div>
-        )}
+        {/* Spacer — WIDE only. The row is already justify-between, so this is
+            belt and braces: it guarantees the keyboard button holds the far
+            right edge however wide the left cluster grows. */}
+        {wideSearch && <div className="flex-1" />}
 
         {/* Right: import, clock, shortcuts, download, search */}
         <div className="flex items-center gap-2">
-          {/* Import — leftmost, only when caller passes showImport=true */}
-          {showImport && (
+          {/* Import — leftmost, only when caller passes showImport=true.
+              COMPACT ONLY: in wide mode it has already rendered in the left
+              cluster above, and its divider goes with it — nothing would
+              follow the separator here. */}
+          {!wideSearch && showImport && (
             <>
-              <button
-                type="button"
-                title="Import OBDs"
-                onClick={() => setImportOpen(true)}
-                className="bg-gray-50 rounded-[5px] p-[4px_8px] cursor-pointer hover:bg-gray-100 transition-colors flex items-center gap-[4px]"
-              >
-                <Upload size={13} className="text-gray-400" />
-                <span className="text-[10px] text-gray-500 font-medium">Import</span>
-              </button>
+              {importButton}
               <div className="w-px h-4 bg-gray-200" />
             </>
           )}
