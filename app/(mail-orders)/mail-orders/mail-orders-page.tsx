@@ -633,23 +633,55 @@ export default function MailOrdersPage() {
     });
   }, [orders]);
 
-  const handleSaveSoNumber = useCallback(async (orderId: number, value: string) => {
+  // `opts.isEdit` — correcting the number on an ALREADY-PUNCHED order, rather
+  // than punching it for the first time. Optional and default-false, so every
+  // existing caller (Table view included) keeps today's exact behaviour.
+  //
+  // Two things are skipped on an edit, and both are the SAME bug seen twice:
+  //
+  //   1. The status/punchedAt write. `status: "punched"` is a no-op — the order
+  //      already is — but `punchedAt: now` is NOT: it would silently restamp the
+  //      punch time to the moment of the correction, so the ribbon's "punched by
+  //      X HH:MM" would start lying about when the work was done.
+  //
+  //   2. The grace add. That 8-second window exists so a row does not vanish
+  //      from under the operator as it moves pending → done. An edit moves
+  //      nothing — the row is already in the done group — so adding the id here
+  //      YANKS IT BACK into the pending list for 8s and then drops it again.
+  //      That bounce was the reported bug. On the billing face it also made
+  //      `pendingOrders` briefly non-empty, which tripped the effect that clears
+  //      `reopenedPunchedId` and flipped the right pane to "All caught up"
+  //      mid-edit.
+  //
+  // The SERVER call below is identical on both paths: an edit still writes the
+  // number through the same `saveSoNumber`. Only the local optimism differs.
+  const handleSaveSoNumber = useCallback(async (
+    orderId: number,
+    value: string,
+    opts?: { isEdit?: boolean },
+  ) => {
     if (!/^\d{10}$/.test(value)) return false;
-    // Optimistic update — set soNumber + auto-punch
+    const isEdit = opts?.isEdit === true;
+
+    // Optimistic update — set soNumber, and on a FRESH punch also auto-punch
     setOrders((prev) =>
       prev.map((o) => (o.id === orderId ? {
         ...o,
         soNumber: value,
-        status: "punched" as const,
-        punchedAt: new Date().toISOString(),
+        ...(isEdit ? {} : {
+          status: "punched" as const,
+          punchedAt: new Date().toISOString(),
+        }),
       } : o)),
     );
 
-    // Grace period — keep in pending section for 8s
-    setRecentlyPunchedIds(prev => { const next = new Set(prev); next.add(orderId); return next; });
-    setTimeout(() => {
-      setRecentlyPunchedIds(prev => { const next = new Set(prev); next.delete(orderId); return next; });
-    }, 8000);
+    // Grace period — keep in pending section for 8s. FRESH PUNCH ONLY.
+    if (!isEdit) {
+      setRecentlyPunchedIds(prev => { const next = new Set(prev); next.add(orderId); return next; });
+      setTimeout(() => {
+        setRecentlyPunchedIds(prev => { const next = new Set(prev); next.delete(orderId); return next; });
+      }, 8000);
+    }
 
     try {
       await saveSoNumber(orderId, value);

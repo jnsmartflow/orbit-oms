@@ -50,7 +50,11 @@ interface ReviewViewProps {
   focusedId: number | null;
   onFocusChange: (id: number | null) => void;
   onFlag: (id: number) => void;
-  onSaveSoNumber: (id: number, value: string) => Promise<boolean>;
+  // `opts.isEdit` marks a correction to an already-punched order, so the page
+  // can skip the punch-time restamp and the pending-list grace. Optional — a
+  // caller that omits it gets fresh-punch behaviour, which is what every
+  // non-billing caller wants.
+  onSaveSoNumber: (id: number, value: string, opts?: { isEdit?: boolean }) => Promise<boolean>;
   onSaveCustomer: (id: number, data: { customerCode: string; customerName: string; saveKeyword?: boolean; keyword?: string; area?: string; deliveryType?: string; route?: string }) => void;
   onCopy: (id: number, lines: MoOrderLine[], batchIndex?: number) => void;
   batchStates: Record<number, number>;
@@ -758,7 +762,19 @@ export function ReviewView({
   async function handlePunchClick() {
     if (!selectedOrder) return;
     if (soInput.length !== 10) return;
-    const ok = await onSaveSoNumber(selectedOrder.id, soInput);
+    // Recomputed here, NOT read from `soEditMode`: that binding lives inside
+    // renderDetailHeader and is out of scope in this function. This expression
+    // is character-equivalent to it, including the `!!soNumber` term.
+    //
+    // ⚠ The `!!selectedOrder.soNumber` term is load-bearing, not defensive.
+    // renderDetailHeader's `isPunched` is `status === "punched" && !!soNumber`
+    // (:1261), and handlePunch (mail-orders-page.tsx:588) can leave an order
+    // `punched` with NO number. Such an order shows the FRESH-PUNCH box, so
+    // dropping this term would mark a genuine first punch as an edit and rob it
+    // of the grace it needs.
+    const editFlag =
+      billingV2 && selectedOrder.status === "punched" && !!selectedOrder.soNumber && editingSoNumber;
+    const ok = await onSaveSoNumber(selectedOrder.id, soInput, { isEdit: editFlag });
     if (ok) {
       setSoInput("");
       setEditingSoNumber(false);
