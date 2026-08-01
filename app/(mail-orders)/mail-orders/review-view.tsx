@@ -770,6 +770,23 @@ export function ReviewView({
       e.preventDefault();
       handlePunchClick();
     }
+    // Escape cancels an EDIT only. On a fresh punch there is nothing to fall
+    // back to, so it is left alone there and the header's own Escape chain keeps
+    // whatever behaviour it has. `stopPropagation` keeps this key from also
+    // reaching that chain and clearing the search behind the operator.
+    if (e.key === "Escape" && editingSoNumber) {
+      e.preventDefault();
+      e.stopPropagation();
+      handleCancelSoEdit();
+    }
+  }
+
+  // Leave edit mode without writing anything — back to the view-mode pill.
+  // `soInput` is blanked so the next entry into edit mode re-prefills cleanly
+  // from `order.soNumber` rather than resuming a half-typed correction.
+  function handleCancelSoEdit() {
+    setEditingSoNumber(false);
+    setSoInput("");
   }
 
   function handleReplyClick() {
@@ -1411,7 +1428,57 @@ export function ReviewView({
       ? (matchStatus === "multiple" ? multiPopoverContent : unmatchedPopoverContent)
       : undefined;
 
-    const soNumberSlot = showInputMode ? (
+    // ── The three states of this slot ─────────────────────────────────────
+    //   1. fresh punch  (!isPunched)                    → Order No. box + Punch
+    //   2. billing EDIT (isPunched && editingSoNumber)  → compact inline editor
+    //   3. view         (isPunched, not editing)        → the green pill + ✎
+    //
+    // ⚠ THIS SLOT IS NOT BILLING-ONLY. It is passed unconditionally to
+    // MetaRibbon (:1817) and rendered by its NON-override branch
+    // (meta-ribbon.tsx:139), so it also drives the non-billing focus view.
+    // That is why mode 2 is gated on `billingV2`: with the flag off the pencil
+    // still opens the full Order No. box + Punch, exactly as it always has.
+    const soEditMode = billingV2 && isPunched && editingSoNumber;
+
+    const soNumberSlot = soEditMode ? (
+      // 2 — a CORRECTION, not a re-punch: no Punch button, an explicit ✓ to
+      // commit and ✕ to back out. Same `handlePunchClick` save handler and the
+      // same 10-digit gate as a fresh punch; only the chrome differs.
+      <>
+        <div className="flex items-center bg-[#f7f7f5] border border-gray-200 rounded-[10px] overflow-hidden transition-colors focus-within:bg-white focus-within:border-teal-600 focus-within:ring-2 focus-within:ring-teal-600/15">
+          <input
+            type="text"
+            value={soInput}
+            onChange={(e) => setSoInput(e.target.value.replace(/\D/g, "").slice(0, 10))}
+            onKeyDown={handleSoKeyDown}
+            autoFocus
+            maxLength={10}
+            className="w-[130px] h-[30px] border-none outline-none bg-transparent font-mono text-[14px] font-medium text-gray-900 px-2.5"
+          />
+        </div>
+        <button
+          onClick={handlePunchClick}
+          disabled={!punchReady}
+          title={punchReady ? "Save order number" : "Enter 10 digits"}
+          aria-label="Save order number"
+          className={`flex h-[26px] w-[26px] items-center justify-center rounded-md border transition-colors ${
+            punchReady
+              ? "border-green-200 bg-green-50 text-green-700 hover:bg-green-100 cursor-pointer"
+              : "border-gray-200 bg-white text-gray-300 cursor-default"
+          }`}
+        >
+          <Check size={13} />
+        </button>
+        <button
+          onClick={handleCancelSoEdit}
+          title="Cancel"
+          aria-label="Cancel editing order number"
+          className="flex h-[26px] w-[26px] items-center justify-center rounded-md border border-gray-200 bg-white text-gray-400 hover:bg-gray-50 hover:text-gray-600 hover:border-gray-300 cursor-pointer"
+        >
+          <X size={13} />
+        </button>
+      </>
+    ) : showInputMode ? (
       <>
         {/* (D) Styled to MATCH the wide-arm search box in universal-header.tsx —
             same pearl fill, same hairline border, same 10px radius, same teal
@@ -1454,7 +1521,10 @@ export function ReviewView({
           <span className="font-mono text-[14px] font-medium text-green-700">{order.soNumber}</span>
         </span>
         <button
-          onClick={() => { setEditingSoNumber(true); setSoInput(""); }}
+          // PREFILL with the current number: an edit is a correction of a known
+          // value, so the operator should start from it rather than retype ten
+          // digits. (Was `setSoInput("")` — that blanked the field on entry.)
+          onClick={() => { setEditingSoNumber(true); setSoInput(order.soNumber ?? ""); }}
           className="w-[18px] h-[18px] rounded border border-gray-200 bg-white cursor-pointer flex items-center justify-center text-gray-400 hover:bg-gray-50 hover:text-gray-600 hover:border-gray-300"
           title="Edit SO number"
         >
