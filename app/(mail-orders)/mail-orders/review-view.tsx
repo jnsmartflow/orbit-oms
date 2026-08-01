@@ -1554,20 +1554,40 @@ export function ReviewView({
     // top border and alignment). `undefined` when the flag is off, which makes
     // MetaRibbon render its summary line + slots exactly as it always has.
     //
-    // Left→right: the actions (Urgent · Hold · Slot) · spacer · Punch · the
-    // utility cluster (Print, Notes, then ⓘ last).
+    // Left→right (2026-08-01): the sales officer's name · spacer · then EVERY
+    // action together on the right — Urgent · Hold · Slot · Notes · the punch
+    // controls — with the ⓘ and the reopen × trailing as utilities.
     //
-    // The descriptive facts that used to sit on this line — ordered by, received,
-    // punched by — moved into the ⓘ popover. It is fed the SAME formatted
-    // strings MetaRibbon would have rendered (soNameFormatted /
-    // receivedAtFormatted / punchedByName / punchedAtFormatted), so the two
-    // faces cannot disagree. Readiness (✓ 6/6) and volume move to the SKU
-    // caption below, via the same getMatchChip() MetaRibbon uses.
+    // Punch is the last ACTION, not the last node: the ⓘ and × are view
+    // utilities, not things done to the order, and they keep the position they
+    // have always had at the end of the row.
+    //
+    // ⚠ A FUTURE action button inserts immediately BEFORE the soNumberSlot
+    // wrapper below — that is the one line that keeps Punch last.
+    //
+    // The descriptive facts that used to sit on this line — received, punched by
+    // — live in the ⓘ popover. It is fed the SAME formatted strings MetaRibbon
+    // would have rendered (soNameFormatted / receivedAtFormatted /
+    // punchedByName / punchedAtFormatted), so the two faces cannot disagree.
+    // `soNameFormatted` is now rendered here as well; both read that one
+    // binding, so the row and the popover cannot drift. Readiness (✓ 6/6) and
+    // volume live on the SKU caption below, via the same getMatchChip().
     //
     // soNumberSlot is reused VERBATIM — the punch flow, its 10-digit gate, the
-    // edit pencil and the "Punched" badge are untouched.
+    // edit pencil and the "Punched" badge are untouched, and Order No. / SO
+    // number stays on the RIGHT in both the pre- and post-punch states.
     const billingRibbonRow = billingV2 ? (
       <div className="flex w-full items-center gap-2">
+        {/* Sales officer — the same `soNameFormatted` binding the rail row
+            (:1019) and the ⓘ popover already render, in the rail's own muted
+            style. No new field and no second derivation.
+            ⚠ `min-w-0 truncate` is load-bearing: this is the only shrinkable
+            node on the row, so a long name must give way rather than push the
+            action cluster past the right edge. */}
+        <span className="min-w-0 truncate text-[11px] text-gray-400">
+          {soNameFormatted}
+        </span>
+        <div className="flex-1" />
         <BillingActionRibbon
           order={order}
           windows={billingWindows}
@@ -1579,7 +1599,6 @@ export function ReviewView({
         <span className="mo-print-hide inline-flex flex-shrink-0 items-center">
           {billingNotesButton}
         </span>
-        <div className="flex-1" />
         <div className="flex flex-shrink-0 items-center gap-1.5">
           {soNumberSlot}
         </div>
