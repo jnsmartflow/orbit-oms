@@ -1480,12 +1480,22 @@ export function ReviewView({
       </>
     ) : showInputMode ? (
       <>
-        {/* (D) Styled to MATCH the wide-arm search box in universal-header.tsx —
-            same pearl fill, same hairline border, same 10px radius, same teal
-            focus border + ring. Values copied from that arm so the two fields on
-            this screen read as one control family. Handlers, ref, placeholder,
-            maxLength and the 120px input width are untouched. */}
-        <div className="flex items-center bg-[#f7f7f5] border border-gray-200 rounded-[10px] overflow-hidden transition-colors focus-within:bg-white focus-within:border-teal-600 focus-within:ring-2 focus-within:ring-teal-600/15">
+        {/* (D) BILLING ONLY: styled to match the wide-arm search box in
+            universal-header.tsx — same pearl fill, hairline border, 10px radius
+            and teal focus ring, so the two fields on that screen read as one
+            control family.
+            ⚠ The OFF arm is the ORIGINAL string, restored verbatim from
+            0a8582e3~1. This slot is shared with the non-billing focus view (see
+            the note above), so only the class string may branch — the input,
+            its handlers, placeholder, maxLength and 120px width are one
+            definition and stay identical on both faces. */}
+        <div
+          className={
+            billingV2
+              ? "flex items-center bg-[#f7f7f5] border border-gray-200 rounded-[10px] overflow-hidden transition-colors focus-within:bg-white focus-within:border-teal-600 focus-within:ring-2 focus-within:ring-teal-600/15"
+              : "flex items-center border-[1.5px] border-gray-200 rounded-md overflow-hidden focus-within:border-teal-500 focus-within:shadow-[0_0_0_3px_rgba(13,148,136,0.08)]"
+          }
+        >
           <span className="text-[10px] font-medium text-gray-400 pl-2 whitespace-nowrap">Order No.</span>
           <input
             type="text"
@@ -1509,27 +1519,48 @@ export function ReviewView({
           Punch
         </button>
       </>
-    ) : (
+    ) : billingV2 ? (
+      // 3a — BILLING view. ✓ and the SO number are ONE green pill, wearing the
+      // tokens the separate "Punched" pill used to carry (bg-green-50 /
+      // text-green-700 / border-green-200) — same shade, moved, not re-picked.
+      // That pill is gone here: the green already says punched, so the word was
+      // saying it twice. The ✓ keeps its own text-green-600.
       <>
-        {/* (A) ✓ and the SO number are ONE green pill. It wears the tokens the
-            separate "Punched" pill used to carry (bg-green-50 / text-green-700 /
-            border-green-200) — same shade, moved, not re-picked — and that pill
-            is gone: the green already says punched, so the word was saying it
-            twice. The ✓ keeps its own text-green-600. */}
         <span className="inline-flex items-center gap-1.5 rounded-md border border-green-200 bg-green-50 px-2 py-0.5">
           <Check size={14} className="text-green-600" />
           <span className="font-mono text-[14px] font-medium text-green-700">{order.soNumber}</span>
         </span>
         <button
-          // PREFILL with the current number: an edit is a correction of a known
-          // value, so the operator should start from it rather than retype ten
-          // digits. (Was `setSoInput("")` — that blanked the field on entry.)
+          // PREFILL with the current number: on this face the pencil opens the
+          // compact editor, which is a correction of a known value, so it should
+          // start from that value rather than make the operator retype ten
+          // digits. The OFF arm below keeps the original blank-on-entry.
           onClick={() => { setEditingSoNumber(true); setSoInput(order.soNumber ?? ""); }}
           className="w-[18px] h-[18px] rounded border border-gray-200 bg-white cursor-pointer flex items-center justify-center text-gray-400 hover:bg-gray-50 hover:text-gray-600 hover:border-gray-300"
           title="Edit SO number"
         >
           <Pencil size={10} />
         </button>
+      </>
+    ) : (
+      // 3b — the ORIGINAL punched view, restored verbatim from 0a8582e3~1: bare
+      // ✓, gray-900 number, pencil, then the separate "Punched" pill, in that
+      // order, with `setSoInput("")` on entry. This slot is shared with the
+      // non-billing focus view, so this arm must stay character-identical to
+      // what shipped before the billing restyle.
+      <>
+        <Check size={14} className="text-green-600" />
+        <span className="font-mono text-[14px] font-medium text-gray-900">{order.soNumber}</span>
+        <button
+          onClick={() => { setEditingSoNumber(true); setSoInput(""); }}
+          className="w-[18px] h-[18px] rounded border border-gray-200 bg-white cursor-pointer flex items-center justify-center text-gray-400 hover:bg-gray-50 hover:text-gray-600 hover:border-gray-300"
+          title="Edit SO number"
+        >
+          <Pencil size={10} />
+        </button>
+        <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-green-50 text-green-700 border border-green-200">
+          Punched
+        </span>
       </>
     );
 
