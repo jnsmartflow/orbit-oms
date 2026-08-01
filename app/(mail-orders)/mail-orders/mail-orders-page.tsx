@@ -136,7 +136,7 @@ function ColumnPicker({
 
 export default function MailOrdersPage() {
   const { data: session } = useSession();
-  const canImportOBDs = ["admin", "dispatcher", "support", "billing_operator", "tint_manager", "operation_manager"]
+  const canImportOBDs = ["admin", "dispatcher", "support", "billing_operator", "tint_manager", "operation_manager", "operations"]
     .includes(session?.user?.role ?? "");
 
   // ── State ────────────────────────────────────────────────────────────────────

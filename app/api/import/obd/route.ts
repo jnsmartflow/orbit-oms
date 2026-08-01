@@ -3563,6 +3563,7 @@ export async function POST(req: Request): Promise<NextResponse> {
     ROLES.BILLING_OPERATOR,
     ROLES.TINT_MANAGER,
     ROLES.OPERATION_MANAGER,
+    ROLES.OPERATIONS,
   ]);
   if (session!.user.role !== "admin") {
     const allowed = await checkPermission(session!.user.role, "import_obd", "canImport");
