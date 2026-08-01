@@ -22,6 +22,10 @@ import {
   SPLIT_LINE_THRESHOLD,
   formatVolume,
 } from "@/lib/mail-orders/utils";
+// Stable tag keys — the ship-card signal filter below keys on MO_TAG.urgent
+// rather than the literal "Urgent", so a label change cannot silently un-filter
+// it. Leaf module, no cycle (see tag-catalog.ts header).
+import { MO_TAG } from "@/lib/hide/tag-catalog";
 import { searchCustomers, saveLineStatus, searchSkus, resolveLine, saveNotes } from "@/lib/mail-orders/api";
 import { BillingTabBar, type BillingTab } from "@/components/billing/billing-tab-bar";
 import { BillingPickingTab } from "@/components/billing/billing-picking-tab";
@@ -1330,6 +1334,34 @@ export function ReviewView({
     const billSignals = signals.filter((s) => s.card === "bill");
     const shipSignals = signals.filter((s) => s.card === "ship");
 
+    // ── Billing v2 — the ship card drops Urgent / Hold / Dispatch ────────────
+    // On this face those three are redundant with BillingActionRibbon, which
+    // reads the SAME fields (billing-action-ribbon.tsx:54-55 — `dispatchStatus`
+    // and `dispatchPriority`) in the SAME amber and red, and is interactive
+    // besides. Dispatch is worse than redundant: its label is `dispatchStatus`
+    // passed through verbatim, which in this app is only ever "Hold" or
+    // "Dispatch", so the chip is the constant word "Dispatch" — rendered green
+    // (signal-pill.tsx:32-34), i.e. the least informative state shouting
+    // loudest — and its tagKey is undefined, so it is the one chip Hide
+    // settings cannot suppress.
+    //
+    // ⚠ FILTERED AT THE CALL SITE, not in getOrderSignals. ShipToCard is SHARED
+    // with the non-billing focus face (only its `actionSlot` pencil is gated),
+    // and getOrderSignals also feeds the rail row (:1024) and Table view. This
+    // narrows what THIS card is handed and nothing else.
+    //
+    // The predicate removes exactly three signals and keeps every other:
+    //   • tagKey === MO_TAG.urgent  → the Urgent chip, pushed once
+    //   • type === "status"         → the dispatchStatus chip, the ONLY push of
+    //     that type; catches Hold AND Dispatch, and is immune to Dispatch's
+    //     undefined tagKey and raw-passthrough label
+    // `Challan` (type "info") is the only other ship signal and survives. The
+    // "⚑ captured" pill is NOT a signal — ShipToCard renders it from the
+    // `isOverride` prop (:99-106) — so it is untouched either way.
+    const shipSignalsForCard = billingV2
+      ? shipSignals.filter((s) => !(s.tagKey === MO_TAG.urgent || s.type === "status"))
+      : shipSignals;
+
     // Instructions strip: collapse typed remarks into a single notes string
     const notesText = (order.remarks_list ?? [])
       .filter((r) => r.remarkType !== "delivery" && r.remarkType !== "billing")
@@ -1659,17 +1691,23 @@ export function ReviewView({
             type="button"
             onClick={handleNotesOpen}
             title={hasNotes ? "Notes (saved)" : "Notes"}
-            className={`${BTN_BASE} ${hasNotes ? "border-gray-300 bg-white text-gray-800 hover:bg-gray-50" : BTN_OFF}`}
+            // Has-notes now TINTS THE WHOLE BUTTON in the instructions-strip
+            // violet, replacing the 8px corner dot that used to carry the
+            // signal. Two reasons: the fill is unmissable where a corner dot was
+            // not, and it matches the band the note actually appears in
+            // (instructions-strip.tsx — #f5f3ff fill, #5b21b6 text, #7c3aed
+            // accent), so the button and its content read as one thing.
+            //
+            // It also retires a stray teal: that dot was bg-teal-600, and this
+            // row already spends the brand accent on Import and the search
+            // focus ring (CLAUDE_UI §1 — one teal element per surface).
+            className={`${BTN_BASE} ${hasNotes ? "border-[#7c3aed]/40 bg-[#f5f3ff] text-[#5b21b6] hover:bg-[#ede9fe]" : BTN_OFF}`}
           >
+            {/* Icon inherits the button's colour when notes exist — unchanged
+                expression, it just now inherits violet instead of gray-800. */}
             <StickyNote size={12} className={hasNotes ? "" : "text-gray-400"} />
             Notes
           </button>
-          {hasNotes && (
-            <span
-              aria-hidden
-              className="pointer-events-none absolute -right-[2px] -top-[2px] h-2 w-2 rounded-full border-[1.5px] border-white bg-teal-600"
-            />
-          )}
         </span>
       );
     })();
@@ -1901,7 +1939,7 @@ export function ReviewView({
             shipToArea={shipToArea}
             shipToDeliveryType={shipToDeliveryType}
             isOverride={order.shipToOverride ?? false}
-            signals={shipSignals}
+            signals={shipSignalsForCard}
             disabledTagKeys={disabledTagKeys}
             // Phase 2 — undefined unless the flag is on, so the card renders
             // nothing extra for every user today.
