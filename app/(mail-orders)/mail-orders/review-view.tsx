@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useRef } from "react";
-import { Check, Pencil, Copy, Mail, Flag, Search, Printer, StickyNote, Star, Droplet } from "lucide-react";
+import { Check, Pencil, Copy, Mail, Flag, Search, Printer, StickyNote, Star, Droplet, X } from "lucide-react";
 import type { MoOrder, MoOrderLine, CustomerSearchResult } from "@/lib/mail-orders/types";
 import type { SlotCutoffs } from "@/lib/mail-orders/utils";
 import {
@@ -547,6 +547,23 @@ export function ReviewView({
   const [notesSaving, setNotesSaving] = useState(false);
   const [notesOverrides, setNotesOverrides] = useState<Map<number, string | null>>(new Map());
 
+  // ── Billing v2 — deliberately reopened punched order ──────────────
+  // The right pane blanks to "All caught up" whenever `pendingOrders` is empty,
+  // deliberately IGNORING `focusedId` — because focusedId is sticky (nothing in
+  // this app ever clears it) and would otherwise keep the just-punched bill on
+  // screen as though it were still work.
+  //
+  // That guard also swallowed a deliberate click on a DONE row, so re-reading a
+  // punched bill did nothing. This state is the narrow exception: it is set ONLY
+  // by clicking a row the punchedOrders predicate would call done, so it can
+  // distinguish "I want to look at this again" from focusedId's residue.
+  //
+  // ⚠ A punch NEVER sets this. That is the whole point: after the last punch of
+  // the day focusedId still points at that order and `selectedOrder` still
+  // resolves, so anything keyed on focus would wrongly redisplay it — this stays
+  // null and the pane flips to "All caught up", exactly as before.
+  const [reopenedPunchedId, setReopenedPunchedId] = useState<number | null>(null);
+
   // ── Selected order ──────────────────────────────────────────────
   const selectedOrder = useMemo(() => {
     if (focusedId === null) return null;
@@ -693,6 +710,27 @@ export function ReviewView({
       return (a.splitLabel ?? "").localeCompare(b.splitLabel ?? "");
     });
   }, [orders, recentlyPunchedIds]);
+
+  // ── Billing v2 — clearing the reopened-punched exception ──────────
+  // Two ways out, besides clicking a pending row (which the row handler itself
+  // clears) and the × on the detail header.
+  //
+  // 1. New work arrived. The exception exists only for the empty state; once
+  //    there is something to punch the pane should be back on work, not on a
+  //    bill the operator opened five minutes ago. Keyed on the LENGTH, not the
+  //    array — `pendingOrders` is a fresh reference on every 30s poll.
+  useEffect(() => {
+    if (pendingOrders.length > 0) setReopenedPunchedId(null);
+  }, [pendingOrders.length]);
+
+  // 2. The reopened order left the visible set — the operator changed date, or
+  //    a filter now excludes it. Without this the pane would fall through to the
+  //    `selectedOrder` arm with nothing to render.
+  useEffect(() => {
+    if (reopenedPunchedId !== null && !orders.some(o => o.id === reopenedPunchedId)) {
+      setReopenedPunchedId(null);
+    }
+  }, [orders, reopenedPunchedId]);
 
   // ── Rail-head day summary (billing face only) ─────────────────────
   // Reproduces the two facts the top header carried before f82016f0 dropped
@@ -926,7 +964,20 @@ export function ReviewView({
     return (
       <div
         key={order.id}
-        onClick={() => onFocusChange(order.id)}
+        onClick={() => {
+          // Is this row in the DONE list? Derived from the order, deliberately
+          // NOT from a parameter: this function is passed straight to
+          // `.map(renderOrderRow)` for both lists, so a second argument would
+          // silently receive the array index (falsy 0 for the first row).
+          //
+          // The test is character-identical to the `punchedOrders` predicate,
+          // so "is this done" is decided by the same rule that put it there.
+          const isDoneRow = order.status === "punched" && !recentlyPunchedIds.has(order.id);
+          // Clicking a PENDING row clears the exception in the same expression —
+          // no separate effect needed for the commonest way out.
+          setReopenedPunchedId(billingV2 && isDoneRow ? order.id : null);
+          onFocusChange(order.id);
+        }}
         className={`px-3.5 py-2.5 border-b border-gray-100 cursor-pointer border-l-[3px] transition-colors ${borderClass}`}
         data-review-order-id={order.id}
       >
@@ -1532,8 +1583,14 @@ export function ReviewView({
         <div className="flex flex-shrink-0 items-center gap-1.5">
           {soNumberSlot}
         </div>
-        {/* Right end: the ⓘ only. Print moved to the SKU caption row, where the
-            thing it prints actually lives. */}
+        {/* Right end: the ⓘ, and — only on a deliberately reopened done order —
+            a × to put the pane back to "All caught up".
+
+            Gated on THIS order being the reopened one, not merely on the state
+            being set, so it cannot appear on a normal pending detail. With the
+            flag off `reopenedPunchedId` is never set (the row handler gates on
+            billingV2), and this whole row is `billingV2 ? … : undefined`
+            anyway — two independent reasons it cannot reach the OFF path. */}
         <div className="mo-print-hide flex flex-shrink-0 items-center gap-1">
           <BillingOrderInfo
             soName={soNameFormatted}
@@ -1541,6 +1598,17 @@ export function ReviewView({
             punchedByName={punchedByName}
             punchedAt={punchedAtFormatted}
           />
+          {reopenedPunchedId !== null && order.id === reopenedPunchedId && (
+            <button
+              type="button"
+              title="Close — back to all caught up"
+              aria-label="Close reopened order"
+              onClick={() => setReopenedPunchedId(null)}
+              className="flex h-[22px] w-[22px] items-center justify-center rounded-[5px] text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors cursor-pointer"
+            >
+              <X size={13} />
+            </button>
+          )}
         </div>
       </div>
     ) : undefined;
@@ -2302,12 +2370,18 @@ export function ReviewView({
 
         {billingV2 && billingTab === "picking" ? (
           <BillingPickingTab />
-        ) : billingV2 && pendingOrders.length === 0 ? (
+        ) : billingV2 && pendingOrders.length === 0 && reopenedPunchedId === null ? (
           /* Billing v2 — nothing left to work on. Deliberately placed BEFORE
              the `selectedOrder` arm: a punched order stays selected (nothing
              clears focusedId), so without this the pane would keep showing the
              last bill as though it were still work. Selection state itself is
              untouched — this only stops rendering it.
+
+             The `reopenedPunchedId === null` conjunct is the ONE exception: a
+             deliberate click on a done row falls through to the `selectedOrder`
+             arm below and shows that bill. Safe to key on because a PUNCH never
+             sets it — only a click does — so the last punch of the day still
+             lands here.
              The tab bar above and the #mo-print-area wrapper are outside this
              ternary and render regardless, so Orders|Picking still switches. */
           genuinelyEmpty ? (
