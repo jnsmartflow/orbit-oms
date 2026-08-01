@@ -459,6 +459,7 @@ function ResolvePopover({
 
 export function ReviewView({
   orders,
+  allOrders,
   focusedId,
   onFocusChange,
   onFlag,
@@ -692,6 +693,28 @@ export function ReviewView({
       return (a.splitLabel ?? "").localeCompare(b.splitLabel ?? "");
     });
   }, [orders, recentlyPunchedIds]);
+
+  // ── Rail-head day summary (billing face only) ─────────────────────
+  // Reproduces the two facts the top header carried before f82016f0 dropped
+  // them ("N orders" + "X% punched"), from the SAME source: `allOrders` is what
+  // mail-orders-page passes as its UNFILTERED day state (:1270) — the very set
+  // its `totalOrders` / `punchPct` are computed from, so the rail cannot
+  // disagree with the number this page shows on the non-billing face.
+  //
+  // ⚠ Deliberately NOT derived from `punchedOrders` above. That list is
+  // filtered, and it excludes the 8-second recently-punched grace window by
+  // design (:687) — reading it here would make the percentage dip and recover
+  // after every punch, and disagree with the header whenever a filter is on.
+  const railTotal = allOrders.length;
+  const railPunched = useMemo(
+    () => allOrders.filter(o => o.status === "punched").length,
+    [allOrders],
+  );
+  // Zero-guard: no orders means no percentage to state. Guarding here rather
+  // than at the render site keeps the divide in one place.
+  const railPunchPct = railTotal > 0
+    ? Math.round((railPunched / railTotal) * 100)
+    : 0;
 
   // ── Handlers ─────────────────────────────────────────────────────
 
@@ -2190,8 +2213,18 @@ export function ReviewView({
             the same state back up. Do not delete the OFF branch. */}
         {billingV2 ? (
           <div className="px-3 py-2 border-b border-gray-200">
-            <div className="flex h-[28px] items-center text-[12px] font-semibold tracking-[-0.01em] text-gray-900">
-              Mail Orders
+            {/* Label left, day summary right — both on the SAME 28px row. That
+                height is load-bearing (see the note above): a second line would
+                grow this head and the order list would stop starting at the same
+                offset as the non-billing face. The stats reuse the `text-[10px]
+                text-gray-400` of the "N punched" divider below — the nearest
+                count text in this rail — rather than a new muted style. */}
+            <div className="flex h-[28px] items-center justify-between gap-2 text-[12px] font-semibold tracking-[-0.01em] text-gray-900">
+              <span>Inbox</span>
+              <span className="text-[10px] font-normal text-gray-400">
+                {railTotal} orders
+                {railTotal > 0 && ` · ${railPunchPct}% punched`}
+              </span>
             </div>
           </div>
         ) : (
