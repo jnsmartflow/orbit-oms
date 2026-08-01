@@ -1214,12 +1214,19 @@ export default function MailOrdersPage() {
         searchPlaceholder="Search orders..."
         searchValue={searchQuery}
         onSearchChange={setSearchQuery}
-        // Billing face: search is promoted to its own centred column, and the
-        // clock goes (with its interval). Same `searchQuery` state and the same
-        // 19-field matcher (:438-472) either way — no new search logic, and the
-        // rail this filters is already driven by it.
-        searchLayout={billingV2 ? "wide" : "compact"}
+        // Billing face: Import + search move to the far RIGHT corner (Import to
+        // the left of search), and the clock goes with its interval. Same
+        // `searchQuery` state and the same 19-field matcher (:438-472) either
+        // way — no new search logic, and the rail this filters is already
+        // driven by it.
+        searchLayout={billingV2 ? "wide-right" : "compact"}
         showClock={!billingV2}
+        // Billing face: no keyboard button in the top header. This hides the
+        // BUTTON only — every shortcut below still fires, including this page's
+        // own Ctrl+C/Ctrl+V (:850) and single-key (:1043) listeners, which are
+        // registered here and never consulted the header's chrome. The `?` key
+        // (:982) still opens TutorialOverlay, so a help surface remains.
+        showShortcutsButton={!billingV2}
         rightExtra={viewMode === "table" ? (
           <ColumnPicker
             columns={ALL_COLUMNS}

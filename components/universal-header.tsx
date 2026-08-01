@@ -100,10 +100,17 @@ export interface UniversalHeaderProps {
    * Escape-to-clear); only the wrapper's width and its position in the row
    * change.
    *
-   * ⚠ The focus width transition is deliberately NOT applied in wide mode — a
-   * fixed w-[180px]/w-[260px] fights the flex sizing and the bar would jump.
+   * `"wide-right"` keeps everything `"wide"` does to the BOX, but renders it —
+   * and the Import button — at the HEAD of the right-hand cluster instead of
+   * after the title, so the row reads `Title … Import search` with the pair
+   * pinned to the right edge. Same single `searchBox`/`importButton` nodes, so
+   * neither can drift between placements.
+   *
+   * ⚠ The focus width transition is deliberately NOT applied in either wide
+   * mode — a fixed w-[180px]/w-[260px] fights the flex sizing and the bar would
+   * jump.
    */
-  searchLayout?: "compact" | "wide";
+  searchLayout?: "compact" | "wide" | "wide-right";
 
   /**
    * Render the IST clock (and the divider that follows it). Default `true`.
@@ -121,6 +128,21 @@ export interface UniversalHeaderProps {
   // cluster. Each board page sets this from session role; the header itself
   // does not read session. Open/close is managed internally.
   showImport?: boolean;
+
+  /**
+   * Render the keyboard-shortcuts BUTTON and its popover. Default `true`.
+   *
+   * ⚠ This gates the BUTTON only — never the shortcuts themselves. All three
+   * keydown listeners (this component's own at the `useEffect` above, plus the
+   * two a consumer page may register) are bound independently of whether this
+   * renders, so every shortcut keeps firing when it is hidden. What is lost is
+   * the on-screen LIST, i.e. discoverability.
+   *
+   * Named `showShortcutsButton`, not `showShortcuts`, precisely because
+   * `shortcuts` (the extra-items array) sits next to it — the two must not read
+   * as a pair that turns each other off.
+   */
+  showShortcutsButton?: boolean;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -155,6 +177,7 @@ export function UniversalHeader({
   showClock = true,
   shortcuts,
   showImport,
+  showShortcutsButton = true,
   segmentsDisabled,
 }: UniversalHeaderProps) {
   const [clock, setClock] = useState("");
@@ -253,7 +276,12 @@ export function UniversalHeader({
   // the control (2026-07-31), verbatim — including that "clear" writes an EMPTY
   // ARRAY per group rather than `{}`.
 
-  const wideSearch = searchLayout === "wide";
+  // `wideSearch` governs the BOX's look (both wide modes share it); `wideRight`
+  // governs only WHERE that box and the Import button render. Keeping them as
+  // two derivations rather than one means the styling arms below never have to
+  // know about placement.
+  const wideSearch = searchLayout === "wide" || searchLayout === "wide-right";
+  const wideRight  = searchLayout === "wide-right";
 
   // The search box — ONE definition, rendered in one of two positions. Hoisted
   // rather than duplicated so the input, its ref, its handlers and the `/` hint
@@ -264,22 +292,28 @@ export function UniversalHeader({
   // focus width transition. Every non-billing consumer renders this and must
   // keep rendering exactly it.
   //
-  // WIDE is styled to sit beside Outlook: white fill on a thin border, gentle
-  // radius, fixed 38px height, roomier type. Not a pill and not grey-filled —
-  // the two modes share only the input's identity, never its look. Each element
-  // branches on `wideSearch` rather than sharing a base string, so a future
-  // tweak to one cannot leak into the other.
+  // WIDE is borderless: a white 300×36 field on a soft shadow stack (a hairline
+  // ring plus a lift), deepening on hover and taking a teal ring on focus. Not a
+  // pill and not grey-filled — the two modes share only the input's identity,
+  // never its look. Each element branches on `wideSearch` rather than sharing a
+  // base string, so a future tweak to one cannot leak into the other.
+  //
+  // ⚠ The width is FIXED here (w-[300px]), not inherited from a parent. The
+  // wide arm used to be `w-full max-w-[480px]` and relied on a 480px sizing
+  // wrapper at its call site; that wrapper is gone. Re-introducing any wrapper
+  // with its own width would push this box off the right edge by the
+  // difference.
   const searchBox = (
     <div
       className={
         wideSearch
-          ? "flex items-center gap-2.5 w-full max-w-[480px] h-[38px] rounded-[7px] bg-white border border-gray-200 px-3.5 transition-colors hover:border-gray-300 focus-within:border-gray-300 focus-within:shadow-[0_1px_2px_rgba(17,24,39,0.06)]"
+          ? "flex items-center gap-2.5 w-[300px] max-w-full min-w-0 h-[36px] rounded-[10px] bg-white border-0 px-3.5 shadow-[0_0_0_1px_rgba(17,24,39,0.05),0_1px_3px_rgba(17,24,39,0.10)] transition-shadow hover:shadow-[0_0_0_1px_rgba(17,24,39,0.06),0_2px_6px_rgba(17,24,39,0.12)] focus-within:shadow-[0_0_0_1px_rgba(13,148,136,0.35),0_2px_8px_rgba(17,24,39,0.13)]"
           : `bg-gray-50 rounded-[6px] px-[10px] py-[4px] flex items-center gap-[6px] transition-all duration-200 ${
               searchFocused || searchValue ? "w-[260px]" : "w-[180px]"
             }`
       }
     >
-      <Search size={wideSearch ? 15 : 13} className="text-gray-400 flex-shrink-0" />
+      <Search size={wideSearch ? 14 : 13} className="text-gray-400 flex-shrink-0" />
       <input
         ref={searchInputRef}
         type="text"
@@ -292,7 +326,7 @@ export function UniversalHeader({
         // input its own background would double up and show a seam at the ends.
         className={
           wideSearch
-            ? "flex-1 bg-transparent outline-none border-0 text-[13.5px] text-gray-900 placeholder:text-gray-500"
+            ? "flex-1 bg-transparent outline-none border-0 text-[13px] text-gray-900 placeholder:text-gray-500"
             : "bg-transparent border-none outline-none text-[11px] text-gray-900 placeholder:text-gray-400 flex-1 w-full"
         }
       />
@@ -371,26 +405,40 @@ export function UniversalHeader({
 
           {/* WIDE only — Import then search, both inside the LEFT cluster.
               Compact renders neither here; its Import stays in the right
-              cluster below and its search stays at the end of it. */}
-          {wideSearch && showImport && importButton}
-          {/* Sizing wrapper: searchBox is `w-full max-w-[480px]`, which needs a
-              parent with a definite width now that it is no longer inside the
-              old flex-1 centring column. 480px fixed, free to shrink when the
-              window is narrow. */}
-          {wideSearch && <div className="w-[480px] max-w-full min-w-0">{searchBox}</div>}
+              cluster below and its search stays at the end of it.
+              WIDE-RIGHT renders neither here either: both move to the head of
+              the right cluster below, so the row reads Title … Import search. */}
+          {wideSearch && !wideRight && showImport && importButton}
+          {/* Sizing wrapper — "wide" ONLY. It exists to give the box a definite
+              parent width; the box's own w-[300px] makes it unnecessary in
+              wide-right, where adding it back would shove the pair off the
+              right edge by the difference. */}
+          {wideSearch && !wideRight && <div className="w-[480px] max-w-full min-w-0">{searchBox}</div>}
         </div>
 
-        {/* Spacer — WIDE only. The row is already justify-between, so this is
-            belt and braces: it guarantees the keyboard button holds the far
-            right edge however wide the left cluster grows. */}
+        {/* Spacer — either WIDE mode. The row is already justify-between, so
+            this is belt and braces: it guarantees the right cluster holds the
+            far right edge however wide the left cluster grows. */}
         {wideSearch && <div className="flex-1" />}
 
         {/* Right: import, clock, shortcuts, download, search */}
         <div className="flex items-center gap-2">
+          {/* WIDE-RIGHT only — Import then search, at the HEAD of this cluster
+              so they sit at the far right edge with Import to the LEFT of the
+              search (flex order, no extra markup). The search box goes in bare:
+              it carries its own w-[300px], and the "wide" sizing wrapper must
+              NOT come along.
+
+              No divider between them or after them: in compact the divider
+              separates Import from the clock/shortcuts that follow, and here
+              the caller that uses this layout hides both. */}
+          {wideRight && showImport && importButton}
+          {wideRight && searchBox}
+
           {/* Import — leftmost, only when caller passes showImport=true.
-              COMPACT ONLY: in wide mode it has already rendered in the left
-              cluster above, and its divider goes with it — nothing would
-              follow the separator here. */}
+              COMPACT ONLY: in either wide mode it has already rendered — left
+              cluster for "wide", head of this one for "wide-right" — and its
+              divider goes with it, since nothing would follow the separator. */}
           {!wideSearch && showImport && (
             <>
               {importButton}
@@ -414,7 +462,15 @@ export function UniversalHeader({
             </>
           )}
 
-          {/* Shortcuts */}
+          {/* Shortcuts — button AND popover together, since the popover is
+              absolutely positioned against this div and `shortcutsRef` anchors
+              the outside-click effect to it. Gating only the <button> would
+              leave an orphan.
+
+              ⚠ This hides the BUTTON, never the shortcuts. The keydown effect
+              above (`/`, Escape, 1-9) is a bare useEffect that does not consult
+              this flag, and a consumer's own listeners are its own. */}
+          {showShortcutsButton && (
           <div className="relative" ref={shortcutsRef}>
             <button
               onClick={() => setShortcutsOpen((v) => !v)}
@@ -452,6 +508,7 @@ export function UniversalHeader({
               </div>
             )}
           </div>
+          )}
 
           {showDownload && (
             <>
