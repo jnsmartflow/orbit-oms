@@ -27,7 +27,6 @@ import { BillingTabBar, type BillingTab } from "@/components/billing/billing-tab
 import { BillingPickingTab } from "@/components/billing/billing-picking-tab";
 import { BillingActionRibbon, BTN_BASE, BTN_OFF } from "@/components/billing/billing-action-ribbon";
 import { BillingShipToPencil } from "@/components/billing/billing-ship-to-pencil";
-import { BillingOrderInfo } from "@/components/billing/billing-order-info";
 import type { DispatchWindow } from "@/components/floor/dispatch-slot-picker";
 import { BillToCard } from "@/components/mail-orders/bill-to-card";
 import { ShipToCard } from "@/components/mail-orders/ship-to-card";
@@ -1414,7 +1413,12 @@ export function ReviewView({
 
     const soNumberSlot = showInputMode ? (
       <>
-        <div className="flex items-center border-[1.5px] border-gray-200 rounded-md overflow-hidden focus-within:border-teal-500 focus-within:shadow-[0_0_0_3px_rgba(13,148,136,0.08)]">
+        {/* (D) Styled to MATCH the wide-arm search box in universal-header.tsx —
+            same pearl fill, same hairline border, same 10px radius, same teal
+            focus border + ring. Values copied from that arm so the two fields on
+            this screen read as one control family. Handlers, ref, placeholder,
+            maxLength and the 120px input width are untouched. */}
+        <div className="flex items-center bg-[#f7f7f5] border border-gray-200 rounded-[10px] overflow-hidden transition-colors focus-within:bg-white focus-within:border-teal-600 focus-within:ring-2 focus-within:ring-teal-600/15">
           <span className="text-[10px] font-medium text-gray-400 pl-2 whitespace-nowrap">Order No.</span>
           <input
             type="text"
@@ -1440,8 +1444,15 @@ export function ReviewView({
       </>
     ) : (
       <>
-        <Check size={14} className="text-green-600" />
-        <span className="font-mono text-[14px] font-medium text-gray-900">{order.soNumber}</span>
+        {/* (A) ✓ and the SO number are ONE green pill. It wears the tokens the
+            separate "Punched" pill used to carry (bg-green-50 / text-green-700 /
+            border-green-200) — same shade, moved, not re-picked — and that pill
+            is gone: the green already says punched, so the word was saying it
+            twice. The ✓ keeps its own text-green-600. */}
+        <span className="inline-flex items-center gap-1.5 rounded-md border border-green-200 bg-green-50 px-2 py-0.5">
+          <Check size={14} className="text-green-600" />
+          <span className="font-mono text-[14px] font-medium text-green-700">{order.soNumber}</span>
+        </span>
         <button
           onClick={() => { setEditingSoNumber(true); setSoInput(""); }}
           className="w-[18px] h-[18px] rounded border border-gray-200 bg-white cursor-pointer flex items-center justify-center text-gray-400 hover:bg-gray-50 hover:text-gray-600 hover:border-gray-300"
@@ -1449,9 +1460,6 @@ export function ReviewView({
         >
           <Pencil size={10} />
         </button>
-        <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-green-50 text-green-700 border border-green-200">
-          Punched
-        </span>
       </>
     );
 
@@ -1578,14 +1586,23 @@ export function ReviewView({
     // number stays on the RIGHT in both the pre- and post-punch states.
     const billingRibbonRow = billingV2 ? (
       <div className="flex w-full items-center gap-2">
-        {/* Sales officer — the same `soNameFormatted` binding the rail row
-            (:1019) and the ⓘ popover already render, in the rail's own muted
-            style. No new field and no second derivation.
+        {/* (B) The order's provenance, inline — this replaces the ⓘ popover,
+            which is gone from this row along with its import. It renders the
+            SAME three bindings BillingOrderInfo was fed, in the same order and
+            the same formats (:1310-1314): soNameFormatted, receivedAtFormatted,
+            and — once punched — punchedByName + punchedAtFormatted.
+
+            The punched half uses BillingOrderInfo's own both-halves guard
+            (`!!punchedByName && !!punchedAt`, its :54): a name with no time, or
+            a time with no name, renders neither rather than a half sentence.
+
             ⚠ `min-w-0 truncate` is load-bearing: this is the only shrinkable
-            node on the row, so a long name must give way rather than push the
+            node on the row, so a long line must give way rather than push the
             action cluster past the right edge. */}
         <span className="min-w-0 truncate text-[11px] text-gray-400">
-          {soNameFormatted}
+          {soNameFormatted} · {receivedAtFormatted}
+          {!!punchedByName && !!punchedAtFormatted &&
+            ` · punched by ${punchedByName} ${punchedAtFormatted}`}
         </span>
         <div className="flex-1" />
         <BillingActionRibbon
@@ -1599,11 +1616,17 @@ export function ReviewView({
         <span className="mo-print-hide inline-flex flex-shrink-0 items-center">
           {billingNotesButton}
         </span>
+        {/* (C) The row's ONE divider: it separates the things you DO to the
+            order (Urgent/Hold/Slot/Notes) from the punch controls. The four
+            buttons are deliberately left undivided — they are one group. Same
+            `w-px h-4 bg-gray-200` rule used across the header and tab row. */}
+        <div className="w-px h-4 bg-gray-200" />
         <div className="flex flex-shrink-0 items-center gap-1.5">
           {soNumberSlot}
         </div>
-        {/* Right end: the ⓘ, and — only on a deliberately reopened done order —
-            a × to put the pane back to "All caught up".
+        {/* Right end: only the reopen ×, on a deliberately reopened done order.
+            The ⓘ was removed 2026-08-01 — its three facts now render inline on
+            the left of this row, so the popover had nothing left to hold.
 
             Gated on THIS order being the reopened one, not merely on the state
             being set, so it cannot appear on a normal pending detail. With the
@@ -1611,12 +1634,6 @@ export function ReviewView({
             billingV2), and this whole row is `billingV2 ? … : undefined`
             anyway — two independent reasons it cannot reach the OFF path. */}
         <div className="mo-print-hide flex flex-shrink-0 items-center gap-1">
-          <BillingOrderInfo
-            soName={soNameFormatted}
-            receivedAt={receivedAtFormatted}
-            punchedByName={punchedByName}
-            punchedAt={punchedAtFormatted}
-          />
           {reopenedPunchedId !== null && order.id === reopenedPunchedId && (
             <button
               type="button"
@@ -2313,9 +2330,21 @@ export function ReviewView({
                 the non-billing face, and it must not follow the label out.
                 Stats reuse the `text-[10px] text-gray-400` of the "N punched"
                 divider below — the nearest count text in this rail. */}
-            <div className="flex h-[28px] items-center text-[10px] text-gray-400">
+            {/* (E) Right-aligned via justify-end. (F) The count stays muted;
+                the percentage is the only coloured thing — GREEN at 100, AMBER
+                below, so "not finished yet" reads at a glance.
+                ⚠ Tokens reused, not picked: text-green-600 / text-amber-600 are
+                the exact pair the original header punch chip used
+                (mail-orders-page.tsx:1203-1204), which is this line's ancestor.
+                The `railTotal > 0` guard is unchanged — an empty day shows
+                "0 orders" and no percentage, so there is nothing to colour. */}
+            <div className="flex h-[28px] items-center justify-end text-[10px] text-gray-400">
               {railTotal} orders
-              {railTotal > 0 && ` · ${railPunchPct}% punched`}
+              {railTotal > 0 && (
+                <span className={`ml-1 font-medium ${railPunchPct === 100 ? "text-green-600" : "text-amber-600"}`}>
+                  · {railPunchPct}% punched
+                </span>
+              )}
             </div>
           </div>
         ) : (
