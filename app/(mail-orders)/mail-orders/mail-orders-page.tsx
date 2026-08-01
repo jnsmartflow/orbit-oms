@@ -17,6 +17,7 @@ import { useBillingV2 } from "@/components/billing/billing-v2-provider";
 import type { BillingTab } from "@/components/billing/billing-tab-bar";
 import { HeaderFilter } from "@/components/header-filter";
 import { HeaderDateStepper } from "@/components/header-date-stepper";
+import { HeaderShortcuts } from "@/components/header-shortcuts";
 
 // The six header filter groups. Hoisted out of the JSX 2026-07-31 so the header
 // and the Billing tab row render the SAME array rather than two literals that
@@ -28,6 +29,19 @@ const MO_FILTER_GROUPS = [
   { label: "Priority", key: "priority", options: [{ value: "Urgent", label: "Urgent" }, { value: "Normal", label: "Normal" }] },
   { label: "Lock", key: "lock", options: [{ value: "locked", label: "Locked" }, { value: "unlocked", label: "Unlocked" }] },
   { label: "Dealer", key: "keyDealer", options: [{ value: "key", label: "Key" }] },
+];
+
+// This page's extra shortcut rows. Hoisted out of the JSX 2026-08-01 for the
+// same reason MO_FILTER_GROUPS was: the header's shortcuts popover and the
+// Billing tab row's copy render the SAME array rather than two literals that
+// drift. Values unchanged from the inline version.
+const MO_SHORTCUTS = [
+  { key: "Ctrl+C", label: "Smart copy" },
+  { key: "Ctrl+V", label: "Paste SO" },
+  { key: "E", label: "Slot email" },
+  { key: "R", label: "Reply" },
+  { key: "F", label: "Flag" },
+  { key: "N", label: "Next unmatched" },
 ];
 
 // ── Column Picker ──────────────────────────────────────────────────────────
@@ -1102,6 +1116,14 @@ export default function MailOrdersPage() {
       />
       <div className="w-px h-4 bg-gray-200" />
       <HeaderDateStepper currentDate={headerDate} onDateChange={handleHeaderDateChange} />
+      <div className="w-px h-4 bg-gray-200" />
+      {/* The shortcuts popover the header no longer shows on this face. SAME
+          component, UNCONTROLLED: no `open`/`onOpenChange`, so it manages its
+          own state and installs its own Escape listener — safe here because
+          this row has no Escape priority chain to order. `segmentCount` is
+          deliberately omitted: the billing face passes `segments={undefined}`
+          to the header, so there is no slot row and no "Jump to slot" to list. */}
+      <HeaderShortcuts shortcuts={MO_SHORTCUTS} variant="row" />
     </>
   ) : undefined;
 
@@ -1234,14 +1256,10 @@ export default function MailOrdersPage() {
             onChange={setVisibleColumns}
           />
         ) : undefined}
-        shortcuts={[
-          { key: "Ctrl+C", label: "Smart copy" },
-          { key: "Ctrl+V", label: "Paste SO" },
-          { key: "E", label: "Slot email" },
-          { key: "R", label: "Reply" },
-          { key: "F", label: "Flag" },
-          { key: "N", label: "Next unmatched" },
-        ]}
+        // Still passed on BOTH paths: on the non-billing face the header's own
+        // shortcuts button renders and needs these rows. On billing the button
+        // is hidden and the same array feeds the tab-row copy below.
+        shortcuts={MO_SHORTCUTS}
       />
 
       {/* ── Content area ───────────────────────────────────────────────────────── */}

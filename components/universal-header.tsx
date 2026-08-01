@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef } from "react";
 import {
   Search,
-  Keyboard,
   Download,
   Upload,
 } from "lucide-react";
@@ -15,6 +14,17 @@ import { ImportModal } from "@/components/import/import-modal";
 // (search → shortcuts → filter) that only the state owner can order.
 import { HeaderFilter } from "@/components/header-filter";
 import { HeaderDateStepper } from "@/components/header-date-stepper";
+// The shortcuts button + popover were extracted 2026-08-01 for the same reason
+// and on the same contract: this header uses it CONTROLLED (it owns
+// `shortcutsOpen` and the Escape priority chain), the Billing tab row uses it
+// bare. Verbatim move — see that file's header.
+import { HeaderShortcuts } from "@/components/header-shortcuts";
+import type { ShortcutItem } from "@/components/header-shortcuts";
+
+// `ShortcutItem` moved to header-shortcuts.tsx with the control it describes.
+// Re-exported here so the consumers that import it from this module keep
+// working. Type-only, so this cannot become a runtime circular import.
+export type { ShortcutItem } from "@/components/header-shortcuts";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -39,11 +49,6 @@ export interface FilterGroup {
   label: string;
   key: string;
   options: FilterOption[];
-}
-
-export interface ShortcutItem {
-  key: string;
-  label: string;
 }
 
 export interface UniversalHeaderProps {
@@ -186,8 +191,8 @@ export function UniversalHeader({
   const [searchFocused, setSearchFocused] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
 
-  const shortcutsRef = useRef<HTMLDivElement>(null);
-  // filterRef moved into HeaderFilter with the outside-click effect it anchored.
+  // filterRef moved into HeaderFilter with the outside-click effect it anchored;
+  // shortcutsRef moved into HeaderShortcuts for the same reason (2026-08-01).
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   // Clock. Gated on showClock (default true → unchanged for every caller):
@@ -210,17 +215,10 @@ export function UniversalHeader({
     return () => clearInterval(t);
   }, [showClock]);
 
-  // Close shortcuts on outside click
-  useEffect(() => {
-    if (!shortcutsOpen) return;
-    function handleClick(e: MouseEvent) {
-      if (shortcutsRef.current && !shortcutsRef.current.contains(e.target as Node)) {
-        setShortcutsOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, [shortcutsOpen]);
+  // The shortcuts outside-click effect moved into HeaderShortcuts with the
+  // control it anchored (2026-08-01), same mousedown/document pairing and the
+  // same open-flag dependency. `shortcutsOpen` STAYS here for the same reason
+  // `filterOpen` does — see the Escape chain below.
 
   // The outside-click effect moved into HeaderFilter with this component
   // (2026-07-31) — same mousedown/document pairing, same open-flag dependency.
@@ -366,16 +364,10 @@ export function UniversalHeader({
     </button>
   );
 
-  // Universal shortcuts
-  const universalShortcuts: ShortcutItem[] = [
-    { key: "/", label: "Focus search" },
-    { key: "Esc", label: "Close / clear" },
-    ...(segments && segments.length > 0
-      ? [{ key: "1-" + Math.min(segments.length, 9), label: "Jump to slot" }]
-      : []),
-    { key: "\u2191\u2193", label: "Navigate rows" },
-    { key: "\u21B5", label: "Expand" },
-  ];
+  // The `universalShortcuts` derivation moved into HeaderShortcuts with the
+  // popover that was its only consumer (2026-08-01). It now takes a
+  // `segmentCount` number instead of reading `segments.length` itself, so the
+  // control never has to know what a segment is.
 
   return (
     <>
@@ -471,43 +463,16 @@ export function UniversalHeader({
               above (`/`, Escape, 1-9) is a bare useEffect that does not consult
               this flag, and a consumer's own listeners are its own. */}
           {showShortcutsButton && (
-          <div className="relative" ref={shortcutsRef}>
-            <button
-              onClick={() => setShortcutsOpen((v) => !v)}
-              className="bg-gray-50 rounded-[5px] p-[4px_8px] cursor-pointer hover:bg-gray-100 transition-colors"
-              title="Keyboard shortcuts (?)"
-            >
-              <Keyboard size={13} className="text-gray-400" />
-            </button>
-            {shortcutsOpen && (
-              <div className="absolute top-full right-0 mt-2 z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-3 w-[220px] max-h-[calc(100vh-120px)] overflow-y-auto">
-                <p className="text-[11px] font-semibold text-gray-900 mb-2">
-                  Keyboard shortcuts
-                </p>
-                {universalShortcuts.map((s) => (
-                  <div key={s.key} className="flex items-center justify-between py-[3px]">
-                    <span className="text-[11px] text-gray-600">{s.label}</span>
-                    <span className="text-[11px] font-mono text-gray-500 bg-gray-50 border border-gray-200 rounded px-[6px] py-[1px]">
-                      {s.key}
-                    </span>
-                  </div>
-                ))}
-                {shortcuts && shortcuts.length > 0 && (
-                  <>
-                    <div className="border-t border-gray-100 my-2" />
-                    {shortcuts.map((s) => (
-                      <div key={s.key} className="flex items-center justify-between py-[3px]">
-                        <span className="text-[11px] text-gray-600">{s.label}</span>
-                        <span className="text-[11px] font-mono text-gray-500 bg-gray-50 border border-gray-200 rounded px-[6px] py-[1px]">
-                          {s.key}
-                        </span>
-                      </div>
-                    ))}
-                  </>
-                )}
-              </div>
-            )}
-          </div>
+            <HeaderShortcuts
+              // CONTROLLED. This header owns `shortcutsOpen` because its Escape
+              // handler orders search → shortcuts → filter, and only the owner
+              // of all three can do that. Passing `open` also suppresses the
+              // component's own Escape listener, which is the point.
+              open={shortcutsOpen}
+              onOpenChange={setShortcutsOpen}
+              shortcuts={shortcuts}
+              segmentCount={segments?.length}
+            />
           )}
 
           {showDownload && (
