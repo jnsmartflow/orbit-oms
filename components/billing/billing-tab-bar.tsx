@@ -110,13 +110,13 @@ export function BillingTabBar({
     <div className="flex items-center gap-[18px] border-b border-gray-200 bg-white px-3.5">
       {pill("orders", "Orders", ordersCount, false)}
       {pill("picking", "Picking", pendingCount, true)}
-      {/* Caption keeps its place; `ml-auto` pushes the pair to the right edge so
-          the controls sit outermost and nothing overlaps. When rightSlot is
-          omitted the caption alone carries ml-auto, as before. */}
-      <span className="ml-auto text-[11px] text-gray-400">
-        updates live as picks are checked
-      </span>
-      {rightSlot && <div className="flex items-center gap-2 py-1.5">{rightSlot}</div>}
+      {/* ⚠ `ml-auto` lives HERE now. It used to sit on a caption span that ran
+          between the pills and this slot; removing that span without moving the
+          class would have left the controls butted against the Picking pill
+          instead of pinned to the right edge. With rightSlot omitted the row is
+          just the two pills, left-aligned — which is correct, there is nothing
+          left to push. */}
+      {rightSlot && <div className="ml-auto flex items-center gap-2 py-1.5">{rightSlot}</div>}
     </div>
   );
 }

@@ -1109,13 +1109,13 @@ export default function MailOrdersPage() {
   // See the suppressFilterBar wiring for why that matters.
   const billingHeaderSlot = billingV2 ? (
     <>
+      <HeaderDateStepper currentDate={headerDate} onDateChange={handleHeaderDateChange} />
+      <div className="w-px h-4 bg-gray-200" />
       <HeaderFilter
         groups={MO_FILTER_GROUPS}
         activeFilters={headerFilters}
         onFilterChange={setHeaderFilters}
       />
-      <div className="w-px h-4 bg-gray-200" />
-      <HeaderDateStepper currentDate={headerDate} onDateChange={handleHeaderDateChange} />
       <div className="w-px h-4 bg-gray-200" />
       {/* The shortcuts popover the header no longer shows on this face. SAME
           component, UNCONTROLLED: no `open`/`onOpenChange`, so it manages its
@@ -1153,6 +1153,10 @@ export default function MailOrdersPage() {
       `}</style>
       <UniversalHeader
         showImport={canImportOBDs}
+        // Billing face: Import is the row's one filled call to action, sized to
+        // match the search box beside it. The OFF path keeps the grey chip, so
+        // the non-billing Mail Orders header is unchanged.
+        importVariant={billingV2 ? "primary" : "default"}
         // Billing face: the title is JUST the word. The Table/Focus toggle, the
         // divider, the "% punched" chip and the `stats` "N orders" are all gone
         // from the header — the Orders tab badge already carries the count that

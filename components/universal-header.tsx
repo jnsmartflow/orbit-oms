@@ -135,6 +135,22 @@ export interface UniversalHeaderProps {
   showImport?: boolean;
 
   /**
+   * How the Import button looks. Default `"default"` — the small grey chip it
+   * has always been, unchanged for every existing caller.
+   *
+   * `"primary"` makes it the row's one filled call to action: teal-600, 36px
+   * tall, white label. Intended for a surface where importing IS the primary
+   * action rather than one utility among several. Behaviour, handler and modal
+   * are identical either way — this is styling only.
+   *
+   * ⚠ teal-600 is the brand accent and CLAUDE_UI reserves it for a SINGLE
+   * element per surface. A caller passing "primary" is asserting that Import is
+   * that element there; do not pass it on a screen that already spends its teal
+   * elsewhere.
+   */
+  importVariant?: "default" | "primary";
+
+  /**
    * Render the keyboard-shortcuts BUTTON and its popover. Default `true`.
    *
    * ⚠ This gates the BUTTON only — never the shortcuts themselves. All three
@@ -182,6 +198,7 @@ export function UniversalHeader({
   showClock = true,
   shortcuts,
   showImport,
+  importVariant = "default",
   showShortcutsButton = true,
   segmentsDisabled,
 }: UniversalHeaderProps) {
@@ -290,11 +307,13 @@ export function UniversalHeader({
   // focus width transition. Every non-billing consumer renders this and must
   // keep rendering exactly it.
   //
-  // WIDE is borderless: a white 300×36 field on a soft shadow stack (a hairline
-  // ring plus a lift), deepening on hover and taking a teal ring on focus. Not a
-  // pill and not grey-filled — the two modes share only the input's identity,
-  // never its look. Each element branches on `wideSearch` rather than sharing a
-  // base string, so a future tweak to one cannot leak into the other.
+  // WIDE is a 300×36 grey field on a hairline border that turns WHITE with a
+  // teal border and ring on focus — the field itself signals focus rather than a
+  // shadow doing it. (This supersedes the borderless shadow-stack version from
+  // d08f3870; same box size, different resting state.) The two modes share only
+  // the input's identity, never its look. Each element branches on `wideSearch`
+  // rather than sharing a base string, so a future tweak to one cannot leak into
+  // the other.
   //
   // ⚠ The width is FIXED here (w-[300px]), not inherited from a parent. The
   // wide arm used to be `w-full max-w-[480px]` and relied on a 480px sizing
@@ -305,13 +324,13 @@ export function UniversalHeader({
     <div
       className={
         wideSearch
-          ? "flex items-center gap-2.5 w-[300px] max-w-full min-w-0 h-[36px] rounded-[10px] bg-white border-0 px-3.5 shadow-[0_0_0_1px_rgba(17,24,39,0.05),0_1px_3px_rgba(17,24,39,0.10)] transition-shadow hover:shadow-[0_0_0_1px_rgba(17,24,39,0.06),0_2px_6px_rgba(17,24,39,0.12)] focus-within:shadow-[0_0_0_1px_rgba(13,148,136,0.35),0_2px_8px_rgba(17,24,39,0.13)]"
+          ? "flex items-center gap-2 w-[300px] max-w-full min-w-0 h-[36px] rounded-[10px] bg-gray-50 border border-gray-200 px-3 transition-colors hover:border-gray-300 focus-within:bg-white focus-within:border-teal-600 focus-within:ring-2 focus-within:ring-teal-600/15"
           : `bg-gray-50 rounded-[6px] px-[10px] py-[4px] flex items-center gap-[6px] transition-all duration-200 ${
               searchFocused || searchValue ? "w-[260px]" : "w-[180px]"
             }`
       }
     >
-      <Search size={wideSearch ? 14 : 13} className="text-gray-400 flex-shrink-0" />
+      <Search size={wideSearch ? 15 : 13} className="text-gray-400 flex-shrink-0" />
       <input
         ref={searchInputRef}
         type="text"
@@ -320,11 +339,12 @@ export function UniversalHeader({
         onChange={(e) => onSearchChange?.(e.target.value)}
         onFocus={() => setSearchFocused(true)}
         onBlur={() => setSearchFocused(false)}
-        // Wide: transparent input over the wrapper's white fill — giving the
-        // input its own background would double up and show a seam at the ends.
+        // Wide: transparent input over the wrapper's fill — giving the input its
+        // own background would double up, show a seam at the ends, and defeat the
+        // grey→white swap the wrapper does on focus.
         className={
           wideSearch
-            ? "flex-1 bg-transparent outline-none border-0 text-[13px] text-gray-900 placeholder:text-gray-500"
+            ? "flex-1 bg-transparent outline-none border-0 text-[13px] text-gray-900 placeholder:text-gray-400"
             : "bg-transparent border-none outline-none text-[11px] text-gray-900 placeholder:text-gray-400 flex-1 w-full"
         }
       />
@@ -352,15 +372,26 @@ export function UniversalHeader({
   // The trailing divider is NOT part of this: in compact it separates Import
   // from the clock/shortcuts that follow it, and in wide nothing follows it in
   // that cluster. It stays at the compact call site.
+  //
+  // Two looks, ONE definition — `importVariant` swaps the class strings and the
+  // icon size, nothing else. The handler, the `importOpen` state and the single
+  // ImportModal below are shared, so the two can never diverge in behaviour.
+  // "default" is the original chip character-for-character; every consumer that
+  // does not pass the prop gets exactly it.
+  const importPrimary = importVariant === "primary";
   const importButton = (
     <button
       type="button"
       title="Import OBDs"
       onClick={() => setImportOpen(true)}
-      className="bg-gray-50 rounded-[5px] p-[4px_8px] cursor-pointer hover:bg-gray-100 transition-colors flex items-center gap-[4px]"
+      className={
+        importPrimary
+          ? "flex items-center gap-1.5 h-[36px] px-3.5 rounded-[10px] bg-teal-600 hover:bg-teal-700 text-white text-[13px] font-medium transition-colors cursor-pointer"
+          : "bg-gray-50 rounded-[5px] p-[4px_8px] cursor-pointer hover:bg-gray-100 transition-colors flex items-center gap-[4px]"
+      }
     >
-      <Upload size={13} className="text-gray-400" />
-      <span className="text-[10px] text-gray-500 font-medium">Import</span>
+      <Upload size={importPrimary ? 15 : 13} className={importPrimary ? "text-white" : "text-gray-400"} />
+      <span className={importPrimary ? "text-white" : "text-[10px] text-gray-500 font-medium"}>Import</span>
     </button>
   );
 
