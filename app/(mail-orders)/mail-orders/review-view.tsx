@@ -1920,7 +1920,30 @@ export function ReviewView({
 
     return (
       <>
-        <div data-tutorial="detail-header" className="flex-shrink-0 grid grid-cols-2 gap-3 px-4 pt-3 pb-2">
+        {/* Billing v2 — a floor under the two cards so the pair stops wobbling
+            as the operator steps through orders. Since the ship card lost its
+            Urgent/Hold/Dispatch chips (c9ff6bb5) its chip row is usually absent
+            entirely, and the card shrank by that row's height.
+
+            ⚠ Applied to the CHILDREN, not this container. These are grid items
+            with the default `align-items: stretch`, so the row is already
+            max(bill, ship) and both cards share a height — a floor on each
+            child is what raises that max. A min-h on the container itself would
+            fight its own pt-3/pb-2 padding.
+
+            108px ≈ the card at its natural height WITH one chip row present, so
+            an order carrying a Challan (the only ship signal that survives the
+            billing filter) does not push the row taller than an order with
+            none. It is a floor, never a cap: a card with more content still
+            grows.
+
+            Call-site only — ShipToCard and BillToCard are SHARED with the
+            non-billing focus face and are not modified. With the flag off this
+            expression contributes no class at all. */}
+        <div
+          data-tutorial="detail-header"
+          className={`flex-shrink-0 grid grid-cols-2 gap-3 px-4 pt-3 pb-2${billingV2 ? " [&>div]:min-h-[108px]" : ""}`}
+        >
           <BillToCard
             customerName={billToName}
             customerCode={order.customerCode}
@@ -2485,21 +2508,33 @@ export function ReviewView({
                 the non-billing face, and it must not follow the label out.
                 Stats reuse the `text-[10px] text-gray-400` of the "N punched"
                 divider below — the nearest count text in this rail. */}
-            {/* (E) Right-aligned via justify-end. (F) The count stays muted;
-                the percentage is the only coloured thing — GREEN at 100, AMBER
-                below, so "not finished yet" reads at a glance.
-                ⚠ Tokens reused, not picked: text-green-600 / text-amber-600 are
-                the exact pair the original header punch chip used
-                (mail-orders-page.tsx:1203-1204), which is this line's ancestor.
-                The `railTotal > 0` guard is unchanged — an empty day shows
-                "0 orders" and no percentage, so there is nothing to colour. */}
-            <div className="flex h-[28px] items-center justify-end text-[10px] text-gray-400">
-              {railTotal} orders
-              {railTotal > 0 && (
-                <span className={`ml-1 font-medium ${railPunchPct === 100 ? "text-green-600" : "text-amber-600"}`}>
-                  · {railPunchPct}% punched
-                </span>
-              )}
+            {/* Rail head: an "Inbox" label on the LEFT, the day summary on the
+                RIGHT, split by justify-between. The Mail glyph is the SAME
+                lucide icon the sidebar maps to this module
+                (role-sidebar.tsx:55, `mail_orders: Mail`), so the rail and the
+                nav name the screen with one mark.
+
+                The percentage is the only coloured thing on the line — GREEN at
+                100, BLUE below, so "still going" reads at a glance without the
+                alarm an amber would carry. The `railTotal > 0` guard is
+                unchanged: an empty day shows "0 orders" and no percentage, so
+                there is nothing to colour.
+
+                ⚠ h-[28px] stays and is load-bearing — it is what keeps the
+                order list starting at the same offset as the non-billing face. */}
+            <div className="flex h-[28px] items-center justify-between text-[10px] text-gray-400">
+              <span className="flex items-center gap-1.5">
+                <Mail size={14} className="text-gray-400 flex-shrink-0" />
+                <span className="uppercase tracking-wide">Inbox</span>
+              </span>
+              <span>
+                {railTotal} orders
+                {railTotal > 0 && (
+                  <span className={`ml-1 font-medium ${railPunchPct === 100 ? "text-green-600" : "text-blue-600"}`}>
+                    · {railPunchPct}% punched
+                  </span>
+                )}
+              </span>
             </div>
           </div>
         ) : (
