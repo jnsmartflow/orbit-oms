@@ -307,13 +307,14 @@ export function UniversalHeader({
   // focus width transition. Every non-billing consumer renders this and must
   // keep rendering exactly it.
   //
-  // WIDE is a 300×36 grey field on a hairline border that turns WHITE with a
-  // teal border and ring on focus — the field itself signals focus rather than a
-  // shadow doing it. (This supersedes the borderless shadow-stack version from
-  // d08f3870; same box size, different resting state.) The two modes share only
-  // the input's identity, never its look. Each element branches on `wideSearch`
-  // rather than sharing a base string, so a future tweak to one cannot leak into
-  // the other.
+  // WIDE is a 240×36 PEARL (#f7f7f5) field on a hairline border that turns WHITE
+  // with a teal border and ring on focus — the field itself signals focus rather
+  // than a shadow doing it. 240 rather than 300 so its right edge lines up with
+  // the control cluster on the row below. (Supersedes the 300px gray-50 version
+  // from f76b4c86, which superseded the borderless shadow stack from d08f3870.)
+  // The two modes share only the input's identity, never its look. Each element
+  // branches on `wideSearch` rather than sharing a base string, so a future tweak
+  // to one cannot leak into the other.
   //
   // ⚠ The width is FIXED here (w-[300px]), not inherited from a parent. The
   // wide arm used to be `w-full max-w-[480px]` and relied on a 480px sizing
@@ -324,7 +325,7 @@ export function UniversalHeader({
     <div
       className={
         wideSearch
-          ? "flex items-center gap-2 w-[300px] max-w-full min-w-0 h-[36px] rounded-[10px] bg-gray-50 border border-gray-200 px-3 transition-colors hover:border-gray-300 focus-within:bg-white focus-within:border-teal-600 focus-within:ring-2 focus-within:ring-teal-600/15"
+          ? "flex items-center gap-2 w-[240px] max-w-full min-w-0 h-[36px] rounded-[10px] bg-[#f7f7f5] border border-gray-200 px-3 transition-colors hover:border-gray-300 focus-within:bg-white focus-within:border-teal-600 focus-within:ring-2 focus-within:ring-teal-600/15"
           : `bg-gray-50 rounded-[6px] px-[10px] py-[4px] flex items-center gap-[6px] transition-all duration-200 ${
               searchFocused || searchValue ? "w-[260px]" : "w-[180px]"
             }`

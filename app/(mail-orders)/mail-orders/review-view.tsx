@@ -1785,10 +1785,15 @@ export function ReviewView({
         </div>
 
         <div className="flex-shrink-0">
+          {/* Billing face gets Floor's light-purple instruction treatment; every
+              other face keeps the grey strip. This component renders in FOCUS
+              mode for non-billing users too, so the recolour has to be a prop —
+              it is not reachable behind a render-time billingV2 branch. */}
           <InstructionsStrip
             delivery={parsed.deliveryInstruction}
             bill={order.billRemarks || null}
             notes={notesString}
+            tone={billingV2 ? "violet" : "default"}
           />
         </div>
       </>
@@ -2281,18 +2286,17 @@ export function ReviewView({
             the same state back up. Do not delete the OFF branch. */}
         {billingV2 ? (
           <div className="px-3 py-2 border-b border-gray-200">
-            {/* Label left, day summary right — both on the SAME 28px row. That
-                height is load-bearing (see the note above): a second line would
-                grow this head and the order list would stop starting at the same
-                offset as the non-billing face. The stats reuse the `text-[10px]
-                text-gray-400` of the "N punched" divider below — the nearest
-                count text in this rail — rather than a new muted style. */}
-            <div className="flex h-[28px] items-center justify-between gap-2 text-[12px] font-semibold tracking-[-0.01em] text-gray-900">
-              <span>Inbox</span>
-              <span className="text-[10px] font-normal text-gray-400">
-                {railTotal} orders
-                {railTotal > 0 && ` · ${railPunchPct}% punched`}
-              </span>
+            {/* The day summary ALONE, left-aligned — the "Inbox" label was
+                dropped 2026-08-01: the rail's contents say what it is, and the
+                word was competing with the tab bar for the same job.
+                ⚠ The h-[28px] stays and is load-bearing (see the note above):
+                it is what keeps the order list starting at the same offset as
+                the non-billing face, and it must not follow the label out.
+                Stats reuse the `text-[10px] text-gray-400` of the "N punched"
+                divider below — the nearest count text in this rail. */}
+            <div className="flex h-[28px] items-center text-[10px] text-gray-400">
+              {railTotal} orders
+              {railTotal > 0 && ` · ${railPunchPct}% punched`}
             </div>
           </div>
         ) : (
