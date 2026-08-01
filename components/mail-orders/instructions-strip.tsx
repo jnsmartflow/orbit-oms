@@ -56,8 +56,21 @@ export function InstructionsStrip({
 
   if (rows.length === 0) return null;
 
+  // The whole class string branches rather than appending to a shared base: the
+  // violet arm needs SIDE-SPECIFIC border colours (border-t-gray-100 +
+  // border-l-[#7c3aed]) because a bare `border-gray-100` would set all four
+  // sides and the left accent would inherit grey. Splitting them keeps the
+  // default arm's `border-t border-gray-100` byte-identical.
+  // #7c3aed is the notes dot's violet (VIOLET_NOTES_DOT above) — same shade, not
+  // a second one.
   return (
-    <div className={`${violet ? "bg-[#f5f3ff]" : "bg-gray-200"} border-t border-gray-100 pt-3 pb-3`}>
+    <div
+      className={
+        violet
+          ? "bg-[#f5f3ff] border-t border-t-gray-100 border-l-[3px] border-l-[#7c3aed] pt-3 pb-3"
+          : "bg-gray-200 border-t border-gray-100 pt-3 pb-3"
+      }
+    >
       {rows.map((row) => (
         <div
           key={row.kind}
