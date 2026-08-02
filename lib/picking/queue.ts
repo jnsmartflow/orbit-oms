@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { getISTDayRange } from "@/lib/dates";
 import { sortPickingQueue } from "./sort";
 import {
   // SUPPORT_DONE_OUTPUT was imported here for the 'rolling' arm's carry-over
@@ -93,7 +94,9 @@ function resolveTargetDate(dateStr?: string): { isoDate: string; dateOnly: Date 
  *
  * 'openPending' — the mobile boards (2026-07-20 date-zones redesign). Pending
  *                 and in-progress work across ALL dates (no dispatchTargetDate
- *                 fence), PLUS today's checked bills only. Both arms keep
+ *                 fence), PLUS the bills CHECKED today — fenced on
+ *                 pick_assignments.checkedAt, not on the dispatch date
+ *                 (2026-08-02; see the arm itself). Both arms keep
  *                 dispatchStatus='dispatch' and isRemoved=false.
  *
  * ⚠ NAME CAVEAT — 'openPending' is slightly narrower than what it returns: it
@@ -193,10 +196,26 @@ export function buildPickingWhere(
   const { date: dateStr, scope = "single" } = options;
   const { isoDate, dateOnly } = resolveTargetDate(dateStr);
 
-  // Today in IST, always — the anchor for zone/ageDays in BOTH scopes, and
-  // the fence for 'openPending''s checked arm. Independent of `dateOnly`,
-  // which in 'single' scope is whatever day the caller asked for.
-  const { dateOnly: todayDateOnly } = getISTTodayDate();
+  // Today in IST as a half-open INSTANT window [start, end) — the fence for
+  // 'openPending''s checked arm below. Independent of `dateOnly`, which in
+  // 'single' scope is whatever day the caller asked for.
+  //
+  // An INSTANT window, not the date-only anchor this line used to build
+  // (`getISTTodayDate().dateOnly`, for the old dispatchTargetDate fence),
+  // because `pick_assignments.checkedAt` is a timestamp and cannot be compared
+  // to a @db.Date value. Same helper and same pairing lib/floor/queries.ts:154
+  // and lib/picking/picker-split.ts:80 already use. Half-open, so a bill
+  // checked exactly at IST midnight lands in the new day only — never twice.
+  //
+  // ⚠ The zone / lock / ageDays maths below is NOT anchored here and must not
+  // be repointed at it: it anchors on `dateOnly` (`anchorMs`, :463), which is
+  // the PROMISE date — a genuinely different question ("when was this bill
+  // due?" vs "when was it checked?"). getISTTodayDate() itself stays; it is
+  // what resolveTargetDate falls back to (:59).
+  //
+  // Pure and synchronous, so this function keeps its signature and both
+  // callers are untouched.
+  const { start: checkedStart, end: checkedEnd } = getISTDayRange();
 
   // Two shapes, one stage universe. PICKING_OPEN_STAGES ⊂ PICKING_ACTIVE_STAGES
   // by construction (lib/workflow-stages.ts), so the scopes cannot drift into
@@ -209,14 +228,55 @@ export function buildPickingWhere(
           isRemoved: false,
           // NO dispatchTargetDate fence on the open arm — that is the whole
           // point of this scope. The checked arm keeps its own today-fence,
-          // per the locked design ("only the Checked band stays on today").
+          // per the locked design ("only the Checked band stays on today") —
+          // but on the CHECK date, not the promise date. See below.
           OR: [
             { workflowStage: { in: PICKING_OPEN_STAGES } },
-            { workflowStage: PICK_CHECKED, dispatchTargetDate: todayDateOnly },
+            // Everything the floor CHECKED TODAY, whatever day it was due.
+            //
+            // 🔴 FENCED ON `pick_assignments.checkedAt`, NOT `dispatchTargetDate`
+            // (fixed 2026-08-02). This is character-for-character the arm
+            // lib/floor/queries.ts:140-143 already carries, and it is here for
+            // the same reason Floor put it there: keying the checked band on
+            // the PROMISE day makes a carried-over bill — due earlier, checked
+            // today — fail BOTH arms and vanish at the instant of completion.
+            //
+            // The old predicate was `dispatchTargetDate: todayDateOnly`. A bill
+            // dispatch-dated last week and approved today matched arm 1 while
+            // it was pick_done (that arm has no date fence), then matched
+            // NOTHING the moment POST /api/picking/approve advanced it to
+            // pick_checked — so it disappeared from the supervisor's Checked
+            // band AND, because the row left the payload entirely, from the
+            // picker's own Done tab, whose rule (lib/picking/picker-split.ts:127)
+            // deliberately admits isChecked precisely so that would not happen.
+            // The mirror case was wrong too: a bill checked days ago but
+            // dispatch-dated today was filed under a day nothing happened on it.
+            //
+            // A bill must never disappear when it is finished.
+            //
+            // ⚠ `pickAssignment` stays INSIDE this OR branch and must not be
+            // lifted to a top-level key. Both callers AND-merge their own
+            // top-level `pickAssignment: { pickerId }` onto this result by
+            // spread (app/api/picking/marker/route.ts:107-108 and
+            // getPickingQueue below) — a top-level relation filter here would
+            // be silently overwritten by that spread, widening every picker's
+            // board to the whole depot.
+            {
+              workflowStage: PICK_CHECKED,
+              pickAssignment: { checkedAt: { gte: checkedStart, lt: checkedEnd } },
+            },
           ],
         }
       : {
           dispatchStatus: "dispatch",
+          // ⚠ DELIBERATELY UNCHANGED by the 2026-08-02 checked-arm fix above.
+          // This fence applies to EVERY stage including PICK_CHECKED, so this
+          // scope still files a checked bill under its dispatch date — the same
+          // attribution the openPending arm just stopped using. Left alone on
+          // purpose: no app code selects 'single' (see the scope doc above),
+          // but both public routes accept it BY NAME, so changing what it
+          // returns is a live API contract change and belongs in its own step,
+          // not smuggled into this one.
           dispatchTargetDate: dateOnly,
           // Unassigned, assigned, AND picked current stages. Assigned
           // (PICK_ASSIGNED) rows are sunk to the bottom by sort.ts's
@@ -411,16 +471,17 @@ export async function getPickingQueue(
   // desktop board a bill dated for D reads as due, later as upcoming, and ageDays
   // is days-overdue relative to D. For 'openPending'/'single' the resolved
   // dateOnly IS today (they never carry a date param), so this is a no-op for
-  // them — their zone/ageDays are unchanged. `todayDateOnly` is still used, above,
-  // ONLY for openPending's checked-arm today-fence.
+  // them — their zone/ageDays are unchanged. Deliberately NOT the checked arm's
+  // IST instant window (`checkedStart`/`checkedEnd`, above): that answers "when
+  // was it checked", this answers "when was it due".
   const anchorMs = dateOnly.getTime();
 
   const rows: PickingQueueRow[] = orders.map((order) => {
     const effectiveDealer = order.shipToOverrideCustomer ?? order.customer;
 
-    // Zone / age. Both dispatchTargetDate (@db.Date) and todayDateOnly are
-    // UTC-midnight anchored, so the millisecond delta is an exact whole
-    // number of days — no rounding drift, no timezone arithmetic here.
+    // Zone / age. Both dispatchTargetDate (@db.Date) and the `anchorMs` date
+    // above are UTC-midnight anchored, so the millisecond delta is an exact
+    // whole number of days — no rounding drift, no timezone arithmetic here.
     // Never new Date(str) and never a string compare (see resolveTargetDate).
     const targetDate = order.dispatchTargetDate;
     const noDispatchDate = targetDate === null;
