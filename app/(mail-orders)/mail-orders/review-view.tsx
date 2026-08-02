@@ -2627,6 +2627,38 @@ export function ReviewView({
              The tab bar above and the #mo-print-area wrapper are outside this
              ternary and render regardless, so Orders|Picking still switches. */
           genuinelyEmpty ? (
+            /* Two ways to have nothing to work on, and they are not the same
+               news. `railTotal === 0` means NOTHING ARRIVED — the green tick and
+               "Every order is punched" would credit the operator with finishing
+               work that never existed, and at 09:00 it reads as "you are done
+               for the day". Anything above zero and empty here really is the
+               day cleared, which is what the tick is for.
+
+               ⚠ Keyed on `railTotal` (:753 — `allOrders.length`, the UNFILTERED
+               day count), deliberately NOT on `genuinelyEmpty`. That flag folds
+               in the filter question and is already false whenever a filter is
+               on, so reusing it would hand the neutral copy to a
+               filtered-to-nothing day — a day that DID receive orders. The
+               filtered arm below is untouched and still owns that case.
+               `railTotal` is also what the rail head prints as "N orders", so
+               the two halves of this screen cannot disagree about whether the
+               day is empty. */
+            railTotal === 0 ? (
+              <div className="flex flex-1 items-center justify-center">
+                {/* Neutral register — the SAME grey ○ and type scale as the
+                    rail's genuinely-empty state (:2563-2571), so the two halves
+                    of an empty screen read as one statement rather than two
+                    unrelated placeholders. No tick, no green: nothing has been
+                    achieved yet, and nothing has gone wrong. */}
+                <div className="px-5 py-14 text-center">
+                  <div className="text-[28px] leading-none text-gray-300">&#9675;</div>
+                  <h4 className="mt-2 text-[13px] font-semibold text-gray-900">No orders yet today</h4>
+                  <p className="mt-1.5 text-[11.5px] leading-relaxed text-gray-400">
+                    New orders appear here as emails arrive.
+                  </p>
+                </div>
+              </div>
+            ) : (
             <div className="flex flex-1 items-center justify-center">
               {/* Mirrors components/floor/floor-board.tsx:140-152 — the green
                   tick "day is done" state, same type scale and spacing. */}
@@ -2638,6 +2670,7 @@ export function ReviewView({
                 </p>
               </div>
             </div>
+            )
           ) : (
             <div className="flex flex-1 items-center justify-center">
               <p className="text-[12px] text-gray-400 text-center">No orders match your filter.</p>

@@ -1300,7 +1300,19 @@ export default function MailOrdersPage() {
 
       {/* ── Content area ───────────────────────────────────────────────────────── */}
       {/* Focus mode — full bleed, manages own layout */}
-      {!loading && !error && orders.length > 0 && viewMode === "focus" && (
+      {/* Billing face: the shell mounts even at ZERO orders (`|| billingV2`).
+          Everything the operator needs to get OUT of an empty day lives inside
+          ReviewView — the rail, the Orders|Picking tabs, and `billingHeaderSlot`,
+          which is where the date stepper and Filter were relocated to (:1142).
+          The header's own Row 2 is suppressed on this face (:1266), so with the
+          shell unmounted there was no date control anywhere on screen and a
+          zero-order day was a dead end. The rail and the right pane already have
+          their own genuinely-empty states (review-view.tsx:2563, :2629).
+          `!loading && !error` is UNTOUCHED and still wins: the skeleton and the
+          retry line below stay the only thing on screen while either is true.
+          With the flag off this term is false and the expression is the original
+          `orders.length > 0`, so the non-billing face is unchanged. */}
+      {!loading && !error && (orders.length > 0 || billingV2) && viewMode === "focus" && (
         <ReviewView
           orders={filteredOrders}
           allOrders={orders}
@@ -1332,7 +1344,16 @@ export default function MailOrdersPage() {
       )}
 
       {/* Table mode — padded wrapper. Also shows loading/error/empty for focus mode. */}
-      {(viewMode !== "focus" || loading || error || orders.length === 0) && (
+      {/* ⚠ This guard and the ReviewView guard above must stay MUTUALLY
+          EXCLUSIVE — they are siblings, and both claiming the zero case would
+          render the shell with the full-page message underneath it. So the
+          `orders.length === 0` term gains the exact inverse of what that guard
+          gained: billing hands the zero case to the shell, every other face
+          keeps it here. loading/error are outside this term and still route
+          here on BOTH faces, which is what keeps the skeleton and the retry
+          line reachable for billing. With the flag off `!billingV2` is true and
+          the term is the original `orders.length === 0`. */}
+      {(viewMode !== "focus" || loading || error || (orders.length === 0 && !billingV2)) && (
         <div className="flex-1 overflow-y-auto px-4 py-3">
           {!loading && hasUrgentOrHold && viewMode === "table" && (
             <div className="sticky top-0 z-20 mb-2 -mx-0">
@@ -1372,7 +1393,15 @@ export default function MailOrdersPage() {
             </p>
           )}
 
-          {!loading && !error && orders.length === 0 && (
+          {/* The `!billingV2` term is belt-and-braces: the wrapper guard above
+              already withholds the zero case from the billing face, so this is
+              unreachable there. It is written here anyway because THIS is the
+              site that carries the copy — the billing face states the same fact
+              in two better-placed halves (the rail's "No new orders" and the
+              pane's "No orders yet today"), and a reader arriving at this
+              paragraph should not have to walk back up to the wrapper to learn
+              that. Non-billing keeps this message verbatim. */}
+          {!loading && !error && orders.length === 0 && !billingV2 && (
             <p className="text-center text-gray-400 mt-12 text-[13px]">
               No mail orders received today. Orders appear here automatically as emails arrive.
             </p>
