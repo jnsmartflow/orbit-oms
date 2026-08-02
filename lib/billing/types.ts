@@ -38,6 +38,36 @@ export interface BillingDoneRow {
   invoiceNo: string | null;
   invoicedAt: string | null;
   invoicedBy: { id: number; name: string } | null;
+  /**
+   * WHICH of the Done area's two arms this row came from.
+   *
+   *   "marked"   — the billing operator marked it done that day (invoicedAt in
+   *                the window). ACTIONABLE history: it may still carry Undo.
+   *   "invoiced" — checked that day, and SAP had ALREADY invoiced it. PURELY
+   *                INFORMATIONAL: never selectable, never copied, never marked
+   *                done, never undone. It exists because such a bill used to
+   *                match neither list and vanished from the screen entirely.
+   *
+   * ⚠ An EXPLICIT discriminator, deliberately not inferred from
+   * `invoicedAt === null` — a "marked" row whose SAP invoice has not landed yet
+   * has a null `invoiceNo` and reads confusingly similar. The server knows
+   * which query produced the row; the client must not re-derive it.
+   */
+  kind: "marked" | "invoiced";
+  /** pick_assignments.checkedAt — when the supervisor approved the pick.
+   *  Populated on "invoiced" rows only; null on "marked" rows. */
+  checkedAt: string | null;
+  /** pick_assignments.checkedBy.name — who approved it. "invoiced" rows only.
+   *  This is the name the UI shows in place of `invoicedBy` on those rows: no
+   *  billing operator acted on them, so there is no invoicedBy to show. */
+  checkedByName: string | null;
+  /**
+   * The ONE key the merged Done list sorts on, newest first — computed
+   * server-side as `invoicedAt ?? checkedAt` so the two arms cannot be ordered
+   * by two different clocks, and so the client never re-derives an ordering
+   * the route did not intend.
+   */
+  sortAt: string | null;
 }
 
 export interface BillingPickingList {
