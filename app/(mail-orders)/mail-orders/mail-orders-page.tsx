@@ -1340,6 +1340,12 @@ export default function MailOrdersPage() {
           onBillingActionSaved={loadOrders}
           billingHeaderSlot={billingHeaderSlot}
           hasHeaderFilter={hasHeaderFilter}
+          // The day the header stepper is on, for the Billing Picking tab's
+          // Done area. Already this page's state (:175) in the exact
+          // YYYY-MM-DD IST form the billing routes parse — passed down, not
+          // re-derived. Nothing else in ReviewView reads it, and the tab it
+          // feeds renders on the billing face only.
+          selectedDate={selectedDate}
         />
       )}
 

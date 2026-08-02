@@ -105,6 +105,17 @@ interface ReviewViewProps {
    * which is the pre-existing behaviour for every non-billing face.
    */
   hasHeaderFilter?: boolean;
+  /**
+   * The day the header date stepper is on (YYYY-MM-DD, IST), forwarded to the
+   * Billing Picking tab so its Done area follows the stepper. This view does
+   * not read it for anything else — the Orders face is already filtered by the
+   * parent, which fetches per date.
+   *
+   * Optional and passed straight through: omitted → the tab omits `?date=` →
+   * the routes default to today, which is what they did before the param
+   * existed. Every non-billing caller is unaffected.
+   */
+  selectedDate?: string;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -486,6 +497,7 @@ export function ReviewView({
   onBillingActionSaved,
   billingHeaderSlot,
   hasHeaderFilter = false,
+  selectedDate,
 }: ReviewViewProps) {
   // Billing v2 (Phase 2) — dispatch windows for the reused Floor slot picker.
   // Fetched ONLY when the flag is on: with it off this effect returns
@@ -2611,7 +2623,7 @@ export function ReviewView({
         )}
 
         {billingV2 && billingTab === "picking" ? (
-          <BillingPickingTab />
+          <BillingPickingTab date={selectedDate} />
         ) : billingV2 && pendingOrders.length === 0 && reopenedPunchedId === null ? (
           /* Billing v2 — nothing left to work on. Deliberately placed BEFORE
              the `selectedOrder` arm: a punched order stays selected (nothing

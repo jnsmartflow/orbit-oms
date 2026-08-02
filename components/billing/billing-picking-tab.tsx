@@ -21,6 +21,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePickingMarker } from "@/lib/hooks/use-picking-marker";
+import { getTodayIST } from "@/lib/dates";
 import { smartTitleCase } from "@/lib/mail-orders/utils";
 import { billingFlags, type BillingPickingList, type BillingPendingRow, type BillingDoneRow } from "@/lib/billing/types";
 
@@ -66,7 +67,19 @@ function shipName(name: string | null): string {
   return name ? smartTitleCase(name) : "—";
 }
 
-export function BillingPickingTab() {
+/** "25 Jul" for the Done heading on a past day. Anchored at IST midnight — the
+ *  same `${d}T00:00:00+05:30` construction mail-orders-page.tsx:1126 uses — so
+ *  the label cannot slip a day on a machine running UTC. Same en-IN format the
+ *  header stepper prints (components/header-date-stepper.tsx). */
+function formatDayLabel(dateStr: string): string {
+  return new Date(`${dateStr}T00:00:00+05:30`).toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    timeZone: "Asia/Kolkata",
+  });
+}
+
+export function BillingPickingTab({ date }: { date?: string }) {
   const [data, setData] = useState<BillingPickingList | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -78,10 +91,19 @@ export function BillingPickingTab() {
 
   const reqRef = useRef(0);
 
+  // Is the tab showing TODAY? Both the "no date given" case (the routes default
+  // to today) and an explicit today read as true. Drives the Done heading and
+  // the Undo gate below.
+  const isToday = !date || date === getTodayIST();
+
   const load = useCallback(async () => {
     const seq = ++reqRef.current;
     try {
-      const res = await fetch(LIST_URL, { cache: "no-store" });
+      // `?date=` scopes the DONE area only — Pending stays all-dates, server
+      // side. Omitted when the parent passes nothing, which is byte-identical
+      // to the request this tab made before the param existed.
+      const url = date ? `${LIST_URL}?date=${encodeURIComponent(date)}` : LIST_URL;
+      const res = await fetch(url, { cache: "no-store" });
       if (!res.ok) {
         if (seq === reqRef.current) setError(`HTTP ${res.status}`);
         return;
@@ -95,7 +117,10 @@ export function BillingPickingTab() {
     } finally {
       if (seq === reqRef.current) setLoading(false);
     }
-  }, []);
+    // `date` in the deps is what makes stepping the header re-fetch: the effect
+    // below re-runs on a new `load` identity. The seq guard already discards a
+    // slower in-flight response for the previous day.
+  }, [date]);
 
   useEffect(() => {
     void load();
@@ -108,6 +133,12 @@ export function BillingPickingTab() {
   usePickingMarker({
     scope: "openPending",
     url: MARKER_URL,
+    // The hook appends `&date=` itself and RE-BASELINES when this changes
+    // (lib/hooks/use-picking-marker.ts) — so stepping the day stores a fresh
+    // baseline rather than firing a spurious refetch on the first probe of the
+    // new day. The marker route uses it to scope the union's informational arm;
+    // its `count` stays all-dates, like the Pending list.
+    date,
     paused: selection.size > 0 || busy,
     onChange: () => void load(),
   });
@@ -195,10 +226,27 @@ export function BillingPickingTab() {
   const markDone = () => post("/api/billing/picking/mark-done", selectedIds);
   const undo = (id: number) => post("/api/billing/picking/undo", [id]);
 
+  // The Done area's two halves. `marked` is what the operator did; `invoiced`
+  // is what SAP had already done before the floor finished checking — carried
+  // for information only (BillingDoneRow.kind, lib/billing/types.ts).
+  const markedCount = useMemo(
+    () => done.filter((r) => r.kind === "marked").length,
+    [done],
+  );
+  const alreadyInvoicedCount = useMemo(
+    () => done.filter((r) => r.kind === "invoiced").length,
+    [done],
+  );
+
   // "Deepanshu 19 · Bankim 15" — who invoiced what today.
+  //
+  // ⚠ MARKED ROWS ONLY. An already-invoiced row has no `invoicedBy` (nobody on
+  // this screen acted on it), so counting it here would file every one of them
+  // under "Unknown" and make the tally read as a mystery operator's work.
   const doneTally = useMemo(() => {
     const counts = new Map<string, number>();
     for (const row of done) {
+      if (row.kind !== "marked") continue;
       const who = row.invoicedBy?.name ?? "Unknown";
       counts.set(who, (counts.get(who) ?? 0) + 1);
     }
@@ -292,8 +340,21 @@ export function BillingPickingTab() {
             className="flex w-full items-center gap-2.5 bg-gray-50 px-[18px] py-[11px] text-left text-[12px] text-gray-600 hover:bg-gray-100"
           >
             <span className="text-[10px] text-gray-400">{doneOpen ? "▾" : "▸"}</span>
-            <span className="font-bold text-gray-800">Done today</span>
-            <span>&middot; {done.length} invoiced</span>
+            {/* On today this is the original "Done today". On any other day it
+                names the day, because the Pending list above it is still
+                ALL-DATES — without the label a stepped-back Done area looks
+                like the whole tab moved. */}
+            <span className="font-bold text-gray-800">
+              {isToday ? "Done today" : `Done · ${formatDayLabel(date!)}`}
+            </span>
+            {/* Two different facts, never added together: what the operator
+                marked, and what SAP had already invoiced before the check. The
+                second segment is omitted at zero rather than printed as "0
+                already invoiced". */}
+            <span>&middot; {markedCount} invoiced</span>
+            {alreadyInvoicedCount > 0 && (
+              <span>&middot; {alreadyInvoicedCount} already invoiced</span>
+            )}
             {doneTally && <span className="ml-auto text-[11px] text-gray-400">{doneTally}</span>}
           </button>
 
@@ -306,14 +367,20 @@ export function BillingPickingTab() {
               </colgroup>
               <tbody>
                 {done.map((row) => (
-                  <DoneRow key={row.id} row={row} busy={busy} onUndo={() => undo(row.id)} />
+                  <DoneRow
+                    key={row.id}
+                    row={row}
+                    busy={busy}
+                    isToday={isToday}
+                    onUndo={() => undo(row.id)}
+                  />
                 ))}
               </tbody>
             </table>
           )}
           {doneOpen && done.length === 0 && (
             <div className="px-[18px] py-6 text-center text-[11.5px] text-gray-400">
-              Nothing invoiced yet today.
+              {isToday ? "Nothing invoiced yet today." : "Nothing recorded on this day."}
             </div>
           )}
         </div>
@@ -435,15 +502,35 @@ function PendingRow({
   );
 }
 
+/**
+ * One row of the Done area, in either of its two kinds.
+ *
+ *   "marked"   — the operator invoiced it here. Unchanged from before this
+ *                component learned about kinds.
+ *   "invoiced" — SAP had already invoiced the bill by the time the floor
+ *                checked it. INFORMATION ONLY: it is not in `pending`, so it
+ *                can never be selected, copied or marked done (selection is
+ *                derived from `pending` alone), and it renders NO Undo. It is
+ *                here because such a bill used to match neither list and
+ *                disappeared from this screen entirely.
+ *
+ * The kind is read from the server's discriminator, never re-derived from
+ * `invoiceNo`/`invoicedAt` — a marked row still awaiting its SAP number looks
+ * confusingly similar (lib/billing/types.ts).
+ */
 function DoneRow({
   row,
   busy,
+  isToday,
   onUndo,
 }: {
   row: BillingDoneRow;
   busy: boolean;
+  /** Undo is a today-only server action — see the Undo cell below. */
+  isToday: boolean;
   onUndo: () => void;
 }) {
+  const info = row.kind === "invoiced";
   return (
     <tr className="bg-gray-50">
       <td className={`${TD} pl-[18px] font-medium text-gray-800`} style={{ fontVariantNumeric: "tabular-nums" }}>
@@ -458,7 +545,20 @@ function DoneRow({
         )}
       </td>
       <td className={TD}>
-        {row.invoiceNo ? (
+        {info ? (
+          <>
+            <span className="text-gray-800" style={{ fontVariantNumeric: "tabular-nums" }}>{row.invoiceNo}</span>{" "}
+            {/* Violet — the CLAUDE_UI signal-pill token (§ pill table), and
+                already this screen's accent family (the instructions strip and
+                the Notes button). Distinct from every other state on this row:
+                amber is "awaiting SAP", green is done, teal is the CTA and the
+                live pip. Same pill geometry as the amber one below, so the two
+                read as one family of states. */}
+            <span className="rounded border border-violet-200 bg-violet-50 px-1.5 py-px text-[9.5px] font-semibold text-violet-700">
+              Already invoiced
+            </span>
+          </>
+        ) : row.invoiceNo ? (
           <span className="text-gray-800" style={{ fontVariantNumeric: "tabular-nums" }}>{row.invoiceNo}</span>
         ) : (
           <>
@@ -473,14 +573,28 @@ function DoneRow({
           </>
         )}
       </td>
-      <td className={`${TD} text-[10.5px] text-gray-500`}>{row.invoicedBy?.name ?? ""}</td>
-      <td className={`${TD} text-gray-400`}>{hhmm(row.invoicedAt)}</td>
+      {/* WHO. On an informational row there is no invoicedBy — nobody here
+          acted on it — so it names the supervisor who CHECKED it, which is the
+          only person who touched the bill that day. */}
+      <td className={`${TD} text-[10.5px] text-gray-500`}>
+        {info ? (row.checkedByName ?? "—") : (row.invoicedBy?.name ?? "")}
+      </td>
+      {/* WHEN. Same hhmm formatter either way — the check time on an
+          informational row (its `invoicedAt` is null by predicate), the
+          mark-done time on a marked one. */}
+      <td className={`${TD} text-gray-400`}>{hhmm(info ? row.checkedAt : row.invoicedAt)}</td>
       <td className={TD_C}>
         {/* Undo is offered ONLY while invoiceNo is still null — mirroring the
             server guard in app/api/billing/picking/undo/route.ts. Once SAP has
             invoiced the bill the action is genuinely unavailable, so the button
-            must not be there to click. */}
-        {row.invoiceNo === null && (
+            must not be there to click.
+            `!info` is belt-and-braces: an informational row always carries an
+            invoiceNo, so the existing test already excludes it.
+            `isToday` closes the other half. The server's undo window is TODAY
+            (undo/route.ts:77) and that scope is deliberate — so on a stepped-
+            back day the button would post, match zero rows and report "0 of 1
+            updated". A control that cannot work must not be offered. */}
+        {!info && isToday && row.invoiceNo === null && (
           <button
             type="button"
             onClick={onUndo}
