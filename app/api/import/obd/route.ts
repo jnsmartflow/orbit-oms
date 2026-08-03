@@ -20,6 +20,7 @@ import type {
 import { upsertObd, resolveSmuFromDivision } from "@/lib/import-upsert";
 import { resolveArrivalSlotId } from "@/lib/slots/slot-ruler";
 import { evaluateDispatchSlot } from "@/lib/dispatch/dispatch-engine";
+import { hasClockTime } from "@/lib/dispatch/punch-clock";
 import type {
   ExistingLine,
   ExistingOrder,
@@ -369,12 +370,22 @@ async function applyMailOrderEnrichment(soNumbers: (string | null)[]): Promise<v
       }
 
       const deliveryType = ord.customer?.area?.deliveryType?.name ?? null;
+      // A date with no time is NOT a clock — see lib/dispatch/punch-clock.ts.
+      // A manual-SAP obdEmailDate lands at 00:00:00.000 UTC (= 05:30 IST), which
+      // is earlier than every window and earlier than the real order-email time,
+      // so pickEffectiveClock's same-day "take the earlier one" rule handed it
+      // the fake 05:30 and pinned the bill to R1_LOCAL_1030. Passing null instead
+      // drops the engine to its single-clock path and lets the order email decide.
+      //
+      // If the email clock is ALSO null the engine declines with
+      // "no-order-datetime" and the bill reaches the operator with no slot. That
+      // is intended: a wrong slot is worse than no slot. No fallback.
       const result = evaluateDispatchSlot({
         smu: ord.smu,
         dispatchStatus: ord.dispatchStatus,
         deliveryType,
         emailDateTime: ord.orderDateTime,
-        punchDateTime: ord.obdEmailDate,
+        punchDateTime: hasClockTime(ord.obdEmailDate) ? ord.obdEmailDate : null,
       });
 
       if (!result.assigned) continue;

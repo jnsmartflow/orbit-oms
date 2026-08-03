@@ -16,6 +16,7 @@
 // PURE: the clock is passed in as `now`; this file never calls Date.now().
 
 import { evaluateDispatchSlot } from "@/lib/dispatch/dispatch-engine";
+import { hasClockTime } from "@/lib/dispatch/punch-clock";
 import type { SlotSuggestion } from "./types";
 
 const MS_PER_MIN = 60 * 1000;
@@ -86,9 +87,16 @@ export function suggestSlot(input: SuggestInput): SlotSuggestion | null {
   // Feeding completion ALONGSIDE the punch would silently invoke that merge and
   // could hand back the punch instead on a different-IST-day bill — exactly the
   // arrival anchoring this exists to avoid. Replace, never add.
+  //
+  // And whichever clock is in play, a date with NO TIME is not a clock at all —
+  // hasClockTime (lib/dispatch/punch-clock.ts, the single owner of that test)
+  // strips a manual-SAP obdEmailDate sitting at 00:00:00.000 UTC. The import
+  // auto-slot path applies the identical filter, so the rail hint and the slot
+  // the engine actually wrote can never disagree about which clocks exist.
   const anchoredOnCompletion = input.completionDateTime != null;
   const emailDateTime = anchoredOnCompletion ? input.completionDateTime! : input.emailDateTime;
-  const punchDateTime = anchoredOnCompletion ? null : input.punchDateTime;
+  const punchDateTime =
+    anchoredOnCompletion || !hasClockTime(input.punchDateTime) ? null : input.punchDateTime;
 
   const r = evaluateDispatchSlot({
     // SMU gate NEUTRALISED with a literal — the same trick as dispatchStatus
