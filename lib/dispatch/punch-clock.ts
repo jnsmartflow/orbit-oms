@@ -1,8 +1,8 @@
 // ─────────────────────────────────────────────────────────
 // Which clocks may the dispatch engine see?
 //
-//   hasClockTime(d)                    — does this timestamp carry a time of day?
-//   resolvePunchClocks(email, punch)   — the pair to hand evaluateDispatchSlot
+//   hasClockTime(d)                     — does this timestamp carry a time of day?
+//   resolveArrivalClocks(email, punch)  — the pair to hand evaluateDispatchSlot
 //
 // THE SINGLE OWNER of both questions. Import them; never write a second copy.
 // Two consumers today — the import auto-slot call site
@@ -78,67 +78,83 @@ export interface ResolvedClocks {
   punchDateTime: Date | null;
 }
 
+/** Does this value carry a usable CALENDAR DAY, even if it carries no time?
+ *  A date-only value does; null and an invalid Date do not. */
+function hasUsableDay(d: Date | null | undefined): d is Date {
+  return d != null && !Number.isNaN(d.getTime());
+}
+
 /**
- * Decide WHICH clocks the engine may see. One owner, both call sites — the
- * import auto-slot path and the rail suggestion — so they cannot drift.
+ * Decide WHICH arrival clocks the engine may see. One owner, both call sites —
+ * the import auto-slot path and the rail suggestion — so they cannot drift.
  *
- * WHY THIS IS MORE THAN `hasClockTime` ALONE
- * ------------------------------------------
- * Dropping a time-less punch (03b6dd19) also dropped the dual clock's CROSS-DAY
- * protection. pickEffectiveClock uses the LATER clock when the two fall on
- * different IST days, so a bill emailed 22 Jul and punched 25 Jul was correctly
- * anchored to 25 Jul. With the punch simply removed it fell back to the 22 Jul
- * email and got scheduled into a date that had already passed — OBD 9108185689
- * went from a stored 2026-07-25 10:30 to a computed 2026-07-22 12:30.
+ * SYMMETRIC: both clocks are validated. Either can be date-only.
+ * ------------------------------------------------------------
+ * `orders.obdEmailDate` is date-only for manual SAP (no time column). So is
+ * `orders.orderDateTime` on a manual-SAP order that was never mail-matched:
+ * `mergeEmailDateTime(obdEmailDate, null)` returns the date untouched, so the
+ * "email" clock is midnight UTC too. Validating only the punch left two holes:
+ *   (i)  lib/floor/suggest.ts runs on EVERY rail bill, not just mail-matched
+ *        ones, so such a bill rendered a confident one-click "Today 10:30"
+ *        button built on a fake 05:30;
+ *   (ii) with a date-only email and a REAL punch, pickEffectiveClock's same-day
+ *        "earlier wins" rule still picked the fake 05:30 over the real time.
  *
- * A date-only punch still tells us the DAY, just not the time. So:
+ * A date-only value is not a clock, but it IS a day, and the day is
+ * trustworthy. That asymmetry drives the whole ladder:
  *
- *   punch has a real time              -> pass BOTH (engine merge, unchanged)
- *   punch date-only, SAME IST day      -> pass EMAIL only. The day agrees, and
- *                                         the email is the only real clock.
- *   punch date-only, EARLIER IST day   -> pass EMAIL only. The email is already
- *                                         the later of the two, which is what
- *                                         the engine's cross-day rule would
- *                                         have chosen anyway — no past-dating.
- *   punch date-only, LATER IST day     -> pass NEITHER. We know the bill belongs
- *                                         to the later day but have no time for
- *                                         it, and anchoring to the older email
- *                                         would schedule into the past. Decline
- *                                         and let the operator choose.
- *   no email at all                    -> pass NEITHER (nothing to anchor to).
+ *   both real                  -> pass BOTH (engine merge, unchanged)
+ *   neither real               -> pass NEITHER
+ *   email real, punch not      -> punch's day LATER than email's -> pass NEITHER
+ *                                 otherwise                      -> EMAIL only
+ *   punch real, email not      -> email's day LATER than punch's -> pass NEITHER
+ *                                 otherwise                      -> PUNCH only
+ *
+ * The two middle rules are the same rule seen from each side: if the clock we
+ * DON'T have sits on a later day than the one we do, the bill belongs to that
+ * later day and we have no time for it — anchoring to the older clock would
+ * schedule into the past. When the dayless side is equal or earlier, the clock
+ * we have is already the later of the two, which is exactly what the engine's
+ * cross-day rule would have chosen anyway.
  *
  * "Pass neither" makes the engine return `no-order-datetime`, and the bill
  * reaches the operator with NO slot. That is the intended outcome, not a gap: a
  * slot in the past is worse than no slot. Do not add a fallback.
+ *
+ * (Named for ARRIVAL clocks, not "punch" — it now owns both sides. Renamed from
+ * resolvePunchClocks in the commit that made it symmetric.)
  */
-export function resolvePunchClocks(
+export function resolveArrivalClocks(
   emailDateTime: Date | null | undefined,
   punchDateTime: Date | null | undefined,
 ): ResolvedClocks {
   const email = emailDateTime ?? null;
+  const punch = punchDateTime ?? null;
+  const emailReal = hasClockTime(email);
+  const punchReal = hasClockTime(punch);
 
-  // A real punch time is the engine's normal input — hand both over untouched.
-  if (hasClockTime(punchDateTime)) {
-    return { emailDateTime: email, punchDateTime: punchDateTime! };
+  // The engine's normal input — hand both over untouched.
+  if (emailReal && punchReal) {
+    return { emailDateTime: email, punchDateTime: punch };
   }
 
-  // From here the punch is unusable as a clock (absent, invalid, or date-only).
-  // With no email either, there is nothing to anchor to.
-  if (email === null || Number.isNaN(email.getTime())) {
+  // Neither side is a clock: date-only, absent or invalid on both. Nothing to
+  // anchor to, whatever days they may name.
+  if (!emailReal && !punchReal) {
     return { emailDateTime: null, punchDateTime: null };
   }
 
-  // No punch value at all (not merely time-less) carries no day information, so
-  // there is no cross-day question to answer — the email stands alone.
-  if (punchDateTime == null || Number.isNaN(punchDateTime.getTime())) {
+  // Exactly one real clock. Lexical compare of zero-padded YYYY-MM-DD is a
+  // calendar compare; a side with no usable day raises no cross-day question.
+  if (emailReal) {
+    if (hasUsableDay(punch) && istDay(punch) > istDay(email!)) {
+      return { emailDateTime: null, punchDateTime: null };
+    }
     return { emailDateTime: email, punchDateTime: null };
   }
 
-  // Date-only punch: the DAY is still trustworthy even though the time is not.
-  // Lexical compare of zero-padded YYYY-MM-DD is a calendar compare.
-  if (istDay(punchDateTime) > istDay(email)) {
+  if (hasUsableDay(email) && istDay(email) > istDay(punch!)) {
     return { emailDateTime: null, punchDateTime: null };
   }
-
-  return { emailDateTime: email, punchDateTime: null };
+  return { emailDateTime: null, punchDateTime: punch };
 }

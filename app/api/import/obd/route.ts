@@ -20,7 +20,7 @@ import type {
 import { upsertObd, resolveSmuFromDivision } from "@/lib/import-upsert";
 import { resolveArrivalSlotId } from "@/lib/slots/slot-ruler";
 import { evaluateDispatchSlot } from "@/lib/dispatch/dispatch-engine";
-import { resolvePunchClocks } from "@/lib/dispatch/punch-clock";
+import { resolveArrivalClocks } from "@/lib/dispatch/punch-clock";
 import type {
   ExistingLine,
   ExistingOrder,
@@ -374,11 +374,13 @@ async function applyMailOrderEnrichment(soNumbers: (string | null)[]): Promise<v
       // decision, and lib/floor/suggest.ts calls the same function, so the slot
       // written here and the hint shown on the rail can never disagree.
       //
-      // A manual-SAP obdEmailDate is date-only (00:00:00.000 UTC = 05:30 IST) and
-      // is not a clock; a date-only punch on a LATER IST day than the email makes
-      // the engine decline outright rather than anchor to a stale email and
-      // schedule into the past. See the function's comment for the full ladder.
-      const clocks = resolvePunchClocks(ord.orderDateTime, ord.obdEmailDate);
+      // BOTH sides are validated: a manual-SAP obdEmailDate is date-only
+      // (00:00:00.000 UTC = 05:30 IST), and so is orderDateTime on an order that
+      // was never mail-matched. A date-only value is not a clock but is still a
+      // trustworthy DAY, so a dayless side sitting on a LATER day makes the
+      // engine decline rather than anchor to the older clock and schedule into
+      // the past. See the function's comment for the full ladder.
+      const clocks = resolveArrivalClocks(ord.orderDateTime, ord.obdEmailDate);
       const result = evaluateDispatchSlot({
         smu: ord.smu,
         dispatchStatus: ord.dispatchStatus,

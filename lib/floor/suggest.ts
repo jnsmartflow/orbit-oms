@@ -16,7 +16,7 @@
 // PURE: the clock is passed in as `now`; this file never calls Date.now().
 
 import { evaluateDispatchSlot } from "@/lib/dispatch/dispatch-engine";
-import { resolvePunchClocks } from "@/lib/dispatch/punch-clock";
+import { resolveArrivalClocks } from "@/lib/dispatch/punch-clock";
 import type { SlotSuggestion } from "./types";
 
 const MS_PER_MIN = 60 * 1000;
@@ -88,16 +88,18 @@ export function suggestSlot(input: SuggestInput): SlotSuggestion | null {
   // could hand back the punch instead on a different-IST-day bill — exactly the
   // arrival anchoring this exists to avoid. Replace, never add.
   //
-  // Otherwise resolvePunchClocks (lib/dispatch/punch-clock.ts, the single owner)
-  // decides which of the two arrival clocks the engine may see: a date-only
-  // manual-SAP punch is not a clock, and a date-only punch on a LATER IST day
-  // than the email declines outright rather than anchoring to a stale email. The
-  // import auto-slot path calls the SAME function, so the rail hint and the slot
-  // the engine actually wrote can never disagree about which clocks exist.
+  // Otherwise resolveArrivalClocks (lib/dispatch/punch-clock.ts, the single
+  // owner) decides which of the two arrival clocks the engine may see. It checks
+  // BOTH sides, which matters most here: this function runs on EVERY rail bill,
+  // not only mail-matched ones, so an order whose orderDateTime is still the
+  // date-only manual-SAP value would otherwise render a confident one-click
+  // "Today 10:30" button built on a fake 05:30. The import auto-slot path calls
+  // the SAME function, so the rail hint and the slot the engine actually wrote
+  // can never disagree about which clocks exist.
   const anchoredOnCompletion = input.completionDateTime != null;
   const { emailDateTime, punchDateTime } = anchoredOnCompletion
     ? { emailDateTime: input.completionDateTime!, punchDateTime: null }
-    : resolvePunchClocks(input.emailDateTime, input.punchDateTime);
+    : resolveArrivalClocks(input.emailDateTime, input.punchDateTime);
 
   const r = evaluateDispatchSlot({
     // SMU gate NEUTRALISED with a literal — the same trick as dispatchStatus
