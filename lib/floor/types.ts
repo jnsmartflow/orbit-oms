@@ -37,12 +37,12 @@ export interface TintState {
   // order, whose completion lives per-split on order_splits.completedAt with no
   // single whole-order moment (out of v1 scope).
   //
-  // ⚠ This crosses the wire in the /api/floor/board payload, where JSON turns it
-  // into an ISO string. The type says Date because that is what the server-side
-  // feed holds; a component reading it would receive a string at runtime. No UI
-  // reads it today — re-type it as `string | null` (ISO) if one ever does, the
-  // way obdDateTime already is.
-  completedAt: Date | null;
+  // ISO string, not Date, for the same reason obdDateTime is: FloorRailCard is
+  // the /api/floor/board PAYLOAD type, and JSON serialises a Date to an ISO
+  // string in transit — so a Date here would promise the client something it
+  // never receives. getFloorRail keeps the real Date internally for the engine
+  // call and serialises only on the way onto this object.
+  completedAt: string | null; // ISO
 }
 
 // Party + flags block shared by the rail / hold / cancelled rows.

@@ -277,13 +277,14 @@ export async function getFloorRail(scope: FloorScope = "All"): Promise<FloorRail
     const deliveryType = dealer?.area?.deliveryType?.name ?? null;
     if (!inScope(deliveryType, scope)) continue;
 
+    // The real Date is kept HERE, not on the card: TintState.completedAt is an
+    // ISO string for the wire, but the engine needs an actual Date. buildTintState
+    // serialises for the payload; the suggestion below uses this value directly.
+    const tintCompletedAt = completedAtByOrder.get(order.id) ?? null;
+
     const tint: TintState | null =
       order.orderType === "tint"
-        ? buildTintState(
-            order.workflowStage,
-            splitsByOrder.get(order.id) ?? [],
-            completedAtByOrder.get(order.id) ?? null,
-          )
+        ? buildTintState(order.workflowStage, splitsByOrder.get(order.id) ?? [], tintCompletedAt)
         : null;
 
     // ── SLOT SUGGESTION — which clock this bill is judged on ──────────────────
@@ -314,13 +315,15 @@ export async function getFloorRail(scope: FloorScope = "All"): Promise<FloorRail
           punchDateTime: order.obdEmailDate,
           now,
         });
-      } else if (!tint.hasSplits && tint.completedAt !== null) {
+      } else if (!tint.hasSplits && tintCompletedAt !== null) {
         suggestion = suggestSlot({
           smu: order.smu,
           deliveryType,
           emailDateTime: null,
           punchDateTime: null,
-          completionDateTime: tint.completedAt,
+          // The Date, never the card's ISO string — suggestSlot feeds this
+          // straight to the engine, which does epoch arithmetic on it.
+          completionDateTime: tintCompletedAt,
           now,
         });
       }
@@ -383,7 +386,18 @@ function buildTintState(
   // hasSplits reads the RAW array — every split row, cancelled included — which
   // is the whole point: shadesTotal has already dropped the cancelled ones, so
   // an all-cancelled split order would report 0 there and pass for a full OBD.
-  return { stage, shadesDone, shadesTotal, operatorName, hasSplits: splits.length > 0, completedAt };
+  //
+  // completedAt is serialised HERE — TintState rides the /api/floor/board payload,
+  // where a Date would become an ISO string anyway; sending one deliberately keeps
+  // the type honest about what the client actually receives.
+  return {
+    stage,
+    shadesDone,
+    shadesTotal,
+    operatorName,
+    hasSplits: splits.length > 0,
+    completedAt: completedAt?.toISOString() ?? null,
+  };
 }
 
 // ── 2. FLOOR — the live board (+ history mode) ───────────────────────────────
