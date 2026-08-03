@@ -20,7 +20,7 @@ import type {
 import { upsertObd, resolveSmuFromDivision } from "@/lib/import-upsert";
 import { resolveArrivalSlotId } from "@/lib/slots/slot-ruler";
 import { evaluateDispatchSlot } from "@/lib/dispatch/dispatch-engine";
-import { hasClockTime } from "@/lib/dispatch/punch-clock";
+import { resolvePunchClocks } from "@/lib/dispatch/punch-clock";
 import type {
   ExistingLine,
   ExistingOrder,
@@ -370,22 +370,21 @@ async function applyMailOrderEnrichment(soNumbers: (string | null)[]): Promise<v
       }
 
       const deliveryType = ord.customer?.area?.deliveryType?.name ?? null;
-      // A date with no time is NOT a clock — see lib/dispatch/punch-clock.ts.
-      // A manual-SAP obdEmailDate lands at 00:00:00.000 UTC (= 05:30 IST), which
-      // is earlier than every window and earlier than the real order-email time,
-      // so pickEffectiveClock's same-day "take the earlier one" rule handed it
-      // the fake 05:30 and pinned the bill to R1_LOCAL_1030. Passing null instead
-      // drops the engine to its single-clock path and lets the order email decide.
+      // Which clocks the engine may see — lib/dispatch/punch-clock.ts owns that
+      // decision, and lib/floor/suggest.ts calls the same function, so the slot
+      // written here and the hint shown on the rail can never disagree.
       //
-      // If the email clock is ALSO null the engine declines with
-      // "no-order-datetime" and the bill reaches the operator with no slot. That
-      // is intended: a wrong slot is worse than no slot. No fallback.
+      // A manual-SAP obdEmailDate is date-only (00:00:00.000 UTC = 05:30 IST) and
+      // is not a clock; a date-only punch on a LATER IST day than the email makes
+      // the engine decline outright rather than anchor to a stale email and
+      // schedule into the past. See the function's comment for the full ladder.
+      const clocks = resolvePunchClocks(ord.orderDateTime, ord.obdEmailDate);
       const result = evaluateDispatchSlot({
         smu: ord.smu,
         dispatchStatus: ord.dispatchStatus,
         deliveryType,
-        emailDateTime: ord.orderDateTime,
-        punchDateTime: hasClockTime(ord.obdEmailDate) ? ord.obdEmailDate : null,
+        emailDateTime: clocks.emailDateTime,
+        punchDateTime: clocks.punchDateTime,
       });
 
       if (!result.assigned) continue;
