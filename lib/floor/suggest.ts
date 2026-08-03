@@ -57,6 +57,11 @@ export interface SuggestInput {
   emailDateTime: Date | null; // orders.orderDateTime
   punchDateTime: Date | null; // orders.obdEmailDate
   now: Date;                  // clock — an argument, never Date.now() here
+  // TINT ONLY — whole-order tint completion (tint_assignments.completedAt).
+  // When supplied it REPLACES the two arrival clocks rather than joining them;
+  // see the anchor block in suggestSlot for why that distinction matters.
+  // Omitted / null → the ordinary arrival-anchored behaviour, unchanged.
+  completionDateTime?: Date | null;
 }
 
 function windowMinutes(hhmm: string): number {
@@ -65,6 +70,26 @@ function windowMinutes(hhmm: string): number {
 }
 
 export function suggestSlot(input: SuggestInput): SlotSuggestion | null {
+  // ── WHICH CLOCK ANCHORS THE SUGGESTION ─────────────────────────────────────
+  //
+  // Normally the two arrival clocks go in and the engine's pickEffectiveClock
+  // merges them (same IST day → earlier, different day → later). For a COMPLETED
+  // full tint OBD that merge is wrong input, not a wrong rule: arrival says when
+  // the paper landed, and the only moment that bears on which batch the bill can
+  // physically make is when the shades were finished.
+  //
+  // So a completion anchor REPLACES both arrival clocks outright — passed as
+  // emailDateTime with punchDateTime null, which takes the engine's existing
+  // single-clock path (pickEffectiveClock returns the non-null one immediately).
+  // No dual-clock merge to reason about, and NO engine change.
+  //
+  // Feeding completion ALONGSIDE the punch would silently invoke that merge and
+  // could hand back the punch instead on a different-IST-day bill — exactly the
+  // arrival anchoring this exists to avoid. Replace, never add.
+  const anchoredOnCompletion = input.completionDateTime != null;
+  const emailDateTime = anchoredOnCompletion ? input.completionDateTime! : input.emailDateTime;
+  const punchDateTime = anchoredOnCompletion ? null : input.punchDateTime;
+
   const r = evaluateDispatchSlot({
     // SMU gate NEUTRALISED with a literal — the same trick as dispatchStatus
     // below, and for the same reason: the engine's gates answer the AUTO-slot
@@ -79,8 +104,8 @@ export function suggestSlot(input: SuggestInput): SlotSuggestion | null {
     smu: "Deco Retail",
     dispatchStatus: "dispatch",
     deliveryType: input.deliveryType,
-    emailDateTime: input.emailDateTime,
-    punchDateTime: input.punchDateTime,
+    emailDateTime,
+    punchDateTime,
   });
   if (!r.assigned) return null;
 

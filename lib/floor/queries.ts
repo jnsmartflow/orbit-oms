@@ -39,6 +39,7 @@ import type {
   FloorPicker,
   TintState,
   TintStage,
+  SlotSuggestion,
 } from "./types";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -52,7 +53,10 @@ const RAIL_STAGES: string[] = STAGE_LADDER
   .filter((d) => d.rank !== null && d.rank < 60)
   .map((d) => d.stage);
 
-// Step 10 — the render-time slot SUGGESTION is ON, for NON-TINT bills only.
+// Step 10 — the render-time slot SUGGESTION is ON. Non-tint bills anchor on
+// arrival; a COMPLETED full (non-split) tint OBD anchors on its completion time.
+// Split tints and unfinished tints still get nothing — see the suggestion block
+// in getFloorRail for the full ladder and why.
 //
 // The 23-Jul stale-date bug ("Release to Wed 16:00" on a Thursday) that took this
 // down is now FIXED AT SOURCE — lib/floor/suggest.ts grew a past-date arm — not
@@ -239,6 +243,34 @@ export async function getFloorRail(scope: FloorScope = "All"): Promise<FloorRail
     splitsByOrder.set(s.orderId, arr);
   }
 
+  // Whole-order tint COMPLETION, one bulk read for the same tint ids. This is
+  // what a completed full OBD's suggestion anchors on (see the suggestion block
+  // below). Sequential await, never $transaction (CORE §3).
+  //
+  // splitId: null keeps this to WHOLE-ORDER assignments. A split's completion
+  // lives on order_splits.completedAt, per split, and never reaches this table.
+  // The live assign route (app/api/tint/manager/assign/route.ts:149) never sets
+  // splitId, so today this filter changes nothing — it is here to make
+  // "whole-order" true by construction rather than by accident, if a future
+  // split-assignment path ever starts writing rows here.
+  const tintAssignments =
+    tintIds.length > 0
+      ? await prisma.tint_assignments.findMany({
+          where: { orderId: { in: tintIds }, splitId: null },
+          select: { orderId: true, status: true, completedAt: true },
+        })
+      : [];
+  // LATEST completedAt wins — a reassigned order leaves its earlier assignment
+  // row behind, and the most recent finish is the one that describes the bill.
+  const completedAtByOrder = new Map<number, Date>();
+  for (const a of tintAssignments) {
+    if (a.status !== "tinting_done" || a.completedAt === null) continue;
+    const prev = completedAtByOrder.get(a.orderId);
+    if (prev === undefined || a.completedAt.getTime() > prev.getTime()) {
+      completedAtByOrder.set(a.orderId, a.completedAt);
+    }
+  }
+
   const cards: FloorRailCard[] = [];
   for (const order of orders) {
     const dealer = order.shipToOverrideCustomer ?? order.customer;
@@ -247,8 +279,52 @@ export async function getFloorRail(scope: FloorScope = "All"): Promise<FloorRail
 
     const tint: TintState | null =
       order.orderType === "tint"
-        ? buildTintState(order.workflowStage, splitsByOrder.get(order.id) ?? [])
+        ? buildTintState(
+            order.workflowStage,
+            splitsByOrder.get(order.id) ?? [],
+            completedAtByOrder.get(order.id) ?? null,
+          )
         : null;
+
+    // ── SLOT SUGGESTION — which clock this bill is judged on ──────────────────
+    //
+    //   not tint                   → arrival-anchored (order email / OBD punch)
+    //   tint + hasSplits           → null. A split order has no single
+    //                                whole-order finish: completion is per split
+    //                                on order_splits.completedAt, and the parent
+    //                                bubble writes no timestamp at all. Deciding
+    //                                which of those moments speaks for the bill
+    //                                is a real question, deliberately out of v1.
+    //   tint + not finished        → null. Nothing to anchor to yet; the arrival
+    //                                clock would happily offer today 12:30 to a
+    //                                bill still on the mixer.
+    //   tint + full + finished     → completion-anchored (tint_assignments.
+    //                                completedAt), which is the first moment the
+    //                                bill could actually go on a vehicle.
+    //
+    // The 60-minute grace test inside suggestSlot applies unchanged in every
+    // case — a tint finished long ago has a closed batch like anything else.
+    let suggestion: SlotSuggestion | null = null;
+    if (RAIL_SUGGESTIONS_ENABLED) {
+      if (tint === null) {
+        suggestion = suggestSlot({
+          smu: order.smu,
+          deliveryType,
+          emailDateTime: order.orderDateTime,
+          punchDateTime: order.obdEmailDate,
+          now,
+        });
+      } else if (!tint.hasSplits && tint.completedAt !== null) {
+        suggestion = suggestSlot({
+          smu: order.smu,
+          deliveryType,
+          emailDateTime: null,
+          punchDateTime: null,
+          completionDateTime: tint.completedAt,
+          now,
+        });
+      }
+    }
 
     cards.push({
       orderId: order.id,
@@ -271,25 +347,7 @@ export async function getFloorRail(scope: FloorScope = "All"): Promise<FloorRail
       obdDateTime: (order.orderDateTime ?? order.obdEmailDate)?.toISOString() ?? null,
       ageDays: arrivalAgeDays(order.obdEmailDate ?? order.orderDateTime, todayMs),
       tint,
-      // NON-TINT ONLY — a tint bill always gets suggestion=null for now.
-      // suggestSlot() anchors on the ARRIVAL clock (order email / OBD punch),
-      // which for a tint bill says nothing about when the shades are actually
-      // finishable: it would happily offer today 12:30 to a bill still mixing.
-      // The honest anchor is tint COMPLETION — tint_assignments.completedAt for a
-      // full OBD, the last non-cancelled order_splits.completedAt for a split one
-      // — and neither is read by this feed yet. Completion-anchored tint
-      // suggestions are a LATER PHASE; until then the operator picks tint slots
-      // himself, exactly as he does today.
-      suggestion:
-        RAIL_SUGGESTIONS_ENABLED && order.orderType !== "tint"
-          ? suggestSlot({
-              smu: order.smu,
-              deliveryType,
-              emailDateTime: order.orderDateTime,
-              punchDateTime: order.obdEmailDate,
-              now,
-            })
-          : null,
+      suggestion,
       presetWindowTime: order.dispatchWindow?.windowTime ?? null,
       presetTargetDate: order.dispatchTargetDate ? order.dispatchTargetDate.toISOString().slice(0, 10) : null,
     });
@@ -306,7 +364,11 @@ export async function getFloorRail(scope: FloorScope = "All"): Promise<FloorRail
   return cards;
 }
 
-function buildTintState(workflowStage: string, splits: { status: string; op: string | null }[]): TintState {
+function buildTintState(
+  workflowStage: string,
+  splits: { status: string; op: string | null }[],
+  completedAt: Date | null,
+): TintState {
   const nonCancelled = splits.filter((s) => s.status !== "cancelled");
   const shadesTotal = nonCancelled.length;
   const shadesDone = nonCancelled.filter((s) => s.status === "tinting_done").length;
@@ -318,7 +380,10 @@ function buildTintState(workflowStage: string, splits: { status: string; op: str
   else if (workflowStage === "tinting_in_progress") stage = "mixing";
   else stage = "ready"; // pending_support = all splits done, awaiting release
 
-  return { stage, shadesDone, shadesTotal, operatorName };
+  // hasSplits reads the RAW array — every split row, cancelled included — which
+  // is the whole point: shadesTotal has already dropped the cancelled ones, so
+  // an all-cancelled split order would report 0 there and pass for a full OBD.
+  return { stage, shadesDone, shadesTotal, operatorName, hasSplits: splits.length > 0, completedAt };
 }
 
 // ── 2. FLOOR — the live board (+ history mode) ───────────────────────────────

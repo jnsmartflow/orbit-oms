@@ -26,6 +26,23 @@ export interface TintState {
   shadesDone: number;         // non-cancelled splits at tinting_done
   shadesTotal: number;        // non-cancelled splits
   operatorName: string | null;
+  // TRUE when the order has ANY order_splits rows at all, counted BEFORE the
+  // cancelled filter. Do NOT infer "full OBD" from shadesTotal === 0: an order
+  // whose splits were ALL cancelled also reports 0 and would be misread as a
+  // full OBD — sending it down the whole-order completion path, where it has no
+  // tint_assignments row to anchor to.
+  hasSplits: boolean;
+  // Whole-order tint completion — tint_assignments.completedAt (latest row when
+  // an order has more than one). null means either not finished yet, or a SPLIT
+  // order, whose completion lives per-split on order_splits.completedAt with no
+  // single whole-order moment (out of v1 scope).
+  //
+  // ⚠ This crosses the wire in the /api/floor/board payload, where JSON turns it
+  // into an ISO string. The type says Date because that is what the server-side
+  // feed holds; a component reading it would receive a string at runtime. No UI
+  // reads it today — re-type it as `string | null` (ISO) if one ever does, the
+  // way obdDateTime already is.
+  completedAt: Date | null;
 }
 
 // Party + flags block shared by the rail / hold / cancelled rows.
