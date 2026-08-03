@@ -52,15 +52,18 @@ const RAIL_STAGES: string[] = STAGE_LADDER
   .filter((d) => d.rank !== null && d.rank < 60)
   .map((d) => d.stage);
 
-// Step 3b — the render-time slot SUGGESTION is DEFERRED to Step 10 (after live
-// sync), so the whole workflow can be tested before deciding what a good
-// suggestion looks like. Flip this ONE constant to `true` to re-enable it;
-// lib/floor/suggest.ts and the suggestSlot() call below are otherwise
-// untouched, so Step 10 is a one-line switch, not a rewrite. Disabling it also
-// removes the 23-Jul stale-date bug ("Release to Wed 16:00" on a Thursday)
-// without patching it. The dispatch engine still auto-slots at enrichment —
-// only this render-time rail hint is off.
-const RAIL_SUGGESTIONS_ENABLED = false;
+// Step 10 — the render-time slot SUGGESTION is ON, for NON-TINT bills only.
+//
+// The 23-Jul stale-date bug ("Release to Wed 16:00" on a Thursday) that took this
+// down is now FIXED AT SOURCE — lib/floor/suggest.ts grew a past-date arm — not
+// hidden behind this flag. Turning it on only makes DATA flow: `suggestion` has
+// always been on FloorRailCard and has always shipped through /api/floor/board,
+// and no component reads it yet (rail-card.tsx still renders the grey picker), so
+// there is no visible change and no write path.
+//
+// The constant stays as the single kill switch: flip to `false` and every card
+// goes back to suggestion=null, no other edit needed.
+const RAIL_SUGGESTIONS_ENABLED = true;
 
 // Shared dealer projection — route/area/delivery-type/key-customer all come
 // from the effective dealer's AREA (design §D3 / matches lib/picking/queue.ts).
@@ -268,15 +271,25 @@ export async function getFloorRail(scope: FloorScope = "All"): Promise<FloorRail
       obdDateTime: (order.orderDateTime ?? order.obdEmailDate)?.toISOString() ?? null,
       ageDays: arrivalAgeDays(order.obdEmailDate ?? order.orderDateTime, todayMs),
       tint,
-      suggestion: RAIL_SUGGESTIONS_ENABLED
-        ? suggestSlot({
-            smu: order.smu,
-            deliveryType,
-            emailDateTime: order.orderDateTime,
-            punchDateTime: order.obdEmailDate,
-            now,
-          })
-        : null,
+      // NON-TINT ONLY — a tint bill always gets suggestion=null for now.
+      // suggestSlot() anchors on the ARRIVAL clock (order email / OBD punch),
+      // which for a tint bill says nothing about when the shades are actually
+      // finishable: it would happily offer today 12:30 to a bill still mixing.
+      // The honest anchor is tint COMPLETION — tint_assignments.completedAt for a
+      // full OBD, the last non-cancelled order_splits.completedAt for a split one
+      // — and neither is read by this feed yet. Completion-anchored tint
+      // suggestions are a LATER PHASE; until then the operator picks tint slots
+      // himself, exactly as he does today.
+      suggestion:
+        RAIL_SUGGESTIONS_ENABLED && order.orderType !== "tint"
+          ? suggestSlot({
+              smu: order.smu,
+              deliveryType,
+              emailDateTime: order.orderDateTime,
+              punchDateTime: order.obdEmailDate,
+              now,
+            })
+          : null,
       presetWindowTime: order.dispatchWindow?.windowTime ?? null,
       presetTargetDate: order.dispatchTargetDate ? order.dispatchTargetDate.toISOString().slice(0, 10) : null,
     });
