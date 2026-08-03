@@ -2,7 +2,7 @@
 # v1.6 · Schema v27.12 · July 2026 · updated 2026-07-27 · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
-Covers the SAP/OBD import pipeline end-to-end: manual SAP upload, Auto-Import (currently paused), the shared upsert utility that both paths funnel through, schema, filters, and downstream consumers.
+Covers the SAP/OBD import pipeline end-to-end: manual SAP upload, Auto-Import (**LIVE** — see §10), the shared upsert utility that both paths funnel through, schema, filters, and downstream consumers.
 
 Primary users: admin, dispatcher, support, billing_operator, tint_manager (all gated on `import_obd` / `canImport` per role).
 
@@ -13,7 +13,7 @@ Primary users: admin, dispatcher, support, billing_operator, tint_manager (all g
 OrbitOMS receives Outbound Deliveries (OBDs) from SAP via two import paths:
 
 - **Manual SAP** — operator uploads a SAP OBT export `.xlsx` via the universal import modal or the admin `/import` page. This is the active production path as of 2026-05-14. Preview-then-confirm with optional bypass for fast batches.
-- **Auto-Import** — scheduled background pull on the depot PC, **paused as of 2026-05-14**. When active, runs every 10 minutes (8AM–8PM IST), fetches SAP files via LAN, HMAC-signs a multipart payload, and POSTs to a dedicated endpoint. Reference script at `docs/sample/Auto-Import.ps1` (production copy lives outside the repo per CORE §4).
+- **Auto-Import** — scheduled background pull on the depot PC. **LIVE and running** (resumed 2026-06-20; the earlier "paused as of 2026-05-14" claim was stale — corrected 2026-08-03 against `import_batches`, which shows 944 auto-import batches / 3,876 OBDs between 2026-06-20 and 2026-08-03). Runs every 10 minutes (8AM–8PM IST), fetches SAP files via LAN, HMAC-signs a multipart payload, and POSTs to a dedicated endpoint. Reference script at `docs/sample/Auto-Import.ps1` (production copy lives outside the repo per CORE §4).
 
 Both paths converge at `upsertObd()` (`lib/import-upsert.ts`) — the shared brain that owns create-vs-patch decisions, line-level diff, soft-remove cascades, audit logging, and downstream-effect signalling.
 
@@ -42,7 +42,7 @@ Manual SAP path:
         rebuildQuerySummaryForOrder
         + customer-resolved / order-type-mismatch signals
 
-Auto-Import path (paused):
+Auto-Import path (LIVE — §10):
   Scheduler (10 min) → Auto-Import.ps1
     → fetch SAP files via LAN, merge LogisticsTracker + per-OBD details
     → HMAC-sign with auto-import-v1 literal
@@ -87,7 +87,7 @@ The current SAP OBT export. One worksheet (`Sheet1` typical). Header row 1, data
 
 REQUIRED_COLS (read-sheet.ts:54-58): `[delivery, warehouse, division, soldToParty, shipToParty, referenceDoc, deliveryType, itemCategory, item, material, deliveryQty]`. Optional positions (`volume`, `netWeight`, `totalWeight`, `batch`, name fields, `storageLocation`) may legitimately be blank on individual rows.
 
-### 3.2 Auto-Import v1 — LogisticsTracker + per-OBD merge (current, PAUSED)
+### 3.2 Auto-Import v1 — LogisticsTracker + per-OBD merge (current, LIVE)
 
 > **v2 replaces this entirely with FormGetData JSON — no Excel files.** See §10.1 for the v2 design. The sheet layout below is v1-only.
 
@@ -435,7 +435,7 @@ export async function POST(req: Request): Promise<NextResponse> {
 |---|---|---|
 | `manual-sap-preview` | `handleManualSapPreview` | SAP preview (dry run) |
 | `manual-sap-confirm` | `handleManualSapConfirm` | SAP confirm (commits) |
-| `auto` | `handleAutoImport` | HMAC-signed Auto-Import v1 (PAUSED) |
+| `auto` | `handleAutoImport` | HMAC-signed Auto-Import v1 (LIVE — §10) |
 | `auto-json` | `handleAutoImportJson` | [PLANNED — v2] HMAC-signed JSON payload; no XLSX |
 | `check` | `handleAutoImportCheck` | [PLANNED — v2] Pre-check: are any submitted OBDs already imported? |
 | `preview` | `handlePreview` | Legacy preview (kept for backwards compat) |
@@ -447,9 +447,16 @@ All routes need `export const dynamic = 'force-dynamic'`.
 
 ## 10. Auto-Import operational details
 
-**Status: PAUSED as of 2026-05-14.** Manual SAP upload is the active path. When Auto-Import resumes it will be v2 (pure JSON) — see §10.1. The v1 XLSX path (`?action=auto`) is kept for reference but will not be un-paused.
+**Status: LIVE.** Resumed 2026-06-20 and running continuously since. Both paths are active:
+manual SAP upload carries the bulk of volume, Auto-Import runs alongside it.
 
-When un-paused (v1 reference):
+⚠ **This line said "PAUSED as of 2026-05-14" until 2026-08-03.** It was stale by six weeks.
+Verified against `import_batches` (headerFile prefix `[auto-import]`): **944 batches / 3,876 OBDs
+between 2026-06-20 and 2026-08-03**, versus 264 manual-sap batches / 24,334 OBDs in the same window.
+Do not restore the paused wording without re-checking that table — the correction pass in §12/§12.1
+depends on Auto-Import actually running, and reasoning from "paused" led to a wrong conclusion once.
+
+v1 XLSX reference details:
 - Scheduled task: every 10 min, 8AM-8PM IST
 - HMAC signing: `IMPORT_HMAC_SECRET` env var, fixed string `"auto-import-v1"` (timestamp-free, avoids clock drift)
 - State files in `Master\`: see CORE §4
