@@ -26,6 +26,23 @@ interface Props {
   popoverAlign?: "left" | "right";
   disabled?: boolean;
   forceOpenGen?: number;
+  // HIGHLIGHT ONLY — a slot the host is PROPOSING (the rail's engine suggestion),
+  // which is NOT a committed value. Read in exactly two places, both inside the
+  // popover: the highlightDate fallback and the isSelected comparison. It is
+  // deliberately never read near the trigger, because the filled/committed
+  // trigger look means "this bill HAS a slot" and a suggestion has written
+  // nothing — `value` alone owns that. Omit it and every existing call site
+  // behaves exactly as before.
+  suggested?: DispatchSlotValue | null;
+  // The HOST draws the visible control (the rail's teal split button) and opens
+  // this picker through forceOpenGen. The trigger button is still RENDERED —
+  // invisible, non-interactive, stretched to fill the host's box — because
+  // updatePosition() measures triggerRef to anchor the body-portalled popover;
+  // omitting the element entirely would leave the popover unpositioned. The host
+  // must therefore supply a `relative` wrapper for it to stretch into. This is
+  // the same overlay the assign bar and detail panel already build by hand in
+  // CSS, expressed as a prop instead. Default false = today's behaviour.
+  hideTrigger?: boolean;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -71,6 +88,8 @@ export function DispatchSlotPicker({
   popoverAlign = "left",
   disabled,
   forceOpenGen,
+  suggested,
+  hideTrigger,
 }: Props) {
   const [open, setOpen]           = useState(false);
   const [calOpen, setCalOpen]     = useState(false);
@@ -200,8 +219,14 @@ export function DispatchSlotPicker({
     setCalOpen(false);
   }
 
+  // What the popover HIGHLIGHTS. A committed `value` always wins; `suggested` is
+  // only consulted when there is none, so a bill that already has a slot can
+  // never have it visually overridden by a proposal. With `suggested` omitted
+  // this is just `value`, so existing call sites are unaffected.
+  const highlightSource = value ?? suggested ?? null;
+
   const isSelected = (date: string, winId: number) =>
-    value?.date === date && value?.dispatchWindowId === winId;
+    highlightSource?.date === date && highlightSource?.dispatchWindowId === winId;
 
   // ── Trigger ──────────────────────────────────────────────────────────────
 
@@ -219,10 +244,13 @@ export function DispatchSlotPicker({
 
   const rail = getRailDates(today);
   const railFirstMonth = rail[0]?.m;
-  // Highlight the bill's own slot day ONLY when it is visible in the rail; never
-  // fall back to today — highlighting today for a bill sitting on an off-rail date
-  // (or with no slot) is a guess dressed as a fact. "" ⇒ nothing highlighted.
-  const highlightDate = selDate || (value != null && rail.some((r) => r.iso === value.date) ? value.date : "");
+  // Highlight the bill's own slot day (or, absent one, the host's suggested day)
+  // ONLY when it is visible in the rail; never fall back to today — highlighting
+  // today for a bill sitting on an off-rail date (or with no slot) is a guess
+  // dressed as a fact. "" ⇒ nothing highlighted.
+  const highlightDate =
+    selDate ||
+    (highlightSource != null && rail.some((r) => r.iso === highlightSource.date) ? highlightSource.date : "");
   // The day a bare window-tap commits to: the highlight if any, else today (a
   // fresh pick defaults to today). handleSelect / commit-on-tap are unchanged.
   const activeDate = highlightDate || today;
@@ -325,13 +353,18 @@ export function DispatchSlotPicker({
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="relative inline-block">
+    <div className={hideTrigger ? "absolute inset-0" : "relative inline-block"}>
       <button
         ref={triggerRef}
         type="button"
         disabled={disabled}
         onClick={handleToggle}
-        className={triggerCls}
+        // hideTrigger: kept in the tree purely as the popover's measuring anchor
+        // (see the prop comment). Invisible, unclickable, unfocusable, and hidden
+        // from assistive tech — the host's own control is the real one.
+        aria-hidden={hideTrigger || undefined}
+        tabIndex={hideTrigger ? -1 : undefined}
+        className={hideTrigger ? "pointer-events-none h-full w-full opacity-0" : triggerCls}
       >
         {value ? (
           <>
