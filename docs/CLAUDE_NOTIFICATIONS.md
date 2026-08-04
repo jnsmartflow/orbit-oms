@@ -1,5 +1,5 @@
 # CLAUDE_NOTIFICATIONS.md — Push Notifications
-# v1.1 · Schema v27.12 · July 2026 · updated 2026-07-28
+# v1.2 · Schema v27.12 · August 2026 · updated 2026-08-04
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md
 
@@ -26,7 +26,11 @@ happens*. No scheduled job, no polling, no infrastructure dependency for the two
 ## 2. Triggers [LIVE]
 
 Two, both fired from the existing picking write routes (no new routes, no new `orders.update` — see the
-marker landmine, §8):
+marker landmine, §8). **Caller sweep 2026-08-04: `sendToUser` has exactly three callers** — the two
+trigger routes below + the `test-saved` diagnostic. Nothing else pushes: not the approve route, not any
+Floor route, not the Billing mark-done. **Floor DOES fire the assign trigger indirectly** — its assign
+bar calls the same `POST /api/picking/assign` (the trigger is route-level, caller-agnostic), so an
+assign from `/floor` buzzes the picker exactly like one from the supervisor board.
 
 | Trigger | Fires from | Recipient(s) | Text | Verified? |
 |---|---|---|---|---|
@@ -89,7 +93,8 @@ not re-documented here.
 ## 4. Subscription storage [LIVE]
 
 - **Table:** `push_subscriptions` — one row **per device endpoint**. Column block lives in
-  **`CLAUDE_CORE.md §7` (schema)**, not restated here.
+  **`CLAUDE_CORE.md §7.12`** (schema-verified against live 2026-08-04 in the CORE pass — 11 cols,
+  `endpoint` UNIQUE, the plain-`@default(now())` `updatedAt`), not restated here.
 - **Subscribe** (`app/api/push/subscribe/route.ts`): **`userId` comes from the SESSION only, never the
   request body** (otherwise one user could register a phone against another's account). Upserts on the
   `endpoint` unique index; if the endpoint already exists under a DIFFERENT user (a shared phone), it
@@ -140,8 +145,10 @@ Tested end-to-end on iPhone 13 (iOS, installed to home screen):
    directions confirmed. ✅
 
 **NOT yet verified [NEXT]:** the **"New pick assigned"** notification to a picker — same code path as
-the working done-trigger, but it cannot be proven until a real picker has a login and a subscribed
-phone. Treat as untested.
+the working done-trigger. **The blocker has since changed shape** (updated 2026-08-04): real picker
+test accounts now EXIST (ids 35/36, active — `CLAUDE_PICKING.md §7`), and the 2026-07-29 first-login
+test plan's Round 4 covers exactly this check — but **no result was ever recorded**, so it stays
+untested until Smart Flow runs it (or reports it ran).
 
 ---
 
@@ -154,7 +161,7 @@ since the last buzz, notify the supervisor `8 picks waiting · oldest 25 min`. *
 something must wake up on its own, count the board, and decide. **Vercel Hobby crons run only ONCE PER
 DAY** — any more-frequent expression **fails at deployment**. The binding constraint is **CADENCE, not
 count**: the per-project job COUNT cap was lifted to 100 on all plans in **January 2026**, so the old
-`CLAUDE_CORE.md §4` "2 cron / Hobby cap" wording is stale (correct it in step 4) — freeing an
+`CLAUDE_CORE.md §4` "2 cron / Hobby cap" wording WAS stale — corrected there 2026-07-22; the "correct it in step 4" note that sat here is done (2026-08-04) — freeing an
 Attendance cron slot would NOT help. Hobby timing is also loose (a job set for 08:00 may fire any time
 within that hour), which would wreck the intended bookends.
 
@@ -225,11 +232,13 @@ attendance to know who's on duty); per-event supervisor buzzes (300+/day); a har
 
 ## 9. Temporary scaffolding [DEFERRED — remove after rollout]
 
-Both carry `⚠ TEMPORARY SCAFFOLDING` comments in code:
+Both carry `⚠ TEMPORARY SCAFFOLDING` comments in code (list corrected 2026-08-04):
 - `app/picking/push-test/page.tsx` — the diagnostic page (subscribe state, saved-device count, "Send to
   saved phone"). Earns its place during rollout.
-- The gray **"Push test (temporary)"** pill on `/picking`, visible to **admin OR operations**. Consider
-  narrowing to admin-only once rollout is done.
+- The **"Push test (temporary)"** link in `picking-mobile-shell.tsx` (~:165) — its own comment says
+  **admin-only, mobile-only**; per that comment it is also the ONLY way to reach `/picking/push-test`
+  from an installed PWA (manifest `start_url` is `/`). ⚠ The old DESKTOP pill this section used to
+  describe went with the desktop board (archived 2026-07-28) — only this mobile link survives.
 
 ---
 
@@ -240,7 +249,7 @@ Both carry `⚠ TEMPORARY SCAFFOLDING` comments in code:
 | `public/sw.js` | Service worker — `push` + `notificationclick` ONLY; no fetch, no cache |
 | `lib/push/send.ts` | `sendToUser(userId, payload)` + `getVapid()`; dead-endpoint hygiene; never throws |
 | `lib/push/quiet-hours.ts` | `isWithinDepotHours()` (IST) + `DEPOT_HOURS_START_IST`/`_END_IST` |
-| `lib/push/recipients.ts` | `getPickingSupervisorUserIds()` — floor_supervisor/operations/admin, primary + secondary `user_roles` |
+| `lib/push/recipients.ts` | `getPickingSupervisorUserIds()` — `PICKING_SUPERVISOR_ROLE_SLUGS = ["floor_supervisor","operations","admin"]`, matches PRIMARY role AND any secondary `user_roles` row, **`isActive` users only**, one sequential query (verified 2026-08-04) |
 | `app/api/push/subscribe/route.ts` | Upsert on endpoint; `userId` from session; reassigns a shared phone |
 | `app/api/push/unsubscribe/route.ts` | `isActive=false` for one endpoint, session-scoped |
 | `app/api/push/test-saved/route.ts` | Sends to the session user's saved devices (diagnostic) |
@@ -252,4 +261,16 @@ Both carry `⚠ TEMPORARY SCAFFOLDING` comments in code:
 
 ---
 
-*CLAUDE_NOTIFICATIONS.md v1.1 · Push Notifications · July 2026*
+## Change log — v1.2 (2026-08-04 reconciliation pass, method v1.1)
+
+- NTF-1 (§2): caller sweep — `sendToUser` has exactly 3 callers (assign, done, test-saved); Floor fires the assign trigger via the shared route; Billing mark-done pushes nothing. Trigger table verified CORRECT.
+- NTF-2 (§6): the assign-notification blocker restated — picker test accounts exist (ids 35/36); the 07-29 test plan covers it; result unrecorded.
+- NTF-3 (§7): the "correct CORE §4 in step 4" parenthetical resolved (done 2026-07-22).
+- NTF-4 (§9): scaffolding list corrected — the desktop pill went with the archived board; the surviving mobile link is admin-only per its own comment.
+- NTF-5 (§4/§10): `push_subscriptions` cited to CORE §7.12 (live-verified); recipients row states slugs + isActive + primary/secondary precisely.
+- NTF-6 (footer): form drift fixed — footer now carries the schema stamp + date like the header.
+- Verified CORRECT, no change: quiet-hours constants (9/20 IST), self-suppression, toggle contract, dead-endpoint hygiene, VAPID env set, all 9 landmines.
+
+---
+
+*CLAUDE_NOTIFICATIONS.md v1.2 · Schema v27.12 · Push Notifications · OrbitOMS · updated 2026-08-04*

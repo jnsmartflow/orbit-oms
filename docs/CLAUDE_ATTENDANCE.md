@@ -1,9 +1,9 @@
 # CLAUDE_ATTENDANCE.md — Attendance + OT Module
-# v1.2 · Schema v27.12
+# v1.3 · Schema v27.12 · August 2026 · updated 2026-08-04
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
-Daily check-in/out with selfie + geofence + OT workflow. PWA UX on `/attendance` (end users) and admin dashboard at `/admin/attendance` (admin, ops_admin) with three sub-pages: OT pending queue, settings, OT audit.
+Daily check-in/out with selfie + geofence + OT workflow. PWA UX on `/attendance` (end users) and admin dashboard at `/admin/attendance` (admin, ops_admin — the **`attendance_admin`** page key, live rows verified 2026-08-04 via `CLAUDE_CORE.md §5`; the end-user `attendance` key deliberately has NO role_permissions row — user-flag gated) with three sub-pages: OT pending queue, settings, OT audit.
 
 Roles gated per rollout stage (see §3). Settings-driven thresholds. Pure decision helpers separated from DB-touching APIs.
 
@@ -22,94 +22,78 @@ Photo storage in Supabase private bucket. Signed URLs only.
 
 ## 2. Database
 
-### attendance_records (per CHECK_IN | CHECK_OUT event)
+> 🔴 **These three blocks were REWRITTEN 2026-08-04 against `information_schema` (live) +
+> `schema.prisma` — the previous version carried wrong column names throughout** (`eventAt`,
+> `accuracyMeters`, `deviceInfo`, `linkedCheckInId`, `otApprovedAdjustedMinutes`,
+> `totalWorkedMinutes`, `otClaimedMinutes`, `sessionsCount`) **and three columns that DO NOT EXIST**
+> (`otCutoffHourIST`, `otRequiresApproval`, `otAutoApproveThresholdMinutes`). Live and Prisma agree
+> with each other; the doc was the outlier.
+
+### attendance_records (per CHECK_IN | CHECK_OUT event) [live-verified 2026-08-04]
 
 ```
-id                        SERIAL PK
-userId                    FK → users.id (RESTRICT)
-type                      'CHECK_IN' | 'CHECK_OUT'
-eventAt                   TIMESTAMPTZ (UTC)
+id, userId (FK RESTRICT), type ('CHECK_IN'|'CHECK_OUT')
+timestamp                 TIMESTAMPTZ (the event instant — NOT "eventAt")
 attendanceDate            TEXT (IST YYYY-MM-DD)
+sessionId                 INT? (pairs OUT to IN — NOT "linkedCheckInId")
 latitude, longitude       DECIMAL(10,7)
-accuracyMeters            DECIMAL
+locationAccuracyMeters    INT?, locationVerified BOOL, locationDistanceMeters INT?
 isOutsideGeofence         BOOLEAN
-photoPath                 TEXT (Supabase Storage path)
-deviceInfo                TEXT (UA snippet)
-ipAddress                 TEXT
-linkedCheckInId           FK → attendance_records.id (CHECK_OUT only)
-createdById               FK → users.id
-createdAt                 TIMESTAMPTZ
+photoPath TEXT?, photoSizeBytes INT?
+userAgent TEXT?, ipAddress TEXT?, deviceLabel TEXT?
+isManualEntry BOOL, manualReason TEXT?, createdById FK?, createdAt
+isLate, isOvertime, hasNoPhoto, hasNoLocation  BOOLEAN flags
 
 -- OT columns
-otClaimed                 BOOLEAN
-otClaimReason             TEXT
-otTotalLessThan95         BOOLEAN
-otApprovalStatus          TEXT (pending|approved|rejected|auto-approved)
-otApprovedById            FK → users.id (nullable)
-otApprovedAt              TIMESTAMPTZ (nullable)
-otApprovedAdjustedMinutes INT (nullable)
+otClaimed BOOL?, otClaimReason TEXT?, otTotalLessThan95 BOOL?
+otApprovalStatus TEXT? (pending|approved|rejected|auto-approved)
+otMinutesCredited INT? (the credited figure — NOT "otApprovedAdjustedMinutes")
+otApprovedById FK?, otApprovedAt TIMESTAMPTZ?, otAdminNote TEXT?
 
-@@index([userId, attendanceDate])
-@@index([attendanceDate])
-@@index([type, attendanceDate])
+@@index([userId, attendanceDate]) · ([attendanceDate]) · ([type, attendanceDate])
+· ([otApprovalStatus, attendanceDate])
 ```
 
-### attendance_summary (one per user per IST date)
+### attendance_summary (one per user per IST date) [live-verified 2026-08-04]
 
 ```
-id                        SERIAL PK
-userId                    FK → users.id
-attendanceDate            TEXT (IST YYYY-MM-DD)
-firstCheckInAt            TIMESTAMPTZ
-lastCheckOutAt            TIMESTAMPTZ
-totalWorkedMinutes        INT
-otClaimedMinutes          INT (sum of approved + auto-approved OT)
-status                    'PRESENT' | 'LATE' | 'HALF_DAY' | 'INCOMPLETE' | 'ABSENT'
-                          | 'HOLIDAY' | 'ON_LEAVE' | 'NOT_IN_YET' | 'EXEMPT'
-hasMissingCheckout        BOOLEAN
-sessionsCount             INT
-updatedAt                 TIMESTAMPTZ
+id, userId, attendanceDate
+firstCheckInAt, lastCheckOutAt          TIMESTAMPTZ?
+sessionCount INT, totalMinutesWorked INT, overtimeMinutes INT, lateMinutes INT
+status TEXT default 'ABSENT' (plain String — PRESENT/LATE/HALF_DAY/INCOMPLETE/ABSENT
+  in data; HOLIDAY/ON_LEAVE/NOT_IN_YET/EXEMPT are DERIVED display statuses, §8,
+  not necessarily stored)
+exceptionReason TEXT?, hasMissingCheckout, hasGeofenceViolation, hasManualEntries
+otMinutesCredited INT, otApprovalState TEXT?
+updatedAt
 
-@@unique([userId, attendanceDate])
-@@index([attendanceDate])
-@@index([status, attendanceDate])
+@@unique([userId, attendanceDate]) · @@index([attendanceDate]) · ([status, attendanceDate])
 ```
 
-### attendance_settings (GLOBAL row, seeded with depot defaults)
+### attendance_settings [live-verified 2026-08-04]
 
 ```
-id                              SERIAL PK (always 1)
-rolloutStage                    'OFF' | 'TEST_USERS_ONLY' | 'ALL_USERS'
-dpdpConsentVersion              TEXT (bump to force re-consent)
+id, scope TEXT default 'GLOBAL', roleSlug TEXT?   — @@unique([scope, roleSlug]);
+                                                    the singleton is BY CONVENTION (one GLOBAL row),
+                                                    not "id always 1"
+rolloutStage 'OFF'|'TEST_USERS_ONLY'|'ALL_USERS'
+workStartTime, workEndTime, checkInWindowStart, checkInWindowEnd   TEXT 'HH:mm'
+lateGraceMinutes, halfDayThresholdMinutes (default 240)
+geofenceLat, geofenceLng  DECIMAL(10,7) — NOT "geofenceLatitude/Longitude"
+geofenceRadiusMeters
+requirePhoto, requireLocation, photoMaxWidthPx, photoJpegQuality, photoRetentionDays (default 90)
+dpdpConsentVersion
+depotWorkingMinutes (default 570 — the 9.5h OT denominator)
+otTriggerTime 'HH:mm', otMonthlyGraceLimit (default 3), otPromptEnabled
+updatedAt, updatedById
+```
 
-workStartTime                   TEXT 'HH:mm'
-workEndTime                     TEXT 'HH:mm'
-checkInWindowStart              TEXT 'HH:mm'
-checkInWindowEnd                TEXT 'HH:mm'
+### OT support tables (were MISSING from this doc entirely)
 
-geofenceLatitude                DECIMAL(10,7)
-geofenceLongitude               DECIMAL(10,7)
-geofenceRadiusMeters            INT
-lateGraceMinutes                INT
-halfDayThresholdMinutes         INT (default 240)
-
-requirePhoto                    BOOLEAN
-requireLocation                 BOOLEAN
-photoMaxWidthPx                 INT
-photoJpegQuality                INT
-photoRetentionDays              INT (default 90)
-
--- OT settings
-otPromptEnabled                 BOOLEAN
-otCutoffHourIST                 INT (e.g. 19 = 7 PM) — legacy field, still used in some paths
-otTriggerTime                   TEXT 'HH:mm'   — modern field, used by check-out page settings fetch
-otRequiresApproval              BOOLEAN
-otAutoApproveThresholdMinutes   INT
-otMonthlyGraceLimit             INT
-depotWorkingMinutes             INT (used as denominator for OT calc)
-
-updatedAt                       TIMESTAMPTZ
-updatedById                     FK → users.id
+```
+attendance_ot_grace        per (userId, yearMonth) — flagCount (the monthly grace counter §16 reads)
+attendance_ot_audit        per action on an OT record — recordId, userId, action, performedById,
+                           performedAt, fromStatus, toStatus, note
 ```
 
 ### users — added columns
@@ -251,7 +235,20 @@ Status chip colours: `CLAUDE_UI.md §3`.
 
 ## 9. Admin dashboard — /admin/attendance
 
-`app/(admin)/admin/attendance/page.tsx`. Server-side roster derivation.
+`app/(ops)/admin/attendance/page.tsx` (⚠ the route group is **`(ops)`**, not `(admin)` — the files-map path was wrong until 2026-08-04). Server-side roster derivation.
+
+### 9.0 The attendance admin header — NOT UniversalHeader [redesigned 2026-05-14, doc caught up 2026-08-04]
+
+All four admin attendance pages render **`components/admin/attendance/attendance-page-header.tsx`** —
+a two-strip header that *"replaces admin-sub-nav.tsx + the per-page UniversalHeader chrome"* (its own
+comment), shipped in commit **`b9923b3e`** (2026-05-14, "redesign 4 admin pages — workflow switcher +
+Reports dropdown") per the approved mockup **`docs/mockups/attendance/admin-redesign.html`** (siblings:
+`ot-pending.html`, `settings.html`, `ot-audit.html`). Strip 1: the workflow switcher (Dashboard / OT
+Pending / Settings / OT Audit) + title — `titleOverride` takes a `" · "`-separated breadcrumb (used on
+Settings: "Attendance · Settings", first part gray, second bold) — + a Reports dropdown; Strip 2's
+left/right content is owned by each caller (`showWorkflowSwitcher` defaults true). This file owns what
+the pages render; `CLAUDE_UI.md §6/§49-51` own the roster fact and design rules. **The §9.1-9.3
+"UniversalHeader title …" claims below were stale from 2026-05-14 until this correction.**
 
 **Layout:** roster table left + 340px sticky right detail panel.
 
@@ -267,7 +264,7 @@ Status chip colours: `CLAUDE_UI.md §3`.
 
 Visual: `CLAUDE_UI.md §49`.
 
-UniversalHeader title "OT Pending Approvals". Roster table-style layout (fixed-layout per UI §27).
+Header: `attendance-page-header.tsx` (§9.0 — NOT UniversalHeader; corrected 2026-08-04), title "OT Pending Approvals". Roster table-style layout (fixed-layout per UI §27).
 
 Per row: user · date · claim reason · total worked · OT minutes raw · `[Approve]` · `[Reject]`.
 
@@ -287,7 +284,7 @@ Backend:
 
 Visual: `CLAUDE_UI.md §50`.
 
-UniversalHeader title "Attendance Settings" + subtitle "Last updated {date} by {updatedByName}".
+Header: `attendance-page-header.tsx` (§9.0 — NOT UniversalHeader; corrected 2026-08-04), breadcrumb "Attendance · Settings" + subtitle "Last updated {date} by {updatedByName}".
 
 **6 sections (in form order):**
 
@@ -320,7 +317,7 @@ Backend: `GET /api/admin/attendance/settings`, `PATCH /api/admin/attendance/sett
 
 Visual: `CLAUDE_UI.md §51`.
 
-Server component reads `?month=YYYY-MM` query param. UniversalHeader title "OT Audit" + month picker on right (`{Month} {YYYY} ▾`).
+Server component reads `?month=YYYY-MM` query param. Header: `attendance-page-header.tsx` (§9.0 — NOT UniversalHeader; corrected 2026-08-04), title "OT Audit" + month picker on right (`{Month} {YYYY} ▾`).
 
 **6-tile stats strip:**
 - Total OT credited (with "≈ Xh Ym" subtext)
@@ -361,8 +358,12 @@ Month parsing + clamping in `lib/attendance/calendar.ts`.
 
 | Path | Schedule (UTC) | Purpose |
 |---|---|---|
-| `/api/cron/attendance-rollover` | 18:35 daily | Inserts ABSENT rows + flags INCOMPLETE summaries with `hasMissingCheckout` |
-| `/api/cron/attendance-purge` | 20:30 daily | Deletes photos older than `photoRetentionDays` from Supabase Storage + clears `photoPath` in DB |
+| `/api/cron/attendance-rollover` | `35 18 * * *` (18:35 UTC daily) | Inserts ABSENT rows + flags INCOMPLETE summaries with `hasMissingCheckout` |
+| `/api/cron/attendance-purge` | `30 20 * * *` (20:30 UTC daily) | Deletes photos older than `photoRetentionDays` from Supabase Storage + clears `photoPath` in DB |
+
+*(Schedule strings verified against `vercel.json` 2026-08-04. ⚠ Hobby guarantees firing only **within
+the scheduled hour**, not at the exact minute — an 18:35 job may fire any time before 19:35 UTC. Do
+not build anything minute-precise on these.)*
 
 **Auth:** Bearer token via `CRON_SECRET`. Bypasses middleware session auth. `lib/cron-auth.ts` fails closed if env var missing.
 
@@ -406,11 +407,13 @@ components/attendance/
   day-summary-view.tsx                success screen + OT outcome banner
   day-detail-card.tsx                 detail rows for selected day
 
-app/(admin)/admin/attendance/
+app/(ops)/admin/attendance/           ⚠ route group is (ops), NOT (admin) — corrected 2026-08-04
   page.tsx                            roster dashboard
   ot-pending/page.tsx                 OT approval queue
   settings/page.tsx                   settings form
   ot-audit/page.tsx                   monthly audit
+
+components/admin/attendance/attendance-page-header.tsx   the two-strip admin header (§9.0)
 
 components/admin/attendance/
   attendance-dashboard.tsx            roster + detail layout
@@ -490,15 +493,15 @@ Bucket is PRIVATE. Access only via signed URLs from admin photo endpoint.
 
 ## 16. OT workflow
 
-**OT prompt** triggers in check-out flow when current IST hour >= `otCutoffHourIST` (or `otTriggerTime`) AND `otPromptEnabled === true`.
+**OT prompt** triggers in check-out flow when current IST time >= `otTriggerTime` AND `otPromptEnabled === true`. *(This line referenced an `otCutoffHourIST` column until 2026-08-04 — that column does not exist; `otTriggerTime` is the only threshold.)*
 
-### Claim shape on attendance_records
+### Claim shape on attendance_records (column names corrected 2026-08-04 — §2)
 
 - `otClaimed: boolean`
 - `otClaimReason: TEXT` (free text, e.g. "Late delivery to S5 yard")
 - `otTotalLessThan95: BOOLEAN` (analytics flag)
 - `otApprovalStatus: pending | approved | rejected | auto-approved`
-- `otApprovedById, otApprovedAt, otApprovedAdjustedMinutes` (set on approval)
+- `otMinutesCredited` (the credited figure), `otApprovedById`, `otApprovedAt`, `otAdminNote` (set on action)
 
 ### otOutcome returned to client
 
@@ -523,9 +526,13 @@ otOutcome: {
 - Grace counter shown in `AUTO_CREDITED_GRACE` banner: "OT credited under grace · {graceUsedThisMonth} of {graceLimit} used this month"
 - Once grace exhausted, further claims go to PENDING status awaiting admin
 
-### Auto-approval
+### Auto-approval (rule corrected 2026-08-04 — there is no threshold column)
 
-OT shorter than `otAutoApproveThresholdMinutes` auto-approves on insert (skips admin queue).
+The driver is **`depotWorkingMinutes`** (default 570 = 9.5h), per `lib/attendance/ot-logic.ts`: a claim
+with `totalMinutesWorked >= depotWorkingMinutes` auto-credits; **below** 9.5h it credits **under grace**
+while the month's `attendance_ot_grace.flagCount` is within `otMonthlyGraceLimit`, else goes PENDING
+for admin. *(The previous "shorter than `otAutoApproveThresholdMinutes` auto-approves" claim described
+a column that does not exist and inverted the shape of the rule.)*
 
 ### Manual approval
 
@@ -556,8 +563,24 @@ Originally specced at 10 chars trimmed. Lowered after first depot test — too s
 - **Photo bucket private.** Direct `<img src>` to Supabase Storage URL will 403. Always use signed URL endpoint.
 - **Submitting state polish** on OT screen — after Submit OT claim is tapped, screen briefly renders ConfirmView ("Submitting…") instead of staying on OT screen. Reason text preserved in error state but invisible during submit moment. Minor — a dedicated "submitting OT claim" state on the OT screen itself would smooth this.
 - **Settings 403 toast mis-label** — permission-denied responses (403) currently toast "Session expired — refresh and re-login" instead of "Permission denied". Cosmetic.
-- **`otCutoffHourIST` vs `otTriggerTime`** — both fields exist on `attendance_settings`. `otCutoffHourIST` is the legacy integer hour; `otTriggerTime` is the modern `HH:mm` string. Some code paths still read `otCutoffHourIST`. Treat them as alternate views of the same threshold for now.
+- **~~`otCutoffHourIST` vs `otTriggerTime`~~ — FALSE, retired 2026-08-04.** `otCutoffHourIST` does NOT exist on `attendance_settings` (live + Prisma agree); `otTriggerTime` is the only threshold. The "both fields exist / some paths still read the legacy one" claim survived at least one schema cleanup it never heard about.
 
 ---
 
-*Attendance v1.2 · Schema v27.12 · OrbitOMS*
+## Change log — v1.3 (2026-08-04 reconciliation pass, method v1.1)
+
+Evidence: `information_schema` SELECT on all three tables (live == Prisma; the doc was the outlier), `ot-logic.ts` + `vercel.json` + folder listing read directly, git (`b9923b3e`). Claim IDs from the session report.
+
+- ATT-1 (§2): all three schema blocks REWRITTEN to live truth — 8 wrong column names fixed, 3 nonexistent columns removed (`otCutoffHourIST`, `otRequiresApproval`, `otAutoApproveThresholdMinutes`), ~14 missing columns added, and the `attendance_ot_grace`/`attendance_ot_audit` tables documented for the first time.
+- ATT-2 (new §9.0 + §9.1-9.3): the admin header redesign documented — `attendance-page-header.tsx`, shipped `b9923b3e` (2026-05-14), mockups named; the three "UniversalHeader title" claims corrected (stale for 82 days).
+- ATT-3 (§9/§13): the admin pages' route group is **`(ops)`**, not `(admin)` — files map fixed.
+- ATT-4 (§16): OT auto-approval rule corrected (driver = `depotWorkingMinutes` + the grace counter; the threshold-column claim was inverted); claim-shape column names fixed; the prompt trigger is `otTriggerTime` only.
+- ATT-5 (§17): the `otCutoffHourIST vs otTriggerTime` landmine retired as FALSE.
+- ATT-6 (§11): cron schedule strings verified against `vercel.json`; the Hobby fires-within-the-hour caveat stated.
+- ATT-7 (§1): `attendance_admin` page key cited (CORE §5); the end-user key's no-DB-row design noted.
+- ATT-8 (header/footer): dates added at both ends (the file had none anywhere).
+- Verified CORRECT, no change: rollout stages + JWT stale window, consent flow, check-in/out flows, photo path scheme + private bucket, §14 PWA facts (start_url `/`, the manifest-name experiment), grace policy, 1-char reason minimum.
+
+---
+
+*Attendance v1.3 · Schema v27.12 · OrbitOMS · updated 2026-08-04*
