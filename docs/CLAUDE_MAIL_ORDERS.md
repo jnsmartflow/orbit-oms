@@ -1,9 +1,9 @@
-# CLAUDE_MAIL_ORDERS.md — Mail Orders Module
-# v1.10 · Schema v27.12 · Parser v6.5 · Enrichment v3 · July 2026 · updated 2026-07-28
+# CLAUDE_MAIL_ORDERS.md — Mail Orders Module (+ Billing v2 pilot, §23)
+# v1.11 · Schema v27.12 (+ unnumbered billing additions — CORE §7) · Parser v7.3.0 (repo copy; live PC ≥v7.2, exact deployed version unverifiable — §3) · Enrichment v3 · August 2026 · updated 2026-08-04
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
-Primary user: Deepanshu Thakur (billing_operator id=25). Secondary: Bankim (id=26).
+Primary user: Deepanshu Thakur (billing_operator id=25). Secondary: Bankim (id=26). Billing v2 pilot user: Operations User (id=20) — §23.
 
 ---
 
@@ -13,7 +13,7 @@ Primary user: Deepanshu Thakur (billing_operator id=25). Secondary: Bankim (id=2
 
 ```
 FW: email → Outlook (surat.order@outlook.com)  ← AkzoNobel front-door forwards in
-  → Parse-MailOrders-v6_5.ps1
+  → Parse-MailOrders (V7 line — §3; repo copy v7.3.0)
   → POST /api/mail-orders/ingest (HMAC auth)
   → enrich.ts v3 (generate → verify → rank) with carryProduct fallback
   → customer-match.ts v2 (token scoring + learned auto-match)
@@ -41,7 +41,10 @@ mo_orders
   status (pending|punched), punchedById (FK→users), punchedAt,
   emailEntryId (UNIQUE), totalLines, matchedLines,
   soNumber, dispatchStatus (Dispatch|Hold), dispatchPriority (Normal|Urgent),
-  shipToOverride BOOLEAN, slotToOverride BOOLEAN,
+  shipToOverride BOOLEAN, shipToOverrideCustomerId INT? (FK, v27.9 — §6),
+  slotToOverride BOOLEAN, notes TEXT?,
+  dispatchTargetDate DATE?, dispatchWindowId INT? (slot INTENT, 2026-07-30
+    unnumbered addition — CORE §7.6; written by the Billing v2 slot action, §23.3),
   isLocked BOOLEAN DEFAULT false,
   splitFromId INT, splitLabel TEXT,
   createdAt
@@ -88,11 +91,24 @@ Index: `idx_mo_sku_lookup_ref_material` on `mo_sku_lookup.refMaterial`. Coverage
 
 ---
 
-## 3. Parser — Parse-MailOrders-v6_5.ps1
+## 3. Parser — Parse-MailOrders (V7 line)
 
-**Location:** `C:\Users\HP\OneDrive\VS Code\mail-orders\` (outside git). UTF-8 with BOM.
+**Live copy:** `C:\Users\HP\OneDrive\VS Code\mail-orders\` on the mail PC (outside git). UTF-8 with BOM.
+**Repo copy:** `docs/Parser/Parse-MailOrders-V7.ps1` — file header **Version: 7.3.0**.
 
-**Architecture: Normalize → Split → Extract**
+**Version ruling (2026-08-04, three-way drift settled):** the repo copy is **v7.3.0** (v7.3 =
+app-only piece-pack peel in `Parse-AppBody` STEP C — `/po` emits piece packs as `"1 pc*12"`, which
+the shared pack detectors reject; the peel strips `pcs|pic|pics|pieces|piece|nos|tin|tins|bag|bags`
+on the app path ONLY, since human mail places units freely. v7.1 = `"800"` → BRILLIANT WHITE, not
+90 BASE — going-forward only, historical `rawText` keeps the corrupted value). The **live PC runs at
+least v7.2** (the 2026-07-15 `Dispatch:`-tag evidence, §3.1); whether v7.3 is deployed is
+**unverifiable from this PC** — the parser stamps no version into the ingest payload or any DB row,
+so there is no runtime marker to read. ⚠ **The script's internal `$ScriptVersion = "6.5.0"` (line
+136) is STALE** — the file header is the real version; the variable is a one-line script fix for an
+owner decision (not edited here). This header's old "Parser v6.5" stamp came from that variable's
+era and survived two major versions.
+
+**Architecture: Normalize → Split → Extract** (unchanged across the v6.5→v7.x line — everything below §3.1 describes the shared human path)
 
 1. **Normalize-Line** — carton suffix detection, piece suffix stripping, divider normalization, unit normalization, noise word stripping, equals separator. Digit-dash guard: skip when preceded by stainer code (23 hardcoded: NO, BU, RE, OR, XR, MA, GR, YE, XY, BLK, WHT, COB, COG, HEY, HER, FFR, OXR, WH, YOX, TBL, MAG, LFY, GRN).
 2. **Comma split.**
@@ -145,7 +161,7 @@ cannot produce it. Deploy already happened; treat this feature as live, not pend
 
 The depot PC (Windows, PS 5.1) has a second class of inbound email: orders placed via the OrbitOMS app (`/place-order`) that arrive as structured app-format emails. These have a `Bill To:` header as the first content line — distinct from human-written order emails.
 
-**Script:** `docs/Parser/Parse-MailOrders-V7.ps1` (v7.2) — editing/repo copy. **Live on the depot PC as of at least 2026-07-15** (confirmed above). Deploy is manual: back up live file → paste v7.2 over it — kept here as the redeploy procedure, not as a pending step.
+**Script:** `docs/Parser/Parse-MailOrders-V7.ps1` (now v7.3.0 — §3's version ruling) — editing/repo copy. **Live on the mail PC as of at least v7.2, 2026-07-15** (confirmed above); v7.3's deploy state is unverifiable from here. Deploy is manual: back up live file → paste the repo copy over it (UTF-8 BOM) — kept here as the redeploy procedure.
 
 **Sorter — `Test-IsAppFormat`:**
 - Strips blank lines from body top
@@ -357,19 +373,15 @@ Shipped alongside the desk-side inline picker (then Support's; the live equivale
 
 **Flag can be `true` with no id.** `shipToOverride = true` can still occur with NO resolvable `customerId` — free-text redirects that don't match a real `delivery_point_master` row (e.g. "as per challan", "Delivery on Challan copy"). "Flag true" does not imply "id present." Any consumer (Floor's detail panel, future screens) must handle both states.
 
-**Verification pending (2b, not yet confirmed):** a real post-deploy mail order with a resolved redirect should fill `mo_orders.shipToOverrideCustomerId`, then flow to `orders.shipToOverrideCustomerId` via enrichment. Check via:
-```sql
-SELECT id, "createdAt", "customerCode", "shipToOverride", "shipToOverrideCustomerId", "deliveryRemarks"
-FROM mo_orders
-WHERE "shipToOverride" = true
-ORDER BY "createdAt" DESC
-LIMIT 15;
-```
-Older rows are expected `null` (no backfill was run).
+**Verification — CONFIRMED 2026-08-04 (this closed the "2b pending" item).** Live SELECT: since the
+2026-07-07 deploy, **34 of 83** `shipToOverride=true` mail orders carry a resolved
+`shipToOverrideCustomerId` (the null remainder are free-text redirects — flag-true/id-null is the
+documented valid state, not a failure), and **34 `orders` rows** carry the id through enrichment.
+All 277 pre-deploy flagged rows are null, as expected — no backfill was run.
 
 **Backfill of historical overrides — DEFERRED, maybe never.** Old `mo_orders` rows only carry the redirect as `[→ Name (Code)]` text inside `deliveryRemarks`; recovering the id needs a parse-then-resolve one-off script (parse the suffix via `splitDeliveryRemarks()`, then resolve the recovered code against `delivery_point_master`). Not needed to proceed.
 
-**Ship-to override on other screens (Planning, Warehouse, challan, etc.) — DEFERRED.** Support only, one screen at a time, per Smart Flow's sequencing.
+**Ship-to override on other screens — where it stands (2026-08-04):** the desk surface is Floor's detail panel (`CLAUDE_FLOOR.md §4.4`); the Billing v2 face resolves the override via the FK relation and can SET it via the ✎ pencil (§23.3). The challan document does not render it. *(This line used to defer to "Support only" and name Planning/Warehouse as future screens — all three boards retired 2026-07-27/28.)*
 
 ### splitDeliveryRemarks helper (in lib/mail-orders/utils.ts)
 
@@ -856,7 +868,7 @@ Access to `/mail-orders` is **entirely DB-driven** via `role_permissions` — no
 `admin` bypasses the permission table entirely (hard-coded bypass in `lib/permissions.ts`). **Testing
 access while logged in as admin proves nothing** — always test as the actual role being granted.
 
-### Current `mail_orders` grants (as of 2026-07-10) [LIVE]
+### Current `mail_orders` grants [LIVE — re-verified by SELECT 2026-08-04, CORE §5 owns the table]
 
 | roleSlug | canView | canEdit |
 |---|---|---|
@@ -865,11 +877,11 @@ access while logged in as admin proves nothing** — always test as the actual r
 | `operation_manager` | true | true |
 | `tint_manager` | true | **false** (view-only) |
 
-**Undocumented facts this grant surfaced:**
-- A role slug **`operation_manager`** exists live in `role_permissions` and is **not** listed in
-  `CORE §5`'s `role_master` table — flagged for the CORE pass (identify: legacy slug, or a real role
-  missing from the docs).
-- `tint_manager` holds a **view-only** `mail_orders` grant that was previously undocumented anywhere.
+**Facts this grant surfaced (both since settled):**
+- **`operation_manager` — RESOLVED 2026-08-04:** a real role, `role_master` id 15, one active user
+  (Prakash, id 32) — `CORE §5` now owns it. The "legacy slug?" question is closed.
+- `tint_manager` holds a **view-only** `mail_orders` grant (previously undocumented; note §18's
+  landmine — view-only is UI-enforced only).
 
 ### Two authorization systems coexist
 
@@ -888,4 +900,178 @@ Mail Orders access for everyone except `admin`. All four rows above should be ad
 
 ---
 
-*Mail Orders v1.10 · Schema v27.12 · Parser v6.5 · Enrichment v3*
+## 23. Billing v2 [PILOT — flag-gated] (2026-07-30 → 08-02 build; documented 2026-08-04)
+
+The Mail Orders screen's next generation, built INSIDE this module — **no `CLAUDE_BILLING.md` exists
+and none is created while pilot-gated** (locked decision; the router gets a billing trigger row at
+full rollout). Sources: five drafts (FINDINGS · phase-2 build-decisions · code-resume 07-31 ·
+code-update 08-01 · web-update 08-02), all commits git-verified 2026-08-04. UI design-system rules
+are in `CLAUDE_UI.md v5.17` (§6 neutral header props, §10 action-surface rules, §28 tone) — this
+section owns BEHAVIOUR.
+
+**PILOT SCOPE (live state, SELECT 2026-08-04):** `billing_settings.rolloutStage =
+'TEST_USERS_ONLY'`; exactly ONE flagged user — Operations User (id 20, `users.billingV2TestUser`).
+Deepanshu (25) + Bankim (26) are the rollout target. **Fail-closed:** `isBillingV2Enabled()`
+(`lib/billing/flag.ts`) is read fresh per page load server-side in the mail-orders layout
+(deliberately NOT JWT-cached), couriered by `BillingV2Provider`, context default `false`. 22 orders
+already carry `invoicedAt` (the tab is in real pilot use); 4 mail orders carry slot intent.
+
+### 23.1 Flag mechanics + gating pattern [LIVE — the top constraint]
+
+- The **page** reads the flag; **`UniversalHeader` takes only NEUTRAL props** (`searchLayout`,
+  `showClock`, `suppressFilterBar`, `showShortcutsButton`, `importVariant`) and must NEVER import
+  from `components/billing/` or call `useBillingV2()`. New header behaviour = optional prop,
+  default = today's behaviour, other consumers byte-identical by construction.
+- New nodes are siblings gated `{billingV2 && …}` — **no wrapper divs**; optional slot props use
+  `undefined`, never `null`/`<></>`; no existing className/grid edited. OFF path byte-identical,
+  verified by mechanical diff (last full audit passed through the 08-01 batch).
+- Key files: `lib/billing/flag.ts` · `components/billing/*` (`billing-v2-provider`,
+  `billing-tab-bar` (`rightSlot`), `billing-action-ribbon` (exports `BTN_BASE`/`BTN_OFF`),
+  `billing-ship-to-pencil`, `billing-picking-tab`; `billing-order-info` is ORPHANED — §23.6) ·
+  `mail-orders-page.tsx` (owns the flag + composes header) · `review-view.tsx` (the billing face) ·
+  `meta-ribbon.tsx` (`contentOverride?: ReactNode`, undefined → original) ·
+  `components/header-filter.tsx` / `header-date-stepper.tsx` / `header-shortcuts.tsx` (extracted
+  from UniversalHeader so the tab row can reuse them).
+
+### 23.2 The billing face (Focus view, flag-ON) [LIVE on the pilot]
+
+Built across `8b2d9553`→`3b678ad3` (07-31 batch) then `d08f3870`→`06a5c904` + `ce1212d3` (08-01/02):
+
+- **Flat order list** — the Morning/Afternoon slot filter and auto-select-first-slot are bypassed;
+  the Orders tab counts **PENDING** (`status !== "punched"`), not total.
+- **Header:** title "Billing" · Import (teal, `importVariant="primary"`) + pearl `w-[240px]` search
+  at the far right (`searchLayout="wide-right"`); clock and header stats dropped; Table/Focus
+  toggle hidden (**Table code fully intact for non-billing users** — retirement is its own future
+  session per the playbook); keyboard-shortcuts button lives on the control row (Orders·Picking ·
+  date · Filter · ⌨).
+- **Inbox rail:** mail icon + "Inbox" label (left), `N orders · X% punched` (right — % blue <100,
+  green at 100); rail's own search box hidden.
+- **Ribbon row:** sales officer name + received + `punched by {op} {time}` on the LEFT; all actions
+  RIGHT — `Urgent · Hold · Slot · Notes │ [Order No + Punch]` pre-punch, or `│ [✓ green SO pill] ✎`
+  post-punch. Punch is rightmost; future buttons insert left of the punch group. Editing a punched
+  SO number uses a compact inline editor and does NOT re-punch (keeps `punchedAt`, no
+  pending-bounce — `a64c7935`). ⚠ Auto-punch sets `status:"punched"` with NO soNumber — any
+  "is-edit?" detector must include `&& !!soNumber` (§23.6).
+- **Notes:** violet band (`instructions-strip` `tone="violet"`) + violet left-accent; the Notes
+  button tints violet when a note exists. Urgent/Hold/Dispatch chips removed from the ship card
+  (call-site filter — the CTA buttons carry the state); Challan chip kept.
+- **Empty states (copy locked, keep verbatim):** rail empty → "**No new orders**" / "New orders
+  appear here on their own."; rail filtered → "No orders match."; right pane empty → green ✓
+  "**All caught up**" / "Every order is punched. New ones show up here as they come in."; filtered →
+  "No orders match your filter." A just-punched row lingers ~8s (`recentlyPunchedIds` grace).
+  Clicking a punched order reopens it on the right even when caught up (`reopenedPunchedId` + ✕
+  back to "All caught up"); a zero-order day keeps the shell (`ce1212d3`).
+- **Ship-to via FK (`e545af29`):** the billing face resolves the override dealer through the
+  `shipToOverrideCustomer` relation (like Floor), not by parsing `deliveryRemarks` text —
+  name/code/area/deliveryType all from master data. **Option-(a) caveat:** Table view still reads
+  the `mo_customer_keywords` cache (can disagree per dealer), and non-billing users still see a
+  blank ship-to name for pencil-set overrides until rollout (self-heals; Floor/dispatch already
+  correct). Ungating the fix for everyone belongs to the data-audit session.
+
+### 23.3 Billing actions — dual-write + slot intent [LIVE]
+
+`/api/billing/mail-order/actions` — Urgent / Hold / Slot / Ship-to all write **both tables,
+sequentially, never `$transaction`** (as-built record: `billing-phase-2-build-decisions.md`):
+
+1. `mo_orders` (the INTENT — carried by enrichment for a bill whose OBD doesn't exist yet);
+2. `orders` via `updateMany WHERE soNumber, isRemoved:false` — an existing OBD updated in place.
+   `orders` second ON PURPOSE (a failed second write leaves the intent recorded). Response
+   `ordersUpdated`: 0 pre-import, 1 normal, >1 split-bill fan-out (intended).
+
+- 🔴 **The `soNumber`-blank guard is LOAD-BEARING:** skipped entirely when soNumber is null/blank —
+  `where {soNumber: null}` would mass-rewrite every un-punched order from one click.
+- ⚠ **Field mapping DIFFERS per table:** Hold = `"Hold"`/`"Dispatch"` capitalised on `mo_orders` vs
+  lowercase on `orders` (wrong case silently drops the bill off Floor's live board); Urgent = word
+  vs `priorityLevel` 1/3; Slot set = both cols + `dispatchSlotSource:'manual'` on orders; Slot
+  clear = nulls + `dispatchSlotSource:null` (hands the bill back to the rules engine — leaving
+  `'manual'` would make the engine skip it forever).
+- `heldAt` is NOT written (v1 decision) → Floor's "held since" shows `heldSinceSource:"unknown"`
+  for billing holds. Display-only; do not add a per-row N-write loop for a timestamp.
+- The `orders` write is ONE update on a NEW path — markers see a genuine change (CORE §3 rule
+  respected).
+- **Billing's own read routes, deliberately not Floor's:** `GET /api/billing/ship-to-search` +
+  `GET /api/billing/dispatch-windows`, gated on `mail_orders/canView` — Floor's equivalents gate on
+  `floor`, which Deepanshu/Bankim don't hold (reusing them would 403 at rollout after a green
+  pilot).
+- Slot-intent columns on `mo_orders`: CORE §7.6 owns the schema (unnumbered addendum; lowercase FK
+  name `mo_orders_dispatchwindowid_fkey`).
+
+### 23.4 The Billing Picking tab [LIVE]
+
+The desk list of checked-but-not-yet-invoiced bills. Predicates in `lib/billing/picking-where.ts`
+(shared by list + marker so they can never disagree); routes `/api/billing/picking/list` + `/marker`
+gated on `mail_orders/canView`.
+
+- **Pending (actionable, all-dates backlog):** `pick_checked` + `invoiceNo IS NULL` +
+  `invoicedAt IS NULL` + `isRemoved:false` + `dispatchStatus:'dispatch'` + hide-exclusion.
+  🔴 **NEVER add a date fence** — measured 2026-07-30: all 11 then-pending bills were older than
+  that day; a today-fence renders an empty tab over a real backlog. Carry-over is the normal case.
+- **Mark done / Undo:** one `orders.update` writing `invoicedAt` + `invoicedById` (clearing = Undo);
+  the WHERE ANDs the pending predicate + `invoiceNo:null`, so an info row (below) matches 0 rows —
+  write-path safety holds by construction. Undo button hidden on past days (server window stays
+  today-only).
+- **"Done = CHECK date" (2026-08-02, `b99a925d`/`71be9ff2`/`e7a2d6e5`):** the Done area for a
+  selected IST day = (a) operator-marked-done that day (keyed on `invoicedAt`) PLUS (b)
+  **informational** rows — `pick_checked` + `invoiceNo IS NOT NULL` + `checkedAt` in that IST day.
+  Info rows are not selectable/markable; violet "Already invoiced" badge
+  (`bg-violet-50 text-violet-700 border-violet-200`) + invoiceNo + checker name. This fixed the
+  vanishing bill: SAP same-day invoicing often lands BEFORE the supervisor checks, which failed
+  Pending (invoiceNo set) AND Done (invoicedAt null).
+- **Owner decisions (Smart Flow, 2026-08-02):** hide filters APPLY to the info arm; NO
+  `dispatchStatus` pin on the info arm; Undo hidden on past days.
+- **Date stepper** drives the Done area; marker = `OR(pending, invoiced-info)` — count stays
+  pending-only, `latest` over the union. The Done strip says "awaiting SAP" semantics: invoiceNo
+  arrives in sub-hourly batches through the day (measured), not live — never render it as a
+  spinner.
+- The sibling Picking-board fix (`e37cbe74` — the supervisor Checked band now keys on
+  `checkedAt` IST, not `dispatchTargetDate`) is **CLAUDE_PICKING territory** — flagged there, not
+  documented here.
+
+### 23.5 Deferred / next (tracked — ROADMAP session must pick these up)
+
+Data-audit + plumbing session (dual-write end-to-end vs Floor; then widen rollout
+`TEST_USERS_ONLY → ALL_USERS`) · clear the test-marked done bills before real rollout · ungate the
+ship-to FK fix for everyone (after a legacy id/text agreement SELECT) · global rename Mail Orders →
+Billing · Table-view retirement (playbook session — currently hide-only) · post-rollout flag
+cleanup (collapse `billingV2 ?` forks, retire `billing-order-info.tsx`) · UI polish of the violet
+info row · billing edge case parked: bills invoiced days before checking show on the check day
+(Smart Flow will flag if that needs more) · human hand-checks outstanding (operations Import
+end-to-end; non-billing screens unregressed; punch/edit/reopen in situ — Claude Code cannot log
+in) · **notes plumbing open question** (from the FINDINGS diagnosis §3.5): `mo_orders.notes` has NO
+enrichment carry line and Floor reads no `orders.remarks` at all — whether billing notes should
+reach Floor is a product decision, not a gap to plug blindly.
+
+### 23.6 Billing landmines
+
+- **A `*Slot` prop renders in BOTH MetaRibbon branches** (`contentOverride ?? fallback` — slots
+  appear in the fallback too). Slots are never automatically billing-only; gate INSIDE the slot
+  with `billingV2 ? … : …`. Leaked twice in `0a8582e3`, fixed in `d5a896b3`.
+- **Shared cards render on both faces** (`ShipToCard`/`BillToCard` via review-view) — filter/gate
+  at the CALL SITE, never restyle the card.
+- **`grid-cols-2` cards share a row height** (align-items: stretch) — floor BOTH children
+  (`[&>div]:min-h-[…]`); a `min-h` on one card alone does nothing.
+- **Auto-punch sets `status:"punched"` with NO `soNumber`** — an is-edit detector without
+  `&& !!soNumber` mis-flags a first punch as an edit and drops its grace (row vanishes).
+- **`billing-order-info.tsx` is ORPHANED** (the ⓘ was removed in `0a8582e3`) — kept per the
+  no-deletions rule; retire in the flag-cleanup pass.
+- **Local `tsc`/build validate the WORKING TREE, not the commit** — after committing, confirm
+  `git diff HEAD --stat` is empty before pushing (an uncommitted `BTN_BASE` export once passed
+  locally and broke the Vercel build — `1f589d51`).
+
+---
+
+## Change log — v1.11 (2026-08-04 reconciliation pass, method v1.1)
+
+Evidence: git (18 commits verified), code call-sites, read-only SELECTs (ship-to carry, pilot state), the parser repo copy. Claim IDs from the session report.
+
+- MO-1 (header/§1/§3): parser three-way version drift settled — repo copy v7.3.0; live PC ≥v7.2 (2026-07-15 evidence); no runtime version marker exists; stale `$ScriptVersion="6.5.0"` flagged for an owner script fix.
+- MO-2 (§2): mo_orders listing gains `shipToOverrideCustomerId`, `notes`, and the slot-intent columns.
+- MO-3 (§6): the "verification pending (2b)" ship-to id carry CONFIRMED by SELECT (34/83 post-deploy resolved; 34 OBDs carry it); the "Support only / Planning / Warehouse" deferral line replaced with the live surface map.
+- MO-4 (§22): grants re-cited to CORE §5 (2026-08-04); operation_manager question closed (role id 15, Prakash).
+- MO-5 (NEW §23): Billing v2 documented from the five drafts — pilot scope + flag mechanics, the billing face, dual-write actions + slot intent, the Picking tab with the 08-02 "done = check date" rule and owner decisions, deferred list, six landmines.
+- MO-6: resume §3 Import-permission question closed — `canImportOBDs` allow-list includes operations/operation_manager (code) + live `import_obd` grant (`c8f8d020`, CORE §5).
+- MO-7: resume §2 items verified SHIPPED in the 08-01 batch (header v7 → `d08f3870`/`f76b4c86`/`471e6808`; keyboard → `15e87e2b`/`f76b4c86`; Inbox+stats → `f91b94c8`/`471e6808`/`06a5c904`); only the human hand-checks remain open (§23.5).
+
+---
+
+*Mail Orders v1.11 · Schema v27.12 (+ unnumbered billing additions — CORE §7) · Parser v7.3.0 (repo copy; live ≥v7.2) · Enrichment v3 · updated 2026-08-04*
