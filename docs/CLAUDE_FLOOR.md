@@ -1,5 +1,5 @@
 # CLAUDE_FLOOR.md — Floor Control
-# v1.3 · Schema v27.12 · July 2026 · updated 2026-07-28
+# v1.4 · Schema v27.12 · August 2026 · updated 2026-08-04
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -25,7 +25,8 @@ Floor Control **reuses Picking as a CALLER**. It did NOT fork or modify it — n
 | the 4 read feeds (§3) | the dispatch engine (`evaluateDispatchSlot`) → **`CLAUDE_CORE.md §7.4`** |
 | floor routes: hold / cancel / release / change-slot (§4) | |
 | ship-to search + save (§4.4) · the dispatch-slot picker (`components/floor/dispatch-slot-picker.tsx`) · `formatArticleTag` (`lib/floor/format.ts`) | |
-| the detail panel (§4.6) | |
+| the action surfaces — assign bar / panel header / picker behaviour / selection+Esc (§4.6) | |
+| the detail panel (§4.7) | |
 | the held-since read-side rule (§4.5) | |
 | floor live-sync + `/api/floor/marker` (§5) | |
 | the hand-rolled header divergence (§10) | |
@@ -42,7 +43,7 @@ If you find yourself explaining borrowed behaviour here, replace it with a point
 
 One rule the operator learns: **left = not on the floor, right = on the floor.**
 
-- **Left rail (344px) — "Needs your decision".** Cards, one per bill. Holds ONLY bills the dispatch engine could not auto-slot (having no slot is *why* they are here). A bill the engine successfully slotted never appears on the rail — it is already on the right, carrying its stored `dispatchTargetDate`/`dispatchWindowId`. Oldest-first, always; never filtered by search/slot/route/date — only the header delivery-type scope narrows it (search only HIGHLIGHTS a matching rail card, never hides it). Each card: `[ pick slot ] [ Hold ] [ ✕ ]` (no Release button, no suggestion — §8). Tint bills show a live tint strip and a slot picker disabled until all shades are done.
+- **Left rail (344px) — "Needs your decision".** Cards, one per bill. Holds ONLY bills the dispatch engine could not auto-slot (having no slot is *why* they are here). A bill the engine successfully slotted never appears on the rail — it is already on the right, carrying its stored `dispatchTargetDate`/`dispatchWindowId`. Oldest-first, always; never filtered by search/slot/route/date — only the header delivery-type scope narrows it (search only HIGHLIGHTS a matching rail card, never hides it). Each card: **with an engine suggestion** (live since 2026-08-03 — §8), a teal split-confirm button `[ ✓ Today 18:00 ▾ ]` + `Hold` + `✕`; **without one**, the original `[ pick slot ] [ Hold ] [ ✕ ]` plus a quiet grey "Why no slot?" link. Tint bills show a live tint strip and a slot picker disabled until all shades are done; a FINISHED full tint OBD gets a completion-anchored suggestion (§8).
 - **Right pane** — three top tabs: **Floor** / **On hold** / **Cancelled**, plus the slide-out **detail panel**.
   - **Floor:** delivery-type scope chips (All/Local/Upcountry/IGT) · slot tabs `10:30 · 12:30 · 16:00 · 18:00 · All` · slot bands (All view) or Flat/By-route (a slot tab) · a fixed-layout table · four status pills (Waiting / With picker / Needs check / Done). Live vs History (History is read-only, dated).
   - **On hold / Cancelled:** tables (§4).
@@ -114,7 +115,48 @@ The **save is a rewrite, not a copy**. Support's PATCH handled four unrelated fi
 - Take the hold **event's** wall-clock `order_status_logs.createdAt`, identified by the log **NOTE** via the shared constant `HOLD_LOG_NOTES` (`lib/floor/hold-log.ts`) — never a sentinel `toStage` (which would pollute the stage ladder). Matches the Floor note AND the two historical Support notes (`"Placed on hold by support"`, `"Placed on hold by support (bulk)"`). ⚠ **Keep both Support strings** — Support no longer writes them, but bills it held are still on hold today and would otherwise fall to the `~approximate` fallback.
 - Fallback ladder: hold log → `orders.heldAt` (rendered with a leading `~` + "approximate" tooltip; enrichment holds write no log) → unknown (banded separately under "Held date unknown"). Nothing can silently read as "held today".
 
-### 4.6 Detail panel [LIVE]
+### 4.6 Action surfaces — assign bar · panel header · slot picker · selection/Esc [LIVE since 2026-07-27]
+
+The 2026-07-26 redesign (draft `web-update-2026-07-26-floor-action-surfaces.md`; committed with the
+Support-retirement step 1). The five general DESIGN rules it minted are owned by
+**`CLAUDE_UI.md §10`**; this section owns the floor-specific SPECS. *(The draft's §8 routing table
+sent four items to `CLAUDE_SUPPORT.md §4.10/§4.18` — that file is retired; the picker and the
+ship-to routes are Floor's own since `316eec6b`, so those items land HERE.)*
+
+- **Assign bar** (`assign-bar.tsx`) — four controls:
+  `[ N selected ][✕] summary … [Change slot] │ [picker ▾][Assign]`. Summary: 1 row →
+  `{customer} · {vol} L`; 2+ → `{total} L · {n} routes`; `· {n} already assigned` appended when
+  applicable. Assign label flips to `Reassign all {n}` when every ticked row has a picker; Assign is
+  the bar's only teal, grey when disabled. Renders nothing when nothing is selected.
+  **Deliberately REMOVED capabilities** (do not rediscover as bugs): bulk mark-urgent (per-row ⚡
+  covers it) · bulk hold (per-bill ⋯ menu) · bulk unassign (weakest removal — fell out of the
+  four-control layout, accepted; the lost case is "pull N bills back with nobody to hand them to").
+  Handlers were deleted from `floor-page.tsx` with explanatory comments left in place.
+- **Detail-panel header** — slot lives on the IDENTITY line as a clickable pencil chip
+  (`DD-MM · HH:MM`, dashed "No slot" when unset, hidden on cancelled); the action row holds only
+  jobs. **Exactly one teal per state, on the state's real job:** Waiting/Assigned/Done → Ship-to;
+  Held/Rail → Release; Cancelled → Restore. The ⋯ menu contents are unchanged from the redesign.
+- **Slot picker behaviour** (`dispatch-slot-picker.tsx` — Floor-owned): commit-on-tap, **no confirm
+  button** (a confirm would tax the most frequent action) → hence NO teal anywhere in the popover;
+  near-black selection on a neutral strip; month tag only on tiles crossing a month. **Honest
+  highlight:** opens on the bill's OWN day if visible, else highlights NOTHING (never claims today).
+  **Consequence: tapping only a time keeps the bill on its own day** — it no longer silently drags
+  the date to today. Auto-flip positioning: preferred direction if it fits, flips, else caps+scrolls;
+  repositions on scroll/resize; already portalled. Plus the §8 `suggested`/`hideTrigger` props.
+- **Selection + Esc — THE spec (flagged in every pass since 2026-08-04 step 2; lands here):**
+  `lib/floor/selection.ts` `toggleAll()` on a PARTIAL selection **selects all, it does not clear**,
+  and it is per-GROUP (one per slot band / route group) — so a cross-group or search-auto-ticked
+  selection cannot be cleared by any header checkbox. That is WHY the bar's ✕ global-clear exists —
+  any proposal to remove it must solve this first. **`floor-page.tsx` is the SINGLE window-level Esc
+  owner** for the floor tree. Guard order, exactly one branch per keypress: slot popover open
+  (`[data-slot-popover="open"]` — the marker the picker carries for exactly this) → nothing · focus
+  in input/textarea/select/contentEditable → nothing · panel open → close panel · rows selected →
+  clear selection · else nothing. **Never add a second Esc keydown listener under
+  `components/floor/`** — two window-level listeners race in registration order, which is the bug
+  this replaced. The panel closes via ✕/backdrop as well; the picker itself dismisses on
+  click-outside, not Esc.
+
+### 4.7 Detail panel [LIVE]
 
 `GET /api/floor/order/[orderId]` (floor `canView`) returns one payload: header + Details + Items + Activity. Items resolve via `sku_master_v2` on `material === skuCodeRaw` (CORE §13 — never a sku id), raw-text fallback preserved, gift lines out of scope. Activity = `order_status_logs` + ONE synthetic "auto-slot" line derived from `dispatchSlotSource`/`dispatchSlotRuleId` and labelled "enrichment" (the engine writes no log — do not add one; §5). 472px slide-in; primary action + Change ship-to + Update slot + ⋯ ; Prev/Next walks the source list.
 
@@ -140,7 +182,7 @@ Each with the one-line root cause so the class is recognisable again.
 
 - **(a) Auto-slot scheduled Saturday-evening bills into Sunday** (depot closed). *Root cause:* `evaluateDispatchSlot()` rolled a late bill to the next **calendar** day. *Fix:* `nextWorkingDateOnlyUTC()` in `lib/dispatch/dispatch-engine.ts` skips Sunday only (Saturday is a working day; holidays not modelled). This was a **live enrichment bug independent of Floor Control**. Engine owned by CORE §7.4.
 - **(b) Releasing a held bill was a silent no-op** (UI said OK, wrote nothing). *Root cause:* the release route required `workflowStage === "pending_support"`, but a floor-held bill sits at `pending_picking`; it was pushed to `failed[]`, the route returned **200**, and the client discarded the response. *Fix:* `FLOOR_RELEASABLE_STAGES` (§4.2) admits `pending_picking`; routes return 422 when nothing was written; the client now reads the response and `reportWrite()` surfaces every non-2xx / hard error / non-empty `failed[]` (the rail release path had the same swallow).
-- **(c) A carried-over bill vanished the instant it was checked.** *Root cause:* the live "checked" arm fenced on `dispatchTargetDate = today`, so a bill due earlier failed both arms the moment it reached `pick_checked`. *Fix:* the checked arm now fences on `pick_assignments.checkedAt` within today's IST range (§3) — a bill can never disappear at completion.
+- **(c) A carried-over bill vanished the instant it was checked.** *Root cause:* the live "checked" arm fenced on `dispatchTargetDate = today`, so a bill due earlier failed both arms the moment it reached `pick_checked`. *Fix:* the checked arm now fences on `pick_assignments.checkedAt` within today's IST range (§3) — a bill can never disappear at completion. **This "done = check date" convention now has three implementations:** Floor (here, the original), the Billing Picking tab (`CLAUDE_MAIL_ORDERS.md §23.4`), and the Picking supervisor board (`e37cbe74`, 2026-08-02 — documented in the PICKING pass, pending).
 
 ---
 
@@ -152,9 +194,60 @@ This is a **completed one-off**, not a runbook. (It is also the source of the `d
 
 ---
 
-## 8. Deferred / not built [DEFERRED]
+## 8. Rail slot suggestion [LIVE — shipped 2026-08-03; hand-verification PENDING]
 
-- **v2 slot suggestion (Step 10).** `lib/floor/suggest.ts` is intact but gated behind `RAIL_SUGGESTIONS_ENABLED = false` in `lib/floor/queries.ts` — flip that one constant to re-enable. Every rail card renders `[ pick slot ] [ Hold ] [ ✕ ]`; the operator always picks the slot. Two things must change first: (1) the staleness check must compare the **full moment (date + time)** vs now, not minutes-since-midnight (the bug that caused removal — §10); (2) the suggestion must carry date AND time. Deferred until v1 has been used.
+**Status:** `RAIL_SUGGESTIONS_ENABLED = true` (`lib/floor/queries.ts:70`) since the 2026-08-03 session
+(commits `30226144` → `dee603dc` + `ab70c826`; draft record
+`docs/prompts/drafts/code-update-2026-08-03-floor-slot-suggestion.md`). Both prior blockers were
+fixed at source: the staleness check is now one closed-batch MOMENT test (below), and the suggestion
+carries date AND time. ⚠ **Smart Flow's five manual hand-checks (rail→auto-slot round trip, human
+slot survives repair, re-slot log lines, no marker flash, morning-rail eyeball) are still pending** —
+treat behaviour as shipped-but-not-hand-verified until they run.
+
+**What it is:** `lib/floor/suggest.ts` — a render-time NUDGE on each rail card, computed in
+`getFloorRail` per card. It reuses the LIVE `evaluateDispatchSlot` (engine owned by **CORE §7.4** —
+never re-implemented, so the hint and the auto-enrich path cannot disagree) with two gates
+deliberately neutralised via literals: `smu: "Deco Retail"` and `dispatchStatus: "dispatch"` — the
+engine's gates answer "may I slot this WITHOUT a human?", the rail hint answers "if I release this
+now, which slot?", which the operator asks of every SMU. `input.smu` stays on `SuggestInput` for
+future "why this slot" copy — input, not a gate.
+
+- **Clock discipline:** arrival clocks go through `resolveArrivalClocks()`
+  (`lib/dispatch/punch-clock.ts` — single owner, **CLAUDE_IMPORT.md §12.1b**; the import auto-slot
+  call site uses the SAME function). This matters MOST here: the rail renders every bill, and 1,854
+  of 9,521 orders carry a date-only `orderDateTime` (audit 2026-08-03) — without the guard, each was
+  eligible for a confident teal one-click button built on a fake 05:30.
+- **Tint, full OBD only:** a finished full tint OBD anchors on `tint_assignments.completedAt`,
+  which **REPLACES both arrival clocks** (passed as the single clock; punchDateTime null — the
+  engine's single-clock path). Feeding completion ALONGSIDE the punch would invoke the dual-clock
+  merge and could hand back the punch on a cross-day bill. Replace, never add. Splits → no
+  suggestion (v1 scope). Mid-tint → no suggestion (arrival clock would offer 12:30 to a bill still
+  on the mixer).
+- **60-minute grace (`SUGGESTION_GRACE_MINUTES`):** a batch stays OPEN for one hour past its window
+  time; past that → no suggestion, operator decides — **deliberately NO roll-forward** to a later
+  window. Why 60: (a) import lag (~15-20 min measured) means near-cutoff bills arrive pre-expired —
+  without grace they could never show a suggestion; (b) **safety proof: the smallest inter-window
+  gap is 10:30→12:30 = 120 min, so 60 can never overlap the next window. Do not raise past 120.**
+- **The closed-batch test** is epoch arithmetic on absolute instants (window minutes − IST offset +
+  grace, on `r.targetDate`'s UTC-midnight epoch) — it replaced the two old arms (past-date string
+  compare + minutes-since-IST-midnight), whose within-a-day blindness was the original 23-Jul
+  "Release to Wed 16:00 on a Thursday" bug. Never reintroduce a per-day arm, and never
+  `Date.parse` an offset-less string here (CORE §3).
+- **UI (`rail-card.tsx`, commit `dd871c41`):** teal split button — body tap = release with that slot
+  via the existing `POST /api/floor/release` (writes `dispatchSlotSource='manual'`); `▾` opens the
+  existing picker pre-highlighted on the suggested day+window. Without a suggestion: unchanged
+  controls + grey "Why no slot?" reveal (neutral copy, **no red/amber** — a missing suggestion is a
+  "you decide", not an error). Teal is the only filled element on the row; green stays "Done".
+- **Design principle — a nudge, never a lock.** Nothing is written until the operator clicks. A
+  completed tint bill is deliberately NOT given a window at completion: `hasPresetSlot` in both tint
+  "done" routes would flip it to `dispatchStatus='dispatch'` and it would **leave the rail
+  entirely**, robbing the operator of the confirm step.
+- **Picker props (additive, `dispatch-slot-picker.tsx`):** `suggested` (highlight only — `value`
+  always wins; a committed slot is never visually overridden by a proposal) + `hideTrigger`. Every
+  other call site omits both and is byte-identical.
+
+## 8b. Deferred / not built [DEFERRED]
+
 - **`byAssigned` on Floor — RESOLVED + SHIPPED (commit `661e4e61`, this session).** Formerly an open question ("decide whether `byAssigned` is right for this screen"). Decided: it is deliberately **excluded** from Floor's sort — Floor sorts with `FLOOR_SPINE` (the picking spine **minus `byAssigned`**, `lib/floor/sort.ts`), so Assigned/Done rows hold their place instead of sinking/rising on each status change, and the `#` column now numbers **every** row, not just Waiting. Full detail: §3.
 - **§7-gap follow-ups:** `Waiting` pills show no elapsed time (needs `releasedAt` on the floor payload); the ship-to original→redirect name pair is missing on the floor table (rail already has it); rail button reads lowercase "pick slot" vs mockup "Set slot"; assign bar reads "Change slot" beside a "pick slot" button; no picker search (matches customer/route/OBD only); detail-panel header pill shows no elapsed time (not a live surface).
 - **Out of scope for v1 (deliberate):** gift lines (no identifier exists anywhere in the codebase — no heuristic invented); free-text ship-to (needs a schema decision); a per-row Slot column on the All view (the band header carries it); the stats line / "pickers free" tile / floor-idle alarm (removed per design §7.13).
@@ -201,7 +294,12 @@ read either — it has its own predicate (`floorLiveBaseWhere`, §3) and counts 
 
 ## 10. Landmines [LANDMINE]
 
-- **`RAIL_SUGGESTIONS_ENABLED = false`** (`lib/floor/queries.ts`) — the slot suggestion is gated OFF; `lib/floor/suggest.ts` (which calls the live `evaluateDispatchSlot`) is intact behind it. Flipping the constant re-enables it — but the staleness bug in §8 must be fixed first, or "Release to Wed 16:00" reappears on a Thursday.
+- **`RAIL_SUGGESTIONS_ENABLED = true` since 2026-08-03** (`lib/floor/queries.ts`) — the suggestion layer is LIVE (§8). The staleness protection is the single closed-batch MOMENT test in `suggest.ts`; **never reintroduce a per-day arm** (minutes-since-midnight was the original bug), and the 60-min grace must never exceed 120 (§8's proof).
+- **Slot tabs group by `windowTime` ALONE, ignoring `dispatchTargetDate`** (the `tabRows` filter in `floor-board.tsx` — verified 2026-08-04). Bills due on different DATES stack under one tab, separated only by the age chip — a real "wrong slot?" illusion generator, distinct from the fixed clock bug.
+- **The floor row displays `orderDateTime` while the slot was decided by `obdEmailDate`** (via `pickEffectiveClock`) — the operator sees two numbers that cannot be reconciled from anything on screen. Display gap, not a data bug.
+- **`change-slot` never clears `dispatchSlotRuleId`** (`app/api/floor/actions/route.ts` — write verified 2026-08-04: sets date+window+`source:'manual'` only). 6 live rows (2026-08-03 count) carry an engine rule id beside a human-picked window — harmless today, misleading in any future audit. One-line fix, owner decision (ROADMAP).
+- **Picker `suggested` prop is highlight-ONLY** — `value ?? suggested` precedence in `dispatch-slot-picker.tsx`; wiring `suggested` into the trigger's committed/filled look would make a proposal read as a decision.
+- **The import-side twins of the clock bug live in IMPORT, not here:** `obdEmailDate` fake-midnight population + the `arrivalSlotId` Morning defect + `import_raw_summary.obdEmailTime` not-source-of-truth → `CLAUDE_IMPORT.md §12.1b`/`§12`/landmines. Cross-ref only.
 - **`heldAt` is the ARRIVAL date, not the hold time** — the write is intentional and inherited from Support (§4.5); thousands of historical rows depend on it. Do NOT "fix" it to wall-clock; the Hold tab already handles it on the read side. Reading `heldAt` as "held since" shows a 3-week-old bill held 5 min ago as "21 days".
 - **The board and the marker MUST stay on the one shared predicate** `floorLiveBaseWhere` (§3/§5). Re-declaring the WHERE in either place reintroduces the marker/queue drift the Picking §10 landmine warns about.
 - **Never add a second `orders.update` (or a log write to the dispatch engine)** in any floor path — the marker keys on `MAX(orders.updatedAt)`; a second write fires a false "changed" on every board.
@@ -224,7 +322,8 @@ read either — it has its own predicate (`floorLiveBaseWhere`, §3) and counts 
 | `components/floor/detail-panel.tsx`, `detail-items.tsx`, `detail-details.tsx`, `detail-activity.tsx` | Detail panel |
 | `components/floor/search-box.tsx`, `filter-sheet.tsx`, `connection-strip.tsx`, `floor-skeleton.tsx` | Search/filter, connection strip, skeleton |
 | `lib/floor/queries.ts` | The 4 feeds + `floorLiveBaseWhere` / `getFloorLiveMarkerWhere` + `RAIL_SUGGESTIONS_ENABLED` |
-| `lib/floor/types.ts`, `selection.ts`, `search.ts`, `filter.ts`, `hold-log.ts`, `hold-pdf.ts`, `release-stages.ts`, `suggest.ts` | Types, selection, search/filter, hold notes + PDF, releasable stages, slot suggestion (gated) |
+| `lib/floor/types.ts`, `selection.ts`, `search.ts`, `filter.ts`, `hold-log.ts`, `hold-pdf.ts`, `release-stages.ts`, `suggest.ts` | Types, selection, search/filter, hold notes + PDF, releasable stages, **slot suggestion (LIVE — §8)** |
+| `lib/dispatch/punch-clock.ts` | `hasClockTime` + `resolveArrivalClocks` — which clocks the engine may see (owned by `CLAUDE_IMPORT.md §12.1b`; suggest.ts is its second consumer) |
 | `lib/floor/use-floor-rail-poll.ts` | Rail 30s poll |
 | `app/api/floor/board/route.ts` | Rail + floor board + pickers |
 | `app/api/floor/hold/route.ts`, `cancelled/route.ts` | Hold / Cancelled feeds |
@@ -235,4 +334,17 @@ read either — it has its own predicate (`floorLiveBaseWhere`, §3) and counts 
 
 ---
 
-*CLAUDE_FLOOR.md v1.3 · Schema v27.12 · OrbitOMS*
+## Change log — v1.4 (2026-08-04 reconciliation pass, method v1.1)
+
+Evidence: 12 commits git-verified, suggest.ts/queries.ts/rail-card/picker/actions-route/floor-board read at the call sites, the 08-03 draft's dated counts cited as-dated. Claim IDs from the session report.
+
+- FLR-1 (§8, §10, §2, §11): the rail slot suggestion is LIVE (`RAIL_SUGGESTIONS_ENABLED = true`, 2026-08-03) — §8 rewritten from "DEFERRED" to the full layer spec (neutralised gates, punch-clock discipline, tint completion anchor, 60-min grace + ≤120 proof, closed-batch moment test, nudge-never-lock + the `hasPresetSlot` trap, picker props); hand-verification marked PENDING. Old deferred entry → §8b.
+- FLR-2 (§4.6 NEW): the 2026-07-26 action-surfaces specs land — assign bar (incl. deliberately-removed bulk actions), panel-header teal-per-state, picker commit-on-tap/honest-highlight/auto-flip, and the toggle-all/single-Esc-owner spec (open since the 08-04 step-2 flag). The draft's four CLAUDE_SUPPORT-routed items re-routed here (picker + ship-to are Floor-owned since `316eec6b`).
+- FLR-3 (§10): three 08-03 floor landmines added (windowTime-only tabs, orderDateTime-vs-obdEmailDate display, change-slot keeps `dispatchSlotRuleId`) — each verified at its call site; import-side twins cross-referenced, not restated.
+- FLR-4 (§6c): the "done = check date" convention cross-referenced to MAIL_ORDERS §23.4 + the pending PICKING doc.
+- FLR-5 (header/footer): the footer date-drift open item fixed — version + date now at both ends.
+- Support mentions (11): all verified legitimate (ownership/origin pointers) — none removed; §9's absorbed-assets table already says Floor owns them now.
+
+---
+
+*CLAUDE_FLOOR.md v1.4 · Schema v27.12 · OrbitOMS · updated 2026-08-04*
