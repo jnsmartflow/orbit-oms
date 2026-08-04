@@ -1,5 +1,5 @@
 # CLAUDE_CORE.md — OrbitOMS Core
-# v90 · Schema v27.12 (+ unnumbered 2026-07-30/31 billing additions — §7) · August 2026 · updated 2026-08-04 · Lives in: orbit-oms/docs/
+# v91 · Schema v27.12 (+ unnumbered 2026-07-30/31 billing additions — §7) · August 2026 · updated 2026-08-04 · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_UI.md
 
 ---
@@ -95,7 +95,7 @@ Never introduce new libraries without being asked.
 | Tool | Location | Schedule | Purpose |
 |---|---|---|---|
 | `Parse-MailOrders-v6_5.ps1` | `C:\Users\HP\OneDrive\VS Code\mail-orders\` | continuous | Forwarded email parser. Outlook COM. Dedup via `processed_ids_fw.json`. |
-| `Auto-Import.ps1` v2.0 | `F:\VS Code\OBD-Import Tool v2\` | **LIVE** — every 10 min, 8AM–8PM IST | SAP OBD fetch. **Runs the v2 JSON path** (`?action=auto-json`, HMAC via `IMPORT_HMAC_SECRET_JSON`; batches stamp `headerFile` `[auto-import] auto-json`), plus the `patch-headers`/`pending-invoices` invoice sweep. Resumed 2026-06-20; the long-stale "paused 2026-05-14" claim was corrected in IMPORT 2026-08-03 (`4aad3622`) and here 2026-08-04 — SELECT 2026-08-04: 156 auto-json batches 2026-07-28→08-03, newest 2026-08-03 19:19 IST. Detail: `CLAUDE_IMPORT.md §10`. |
+| **`Auto-Import-v2.ps1`** (pure JSON; internal stamp "v1.0") | `F:\VS Code\OBD-Import Tool v2\` — **on the import PC, unverifiable from the depot PC**; repo copy `docs/Powershell/Auto-Import-v2.ps1` | **LIVE** — ~10-min timer; batches observed 08:15–22:52 IST, none on Sundays | SAP OBD fetch via Breakwalls FormGetData JSON → `?action=auto-json` (HMAC `auto-import-json-v1` / `IMPORT_HMAC_SECRET_JSON`; batches stamp `[auto-import] auto-json`), plus `check` + `patch-headers`/`pending-invoices`. Resumed 2026-06-20. ⚠ Corrected 2026-08-04 (second pass): this row previously named `Auto-Import.ps1` "v2.0" — that file is the **v1 multipart** script (**zero batches ever**; "v2.0" = Tool v2, not the pipeline) and may or may not still run on the import PC. Detail: `CLAUDE_IMPORT.md §10`. |
 | `Watch-Import-V2.ps1` | `F:\VS Code\OBD-Import Tool v2\` | manual | Cycle summary watcher. Supports `-Today` and `-Date YYYY-MM-DD` modes. |
 
 **Auto-Import v2 state files** (in `Master\`): `yesterday-recovery-state.txt`, `pending-upload.txt`, `last-spec-call.txt`, `last-noise-call.txt`, `obd-tally-<date>.txt`, `session-cookie.txt` (4-hour cache), `daily-state.txt`. ExecutionTimeLimit on `2_Auto_Import` scheduler task is `PT5M`. Repetition interval `PT10M`, `StopAtDurationEnd=false`.
@@ -1046,6 +1046,10 @@ Evidence: read-only SELECTs against production 2026-08-04 + call-site sweeps + g
 - CORE-21 (§15): rows for lib/billing/*, lib/dispatch/punch-clock.ts (doc homes pending).
 - CORE-22 (§1): OBD pipeline line no longer names the retired Support/Planning steps as live.
 
+## Change log — v91 (2026-08-04, IMPORT reconciliation follow-up)
+
+- IMP-1 (§4 tool table, named row only): the Auto-Import row named the wrong file — the live script is **`Auto-Import-v2.ps1`** (pure JSON); `Auto-Import.ps1` "v2.0" is the v1 multipart script with zero batch evidence. Schedule wording replaced with the observed batch window; `F:\` path marked as describing the import PC (unverifiable from here). Evidence + detail: `CLAUDE_IMPORT.md v1.7 §10/§14`.
+
 ---
 
-*CORE v90 · Schema v27.12 (+ unnumbered 2026-07-30/31 billing additions — §7) · OrbitOMS · updated 2026-08-04*
+*CORE v91 · Schema v27.12 (+ unnumbered 2026-07-30/31 billing additions — §7) · OrbitOMS · updated 2026-08-04*

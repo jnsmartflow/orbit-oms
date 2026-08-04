@@ -1,10 +1,10 @@
 # CLAUDE_IMPORT.md — OrbitOMS Import Pipeline
-# v1.6 · Schema v27.12 · July 2026 · updated 2026-07-27 · Lives in: orbit-oms/docs/
+# v1.7 · Schema v27.12 · August 2026 · updated 2026-08-04 · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
 Covers the SAP/OBD import pipeline end-to-end: manual SAP upload, Auto-Import (**LIVE** — see §10), the shared upsert utility that both paths funnel through, schema, filters, and downstream consumers.
 
-Primary users: admin, dispatcher, support, billing_operator, tint_manager (all gated on `import_obd` / `canImport` per role).
+Primary users (live `import_obd` grants, SELECT 2026-08-04 — CORE §5): admin, billing_operator, tint_manager, operations (granted 2026-08-01, `c8f8d020`), operation_manager. ⚠ dispatcher and support are **seeded** for this key but **all-false live** — this line named them as users until 2026-08-04; that was seed, not reality.
 
 ---
 
@@ -13,7 +13,7 @@ Primary users: admin, dispatcher, support, billing_operator, tint_manager (all g
 OrbitOMS receives Outbound Deliveries (OBDs) from SAP via two import paths:
 
 - **Manual SAP** — operator uploads a SAP OBT export `.xlsx` via the universal import modal or the admin `/import` page. This is the active production path as of 2026-05-14. Preview-then-confirm with optional bypass for fast batches.
-- **Auto-Import** — scheduled background pull on the depot PC. **LIVE and running** (resumed 2026-06-20; the earlier "paused as of 2026-05-14" claim was stale — corrected 2026-08-03 against `import_batches`, which shows 944 auto-import batches / 3,876 OBDs between 2026-06-20 and 2026-08-03). Runs every 10 minutes (8AM–8PM IST), fetches SAP files via LAN, HMAC-signs a multipart payload, and POSTs to a dedicated endpoint. Reference script at `docs/sample/Auto-Import.ps1` (production copy lives outside the repo per CORE §4).
+- **Auto-Import** — scheduled background pull on the **import PC** (a separate machine — task state and trigger config are unverifiable from the depot PC; DB batch markers are the ground truth). **LIVE and running** (resumed 2026-06-20; the "paused as of 2026-05-14" claim was corrected 2026-08-03, and the MECHANISM line corrected 2026-08-04): **it is the v2 pure-JSON pipeline** — `Auto-Import-v2.ps1` fetches Breakwalls FormGetData JSON, HMAC-signs with `auto-import-json-v1` (`IMPORT_HMAC_SECRET_JSON`), and POSTs to `?action=auto-json`, plus the `check` pre-filter and the `patch-headers`/`pending-invoices` invoice+clock sweep. **Every one of the 944 batches 2026-06-20→08-03 (3,876 OBDs) carries the `[auto-import] auto-json` marker; the v1 multipart path (`?action=auto`) has ZERO batches in the entire table.** The old "HMAC-signs a multipart payload" wording survived the 2026-08-03 status correction — status and mechanism were two separate stale claims. Repo copy of what runs: **`docs/Powershell/Auto-Import-v2.ps1`** (a copy is a claim, not proof it is deployed unmodified). The v1-mechanism copies (`docs/sample/Auto-Import.ps1`, `docs/Parser/Auto-Import.ps1`, `docs/Powershell/Auto-Import.ps1` — all titled "v2.0", all posting to the old `orbit-oms.vercel.app` domain) are historical; see §14's naming-trap landmine.
 
 Both paths converge at `upsertObd()` (`lib/import-upsert.ts`) — the shared brain that owns create-vs-patch decisions, line-level diff, soft-remove cascades, audit logging, and downstream-effect signalling.
 
@@ -42,18 +42,22 @@ Manual SAP path:
         rebuildQuerySummaryForOrder
         + customer-resolved / order-type-mismatch signals
 
-Auto-Import path (LIVE — §10):
-  Scheduler (10 min) → Auto-Import.ps1
-    → fetch SAP files via LAN, merge LogisticsTracker + per-OBD details
-    → HMAC-sign with auto-import-v1 literal
-    → POST /api/import/obd?action=auto (multipart, x-import-key-id header)
-    → middleware bypasses session (HMAC verified by route handler)
-    → handleAutoImport: bucket by obdNumber → AutoLineInterim
-    → bulk createMany (CREATE-only: skips existing OBDs entirely)
+Auto-Import path (LIVE — the v2 JSON pipeline, §10; mechanism corrected 2026-08-04):
+  Scheduler on the import PC (~10 min) → Auto-Import-v2.ps1
+    → Breakwalls FormGetData JSON (no Excel files anywhere)
+    → POST ?action=check           (HMAC v2) — which OBDs are new?
+    → POST ?action=auto-json       (HMAC v2, auto-import-json-v1 / IMPORT_HMAC_SECRET_JSON)
+    → middleware bypasses session (HMAC verified by the handler)
+    → handleAutoImportJson → processAutoImportRows("auto-json")
+    → bulk createMany (CREATE-only for lines: existing OBDs skipped at ingest)
     → applyMailOrderEnrichment
+  Phase 9.5, same cycle:
+    → GET  ?action=pending-invoices — OBDs in the window with invoiceNo null
+    → POST ?action=patch-headers    — null→value invoice fill + clock repair +
+                                      dispatch-window repair (§12, Step B)
 ```
 
-Manual SAP exercises both create and patch paths. Auto-Import is **create-only** (route.ts:2376 explicitly `continue`s on already-existing OBDs) and therefore never reaches `patchLines`.
+Manual SAP exercises both create and patch paths. The auto-json ingest is **create-only for lines** — an existing OBD is skipped entirely at ingest; the ONLY writes to existing OBDs from the auto pipeline go through the separate `patch-headers` action (null-only invoice fill + clock/slot/window repair, §12). Neither auto action ever reaches `applyLinePatch`.
 
 ---
 
@@ -87,9 +91,11 @@ The current SAP OBT export. One worksheet (`Sheet1` typical). Header row 1, data
 
 REQUIRED_COLS (read-sheet.ts:54-58): `[delivery, warehouse, division, soldToParty, shipToParty, referenceDoc, deliveryType, itemCategory, item, material, deliveryQty]`. Optional positions (`volume`, `netWeight`, `totalWeight`, `batch`, name fields, `storageLocation`) may legitimately be blank on individual rows.
 
-### 3.2 Auto-Import v1 — LogisticsTracker + per-OBD merge (current, LIVE)
+### 3.2 Auto-Import v1 — LogisticsTracker + per-OBD merge (HISTORICAL — never evidenced in batches)
 
-> **v2 replaces this entirely with FormGetData JSON — no Excel files.** See §10.1 for the v2 design. The sheet layout below is v1-only.
+> **The live pipeline is v2 FormGetData JSON — no Excel files** (§10.1, shipped). The sheet layout
+> below is v1-only, kept as reference; `import_batches` holds **zero** v1-marker batches
+> (checked 2026-08-04), so this layout has no batch evidence of ever running in the current table.
 
 `Auto-Import.ps1` builds a combined `.xlsx` with two named sheets:
 
@@ -405,12 +411,17 @@ it (`CLAUDE_PLACE_ORDER.md`).
 All import operations dispatch through a single route with an `?action=` query param.
 
 ```ts
-// app/api/import/obd/route.ts
+// app/api/import/obd/route.ts (dispatch verified 2026-08-04)
 export async function POST(req: Request): Promise<NextResponse> {
   const url = new URL(req.url, "http://localhost");
   const action = url.searchParams.get("action");
 
-  if (action === "auto") return handleAutoImport(req);
+  // Five HMAC-authenticated actions dispatch BEFORE session auth:
+  if (action === "auto")              return handleAutoImport(req);           // v1 — wired, zero batch evidence
+  if (action === "check")             return handleAutoImportCheck(req);      // v2, LIVE
+  if (action === "auto-json")         return handleAutoImportJson(req);       // v2, LIVE
+  if (action === "patch-headers")     return handleAutoImportPatchHeaders(req);    // v2, LIVE
+  if (action === "pending-invoices")  return handleAutoImportPendingInvoices(req); // v2, LIVE
 
   const session = await auth();
   requireRole(session, [
@@ -435,11 +446,15 @@ export async function POST(req: Request): Promise<NextResponse> {
 |---|---|---|
 | `manual-sap-preview` | `handleManualSapPreview` | SAP preview (dry run) |
 | `manual-sap-confirm` | `handleManualSapConfirm` | SAP confirm (commits) |
-| `auto` | `handleAutoImport` | HMAC-signed Auto-Import v1 (LIVE — §10) |
-| `auto-json` | `handleAutoImportJson` | [PLANNED — v2] HMAC-signed JSON payload; no XLSX |
-| `check` | `handleAutoImportCheck` | [PLANNED — v2] Pre-check: are any submitted OBDs already imported? |
+| `auto` | `handleAutoImport` | HMAC v1 multipart — **wired but zero batch evidence ever** (§10); do not delete without an owner decision |
+| `auto-json` | `handleAutoImportJson` | **[LIVE — v2, the production auto path]** HMAC v2 JSON payload → `processAutoImportRows()` |
+| `check` | `handleAutoImportCheck` | **[LIVE — v2]** read-only pre-check: which submitted OBDs are new? |
+| `patch-headers` | `handleAutoImportPatchHeaders` | **[LIVE — v2]** null-only invoice fill + clock/arrival-slot/dispatch-window repair (§12) |
+| `pending-invoices` | `handleAutoImportPendingInvoices` | **[LIVE — v2]** OBDs in a date window with `invoiceNo` null (feeds Phase 9.5) |
 | `preview` | `handlePreview` | Legacy preview (kept for backwards compat) |
 | `confirm` | `handleConfirm` | Legacy confirm |
+
+*(The auto-json/check/patch-headers/pending-invoices rows said "[PLANNED — v2]" or were absent until 2026-08-04 — the build shipped without this table being updated.)*
 
 All routes need `export const dynamic = 'force-dynamic'`.
 
@@ -447,23 +462,30 @@ All routes need `export const dynamic = 'force-dynamic'`.
 
 ## 10. Auto-Import operational details
 
-**Status: LIVE.** Resumed 2026-06-20 and running continuously since. Both paths are active:
-manual SAP upload carries the bulk of volume, Auto-Import runs alongside it.
+**Status: LIVE — on the v2 JSON path.** Resumed 2026-06-20 and running since. Both import paths are
+active: manual SAP upload carries the bulk of OBD volume, Auto-Import runs alongside it.
 
-⚠ **This line said "PAUSED as of 2026-05-14" until 2026-08-03.** It was stale by six weeks.
-Verified against `import_batches` (headerFile prefix `[auto-import]`): **944 batches / 3,876 OBDs
-between 2026-06-20 and 2026-08-03**, versus 264 manual-sap batches / 24,334 OBDs in the same window.
-Do not restore the paused wording without re-checking that table — the correction pass in §12/§12.1
-depends on Auto-Import actually running, and reasoning from "paused" led to a wrong conclusion once.
+⚠ **This section carried TWO separate stale claims.** "PAUSED as of 2026-05-14" survived until
+2026-08-03 (six weeks stale); the mechanism ("HMAC-signs a multipart payload") survived until
+2026-08-04 — the status correction did not re-check what actually runs. Batch evidence: **944
+batches / 3,876 OBDs 2026-06-20→08-03, every one marked `[auto-import] auto-json`; zero v1
+multipart batches exist in the whole table** (vs 264 manual-sap batches / 24,334 OBDs in the same
+window). Do not restore either wording without re-SELECTing `import_batches`.
 
-v1 XLSX reference details:
-- Scheduled task: every 10 min, 8AM-8PM IST
-- HMAC signing: `IMPORT_HMAC_SECRET` env var, fixed string `"auto-import-v1"` (timestamp-free, avoids clock drift)
-- State files in `Master\`: see CORE §4
-- PowerShell 5.1 quirks per CORE §3
-- ExecutionTimeLimit `PT5M`, Repetition interval `PT10M`, `StopAtDurationEnd=false`
+**Cadence — derived from batch data 2026-07-20→08-04 (the scheduler itself is on the import PC and
+unverifiable from here):** batches observed **08:15–22:52 IST**, densest 10:00–19:00; median gap
+between consecutive same-day batches **~20 min** (consistent with a ~10-min timer where a batch is
+only created when new OBDs exist); minute-of-hour drifts across the 10-min grid (Task Scheduler
+drift, not a fixed :x0 tick). **No batches on Sundays** (2026-07-26, 08-02 — depot closed, SAP emits
+nothing). The old "every 10 min, 8AM–8PM IST" claim was close but understated the evening tail.
 
-### 10.1 Auto-Import v2 — pure JSON pipeline [DESIGN LOCKED 2026-06-20, BUILD IN PROGRESS]
+Runtime facts (v2, live):
+- HMAC signing: `IMPORT_HMAC_SECRET_JSON` env var, fixed string `"auto-import-json-v1"` (timestamp-free)
+- Repo copy of the running script: `docs/Powershell/Auto-Import-v2.ps1` (`$ToolRoot = "F:\VS Code\OBD-Import Tool v2"` — describes the import PC)
+- State files in `Master\`: see CORE §4 · PowerShell 5.1 quirks per CORE §3
+- v1 reference (`IMPORT_HMAC_SECRET`, `"auto-import-v1"`, the XLSX merge): historical — §3.2
+
+### 10.1 Auto-Import v2 — pure JSON pipeline [SHIPPED — LIVE since 2026-06-20 per batch markers]
 
 Goal: replace the two-step XLSX download cycle with a direct FormGetData JSON POST. No Excel files. No intermediate sheets.
 
@@ -528,31 +550,24 @@ If `?action=auto-json` receives an OBD number that already exists, it does NOT s
 **Yesterday-completeness pass (§3.6 of design doc):**
 On each run, PS v2 also re-fetches OBDs from yesterday + day-before-yesterday (rolling 3-day chase window). Covers OBDs that were created late or had their invoice stamped after the same-day run. Server only patches null fields — safe to re-submit.
 
-**Build sequence status (as of 2026-06-20):**
+**Build sequence — ALL STEPS SHIPPED** (table corrected 2026-08-04; it froze at the 2026-06-20
+"NOT DONE" snapshot while the build shipped around it):
 
-| Step | Description | Status |
+| Step | Description | Status (evidence) |
 |---|---|---|
-| 1 | Prove FormGetData returns the expected payload | DONE |
-| 2 | Confirm field key names match the map above | DONE |
-| 3 | Design `processAutoImportRows()` refactor (shared core for v1+v2) | DONE (design) |
-| 4 | Build `processAutoImportRows()` in route | NOT DONE |
-| 5 | Build `?action=auto-json` handler | NOT DONE |
-| 6 | Design PS v2 script | DONE |
-| 7 | Build PS v2 script | NOT DONE |
-| 8 | Integrate `?action=check` pre-check | NOT DONE |
-| 8b | Build `?action=check` handler on server | NOT DONE |
-| 9 | End-to-end smoke test on dev (bench data) | NOT DONE |
-| 10 | Deploy PS v2 + enable on depot PC | NOT DONE |
+| 1-3, 6 | FormGetData proof · field map · `processAutoImportRows()` design · PS v2 design | DONE (as recorded 2026-06-20) |
+| 4 | `processAutoImportRows()` in route | **SHIPPED** — `route.ts`, called by both `auto` and `auto-json` handlers |
+| 5 | `?action=auto-json` handler | **SHIPPED** — `handleAutoImportJson`, wired in the dispatch |
+| 7 | PS v2 script | **SHIPPED** — repo copy `docs/Powershell/Auto-Import-v2.ps1` |
+| 8/8b | `?action=check` integration + handler | **SHIPPED** — `handleAutoImportCheck` (read-only pre-check) |
+| 9 | End-to-end smoke | moot — running in production since 2026-06-20 |
+| 10 | Deploy + enable on the import PC | **RUNNING** — 944 auto-json batches through 2026-08-03, plus 2026-08-04 15:07 IST (14 OBDs) |
 
-**Known recovery gaps:** v2 will miss any OBD created between pause (2026-05-14) and v2 go-live. Those must be imported manually via SAP.
+**Shipped beyond the locked design:** `?action=patch-headers` grew from "null-only invoice fill" into
+the full clock/arrival-slot/dispatch-window repair pass (§12), and `?action=pending-invoices` feeds
+the Phase 9.5 sweep — neither was in the 2026-06-20 step list.
 
-### Resume checklist (v1 — superseded by v2)
-
-1. Verify HMAC secret matches Vercel env vars
-2. Audit cross-source orphan policy (see §15 open items)
-3. Smoke-test against a small known batch
-4. Re-enable Windows Task Scheduler task `2_Auto_Import`
-5. Monitor `import_batches` + `/api/health` for first 24h
+**Known recovery gaps:** v2 missed OBDs created between pause (2026-05-14) and go-live (2026-06-20). Those were manual-SAP territory.
 
 ---
 
@@ -613,8 +628,32 @@ time — repaired for free by this one-line fix:
 - **`lib/dispatch/dispatch-engine.ts`** reads `obdEmailDate` as its `punchDateTime` for a
   same-day/different-day "effective clock" pick — was getting a fake midnight for every
   header-patched order, now correct.
-- **Support order display** (`support-orders-table.tsx`, `support-hold-table.tsx`) showed `00:00`
-  for previously-patched orders — now shows real time.
+- The then-live Support board showed `00:00` for previously-patched orders (board retired
+  2026-07-27 — `archive/2026-07-support/`; today's beneficiaries of a real time here are the
+  dispatch engine, Floor, and Picking).
+
+### 12.1b Punch-clock guard + dispatch-window repair (2026-08-02/03, commits `03b6dd19` → `dee603dc` + `ab70c826`) [LIVE]
+
+Two related additions after the fixes above — both verified in code 2026-08-04:
+
+- **`lib/dispatch/punch-clock.ts` — "a date with no time is not a clock."** Manual SAP's 19-column
+  layout has no time column, so `obdEmailDate` lands at exactly 00:00:00.000 **UTC** (renders 05:30
+  IST) — earlier than every dispatch window, so the engine's effective-clock pick pinned such bills
+  to `R1_LOCAL_1030` (audited 2026-08-03: **5,517 of 9,521 rows** carried the fake value).
+  `hasClockTime()` + `resolveArrivalClocks(email, punch)` are now the SINGLE OWNER of "which clocks
+  may the engine see": a date-only value is passed as `null`, dropping the engine to its
+  single-clock path; if BOTH clocks are null the engine declines (`no-order-datetime`) and the bill
+  reaches the operator unslotted — **deliberately; a wrong slot is worse than no slot.** ⚠ The tell
+  is **UTC midnight, not IST midnight** — 18:30 UTC = 00:00 IST rows are GENUINE times; do not
+  "fix" the test to IST. Two consumers must stay in agreement: the import auto-slot call site and
+  Floor's rail suggestion (`lib/floor/suggest.ts`).
+- **`patch-headers` Step B — dispatch-window repair (`ab70c826`).** The pass already repaired the
+  clock; it now also **re-runs `evaluateDispatchSlot` from the corrected timestamps** on the same
+  tick. Same scope gates as the import call site (smu / dispatchStatus / delivery type — NOT
+  widened), same manual guard (`dispatchSlotSource === 'manual'` is never overwritten), and **a
+  decline never nulls an existing slot** ("no opinion" ≠ "remove"). Folded into the ONE existing
+  `orders.update` — a second update per bill would false-fire every board's `updatedAt` live-sync
+  marker (CORE §3).
 
 **No backfill run.** Already-wrong orders self-correct on their next auto-import batch (same
 self-healing pattern as §12 above); the rest age out. Not worth a one-time re-stamp.
@@ -663,7 +702,9 @@ flows through, as the acceptance check.
 
 ## 14. Landmines
 
-- **Auto-Import is create-only.** It calls `createMany` directly and skips `upsertObd`'s patch path. If a re-imported OBD comes through Auto-Import, it gets `continue`'d (route.ts:2376). All patch logic is exclusive to Manual SAP today.
+- **Auto-Import ingest is create-only for lines.** `processAutoImportRows` skips existing OBDs entirely; line-patch logic is exclusive to Manual SAP. The auto pipeline's ONLY writes to existing OBDs are the separate `patch-headers` action's null-only invoice fill + clock/slot/window repair (§12) — header fields, never lines.
+- **THE NAMING TRAP — three scripts, misleading version labels.** `Auto-Import.ps1` titled "**v2.0**" is the **v1 XLSX/multipart** script ("v2.0" = OBD-Import **Tool** v2, not the pipeline) — copies at `docs/sample/`, `docs/Parser/` (untracked), `docs/Powershell/`, all posting to the OLD `orbit-oms.vercel.app` domain, zero batch evidence ever. The script matching what runs is `Auto-Import-v2.ps1` titled "**v1.0**" (pure JSON, `www.orbitoms.in`). "Version two" is ambiguous across every doc mention — name the FILE, not the number. *(The Parser copy's `$ToolRoot` also points at a `%USERPROFILE%\OneDrive` path while the v2 script and CORE §4 say `F:\` — different machines/eras; only the import PC knows its own truth.)*
+- **`import_batches.createdAt` is `timestamp` WITHOUT time zone (naive UTC).** Postgres `AT TIME ZONE 'Asia/Kolkata'` on it converts the WRONG WAY (treats the naive value as IST) — silently shifting every timestamp by −11h. Convert with `+ interval '5 hours 30 minutes'`. This bit the 2026-08-04 cadence measurement on its first attempt.
 - **`ObdSource` enum has two values.** Don't re-add a third without auditing `LINE_AUTHORITY`, the orphan handler, and the audit logger.
 - **`ExistingLine` doesn't carry weights.** `state.ts:42-48` SELECT clause omits `netWeight` and `totalWeight`. Weight diffs on re-import currently go silently un-audited. Data still updates if the row is touched for other reasons. See §15 if weight diff becomes needed.
 - **`refItem` field deleted.** Pre-rewrite `RawSapRow` had `refItem: number | null` reading col 9 as an integer. New layout's col 9 is the SAP Reference Document (string). Field deleted, replaced by `referenceDoc: string | null`. Don't reintroduce.
@@ -698,20 +739,35 @@ flows through, as the acceptance check.
 
 ## 15. Open items / future work
 
-- **Auto-Import resume + cross-source orphan policy.** When Auto-Import comes back online, decide policy for the case where a SAP authoritative re-import follows an Auto-Import create on the same OBD. The composite-key change could orphan everything Auto-Import wrote (if it ever wrote `lineId=0` or similar). Options:
-  - (a) treat as acceptable cleanup
-  - (b) one-time backfill to map Auto-Import lineIds before resume
-  - (c) keep Auto-Import non-authoritative and let manual-sap re-imports rebuild the line set
-  Decision deferred until Auto-Import is actually un-paused.
+- **Cross-source orphan policy — NOW LIVE-RELEVANT, still undecided.** Auto-Import IS running (since 2026-06-20), so the deferred question is active daily: when a SAP authoritative re-import follows an auto-json create on the same OBD, the v2 `lineId` (real SAP item numbers) vs composite-key interplay decides what gets orphaned. Options unchanged: (a) accept as cleanup · (b) one-time lineId backfill · (c) keep auto non-authoritative and let manual-sap rebuild the line set. The old "deferred until un-paused" framing is void — it un-paused six weeks before anyone re-read this line.
 - **Weight diff in audit log.** Currently skipped to keep audit-log noise low. Re-add if depot ops needs weight-change tracking.
 - **`articleTag` rule for ZINR.** Today the row is included with a breadcrumb warning. If business semantics emerge for ZINR articleTags, implement the rule and remove the warning.
 - **Old SAP layout shim** if SAP ever ships the old layout again (e.g. depot-level legacy). Not built today.
 - **Auto-Import patch path.** Today Auto-Import is create-only. If Auto-Import ever needs to patch existing OBDs (e.g. for late-update detection), the path needs to go through `upsertObd` like manual SAP does, with `LINE_AUTHORITY['auto-import'] = 'authoritative'`. Big change — full re-audit needed.
-- **Auto-Import v2 — steps 4–10 not yet built.** See §10.1 build sequence. Design is locked; build has not started. Reference design doc at `docs/prompts/drafts/web-update-2026-06-20-auto-import-v2-pure-json.md` for full detail.
-- **`IMPORT_HMAC_SECRET_JSON` env var** must be added to Vercel before step 5. Keep `IMPORT_HMAC_SECRET` (v1 var) until v1 handler is retired.
+- ~~Auto-Import v2 — steps 4–10 not yet built~~ — **SHIPPED, see §10.1** (corrected 2026-08-04). Design doc now at `docs/prompts/archive/2026-06/web-update-2026-06-20-auto-import-v2-pure-json.md` (was in drafts/).
+- **`IMPORT_HMAC_SECRET_JSON`** is in Vercel and working (live auto-json batches authenticate daily). `IMPORT_HMAC_SECRET` (v1 var) stays until the v1 `?action=auto` handler is retired — which is now a real candidate: zero batch evidence ever (§9/§10). Retiring it is an owner decision, not a cleanup.
 - **lineId semantic change in v2.** v1 used ordinal positions (10/20/30); v2 uses real SAP item numbers. This means composite key `lineId|skuCodeRaw` will NOT match between a v1 create and a v2 patch. Create-only policy makes this safe, but if patch path ever becomes needed for Auto-Import, re-audit the key strategy.
 - **The new same-day/different-day arrival-slot rule is designed but NOT built** (§12.2). The live fork in `applyMailOrderEnrichment` still uses the old `receivedAt` vs `punchedAt` comparison. Building it is a single-site edit once picked up — see §12.2 for the full rule and the acceptance check (OBD `9108192224`).
 
 ---
 
-*Import v1.6 · Schema v27.12 · OrbitOMS*
+## Change log — v1.7 (2026-08-04 reconciliation pass, method v1.1)
+
+Evidence: `import_batches` SELECTs (timestamps naive-UTC-corrected), the repo script copies, `route.ts` read at the call sites, git log. Claim IDs from the session report.
+
+- IMP-1 (§1/§2/§10): the MECHANISM corrected — the live auto path is the v2 pure-JSON pipeline (`Auto-Import-v2.ps1` → `?action=auto-json` + `patch-headers`/`pending-invoices`, HMAC `auto-import-json-v1`); the "multipart payload" wording survived the 2026-08-03 status fix. Zero v1 batches exist in the whole table.
+- IMP-2 (§1): primary-user list rebuilt from live grants (operations + operation_manager in; dispatcher/support were seed-only).
+- IMP-3 (§3.2): v1 XLSX layout re-labelled HISTORICAL.
+- IMP-4 (§9): dispatch snippet + action table updated — five HMAC actions live before session auth; "[PLANNED — v2]" rows were shipped code.
+- IMP-5 (§10): cadence stated from data — batches 08:15–22:52 IST, median same-day gap ~20 min, no Sunday batches; scheduler config itself marked unverifiable from the depot PC.
+- IMP-6 (§10): today's-batches re-check resolved — auto-json batch 2026-08-04 15:07 IST (14 OBDs); the morning zero was timing, not a stall.
+- IMP-7 (§10.1): build-sequence table corrected — all steps SHIPPED; patch-headers/pending-invoices noted as shipped beyond the locked design.
+- IMP-8 (§12.1): retired Support board no longer named as a live display consumer.
+- IMP-9 (§12.1b): NEW — punch-clock guard (`03b6dd19`→`dee603dc`; 5,517/9,521 fake-midnight audit) + patch-headers Step B dispatch-window repair (`ab70c826`).
+- IMP-10 (§14): landmines updated — create-only wording now covers the patch-headers exception; NEW naming-trap landmine (Auto-Import.ps1 "v2.0" is the v1 script); NEW naive-UTC `createdAt` conversion trap.
+- IMP-11 (§15): open items — v2 build rows closed; orphan-policy item re-framed as live-relevant; HMAC_JSON var confirmed working; v1 handler flagged as a retirement candidate (owner decision).
+- §12.2 verified still NOT built (the fork still compares `receivedAt` vs `punchedAt` — `route.ts:322-331`); left as-is deliberately.
+
+---
+
+*Import v1.7 · Schema v27.12 · OrbitOMS · updated 2026-08-04*
