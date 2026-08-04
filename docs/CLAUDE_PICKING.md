@@ -1,5 +1,5 @@
 # CLAUDE_PICKING.md — Picking Module
-# v1.11 · Schema v27.12 · July 2026 · updated 2026-07-30
+# v1.12 · Schema v27.12 · August 2026 · updated 2026-08-04
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -289,8 +289,29 @@ clean thing. (Superseded: the old Assign / Check / Done split, where Check merge
 | **Done** (`done`) | `pick_done` (Needs-check band) + `pick_checked`-today (Checked band) | **Needs-check only** — `isChecked` deliberately excluded from the badge |
 
 **Mobile fetch scope (`openPending`, `getPickingQueue`):** all-dates `pending_picking` + `pick_assigned`
-+ `pick_done`, PLUS `pick_checked` for **today only** (`dispatchStatus='dispatch'`, `isRemoved=false`).
-So waiting / picking / needs-check never drop off by date; only the Checked band is date-fenced. Each
++ `pick_done`, PLUS `pick_checked` for **today only — fenced on `pick_assignments.checkedAt` within
+today's IST instant range (`getISTDayRange()`), NOT on `dispatchTargetDate`** [FIXED 2026-08-02,
+commit `e37cbe74`] (`dispatchStatus='dispatch'`, `isRemoved=false`).
+So waiting / picking / needs-check never drop off by date; only the Checked band is date-fenced —
+**by when the supervisor CHECKED the bill.**
+
+> **The 2026-08-02 `checkedAt` fix — why the fence moved.** The old predicate was
+> `dispatchTargetDate: todayDateOnly`. A bill checked TODAY but dispatch-dated earlier matched
+> NEITHER openPending arm — it **vanished from the supervisor's Checked band at the instant of
+> approval**, and (downstream) from the picker's own Done tab, whose rows the server had already
+> removed. Mirror defect: a bill dispatch-dated today but checked earlier wrongly showed today. The
+> Checked band applies no client date test (`checkedRows = rows.filter(isChecked)`), so the server
+> predicate WAS the whole fence — `checkedAt` was fetched and displayed but never used for
+> attribution. Fix (Option a, matching Floor's arm — `CLAUDE_FLOOR.md §6(c)`): the checked branch is
+> now `{ workflowStage: PICK_CHECKED, pickAssignment: { checkedAt: { gte, lt } } }` over
+> `getISTDayRange()` (`checkedAt` is a timestamptz instant, never compared as a `@db.Date`).
+> `buildPickingWhere` stayed pure/sync — no signature change — so **the marker follows for free**
+> (§10, same function). The dead `todayDateOnly` binding was removed (its only consumer was the
+> replaced predicate; zone/lock/ageDays anchor elsewhere); **`single` scope was left UNCHANGED**
+> (caller-less but a public API contract). No stale-badge risk: `AgeBadge` renders only under
+> `variant==="assign"`. Live-verified on the pilot 2026-08-02. **This "done = check date" convention
+> now has three implementations** — Floor (the original), the Billing Picking tab
+> (`CLAUDE_MAIL_ORDERS.md §23.4`), and this board. Each
 row's `zone` (`due` | `upcoming`) is computed from `dispatchTargetDate` vs today in `lib/picking/queue.ts`
 (future date ⇒ `upcoming`; ≤ today or NULL ⇒ `due`; an early-released bill is forced `due`), with a
 `ageDays` for the age tag.
@@ -322,7 +343,8 @@ row's `zone` (`due` | `upcoming`) is computed from `dispatchTargetDate` vs today
     a card opens the **per-line tick screen**; ticking every line unlocks **Approve**
     (`POST /api/picking/approve` → writes `pick_checked` + `pick_assignments.checkedAt`/`checkedById`).
     Flat green "Picked Xm ago" pill (a receipt, not a tiered urgency signal).
-  - **Checked** (below, quiet) — `pick_checked`, **today only** (the day's settled receipt), re-sorted
+  - **Checked** (below, quiet) — `pick_checked`, **checked-today only** (the day's settled receipt,
+    fenced on `checkedAt` — the boxed note above), re-sorted
     newest-checked-first (the one display-only deviation from `PICKING_SPINE`, on an already-filtered
     slice; `sort.ts` untouched). Own picker-filter dropdown. Fully read-only (no ticks/Approve/Undo/
     Assign — all gate on `!isChecked`). `✓ Checked by {name}` renders on its OWN line, never folded
@@ -453,8 +475,10 @@ example, not as a consequence of the retirement.
 
 **[LIVE]** `components/picking/picker-my-picks-board.tsx`, mounted by `app/picking/page.tsx` on the
 SAME route when the viewer's primary role is `picker` — or an admin/operations session using the
-`?view=picker&as=<id>` test hook, since no real picker-facing login flow has shipped yet (§7). Roster
-data for that dropdown comes from `lib/picking/picker-roster.ts`.
+`?view=picker&as=<id>` test hook (kept for admin preview). Real picker/supervisor test accounts now
+exist and land here on login (ids 34-36, SELECT-verified active 2026-08-04; `lib/rbac.ts` sends both
+roles to `/picking`) — the 2026-07-29 first-real-login test plan was written against them; whether it
+was run is not recorded (§7). Roster data for that dropdown comes from `lib/picking/picker-roster.ts`.
 
 > **REWRITTEN 2026-07-30.** This face was rebuilt across nine commits on 29-30 July
 > (`a2fb6889` → `28986d0a`). Everything the previous version of this section said about it — a TOP
@@ -650,11 +674,14 @@ picker-facing login flow shipped yet.
   prior gaps in one place: the 2026-07-17 "zero picking rows for floor_supervisor/picker" finding AND
   the 2026-07-19 seed-fragile live-only `operations` grant. All three now live in the SEED (source of
   truth), so a reseed no longer revokes them.
-  > **Seed ≠ prod — verification PENDING.** Confirmed in the seed file only; **no `SELECT` was run
-  > against live production this cycle**, so whether prod currently holds these rows is unverified.
-  > Do NOT claim floor logins work on prod without a live check — the prior cycle's failure was the
-  > exact mirror (live grant, no seed row). 2 real picker-role test users exist: Ramesh K. (id 8),
-  > Sunil P. (id 9) — test accounts, not depot staff yet.
+  > **Live-verified — this stale copy corrected 2026-08-04.** This block still said "verification
+  > PENDING, no SELECT was run" while §1 of this same file recorded the 2026-07-28 live SELECT — the
+  > exact one-file self-contradiction the desktop-retirement discovery flagged (its §7b #10), fixed
+  > in CORE/ROADMAP on 07-28/30 but never in this copy. Grants re-confirmed by SELECT **2026-08-04**
+  > (CORE §5 owns the table). Test accounts (SELECT 2026-08-04): Ramesh K. (id 8) and Sunil P.
+  > (id 9) are **deactivated**; the live ones are Test Supervisor 1 (id 34, floor_supervisor) +
+  > Test Picker 1/2 (ids 35/36, picker) — created for the first real-login test
+  > (2026-07-29 plan, archived).
 - **Write-route gating — mostly RESOLVED 2026-07-20; one deliberate exception** — the four SUPERVISOR
   write routes now gate on **`canEdit`** (`assign`, `unassign`, `approve`, `release`), corrected when
   `picker` was granted `canView` so its board could render (under the old `canView` gate that grant
@@ -723,10 +750,32 @@ picker-facing login flow shipped yet.
   system-wide/historical gap** (5,589 of 8,084 `import_obd_query_summary` rows), which mostly
   predates the `article_tag` raw SAP-XLS column existing at all. Not conclusively tied to one order
   type or import path from the data alone — every null-tag sample also has `sapStatus: null`, which
-  may correlate with the manual-SAP-upload path (Auto-Import paused since 2026-05-14, CORE §4), but
-  that correlation needs a dedicated follow-up query to confirm. Still open, now evidence-based.
+  may correlate with the manual-SAP-upload path — ⚠ this line said "Auto-Import paused since
+  2026-05-14" until 2026-08-04; **Auto-Import is LIVE** (resumed 2026-06-20, the v2 JSON path —
+  CORE §4 / IMPORT §10), which if anything strengthens the manual-SAP correlation hypothesis (the
+  2026-07-17 sample predates most auto-json volume) but the dedicated follow-up query is still
+  needed. Still open, now evidence-based.
 - **Real pick durations are unmeasured** — the Check tab's 30m/60m elapsed thresholds are a guess, not
-  a measured depot baseline.
+  a measured depot baseline. (The 2026-07-29 first-login test plan asked the floor to time 3-4 real
+  picks — no results recorded yet.)
+- **Picking applies NO hide filter — deliberate per-surface asymmetry** [documented 2026-08-04].
+  `lib/picking/queue.ts` makes zero `getHideExclusion()` calls (CORE §13): an admin-hidden order is
+  invisible on Floor and on the Billing Pending list but **visible on Picking**. A floor-execution
+  surface hiding a physical bill was never chosen; if that ever changes it is a per-surface decision,
+  not a "consistency" patch.
+- **A deactivated picker's SESSION keeps working until the token expires** [code-verified 2026-08-04;
+  first surfaced by the 2026-07-29 test plan]. `isActive` is checked at LOGIN only
+  (`lib/auth.ts` authorize); an existing JWT session is not revoked. The backstop: `done/route.ts`
+  re-verifies `isActive: true` on the picker, so a deactivated picker can still OPEN his board but
+  Mark Done fails with an error. Known shape, not a bug ticket — revisit only if deactivation needs
+  to be immediate.
+- **The supervisor board has TWO picker dropdowns fed from DIFFERENT sources** [code-verified
+  2026-08-04; same test-plan finding]. The Assign sheet lists `/api/warehouse/pickers`
+  (`isActive: true` filter — a switched-off picker vanishes immediately); the Picking-tab FILTER
+  derives its list from `assignedToName` on the loaded rows — a switched-off picker stays in the
+  filter as long as bills still carry their name. Correct behaviour twice (you cannot assign to
+  them; you can still find their outstanding bills) — but it reads as an inconsistency if nobody
+  says so. Do not "unify" the sources without deciding which question each list answers.
 - **Decided against, revisit only if usage proves otherwise:** pinning the mobile filter row + lane
   strip — mechanically easy but costs ~200-215px permanently claimed on every screen (nearly a full
   card of list density in all scroll states). Shipped lean; same call as the no-jump guard above.
@@ -838,8 +887,8 @@ on the floor for a while — nothing else in the system changes, it's a note, no
 ## 9. Desktop board — RETIRED 2026-07-28
 
 The wide-screen table is gone. `components/picking/picking-queue.tsx` is archived at
-`archive/2026-07-picking-desktop/` (that folder's `README.md` owns the story; until it is written,
-the record is `docs/prompts/drafts/code-discovery-2026-07-28-picking-desktop-retirement.md`). Its
+`archive/2026-07-picking-desktop/` (that folder's `README.md` exists — verified 2026-08-04 — and owns
+the story; the dated working record behind it is the discovery draft, now archived). Its
 visual spec was `CLAUDE_UI.md §61`, now collapsed to a banner — the parts of it that were never
 desktop-only were moved to `CLAUDE_UI.md §62.1-§62.4` and `§1` first.
 
@@ -938,4 +987,17 @@ on becoming visible); skips overlapping requests; **fails silently** (no toast/U
 
 ---
 
-*CLAUDE_PICKING.md v1.11 · Schema v27.12 · Picking Module · July 2026 · updated 2026-07-30*
+## Change log — v1.12 (2026-08-04 reconciliation pass, method v1.1)
+
+Evidence: `lib/picking/queue.ts` + auth/route/board files read at the call sites, git (`e37cbe74` verified), one read-only SELECT (test accounts), CORE v91 anchors. Claim IDs from the session report.
+
+- PCK-1 (§5.2): the 2026-08-02 `checkedAt` fix documented — the Checked band fences on `pick_assignments.checkedAt` in today's IST instant range, not `dispatchTargetDate`; the vanish-on-approve defect and its mirror recorded; dead `todayDateOnly` removal + untouched `single` scope noted; marker follows for free; cross-refs to Floor §6(c) + Billing §23.4.
+- PCK-2 (§7): the grants block's "Seed ≠ prod — verification PENDING" copy corrected — it contradicted §1's own 2026-07-28 live verification within one file; grants re-confirmed 2026-08-04; test accounts updated (8/9 deactivated, 34-36 live — SELECT).
+- PCK-3 (§7): "Auto-Import paused since 2026-05-14" — the last stale copy outside ROADMAP — corrected to LIVE per CORE v91 §4.
+- PCK-4 (§7): NEW — Picking applies no hide filter (deliberate asymmetry, CORE §13); the deactivated-session behaviour and the dual-dropdown sourcing (both from the 2026-07-29 test plan) code-verified and documented.
+- PCK-5 (§1/§5.4): test-hook wording updated — real picker/supervisor test accounts exist and land on `/picking`; whether the first-login test ran is not recorded.
+- PCK-6 (§9): the archive README verified to exist; conditional wording removed; the discovery draft archived this session (its unrun grants SQL is satisfied by the 07-28 + 08-04 SELECTs).
+
+---
+
+*CLAUDE_PICKING.md v1.12 · Schema v27.12 · Picking Module · August 2026 · updated 2026-08-04*
