@@ -1,5 +1,5 @@
 # CLAUDE_TRIP_REPORT.md — Trip Report Module
-# v1.0 · Schema v27.12 · July 2026
+# v1.1 · Schema v27.12 · August 2026 · updated 2026-08-04
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md
 
@@ -14,6 +14,8 @@ External trip software (Nagadhiraj) → PowerShell puller (depot PC) → standal
 **Routes:**
 - `/trips` — list (desktop full-width table; mobile app-style cards)
 - `/trips/[tripNo]/sheet` — A4 printable trip sheet (full-page, no sidebar)
+
+**Visual-spec ownership (locked 2026-08-04):** `/trips`' visual spec lives **in THIS file by design** — a named delegation from the UI design system (like `/floor`'s in `CLAUDE_FLOOR.md`); `CLAUDE_UI.md` carries only the wiring-table row. This closes the UI-pass MISSING flag.
 
 **Access:** `trip_report` page key, view-only. Granted to the **`logistics`** role (new — see §7 CORE flag) plus 4 existing users individually added to `logistics` as a secondary role (primary roles untouched): Ajay Vansiya (dispatcher), Dhanraj Shah (dispatcher), Priya Chaudhari (support), Operations User (operations). One new user, **Praveen**, has `logistics` as his primary (and only) role — sees only Trip Report. The `operations` role itself is **not** granted — only these 5 named users, for now.
 
@@ -45,7 +47,7 @@ The puller now POSTs `{ rows: [...] }` to `/rest/v1/rpc/mirror_trip_report_today
 
 **Unique constraint:** `trip_report_delivery_no_dis_date_key UNIQUE(deliveryNo, disDate)` — prevents a delivery from duplicating within a day; mirrored in `prisma/schema.prisma` via `@@unique([deliveryNo, disDate], map: "...")` (hand-edited + `npx prisma generate`, no `db push`/`db pull`, per CORE §3).
 
-⚠ **Puller must be RUNNING on the depot PC for live data.** Not yet a Task Scheduler job — see §7.
+⚠ **Puller must be RUNNING on its host PC for live data.** **Machine reality (framed 2026-08-04, same rules as the import scripts):** the script has **NO repo copy** (searched — `F:\…\Pull-TripReport.ps1` is the doc's path claim about another machine, unverifiable from the depot PC); the mirror's DB rows are the ground truth of whether it runs. **SELECT 2026-08-04: it IS running** — 116 rows for today, newest `fetchedAt` seconds old at check time (3,246 rows total). Whether it is a Task Scheduler job yet or still a hand-opened window is unverifiable from here — see §7.
 
 ---
 
@@ -163,7 +165,7 @@ Renders `<TripSheetDocument>` into a hidden **same-document** div from in-memory
 ## 7. Open / deferred + landmines
 
 **[NEXT]**
-- **Puller as a Task Scheduler job** — currently only runs while its PowerShell window stays open on the depot PC.
+- **Puller as a Task Scheduler job** — the "only runs while its PowerShell window stays open" claim describes the host PC and is **unverifiable from here**; what IS verifiable: the mirror was live and fresh on 2026-08-04 (§2). If the window-only claim still holds, this item stands.
 - **Operations-role grant** — if Trip Report access is ever widened beyond the 5 named users in §1.
 - **Multi-select trips → combined PDF share** — single-trip image share is done; a multi-trip combined export is not built.
 - **Puller mirror monitoring** — watch the puller's first few days post-rewrite (§2): confirm NTS-side deletions actually mirror away, and that the "mirrored N rows" log count keeps tracking NTS's true row count.
@@ -199,4 +201,17 @@ Renders `<TripSheetDocument>` into a hidden **same-document** div from in-memory
 
 ---
 
-*Trip Report v1.0 · Schema v27.12 · OrbitOMS*
+## Change log — v1.1 (2026-08-04 reconciliation pass, method v1.1)
+
+Evidence: read-only SELECT (freshness + column count), globals.css + share/display files, CORE v91 §5. Claim IDs from the session report.
+
+- TRP-1 (§2/§7): puller machine-reality framed — no repo copy exists; host-PC claims marked unverifiable; the mirror proven RUNNING by SELECT (116 rows today, seconds-fresh `fetchedAt`).
+- TRP-2 (§1): the visual-spec ownership line added (named delegation, like `/floor`) — closes the UI-pass flag.
+- TRP-3 (§3): 38-column claim verified exact against `information_schema` (38/38).
+- TRP-4 (§5): `@page trip-sheet` verified top-level in `globals.css` (`:24`) with id-scoped visibility isolation (`:642`) — never nested in `@media print`.
+- TRP-5 (header/footer): dates added at both ends (the file had none).
+- Verified CORRECT, no change: §1 access (logistics + 4 secondary users + Praveen — CORE §5 re-verified 2026-08-04; the dispatcher mentions are the live ROLE, kept), §4 display rules, §6 share mechanism + logo-capture fix, §7 landmines.
+
+---
+
+*Trip Report v1.1 · Schema v27.12 · OrbitOMS · updated 2026-08-04*

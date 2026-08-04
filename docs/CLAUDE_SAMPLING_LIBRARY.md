@@ -1,5 +1,5 @@
 # CLAUDE_SAMPLING_LIBRARY.md — Sampling Library Module
-# v1.5 · Schema v27.12 · July 2026 · updated 2026-07-27 · Phase 4 shipped 2026-05-25 · Cohort A+B restore 2026-05-27
+# v1.6 · Schema v27.12 · August 2026 · updated 2026-08-04 · Phase 4 shipped 2026-05-25 · Cohort A+B restore 2026-05-27
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -8,11 +8,17 @@ Digital library for the depot's paper-based Sampling Register. Shade name + tint
 Page route: `/tint/sampling-library`
 Page key: `sampling_library`
 
-Roles granted:
-- `tint_manager` — view + edit
-- `tint_operator` — view (read-only)
-- `admin` — full
-- `ops_admin` — view
+Roles granted — **LIVE, SELECT 2026-08-04** (this list previously understated three grants):
+
+| roleSlug | canView | canEdit |
+|---|---|---|
+| `admin` | ✅ | ✅ |
+| `tint_manager` | ✅ | ✅ |
+| `tint_operator` | ✅ | **✅ — NOT view-only** (this doc said "view (read-only)"; the live row disagrees. Whether any UI path actually exercises the edit grant for operators was not traced — the FACT is the row; treat "operators are read-only" as a UI convention, not a server-enforced one) |
+| `ops_admin` | ✅ | **✅** (doc said view-only) |
+| `operation_manager` | ✅ | ✅ — was undocumented here entirely (role real since 2026-08-04's CORE confirmation, id 15) |
+
+⚠ `CLAUDE_CORE.md §5`'s `sampling_library` row still shows the OLD list — flagged for the final CORE pass, not fixed here.
 
 Primary users: Chandresh (TM), Deepak + Chandrasing (operators reference past recipes).
 
@@ -491,7 +497,7 @@ FROM sampling_usage_log GROUP BY bucket ORDER BY bucket;
 
 The Tint Operator reuse area (UI: `CLAUDE_UI.md §34`; operator flow: `CLAUDE_TINT.md §3.12`) is fed by this module.
 
-**Flat suggestions (rewrite, 2026-06-16).** `_lib/suggest.ts` now emits **`flatSuggestions`** — an uncapped this-site list with `isExactMatch`, `primarySiteName`, `otherSites[]`. The old two-section exact/reference UI and its `exact.slice(0,3)` / `reference.slice(0,5)` caps are gone (`exactMatches`/`referenceList` still built but no longer consumed by the UI — remove in cleanup). Shared helpers `groupOtherSitesBySampling(samplingNos, excludeSiteId)` + `assembleFlatRow(...)`; exported `SuggestFlatRow`, `SuggestOtherSite`.
+**Flat suggestions (rewrite, 2026-06-16).** `_lib/suggest.ts` now emits **`flatSuggestions`** — an uncapped this-site list with `isExactMatch`, `primarySiteName`, `otherSites[]`. The old two-section exact/reference UI and its `exact.slice(0,3)` / `reference.slice(0,5)` caps are gone (`exactMatches`/`referenceList` still built but no longer consumed by the UI — remove in cleanup). **Consumer re-verified 2026-08-04:** `tint-operator-content.tsx` reads `flatSuggestions` only. ⚠ **The CODE COMMENT at `suggest.ts:51-52` says the opposite** ("The current UI still reads exactMatches + referenceList") — it is a STALE COMMENT from mid-transition; do not quote it. Flagged for the cleanup that removes the dead lists. Shared helpers `groupOtherSitesBySampling(samplingNos, excludeSiteId)` + `assembleFlatRow(...)`; exported `SuggestFlatRow`, `SuggestOtherSite`.
 
 - **Search scope** (`operator-search`): all sites, partial (ILIKE contains) on `samplingNo` / `shadeName` / usage site name; optional `type`; `RESULT_LIMIT = 50`. No fuzzy (CORE §3 never-fuzzy-match-sites; `pg_trgm` deferred). No formula-value search.
 - **Exact match** = a sampling with a variant matching the current line's `skuCode` AND `packCode` (multiple possible). Pinned top.
@@ -536,6 +542,21 @@ Sampling Library is **operator-created runtime data, NOT CSV-seeded** — merges
 
 **Status:** 3 white-only groups merged (masters `26-0196`/`26-0106`/`26-0094`); **~380 duplicate groups remain** — process group by group per the runbook. Pending: an exact-dupe-finder tool (given a seed number, find all active samplings whose primary recipe matches exactly → dated review CSV); junk test sampling `#26-0285` cleanup. Owner chose manual SQL over a batch script for now.
 
+**Status figures are DATED (2026-07-27):** "3 groups merged / ~380 remain" was the count then; re-SELECT before resuming the runbook — merges may have run since.
+
 ---
 
-*Sampling Library v1.5 · Schema v27.12 · July 2026 · Phase 4 shipped + Cohort A+B restored · OrbitOMS*
+## Change log — v1.6 (2026-08-04 reconciliation pass, method v1.1)
+
+Evidence: one read-only SELECT (grants), pack-litres/suggest/formula-match/operator-search + the operator consumer read at the call sites. Claim IDs from the session report.
+
+- SMP-1 (header roles): grants table rebuilt from live — `tint_operator` and `ops_admin` hold **canEdit=true** (doc said view-only for both) and `operation_manager` holds a full grant (undocumented). CORE §5's row flagged as carrying the old list.
+- SMP-2 (§11): flat-list consumer re-verified (`flatSuggestions` only); the STALE code comment at `suggest.ts:51-52` claiming the opposite flagged — the doc was right, the comment wasn't.
+- SMP-3 (§11): pack-scaling engine verified at the call sites — `packDoseLitres` map (ml_500→0.5 …), `scalePigments` 3dp, `perLitreFingerprint` 2dp, TINTER-only per-litre matching vs ACOTONE exact 27-value (`formula-match/route.ts:103-111`), `operator-search` `RESULT_LIMIT=50`. All as documented.
+- SMP-4 (§12): merge-runbook status marked as dated (2026-07-27 figures) rather than current.
+- SMP-5 (header/footer): version + date bumped both ends.
+- Verified CORRECT, no change: §2 schema blocks (match schema.prisma, read in full this cycle), §5 API table, §3's pre-drop `normalise-sampling-data.ts` risk (still tracked in CORE §13), §9 landmines incl. the split-done usage-log gap (still open — TINT §14 agrees), §7 import gotchas. **Retired-module hits: zero, as the inventory predicted — clean pass.**
+
+---
+
+*Sampling Library v1.6 · Schema v27.12 · August 2026 · Phase 4 shipped + Cohort A+B restored · OrbitOMS · updated 2026-08-04*
