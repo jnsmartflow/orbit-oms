@@ -1,11 +1,11 @@
 # CLAUDE_TINT.md — Tint Module
-# v1.8 · Schema v27.12 · July 2026 · updated 2026-07-28
+# v1.9 · Schema v27.12 · August 2026 · updated 2026-08-04
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
 Covers Tint Manager, Tint Operator (incl. skip, pause/resume, partial done, sampling reuse + pack scaling), Manual Tint Entry, Delivery Challans (incl. void), Shade Master (legacy), TI Report, Tint Summary report, Remove OBD.
 
-Users: Chandresh Kolgha (tint_manager), Deepak Vasava + Chandrasing Valvi (tint_operator).
+Users: Chandresh Kolgha (tint_manager), Deepak Vasava + Chandrasing Valvi (tint_operator). Prakash (operation_manager, id 32) also LANDS on `/tint/manager` at login (`lib/rbac.ts`; role confirmed real 2026-08-04 — `CLAUDE_CORE.md §5`).
 
 Sampling Library is a SEPARATE module — see `CLAUDE_SAMPLING_LIBRARY.md`.
 
@@ -109,13 +109,31 @@ See `CLAUDE_CORE.md §9` (⚠ CORE §9 has a pending update from this section �
 - At import: `orderType === "tint"` → `slotId = null`, `originalSlotId = null`
 - **`arrivalSlotId` — now stamped at import for tint orders too (2026-06-29) [LIVE].** Previously tint orders got `arrivalSlotId = null` at import (the `orderType !== "tint"` guard). That guard was removed from both import paths (`handleManualSapConfirm` and the auto-import confirm path in `app/api/import/obd/route.ts`) — tint orders now get `arrivalSlotId = resolveArrivalSlotId(emailDateTime)` (the 5-slot ruler), exactly like non-tint orders. This is separate from `slotId`/`originalSlotId`, which remain null until completion (unchanged, see below). No backfill was run — applies to NEW orders only. See CLAUDE_IMPORT.md §12 for the import-side detail.
 - At completion (whole order, `/api/tint/operator/done`): sets `slotId` + `originalSlotId` on order using `resolveSlot()` thresholds on current IST time
-- **Completion now branches on a pre-set dispatch slot (2026-06-29) [LIVE].** If `order.dispatchWindowId != null && order.dispatchTargetDate != null` (an operator pre-set a slot at the desk while the order was still tinting — today via Floor's **change-slot**, `CLAUDE_FLOOR.md §4.1`; until 2026-07-27 via the Support board), completion additionally writes `workflowStage: "closed"`, `dispatchStatus: "dispatch"` — the order auto-flips to Dispatch and leaves the pending list, landing on Floor as a released bill instead of returning to `pending_support`. If no slot was pre-set, behaviour is unchanged: `workflowStage: "pending_support"`.
+- **Completion branches on a pre-set dispatch slot (2026-06-29) [LIVE — stage value CORRECTED 2026-08-04].** If `order.dispatchWindowId != null && order.dispatchTargetDate != null` (an operator pre-set a slot at the desk while the order was still tinting — today via Floor's **change-slot**, `CLAUDE_FLOOR.md §4.1`; until 2026-07-27 via the Support board), completion additionally writes **`workflowStage: SUPPORT_DONE_OUTPUT` (= `"pending_picking"`)** + `dispatchStatus: "dispatch"` — the order auto-flips to Dispatch and lands on Floor's board as a released bill instead of returning to the rail. If no slot was pre-set: `workflowStage: "pending_support"` (the rail). ⚠ **This bullet said `workflowStage: "closed"` until 2026-08-04 — wrong per the code** (`done/route.ts:183-191`, `split/done/route.ts:191-193` both write `SUPPORT_DONE_OUTPUT`; nothing writes `closed` any more — `CLAUDE_PICKING.md §2`). **A stale code COMMENT still says "closed+dispatch"** at `split/done/route.ts:169`, directly above code that does otherwise — flagged, not edited here; do not quote it.
 - At split completion (`/api/tint/operator/split/done`): sets slot on **parent** order. Latest completion wins. The same pre-set/auto-flip branch applies to the parent-bubble update (runs after the `$transaction`, not inside it — no new landmine interaction).
 - **Parent auto-advance (2026-06-25 fix):** after setting the slot, the route checks whether all non-cancelled splits are now `tinting_done`. If yes AND parent is still `tinting_in_progress`, it advances the parent to `workflowStage = "pending_support"` and writes an `order_status_logs` entry (`changedById: 1`, note `"Auto-advanced: all splits tinting_done"`). Guard is idempotent (`workflowStage === "tinting_in_progress"`). **Cancelled splits are excluded from the count — non-negotiable for correctness.**
 - No buffer before cutoff
 - `applyMailOrderEnrichment()` skips recalculation of **`slotId`/`originalSlotId` only** for tint orders. It does **not** skip `arrivalSlotId` — that field is stamped for every mail-matched order regardless of `orderType` (not tint-guarded), and always has been.
 
-⚠ **FLAG FOR CORE PASS (step 6):** CORE §9 needs one sentence added: *"`arrivalSlotId` is set at import for ALL orders (tint and non-tint) via `resolveArrivalSlotId(emailDateTime)`. `slotId` stays null for tint until completion."* Not applied here — CORE is out of scope for this pass.
+~~⚠ FLAG FOR CORE PASS: CORE §9 needs one sentence added~~ — **RESOLVED**: CORE §9 carries the `arrivalSlotId`-for-all-orders sentence (verified against CORE v91, 2026-08-04).
+
+### 2.1 Tint-side facts for the Floor rail suggestion (2026-08-03) — read-only for this module
+
+`CLAUDE_FLOOR.md §8` owns the suggestion layer; these are the TINT-side facts it depends on:
+
+- **`tint_assignments.completedAt` is the suggestion anchor** for a finished FULL tint OBD. Written
+  by `done/route.ts:159` (whole-OBD) and `split/done/route.ts:100` (per split, `status:
+  "tinting_done"`). It replaces both arrival clocks in the suggestion — arrival says when the paper
+  landed; completion is the first moment the bill could physically go on a vehicle.
+- **Completion deliberately does NOT pre-set a dispatch slot.** Neither done route writes
+  `dispatchTargetDate`/`dispatchWindowId` — they only READ a pre-set (the `hasPresetSlot` branch
+  above). Writing one at completion would trip that very branch, flip the bill to
+  `dispatchStatus='dispatch'`, and it would **leave the Floor rail entirely**, robbing the operator
+  of the confirm step. The suggestion is a nudge on the rail, never a write from here.
+- **On the Floor card payload, `tint.completedAt` is an ISO UTC STRING, not a Date** (re-typed
+  2026-08-03, commit `7e466776` — a JSON payload cannot carry a Date). Convert to IST at render
+  time. This module's own uses (`§12`'s date axes) read the DB column server-side as a real Date —
+  the string shape exists only on Floor's client payload.
 
 ---
 
@@ -677,7 +695,7 @@ Layout uses `buildNavItems()` only.
 - **`SlotSummaryItem` interface** in `tint-manager-content.tsx` — defined but unused.
 - **CustomerMissingSheet** styling doesn't match admin customer split-view (cosmetic).
 - **Shade Master `isActive` filter** — unverified in production.
-- **Challan lazy creation** — `[orderId]` detail API may still auto-create on click. Verify.
+- **~~Challan lazy creation~~ — VERIFIED 2026-08-04: the `[orderId]` detail API does NOT auto-create** (no `create` call in the route; it reads the existing challan). Creation happens at import only (§9.1).
 - **Challan print CSS** — old class names (`ch-header`, `tint-yes`) may persist in `@media print`.
 - **`lib/slot-cascade.ts`** — no longer in the live tree: archived 2026-07-28 with the Planning board (`archive/2026-07-planning-board/lib/`), after a long period disabled. **If it is ever restored, it must skip tint orders** — that condition outlives the archive.
 - **Customer master gaps:** Bill-To customers missing contacts → challan S5 CUSTOMER blanks.
@@ -697,4 +715,17 @@ Layout uses `buildNavItems()` only.
 
 ---
 
-*Tint v1.8 · Schema v27.12*
+## Change log — v1.9 (2026-08-04 reconciliation pass, method v1.1)
+
+Evidence: done/split routes + challan routes + globals.css read at the call sites; CORE v91 / FLOOR v1.4 / UI v5.17 anchors; git (`7e466776`). Claim IDs from the session report.
+
+- TNT-1 (§2): the pre-set-slot completion branch writes **`SUPPORT_DONE_OUTPUT` ("pending_picking")**, NOT `"closed"` — corrected against both done routes; the stale "closed+dispatch" CODE COMMENT at `split/done/route.ts:169` flagged (not edited).
+- TNT-2 (NEW §2.1): tint-side facts for the Floor rail suggestion — `completedAt` as the anchor (write sites named), the deliberate no-preset-at-completion decision (the `hasPresetSlot` trap from the tint side), and the Floor-payload `completedAt` ISO-string re-type (`7e466776`).
+- TNT-3 (§2): the standing "FLAG FOR CORE PASS — CORE §9 needs one sentence" resolved — CORE v91 §9 already carries it.
+- TNT-4 (header): Prakash / operation_manager lands on `/tint/manager` — access line updated per CORE v91 §5.
+- TNT-5 (§14): challan lazy-creation landmine VERIFIED closed (the `[orderId]` route has no create call); `@page` top-level + the PATCH `$transaction` at `:527` re-confirmed as documented.
+- Hygiene: Support @112 (one-line history) and the `/order`/`/operations` hits (route-path + role-list overmatches) all verified legitimate — none changed.
+
+---
+
+*Tint v1.9 · Schema v27.12 · OrbitOMS · updated 2026-08-04*
