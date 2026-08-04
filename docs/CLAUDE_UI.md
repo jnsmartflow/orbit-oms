@@ -1,5 +1,5 @@
 # CLAUDE_UI.md — OrbitOMS UI Design System
-# v5.16 · July 2026 · updated 2026-07-30 · Lives in: orbit-oms/docs/
+# v5.17 · August 2026 · updated 2026-08-04 · No Schema stamp BY DESIGN (decided 2026-08-04) — this file tracks components, not tables · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md
 
 Single source of truth for visual styling across all screens.
@@ -152,7 +152,11 @@ If either layer is missing, scroll breaks. Took 2 iterations to land — don't t
 
 ## 6. Universal header system
 
-All boards use `<UniversalHeader />` from `components/universal-header.tsx`. Never custom.
+Desk boards use `<UniversalHeader />` from `components/universal-header.tsx`. Never hand-roll a new one.
+
+**Live consumers (import sweep 2026-08-04) — 8 boards:** Mail Orders (`mail-orders-page.tsx` + `review-view.tsx`, one board), Tint Manager, Tint Operator, TI Report, Shade Master, Delivery Challan (`challan-content.tsx`), Sampling Library, Trip Report. **No longer consumers:** the attendance admin pages (own two-strip `components/admin/attendance/attendance-page-header.tsx` — "replaces the per-page UniversalHeader chrome", per `docs/mockups/attendance/admin-redesign.html`; detail belongs to `CLAUDE_ATTENDANCE.md`) and Admin Import (`import-page-content.tsx` renders no UniversalHeader). The code-update-2026-08-01 audit's "7 shared-header consumers" = these 8 minus the Mail Orders board it was editing.
+
+**Neutral props added for the Billing v2 face (2026-08-01, commits `d08f3870`/`15e87e2b`/`f76b4c86`):** `searchLayout?: "compact" | "wide" | "wide-right"` (default compact, the 180→260px grow), `showShortcutsButton?: boolean` (default true — billing hides it in the header and renders the extracted **`components/header-shortcuts.tsx`** on its own control row), `importVariant?: "default" | "primary"` (primary = teal Import). The component imports nothing from `components/billing/` and never calls `useBillingV2()` — callers opt in; every non-billing board is byte-identical by default.
 
 **Named exception — `/floor` (Floor Control) is hand-rolled, deliberately.** `app/(floor)/floor/page.tsx` → `components/floor/floor-page.tsx` renders its OWN two-row header (Row 1: "Floor Control" title + IST date/time; Row 2: delivery-type scope chips + one search box + one filter) — no `<UniversalHeader />` anywhere in the floor tree. Reason: an approved divergence hand-rolled to the locked mockup `docs/mockups/floor-control/01-board.html` (scope chips + search/filter, a different shape from UniversalHeader's segmented control). This is ONE named exception, not a loosening of the rule — every other board still uses `<UniversalHeader />`. The screen itself is documented in `CLAUDE_FLOOR.md`; do not restate its layout here. Do not "fix" `/floor` back to `<UniversalHeader />`.
 
@@ -194,20 +198,17 @@ Per-board wiring summary:
 
 | Board | Segments | Filters | Date | Extras |
 |---|---|---|---|---|
-| Support | Slots (4) | View, SMU, Del Type, Priority | Stepper | Search |
 | Tint Manager | Operator pills | Del Type, Priority, Type | None | View toggle, missing-customer badge |
-| Planning | Slots (4) | Del Type, Dispatch | Stepper | — |
-| Warehouse | Slots (4) | Del Type, Pick Status | Stepper | — |
-| Mail Orders | Slots (5) | Status, Match, Dispatch, Lock | Stepper | Column toggle, Table/Review toggle |
+| Mail Orders | Slots (5) | Status, Match, Dispatch, Lock | Stepper | Column toggle, Table/Review toggle. ⚠ The flag-gated Billing v2 face rewires this header (`searchLayout="wide-right"`, teal Import, shortcuts moved to the control row) — spec belongs to the MAIL_ORDERS session, not here |
 | Tint Operator | Job pill (teal, dropdown) | — | None | Progress bar (rightExtra) |
 | TI Report | Date presets | Tinter Type, Operator | None | Date range, Download |
 | Shade Master | — | Tinter Type, Status | None | — |
 | Delivery Challan | — | SMU, Route | Stepper | Search |
 | Sampling Library | Type (TINTER/ACOTONE) | Pack, Status | None | Month picker |
-| Admin Import | — | — | Stepper | Upload |
-| OT Pending | — | — | None | Status filter |
-| OT Audit | — | — | Month | — |
+| Trip Report | Local/Up-Country segment | — | Date filter | → `CLAUDE_TRIP_REPORT.md §1` |
 | **Floor Control** | Scope chips (+ slot tabs in body) | Status / Flags | None | Search · **⚠ HAND-ROLLED, NOT `<UniversalHeader />`** — named exception above; → `CLAUDE_FLOOR.md` |
+
+*(Rows removed 2026-08-04: Support / Planning / Warehouse — boards retired 2026-07-27/28, wiring archived with them; Admin Import + OT Pending + OT Audit — no longer UniversalHeader consumers, see the roster above.)*
 
 ---
 
@@ -255,6 +256,14 @@ Tint Operator workflow CTAs: `bg-green-600 text-white`
 Operator Pause CTA: `bg-amber-600 hover:bg-amber-700 text-white`
 Skip CTA: `bg-gray-100 hover:bg-gray-200 text-gray-700` (passive — never primary)
 Remove OBD destructive confirm: `bg-red-600 hover:bg-red-700 text-white`
+
+### Action-surface rules (general canon — established 2026-07-26 on the Floor action-surfaces redesign, `drafts/web-update-2026-07-26-floor-action-surfaces.md` §2; shipped 2026-07-27)
+
+- **One teal per surface, and it goes to the state's REAL job — not to a fixed button.** Exactly one teal button per state, never zero, never two; which button is teal may change with the bill's state (Floor's detail panel: Ship-to in most states, Release on a held bill).
+- **Disabled buttons are grey, never faded primary** — `bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed`. A faded teal button reads as broken, not waiting. Box model identical in both states (border present even when invisible) so nothing shifts on enable.
+- **An editable value gets a pencil, not a label.** A grey caption + chip reads as display-only; a chip carrying a small pencil is unambiguous.
+- **Facts live in the header, jobs live in the action row.** A property of the record (slot, date, number) belongs on the identity line; the action row holds only things the operator *does*.
+- **Selection summaries name what was selected** — one row shows the name; multiple show totals (volume, route count), derived from data already in the component.
 
 ---
 
@@ -473,8 +482,8 @@ All data tables use `table-layout: fixed` with `<colgroup>` percentage widths.
 - Sampling Library recipe table
 - Any future data table in any module
 
-**Support does NOT belong on this list.** Support's tables are CSS Grid, not `<table>` — see the
-Grid-native equivalent rule below and `§58`.
+**Support never belonged on this list.** Its tables were CSS Grid, not `<table>` (board retired
+2026-07-27 — §58); the live takeaway is the Grid-native equivalent rule below.
 
 ### Grid-native equivalent — percentage tracks on CSS Grid (2026-07-09)
 
@@ -586,6 +595,8 @@ Props:
 ### InstructionsStrip component
 
 `bg-gray-50`, `border-top: 1px solid gray-200`, padding 8px 20px. Returns null when all three values are null/empty.
+
+**`tone?: "default" | "violet"` prop (2026-08-01, commits `471e6808` + `e309ac37`):** default = the gray strip above, unchanged. `violet` = the Billing v2 notes band (Floor's tint-strip palette `#f5f3ff`/`#5b21b6`/`#7c3aed` + 3px violet left-accent bar); the three dots keep their own colours in both tones. Only the flag-gated billing face passes `violet` — its spec belongs to the MAIL_ORDERS session.
 
 ```
 ● delivery (amber dot)  — from deliveryRemarks minus [→ Name (Code)] suffix
@@ -955,7 +966,7 @@ Full-screen, no sidebar. 480px max column, centred on tablet/desktop.
 
 ## 49. Admin OT pending queue UI
 
-Page `/admin/attendance/ot-pending`. UniversalHeader title "OT Pending Approvals" + status filter.
+Page `/admin/attendance/ot-pending`. Header: the attendance admin's own two-strip `attendance-page-header.tsx` — NOT UniversalHeader (corrected 2026-08-04; §6 roster). Title "OT Pending Approvals" + status filter.
 
 Per row: user · date · claim reason · total worked · OT minutes raw · `[Approve]` · `[Reject]`.
 
@@ -969,7 +980,7 @@ Empty state: lucide CheckCircle2 in emerald circle, "Nothing pending" headline.
 
 ## 50. Admin attendance settings UI
 
-Page `/admin/attendance/settings`. UniversalHeader title + "Last updated {date} by {name}".
+Page `/admin/attendance/settings`. Header: `attendance-page-header.tsx` (breadcrumb "Attendance · Settings") — NOT UniversalHeader (corrected 2026-08-04; §6 roster). "Last updated {date} by {name}".
 
 6 sections (in order): Rollout · Work hours · Geofence · Photo policy · OT policy · Thresholds.
 
@@ -990,7 +1001,7 @@ Toast variants:
 
 ## 51. Admin OT audit UI
 
-Page `/admin/attendance/ot-audit?month=YYYY-MM`. UniversalHeader title + month picker on right (`{Month} {YYYY} ▾`).
+Page `/admin/attendance/ot-audit?month=YYYY-MM`. Header: `attendance-page-header.tsx` — NOT UniversalHeader (corrected 2026-08-04; §6 roster). Month picker on right (`{Month} {YYYY} ▾`).
 
 6-tile stats strip: Total OT credited · Auto credited · Grace credited · Admin approved · Pending (amber when >0) · Rejected.
 
@@ -1032,7 +1043,7 @@ When `contact.linkedSalesOfficerId` is non-null:
 - Badge: `bg-teal-50 text-teal-700 border-teal-200`, label `Auto · {Role} SO` where Role is the SO's role on this customer (Primary / Backup / Junior). e.g. "Auto · Primary SO".
 - Delete (×) button:
   - **Admin Customer Master** form: enabled, opens AutoContactDeleteDialog confirm modal
-  - **Missing Customer Sheet** (TM Kanban / Support resolver): DISABLED with tooltip "Remove via Sales Officers tab" (create-only flow)
+  - **Missing Customer Sheet** (TM Kanban resolver — its Support mount retired 2026-07-27): DISABLED with tooltip "Remove via Sales Officers tab" (create-only flow)
 - Name + phone are NOT editable inline — single source is the SO master record. Refreshed on every save via the SoSync backend stages.
 
 ### Manual contact
@@ -1261,7 +1272,7 @@ Branch 3 is unchanged from the original shell: **Home** → `navItems[0]?.href ?
 
 ### 59.4 How a future module plugs in [LIVE — sanctioned extension point]
 
-Every future module (**Tint Operator, Support, Warehouse, Trip Report**) now has a supported way to mount its own bottom tabs. **Do not rebuild the shell** — the frame, both sheets, and the wiring already exist. A module supplies only its own tabs and its own page contents:
+Every future module (**Tint Operator, Trip Report** — this list named Support and Warehouse until 2026-08-04; both were retired 2026-07-27/28 before ever adopting it) now has a supported way to mount its own bottom tabs. **Do not rebuild the shell** — the frame, both sheets, and the wiring already exist. A module supplies only its own tabs and its own page contents:
 
 1. Supply `workflowTabs` + `activeTabKey` + `onTabChange` through `<RoleLayoutClient>`.
 2. For a Direction-A header, call `openMenu()` / `openYou()` from `useMobileShell()` on the header's grid icon / avatar.
@@ -1372,9 +1383,9 @@ Records the /po-derived type discipline so this is never re-discovered. **Reusab
 The desktop `/picking` table no longer exists. `components/picking/picking-queue.tsx` was archived to
 `archive/2026-07-picking-desktop/`; **`/picking` itself STAYS LIVE** and renders the mobile card
 board (§62) at every screen width. Its story — why it went, what replaced it, what moved out first —
-belongs to that folder's `README.md`. *(That README is written in a later step of this retirement; if
-it is not there yet, the discovery report
-`docs/prompts/drafts/code-discovery-2026-07-28-picking-desktop-retirement.md` is the record.)*
+belongs to that folder's `README.md` *(exists — verified 2026-08-04; the discovery report
+`docs/prompts/drafts/code-discovery-2026-07-28-picking-desktop-retirement.md` remains the dated
+working record behind it)*.
 
 **Why:** Floor Control (`/floor`) was built to replace it, the floor team works on Android phones
 only, and a desk operator who needs a board uses `/floor`. Picking is also hidden from the desktop
@@ -1462,13 +1473,29 @@ Do not read this list as an app-wide ban.
 
 ---
 
-**⚠ OPEN — this file carries NO `Schema` stamp, at either end.** `CLAUDE_CORE.md`, `CLAUDE_PICKING.md`
-and `CLAUDE_FLOOR.md` all carry `Schema v27.12` in their header; this file carries none in the header
-or the footer. That may well be *right* — a design-system file has no schema to be in step with — but
-it has never been decided, and `CLAUDE.md`'s session procedure tells every reader to check a file's
-header against CORE's schema stamp, which for this file silently checks nothing. **Deliberately left
-as-is on 2026-07-30 rather than quietly adding one:** a stamp creates an obligation to keep it
-current, and omitting one should be a decision on the record, not a drift nobody noticed. Resolve in
-whichever pass owns the doc-header convention.
+**Schema stamp — RESOLVED 2026-08-04: this file carries NO `Schema` stamp BY DESIGN.** It tracks
+components, not tables — there is no schema for it to be in step with, so a stamp would only create
+an obligation to bump a number this file never depends on. The decision is recorded in the header
+AND here so no future inventory reads the absence as drift. `CLAUDE.md §4`'s check-against-CORE step
+simply does not apply to this file. *(This replaces the ⚠ OPEN block that sat here 2026-07-30 →
+2026-08-04.)*
 
-*UI v5.16 · OrbitOMS · updated 2026-07-30*
+---
+
+## Change log — v5.17 (2026-08-04 reconciliation pass, method v1.1)
+
+Evidence: component import sweeps + folder listings + git log 2026-07-31→08-03. Claim IDs from the session report.
+
+- UI-1 (header + footer): the missing-schema-stamp OPEN item resolved — no stamp BY DESIGN, recorded at both ends.
+- UI-2/3 (§6): consumer roster stated from a 2026-08-04 import sweep (8 boards); attendance admin pages + Admin Import removed — they run their own headers (`attendance-page-header.tsx`; import has none).
+- UI-4 (§6): wiring table — retired Support/Planning/Warehouse rows dropped; OT Pending/OT Audit/Admin Import rows dropped (not consumers); Trip Report row added; Mail Orders row flags the flag-gated billing-face divergence.
+- UI-5 (§6): Billing v2's neutral header props documented (`searchLayout` / `showShortcutsButton` / `importVariant` + the `header-shortcuts.tsx` extraction) — commits confirmed in git log.
+- UI-6 (§28): `InstructionsStrip` `tone` prop documented (violet = billing notes band).
+- UI-7 (§49-§51): the three attendance admin pages no longer claim UniversalHeader.
+- UI-8 (§53): Missing Customer Sheet's retired Support mount no longer described as live.
+- UI-9 (§59.4): future-module candidate list no longer names the retired Support/Warehouse.
+- UI-10 (§61): the picking-desktop archive README verified to exist; conditional wording removed.
+- UI-11 (§27): Support tense fixed (retired board no longer described in the present).
+- UI-12 (§47→§55): extraction re-verified — `--vvh` fix, app-wide viewport export, empty-state row, qty/autofocus rules all present in §55; §47 pointer stands.
+
+*UI v5.17 · OrbitOMS · updated 2026-08-04 · No Schema stamp by design (see above)*
