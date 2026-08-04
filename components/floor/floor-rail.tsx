@@ -51,14 +51,14 @@ export function FloorRail({
     <div className="flex min-h-0 flex-col border-r border-gray-200 bg-[#fbfbfc]">
       <div className="flex items-center gap-2 border-b border-gray-200 bg-white px-3.5 py-2.5">
         <span className="text-[11.5px] font-bold text-gray-900">Needs your decision</span>
-        {!loading && !error && (
+        {cards != null && !error && (
           <span className="rounded bg-gray-100 px-[7px] py-px text-[10.5px] font-bold text-gray-700">{count}</span>
         )}
         <span className="ml-auto text-[10px] text-gray-400">oldest first</span>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {loading ? (
+        {loading && cards == null ? (
           <FloorSkeleton variant="rail" />
         ) : error ? (
           <div className="px-5 py-14 text-center text-[11.5px] text-gray-400">Couldn&rsquo;t load the rail. {error}</div>
