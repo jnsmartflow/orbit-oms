@@ -1,5 +1,5 @@
 # CLAUDE_CORE.md — OrbitOMS Core
-# v89 · Schema v27.12 · July 2026 · updated 2026-07-30 · Lives in: orbit-oms/docs/
+# v90 · Schema v27.12 (+ unnumbered 2026-07-30/31 billing additions — §7) · August 2026 · updated 2026-08-04 · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_UI.md
 
 ---
@@ -8,7 +8,7 @@
 
 Depot-level order management for a paint distribution company (JSW Dulux, formerly Akzo Nobel India). Single depot, Surat. Two parallel pipelines:
 
-- **OBD pipeline:** SAP XLS import → tinting → support review → dispatch planning → warehouse picking → vehicle dispatch
+- **OBD pipeline:** SAP XLS import → tinting → Floor Control release (`/floor` — the desk step formerly done on the retired Support board) → warehouse picking → vehicle dispatch
 - **Mail order pipeline:** Forwarded email parsing → SKU enrichment → SAP punching → SO number capture → dispatch data flows back to OBD
 
 Plus three standalone modules:
@@ -86,7 +86,7 @@ Never introduce new libraries without being asked.
 
 **Database:** Supabase Pro ($25/mo, never pauses). Region `ap-south-1`. Pooler: Transaction mode, port 6543, pool size 15, max clients 200. DIRECT_URL on port 5432 for `prisma generate`.
 
-**Env vars (Vercel):** `DATABASE_URL`, `DIRECT_URL`, `NEXTAUTH_SECRET`, `NEXTAUTH_URL` (https://www.orbitoms.in), `IMPORT_HMAC_SECRET`, `MAIL_ORDER_HMAC_SECRET`, `CRON_SECRET`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`.
+**Env vars (Vercel):** `DATABASE_URL`, `DIRECT_URL`, `NEXTAUTH_SECRET`, `NEXTAUTH_URL` (https://www.orbitoms.in), `IMPORT_HMAC_SECRET` (v1 multipart auto path), `IMPORT_HMAC_SECRET_JSON` (v2 JSON auto path: `?action=auto-json` / `check` / `patch-headers` / `pending-invoices` — the path the live Auto-Import runs on), `MAIL_ORDER_HMAC_SECRET`, `CRON_SECRET`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`.
 
 **Local codebase:** `C:\Users\HP\OneDrive\VS Code\orbit-oms` · GitHub `jnsmartflow/orbit-oms`. Working branch: `main`.
 
@@ -95,7 +95,7 @@ Never introduce new libraries without being asked.
 | Tool | Location | Schedule | Purpose |
 |---|---|---|---|
 | `Parse-MailOrders-v6_5.ps1` | `C:\Users\HP\OneDrive\VS Code\mail-orders\` | continuous | Forwarded email parser. Outlook COM. Dedup via `processed_ids_fw.json`. |
-| `Auto-Import.ps1` v2.0 | `F:\VS Code\OBD-Import Tool v2\` | PAUSED | SAP OBD fetch. HMAC-signed ingest. Tally-based pagination, yesterday recovery, lazy session reuse. **Paused as of 2026-05-14**; manual SAP upload is the active path. |
+| `Auto-Import.ps1` v2.0 | `F:\VS Code\OBD-Import Tool v2\` | **LIVE** — every 10 min, 8AM–8PM IST | SAP OBD fetch. **Runs the v2 JSON path** (`?action=auto-json`, HMAC via `IMPORT_HMAC_SECRET_JSON`; batches stamp `headerFile` `[auto-import] auto-json`), plus the `patch-headers`/`pending-invoices` invoice sweep. Resumed 2026-06-20; the long-stale "paused 2026-05-14" claim was corrected in IMPORT 2026-08-03 (`4aad3622`) and here 2026-08-04 — SELECT 2026-08-04: 156 auto-json batches 2026-07-28→08-03, newest 2026-08-03 19:19 IST. Detail: `CLAUDE_IMPORT.md §10`. |
 | `Watch-Import-V2.ps1` | `F:\VS Code\OBD-Import Tool v2\` | manual | Cycle summary watcher. Supports `-Today` and `-Date YYYY-MM-DD` modes. |
 
 **Auto-Import v2 state files** (in `Master\`): `yesterday-recovery-state.txt`, `pending-upload.txt`, `last-spec-call.txt`, `last-noise-call.txt`, `obd-tally-<date>.txt`, `session-cookie.txt` (4-hour cache), `daily-state.txt`. ExecutionTimeLimit on `2_Auto_Import` scheduler task is `PT5M`. Repetition interval `PT10M`, `StopAtDurationEnd=false`.
@@ -114,16 +114,16 @@ Never introduce new libraries without being asked.
 |---|---|---|---|
 | 1 | admin | `/admin` | admin@orbitoms.in |
 | 2 | dispatcher | `/place-order` (gated, see below) | Ajay Vansiya, Dhanraj Shah |
-| 3 | support | `/place-order` (gated) | Priya Chaudhari, Rahul |
+| 3 | support | `/place-order` (gated) | Priya Chaudhari (id=31). ⚠ Rahul (§6 team) has NO active support user account — SELECT 2026-08-04 shows only Priya + a test account. |
 | 4 | tint_manager | `/tint/manager` | Chandresh Kolgha |
 | 5 | tint_operator | `/tint/operator` | Deepak Vasava, Chandrasing Valvi |
-| 6 | floor_supervisor | `/picking` | — |
-| 7 | picker | `/picking` | seeded |
+| 6 | floor_supervisor | `/picking` | Test Supervisor 1 (id=34) — test account, first real logins 2026-07-29 |
+| 7 | picker | `/picking` | Test Picker 1 (id=35), Test Picker 2 (id=36) — test accounts |
 | 12 | operations | `/floor` | operations@orbitoms.in |
 | 13 | billing_operator | `/mail-orders` | Deepanshu Thakur (id=25), Bankim (id=26) |
 | 14 | ops_admin | `/admin/attendance` | Dhruv (id=27), Kuldeep (id=28) |
 | 16 | logistics | `/trips` | Praveen (primary role — sees only Trip Report). Full detail: `CLAUDE_TRIP_REPORT.md §1`. |
-| — | operation_manager | `/tint/manager` | Undocumented role slug (2026-07-10 discovery) — exists live in `role_permissions`/`lib/rbac.ts` with NO confirmed `role_master` row/ID. Not invented here; may be a legacy slug or a real role missing from this table. Identify before relying on it. |
+| 15 | operation_manager | `/tint/manager` | Prakash (id=32, active). **CONFIRMED REAL 2026-08-04** (role_master SELECT: id 15; one active user) — settling the 2026-07-10 "undocumented slug, no confirmed row" open item; first flagged confirmed in `docs/prompts/drafts/web-test-plan-2026-07-29-picking-first-real-login.md`. |
 
 **Login redirects** (`lib/rbac.ts` `ROLE_REDIRECTS` map — verified against live code 2026-07-16, three entries corrected): admin→`/admin`, dispatcher→`/place-order`, support→`/place-order`, tint_manager→`/tint/manager`, tint_operator→`/tint/operator`, **floor_supervisor→`/picking`** and **picker→`/picking`** (both repointed 2026-07-28, commit `c4323cd4` — they previously landed on the `/warehouse/supervisor` and `/warehouse/picker` stubs, which forwarded to the now-archived, always-empty `/warehouse` board), **operations→`/floor`** (was `/operations/support`; repointed 2026-07-27 with the Support retirement, commit `3ff717e5`), billing_operator→`/mail-orders`, **ops_admin→`/admin/attendance`** (was wrongly `/admin`), operation_manager→`/tint/manager` (previously missing from this map entirely), logistics→`/trips`.
 
@@ -156,14 +156,15 @@ Primary role drives login redirect and href overrides. Additional rows add nav i
 
 | Page key | Granted to |
 |---|---|
-| `import_obd` | admin, billing_operator, tint_manager (canImport gated separately). ⚠ `dispatcher` and `support` appear in `prisma/seed.ts` for this key but are **`canView=false` LIVE** (SELECT 2026-07-28) — seed/live drift; see §5's gated-permissions note. |
+| `import_obd` | admin (view+import); `canImport=true` (with `canView=false` — import runs from the universal modal, not a page view) on billing_operator, tint_manager, **operations (granted 2026-08-01, commit `c8f8d020` + live row)** and operation_manager — SELECT 2026-08-04. ⚠ `dispatcher` and `support` appear in `prisma/seed.ts` with `canView`+`canImport` true but are **all-false LIVE** — seed/live drift; see §5's gated-permissions note. Import authority also lives in the client allow-list (`canImportOBDs`, mail-orders-page) and the route's `requireRole` — three places, keep in step. |
 | `delivery_challans` | tint_manager (view + edit), admin |
 | `shade_master` | tint_manager (view), admin — DEPRECATED, retiring soon (see §13) |
 | `ti_report` | tint_manager (view + export), admin |
 | `sampling_library` | tint_manager (view + edit), tint_operator (view), admin |
-| `customer_master` | admin, ops_admin, tint_manager (view + edit). ⚠ `support` and `dispatcher` are seeded but **`canView=false` LIVE** — same drift as `import_obd` above. |
+| `customers` | admin, operation_manager, tint_manager (view + edit) — SELECT 2026-08-04. ⚠ This row previously named the key **`customer_master`** and listed **ops_admin** — both wrong: the live key (and the `PageKey` union member, `lib/permissions.ts`) is `customers`, and ops_admin holds no row for it. ⚠ `support` and `dispatcher` are seeded but **`canView=false` LIVE** — same drift as `import_obd` above. |
 | `place_order` | admin, billing_operator, tint_manager, support, dispatcher |
-| `attendance` | all roles gated per rollout stage |
+| `attendance` | all roles gated per rollout stage — visibility from user-level flags, **no `role_permissions` row exists for this key by design** (`lib/permissions.ts` special-cases it) |
+| `attendance_admin` | the `/admin/attendance` dashboard key (separate from end-user `attendance`) — in the `PageKey` union and live `role_permissions`; previously missing from this table |
 | `removed_orders` | admin only |
 | `ti_report` (reused) | gates the Reports hub `/reports` (Tint Summary + TI Report) |
 | `settings_hide` | admin only (v27.6). In `PageKey` union + `ALL_PAGE_KEYS` (admin auto-ALL_TRUE), **NOT** in `PAGE_NAV_MAP` (that feeds operational sidebars; would duplicate the admin entry). |
@@ -196,14 +197,14 @@ Primary role drives login redirect and href overrides. Additional rows add nav i
 
 ## 7. Database schema — v27.12
 
-Versions: v21 base → v22 (mo_*) → v23 (orders dispatch) → v24 (customer match) → v25 (split) → v26 (mo_order_remarks) → v26.1 (isLocked) → v26.2 (mo_line_status) → v26.3 (carton + piecesPerCarton) → v26.4 (mo_learned_customers) → v26.5 (orders.orderDateTime) → v26.6 (user_roles + manual_tint_entries + users.phone + mo_sku_lookup.refDescription) → v27.0 (attendance foundation) → v27.1 (attendance settings hardening) → v27.2 (OT workflow + 2026-05-13 place-order v2 tables) → v27.3 (sampling_register + sampling_recipes + sampling_usage_log; orders.isRemoved + delivery_challans.isVoided; tint_skip_events + tint_pause_events; tint_assignments + import_raw_line_items netWeight/totalWeight) → v27.4 (sampling_usage_log.deliveryNumber backfill + tinter_issue_entries.samplingNo/shadeName) → v27.5 (customer_sales_officers + linkedSalesOfficerId on delivery_point_contacts + 3 columns on delivery_challan_formulas + sampling_recipes.packCode nullable with NULLS NOT DISTINCT + mo_sku_lookup_v2.isPrimary + mo_order_form_index_v2.mobileFamily) → v27.6 (mo_order_form_index_v2.region; Hide feature: `obd_visibility_rules` + `app_tag_settings` tables + orders.isHidden/hiddenById/hiddenReason/hiddenAt — §7.10) → v27.7 (Support gatekeeper + Hold/Dispatch-Target: orders.mailMatched; orders.heldAt, dispatchTargetDate, dispatchWindowId, arrivalSlotId; new `dispatch_slot_master` table — §7.4) → **v27.8** (Trip Report module, 2026-07-04/06: new standalone `trip_report` table — full columns → `CLAUDE_TRIP_REPORT.md §3`, §7.11 pointer here; `trip_report_delivery_no_dis_date_key` UNIQUE(deliveryNo, disDate); `mirror_trip_report_today` Postgres function) → **v27.9** (Support ship-to override, 2026-07-07: `orders.shipToOverrideCustomerId` Int? FK → `delivery_point_master`, relation `shipToOverrideCustomer` / `@relation("OrderShipToOverride")` — see dual-relation note in §7.3; `mo_orders.shipToOverrideCustomerId` Int? FK → `delivery_point_master`, relation `shipToOverrideCustomer` / `@relation("MoOrderShipToOverride")` — mo_orders' first relation to that table, no dual-relation trap) → **v27.10** (Picking Stage 2 — 2026-07-17/18 sessions, already shipped in code: `pick_assignments.checkedAt` DateTime? `@map("checked_at")` + `checkedById` Int? `@map("checked_by_id")`, relation `checkedBy` / `@relation("PickAssignmentCheckedBy")` — THIRD named relation from `pick_assignments` to `users`, alongside `picker`/`PickAssignmentPicker` and `assignedBy`/`PickAssignmentAssignedBy`, all correctly named on both sides today — no ambiguity. Supports the supervisor Approve step of the picking floor workflow — `CLAUDE_PICKING.md §6`) → **v27.11** (Flat SKU catalog, 2026-07-19, commit `916fcd39`: new standalone `sku_master_v2` table — 17 columns, FLAT, zero relations, `material` `@unique` as the natural key; mirrors `mo_sku_lookup_v2` MINUS `containerType`, PLUS `isActive` (new lifecycle flag) and `updatedAt` (`DateTime?`, hand-maintained, deliberately NO `@updatedAt`). Both timestamps carry `@db.Timestamptz(6)` — required, or Prisma emits plain `timestamp` and mismatches the live column. Built + poured via `docs/prompts/drafts/build-sku-master-v2-2026-07-19.sql`: 1,743 rows, 25 retired TOOLS `645xxxx` rows marked `isActive=false`. Old `sku_master` + its 3 FK helpers are now dead to operations, pending drop — §7.1.c) → **v27.12** (Push notifications + Picking live-sync, 2026-07-22: new standalone `push_subscriptions` table — 11 cols, `endpoint` UNIQUE `push_subscriptions_endpoint_key`, FK `userId`→users ON DELETE CASCADE, `updatedAt` a PLAIN `@default(now())` NOT `@updatedAt`; PLUS new index `orders_updatedAt_idx` on `orders("updatedAt" DESC)` backing the live-sync marker — §7.12).
+Versions: v21 base → v22 (mo_*) → v23 (orders dispatch) → v24 (customer match) → v25 (split) → v26 (mo_order_remarks) → v26.1 (isLocked) → v26.2 (mo_line_status) → v26.3 (carton + piecesPerCarton) → v26.4 (mo_learned_customers) → v26.5 (orders.orderDateTime) → v26.6 (user_roles + manual_tint_entries + users.phone + mo_sku_lookup.refDescription) → v27.0 (attendance foundation) → v27.1 (attendance settings hardening) → v27.2 (OT workflow + 2026-05-13 place-order v2 tables) → v27.3 (sampling_register + sampling_recipes + sampling_usage_log; orders.isRemoved + delivery_challans.isVoided; tint_skip_events + tint_pause_events; tint_assignments + import_raw_line_items netWeight/totalWeight) → v27.4 (sampling_usage_log.deliveryNumber backfill + tinter_issue_entries.samplingNo/shadeName) → v27.5 (customer_sales_officers + linkedSalesOfficerId on delivery_point_contacts + 3 columns on delivery_challan_formulas + sampling_recipes.packCode nullable with NULLS NOT DISTINCT + mo_sku_lookup_v2.isPrimary + mo_order_form_index_v2.mobileFamily) → v27.6 (mo_order_form_index_v2.region; Hide feature: `obd_visibility_rules` + `app_tag_settings` tables + orders.isHidden/hiddenById/hiddenReason/hiddenAt — §7.10) → v27.7 (Support gatekeeper + Hold/Dispatch-Target: orders.mailMatched; orders.heldAt, dispatchTargetDate, dispatchWindowId, arrivalSlotId; new `dispatch_slot_master` table — §7.4) → **v27.8** (Trip Report module, 2026-07-04/06: new standalone `trip_report` table — full columns → `CLAUDE_TRIP_REPORT.md §3`, §7.11 pointer here; `trip_report_delivery_no_dis_date_key` UNIQUE(deliveryNo, disDate); `mirror_trip_report_today` Postgres function) → **v27.9** (Support ship-to override, 2026-07-07: `orders.shipToOverrideCustomerId` Int? FK → `delivery_point_master`, relation `shipToOverrideCustomer` / `@relation("OrderShipToOverride")` — see dual-relation note in §7.3; `mo_orders.shipToOverrideCustomerId` Int? FK → `delivery_point_master`, relation `shipToOverrideCustomer` / `@relation("MoOrderShipToOverride")` — mo_orders' first relation to that table, no dual-relation trap) → **v27.10** (Picking Stage 2 — 2026-07-17/18 sessions, already shipped in code: `pick_assignments.checkedAt` DateTime? `@map("checked_at")` + `checkedById` Int? `@map("checked_by_id")`, relation `checkedBy` / `@relation("PickAssignmentCheckedBy")` — THIRD named relation from `pick_assignments` to `users`, alongside `picker`/`PickAssignmentPicker` and `assignedBy`/`PickAssignmentAssignedBy`, all correctly named on both sides today — no ambiguity. Supports the supervisor Approve step of the picking floor workflow — `CLAUDE_PICKING.md §6`) → **v27.11** (Flat SKU catalog, 2026-07-19, commit `916fcd39`: new standalone `sku_master_v2` table — 17 columns, FLAT, zero relations, `material` `@unique` as the natural key; mirrors `mo_sku_lookup_v2` MINUS `containerType`, PLUS `isActive` (new lifecycle flag) and `updatedAt` (`DateTime?`, hand-maintained, deliberately NO `@updatedAt`). Both timestamps carry `@db.Timestamptz(6)` — required, or Prisma emits plain `timestamp` and mismatches the live column. Built + poured via `docs/prompts/drafts/build-sku-master-v2-2026-07-19.sql`: 1,743 rows, 25 retired TOOLS `645xxxx` rows marked `isActive=false`. Old `sku_master` + its 3 FK helpers are now dead to operations, pending drop — §7.1.c) → **v27.12** (Push notifications + Picking live-sync, 2026-07-22: new standalone `push_subscriptions` table — 11 cols, `endpoint` UNIQUE `push_subscriptions_endpoint_key`, FK `userId`→users ON DELETE CASCADE, `updatedAt` a PLAIN `@default(now())` NOT `@updatedAt`; PLUS new index `orders_updatedAt_idx` on `orders("updatedAt" DESC)` backing the live-sync marker — §7.12) → **UNNUMBERED — 2026-07-20/30/31 additions, SELECT-verified live 2026-08-04; no version minted (the counter is Smart Flow's — assign one or fold into v27.13 when convenient):** (a) `orders.pickEarlyReleasedAt` Timestamptz(6) + `pickEarlyReleasedById` FK→users `@relation("OrderPickEarlyReleasedBy")` (Picking early-release 5b, 2026-07-20 — `CLAUDE_PICKING.md`); (b) **Billing v2** (2026-07-30/31, `docs/prompts/drafts/billing-phase-2-build-decisions.md` — behaviour docs land in the MAIL_ORDERS session): new singleton `billing_settings` (scope UNIQUE `billing_settings_scope_key`, `rolloutStage` enforced by CHECK `chk_billing_settings_rollout_stage` OFF|TEST_USERS_ONLY|ALL_USERS — live row TEST_USERS_ONLY); `users.billingV2TestUser` Boolean (read fresh per page load by `lib/billing/flag.ts`, deliberately NOT JWT-cached — live: user 20 only); `orders.invoicedAt` Timestamptz(6) + `invoicedById` FK→users `@relation("OrderInvoicedBy")` (billing mark-done — 22 rows already carry it); partial index `orders_billing_pending_idx` ON orders("workflowStage") WHERE invoicedAt IS NULL AND invoiceNo IS NULL AND isRemoved=false (partial — NOT expressible in Prisma, do not model as `@@index`); `mo_orders.dispatchTargetDate` @db.Date + `dispatchWindowId` FK → `dispatch_slot_master` (slot INTENT — live FK name is all-lowercase `mo_orders_dispatchwindowid_fkey`, Postgres folded it; a camelCase FK search comes back empty and looks like a missing FK) + partial index `mo_orders_slot_intent_idx`; (c) `sku_master_v2.displayCategory` + `displayName` (deferred friendly-name columns — §7.1.c).
 
 ### 7.1 Setup / Master
 
 ```
 status_master              UNIFIED. Domains: dispatch|tinting|pick_list|import|workflow|priority
 system_config              Key-value
-role_master                Roles 1-14 (see §5)
+role_master                Roles — ids 1-7 + 12-16, 12 rows live (see §5; SELECT 2026-08-04)
 role_permissions           (roleSlug, pageKey, canView, canImport, canExport, canEdit, canDelete)
 user_roles                 Multi-role assignment (§5)
 users                      Depot staff. bcryptjs 10 rounds. roleId FK. phone TEXT (nullable, 10-digit).
@@ -247,9 +248,14 @@ customer_sales_officers    v27.5. NEW. Multi-SO per customer.
 
 ```
 CustomerSalesOfficerRole   PRIMARY | BACKUP | JUNIOR
-PackCode                   L_1 | L_4 | L_10 | L_20 | L_18 | L_18_5 | L_3_7 | ML_*  ...
+PackCode                   17 values: ml_500 | L_0_9 | L_0_925 | L_1 | L_3_6 | L_3_7 | L_4 | L_9 |
+                           L_9_25 | L_10 | L_15 | L_18 | L_18_5 | L_20 | L_22 | L_30 | L_40
 TinterType                 TINTER | ACOTONE
+StatusDomain               dispatch | tinting | pick_list | import | workflow | priority (status_master.domain)
+SlotRuleType               time_based | default
 ```
+
+Five app enums total — pg_enum verified 2026-08-04 (value counts 3/17/2/6/2 match schema.prisma exactly).
 
 ### 7.1.c SKU catalog — THREE tables, keep them straight [v27.11, 2026-07-19]
 
@@ -267,13 +273,15 @@ versions of each other.** Read this before touching anything with "sku" in its n
 > `mo_sku_lookup` (v1). Table 1 belongs to the email parser and is not part of this story at all.
 > Confirm which table is meant before acting on the phrase.
 
-**`sku_master_v2` — 17 columns** (`prisma/schema.prisma`, no `@map`/`@@map` anywhere):
+**`sku_master_v2` — 19 columns** (`prisma/schema.prisma`, no `@map`/`@@map` anywhere; was 17 at v27.11 — `displayCategory`/`displayName` added later, see below):
 
 ```
 id               Int       PK autoincrement (surrogate — the machine pointer)
 material         String    @unique   ← THE NATURAL KEY (SAP material code)
 description      String              (serves old sku_master.skuName)
 category         String              (family: WS / GLOSS / TOOLS … — replaces product_category FK)
+displayCategory  String?             deferred friendly-name override — EMPTY, no readers yet
+displayName      String?             deferred friendly-name override — EMPTY, no readers yet
 product          String              (SAP-clean name — replaces product_name FK)
 baseColour       String              ('' when none, never NULL — replaces base_colour FK)
 packCode         String              TEXT, not the PackCode enum ("1", "500", "12")
@@ -300,8 +308,11 @@ updatedAt        DateTime?              @db.Timestamptz(6)
   manual.
 - **`containerType` was NOT carried forward** from old `sku_master` — it had no operational reader,
   only the retiring admin CRUD form.
-- **`skuDisplayName` deliberately does NOT exist yet.** The friendly-name-on-picking-card feature is
-  designed and proven but **deferred** — see `docs/ROADMAP.md`. Do not add the column speculatively.
+- **The friendly-name columns NOW EXIST but are inert** (corrected 2026-08-04 — this bullet used to say
+  "`skuDisplayName` deliberately does NOT exist yet"): `displayCategory` + `displayName` were added for
+  the deferred Picking-card friendly-name feature (SELECT-verified live 2026-08-04, both empty, read by
+  no code). The FEATURE is still deferred — see `docs/ROADMAP.md` / `CLAUDE_PICKING.md`. Do not wire
+  readers speculatively.
 
 **`material` (the SAP code) is the natural key for every repoint — never an internal row id.** It is
 identical across both tables, never null on a raw line (`import_raw_line_items.skuCodeRaw`), and is
@@ -366,10 +377,14 @@ orders                     workflowStage, slotId, originalSlotId, dispatchSlotDe
                            isHidden BOOLEAN DEFAULT false (indexed), hiddenById,
                            hiddenReason TEXT, hiddenAt TIMESTAMPTZ
 
-                           GATEKEEPER column (v27.7 — Support module, 06-23 session):
+                           GATEKEEPER column (v27.7 — built for the since-retired Support board):
                            mailMatched Boolean NOT NULL DEFAULT false — true when enrichment
-                           matched a mail order; envelope icon in Support table gates on this.
-                           Cannot use orderDateTime for this (it is NEVER null — see SUPPORT §5).
+                           matched a mail order. ⚠ WRITE-ONLY since 2026-07-27: its only UI
+                           consumer (the Support table's envelope icon) was archived with the
+                           board; a repo sweep 2026-08-04 finds ONE reference — the enrichment
+                           write (app/api/import/obd/route.ts:249) — and no reader. Kept: it is
+                           still the only record of "this OBD arrived via mail", and
+                           orderDateTime cannot proxy for it (it is NEVER null).
 
                            HOLD + DISPATCH-TARGET columns (v27.7 — Support module, 06-27 session):
                            heldAt TIMESTAMPTZ? — hold footprint anchor; set to obdEmailDate (NOT wall-clock)
@@ -398,6 +413,23 @@ orders                     workflowStage, slotId, originalSlotId, dispatchSlotDe
                            The legacy boolean `shipToOverride` flag is retained and kept in sync
                            (true when an id is set, false when cleared) — a flag can still be true
                            with the id null (free-text redirects with no resolved customer).
+
+                           PICKING EARLY-RELEASE columns (2026-07-20, unnumbered — §7 chain):
+                           pickEarlyReleasedAt TIMESTAMPTZ?, pickEarlyReleasedById INT? FK → users
+                           relation @relation("OrderPickEarlyReleasedBy"). Timestamp+actor, NOT a
+                           stage value — behaviour: CLAUDE_PICKING.md.
+
+                           BILLING MARK-DONE columns (2026-07-30, unnumbered — §7 chain):
+                           invoicedAt TIMESTAMPTZ?, invoicedById INT? FK → users
+                           relation @relation("OrderInvoicedBy") — the billing operator's "marked
+                           invoiced" decision, distinct from SAP's invoiceNo/invoiceDate facts.
+                           Clearing invoicedAt is the Undo. Backed by partial index
+                           orders_billing_pending_idx (§7 chain). Behaviour docs land with the
+                           MAIL_ORDERS reconciliation session.
+                           ⚠ Every FK to users on this table MUST carry a named @relation on both
+                           sides — FIVE exist now (OrderPickedBy / OrderRemovedBy / OrderRestoredBy /
+                           OrderPickEarlyReleasedBy / OrderInvoicedBy; hiddenById is a bare Int with
+                           no relation) — an unnamed one is a Prisma ambiguity ERROR.
 
 order_splits               Per tint batch/split
 split_line_items           Per line
@@ -542,6 +574,13 @@ mo_orders                  Per parsed email
                            @relation("MoOrderShipToOverride") — mo_orders' FIRST relation to
                            delivery_point_master, no dual-relation trap. Legacy boolean
                            `shipToOverride` retained. Full detail: CLAUDE_MAIL_ORDERS.md §6.
+                           SLOT INTENT (2026-07-30, unnumbered — §7 chain): dispatchTargetDate
+                           @db.Date + dispatchWindowId FK → dispatch_slot_master (live FK name
+                           all-lowercase mo_orders_dispatchwindowid_fkey). The operator's slot
+                           DECISION, carried at enrichment into orders with
+                           dispatchSlotSource='manual' BEFORE the engine loop so the §7.4
+                           manual-skip guard honours it. Written together or not at all.
+                           As-built record: docs/prompts/drafts/billing-phase-2-build-decisions.md.
 mo_order_lines             Per product line. isCarton, cartonCount.
 mo_order_remarks           billing|delivery|contact|instruction|cross|customer|area|unknown
 mo_line_status             SKU found/not-found tracking
@@ -936,13 +975,13 @@ Supporting facts for the same area:
 - **`CATEGORY_KEYWORDS` constant** in `enrich.ts` — dead code.
 - **GEN SKUs** — 8 deleted: `5860311, 5984151, 5967877, 5955808, 5955810, 5955818, 5955826, 5911947`. If new GEN SKUs appear in imports, delete them.
 - **Challan sequence allocation must include voided rows** — opposite of every other challan read. Don't filter `isVoided: false` in sequence-numbering queries.
-- **Auto-Import paused** — only manual SAP upload runs since 2026-05-14. If resumed, audit cross-source orphan policy first (see `CLAUDE_IMPORT.md §15`).
+- **~~Auto-Import paused~~ — WRONG, corrected 2026-08-04. Auto-Import is LIVE** (resumed 2026-06-20; §4). This "paused since 2026-05-14" line survived six weeks stale here and in IMPORT (corrected there 2026-08-03, `4aad3622`) and was quoted onward by a discovery draft — a doc claim is not a data claim, SELECT `import_batches` before repeating it. The open item it carried is still open: the cross-source orphan policy audit (`CLAUDE_IMPORT.md §15`) was never done before the resume.
 - **`shade_master` deprecated.** Sampling Library Phase 4 shipped (2026-05-25). All new shade saves write to `sampling_register` + `sampling_recipes` + `sampling_usage_log`. `shade_master` table still exists with historical data but is no longer read or written by the live operator workflow. Scheduled for deletion after a retention window. Do not write to it.
 - **Split-done usage-log gap.** `app/api/tint/operator/split/done/route.ts` never writes a `sampling_usage_log` row. Split-completed tints never appear in the Sampling Library usage history or same-site suggestions. Pre-existing, separate from any other tint bug. ROADMAP item: decide whether splits should log usage.
 - **`/api/order/data` and `/api/place-order/data` carry duplicated v2 payload queries** — no shared helper yet. If you edit the v2 payload shape, edit BOTH or extract a shared builder.
 - **Legacy `mo_order_form_index` + `mo_sku_lookup` orphaned by `/po` and `/place-order`** — both frontends read v2 tables (the retired `/order` moved across on 2026-05-29, before it went). BUT the mail parser + enrichment still read the LEGACY tables. Do NOT delete the legacy tables until the parser is migrated to v2 (Stage 3 of the v2 single-source plan; see `CLAUDE_PLACE_ORDER.md`).
 - **Pre-existing `prisma.$transaction` in admin customer routes** (`app/api/admin/customers/route.ts` lines 133 & 186) — flagged in multi-SO commit, left untouched. Refactor when convenient.
-- **NULL three-valued logic (Hide filter).** Prisma `NOT { field: value }` on a NULLABLE column DROPS NULL rows (a "hide if HOLD" rule hid every order whose `dispatchStatus` was null). For "exclude matching" filters build NULL-safe KEEP conditions: `{ OR: [ { field: null }, { field: { not: value } } ] }`, AND-combined. Implemented in `getHideExclusion()`. The hide filter is AND-merged into every order-display query (Tint Manager, TM missing-customers, Tint Operator my-orders, Support, Planning, Warehouse, Operations) — NOT into Hidden-Orders/restore views, challan audit OR, import internals, or `mo_orders` (out of v1 scope).
+- **NULL three-valued logic (Hide filter).** Prisma `NOT { field: value }` on a NULLABLE column DROPS NULL rows (a "hide if HOLD" rule hid every order whose `dispatchStatus` was null). For "exclude matching" filters build NULL-safe KEEP conditions: `{ OR: [ { field: null }, { field: { not: value } } ] }`, AND-combined. Implemented in `getHideExclusion()`. Live consumer list (call-site sweep 2026-08-04 — the old list named the retired Support/Planning/Warehouse boards): Tint Manager orders, TM missing-customers, Tint Operator my-orders, Operations summary, **Floor — all five feeds** (`lib/floor/queries.ts`), **Billing Pending** (`lib/billing/picking-where.ts`; the billing DONE arm skips it deliberately — see that route's comment), Tint Summary report. NOT into Hidden-Orders/restore views, challan audit OR, import internals, or `mo_orders` (out of v1 scope). ⚠ **Picking does NOT apply it** (`lib/picking/queue.ts` — zero calls): an admin-hidden order is invisible on Floor but visible on Picking. Standing asymmetry, not an accident of this pass — decide per-surface.
 - **`orders.dispatchStatus` Hold value is lowercase `"hold"`.** The capitalized `"Hold"` belongs to the mail-orders pipeline (`getOrderSignals` status badge), not the orders table.
 - **MO badges are centralized in `getOrderSignals()`** (one emit point — easy to tag-gate, §MAIL_ORDERS §21). **Tint badges are NOT centralized** (hardcoded across 3 components, `getAgeBadge` duplicated) — gating them needs a shared badge registry first (the deferred "hard part").
 - **Hide does NOT delete.** Rules + manual hide are reversible; rule-hidden orders have no per-order un-hide in v1 (Hidden Orders shows "Managed by rule"); only manual hides get an Un-hide button.
@@ -953,6 +992,7 @@ Supporting facts for the same area:
 - **SECURITY — broad no-role-check gap across `app/api/mail-orders/**`** — most routes check only "is there a valid session," never role/permission (full route list: `CLAUDE_MAIL_ORDERS.md §18`). Any logged-in user of any role can PATCH/POST Mail Orders data by calling these directly. Consequence: a view-only (`canEdit=false`) grant on this module — e.g. `tint_manager`'s — is currently a UI illusion only, not server-enforced.
 - **Mail Orders write routes gate on `canView`, not `canEdit`** — same pattern independently found on `/picking`'s write routes (`assign`/`unassign` both check `canView`). There is no distinct read-only access on either module today; a real write probably should check `canEdit`. Pre-existing on both, not introduced by any one session.
 - **`addToPackMap` dedupe-collision risk** (`app/api/place-order/data/route.ts` and `/api/order/data`) — dedup key is first-row-wins with **no `orderBy`** on the `skuRows` query. If two `isPrimary=true` rows ever collide on the same rendered pack, which one wins is unspecified. Unrelated to the isPrimary filter itself (§7.7) — a separate, still-open risk.
+- **Floor selection: the table-header checkbox is a toggle-all, NOT a clear; Esc has ONE owner** (2026-07-26 action-surfaces redesign, shipped — recorded in `docs/prompts/drafts/web-update-2026-07-26-floor-action-surfaces.md` §5, still unmerged into `CLAUDE_FLOOR.md`). `lib/floor/selection.ts` `toggleAll()` on a PARTIAL selection selects-all rather than clearing, and it is per-group — which is why a global Clear affordance must exist somewhere. `floor-page.tsx` is the single window-level Esc owner for the whole floor tree; **never add a second Esc keydown listener under `components/floor/`** (two listeners race in registration order). Full spec belongs to the FLOOR reconciliation session — this entry only stops a CORE reader from "fixing" either behaviour.
 - **"WHITE BASE" in a SKU `description` does NOT reliably mean Brilliant White** — at least 3 WS Powerflexx SKUs were found misfiled under `baseColour='BRILLIANT WHITE'` despite being `90 BASE` (fixed 2026-07-16). Likely not isolated — a catalog-wide `description ILIKE '%WHITE BASE%'` sweep under `baseColour='BRILLIANT WHITE'` is a candidate follow-up, not yet run.
 
 ---
@@ -977,9 +1017,35 @@ Quick index; full detail in domain file maps.
 | `lib/hide/*` | `visibility.ts`, `tag-settings.ts`, `tag-catalog.ts` (Hide feature) | §7.10, UI §57 |
 | `lib/reports/tint-summary-data.ts` | Tint Summary report data source-of-truth | TINT §12 |
 | `lib/picking/picker-split.ts` | `splitPickerRows()` — the picker's Pending/Done + today-IST rule, called by BOTH the server page and the client shell so the two can never disagree about which tab a bill is in. Pure: no I/O, and the clock is passed in rather than read inside. Also the reference implementation for the offset-less-`Date.parse` rule (§3) | PICKING §5.4 |
+| `lib/billing/flag.ts` + `lib/billing/picking-where.ts` | Billing v2 rollout gate (per-page-load read of `billing_settings` + `users.billingV2TestUser`) · shared WHERE builders for the billing Picking tab (list + marker read the same predicate) | doc home pending — MAIL_ORDERS session (as-built: `drafts/billing-phase-2-build-decisions.md`) |
+| `lib/dispatch/punch-clock.ts` | arrival-clock validation feeding the dispatch engine (2026-08-02/03 commits `03b6dd19`→`dee603dc`: a date-only punch is a DAY, not a clock — both arrival clocks validated before slotting) | §7.4-adjacent; doc home pending — flag for the next IMPORT/FLOOR pass |
 
 Engineering note: a parallel session owns `scripts/_*` scratch files (sampling/report seed helpers) — they throw `tsc --noEmit` errors but are never committed; exclude `scripts/_*` from tsconfig or delete to keep the gate clean. Same treatment for `docs/dhruv-review/**` (added 2026-07-08) — a parked, untracked draft-review snapshot with its own stale/incomplete types; excluded from `tsconfig.json` for the same reason (never committed, not live code).
 
 ---
 
-*CORE v89 · Schema v27.12 · OrbitOMS · updated 2026-07-30*
+## Change log — v90 (2026-08-04 reconciliation pass, method v1.1)
+
+Evidence: read-only SELECTs against production 2026-08-04 + call-site sweeps + git log. Claim IDs from the session report.
+
+- CORE-1/2 (§4 tool table + §13): Auto-Import "PAUSED since 2026-05-14" → **LIVE** — 156 `[auto-import] auto-json` batches 2026-07-28→08-03; runs the v2 JSON path.
+- CORE-3 (§4): env list gains `IMPORT_HMAC_SECRET_JSON` (required by the live v2 handlers).
+- CORE-5 (§5): `operation_manager` confirmed real — role_master id 15, Prakash id 32 (settles the 2026-07-10 open item; source: web-test-plan draft, DB-verified).
+- CORE-6/7 (§5): floor_supervisor/picker/support "Key users" updated to live accounts; Rahul has no active support account.
+- CORE-8 (§5): `import_obd` grants row rebuilt from live (operations + operation_manager canImport, 2026-08-01 grant; dispatcher/support all-false drift now includes canImport).
+- CORE-9 (§5): page key `customer_master` → **`customers`**; grants are admin/operation_manager/tint_manager, NOT ops_admin.
+- CORE-10 (§5): `attendance_admin` page key row added; `attendance` row notes its no-DB-row design.
+- CORE-11 (§7): version chain gains the unnumbered 2026-07-20/30/31 additions (pickEarlyReleased*, billing_settings, billingV2TestUser, invoicedAt/ById + partial index, mo_orders slot intent + lowercase FK name, sku_master_v2 display columns). No version minted — Smart Flow's counter.
+- CORE-12 (§7.1): role_master "Roles 1-14" → ids 1-7 + 12-16.
+- CORE-13 (§7.1.b): enum list completed (StatusDomain, SlotRuleType; PackCode = 17 real values) — pg_enum verified.
+- CORE-14/15 (§7.1.c): sku_master_v2 17 → 19 columns; "skuDisplayName does not exist" bullet inverted to match reality (columns exist, inert).
+- CORE-16 (§7.3): `mailMatched` — Support envelope consumer is archived; flag is write-only today; dead `SUPPORT §5` pointer removed.
+- CORE-17/18 (§7.3, §7.6): orders billing/early-release columns + mo_orders slot intent documented.
+- CORE-19 (§13): hide-filter consumer list rebuilt from live call sites (Floor five feeds + Billing Pending + Tint Summary in; retired Support/Planning/Warehouse out; Picking's deliberate non-application flagged).
+- CORE-20 (§13): new landmine — Floor toggle-all/single-Esc-owner (from the unmerged 2026-07-26 action-surfaces draft; FLOOR session owns the full spec).
+- CORE-21 (§15): rows for lib/billing/*, lib/dispatch/punch-clock.ts (doc homes pending).
+- CORE-22 (§1): OBD pipeline line no longer names the retired Support/Planning steps as live.
+
+---
+
+*CORE v90 · Schema v27.12 (+ unnumbered 2026-07-30/31 billing additions — §7) · OrbitOMS · updated 2026-08-04*

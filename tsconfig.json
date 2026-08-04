@@ -22,5 +22,5 @@
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules", "scripts/_*.ts", "scripts/_tmp/**", "docs/dhruv-review/**", "archive"]
+  "exclude": ["node_modules", "scripts/_*.ts", "scripts/_tmp/**", "docs/dhruv-review/**", "docs/_backup_*/**", "archive"]
 }
