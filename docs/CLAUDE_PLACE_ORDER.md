@@ -1,5 +1,5 @@
 # CLAUDE_PLACE_ORDER.md — Place Order Module
-# v1.7 · Schema v27.12 · July 2026 · updated 2026-07-27
+# v1.8 · Schema v27.12 · August 2026 · updated 2026-08-04
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -20,7 +20,7 @@ Primary users: admin, billing_operator, tint_manager. Restricted-view users: sup
 
 ## 1. What this page is
 
-Operator types a phone order quickly while a dealer is on the line. Output is a `mailto:` link. Desktop `/place-order` emits the plain order body; `/po` intentionally diverges (carries Dispatch / Remark / Note / conditional Ship-to lines — §25), though a plain `/po` order is byte-identical to it. The retired `/order` shared that same plain body. The email lands back in OrbitOMS and is parsed by `Parse-MailOrders-v6_5.ps1`.
+Operator types a phone order quickly while a dealer is on the line. Output is a `mailto:` link. Desktop `/place-order` emits the plain order body; `/po` intentionally diverges (carries Dispatch / Remark / Note / conditional Ship-to lines — §25), though a plain `/po` order is byte-identical to it. The retired `/order` shared that same plain body. The email lands back in OrbitOMS and is parsed by the Mail Orders parser (**V7 line — version ruling + repo/live split owned by `CLAUDE_MAIL_ORDERS.md §3`**, do not restate numbers here; this line named "v6_5" until 2026-08-04). App-format `/po`/`/place-order` emails route through its `Parse-AppBody` path (`CLAUDE_MAIL_ORDERS.md §3.1`).
 
 Keep the page fast — no scroll, no nested popovers, keyboard-first on desktop, thumb-first on mobile.
 
@@ -138,6 +138,8 @@ SET "canView" = EXCLUDED."canView", "canEdit" = EXCLUDED."canEdit";
 ```
 
 Login redirect (`lib/rbac.ts`): support → `/place-order`. dispatcher → `/place-order`.
+
+⚠ **Role vs page key — `dispatcher` is BOTH words, only one survives.** Everything in this section is about the `dispatcher` **ROLE** (live, 3 active users incl. Ajay + Dhanraj — CORE §5, grants re-SELECTed 2026-08-04: `place_order` canView only, everything else all-false; the seed still wrongly grants more). The `dispatcher` **PAGE KEY** was retired 2026-07-28 with the Planning board (CORE §12) — same word, different union. Say which is meant whenever editing anything named "dispatcher".
 
 ---
 
@@ -369,7 +371,7 @@ falsifying the loose-selling UI decision. `PRODUCT_CARTON_OVERRIDES` is the righ
 loose-selling is a UI concern, not a data correction. Option B remains viable if cartons ever
 diverge *factually* for the same pack label.
 
-**Piece/box packs (TOOLS, 2026-06-08):** `unit="PC"`, `packCode="25"` (rollers) / `"12"` (brushes) → distinct lookup keys `25PC`/`12PC`. `formatPack` PC → **"1 pc"**; `PACK_CONTAINER_MAP` `25PC`→"box of 25", `12PC`→"box of 12". Helper **`packStepForPack(packCode, unit, productKey?)`** (with `PIECE_BOX_STEP { "25PC":25, "12PC":12, "500PC":500 }`, unlisted PC code → `?? 1`) **delegates to the label-keyed `packStep` for every non-PC pack** (paint byte-identical); used by desktop `variant-grid.tsx` AND both mobile renderers. Distinct keys are what let two carton sizes coexist (the label-keyed map couldn't carry both).
+**Piece/box packs (TOOLS, 2026-06-08):** `unit="PC"`, `packCode="25"` (rollers) / `"12"` (brushes) → distinct lookup keys `25PC`/`12PC`. `formatPack` PC → **"1 pc"**; ⚠ **this is why a `/po` TOOLS order line reads `"… - 1 pc*12"`** — a shape the parser's shared pack detectors reject (the letter left of the `*` blocks `\d+\s*\*\s*\d+`). **Parser v7.3 fixed this on the APP PATH ONLY** (`Parse-AppBody` STEP C peels the unit word; the human path deliberately untouched — `CLAUDE_MAIL_ORDERS.md §3`). Do not "fix" `formatPack` to drop the unit — the cell label and email shape are a fixed app contract the parser now handles. `PACK_CONTAINER_MAP` `25PC`→"box of 25", `12PC`→"box of 12". Helper **`packStepForPack(packCode, unit, productKey?)`** (with `PIECE_BOX_STEP { "25PC":25, "12PC":12, "500PC":500 }`, unlisted PC code → `?? 1`) **delegates to the label-keyed `packStep` for every non-PC pack** (paint byte-identical); used by desktop `variant-grid.tsx` AND both mobile renderers. Distinct keys are what let two carton sizes coexist (the label-keyed map couldn't carry both).
 
 **New pack step defaults to 1** when the label isn't in `PACK_STEP_MAP` — so a per-unit pack like the Spray Paint **400 ml can** (`formatPack(400,ML)→"400 ml"`, `PACK_CONTAINER_MAP["400ML"]="can"`) needs no `packStepForPack` edit.
 
@@ -756,13 +758,13 @@ that here.
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/api/place-order/quick-tiles` | Returns 9-tile config + counts (desktop) |
-| GET | `/api/order/data` | Returns hydrated v2 form index + SKU lookup (used by `/order` mobile **AND `/po`** — confirmed 2026-07-15, `app/po/po-page.tsx:752`). Public. Filters `isPrimary = true` on SKU lookup. |
+| GET | `/api/order/data` | Returns hydrated v2 form index + SKU lookup — **serves `/po`** (`app/po/po-page.tsx`; the retired `/order` was its original consumer, which is why the route keeps that name — a SURVIVOR, CORE §12). Public (`middleware.ts` keeps `/api/order` in the public list). Filters `isPrimary = true` on SKU lookup. |
 | GET | `/api/place-order/data` | Returns same shape (used by `/place-order` desktop only). Session-auth'd. **Also filters `isPrimary = true`** on SKU lookup as of commit `46b500fb` (2026-07-15) — confirmed live 2026-07-16, `route.ts:92-93`. |
 | POST | `/api/place-order/last-order` | Returns last order normalised to units for given customerCode |
 
 All routes: `export const dynamic = 'force-dynamic'`.
 
-**Route sharing (confirmed 2026-07-15):** `/place-order` is the **only** surface with its own data route AND its own search matcher (`queries.ts`). `/po` and `/order` share both `/api/order/data` and the mobile matcher (`rankProductsForQuery`, `mobile-search.ts`).
+**Route sharing:** `/place-order` is the **only** surface with its own data route AND its own search matcher (`queries.ts`). `/po` uses `/api/order/data` and the mobile matcher (`rankProductsForQuery`, `mobile-search.ts`) — both were shared with `/order` until its 2026-07-27 retirement; the route and matcher survive as `/po`'s.
 
 **Duplicated payload queries:** `/api/order/data` and `/api/place-order/data` both build the v2 payload via duplicated queries. No shared helper yet. If you edit the v2 payload shape, edit BOTH or extract a shared builder. CORE §13 landmine.
 
@@ -998,7 +1000,7 @@ All work in **`app/po/po-page.tsx`** (single file). `/po` email intentionally di
 - **Add / Delete / Duplicate** bill from an always-visible bill bar (desktop `/place-order` matched this 2026-06-09 via `renumberBills()`). Delete: renumber 1..n (no gaps), repoint `activeBillId`; confirm sheet only when the bill has lines (empty deletes instantly); disabled at 1 bill. Duplicate: **deep-copy** each line + its nested `packQtys` (`CartLine` is scalars + one nested map — spread both), insert after source.
 
 ### Review & options
-Order-level (one set per multi-bill send): **Dispatch** (Normal · Urgent · **Call**, Call last; "Call" requires an SO/Dealer target via a sheet → email "Call to SO/Dealer"), **Remarks** 2×2 (Truck / Cross / Bounce / DTS, re-tap clears; Cross opens a depot picker Dahisar/Ahmedabad/Rajkot/Pune), **Notes** (free text + Quick-add presets), **Ship-to** (autocomplete; omitted from email when "same as billing"). "Hold" dispatch is removed (stale drafts coerce to "Normal" on restore). Desktop options panel is always-open (no "More options" collapse).
+Order-level (one set per multi-bill send): **Dispatch** (Normal · Urgent · **Call**, Call last; "Call" requires an SO/Dealer target via a sheet → email "Call to SO/Dealer"), **Remarks** 2×2 (Truck / Cross / Bounce / DTS, re-tap clears; Cross opens a depot picker Dahisar/Ahmedabad/Rajkot/Pune), **Notes** (free text + Quick-add presets), **Ship-to** (autocomplete; omitted from email when "same as billing"). **"Hold" dispatch is ABSENT BY DESIGN — the gap the retirement parity-gate flagged, re-verified in code 2026-08-04.** `/order` offered Normal·Hold·Urgent; `/po`'s union is `"Normal" | "Urgent" | "Call"` (`po-page.tsx:84` — its own comment says Call *replaces* Hold), desktop's `EmailDispatch` matches, and stale drafts coerce a stored "Hold" to "Normal" on restore (both surfaces). The owner accepted the loss at the 2026-07-27 retirement (`archive/RETIREMENT-PLAYBOOK.md §4`). ⚠ Dormant capability: the parser's app-format template still accepts a `Dispatch: Hold` line (`CLAUDE_MAIL_ORDERS.md §3.1`) — no live surface emits it; re-adding Hold to `/po` would be a UI change only. Desktop options panel is always-open (no "More options" collapse).
 
 ### Browser-history back-nav (the single back authority)
 Android hardware Back and iPhone edge-swipe step *back through screens* instead of exiting. **Every forward screen and every overlay pushes exactly one `pushState` entry; every back (hardware/swipe/in-app button) goes through `history.back()` → one popstate handler closes the topmost layer.** Refs: `depthRef` (entries above base), `suppressPopRef` (ignore programmatic pops), `navStateRef` (live screen state so the handler never reads a stale closure). Initial load = base entry = landing (never pushed). **Adding any new screen/overlay MUST: push on open, close via `history.back()`, and be added to both the popstate branch and `navStateRef`** — or Back skips/strands. (The Call sheet is the worked example.) Back-on-build-with-lines raises the change-customer discard confirm (Cancel re-pushes a build entry; Discard → landing).
@@ -1058,4 +1060,18 @@ Manifest `display_override: ["standalone"]`; `html,body { overscroll-behavior: n
 
 ---
 
-*Place Order v1.7 · Schema v27.12 · OrbitOMS*
+## Change log — v1.8 (2026-08-04 reconciliation pass, method v1.1)
+
+Evidence: po-page.tsx / place-order-page.tsx / email.ts / pack.ts / fav-customers.ts read at the call sites; CORE v91 / MAIL_ORDERS v1.11 / UI v5.17 anchors. Claim IDs from the session report.
+
+- PO-1 (§1): the stale `Parse-MailOrders-v6_5.ps1` name replaced with a cross-ref to MAIL_ORDERS §3's version ruling (numbers not restated — they drift).
+- PO-2 (§9): the `/po` side of parser v7.3 documented — TOOLS lines emit `"1 pc*12"` (a fixed app contract); the parser peels the unit app-path-only; `formatPack` must not be "fixed".
+- PO-3 (§25): the Hold gap ruled — ABSENT BY DESIGN (Call replaces Hold; both surfaces verified in code 2026-08-04; owner accepted at retirement); the parser's dormant `Dispatch: Hold` template noted.
+- PO-4 (§16): `/api/order/data` no longer described as serving the retired `/order`; route-sharing line moved to past tense; the route named a SURVIVOR (CORE §12).
+- PO-5 (§3): role-vs-page-key clarifier added (dispatcher ROLE live, grants re-SELECTed 2026-08-04 via CORE §5; dispatcher PAGE KEY retired 2026-07-28).
+- Hygiene: the other 20 `/order` mentions verified past-tense-correct (succession story this file owns); Support @17 kept (grant-history pointer, already corrected 2026-07-27); `/order` overmatches on `/api/order/data` / `/order-demo` left as live facts.
+- Verified CORRECT, no change: v2 table shapes + isPrimary filters, pack step/carton tables, Favourites (cap-8 block, A-Z, localStorage), `draftsEnabled = true` launch state, ORDER_TO recipients, §25 back-nav/keyboard rules (UI §55 cross-ref stands).
+
+---
+
+*Place Order v1.8 · Schema v27.12 · OrbitOMS · updated 2026-08-04*
