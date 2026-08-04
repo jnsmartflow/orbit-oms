@@ -3359,22 +3359,47 @@ async function handleAutoImportPatchHeaders(req: Request): Promise<NextResponse>
     mailOwnedSkipped: 0,
     slotOverrideKept: 0,
     noChange:         0,
+    // Dispatch-window repair (Step B) — see the block in §c.
+    windowFixed:      0,
+    windowManualKept: 0,
+    windowDeclined:   0,
   };
   const changes: { obdNumber: string; fields: string[] }[] = [];
+
+  // Dispatch engine — windowTime ("10:30" etc.) → dispatch_slot_master.id.
+  // Loaded ONCE for the whole request, exactly as applyMailOrderEnrichment does
+  // (route.ts:235-239) — never per bill, and never a hardcoded id.
+  const activeWindows = await prisma.dispatch_slot_master.findMany({
+    where:  { isActive: true },
+    select: { id: true, windowTime: true },
+  });
+  const windowIdByTime = new Map(activeWindows.map((w) => [w.windowTime, w.id]));
 
   for (const raw of b.patchHeaders as Record<string, unknown>[]) {
     const obdNumber = toStr(raw["OBD Number"]);
     if (!obdNumber) { counts.notFound++; continue; }
 
+    // ONE read per bill — the dispatch-window repair below rides on this same
+    // select rather than adding a query. Scoped to this batch's obdNumbers;
+    // never a full-table scan (CORE §7.4).
     const existing = await prisma.orders.findUnique({
       where:  { obdNumber },
       select: {
-        id:             true,
-        orderType:      true,
-        slotToOverride: true,
-        orderDateTime:  true,
-        invoiceNo:      true,
-        invoiceDate:    true,
+        id:                 true,
+        orderType:          true,
+        slotToOverride:     true,
+        orderDateTime:      true,
+        invoiceNo:          true,
+        invoiceDate:        true,
+        // Dispatch-window repair inputs + the "old" half of the log line.
+        smu:                true,
+        dispatchStatus:     true,
+        dispatchSlotSource: true,
+        dispatchTargetDate: true,
+        dispatchWindow:     { select: { windowTime: true } },
+        customer: {
+          select: { area: { select: { deliveryType: { select: { name: true } } } } },
+        },
       },
     });
 
@@ -3437,6 +3462,76 @@ async function handleAutoImportPatchHeaders(req: Request): Promise<NextResponse>
               counts.slotFixed++;
             } else {
               counts.slotOverrideKept++;
+            }
+          }
+
+          // ── DISPATCH WINDOW REPAIR (Step B) ──────────────────────────────
+          //
+          // This pass already repairs the CLOCK. Until now it stopped there, so
+          // a manual-SAP bill kept whatever dispatch window was decided from the
+          // fake 05:30 date-only punch — the arrival slot and completion slot
+          // healed on this tick while the window it would actually ship in did
+          // not. Recompute it here, from the CORRECTED timestamps.
+          //
+          // Mirrors the import call site (route.ts:365-390) exactly: same
+          // resolveArrivalClocks, same scope gates inside the engine (smu /
+          // dispatchStatus / delivery type), same manual guard. The gates are
+          // NOT widened here — a bill the engine would not auto-slot at import
+          // must not become auto-slotted by a repair pass.
+          //
+          // Both corrected clocks are `newDT` because that is exactly what this
+          // update is about to store into orderDateTime AND obdEmailDate above,
+          // so the engine sees the row as it will be, not as it was.
+          if (existing.dispatchSlotSource === "manual") {
+            // A human's chosen slot is never overwritten (mirrors route.ts:366).
+            counts.windowManualKept++;
+          } else {
+            const deliveryType = existing.customer?.area?.deliveryType?.name ?? null;
+            const clocks = resolveArrivalClocks(newDT, newDT);
+            const slotResult = evaluateDispatchSlot({
+              smu:            existing.smu,
+              dispatchStatus: existing.dispatchStatus,
+              deliveryType,
+              emailDateTime:  clocks.emailDateTime,
+              punchDateTime:  clocks.punchDateTime,
+            });
+
+            if (!slotResult.assigned) {
+              // NEVER null out a slot that already exists — a decline means "no
+              // opinion", not "remove what is there". Leave every dispatch field
+              // untouched and let the operator keep whatever he can see.
+              counts.windowDeclined++;
+            } else {
+              const newWindowId = windowIdByTime.get(slotResult.windowTime);
+              if (newWindowId === undefined) {
+                console.warn(
+                  `[patch-headers][dispatch-engine] No active dispatch_slot_master row for windowTime=${slotResult.windowTime} — skipping obdNumber=${obdNumber}`,
+                );
+              } else {
+                const oldWindow = existing.dispatchWindow?.windowTime ?? "none";
+                const oldDate   = existing.dispatchTargetDate?.toISOString().slice(0, 10) ?? "none";
+                const newDate   = slotResult.targetDate.toISOString().slice(0, 10);
+
+                // FOLDED INTO THE EXISTING updateData — a second orders.update
+                // per bill would fire a false "changed" on every board's
+                // updatedAt live-sync marker (CORE §3 / CLAUDE_FLOOR.md §4).
+                updateData.dispatchTargetDate = slotResult.targetDate;
+                updateData.dispatchWindowId   = newWindowId;
+                updateData.dispatchSlotRuleId = slotResult.ruleId;
+                updateData.dispatchSlotSource = "auto";
+                changedFields.push(
+                  "dispatchTargetDate", "dispatchWindowId",
+                  "dispatchSlotRuleId", "dispatchSlotSource",
+                );
+                counts.windowFixed++;
+
+                console.log(
+                  `[patch-headers][dispatch-engine] Re-slotted obdNumber=${obdNumber} ` +
+                  `${oldDate} ${oldWindow} -> ${newDate} ${slotResult.windowTime} ` +
+                  `ruleId=${slotResult.ruleId} clock=${slotResult.clockUsed} ` +
+                  `effectiveDateTime=${slotResult.effectiveDateTime.toISOString()}`,
+                );
+              }
             }
           }
         }
