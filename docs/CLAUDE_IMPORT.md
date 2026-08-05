@@ -1,5 +1,5 @@
 # CLAUDE_IMPORT.md — OrbitOMS Import Pipeline
-# v1.7 · Schema v27.12 · August 2026 · updated 2026-08-04 · Lives in: orbit-oms/docs/
+# v1.7 · Schema v27.13 · August 2026 · updated 2026-08-04 · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
 Covers the SAP/OBD import pipeline end-to-end: manual SAP upload, Auto-Import (**LIVE** — see §10), the shared upsert utility that both paths funnel through, schema, filters, and downstream consumers.
@@ -768,6 +768,8 @@ Evidence: `import_batches` SELECTs (timestamps naive-UTC-corrected), the repo sc
 - IMP-11 (§15): open items — v2 build rows closed; orphan-policy item re-framed as live-relevant; HMAC_JSON var confirmed working; v1 handler flagged as a retirement candidate (owner decision).
 - §12.2 verified still NOT built (the fork still compares `receivedAt` vs `punchedAt` — `route.ts:322-331`); left as-is deliberately.
 
+- Schema stamp -> v27.13 (final-pass 12b, 2026-08-05).
+
 ---
 
-*Import v1.7 · Schema v27.12 · OrbitOMS · updated 2026-08-04*
+*Import v1.7 · Schema v27.13 · OrbitOMS · updated 2026-08-04*

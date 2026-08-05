@@ -1,5 +1,5 @@
 # CLAUDE_PICKING.md — Picking Module
-# v1.12 · Schema v27.12 · August 2026 · updated 2026-08-04
+# v1.12 · Schema v27.13 · August 2026 · updated 2026-08-04
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -998,6 +998,8 @@ Evidence: `lib/picking/queue.ts` + auth/route/board files read at the call sites
 - PCK-5 (§1/§5.4): test-hook wording updated — real picker/supervisor test accounts exist and land on `/picking`; whether the first-login test ran is not recorded.
 - PCK-6 (§9): the archive README verified to exist; conditional wording removed; the discovery draft archived this session (its unrun grants SQL is satisfied by the 07-28 + 08-04 SELECTs).
 
+- Schema stamp -> v27.13 (final-pass 12b, 2026-08-05).
+
 ---
 
-*CLAUDE_PICKING.md v1.12 · Schema v27.12 · Picking Module · August 2026 · updated 2026-08-04*
+*CLAUDE_PICKING.md v1.12 · Schema v27.13 · Picking Module · August 2026 · updated 2026-08-04*

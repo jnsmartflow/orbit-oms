@@ -1,5 +1,5 @@
 # CLAUDE_MAIL_ORDERS.md — Mail Orders Module (+ Billing v2 pilot, §23)
-# v1.11 · Schema v27.12 (+ unnumbered billing additions — CORE §7) · Parser v7.3.0 (repo copy; live PC ≥v7.2, exact deployed version unverifiable — §3) · Enrichment v3 · August 2026 · updated 2026-08-04
+# v1.11 · Schema v27.13 · Parser v7.3.0 (repo copy; live PC ≥v7.2, exact deployed version unverifiable — §3) · Enrichment v3 · August 2026 · updated 2026-08-04
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -44,7 +44,7 @@ mo_orders
   shipToOverride BOOLEAN, shipToOverrideCustomerId INT? (FK, v27.9 — §6),
   slotToOverride BOOLEAN, notes TEXT?,
   dispatchTargetDate DATE?, dispatchWindowId INT? (slot INTENT, 2026-07-30
-    unnumbered addition — CORE §7.6; written by the Billing v2 slot action, §23.3),
+    v27.13 addition — CORE §7.6; written by the Billing v2 slot action, §23.3),
   isLocked BOOLEAN DEFAULT false,
   splitFromId INT, splitLabel TEXT,
   createdAt
@@ -993,7 +993,7 @@ sequentially, never `$transaction`** (as-built record: `billing-phase-2-build-de
   `GET /api/billing/dispatch-windows`, gated on `mail_orders/canView` — Floor's equivalents gate on
   `floor`, which Deepanshu/Bankim don't hold (reusing them would 403 at rollout after a green
   pilot).
-- Slot-intent columns on `mo_orders`: CORE §7.6 owns the schema (unnumbered addendum; lowercase FK
+- Slot-intent columns on `mo_orders`: CORE §7.6 owns the schema (v27.13; lowercase FK
   name `mo_orders_dispatchwindowid_fkey`).
 
 ### 23.4 The Billing Picking tab [LIVE]
@@ -1072,6 +1072,8 @@ Evidence: git (18 commits verified), code call-sites, read-only SELECTs (ship-to
 - MO-6: resume §3 Import-permission question closed — `canImportOBDs` allow-list includes operations/operation_manager (code) + live `import_obd` grant (`c8f8d020`, CORE §5).
 - MO-7: resume §2 items verified SHIPPED in the 08-01 batch (header v7 → `d08f3870`/`f76b4c86`/`471e6808`; keyboard → `15e87e2b`/`f76b4c86`; Inbox+stats → `f91b94c8`/`471e6808`/`06a5c904`); only the human hand-checks remain open (§23.5).
 
+- Schema stamp -> v27.13 (final-pass 12b, 2026-08-05; the "(+ unnumbered billing additions)" qualifier is retired — that IS v27.13 now).
+
 ---
 
-*Mail Orders v1.11 · Schema v27.12 (+ unnumbered billing additions — CORE §7) · Parser v7.3.0 (repo copy; live ≥v7.2) · Enrichment v3 · updated 2026-08-04*
+*Mail Orders v1.11 · Schema v27.13 · Parser v7.3.0 (repo copy; live ≥v7.2) · Enrichment v3 · updated 2026-08-04*

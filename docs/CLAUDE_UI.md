@@ -1,5 +1,5 @@
 # CLAUDE_UI.md — OrbitOMS UI Design System
-# v5.17 · August 2026 · updated 2026-08-04 · No Schema stamp BY DESIGN (decided 2026-08-04) — this file tracks components, not tables · Lives in: orbit-oms/docs/
+# v5.18 · August 2026 · updated 2026-08-05 · No Schema stamp BY DESIGN (decided 2026-08-04) — this file tracks components, not tables · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md
 
 Single source of truth for visual styling across all screens.
@@ -816,7 +816,7 @@ Only available when `workflowStage === 'pending_tint_assignment'`. Server return
 
 ## 40. OT prompt screens (check-out)
 
-Used in `/attendance/check-out` flow when current IST hour >= `otCutoffHourIST`.
+Used in `/attendance/check-out` flow when current IST time >= `otTriggerTime` (⚠ corrected 2026-08-05 — this line cited `otCutoffHourIST`, a column that does not exist; `CLAUDE_ATTENDANCE.md §16`).
 
 ### Choice screen
 "Were you doing overtime work?" + amber callout with current time + trigger time.
@@ -1122,7 +1122,9 @@ export is app-wide. Verified against the code at the time of the move.*
 `style={{ height: "var(--vvh, 100vh)" }}` + `overflow-y-auto`. A mount-effect listens to
 `window.visualViewport` `resize`/`scroll` and writes the visible height into `--vvh` via
 `documentElement.style.setProperty` — **never React state**, which would cause a render
-storm. Live at `app/po/po-page.tsx:946` (writer) and `:2216` (consumer); the SSR fallback
+storm. Live in `app/po/po-page.tsx` — the writer is the `setProperty("--vvh", …)` call in the
+visualViewport mount-effect; the consumer is `<main>`'s `style={{ height: "var(--vvh, 100vh)" }}`
+(symbols verified 2026-08-05; line numbers dropped per §62.1's rule — they had already rotted); the SSR fallback
 `html { --vvh: 100vh }` is in `app/globals.css`. Full `/po` scroll-architecture rules
 (the single `flex-1 min-h-0` scroll area, the `keyboardOpen` gate, the resize+scroll
 double listener) are in `CLAUDE_PLACE_ORDER.md §25` — not restated here.
@@ -1145,7 +1147,7 @@ viewport when the soft keyboard opens rather than overlay it — that is what pa
 
 **Empty-state row.** Render gate is `inMultiSel && searchQuery.trim().length >= 2`. A
 zero-match query shows an italic `"No products match {query}"` row rather than nothing
-(`po-page.tsx:3229`).
+(the literal string is the anchor in `po-page.tsx` — de-lined 2026-08-05).
 
 **Input + tap patterns:**
 - Qty input `text-[16px]` — iOS auto-zoom prevention (§ the general rule at §12).
@@ -1153,8 +1155,9 @@ zero-match query shows an italic `"No products match {query}"` row rather than n
 - Single-pack products render `py-[18px]` + `text-[16px]` label (vs the default
   `py-[10px]` + `text-[14px]`).
 - Mount / mode-transition auto-focus is **desktop-only**, gated on
-  `window.matchMedia("(min-width: 768px)").matches` (`po-page.tsx:991, :1004, :1773`) —
-  focusing an input on a phone would spring the keyboard over the content.
+  `window.matchMedia("(min-width: 768px)").matches` (three gate sites in `po-page.tsx` — grep that
+  exact expression; de-lined 2026-08-05) — focusing an input on a phone would spring the keyboard
+  over the content.
 
 ### Favourites — replaces Recents on Home [LIVE, 2026-07-14]
 
@@ -1498,4 +1501,6 @@ Evidence: component import sweeps + folder listings + git log 2026-07-31→08-03
 - UI-11 (§27): Support tense fixed (retired board no longer described in the present).
 - UI-12 (§47→§55): extraction re-verified — `--vvh` fix, app-wide viewport export, empty-state row, qty/autofocus rules all present in §55; §47 pointer stands.
 
-*UI v5.17 · OrbitOMS · updated 2026-08-04 · No Schema stamp by design (see above)*
+- UI-13 (v5.18, final-pass 12b 2026-08-05): §55's four `po-page.tsx` line-number references replaced with file+symbol anchors per §62.1's own rule — each symbol re-verified live; the numbers had already drifted by 8 lines.
+
+*UI v5.18 · OrbitOMS · updated 2026-08-05 · No Schema stamp by design (see above)*

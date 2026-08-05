@@ -1,5 +1,5 @@
 # CLAUDE_ATTENDANCE.md — Attendance + OT Module
-# v1.3 · Schema v27.12 · August 2026 · updated 2026-08-04
+# v1.3 · Schema v27.13 · August 2026 · updated 2026-08-04
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -581,6 +581,8 @@ Evidence: `information_schema` SELECT on all three tables (live == Prisma; the d
 - ATT-8 (header/footer): dates added at both ends (the file had none anywhere).
 - Verified CORRECT, no change: rollout stages + JWT stale window, consent flow, check-in/out flows, photo path scheme + private bucket, §14 PWA facts (start_url `/`, the manifest-name experiment), grace policy, 1-char reason minimum.
 
+- Schema stamp -> v27.13 (final-pass 12b, 2026-08-05).
+
 ---
 
-*Attendance v1.3 · Schema v27.12 · OrbitOMS · updated 2026-08-04*
+*Attendance v1.3 · Schema v27.13 · OrbitOMS · updated 2026-08-04*

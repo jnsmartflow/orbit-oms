@@ -1,5 +1,5 @@
 # CLAUDE_SAMPLING_LIBRARY.md — Sampling Library Module
-# v1.6 · Schema v27.12 · August 2026 · updated 2026-08-04 · Phase 4 shipped 2026-05-25 · Cohort A+B restore 2026-05-27
+# v1.6 · Schema v27.13 · August 2026 · updated 2026-08-04 · Phase 4 shipped 2026-05-25 · Cohort A+B restore 2026-05-27
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -557,6 +557,8 @@ Evidence: one read-only SELECT (grants), pack-litres/suggest/formula-match/opera
 - SMP-5 (header/footer): version + date bumped both ends.
 - Verified CORRECT, no change: §2 schema blocks (match schema.prisma, read in full this cycle), §5 API table, §3's pre-drop `normalise-sampling-data.ts` risk (still tracked in CORE §13), §9 landmines incl. the split-done usage-log gap (still open — TINT §14 agrees), §7 import gotchas. **Retired-module hits: zero, as the inventory predicted — clean pass.**
 
+- Schema stamp -> v27.13 (final-pass 12b, 2026-08-05).
+
 ---
 
-*Sampling Library v1.6 · Schema v27.12 · August 2026 · Phase 4 shipped + Cohort A+B restored · OrbitOMS · updated 2026-08-04*
+*Sampling Library v1.6 · Schema v27.13 · August 2026 · Phase 4 shipped + Cohort A+B restored · OrbitOMS · updated 2026-08-04*

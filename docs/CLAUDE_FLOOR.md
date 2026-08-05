@@ -1,5 +1,5 @@
 # CLAUDE_FLOOR.md — Floor Control
-# v1.4 · Schema v27.12 · August 2026 · updated 2026-08-04
+# v1.4 · Schema v27.13 · August 2026 · updated 2026-08-04
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -345,6 +345,8 @@ Evidence: 12 commits git-verified, suggest.ts/queries.ts/rail-card/picker/action
 - FLR-5 (header/footer): the footer date-drift open item fixed — version + date now at both ends.
 - Support mentions (11): all verified legitimate (ownership/origin pointers) — none removed; §9's absorbed-assets table already says Floor owns them now.
 
+- Schema stamp -> v27.13 (final-pass 12b, 2026-08-05).
+
 ---
 
-*CLAUDE_FLOOR.md v1.4 · Schema v27.12 · OrbitOMS · updated 2026-08-04*
+*CLAUDE_FLOOR.md v1.4 · Schema v27.13 · OrbitOMS · updated 2026-08-04*

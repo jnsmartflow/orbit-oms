@@ -1,5 +1,5 @@
 # CLAUDE_TINT.md — Tint Module
-# v1.9 · Schema v27.12 · August 2026 · updated 2026-08-04
+# v1.9 · Schema v27.13 · August 2026 · updated 2026-08-04
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -726,6 +726,8 @@ Evidence: done/split routes + challan routes + globals.css read at the call site
 - TNT-5 (§14): challan lazy-creation landmine VERIFIED closed (the `[orderId]` route has no create call); `@page` top-level + the PATCH `$transaction` at `:527` re-confirmed as documented.
 - Hygiene: Support @112 (one-line history) and the `/order`/`/operations` hits (route-path + role-list overmatches) all verified legitimate — none changed.
 
+- Schema stamp -> v27.13 (final-pass 12b, 2026-08-05).
+
 ---
 
-*Tint v1.9 · Schema v27.12 · OrbitOMS · updated 2026-08-04*
+*Tint v1.9 · Schema v27.13 · OrbitOMS · updated 2026-08-04*

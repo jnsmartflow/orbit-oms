@@ -1,5 +1,5 @@
 # CLAUDE_NOTIFICATIONS.md — Push Notifications
-# v1.2 · Schema v27.12 · August 2026 · updated 2026-08-04
+# v1.2 · Schema v27.13 · August 2026 · updated 2026-08-04
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md
 
@@ -271,6 +271,8 @@ Both carry `⚠ TEMPORARY SCAFFOLDING` comments in code (list corrected 2026-08-
 - NTF-6 (footer): form drift fixed — footer now carries the schema stamp + date like the header.
 - Verified CORRECT, no change: quiet-hours constants (9/20 IST), self-suppression, toggle contract, dead-endpoint hygiene, VAPID env set, all 9 landmines.
 
+- Schema stamp -> v27.13 (final-pass 12b, 2026-08-05).
+
 ---
 
-*CLAUDE_NOTIFICATIONS.md v1.2 · Schema v27.12 · Push Notifications · OrbitOMS · updated 2026-08-04*
+*CLAUDE_NOTIFICATIONS.md v1.2 · Schema v27.13 · Push Notifications · OrbitOMS · updated 2026-08-04*

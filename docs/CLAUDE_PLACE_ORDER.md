@@ -1,5 +1,5 @@
 # CLAUDE_PLACE_ORDER.md — Place Order Module
-# v1.8 · Schema v27.12 · August 2026 · updated 2026-08-04
+# v1.8 · Schema v27.13 · August 2026 · updated 2026-08-04
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -1072,6 +1072,8 @@ Evidence: po-page.tsx / place-order-page.tsx / email.ts / pack.ts / fav-customer
 - Hygiene: the other 20 `/order` mentions verified past-tense-correct (succession story this file owns); Support @17 kept (grant-history pointer, already corrected 2026-07-27); `/order` overmatches on `/api/order/data` / `/order-demo` left as live facts.
 - Verified CORRECT, no change: v2 table shapes + isPrimary filters, pack step/carton tables, Favourites (cap-8 block, A-Z, localStorage), `draftsEnabled = true` launch state, ORDER_TO recipients, §25 back-nav/keyboard rules (UI §55 cross-ref stands).
 
+- Schema stamp -> v27.13 (final-pass 12b, 2026-08-05).
+
 ---
 
-*Place Order v1.8 · Schema v27.12 · OrbitOMS · updated 2026-08-04*
+*Place Order v1.8 · Schema v27.13 · OrbitOMS · updated 2026-08-04*

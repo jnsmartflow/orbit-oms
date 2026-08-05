@@ -1,5 +1,5 @@
 # CLAUDE_CORE.md — OrbitOMS Core
-# v91 · Schema v27.12 (+ unnumbered 2026-07-30/31 billing additions — §7) · August 2026 · updated 2026-08-04 · Lives in: orbit-oms/docs/
+# v92 · Schema v27.13 · August 2026 · updated 2026-08-05 · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_UI.md
 
 ---
@@ -61,7 +61,7 @@ Never introduce new libraries without being asked.
 - PowerShell on depot PC: PS 5.1. `[BitConverter]::ToString($h).Replace("-","").ToLower()` (not `[Convert]::ToHexString()`). `Invoke-WebRequest -UseBasicParsing` (not `Invoke-RestMethod`). `$x = default; try { $x = expr } catch { $x = fallback }` — never `$x = try {...} catch {...}` (PS7+ only).
 - Parser files UTF-8 with BOM for non-ASCII chars.
 - Google Maps URLs: `https://www.google.com/maps?q=LAT,LONG`. Never `place_id:` format.
-- HMAC-signed auto-import uses fixed string `"auto-import-v1"` (timestamp-free, avoids PC clock drift).
+- HMAC-signed auto-import: the LIVE path signs with fixed string `"auto-import-json-v1"` (`IMPORT_HMAC_SECRET_JSON`); `"auto-import-v1"` (`IMPORT_HMAC_SECRET`) belongs to the v1 multipart handler — wired but with zero batch evidence ever; retire-or-keep is a ROADMAP owner decision. Both timestamp-free (avoids PC clock drift). *(Corrected 2026-08-05 — this line named only the dead v1 string.)*
 - `<UniversalHeader />` is mandatory for all boards. No custom headers.
 - `page.tsx` pattern: bare `<ComponentName />`, no wrapper div, no title.
 - Fixed table standard (`CLAUDE_UI.md §40`) for ALL data tables.
@@ -94,7 +94,7 @@ Never introduce new libraries without being asked.
 
 | Tool | Location | Schedule | Purpose |
 |---|---|---|---|
-| `Parse-MailOrders-v6_5.ps1` | `C:\Users\HP\OneDrive\VS Code\mail-orders\` | continuous | Forwarded email parser. Outlook COM. Dedup via `processed_ids_fw.json`. |
+| `Parse-MailOrders` (**V7 line** — repo copy `docs/Parser/Parse-MailOrders-V7.ps1` v7.3.0; live PC ≥v7.2, version ruling owned by `CLAUDE_MAIL_ORDERS.md §3`) | `C:\Users\HP\OneDrive\VS Code\mail-orders\` — the MAIL PC | continuous | Forwarded email parser. Outlook COM. Dedup via `processed_ids_fw.json`. *(Row named "v6_5" until 2026-08-05.)* |
 | **`Auto-Import-v2.ps1`** (pure JSON; internal stamp "v1.0") | `F:\VS Code\OBD-Import Tool v2\` — **on the import PC, unverifiable from the depot PC**; repo copy `docs/Powershell/Auto-Import-v2.ps1` | **LIVE** — ~10-min timer; batches observed 08:15–22:52 IST, none on Sundays | SAP OBD fetch via Breakwalls FormGetData JSON → `?action=auto-json` (HMAC `auto-import-json-v1` / `IMPORT_HMAC_SECRET_JSON`; batches stamp `[auto-import] auto-json`), plus `check` + `patch-headers`/`pending-invoices`. Resumed 2026-06-20. ⚠ Corrected 2026-08-04 (second pass): this row previously named `Auto-Import.ps1` "v2.0" — that file is the **v1 multipart** script (**zero batches ever**; "v2.0" = Tool v2, not the pipeline) and may or may not still run on the import PC. Detail: `CLAUDE_IMPORT.md §10`. |
 | `Watch-Import-V2.ps1` | `F:\VS Code\OBD-Import Tool v2\` | manual | Cycle summary watcher. Supports `-Today` and `-Date YYYY-MM-DD` modes. |
 
@@ -160,7 +160,7 @@ Primary role drives login redirect and href overrides. Additional rows add nav i
 | `delivery_challans` | tint_manager (view + edit), admin |
 | `shade_master` | tint_manager (view), admin — DEPRECATED, retiring soon (see §13) |
 | `ti_report` | tint_manager (view + export), admin |
-| `sampling_library` | tint_manager (view + edit), tint_operator (view), admin |
+| `sampling_library` | **FIVE roles, ALL canView+canEdit — SELECT 2026-08-05:** admin, tint_manager, tint_operator, ops_admin, operation_manager. ⚠ This row said "tint_operator (view)" until 2026-08-05 — the live rows disagree; "operators are read-only" is a UI convention, not a grant (`CLAUDE_SAMPLING_LIBRARY.md` header). |
 | `customers` | admin, operation_manager, tint_manager (view + edit) — SELECT 2026-08-04. ⚠ This row previously named the key **`customer_master`** and listed **ops_admin** — both wrong: the live key (and the `PageKey` union member, `lib/permissions.ts`) is `customers`, and ops_admin holds no row for it. ⚠ `support` and `dispatcher` are seeded but **`canView=false` LIVE** — same drift as `import_obd` above. |
 | `place_order` | admin, billing_operator, tint_manager, support, dispatcher |
 | `attendance` | all roles gated per rollout stage — visibility from user-level flags, **no `role_permissions` row exists for this key by design** (`lib/permissions.ts` special-cases it) |
@@ -195,9 +195,9 @@ Primary role drives login redirect and href overrides. Additional rows add nav i
 
 ---
 
-## 7. Database schema — v27.12
+## 7. Database schema — v27.13
 
-Versions: v21 base → v22 (mo_*) → v23 (orders dispatch) → v24 (customer match) → v25 (split) → v26 (mo_order_remarks) → v26.1 (isLocked) → v26.2 (mo_line_status) → v26.3 (carton + piecesPerCarton) → v26.4 (mo_learned_customers) → v26.5 (orders.orderDateTime) → v26.6 (user_roles + manual_tint_entries + users.phone + mo_sku_lookup.refDescription) → v27.0 (attendance foundation) → v27.1 (attendance settings hardening) → v27.2 (OT workflow + 2026-05-13 place-order v2 tables) → v27.3 (sampling_register + sampling_recipes + sampling_usage_log; orders.isRemoved + delivery_challans.isVoided; tint_skip_events + tint_pause_events; tint_assignments + import_raw_line_items netWeight/totalWeight) → v27.4 (sampling_usage_log.deliveryNumber backfill + tinter_issue_entries.samplingNo/shadeName) → v27.5 (customer_sales_officers + linkedSalesOfficerId on delivery_point_contacts + 3 columns on delivery_challan_formulas + sampling_recipes.packCode nullable with NULLS NOT DISTINCT + mo_sku_lookup_v2.isPrimary + mo_order_form_index_v2.mobileFamily) → v27.6 (mo_order_form_index_v2.region; Hide feature: `obd_visibility_rules` + `app_tag_settings` tables + orders.isHidden/hiddenById/hiddenReason/hiddenAt — §7.10) → v27.7 (Support gatekeeper + Hold/Dispatch-Target: orders.mailMatched; orders.heldAt, dispatchTargetDate, dispatchWindowId, arrivalSlotId; new `dispatch_slot_master` table — §7.4) → **v27.8** (Trip Report module, 2026-07-04/06: new standalone `trip_report` table — full columns → `CLAUDE_TRIP_REPORT.md §3`, §7.11 pointer here; `trip_report_delivery_no_dis_date_key` UNIQUE(deliveryNo, disDate); `mirror_trip_report_today` Postgres function) → **v27.9** (Support ship-to override, 2026-07-07: `orders.shipToOverrideCustomerId` Int? FK → `delivery_point_master`, relation `shipToOverrideCustomer` / `@relation("OrderShipToOverride")` — see dual-relation note in §7.3; `mo_orders.shipToOverrideCustomerId` Int? FK → `delivery_point_master`, relation `shipToOverrideCustomer` / `@relation("MoOrderShipToOverride")` — mo_orders' first relation to that table, no dual-relation trap) → **v27.10** (Picking Stage 2 — 2026-07-17/18 sessions, already shipped in code: `pick_assignments.checkedAt` DateTime? `@map("checked_at")` + `checkedById` Int? `@map("checked_by_id")`, relation `checkedBy` / `@relation("PickAssignmentCheckedBy")` — THIRD named relation from `pick_assignments` to `users`, alongside `picker`/`PickAssignmentPicker` and `assignedBy`/`PickAssignmentAssignedBy`, all correctly named on both sides today — no ambiguity. Supports the supervisor Approve step of the picking floor workflow — `CLAUDE_PICKING.md §6`) → **v27.11** (Flat SKU catalog, 2026-07-19, commit `916fcd39`: new standalone `sku_master_v2` table — 17 columns, FLAT, zero relations, `material` `@unique` as the natural key; mirrors `mo_sku_lookup_v2` MINUS `containerType`, PLUS `isActive` (new lifecycle flag) and `updatedAt` (`DateTime?`, hand-maintained, deliberately NO `@updatedAt`). Both timestamps carry `@db.Timestamptz(6)` — required, or Prisma emits plain `timestamp` and mismatches the live column. Built + poured via `docs/prompts/drafts/build-sku-master-v2-2026-07-19.sql`: 1,743 rows, 25 retired TOOLS `645xxxx` rows marked `isActive=false`. Old `sku_master` + its 3 FK helpers are now dead to operations, pending drop — §7.1.c) → **v27.12** (Push notifications + Picking live-sync, 2026-07-22: new standalone `push_subscriptions` table — 11 cols, `endpoint` UNIQUE `push_subscriptions_endpoint_key`, FK `userId`→users ON DELETE CASCADE, `updatedAt` a PLAIN `@default(now())` NOT `@updatedAt`; PLUS new index `orders_updatedAt_idx` on `orders("updatedAt" DESC)` backing the live-sync marker — §7.12) → **UNNUMBERED — 2026-07-20/30/31 additions, SELECT-verified live 2026-08-04; no version minted (the counter is Smart Flow's — assign one or fold into v27.13 when convenient):** (a) `orders.pickEarlyReleasedAt` Timestamptz(6) + `pickEarlyReleasedById` FK→users `@relation("OrderPickEarlyReleasedBy")` (Picking early-release 5b, 2026-07-20 — `CLAUDE_PICKING.md`); (b) **Billing v2** (2026-07-30/31, `docs/prompts/drafts/billing-phase-2-build-decisions.md` — behaviour docs land in the MAIL_ORDERS session): new singleton `billing_settings` (scope UNIQUE `billing_settings_scope_key`, `rolloutStage` enforced by CHECK `chk_billing_settings_rollout_stage` OFF|TEST_USERS_ONLY|ALL_USERS — live row TEST_USERS_ONLY); `users.billingV2TestUser` Boolean (read fresh per page load by `lib/billing/flag.ts`, deliberately NOT JWT-cached — live: user 20 only); `orders.invoicedAt` Timestamptz(6) + `invoicedById` FK→users `@relation("OrderInvoicedBy")` (billing mark-done — 22 rows already carry it); partial index `orders_billing_pending_idx` ON orders("workflowStage") WHERE invoicedAt IS NULL AND invoiceNo IS NULL AND isRemoved=false (partial — NOT expressible in Prisma, do not model as `@@index`); `mo_orders.dispatchTargetDate` @db.Date + `dispatchWindowId` FK → `dispatch_slot_master` (slot INTENT — live FK name is all-lowercase `mo_orders_dispatchwindowid_fkey`, Postgres folded it; a camelCase FK search comes back empty and looks like a missing FK) + partial index `mo_orders_slot_intent_idx`; (c) `sku_master_v2.displayCategory` + `displayName` (deferred friendly-name columns — §7.1.c).
+Versions: v21 base → v22 (mo_*) → v23 (orders dispatch) → v24 (customer match) → v25 (split) → v26 (mo_order_remarks) → v26.1 (isLocked) → v26.2 (mo_line_status) → v26.3 (carton + piecesPerCarton) → v26.4 (mo_learned_customers) → v26.5 (orders.orderDateTime) → v26.6 (user_roles + manual_tint_entries + users.phone + mo_sku_lookup.refDescription) → v27.0 (attendance foundation) → v27.1 (attendance settings hardening) → v27.2 (OT workflow + 2026-05-13 place-order v2 tables) → v27.3 (sampling_register + sampling_recipes + sampling_usage_log; orders.isRemoved + delivery_challans.isVoided; tint_skip_events + tint_pause_events; tint_assignments + import_raw_line_items netWeight/totalWeight) → v27.4 (sampling_usage_log.deliveryNumber backfill + tinter_issue_entries.samplingNo/shadeName) → v27.5 (customer_sales_officers + linkedSalesOfficerId on delivery_point_contacts + 3 columns on delivery_challan_formulas + sampling_recipes.packCode nullable with NULLS NOT DISTINCT + mo_sku_lookup_v2.isPrimary + mo_order_form_index_v2.mobileFamily) → v27.6 (mo_order_form_index_v2.region; Hide feature: `obd_visibility_rules` + `app_tag_settings` tables + orders.isHidden/hiddenById/hiddenReason/hiddenAt — §7.10) → v27.7 (Support gatekeeper + Hold/Dispatch-Target: orders.mailMatched; orders.heldAt, dispatchTargetDate, dispatchWindowId, arrivalSlotId; new `dispatch_slot_master` table — §7.4) → **v27.8** (Trip Report module, 2026-07-04/06: new standalone `trip_report` table — full columns → `CLAUDE_TRIP_REPORT.md §3`, §7.11 pointer here; `trip_report_delivery_no_dis_date_key` UNIQUE(deliveryNo, disDate); `mirror_trip_report_today` Postgres function) → **v27.9** (Support ship-to override, 2026-07-07: `orders.shipToOverrideCustomerId` Int? FK → `delivery_point_master`, relation `shipToOverrideCustomer` / `@relation("OrderShipToOverride")` — see dual-relation note in §7.3; `mo_orders.shipToOverrideCustomerId` Int? FK → `delivery_point_master`, relation `shipToOverrideCustomer` / `@relation("MoOrderShipToOverride")` — mo_orders' first relation to that table, no dual-relation trap) → **v27.10** (Picking Stage 2 — 2026-07-17/18 sessions, already shipped in code: `pick_assignments.checkedAt` DateTime? `@map("checked_at")` + `checkedById` Int? `@map("checked_by_id")`, relation `checkedBy` / `@relation("PickAssignmentCheckedBy")` — THIRD named relation from `pick_assignments` to `users`, alongside `picker`/`PickAssignmentPicker` and `assignedBy`/`PickAssignmentAssignedBy`, all correctly named on both sides today — no ambiguity. Supports the supervisor Approve step of the picking floor workflow — `CLAUDE_PICKING.md §6`) → **v27.11** (Flat SKU catalog, 2026-07-19, commit `916fcd39`: new standalone `sku_master_v2` table — 17 columns, FLAT, zero relations, `material` `@unique` as the natural key; mirrors `mo_sku_lookup_v2` MINUS `containerType`, PLUS `isActive` (new lifecycle flag) and `updatedAt` (`DateTime?`, hand-maintained, deliberately NO `@updatedAt`). Both timestamps carry `@db.Timestamptz(6)` — required, or Prisma emits plain `timestamp` and mismatches the live column. Built + poured via `docs/prompts/drafts/build-sku-master-v2-2026-07-19.sql`: 1,743 rows, 25 retired TOOLS `645xxxx` rows marked `isActive=false`. Old `sku_master` + its 3 FK helpers are now dead to operations, pending drop — §7.1.c) → **v27.12** (Push notifications + Picking live-sync, 2026-07-22: new standalone `push_subscriptions` table — 11 cols, `endpoint` UNIQUE `push_subscriptions_endpoint_key`, FK `userId`→users ON DELETE CASCADE, `updatedAt` a PLAIN `@default(now())` NOT `@updatedAt`; PLUS new index `orders_updatedAt_idx` on `orders("updatedAt" DESC)` backing the live-sync marker — §7.12) → **v27.13** (2026-07-20/30/31 additions, SELECT-verified live 2026-08-04; **minted 2026-08-05** in the reconciliation final pass): (a) `orders.pickEarlyReleasedAt` Timestamptz(6) + `pickEarlyReleasedById` FK→users `@relation("OrderPickEarlyReleasedBy")` (Picking early-release 5b, 2026-07-20 — `CLAUDE_PICKING.md`); (b) **Billing v2** (2026-07-30/31, `docs/prompts/drafts/billing-phase-2-build-decisions.md` — behaviour docs land in the MAIL_ORDERS session): new singleton `billing_settings` (scope UNIQUE `billing_settings_scope_key`, `rolloutStage` enforced by CHECK `chk_billing_settings_rollout_stage` OFF|TEST_USERS_ONLY|ALL_USERS — live row TEST_USERS_ONLY); `users.billingV2TestUser` Boolean (read fresh per page load by `lib/billing/flag.ts`, deliberately NOT JWT-cached — live: user 20 only); `orders.invoicedAt` Timestamptz(6) + `invoicedById` FK→users `@relation("OrderInvoicedBy")` (billing mark-done — 22 rows already carry it); partial index `orders_billing_pending_idx` ON orders("workflowStage") WHERE invoicedAt IS NULL AND invoiceNo IS NULL AND isRemoved=false (partial — NOT expressible in Prisma, do not model as `@@index`); `mo_orders.dispatchTargetDate` @db.Date + `dispatchWindowId` FK → `dispatch_slot_master` (slot INTENT — live FK name is all-lowercase `mo_orders_dispatchwindowid_fkey`, Postgres folded it; a camelCase FK search comes back empty and looks like a missing FK) + partial index `mo_orders_slot_intent_idx`; (c) `sku_master_v2.displayCategory` + `displayName` (deferred friendly-name columns — §7.1.c).
 
 ### 7.1 Setup / Master
 
@@ -414,17 +414,17 @@ orders                     workflowStage, slotId, originalSlotId, dispatchSlotDe
                            (true when an id is set, false when cleared) — a flag can still be true
                            with the id null (free-text redirects with no resolved customer).
 
-                           PICKING EARLY-RELEASE columns (2026-07-20, unnumbered — §7 chain):
+                           PICKING EARLY-RELEASE columns (2026-07-20, v27.13 — §7):
                            pickEarlyReleasedAt TIMESTAMPTZ?, pickEarlyReleasedById INT? FK → users
                            relation @relation("OrderPickEarlyReleasedBy"). Timestamp+actor, NOT a
                            stage value — behaviour: CLAUDE_PICKING.md.
 
-                           BILLING MARK-DONE columns (2026-07-30, unnumbered — §7 chain):
+                           BILLING MARK-DONE columns (2026-07-30, v27.13 — §7):
                            invoicedAt TIMESTAMPTZ?, invoicedById INT? FK → users
                            relation @relation("OrderInvoicedBy") — the billing operator's "marked
                            invoiced" decision, distinct from SAP's invoiceNo/invoiceDate facts.
                            Clearing invoicedAt is the Undo. Backed by partial index
-                           orders_billing_pending_idx (§7 chain). Behaviour docs land with the
+                           orders_billing_pending_idx (v27.13 — §7). Behaviour docs land with the
                            MAIL_ORDERS reconciliation session.
                            ⚠ Every FK to users on this table MUST carry a named @relation on both
                            sides — FIVE exist now (OrderPickedBy / OrderRemovedBy / OrderRestoredBy /
@@ -514,6 +514,16 @@ here rather than re-describing it.
   (`app/api/import/obd/route.ts:22`) and wired into `applyMailOrderEnrichment` — it auto-assigns a
   dispatch **date + window** at enrichment, per-`soNumber` (never a full-table scan). Pure function,
   no I/O, no `Date.now()` — every decision derives from its inputs (deterministic, backfill-safe).
+- **The anchor clock — `pickEffectiveClock` (added to canon 2026-08-05):** given the email clock
+  (`orderDateTime`) and the punch clock (`obdEmailDate`), same IST calendar date → the EARLIER of
+  the two; different date → the LATER; one null → the other outright; both null → decline
+  (`no-order-datetime` — the bill reaches the operator unslotted, deliberately).
+- **Input guard — `resolveArrivalClocks` (2026-08-02/03, in FRONT of the engine):** a date-only
+  value (exactly 00:00:00.000 UTC — the manual-SAP no-time-column artifact) is not a clock and is
+  passed as null; a later-day date-only value forces a decline rather than a back-date. Single
+  owner `lib/dispatch/punch-clock.ts` — full contract **`CLAUDE_IMPORT.md §12.1b`**; its second
+  consumer is Floor's rail suggestion (**`CLAUDE_FLOOR.md §8`**), so the hint and the written slot
+  can never disagree about which clocks exist.
 - **What it writes** (`route.ts:368-376`): `dispatchTargetDate`, `dispatchWindowId`,
   `dispatchSlotSource='auto'`, `dispatchSlotRuleId` (§7.3).
 - **Manual-skip guard** (`route.ts:344`): it SKIPS any order already `dispatchSlotSource='manual'` —
@@ -574,7 +584,7 @@ mo_orders                  Per parsed email
                            @relation("MoOrderShipToOverride") — mo_orders' FIRST relation to
                            delivery_point_master, no dual-relation trap. Legacy boolean
                            `shipToOverride` retained. Full detail: CLAUDE_MAIL_ORDERS.md §6.
-                           SLOT INTENT (2026-07-30, unnumbered — §7 chain): dispatchTargetDate
+                           SLOT INTENT (2026-07-30, v27.13 — §7): dispatchTargetDate
                            @db.Date + dispatchWindowId FK → dispatch_slot_master (live FK name
                            all-lowercase mo_orders_dispatchwindowid_fkey). The operator's slot
                            DECISION, carried at enrichment into orders with
@@ -635,25 +645,39 @@ Full detail in `CLAUDE_PLACE_ORDER.md`.
 
 ### 7.8 Attendance + OT
 
+> Rewritten 2026-08-05 against `information_schema` (re-confirmed same day) — the previous block
+> carried three PHANTOM columns (`otCutoffHourIST`, `otRequiresApproval`,
+> `otAutoApproveThresholdMinutes` — zero code references either) and wrong names throughout.
+> `CLAUDE_ATTENDANCE.md §2` owns the full live column blocks; summary here only.
+
 ```
-attendance_records         Per CHECK_IN | CHECK_OUT event.
+attendance_records         Per CHECK_IN | CHECK_OUT event. `timestamp` (the instant),
+                           attendanceDate (IST), sessionId, location* trio, photo fields,
+                           isManualEntry/manualReason, boolean flags.
                            OT columns: otClaimed, otClaimReason, otTotalLessThan95,
-                           otApprovalStatus, otApprovedById, otApprovedAt,
-                           otApprovedAdjustedMinutes.
+                           otApprovalStatus, otMinutesCredited (the credited figure),
+                           otApprovedById, otApprovedAt, otAdminNote.
 
-attendance_summary         One per (userId, attendanceDate). totalWorkedMinutes,
-                           otClaimedMinutes, status, hasMissingCheckout, sessionsCount.
+attendance_summary         One per (userId, attendanceDate). totalMinutesWorked,
+                           overtimeMinutes, lateMinutes, otMinutesCredited, otApprovalState,
+                           status (plain String, default 'ABSENT'), hasMissingCheckout,
+                           hasGeofenceViolation, hasManualEntries, sessionCount.
 
-attendance_settings        GLOBAL row. rolloutStage, otPromptEnabled, otRequiresApproval,
-                           dpdpConsentVersion, geofenceLatitude/Longitude/RadiusMeters,
-                           lateGraceMinutes, halfDayThresholdMinutes, photoRetentionDays,
-                           otCutoffHourIST, otAutoApproveThresholdMinutes,
-                           otMonthlyGraceLimit, depotWorkingMinutes,
-                           workStartTime, workEndTime, checkInWindowStart, checkInWindowEnd,
-                           requirePhoto, requireLocation, photoMaxWidthPx, photoJpegQuality.
+attendance_settings        @@unique([scope, roleSlug]) — singleton BY CONVENTION (one GLOBAL
+                           row). rolloutStage, dpdpConsentVersion,
+                           workStartTime/EndTime, checkInWindowStart/End, lateGraceMinutes,
+                           halfDayThresholdMinutes, geofenceLat/Lng/RadiusMeters,
+                           requirePhoto/Location, photoRetentionDays/MaxWidthPx/JpegQuality,
+                           depotWorkingMinutes (the 9.5h OT denominator — THE auto-approval
+                           driver; there is no threshold column), otTriggerTime,
+                           otMonthlyGraceLimit, otPromptEnabled.
+
+attendance_ot_grace        Per (userId, yearMonth) — flagCount, the monthly grace counter.
+attendance_ot_audit        Per action on an OT record — who/when/from/to/note.
+                           (Both were undocumented here until 2026-08-05.)
 ```
 
-Full detail in `CLAUDE_ATTENDANCE.md`.
+Full detail in `CLAUDE_ATTENDANCE.md §2` (live-verified blocks) + `§16` (the corrected OT rule).
 
 ### 7.9 Sampling Library
 
@@ -1046,10 +1070,20 @@ Evidence: read-only SELECTs against production 2026-08-04 + call-site sweeps + g
 - CORE-21 (§15): rows for lib/billing/*, lib/dispatch/punch-clock.ts (doc homes pending).
 - CORE-22 (§1): OBD pipeline line no longer names the retired Support/Planning steps as live.
 
+## Change log — v92 (2026-08-05, reconciliation FINAL pass — 12b)
+
+- FP-a (§7.8): attendance blocks rewritten from ATTENDANCE v1.3's live-verified list (re-SELECTed 2026-08-05) — three phantom columns out, names corrected, the two OT tables named with pointers.
+- FP-b (§7.4): `pickEffectiveClock` + the `resolveArrivalClocks` input guard added to canon (cross-refs IMPORT §12.1b / FLOOR §8).
+- FP-c (§3): the HMAC rule line now names the LIVE `auto-import-json-v1` string; `auto-import-v1` marked as the dead v1 handler's.
+- FP-d (§4): parser row → the V7 line (repo v7.3.0, live ≥v7.2; MAIL_ORDERS §3 owns the ruling).
+- FP-e (§5): `sampling_library` row rebuilt from live (five roles, all canView+canEdit — SELECT 2026-08-05).
+- FP-f (§7): **v27.13 MINTED** — the unnumbered 2026-07-20/30/31 addendum is now the numbered entry; §7 heading, header and footer stamps updated; the four in-body "unnumbered" citations renumbered.
+- (§6 Rahul: untouched — no owner answer accompanied this pass.)
+
 ## Change log — v91 (2026-08-04, IMPORT reconciliation follow-up)
 
 - IMP-1 (§4 tool table, named row only): the Auto-Import row named the wrong file — the live script is **`Auto-Import-v2.ps1`** (pure JSON); `Auto-Import.ps1` "v2.0" is the v1 multipart script with zero batch evidence. Schedule wording replaced with the observed batch window; `F:\` path marked as describing the import PC (unverifiable from here). Evidence + detail: `CLAUDE_IMPORT.md v1.7 §10/§14`.
 
 ---
 
-*CORE v91 · Schema v27.12 (+ unnumbered 2026-07-30/31 billing additions — §7) · OrbitOMS · updated 2026-08-04*
+*CORE v92 · Schema v27.13 · OrbitOMS · updated 2026-08-05*

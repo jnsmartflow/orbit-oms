@@ -1,5 +1,5 @@
 # CLAUDE_TRIP_REPORT.md — Trip Report Module
-# v1.1 · Schema v27.12 · August 2026 · updated 2026-08-04
+# v1.1 · Schema v27.13 · August 2026 · updated 2026-08-04
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md
 
@@ -212,6 +212,8 @@ Evidence: read-only SELECT (freshness + column count), globals.css + share/displ
 - TRP-5 (header/footer): dates added at both ends (the file had none).
 - Verified CORRECT, no change: §1 access (logistics + 4 secondary users + Praveen — CORE §5 re-verified 2026-08-04; the dispatcher mentions are the live ROLE, kept), §4 display rules, §6 share mechanism + logo-capture fix, §7 landmines.
 
+- Schema stamp -> v27.13 (final-pass 12b, 2026-08-05).
+
 ---
 
-*Trip Report v1.1 · Schema v27.12 · OrbitOMS · updated 2026-08-04*
+*Trip Report v1.1 · Schema v27.13 · OrbitOMS · updated 2026-08-04*

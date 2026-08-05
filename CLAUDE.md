@@ -1,5 +1,5 @@
 # CLAUDE.md — Orbit OMS Router
-# v1.9 · Entry point · Read this first · July 2026 · updated 2026-07-30 · Lives in: repo root (auto-loaded by Claude Code)
+# v1.10 · Entry point · Read this first · August 2026 · updated 2026-08-05 · Lives in: repo root (auto-loaded by Claude Code)
 
 **OrbitOMS — depot operations management for JSW Dulux paint distribution, Surat depot. Live at https://orbitoms.in.**
 
@@ -43,6 +43,7 @@ All context files live in `docs/` relative to repo root.
 | You are working on | Also load |
 |---|---|
 | `/mail-orders`, `mo_*` tables, parser, enrichment, customer matching, learned keywords, email template, signal badges, Table/Review views, 5-slot bucketing, tag-gating | `docs/CLAUDE_MAIL_ORDERS.md` |
+| **Billing** / `billingV2` / the "Billing" screen / the Billing Picking tab / `billing_settings` / `invoicedAt` mark-done / `components/billing/*` — **PILOT, flag-gated** (operations id 20 only until rollout) | `docs/CLAUDE_MAIL_ORDERS.md §23` (no separate CLAUDE_BILLING.md exists while pilot-gated — locked decision) |
 | `/tint/manager`, `/tint/operator`, challans, shades, TI report, **Tint Summary report / `/reports` hub**, operator sequence, pigment shade grid, slot-at-completion, sampling reuse + pack scaling | `docs/CLAUDE_TINT.md` |
 | `/tint/sampling-library`, `sampling_register`/`sampling_recipes`/`sampling_usage_log`, suggestion engine, duplicate merge | `docs/CLAUDE_SAMPLING_LIBRARY.md` |
 | `/place-order`, `/po` (`/order` retired 2026-07-27 — address parked, see below), `mo_order_form_index_v2`, `mo_sku_lookup_v2`, speed dial, cart, pack buckets, base aliases, catalog families, email builder | `docs/CLAUDE_PLACE_ORDER.md` |
@@ -120,4 +121,4 @@ When extracting, update §3 decision table in this file.
 
 ---
 
-*Router v1.9 · Orbit OMS · July 2026 · updated 2026-07-30*
+*Router v1.10 · Orbit OMS · August 2026 · updated 2026-08-05 — added the Billing pilot row (→ MAIL_ORDERS §23); all other rows re-verified against the 2026-08-04/05 reconciliation cycle (method: `docs/runbooks/reconciliation-method.md`)*
