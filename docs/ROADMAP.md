@@ -1,5 +1,5 @@
 # ROADMAP.md — OrbitOMS Planned Work
-# Updated 2026-07-30 · Lives in: orbit-oms/docs/ (manual attach — NOT auto-loaded)
+# Updated 2026-08-05 (full item-by-item status pass, reconciliation cycle) · Lives in: orbit-oms/docs/ (manual attach — NOT auto-loaded)
 
 Attach this file when planning the next phase of any module. Live "what's next" list, separated from canonical docs.
 
@@ -12,12 +12,12 @@ Items grouped by module. Within each module: SHIPPED → P0 (blocking) → P1 (n
 The big architectural arc. **Currently in Stage 1.** Full plan in `CLAUDE_PLACE_ORDER.md §19`.
 
 **Shipped 2026-06-19 — App-format parser + Table C fast-path (app orders → V2):**
-- Mail parser v7.2: App reader (`Parse-AppBody`) + sorter (`Test-IsAppFormat`, routes on first content line `Bill To:`) + name-lock (pins the exact emitted name so the Table C key matches by construction). Human/typed path untouched. Manual-deploy to depot PC. (Parser lives in the repo's `docs/Parser/` working copy and is **untracked / not committed** — the canonical live parser is outside git per `CLAUDE_MAIL_ORDERS.md §3`.)
+- Mail parser v7.2: App reader (`Parse-AppBody`) + sorter (`Test-IsAppFormat`, routes on first content line `Bill To:`) + name-lock (pins the exact emitted name so the Table C key matches by construction). Human/typed path untouched. Manual-deploy to depot PC. (The repo's `docs/Parser/Parse-MailOrders-V7.ps1` working copy is **tracked** and now at v7.3.0 — status-pass correction 2026-08-05; the canonical LIVE parser is still outside git per `CLAUDE_MAIL_ORDERS.md §3`, which owns the version ruling.)
 - Table C exact-match fast-path in enrichment (commit `da219238`, on `main`): app line → exact dict (built from `mo_sku_lookup_v2` via `buildTableCContext`) → V2 material via a V2 resolver; 15 collisions excluded from the dict → keyword fallback. Stacked design (exact-first, keyword-fallback). Tested 11/11 this session; one real SKU rescue proven (`2K PU GLOSS 90 BASE` → V2 primary). **INGEST-only** — verified the other callers (debug / backfill / re-enrich) pass no context.
 - **Net:** a clean app line that HITS Table C resolves via `mo_sku_lookup_v2` (fast lane). A MISS (collision / not-in-dict) and ALL typed/human orders still resolve via legacy `mo_sku_lookup` (keyword path — verified ingest still reads it; legacy `mo_sku_lookup` model still in schema). The split is intentional — a partial early bridge ahead of full Stage 3. Legacy tables stay (do NOT delete).
 
 **Pending (this bridge):**
-- [ ] Parser go-live: re-copy the name-locked v7.2 parser to the live PC (UTF-8 BOM) + restart. (Live copy is pre-name-lock — cannot be verified from here.)
+- [x] ~~Parser go-live (v7.2)~~ — **CONFIRMED LIVE 2026-07-15** (the app-only `Dispatch:` tag came back on a real order — `CLAUDE_MAIL_ORDERS.md §3.1`). NEW residue: the repo copy moved on to **v7.3** (piece-pack peel); whether v7.3 is deployed is unverifiable from here — redeploy when convenient.
 - [ ] Live verification: first real app order → billed SKU matches app-catalogue intent (rescue sanity-check), with live keywords.
 - [ ] Reclaim the 13 double-primary collisions into the fast lane: pick keeper per pair → `SET_FALSE` loser in `scripts/v2-sku-seed-from-legacy.ts` + flip `isPrimary` in Supabase (SELECT-verify + backup). The 2 pack-rounding collisions stay excluded.
 - [ ] Thread `tableC` into RE-ENRICH so historical / re-run orders also get the fast-path (ingest-only today).
@@ -42,7 +42,7 @@ The big architectural arc. **Currently in Stage 1.** Full plan in `CLAUDE_PLACE_
   - WS Max Yellow Base; WS Protect 90/93/96/97 Base; WS Protect Dustproof Yellow Base / ROX
 - Stock-side: Acrylic Distemper / Interior Distemper SKU missing its `packCode`
 - Optional cosmetic: WS rows carry `mobileFamily = MAX/POWERFLEXX/PROTECT/RAINPROOF`. Harmless today (labels by `family = "WS"`); normalise to "WS" only if desired
-- Add `isPrimary` filter to `/api/place-order/data` (desktop catch-up)
+- ~~Add `isPrimary` filter to `/api/place-order/data`~~ — **✅ SHIPPED 2026-07-15** (`46b500fb`; confirmed live against the route 2026-07-16 — `CLAUDE_PLACE_ORDER.md §16/§22`)
 
 ### Stage 2 — make v2 parser-ready
 
@@ -101,7 +101,7 @@ Sampling Library is operationally stable. Reactive items only.
 
 - **Phase 4.5 + 5 orphan fix.** Designed (14 points locked), parked indefinitely. Live data shows ~15 orphans/month — manual cleanup is cheaper. Monthly check query in `CLAUDE_SAMPLING_LIBRARY.md §3`. Trigger Phase 4.5 + 5 if orphan count crosses 20/month sustained.
 
-- **Sampling Issue-5 duplicate cleanup (IN PROGRESS).** Runbook + reference graph shipped (`CLAUDE_SAMPLING_LIBRARY.md §12`); dedupe by EXACT formula fingerprint, never shade name; inactivate (never delete) sources. **3 white-only groups merged** (`26-0196`/`26-0106`/`26-0094`); **~380 duplicate groups remain** — process group by group. Pending: build the **exact-dupe-finder tool** (seed number → all matching active samplings → dated review CSV); remove junk test sampling **`#26-0285`**. Owner chose manual SQL over a batch script for now.
+- **Sampling Issue-5 duplicate cleanup (IN PROGRESS).** Runbook + reference graph shipped (`CLAUDE_SAMPLING_LIBRARY.md §12`); dedupe by EXACT formula fingerprint, never shade name; inactivate (never delete) sources. **3 white-only groups merged** (`26-0196`/`26-0106`/`26-0094`); **~380 duplicate groups remained AS OF 2026-07-27 — re-COUNT before resuming the runbook** (status-pass note 2026-08-05: figure not re-run; merges may have happened since). Pending: build the **exact-dupe-finder tool** (seed number → all matching active samplings → dated review CSV); remove junk test sampling **`#26-0285`**. Owner chose manual SQL over a batch script for now.
 
 - **Phase 5 fuzzy site match.** ~2,411 parents siteless after backfill. Recover most via fuzzy match against `delivery_point_master.customerName`. NEVER auto-fuzzy without operator review — site suffixes like "FACE" / phase numbers distinguish genuine different sites. CORE §3 rule.
 
@@ -190,7 +190,7 @@ Useful for inventory planning, not blocking.
 
 - CustomerMissingSheet styling to match admin customer split-view form
 - Shade Master `isActive` filter — production verification (deferring; table is retiring)
-- Challan lazy creation removal (verify `[orderId]` detail API doesn't still auto-create)
+- ~~Challan lazy creation removal~~ — **✅ VERIFIED CLOSED 2026-08-04**: the `[orderId]` detail API has no create call; creation is import-time only (`CLAUDE_TINT.md §14`)
 - Challan print CSS audit — old class names `ch-header`, `tint-yes` may persist
 
 ---
@@ -229,14 +229,26 @@ Currently placeholder: Surat city centre `21.1702, 72.8311` with ±150m radius. 
 
 ## Import Pipeline
 
-### Auto-Import resume (when ready)
+### ~~Auto-Import resume~~ — MOOT (status-passed 2026-08-05)
 
-Auto-Import paused since 2026-05-14. To un-pause:
-1. Verify `IMPORT_HMAC_SECRET` matches across depot PC + Vercel
-2. Decide cross-source orphan policy (CLAUDE_IMPORT.md §15 — three options on the table)
-3. Smoke-test against a small known batch in test mode
-4. Re-enable Windows Task Scheduler task `2_Auto_Import`
-5. Monitor `import_batches` + `/api/health` for first 24h
+The whole "paused since 2026-05-14, to un-pause:" block described a world that ended 2026-06-20 —
+**Auto-Import has been LIVE on the v2 JSON path ever since** (944+ batches; `CLAUDE_CORE.md §4` /
+`CLAUDE_IMPORT.md §10`, both corrected 2026-08-03/04). One survivor from the old checklist:
+
+- **Cross-source orphan policy — OPEN, now LIVE-RELEVANT daily** (it was "deferred until un-paused";
+  it un-paused six weeks before anyone re-read the line). Three options still on the table —
+  `CLAUDE_IMPORT.md §15`.
+
+### New import items (opened 2026-08-04, from the IMPORT v1.7 pass)
+
+- **Retire-or-keep the v1 `?action=auto` handler + `IMPORT_HMAC_SECRET`** — the v1 multipart path has
+  ZERO batch evidence in the entire table; whether its depot task still fires is import-PC-only
+  knowledge. Owner decision (retiring changes a live API surface), not a cleanup.
+- **Parser `$ScriptVersion = "6.5.0"` stale variable** (`docs/Parser/Parse-MailOrders-V7.ps1:136`) —
+  one-line script fix; the file header (v7.3.0) is the real version. Owner-approved edit + redeploy.
+- **A version field in the ingest payload** — the parser stamps no version anywhere, so the deployed
+  version is permanently unverifiable from the depot PC (bit the 2026-08-04 pass). One header/body
+  field + one column or log line fixes the class forever.
 
 ### P2 — Auto-Import patch path
 
@@ -271,17 +283,26 @@ Zero automated tests today. `npx tsc --noEmit` is the only smoke. Worth adding:
 
 `npm run lint` is unconfigured. Wire `eslint-config-next` strict + simple pre-commit hook.
 
-### P2 — Vercel Pro upgrade
+### P2 — Vercel Pro upgrade (premise REWRITTEN 2026-08-05)
 
-Hobby tier cap at 2 cron jobs. If we ever need a third (e.g. nightly Sampling Library `usageCount` rebuild + retention sweep), we'll need Pro.
+~~Hobby tier cap at 2 cron jobs~~ — that premise died in January 2026: the COUNT cap is 100 on all
+plans; the binding Hobby constraint is **CADENCE (once per day, fires within the hour)** —
+`CLAUDE_CORE.md §4`. A third or tenth DAILY cron needs nothing. Pro is needed only for a
+**sub-daily** schedule (e.g. the picking-supervisor reminder), and the chosen alternative there is
+the depot-PC doorbell (`CLAUDE_NOTIFICATIONS.md §7`). Keep Pro as the fallback if the doorbell
+disappoints.
 
 ### P1 — OneDrive dev-machine sync risk
 
 `orbit-oms` is OneDrive-synced and shared between the depot/server PC and the (returning) laptop. Two machines two-way-syncing one git folder risks `.git` corruption mid-sync and propagates deletions both ways — the 3 stale deletions currently sitting in `git status` (`docs/CLAUDE_IMPORT V1.md`, two `.xlsx` files under `docs/plans/sampling-register/`) may already be a symptom of this. Decide a single-primary-dev-machine policy before it causes real data loss.
 
-### P2 — `trip_report` field meanings
+### P2 — `trip_report` field meanings (reworded 2026-08-05)
 
-13 columns exist in the live `trip_report` table but are undocumented: `fixedType`, `tRate`, `vehType`, `vModal`, `volLt`, `totQty`, `totWeight`, `modiInv`, `remark`, `isManual`, `tranTransporterName`, `custsoName`, `createdOn`. Confirm meanings with Smart Flow and backfill into `CLAUDE_TRIP_REPORT.md §3`.
+`CLAUDE_TRIP_REPORT.md §3` now lists all 38 columns (38/38 live-verified) with **10 explicitly marked
+as having no confirmed display-rule meaning** (`fixedType`, `tRate`, `vehType`, `vModal`, `modiInv`,
+`remark`, `isManual`, `tranTransporterName`, `custsoName`, `createdOn` — `volLt`/`totQty`/`totWeight`
+gained meanings in the display-rules session). Remaining work: confirm those 10 with Smart Flow and
+annotate §3.
 
 ---
 
@@ -326,8 +347,8 @@ New OPEN items surfaced while consolidating the 29 drafts. Grouped by module.
 - **Combined rule conditions** (e.g. HOLD AND older than 7 days); URGENT / MISSING_CUSTOMER rule tags; per-rule hidden counts; per-order override/pin to reveal one rule-hidden order.
 
 ### Cross-cutting
-- **`scripts/_*` tsc noise** — untracked scratch files throw ~24 `tsc --noEmit` errors. Exclude `scripts/_*` from tsconfig or delete to keep the gate clean.
-- **Two CLAUDE.md routers (repo-root vs docs/)** — confirm both intended or consolidate to one.
+- ~~**`scripts/_*` tsc noise**~~ — **✅ DONE**: `tsconfig.json` `exclude` carries `"scripts/_*.ts"` + `"scripts/_tmp/**"` (and, since 2026-08-04, `"docs/_backup_*/**"`); the gate runs clean.
+- ~~**Two CLAUDE.md routers**~~ — **✅ RESOLVED 2026-07-19**: `docs/CLAUDE.md` retired; the repo-root router is the ONLY router and says so in its own header.
 
 ---
 
@@ -340,7 +361,7 @@ New OPEN items surfaced while consolidating the 17 drafts (Jul 8–16) into cano
 - **Mail Orders routes are session-only, no role check** — most of `app/api/mail-orders/**` never checks role/permission; write routes gate on `canView`, not `canEdit`. (`CLAUDE_MAIL_ORDERS.md §18`, `CLAUDE_CORE.md §13`)
 
 ### Bugs (P1)
-- **App-format orders lose all product lines before enrichment.** Headers parse correctly (Bill To/Ship To/Dispatch), but zero product lines reach enrichment on a real test order. Live, unresolved, undocumented until this line. Surfaced 2026-07-15.
+- **App-format orders lose product lines before enrichment — STATUS UNCLEAR, re-test (reworded 2026-08-05).** Surfaced 2026-07-15 — the same day v7.2 was confirmed live and parsing (`CLAUDE_MAIL_ORDERS.md §3.1`), so the original "zero lines" observation may have been the pre-deploy copy. One specific line-loss class (TOOLS `"1 pc*12"` piece packs) was definitively fixed in parser **v7.3** (repo copy; deploy unverified). Before treating this as open OR closed: place one real app order and check its lines reached enrichment.
 
 ### Picking
 - **Picking role grants — ✅ CLOSED 2026-07-28. Live-prod SELECT run; seed and live AGREE.** Both this
@@ -388,8 +409,10 @@ New OPEN items surfaced while consolidating the 17 drafts (Jul 8–16) into cano
   (`639f8139`, `207e2a5c`). The ~500-row movement is **still unexplained**, and there is now one
   less place to observe it from. Priority unchanged. Pairs with the dispatched-bill lookup item
   above. (`CLAUDE_PICKING.md §7`, `CLAUDE_FLOOR.md §7`)
-- **Verify "New pick assigned" push on a real device.** Code is live; device-verification pending until
-  a real picker has a login + subscribed phone. (`CLAUDE_NOTIFICATIONS.md §6`)
+- **Verify "New pick assigned" push on a real device.** Code is live; **the blocker changed shape
+  2026-08-04**: real picker test accounts now EXIST (ids 35/36) and the 2026-07-29 first-login test
+  plan's Round 4 covers exactly this — but no result was recorded. Run it (or report it ran).
+  (`CLAUDE_NOTIFICATIONS.md §6`, `CLAUDE_PICKING.md §7`)
 - **Remove push-test scaffolding** — the `/picking/push-test` page + the gray admin/ops pill on
   `/picking`, after floor rollout. ⚠ **Updated 2026-07-28: only ONE door is left, and it is
   phone-only.** The desktop pill lived in the archived board; the surviving link
@@ -453,16 +476,17 @@ New OPEN items surfaced while consolidating the 17 drafts (Jul 8–16) into cano
   opened from the Support board and the Tint Manager Kanban; with Support retired, only Tint Manager
   can resolve an unmatched customer. Decide whether Floor's detail panel should surface it.
   (`CLAUDE_MAIL_ORDERS.md §19`)
-- **Floor Control v2 — re-enable slot suggestion (Step 10 of the build).** `lib/floor/suggest.ts` is
-  gated behind `RAIL_SUGGESTIONS_ENABLED=false`. Two fixes first: (1) the staleness check must compare
-  the full moment (date + time) vs now, not minutes-since-midnight (the bug that caused removal);
-  (2) carry date AND time. (`CLAUDE_FLOOR.md §8`)
+- **Floor Control v2 — slot suggestion — ✅ SHIPPED 2026-08-03** (commits `30226144` → `dee603dc` +
+  `ab70c826`). Both preconditions this item set were built exactly as specified: the staleness check
+  is now one closed-batch MOMENT test, and the suggestion carries date AND time. Layer spec:
+  `CLAUDE_FLOOR.md §8` (hand-verification of five checks still pending there). Follow-ups it opened
+  are below under **"Floor Control — slot-suggestion follow-ups (opened 2026-08-03)"**.
 - **v1 gaps (P2 — from the build draft §7; carried across individually):**
   - `Waiting` pills show no elapsed time — needs a `releasedAt` on the floor payload.
   - Ship-to original→redirect name pair missing on the floor table — needs the original name on the floor feed (the rail already has it).
   - Assigned rows sink to the bottom of the board — **✅ RESOLVED + SHIPPED (`661e4e61`, 2026-07-25):** `byAssigned` excluded from Floor's sort (Floor now uses `FLOOR_SPINE` = spine minus `byAssigned`, `lib/floor/sort.ts`), so Assigned/Done rows hold their place. The residual new/urgent-bill slide above a picker's row is parked separately → **"Floor Control — carry-over + stable positions (opened 2026-07-25)"** below.
-  - Rail button reads lowercase "pick slot"; mockup says "Set slot" — copy fix; the picker is Floor's own now (`components/floor/dispatch-slot-picker.tsx`), nothing to fork around.
-  - Assign bar reads "Change slot" beside a "pick slot" button — one label, one action.
+  - Rail button reads lowercase "pick slot"; mockup says "Set slot" — copy fix; the picker is Floor's own now (`components/floor/dispatch-slot-picker.tsx`), nothing to fork around. *(Still true 2026-08-05 — the 08-03 suggestion redesign kept shape B's `[pick slot]` label.)*
+  - ~~Assign bar reads "Change slot" beside a "pick slot" button~~ — **✅ RESOLVED by the 2026-07-26 action-surfaces redesign**: the duplication collapsed to ONE proper "Change slot" button (`CLAUDE_FLOOR.md §4.6`).
   - No picker search — search matches customer / route / OBD only.
   - Detail-panel header pill shows no elapsed time — the panel is not a live surface.
   (`CLAUDE_FLOOR.md §8`)
@@ -511,10 +535,13 @@ From the flat-SKU-catalog migration + the Direction-A mobile shell batch. Canoni
 ### Friendly product name on the picking card (P2 — DEFERRED, designed + proven)
 
 - [ ] Deferred by Smart Flow 2026-07-19: unwilling to risk any misleading name on a picking card
-  until the catalog odd-rows above are cleaned. **Nothing was built** — no column, no picking code.
-  Recipe is fully proven and preserved (stored `skuDisplayName String?`, built from `category` /
-  `product` / `baseColour` with NO menu-table join, `emailCase()` not `smartTitleCase`, gentle
-  de-double only, SKU code stays the hero and the name is a muted reference line):
+  until the catalog odd-rows above are cleaned. **Status update 2026-08-05: the COLUMNS now exist —
+  `sku_master_v2.displayCategory` + `displayName` (live-verified 2026-08-04, both EMPTY, read by
+  zero code; CORE §7.1.c).** The feature itself is still not built — no fill, no picking code; the
+  "nothing was built" claim below is otherwise intact. Recipe is fully proven and preserved (the
+  stored column landed as `displayName`, built from `category` / `product` / `baseColour` with NO
+  menu-table join, `emailCase()` not `smartTitleCase`, gentle de-double only, SKU code stays the
+  hero and the name is a muted reference line):
   `docs/prompts/drafts/web-update-2026-07-19-sku-master-v2-project-v2.md §5` + the per-family samples
   in `code-discovery-2026-07-19d-picking-name-samples.md`. **Resume order:** clean the catalog → re-run
   the 19d sampling to confirm zero misleading names → build in two steps (fill via reviewable SQL,
@@ -617,6 +644,10 @@ is done and recorded in `archive/2026-07-support/README.md` — these are the lo
   began (`d08681e9`) and never referenced by Support: `components/shared/role-nav.tsx`,
   `components/shared/sign-out-button.tsx`, `lib/mail-orders/enrich-v2.ts`,
   `lib/picking/validate-assign.ts`, `lib/slot-history.ts`. Confirm and remove in one sweep.
+  ⚠ **CONFLICT flagged 2026-08-05:** the reconciliation cycle's survivor list named `lib/slot-history.ts`
+  a KEEP-as-live survivor, while this item lists it for removal — and `lib/picking/validate-assign.ts`
+  is a documented DELIBERATE dormant keep (`CLAUDE_PICKING.md §7`). Resolve per-file with the owner
+  before any sweep; do not delete either on this item's say-so alone.
 
 ---
 
@@ -697,12 +728,108 @@ screenshot — needs a few days watching a real end-of-day board. Answer this be
 
 ---
 
+## Billing v2 (opened 2026-08-04, from `CLAUDE_MAIL_ORDERS.md §23.5`)
+
+Pilot is flag-gated (`billingV2`, `TEST_USERS_ONLY`, operations id 20 only). Ordered:
+
+- **P1 — Data-audit + plumbing session, THEN widen rollout.** Verify the dual-write lands end-to-end
+  (orders → Floor; Floor → Picking), the known billing-face Picking data issue, then flip
+  `billing_settings.rolloutStage` → `ALL_USERS` (must reach Deepanshu 25 + Bankim 26). Smart Flow
+  wants this as its own session.
+- **P1 — Clear the test-marked "done" bills** created during the pilot before real rollout (22 rows
+  carried `invoicedAt` as of 2026-08-04 — re-SELECT).
+- **P1 — Ship-to option-(a) ungating** — billing face reads master data, Table view reads the
+  keyword cache; ungate the FK fix for everyone AFTER a legacy id/text agreement SELECT.
+- **P2 — Global rename Mail Orders → Billing** (currently billing-face only).
+- **P2 — Table-view retirement** — per `archive/RETIREMENT-PLAYBOOK.md`, its own careful session;
+  currently hide-only, code intact for non-billing users.
+- **P2 — `billingV2` flag cleanup at full rollout** — collapse the `billingV2 ?` forks, delete the
+  OFF paths, retire the orphaned `billing-order-info.tsx`.
+- **P2 — Violet "Already invoiced" info-row UI polish** (deferred by Smart Flow 2026-08-02).
+- **OPEN QUESTION — notes plumbing:** `mo_orders.notes` has no enrichment carry line and Floor reads
+  no `orders.remarks`; whether billing notes should reach Floor is a product decision
+  (`CLAUDE_MAIL_ORDERS.md §23.5`).
+
+---
+
+## Floor Control — slot-suggestion follow-ups (opened 2026-08-03, tracked 2026-08-05)
+
+From the shipped suggestion layer (`CLAUDE_FLOOR.md §8`); counts are AS OF 2026-08-03 — **re-SELECT
+before acting on any of them**:
+
+- **P1 — Backfill decision.** 73 auto-slotted rows sit in a window the corrected clock rule would
+  change (63 window-only, **8 date-moves — think hard before moving bills across days**, 2 now
+  declining); separately **85 unmatched bills have no slot at all**. Step B is forward-only — neither
+  set drains on its own. Any backfill must skip `dispatchSlotSource='manual'`.
+- **P1 — `arrivalSlotId` Morning defect** — same fake-clock root cause, different field, still
+  unfixed: `resolveArrivalSlotId` has no time guard, so every manual-SAP bill buckets to Morning
+  (`CLAUDE_IMPORT.md §12` / landmines).
+- **P2 — `dispatchSlotRuleId` clear-on-manual** — one-line fix: Floor's change-slot writes
+  date+window+`source:'manual'` but leaves the engine's rule id (6 contradicting rows as of 08-03).
+- **P2 — Auto-confirm for HIGH-confidence suggestions** — deliberately deferred until v1 has been
+  used on the rail.
+- **P2 — Tint split-OBD suggestions** — out of v1 scope (full-OBD only today).
+- **P2 — `card.tint.completedAt` IST render** — it is an ISO UTC string on the payload; convert at
+  render when something finally displays it.
+- **P2 — Mixed-slot amber warning** on the assign bar ("these 3 bills are not all on one slot") —
+  dropped from the 2026-07-26 redesign as needing new data threading; revisit on demand.
+
+---
+
+## Floor Control — inherited Support-board gaps (verified still real 2026-08-05)
+
+From the 2026-07-27 parity discovery (G-list), each re-checked against today's Floor before listing —
+the resolved ones (tint pre-set G2, carry-over G5-old, priority G17, resolver G7 = tracked above) are
+NOT repeated:
+
+- **P1 — No undo of a release (G1).** Floor's action set is mark-urgent / change-slot / hold /
+  cancel / restore — nothing pulls a released bill back to the rail; the workaround (Cancel→Restore)
+  lies in the audit trail. Support's old write shows the shape.
+- **P1 — No bulk release/hold from the rail (G3).** The rail has no checkboxes; a 40-bill morning is
+  40 individual slot picks. Floor's release route already accepts a list.
+- **P2 — Cancel records no reason (G4).** `/api/floor/actions` accepts a `reason`; the UI never
+  sends one — every cancellation logs "Cancelled from floor". Support had a six-reason dialog.
+- **P2 — Cancelled tab is today-only (G5)** — yesterday's cancellation can never be un-cancelled
+  from Floor (`CLAUDE_FLOOR.md §3`).
+- **P2 — No CSV export of the day's board (G6)** — only the Hold-report PDF exists.
+- **DECIDE — arrival-slot view + day-progress tiles (G8).** Does the depot still think in
+  Morning/Afternoon arrival slots and "% done today"? If no, close as a deliberate drop; if yes,
+  Floor needs an arrival view.
+- **DIAGNOSE — contradictory-state bills (G9).** `pending_support` WITH `dispatchStatus='dispatch'`
+  matches NEITHER Floor feed (rail wants status null; board wants a later stage) — the mirror image
+  of the 103-NULL parked issue. Run the count; fold into that diagnosis session.
+
+---
+
+## Picking — measurement + follow-up queries (opened 2026-08-04)
+
+- **P2 — articleTag / manual-SAP correlation query** — 17% of the live queue had null `articleTag`
+  (2026-07-17 sample); every null-tag sample also had `sapStatus: null`. The dedicated follow-up
+  query was never run; Auto-Import being LIVE (not paused) strengthens the manual-SAP hypothesis
+  (`CLAUDE_PICKING.md §7`).
+- **P2 — Real pick durations** — the 30m/60m elapsed thresholds are still a guess; the 2026-07-29
+  test plan asked the floor to time 3-4 real picks and no numbers came back.
+
+---
+
+## Ops scripts — owner decisions (opened 2026-08-05)
+
+- **The undocumented Frt/Breakwalls pipeline:** `docs/Powershell/0-FrtIngestion.ps1` (watches Outlook
+  for the daily Frt Report email) + `3-PendingFetch.ps1` + `4-LogisticsEntry.ps1` (Breakwalls batch
+  import) — untracked, in NO canonical file, surfaced by the 2026-08-04 reconciliation. Decide:
+  document (whose module?), track in git, or remove.
+- **`web-update-2026-07-14-po-save-draft-sent-feature.md` locate-or-reauthor** — already tracked
+  under "Consolidation follow-ups (2026-07-16) → Place Order"; repeated here only as the standing
+  blocker for documenting `/po` Drafts/Sent.
+
+---
+
 ## Documentation hygiene
 
 ### Schema docs consolidation cadence
 Every 2-3 weeks: consolidate `docs/prompts/drafts/` into canonical files using the consolidation prompt. Archive consumed drafts to `docs/prompts/archive/YYYY-MM/`.
 
-Last cycle: 2026-06-18 (29 code-update drafts from Jun 2 – Jun 18: full catalog restructure, `/po` redesign + back-nav, desktop parity, pack buckets, email single-source, Sadolin/SuperCover/SuperClean/Tools/Spray Paint/M900, Stainer codes, Hide feature, tint sampling reuse + pack scaling + duplicate-merge runbook, Tint Summary report, mail-orders 5 slots). Prior cycle: 2026-06-02.
+Last cycle: **2026-08-04/05 — the full reconciliation cycle** (method v1.1, 12 canonical files verified claim-by-claim against code + live DB + git; 11 drafts archived to `docs/prompts/archive/2026-08/`; this status pass is its final step before 12b's router/CORE finish). Prior cycles: 2026-06-18 (29 drafts), 2026-06-02.
 
 ### `taxonomy-preview.json` path
 
@@ -710,4 +837,17 @@ Lives at `docs/prompts/archive/drafts/2026-04-to-05/taxonomy-preview.json`. The 
 
 ---
 
-*Updated 2026-07-30 — picker "My Picks" face rebuilt on the shared shell (`a2fb6889`→`28986d0a`, twelve commits) plus the canon pass that followed; the Direction-A header extraction above is CLOSED. 2026-07-28 — Picking DESKTOP board retired (six steps, `90c9a865`→). Earlier: 2026-06-19 reflects the full catalog restructure (all families folded, 9-tile dial), `/po` going-forward build, desktop `/place-order` parity, email single-source + AkzoNobel recipient, Hide feature shipped, tint sampling reuse + pack scaling + duplicate-merge runbook (3 groups merged), Tint Summary report + `/reports` hub, mail-orders 5 slots, **app-format order email (shared `renderOrderBody` + proper-case + line-number alignment) + mail parser v7.2 (`Parse-AppBody` reader, `Test-IsAppFormat` sorter, name-lock) + Table C exact-name enrichment fast-path (app orders → `mo_sku_lookup_v2`, ingest-only, 15 collisions excluded)**. Schema v27.6.*
+## Change log — status pass 2026-08-05 (reconciliation cycle, method v1.1)
+
+Every existing item verified against the reconciled canon (CORE v91 · UI v5.17 · IMPORT v1.7 · MAIL_ORDERS v1.11 · FLOOR v1.4 · PICKING v1.12 · TINT v1.9 · PLACE_ORDER v1.8 · NOTIFICATIONS v1.2 · ATTENDANCE v1.3 · TRIP v1.1 · SAMPLING v1.6), code, and git. Nothing deleted silently — moot/shipped items keep a struck-through record in place.
+
+- **SHIPPED/DONE marked:** rail slot suggestion (2026-08-03) · desktop isPrimary filter (`46b500fb`) · parser v7.2 go-live (2026-07-15) · assign-bar label duplication (2026-07-26) · challan lazy-creation verification (2026-08-04) · `scripts/_*` tsconfig exclusion · the two-routers question (2026-07-19).
+- **MOOT:** the entire Auto-Import un-pause block (LIVE since 2026-06-20; the orphan-policy survivor stays OPEN and live-relevant).
+- **STALE WORDING rewritten:** Vercel-Pro premise (cadence, not count) · trip_report field-meanings (10 remain, TRIP §3 lists all 38) · friendly-name recipe (the columns now EXIST, inert) · app-format line-loss bug (status-unclear, re-test) · push-verify blocker (test accounts exist) · parser-copy tracked/version note · sampling merge count (as-of stamp).
+- **NEW sections:** Billing v2 (8 items) · Floor slot-suggestion follow-ups (7, counts as-of 08-03) · Floor inherited Support-board gaps (G1/G3/G4/G5/G6 verified still real + G8 decide + G9 diagnose) · Picking measurement queries (2) · Ops scripts owner decisions (Frt/Breakwalls).
+- **CONFLICT flagged:** `lib/slot-history.ts` — survivor-list KEEP vs the five-unused-files removal item; per-file owner decision required.
+- Footer's stale "Schema v27.6" stamp removed — ROADMAP tracks work, not schema; the counter lives in `CLAUDE_CORE.md §7` (v27.12 + unnumbered 2026-07-3x additions; **v27.13 minting pending — 12b**).
+
+---
+
+*Updated 2026-08-05 (full status pass — see change log above). Prior: 2026-07-30 — picker "My Picks" face rebuilt on the shared shell (`a2fb6889`→`28986d0a`) + canon pass; 2026-07-28 — Picking DESKTOP board retired; 2026-06-19 — full catalog restructure, `/po` build, Hide feature, Tint Summary, parser v7.2 + Table C. Schema counter: `CLAUDE_CORE.md §7` (not tracked here).*
