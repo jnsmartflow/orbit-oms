@@ -48,8 +48,10 @@ export interface SuggestSiteSummary {
 // ── Phase-3 flat list (additive) ─────────────────────────────────────────────
 // One row per sampling tinted at THIS site, uncapped. Mirrors the existing card
 // shape (so applySuggestionToEntry consumes it unchanged) plus exact-match flag
-// and cross-site reuse info. The current UI still reads exactMatches +
-// referenceList; this is consumed by the new search-first picker later.
+// and cross-site reuse info. flatSuggestions IS what the live UI reads
+// (flat-suggestion-list.tsx via tint-operator-content.tsx); exactMatches +
+// referenceList are still BUILT but consumed by nothing — remove in cleanup.
+// (This comment claimed the inverse until 2026-08-05; CLAUDE_SAMPLING_LIBRARY.md §11.)
 
 export interface SuggestOtherSite {
   siteName: string;

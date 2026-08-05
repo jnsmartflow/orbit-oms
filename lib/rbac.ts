@@ -33,8 +33,9 @@ export const ROLE_REDIRECTS: Record<string, string> = {
   // roles landed on a permanently empty screen. /picking is their real board:
   // floor_supervisor gets the supervisor face, picker gets his own "My Picks"
   // face (app/picking/page.tsx branches on primaryRole). Both roles hold
-  // picking.canView live (SELECT 2026-07-27). /warehouse and its stubs are
-  // scheduled for retirement — they still exist today, just unlinked from here.
+  // picking.canView live (SELECT 2026-07-27, re-confirmed 2026-08-04).
+  // /warehouse and its stubs were RETIRED 2026-07-28 —
+  // archive/2026-07-warehouse-board/ owns the story.
   floor_supervisor: "/picking",
   picker: "/picking",
   billing_operator: "/mail-orders",

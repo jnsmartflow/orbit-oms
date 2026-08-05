@@ -116,7 +116,8 @@ export async function POST(req: Request): Promise<NextResponse> {
           continue;
         }
         // heldAt anchors the hold footprint to the ARRIVAL date, not wall-clock
-        // (CLAUDE_SUPPORT §4.9 / §5). Same convention every hold path uses.
+        // (CLAUDE_FLOOR.md §4.5 — the read-side rule; convention inherited from
+        // the retired Support board). Same convention every hold path uses.
         updateData = { dispatchStatus: "hold", heldAt: order.obdEmailDate ?? new Date() };
         // The note is the ONLY thing that identifies this as a hold event —
         // toStage deliberately stays the order's unchanged workflowStage. Shared

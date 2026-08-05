@@ -166,8 +166,10 @@ export async function POST(req: Request): Promise<NextResponse> {
   }
 
   // 5. Parent bubble — advance workflowStage when all non-cancelled splits are
-  //    tinting_done. Auto-flips to closed+dispatch if operator pre-set a slot,
-  //    otherwise lands in pending_support. Sequential awaits per CORE §3.
+  //    tinting_done. Auto-flips to SUPPORT_DONE_OUTPUT (pending_picking) +
+  //    dispatchStatus 'dispatch' if operator pre-set a slot, otherwise lands in
+  //    pending_support. (Comment said "closed+dispatch" until 2026-08-05 —
+  //    nothing writes 'closed'; CLAUDE_TINT.md §2.) Sequential awaits per CORE §3.
   //    NOTE: The $transaction above (line 50) is a pre-existing CORE §3 landmine
   //    (Supabase pooler timeout risk). Do not refactor it here.
   if (parentOrderId !== null) {

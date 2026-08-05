@@ -1628,7 +1628,11 @@ model mo_sku_lookup_v2 {
 // `updatedAt` is nullable with NO @updatedAt directive — the catalog is
 // hand-maintained by SQL, not auto-stamped by Prisma writes. Keep it manual.
 //
-// No readers repointed yet — that is a separate session.
+// Every operational reader repoints here by `material` since 2026-07-19
+// (commits 8f606a88 / a227fb13 / b91b7381 — import gates, picking detail,
+// order-detail panel, removed-lines, admin count tile). Only the admin SKU-CRUD
+// pages still read old sku_master; the retire/rename swap is its own session
+// (ROADMAP). (This line said "No readers repointed yet" until 2026-08-05.)
 model sku_master_v2 {
   id              Int       @id @default(autoincrement())
   material        String    @unique
