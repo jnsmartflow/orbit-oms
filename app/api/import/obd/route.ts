@@ -3649,6 +3649,93 @@ async function handleAutoImportPendingInvoices(req: Request): Promise<NextRespon
   });
 }
 
+// ── AUTO-IMPORT v2: day-obds handler ─────────────────────────────────────────
+//
+// ?action=day-obds — read-only: count + OBD numbers whose obdEmailDate falls in
+// the given window. Near-clone of pending-invoices with NO invoiceNo filter and
+// NO isRemoved filter. Soft-removed orders are included DELIBERATELY (mirrors
+// ?action=check, STEP B above): a soft-removed order still exists on Breakwalls,
+// so excluding it here would make the PS glance see it as "missing" and try to
+// re-import it forever. This is a sanctioned exemption from the CORE §3
+// soft-delete-reads rule, same as the check handler.
+
+async function handleAutoImportDayObds(req: Request): Promise<NextResponse> {
+  if (!verifyHmacSignatureV2(req)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  if (!body || typeof body !== "object") {
+    return NextResponse.json({ error: "JSON body must be an object" }, { status: 400 });
+  }
+
+  const b           = body as Record<string, unknown>;
+  const fromDateStr = toStr(b.fromDate);
+  const toDateStr   = toStr(b.toDate);
+
+  if (!fromDateStr || !toDateStr) {
+    return NextResponse.json(
+      { error: "fromDate and toDate are required (yyyy-MM-dd)" },
+      { status: 400 },
+    );
+  }
+
+  const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+  if (!DATE_RE.test(fromDateStr) || !DATE_RE.test(toDateStr)) {
+    return NextResponse.json(
+      { error: "fromDate and toDate must be yyyy-MM-dd" },
+      { status: 400 },
+    );
+  }
+
+  const fromDate = new Date(fromDateStr + "T00:00:00.000Z");
+  const toDate   = new Date(toDateStr   + "T00:00:00.000Z");
+
+  if (isNaN(fromDate.getTime()) || isNaN(toDate.getTime())) {
+    return NextResponse.json(
+      { error: "fromDate or toDate is not a valid date" },
+      { status: 400 },
+    );
+  }
+
+  if (fromDate > toDate) {
+    return NextResponse.json(
+      { error: "fromDate must not be after toDate" },
+      { status: 400 },
+    );
+  }
+
+  const spanDays = (toDate.getTime() - fromDate.getTime()) / (1000 * 60 * 60 * 24);
+  if (spanDays > 31) {
+    return NextResponse.json(
+      { error: `Date span of ${Math.round(spanDays)} days exceeds the 31-day safety cap` },
+      { status: 400 },
+    );
+  }
+
+  // toDate is inclusive: query up to the start of the day after toDate (UTC)
+  const toDateExclusive = new Date(toDate.getTime() + 24 * 60 * 60 * 1000);
+
+  const orders = await prisma.orders.findMany({
+    where: {
+      obdEmailDate: { gte: fromDate, lt: toDateExclusive },
+    },
+    select: { obdNumber: true },
+  });
+
+  return NextResponse.json({
+    ok:         true,
+    count:      orders.length,
+    obdNumbers: orders.map((o) => o.obdNumber),
+  });
+}
+
 // ── Main handler ──────────────────────────────────────────────────────────────
 
 export async function POST(req: Request): Promise<NextResponse> {
@@ -3660,6 +3747,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   if (action === "auto-json")     return handleAutoImportJson(req);
   if (action === "patch-headers")     return handleAutoImportPatchHeaders(req);
   if (action === "pending-invoices")  return handleAutoImportPendingInvoices(req);
+  if (action === "day-obds")          return handleAutoImportDayObds(req);
 
   // All other actions require session auth
   const session = await auth();
@@ -3683,7 +3771,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   if (action === "manual-sap-confirm") return handleManualSapConfirm(req, session!);
 
   return NextResponse.json(
-    { error: "Invalid action. Use ?action=auto, ?action=check, ?action=auto-json, ?action=patch-headers, ?action=pending-invoices, ?action=preview, ?action=confirm, ?action=manual-sap-preview, or ?action=manual-sap-confirm" },
+    { error: "Invalid action. Use ?action=auto, ?action=check, ?action=auto-json, ?action=patch-headers, ?action=pending-invoices, ?action=day-obds, ?action=preview, ?action=confirm, ?action=manual-sap-preview, or ?action=manual-sap-confirm" },
     { status: 400 },
   );
 }
