@@ -1791,6 +1791,22 @@ export function ReviewView({
         <span className="mo-print-hide inline-flex flex-shrink-0 items-center">
           {billingNotesButton}
         </span>
+        {/* Copy — removed from this face in 267bcad4 (2026-07-31) on the
+            reasoning that Ctrl+C covers it; re-added for the mouse-first
+            billing operator. Same handler as the retired actionsSlot button
+            (handleCopyClick → onCopy with no batchIndex → buildClipboardText):
+            one click copies every matched SKU line, unbatched — NOT the
+            two-state Ctrl+C machine. Same Copy icon, BTN_BASE/BTN_OFF shape
+            so it reads as part of this action group like Notes does. */}
+        <button
+          type="button"
+          onClick={handleCopyClick}
+          title="Copy · Ctrl+C"
+          className={`mo-print-hide ${BTN_BASE} ${BTN_OFF}`}
+        >
+          <Copy size={12} className="text-gray-400" />
+          Copy
+        </button>
         {/* (C) The row's ONE divider: it separates the things you DO to the
             order (Urgent/Hold/Slot/Notes) from the punch controls. The four
             buttons are deliberately left undivided — they are one group. Same
