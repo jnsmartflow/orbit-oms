@@ -137,7 +137,7 @@ export async function GET(
   const detail: FloorDetail = {
     orderId: order.id,
     obdNumber: order.obdNumber,
-    obdDateTime: (order.orderDateTime ?? order.obdEmailDate)?.toISOString() ?? null,
+    obdDateTime: (order.obdEmailDate ?? order.orderDateTime)?.toISOString() ?? null,
     orderType: order.orderType,
     workflowStage: order.workflowStage,
     dispatchStatus: order.dispatchStatus,
