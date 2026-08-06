@@ -63,20 +63,6 @@ export default async function MailOrdersLayout({
         userInitials={userInitials}
         navItems={dedupedNavItems}
       >
-        {/* ⚠ TEMPORARY Phase-0 marker — DELETE IN PHASE 2. Proves the per-user
-            flag switches end to end. Renders NOTHING when the flag is false,
-            which is everyone today, so the page is byte-identical until a user
-            is opted in. Grey, never teal: this is debug scaffolding, not UI
-            (one-teal rule, CLAUDE_UI.md §1). Placed as a plain sibling above
-            {children} rather than inside a header — this layout owns no header
-            of its own, and RoleLayoutClient is shared with eight other modules
-            and must not be touched for this. */}
-        {billingV2 && (
-          <div className="px-2 py-0.5 rounded text-[11px] font-medium
-                          bg-gray-100 text-gray-600 border border-gray-200">
-            Billing v2
-          </div>
-        )}
         {/* One server-side flag read, couriered to the client tree. Nothing
             below re-fetches it, and page.tsx keeps its bare <ComponentName />
             shape (CORE §3). */}
