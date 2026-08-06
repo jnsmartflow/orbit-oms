@@ -73,6 +73,10 @@ export interface FloorRailCard extends FloorPartyFields {
   // customer) and would lose the original name on a redirect (04-card-spec §4).
   customerName: string | null;
   shipToOverrideName: string | null;
+  // True when obdDateTime (above, on FloorPartyFields) is the EMAIL clock
+  // (orders.orderDateTime) rather than SAP's own punch clock
+  // (orders.obdEmailDate) — see lib/floor/format.ts resolveFloorDisplayDate().
+  isEmailTime: boolean;
   ageDays: number;            // days since arrival (carried-over tag); 0 = today
   tint: TintState | null;
   suggestion: SlotSuggestion | null;
@@ -87,6 +91,10 @@ export interface FloorRailCard extends FloorPartyFields {
 export interface FloorBoardRow extends PickingQueueRow {
   smu: string | null;
   billToName: string | null;
+  // True when obdDateTime (on PickingQueueRow) is the EMAIL clock
+  // (orders.orderDateTime) rather than SAP's own punch clock
+  // (orders.obdEmailDate) — see lib/floor/format.ts resolveFloorDisplayDate().
+  isEmailTime: boolean;
 }
 
 export interface FloorWindowCount {

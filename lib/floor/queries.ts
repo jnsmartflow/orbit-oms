@@ -19,6 +19,7 @@ import { getHideExclusion } from "@/lib/hide/visibility";
 import { getISTDayRange } from "@/lib/dates";
 import { sortPickingQueue } from "@/lib/picking/sort";
 import { FLOOR_SPINE } from "@/lib/floor/sort";
+import { resolveFloorDisplayDate } from "@/lib/floor/format";
 import {
   STAGE_LADDER,
   PICKING_OPEN_STAGES,
@@ -329,6 +330,8 @@ export async function getFloorRail(scope: FloorScope = "All"): Promise<FloorRail
       }
     }
 
+    const displayDate = resolveFloorDisplayDate(order.orderDateTime, order.obdEmailDate);
+
     cards.push({
       orderId: order.id,
       obdNumber: order.obdNumber,
@@ -347,7 +350,8 @@ export async function getFloorRail(scope: FloorScope = "All"): Promise<FloorRail
       isTint: order.orderType === "tint",
       volumeLitres: order.querySnapshot?.totalVolume ?? null,
       articleTag: order.querySnapshot?.articleTag ?? null,
-      obdDateTime: (order.orderDateTime ?? order.obdEmailDate)?.toISOString() ?? null,
+      obdDateTime: displayDate.obdDateTime?.toISOString() ?? null,
+      isEmailTime: displayDate.isEmailTime,
       ageDays: arrivalAgeDays(order.obdEmailDate ?? order.orderDateTime, todayMs),
       tint,
       suggestion,
@@ -485,6 +489,8 @@ export async function getFloorBoard(
       ? null
       : Math.max(0, Math.floor((anchorMs - targetDate.getTime()) / MS_PER_DAY));
 
+    const displayDate = resolveFloorDisplayDate(order.orderDateTime, order.obdEmailDate);
+
     rows.push({
       orderId: order.id,
       obdNumber: order.obdNumber,
@@ -506,7 +512,8 @@ export async function getFloorBoard(
       // are honest "not computed / not applicable" for this board.
       families: [],
       unresolvedLineCount: 0,
-      obdDateTime: (order.orderDateTime ?? order.obdEmailDate)?.toISOString() ?? null,
+      obdDateTime: displayDate.obdDateTime?.toISOString() ?? null,
+      isEmailTime: displayDate.isEmailTime,
       isAssigned: order.workflowStage === PICK_ASSIGNED,
       isDone: order.workflowStage === PICK_DONE,
       isChecked: order.workflowStage === PICK_CHECKED,

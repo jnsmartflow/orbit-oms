@@ -33,7 +33,7 @@
 //    A non-releasable bill therefore always takes shape B, suggestion or not.
 
 import { useState } from "react";
-import { Droplet } from "lucide-react";
+import { Droplet, Mail } from "lucide-react";
 import {
   DispatchSlotPicker,
   type DispatchWindow,
@@ -171,6 +171,11 @@ export function RailCard({
       <div className="flex items-center gap-2">
         <span className="font-mono text-[11.5px] tracking-[-0.01em] text-gray-700">{card.obdNumber}</span>
         <span className="text-[10.5px] text-gray-400">{fmtWhen(card.obdDateTime)}</span>
+        {card.isEmailTime && (
+          <span title="Email time" className="inline-flex shrink-0">
+            <Mail size={10.5} className="text-gray-400" />
+          </span>
+        )}
         <span className="ml-auto flex items-center gap-1.5">
           {card.ageDays > 0 && (
             <span className="rounded-[3px] bg-gray-100 px-[5px] py-px text-[9.5px] font-bold leading-[1.5] text-gray-500">

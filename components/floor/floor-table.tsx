@@ -18,7 +18,7 @@
 //    (Step-5 bug fix — 3% + 28px padding was clipping "1" to "1…").
 
 import type { ReactNode } from "react";
-import { Building2, Droplet, MoreHorizontal, Zap } from "lucide-react";
+import { Building2, Droplet, Mail, MoreHorizontal, Zap } from "lucide-react";
 import { formatArticleTag } from "@/lib/floor/format";
 import { StatusPill, rowStatus } from "./status-pill";
 import { isAllSelected, type FloorSelection } from "@/lib/floor/selection";
@@ -259,7 +259,14 @@ export function FloorTable({
                 {(row.ageDays ?? 0) > 0 && (
                   <span className="ml-1.5 rounded-[3px] bg-[#f3f4f6] px-[5px] py-px text-[9.5px] font-bold text-[#6b7280]">{row.ageDays}d</span>
                 )}
-                <div className="text-[10px] text-[#9ca3af]">{fmtDateTime(obd)}</div>
+                <div className="flex items-center gap-1 text-[10px] text-[#9ca3af]">
+                  {fmtDateTime(obd)}
+                  {row.isEmailTime && (
+                    <span title="Email time" className="inline-flex shrink-0">
+                      <Mail size={9.5} />
+                    </span>
+                  )}
+                </div>
               </td>
               <td className={TD}>
                 <span className="text-[11.5px] font-medium text-[#111827]">{row.dealerName}</span>
