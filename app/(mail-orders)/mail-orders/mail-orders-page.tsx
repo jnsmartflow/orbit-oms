@@ -1324,6 +1324,7 @@ export default function MailOrdersPage() {
           onSaveSoNumber={handleSaveSoNumber}
           onSaveCustomer={handleSaveCustomer}
           onCopy={handleCopy}
+          showCopyToast={showCopyToast}
           batchStates={batchStates}
           onAdvanceBatch={handleAdvanceBatch}
           punchedVisible={punchedVisible}

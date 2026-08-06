@@ -61,6 +61,10 @@ interface ReviewViewProps {
   onSaveSoNumber: (id: number, value: string, opts?: { isEdit?: boolean }) => Promise<boolean>;
   onSaveCustomer: (id: number, data: { customerCode: string; customerName: string; saveKeyword?: boolean; keyword?: string; area?: string; deliveryType?: string; route?: string }) => void;
   onCopy: (id: number, lines: MoOrderLine[], batchIndex?: number) => void;
+  /** Same toast the Ctrl+C smart-copy flow uses (mail-orders-page.tsx) — passed
+   * down so the Copy button's confirmation matches Ctrl+C's unbatched SKU-copy
+   * toast exactly, without duplicating its state/timer here. */
+  showCopyToast: (text: string, type: "customer" | "sku" | "error") => void;
   batchStates: Record<number, number>;
   onAdvanceBatch: (orderId: number) => void;
   punchedVisible: boolean;
@@ -488,6 +492,7 @@ export function ReviewView({
   onSaveSoNumber,
   onSaveCustomer,
   onCopy,
+  showCopyToast,
   punchedVisible,
   onTogglePunched,
   recentlyPunchedIds,
@@ -922,6 +927,10 @@ export function ReviewView({
   function handleCopyClick() {
     if (!selectedOrder) return;
     onCopy(selectedOrder.id, selectedOrder.lines);
+    const matchedLines = selectedOrder.lines.filter(
+      l => l.matchStatus === "matched" && l.skuCode != null
+    );
+    showCopyToast(`${matchedLines.length} SKUs copied`, "sku");
   }
 
   async function handlePickCandidate(c: { customerCode: string; customerName: string; area?: string | null; deliveryType?: string | null; route?: string | null }, fromSearch: boolean) {
