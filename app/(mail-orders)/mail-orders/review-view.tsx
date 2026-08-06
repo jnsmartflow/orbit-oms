@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useRef } from "react";
-import { Check, Pencil, Copy, Mail, Flag, Search, Printer, StickyNote, Star, Droplet, X } from "lucide-react";
+import { Check, Pencil, Copy, Mail, Flag, Search, Printer, StickyNote, Star, Droplet, X, Truck } from "lucide-react";
 import type { MoOrder, MoOrderLine, CustomerSearchResult } from "@/lib/mail-orders/types";
 import type { SlotCutoffs } from "@/lib/mail-orders/utils";
 import {
@@ -141,6 +141,10 @@ function getDeliveryDotClass(type: string | null | undefined): string {
 
 function StarGlyph() {
   return <Star size={12} className="text-amber-500 flex-shrink-0" fill="currentColor" />;
+}
+
+function TruckGlyph() {
+  return <Truck size={12} strokeWidth={2} className="text-violet-700 flex-shrink-0" />;
 }
 
 function formatTime(iso: string): string {
@@ -1000,6 +1004,10 @@ export function ReviewView({
     const isFocused = focusedId === order.id;
     const isFlagged = order.isLocked || isOdCiFlagged(order);
     const isPunched = order.status === "punched";
+    // Computed once here and reused below for both the truck icon and the
+    // bill/split badges — do not call getOrderSignals a second time per row.
+    const sigs = getOrderSignals(order, { disabledTagKeys });
+    const hasTruckOrder = sigs.some((s) => s.type === "truck-order");
 
     const borderClass = isFocused
       ? "bg-teal-50 border-l-teal-600"
@@ -1036,8 +1044,8 @@ export function ReviewView({
               {smartTitleCase(order.customerName ?? cleanSubject(order.subject))}
             </span>
             {order.isKeyCustomer && <StarGlyph />}
+            {hasTruckOrder && <TruckGlyph />}
             {(() => {
-              const sigs = getOrderSignals(order, { disabledTagKeys });
               // Show bill OR split badges in left panel — each order gets
               // at most one of these because getOrderSignals emits the
               // parent "Bill N" only when splitLabel is null.
