@@ -181,6 +181,11 @@ model users {
   pickAssignmentsAsPicker   pick_assignments[]       @relation("PickAssignmentPicker")
   pickAssignmentsAssigned   pick_assignments[]       @relation("PickAssignmentAssignedBy")
   pickAssignmentsChecked    pick_assignments[]       @relation("PickAssignmentCheckedBy")
+  // Picking findings (2026-08-07) — TWO FKs from one table to `users`, so BOTH
+  // sides must stay explicitly named or Prisma throws an ambiguity ERROR at
+  // generate time. Same rule as the three PickAssignment* relations above.
+  pickFindingsReported      pick_findings[]          @relation("PickFindingReportedBy")
+  pickFindingsRecorded      pick_findings[]          @relation("PickFindingRecordedBy")
   // Mail Order back-relations
   mailOrdersPunched         mo_orders[]              @relation("MoOrderPunchedBy")
   lineStatuses              mo_line_status[]
@@ -648,6 +653,9 @@ model import_raw_line_items {
   challanFormulas     delivery_challan_formulas[]
   tinterIssueEntries  tinter_issue_entries[]
   tinterIssueEntriesB tinter_issue_entries_b[]
+  // Picking finding (2026-08-07). SINGULAR + optional, not a list: the FK side
+  // carries @unique (pick_findings_rawLineItemId_key), so this is one-to-one.
+  pickFinding         pick_findings?
 
   @@index([obdNumber, lineStatus])
 }
@@ -756,6 +764,10 @@ model orders {
   pickListItems        pick_list_items[]
   changeQueue          dispatch_change_queue[]
   pickAssignment       pick_assignments?
+  // Picking findings (2026-08-07) — many per order, one per raw line.
+  // pick_findings has exactly ONE FK to `orders`, so this back-relation needs
+  // no @relation name (same rule as push_subscriptions → users).
+  pickFindings         pick_findings[]
   // TM Remove OBD (Feature 1)
   isRemoved            Boolean                   @default(false)
   removalReason        String?
@@ -1201,6 +1213,79 @@ model pick_assignments {
   checkedBy    users?    @relation("PickAssignmentCheckedBy", fields: [checkedById], references: [id])
   notes        String?
   clearedAt    DateTime? @db.Timestamptz
+}
+
+/// Picking findings — what the floor ACTUALLY found on a checked line (short
+/// quantity, or old manufacturing date). Table created by hand in the Supabase
+/// SQL Editor and hand-mirrored here; db push/pull are banned (CORE §3) and db
+/// pull additionally fails on this machine with P1001. Column list, types and
+/// nullability re-verified against information_schema before this model was
+/// written — do not re-guess them.
+///
+/// camelCase columns, NO @map — unlike its neighbour `pick_assignments`, which
+/// is snake_case-mapped because it predates that rule (CORE §7.4). Do not
+/// "harmonise" the two.
+///
+/// WHY THE FK IS SAFE. `rawLineItemId` points at import_raw_line_items.id, a
+/// real autoincrement PK. A re-import PATCHES a matched line in place
+/// (lib/import-upsert/lines.ts — matched on lineId+skuCodeRaw, then
+/// `update where id`) and SOFT-removes an absent one (lineStatus =
+/// 'removed_by_import'); there is no hard delete of that table anywhere in the
+/// repo, so a finding's target row cannot vanish underneath it. Four other
+/// tables already FK the same id (import_enriched_line_items, split_line_items,
+/// delivery_challan_formulas, tinter_issue_entries).
+///
+/// obdNumber / lineId / skuCodeRaw are DENORMALISED COPIES, deliberately — a
+/// finding is a record of what a human observed, and it must still read
+/// correctly if its line is later soft-removed by a re-import. Do not drop them
+/// as "derivable"; the FK answers a different question.
+/// ⚠ `lineId` here is TEXT (nullable), NOT the Int that import_raw_line_items
+/// carries. That is what the live column is — a copy for display, not a join key.
+///
+/// NOT EXPRESSIBLE IN PRISMA — live in Supabase, recorded here by hand:
+///   chk_pick_findings_reason  CHECK (reason IN ('short_quantity','old_mfg'))
+///     — same shape as chk_pick_assignments_status (CLAUDE_PICKING.md §7): a
+///       THIRD reason string needs a SQL ALTER first, never just a new literal
+///       in application code.
+///   pick_findings_confirmed_idx  ON ("recordedById") WHERE "recordedById" IS NOT NULL
+///     — partial index, same class as orders_billing_pending_idx. Do NOT model
+///       it as @@index.
+model pick_findings {
+  id            Int                   @id @default(autoincrement())
+  orderId       Int
+  order         orders                @relation(fields: [orderId], references: [id])
+  // One finding per raw line — UNIQUE live (pick_findings_rawLineItemId_key),
+  // which makes this a one-to-one from the line's side. Uniqueness is expressed
+  // HERE, on the id, never on the (obdNumber, lineId, skuCodeRaw) tuple: that
+  // tuple is not unique in live data.
+  rawLineItemId Int                   @unique
+  rawLineItem   import_raw_line_items @relation(fields: [rawLineItemId], references: [id])
+  obdNumber     String
+  lineId        String?
+  skuCodeRaw    String?
+  qtyOrdered    Int
+  qtyFound      Int
+  reason        String
+  remarks       String?
+  // TWO FKs to `users` on one table — BOTH relations MUST stay explicitly named
+  // on both sides (here and on the users model), or Prisma throws an ambiguity
+  // ERROR at generate time, not a warning. Same discipline as pick_assignments'
+  // three named users relations and orders' five (CORE §7.3).
+  //   reported = the picker/supervisor who saw it on the floor
+  //   recorded = whoever confirmed it downstream
+  reportedById  Int?
+  reportedBy    users?                @relation("PickFindingReportedBy", fields: [reportedById], references: [id])
+  reportedAt    DateTime?             @db.Timestamptz(6)
+  recordedById  Int?
+  recordedBy    users?                @relation("PickFindingRecordedBy", fields: [recordedById], references: [id])
+  recordedAt    DateTime?             @db.Timestamptz(6)
+  // @db.Timestamptz(6) is REQUIRED on every timestamp here — without it Prisma
+  // emits plain `timestamp` and mismatches the live column (CORE §7.1.c).
+  createdAt     DateTime              @default(now()) @db.Timestamptz(6)
+
+  // `map:` is required — the live index is pick_findings_order_idx, whereas
+  // Prisma's default name for this would be pick_findings_orderId_idx.
+  @@index([orderId], map: "pick_findings_order_idx")
 }
 
 model tinter_issue_entries {
