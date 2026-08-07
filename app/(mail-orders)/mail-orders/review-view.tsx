@@ -121,7 +121,7 @@ interface ReviewViewProps {
    */
   selectedDate?: string;
   /**
-   * Notes-band remark text size in px, 11-15. Owned by the parent page (which
+   * Notes-band remark text size in px, 11-20. Owned by the parent page (which
    * seeds it from the server-resolved per-user value and persists changes), so
    * it survives this component re-mounting — same arrangement as
    * `billingTab`/`onBillingTabChange`.
@@ -199,7 +199,7 @@ const REASON_LABELS: Record<string, string> = {
 const REASON_KEY_VALUES = ["out_of_stock", "wrong_pack", "discontinued", "other_depot", "other"];
 
 // ── Notes-band text size ───────────────────────────────────────────────────
-// The size is now the PIXEL VALUE itself, stepped 11-15 and stored per user on
+// The size is now the PIXEL VALUE itself, stepped 11-20 and stored per user on
 // users.notesFontSize. The old "small"/"normal"/"large" mapping is gone: a
 // stepper that stores px needs no vocabulary in between, and the DB column,
 // its CHECK constraint, the API route and this control now all speak the same
@@ -210,7 +210,7 @@ const REASON_KEY_VALUES = ["out_of_stock", "wrong_pack", "discontinued", "other_
 // bundle. Three enforcement points by design (Postgres CHECK, the POST route,
 // this control); widening the range means changing all of them.
 const NOTES_FONT_MIN = 11;
-const NOTES_FONT_MAX = 15;
+const NOTES_FONT_MAX = 20;
 
 // The old localStorage key, replaced by the per-user column. Cleared on mount
 // as a courtesy so a stale value does not sit in every operator's browser
@@ -2009,7 +2009,7 @@ export function ReviewView({
     );
 
     // Notes-band size control — a −/value/+ stepper rendered top-right INSIDE
-    // the band via its `controlsSlot`. Steps the PIXEL SIZE directly, 11-15;
+    // the band via its `controlsSlot`. Steps the PIXEL SIZE directly, 11-20;
     // there is no small/normal/large vocabulary anywhere any more.
     //
     // Chrome derives from the SKU table's [long]/[short] desc toggle (radius 4,
@@ -2166,6 +2166,12 @@ export function ReviewView({
             billToCode={order.customerCode}
             billToArea={order.customerArea ?? null}
             billToDeliveryType={order.customerDeliveryType ?? null}
+            // Gated HERE, not inside the card — ShipToCard is shared with the
+            // non-billing Focus face (§23.6). "default" is the literal today,
+            // so the OFF path is byte-identical. The card itself additionally
+            // requires the override state before any violet applies, so a
+            // billing order with a normal ship-to still renders white.
+            tone={billingV2 ? "violet" : "default"}
           />
         </div>
 

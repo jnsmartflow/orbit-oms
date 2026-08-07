@@ -24,14 +24,17 @@ export const DEFAULT_NOTES_FONT_PX = 11;
 
 /**
  * Bounds, mirroring the live CHECK constraint chk_users_notes_font_size
- * (notesFontSize >= 11 AND <= 15). Prisma cannot express a CHECK, so the same
- * range is enforced in three places — here on read, in the POST route on write,
- * and by Postgres itself. Widening the range means changing all three.
+ * (notesFontSize >= 11 AND <= 20; widened from 15 on 2026-08-07, verified by
+ * read-only SELECT before this constant moved). Prisma cannot express a CHECK,
+ * so the same range is enforced in three places — here on read, in the POST
+ * route on write, and by Postgres itself. Widening the range again means
+ * changing all three, CONSTRAINT FIRST: a code max above the constraint turns
+ * an in-range click into a 500.
  */
 export const MIN_NOTES_FONT_PX = 11;
-export const MAX_NOTES_FONT_PX = 15;
+export const MAX_NOTES_FONT_PX = 20;
 
-/** Clamp to [11, 15]. Exported so the write path bounds-checks against the
+/** Clamp to [11, 20]. Exported so the write path bounds-checks against the
  *  same helper the read path clamps with, rather than a second pair of
  *  literals that can drift. */
 export function clampNotesFontPx(px: number): number {

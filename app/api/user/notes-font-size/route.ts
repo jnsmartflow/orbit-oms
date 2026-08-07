@@ -42,7 +42,7 @@ export async function POST(req: Request) {
 
   const size = (body as { size?: unknown })?.size;
 
-  // Validate rather than clamp. A clamp would silently accept 99 and write 15,
+  // Validate rather than clamp. A clamp would silently accept 99 and write 20,
   // so a buggy caller would look like it worked; the CHECK constraint
   // chk_users_notes_font_size would reject it anyway and surface as a 500.
   // Integer only — the column is `integer`, so 12.5 is not storable.

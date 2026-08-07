@@ -31,6 +31,27 @@ interface ShipToCardProps {
    * card div; no existing markup is wrapped and no className is changed.
    */
   actionSlot?: React.ReactNode;
+  /**
+   * Colour treatment for the OVERRIDE state. Default `"default"` — the amber
+   * bar + `⚑ captured` pill this card has always shown, byte-identical for
+   * every caller that does not pass it.
+   *
+   * `"violet"` recolours that same state to the Billing face's violet family
+   * (`#f5f3ff` fill / `#ddd6fe` border / `#7c3aed` accent / `#5b21b6` /
+   * `#4c1d95`), the shades instructions-strip.tsx :12-15 already owns — no new
+   * purple is introduced. The pill also loses its ⚑ (that glyph means Hold
+   * elsewhere) and reads a solid `changed`.
+   *
+   * ⚠ This card is SHARED with the non-billing Focus face (CLAUDE_MAIL_ORDERS
+   * §23.6: gate at the call site, never restyle the card). Only the flag-gated
+   * billing call site passes `violet`.
+   *
+   * ⚠ Tone alone changes nothing. Every violet branch below is additionally
+   * gated on the card actually being in its override state, so a billing order
+   * with a NORMAL ship-to renders exactly like today's white card. A card that
+   * were always violet would make "changed" mean nothing.
+   */
+  tone?: "default" | "violet";
 }
 
 function getDeliveryDotClass(type: string | null | undefined): string {
@@ -57,7 +78,9 @@ export function ShipToCard({
   billToArea,
   billToDeliveryType,
   actionSlot,
+  tone = "default",
 }: ShipToCardProps): JSX.Element {
+  const violet = tone === "violet";
   const capturedDisabled = disabledTagKeys?.has(MO_TAG.captured) ?? false;
 
   // When "captured" is OFF, an overridden order falls back to showing the
@@ -78,8 +101,15 @@ export function ShipToCard({
   // Amber override styling only when we're actually showing the override.
   const showOverrideStyling = isOverride && !useBillToFallback;
 
+  // The violet treatment REPLACES the amber one; it never stacks on a normal
+  // card. `tinted` is the one gate every violet branch reads, so the tone can
+  // never leak onto a non-override card.
+  const tinted = violet && showOverrideStyling;
+
   const cardClasses = showOverrideStyling
-    ? "relative bg-white border border-gray-200 rounded-lg pl-[14px] pr-3 py-2.5 before:content-[''] before:absolute before:left-0 before:top-2 before:bottom-2 before:w-[3px] before:bg-amber-500 before:rounded-sm"
+    ? tinted
+      ? "relative bg-[#f5f3ff] border border-[#ddd6fe] rounded-lg pl-[14px] pr-3 py-2.5 before:content-[''] before:absolute before:left-0 before:top-2 before:bottom-2 before:w-[3px] before:bg-[#7c3aed] before:rounded-sm"
+      : "relative bg-white border border-gray-200 rounded-lg pl-[14px] pr-3 py-2.5 before:content-[''] before:absolute before:left-0 before:top-2 before:bottom-2 before:w-[3px] before:bg-amber-500 before:rounded-sm"
     : "relative bg-white border border-gray-200 rounded-lg px-3 py-2.5";
 
   const showCode = !!effectiveCode;
@@ -97,18 +127,34 @@ export function ShipToCard({
           Ship to
         </span>
         {showCaptured && (
-          <span
-            className="inline-flex items-center gap-[3px] h-4 px-[5px] text-[9.5px] font-semibold rounded border bg-amber-50 border-amber-200 text-amber-700"
-            title="Ship-to captured from email remark"
-          >
-            ⚑ captured
-          </span>
+          tinted ? (
+            // Solid fill, not a light pill: against the tinted card a violet-50
+            // pill would vanish. No ⚑ — that glyph reads as Hold elsewhere in
+            // the billing face, so reusing it here would say the wrong thing.
+            <span
+              className="inline-flex items-center h-4 px-[5px] text-[9.5px] font-semibold rounded border border-[#7c3aed] bg-[#7c3aed] text-white"
+              title="Ship-to changed from the bill-to address"
+            >
+              changed
+            </span>
+          ) : (
+            <span
+              className="inline-flex items-center gap-[3px] h-4 px-[5px] text-[9.5px] font-semibold rounded border bg-amber-50 border-amber-200 text-amber-700"
+              title="Ship-to captured from email remark"
+            >
+              ⚑ captured
+            </span>
+          )
         )}
       </div>
 
       <div className="flex items-baseline gap-1.5 mb-[3px]">
         <span className={`w-[6px] h-[6px] rounded-full flex-shrink-0 ${dotClass}`} />
-        <span className="text-[14.5px] font-bold text-gray-900 tracking-tight truncate">
+        <span
+          className={`text-[14.5px] font-bold tracking-tight truncate ${
+            tinted ? "text-[#4c1d95]" : "text-gray-900"
+          }`}
+        >
           {effectiveName || "—"}
         </span>
       </div>
@@ -116,7 +162,15 @@ export function ShipToCard({
       {hasDetail && (
         <div className="flex items-center gap-2 text-[11.5px] text-gray-500">
           {showCode && (
-            <span className="font-mono text-[11px] px-1.5 py-px rounded border bg-gray-100 text-gray-700 border-gray-200">
+            <span
+              className={`font-mono text-[11px] px-1.5 py-px rounded border ${
+                // White, not gray-100: the chip's usual grey fill sits too close
+                // to the violet-50 card to read as a separate object.
+                tinted
+                  ? "bg-white border-[#ddd6fe] text-[#5b21b6]"
+                  : "bg-gray-100 text-gray-700 border-gray-200"
+              }`}
+            >
               {effectiveCode}
             </span>
           )}
