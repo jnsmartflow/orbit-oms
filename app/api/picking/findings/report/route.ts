@@ -100,10 +100,17 @@ export async function POST(req: Request): Promise<NextResponse> {
     );
   }
 
-  // Empty/whitespace remarks store as NULL, never as "" — a blank string would
-  // read downstream as "he wrote something" when he did not.
-  const remarksRaw = typeof body.remarks === "string" ? body.remarks.trim() : "";
-  const remarks = remarksRaw === "" ? null : remarksRaw;
+  // ⚠ ABSENT remarks means LEAVE IT ALONE, not "clear it" (corrected
+  // 2026-08-08). The popup stopped collecting remarks when the field was
+  // removed from it, so this key is now normally MISSING from the body — and
+  // the previous version turned a missing key into `null`, which on the update
+  // path would silently wipe a remark typed before the field went away. Only an
+  // explicitly supplied value writes. Empty/whitespace still stores as NULL,
+  // never "", so a blank never reads downstream as "he wrote something".
+  // Same rule in confirm/route.ts.
+  const remarksProvided = body.remarks !== undefined;
+  const remarksValue =
+    typeof body.remarks === "string" && body.remarks.trim() !== "" ? body.remarks.trim() : null;
 
   // ── Which picker is this for? ────────────────────────────────────────────
   // A real picker's OWN session id always wins; the body's pickerId is honoured
@@ -226,7 +233,13 @@ export async function POST(req: Request): Promise<NextResponse> {
       // reportedById is re-stamped: whoever last recorded it is the reporter.
       // recordedById/recordedAt are deliberately NOT touched — they are the
       // supervisor's to set, and they are NULL here by the guard above.
-      data: { qtyFound, reason, remarks, reportedById: actorId, reportedAt: now },
+      data: {
+        qtyFound,
+        reason,
+        reportedById: actorId,
+        reportedAt: now,
+        ...(remarksProvided ? { remarks: remarksValue } : {}),
+      },
       select: {
         id: true, qtyFound: true, reason: true, remarks: true,
         reportedById: true, reportedAt: true, recordedById: true, recordedAt: true,
@@ -248,7 +261,7 @@ export async function POST(req: Request): Promise<NextResponse> {
       qtyOrdered: rawLine.unitQty,
       qtyFound,
       reason,
-      remarks,
+      remarks: remarksProvided ? remarksValue : null,
       reportedById: actorId,
       reportedAt:   now,
       // recordedById / recordedAt stay NULL — this is a report, not a

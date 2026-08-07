@@ -123,6 +123,43 @@ export type SortRule = {
   compare: (a: PickingQueueRow, b: PickingQueueRow) => number;
 };
 
+// ── Detail-screen line items (shared by BOTH boards, 2026-08-07) ───────────
+// The GET /api/picking/order/[orderId] response shape. Declared here, not
+// duplicated in each board, because both faces now render findings and a drift
+// between their two copies would be silent. (Each board carried its own private
+// copy of this interface until the findings work; that was fine while the shape
+// was four scalars and stopped being fine the moment it grew a nested object.)
+
+/**
+ * The pick_findings row for one line, or null when nothing is recorded.
+ *
+ * ⚠ `recordedById` IS THE STATE DISCRIMINATOR and the whole ladder hangs off it:
+ *   null     → reported by the picker, awaiting a supervisor   (PENDING, amber)
+ *   non-null → a supervisor confirmed it                       (CONFIRMED, red)
+ * Never infer state from qtyFound or reason — a supervisor may legitimately
+ * confirm a line at the full ordered quantity.
+ */
+export interface PickingLineFinding {
+  qtyFound:     number;
+  reason:       string;
+  remarks:      string | null;
+  reportedById: number | null;
+  reportedAt:   string | null;
+  recordedById: number | null;
+  recordedAt:   string | null;
+}
+
+export interface PickingDetailLine {
+  /** import_raw_line_items.id — a real PK, and the findings FK target. */
+  id:      number;
+  name:    string | null;
+  sku:     string;
+  pack:    string | null;
+  /** Qty ORDERED on this line (import_raw_line_items.unitQty). */
+  qty:     number;
+  finding: PickingLineFinding | null;
+}
+
 // ── Combined view (picker "My Picks" third tab, 2026-08-07) ─────────────────
 // The GET /api/picking/combined payload. Declared HERE, next to
 // PickingQueueRow, because this module is pure types with no imports — the

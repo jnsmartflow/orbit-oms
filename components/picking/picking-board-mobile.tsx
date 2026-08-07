@@ -9,7 +9,16 @@ import { ModuleMobileHeader } from "@/components/shared/module-mobile-header";
 import { AgeBadge, CardShelf, CARD_SHADOW_V2, RouteDot } from "./card-atoms";
 import { usePickingBoard } from "./picking-mobile-shell";
 import { useBillPager } from "./use-bill-pager";
-import type { PickingQueueRow } from "@/lib/picking/types";
+import {
+  FindingNote,
+  FindingPopup,
+  FindingRecordBanner,
+  FindingStatusBadge,
+  FindingTriangleButton,
+  findingState,
+  useFindingRecorder,
+} from "./finding-recorder";
+import type { PickingDetailLine, PickingLineFinding, PickingQueueRow } from "@/lib/picking/types";
 
 // Real /api/warehouse/pickers response shape — do not invent fields.
 interface Picker {
@@ -29,14 +38,12 @@ interface AssignResponse {
   error?: string;
 }
 
-// Real GET /api/picking/order/[orderId] response shape — see that route.
-interface LineItem {
-  id: number;
-  name: string | null;
-  sku: string;
-  pack: string | null;
-  qty: number;
-}
+// The GET /api/picking/order/[orderId] line shape now lives in
+// lib/picking/types.ts as PickingDetailLine — shared with the picker board
+// instead of each face keeping a private copy. The copies were harmless while
+// the shape was four scalars; they stopped being harmless the moment it grew a
+// nested `finding` object that drives colour AND the Approve gate.
+type LineItem = PickingDetailLine;
 
 // Card shell shadow — lifted verbatim from app/po/po-page.tsx's SOFT_CARD_SHADOW
 // (the /po visual reference this board is styled to match).
@@ -718,6 +725,26 @@ export function PickingBoardMobile(): React.JSX.Element {
   const [checkedLineIds, setCheckedLineIds] = useState<Set<number>>(new Set());
   const [approving, setApproving] = useState(false);
 
+  // ── Shortfall recording (2026-08-08) ─────────────────────────────────────
+  // The SAME triangle / banner / popup the picker uses — the mockup is explicit
+  // that both roles get one screen (docs/mockups/picking/picking-shortfall-
+  // design.html). Only `mode` differs: "confirm" posts to the supervisor route
+  // and labels the CTA "Confirm".
+  const [lineItemsReloadKey, setLineItemsReloadKey] = useState(0);
+
+  const applyFinding = useCallback((rawLineItemId: number, finding: PickingLineFinding) => {
+    setLineItems((prev) =>
+      prev === null ? prev : prev.map((li) => (li.id === rawLineItemId ? { ...li, finding } : li)),
+    );
+  }, []);
+
+  const recorder = useFindingRecorder({
+    mode: "confirm",
+    orderId: detailOrderId,
+    onSaved: applyFinding,
+    onConflict: () => setLineItemsReloadKey((k) => k + 1),
+  });
+
   // Early-release (5b) — which locked bill the confirm sheet is asking about
   // (null = closed), plus an in-flight guard so a double-tap can't fire two
   // overlapping POSTs. Deliberately its OWN state, not folded into
@@ -758,7 +785,14 @@ export function PickingBoardMobile(): React.JSX.Element {
   // navStateRef mirrors detailOpen/pickerSheetOpen for the popstate handler
   // to read live, never a stale closure (same reason /po uses navStateRef).
   const depthRef = useRef(0);
-  const navStateRef = useRef({ detailOpen: false, pickerSheetOpen: false });
+  // findingOpen joins the pair 2026-08-08 — the record popup is a second nested
+  // overlay over the detail screen, and it needs the same close-and-re-push
+  // treatment the picker sheet already gets.
+  const navStateRef = useRef({ detailOpen: false, pickerSheetOpen: false, findingOpen: false });
+  // The popstate listener registers ONCE, so it must not close over a
+  // `recorder` object rebuilt on every render.
+  const recorderRef = useRef(recorder);
+  recorderRef.current = recorder;
 
   // Push one entry at the CURRENT url (pushState with no url arg navigates
   // nowhere) — a "back" from it is purely an in-app state change, never a
@@ -819,7 +853,10 @@ export function PickingBoardMobile(): React.JSX.Element {
     return () => {
       cancelled = true;
     };
-  }, [detailOrderId]);
+    // lineItemsReloadKey lets a 409 force a re-read of the SAME bill — the
+    // server knows something this screen does not (someone else confirmed a
+    // line while it sat open).
+  }, [detailOrderId, lineItemsReloadKey]);
 
   // data.rows arrives already sorted server-side (lib/picking/sort.ts
   // PICKING_SPINE — assigned-sink leads, window next). Array.filter preserves
@@ -1094,6 +1131,10 @@ export function PickingBoardMobile(): React.JSX.Element {
     setDetailQuery("");
     setActivePackFilter("ALL");
     setCheckedLineIds(new Set());
+    // The popup belongs to ONE line of ONE bill — paging away must close it.
+    // `recordMode` deliberately does NOT reset here (screen-level mode); it
+    // resets on a fresh open, in openDetail.
+    recorderRef.current.close();
   }
 
   // Detail-interactions Build A — `listKey` says which of the four already-
@@ -1102,6 +1143,9 @@ export function PickingBoardMobile(): React.JSX.Element {
   // Pushes ONE history entry for the whole detail "session" — see pushScreen.
   function openDetail(orderId: number, listKey: DetailListKey): void {
     switchDetailTo(orderId, listKey);
+    // Recording is OFF on every fresh open — the bill he opens looks exactly
+    // like the bill he opens today, and arming the mode is a deliberate tap.
+    recorderRef.current.setRecordMode(false);
     // Defensive reset (Build B) — a fresh open from a card tap must always
     // start at rest, in case a prior session's gesture left the ref mid-
     // transform. The pager's own paging flow deliberately does NOT reset
@@ -1159,8 +1203,8 @@ export function PickingBoardMobile(): React.JSX.Element {
   // Keeps navStateRef synced to live detailOpen/pickerSheetOpen so the
   // handler (registered once below) never reads a stale closure.
   useEffect(() => {
-    navStateRef.current = { detailOpen, pickerSheetOpen };
-  }, [detailOpen, pickerSheetOpen]);
+    navStateRef.current = { detailOpen, pickerSheetOpen, findingOpen: recorder.target !== null };
+  }, [detailOpen, pickerSheetOpen, recorder.target]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1173,6 +1217,14 @@ export function PickingBoardMobile(): React.JSX.Element {
       // The sheet itself never pushes its own entry (out of scope — the
       // other 4 sheets + the bulk-bar opening of this same sheet are a
       // separate, later cleanup); this only intercepts the nested case.
+      // The record popup is the topmost layer when it is up — same
+      // close-just-this-and-re-push treatment as the picker sheet below it, so
+      // the single "detail" entry survives for the NEXT back-press.
+      if (navStateRef.current.findingOpen && navStateRef.current.detailOpen) {
+        recorderRef.current.close();
+        pushScreen();
+        return;
+      }
       if (navStateRef.current.pickerSheetOpen && navStateRef.current.detailOpen) {
         setPickerSheetOpen(false);
         pushScreen();
@@ -1199,14 +1251,31 @@ export function PickingBoardMobile(): React.JSX.Element {
 
   // Approve gate — checks the FULL line set, never filteredLineItems, so an
   // active pack-chip filter hiding some lines can never let a partially-
-  // ticked bill through (task brief: "Approve must still require ALL lines
+  // resolved bill through (task brief: "Approve must still require ALL lines
   // ticked, not just visible ones"). A zero-line bill stays permanently
   // disabled rather than vacuously passing `.every()` on an empty array —
   // a bill with no lines shouldn't be in picking at all.
-  const allLinesChecked = useMemo(() => {
-    if (!lineItems || lineItems.length === 0) return false;
-    return lineItems.every((li) => checkedLineIds.has(li.id));
-  }, [lineItems, checkedLineIds]);
+  //
+  // ⚠ WIDENED 2026-08-08: a line counts as RESOLVED if it is plain-ticked OR
+  // it carries a CONFIRMED finding. The two are alternatives, not both — a
+  // line the supervisor recorded as short is resolved by that record; making
+  // him also tick it would be asking the same question twice.
+  //
+  // ⚠ A PENDING finding does NOT count. A picker's report is a claim awaiting
+  // review, and Approve is the review — letting it satisfy the gate would let
+  // a supervisor approve a bill on the strength of the picker's own say-so
+  // without ever looking. The mockup states this outright ("an amber 'picker
+  // recorded' line does NOT count until the supervisor actually confirms it").
+  // This is the single most important line in this memo; do not relax it.
+  const resolvedLineCount = useMemo(
+    () =>
+      (lineItems ?? []).filter(
+        (li) => findingState(li.finding) === "confirmed" || checkedLineIds.has(li.id),
+      ).length,
+    [lineItems, checkedLineIds],
+  );
+  const allLinesResolved =
+    lineItems !== null && lineItems.length > 0 && resolvedLineCount === lineItems.length;
 
   // Distinct packs present on this bill, for the pack-filter chip row.
   // Sorted alphabetically with "No pack" trailing last (an exception
@@ -1974,6 +2043,17 @@ export function PickingBoardMobile(): React.JSX.Element {
               </div>
             )}
           </div>
+          {/* Triangle — arms recording mode, only on a bill he is actually
+              checking (isDone = the Done tab's "Check now" band, the same
+              condition that renders the tick column and the Approve CTA).
+              Sits LEFT of search: search is the incumbent control and moving
+              it would re-teach a position for no reason. */}
+          {detailRow?.isDone && (
+            <FindingTriangleButton
+              armed={recorder.recordMode}
+              onToggle={() => recorder.setRecordMode(!recorder.recordMode)}
+            />
+          )}
           <button
             type="button"
             onClick={() => setDetailSearching((v) => !v)}
@@ -1983,6 +2063,13 @@ export function PickingBoardMobile(): React.JSX.Element {
             <Search size={17} />
           </button>
         </div>
+
+        {/* Recording banner — OUTSIDE pager.contentRef, same as the picker
+            board: recording is a screen-level mode and must not slide away on
+            every swipe between bills. */}
+        {recorder.recordMode && detailRow?.isDone && (
+          <FindingRecordBanner onDone={() => recorder.setRecordMode(false)} />
+        )}
 
         {/* Detail-polish Build B — everything below the header (stat strip /
             pack filter / line items / CTAs) is wrapped in ONE ref'd
@@ -2039,7 +2126,7 @@ export function PickingBoardMobile(): React.JSX.Element {
                 </div>
                 {detailRow?.isDone && lineItems !== null && (
                   <div className="text-[11.5px] text-gray-400 tabular-nums mt-0.5">
-                    {checkedLineIds.size} / {lineItems.length} checked
+                    {resolvedLineCount} / {lineItems.length} resolved
                   </div>
                 )}
               </div>
@@ -2129,10 +2216,28 @@ export function PickingBoardMobile(): React.JSX.Element {
               // Flat — filtered, never restructured or grouped by pack.
               filteredLineItems.map((li) => {
                 const isChecked = detailRow?.isDone === true && checkedLineIds.has(li.id);
+                // ⚠ ONE place decides none/pending/confirmed — findingState().
+                const state = findingState(li.finding);
+                // A PENDING line is tappable regardless of the mode: the
+                // picker already flagged it and confirming is the supervisor's
+                // job, so it must not hide behind an extra toggle (the
+                // mockup's "always tappable, even without the triangle on").
+                // An untouched line needs the mode armed; a CONFIRMED line
+                // stays tappable so a wrong number can be corrected.
+                const rowTappable =
+                  detailRow?.isDone === true && (recorder.recordMode || state !== "none");
                 return (
                 <div
                   key={li.id}
-                  className="flex bg-white rounded-[14px] overflow-hidden mb-2"
+                  onClick={rowTappable ? () => recorder.openFor(li) : undefined}
+                  // ⚠ NO status fill or border — the row stays white like every
+                  // other row and the status lives in the badge + note only.
+                  // (The picker board briefly tinted whole rows; live testing
+                  // said it read as alarming end to end. Same rule both faces.)
+                  className={
+                    "flex bg-white rounded-[14px] overflow-hidden mb-2 " +
+                    (rowTappable ? "cursor-pointer active:opacity-90" : "")
+                  }
                   style={{ boxShadow: SOFT_CARD_SHADOW }}
                 >
                   {/* PACK TILE — fixed 56px, full card height (flex stretch),
@@ -2153,9 +2258,15 @@ export function PickingBoardMobile(): React.JSX.Element {
                       is muted confirmation underneath. Mutes slightly once
                       ticked (Check tab only) — per the approved mockup, no
                       ring, no left border, just a quiet row. */}
-                  <div className={"flex-1 min-w-0 px-3 py-2.5 transition-opacity " + (isChecked ? "opacity-55" : "")}>
+                  <div className={"flex-1 min-w-0 px-3 py-2.5 transition-opacity " + (isChecked && state === "none" ? "opacity-55" : "")}>
                     <div className="font-mono text-[17px] font-bold text-gray-900 truncate">{li.sku}</div>
                     <div className="text-[12px] text-gray-500 truncate mt-0.5">{li.name ?? "—"}</div>
+                    {/* With the row fill gone, this note and the badge ARE the
+                        status. mode="confirm" makes a pending line read "tap to
+                        confirm" — the supervisor is the one who acts on it. */}
+                    {li.finding !== null && (
+                      <FindingNote finding={li.finding} qtyOrdered={li.qty} mode="confirm" />
+                    )}
                   </div>
                   {/* QTY — fixed, plain, no "x" prefix. */}
                   <div className="shrink-0 flex items-center justify-center px-3.5">
@@ -2169,10 +2280,25 @@ export function PickingBoardMobile(): React.JSX.Element {
                       not a compartment), per the approved mockup
                       (docs/mockups/picking/supervisor-check-ticks.html).
                       Freely toggleable — a forcing function, not a lock. */}
-                  {detailRow?.isDone && (
+                  {/* ⚠ THE CIRCLE IS SHARED BY TWO FEATURES and shows the
+                      STRONGER one. With no finding it is the plain tick,
+                      exactly as before. Once something is recorded it becomes
+                      the finding's badge and its tap opens the popup — a
+                      recorded line is resolved BY that record, so asking for a
+                      tick as well would be the same question twice (and the
+                      Approve gate treats them as alternatives for exactly that
+                      reason). The ephemeral tick for that line is not cleared,
+                      only hidden. */}
+                  {detailRow?.isDone && state !== "none" && (
+                    <FindingStatusBadge state={state} onOpen={() => recorder.openFor(li)} />
+                  )}
+                  {detailRow?.isDone && state === "none" && (
                     <button
                       type="button"
-                      onClick={() => toggleLineChecked(li.id)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleLineChecked(li.id);
+                      }}
                       aria-label={isChecked ? "Mark line unchecked" : "Mark line checked"}
                       className="w-11 shrink-0 flex items-center justify-center"
                     >
@@ -2314,10 +2440,10 @@ export function PickingBoardMobile(): React.JSX.Element {
             <button
               type="button"
               onClick={() => void handleApprove(detailRow)}
-              disabled={!allLinesChecked || approving}
+              disabled={!allLinesResolved || approving}
               className={
                 "w-full h-12 rounded-full text-[14.5px] font-bold " +
-                (allLinesChecked
+                (allLinesResolved
                   ? "bg-teal-600 active:bg-teal-700 text-white shadow-[0_8px_22px_rgba(13,148,136,0.42)]"
                   : "bg-gray-200 text-gray-400")
               }
@@ -2330,6 +2456,10 @@ export function PickingBoardMobile(): React.JSX.Element {
         {/* ^ closes the Detail-polish Build B sliding content wrapper
             (ref={pager.contentRef}) opened above the stat-strip/search
             block. */}
+
+        {/* Record popup — the SHARED component, the same one the picker board
+            renders. It carries its own NO_BILL_SWIPE opt-out. */}
+        <FindingPopup {...recorder.popupProps} />
       </div>
 
       {/* Floating assign bar — matches docs/mockups/picking/supervisor-assign-board.html's
