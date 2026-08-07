@@ -18,9 +18,10 @@ interface InstructionsStripProps {
    */
   tone?: "default" | "violet";
   /**
-   * Remark-text size in px. Default `11.5` — the value this row wrapper carried
-   * as a hardcoded `text-[11.5px]`, so a caller that does not pass it renders
-   * byte-identically.
+   * Remark-text size in px. Default `11` — the default of the per-user column
+   * that now drives it (`users.notesFontSize`, bounded 11-15). The band shipped
+   * briefly at 11.5 under a small/normal/large control; that vocabulary is gone
+   * and the size is now the pixel value itself.
    *
    * Applies to all THREE rows (delivery / bill / notes) and to BOTH tones — the
    * size is a reader preference, not a billing treatment, so it is deliberately
@@ -65,7 +66,7 @@ export function InstructionsStrip({
   bill,
   notes,
   tone = "default",
-  fontSize = 11.5,
+  fontSize = 11,
   controlsSlot,
 }: InstructionsStripProps): JSX.Element | null {
   const violet = tone === "violet";

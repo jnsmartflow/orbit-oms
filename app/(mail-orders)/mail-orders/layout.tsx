@@ -5,6 +5,8 @@ import { RoleSidebarProvider } from "@/components/shared/role-sidebar-provider";
 import { RoleLayoutClient } from "@/components/shared/role-layout-client";
 import { isBillingV2Enabled } from "@/lib/billing/flag";
 import { BillingV2Provider } from "@/components/billing/billing-v2-provider";
+import { getNotesFontSize } from "@/lib/mail-orders/notes-font-size";
+import { NotesFontSizeProvider } from "@/components/mail-orders/notes-font-size-provider";
 import type { RoleSidebarRole } from "@/components/shared/role-sidebar";
 
 export const dynamic = "force-dynamic";
@@ -55,6 +57,12 @@ export default async function MailOrdersLayout({
   // break the page.
   const billingV2 = await isBillingV2Enabled(Number(session.user.id));
 
+  // Notes-band text size — read FRESH here too, for the same reason and by the
+  // same shape (Number(session.user.id) + the helper's own isFinite guard).
+  // Sequential await, never $transaction. Fails soft to 11px, so this cannot
+  // break the page any more than the flag above can.
+  const notesFontSize = await getNotesFontSize(Number(session.user.id));
+
   return (
     <RoleSidebarProvider>
       <RoleLayoutClient
@@ -65,8 +73,12 @@ export default async function MailOrdersLayout({
       >
         {/* One server-side flag read, couriered to the client tree. Nothing
             below re-fetches it, and page.tsx keeps its bare <ComponentName />
-            shape (CORE §3). */}
-        <BillingV2Provider enabled={billingV2}>{children}</BillingV2Provider>
+            shape (CORE §3). The size provider nests INSIDE rather than merging
+            into the flag provider — a rollout flag and a user preference are
+            two concerns with two different defaults. */}
+        <BillingV2Provider enabled={billingV2}>
+          <NotesFontSizeProvider size={notesFontSize}>{children}</NotesFontSizeProvider>
+        </BillingV2Provider>
       </RoleLayoutClient>
     </RoleSidebarProvider>
   );

@@ -120,6 +120,18 @@ interface ReviewViewProps {
    * existed. Every non-billing caller is unaffected.
    */
   selectedDate?: string;
+  /**
+   * Notes-band remark text size in px, 11-15. Owned by the parent page (which
+   * seeds it from the server-resolved per-user value and persists changes), so
+   * it survives this component re-mounting — same arrangement as
+   * `billingTab`/`onBillingTabChange`.
+   *
+   * Defaults to 11 — the column's default and the size the band rendered at
+   * before this existed — so a caller that omits it is unchanged. The SIZE
+   * applies on both faces; only the stepper CONTROL is billing-gated.
+   */
+  notesFontSize?: number;
+  onNotesFontSizeChange?: (size: number) => void;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -187,29 +199,24 @@ const REASON_LABELS: Record<string, string> = {
 const REASON_KEY_VALUES = ["out_of_stock", "wrong_pack", "discontinued", "other_depot", "other"];
 
 // ── Notes-band text size ───────────────────────────────────────────────────
-// Three steps off the CLAUDE_UI.md §4 scale — no invented pixel values.
-// `normal` is the 11.5px the band has always rendered at, so the default is a
-// no-op. 11.5 → 12 would have been invisible, hence the jump to 13.5 (§4 "card
-// customer name") for large; 10.5 is §4 "badge text".
-type NotesFontSize = "small" | "normal" | "large";
-const NOTES_FONT_PX: Record<NotesFontSize, number> = {
-  small: 10.5,
-  normal: 11.5,
-  large: 13.5,
-};
-const NOTES_FONT_KEY = "mo-review-notes-font-size";
+// The size is now the PIXEL VALUE itself, stepped 11-15 and stored per user on
+// users.notesFontSize. The old "small"/"normal"/"large" mapping is gone: a
+// stepper that stores px needs no vocabulary in between, and the DB column,
+// its CHECK constraint, the API route and this control now all speak the same
+// units.
+//
+// Bounds are duplicated from lib/mail-orders/notes-font-size.ts rather than
+// imported — that module pulls in lib/prisma, which must not reach a client
+// bundle. Three enforcement points by design (Postgres CHECK, the POST route,
+// this control); widening the range means changing all of them.
+const NOTES_FONT_MIN = 11;
+const NOTES_FONT_MAX = 15;
 
-// The size control's face: one "A" per step, drawn at increasing sizes so the
-// row reads as a size icon instead of three words. These are ICON sizes and
-// deliberately NOT the NOTES_FONT_PX values above — a 10.5 vs 11.5 glyph is
-// indistinguishable at this scale, so the ladder is exaggerated to stay legible.
-// The title doubles as the aria-label: with the words gone, the glyph alone
-// does not say which button is which.
-const NOTES_SIZE_GLYPH: Record<NotesFontSize, { px: number; title: string }> = {
-  small: { px: 9, title: "Small text" },
-  normal: { px: 11, title: "Normal text" },
-  large: { px: 13, title: "Large text" },
-};
+// The old localStorage key, replaced by the per-user column. Cleared on mount
+// as a courtesy so a stale value does not sit in every operator's browser
+// forever — same one-time cleanup use-sku-display-mode.ts does for its own
+// legacy key. Idempotent; a no-op once removed.
+const LEGACY_NOTES_FONT_KEY = "mo-review-notes-font-size";
 
 // ── Toggle component ───────────────────────────────────────────────────────
 
@@ -532,6 +539,8 @@ export function ReviewView({
   billingHeaderSlot,
   hasHeaderFilter = false,
   selectedDate,
+  notesFontSize = NOTES_FONT_MIN,
+  onNotesFontSizeChange,
 }: ReviewViewProps) {
   // Billing v2 (Phase 2) — dispatch windows for the reused Floor slot picker.
   // Fetched ONLY when the flag is on: with it off this effect returns
@@ -590,22 +599,6 @@ export function ReviewView({
     if (typeof window === "undefined") return "long";
     const stored = window.localStorage.getItem("mo-review-desc-mode");
     return stored === "short" ? "short" : "long";
-  });
-  // Notes-band text size — same persistent shape as `descMode` above (lazy
-  // initializer, SSR guard, whitelist read so junk in storage falls back to the
-  // default instead of corrupting state), with ONE hardening: the read is
-  // wrapped too. `descMode` guards only the write, but Safari private mode can
-  // throw on getItem as well, and a throw in a lazy initializer takes the whole
-  // screen down rather than just losing the preference.
-  const [notesFontSize, setNotesFontSize] = useState<NotesFontSize>(() => {
-    if (typeof window === "undefined") return "normal";
-    try {
-      const stored = window.localStorage.getItem(NOTES_FONT_KEY);
-      return stored === "small" || stored === "large" ? stored : "normal";
-    } catch {
-      // localStorage unavailable — ignore
-      return "normal";
-    }
   });
   const [splitDismissed, setSplitDismissed] = useState(false);
   const [splitting, setSplitting] = useState(false);
@@ -667,14 +660,16 @@ export function ReviewView({
     }
   }, [descMode]);
 
-  // Persist notes-band font size to localStorage
+  // One-time cleanup of the notes-size localStorage key, replaced by the
+  // per-user users.notesFontSize column. Idempotent; a no-op once every browser
+  // has had it removed once. Nothing reads this key any more.
   useEffect(() => {
     try {
-      window.localStorage.setItem(NOTES_FONT_KEY, notesFontSize);
+      window.localStorage.removeItem(LEGACY_NOTES_FONT_KEY);
     } catch {
       // localStorage unavailable — ignore
     }
-  }, [notesFontSize]);
+  }, []);
 
   // Auto-select first pending order if none selected
   useEffect(() => {
@@ -2013,65 +2008,100 @@ export function ReviewView({
       </div>
     );
 
-    // Notes-band size control — three always-visible buttons rendered top-right
-    // INSIDE the band via its `controlsSlot`. Chrome derives from the SKU
-    // table's [long]/[short] desc toggle (radius 4, thin border), NOT from
-    // BTN_BASE: that is the 27px action-ribbon button and would tower over an
-    // 11.5px band.
+    // Notes-band size control — a −/value/+ stepper rendered top-right INSIDE
+    // the band via its `controlsSlot`. Steps the PIXEL SIZE directly, 11-15;
+    // there is no small/normal/large vocabulary anywhere any more.
     //
-    // The face is an "A" at three sizes rather than the words SMALL/NORMAL/
-    // LARGE. Because the glyph size differs per button, the box CANNOT be
-    // padding-driven the way the desc toggle is — a 13px A would make a taller
-    // button than a 9px one and the row would come out ragged. Fixed 20x18 with
-    // inline-flex centring keeps the three boxes identical while only the letter
-    // inside them grows.
+    // Chrome derives from the SKU table's [long]/[short] desc toggle (radius 4,
+    // thin border), NOT from BTN_BASE: that is the 27px action-ribbon button and
+    // would tower over an 11px band. The three cells share one 18px height and
+    // one border colour so they read as a single control rather than three
+    // buttons that happen to be adjacent.
     //
-    // Colours are the band's OWN violets (#7c3aed border/fill, #5b21b6 text) —
-    // instructions-strip.tsx :12-15 names one owner for that shade so this
-    // screen and Floor cannot drift; no new purple is introduced here.
+    // Colours are the band's OWN violets (#7c3aed fill/border, #5b21b6 text,
+    // #ddd6fe rest border) — instructions-strip.tsx :12-15 names one owner for
+    // that shade so this screen and Floor cannot drift; no new purple here.
     //
-    // Billing-only, matching the rest of the billing face. The STORED SIZE is
-    // not gated — a non-billing operator still gets whatever size is in
-    // localStorage, they just have no on-screen way to change it yet.
+    // Ends are DISABLED, not wrapped: an operator holding − at 11 should feel
+    // the floor, not jump to 15. Disabled uses the grey treatment CLAUDE_UI.md
+    // §10 requires (never a faded primary), and the box model is identical in
+    // both states so nothing shifts as it enables.
+    //
+    // Billing-only, matching the rest of the billing face. The stored SIZE is
+    // not gated — a non-billing operator still renders at whatever px their row
+    // holds, they just have no on-screen way to change it yet.
+    const notesStepDisabled = (dir: -1 | 1): boolean =>
+      dir === -1 ? notesFontSize <= NOTES_FONT_MIN : notesFontSize >= NOTES_FONT_MAX;
+
+    const renderNotesStep = (dir: -1 | 1) => {
+      const disabled = notesStepDisabled(dir);
+      const label = dir === -1 ? "Smaller notes text" : "Larger notes text";
+      return (
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => {
+            if (disabled) return;
+            // Clamp on the way out as well as gating the button: the bound is
+            // cheap to assert twice and this value goes on to a column with a
+            // CHECK constraint that would 500 rather than round.
+            const next = Math.min(
+              NOTES_FONT_MAX,
+              Math.max(NOTES_FONT_MIN, notesFontSize + dir),
+            );
+            if (next !== notesFontSize) onNotesFontSizeChange?.(next);
+          }}
+          title={label}
+          aria-label={label}
+          style={{
+            width: 18,
+            height: 18,
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 12,
+            lineHeight: 1,
+            fontWeight: 600,
+            borderRadius: 4,
+            border: `1px solid ${disabled ? "#e5e7eb" : "#ddd6fe"}`,
+            background: disabled ? "#f9fafb" : "#fff",
+            color: disabled ? "#d1d5db" : "#5b21b6",
+            cursor: disabled ? "not-allowed" : "pointer",
+            transition: "background 0.12s",
+          }}
+          onMouseEnter={(e) => {
+            if (!disabled) e.currentTarget.style.background = "#f5f3ff";
+          }}
+          onMouseLeave={(e) => {
+            if (!disabled) e.currentTarget.style.background = "#fff";
+          }}
+        >
+          {dir === -1 ? "−" : "+"}
+        </button>
+      );
+    };
+
     const notesSizeControls = billingV2 ? (
-      <div className="mo-print-hide flex items-center gap-1">
-        {(["small", "normal", "large"] as const).map((size) => {
-          const active = notesFontSize === size;
-          const glyph = NOTES_SIZE_GLYPH[size];
-          return (
-            <button
-              key={size}
-              type="button"
-              onClick={() => setNotesFontSize(size)}
-              title={glyph.title}
-              aria-label={glyph.title}
-              style={{
-                width: 20,
-                height: 18,
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: glyph.px,
-                lineHeight: 1,
-                fontWeight: active ? 600 : 500,
-                borderRadius: 4,
-                border: `1px solid ${active ? "#7c3aed" : "#ddd6fe"}`,
-                background: active ? "#7c3aed" : "#fff",
-                color: active ? "#fff" : "#5b21b6",
-                cursor: "pointer",
-                transition: "background 0.12s",
-              }}
-              onMouseEnter={(e) => {
-                if (!active) e.currentTarget.style.background = "#f5f3ff";
-              }}
-              onMouseLeave={(e) => {
-                if (!active) e.currentTarget.style.background = "#fff";
-              }}
-            >
-              A
-            </button>
-          );
-        })}
+      <div
+        className="mo-print-hide flex items-center gap-1"
+        title={`Notes text size — ${notesFontSize}px`}
+      >
+        {renderNotesStep(-1)}
+        <span
+          aria-live="polite"
+          style={{
+            minWidth: 18,
+            textAlign: "center",
+            fontSize: 10,
+            lineHeight: 1,
+            fontWeight: 600,
+            color: "#5b21b6",
+            fontVariantNumeric: "tabular-nums",
+          }}
+        >
+          {notesFontSize}
+        </span>
+        {renderNotesStep(1)}
       </div>
     ) : undefined;
 
@@ -2165,7 +2195,7 @@ export function ReviewView({
             bill={order.billRemarks || null}
             notes={notesString}
             tone={billingV2 ? "violet" : "default"}
-            fontSize={NOTES_FONT_PX[notesFontSize]}
+            fontSize={notesFontSize}
             controlsSlot={notesSizeControls}
           />
         </div>

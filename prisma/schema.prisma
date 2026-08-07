@@ -134,6 +134,22 @@ model users {
   // takes effect immediately instead of after the 5-minute token stale window.
   // See that file's header before "optimising" it into lib/auth.ts.
   billingV2TestUser         Boolean                  @default(false)
+  // Notes-band text size on /mail-orders, in PIXELS (2026-08-07). Created in the
+  // Supabase SQL Editor and hand-mirrored here — db push/pull are banned
+  // (CORE §3) and db pull additionally fails on this machine with P1001.
+  //
+  // Live column: integer NOT NULL DEFAULT 11, with
+  // chk_users_notes_font_size CHECK (notesFontSize >= 11 AND <= 15).
+  // Prisma cannot express that CHECK, so the 11-15 bound is enforced twice in
+  // code — the API route rejects out-of-range writes, and
+  // lib/mail-orders/notes-font-size.ts clamps on read. Widening the range means
+  // changing the constraint AND both of those.
+  //
+  // Like billingV2TestUser above, deliberately NOT cached onto the JWT: it is
+  // read fresh per page load in the mail-orders layout. Caching it behind the
+  // 5-minute token stale window would let a reload show the OLD size after the
+  // operator had already changed it.
+  notesFontSize             Int                      @default(11)
   // Phase 2 back-relations
   importBatches             import_batches[]
   statusLogs                order_status_logs[]

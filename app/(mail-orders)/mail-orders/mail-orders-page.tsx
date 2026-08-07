@@ -14,6 +14,7 @@ import { ReviewView } from "./review-view";
 import { TutorialOverlay } from "./tutorial-overlay";
 import { Check, Copy } from "lucide-react";
 import { useBillingV2 } from "@/components/billing/billing-v2-provider";
+import { useInitialNotesFontSize } from "@/components/mail-orders/notes-font-size-provider";
 import type { BillingTab } from "@/components/billing/billing-tab-bar";
 import { HeaderFilter } from "@/components/header-filter";
 import { HeaderDateStepper } from "@/components/header-date-stepper";
@@ -191,6 +192,13 @@ export default function MailOrdersPage() {
   // `billingTab` is not persisted: a reload lands back on Orders.
   const billingV2 = useBillingV2();
   const [billingTab, setBillingTab] = useState<BillingTab>("orders");
+  // ── Notes-band text size (per user, px) ─────────────────────────────────────
+  // Seeded from the value the layout resolved server-side for THIS user, so the
+  // band paints at the stored size on first frame — no default-then-snap flash.
+  // Owned here rather than in ReviewView so it survives that component
+  // re-mounting, same reason billingTab lives here.
+  const initialNotesFontSize = useInitialNotesFontSize();
+  const [notesFontSize, setNotesFontSize] = useState<number>(initialNotesFontSize);
   // ── Smart copy state (Ctrl+C workflow for SAP) ──────────────────────────────
   const [smartCopyOrderId, setSmartCopyOrderId] = useState<number | null>(null);
   const [smartCopyLineIdx, setSmartCopyLineIdx] = useState(0);
@@ -541,6 +549,33 @@ export default function MailOrdersPage() {
     setCopyToast({ text, type });
     copyToastTimer.current = setTimeout(() => setCopyToast(null), 1500);
   }, []);
+
+  // ── Notes-band size: optimistic write ───────────────────────────────────────
+  // The band repaints on the click, then the POST follows. A stepper that waited
+  // for a round trip before moving would feel broken on a depot connection, and
+  // the operator is already looking at the text they are resizing.
+  //
+  // On failure the state goes BACK to the value it had before this click — not
+  // to the default — and the existing copy-toast channel reports it, so a
+  // silent no-save is impossible. `prev` is captured from state rather than
+  // inside a setState updater on purpose: an updater runs twice under StrictMode
+  // in dev, which would capture the already-updated value and make the revert a
+  // no-op.
+  const handleNotesFontSizeChange = useCallback(async (size: number) => {
+    const prev = notesFontSize;
+    setNotesFontSize(size);
+    try {
+      const res = await fetch("/api/user/notes-font-size", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ size }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    } catch {
+      setNotesFontSize(prev);
+      showCopyToast("Couldn't save text size", "error");
+    }
+  }, [notesFontSize, showCopyToast]);
 
   // ── Smart copy: flash cell helper ───────────────────────────────────────────
   const flashCell = useCallback((orderId: number, cellType: "code" | "sku") => {
@@ -1347,6 +1382,10 @@ export default function MailOrdersPage() {
           // re-derived. Nothing else in ReviewView reads it, and the tab it
           // feeds renders on the billing face only.
           selectedDate={selectedDate}
+          // Per-user notes-band size (px). The VALUE applies on both faces; only
+          // the stepper control inside ReviewView is billing-gated.
+          notesFontSize={notesFontSize}
+          onNotesFontSizeChange={handleNotesFontSizeChange}
         />
       )}
 
