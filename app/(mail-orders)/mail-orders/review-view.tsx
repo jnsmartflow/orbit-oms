@@ -186,6 +186,19 @@ const REASON_LABELS: Record<string, string> = {
 // 1-5 quick-pick keyboard mapping (skips the divider)
 const REASON_KEY_VALUES = ["out_of_stock", "wrong_pack", "discontinued", "other_depot", "other"];
 
+// ── Notes-band text size ───────────────────────────────────────────────────
+// Three steps off the CLAUDE_UI.md §4 scale — no invented pixel values.
+// `normal` is the 11.5px the band has always rendered at, so the default is a
+// no-op. 11.5 → 12 would have been invisible, hence the jump to 13.5 (§4 "card
+// customer name") for large; 10.5 is §4 "badge text".
+type NotesFontSize = "small" | "normal" | "large";
+const NOTES_FONT_PX: Record<NotesFontSize, number> = {
+  small: 10.5,
+  normal: 11.5,
+  large: 13.5,
+};
+const NOTES_FONT_KEY = "mo-review-notes-font-size";
+
 // ── Toggle component ───────────────────────────────────────────────────────
 
 function SkuToggle({ isOn, onToggle }: { isOn: boolean; onToggle: () => void }) {
@@ -566,6 +579,22 @@ export function ReviewView({
     const stored = window.localStorage.getItem("mo-review-desc-mode");
     return stored === "short" ? "short" : "long";
   });
+  // Notes-band text size — same persistent shape as `descMode` above (lazy
+  // initializer, SSR guard, whitelist read so junk in storage falls back to the
+  // default instead of corrupting state), with ONE hardening: the read is
+  // wrapped too. `descMode` guards only the write, but Safari private mode can
+  // throw on getItem as well, and a throw in a lazy initializer takes the whole
+  // screen down rather than just losing the preference.
+  const [notesFontSize, setNotesFontSize] = useState<NotesFontSize>(() => {
+    if (typeof window === "undefined") return "normal";
+    try {
+      const stored = window.localStorage.getItem(NOTES_FONT_KEY);
+      return stored === "small" || stored === "large" ? stored : "normal";
+    } catch {
+      // localStorage unavailable — ignore
+      return "normal";
+    }
+  });
   const [splitDismissed, setSplitDismissed] = useState(false);
   const [splitting, setSplitting] = useState(false);
 
@@ -625,6 +654,15 @@ export function ReviewView({
       // localStorage unavailable — ignore
     }
   }, [descMode]);
+
+  // Persist notes-band font size to localStorage
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(NOTES_FONT_KEY, notesFontSize);
+    } catch {
+      // localStorage unavailable — ignore
+    }
+  }, [notesFontSize]);
 
   // Auto-select first pending order if none selected
   useEffect(() => {
@@ -1963,6 +2001,56 @@ export function ReviewView({
       </div>
     );
 
+    // Notes-band size control — three always-visible buttons rendered top-right
+    // INSIDE the band via its `controlsSlot`. Shape copied from the SKU table's
+    // [long]/[short] desc toggle (fontSize 9, 1px 6px, radius 4, uppercase), NOT
+    // from BTN_BASE: that is the 27px action-ribbon button and would tower over
+    // an 11.5px band.
+    //
+    // Colours are the band's OWN violets (#7c3aed border/fill, #5b21b6 text) —
+    // instructions-strip.tsx :12-15 names one owner for that shade so this
+    // screen and Floor cannot drift; no new purple is introduced here.
+    //
+    // Billing-only, matching the rest of the billing face. The STORED SIZE is
+    // not gated — a non-billing operator still gets whatever size is in
+    // localStorage, they just have no on-screen way to change it yet.
+    const notesSizeControls = billingV2 ? (
+      <div className="mo-print-hide flex items-center gap-1">
+        {(["small", "normal", "large"] as const).map((size) => {
+          const active = notesFontSize === size;
+          return (
+            <button
+              key={size}
+              type="button"
+              onClick={() => setNotesFontSize(size)}
+              title={`Notes text — ${size}`}
+              style={{
+                fontSize: 9,
+                fontWeight: active ? 600 : 500,
+                padding: "1px 6px",
+                borderRadius: 4,
+                border: `1px solid ${active ? "#7c3aed" : "#ddd6fe"}`,
+                background: active ? "#7c3aed" : "#fff",
+                color: active ? "#fff" : "#5b21b6",
+                cursor: "pointer",
+                letterSpacing: "0.02em",
+                textTransform: "uppercase",
+                transition: "background 0.12s",
+              }}
+              onMouseEnter={(e) => {
+                if (!active) e.currentTarget.style.background = "#f5f3ff";
+              }}
+              onMouseLeave={(e) => {
+                if (!active) e.currentTarget.style.background = "#fff";
+              }}
+            >
+              {size}
+            </button>
+          );
+        })}
+      </div>
+    ) : undefined;
+
     return (
       <>
         {/* Billing v2 — a floor under the two cards so the pair stops wobbling
@@ -2053,6 +2141,8 @@ export function ReviewView({
             bill={order.billRemarks || null}
             notes={notesString}
             tone={billingV2 ? "violet" : "default"}
+            fontSize={NOTES_FONT_PX[notesFontSize]}
+            controlsSlot={notesSizeControls}
           />
         </div>
       </>

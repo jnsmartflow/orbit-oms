@@ -1,5 +1,7 @@
 "use client";
 
+import type { ReactNode } from "react";
+
 interface InstructionsStripProps {
   delivery: string | null;
   bill: string | null;
@@ -15,6 +17,27 @@ interface InstructionsStripProps {
    * here: one owner for the shade, so the two screens cannot drift apart.
    */
   tone?: "default" | "violet";
+  /**
+   * Remark-text size in px. Default `11.5` — the value this row wrapper carried
+   * as a hardcoded `text-[11.5px]`, so a caller that does not pass it renders
+   * byte-identically.
+   *
+   * Applies to all THREE rows (delivery / bill / notes) and to BOTH tones — the
+   * size is a reader preference, not a billing treatment, so it is deliberately
+   * NOT gated on `tone`. The per-row caption below keeps its own fixed 10px
+   * (`CLAUDE_UI.md §27` header typography); only the remark text scales.
+   */
+  fontSize?: number;
+  /**
+   * Optional controls rendered top-right INSIDE the band. Same escape-hatch
+   * shape as `tone` above and MetaRibbon's `contentOverride` — this component
+   * stays dumb about what is in there; the caller composes it.
+   *
+   * Default `undefined`, never `null`/`<></>`. Note this rides the null-return
+   * guard below: an empty band renders nothing, controls included. That is
+   * intended — there is nothing to resize when there is no text.
+   */
+  controlsSlot?: ReactNode;
 }
 
 // Per-kind dots. delivery/bill are SEMANTIC (amber = delivery instruction, blue
@@ -42,6 +65,8 @@ export function InstructionsStrip({
   bill,
   notes,
   tone = "default",
+  fontSize = 11.5,
+  controlsSlot,
 }: InstructionsStripProps): JSX.Element | null {
   const violet = tone === "violet";
   const rows: { kind: Kind; text: string }[] = [];
@@ -63,34 +88,44 @@ export function InstructionsStrip({
   // default arm's `border-t border-gray-100` byte-identical.
   // #7c3aed is the notes dot's violet (VIOLET_NOTES_DOT above) — same shade, not
   // a second one.
+  // The band is a flex row so `controlsSlot` can sit top-right in the SAME 20px
+  // gutter the rows already use (`px-5`), rather than being absolutely
+  // positioned over text that wraps. With no slot passed there is one `flex-1`
+  // child, which lays out exactly as the block did.
   return (
     <div
       className={
         violet
-          ? "bg-[#f5f3ff] border-t border-t-gray-100 border-l-[3px] border-l-[#7c3aed] pt-3 pb-3"
-          : "bg-gray-200 border-t border-gray-100 pt-3 pb-3"
+          ? "flex items-start bg-[#f5f3ff] border-t border-t-gray-100 border-l-[3px] border-l-[#7c3aed] pt-3 pb-3"
+          : "flex items-start bg-gray-200 border-t border-gray-100 pt-3 pb-3"
       }
     >
-      {rows.map((row) => (
-        <div
-          key={row.kind}
-          className={`flex items-start gap-2 px-5 py-1 text-[11.5px] leading-[1.45] ${violet ? "text-[#5b21b6]" : "text-gray-700"}`}
-        >
-          <span
-            className={`w-[7px] h-[7px] rounded-full flex-shrink-0 mt-1.5 ${
-              violet && row.kind === "notes" ? VIOLET_NOTES_DOT : DOT_BY_KIND[row.kind]
-            }`}
-          />
-          <span
-            className={`text-[10px] font-semibold uppercase tracking-[0.05em] w-16 flex-shrink-0 pt-0.5 ${
-              violet ? "text-[#7c3aed]" : "text-gray-500"
-            }`}
+      <div className="flex-1 min-w-0">
+        {rows.map((row) => (
+          <div
+            key={row.kind}
+            className={`flex items-start gap-2 px-5 py-1 leading-[1.45] ${violet ? "text-[#5b21b6]" : "text-gray-700"}`}
+            style={{ fontSize }}
           >
-            {row.kind}
-          </span>
-          <span className={`flex-1 pt-px ${violet ? "text-[#5b21b6]" : "text-gray-700"}`}>{row.text}</span>
-        </div>
-      ))}
+            <span
+              className={`w-[7px] h-[7px] rounded-full flex-shrink-0 mt-1.5 ${
+                violet && row.kind === "notes" ? VIOLET_NOTES_DOT : DOT_BY_KIND[row.kind]
+              }`}
+            />
+            <span
+              className={`text-[10px] font-semibold uppercase tracking-[0.05em] w-16 flex-shrink-0 pt-0.5 ${
+                violet ? "text-[#7c3aed]" : "text-gray-500"
+              }`}
+            >
+              {row.kind}
+            </span>
+            <span className={`flex-1 pt-px ${violet ? "text-[#5b21b6]" : "text-gray-700"}`}>{row.text}</span>
+          </div>
+        ))}
+      </div>
+      {controlsSlot && (
+        <div className="flex-shrink-0 pl-2 pr-5">{controlsSlot}</div>
+      )}
     </div>
   );
 }
