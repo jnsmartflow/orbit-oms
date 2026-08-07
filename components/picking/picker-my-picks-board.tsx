@@ -1163,24 +1163,42 @@ export function PickerMyPicksBoard({
           {/* Footer. paddingBottom reserves the shell's fixed bottom bar —
               the bar IS visible on this tab (unlike the detail screen, which
               hides it), so MOBILE_NAV_CLEARANCE is imported, never retyped as
-              a bare 76px (CLAUDE_PICKING.md §7). */}
+              a bare 76px (CLAUDE_PICKING.md §7).
+              ⚠ NO `border-t` HERE, DELIBERATELY (2026-08-07). WorkflowTabBar
+              already draws `border-t border-gray-200` on the SAME white
+              background (CLAUDE_UI.md §59.3 — its classes are copied from the
+              default nav by construction). A matching hairline on this strip
+              made two identical rules 76px apart with white between them, and
+              the bottom of the screen read as two stacked toolbars instead of
+              one. The bar's own rule is now the single divider inside one
+              continuous white strip; the tonal step against the #f9fafb list
+              above is this plate's top edge, the same way the pills and pack
+              strips sit on the page background. Do not re-add it. */}
           {combined !== null && combined.bills.length > 0 && (
             <div
-              className="shrink-0 bg-white border-t border-gray-200 px-3.5 pt-2.5"
+              className="shrink-0 bg-white px-3.5 pt-2"
               style={{ paddingBottom: MOBILE_NAV_CLEARANCE }}
             >
-              <div className="mb-2 text-center text-[11.5px] text-gray-400 tabular-nums">
+              <div className="mb-1.5 text-center text-[11.5px] text-gray-400 tabular-nums">
                 {combinedTickedCount} of {combinedRows.length} ticked
               </div>
               {/* ⚠ NEVER GATED ON THE TICKS — `markingAll` is the in-flight
                   double-tap guard and the only thing that can disable this.
                   Ticking nothing and tapping Mark all done is a normal day,
-                  exactly as on the single-bill screen. Do not add a check. */}
+                  exactly as on the single-bill screen. Do not add a check.
+                  NO drop shadow here, unlike the single-bill Mark done CTA
+                  (2026-08-07). That shadow is CLAUDE_UI.md §55's FLOATING
+                  pill token — right on the detail screen, which hides the bar
+                  so the pill really does float, and wrong on this tab, where
+                  the button is seated in a plate directly above the tab bar
+                  and the shadow bled teal across the bar's top border. Same
+                  button, same size, same colour — it just stops pretending to
+                  hover. */}
               <button
                 type="button"
                 onClick={() => void handleMarkAllDone()}
                 disabled={markingAll}
-                className="w-full h-12 rounded-full bg-teal-600 active:bg-teal-700 text-white text-[14.5px] font-bold shadow-[0_8px_22px_rgba(13,148,136,0.42)] disabled:opacity-60"
+                className="w-full h-12 rounded-full bg-teal-600 active:bg-teal-700 text-white text-[14.5px] font-bold disabled:opacity-60"
               >
                 {markingAll ? "Marking done…" : "Mark all done"}
               </button>
