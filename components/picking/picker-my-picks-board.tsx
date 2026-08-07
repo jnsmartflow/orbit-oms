@@ -2,8 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { ChevronLeft, ChevronRight, Plus, Star, X } from "lucide-react";
+import { AlertTriangle, ChevronLeft, ChevronRight, Plus, Star, X } from "lucide-react";
 import { toast } from "sonner";
+import {
+  FINDING_REASON_OPTIONS,
+  findingReasonLabel,
+  type FindingReason,
+} from "@/lib/picking/findings-reasons";
 import { useMobileShell } from "@/components/shared/mobile-shell-context";
 import { ModuleMobileHeader } from "@/components/shared/module-mobile-header";
 import { MOBILE_NAV_CLEARANCE } from "@/components/shared/mobile-shell";
@@ -39,12 +44,34 @@ const NO_BILL_SWIPE: Record<string, string> = { [NO_BILL_SWIPE_ATTR]: "" };
 // Real GET /api/picking/order/[orderId] response shape — see that route.
 // Duplicated from picking-board-mobile.tsx rather than imported: that file
 // is untouched this stage (per constraints), and this shape is small/stable.
+/**
+ * The pick_findings row for one line, as GET /api/picking/order/[orderId]
+ * returns it — or null when nothing has been recorded.
+ *
+ * ⚠ `recordedById` is THE state discriminator, and the whole amber→red ladder
+ * hangs off it:
+ *   recordedById === null → the picker recorded it, awaiting a supervisor  (AMBER)
+ *   recordedById !== null → a supervisor confirmed it                       (RED)
+ * Never infer the state from qtyFound or reason.
+ */
+interface LineFinding {
+  qtyFound:     number;
+  reason:       string;
+  remarks:      string | null;
+  reportedById: number | null;
+  reportedAt:   string | null;
+  recordedById: number | null;
+  recordedAt:   string | null;
+}
+
 interface LineItem {
   id: number;
   name: string | null;
   sku: string;
   pack: string | null;
+  /** Qty ORDERED on this line (import_raw_line_items.unitQty). */
   qty: number;
+  finding: LineFinding | null;
 }
 
 /**
@@ -347,6 +374,27 @@ export function PickerMyPicksBoard({
   // second one anyway, but this avoids firing it at all).
   const [marking, setMarking] = useState(false);
 
+  // ── Shortfall recording (2026-08-07) ─────────────────────────────────────
+  // Fidelity source: docs/mockups/picking/picking-shortfall-design.html,
+  // screen 1. Recording is a MODE, not a permanent row control: the triangle in
+  // the header arms it, and only then does tapping a line body open the popup.
+  // Off by default on every fresh open, so the screen he sees when he opens a
+  // bill is exactly the screen he has today.
+  const [recordMode, setRecordMode] = useState(false);
+  // The line whose popup is open (null = closed). Holds the LineItem itself,
+  // not just an id, so the popup can render pack/sku/desc/ordered without
+  // re-finding it — and so it survives a background list update mid-edit.
+  const [findingTarget, setFindingTarget] = useState<LineItem | null>(null);
+  // Popup form. qty is a STRING while editing — a number state would fight the
+  // input on an empty field (the picker clearing it to retype).
+  const [findingQty, setFindingQty] = useState("");
+  const [findingReason, setFindingReason] = useState<FindingReason>(FINDING_REASON_OPTIONS[0].value);
+  const [findingRemarks, setFindingRemarks] = useState("");
+  const [savingFinding, setSavingFinding] = useState(false);
+  // Bumped to force the line-items effect to re-run without changing bill —
+  // used after a 409, where the server knows something this screen does not.
+  const [lineItemsReloadKey, setLineItemsReloadKey] = useState(0);
+
   // ── Combined tab state (2026-08-07) ──────────────────────────────────────
   // The merged list itself, fetched from GET /api/picking/combined. It is NOT
   // derived from `pending` on the client: the line items behind these rows are
@@ -495,7 +543,10 @@ export function PickerMyPicksBoard({
     return () => {
       cancelled = true;
     };
-  }, [detailOrderId]);
+    // lineItemsReloadKey lets a 409 force a re-read of the SAME bill — the
+    // server has state this screen does not (a supervisor confirmed the line
+    // while it sat open), and re-fetching is how the row learns about it.
+  }, [detailOrderId, lineItemsReloadKey]);
 
   // ── In-module back navigation (2026-07-29) ───────────────────────────────
   // Before this, a back press with a bill open was not intercepted at all: the
@@ -514,10 +565,18 @@ export function PickerMyPicksBoard({
   // navStateRef mirrors detailOpen so the listener — registered once — reads
   // it live instead of through a stale closure (the same reason the
   // supervisor keeps its own navStateRef).
-  const navStateRef = useRef(false);
+  //
+  // ⚠ IT NOW CARRIES TWO FLAGS (2026-08-07). The record popup is this face's
+  // FIRST nested overlay — CLAUDE_PICKING.md §5.4 predicted exactly this
+  // ("if it ever gets one, the two shapes converge") and this is the
+  // convergence: the handler below gained the supervisor board's
+  // close-the-sheet-and-re-push branch. Without it, a back-press with the popup
+  // open would close the whole BILL and drop him back to the list, losing the
+  // line he was recording.
+  const navStateRef = useRef({ detailOpen: false, findingOpen: false });
   useEffect(() => {
-    navStateRef.current = detailOpen;
-  }, [detailOpen]);
+    navStateRef.current = { detailOpen, findingOpen: findingTarget !== null };
+  }, [detailOpen, findingTarget]);
 
   // Push one entry at the CURRENT url (pushState with no url arg navigates
   // nowhere), so a back from it is a pure in-app state change and never a real
@@ -531,7 +590,17 @@ export function PickerMyPicksBoard({
   useEffect(() => {
     if (typeof window === "undefined") return;
     function onPop(): void {
-      if (navStateRef.current) closeDetail();
+      // Topmost layer FIRST: the record popup floating over an open bill.
+      // Close just the popup and re-push, so the ONE detail entry this face
+      // relies on stays available for the NEXT back-press to close the bill.
+      // Byte-for-byte the guard picking-board-mobile.tsx makes for its nested
+      // picker sheet.
+      if (navStateRef.current.findingOpen && navStateRef.current.detailOpen) {
+        setFindingTarget(null);
+        pushScreen();
+        return;
+      }
+      if (navStateRef.current.detailOpen) closeDetail();
       // Nothing open — let the pop fall through to the browser's real
       // previous entry, whatever that is.
     }
@@ -558,6 +627,12 @@ export function PickerMyPicksBoard({
     setDetailOpen(true);
     setActivePackFilter("ALL");
     setTickedLineIds(readTicks(orderId));
+    // The popup belongs to ONE line of ONE bill — paging away must close it,
+    // or it would sit over the next bill still holding the previous bill's
+    // line. `recordMode` deliberately does NOT reset here: it is a screen-level
+    // mode, and a picker working through several short bills should not have to
+    // re-arm it on every swipe. It resets on a fresh open (openDetail).
+    setFindingTarget(null);
   }
 
   // Tap toggles. Write-through to device storage on every tap, so nothing is
@@ -576,6 +651,10 @@ export function PickerMyPicksBoard({
 
   function openDetail(orderId: number, listKey: DetailListKey): void {
     switchDetailTo(orderId, listKey);
+    // Recording is OFF on every fresh open — the bill he opens looks exactly
+    // like the bill he opens today, and arming the mode is always a deliberate
+    // tap. (Not reset in switchDetailTo, so it survives a swipe between bills.)
+    setRecordMode(false);
     // A fresh open from a card tap must always start at rest, in case a prior
     // session's gesture left the ref mid-transform. (`pager` is declared
     // below; this only ever runs from a tap, long after that render.)
@@ -903,6 +982,100 @@ export function PickerMyPicksBoard({
       setMarkingAll(false);
     }
   }, [activePickerId, markingAll, combined, enabledBillIds, refetchQueue]);
+
+  // ── Record popup ─────────────────────────────────────────────────────────
+  /**
+   * Open the popup for one line, pre-filled.
+   *
+   * Qty found starts at the qty ORDERED (the mockup's `openModal(el.dataset.qty)`
+   * — screen 1), not at 0: the overwhelmingly common edit is "one less than
+   * ordered", and starting from the full number means one keystroke, not a
+   * whole re-type. An existing finding pre-fills from what was recorded instead.
+   */
+  function openFindingFor(li: LineItem): void {
+    setFindingTarget(li);
+    setFindingQty(String(li.finding?.qtyFound ?? li.qty));
+    const existing = li.finding?.reason;
+    setFindingReason(
+      FINDING_REASON_OPTIONS.find((o) => o.value === existing)?.value ?? FINDING_REASON_OPTIONS[0].value,
+    );
+    setFindingRemarks(li.finding?.remarks ?? "");
+  }
+
+  // Parsed once — drives both the Save-disabled state and the POST body, so the
+  // button can never be enabled for a value the request would reject.
+  const findingQtyNum = Number(findingQty);
+  const findingQtyValid =
+    findingTarget !== null &&
+    findingQty.trim() !== "" &&
+    Number.isInteger(findingQtyNum) &&
+    findingQtyNum >= 0 &&
+    findingQtyNum <= findingTarget.qty;
+
+  /**
+   * Save the record. Optional, additive, and completely detached from Mark
+   * done — nothing here touches `marking`, the CTA, or the ticks.
+   *
+   * On success the returned row is merged into the OPEN bill's lineItems in
+   * place (no refetch): the row re-tints instantly and the screen never
+   * flickers through a loading state mid-shift.
+   */
+  const handleSaveFinding = useCallback(async () => {
+    if (findingTarget === null || detailRow === null || savingFinding) return;
+    if (!findingQtyValid) return;
+    const target = findingTarget;
+    setSavingFinding(true);
+    try {
+      const res = await fetch("/api/picking/findings/report", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          orderId:       detailRow.orderId,
+          rawLineItemId: target.id,
+          qtyFound:      findingQtyNum,
+          reason:        findingReason,
+          remarks:       findingRemarks,
+          // Ignored by the server for a real picker (his session id always
+          // wins); honoured only for the admin view-as preview.
+          pickerId:      activePickerId ?? undefined,
+        }),
+      });
+      const json = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        finding?: LineFinding;
+        error?: string;
+      };
+      if (!res.ok) {
+        if (res.status === 409) {
+          // Either a supervisor confirmed this line while the popup sat open,
+          // or the bill moved out from under him. Same wording and shape the
+          // rest of this module uses for a 409, plus a re-read so the row shows
+          // whatever is actually true now.
+          toast("Already changed — refreshed.");
+          setFindingTarget(null);
+          setLineItemsReloadKey((k) => k + 1);
+        } else {
+          toast.error(json.error ?? `Request failed (${res.status})`);
+        }
+        return;
+      }
+      const saved = json.finding ?? null;
+      if (saved !== null) {
+        setLineItems((prev) =>
+          prev === null ? prev : prev.map((li) => (li.id === target.id ? { ...li, finding: saved } : li)),
+        );
+      }
+      toast.success(`${target.sku} — found ${findingQtyNum} of ${target.qty}`);
+      setFindingTarget(null);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not save");
+    } finally {
+      setSavingFinding(false);
+    }
+  }, [
+    findingTarget, detailRow, savingFinding, findingQtyValid,
+    findingQtyNum, findingReason, findingRemarks, activePickerId,
+  ]);
 
   const distinctPackKeys = useMemo(() => {
     if (!lineItems) return [];
@@ -1382,7 +1555,49 @@ export function PickerMyPicksBoard({
                 : "—"}
             </div>
           </div>
+          {/* Triangle — arms recording mode. Amber (#fbbf24 on #78350f), the
+              mockup's exact pair, and the ONE amber control on a teal header:
+              it is deliberately not teal, because teal here belongs to Mark
+              done (CLAUDE_UI §1's one-teal rule) and this must not read as the
+              primary action. The ring when armed is the mockup's
+              `.triangle-btn.on` box-shadow. 38px, matching the mockup, which
+              also clears the 44px-ish tap floor the rest of this screen uses.
+              Only on a bill he can still act on — a Done bill has nothing to
+              record against, the same condition that hides the Mark done CTA. */}
+          {detailRow && !detailRow.isDone && (
+            <button
+              type="button"
+              onClick={() => setRecordMode((v) => !v)}
+              aria-label={recordMode ? "Stop recording shortages" : "Record a shortage"}
+              aria-pressed={recordMode}
+              className={
+                "w-[38px] h-[38px] rounded-[10px] bg-[#fbbf24] text-[#78350f] flex items-center justify-center shrink-0 active:opacity-80 " +
+                (recordMode ? "ring-[3px] ring-[rgba(146,64,14,0.4)]" : "")
+              }
+            >
+              <AlertTriangle size={18} strokeWidth={2.5} />
+            </button>
+          )}
         </div>
+
+        {/* Recording banner — the mockup's `.record-banner`, sitting between the
+            teal header and the content, and OUTSIDE pager.contentRef on
+            purpose: recording mode is a screen-level state, so the banner must
+            not slide away and back every time he swipes to the next bill. */}
+        {recordMode && (
+          <div className="shrink-0 flex items-center justify-between gap-3 bg-[#fffbeb] border-b border-[#fde68a] px-4 py-2.5">
+            <span className="text-[12px] font-semibold text-[#92400e]">
+              Recording mode — tap any line to record what you found
+            </span>
+            <button
+              type="button"
+              onClick={() => setRecordMode(false)}
+              className="text-[12px] font-semibold text-[#78350f] underline shrink-0"
+            >
+              Done
+            </button>
+          </div>
+        )}
 
         {/* Everything below the teal header is wrapped in ONE ref'd container
             so the pager can translate it as a single unit. The header itself
@@ -1510,10 +1725,29 @@ export function PickerMyPicksBoard({
             ) : (
               filteredLineItems.map((li) => {
                 const isTicked = tickedLineIds.has(li.id);
+                // ⚠ recordedById is the ONLY discriminator — see LineFinding.
+                const confirmed = li.finding !== null && li.finding.recordedById !== null;
+                const pending   = li.finding !== null && li.finding.recordedById === null;
+                // Tappable when the mode is armed, OR when something is already
+                // recorded — the mockup's "always tappable" rule for a flagged
+                // row, which is also how he corrects a number he mistyped.
+                const rowTappable = recordMode || li.finding !== null;
                 return (
                 <div
                   key={li.id}
-                  className="flex bg-white rounded-[14px] overflow-hidden mb-2"
+                  onClick={rowTappable ? () => openFindingFor(li) : undefined}
+                  // border-2 on EVERY state, transparent when neutral — the
+                  // mockup's own trick, and the reason a row does not change
+                  // height the instant it gets recorded.
+                  className={
+                    "flex rounded-[14px] overflow-hidden mb-2 border-2 " +
+                    (confirmed
+                      ? "bg-[#fef2f2] border-[#fca5a5] "
+                      : pending
+                        ? "bg-[#fffbeb] border-[#fcd34d] "
+                        : "bg-white border-transparent ") +
+                    (rowTappable ? "cursor-pointer active:opacity-90" : "")
+                  }
                   style={{ boxShadow: SOFT_CARD_SHADOW }}
                 >
                   {/* PACK TILE — SLATE #3d4650, matching the supervisor's own
@@ -1533,9 +1767,23 @@ export function PickerMyPicksBoard({
                   {/* BODY — mutes once ticked so his eye skips the line. Same
                       quiet treatment as the supervisor's: no ring, no left
                       border, no strikethrough. */}
-                  <div className={"flex-1 min-w-0 px-3 py-2.5 transition-opacity " + (isTicked ? "opacity-55" : "")}>
+                  <div className={"flex-1 min-w-0 px-3 py-2.5 transition-opacity " + (isTicked && li.finding === null ? "opacity-55" : "")}>
                     <div className="font-mono text-[17px] font-bold text-gray-900 truncate">{li.sku}</div>
                     <div className="text-[12px] text-gray-500 truncate mt-0.5">{li.name ?? "—"}</div>
+                    {/* The recorded note — the mockup's .line-short-note /
+                        .line-flag-note. Carries BOTH numbers ("found 1 of 2")
+                        so the row reads on its own without the popup. */}
+                    {li.finding !== null && (
+                      <div
+                        className="text-[12px] font-semibold mt-1"
+                        style={{ color: confirmed ? "#b91c1c" : "#92400e" }}
+                      >
+                        {confirmed ? "✓ Confirmed: " : "Recorded: "}
+                        found {li.finding.qtyFound} of {li.qty} ·{" "}
+                        {findingReasonLabel(li.finding.reason)}
+                        {!confirmed && " · tap to edit"}
+                      </div>
+                    )}
                   </div>
                   <div className="shrink-0 flex items-center justify-center px-3.5">
                     <span className="text-[26px] font-extrabold text-gray-900">{li.qty}</span>
@@ -1550,32 +1798,62 @@ export function PickerMyPicksBoard({
                       Rendered on EVERY line of EVERY bill, unconditionally —
                       no stage gate, no "only when pending". Toggling is free
                       and reversible and costs nothing. */}
-                  <button
-                    type="button"
-                    onClick={() => toggleLineTick(li.id)}
-                    aria-label={isTicked ? "Remove tick from line" : "Tick line"}
-                    aria-pressed={isTicked}
-                    className="w-11 shrink-0 flex items-center justify-center"
-                  >
-                    <span
-                      className={
-                        "w-5 h-5 rounded-full border-2 flex items-center justify-center " +
-                        (isTicked ? "bg-[#6b7480] border-[#6b7480]" : "bg-white border-gray-300")
-                      }
+                  {/* ⚠ THE CIRCLE IS SHARED BY TWO FEATURES and shows the
+                      STRONGER one. With no finding it is the private tick,
+                      exactly as before. Once something is recorded, the circle
+                      becomes the finding's state mark (amber "!" pending, red
+                      "⚠" confirmed) and its tap opens the popup instead —
+                      the mockup's own treatment. His private tick for that line
+                      is NOT cleared, only hidden: remove the finding and the
+                      tick reappears exactly as he left it. */}
+                  {li.finding !== null ? (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openFindingFor(li);
+                      }}
+                      aria-label={confirmed ? "Confirmed shortage — view" : "Recorded shortage — edit"}
+                      className="w-11 shrink-0 flex items-center justify-center"
                     >
-                      {isTicked && (
-                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none">
-                          <path
-                            d="M5 13l4 4L19 7"
-                            stroke="white"
-                            strokeWidth={3.5}
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
-                        </svg>
-                      )}
-                    </span>
-                  </button>
+                      <span
+                        className="w-[22px] h-[22px] rounded-full flex items-center justify-center text-white text-[12px] font-bold"
+                        style={{ background: confirmed ? "#dc2626" : "#f59e0b" }}
+                      >
+                        {confirmed ? "⚠" : "!"}
+                      </span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleLineTick(li.id);
+                      }}
+                      aria-label={isTicked ? "Remove tick from line" : "Tick line"}
+                      aria-pressed={isTicked}
+                      className="w-11 shrink-0 flex items-center justify-center"
+                    >
+                      <span
+                        className={
+                          "w-5 h-5 rounded-full border-2 flex items-center justify-center " +
+                          (isTicked ? "bg-[#6b7480] border-[#6b7480]" : "bg-white border-gray-300")
+                        }
+                      >
+                        {isTicked && (
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none">
+                            <path
+                              d="M5 13l4 4L19 7"
+                              stroke="white"
+                              strokeWidth={3.5}
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                        )}
+                      </span>
+                    </button>
+                  )}
                 </div>
                 );
               })
@@ -1621,6 +1899,132 @@ export function PickerMyPicksBoard({
         </div>
         {/* ^ closes the sliding content wrapper (ref={pager.contentRef})
             opened just below the teal header. */}
+
+        {/* ── RECORD POPUP ────────────────────────────────────────────────
+            The mockup's `.modal-backdrop` + `.modal`: centred card, 320px,
+            rgba(0,0,0,.45) scrim. Sits INSIDE the detail overlay but outside
+            the sliding wrapper, so a swipe can never drag it.
+            z-[65] matches picking-board-mobile.tsx's SHEET_GEOMETRY.scrimZ —
+            chosen to clear mobile-shell's OWN stack (nav z-40, scrim z-50,
+            sheets z-[60]), not just this screen's z-[35].
+            A backdrop tap cancels, like every other sheet in this app; a tap
+            inside the card must not fall through to it.
+            ⚠ {...NO_BILL_SWIPE} IS LOAD-BEARING. This popup renders INSIDE the
+            element carrying pager.touchHandlers, so without the opt-out a
+            horizontal drag inside the remarks textarea (or across the card at
+            all) would be claimed by the bill pager and page to the next bill
+            mid-edit — the exact bug the pack-filter strip hit on 2026-07-30
+            (CLAUDE_PICKING.md §5.3). */}
+        {findingTarget !== null && (
+          <div
+            {...NO_BILL_SWIPE}
+            className="fixed inset-0 z-[65] bg-black/45 flex items-center justify-center px-6"
+            onClick={() => {
+              if (!savingFinding) setFindingTarget(null);
+            }}
+          >
+            <div
+              className="w-full max-w-[320px] rounded-2xl bg-white p-5"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="text-[12px] text-gray-400">{findingTarget.pack ?? "—"}</div>
+              <div className="font-mono text-[15px] font-bold text-gray-900 mt-0.5">
+                {findingTarget.sku}
+              </div>
+              <div className="text-[12px] text-gray-400 mb-4">{findingTarget.name ?? "—"}</div>
+
+              <span className="block text-[11px] font-semibold uppercase tracking-[0.03em] text-gray-500 mb-1">
+                Qty ordered
+              </span>
+              <div className="text-[14px] font-semibold text-gray-700 mb-3 tabular-nums">
+                {findingTarget.qty}
+              </div>
+
+              <label
+                htmlFor="finding-qty"
+                className="block text-[11px] font-semibold uppercase tracking-[0.03em] text-gray-500 mb-1"
+              >
+                Qty found
+              </label>
+              {/* text-[16px] — the iOS zoom guard this app applies to every
+                  mobile input (CLAUDE_UI §59.1). The mockup's 14px would make
+                  Safari zoom the whole screen on focus. */}
+              <input
+                id="finding-qty"
+                type="number"
+                inputMode="numeric"
+                min={0}
+                max={findingTarget.qty}
+                value={findingQty}
+                onChange={(e) => setFindingQty(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-2.5 py-2 text-[16px] text-gray-900 mb-1 tabular-nums"
+              />
+              {/* Quiet, inline, and only when wrong — never a blocking alert. */}
+              <div className="h-[16px] mb-2">
+                {!findingQtyValid && findingQty.trim() !== "" && (
+                  <span className="text-[11px] font-medium text-red-600">
+                    Enter a whole number from 0 to {findingTarget.qty}
+                  </span>
+                )}
+              </div>
+
+              <label
+                htmlFor="finding-reason"
+                className="block text-[11px] font-semibold uppercase tracking-[0.03em] text-gray-500 mb-1"
+              >
+                Reason
+              </label>
+              {/* Options come from lib/picking/findings-reasons.ts — the same
+                  list the server validates against, so the dropdown can never
+                  offer a value the API would 400. */}
+              <select
+                id="finding-reason"
+                value={findingReason}
+                onChange={(e) => setFindingReason(e.target.value as FindingReason)}
+                className="w-full border border-gray-300 rounded-lg px-2.5 py-2 text-[16px] text-gray-900 mb-3 bg-white"
+              >
+                {FINDING_REASON_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+
+              <label
+                htmlFor="finding-remarks"
+                className="block text-[11px] font-semibold uppercase tracking-[0.03em] text-gray-500 mb-1"
+              >
+                Remarks (optional)
+              </label>
+              <textarea
+                id="finding-remarks"
+                rows={2}
+                value={findingRemarks}
+                onChange={(e) => setFindingRemarks(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-2.5 py-2 text-[16px] text-gray-900 mb-4 resize-none"
+              />
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setFindingTarget(null)}
+                  disabled={savingFinding}
+                  className="flex-1 h-11 rounded-[10px] border border-gray-300 bg-white text-[13px] font-semibold text-gray-600 disabled:opacity-60"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleSaveFinding()}
+                  disabled={savingFinding || !findingQtyValid}
+                  className="flex-1 h-11 rounded-[10px] bg-teal-600 active:bg-teal-700 text-[13px] font-semibold text-white disabled:opacity-60"
+                >
+                  {savingFinding ? "Saving…" : "Save"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

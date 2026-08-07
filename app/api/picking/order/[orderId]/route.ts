@@ -24,6 +24,11 @@ export const dynamic = "force-dynamic";
  * repoint, Option B); ~73% of active raw SAP codes resolve, the rest fall back
  * to raw text. Do NOT reintroduce the enrichedLineItem.sku relation here — see
  * the comment at the catalog lookup below.
+ *
+ * 2026-08-07 — each line now also carries `finding`: the pick_findings row for
+ * that raw line, or null. ADDITIVE ONLY: every pre-existing field on `lines` is
+ * untouched, so the supervisor board (which reads the same endpoint and does not
+ * know about findings) is unaffected.
  */
 export async function GET(
   _req: Request,
@@ -89,14 +94,63 @@ export async function GET(
   // Unresolved codes fall back to the raw SAP text exactly as before; a blank
   // pack stays blank rather than guessing (CLAUDE_PICKING.md §7 — a blank is a
   // mis-pick preventer, a wrong value is not).
+  // ── Findings (2026-08-07) — has anyone recorded a shortage on these lines? ──
+  // ONE extra query, keyed on rawLineItemId (UNIQUE on pick_findings, so this is
+  // at most one row per line). Read-only; this route writes nothing.
+  //
+  // The pair that matters downstream is reportedAt vs recordedAt:
+  //   reportedById set, recordedById NULL → the picker recorded it, awaiting a
+  //                                          supervisor's confirmation (amber)
+  //   recordedById set                    → a supervisor confirmed it (red)
+  // The UI reads exactly that distinction; nothing here interprets it.
+  //
+  // Sequential await, no $transaction (CORE §3). Skipped entirely on a bill
+  // with no lines.
+  const findingRows =
+    rawLines.length > 0
+      ? await prisma.pick_findings.findMany({
+          where: { rawLineItemId: { in: rawLines.map((l) => l.id) } },
+          select: {
+            rawLineItemId: true,
+            qtyFound:      true,
+            reason:        true,
+            remarks:       true,
+            reportedById:  true,
+            reportedAt:    true,
+            recordedById:  true,
+            recordedAt:    true,
+          },
+        })
+      : [];
+  const findingByLineId = new Map(findingRows.map((f) => [f.rawLineItemId, f]));
+
+  // `pack` is the code ONLY ("1L", "500ML") — no container word. The picker
+  // matches pack size against the shelf/box, not the container type.
+  // Unresolved codes fall back to the raw SAP text exactly as before; a blank
+  // pack stays blank rather than guessing (CLAUDE_PICKING.md §7 — a blank is a
+  // mis-pick preventer, a wrong value is not).
   const lines = rawLines.map((l) => {
     const cat = catalogByCode.get(l.skuCodeRaw);
+    const finding = findingByLineId.get(l.id);
     return {
       id: l.id,
       name: cat?.name ?? l.skuDescriptionRaw ?? null,
       sku: l.skuCodeRaw,
       pack: cat?.pack ?? null,
       qty: l.unitQty,
+      // null — not undefined and not an empty object — when nothing is
+      // recorded, so a consumer can test `finding !== null` and be done.
+      finding: finding
+        ? {
+            qtyFound:     finding.qtyFound,
+            reason:       finding.reason,
+            remarks:      finding.remarks,
+            reportedById: finding.reportedById,
+            reportedAt:   finding.reportedAt,
+            recordedById: finding.recordedById,
+            recordedAt:   finding.recordedAt,
+          }
+        : null,
     };
   });
 
