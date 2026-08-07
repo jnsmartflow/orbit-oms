@@ -199,6 +199,18 @@ const NOTES_FONT_PX: Record<NotesFontSize, number> = {
 };
 const NOTES_FONT_KEY = "mo-review-notes-font-size";
 
+// The size control's face: one "A" per step, drawn at increasing sizes so the
+// row reads as a size icon instead of three words. These are ICON sizes and
+// deliberately NOT the NOTES_FONT_PX values above — a 10.5 vs 11.5 glyph is
+// indistinguishable at this scale, so the ladder is exaggerated to stay legible.
+// The title doubles as the aria-label: with the words gone, the glyph alone
+// does not say which button is which.
+const NOTES_SIZE_GLYPH: Record<NotesFontSize, { px: number; title: string }> = {
+  small: { px: 9, title: "Small text" },
+  normal: { px: 11, title: "Normal text" },
+  large: { px: 13, title: "Large text" },
+};
+
 // ── Toggle component ───────────────────────────────────────────────────────
 
 function SkuToggle({ isOn, onToggle }: { isOn: boolean; onToggle: () => void }) {
@@ -2002,10 +2014,17 @@ export function ReviewView({
     );
 
     // Notes-band size control — three always-visible buttons rendered top-right
-    // INSIDE the band via its `controlsSlot`. Shape copied from the SKU table's
-    // [long]/[short] desc toggle (fontSize 9, 1px 6px, radius 4, uppercase), NOT
-    // from BTN_BASE: that is the 27px action-ribbon button and would tower over
-    // an 11.5px band.
+    // INSIDE the band via its `controlsSlot`. Chrome derives from the SKU
+    // table's [long]/[short] desc toggle (radius 4, thin border), NOT from
+    // BTN_BASE: that is the 27px action-ribbon button and would tower over an
+    // 11.5px band.
+    //
+    // The face is an "A" at three sizes rather than the words SMALL/NORMAL/
+    // LARGE. Because the glyph size differs per button, the box CANNOT be
+    // padding-driven the way the desc toggle is — a 13px A would make a taller
+    // button than a 9px one and the row would come out ragged. Fixed 20x18 with
+    // inline-flex centring keeps the three boxes identical while only the letter
+    // inside them grows.
     //
     // Colours are the band's OWN violets (#7c3aed border/fill, #5b21b6 text) —
     // instructions-strip.tsx :12-15 names one owner for that shade so this
@@ -2018,23 +2037,28 @@ export function ReviewView({
       <div className="mo-print-hide flex items-center gap-1">
         {(["small", "normal", "large"] as const).map((size) => {
           const active = notesFontSize === size;
+          const glyph = NOTES_SIZE_GLYPH[size];
           return (
             <button
               key={size}
               type="button"
               onClick={() => setNotesFontSize(size)}
-              title={`Notes text — ${size}`}
+              title={glyph.title}
+              aria-label={glyph.title}
               style={{
-                fontSize: 9,
+                width: 20,
+                height: 18,
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: glyph.px,
+                lineHeight: 1,
                 fontWeight: active ? 600 : 500,
-                padding: "1px 6px",
                 borderRadius: 4,
                 border: `1px solid ${active ? "#7c3aed" : "#ddd6fe"}`,
                 background: active ? "#7c3aed" : "#fff",
                 color: active ? "#fff" : "#5b21b6",
                 cursor: "pointer",
-                letterSpacing: "0.02em",
-                textTransform: "uppercase",
                 transition: "background 0.12s",
               }}
               onMouseEnter={(e) => {
@@ -2044,7 +2068,7 @@ export function ReviewView({
                 if (!active) e.currentTarget.style.background = "#fff";
               }}
             >
-              {size}
+              A
             </button>
           );
         })}
