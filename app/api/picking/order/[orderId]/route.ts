@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
-import { formatPack } from "@/lib/place-order/pack";
+import { resolveCatalogByCode } from "@/lib/picking/resolve-lines";
 
 export const dynamic = "force-dynamic";
 
@@ -71,26 +71,18 @@ export async function GET(
   });
 
   // Catalog resolution goes through sku_master_v2 keyed on `material` (the SAP
-  // code), NOT through the enrichedLineItem.sku relation. The FK rides
-  // `skuId`, which still points at the OLD sku_master and shares no id space
-  // with v2 — following it here would render a confidently WRONG product name
-  // and pack on a live picking bill. `skuCodeRaw` is the stable natural key,
-  // never null, identical across both tables.
-  // Reasoning: docs/prompts/drafts/code-discovery-2026-07-19b-catalog-repoint.md
+  // code), NOT through the enrichedLineItem.sku relation — the FK rides
+  // `skuId`, which shares no id space with v2 and would render a confidently
+  // WRONG name/pack on a live picking bill.
   //
-  // No isPrimary filter — a duplicate twin is still a real SAP code the picker
-  // may be holding. Sequential await, no $transaction (CORE §3).
-  const codes = Array.from(
-    new Set(rawLines.map((l) => l.skuCodeRaw).filter((c): c is string => Boolean(c))),
-  );
-  const catalogRows =
-    codes.length > 0
-      ? await prisma.sku_master_v2.findMany({
-          where: { material: { in: codes } },
-          select: { material: true, description: true, packCode: true, unit: true },
-        })
-      : [];
-  const catalogByCode = new Map(catalogRows.map((r) => [r.material, r]));
+  // Moved into lib/picking/resolve-lines.ts on 2026-08-07 (extraction, not a
+  // behaviour change: same query, same select, same de-dup, same fallbacks) so
+  // the Combined view can resolve MANY bills' codes through the identical
+  // path. ⚠️ THE FULL WARNING AND ITS REASONING NOW LIVE IN THAT FILE — read it
+  // there before touching this lookup.
+  //
+  // Sequential await, no $transaction (CORE §3).
+  const catalogByCode = await resolveCatalogByCode(rawLines.map((l) => l.skuCodeRaw));
 
   // `pack` is the code ONLY ("1L", "500ML") — no container word. The picker
   // matches pack size against the shelf/box, not the container type.
@@ -101,9 +93,9 @@ export async function GET(
     const cat = catalogByCode.get(l.skuCodeRaw);
     return {
       id: l.id,
-      name: cat?.description ?? l.skuDescriptionRaw ?? null,
+      name: cat?.name ?? l.skuDescriptionRaw ?? null,
       sku: l.skuCodeRaw,
-      pack: cat ? formatPack(cat.packCode, cat.unit) : null,
+      pack: cat?.pack ?? null,
       qty: l.unitQty,
     };
   });

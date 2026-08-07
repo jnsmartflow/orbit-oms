@@ -122,3 +122,71 @@ export type SortRule = {
   label: string;
   compare: (a: PickingQueueRow, b: PickingQueueRow) => number;
 };
+
+// ── Combined view (picker "My Picks" third tab, 2026-08-07) ─────────────────
+// The GET /api/picking/combined payload. Declared HERE, next to
+// PickingQueueRow, because this module is pure types with no imports — the
+// route and the client board both import from it, so the wire shape has one
+// definition instead of the duplicated-interface convention the single-bill
+// detail shape still follows.
+
+/**
+ * ONE raw line's contribution to a merged SKU row.
+ *
+ * The `(orderId, lineItemId)` pair is the whole reason this array crosses the
+ * wire: the picker's private line ticks are stored per BILL, keyed by the
+ * line's stable `import_raw_line_items.id`, so ticking a merged row has to be
+ * written back into each contributing bill's own entry
+ * (docs/CLAUDE_PICKING.md §5.4.1). Per-contribution `qty`/`litres` let the
+ * client re-total when a bill is toggled off WITHOUT a refetch.
+ */
+export interface CombinedContribution {
+  orderId: number;
+  /** `import_raw_line_items.id` — a global PK, unique across bills. */
+  lineItemId: number;
+  qty: number;
+  litres: number;
+}
+
+/**
+ * One DISTINCT SAP code across all of this picker's pending bills.
+ *
+ * ⚠ MERGED BY `skuCodeRaw` / `sku_master_v2.material` — the SAP code, ALWAYS.
+ * Never by description text: two bills can carry different raw text for the
+ * same unmastered code, and text matching would silently merge or split real
+ * products. `name`/`pack` resolve through lib/picking/resolve-lines.ts; when a
+ * code is in neither catalog table (~27%, §7's blank-pack landmine) `name`
+ * falls back to the raw SAP text of the FIRST contributing bill (cosmetic only)
+ * and `pack` stays null.
+ */
+export interface CombinedSkuRow {
+  sku: string;
+  name: string | null;
+  pack: string | null;
+  /** Summed across EVERY contributing bill (server-side, all bills enabled). */
+  qty: number;
+  /** Summed `import_raw_line_items.volumeLine`, 2dp. */
+  litres: number;
+  contributions: CombinedContribution[];
+}
+
+/** A bill feeding the Combined list — one pill in the client's bill row. */
+export interface CombinedBill {
+  orderId: number;
+  obdNumber: string;
+  dealerName: string;
+}
+
+/**
+ * GET /api/picking/combined response.
+ *
+ * `bills` is exactly the picker's Pending tab (same getPickingQueue +
+ * splitPickerRows rule), resolved SERVER-SIDE from his own pickerId — the
+ * client never sends an order-id list, so Combined can never show another
+ * picker's bills and can never drift from Pending.
+ */
+export interface CombinedPickResult {
+  pickerId: number;
+  bills: CombinedBill[];
+  rows: CombinedSkuRow[];
+}

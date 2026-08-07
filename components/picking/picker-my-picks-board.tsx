@@ -2,17 +2,23 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { ChevronLeft, ChevronRight, Star } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, Star, X } from "lucide-react";
 import { toast } from "sonner";
 import { useMobileShell } from "@/components/shared/mobile-shell-context";
 import { ModuleMobileHeader } from "@/components/shared/module-mobile-header";
+import { MOBILE_NAV_CLEARANCE } from "@/components/shared/mobile-shell";
 import { AgeBadge, CardShelf, CARD_SHADOW_V2, RouteDot } from "./card-atoms";
 import { usePickerBoard } from "./picking-mobile-shell";
 import { NO_BILL_SWIPE_ATTR, useBillPager } from "./use-bill-pager";
-import type { PickerTabKey } from "./picking-mobile-shell";
-import type { PickingQueueRow } from "@/lib/picking/types";
+import type { CombinedPickResult, PickingQueueRow } from "@/lib/picking/types";
 import type { PickerRosterEntry } from "@/lib/picking/picker-roster";
 import { usePickingMarker } from "@/lib/hooks/use-picking-marker";
+
+// Which of the two BILL lists a detail session pages through. Deliberately NOT
+// PickerTabKey: the Combined tab (2026-08-07) is not a bill list — a bill
+// opened from one of its pills is opened from PENDING, and the swipe pager
+// walks the pending bills exactly as it does from the Pending tab.
+type DetailListKey = "pending" | "done";
 
 // Card shell shadow — lifted verbatim from picking-board-mobile.tsx's
 // SOFT_CARD_SHADOW, the fidelity source for this whole face
@@ -39,6 +45,25 @@ interface LineItem {
   sku: string;
   pack: string | null;
   qty: number;
+}
+
+/**
+ * One rendered Combined row — the server's CombinedSkuRow re-totalled for the
+ * bills that are currently switched ON.
+ *
+ * `lineIds` is the flat set the tick circle reads; `byOrder` is the same ids
+ * grouped by bill, which is the shape the tick STORE needs (it is keyed per
+ * bill). Both are derived together so they can never disagree about which
+ * lines a row covers.
+ */
+interface CombinedRowView {
+  sku:     string;
+  name:    string | null;
+  pack:    string | null;
+  qty:     number;
+  litres:  number;
+  lineIds: number[];
+  byOrder: { orderId: number; lineItemIds: number[] }[];
 }
 
 interface PickerMyPicksBoardProps {
@@ -179,6 +204,72 @@ function clearTicks(orderId: number): void {
   writeTicks(orderId, new Set());
 }
 
+// ── Multi-bill tick access (Combined view, 2026-08-07) ─────────────────────
+// The Combined list shows ONE row per SAP code, summed across several bills,
+// so a single tick belongs to line items in several bills at once. These three
+// helpers are the multi-bill face of the SAME store above — same key, same
+// shape, same pruning. There is no second store and there must never be one:
+// a tick made in Combined and the same tick seen on that bill's own detail
+// screen are the same note about the same physical goods.
+
+/** Union of the ticked line ids across several bills. ONE store read. */
+function readTicksForOrders(orderIds: readonly number[]): Set<number> {
+  const store = readTickStore();
+  const out = new Set<number>();
+  for (const orderId of orderIds) {
+    for (const id of store[String(orderId)]?.ids ?? []) out.add(id);
+  }
+  return out;
+}
+
+interface TickUpdate {
+  orderId: number;
+  add?:    number[];
+  remove?: number[];
+}
+
+/**
+ * Apply add/remove sets across SEVERAL bills in ONE read → merge → write.
+ *
+ * ⚠️ MERGES, NEVER REPLACES. writeTicks() above takes a bill's WHOLE set and
+ * overwrites it, which is right for the single-bill screen (it holds every
+ * line of that bill on screen) and catastrophic here: a Combined row knows
+ * only its own SKU's line ids, so writing those as the bill's set would erase
+ * every tick the picker had made on that bill's other lines. Each entry is
+ * read, unioned/differenced, and written back.
+ *
+ * One read + one write rather than a loop of writeTicks() calls: N bills used
+ * to mean N JSON parses, N prunes and N serialisations for a single tap, and —
+ * worse — N chances for a partial write to leave the bills disagreeing.
+ * Pruning still happens exactly once, inside writeTickStore.
+ */
+function writeManyTicks(updates: readonly TickUpdate[]): void {
+  if (updates.length === 0) return;
+  const store = readTickStore();
+  const now = Date.now();
+  for (const update of updates) {
+    const key = String(update.orderId);
+    const next = new Set(store[key]?.ids ?? []);
+    for (const id of update.add ?? []) next.add(id);
+    for (const id of update.remove ?? []) next.delete(id);
+    // Empty set removes the entry outright — same rule as writeTicks, so
+    // unticking everything through Combined leaves no residue either.
+    if (next.size === 0) delete store[key];
+    else store[key] = { t: now, ids: Array.from(next) };
+  }
+  writeTickStore(store);
+}
+
+/** Drop several bills' notes at once — the Mark-all-done counterpart of
+ *  clearTicks(). Same "the bill is finished, the notes served their purpose"
+ *  rule, applied only to bills the server actually accepted. */
+function clearTicksForOrders(orderIds: readonly number[]): void {
+  if (orderIds.length === 0) return;
+  const store = readTickStore();
+  for (const orderId of orderIds) delete store[String(orderId)];
+  writeTickStore(store);
+}
+
 // The local TopBarTab copy that used to live here (a self-declared third
 // copy of picking-board-mobile.tsx's original) was DELETED 2026-07-29: the
 // Pending/Done strip moved to the shared bottom bar (WorkflowTabBar, driven
@@ -237,7 +328,7 @@ export function PickerMyPicksBoard({
   // the list key. Today the bottom bar is hidden while a bill is open
   // (hideBar), so activeTab cannot change mid-session anyway — this keeps the
   // pager correct if that ever stops being true.
-  const [detailListKey, setDetailListKey] = useState<PickerTabKey>("pending");
+  const [detailListKey, setDetailListKey] = useState<DetailListKey>("pending");
   const [lineItems, setLineItems] = useState<LineItem[] | null>(null);
   const [lineItemsLoading, setLineItemsLoading] = useState(false);
   const [lineItemsError, setLineItemsError] = useState<string | null>(null);
@@ -255,6 +346,35 @@ export function PickerMyPicksBoard({
   // overlapping POSTs (the server's own PICK_ASSIGNED guard would 409 the
   // second one anyway, but this avoids firing it at all).
   const [marking, setMarking] = useState(false);
+
+  // ── Combined tab state (2026-08-07) ──────────────────────────────────────
+  // The merged list itself, fetched from GET /api/picking/combined. It is NOT
+  // derived from `pending` on the client: the line items behind these rows are
+  // not in the queue payload at all (PickingQueueRow carries order-level
+  // aggregates only), so the merge has to happen server-side. What IS derived
+  // from `pending` is WHEN to refetch — see the effect below.
+  const [combined, setCombined] = useState<CombinedPickResult | null>(null);
+  const [combinedLoading, setCombinedLoading] = useState(false);
+  const [combinedError, setCombinedError] = useState<string | null>(null);
+  // Bills the picker has toggled OFF for this visit. Deliberately EPHEMERAL and
+  // deliberately NOT persisted: it resets to empty every time the tab is opened
+  // (the effect below), because "which bills am I fetching for right now" is a
+  // question about the next ten minutes, not a setting. A bill is never removed
+  // from his board by this — only from the current merge.
+  const [disabledBillIds, setDisabledBillIds] = useState<Set<number>>(new Set());
+  // Its OWN pack filter, separate from the detail screen's activePackFilter —
+  // sharing one would make opening a bill silently re-filter the Combined list
+  // underneath, and vice versa.
+  const [combinedPackFilter, setCombinedPackFilter] = useState<string>("ALL");
+  // The ticked line ids across ALL of his pending bills, mirrored from the same
+  // device store the single-bill screen writes (readTicksForOrders). Held as
+  // state so a tap re-renders; the store is the durable copy.
+  const [combinedTicked, setCombinedTicked] = useState<Set<number>>(new Set());
+  // In-flight guard for Mark all done — the batch equivalent of `marking`. Same
+  // job: stop a double-tap firing the whole sequence twice.
+  const [markingAll, setMarkingAll] = useState(false);
+
+  const isCombined = activeTab === "combined";
 
   // Live sync (2026-07-22) — poll the cheap marker every 15s; on a real change,
   // refetch this picker's rows. The marker GATE is what keeps that cheap: the
@@ -281,12 +401,77 @@ export function PickerMyPicksBoard({
   // blank detailRow ([...pending,...done].find, below) if the bill left his
   // scope; deferring until he backs out avoids that. On unpause, if the marker
   // moved meanwhile, the hook fires onChange once.
+  //
+  // ⚠️ STILL EXACTLY ONE MARKER INSTANCE after the Combined tab landed
+  // (2026-08-07), and there must never be a second. Combined is refreshed by
+  // THIS poll: the marker moves → refetchQueue() → `pending` changes → the
+  // combined effect below re-runs. A second usePickingMarker for the combined
+  // list would double the probe traffic and fire two refetches per change for
+  // no new information (CLAUDE_PICKING.md §10). markingAll joins the pause for
+  // the same reason `marking` is there — the ground must not move under a
+  // batch that is halfway through writing.
   usePickingMarker({
     scope: "openPending",
     pickerId: activePickerId ?? undefined,
     onChange: refetchQueue,
-    paused: detailOpen || marking,
+    paused: detailOpen || marking || markingAll,
   });
+
+  // Reset the per-visit view state every time Combined is opened. "All bills
+  // on" and "All packs" is the state he expects to find; carrying a toggle
+  // across visits would silently hide a bill he never chose to hide THIS time.
+  useEffect(() => {
+    if (!isCombined) return;
+    setDisabledBillIds(new Set());
+    setCombinedPackFilter("ALL");
+  }, [isCombined]);
+
+  // WHICH bills are pending, as a stable primitive. This — not the array
+  // identity — is what the combined fetch keys on, so a refetch that returns
+  // the same bills does NOT re-run it, while a bill genuinely arriving or
+  // leaving does. That is the whole live-refresh mechanism for this tab: no
+  // second marker, no polling of its own, no popup and nothing asked of the
+  // picker.
+  const pendingKey = useMemo(() => pending.map((r) => r.orderId).join(","), [pending]);
+
+  useEffect(() => {
+    if (!isCombined) return;
+    if (activePickerId === null) {
+      setCombined(null);
+      return;
+    }
+    let cancelled = false;
+    setCombinedLoading(true);
+    setCombinedError(null);
+    async function load() {
+      try {
+        // pickerId is the ADMIN-PREVIEW path only — the route ignores it for a
+        // real picker and uses his own session id, so this can never widen the
+        // scope (see that route's comment). Nothing here sends order ids.
+        const res = await fetch(`/api/picking/combined?pickerId=${activePickerId}`);
+        if (!res.ok) throw new Error(`Request failed (${res.status})`);
+        const json = (await res.json()) as CombinedPickResult;
+        if (cancelled) return;
+        setCombined(json);
+        // Re-read his notes for exactly these bills, synchronously with the
+        // data they belong to — same reasoning as switchDetailTo's tick read:
+        // never render one set of rows against another set's ticks.
+        setCombinedTicked(readTicksForOrders(json.bills.map((b) => b.orderId)));
+      } catch (err) {
+        // Keep the last good list on failure, exactly like refetchQueue —
+        // a network blip on a screen he is working from must not blank it.
+        if (!cancelled) {
+          setCombinedError(err instanceof Error ? err.message : "Failed to load the combined list");
+        }
+      } finally {
+        if (!cancelled) setCombinedLoading(false);
+      }
+    }
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [isCombined, activePickerId, pendingKey]);
 
   useEffect(() => {
     if (detailOrderId === null) return;
@@ -367,7 +552,7 @@ export function PickerMyPicksBoard({
   // swap exactly as it does on a fresh open. Re-setting detailOpen(true) on
   // every call is harmless (already true while paging) — same shape as the
   // supervisor's switchDetailTo.
-  function switchDetailTo(orderId: number, listKey: PickerTabKey): void {
+  function switchDetailTo(orderId: number, listKey: DetailListKey): void {
     setDetailOrderId(orderId);
     setDetailListKey(listKey);
     setDetailOpen(true);
@@ -389,7 +574,7 @@ export function PickerMyPicksBoard({
     writeTicks(orderId, next);
   }
 
-  function openDetail(orderId: number, listKey: PickerTabKey): void {
+  function openDetail(orderId: number, listKey: DetailListKey): void {
     switchDetailTo(orderId, listKey);
     // A fresh open from a card tap must always start at rest, in case a prior
     // session's gesture left the ref mid-transform. (`pager` is declared
@@ -417,7 +602,126 @@ export function PickerMyPicksBoard({
   // carried now sits with the mechanism that replaced them, in
   // PickerPickingShell.)
 
-  const rows = activeTab === "pending" ? pending : done;
+  // ⚠ THREE TAB KEYS, TWO BILL LISTS. `listKey` is the ONE place that mapping
+  // is made, and every card-list call site below reads it — the card list is
+  // not rendered at all on Combined, so "not done ⇒ pending" is exact rather
+  // than a fallback. Before the third key existed this file carried four
+  // separate `activeTab === "pending" ? … : …` ternaries, each of which would
+  // have silently treated Combined as Done.
+  const listKey: DetailListKey = activeTab === "done" ? "done" : "pending";
+  const listRows = listKey === "done" ? done : pending;
+
+  // ── Combined derivations ─────────────────────────────────────────────────
+  // Everything below recomputes from (server payload × which bills are on), so
+  // toggling a bill needs NO refetch — the contributions carry per-bill qty and
+  // volume precisely so the totals can be rebuilt on the device.
+  const enabledBillIds = useMemo(() => {
+    const ids = new Set<number>();
+    for (const bill of combined?.bills ?? []) {
+      if (!disabledBillIds.has(bill.orderId)) ids.add(bill.orderId);
+    }
+    return ids;
+  }, [combined, disabledBillIds]);
+
+  const combinedRows = useMemo<CombinedRowView[]>(() => {
+    const out: CombinedRowView[] = [];
+    for (const row of combined?.rows ?? []) {
+      const live = row.contributions.filter((c) => enabledBillIds.has(c.orderId));
+      // A code that only existed on switched-off bills leaves the list
+      // entirely — showing it at qty 0 would read as "nothing to fetch".
+      if (live.length === 0) continue;
+
+      let qty = 0;
+      let litres = 0;
+      const lineIds: number[] = [];
+      const byOrderMap = new Map<number, number[]>();
+      for (const c of live) {
+        qty += c.qty;
+        litres += c.litres;
+        lineIds.push(c.lineItemId);
+        const bucket = byOrderMap.get(c.orderId);
+        if (bucket) bucket.push(c.lineItemId);
+        else byOrderMap.set(c.orderId, [c.lineItemId]);
+      }
+      out.push({
+        sku: row.sku,
+        name: row.name,
+        pack: row.pack,
+        qty,
+        litres: Math.round(litres * 100) / 100,
+        lineIds,
+        // Array.from around the Map iterator (CORE §3, target < ES2015).
+        byOrder: Array.from(byOrderMap, ([orderId, lineItemIds]) => ({ orderId, lineItemIds })),
+      });
+    }
+    return out;
+  }, [combined, enabledBillIds]);
+
+  // Same shape and same NO_PACK_KEY convention as the detail screen's chip row
+  // — the strip is reused as-is, only its source list differs.
+  const combinedPackKeys = useMemo(() => {
+    const set = new Set<string>();
+    for (const row of combinedRows) set.add(row.pack ?? NO_PACK_KEY);
+    const keys = Array.from(set);
+    const real = keys.filter((k) => k !== NO_PACK_KEY).sort((a, b) => a.localeCompare(b));
+    return keys.includes(NO_PACK_KEY) ? [...real, NO_PACK_KEY] : real;
+  }, [combinedRows]);
+
+  const filteredCombinedRows = useMemo(() => {
+    if (combinedPackFilter === "ALL") return combinedRows;
+    return combinedRows.filter((r) => (r.pack ?? NO_PACK_KEY) === combinedPackFilter);
+  }, [combinedRows, combinedPackFilter]);
+
+  // BINARY, never tri-state: a merged row counts as ticked only when EVERY one
+  // of its live line ids is ticked, and one tap flips all of them together. A
+  // half-ticked look would be a third state to interpret on a screen whose
+  // whole job is "have I picked this or not".
+  const isRowTicked = useCallback(
+    (row: CombinedRowView): boolean =>
+      row.lineIds.length > 0 && row.lineIds.every((id) => combinedTicked.has(id)),
+    [combinedTicked],
+  );
+
+  // Counted against the FULL merged list, never filteredCombinedRows — the
+  // pack chips are a view filter and his progress does not change when he
+  // narrows the view. Same rule as the detail screen's tickedCount.
+  const combinedTickedCount = useMemo(
+    () => combinedRows.filter((r) => isRowTicked(r)).length,
+    [combinedRows, isRowTicked],
+  );
+
+  const combinedSummary = useMemo(() => {
+    let litres = 0;
+    for (const row of combinedRows) litres += row.litres;
+    return { orders: enabledBillIds.size, litres, products: combinedRows.length };
+  }, [combinedRows, enabledBillIds]);
+
+  function toggleBill(orderId: number): void {
+    setDisabledBillIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(orderId)) next.delete(orderId);
+      else next.add(orderId);
+      return next;
+    });
+  }
+
+  // One tap → every contributing line id, in every contributing bill, flipped
+  // together through the ONE merged write (writeManyTicks). Reads nothing to
+  // decide anything else: like every other tick on this face it gates nothing.
+  function toggleCombinedTick(row: CombinedRowView): void {
+    const ticked = isRowTicked(row);
+    writeManyTicks(
+      row.byOrder.map(({ orderId, lineItemIds }) =>
+        ticked ? { orderId, remove: lineItemIds } : { orderId, add: lineItemIds },
+      ),
+    );
+    const next = new Set(combinedTicked);
+    for (const id of row.lineIds) {
+      if (ticked) next.delete(id);
+      else next.add(id);
+    }
+    setCombinedTicked(next);
+  }
 
   const detailRow: PickingQueueRow | null = useMemo(() => {
     if (detailOrderId === null) return null;
@@ -512,6 +816,94 @@ export function PickerMyPicksBoard({
     // refresh is refetchQueue, owned by the shell.
   }, [detailRow, activePickerId, marking, refetchQueue]);
 
+  /**
+   * Mark all done — the Combined tab's CTA.
+   *
+   * ⚠ It calls the EXISTING single-bill POST /api/picking/done once per bill,
+   * SEQUENTIALLY. No batch endpoint was added and none should be: that route
+   * already owns the stage guard, the pickerId-ownership check and the
+   * two-write order (pick_assignments first, then the stage), and a batch
+   * variant would be a second copy of all three. Sequential, never
+   * Promise.all and never prisma.$transaction (CORE §3) — each bill's pair of
+   * writes must complete before the next begins, exactly as
+   * /api/picking/assign does across a batch.
+   *
+   * Per-bill failures do NOT stop the run: a 409 (the bill moved out from
+   * under him — already advanced, or reassigned) is an outcome, not an error,
+   * and the bills already written stay written. One toast summarises the whole
+   * pass rather than N toasts stacking on a phone.
+   *
+   * ALWAYS ENABLED regardless of ticks — `markingAll` is the only thing that
+   * disables it, precisely like the single-bill CTA's `marking`.
+   */
+  const handleMarkAllDone = useCallback(async () => {
+    if (activePickerId === null || markingAll) return;
+    const targets = (combined?.bills ?? []).filter((b) => enabledBillIds.has(b.orderId));
+    if (targets.length === 0) return;
+
+    setMarkingAll(true);
+    const doneIds: number[] = [];
+    let conflicts = 0;
+    let failures = 0;
+    try {
+      for (const bill of targets) {
+        try {
+          const res = await fetch("/api/picking/done", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            // The server-resolved picker, never a client-invented identity —
+            // and the route re-verifies it against the bill's real
+            // pick_assignments row regardless.
+            body: JSON.stringify({ orderId: bill.orderId, pickerId: activePickerId }),
+          });
+          if (res.ok) doneIds.push(bill.orderId);
+          else if (res.status === 409) conflicts += 1;
+          else failures += 1;
+        } catch {
+          failures += 1;
+        }
+      }
+
+      // Their notes have served their purpose — but only for bills the server
+      // actually accepted. A 409'd bill keeps its ticks: it is still somewhere,
+      // and wiping notes on work that did not complete is the one thing this
+      // store must never do.
+      clearTicksForOrders(doneIds);
+      if (doneIds.length > 0) {
+        setCombinedTicked((prev) => {
+          const cleared = new Set(prev);
+          const doneSet = new Set(doneIds);
+          for (const row of combined?.rows ?? []) {
+            for (const c of row.contributions) {
+              if (doneSet.has(c.orderId)) cleared.delete(c.lineItemId);
+            }
+          }
+          return cleared;
+        });
+      }
+
+      const parts: string[] = [];
+      if (doneIds.length > 0) {
+        parts.push(`${doneIds.length} bill${doneIds.length === 1 ? "" : "s"} marked done`);
+      }
+      if (conflicts > 0) parts.push(`${conflicts} already changed`);
+      if (failures > 0) parts.push(`${failures} failed`);
+      const message = parts.join(" · ");
+      if (failures > 0) toast.error(message);
+      else if (doneIds.length > 0) toast.success(message);
+      else toast(message);
+
+      // Back to the board the way the single Mark Done does — WITHOUT a
+      // history pop. That CTA pops because opening a bill pushed an entry;
+      // this one lives on a TAB, which pushes nothing, so a back() here would
+      // navigate off /picking entirely. The refetch is the return: `pending`
+      // empties, and this tab re-renders as the list he is already looking at.
+      await refetchQueue();
+    } finally {
+      setMarkingAll(false);
+    }
+  }, [activePickerId, markingAll, combined, enabledBillIds, refetchQueue]);
+
   const distinctPackKeys = useMemo(() => {
     if (!lineItems) return [];
     const set = new Set<string>();
@@ -580,30 +972,238 @@ export function PickerMyPicksBoard({
           title, the viewer's name and the Pending/Done TopBarTab strip; the
           tabs are now the bottom bar (PickerPickingShell) and identity lives
           in the avatar → You sheet. */}
+      {/* One header for all three tabs — the SAME teal band, no back arrow:
+          Combined is a peer tab, not a drill-in, so it must not borrow the
+          detail screen's chevron. Only the title and the optional subtitle
+          change. */}
       <ModuleMobileHeader
-        title="My Picks"
+        title={isCombined ? "Combined" : "My Picks"}
+        subtitle={
+          isCombined
+            ? `${combinedSummary.orders} order${combinedSummary.orders === 1 ? "" : "s"} · ${formatLitres(
+                combinedSummary.litres,
+              )} L · ${combinedSummary.products} product${combinedSummary.products === 1 ? "" : "s"}`
+            : undefined
+        }
         avatarInitials={userInitials}
         onAvatarClick={openYou}
         onMenuClick={openMenu}
         showSearch={false}
       />
 
-      {/* Card list. Four rows (2026-07-29): caption + flags · name · where ·
+      {isCombined ? (
+        /* ── COMBINED — every pending bill as ONE flat list ─────────────────
+           Deliberately NOT the card list: no per-bill grouping, no family or
+           section headers, no per-row "which bill" breakdown. One row per SAP
+           code with one total quantity is the entire point — he walks the
+           shelves once, not once per bill. The row itself is the single-bill
+           detail row, unchanged (pack tile · SKU · name · qty · tick), so the
+           two screens read identically. */
+        <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+          {/* Bill pills — which bills are feeding this list. The NAME opens
+              that bill's own detail screen (unchanged, pending list, full
+              swipe pager); the icon toggles it out of the merge for THIS
+              visit only. Nothing here removes a bill from his board. */}
+          {(combined?.bills.length ?? 0) > 0 && (
+            <div
+              className="shrink-0 flex items-center gap-1.5 overflow-x-auto bg-white border-b border-gray-200 px-3.5 py-2.5 [&::-webkit-scrollbar]:hidden"
+              style={{ scrollbarWidth: "none" }}
+            >
+              {(combined?.bills ?? []).map((bill) => {
+                const on = enabledBillIds.has(bill.orderId);
+                return (
+                  <span
+                    key={bill.orderId}
+                    className={
+                      "shrink-0 flex items-center rounded-full border text-[12.5px] " +
+                      (on ? "bg-white border-gray-200" : "bg-gray-50 border-dashed border-gray-300")
+                    }
+                  >
+                    <button
+                      type="button"
+                      onClick={() => openDetail(bill.orderId, "pending")}
+                      className={
+                        "max-w-[132px] truncate py-2 pl-3 pr-1 text-left font-medium " +
+                        (on ? "text-gray-700" : "text-gray-400")
+                      }
+                    >
+                      {bill.dealerName}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => toggleBill(bill.orderId)}
+                      aria-label={on ? `Leave out ${bill.dealerName}` : `Add back ${bill.dealerName}`}
+                      aria-pressed={on}
+                      className="flex min-w-[32px] items-center justify-center self-stretch pr-2 text-gray-400"
+                    >
+                      {on ? <X size={13} /> : <Plus size={13} />}
+                    </button>
+                  </span>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Pack filter — the detail screen's strip, reused as-is: same
+              markup, same styling, same >= 2 distinct packs rule (a list with
+              one pack has nothing to filter between). Its own state, so
+              filtering here and inside an open bill never interfere.
+              No NO_BILL_SWIPE needed — the bill-swipe pager lives on the
+              detail overlay, and this strip is on the list view. */}
+          {combinedPackKeys.length >= 2 && (
+            <div className="shrink-0 bg-white border-b border-gray-200 px-3.5 py-2.5 flex items-center gap-1.5 overflow-x-auto">
+              <button
+                type="button"
+                onClick={() => setCombinedPackFilter("ALL")}
+                className={
+                  "text-[12.5px] font-medium px-3 py-1.5 rounded-full border whitespace-nowrap shrink-0 " +
+                  (combinedPackFilter === "ALL"
+                    ? "bg-[#2a323c] border-[#2a323c] text-white font-semibold"
+                    : "bg-white border-gray-200 text-gray-700")
+                }
+              >
+                All
+              </button>
+              {combinedPackKeys.map((key) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setCombinedPackFilter(key)}
+                  className={
+                    "text-[12.5px] font-medium px-3 py-1.5 rounded-full border whitespace-nowrap shrink-0 " +
+                    (combinedPackFilter === key
+                      ? "bg-[#2a323c] border-[#2a323c] text-white font-semibold"
+                      : "bg-white border-gray-200 text-gray-700")
+                  }
+                >
+                  {key === NO_PACK_KEY ? "No pack" : key}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <div className="flex-1 overflow-y-auto overscroll-contain px-3.5 pt-3 pb-3">
+            {combined === null && combinedLoading && (
+              <p className="text-[13px] text-gray-400 text-center py-10">Loading&hellip;</p>
+            )}
+            {combined === null && !combinedLoading && combinedError !== null && (
+              <p className="text-[13px] text-red-600 text-center py-10">
+                Couldn&apos;t load the combined list: {combinedError}
+              </p>
+            )}
+            {/* Empty state — the SAME words the Pending tab uses. */}
+            {combined !== null && combined.bills.length === 0 && (
+              <p className="text-[13px] text-gray-400 text-center py-16">Nothing pending.</p>
+            )}
+            {combined !== null && combined.bills.length > 0 && filteredCombinedRows.length === 0 && (
+              <p className="text-[13px] text-gray-400 text-center py-10">
+                {combinedRows.length === 0 ? "No bills selected." : "No lines match."}
+              </p>
+            )}
+            {filteredCombinedRows.map((row) => {
+              const ticked = isRowTicked(row);
+              return (
+                <div
+                  key={row.sku}
+                  className="flex bg-white rounded-[14px] overflow-hidden mb-2"
+                  style={{ boxShadow: SOFT_CARD_SHADOW }}
+                >
+                  <div className="w-14 shrink-0 bg-[#f8fafa] border-r border-gray-200 flex items-center justify-center px-1 py-2.5">
+                    <span
+                      className="text-[13px] font-bold text-center"
+                      style={{ color: row.pack !== null ? "#3d4650" : "#9ca3af" }}
+                    >
+                      {row.pack ?? "—"}
+                    </span>
+                  </div>
+                  <div className={"flex-1 min-w-0 px-3 py-2.5 transition-opacity " + (ticked ? "opacity-55" : "")}>
+                    <div className="font-mono text-[17px] font-bold text-gray-900 truncate">{row.sku}</div>
+                    <div className="text-[12px] text-gray-500 truncate mt-0.5">{row.name ?? "—"}</div>
+                  </div>
+                  {/* ONE total. No per-bill breakdown text under it — the pills
+                      above say which bills are in play, and a "2 + 1 + 3" line
+                      on every row is arithmetic he did not ask for. */}
+                  <div className="shrink-0 flex items-center justify-center px-3.5">
+                    <span className="text-[26px] font-extrabold text-gray-900">{row.qty}</span>
+                  </div>
+                  {/* Same slate circle as the single-bill screen, and the same
+                      contract: his private note, gating nothing. One tap
+                      writes through to EVERY contributing bill's entry. */}
+                  <button
+                    type="button"
+                    onClick={() => toggleCombinedTick(row)}
+                    aria-label={ticked ? "Remove tick from product" : "Tick product"}
+                    aria-pressed={ticked}
+                    className="w-11 shrink-0 flex items-center justify-center"
+                  >
+                    <span
+                      className={
+                        "w-5 h-5 rounded-full border-2 flex items-center justify-center " +
+                        (ticked ? "bg-[#6b7480] border-[#6b7480]" : "bg-white border-gray-300")
+                      }
+                    >
+                      {ticked && (
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none">
+                          <path
+                            d="M5 13l4 4L19 7"
+                            stroke="white"
+                            strokeWidth={3.5}
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      )}
+                    </span>
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Footer. paddingBottom reserves the shell's fixed bottom bar —
+              the bar IS visible on this tab (unlike the detail screen, which
+              hides it), so MOBILE_NAV_CLEARANCE is imported, never retyped as
+              a bare 76px (CLAUDE_PICKING.md §7). */}
+          {combined !== null && combined.bills.length > 0 && (
+            <div
+              className="shrink-0 bg-white border-t border-gray-200 px-3.5 pt-2.5"
+              style={{ paddingBottom: MOBILE_NAV_CLEARANCE }}
+            >
+              <div className="mb-2 text-center text-[11.5px] text-gray-400 tabular-nums">
+                {combinedTickedCount} of {combinedRows.length} ticked
+              </div>
+              {/* ⚠ NEVER GATED ON THE TICKS — `markingAll` is the in-flight
+                  double-tap guard and the only thing that can disable this.
+                  Ticking nothing and tapping Mark all done is a normal day,
+                  exactly as on the single-bill screen. Do not add a check. */}
+              <button
+                type="button"
+                onClick={() => void handleMarkAllDone()}
+                disabled={markingAll}
+                className="w-full h-12 rounded-full bg-teal-600 active:bg-teal-700 text-white text-[14.5px] font-bold shadow-[0_8px_22px_rgba(13,148,136,0.42)] disabled:opacity-60"
+              >
+                {markingAll ? "Marking done…" : "Mark all done"}
+              </button>
+            </div>
+          )}
+        </div>
+      ) : (
+      /* Card list. Four rows (2026-07-29): caption + flags · name · where ·
           families. Still NO checkbox, NO elapsed pill, NO avatar, NO footer —
           those are supervisor concerns. Reserves 76px for the shell's fixed
           bottom bar (components/shared/mobile-shell.tsx), same convention as
-          picking-board-mobile.tsx. */}
+          picking-board-mobile.tsx. */
       <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain pb-[76px] bg-white border-b border-gray-200 px-4 py-2.5">
-        {rows.length === 0 ? (
+        {listRows.length === 0 ? (
           <p className="text-[13px] text-gray-400 text-center py-16">
-            {activeTab === "pending" ? "Nothing pending." : "Nothing marked done yet today."}
+            {listKey === "pending" ? "Nothing pending." : "Nothing marked done yet today."}
           </p>
         ) : (
-          rows.map((row) => (
+          listRows.map((row) => (
             <button
               key={row.orderId}
               type="button"
-              onClick={() => openDetail(row.orderId, activeTab)}
+              onClick={() => openDetail(row.orderId, listKey)}
               className="block w-full text-left mb-[11px] rounded-[20px] overflow-hidden border-[1.5px] bg-white border-[#eceef2] active:bg-gray-50"
               style={{ boxShadow: CARD_SHADOW_V2 }}
             >
@@ -707,7 +1307,7 @@ export function PickerMyPicksBoard({
               <CardShelf
                 row={row}
                 trailing={
-                  activeTab === "done" && formatPickedTime(row.pickedAt) !== null ? (
+                  listKey === "done" && formatPickedTime(row.pickedAt) !== null ? (
                     <span
                       className="shrink-0 self-stretch flex items-center gap-1 pl-1.5 text-[12px] font-semibold whitespace-nowrap"
                       style={{ color: "#8a929c" }}
@@ -722,6 +1322,7 @@ export function PickerMyPicksBoard({
           ))
         )}
       </div>
+      )}
 
       {/* Detail screen — reuses the live board's detail-screen pattern: teal
           header, articleTag+volume stat strip, pack chips (only when ≥2

@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { Inbox, Package, CheckCircle2 } from "lucide-react";
+import { Inbox, Package, CheckCircle2, Layers } from "lucide-react";
 import { RoleLayoutClient } from "@/components/shared/role-layout-client";
 import type { RoleSidebarRole } from "@/components/shared/role-sidebar";
 import type { WorkflowTab } from "@/components/shared/workflow-tab-bar";
@@ -85,7 +85,27 @@ export function usePickingBoard(): PickingBoardContextValue {
 // nothing client-side (app/picking/page.tsx resolves its rows server-side and
 // passes them as props), so there is no data/loading/error/refetch to share —
 // only which tab is showing, plus whether a bill is open.
-export type PickerTabKey = "pending" | "done";
+//
+// THREE tabs since 2026-08-07 — "combined" landed between the two originals.
+// It is a VIEW of `pending`, not a fourth list: nothing is added to this
+// context for it, because the board derives it from the same `pending` array
+// the shell already owns and refreshes (which is also why it needs no second
+// live-sync marker — CLAUDE_PICKING.md §10).
+export type PickerTabKey = "pending" | "combined" | "done";
+
+// ⚠️ THE RUNTIME GUARD THAT `tsc` CANNOT REPLACE. WorkflowTab.key is a bare
+// `string` (components/shared/workflow-tab-bar.tsx), so onTabChange hands back
+// a string, and this used to be resolved with `key as PickerTabKey` — a cast
+// the compiler accepts unconditionally, which means a tab key that is NOT in
+// the union above would have been written into state silently and every
+// `activeTab === …` comparison downstream would then fall through to whatever
+// its else-branch happens to be. Widening the union from two keys to three is
+// exactly the change that would have exposed it. Narrow, never cast.
+const PICKER_TAB_KEYS: readonly PickerTabKey[] = ["pending", "combined", "done"];
+
+function isPickerTabKey(key: string): key is PickerTabKey {
+  return (PICKER_TAB_KEYS as readonly string[]).includes(key);
+}
 
 interface PickerBoardContextValue {
   // Read-only in the board: its two writers were the TopBarTabs deleted with
@@ -212,14 +232,18 @@ interface PickerPickingShellProps {
  * splitPickerRows() (lib/picking/picker-split.ts) — one rule, one place, so
  * server and client can never disagree about which tab a bill belongs to.
  *
- * Two tabs, matching the DATA: the stages are pick_assigned / pick_done /
- * pick_checked, so "pending" and "done" is the whole picture — there is no
- * third state to add a third tab for.
+ * Two tabs match the DATA — the stages are pick_assigned / pick_done /
+ * pick_checked, so "pending" and "done" is the whole picture of STATE. The
+ * third tab (2026-08-07) is NOT a third state: "combined" is a second VIEW of
+ * pending, permanent, always present for every picker, and always mirroring
+ * whatever `pending` currently holds. It adds no list here — the board derives
+ * it from the same array, which is what keeps it live for free.
  *
  * Icons reuse the supervisor board's vocabulary (§ the workflowTabs memo
  * below in this file): Package = goods being fetched right now, CheckCircle2
- * = finished. Inbox is deliberately NOT reused — it means "waiting to be
- * assigned", which is a supervisor concept the picker never sees.
+ * = finished. Layers = the same bills stacked into one list. Inbox is
+ * deliberately NOT reused — it means "waiting to be assigned", which is a
+ * supervisor concept the picker never sees.
  *
  * Badge on Pending only. Done deliberately passes no `count`, so
  * WorkflowTabBar's `showBadge` is false and it renders none: a picker's
@@ -269,10 +293,16 @@ function PickerPickingShell({
     [rows, viewerId],
   );
 
-  // Badge on Pending only — `done` deliberately passes no count.
+  // Badge on Pending ONLY — `combined` and `done` both deliberately pass no
+  // count, so WorkflowTabBar's `showBadge` is false and neither renders one.
+  // Done: a picker's finished pile is a receipt, not work still requiring him.
+  // Combined: it is the SAME work as Pending seen a different way, so a second
+  // badge counting the same bills would double-report the day's load — and a
+  // product count there would compete with the number that means "bills left".
   const workflowTabs = useMemo<WorkflowTab[]>(
     () => [
       { key: "pending", label: "Pending", count: pending.length, icon: Package },
+      { key: "combined", label: "Combined", icon: Layers },
       { key: "done", label: "Done", icon: CheckCircle2 },
     ],
     [pending.length],
@@ -291,7 +321,11 @@ function PickerPickingShell({
       navItems={navItems}
       workflowTabs={workflowTabs}
       activeTabKey={activeTab}
-      onTabChange={(key) => setActiveTab(key as PickerTabKey)}
+      // Narrowed, never cast — see isPickerTabKey above. An unrecognised key
+      // is ignored rather than written into state as a lie.
+      onTabChange={(key) => {
+        if (isPickerTabKey(key)) setActiveTab(key);
+      }}
       hideBar={detailOpen}
     >
       <PickerBoardContext.Provider value={contextValue}>

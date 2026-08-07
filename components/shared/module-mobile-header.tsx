@@ -25,6 +25,18 @@ import { Search, LayoutGrid } from "lucide-react";
 
 interface ModuleMobileHeaderProps {
   title:          string;
+  /**
+   * OPTIONAL second line under the title (2026-08-07, for the picker's
+   * Combined tab: "3 orders · 128 L · 14 products").
+   *
+   * ⚠ ADDITIVE AND DEFAULT-OFF, on purpose. When it is undefined the header
+   * renders the bare `<h1>` exactly as it always has — same element, same
+   * classes, same flex position — so every existing consumer stays
+   * byte-identical (`showSearch`'s precedent). Only the subtitle CASE wraps
+   * title+subtitle in a column. This is a new capability, NOT a restyle of the
+   * existing one; do not fold the two branches together to "tidy" it.
+   */
+  subtitle?:      string;
   avatarInitials: string;
   /** Avatar tap — Picking opens the shared You sheet (useMobileShell().openYou). */
   onAvatarClick:  () => void;
@@ -52,6 +64,7 @@ interface ModuleMobileHeaderProps {
 
 export function ModuleMobileHeader({
   title,
+  subtitle,
   avatarInitials,
   onAvatarClick,
   onMenuClick,
@@ -71,7 +84,16 @@ export function ModuleMobileHeader({
       >
         {avatarInitials}
       </button>
-      <h1 className="text-[19px] font-extrabold text-white tracking-tight">{title}</h1>
+      {subtitle === undefined ? (
+        <h1 className="text-[19px] font-extrabold text-white tracking-tight">{title}</h1>
+      ) : (
+        <div className="flex min-w-0 flex-col items-center">
+          <h1 className="text-[19px] font-extrabold text-white tracking-tight">{title}</h1>
+          <p className="max-w-full truncate text-[11.5px] font-medium text-white/75 tabular-nums">
+            {subtitle}
+          </p>
+        </div>
+      )}
       <div className="flex items-center gap-0.5 shrink-0">
         <button
           type="button"
