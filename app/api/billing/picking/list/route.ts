@@ -61,6 +61,11 @@ const DATE_STR_RE = /^\d{4}-\d{2}-\d{2}$/;
  * are RAW PASS-THROUGH for the FLAGS column the UI renders later. This route
  * does not interpret them and holds no flag logic — deliberately.
  *
+ * `hasConfirmedShortage` (2026-08-08) is the ONE exception to that rule, and it
+ * is a derived boolean on purpose: the raw form would be a per-row query, which
+ * is exactly what the batched Set below exists to avoid. PENDING ROWS ONLY —
+ * both Done arms are untouched, so their shape is byte-identical to before.
+ *
  * Sequential awaits only, never prisma.$transaction (CORE §3).
  */
 export async function GET(req: Request): Promise<NextResponse> {
@@ -131,6 +136,43 @@ export async function GET(req: Request): Promise<NextResponse> {
     },
   });
 
+  // ── Confirmed shortages — ONE batched query for the whole visible list ─────
+  // Mirrors app/api/picking/order/[orderId]/route.ts:109-125 (findMany with an
+  // `in` list → Map/Set → attach in the map below), widened from one bill's
+  // LINES to the list's ORDERS. Never one query per row.
+  //
+  // Keyed on `orderId` — pick_findings.orderId points at orders.id, the same id
+  // space `pendingRows` is built from (both are `prisma.orders` rows), so no
+  // resolution step is needed. That is NOT true of the mo_orders-keyed billing
+  // face, which would have to travel soNumber → orders first.
+  // Index-backed: pick_findings_order_idx ON (orderId).
+  //
+  // 🔴 `recordedById: { not: null }` IS THE ENTIRE DEFINITION OF "CONFIRMED",
+  // and it is a filter here rather than a test at the call site so no consumer
+  // can widen it by accident. A PENDING finding — picker reported it, no
+  // supervisor has signed off — must NOT reach this list: it is a claim awaiting
+  // confirmation, and Billing invoices against confirmed fact. Never infer the
+  // state from qtyFound or reason (lib/picking/types.ts:136-140) — a supervisor
+  // may confirm a line at the full ordered quantity.
+  // Matches the live partial index pick_findings_confirmed_idx
+  // ON ("recordedById") WHERE "recordedById" IS NOT NULL.
+  //
+  // `select: { orderId }` only — the flag is a boolean, so the rows themselves
+  // are never needed and a bill with six confirmed lines collapses to one Set
+  // entry. Skipped entirely on an empty list, the guard shape
+  // app/api/sampling-library/route.ts:195-213 uses.
+  //
+  // Read-only. Sequential await, never prisma.$transaction (CORE §3).
+  const pendingIds = pendingRows.map((o) => o.id);
+  const confirmedFindingRows =
+    pendingIds.length === 0
+      ? []
+      : await prisma.pick_findings.findMany({
+          where: { orderId: { in: pendingIds }, recordedById: { not: null } },
+          select: { orderId: true },
+        });
+  const shortageOrderIds = new Set(confirmedFindingRows.map((f) => f.orderId));
+
   const pending = pendingRows.map((o) => ({
     id: o.id,
     obdNumber: o.obdNumber,
@@ -144,6 +186,7 @@ export async function GET(req: Request): Promise<NextResponse> {
     dispatchStatus: o.dispatchStatus,
     orderType: o.orderType,
     natureOfTransaction: o.natureOfTransaction,
+    hasConfirmedShortage: shortageOrderIds.has(o.id),
   }));
 
   // ── Done (a) — MARKED: invoiced by the operator, in the selected IST day. ─

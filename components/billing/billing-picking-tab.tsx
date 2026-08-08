@@ -439,6 +439,27 @@ export function BillingPickingTab({ date }: { date?: string }) {
   );
 }
 
+/**
+ * One pending row.
+ *
+ * SHORTAGE TINT (2026-08-08). A bill with a supervisor-CONFIRMED shortage takes
+ * a light red wash across the WHOLE row plus a 3px red left edge. The server
+ * decides — `row.hasConfirmedShortage`, which means `recordedById IS NOT NULL`
+ * and nothing else (lib/billing/types.ts); this component never re-derives it.
+ *
+ * ⚠ THE TINT LIVES ON EACH `<td>`, NOT ON THE `<tr>`. Every cell here carries
+ * its own `border-b` from the TD/TD_C constants, and a background painted on the
+ * row sits BEHIND those borders — on a table-layout:fixed table the wash then
+ * reads as banded rather than solid. Setting it per cell is what makes it one
+ * continuous block. Same reason the left edge is a `border-l` on the FIRST cell
+ * rather than an outline on the row.
+ *
+ * SELECTION STILL WINS. A ticked row keeps its teal wash even when short: the
+ * operator is mid-action, and the selection has to stay legible as the thing
+ * they are about to copy into SAP. The red left edge survives either way, so the
+ * bill never stops announcing itself — it just stops shouting while being acted
+ * on. Two washes stacked would muddy into brown and read as neither.
+ */
 function PendingRow({
   row,
   index,
@@ -451,9 +472,13 @@ function PendingRow({
   onToggle: () => void;
 }) {
   const flags = billingFlags(row);
+  const short = row.hasConfirmedShortage;
+  // Appended to every cell's class. Empty on an ordinary row, so a bill with no
+  // finding renders byte-identically to before this feature existed.
+  const cell = short && !selected ? " bg-red-50" : "";
   return (
-    <tr className={selected ? "bg-teal-50/60" : "hover:bg-[#fafafa]"}>
-      <td className={TD_C}>
+    <tr className={selected ? "bg-teal-50/60" : short ? "" : "hover:bg-[#fafafa]"}>
+      <td className={`${TD_C}${cell}${short ? " border-l-[3px] border-l-red-500" : ""}`}>
         <input
           type="checkbox"
           aria-label={`Select ${row.obdNumber}`}
@@ -462,11 +487,11 @@ function PendingRow({
           onChange={onToggle}
         />
       </td>
-      <td className={`${TD_C} text-gray-400`}>{index}</td>
-      <td className={`${TD} font-medium text-gray-800`} style={{ fontVariantNumeric: "tabular-nums" }}>
+      <td className={`${TD_C} text-gray-400${cell}`}>{index}</td>
+      <td className={`${TD} font-medium text-gray-800${cell}`} style={{ fontVariantNumeric: "tabular-nums" }}>
         {row.obdNumber}
       </td>
-      <td className={`${TD} font-semibold text-gray-900`}>
+      <td className={`${TD} font-semibold text-gray-900${cell}`}>
         {shipName(row.shipToName)}
         {row.shipToOverridden && (
           <span
@@ -477,18 +502,18 @@ function PendingRow({
           </span>
         )}
       </td>
-      <td className={TD}>
+      <td className={`${TD}${cell}`}>
         {slotLabel(row) && (
           <span className="rounded border border-gray-200 bg-gray-100 px-1.5 py-px text-[10.5px] font-semibold text-gray-600" style={{ fontVariantNumeric: "tabular-nums" }}>
             {slotLabel(row)}
           </span>
         )}
       </td>
-      <td className={`${TD} text-gray-700`} style={{ fontVariantNumeric: "tabular-nums" }}>
+      <td className={`${TD} text-gray-700${cell}`} style={{ fontVariantNumeric: "tabular-nums" }}>
         {row.volume ?? 0} <span className="text-[10px] text-gray-400">L</span>
       </td>
-      <td className={`${TD} text-gray-400`}>{ago(row.checkedAt)}</td>
-      <td className={TD}>
+      <td className={`${TD} text-gray-400${cell}`}>{ago(row.checkedAt)}</td>
+      <td className={`${TD}${cell}`}>
         {flags.map((f) => (
           <span
             key={f}
@@ -497,6 +522,26 @@ function PendingRow({
             {f}
           </span>
         ))}
+        {/* ⚠ ICON ONLY — never a "SHORT" text pill. This column is 11% of a
+            table-layout:fixed table and already carries up to two pills
+            (TINT + STOCK TFR); a third text pill would push one out through the
+            cell's ellipsis and silently lose a flag the operator needs. A bare
+            glyph costs ~10px and cannot do that.
+            ADDITIVE, never a replacement: it renders ALONGSIDE whatever flags
+            are already there, because "this bill is short" and "this bill is a
+            stock transfer" are unrelated facts and neither substitutes for the
+            other. `title` carries the meaning on hover — the glyph alone is
+            recognisable but not self-explaining, and this row has no
+            drill-through yet. */}
+        {short && (
+          <span
+            title="Shortage confirmed by the supervisor"
+            aria-label="Shortage confirmed"
+            className="align-middle text-[11px] font-bold leading-none text-red-600"
+          >
+            ⚠
+          </span>
+        )}
       </td>
     </tr>
   );

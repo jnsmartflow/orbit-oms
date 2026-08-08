@@ -26,6 +26,25 @@ export interface BillingPendingRow {
   dispatchStatus: string | null;
   orderType: string | null;
   natureOfTransaction: string | null;
+  /**
+   * TRUE when at least one line on this bill carries a pick_findings row that a
+   * supervisor has CONFIRMED.
+   *
+   * ⚠ "Confirmed" means `pick_findings.recordedById IS NOT NULL` and NOTHING
+   * ELSE — the same discriminator `findingState()` uses
+   * (components/picking/finding-recorder.tsx:45-48, doctrine in
+   * lib/picking/types.ts:136-140). Never inferred from `qtyFound` or `reason`: a
+   * supervisor may legitimately confirm a line at the full ordered quantity, and
+   * a PENDING finding (picker reported, nobody signed off) is a claim, not a
+   * fact, so it deliberately does NOT light this flag.
+   *
+   * Boolean, not a count — Billing acts per BILL, not per line. How MANY lines
+   * are short is a question for a detail surface that does not exist yet.
+   *
+   * PENDING ROWS ONLY. `BillingDoneRow` deliberately has no equivalent: the Done
+   * area is a record of what already happened and nobody works those rows.
+   */
+  hasConfirmedShortage: boolean;
 }
 
 export interface BillingDoneRow {
