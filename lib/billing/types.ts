@@ -94,6 +94,65 @@ export interface BillingPickingList {
   done: BillingDoneRow[];
 }
 
+// ── Detail panel — GET /api/billing/picking/order/[orderId] ─────────────────
+// Billing's OWN read-only view of one bill's lines. Deliberately not Floor's
+// FloorDetail: that payload carries ship-to/slot/activity/override facts this
+// panel has no controls for, and its route gates on `floor`/canView, which the
+// billing operators do not hold.
+
+/**
+ * A CONFIRMED pick_findings row on one line, or null.
+ *
+ * ⚠ CONFIRMED ONLY. The route filters `recordedById: { not: null }`, so a
+ * PENDING finding — the picker reported it, no supervisor has signed off —
+ * never reaches this type. That is the same test
+ * `BillingPendingRow.hasConfirmedShortage` applies, and it must stay that way:
+ * if the two ever diverge, a row could carry the ⚠ flag and open onto a panel
+ * showing no flagged line (or the reverse), and the operator would have no way
+ * to tell which surface was lying.
+ *
+ * There is therefore no `recordedById` here — it would always be non-null, and
+ * carrying it would invite a consumer to re-derive a state this payload has
+ * already decided.
+ */
+export interface BillingDetailLineFinding {
+  qtyFound: number;
+  /** Raw DB value ('short_quantity' | 'old_mfg'); label via findingReasonLabel(). */
+  reason: string;
+  recordedAt: string | null;
+  /** users.name of the supervisor who confirmed it. */
+  recordedByName: string | null;
+}
+
+export interface BillingDetailLine {
+  /** import_raw_line_items.id — the pick_findings FK target. */
+  id: number;
+  sku: string;
+  /** sku_master_v2.description, else the raw SAP text, else null. */
+  name: string | null;
+  /** Pack CODE only ("1L", "500ML"). Blank stays blank, never guessed. */
+  pack: string | null;
+  /** Qty ORDERED on this line (import_raw_line_items.unitQty). */
+  qty: number;
+  litres: number;
+  isTint: boolean;
+  finding: BillingDetailLineFinding | null;
+}
+
+export interface BillingOrderDetail {
+  orderId: number;
+  obdNumber: string;
+  obdDateTime: string | null;
+  customerName: string | null;
+  customerCode: string | null;
+  /** True when a Support/Billing ship-to override resolved to a real dealer row
+   *  — the panel labels the name so it is not mistaken for the SAP bill-to. */
+  isShipToOverride: boolean;
+  lines: BillingDetailLine[];
+  lineCount: number;
+  totalLitres: number;
+}
+
 /**
  * FLAGS shown on a pending row.
  *

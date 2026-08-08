@@ -18,11 +18,17 @@
 //   2. the LIVE count/dot — the Picking tab badge and the "live" pip
 // The section-tab active pill stays gray-900 (Floor's tabPill), and row
 // checkboxes use accent-teal-600 like every other data table in the app.
+//
+// A Pending row now has TWO click targets (2026-08-08): the checkbox cell ticks
+// it, anywhere else opens the read-only detail panel
+// (components/billing/billing-order-detail-panel.tsx). See the stopPropagation
+// note on that cell — the two intents must not fire together.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePickingMarker } from "@/lib/hooks/use-picking-marker";
 import { getTodayIST } from "@/lib/dates";
 import { smartTitleCase } from "@/lib/mail-orders/utils";
+import { BillingOrderDetailPanel } from "@/components/billing/billing-order-detail-panel";
 import { billingFlags, type BillingPickingList, type BillingPendingRow, type BillingDoneRow } from "@/lib/billing/types";
 
 const LIST_URL = "/api/billing/picking/list";
@@ -88,6 +94,10 @@ export function BillingPickingTab({ date }: { date?: string }) {
   const [copied, setCopied] = useState(false);
   const [doneOpen, setDoneOpen] = useState(true);
   const [notice, setNotice] = useState<string | null>(null);
+  // The bill whose read-only detail panel is open, or null. An ORDER ID, not a
+  // row object — the panel fetches its own payload, so a list refetch under an
+  // open panel cannot leave it rendering a stale copy of the row.
+  const [detailOrderId, setDetailOrderId] = useState<number | null>(null);
 
   const reqRef = useRef(0);
 
@@ -326,6 +336,7 @@ export function BillingPickingTab({ date }: { date?: string }) {
                   index={i + 1}
                   selected={selection.has(row.id)}
                   onToggle={() => toggleOne(row.id)}
+                  onOpen={() => setDetailOrderId(row.id)}
                 />
               ))}
             </tbody>
@@ -435,6 +446,20 @@ export function BillingPickingTab({ date }: { date?: string }) {
           </div>
         </div>
       )}
+
+      {/* ── Detail panel ──────────────────────────────────────────────────── */}
+      {/* Read-only, no actions — so it is mounted OUTSIDE the bulk bar and does
+          not touch selection: closing it returns the operator to exactly the
+          list state they left, half-made tick set intact. Keyed on the order id
+          so opening a different bill remounts rather than showing the previous
+          bill's lines while the new ones load. */}
+      {detailOrderId !== null && (
+        <BillingOrderDetailPanel
+          key={detailOrderId}
+          orderId={detailOrderId}
+          onClose={() => setDetailOrderId(null)}
+        />
+      )}
     </div>
   );
 }
@@ -465,11 +490,13 @@ function PendingRow({
   index,
   selected,
   onToggle,
+  onOpen,
 }: {
   row: BillingPendingRow;
   index: number;
   selected: boolean;
   onToggle: () => void;
+  onOpen: () => void;
 }) {
   const flags = billingFlags(row);
   const short = row.hasConfirmedShortage;
@@ -477,8 +504,21 @@ function PendingRow({
   // finding renders byte-identically to before this feature existed.
   const cell = short && !selected ? " bg-red-50" : "";
   return (
-    <tr className={selected ? "bg-teal-50/60" : short ? "" : "hover:bg-[#fafafa]"}>
-      <td className={`${TD_C}${cell}${short ? " border-l-[3px] border-l-red-500" : ""}`}>
+    <tr
+      onClick={onOpen}
+      className={`cursor-pointer ${selected ? "bg-teal-50/60" : short ? "" : "hover:bg-[#fafafa]"}`}
+    >
+      {/* ⚠ THE CHECKBOX CELL SWALLOWS THE CLICK. Ticking a row and opening a row
+          are different intents, and the tick is the one that leads to a WRITE
+          (Copy OBDs → Mark done). Without this stop, every tick would also
+          throw a panel over the list the operator is working down, and a
+          bulk-select drag would open one bill after another. `onClick` on the
+          cell, not the input: the label-sized hit area around a 13px checkbox is
+          most of what a thumb actually lands on. */}
+      <td
+        onClick={(e) => e.stopPropagation()}
+        className={`${TD_C}${cell}${short ? " border-l-[3px] border-l-red-500" : ""}`}
+      >
         <input
           type="checkbox"
           aria-label={`Select ${row.obdNumber}`}
