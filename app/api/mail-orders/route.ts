@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { splitDeliveryRemarks } from "@/lib/mail-orders/utils";
 import { getTagSettings } from "@/lib/hide/tag-settings";
-import { buildComboSiblings } from "@/lib/mail-orders/table-c";
+import { buildComboSiblings, type ComboSiblingMaps } from "@/lib/mail-orders/table-c";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +29,65 @@ function getISTDayRange(dateStr?: string): { start: Date; end: Date } {
   const start = new Date(Date.UTC(year, month - 1, day, 0, 0, 0) - istOffset);
   const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
   return { start, end };
+}
+
+/* ── Alt-SKU sibling maps — 5-minute in-process cache ──────── */
+
+/**
+ * Why this cache exists. The alt-SKU twin maps are built from an UNCONDITIONED
+ * read of mo_sku_lookup_v2 (1,743 rows, live count 2026-08-08) — the whole
+ * catalog, not the day's rows. The board polls this route every 30s
+ * (mail-orders-page.tsx:270 `setInterval(loadOrders, 30_000)`), so the same
+ * 1,743 rows were being re-read and re-indexed 120x/hour per open tab to serve
+ * informational chips. Everything else in the handler is already day-scoped.
+ *
+ * The catalog is reference data maintained by one admin via SQL/CSV — it moves
+ * a few times a year, not per request. A 5-minute TTL is the accepted trade:
+ * a catalog edit surfaces within 5 minutes, never instantly, never not at all.
+ *
+ * SOFT cache, not a source of truth. Module-level = per warm Vercel instance;
+ * a cold start rebuilds it once, which is correct. Deliberately NOT persisted,
+ * NOT shared across instances, and NOT invalidated by catalog writes — a stale
+ * alt-SKU chip is informational only (the billed skuCode stays primary,
+ * lib/mail-orders/table-c.ts:234-236), so the worst case is a missing
+ * suggestion for a few minutes.
+ *
+ * ⚠ SCOPE: this caches the read made by THIS route only. /po and /place-order
+ * read the same table through their own routes (CORE §7.7) and are untouched.
+ */
+const COMBO_CACHE_TTL_MS = 5 * 60 * 1000;
+
+let comboCache: { maps: ComboSiblingMaps; builtAt: number } | null = null;
+// Single-flight guard: on a cold start several polls can land at once, and
+// without this every one of them would run the same full-table read.
+let comboInFlight: Promise<ComboSiblingMaps> | null = null;
+
+async function getComboSiblings(): Promise<ComboSiblingMaps> {
+  if (comboCache && Date.now() - comboCache.builtAt < COMBO_CACHE_TTL_MS) {
+    return comboCache.maps;
+  }
+  if (comboInFlight) return comboInFlight;
+
+  // Sequential await inside, never prisma.$transaction (CORE §3).
+  const build = (async (): Promise<ComboSiblingMaps> => {
+    const comboSkuRows = await prisma.mo_sku_lookup_v2.findMany({
+      select: { material: true, product: true, baseColour: true, packCode: true, description: true, isPrimary: true },
+    });
+    const maps = buildComboSiblings(comboSkuRows);
+    // Stamped AFTER the query returns, so a slow read doesn't shorten its own
+    // usable window.
+    comboCache = { maps, builtAt: Date.now() };
+    return maps;
+  })();
+
+  comboInFlight = build;
+  try {
+    return await build;
+  } finally {
+    // Only the creator clears the slot, and only if it is still its own — a
+    // failed build leaves no cache entry and the next request simply retries.
+    if (comboInFlight === build) comboInFlight = null;
+  }
 }
 
 /* ── GET handler ───────────────────────────────────────────── */
@@ -178,13 +237,10 @@ export async function GET(req: Request): Promise<NextResponse> {
   }
 
   // Alt-SKU twins — every v2 SKU sharing a line's product|baseColour|packCode
-  // combo. Built ONCE per request from v2 stock (sequential await, no
-  // $transaction — CORE §3), same batch shape as customerLookupMap above.
-  // Purely additive: the billed skuCode stays primary; altSkus is informational.
-  const comboSkuRows = await prisma.mo_sku_lookup_v2.findMany({
-    select: { material: true, product: true, baseColour: true, packCode: true, description: true, isPrimary: true },
-  });
-  const { materialToCombo, comboToSiblings } = buildComboSiblings(comboSkuRows);
+  // combo. Served from the 5-minute module cache above (sequential await, no
+  // $transaction — CORE §3); only a cold/expired cache hits the DB. Purely
+  // additive: the billed skuCode stays primary; altSkus is informational.
+  const { materialToCombo, comboToSiblings } = await getComboSiblings();
   const siblingsFor = (skuCode: string | null): { code: string; description: string }[] => {
     if (!skuCode) return [];
     const combo = materialToCombo.get(skuCode);
