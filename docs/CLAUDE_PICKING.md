@@ -1,5 +1,5 @@
 # CLAUDE_PICKING.md — Picking Module
-# v1.13 · Schema v27.15 · August 2026 · updated 2026-08-09
+# v1.14 · Schema v27.15 · August 2026 · updated 2026-08-09
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -801,17 +801,15 @@ picker-facing login flow shipped yet.
     detail in the SKU-catalog section of `CLAUDE_CORE.md`.
   - **Anyone reading the repoint as "the blank-pack problem is solved" is wrong** — set that
     expectation before shipping anything that depends on near-total resolution.
-- **`articleTag` is null on some bills** — **confirmed a real, ongoing minority pattern, not a
-  handful of strays** (2026-07-17 discovery): **17% of the live picking-queue set** (111 of 663
-  orders — 105 non-tint, 6 tint) have a null `articleTag`, layered on a much larger **69%
-  system-wide/historical gap** (5,589 of 8,084 `import_obd_query_summary` rows), which mostly
-  predates the `article_tag` raw SAP-XLS column existing at all. Not conclusively tied to one order
-  type or import path from the data alone — every null-tag sample also has `sapStatus: null`, which
-  may correlate with the manual-SAP-upload path — ⚠ this line said "Auto-Import paused since
-  2026-05-14" until 2026-08-04; **Auto-Import is LIVE** (resumed 2026-06-20, the v2 JSON path —
-  CORE §4 / IMPORT §10), which if anything strengthens the manual-SAP correlation hypothesis (the
-  2026-07-17 sample predates most auto-json volume) but the dedicated follow-up query is still
-  needed. Still open, now evidence-based.
+- **~~`articleTag` is null on some bills~~ — ROOT-CAUSED AND FIXED 2026-08-09** (commit `9de0c55b`).
+  The 2026-07-17 hunch was right: the null-tag correlation with `sapStatus: null` was the
+  manual-SAP-upload path, which emitted `articleTag: null` for **every** line unconditionally. A
+  second, independent cause was a depot-PC pack-size dictionary with no entry for several live pack
+  sizes. **Import owns this end to end — see `CLAUDE_IMPORT.md §8.2`** for the rule, the two root
+  causes, and what is still deliberately untagged. Picking needs no change; the tag simply arrives
+  now. ⚠ **Old bills keep their old tags** — historical rows are not backfilled, and 138 lines across
+  four 1 L SKUs carry a *wrong* count (not null), so a stale-looking tag on an old bill is expected,
+  not a new bug (`CLAUDE_IMPORT.md §15`).
 - **Real pick durations are unmeasured** — the Check tab's 30m/60m elapsed thresholds are a guess, not
   a measured depot baseline. (The 2026-07-29 first-login test plan asked the floor to time 3-4 real
   picks — no results recorded yet.)
@@ -1226,4 +1224,4 @@ Evidence: all nine commits confirmed present on `main` by `git log` before anyth
 
 ---
 
-*CLAUDE_PICKING.md v1.13 · Schema v27.15 · Picking Module · August 2026 · updated 2026-08-09*
+*CLAUDE_PICKING.md v1.14 · Schema v27.15 · Picking Module · August 2026 · updated 2026-08-09 — §7's `articleTag`-is-null landmine closed out (root-caused + fixed, `9de0c55b`); detail now owned by `CLAUDE_IMPORT.md §8.2`, cross-referenced not duplicated*

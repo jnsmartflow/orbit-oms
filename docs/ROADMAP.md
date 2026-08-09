@@ -1,5 +1,5 @@
 # ROADMAP.md — OrbitOMS Planned Work
-# Updated 2026-08-09 (Picking Stage 3 closed — findings shipped) · Prior: 2026-08-05 (full item-by-item status pass, reconciliation cycle) · Lives in: orbit-oms/docs/ (manual attach — NOT auto-loaded)
+# Updated 2026-08-09 (articleTag rule shipped — 2 new Import items, ZINR item superseded; Picking Stage 3 closed — findings shipped) · Prior: 2026-08-05 (full item-by-item status pass, reconciliation cycle) · Lives in: orbit-oms/docs/ (manual attach — NOT auto-loaded)
 
 Attach this file when planning the next phase of any module. Live "what's next" list, separated from canonical docs.
 
@@ -262,9 +262,49 @@ Today Auto-Import is create-only. If late-update detection is needed (e.g. SAP m
 
 If SAP ever ships the old 25-column layout again, implement a layout detector. Not built today.
 
-### P2 — `articleTag` rule for ZINR rows
+### ~~P2 — `articleTag` rule for ZINR rows~~ — SUPERSEDED 2026-08-09 (`9de0c55b`)
 
-Today ZINR rows include with `zinr-article-tag-pending` breadcrumb warning. Implement the rule if business semantics emerge.
+ZINR was never the reason tags were missing. The manual-SAP parser emitted `null` for **every** item
+category, ZINR included. The rule now lives in `lib/article-tag.ts` and applies to all categories —
+`CLAUDE_IMPORT.md §8.2`. One crumb left: the `zinr-article-tag-pending` warning text still says
+"needs articleTag rule (deferred)". It gates nothing (preview-only, never reaches confirm), so it was
+left rather than removed inside a change about the tag rule. **Retiring that one string is a P2
+one-liner** — `lib/sap-parser/apply-rules.ts:144-151`.
+
+### P1 — Backfill historically wrong / null `articleTag`
+
+The 2026-08-09 fix corrects **new imports only**. `patchLines` (`lib/import-upsert/lines.ts`) never
+touches `articleTag` on an existing line, so even re-uploading an old OBD will not repair it. Two
+populations, and the second matters more:
+
+- **~19,200 lines with a NULL tag** — cosmetic gap; the picker sees no pack count, same as before.
+- **138 lines with a WRONG tag** across four 1 L SKUs (`5948208`, `5948212`, `5948220`,
+  `IN32400023`), computed at 6/carton when the catalog says 9 — e.g. qty 45 reads `7 Carton 3 Tin`
+  where the truth is `5 Carton`. **Worse than null**, because it reads as authoritative and a picker
+  will count against it.
+- Order-level roll-ups also do not recompute until an order's lines next change, so some orders show
+  a null tag even though their lines are tagged (`CLAUDE_IMPORT.md §8.2`, multi-group bug).
+
+Needs an owner decision before anything runs: this rewrites live picking data on orders that may
+already be picked. A one-off script (not a schema change) — read lines, recompute via
+`computeArticleInfo()`, write back, then rebuild the affected `import_obd_query_summary` rows.
+**Ranked P1 not P2 only because of the 138 wrong ones**; the null backfill alone would be P2.
+
+### P2 — A real `containerType` column on `sku_master_v2`
+
+The permanent Drum-vs-Bag blind spot. Verified 2026-08-09 across the whole catalog: **nothing**
+in `sku_master_v2` — `category`, `materialType`, `paintType`, `unit`, or any combination — separates
+a drum from a bag. `unit` is `KG` for both (20 KG distemper → Drum, 25 KG texture → Bag) and `L` for
+both. The only thing making that call today is the literal number in `lib/article-tag.ts`'s
+`DRUM_SIZES` / `BAG_SIZES` lists, which means **every new pack size needs a human decision and a code
+edit** — that is the recurring maintenance cost, not a one-off.
+
+`piecesPerCarton` already proves the shape works: it identifies Carton with **perfect precision**
+(zero false positives across 252 drum/bag SKUs). A `containerType` enum (`drum` / `bag` / `carton` /
+`piece`) would do the same for the other three and let the fallback lists shrink to a legacy path.
+Cost is not the column — it is populating ~872 catalog rows and keeping it populated. Worth doing
+**if** list maintenance keeps recurring; not worth pre-empting. Would also resolve the open
+`2.5 / 3 / 5 / 0.4` decisions (`CLAUDE_IMPORT.md §8.2`) at the source instead of one list edit at a time.
 
 ---
 
@@ -858,4 +898,4 @@ Every existing item verified against the reconciled canon (CORE v91 · UI v5.17 
 
 ---
 
-*Updated 2026-08-09 — Picking **Stage 3 closed**: floor findings shipped (`cd27c976`→`0df656ef`), Billing flag + detail panel with them; the picker's third "Combined" tab (`1ad903ef`/`733fcd6b`) documented at the same time. Prior: 2026-08-05 (full status pass — see change log above); 2026-07-30 — picker "My Picks" face rebuilt on the shared shell (`a2fb6889`→`28986d0a`) + canon pass; 2026-07-28 — Picking DESKTOP board retired; 2026-06-19 — full catalog restructure, `/po` build, Hide feature, Tint Summary, parser v7.2 + Table C. Schema counter: `CLAUDE_CORE.md §7` (not tracked here).*
+*Updated 2026-08-09 — **articleTag rule shipped** (`9de0c55b`): the pack rule moved off the depot PC into `lib/article-tag.ts`, catalog-first; ZINR roadmap item superseded, two new Import items opened (backfill of 138 wrongly-tagged + ~19,200 null lines · a `containerType` column for the Drum-vs-Bag blind spot) — detail in `CLAUDE_IMPORT.md §8.2`. Picking **Stage 3 closed**: floor findings shipped (`cd27c976`→`0df656ef`), Billing flag + detail panel with them; the picker's third "Combined" tab (`1ad903ef`/`733fcd6b`) documented at the same time. Prior: 2026-08-05 (full status pass — see change log above); 2026-07-30 — picker "My Picks" face rebuilt on the shared shell (`a2fb6889`→`28986d0a`) + canon pass; 2026-07-28 — Picking DESKTOP board retired; 2026-06-19 — full catalog restructure, `/po` build, Hide feature, Tint Summary, parser v7.2 + Table C. Schema counter: `CLAUDE_CORE.md §7` (not tracked here).*
