@@ -148,11 +148,13 @@ export interface PickingLineFinding {
    * `reason === "old_mfg"`, null on every short-quantity row (the write routes
    * force them null on that branch).
    *
-   * ⚠ CARRIED FOR THE POPUP, NOT FOR THE NOTE. These exist so re-opening an
-   * old-MFG line prefills what was recorded instead of making the supervisor
-   * retype it. They are DELIBERATELY absent from every compact note on all
-   * three screens (both picking boards + the billing panel) — the note is a
-   * glance, and a date in it pushes the reason off the end of the row.
+   * Two consumers: the popup prefills them when an old-MFG line is re-opened,
+   * and (since 2026-08-09) the compact note renders them as a "· Mar 2024"
+   * tail on all three screens — both picking boards and the billing panel.
+   * Format via `mfgLabel()`, never by interpolating the two numbers directly:
+   * a legacy old_mfg row recorded before the columns existed carries null for
+   * both, and the shared formatter is what turns that into "no segment"
+   * rather than "undefined NaN".
    */
   mfgMonth:     number | null;
   mfgYear:      number | null;

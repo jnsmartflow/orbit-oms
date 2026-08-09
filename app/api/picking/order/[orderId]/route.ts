@@ -115,9 +115,9 @@ export async function GET(
             qtyFound:      true,
             reason:        true,
             remarks:       true,
-            // Old-MFG month/year (2026-08-08). Carried so re-opening the popup
-            // on an old_mfg line prefills what was recorded; NOT rendered in
-            // the note (lib/picking/types.ts).
+            // Old-MFG month/year (2026-08-08). Prefills the popup on re-open,
+            // and since 2026-08-09 also renders as the note's "· Mar 2024"
+            // tail on old_mfg lines (lib/picking/types.ts).
             mfgMonth:      true,
             mfgYear:       true,
             reportedById:  true,

@@ -147,6 +147,12 @@ export async function GET(
             rawLineItemId: true,
             qtyFound: true,
             reason: true,
+            // The old-MFG date, for the note's "· Mar 2024" tail (2026-08-09).
+            // Deliberately NOT selected when this route was written the day
+            // before, because the note had no date in it then; added the moment
+            // it did. Null on every short_quantity row by construction.
+            mfgMonth: true,
+            mfgYear: true,
             recordedAt: true,
             // Two named users relations on this table (reportedBy/recordedBy) —
             // this is the CONFIRMING supervisor, the one the panel names.
@@ -175,6 +181,8 @@ export async function GET(
         ? {
             qtyFound: finding.qtyFound,
             reason: finding.reason,
+            mfgMonth: finding.mfgMonth,
+            mfgYear: finding.mfgYear,
             recordedAt: finding.recordedAt?.toISOString() ?? null,
             recordedByName: finding.recordedBy?.name ?? null,
           }

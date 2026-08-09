@@ -78,6 +78,30 @@ export function mfgYearOptions(now: Date = new Date()): number[] {
   return Array.from({ length: MFG_YEAR_WINDOW }, (_, i) => current - i);
 }
 
+/**
+ * "Mar 2024" for the compact note — THE one formatter, shared by every screen
+ * that prints a finding (both picking boards via FindingNote, and the billing
+ * detail panel's own note). Two copies of this would drift on the separator or
+ * the month casing while sitting side by side in the same workflow.
+ *
+ * Returns null — not "" and not a partial string — unless BOTH parts are
+ * present and the month is in range. That is not defensive padding: `old_mfg`
+ * findings recorded BEFORE these columns existed (2026-08-08) have null
+ * month/year and are still live rows, and a re-import cannot backfill them.
+ * Callers render the date only when this returns non-null, so a legacy row
+ * reads "Found 9 · Old MFG" — the truth about it — instead of
+ * "Found 9 · Old MFG · undefined NaN".
+ *
+ * Month/year are NOT validated against each other or against today: the whole
+ * point of the field is to record a date read off a tin, which may legitimately
+ * be older than any window this app would offer.
+ */
+export function mfgLabel(month: number | null, year: number | null): string | null {
+  if (month === null || year === null) return null;
+  if (!isMfgMonth(month)) return null;
+  return `${MFG_MONTH_LABELS[month - 1]} ${year}`;
+}
+
 /** 1-12. Mirrors the live chk_pick_findings_mfg_month CHECK, so a bad value
  *  comes back as a clean 400 instead of a raw constraint violation. */
 export function isMfgMonth(value: unknown): value is number {

@@ -8,6 +8,7 @@ import {
   MFG_MONTH_LABELS,
   findingReasonLabel,
   isFindingReason,
+  mfgLabel,
   mfgYearOptions,
   type FindingReason,
 } from "@/lib/picking/findings-reasons";
@@ -177,6 +178,18 @@ export function FindingStatusBadge({
  *
  * Colour still carries state (amber pending / red confirmed) and the NUMBER
  * still carries the emphasis: it is the one thing a supervisor scans for.
+ *
+ * ── THE ONE THING ADDED BACK (2026-08-09) ──────────────────────────────────
+ * "Found 9 · Old MFG · Mar 2024" — the manufacturing date, on OLD MFG lines
+ * ONLY. It was held out of the note when the columns landed the day before, on
+ * the reasoning that the note is a glance; the owner's call is that on an
+ * old-stock line the date IS the finding, and a reader who has to open a popup
+ * to learn WHICH date has not been told anything by the note at all.
+ *
+ * This is NOT a reversal of the three deletions above — none of them carried
+ * information the row lacked, and this does. Short-quantity notes are
+ * untouched: there is no date to show, and appending an empty separator there
+ * would put a dangling "·" on every shortage row in the app.
  */
 export function FindingNote({
   finding,
@@ -188,6 +201,12 @@ export function FindingNote({
   mode: FindingMode;
 }): React.JSX.Element {
   const confirmed = finding.recordedById !== null;
+  // Non-null ONLY on an old_mfg row that actually carries both parts — the
+  // shared formatter decides, so this note and the billing panel's cannot print
+  // the date differently. A short_quantity row has both columns null by
+  // construction (the write routes force them), so this is null there too and
+  // no separator is emitted.
+  const mfg = mfgLabel(finding.mfgMonth, finding.mfgYear);
   return (
     <div
       className="text-[12px] mt-1"
@@ -195,10 +214,13 @@ export function FindingNote({
     >
       {/* Only the count is bold. The reason is normal weight so the eye lands
           on the number first — the reason is a category, the number is the
-          fact that changes what happens next. */}
+          fact that changes what happens next. The date stays normal weight for
+          the same reason: it qualifies the reason, it is not what the row is
+          scanned for. */}
       <span className="font-bold tabular-nums">Found {finding.qtyFound}</span>
       {" · "}
       {findingReasonLabel(finding.reason)}
+      {mfg && <> · {mfg}</>}
     </div>
   );
 }

@@ -35,7 +35,7 @@
 // two lines out of many.
 
 import { useCallback, useEffect, useState } from "react";
-import { findingReasonLabel } from "@/lib/picking/findings-reasons";
+import { findingReasonLabel, mfgLabel } from "@/lib/picking/findings-reasons";
 import { smartTitleCase } from "@/lib/mail-orders/utils";
 import type { BillingDetailLine, BillingOrderDetail } from "@/lib/billing/types";
 
@@ -216,6 +216,11 @@ export function BillingOrderDetailPanel({
  */
 function DetailLineRow({ line, index }: { line: BillingDetailLine; index: number }) {
   const f = line.finding;
+  // Same shared formatter the picking boards' FindingNote uses, so one event
+  // cannot print as "Mar 2024" on the floor and something else on this desk.
+  // Null on short_quantity, and on a legacy old_mfg row that predates the
+  // columns — in both cases the note simply omits the segment.
+  const mfg = f ? mfgLabel(f.mfgMonth, f.mfgYear) : null;
   return (
     <div
       className="flex items-start gap-[11px] border-b border-[#f5f5f5] px-5 py-[9px]"
@@ -251,12 +256,20 @@ function DetailLineRow({ line, index }: { line: BillingDetailLine; index: number
             column on the same row, two elements away.
             The NAME stays, and only here — this is the one screen whose reader
             did not confirm it and has to know who to go and ask. The picking
-            boards omit it because there the supervisor IS the reader. */}
+            boards omit it because there the supervisor IS the reader.
+            ⚠ ORDER MATTERS (2026-08-09): the MFG date goes immediately after
+            the reason it qualifies — "Found 9 · Old MFG · Mar 2024 · Name" —
+            NOT after the name. The date belongs to the finding; the name
+            belongs to the act of confirming it, and it stays last so the tail
+            of every note on this panel is the same shape. Short-quantity rows
+            get no date segment at all (mfgLabel returns null), so they read
+            "Found 0 · Short quantity · Name" exactly as before. */}
         {f && (
           <div className="mt-1 text-[11.5px] leading-[1.45]" style={{ color: SHORT_TEXT }}>
             <span className="font-bold tabular-nums">Found {f.qtyFound}</span>
             {" · "}
             {findingReasonLabel(f.reason)}
+            {mfg && <> · {mfg}</>}
             {f.recordedByName && <> · {f.recordedByName}</>}
           </div>
         )}

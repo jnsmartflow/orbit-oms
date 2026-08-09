@@ -119,6 +119,18 @@ export interface BillingDetailLineFinding {
   qtyFound: number;
   /** Raw DB value ('short_quantity' | 'old_mfg'); label via findingReasonLabel(). */
   reason: string;
+  /**
+   * Manufacturing month (1-12) and year, for the note's "· Mar 2024" tail
+   * (2026-08-09). Non-null only on an `old_mfg` finding — the picking write
+   * routes force both to null on the short-quantity branch.
+   *
+   * ⚠ Null is a REAL case on old_mfg too: rows recorded before these columns
+   * existed (2026-08-08) carry neither, and nothing backfills them. Format via
+   * `mfgLabel()`, which returns null unless both parts are present, rather than
+   * interpolating them here.
+   */
+  mfgMonth: number | null;
+  mfgYear: number | null;
   recordedAt: string | null;
   /** users.name of the supervisor who confirmed it. */
   recordedByName: string | null;
