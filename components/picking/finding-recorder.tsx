@@ -5,8 +5,10 @@ import { AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import {
   FINDING_REASON_OPTIONS,
+  MFG_MONTH_LABELS,
   findingReasonLabel,
   isFindingReason,
+  mfgYearOptions,
   type FindingReason,
 } from "@/lib/picking/findings-reasons";
 import { NO_BILL_SWIPE_ATTR } from "./use-bill-pager";
@@ -153,29 +155,50 @@ export function FindingStatusBadge({
   );
 }
 
-/** The note under the product name — carries BOTH numbers so the row reads
- *  without opening anything. The only other colour a recorded row gets. */
+/**
+ * The note under the product name. The only other colour a recorded row gets.
+ *
+ * ⚠ TRIMMED TO "Found <n> · <reason>" (2026-08-08, live-testing feedback) —
+ * every other word that used to be here was removed on purpose. Do not put any
+ * of them back:
+ *   • "Recorded:" / "✓ Confirmed:" / "Picker recorded:" — the BADGE beside the
+ *     row already says which state this is, in colour, and said it first. The
+ *     prefix restated it in words and pushed the two facts that are NOT
+ *     duplicated anywhere (the number, the reason) toward the truncation edge.
+ *   • "of <ordered>" — the ordered quantity is printed in its own column on the
+ *     same row, inches away. A second copy inside the note is not a reminder,
+ *     it is a chance for the two to disagree while both are on screen.
+ *   • "· tap to edit" / "· tap to confirm" — an instruction, not a finding. The
+ *     row is tappable and looks it; a permanent label spends the row's scarcest
+ *     space telling a daily user something they learned on day one.
+ * `mode` is retained in the signature: it is what USED to select the tap hint,
+ * and both call sites still pass it. Keep it — the two faces have diverged in
+ * wording before and will again.
+ *
+ * Colour still carries state (amber pending / red confirmed) and the NUMBER
+ * still carries the emphasis: it is the one thing a supervisor scans for.
+ */
 export function FindingNote({
   finding,
-  qtyOrdered,
-  mode,
 }: {
   finding: PickingLineFinding;
-  qtyOrdered: number;
+  /** Accepted but not bound — kept for call-site symmetry and future per-face
+   *  wording (see above). Deliberately not destructured, so it is not an unused
+   *  local. */
   mode: FindingMode;
 }): React.JSX.Element {
   const confirmed = finding.recordedById !== null;
-  // The supervisor is the one who acts on a pending line, so only his copy
-  // invites a tap. The picker's own pending line just states what he recorded.
-  const tail = confirmed ? "" : mode === "confirm" ? " · tap to confirm" : " · tap to edit";
   return (
     <div
-      className="text-[12px] font-semibold mt-1"
+      className="text-[12px] mt-1"
       style={{ color: confirmed ? CONFIRMED_TEXT : PENDING_TEXT }}
     >
-      {confirmed ? "✓ Confirmed: " : "Recorded: "}
-      found {finding.qtyFound} of {qtyOrdered} · {findingReasonLabel(finding.reason)}
-      {tail}
+      {/* Only the count is bold. The reason is normal weight so the eye lands
+          on the number first — the reason is a category, the number is the
+          fact that changes what happens next. */}
+      <span className="font-bold tabular-nums">Found {finding.qtyFound}</span>
+      {" · "}
+      {findingReasonLabel(finding.reason)}
     </div>
   );
 }
@@ -218,6 +241,15 @@ export function useFindingRecorder({
   // "" = nothing chosen yet. Only reachable in confirm mode on a fresh line,
   // where the mockup shows no preselected reason.
   const [reason, setReason] = useState<FindingReason | "">("");
+  // Old-MFG month/year (2026-08-08). Strings, like `qty`, so an empty <select>
+  // is representable — "" is the unchosen state that blocks Save.
+  //
+  // ⚠ NEVER PREFILLED ON A FRESH LINE, in either mode. Today's month is the one
+  // value that is certainly WRONG for a stock item flagged as old, and a
+  // plausible wrong default is worse than an empty field: it saves silently.
+  // The whole point of collecting this is that someone read it off the tin.
+  const [mfgMonth, setMfgMonth] = useState("");
+  const [mfgYear, setMfgYear] = useState("");
   const [saving, setSaving] = useState(false);
 
   /**
@@ -238,12 +270,20 @@ export function useFindingRecorder({
       if (line.finding) {
         setQty(String(line.finding.qtyFound));
         setReason(isFindingReason(line.finding.reason) ? line.finding.reason : "");
+        // Re-open shows what was recorded. Null on a short-quantity row, which
+        // maps to "" and stays hidden behind the reason gate anyway.
+        setMfgMonth(line.finding.mfgMonth !== null ? String(line.finding.mfgMonth) : "");
+        setMfgYear(line.finding.mfgYear !== null ? String(line.finding.mfgYear) : "");
       } else if (mode === "report") {
         setQty(String(line.qty));
         setReason(FINDING_REASON_OPTIONS[0].value);
+        setMfgMonth("");
+        setMfgYear("");
       } else {
         setQty("");
         setReason("");
+        setMfgMonth("");
+        setMfgYear("");
       }
     },
     [mode],
@@ -258,7 +298,17 @@ export function useFindingRecorder({
     Number.isInteger(qtyNum) &&
     qtyNum >= 0 &&
     qtyNum <= target.qty;
-  const canSave = qtyValid && reason !== "";
+
+  // Old MFG is the only reason that carries a date. `needsMfg` gates BOTH the
+  // two fields' visibility and their contribution to canSave — one flag, so the
+  // form can never show a field it does not require or require one it does not
+  // show.
+  const needsMfg = reason === "old_mfg";
+  const mfgValid = !needsMfg || (mfgMonth !== "" && mfgYear !== "");
+  // Both required before Save lights up, exactly as qty already is — capturing
+  // the date IS the reason these columns were added, so an old_mfg row that
+  // saves without one would defeat the feature silently.
+  const canSave = qtyValid && reason !== "" && mfgValid;
 
   const save = useCallback(async () => {
     if (target === null || orderId === null || saving || !canSave) return;
@@ -275,6 +325,12 @@ export function useFindingRecorder({
           rawLineItemId: line.id,
           qtyFound: qtyNum,
           reason,
+          // Sent ONLY on the old_mfg branch. On short_quantity the keys are
+          // omitted entirely — and the server independently forces both columns
+          // to NULL on that branch regardless of what arrives, so a stale value
+          // cannot survive a reason change either way (belt AND braces: this
+          // client is not the only possible caller).
+          ...(needsMfg ? { mfgMonth: Number(mfgMonth), mfgYear: Number(mfgYear) } : {}),
           // ⚠ `remarks` is DELIBERATELY NOT SENT (2026-08-08). The field was
           // removed from this popup, and both routes treat an ABSENT remarks
           // key as "leave whatever is there" — sending null would silently wipe
@@ -305,7 +361,7 @@ export function useFindingRecorder({
     } finally {
       setSaving(false);
     }
-  }, [target, orderId, saving, canSave, mode, qtyNum, reason, pickerId, onSaved, onConflict]);
+  }, [target, orderId, saving, canSave, mode, qtyNum, reason, needsMfg, mfgMonth, mfgYear, pickerId, onSaved, onConflict]);
 
   return {
     recordMode,
@@ -314,7 +370,11 @@ export function useFindingRecorder({
     openFor,
     close,
     saving,
-    popupProps: { mode, target, qty, setQty, reason, setReason, saving, qtyValid, canSave, onCancel: close, onSave: save },
+    popupProps: {
+      mode, target, qty, setQty, reason, setReason,
+      mfgMonth, setMfgMonth, mfgYear, setMfgYear, needsMfg,
+      saving, qtyValid, canSave, onCancel: close, onSave: save,
+    },
   };
 }
 
@@ -326,6 +386,14 @@ export interface FindingPopupProps {
   setQty:    (v: string) => void;
   reason:    FindingReason | "";
   setReason: (v: FindingReason | "") => void;
+  /** "" until chosen. Rendered only when `needsMfg`. */
+  mfgMonth:    string;
+  setMfgMonth: (v: string) => void;
+  mfgYear:     string;
+  setMfgYear:  (v: string) => void;
+  /** reason === 'old_mfg'. Gates the two fields' visibility AND their share of
+   *  `canSave` — one flag so the form cannot show a field it does not require. */
+  needsMfg:    boolean;
   saving:    boolean;
   qtyValid:  boolean;
   canSave:   boolean;
@@ -352,9 +420,14 @@ export interface FindingPopupProps {
  * the API parameter both remain; this UI simply no longer collects it.
  */
 export function FindingPopup({
-  mode, target, qty, setQty, reason, setReason, saving, qtyValid, canSave, onCancel, onSave,
+  mode, target, qty, setQty, reason, setReason,
+  mfgMonth, setMfgMonth, mfgYear, setMfgYear, needsMfg,
+  saving, qtyValid, canSave, onCancel, onSave,
 }: FindingPopupProps): React.JSX.Element {
   const open = target !== null;
+  // Recomputed per render rather than memoised: the list is six integers, and a
+  // frozen one would go stale in a session left open across New Year.
+  const yearOptions = mfgYearOptions();
   // Retained so the fade-out renders the bill it was actually about.
   const lastRef = useRef<PickingDetailLine | null>(null);
   if (target !== null) lastRef.current = target;
@@ -450,6 +523,83 @@ export function FindingPopup({
             </option>
           ))}
         </select>
+
+        {/* ── Manufacturing date — OLD MFG ONLY (2026-08-08) ─────────────────
+            Rendered only when the reason calls for it, and REQUIRED when shown
+            (both feed canSave). Not rendered-and-disabled: a field that cannot
+            apply should not occupy a row on a phone-sized card at all.
+
+            ⚠ THE VALUES ARE NOT CLEARED WHEN THE REASON SWITCHES AWAY. Someone
+            who picks Old MFG, types a date, then realises it is really a short
+            quantity gets those keystrokes back if they switch again — the state
+            is local and cheap. What makes that SAFE is the server: both routes
+            force mfgMonth/mfgYear to NULL on the short_quantity branch whatever
+            the body says, and this client omits the keys there too. So a
+            lingering value can be seen in the form but can never be stored
+            against the wrong reason.
+
+            Month and year are SEPARATE selects, not a <input type="month">:
+            that control renders as a native picker that varies per Android
+            build, and the floor reads two independent things off the tin. */}
+        {needsMfg && (
+          <div className="grid grid-cols-2 gap-2 mb-4">
+            <div>
+              <label
+                htmlFor="finding-mfg-month"
+                className="block text-[11px] font-semibold uppercase tracking-[0.03em] text-gray-500 mb-1"
+              >
+                MFG month
+              </label>
+              {/* text-[16px] — the iOS zoom guard (CLAUDE_UI §59.1), same as
+                  every other control on this card. */}
+              <select
+                id="finding-mfg-month"
+                value={mfgMonth}
+                onChange={(e) => setMfgMonth(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-2.5 py-2 text-[16px] text-gray-900 bg-white"
+              >
+                <option value="" disabled>
+                  Month…
+                </option>
+                {/* value is the 1-12 INTEGER the column stores; the label is
+                    display only. MFG_MONTH_LABELS is index-0-based, hence i+1. */}
+                {MFG_MONTH_LABELS.map((label, i) => (
+                  <option key={label} value={i + 1}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label
+                htmlFor="finding-mfg-year"
+                className="block text-[11px] font-semibold uppercase tracking-[0.03em] text-gray-500 mb-1"
+              >
+                MFG year
+              </label>
+              {/* Six years, newest first — the current year and the five before
+                  it (lib/picking/findings-reasons.ts). Stock older than that is
+                  rare enough that typing it is not the common case, and the
+                  server accepts a wider range than this list offers, so an
+                  older year entered by another caller still saves. */}
+              <select
+                id="finding-mfg-year"
+                value={mfgYear}
+                onChange={(e) => setMfgYear(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-2.5 py-2 text-[16px] text-gray-900 bg-white"
+              >
+                <option value="" disabled>
+                  Year…
+                </option>
+                {yearOptions.map((y) => (
+                  <option key={y} value={y}>
+                    {y}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
 
         <div className="flex gap-2">
           <button

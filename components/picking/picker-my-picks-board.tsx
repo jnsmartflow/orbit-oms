@@ -1651,7 +1651,7 @@ export function PickerMyPicksBoard({
                         reads on its own without opening the popup. With the
                         row fill gone, this and the badge ARE the status. */}
                     {li.finding !== null && (
-                      <FindingNote finding={li.finding} qtyOrdered={li.qty} mode="report" />
+                      <FindingNote finding={li.finding} mode="report" />
                     )}
                   </div>
                   <div className="shrink-0 flex items-center justify-center px-3.5">

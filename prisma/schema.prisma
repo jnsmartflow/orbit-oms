@@ -1268,6 +1268,27 @@ model pick_findings {
   qtyFound      Int
   reason        String
   remarks       String?
+  // Manufacturing month/year — the OLD MFG half of `reason`, added 2026-08-08.
+  // Live columns (integer, nullable) created by hand in the Supabase SQL Editor
+  // and mirrored here; never db push (CORE §3).
+  //
+  // ⚠ REASON-DEPENDENT, and the DB does NOT enforce the dependency. Both are
+  // REQUIRED when reason = 'old_mfg' and forced to NULL when reason =
+  // 'short_quantity' — that rule lives in the two write routes
+  // (app/api/picking/findings/report|confirm), because a CHECK spanning three
+  // columns would also have to be re-stated here as a comment nobody can run.
+  // A row with reason='short_quantity' and a non-null mfgMonth is a BUG in a
+  // write path, not a state the schema permits by design.
+  //
+  // NOT EXPRESSIBLE IN PRISMA — live in Supabase, recorded here by hand:
+  //   chk_pick_findings_mfg_month  CHECK (mfgMonth IS NULL OR mfgMonth BETWEEN 1 AND 12)
+  //     — same class as chk_pick_findings_reason above. The routes validate the
+  //       1-12 range themselves so a bad value returns a clean 400 instead of a
+  //       raw constraint violation; this constraint is the backstop, not the
+  //       first line of defence. There is deliberately NO year constraint —
+  //       "reasonable year" is a UI judgement that will age, not an invariant.
+  mfgMonth      Int?
+  mfgYear       Int?
   // TWO FKs to `users` on one table — BOTH relations MUST stay explicitly named
   // on both sides (here and on the users model), or Prisma throws an ambiguity
   // ERROR at generate time, not a warning. Same discipline as pick_assignments'

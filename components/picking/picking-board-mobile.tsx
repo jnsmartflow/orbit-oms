@@ -2265,7 +2265,7 @@ export function PickingBoardMobile(): React.JSX.Element {
                         status. mode="confirm" makes a pending line read "tap to
                         confirm" — the supervisor is the one who acts on it. */}
                     {li.finding !== null && (
-                      <FindingNote finding={li.finding} qtyOrdered={li.qty} mode="confirm" />
+                      <FindingNote finding={li.finding} mode="confirm" />
                     )}
                   </div>
                   {/* QTY — fixed, plain, no "x" prefix. */}

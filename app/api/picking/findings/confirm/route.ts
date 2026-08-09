@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
-import { isFindingReason } from "@/lib/picking/findings-reasons";
+import { isFindingReason, isMfgMonth, isMfgYear } from "@/lib/picking/findings-reasons";
 
 export const dynamic = "force-dynamic";
 
@@ -10,7 +10,13 @@ export const dynamic = "force-dynamic";
  * POST /api/picking/findings/confirm — the SUPERVISOR signs off what was
  * actually found on one line.
  *
- * Body: { orderId, rawLineItemId, qtyFound, reason }
+ * Body: { orderId, rawLineItemId, qtyFound, reason, mfgMonth?, mfgYear? }
+ *
+ * `mfgMonth` / `mfgYear` are REQUIRED when reason is 'old_mfg' and FORCED TO
+ * NULL when it is 'short_quantity' — the SAME rule, in the same shape, as
+ * report/route.ts. The two must not drift: a supervisor correcting a picker's
+ * old_mfg line down to short_quantity has to clear the date here just as the
+ * picker's own route would.
  *
  * ⚠ canEdit, NOT canView — and that is the whole difference from
  * app/api/picking/findings/report/route.ts. This is a supervisor action, so it
@@ -70,6 +76,8 @@ export async function POST(req: Request): Promise<NextResponse> {
     qtyFound?:      number;
     reason?:        string;
     remarks?:       string | null;
+    mfgMonth?:      number | null;
+    mfgYear?:       number | null;
   };
 
   const orderId = body.orderId;
@@ -97,6 +105,42 @@ export async function POST(req: Request): Promise<NextResponse> {
       { status: 400 },
     );
   }
+
+  // ── MFG month/year — reason-dependent, validated HERE ───────────────────
+  // 🔴 THE DEPENDENCY IS NOT IN THE DATABASE. The live CHECK only says
+  // "mfgMonth IS NULL OR 1..12"; nothing ties either column to `reason`. This
+  // block IS the rule, and it is deliberately IDENTICAL to the one in
+  // report/route.ts — two routes write this table, and a value that gets past
+  // either is stored just as permanently.
+  //
+  // The 1-12 test is repeated here rather than left to the CHECK because that
+  // constraint is invisible to Prisma: relying on it alone returns a raw
+  // Postgres constraint violation instead of a clean 400.
+  //
+  // ⚠ CONTRAST WITH `remarks` BELOW — the opposite rule, on purpose. Absent
+  // remarks means "leave it alone"; these two are written on EVERY save. That
+  // is what forces both to NULL on the short_quantity branch, and it is the
+  // whole reason a supervisor can correct an old_mfg row down to a short
+  // quantity without leaving an orphaned date behind it.
+  let mfgMonth: number | null = null;
+  let mfgYear: number | null = null;
+  if (reason === "old_mfg") {
+    if (!isMfgMonth(body.mfgMonth)) {
+      return NextResponse.json(
+        { error: "mfgMonth must be a whole number from 1 to 12 when reason is 'old_mfg'" },
+        { status: 400 },
+      );
+    }
+    if (!isMfgYear(body.mfgYear)) {
+      return NextResponse.json(
+        { error: "mfgYear must be a valid year when reason is 'old_mfg'" },
+        { status: 400 },
+      );
+    }
+    mfgMonth = body.mfgMonth;
+    mfgYear = body.mfgYear;
+  }
+  // reason === 'short_quantity' → both stay null, whatever the body claimed.
 
   // ⚠ ABSENT remarks means LEAVE IT ALONE, not "clear it". The popup no longer
   // collects remarks (2026-08-08), so this key is normally missing — and a
@@ -152,6 +196,7 @@ export async function POST(req: Request): Promise<NextResponse> {
 
   const SAVED_SELECT = {
     qtyFound: true, reason: true, remarks: true,
+    mfgMonth: true, mfgYear: true,
     reportedById: true, reportedAt: true, recordedById: true, recordedAt: true,
   } as const;
 
@@ -165,6 +210,10 @@ export async function POST(req: Request): Promise<NextResponse> {
       data: {
         qtyFound,
         reason,
+        // Unconditional — see the validation block above. This is what clears a
+        // picker's date when the supervisor re-files the line as a shortage.
+        mfgMonth,
+        mfgYear,
         recordedById,
         recordedAt: now,
         ...(remarksProvided ? { remarks: remarksValue } : {}),
@@ -187,6 +236,10 @@ export async function POST(req: Request): Promise<NextResponse> {
       qtyOrdered: rawLine.unitQty,
       qtyFound,
       reason,
+      // Both null unless reason is old_mfg — the validation block above is the
+      // only thing that sets them.
+      mfgMonth,
+      mfgYear,
       remarks: remarksProvided ? remarksValue : null,
       // No picker report behind this one — the supervisor found it himself.
       // reportedById / reportedAt stay NULL, and that NULL is meaningful:

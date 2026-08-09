@@ -143,6 +143,19 @@ export interface PickingLineFinding {
   qtyFound:     number;
   reason:       string;
   remarks:      string | null;
+  /**
+   * Manufacturing month (1-12) and year — populated ONLY when
+   * `reason === "old_mfg"`, null on every short-quantity row (the write routes
+   * force them null on that branch).
+   *
+   * ⚠ CARRIED FOR THE POPUP, NOT FOR THE NOTE. These exist so re-opening an
+   * old-MFG line prefills what was recorded instead of making the supervisor
+   * retype it. They are DELIBERATELY absent from every compact note on all
+   * three screens (both picking boards + the billing panel) — the note is a
+   * glance, and a date in it pushes the reason off the end of the row.
+   */
+  mfgMonth:     number | null;
+  mfgYear:      number | null;
   reportedById: number | null;
   reportedAt:   string | null;
   recordedById: number | null;

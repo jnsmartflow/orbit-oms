@@ -241,19 +241,23 @@ function DetailLineRow({ line, index }: { line: BillingDetailLine; index: number
             </span>
           )}
         </div>
-        {/* The note. Wording tracks finding-recorder.tsx's FindingNote — "✓
-            Confirmed: found X of Y · <reason>" — plus the confirming
-            supervisor's name, which the floor's own copy omits because there
-            the supervisor IS the reader. Here he is not, so the bill has to say
-            who to go and ask. `qtyOrdered` is the LIVE line qty, the same
-            source the picking screens print, so the two never show a different
-            denominator for one event. */}
+        {/* The note. Wording tracks finding-recorder.tsx's FindingNote —
+            "Found <n> · <reason>" — and was trimmed with it (2026-08-08): the
+            "✓ Confirmed:" prefix and the "of <ordered>" both went. The prefix
+            is redundant here for a different reason than on the picking boards:
+            this panel shows CONFIRMED findings ONLY (the route filters
+            recordedById IS NOT NULL), so "Confirmed" was true of every note on
+            the screen and distinguished nothing. The ordered qty sits in its own
+            column on the same row, two elements away.
+            The NAME stays, and only here — this is the one screen whose reader
+            did not confirm it and has to know who to go and ask. The picking
+            boards omit it because there the supervisor IS the reader. */}
         {f && (
-          <div className="mt-1 text-[11.5px] font-semibold leading-[1.45]" style={{ color: SHORT_TEXT }}>
-            ✓ Confirmed: found {f.qtyFound} of {line.qty} · {findingReasonLabel(f.reason)}
-            {f.recordedByName && (
-              <span className="font-medium"> · confirmed by {f.recordedByName}</span>
-            )}
+          <div className="mt-1 text-[11.5px] leading-[1.45]" style={{ color: SHORT_TEXT }}>
+            <span className="font-bold tabular-nums">Found {f.qtyFound}</span>
+            {" · "}
+            {findingReasonLabel(f.reason)}
+            {f.recordedByName && <> · {f.recordedByName}</>}
           </div>
         )}
       </div>

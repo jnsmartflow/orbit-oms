@@ -115,6 +115,11 @@ export async function GET(
             qtyFound:      true,
             reason:        true,
             remarks:       true,
+            // Old-MFG month/year (2026-08-08). Carried so re-opening the popup
+            // on an old_mfg line prefills what was recorded; NOT rendered in
+            // the note (lib/picking/types.ts).
+            mfgMonth:      true,
+            mfgYear:       true,
             reportedById:  true,
             reportedAt:    true,
             recordedById:  true,
@@ -145,6 +150,8 @@ export async function GET(
             qtyFound:     finding.qtyFound,
             reason:       finding.reason,
             remarks:      finding.remarks,
+            mfgMonth:     finding.mfgMonth,
+            mfgYear:      finding.mfgYear,
             reportedById: finding.reportedById,
             reportedAt:   finding.reportedAt,
             recordedById: finding.recordedById,

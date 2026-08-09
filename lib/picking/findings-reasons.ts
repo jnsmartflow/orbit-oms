@@ -51,3 +51,50 @@ export const FINDING_REASON_OPTIONS: { value: FindingReason; label: string }[] =
 export function findingReasonLabel(reason: string): string {
   return isFindingReason(reason) ? FINDING_REASON_LABELS[reason] : reason;
 }
+
+// ── Manufacturing month / year — the old_mfg fields (2026-08-08) ────────────
+// Lives here, beside the reason list, because these two columns exist ONLY for
+// `reason === 'old_mfg'`: they are part of what that reason MEANS, not a
+// general property of a finding. Both consumers (the popup and the two write
+// routes) already import from this module, so one home keeps the UI from ever
+// offering a value the API would reject.
+
+/** Jan-Dec, index 0 = month 1. Display labels only — the DB stores the integer. */
+export const MFG_MONTH_LABELS = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+] as const;
+
+/** How many years the picker's dropdown offers, current year inclusive. */
+export const MFG_YEAR_WINDOW = 6;
+
+/**
+ * The years the UI offers, newest first: the current year and the five before
+ * it. Computed at call time from the caller's clock rather than frozen into a
+ * constant, so the list does not silently go stale on 1 January.
+ */
+export function mfgYearOptions(now: Date = new Date()): number[] {
+  const current = now.getFullYear();
+  return Array.from({ length: MFG_YEAR_WINDOW }, (_, i) => current - i);
+}
+
+/** 1-12. Mirrors the live chk_pick_findings_mfg_month CHECK, so a bad value
+ *  comes back as a clean 400 instead of a raw constraint violation. */
+export function isMfgMonth(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 12;
+}
+
+/**
+ * A SANITY bound, deliberately WIDER than `mfgYearOptions()` offers.
+ *
+ * ⚠ Do NOT tighten this to the UI's 6-year window. That window rolls forward
+ * every 1 January, so an old_mfg finding recorded in December against the
+ * oldest offered year would start rejecting its own re-save a few weeks later —
+ * the supervisor would be unable to correct a typo on a row he is looking at.
+ * The narrow list is a convenience for typing; this is the only thing that has
+ * to be true. There is no DB constraint on the year for the same reason.
+ */
+export function isMfgYear(value: unknown): value is number {
+  if (typeof value !== "number" || !Number.isInteger(value)) return false;
+  return value >= 2000 && value <= new Date().getFullYear() + 1;
+}
