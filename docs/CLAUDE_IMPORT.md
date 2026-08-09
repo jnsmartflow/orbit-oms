@@ -1,5 +1,5 @@
 # CLAUDE_IMPORT.md — OrbitOMS Import Pipeline
-# v1.7 · Schema v27.13 · August 2026 · updated 2026-08-04 · Lives in: orbit-oms/docs/
+# v1.8 · Schema v27.14 · August 2026 · updated 2026-08-09 · Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
 Covers the SAP/OBD import pipeline end-to-end: manual SAP upload, Auto-Import (**LIVE** — see §10), the shared upsert utility that both paths funnel through, schema, filters, and downstream consumers.
@@ -338,11 +338,71 @@ In order of application (parser side):
 6. **Item ≤ 0** → drop + `negative-or-zero-item` warning.
 7. **Missing material** → drop + `missing-material` warning.
 8. **Unknown item category** → row INCLUDED with `unknown-item-category` warning; `isTinting` defaults to `false`.
-9. **ZINR breadcrumb** → row included; emits `zinr-article-tag-pending`. Placeholder for future `articleTag` rule.
+9. **ZINR breadcrumb** → row included; emits `zinr-article-tag-pending`. ⚠ **The warning text is now stale** — it says "needs articleTag rule (deferred)", but since 2026-08-09 ZINR rows resolve a tag through the same rule as every other category (§8.2). Left in place deliberately (it gates nothing and is preview-only) rather than removed in a change that was about the tag rule; retire it in its own pass.
 10. **D.3 — no surviving lines.** Skipped with `"no-valid-lines"`.
 
 **Unknown SKU is NOT dropped at import.** Line lands with `skuCodeRaw` set and is flagged via the
 `note` field (§8.1), never discarded. Surfaced in mail-orders enrichment + order detail UI.
+
+### 8.2 The article / articleTag rule — `lib/article-tag.ts` [LIVE, 2026-08-09]
+
+**Before this file the rule did not exist in this repo.** It lived only on the depot PC, as
+`Get-ArticleInfo` in `Auto-Import*.ps1` reading `$ToolRoot\Master\pack-sizes.txt` — a config file
+that is not in git and whose only copy on the dev machine is a stale mirror under
+`OneDrive\VS Code\OBD-Import Tool v2\Master\`. The server copied the PowerShell-computed
+`article_tag` field through verbatim, and **`build-obd.ts` hardcoded `articleTag: null`** on every
+manual-SAP line ever imported. Measured 2026-08-08: **15,370 manual-SAP lines null on pack sizes the
+dictionary DID cover (100% of manual-SAP, 0% of auto-json)**, plus **3,847 lines** across 16 pack
+sizes the dictionary never covered at all.
+
+**Resolution order — first match wins.** `sku_master_v2` is the primary source; the old pack-size
+list is the fallback.
+
+1. Catalog lookup by `material` (no `isPrimary` filter — `material` is `@unique`, nothing to disambiguate).
+   - `unit === "PC"` → `"N Pcs"`. **Checked first**: piece goods carry `volumeLine` 0, so every
+     volume-based branch below would reject them.
+   - `piecesPerCarton != null` → carton math at the SKU's **own** count.
+2. `packSize = volumeLine / unitQty`, with these SAP-volume overrides applied **to the fallback
+   lookup only, never to the catalog**: `0.925→1`, `3.7→4`, `9.25→10`, `18.5→20`.
+   - DRUM `10, 20, 15` → `"N Drum"` · BAG `25, 30, 40` → `"N Bag"`
+   - CARTON `1→6, 4→4, 0.5→12, 0.05→20, 0.1→20, 0.2→12, 0.3→12`
+3. **No match → `null`, deliberately.** packSize `0.4`, `2.5`, `3`, `5` and anything unlisted stay
+   untagged pending depot confirmation. An untagged line is recoverable; a wrong pack count sends a
+   picker to the wrong shelf. **Do not add guesses here.**
+
+**Why the catalog beats the file:** `pack-sizes.txt` holds ONE carton count per pack size (`1=6`),
+but `sku_master_v2` knows four 1 L SKUs pack **9** to a carton — `5948208`, `5948212`, `5948220`,
+`IN32400023`. Those have been **mis-tagged in production** since the rule was written (qty 45 tagged
+`7 Carton 3 Tin`, actually `5 Carton`). Fixed for new imports by this change; historical rows are NOT
+backfilled (see §15).
+
+**Float safety:** pack sizes are compared as `Math.round(packSize * 10000)` integer keys. `0.05`,
+`0.1`, `0.2`, `0.3`, `0.925` are none of them exactly representable as doubles — `packSize === 0.05`
+is a coin flip. Do not "simplify" these back to decimal equality.
+
+**Performance:** `loadPackCatalog()` batches the whole file/batch into ONE `findMany`; per-line
+`computeArticleInfo(input, catalog)` then does no I/O. `computeArticleTag()` without a catalog arg
+falls back to a single `findUnique` — fine for one-offs, never in a loop. Sequential awaits only.
+
+**Wired at three write sites** — `lib/sap-parser/build-obd.ts` (manual-SAP) and the shared line
+builder in `processAutoImportRows` (serves BOTH `?action=auto` and `?action=auto-json`). On the auto
+paths the **server result is primary**; the payload's own `article_tag` is used only when the server
+returns null and the payload did not, logged as `[auto-import] articleTag fallback to payload`. A
+steady stream of that warning means the catalog has drifted behind the depot's `pack-sizes.txt`.
+
+⚠ **`headerRowToObdInput` (~line 2458) is NOT a write site.** It is shadow-only
+(`IMPORT_SHADOW_MODE`, default off) and feeds a dry-run comparison. Wiring the tag rule there does
+nothing. The live auto path builds its lines inline in `processAutoImportRows`.
+
+**Order-level roll-up** — `aggregateArticleTags()` in the same module, used by all THREE roll-up
+sites (`rebuildQuerySummaryForOrder`, manual-template CONFIRM D3, auto-import CONFIRM D3), which
+previously held three copies of the same inline parser. Display order `Drum → Bag → Carton → Tin →
+Pcs`, joined with `", "`. **The old inline parser dropped multi-group tags entirely**: it read
+`parts[0]` as the count and joined the rest as the type, so `"1 Carton 3 Tin"` became the type string
+`"Carton 3 Tin"`, matched nothing, and vanished. 801 of 14,207 tagged rows are multi-group; orders
+whose only tagged lines were multi-group carried a NULL order tag (e.g. OBD `9108735710`, line
+`"7 Carton 3 Tin"`, order tag null). Carton math makes multi-group far more common, so the shared
+parser walks number/word pairs.
 
 ### 8.1 Catalog recognition + the enrichment write [LIVE, 2026-07-19, commit `b91b7381`]
 
@@ -694,7 +754,8 @@ flows through, as the acceptance check.
   - `stats-mismatch` — file-level invariant violation
   - `unknown-item-category` — new SAP item category not yet mapped
   - `mixed-zzre-line` — partial ZZRE delivery
-  - `zinr-article-tag-pending` — articleTag rule placeholder
+  - `zinr-article-tag-pending` — **stale since 2026-08-09** (§8.2); ZINR now tags like any category
+  - `[auto-import] articleTag fallback to payload` — the server rule returned null and the depot PC's did not. A steady stream means `sku_master_v2` has drifted behind `Master\pack-sizes.txt` (§8.2)
   - `missing-material` — SAP row without material code
 - `lineStatus` transitions: `active` ↔ `removed_by_import`. Never any other value.
 
@@ -741,7 +802,9 @@ flows through, as the acceptance check.
 
 - **Cross-source orphan policy — NOW LIVE-RELEVANT, still undecided.** Auto-Import IS running (since 2026-06-20), so the deferred question is active daily: when a SAP authoritative re-import follows an auto-json create on the same OBD, the v2 `lineId` (real SAP item numbers) vs composite-key interplay decides what gets orphaned. Options unchanged: (a) accept as cleanup · (b) one-time lineId backfill · (c) keep auto non-authoritative and let manual-sap rebuild the line set. The old "deferred until un-paused" framing is void — it un-paused six weeks before anyone re-read this line.
 - **Weight diff in audit log.** Currently skipped to keep audit-log noise low. Re-add if depot ops needs weight-change tracking.
-- **`articleTag` rule for ZINR.** Today the row is included with a breadcrumb warning. If business semantics emerge for ZINR articleTags, implement the rule and remove the warning.
+- ~~**`articleTag` rule for ZINR.**~~ — **SUPERSEDED 2026-08-09 (§8.2).** ZINR was never the reason tags were missing: the manual-SAP parser emitted `null` for EVERY item category, ZINR included. The rule now lives in `lib/article-tag.ts` and applies to all categories. The breadcrumb warning itself is stale but was left in place (§8 rule 9) — retiring it is a separate, one-line pass.
+- **Backfill of historical null `articleTag` is NOT done and is a separate decision.** This change fixes new imports only. `patchLines` (`lib/import-upsert/lines.ts`) still never touches `articleTag` on an existing line, so a manual-SAP re-upload of an old OBD will not fill it. ~19,200 historical null lines remain, including the four 9-per-carton SKUs whose existing tags are wrong (§8.2). Needs an owner decision on whether to rewrite live picking data.
+- **Pack sizes still deliberately untagged**, pending depot confirmation of the container word: `0.4` (400 ML sprays, 57 lines), `5` (221), `3` (29), `2.5` (3). The catalog has `packCode`+`unit` for most of these but nothing in `sku_master_v2` distinguishes Drum from Bag — see the Check D finding in the 2026-08-09 discovery. Add them to §8.2's lists once the depot confirms.
 - **Old SAP layout shim** if SAP ever ships the old layout again (e.g. depot-level legacy). Not built today.
 - **Auto-Import patch path.** Today Auto-Import is create-only. If Auto-Import ever needs to patch existing OBDs (e.g. for late-update detection), the path needs to go through `upsertObd` like manual SAP does, with `LINE_AUTHORITY['auto-import'] = 'authoritative'`. Big change — full re-audit needed.
 - ~~Auto-Import v2 — steps 4–10 not yet built~~ — **SHIPPED, see §10.1** (corrected 2026-08-04). Design doc now at `docs/prompts/archive/2026-06/web-update-2026-06-20-auto-import-v2-pure-json.md` (was in drafts/).
@@ -772,4 +835,4 @@ Evidence: `import_batches` SELECTs (timestamps naive-UTC-corrected), the repo sc
 
 ---
 
-*Import v1.7 · Schema v27.13 · OrbitOMS · updated 2026-08-04*
+*Import v1.8 · Schema v27.14 · OrbitOMS · updated 2026-08-09 — added §8.2 (the article/articleTag rule, `lib/article-tag.ts`); §8 rule 9, §13 and §15 revised accordingly*

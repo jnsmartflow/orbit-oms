@@ -1,9 +1,14 @@
 // lib/sap-parser/index.ts
 //
-// Public entry point for the SAP OBT XLSX parser. Pure synchronous code:
-// reads a workbook from a buffer, applies skip/category/qty rules, and
-// returns ObdInput[] ready for upsertObd plus warnings + skipped tallies
-// + file-level stats.
+// Public entry point for the SAP OBT XLSX parser. Reads a workbook from a
+// buffer, applies skip/category/qty rules, and returns ObdInput[] ready for
+// upsertObd plus warnings + skipped tallies + file-level stats.
+//
+// ASYNC as of 2026-08-09. readSheet/groupRows/applyRules are still pure and
+// synchronous; only the final buildObds() step touches the DB, to resolve
+// article/articleTag against sku_master_v2 (lib/article-tag.ts). It reads
+// the catalog ONCE per file — the parser is still one query per upload, not
+// one per line, and still writes nothing.
 //
 // Pipeline:
 //   readSheet()    → flat RawSapRow[] with header validation
@@ -35,8 +40,9 @@ export { FileParseError, FileFormatError } from "./types";
 /**
  * Parse a SAP OBT XLSX export into a list of ObdInput objects.
  *
- * Pure: no DB access, no HTTP, no auth, no side effects, no Date.now().
- * Synchronous: SheetJS's read API is synchronous; the whole pipeline is too.
+ * No HTTP, no auth, no writes, no Date.now(). ONE read: buildObds() loads the
+ * sku_master_v2 pack columns for the file's SKUs to resolve article/articleTag
+ * (see lib/article-tag.ts). Everything before that stage is still pure.
  *
  * Throws FileParseError when the buffer is not a readable workbook.
  * Throws FileFormatError when the workbook is missing the target sheet
@@ -45,14 +51,14 @@ export { FileParseError, FileFormatError } from "./types";
  * Per-row issues never throw — they appear in `result.warnings` with
  * an actionable `kind`, `message`, and the source row numbers.
  */
-export function parseSapFile(
+export async function parseSapFile(
   buffer:  ArrayBuffer | Buffer,
   options: ParseOptions,
-): ParseResult {
+): Promise<ParseResult> {
   const { rows, totalRows, warnings: readWarnings } = readSheet(buffer, options.sheetName);
   const grouped = groupRows(rows);
   const applied = applyRules(grouped.groups);
-  const built   = buildObds(grouped.groups, applied, options.fallbackObdEmailDate);
+  const built   = await buildObds(grouped.groups, applied, options.fallbackObdEmailDate);
 
   const skipped = [
     ...grouped.skipped,

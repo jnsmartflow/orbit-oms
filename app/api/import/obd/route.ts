@@ -28,6 +28,7 @@ import type {
   ObdInput,
 } from "@/lib/import-upsert";
 import { parseSapFile, FileFormatError, FileParseError } from "@/lib/sap-parser";
+import { aggregateArticleTags, computeArticleInfo, loadPackCatalog } from "@/lib/article-tag";
 
 export const dynamic = "force-dynamic";
 
@@ -567,22 +568,10 @@ async function rebuildQuerySummaryForOrder(
   const totalArticle = lines.reduce((sum, l) => sum + (l.article ?? 0),          0);
   const hasTinting   = lines.some((l) => l.isTinting);
 
-  // articleTag aggregation: parse "<qty> <type>" pairs and sum by type.
-  const tagTotals: Record<string, number> = {};
-  for (const l of lines) {
-    if (!l.articleTag) continue;
-    const parts = l.articleTag.split(" ");
-    if (parts.length >= 2) {
-      const qty  = parseInt(parts[0], 10);
-      const type = parts.slice(1).join(" ");
-      if (!isNaN(qty) && type) tagTotals[type] = (tagTotals[type] ?? 0) + qty;
-    }
-  }
-  const typeOrder     = ["Drum", "Bag", "Carton", "Tin"];
-  const articleTagStr = typeOrder
-    .filter((t) => tagTotals[t] > 0)
-    .map((t) => `${tagTotals[t]} ${t}`)
-    .join(", ") || null;
+  // articleTag aggregation — shared with the other two roll-up sites via
+  // lib/article-tag.ts. Handles multi-group line tags ("1 Carton 3 Tin",
+  // which the old inline parser dropped entirely) and the "N Pcs" type.
+  const articleTagStr = aggregateArticleTags(lines.map((l) => l.articleTag));
 
   const totalUnitQtyResolved = totalLines > 0 ? totalUnitQty : (summary?.totalUnitQty ?? 0);
   const totalVolumeResolved  = totalLines > 0 ? totalVolume  : (summary?.volume       ?? 0);
@@ -1292,26 +1281,10 @@ async function handleConfirm(req: Request, session: Session): Promise<NextRespon
       // Sum total articles across all valid lines
       const totalArticle = o.validLines.reduce((sum, l) => sum + (l.article ?? 0), 0);
 
-      // Group by tag type and sum — e.g. "30 Drum, 2 Carton, 1 Tin"
-      const tagTotals: Record<string, number> = {};
-      for (const l of o.validLines) {
-        if (!l.articleTag) continue;
-        // Parse tag parts — each part is like "30 Drum" or "1 Carton" or "2 Tin"
-        const parts = l.articleTag.split(' ');
-        if (parts.length >= 2) {
-          const qty  = parseInt(parts[0], 10);
-          const type = parts.slice(1).join(' ');  // handles "Carton" and "Tin"
-          if (!isNaN(qty) && type) {
-            tagTotals[type] = (tagTotals[type] ?? 0) + qty;
-          }
-        }
-      }
-      // Build summary string in order: Drum → Bag → Carton → Tin
-      const typeOrder = ['Drum', 'Bag', 'Carton', 'Tin'];
-      const articleTagStr = typeOrder
-        .filter(t => tagTotals[t] > 0)
-        .map(t => `${tagTotals[t]} ${t}`)
-        .join(', ') || null;
+      // Group by tag type and sum — e.g. "30 Drum, 2 Carton, 1 Tin".
+      // Shared parser (lib/article-tag.ts): handles multi-group line tags
+      // and the "N Pcs" type. Order: Drum → Bag → Carton → Tin → Pcs.
+      const articleTagStr = aggregateArticleTags(o.validLines.map((l) => l.articleTag));
 
       return {
         obdNumber:    o.obdNumber,
@@ -1480,7 +1453,7 @@ async function handleManualSapPreview(_req: Request, _session: Session): Promise
 
   let parseResult;
   try {
-    parseResult = parseSapFile(buffer, { fallbackObdEmailDate });
+    parseResult = await parseSapFile(buffer, { fallbackObdEmailDate });
   } catch (err) {
     if (err instanceof FileParseError || err instanceof FileFormatError) {
       return NextResponse.json({ ok: false, error: err.message }, { status: 400 });
@@ -1617,7 +1590,7 @@ async function handleManualSapConfirm(_req: Request, session: Session): Promise<
 
   let parseResult;
   try {
-    parseResult = parseSapFile(buffer, { fallbackObdEmailDate });
+    parseResult = await parseSapFile(buffer, { fallbackObdEmailDate });
   } catch (err) {
     if (err instanceof FileParseError || err instanceof FileFormatError) {
       return NextResponse.json({ ok: false, error: err.message }, { status: 400 });
@@ -2585,6 +2558,13 @@ async function processAutoImportRows(
     existingSkuSet = new Set(existingSkus.map((s) => s.material));
   }
 
+  // Pack catalog for server-side article/articleTag resolution (STEP E2).
+  // One read for the whole batch; computeArticleInfo() then does no I/O
+  // per line. Shared by ?action=auto and ?action=auto-json — both land here.
+  const packCatalog = await loadPackCatalog(
+    lineRows.map((r) => toStr(r["sku_codes"])).filter(Boolean),
+  );
+
   const linesByObd = new Map<string, RawLineRow[]>();
   for (const lr of lineRows) {
     const obd = toStr(lr["obd_number"]);
@@ -2666,14 +2646,39 @@ async function processAutoImportRows(
     }
 
     const obdLines = linesByObd.get(obdNumber) ?? [];
-    const lines: AutoLineInterim[] = obdLines.map((lr) => {
+    const lines: AutoLineInterim[] = [];
+    for (const lr of obdLines) {
       const skuCodeRaw = toStr(lr["sku_codes"]);
       const lineIdRaw  = toInt(lr["line_id"]) ?? 0;
       const unitQty    = toInt(lr["unit_qty"]) ?? 0;
       const volumeLine = toNum(lr["volume_line"]);
       const isTinting  = parseBooleanCell(lr["Tinting"]);
-      const article    = lr["article"]     != null ? parseInt(String(lr["article"]), 10)  : null;
-      const articleTag = lr["article_tag"] != null ? String(lr["article_tag"]).trim()     : null;
+
+      // The payload's own article/article_tag, computed by the depot PC's
+      // Get-ArticleInfo against Master\pack-sizes.txt.
+      const payloadArticleRaw = lr["article"]     != null ? parseInt(String(lr["article"]), 10) : null;
+      const payloadArticle    = isNaN(payloadArticleRaw as number) ? null : payloadArticleRaw;
+      const payloadTag        = lr["article_tag"] != null ? String(lr["article_tag"]).trim() || null : null;
+
+      // Server-side rule is PRIMARY (2026-08-09). It knows per-SKU carton
+      // counts and the sub-litre packs that pack-sizes.txt never covered.
+      const computed = await computeArticleInfo(
+        { material: skuCodeRaw, unitQty, volumeLine },
+        packCatalog,
+      );
+
+      // Defensive fallback: only when the server cannot decide AND the depot
+      // PC could. Logged — a steady stream here means the catalog is behind
+      // the depot's pack-sizes.txt and should be reconciled.
+      let article    = computed.article;
+      let articleTag = computed.articleTag;
+      if (articleTag === null && payloadTag !== null) {
+        article    = payloadArticle;
+        articleTag = payloadTag;
+        console.warn("[auto-import] articleTag fallback to payload", {
+          batchRef, obdNumber, sku: skuCodeRaw, unitQty, volumeLine, payloadTag,
+        });
+      }
 
       let lineStatus: "valid" | "error" = "valid";
       let lineError:  string | null     = null;
@@ -2684,7 +2689,7 @@ async function processAutoImportRows(
         lineError = `Unknown SKU: ${skuCodeRaw} — manual mapping required`;
       }
 
-      return {
+      lines.push({
         lineId:            lineIdRaw,
         skuCodeRaw,
         skuDescriptionRaw: toStr(lr["sku_description"]) || null,
@@ -2692,12 +2697,12 @@ async function processAutoImportRows(
         unitQty,
         volumeLine,
         isTinting,
-        article:    isNaN(article as number) ? null : article,
-        articleTag: articleTag || null,
+        article,
+        articleTag,
         rowStatus:  lineStatus,
         rowError:   lineError,
-      };
-    });
+      });
+    }
 
     obdInterims.push({
       obdNumber, shipToId, shipToCustomerName, emailDate,
@@ -3109,21 +3114,8 @@ async function processAutoImportRows(
 
       const totalArticle = o.validLines.reduce((sum, l) => sum + (l.article ?? 0), 0);
 
-      const tagTotals: Record<string, number> = {};
-      for (const l of o.validLines) {
-        if (!l.articleTag) continue;
-        const parts = l.articleTag.split(" ");
-        if (parts.length >= 2) {
-          const qty  = parseInt(parts[0], 10);
-          const type = parts.slice(1).join(" ");
-          if (!isNaN(qty) && type) tagTotals[type] = (tagTotals[type] ?? 0) + qty;
-        }
-      }
-      const typeOrder     = ["Drum", "Bag", "Carton", "Tin"];
-      const articleTagStr = typeOrder
-        .filter((t) => tagTotals[t] > 0)
-        .map((t) => `${tagTotals[t]} ${t}`)
-        .join(", ") || null;
+      // Shared parser (lib/article-tag.ts) — multi-group tags + "N Pcs".
+      const articleTagStr = aggregateArticleTags(o.validLines.map((l) => l.articleTag));
 
       return {
         obdNumber:    o.obdNumber,
