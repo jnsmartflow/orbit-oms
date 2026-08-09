@@ -16,6 +16,7 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getHideExclusion } from "@/lib/hide/visibility";
+import { inScope } from "./scope";
 import { getISTDayRange } from "@/lib/dates";
 import { sortPickingQueue } from "@/lib/picking/sort";
 import { FLOOR_SPINE } from "@/lib/floor/sort";
@@ -117,9 +118,11 @@ function arrivalAgeDays(arrival: Date | null, todayMs: number): number {
   return Math.max(0, Math.floor((todayMs - Date.UTC(y, m - 1, d)) / MS_PER_DAY));
 }
 
-function inScope(deliveryType: string | null, scope: FloorScope): boolean {
-  return scope === "All" || deliveryType === scope;
-}
+// `inScope` MOVED to lib/floor/scope.ts (2026-08-09) — same function, byte for
+// byte. It now has a second consumer: the client board re-derives each scope's
+// view from one unscoped fetch instead of refetching per chip click, and a
+// second copy of this predicate is exactly the drift that would break it. The
+// server's use below is unchanged; every route still honours `?scope=`.
 
 // ── Floor LIVE where — shared by the board and the live-sync marker ──────────
 // ONE encoding of "what is on the floor right now", so the marker

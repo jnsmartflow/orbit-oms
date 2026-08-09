@@ -25,6 +25,7 @@ import { ConnectionStrip } from "./connection-strip";
 import { usePickingMarker } from "@/lib/hooks/use-picking-marker";
 import { useFloorRailPoll } from "@/lib/floor/use-floor-rail-poll";
 import { toggleOne, toggleAll as toggleAllRows, isSelectable, type FloorSelection } from "@/lib/floor/selection";
+import { railInScope, rowsInScope, scopeBoard } from "@/lib/floor/scope";
 import { parseSearch, applySearch, searchReport, type Searchable } from "@/lib/floor/search";
 import { applyFloorFilters, applyFlagFilters, EMPTY_FILTERS, type FloorFilters } from "@/lib/floor/filter";
 import type { RailReleaseSlot } from "./rail-card";
@@ -33,6 +34,21 @@ import type { FloorRailCard, FloorScope, FloorBoardResult, FloorBoardRow, FloorP
 import type { SlotTabKey } from "./floor-tabs";
 
 const SCOPES: FloorScope[] = ["All", "Local", "Upcountry", "IGT"];
+
+// Every board/hold/cancelled fetch asks for the UNSCOPED set and the chips
+// narrow it client-side (lib/floor/scope.ts).
+//
+// This is not an optimisation guess — Floor's scope was NEVER a database
+// filter. lib/floor/queries.ts applied it as a post-fetch `continue` in JS and
+// no `findMany` ever referenced it, so `scope=All` and `scope=Local` cost the
+// server the identical query; only the serialised payload differed. Asking for
+// `All` once and filtering here runs the SAME predicate on the SAME rows, and
+// turns a chip click from 3 HTTP round trips into a `useMemo`.
+//
+// Sent explicitly rather than omitted: the routes default to "All" when the
+// param is absent (parseScope), so this is belt-and-braces, and it keeps the
+// request legible in the network tab and the server logs.
+const UNSCOPED_QS = "scope=All";
 
 // The three top tabs (design §3 — Floor / On hold / Cancelled).
 type TopTab = "floor" | "hold" | "cancelled";
@@ -131,7 +147,9 @@ export function FloorPage() {
     setError(null);
     setSideError(null);
     try {
-      const params = new URLSearchParams({ scope });
+      // ⚠ ALWAYS UNSCOPED — see UNSCOPED_QS below. `scope` is deliberately NOT
+      // a dependency of this callback: a chip click must not refetch.
+      const params = new URLSearchParams(UNSCOPED_QS);
       if (viewMode === "history" && histDate) {
         params.set("mode", "history");
         params.set("date", histDate);
@@ -139,11 +157,10 @@ export function FloorPage() {
       // Board + hold + cancelled — three independent GET routes, fetched together
       // (parallel client fetches, not a prisma $transaction). Hold/Cancelled are
       // pure open states (no date anchor), so they ignore the history params.
-      const scopeQs = new URLSearchParams({ scope }).toString();
       const [boardRes, holdRes, cancRes] = await Promise.all([
         fetch(`/api/floor/board?${params.toString()}`, { cache: "no-store" }),
-        fetch(`/api/floor/hold?${scopeQs}`, { cache: "no-store" }),
-        fetch(`/api/floor/cancelled?${scopeQs}`, { cache: "no-store" }),
+        fetch(`/api/floor/hold?${UNSCOPED_QS}`, { cache: "no-store" }),
+        fetch(`/api/floor/cancelled?${UNSCOPED_QS}`, { cache: "no-store" }),
       ]);
       if (!boardRes.ok) throw new Error(`HTTP ${boardRes.status}`);
       const board = await boardRes.json();
@@ -164,7 +181,10 @@ export function FloorPage() {
     } finally {
       setLoading(false);
     }
-  }, [scope, viewMode, histDate]);
+    // `scope` is NOT here on purpose — every fetch is unscoped and the chips are
+    // a pure client-side narrowing (scopedData below). Adding it back would
+    // restore the 3-fetches-per-chip-click behaviour this change removed.
+  }, [viewMode, histDate]);
 
   useEffect(() => {
     void load();
@@ -179,6 +199,11 @@ export function FloorPage() {
 
   const clearSelection = () => setSelection(new Set());
 
+  // UNSCOPED on purpose — this only resolves already-SELECTED ids into rows for
+  // the bulk bar, and a selection can only ever hold in-scope ids (it is cleared
+  // on every scope change by the effect above). Reading the unscoped set keeps
+  // the bar populated for the one render between a chip click and that clear,
+  // which is exactly how it behaved when a chip click refetched.
   const rows = data?.floor.rows ?? [];
   const selectedRows = rows.filter((r) => selection.has(r.orderId));
   const selectedIds = selectedRows.map((r) => r.orderId);
@@ -275,39 +300,76 @@ export function FloorPage() {
     [load],
   );
 
+  // ── Scope (client-side, from ONE unscoped fetch) ───────────────────────────
+  // `data` holds the UNSCOPED board exactly as the server returned it. This memo
+  // reproduces what the server used to return for the selected scope: the same
+  // `inScope` predicate (lib/floor/scope.ts — literally the function that used
+  // to live in queries.ts), plus the derived numbers re-derived in the SAME
+  // order the server derives them (scope → drop `upcoming` → per-window counts →
+  // total). Everything downstream reads `scopedData` and is otherwise untouched.
+  //
+  // The rail scopes too — getFloorRail applied the identical filter (design
+  // §5.2: "the delivery-type scope applies to BOTH feeds").
+  //
+  // `pickers` is scope-independent and passes through unchanged.
+  const scopedData = useMemo<BoardData | null>(() => {
+    if (!data) return null;
+    if (scope === "All") return data; // identity — skip the work entirely
+    return {
+      rail: railInScope(data.rail, scope),
+      floor: scopeBoard(data.floor, scope),
+      pickers: data.pickers,
+    };
+  }, [data, scope]);
+
   // ── Search + filter (client-side, design §5.2/§5.3) ─────────────────────────
   const parsed = useMemo(() => parseSearch(searchQuery), [searchQuery]);
+
+  // Hold / Cancelled scoped the same way, BEFORE search/flags below — the same
+  // order the server applied it (scope inside the row loop, search/flags here).
+  const scopedHold = useMemo<FloorHoldRow[] | null>(
+    () => (holdRows ? rowsInScope(holdRows, scope) : null),
+    [holdRows, scope],
+  );
+  const scopedCancelled = useMemo<FloorCancelledRow[] | null>(
+    () => (cancelledRows ? rowsInScope(cancelledRows, scope) : null),
+    [cancelledRows, scope],
+  );
 
   // Floor: search + Status/Flags filter. Rows re-derived and windows/total
   // recomputed so the slot tabs + Floor count reflect exactly what is shown.
   const filteredFloor = useMemo<FloorBoardResult | null>(() => {
-    if (!data) return null;
-    const fRows = applyFloorFilters(applySearch(data.floor.rows, parsed), filters);
+    if (!scopedData) return null;
+    const fRows = applyFloorFilters(applySearch(scopedData.floor.rows, parsed), filters);
     const due = fRows.filter((r) => r.zone !== "upcoming");
-    const windows = data.floor.windows.map((w) => ({ ...w, count: due.filter((r) => r.windowId === w.id).length }));
-    return { ...data.floor, rows: fRows, windows, total: due.length };
-  }, [data, parsed, filters]);
+    const windows = scopedData.floor.windows.map((w) => ({ ...w, count: due.filter((r) => r.windowId === w.id).length }));
+    return { ...scopedData.floor, rows: fRows, windows, total: due.length };
+  }, [scopedData, parsed, filters]);
 
   // Hold / Cancelled: search + Flags only (Status is a floor-only concept).
   const filteredHold = useMemo<FloorHoldRow[] | null>(
-    () => (holdRows ? applyFlagFilters(applySearch(holdRows, parsed), filters) : null),
-    [holdRows, parsed, filters],
+    () => (scopedHold ? applyFlagFilters(applySearch(scopedHold, parsed), filters) : null),
+    [scopedHold, parsed, filters],
   );
   const filteredCancelled = useMemo<FloorCancelledRow[] | null>(
-    () => (cancelledRows ? applyFlagFilters(applySearch(cancelledRows, parsed), filters) : null),
-    [cancelledRows, parsed, filters],
+    () => (scopedCancelled ? applyFlagFilters(applySearch(scopedCancelled, parsed), filters) : null),
+    [scopedCancelled, parsed, filters],
   );
 
   // The rail is NEVER filtered (design §6.1) — it is the undecided pile and must
   // stay complete. Search only HIGHLIGHTS matching rail cards.
   const railHighlightIds = useMemo<Set<number>>(() => {
-    if (parsed.mode === "none" || !data) return new Set<number>();
-    return new Set(applySearch(data.rail, parsed).map((c) => c.orderId));
-  }, [parsed, data]);
+    if (parsed.mode === "none" || !scopedData) return new Set<number>();
+    return new Set(applySearch(scopedData.rail, parsed).map((c) => c.orderId));
+  }, [parsed, scopedData]);
 
-  // The open tab's pool + report for the hits strip (chips / summary).
-  const dueFloorRows = useMemo(() => (data?.floor.rows ?? []).filter((r) => r.zone !== "upcoming"), [data]);
-  const activePool: Searchable[] = topTab === "floor" ? dueFloorRows : topTab === "hold" ? holdRows ?? [] : cancelledRows ?? [];
+  // The open tab's pool + report for the hits strip (chips / summary). Scoped,
+  // so the hit counts describe the chip the operator is actually looking at.
+  const dueFloorRows = useMemo(
+    () => (scopedData?.floor.rows ?? []).filter((r) => r.zone !== "upcoming"),
+    [scopedData],
+  );
+  const activePool: Searchable[] = topTab === "floor" ? dueFloorRows : topTab === "hold" ? scopedHold ?? [] : scopedCancelled ?? [];
   const tabSearchReport = useMemo(() => searchReport(activePool, parsed), [activePool, parsed]);
 
   const commitSearch = useCallback(
@@ -317,15 +379,15 @@ export function FloorPage() {
       // Auto-tick (design §5.2) — ONLY on the Floor tab, and ONLY selectable rows
       // (Waiting / With picker, Step 5). A pasted number matching a Done or
       // Needs-check row is still found + shown, but never ticked.
-      if (p.mode === "numbers" && topTab === "floor" && data) {
-        const due = data.floor.rows.filter((r) => r.zone !== "upcoming");
+      if (p.mode === "numbers" && topTab === "floor" && scopedData) {
+        const due = scopedData.floor.rows.filter((r) => r.zone !== "upcoming");
         const ids = applySearch(due, p).filter(isSelectable).map((r) => r.orderId);
         setSelection(new Set(ids));
       } else {
         setSelection(new Set());
       }
     },
-    [topTab, data],
+    [topTab, scopedData],
   );
   const clearSearch = useCallback(() => {
     setSearchQuery("");
@@ -348,7 +410,7 @@ export function FloorPage() {
     if (!detail) return [];
     switch (detail.source) {
       case "rail":
-        return (data?.rail ?? []).map((c) => c.orderId);
+        return (scopedData?.rail ?? []).map((c) => c.orderId);
       case "floor":
         return (filteredFloor?.rows ?? []).filter((r) => r.zone !== "upcoming").map((r) => r.orderId);
       case "hold":
@@ -356,7 +418,7 @@ export function FloorPage() {
       case "cancelled":
         return (filteredCancelled ?? []).map((r) => r.orderId);
     }
-  }, [detail, data, filteredFloor, filteredHold, filteredCancelled]);
+  }, [detail, scopedData, filteredFloor, filteredHold, filteredCancelled]);
 
   const detailActions: DetailActions = useMemo(
     () => ({
@@ -382,6 +444,10 @@ export function FloorPage() {
       // reusing the Picking endpoints. The current assignment is read from the
       // live floor rows so a Waiting bill isn't sent a spurious unassign (409).
       onReassign: async (orderId, pickerId) => {
+        // Deliberately the UNSCOPED rows: "does this bill already have a picker"
+        // is a property of the bill, not of the chip in view. Only in-scope rows
+        // are reachable here (the panel opens from a scoped list), so the result
+        // is identical either way — the wider set just cannot miss.
         const row = (data?.floor.rows ?? []).find((x) => x.orderId === orderId);
         if (row?.isAssigned) {
           reportWrite("Unassign", await postJson("/api/picking/unassign", { orderId }));
@@ -456,7 +522,11 @@ export function FloorPage() {
   // reaching for. A read-only GET — no orders.update anywhere.
   const reconcileSelection = useCallback(async () => {
     try {
-      const res = await fetch(`/api/floor/board?${new URLSearchParams({ scope }).toString()}`, { cache: "no-store" });
+      // Unscoped, like every other board fetch. This only ever ASKS "is each
+      // already-selected id still selectable?", and a selection can only hold
+      // in-scope ids — so the wider set answers the same question and can never
+      // untick a bill merely because the chip changed.
+      const res = await fetch(`/api/floor/board?${UNSCOPED_QS}`, { cache: "no-store" });
       if (!res.ok) return;
       const board = await res.json();
       const stillSelectable = new Set<number>(
@@ -481,7 +551,8 @@ export function FloorPage() {
     } catch {
       /* silent — the connection strip owns the "not connected" surface */
     }
-  }, [scope]);
+    // No `scope` dep — the request is unscoped and the answer is scope-independent.
+  }, []);
 
   // FLOOR — the Picking pattern: use-picking-marker, pointed at the floor's OWN
   // marker (/api/floor/marker) via the optional `url` param, so it watches the
@@ -511,6 +582,10 @@ export function FloorPage() {
     onTick: () => void load(),
   });
 
+  // Unscoped on purpose: this is the LIST of dispatch windows to offer, not
+  // their counts. The server maps every active dispatch_slot_master row whatever
+  // the scope, so scoping would return the same ids — and the pickable windows
+  // must not shrink just because a chip is on.
   const dispatchWindows: DispatchWindow[] = (data?.floor.windows ?? []).map((w) => ({
     id: w.id,
     windowTime: w.windowTime,
@@ -594,11 +669,11 @@ export function FloorPage() {
       {/* ── Body — left rail (344px) + right main. ───────────────────────── */}
       <div className="grid min-h-0 flex-1 overflow-hidden" style={{ gridTemplateColumns: "344px 1fr" }}>
         <FloorRail
-          cards={data?.rail ?? null}
+          cards={scopedData?.rail ?? null}
           loading={loading}
           error={error}
           scope={scope}
-          floorTotal={data?.floor.total ?? 0}
+          floorTotal={scopedData?.floor.total ?? 0}
           windows={dispatchWindows}
           onRelease={handleRelease}
           onHold={railHold}
