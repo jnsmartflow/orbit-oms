@@ -1,5 +1,5 @@
 # CLAUDE_MAIL_ORDERS.md — Mail Orders Module (+ Billing v2 pilot, §23)
-# v1.11 · Schema v27.13 · Parser v7.3.0 (repo copy; live PC ≥v7.2, exact deployed version unverifiable — §3) · Enrichment v3 · August 2026 · updated 2026-08-04
+# v1.12 · Schema v27.15 · Parser v7.3.0 (repo copy; live PC ≥v7.2, exact deployed version unverifiable — §3) · Enrichment v3 · August 2026 · updated 2026-08-09
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -1027,6 +1027,57 @@ gated on `mail_orders/canView`.
   `checkedAt` IST, not `dispatchTargetDate`) is **CLAUDE_PICKING territory** — flagged there, not
   documented here.
 
+#### 23.4.1 Confirmed shortages reach Billing [LIVE, 2026-08-08/09 — `42f14de4`, `bfff2400`]
+
+The floor's findings (`CLAUDE_PICKING.md §11` owns the recording flow) surface here in two places.
+
+🔴 **CONFIRMED ONLY, ON BOTH SURFACES — `pick_findings.recordedById IS NOT NULL`, and nothing else.**
+A picker's unconfirmed report is a claim awaiting a supervisor, and Billing invoices against
+confirmed fact. **Never** infer the state from `qtyFound` or `reason`: a supervisor may legitimately
+confirm a line at the full ordered quantity. The list flag and the panel apply the SAME predicate on
+purpose — if the two ever diverge, a row can carry the ⚠ and open onto a panel with nothing flagged,
+and the operator has no way to tell which surface is lying.
+
+**(a) The FLAGS column + row highlight.** `BillingPendingRow.hasConfirmedShortage` is computed in
+`/api/billing/picking/list` by ONE batched read over the visible ids —
+`pick_findings.findMany({ where: { orderId: { in: pendingIds }, recordedById: { not: null } }, select: { orderId } })`
+→ a `Set`, skipped entirely on an empty list. Never a query per row. Index-backed both ways
+(`pick_findings_order_idx`, and the partial `pick_findings_confirmed_idx`).
+- A flagged row takes a light red wash **on every `<td>`, not the `<tr>`** — each cell carries its
+  own `border-b`, so a row-level fill renders banded on this `table-fixed` table — plus a 3px red
+  left edge. Selection's teal wash still wins; the left edge survives both.
+- In FLAGS it is a **⚠ glyph, never a text pill**, rendered ALONGSIDE any TINT / STOCK TFR. That
+  column is 11% of a fixed table and already holds up to two pills; a third would push one out
+  through the cell's ellipsis and silently lose a flag.
+- ⚠ **Pending rows only.** Both Done arms are untouched and their wire shape is unchanged.
+
+**(b) The read-only detail panel.** `components/billing/billing-order-detail-panel.tsx`, opened by
+clicking any Pending row, fed by **`GET /api/billing/picking/order/[orderId]`**. Shows OBD, date,
+dealer + code, the bill's active line items (product, SKU + pack, qty, litres) and a total row. A
+confirmed line takes the shortfall card treatment (`#fef2f2` / `#fca5a5`) plus the note
+**"Found 9 · Old MFG · Mar 2024 · <confirmer>"** — wording and formatter shared with the picking
+boards, with the confirmer's name added because this is the one screen whose reader did NOT confirm
+it. No ship-to, slot, reassign or edit controls: a close button, a backdrop and Esc.
+
+🔴 **GATED ON `mail_orders`/canView — NOT `floor`/canView, and that is the whole reason this route
+exists.** `GET /api/floor/order/[orderId]` returns very nearly the same payload, and reusing it would
+have sailed through the pilot (Operations User id 20 holds `floor`) and then **403'd for Deepanshu
+(25) and Bankim (26) on rollout** — neither holds `floor` (`CLAUDE_PICKING.md §1`). This is the third
+instance of the same call, not a new pattern: `/api/billing/ship-to-search` and
+`/api/billing/dispatch-windows` were carved out for exactly this (§23.3). Floor's panel is also an
+ACTION surface — ship-to, slot, assign, hold, cancel — where this one is read-only, so it is a
+structural reference, never an import.
+
+Two smaller decisions worth not re-litigating:
+- **The route carries no stage/invoice fence.** The list decides which bills are on screen; this
+  answers "show me this bill" for whatever the list handed over. Duplicating `buildBillingPendingWhere()`
+  would 404 a row that is legitimately rendered.
+- **Qty shown stays qty ORDERED on a short line**, and the total counts every active line. What was
+  found is stated in the note. Netting a short line out here would quietly disagree with the SAP
+  invoice the operator is about to raise.
+- **The checkbox cell stops the row click** — ticking leads to a write (Copy OBDs → Mark done),
+  opening does not; without the stop every tick would throw a panel over the list.
+
 ### 23.5 Deferred / next (tracked — ROADMAP session must pick these up)
 
 Data-audit + plumbing session (dual-write end-to-end vs Floor; then widen rollout
@@ -1076,4 +1127,13 @@ Evidence: git (18 commits verified), code call-sites, read-only SELECTs (ship-to
 
 ---
 
-*Mail Orders v1.11 · Schema v27.13 · Parser v7.3.0 (repo copy; live ≥v7.2) · Enrichment v3 · updated 2026-08-04*
+## Change log — v1.12 (2026-08-09)
+
+Evidence: `42f14de4` + `bfff2400` confirmed on `main` by `git log` before either was called LIVE; route, component and type files read at the call sites.
+
+- MO-8 (NEW §23.4.1): confirmed shortages reaching Billing documented — the FLAGS ⚠ glyph + row highlight fed by ONE batched `pick_findings` read over the visible ids, and the read-only detail panel on `GET /api/billing/picking/order/[orderId]`. The `recordedById IS NOT NULL` predicate is recorded as shared-and-must-stay-shared across both surfaces. The `mail_orders`/canView gate is written up with its reason (Floor's route would 403 for Deepanshu and Bankim on rollout) as the third instance of the §23.3 carve-out pattern.
+- Schema stamp -> **v27.15** (was v27.13; `pick_findings` minted v27.14 on 08-07, its `mfgMonth`/`mfgYear` v27.15 on 08-08 — `CLAUDE_CORE.md §7.4` owns both).
+
+---
+
+*Mail Orders v1.12 · Schema v27.15 · Parser v7.3.0 (repo copy; live ≥v7.2) · Enrichment v3 · updated 2026-08-09*

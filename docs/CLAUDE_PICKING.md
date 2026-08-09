@@ -1,5 +1,5 @@
 # CLAUDE_PICKING.md — Picking Module
-# v1.12 · Schema v27.13 · August 2026 · updated 2026-08-04
+# v1.13 · Schema v27.15 · August 2026 · updated 2026-08-09
 # Lives in: orbit-oms/docs/
 # Load with: CLAUDE.md (repo root) + docs/CLAUDE_CORE.md + docs/CLAUDE_UI.md
 
@@ -40,9 +40,10 @@ by ROLE. The width-based switch is gone: the desktop table went 2026-07-28 and t
 its `md:hidden` breakpoint, so the same board renders on a phone and on a PC.
 - **Supervisor board** — `components/picking/picking-board-mobile.tsx` (Assign / Picking / Done —
   three **bottom** tabs — + a detail screen. [LIVE], §5).
-- **Picker's own "My Picks"** — `components/picking/picker-my-picks-board.tsx` (Pending / Done —
-  two **bottom** tabs — + a detail screen. [LIVE], §5.4) when the viewer's primary role is `picker` —
-  or an admin/operations session using the `?view=picker&as=<id>` test hook (§7).
+- **Picker's own "My Picks"** — `components/picking/picker-my-picks-board.tsx` (Pending / **Combined**
+  / Done — **three** **bottom** tabs since 2026-08-07 — + a detail screen. [LIVE], §5.4/§5.4.2) when
+  the viewer's primary role is `picker` — or an admin/operations session using the
+  `?view=picker&as=<id>` test hook (§7).
 
   Both mobile faces mount through `components/picking/picking-mobile-shell.tsx`, which wraps
   `<RoleLayoutClient>` — Picking is the **first and reference consumer** of the shared shell's
@@ -234,11 +235,18 @@ works.** What is Picking-specific:
   supervisor-only wrapper** [CHANGED 2026-07-29]. This bullet used to read *"the picker face gets the
   DEFAULT bar … it keeps the standard Home/Menu/You bar untouched"*; that is no longer true.
   `showPickerFace` now selects **`PickerPickingShell`** instead of `SupervisorPickingShell`, and the
-  picker shell is the full equivalent of the supervisor one for its own face: it owns its two tabs,
-  its rows, its refetch and `detailOpen`, and hands them down through a **separate** context,
-  `usePickerBoard()`. Two contexts, two hooks, deliberately different shapes — the picker's is
-  smaller because that face has no filters and no sheets (§5.4). The archived desktop queue *did*
-  leave `workflowTabs` undefined and take the default bar; **nothing live does any more.**
+  picker shell is the full equivalent of the supervisor one for its own face: it owns its **three**
+  tabs (Pending / Combined / Done since 2026-08-07 — §5.4.2), its rows, its refetch and `detailOpen`,
+  and hands them down through a **separate** context, `usePickerBoard()`. Two contexts, two hooks,
+  deliberately different shapes — the picker's is smaller because that face has no filters and no
+  sheets (§5.4). The archived desktop queue *did* leave `workflowTabs` undefined and take the default
+  bar; **nothing live does any more.**
+  > ⚠ **`PickerTabKey` is NARROWED at runtime, never cast** — `PICKER_TAB_KEYS` + `isPickerTabKey()`
+  > in the shell. `WorkflowTab.key` is a bare `string`, so `onTabChange` hands back a string; the old
+  > `key as PickerTabKey` cast compiled unconditionally, which means an unknown key would have been
+  > written into state silently and every `activeTab === …` downstream would fall through to its
+  > else-branch. **Widening the union from two keys to three is exactly the change that would have
+  > exposed it.** Narrow, never cast.
 - Tab icons (lucide): `Inbox` (Assign) · `Package` (Picking) · `CheckCircle2` (Done). Count badge
   hidden at 0.
 - The top teal header keeps the "Picking" title + search toggle, and gained the grid/avatar triggers
@@ -423,8 +431,9 @@ or Mark done, and must not learn.
 
 - `openDetail(orderId, listKey)` — the signature carries a **`listKey`** (`waiting` | `needsCheck` |
   `stillPicking` | `checked`) because the Check tab has two sections; prev/next must page the RIGHT
-  list. All four call sites pass it. (The picker face has one band per tab, so its own list key is
-  just the tab — §5.4.)
+  list. All four call sites pass it. (The picker face has one band per bill-list, so its own key is
+  just the tab — and it stays **two** keys across three tabs, because Combined is a view of Pending
+  rather than a list of its own — §5.4/§5.4.2.)
 - The index is derived **live on every render** from the caller's list + the open bill's id, never
   frozen at open time — `handleUndo` refetches while the detail is open, so a captured array would go
   stale. **If the open bill leaves the list entirely the index resolves to `-1`: paging goes inert,
@@ -486,14 +495,26 @@ was run is not recorded (§7). Roster data for that dropdown comes from `lib/pic
 > server-computed split arriving as props — **is now false in every clause**. It is recorded here
 > because that stack of wrong claims is what a doc pass is for, not as history worth preserving.
 
-**Two BOTTOM tabs — Pending / Done.** The face moved onto the shared shell's per-module slot
-(Direction A, `CLAUDE_UI.md §59`), the same move the supervisor board made on 2026-07-19. Owner is
-`PickerPickingShell` (§5.1), reached by `usePickerBoard()`. Its local `TopBarTab` copy was **deleted**
-with the strip — there is no third copy left in the module. Icons `Package` / `CheckCircle2`; `Inbox`
-is deliberately not reused, it means "waiting to be assigned", a supervisor concept the picker never
-sees. **Badge on Pending ONLY** — `done` passes no `count`, so `WorkflowTabBar` renders none: a
-picker's finished pile is a receipt, not work still requiring him. Same reasoning that keeps
-`isChecked` out of the supervisor's Done badge (§5.2).
+**THREE BOTTOM tabs — Pending / Combined / Done** [Combined added 2026-08-07, `1ad903ef` +
+`733fcd6b`; this section said "two" until 2026-08-09]. The face moved onto the shared shell's
+per-module slot (Direction A, `CLAUDE_UI.md §59`), the same move the supervisor board made on
+2026-07-19. Owner is `PickerPickingShell` (§5.1), reached by `usePickerBoard()`. Its local
+`TopBarTab` copy was **deleted** with the strip — there is no third copy left in the module. Icons
+`Package` / **`Layers`** / `CheckCircle2`; `Inbox` is deliberately not reused, it means "waiting to
+be assigned", a supervisor concept the picker never sees.
+
+**Badge on Pending ONLY** — `combined` and `done` both pass no `count`, so `WorkflowTabBar` renders
+neither. `done`: a picker's finished pile is a receipt, not work still requiring him (same reasoning
+that keeps `isChecked` out of the supervisor's Done badge, §5.2). `combined`: it is the SAME work as
+Pending seen a different way, so a second badge would double-count the one number that means "bills
+still on you".
+
+**⚠ TWO BILL LISTS, THREE TAB KEYS.** Combined is a **VIEW of `pending`**, not a fourth list — the
+shell adds nothing to `PickerBoardContext` for it, and the board derives it from the same `pending`
+array the shell already owns and refreshes. That is also why it needs no second live-sync marker
+(§10). The paging `DetailListKey` stays `"pending" | "done"` deliberately: a bill opened from a
+Combined pill is opened **from Pending**, and the swipe pager walks the pending bills exactly as it
+does from the Pending tab.
 
 **The two lists are ONE rule, in `lib/picking/picker-split.ts`** (`splitPickerRows`, extracted
 2026-07-29). Scoping is on `pickerId` — a real FK, never `assignedToName`, which is a display string
@@ -545,8 +566,8 @@ carries the same three phone-native behaviours:
   a nested-sheet branch (close the sheet, re-push, keep the detail entry alive) and this face has no
   sheets. If it ever gets one, the two shapes converge and extraction becomes worth it.
 - **Swipe between bills** — the shared pager, contract in **§5.3**; not restated here. Picker
-  specifics only: the list key is just the tab (`pending` | `done`) since there is one band per tab,
-  and a swipe **never crosses between them** — Pending and Done are different work, and only Done is
+  specifics only: the list key is `pending` | `done` — **two keys, not three** (§5.4.2) — and a swipe
+  **never crosses between them** — Pending and Done are different work, and only Done is
   date-fenced. Per-bill state reset on a swap is `activePackFilter`; the line items refetch on the
   bill-id change. The pack-filter strip carries `NO_BILL_SWIPE_ATTR` (§5.3).
 
@@ -603,6 +624,42 @@ deletes its entry outright, so unticking everything leaves no residue.
 **Not the supervisor's ticks.** They look identical on purpose and are a different feature with
 different plumbing — the supervisor's gate Approve and are ephemeral component state (§6). Do not
 merge them, do not reuse one for the other, and do not pre-fill anything a supervisor sees from these.
+
+#### 5.4.2 Combined tab — every pending bill as one flat list [LIVE, 2026-08-07]
+
+`1ad903ef` (the tab) + `733fcd6b` (footer and tab bar read as one bottom strip). One row per
+**distinct SAP code** across all of his pending bills, quantities and volume summed — so a picker
+fetching four bills walks the racks once instead of four times.
+
+**`GET /api/picking/combined`** — `canView` + admin bypass, read-only, sequential awaits.
+
+🔴 **THE SCOPE IS DECIDED SERVER-SIDE AND IS NEVER SENT BY THE PHONE.** There is deliberately no
+`orderIds` parameter: the route resolves the viewer's own `pickerId` and re-runs the EXACT rule the
+Pending tab uses — `getPickingQueue({ scope: "openPending", pickerId })` → `splitPickerRows` →
+`pending`. Two things fall out of that, both load-bearing: Combined **can never show another
+picker's bills** (there is no input that could widen it), and it **can never drift from Pending** —
+it is not a parallel filter, it is the same one called again. `pickerId` IS accepted as a param but
+ONLY for the admin `?view=picker&as=<id>` preview; a real picker's session id always wins, making
+this route strictly tighter than `/api/picking/queue`.
+
+⚠ **MERGED BY `skuCodeRaw` — the SAP code, ALWAYS, never description text.** Two bills can carry
+different raw text for the same unmastered code, and text matching would silently merge or split
+real products. Name/pack resolve through the shared `resolveCatalogByCode()`; a code in neither
+catalog table (~27%, §7's blank-pack landmine) falls back to the FIRST contributing bill's raw text
+with a null pack — cosmetic only, the merge key is unaffected.
+
+**Bill pills toggle.** Each contributing bill is a pill; switching one off re-totals the rows
+**client-side with no refetch** — which is why every row carries per-contribution `qty`/`litres`
+rather than just a sum.
+
+**⚠ TICKS MERGE, NEVER REPLACE.** A Combined row covers line items in several bills at once, and the
+tick store is keyed per BILL (§5.4.1). `writeTicks()` takes a bill's WHOLE set and overwrites it —
+right for the single-bill screen, which holds every line of that bill on screen, and **catastrophic
+here**: a Combined row knows only its own SKU's line ids, so writing those as the bill's set would
+erase every tick made on that bill's other lines. The multi-bill helpers read → union/difference →
+write back per entry. Same key, same shape, same pruning — **there is no second store and there must
+never be one.** A tick made in Combined and the same tick seen on that bill's own detail screen are
+the same note about the same physical goods.
 
 ---
 
@@ -843,11 +900,12 @@ picker-facing login flow shipped yet.
   **Still required** (2026-07-19): the detail-screen CTAs stopped using it when the bar started
   hiding there (§5.3), but `SHEET_GEOMETRY` and the list-view sheets still do — do not remove it.
 
-**Deferred to Stage 3 [NEXT]:** supervisor recording **what he actually found** on a Checked bill —
-qty short (e.g. 8 of 10), remarks, and a message the billing operator sees so he can fix it in SAP.
-Needs a findings table (a typed number is data, can't be ephemeral, unlike the tick screen). The tick
-screen and this qty screen are the same screen, so it bolts on once the plain version has been used
-on the floor for a while — nothing else in the system changes, it's a note, not an edit to the order.
+**~~Deferred to Stage 3~~ — ✅ SHIPPED 2026-08-07/09.** See §11 below: findings are built, live, and
+reach Billing. The prediction in the old note held on every point — the tick screen and the qty
+screen ARE the same screen, and a finding is still a note rather than an edit to the order. Two
+things it did not anticipate: recording is **two-step** (picker reports / supervisor confirms), not
+supervisor-only; and the "message the billing operator sees" is not free text — it is a flag and a
+panel (§11.5).
 
 ---
 
@@ -857,9 +915,15 @@ on the floor for a while — nothing else in the system changes, it's a note, no
 |---|---|
 | `app/picking/page.tsx` | Role branch — supervisor board vs the picker's "My Picks", one face at every width (the width switch went with the desktop board, 2026-07-28). For the picker face it resolves **first-paint rows only**, already narrowed by `pickerId` in the query, and hands them to the shell; it no longer computes or passes the two lists (§5.4) |
 | ~~`components/picking/picking-queue.tsx`~~ | **ARCHIVED 2026-07-28** → `archive/2026-07-picking-desktop/components/picking/picking-queue.tsx`. Nothing under `archive/` is compiled, deployed or reachable (`tsconfig.json` excludes it) |
-| `components/picking/picking-mobile-shell.tsx` | **Direction-A wrapper — TWO shells since 2026-07-29** (§5.1). `SupervisorPickingShell` owns `data`/`activeTab`/`refetchQueue`/`detailOpen` + the three tab counts → `usePickingBoard()`. `PickerPickingShell` owns his rows, the `splitPickerRows` result, `refetchQueue`, `activeTab`, `detailOpen` → `usePickerBoard()`. Both fill `RoleLayoutClient`'s `workflowTabs`/`hideBar` slots |
+| `components/picking/picking-mobile-shell.tsx` | **Direction-A wrapper — TWO shells since 2026-07-29** (§5.1). `SupervisorPickingShell` owns `data`/`activeTab`/`refetchQueue`/`detailOpen` + the three tab counts → `usePickingBoard()`. `PickerPickingShell` owns his rows, the `splitPickerRows` result, `refetchQueue`, `activeTab`, `detailOpen` → `usePickerBoard()`. Both fill `RoleLayoutClient`'s `workflowTabs`/`hideBar` slots. Also owns `PickerTabKey` + the `isPickerTabKey()` runtime narrowing — **three** picker tabs since 2026-08-07 (§5.1) |
 | `components/picking/picking-board-mobile.tsx` | Supervisor board — Assign/Picking/**Done** tab CONTENT (the tab strip itself lives in the bottom bar), shared `PickingCard`, detail screen + its **popstate** authority (§5.2-§5.3). The swipe/slide half moved out to `use-bill-pager.ts` on 2026-07-30 |
-| `components/picking/picker-my-picks-board.tsx` | Picker's own "My Picks" board (§5.4) — Pending/Done **bottom** tabs via `usePickerBoard()`, its own popstate authority, the shared pager, and the device-local line ticks (§5.4.1). Takes **no** row props: the shell owns the lists |
+| `components/picking/picker-my-picks-board.tsx` | Picker's own "My Picks" board (§5.4) — Pending/**Combined**/Done **bottom** tabs via `usePickerBoard()`, its own popstate authority, the shared pager, the device-local line ticks (§5.4.1) and their multi-bill merge helpers (§5.4.2). Takes **no** row props: the shell owns the lists |
+| `components/picking/finding-recorder.tsx` | **The findings screen, shared by BOTH boards** (§11.4) — `findingState()` (THE amber/red decision), `FindingTriangleButton`, `FindingRecordBanner`, `FindingStatusBadge`, `FindingNote`, `useFindingRecorder()`, `FindingPopup`. Exactly three things differ per caller, all carried by `mode` |
+| `lib/picking/findings-reasons.ts` | THE closed reason vocabulary (`short_quantity` \| `old_mfg`) + labels + `isFindingReason()`, plus the Old-MFG month/year helpers `MFG_MONTH_LABELS` / `mfgYearOptions()` / `isMfgMonth()` / `isMfgYear()` / `mfgLabel()` (§11.2-§11.3). **Pure constants, zero imports** — safe from a client component and a route handler alike; do not add a prisma import |
+| `lib/picking/resolve-lines.ts` | `resolveCatalogByCode()` — batch SKU resolution against `sku_master_v2` by `material`, extracted 2026-08-07 so the single-bill detail and the Combined view resolve identically (§5.3's id-space warning lives in this file) |
+| `app/api/picking/findings/report/route.ts` | POST — the PICKER's report. **`canView`** (the second deliberate exception, §11.1), bounded by `pickerId` ownership; 409 on an already-confirmed row |
+| `app/api/picking/findings/confirm/route.ts` | POST — the SUPERVISOR's sign-off. **`canEdit`**; stamps `recordedById`/`recordedAt` and never touches `reportedById` |
+| `app/api/picking/combined/route.ts` | GET — the Combined view (§5.4.2). Scope resolved server-side from the viewer's own `pickerId`, **no `orderIds` param**; merges by `skuCodeRaw` |
 | `components/picking/card-atoms.tsx` | The two boards' shared card language (2026-07-29). Both import exactly four: `AgeBadge` (the days→colour scale, here and nowhere else), `CardShelf`, `CARD_SHADOW_V2`, `RouteDot`. ⚠ `FamilyChip` and `UnlistedChip` are exported but are **shelf internals** — `CardShelf` is their only consumer; do not hunt for board-level call sites. The CARD itself is deliberately not shared (§5.4) |
 | `components/picking/use-bill-pager.ts` | The swipe/slide bill pager, shared by both detail screens (§5.3 owns the contract). Holds all four gesture constants + both slide constants, and exports `NO_BILL_SWIPE_ATTR`. Picking-scoped on purpose — moving it to `components/shared/` means re-homing its docs in `CLAUDE_UI.md` |
 | `components/shared/module-mobile-header.tsx` | The Direction-A header both faces render (extracted from the supervisor board, 2026-07-29). Not picking-specific — contract lives in `CLAUDE_UI.md §59` |
@@ -873,10 +937,10 @@ on the floor for a while — nothing else in the system changes, it's a note, no
 | `app/api/picking/unassign/route.ts` | POST — single-bill undo, mirrors Support's undo-dispatch two-write order |
 | `app/api/picking/done/route.ts` | POST — picker Mark Done, writes `pick_done` + `pick_assignments.pickedAt` |
 | `app/api/picking/approve/route.ts` | POST — supervisor Approve, writes `pick_checked` + `pick_assignments.checkedAt`/`checkedById` (real session user, never request-body-trusted) |
-| `app/api/picking/order/[orderId]/route.ts` | GET — on-demand line items for the mobile detail screen; no FK, matches on `obdNumber` |
+| `app/api/picking/order/[orderId]/route.ts` | GET — on-demand line items for the mobile detail screen; no FK, matches on `obdNumber`. Each line also carries its `finding` (or null) since 2026-08-07 — additive, so a consumer that doesn't know about findings is unaffected (§11) |
 | `lib/picking/queue.ts` | `getPickingQueue()` — builds `PickingQueueRow[]` from `orders` + `querySnapshot`; WHERE includes `pick_checked`, select includes `checkedAt`/`checkedBy`. Takes an optional `pickerId` that narrows to one picker's bills **in the query** (2026-07-29, §5.4). Returns `{ date, rows }` — the four aggregate counters were removed 2026-07-28 (§7) |
 | `lib/picking/sort.ts` | `PICKING_SPINE` + `sortPickingQueue()` — the flat sort spine, §3 — untouched |
-| `lib/picking/types.ts` | `PickingQueueRow`, `SortRule` shapes — `isChecked`/`checkedAt`/`checkedByName` added 2026-07-18 |
+| `lib/picking/types.ts` | `PickingQueueRow`, `SortRule` shapes — `isChecked`/`checkedAt`/`checkedByName` added 2026-07-18. Also the shapes BOTH boards share: `PickingDetailLine` + `PickingLineFinding` (2026-08-07, declared once because a silent drift between two private copies is what the nested `finding` object made possible) and the Combined wire types `CombinedSkuRow`/`CombinedContribution`/`CombinedBill`/`CombinedPickResult` |
 | `lib/picking/validate-assign.ts` | DORMANT — the no-jump guard, unused, kept on disk (§7) |
 | `lib/workflow-stages.ts` | Central stage-ladder registry — `STAGE_LADDER`, `SUPPORT_DONE_OUTPUT`, `PICK_ASSIGNED`, `PICK_DONE`, `PICK_CHECKED`, `stageRank()`, `supportMayEdit()`, `isSupportDone()` (§2) |
 | `docs/mockups/picking/supervisor-assign-board.html` | Approved mobile board mockup |
@@ -987,6 +1051,140 @@ on becoming visible); skips overlapping requests; **fails silently** (no toast/U
 
 ---
 
+## 11. Findings — what the floor actually found [LIVE, 2026-08-07/09]
+
+Stage 3, built across seven commits, all verified on `main`: `cd27c976` (schema) → `4d9d4535`
+(picker records) → `490164c4` (supervisor confirms) → `42f14de4` (billing flag) → `bfff2400`
+(billing panel) → `286457e7` (MFG month/year + note trim) → `0df656ef` (MFG date in the note).
+
+A finding records **what was physically there** on one line. It never edits the order, never changes
+a quantity anywhere, and never blocks Mark done or Approve.
+
+### 11.1 Two steps, and only the second one counts
+
+**Picker-optional, supervisor-authoritative.** Both roles use the SAME screen — the mockup was
+explicit about that (`docs/mockups/picking/picking-shortfall-design.html`) and it is why one
+component serves both (§11.4).
+
+| Step | Who | Route | Gate | Writes |
+|---|---|---|---|---|
+| **Report** | picker (optional) | `POST /api/picking/findings/report` | **`canView`** | `reportedById`/`reportedAt`; leaves `recordedById` NULL |
+| **Confirm** | supervisor (authoritative) | `POST /api/picking/findings/confirm` | **`canEdit`** | `recordedById`/`recordedAt`; ⚠ never touches `reportedById` |
+
+🔴 **`recordedById IS NULL` MEANS PENDING. That single column is the whole state ladder** — amber
+(reported, awaiting a supervisor) vs red (confirmed). `findingState()` in `finding-recorder.tsx` is
+the ONE place that decision is made; every render site calls it rather than re-testing the column.
+**Never infer the state from `qtyFound` or `reason`** — a supervisor may legitimately confirm a line
+at the full ordered quantity, so "found == ordered" says nothing about whether anyone signed off.
+
+Two asymmetries between the routes, both deliberate:
+- **`report` gates on `canView`**, joining `done/route.ts` as the second deliberate exception to the
+  canEdit rule above — `picker` holds canView ONLY, so canEdit would lock the one role it exists for
+  out of it. The real boundary is the `pickerId`-ownership check (the bill must actually be assigned
+  to the acting picker), exactly as `done/route.ts` documents for itself.
+- **`report` 409s on an already-confirmed row; `confirm` does not.** A picker must never silently
+  overwrite a supervisor's sign-off — that refusal is what makes the amber→red ladder trustworthy.
+  A supervisor correcting his own earlier number is the expected path, so it is an ordinary update.
+
+Both routes re-verify that the line belongs to the bill (`rawLineItemId` arrives from the client and
+there is **no FK from `orders` to its line items**), refuse a non-`active` line, and refuse
+`qtyFound > unitQty` — found-more-than-ordered is a typo, not a finding. That bound lives in code,
+not the DB, so relaxing it is a one-line change.
+
+### 11.2 Exactly two reasons — and the CHECK-constraint landmine
+
+`lib/picking/findings-reasons.ts` is THE central list: **`short_quantity` | `old_mfg`**, labels
+"Short quantity" / "Old MFG". Same spirit as `lib/workflow-stages.ts` — one closed vocabulary every
+consumer asks, instead of hand-maintained arrays. The popup's `<select>` is built from it, so the UI
+can never offer a value the API would reject.
+
+🔴 **LANDMINE — `chk_pick_findings_reason` is a live CHECK Prisma cannot see**, restricting `reason`
+to exactly those two strings. **Identical class to `chk_pick_assignments_status` (§7)**, and it bites
+the same way: an unlisted value does NOT fail type-check or Prisma validation — it reaches Postgres
+and comes back as a raw constraint violation. Adding a THIRD reason means, in this order: **(1)**
+`ALTER` the constraint in the Supabase SQL Editor (CORE §3 — never a migration, never `db push`),
+**(2)** add it to `findings-reasons.ts`, **(3)** only then use it in code. Both routes validate
+against the module BEFORE any write, which is the only thing turning a bad value into a clean 400.
+
+### 11.3 Old MFG additionally captures a month + year
+
+`mfgMonth` / `mfgYear` (Schema **v27.15**, 2026-08-08). The popup shows two selects — Jan-Dec, and
+six years newest-first — **only** when the reason is Old MFG, and both are required before Save
+enables. Never prefilled on a fresh line: today's month is the one value certainly WRONG for stock
+flagged as old, and a plausible wrong default saves silently.
+
+⚠ **The reason-dependency is NOT in the database.** The live `chk_pick_findings_mfg_month` constrains
+the month's RANGE only (NULL or 1-12); nothing ties either column to `reason`. Both write routes
+carry the rule instead — **required on `old_mfg`, forced to NULL on `short_quantity` whatever the
+body claims**, written unconditionally on every save so a stale date cannot outlive a reason change.
+A short-quantity row carrying a non-null `mfgMonth` is a bug in a write path, not a permitted state.
+The server's year bound is deliberately **wider** than the dropdown offers: a rolling six-year window
+would start rejecting a December row's own re-save a few weeks later.
+
+**The note reads `Found 9 · Old MFG · Mar 2024`** — trimmed to that shape on 2026-08-08 and given the
+date on 2026-08-09. Short-quantity notes carry no date segment. Formatting goes through the shared
+`mfgLabel()`, which returns null unless both parts are present: ⚠ **`old_mfg` findings recorded
+BEFORE 2026-08-08 have no month/year and nothing can backfill a date read off a tin** — 3 of the 4
+live old-MFG rows were dateless at the 2026-08-09 count (16 findings total). They render
+`Found 9 · Old MFG`, which is the truth about them. Fixing one is a floor action (re-open the line,
+save the date), not a migration.
+
+### 11.4 One component, both boards
+
+`components/picking/finding-recorder.tsx` — extracted the moment the supervisor's Done-tab detail
+gained the same screen. Same seam `card-atoms.tsx` and `use-bill-pager.ts` already occupy.
+
+Exactly **three** things differ between the two callers, all carried by `mode` (`report` | `confirm`):
+which route the save posts to, the Save button's label ("Save" vs "Confirm"), and the prefill policy
+on a fresh line (report prefills qty ORDERED — the common edit is "one less"; confirm prefills
+NOTHING — a supervisor who has not counted must not save a number he did not type). **If a fourth
+difference appears, add it to `mode` rather than forking the component.**
+
+⚠ **What this file must never learn:** whether a line is ticked, whether Mark done / Approve is
+enabled, or anything about either board's list state. Same discipline that keeps `use-bill-pager.ts`
+shareable.
+
+Three UI rules that came from live testing on 2026-08-08 and should not be undone:
+- **No row fill.** Rows used to take a full amber/red background plus a 2px border, which made a bill
+  with a few findings look alarming end to end. Status is carried by the badge and the coloured note
+  line, nothing else. *(This does NOT bind the Billing panel — §11.5.)*
+- **The header triangle is quiet** — a frosted icon matching the back button, not the original solid
+  amber slab that out-shouted the customer name and competed with the CTA.
+- **The popup is ALWAYS MOUNTED**, opacity/scale-toggled, never `{open && …}` — a conditionally
+  rendered overlay has no previous frame to transition from and pops. It also carries
+  `NO_BILL_SWIPE_ATTR` itself (§5.3), so a horizontal drag mid-edit cannot page to the next bill.
+- **Remarks was removed** from the popup. The column and both routes' parameter remain, and an
+  ABSENT `remarks` key means *leave it alone* — never "clear it", or a supervisor confirming a
+  picker's report would wipe a remark typed before the field went away. ⚠ `mfgMonth`/`mfgYear` follow
+  the OPPOSITE rule (§11.3) — do not "harmonise" them.
+
+### 11.5 What Billing sees
+
+Owned by `CLAUDE_MAIL_ORDERS.md §23.4`; the picking-side contract is just this: **Billing reads
+CONFIRMED findings only** (`recordedById IS NOT NULL`), the same predicate on both its surfaces —
+the Picking-list ⚠ flag and the detail panel. A picker's unconfirmed report is a claim, not a fact,
+and must never reach a billing screen. If that predicate ever diverges between the two, a row can
+carry the flag and open onto a panel with nothing flagged.
+
+### 11.6 Table shape
+
+Full column list + landmines: **`CLAUDE_CORE.md §7.4`** (v27.14 mint, v27.15 columns) — not restated
+here. What matters on this board:
+
+- `rawLineItemId` is **UNIQUE** → one finding per raw line, one-to-one from the line's side. It FKs
+  `import_raw_line_items.id`, which is safe because a re-import PATCHES a matched line in place and
+  SOFT-removes an absent one — there is no hard delete of that table anywhere in the repo.
+- `obdNumber` / `lineId` / `skuCodeRaw` / `qtyOrdered` are **denormalised copies on purpose**: a
+  finding is a record of what a human observed and must still read correctly if its line is later
+  soft-removed. ⚠ `lineId` is TEXT here and Int on `import_raw_line_items` — a display copy, not a
+  join key.
+- Two named relations to `users` (`PickFindingReportedBy` / `PickFindingRecordedBy`) — both must stay
+  explicitly named on both sides or Prisma errors at generate time.
+- `pick_findings_confirmed_idx` is **partial** (`WHERE "recordedById" IS NOT NULL`) and NOT
+  expressible in Prisma; `pick_findings_order_idx` IS modelled, with an explicit `map:`.
+
+---
+
 ## Change log — v1.12 (2026-08-04 reconciliation pass, method v1.1)
 
 Evidence: `lib/picking/queue.ts` + auth/route/board files read at the call sites, git (`e37cbe74` verified), one read-only SELECT (test accounts), CORE v91 anchors. Claim IDs from the session report.
@@ -1002,4 +1200,30 @@ Evidence: `lib/picking/queue.ts` + auth/route/board files read at the call sites
 
 ---
 
-*CLAUDE_PICKING.md v1.12 · Schema v27.13 · Picking Module · August 2026 · updated 2026-08-04*
+## Change log — v1.13 (2026-08-09, Stage-3 close-out + the Combined-tab correction)
+
+Evidence: all nine commits confirmed present on `main` by `git log` before anything was written
+"LIVE" (CORE's own rule — a SHIPPED claim is a claim until git says otherwise): `cd27c976`,
+`4d9d4535`, `490164c4`, `42f14de4`, `bfff2400`, `286457e7`, `0df656ef` (findings) + `1ad903ef`,
+`733fcd6b` (Combined). Route/component/type files read at the call sites; one read-only SELECT
+(dateless old-MFG rows).
+
+- PCK-7 (§7 → NEW §11): **"Deferred to Stage 3" CLOSED.** Replaced with what shipped — the
+  two-step picker-optional / supervisor-authoritative flow, the `recordedById IS NULL` = pending
+  rule, exactly two reasons + the `chk_pick_findings_reason` landmine, Old-MFG month/year and its
+  NOT-in-the-database reason-dependency, the shared `finding-recorder.tsx`, what Billing sees, and
+  the table's shape. The old note's predictions held except on two points, both recorded.
+- PCK-8 (§1/§5.1/§5.4/§5.3/§8 + NEW §5.4.2): **the picker face has THREE bottom tabs, not two.**
+  Combined shipped 2026-08-07 and was never documented; four places still said "two" and a fifth
+  described the shell as owning two tabs. Fixed together with a new §5.4.2 covering the
+  server-side-only scope, the merge-by-SAP-code rule, the bill-pill re-total, and the
+  ⚠ merge-never-replace tick rule. Also records the `PickerTabKey` narrow-never-cast guard, which
+  the widening from two keys to three is exactly what would have exposed.
+- PCK-9 (§8): key-files index gains `finding-recorder.tsx`, `findings-reasons.ts`,
+  `resolve-lines.ts`, both findings routes and the combined route; the `order/[orderId]`,
+  `types.ts`, `picker-my-picks-board.tsx` and `picking-mobile-shell.tsx` rows updated.
+- Schema stamp -> **v27.15** (was v27.13; CORE minted v27.14 on 08-07 and v27.15 on 08-08).
+
+---
+
+*CLAUDE_PICKING.md v1.13 · Schema v27.15 · Picking Module · August 2026 · updated 2026-08-09*

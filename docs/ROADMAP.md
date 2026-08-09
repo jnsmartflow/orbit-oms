@@ -1,5 +1,5 @@
 # ROADMAP.md — OrbitOMS Planned Work
-# Updated 2026-08-05 (full item-by-item status pass, reconciliation cycle) · Lives in: orbit-oms/docs/ (manual attach — NOT auto-loaded)
+# Updated 2026-08-09 (Picking Stage 3 closed — findings shipped) · Prior: 2026-08-05 (full item-by-item status pass, reconciliation cycle) · Lives in: orbit-oms/docs/ (manual attach — NOT auto-loaded)
 
 Attach this file when planning the next phase of any module. Live "what's next" list, separated from canonical docs.
 
@@ -375,8 +375,16 @@ New OPEN items surfaced while consolidating the 17 drafts (Jul 8–16) into cano
   reseed no longer revokes them, and live now matches seed. Standing lesson kept: **seed is not live,
   in BOTH directions** — it has now bitten each way once.
 - **Floor workflow (Picked/Approved states) — ✅ LIVE (Stage 2, shipped through commit `bae3d182`).**
-  Remaining: Stage 3 — supervisor findings (qty-short, remarks, billing-visible message), tracked
-  inline in `CLAUDE_PICKING.md §7`.
+- **Stage 3 — floor findings (qty-short / old MFG) — ✅ LIVE (shipped 2026-08-07/09, `cd27c976` →
+  `0df656ef`).** Nothing remaining. Delivered as a **two-step** flow — picker reports (optional),
+  supervisor confirms (authoritative, `recordedById IS NULL` = pending) — on the same screen both
+  roles already use; exactly two reasons behind a live CHECK constraint; Old MFG additionally
+  capturing a month + year (Schema v27.15). The "billing-visible message" landed not as free text but
+  as a ⚠ flag on the Billing Picking list plus a read-only detail panel, both reading CONFIRMED
+  findings only. Full write-up: `CLAUDE_PICKING.md §11`; the Billing half: `CLAUDE_MAIL_ORDERS.md
+  §23.4.1`. ⚠ Carried forward, NOT a blocker: **3 of 4 live `old_mfg` rows predate the month/year
+  columns and are dateless** (count 2026-08-09) — fixed by re-opening the line on the floor, never a
+  backfill; a date read off a tin cannot be reconstructed.
 - **Supervisor 10-min "N picks waiting" reminder — DEFERRED.** Not event-driven; Vercel Hobby crons are
   once-per-day (CADENCE, not count — CORE §4). Planned trigger: a small depot-PC PowerShell "doorbell"
   (committed to `scripts/`) hitting a cron-auth'd route. (`CLAUDE_NOTIFICATIONS.md §7`)
@@ -850,4 +858,4 @@ Every existing item verified against the reconciled canon (CORE v91 · UI v5.17 
 
 ---
 
-*Updated 2026-08-05 (full status pass — see change log above). Prior: 2026-07-30 — picker "My Picks" face rebuilt on the shared shell (`a2fb6889`→`28986d0a`) + canon pass; 2026-07-28 — Picking DESKTOP board retired; 2026-06-19 — full catalog restructure, `/po` build, Hide feature, Tint Summary, parser v7.2 + Table C. Schema counter: `CLAUDE_CORE.md §7` (not tracked here).*
+*Updated 2026-08-09 — Picking **Stage 3 closed**: floor findings shipped (`cd27c976`→`0df656ef`), Billing flag + detail panel with them; the picker's third "Combined" tab (`1ad903ef`/`733fcd6b`) documented at the same time. Prior: 2026-08-05 (full status pass — see change log above); 2026-07-30 — picker "My Picks" face rebuilt on the shared shell (`a2fb6889`→`28986d0a`) + canon pass; 2026-07-28 — Picking DESKTOP board retired; 2026-06-19 — full catalog restructure, `/po` build, Hide feature, Tint Summary, parser v7.2 + Table C. Schema counter: `CLAUDE_CORE.md §7` (not tracked here).*
