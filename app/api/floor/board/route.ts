@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { getFloorRail, getFloorBoard, getFloorPickers } from "@/lib/floor/queries";
+import { getHideExclusion } from "@/lib/hide/visibility";
 import type { FloorScope } from "@/lib/floor/types";
 
 export const dynamic = "force-dynamic";
@@ -29,8 +30,17 @@ export async function GET(req: Request) {
 
   try {
     // Sequential awaits only — never prisma.$transaction (CORE §3).
-    const rail = await getFloorRail(scope);
-    const floor = await getFloorBoard({ mode, date, scope });
+    //
+    // ONE hide read for the whole request, passed into both feeds. getFloorRail
+    // and getFloorBoard each read it themselves when not given one (unchanged
+    // for every other caller) — this route is the only path that calls both, so
+    // it was the only one paying for two identical obd_visibility_rules reads.
+    // Not a cache: still a real, fresh read on every request, just once instead
+    // of twice. Also makes the two feeds share one `daysOld` cutoff instant
+    // rather than two computed milliseconds apart.
+    const hideExclusion = await getHideExclusion();
+    const rail = await getFloorRail(scope, hideExclusion);
+    const floor = await getFloorBoard({ mode, date, scope, hideExclusion });
     const pickers = await getFloorPickers();
     return NextResponse.json({ scope, rail, railCount: rail.length, floor, pickers });
   } catch (e) {

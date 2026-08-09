@@ -43,11 +43,18 @@ export const BILLING_PENDING_STAGE = "pick_checked";
  * Read-only. Builds a `where` and nothing else — no writes anywhere in this
  * module.
  */
-export async function buildBillingPendingWhere(): Promise<Prisma.ordersWhereInput> {
+export async function buildBillingPendingWhere(
+  // OPTIONAL pre-computed hide-exclusion. Omitted → read here, exactly as
+  // before. The marker route called this builder AND buildBillingMarkerWhere
+  // (which calls it again, plus the invoiced-info arm) = THREE identical
+  // obd_visibility_rules reads per poll; the list route made two. Passing one
+  // in collapses those to one. Not a cache — still a real read per request.
+  hideExclusion?: Prisma.ordersWhereInput,
+): Promise<Prisma.ordersWhereInput> {
   // getHideExclusion() is NOT automatic — every query that wants hidden OBDs
   // dropped has to AND-merge it by hand (CORE §7.10). Sequential await, never
   // prisma.$transaction (CORE §3).
-  const hide = await getHideExclusion();
+  const hide = hideExclusion ?? (await getHideExclusion());
 
   // Merged as a SIBLING member of the top-level AND — the same shape
   // lib/floor/queries.ts:154 uses. Never nested inside the base object: hide
@@ -103,6 +110,8 @@ export async function buildBillingPendingWhere(): Promise<Prisma.ordersWhereInpu
  */
 export async function buildBillingInvoicedInfoWhere(
   dateStr?: string,
+  // OPTIONAL pre-computed hide-exclusion — see buildBillingPendingWhere above.
+  hideExclusion?: Prisma.ordersWhereInput,
 ): Promise<Prisma.ordersWhereInput> {
   // Half-open [start, end) IST window. Omitted dateStr → today, the same
   // default the Done strip has always used (lib/dates.ts). Never hand-roll a
@@ -111,9 +120,10 @@ export async function buildBillingInvoicedInfoWhere(
 
   // Same hand-merge as the pending predicate above — OWNER DECISION: hide
   // applies here too, so a hidden bill stays hidden everywhere. This one await
-  // is the only reason this function is async. Sequential, never
+  // is the only reason this function is async (it stays async either way — the
+  // signature is part of the contract both consumers call). Sequential, never
   // prisma.$transaction (CORE §3).
-  const hide = await getHideExclusion();
+  const hide = hideExclusion ?? (await getHideExclusion());
 
   return {
     AND: [
@@ -165,8 +175,12 @@ export async function buildBillingInvoicedInfoWhere(
  */
 export async function buildBillingMarkerWhere(
   dateStr?: string,
+  // OPTIONAL pre-computed hide-exclusion, FORWARDED to both arms — see
+  // buildBillingPendingWhere above. Omitted, each arm reads its own and this
+  // behaves exactly as before.
+  hideExclusion?: Prisma.ordersWhereInput,
 ): Promise<Prisma.ordersWhereInput> {
-  const pending = await buildBillingPendingWhere();
-  const invoicedInfo = await buildBillingInvoicedInfoWhere(dateStr);
+  const pending = await buildBillingPendingWhere(hideExclusion);
+  const invoicedInfo = await buildBillingInvoicedInfoWhere(dateStr, hideExclusion);
   return { OR: [pending, invoicedInfo] };
 }

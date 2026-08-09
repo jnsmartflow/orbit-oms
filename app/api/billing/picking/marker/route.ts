@@ -6,6 +6,7 @@ import {
   buildBillingPendingWhere,
   buildBillingMarkerWhere,
 } from "@/lib/billing/picking-where";
+import { getHideExclusion } from "@/lib/hide/visibility";
 
 export const dynamic = "force-dynamic";
 
@@ -81,13 +82,19 @@ export async function GET(req: Request): Promise<NextResponse> {
   // TWO aggregates over TWO sets, for the reason in the header block: the badge
   // count must stay outstanding-work, while change detection must see the
   // informational rows too.
-  const pendingWhere = await buildBillingPendingWhere();
+  // ONE hide read for the whole request, threaded into both builders. This
+  // route used to pay for THREE identical obd_visibility_rules reads per poll
+  // (here, plus both arms inside buildBillingMarkerWhere) — and it polls every
+  // 15s. Not a cache: still a real, fresh read on each request, just once.
+  const hideExclusion = await getHideExclusion();
+
+  const pendingWhere = await buildBillingPendingWhere(hideExclusion);
   const countAgg = await prisma.orders.aggregate({
     where: pendingWhere,
     _count: true,
   });
 
-  const unionWhere = await buildBillingMarkerWhere(dateStr);
+  const unionWhere = await buildBillingMarkerWhere(dateStr, hideExclusion);
   const latestAgg = await prisma.orders.aggregate({
     where: unionWhere,
     _max: { updatedAt: true },

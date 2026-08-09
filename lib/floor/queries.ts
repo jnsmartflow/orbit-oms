@@ -205,8 +205,16 @@ export async function getFloorPickers(): Promise<FloorPicker[]> {
 
 // ── 1. RAIL — "needs your decision" ──────────────────────────────────────────
 
-export async function getFloorRail(scope: FloorScope = "All"): Promise<FloorRailCard[]> {
-  const hide = await getHideExclusion();
+export async function getFloorRail(
+  scope: FloorScope = "All",
+  // Pre-computed admin hide-exclusion. OPTIONAL — omitted, this reads it itself
+  // and behaves exactly as before. /api/floor/board passes it so the rail and
+  // the board share ONE read instead of two (they always agreed anyway; sharing
+  // the object also removes the millisecond skew a `daysOld` rule's Date.now()
+  // cutoff could otherwise have between the two calls).
+  hideExclusion?: Prisma.ordersWhereInput,
+): Promise<FloorRailCard[]> {
+  const hide = hideExclusion ?? (await getHideExclusion());
   const now = new Date();
   const todayMs = getISTTodayDateOnly().getTime();
 
@@ -426,11 +434,18 @@ const FLOOR_BOARD_INCLUDE = {
 } as const;
 
 export async function getFloorBoard(
-  opts: { mode?: "live" | "history"; date?: string; scope?: FloorScope } = {},
+  // `hideExclusion` — OPTIONAL pre-computed admin hide-exclusion; omitted, this
+  // reads it itself and behaves exactly as before. See getFloorRail above.
+  opts: {
+    mode?: "live" | "history";
+    date?: string;
+    scope?: FloorScope;
+    hideExclusion?: Prisma.ordersWhereInput;
+  } = {},
 ): Promise<FloorBoardResult> {
   const mode = opts.mode ?? "live";
   const scope = opts.scope ?? "All";
-  const hide = await getHideExclusion();
+  const hide = opts.hideExclusion ?? (await getHideExclusion());
   const todayDateOnly = getISTTodayDateOnly();
 
   // History anchors on the viewed day; live anchors on today.
@@ -553,8 +568,15 @@ export async function getFloorBoard(
 
 // ── 3. HOLD ──────────────────────────────────────────────────────────────────
 
-export async function getFloorHold(scope: FloorScope = "All"): Promise<FloorHoldRow[]> {
-  const hide = await getHideExclusion();
+export async function getFloorHold(
+  scope: FloorScope = "All",
+  // OPTIONAL pre-computed hide-exclusion — see getFloorRail above. /api/floor/hold
+  // is a single-call path today and passes nothing, so it is unchanged; the
+  // parameter exists so a future caller that also needs the board cannot
+  // accidentally reintroduce a second read.
+  hideExclusion?: Prisma.ordersWhereInput,
+): Promise<FloorHoldRow[]> {
+  const hide = hideExclusion ?? (await getHideExclusion());
   const orders = await prisma.orders.findMany({
     where: { AND: [{ dispatchStatus: "hold", isRemoved: false }, hide] },
     include: {
@@ -636,8 +658,13 @@ export async function getFloorHold(scope: FloorScope = "All"): Promise<FloorHold
 
 // ── 4. CANCELLED (today only, design §9) ─────────────────────────────────────
 
-export async function getFloorCancelled(scope: FloorScope = "All"): Promise<FloorCancelledRow[]> {
-  const hide = await getHideExclusion();
+export async function getFloorCancelled(
+  scope: FloorScope = "All",
+  // OPTIONAL pre-computed hide-exclusion — see getFloorHold above. Same story:
+  // /api/floor/cancelled passes nothing and is unchanged.
+  hideExclusion?: Prisma.ordersWhereInput,
+): Promise<FloorCancelledRow[]> {
+  const hide = hideExclusion ?? (await getHideExclusion());
   const todayIso = istDayOf(new Date());
 
   const orders = await prisma.orders.findMany({

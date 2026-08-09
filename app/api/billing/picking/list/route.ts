@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { getISTDayRange } from "@/lib/dates";
+import { getHideExclusion } from "@/lib/hide/visibility";
 import {
   buildBillingPendingWhere,
   buildBillingInvoicedInfoWhere,
@@ -101,11 +102,18 @@ export async function GET(req: Request): Promise<NextResponse> {
   }
   const dateStr = dateParam ?? undefined;
 
+  // ONE hide read for the whole request, shared by the pending arm below and
+  // the invoiced-info arm further down — two identical obd_visibility_rules
+  // reads before. Not a cache: a real, fresh read per request, just once.
+  // (The Done/MARKED arm deliberately applies no hide at all — see its own
+  // note below; that asymmetry is untouched.)
+  const hideExclusion = await getHideExclusion();
+
   // ── Pending — approved, uninvoiced, every date. ─────────────────────────
   // ⚠ Deliberately NOT given `dateStr`. This arm is the outstanding-work
   // backlog and spans every date; narrowing it to a day would hide exactly the
   // carry-over bills it exists to surface.
-  const pendingWhere = await buildBillingPendingWhere();
+  const pendingWhere = await buildBillingPendingWhere(hideExclusion);
 
   const pendingRows = await prisma.orders.findMany({
     where: pendingWhere,
@@ -248,7 +256,7 @@ export async function GET(req: Request): Promise<NextResponse> {
   // against arm (a), isRemoved, the checkedAt day window and the hide
   // exclusion. This route adds NO filtering of its own — one definition, one
   // place. Sequential await, never prisma.$transaction (CORE §3).
-  const invoicedInfoWhere = await buildBillingInvoicedInfoWhere(dateStr);
+  const invoicedInfoWhere = await buildBillingInvoicedInfoWhere(dateStr, hideExclusion);
 
   const invoicedInfoRows = await prisma.orders.findMany({
     where: invoicedInfoWhere,
