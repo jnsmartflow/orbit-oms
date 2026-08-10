@@ -363,35 +363,105 @@ export async function getPickingQueue(
   const orders = await prisma.orders.findMany({
     where: scopedWhere,
     include: {
-      customer: { select: DEALER_SELECT },
-      shipToOverrideCustomer: { select: DEALER_SELECT },
+      // ⚠ `customer` / `shipToOverrideCustomer` / `pickEarlyReleasedBy` and the
+      // three user relations under pickAssignment were REMOVED from this
+      // include on 2026-08-10 and are now resolved by the two batched lookups
+      // below. Reason, measured with Prisma query logging against production
+      // (72-row board): this include tree issued 18 SQL statements, of which
+      //   2 x delivery_point_master + 2 x area_master + 2 x route_master
+      //   + 2 x delivery_type_master   (the dealer chain, run TWICE)
+      //   3 x users                    (picker / assignedBy / checkedBy)
+      // Prisma does NOT dedupe the two dealer chains even though both target
+      // delivery_point_master, and does NOT skip the override chain for the 69
+      // of 72 rows whose shipToOverrideCustomerId is NULL — it paid four round
+      // trips to resolve three rows. Nor does it collapse the three user
+      // relations into one query.
+      //
+      // Everything those relations produced is still produced, from the same
+      // tables, with the same SELECTs — just fetched once per distinct id
+      // instead of once per relation. Batch-and-match is the pattern this file
+      // already uses for sku_master_v2 (below) and CORE §7.1.c describes.
       dispatchWindow: { select: { id: true, windowTime: true, sortOrder: true } },
-      // Early-release actor (5b) — name only, for the "released" chip's
-      // provenance. The timestamp itself is a base scalar and arrives via
-      // `include` without being named here.
-      pickEarlyReleasedBy: { select: { name: true } },
       // 1:1, optional — an order may have no snapshot row. Source: CLAUDE_SUPPORT.md §4.19.
       querySnapshot: { select: { articleTag: true, totalVolume: true, totalWeight: true } },
       // 1:1, optional — present only once the order is PICK_ASSIGNED (or later).
-      // pickerId added 2026-07-17 for server-side "my bills only" scoping on
-      // the picker "My Picks" face — a real FK, not a display-name match.
-      // pickedAt added same day (step 5) for the Check tab's "Needs check"
-      // pill and the picker Done card's timestamp — null until PICK_DONE.
+      // SCALARS ONLY now. pickerId added 2026-07-17 for server-side "my bills
+      // only" scoping on the picker "My Picks" face — a real FK, not a
+      // display-name match. pickedAt added same day (step 5) for the Check
+      // tab's "Needs check" pill and the picker Done card's timestamp — null
+      // until PICK_DONE. assignedById/checkedById are the FKs the batched user
+      // lookup below resolves to names; checkedAt added 2026-07-18 for the
+      // Checked tab's "checked {time}" line.
       pickAssignment: {
         select: {
           pickerId: true,
+          assignedById: true,
+          checkedById: true,
           assignedAt: true,
           pickedAt: true,
-          // checkedAt/checkedBy added 2026-07-18 for the Checked tab's
-          // "checked {time}" line and the checker-name traceability segment.
           checkedAt: true,
-          checkedBy: { select: { name: true } },
-          picker: { select: { name: true } },
-          assignedBy: { select: { name: true } },
         },
       },
     },
   });
+
+  // ── Dealer resolution — ONE batched lookup for BOTH dealer FKs ─────────────
+  // Collects customerId ∪ shipToOverrideCustomerId across every loaded row and
+  // fetches each distinct dealer once. Replaces the two parallel relation
+  // chains (8 round trips) with one (4), and the override chain is no longer
+  // paid for at all when no row carries an override.
+  //
+  // 🔴 THE EFFECTIVE-DEALER RULE IS UNCHANGED and is the highest-risk part of
+  // this change: override first, plain customer second. The old expression was
+  // `order.shipToOverrideCustomer ?? order.customer` — a null RELATION fell
+  // through to the customer. The id form below behaves identically, including
+  // the pathological case: a shipToOverrideCustomerId pointing at a row that
+  // did not come back yields `undefined` from the Map and falls through to the
+  // customer, exactly as a null relation would have.
+  const dealerIds = Array.from(
+    new Set(
+      orders
+        .flatMap((o) => [o.customerId, o.shipToOverrideCustomerId])
+        .filter((id): id is number => id !== null),
+    ),
+  );
+  const dealerRows =
+    dealerIds.length > 0
+      ? await prisma.delivery_point_master.findMany({
+          where: { id: { in: dealerIds } },
+          select: DEALER_SELECT,
+        })
+      : [];
+  const dealerById = new Map(dealerRows.map((d) => [d.id, d]));
+
+  // ── Actor names — ONE batched lookup for all FOUR user FKs ────────────────
+  // picker / assignedBy / checkedBy (all on pick_assignments) plus the
+  // early-release actor on the order itself. Prisma issued a separate query per
+  // relation; one `id IN (…)` covers the lot, and the same user appearing in
+  // several roles (routinely — a supervisor assigns AND checks) is fetched once.
+  const userIds = Array.from(
+    new Set(
+      orders
+        .flatMap((o) => [
+          o.pickAssignment?.pickerId ?? null,
+          o.pickAssignment?.assignedById ?? null,
+          o.pickAssignment?.checkedById ?? null,
+          o.pickEarlyReleasedById,
+        ])
+        .filter((id): id is number => id !== null && id !== undefined),
+    ),
+  );
+  const userRows =
+    userIds.length > 0
+      ? await prisma.users.findMany({
+          where: { id: { in: userIds } },
+          select: { id: true, name: true },
+        })
+      : [];
+  // users.name is NOT NULL in the schema, so a hit always yields a real string;
+  // a MISS yields undefined and every read below coalesces it to null — the
+  // same value the old `?.name ?? null` produced for a null relation.
+  const userNameById = new Map(userRows.map((u) => [u.id, u.name]));
 
   // (A dispatch_slot_master read used to sit here, purely to build the removed
   // `windows[]` counters. It went with them 2026-07-28 — one fewer round trip
@@ -477,7 +547,17 @@ export async function getPickingQueue(
   const anchorMs = dateOnly.getTime();
 
   const rows: PickingQueueRow[] = orders.map((order) => {
-    const effectiveDealer = order.shipToOverrideCustomer ?? order.customer;
+    // Override first, plain customer second — byte-for-byte the old
+    // `order.shipToOverrideCustomer ?? order.customer`, resolved through the
+    // batched Map instead of two hydrated relations. See the block comment on
+    // dealerById above for why the fallback semantics are identical.
+    const overrideDealer =
+      order.shipToOverrideCustomerId !== null
+        ? dealerById.get(order.shipToOverrideCustomerId)
+        : undefined;
+    const plainDealer =
+      order.customerId !== null ? dealerById.get(order.customerId) : undefined;
+    const effectiveDealer = overrideDealer ?? plainDealer ?? null;
 
     // Zone / age. Both dispatchTargetDate (@db.Date) and the `anchorMs` date
     // above are UTC-midnight anchored, so the millisecond delta is an exact
@@ -512,7 +592,10 @@ export async function getPickingQueue(
       // calendar day with no timezone maths (same basis as `isoDate` above).
       dispatchTargetDate: targetDate === null ? null : targetDate.toISOString().slice(0, 10),
       isEarlyReleased,
-      earlyReleasedByName: order.pickEarlyReleasedBy?.name ?? null,
+      earlyReleasedByName:
+        order.pickEarlyReleasedById !== null
+          ? (userNameById.get(order.pickEarlyReleasedById) ?? null)
+          : null,
       orderId: order.id,
       obdNumber: order.obdNumber,
       dealerName: effectiveDealer?.customerName ?? "(Unmatched)",
@@ -550,10 +633,22 @@ export async function getPickingQueue(
       assignedAt: order.pickAssignment?.assignedAt ?? null,
       pickedAt: order.pickAssignment?.pickedAt ?? null,
       checkedAt: order.pickAssignment?.checkedAt ?? null,
-      checkedByName: order.pickAssignment?.checkedBy?.name ?? null,
+      // The three actor names, resolved off the batched user Map. Each guards
+      // its own FK exactly as the old optional-chained relation did: no
+      // pick_assignments row → null; a null checkedById → null.
+      checkedByName:
+        order.pickAssignment?.checkedById != null
+          ? (userNameById.get(order.pickAssignment.checkedById) ?? null)
+          : null,
       pickerId: order.pickAssignment?.pickerId ?? null,
-      assignedToName: order.pickAssignment?.picker?.name ?? null,
-      assignedByName: order.pickAssignment?.assignedBy?.name ?? null,
+      assignedToName:
+        order.pickAssignment?.pickerId != null
+          ? (userNameById.get(order.pickAssignment.pickerId) ?? null)
+          : null,
+      assignedByName:
+        order.pickAssignment?.assignedById != null
+          ? (userNameById.get(order.pickAssignment.assignedById) ?? null)
+          : null,
     };
   });
 
