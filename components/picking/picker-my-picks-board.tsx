@@ -323,7 +323,8 @@ export function PickerMyPicksBoard({
   // `pending`/`done`/`refetchQueue` joined this context on 2026-07-29 when the
   // shell took ownership of the rows — see PickerPickingShell for why this face
   // fetches rather than calling router.refresh().
-  const { activeTab, pending, done, refetchQueue, detailOpen, setDetailOpen } = usePickerBoard();
+  const { activeTab, pending, done, refetchQueue, detailOpen, setDetailOpen, markerResyncRef } =
+    usePickerBoard();
 
   // Detail overlay — always-mounted, translateX slide, same pattern as
   // picking-board-mobile.tsx's detail screen so the list underneath is never
@@ -454,12 +455,29 @@ export function PickerMyPicksBoard({
   // no new information (CLAUDE_PICKING.md §10). markingAll joins the pause for
   // the same reason `marking` is there — the ground must not move under a
   // batch that is halfway through writing.
-  usePickingMarker({
+  //
+  // `onChange` passes `fromMarker: true` (2026-08-10): the hook has just
+  // re-baselined itself, so the shell must NOT resync it again. Every other
+  // caller of refetchQueue — both Mark-done paths — omits the flag and gets the
+  // resync, which is what stops a second full rebuild ~15s after each write.
+  // The resync CALL lives in the shell's refetchQueue; this file only registers
+  // the handle below, because the marker has to stay here (its `paused` reads
+  // `marking`/`markingAll`, which are local to this component).
+  const markerResync = usePickingMarker({
     scope: "openPending",
     pickerId: activePickerId ?? undefined,
-    onChange: refetchQueue,
+    onChange: () => {
+      void refetchQueue({ fromMarker: true });
+    },
     paused: detailOpen || marking || markingAll,
   });
+
+  useEffect(() => {
+    markerResyncRef.current = markerResync;
+    return () => {
+      markerResyncRef.current = null;
+    };
+  }, [markerResync, markerResyncRef]);
 
   // Reset the per-visit view state every time Combined is opened. "All bills
   // on" and "All packs" is the state he expects to find; carrying a toggle

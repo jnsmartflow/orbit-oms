@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 
 /**
  * How often each client asks GET /api/picking/marker "has the board changed?".
@@ -65,6 +65,18 @@ interface UsePickingMarkerOptions {
 }
 
 /**
+ * What `usePickingMarker` hands back: "I already have fresh data as of now —
+ * re-baseline yourself and do NOT tell me about it."
+ *
+ * Await it after a refetch the CALLER performed (a user action), never after a
+ * refetch the hook itself asked for. See the hook's own doc block for the
+ * problem this solves.
+ *
+ * Every pre-existing call site ignores the return value and is byte-identical.
+ */
+export type MarkerResync = () => Promise<void>;
+
+/**
  * Cheap "has the picking board changed?" poll, shared by all three picking
  * surfaces (supervisor mobile is the first consumer; desktop + picker face
  * reuse it later). Polls the tiny marker endpoint every 15s and calls
@@ -83,6 +95,47 @@ interface UsePickingMarkerOptions {
  *  - A failed marker fetch fails SILENTLY (no toast, no error state, no console
  *    spam): the tick is skipped and retried next time. This runs all day.
  *  - Cleaned up on unmount — no leaked timers, no dangling listener.
+ *
+ * ── THE RETURNED `resync()` (2026-08-10) ────────────────────────────────────
+ *
+ * THE PROBLEM IT SOLVES. Every picking write action (assign / undo / release /
+ * approve / mark-done) does its own full queue refetch the moment it succeeds,
+ * so the acting user already sees the result. That same write also bumps
+ * `orders.updatedAt` — and this hook has no way to know the change was already
+ * shown, because `lastSeenRef` is advanced ONLY inside `check()`. So the next
+ * scheduled tick, up to a full interval later, saw the identical change as
+ * "new" and fired `onChange` → a SECOND full `getPickingQueue()` rebuild for an
+ * update already on screen. Roughly half of all queue calls were that duplicate.
+ *
+ * `resync()` closes it by re-using this hook's OWN probe — the same request
+ * `check()` makes — rather than having the caller recompute `{count, latest}`
+ * from the queue response. That matters: the marker route's predicate
+ * (`buildPickingWhere`) is server-side and can change; a client-side
+ * reimplementation would silently drift out of step with it. One ~16ms marker
+ * call instead of a ~23.5ms queue rebuild is the trade, and it is a clear win.
+ *
+ * What it does, precisely:
+ *   1. probes the marker endpoint;
+ *   2. stores the result as the new baseline — NEVER compares, NEVER fires
+ *      `onChange` (the caller already rendered this data; firing would cause a
+ *      THIRD reload);
+ *   3. clears any deferred change queued while `paused` — that change is by
+ *      definition covered by the fresh data the caller just fetched, so leaving
+ *      it armed would fire on unpause for something already on screen;
+ *   4. restarts the interval, so the next real tick is a FULL interval away
+ *      from the action rather than a stray few seconds after it;
+ *   5. invalidates any check already in flight (generation counter), so a probe
+ *      that started before the action cannot land afterwards and re-fire
+ *      `onChange` for the same change.
+ *
+ * A failed resync is silent and harmless: the baseline simply stays where it
+ * was, and the next tick behaves exactly as it does today (one extra refetch) —
+ * i.e. it degrades to the CURRENT behaviour, never to something worse.
+ *
+ * ⚠ READ-ONLY, and it must stay that way. This hook and the marker route it
+ * calls perform no writes at all. Never add an `orders.update` to any picking
+ * path to "help" the marker: the marker keys on `MAX(orders.updatedAt)`, so an
+ * extra write fires a false "changed" on every board (CORE §3).
  */
 export function usePickingMarker({
   scope,
@@ -93,7 +146,7 @@ export function usePickingMarker({
   url,
   onProbe,
   pollMs = PICKING_MARKER_POLL_MS,
-}: UsePickingMarkerOptions): void {
+}: UsePickingMarkerOptions): MarkerResync {
   // Refs let the poll effect stay mounted for the component's life without
   // re-subscribing every render when onChange/paused identities change.
   const onChangeRef = useRef(onChange);
@@ -106,6 +159,32 @@ export function usePickingMarker({
   const pendingChangeRef = useRef(false);
   // Guard against overlapping in-flight marker requests.
   const inFlightRef = useRef(false);
+  // Bumped by resync(). A check() that started BEFORE a resync landed carries
+  // the old generation and discards its own result rather than overwriting the
+  // fresher baseline or firing onChange for a change already handled.
+  const generationRef = useRef(0);
+  // Set by the poll effect so resync() can restart the interval from outside
+  // it. Null while unmounted or while the tab is hidden (no interval running).
+  const restartIntervalRef = useRef<(() => void) | null>(null);
+  // Guards resync() against landing after unmount.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  // ONE construction of the probe URL, shared by the poll effect and resync()
+  // so the two can never ask different questions. Identity changes exactly when
+  // (url, scope, date, pickerId) do — which is what re-subscribes the effect and
+  // re-baselines, precisely as before this was hoisted.
+  const requestUrl = useMemo(() => {
+    const markerBase = url ?? "/api/picking/marker";
+    return `${markerBase}?scope=${encodeURIComponent(scope)}${
+      date ? `&date=${encodeURIComponent(date)}` : ""
+    }${pickerId !== undefined ? `&pickerId=${pickerId}` : ""}`;
+  }, [url, scope, date, pickerId]);
 
   useEffect(() => {
     onChangeRef.current = onChange;
@@ -137,16 +216,15 @@ export function usePickingMarker({
     lastSeenRef.current = null;
     pendingChangeRef.current = false;
 
-    const markerBase = url ?? "/api/picking/marker";
-    const requestUrl = `${markerBase}?scope=${encodeURIComponent(scope)}${
-      date ? `&date=${encodeURIComponent(date)}` : ""
-    }${pickerId !== undefined ? `&pickerId=${pickerId}` : ""}`;
-
     async function check(): Promise<void> {
       // Skip if unmounted, a request is already open, or the tab is hidden.
       if (cancelled || inFlightRef.current) return;
       if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
       inFlightRef.current = true;
+      // Snapshot the generation. If resync() lands while this request is open,
+      // this probe's answer is stale by definition — it was taken BEFORE the
+      // caller's own fresh fetch — so it must not touch the baseline or fire.
+      const generation = generationRef.current;
       try {
         const res = await fetch(requestUrl, { cache: "no-store" });
         if (!res.ok) {
@@ -156,6 +234,7 @@ export function usePickingMarker({
         onProbeRef.current?.(true);
         const marker = (await res.json()) as MarkerResponse;
         if (cancelled) return;
+        if (generation !== generationRef.current) return; // superseded by resync()
         const next = { count: marker.count, latest: marker.latest };
         const prev = lastSeenRef.current;
         if (prev === null) {
@@ -206,15 +285,58 @@ export function usePickingMarker({
       document.addEventListener("visibilitychange", handleVisibility);
     }
 
+    // Expose the restart to resync(), which lives outside this effect.
+    restartIntervalRef.current = () => {
+      stopInterval();
+      startInterval();
+    };
+
     return () => {
       cancelled = true;
       stopInterval();
+      restartIntervalRef.current = null;
       if (typeof document !== "undefined") {
         document.removeEventListener("visibilitychange", handleVisibility);
       }
     };
+    // `requestUrl` stands in for (url, scope, date, pickerId) — it changes
+    // exactly when they do, so this re-subscribes and re-baselines identically.
     // `pollMs` joins the deps so a caller changing it re-subscribes with the new
     // cadence. Every existing caller omits it, so it is the same constant on
     // every render and this effect re-runs exactly as often as it did before.
-  }, [scope, date, pickerId, url, pollMs]);
+  }, [requestUrl, pollMs]);
+
+  /**
+   * "I already have fresh data as of now." Re-baselines from this hook's own
+   * probe and stays silent. Full contract in the doc block above.
+   */
+  const resync = useCallback<MarkerResync>(async () => {
+    // Supersede any check() already in flight BEFORE awaiting anything, so a
+    // probe that started earlier cannot land afterwards and re-fire onChange.
+    generationRef.current += 1;
+    try {
+      const res = await fetch(requestUrl, { cache: "no-store" });
+      if (!res.ok) {
+        onProbeRef.current?.(false);
+        return; // silent — baseline unchanged, next tick behaves as it does today
+      }
+      onProbeRef.current?.(true);
+      const marker = (await res.json()) as MarkerResponse;
+      if (!mountedRef.current) return;
+      // Accept as the new baseline WITHOUT comparing and WITHOUT firing: the
+      // caller has already fetched and rendered this state.
+      lastSeenRef.current = { count: marker.count, latest: marker.latest };
+      // Any change deferred while paused is covered by the caller's own fresh
+      // fetch — leaving it armed would fire on unpause for data already shown.
+      pendingChangeRef.current = false;
+      // Next scheduled tick a FULL interval away from the action, not a stray
+      // few seconds after it. No-op when no interval is running (tab hidden).
+      restartIntervalRef.current?.();
+    } catch {
+      onProbeRef.current?.(false);
+      // silent — see above
+    }
+  }, [requestUrl]);
+
+  return resync;
 }

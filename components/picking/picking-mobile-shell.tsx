@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Inbox, Package, CheckCircle2, Layers } from "lucide-react";
 import { RoleLayoutClient } from "@/components/shared/role-layout-client";
 import type { RoleSidebarRole } from "@/components/shared/role-sidebar";
@@ -9,7 +9,7 @@ import type { NavItemConfig } from "@/lib/permissions";
 import type { PickingQueueRow } from "@/lib/picking/types";
 import type { PickingQueueResult } from "@/lib/picking/queue";
 import { splitPickerRows } from "@/lib/picking/picker-split";
-import { usePickingMarker } from "@/lib/hooks/use-picking-marker";
+import { usePickingMarker, type MarkerResync } from "@/lib/hooks/use-picking-marker";
 
 // Stage 3/4 (2026-07-19) — Direction A. `workflowTabs`/`activeTabKey`/
 // `onTabChange` (the Stage-2 slot on MobileShell) must reach
@@ -118,7 +118,23 @@ interface PickerBoardContextValue {
   done:    PickingQueueRow[];
   // The ONE refresh path for this face. Called by the 15s marker and by Mark
   // Done. See PickerPickingShell for why it is a fetch and not router.refresh().
-  refetchQueue: () => Promise<void>;
+  //
+  // `fromMarker` (2026-08-10) — pass true ONLY from the marker's own onChange.
+  // Every other caller omits it and gets a marker resync, which is what stops a
+  // second full rebuild ~15s after each Mark done. Optional with a safe default,
+  // so the three existing call sites in the board are untouched.
+  refetchQueue: (opts?: { fromMarker?: boolean }) => Promise<void>;
+  /**
+   * Where the board registers its marker's `resync` handle (2026-08-10).
+   *
+   * ⚠ This face's marker is mounted in the BOARD, not here — its `paused` reads
+   * `marking`/`markingAll`, which are board-local state — so the shell cannot
+   * call usePickingMarker itself without lifting those two flags, a larger
+   * refactor than this step warrants. A ref through context is the minimal
+   * bridge: the board registers, the shell CALLS. The resync call itself still
+   * lives in exactly one place (refetchQueue), which is the point.
+   */
+  markerResyncRef: React.MutableRefObject<MarkerResync | null>;
   // Lifted from the board 2026-07-29 for the SAME reason detailOpen was lifted
   // to SupervisorPickingShell: RoleLayoutClient carries the `hideBar` slot and
   // renders ABOVE the board, so the shell has to know when a bill is open.
@@ -272,13 +288,23 @@ function PickerPickingShell({
   // on failure, exactly like the supervisor's refetchQueue below — keep the
   // last good rows, never blank the board on a network blip; the next marker
   // tick or the next action retries.
-  const refetchQueue = useCallback(async () => {
+  // Registered by the board's marker (see PickerBoardContextValue).
+  const markerResyncRef = useRef<MarkerResync | null>(null);
+
+  // ⚠ THE ONE PLACE THE DUPLICATE-RELOAD FIX LIVES for this face (2026-08-10),
+  // mirroring SupervisorPickingShell below. Mark done — single and bulk — calls
+  // this and nothing else, so telling the marker "already fresh" belongs here
+  // rather than at each Mark-done call site.
+  const refetchQueue = useCallback(async (opts?: { fromMarker?: boolean }) => {
     if (viewerId === null) return;
     try {
       const res = await fetch(`/api/picking/queue?scope=openPending&pickerId=${viewerId}`);
       if (!res.ok) return;
       const json = (await res.json()) as PickingQueueResult;
       setRows(json.rows);
+      // Skipped when the marker itself asked for this — it has already
+      // re-baselined, so a resync would be a pointless extra probe.
+      if (!opts?.fromMarker) await markerResyncRef.current?.();
     } catch {
       // silent — keep last good data, retry on the next trigger
     }
@@ -309,7 +335,9 @@ function PickerPickingShell({
   );
 
   const contextValue = useMemo<PickerBoardContextValue>(
-    () => ({ activeTab, pending, done, refetchQueue, detailOpen, setDetailOpen }),
+    // markerResyncRef is a stable ref object — it never changes identity, so it
+    // adds nothing to this memo's deps.
+    () => ({ activeTab, pending, done, refetchQueue, detailOpen, setDetailOpen, markerResyncRef }),
     [activeTab, pending, done, refetchQueue, detailOpen],
   );
 
@@ -391,6 +419,12 @@ function SupervisorPickingShell({
     };
   }, [fetchQueue]);
 
+  // Handle to the marker's resync (2026-08-10). Held in a ref because
+  // refetchQueue is defined ABOVE the usePickingMarker call that produces it —
+  // the marker needs refetchQueue as its onChange, so the two cannot both be
+  // plain values in dependency order.
+  const markerResyncRef = useRef<MarkerResync | null>(null);
+
   // A REFRESH of already-loaded data — deliberately silent on failure: keep the
   // last good board (the error SCREEN is owned only by the initial load() above)
   // and never toggle `loading` (no spinner, no flicker). This is what makes it
@@ -398,10 +432,23 @@ function SupervisorPickingShell({
   // the foreground assign/undo/approve callers — a bill already persisted, so a
   // failed follow-up refresh must not wipe the board. The next marker tick or
   // user action recovers the data.
-  const refetchQueue = useCallback(async () => {
+  //
+  // ⚠ THE ONE PLACE THE DUPLICATE-RELOAD FIX LIVES (2026-08-10). Every write
+  // action in PickingBoardMobile calls this and nothing else, so telling the
+  // marker "already fresh" belongs HERE — not scattered across the seven action
+  // call sites, where the next new action would silently forget it.
+  //
+  // `fromMarker` distinguishes the two callers. The marker's own onChange passes
+  // true (it has just re-baselined itself — resyncing would be a pointless extra
+  // probe); every user action leaves it at the default false and resyncs, which
+  // stops the marker firing a second full rebuild ~15s later for a change the
+  // supervisor is already looking at. Optional with a safe default, so the
+  // context type below stays `() => Promise<void>` and the board is untouched.
+  const refetchQueue = useCallback(async (opts?: { fromMarker?: boolean }) => {
     try {
       const json = await fetchQueue();
       setData(json);
+      if (!opts?.fromMarker) await markerResyncRef.current?.();
     } catch {
       // silent — keep last good data, retry on the next trigger
     }
@@ -414,11 +461,17 @@ function SupervisorPickingShell({
   // line-tick / Approve screen) OR overlayBusy (picker sheet / release confirm
   // floating over the list) — a background refetch must never move the ground
   // under an in-progress assignment or approval.
-  usePickingMarker({
+  const markerResync = usePickingMarker({
     scope: "openPending",
-    onChange: refetchQueue,
+    onChange: () => {
+      void refetchQueue({ fromMarker: true });
+    },
     paused: detailOpen || overlayBusy,
   });
+
+  useEffect(() => {
+    markerResyncRef.current = markerResync;
+  }, [markerResync]);
 
   // Tab counts — same filter semantics as PickingBoardMobile's own
   // waitingRows/assignedRows/doneRows/checkedRows memos (§ that file), just
