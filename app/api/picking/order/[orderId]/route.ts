@@ -3,6 +3,8 @@ import { auth } from "@/lib/auth";
 import { checkAnyPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { resolveCatalogByCode } from "@/lib/picking/resolve-lines";
+import { groupPickingDetailLines } from "@/lib/picking/group-lines";
+import type { PickingLineFinding } from "@/lib/picking/types";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +31,29 @@ export const dynamic = "force-dynamic";
  * that raw line, or null. ADDITIVE ONLY: every pre-existing field on `lines` is
  * untouched, so the supervisor board (which reads the same endpoint and does not
  * know about findings) is unaffected.
+ *
+ * 2026-08-10 — SPLIT-SKU MERGE. SAP routinely emits one line PER BATCH/LOT for a
+ * single ordered quantity, so the same SKU arrives as several `active` rows that
+ * are identical in every product-identifying field. Live measurement on that
+ * date: 1,225 duplicate groups across 963 OBDs (2,630 of 33,500 active lines);
+ * `skuDescriptionRaw` and `isTinting` differed in ZERO of them, and 62% did not
+ * even differ on `batchCode`. Worst case OBD 9108587550 printed the SAME tin
+ * eight times (IN60000676, one line per batch, qty 3+4+1+4+4+4+4+8 = 32). This
+ * route now groups them into one row per (skuCodeRaw, resolved pack) and sums
+ * the quantities.
+ *
+ * ⚠ MERGED ON THE SAP CODE, never on description text — the same natural-key
+ * rule CombinedSkuRow already follows for its cross-bill merge
+ * (lib/picking/types.ts). Pack is included in the key as belt-and-braces only:
+ * it resolves FROM the code (sku_master_v2.material is @unique), so it can never
+ * split a group on its own.
+ *
+ * The DISPLAY layer is the only thing merged. Nothing here writes, and every row
+ * still carries its underlying `import_raw_line_items.id`s in `lineIds`, so the
+ * tables that reference raw line ids directly — pick_findings,
+ * delivery_challan_formulas, tinter_issue_entries — are untouched and unaware.
+ * app/api/billing/picking/order/[orderId]/route.ts mirrors this route but is
+ * deliberately NOT merged: out of scope, still one row per raw line.
  */
 export async function GET(
   _req: Request,
@@ -71,6 +96,13 @@ export async function GET(
       skuCodeRaw: true,
       skuDescriptionRaw: true,
       unitQty: true,
+      // Added 2026-08-10 for the split-SKU merge — the three measures that must
+      // be SUMMED across a group rather than taken from one line, plus the tag
+      // that must NOT be (see the merge below).
+      volumeLine: true,
+      netWeight: true,
+      totalWeight: true,
+      articleTag: true,
     },
     orderBy: { lineId: "asc" },
   });
@@ -127,39 +159,34 @@ export async function GET(
           },
         })
       : [];
-  const findingByLineId = new Map(findingRows.map((f) => [f.rawLineItemId, f]));
+  // Normalised to the wire shape (PickingLineFinding) right here, so the pure
+  // grouping below never sees a Prisma row or a Date. The two timestamps become
+  // ISO strings — byte for byte what NextResponse.json already emitted for them,
+  // so this is a type-honesty fix, not a wire change.
+  const findingByLineId = new Map<number, PickingLineFinding>(
+    findingRows.map((f) => [
+      f.rawLineItemId,
+      {
+        qtyFound:     f.qtyFound,
+        reason:       f.reason,
+        remarks:      f.remarks,
+        mfgMonth:     f.mfgMonth,
+        mfgYear:      f.mfgYear,
+        reportedById: f.reportedById,
+        reportedAt:   f.reportedAt?.toISOString() ?? null,
+        recordedById: f.recordedById,
+        recordedAt:   f.recordedAt?.toISOString() ?? null,
+      },
+    ]),
+  );
 
-  // `pack` is the code ONLY ("1L", "500ML") — no container word. The picker
-  // matches pack size against the shelf/box, not the container type.
-  // Unresolved codes fall back to the raw SAP text exactly as before; a blank
-  // pack stays blank rather than guessing (CLAUDE_PICKING.md §7 — a blank is a
-  // mis-pick preventer, a wrong value is not).
-  const lines = rawLines.map((l) => {
-    const cat = catalogByCode.get(l.skuCodeRaw);
-    const finding = findingByLineId.get(l.id);
-    return {
-      id: l.id,
-      name: cat?.name ?? l.skuDescriptionRaw ?? null,
-      sku: l.skuCodeRaw,
-      pack: cat?.pack ?? null,
-      qty: l.unitQty,
-      // null — not undefined and not an empty object — when nothing is
-      // recorded, so a consumer can test `finding !== null` and be done.
-      finding: finding
-        ? {
-            qtyFound:     finding.qtyFound,
-            reason:       finding.reason,
-            remarks:      finding.remarks,
-            mfgMonth:     finding.mfgMonth,
-            mfgYear:      finding.mfgYear,
-            reportedById: finding.reportedById,
-            reportedAt:   finding.reportedAt,
-            recordedById: finding.recordedById,
-            recordedAt:   finding.recordedAt,
-          }
-        : null,
-    };
-  });
+  // ── Split-SKU grouping (2026-08-10) ───────────────────────────────────────
+  // One row per (skuCodeRaw, resolved pack), quantities summed. The rule, the
+  // live evidence behind it, and why a group carrying a finding is deliberately
+  // left UNMERGED all live in lib/picking/group-lines.ts — read it there before
+  // touching this. Pure and synchronous; the reads above are this route's only
+  // I/O (sequential awaits, no $transaction — CORE §3).
+  const lines = groupPickingDetailLines(rawLines, catalogByCode, findingByLineId);
 
   return NextResponse.json({ lines });
 }

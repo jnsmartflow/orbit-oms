@@ -1240,11 +1240,25 @@ export function PickingBoardMobile(): React.JSX.Element {
     return () => window.removeEventListener("popstate", onPop);
   }, []);
 
-  function toggleLineChecked(lineId: number): void {
+  /**
+   * Tick/untick ONE ROW — which since the 2026-08-10 split-SKU merge may cover
+   * several raw lines (see PickingDetailLine.lineIds).
+   *
+   * Takes the row's whole id array and moves ALL of them together, so a merged
+   * row can never end up half-ticked: there is one circle on screen, so there
+   * must be one state behind it. The set stays keyed by RAW line id (unchanged)
+   * — it is the Approve gate's currency, and that gate counts raw lines.
+   */
+  function toggleLineChecked(lineIds: readonly number[]): void {
     setCheckedLineIds((prev) => {
       const next = new Set(prev);
-      if (next.has(lineId)) next.delete(lineId);
-      else next.add(lineId);
+      // "Already ticked" means EVERY underlying line is — the same test the row
+      // renders from, so tapping always flips what the picker sees.
+      const allChecked = lineIds.every((id) => next.has(id));
+      for (const id of lineIds) {
+        if (allChecked) next.delete(id);
+        else next.add(id);
+      }
       return next;
     });
   }
@@ -1267,15 +1281,31 @@ export function PickingBoardMobile(): React.JSX.Element {
   // without ever looking. The mockup states this outright ("an amber 'picker
   // recorded' line does NOT count until the supervisor actually confirms it").
   // This is the single most important line in this memo; do not relax it.
+  //
+  // ⚠ COUNTED IN RAW LINES, NOT ROWS (2026-08-10, the split-SKU merge). One row
+  // may now stand for several `import_raw_line_items` (li.lineIds), so both the
+  // numerator and the denominator run over lineIds rather than over rows.
+  // Keeping the gate in raw lines means the merge cannot change what Approve
+  // demands — before and after, it is "every underlying line of this bill".
+  // Rows and lines are equal on a bill with no split SKUs, which is most of them.
+  const totalRawLineCount = useMemo(
+    () => (lineItems ?? []).reduce((sum, li) => sum + li.lineIds.length, 0),
+    [lineItems],
+  );
   const resolvedLineCount = useMemo(
     () =>
-      (lineItems ?? []).filter(
-        (li) => findingState(li.finding) === "confirmed" || checkedLineIds.has(li.id),
-      ).length,
+      (lineItems ?? []).reduce((sum, li) => {
+        // A confirmed finding resolves the whole row. Only single-line rows can
+        // carry one (the route never merges a group that has a finding), so
+        // this adds exactly 1 — written as lineIds.length so it stays correct
+        // if that ever changes.
+        if (findingState(li.finding) === "confirmed") return sum + li.lineIds.length;
+        return sum + li.lineIds.filter((id) => checkedLineIds.has(id)).length;
+      }, 0),
     [lineItems, checkedLineIds],
   );
   const allLinesResolved =
-    lineItems !== null && lineItems.length > 0 && resolvedLineCount === lineItems.length;
+    lineItems !== null && totalRawLineCount > 0 && resolvedLineCount === totalRawLineCount;
 
   // Distinct packs present on this bill, for the pack-filter chip row.
   // Sorted alphabetically with "No pack" trailing last (an exception
@@ -1289,6 +1319,12 @@ export function PickingBoardMobile(): React.JSX.Element {
     return keys.includes(NO_PACK_KEY) ? [...real, NO_PACK_KEY] : real;
   }, [lineItems]);
 
+  // Operates on the GROUPED rows the route now returns (2026-08-10) — `lineItems`
+  // is one entry per (SKU, pack), not per raw line. Both filters read fields
+  // that are identical across a merged group by construction (sku, name, pack
+  // all resolve FROM the SAP code the group is keyed on), so a merged row is
+  // matched or excluded as a unit and can never be half-filtered. Unchanged in
+  // behaviour for the single-line rows that are most of them.
   const detailQueryNorm = detailQuery.trim().toLowerCase();
   const filteredLineItems = useMemo(() => {
     if (!lineItems) return [];
@@ -2124,9 +2160,13 @@ export function PickingBoardMobile(): React.JSX.Element {
                     </span>
                   )}
                 </div>
+                {/* Denominator is RAW LINES, not rows on screen — the same
+                    number the Approve gate uses, so the counter can never read
+                    "8 / 8 resolved" beside a disabled button. See
+                    totalRawLineCount. */}
                 {detailRow?.isDone && lineItems !== null && (
                   <div className="text-[11.5px] text-gray-400 tabular-nums mt-0.5">
-                    {resolvedLineCount} / {lineItems.length} resolved
+                    {resolvedLineCount} / {totalRawLineCount} resolved
                   </div>
                 )}
               </div>
@@ -2215,17 +2255,35 @@ export function PickingBoardMobile(): React.JSX.Element {
             ) : (
               // Flat — filtered, never restructured or grouped by pack.
               filteredLineItems.map((li) => {
-                const isChecked = detailRow?.isDone === true && checkedLineIds.has(li.id);
+                // Every underlying line, or none — a merged row has ONE circle,
+                // so a half-ticked group must not be representable on screen.
+                const isChecked =
+                  detailRow?.isDone === true && li.lineIds.every((id) => checkedLineIds.has(id));
                 // ⚠ ONE place decides none/pending/confirmed — findingState().
                 const state = findingState(li.finding);
+                // A merged row (several raw lines behind one SKU — 2026-08-10).
+                const isMerged = li.lineIds.length > 1;
                 // A PENDING line is tappable regardless of the mode: the
                 // picker already flagged it and confirming is the supervisor's
                 // job, so it must not hide behind an extra toggle (the
                 // mockup's "always tappable, even without the triangle on").
                 // An untouched line needs the mode armed; a CONFIRMED line
                 // stays tappable so a wrong number can be corrected.
+                //
+                // ⚠ NOT ON A MERGED ROW. pick_findings is UNIQUE on
+                // rawLineItemId, so a shortage recorded against a summed row
+                // would have to pick ONE of its lines to land on, arbitrarily —
+                // and "found 22 of 31" says nothing about which batch was
+                // short. Recording a shortage against a merged row is DEFERRED:
+                // it needs a real design (distribute across lines? a
+                // group-level findings row?), and that design does not exist
+                // yet. Until it does, the honest behaviour is no entry point.
+                // A row that already HAS a finding is never merged (the route
+                // splits it back out), so nothing recorded is ever hidden here.
                 const rowTappable =
-                  detailRow?.isDone === true && (recorder.recordMode || state !== "none");
+                  detailRow?.isDone === true &&
+                  !isMerged &&
+                  (recorder.recordMode || state !== "none");
                 return (
                 <div
                   key={li.id}
@@ -2297,7 +2355,7 @@ export function PickingBoardMobile(): React.JSX.Element {
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
-                        toggleLineChecked(li.id);
+                        toggleLineChecked(li.lineIds);
                       }}
                       aria-label={isChecked ? "Mark line unchecked" : "Mark line checked"}
                       className="w-11 shrink-0 flex items-center justify-center"

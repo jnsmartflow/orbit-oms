@@ -164,14 +164,68 @@ export interface PickingLineFinding {
   recordedAt:   string | null;
 }
 
+/**
+ * ONE ROW ON THE DETAIL SCREEN — which since 2026-08-10 may stand for SEVERAL
+ * raw line items.
+ *
+ * SAP emits one line per batch/lot, so a single ordered quantity routinely
+ * arrives as 2-8 `import_raw_line_items` rows that are identical in every
+ * product-identifying field. The route now groups them by (skuCodeRaw, resolved
+ * pack) — the same natural-key rule CombinedSkuRow uses for its cross-bill merge
+ * — and sums the measures. Most rows are still a group of one and behave exactly
+ * as they always did.
+ *
+ * ⚠ `id` IS NO LONGER THE WHOLE STORY. Use `lineIds` for anything that must
+ * cover every line the row represents (ticks, checks, counters); `id` is the
+ * FIRST contributing line and is only correct for single-line rows.
+ */
 export interface PickingDetailLine {
-  /** import_raw_line_items.id — a real PK, and the findings FK target. */
+  /**
+   * `import_raw_line_items.id` of the FIRST contributing line — a real PK, the
+   * findings FK target, and the React key. Always equal to `lineIds[0]`.
+   *
+   * Safe as a findings target ONLY because a row carrying a finding is never
+   * merged (the route splits such a group back out) and both boards block
+   * recording a new finding on a merged row.
+   */
   id:      number;
+  /**
+   * EVERY raw line id this row stands for, in `lineId` order. Never empty;
+   * length 1 on an ordinary row.
+   *
+   * Mirrors what CombinedSkuRow.contributions[] does for the cross-bill
+   * Combined view, and exists for the same reason: a tick on a merged row is a
+   * note about all of the underlying lines, so it has to fan out to every one
+   * of them rather than land on an arbitrary representative.
+   */
+  lineIds: number[];
   name:    string | null;
   sku:     string;
   pack:    string | null;
-  /** Qty ORDERED on this line (import_raw_line_items.unitQty). */
+  /** Qty ORDERED — `import_raw_line_items.unitQty`, SUMMED across `lineIds`. */
   qty:     number;
+  /**
+   * Summed `volumeLine` / `netWeight` / `totalWeight` across `lineIds`.
+   *
+   * null when ANY contributing line is missing the value — a partial sum would
+   * read as the whole row's figure while silently omitting lines. Not rendered
+   * by either board today; carried so a consumer that wants them gets the
+   * merged-correct number rather than one line's share.
+   */
+  litres:      number | null;
+  netWeight:   number | null;
+  totalWeight: number | null;
+  /**
+   * `import_raw_line_items.articleTag` — and NULL on any merged row.
+   *
+   * Deliberately not inherited from a contributing line: schema.prisma's own
+   * comment on the column states the per-line value "is not authoritative for
+   * duplicate-SKU orders", and live data bears it out (one SKU on OBD
+   * 9107917606 carries "1 Drum", "2 Drum", "3 Drum" and "5 Drum" across its
+   * seven lines). Only the order-level rollup is authoritative — the detail
+   * header already reads that one, off PickingQueueRow.articleTag.
+   */
+  articleTag: string | null;
   finding: PickingLineFinding | null;
 }
 

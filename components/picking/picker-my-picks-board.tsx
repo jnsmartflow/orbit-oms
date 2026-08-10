@@ -635,13 +635,31 @@ export function PickerMyPicksBoard({
   // lost if the phone sleeps or the tab is discarded mid-bill. Computed off the
   // current state OUTSIDE the setState updater — the updater stays pure, and
   // the storage write happens exactly once per tap.
-  function toggleLineTick(lineId: number): void {
+  //
+  // ⚠ TAKES A ROW'S WHOLE ID ARRAY (2026-08-10, the split-SKU merge). One row on
+  // screen may stand for several raw lines (PickingDetailLine.lineIds), and one
+  // circle must mean one state — so all of a row's ids move together and a
+  // merged row can never be half-ticked. The STORAGE SHAPE IS UNCHANGED: the
+  // per-bill entry was always `ids: number[]`, and this still writes that whole
+  // set through writeTicks(); a tap simply adds or removes several ids at once.
+  // Ticks made before this change stay readable and keep working — they are raw
+  // line ids either way, which is also what lets a tick survive the row it was
+  // made on being merged or split.
+  function toggleLineTick(lineIds: readonly number[]): void {
     const orderId = detailOrderId;
     if (orderId === null) return;
     const next = new Set(tickedLineIds);
-    if (next.has(lineId)) next.delete(lineId);
-    else next.add(lineId);
+    // "Already ticked" means EVERY underlying line is — the same test the row
+    // renders from, so a tap always flips what he sees.
+    const allTicked = lineIds.every((id) => next.has(id));
+    for (const id of lineIds) {
+      if (allTicked) next.delete(id);
+      else next.add(id);
+    }
     setTickedLineIds(next);
+    // writeTicks takes the bill's WHOLE set and overwrites it — correct here,
+    // as it always was: this screen holds every line of this one bill. (The
+    // Combined view uses writeManyTicks for exactly the opposite reason.)
     writeTicks(orderId, next);
   }
 
@@ -988,6 +1006,11 @@ export function PickerMyPicksBoard({
     return keys.includes(NO_PACK_KEY) ? [...real, NO_PACK_KEY] : real;
   }, [lineItems]);
 
+  // Operates on the GROUPED rows the route now returns (2026-08-10) — `lineItems`
+  // is one entry per (SKU, pack), not per raw line. `pack` resolves FROM the SAP
+  // code the group is keyed on, so it is identical across a merged group and the
+  // chip matches or excludes the row as a unit. No behaviour change on the
+  // single-line rows that are most of them.
   const filteredLineItems = useMemo(() => {
     if (!lineItems) return [];
     if (activePackFilter === "ALL") return lineItems;
@@ -999,8 +1022,22 @@ export function PickerMyPicksBoard({
   // narrows the view. Derived by intersecting with the lines actually present,
   // so a stored tick for a line that is no longer on the bill cannot inflate
   // the number. Purely informational: nothing branches on it.
+  //
+  // ⚠ COUNTED IN RAW LINES, NOT ROWS (2026-08-10, the split-SKU merge), so
+  // ticking one 8-line merged row moves this by 8 — exactly what ticking those
+  // 8 lines individually did before the merge. The denominator below
+  // (totalRawLineCount) is the matching total, so "N of M" keeps meaning what it
+  // always meant. Rows and lines are equal on a bill with no split SKUs.
+  const totalRawLineCount = useMemo(
+    () => (lineItems ?? []).reduce((sum, li) => sum + li.lineIds.length, 0),
+    [lineItems],
+  );
   const tickedCount = useMemo(
-    () => (lineItems ?? []).filter((li) => tickedLineIds.has(li.id)).length,
+    () =>
+      (lineItems ?? []).reduce(
+        (sum, li) => sum + li.lineIds.filter((id) => tickedLineIds.has(id)).length,
+        0,
+      ),
     [lineItems, tickedLineIds],
   );
 
@@ -1495,9 +1532,12 @@ export function PickerMyPicksBoard({
                 word "ticked" because the bill-position counter ("2 of 5") sits
                 on the SAME pinned row: two bare "N of M" strings side by side
                 would be read as one thing. Nothing branches on this number. */}
-            {lineItems !== null && lineItems.length > 0 && (
+            {/* Denominator is RAW LINES, not rows on screen — see
+                totalRawLineCount. A bill whose SKUs SAP split by batch shows
+                fewer rows than the M here counts. */}
+            {lineItems !== null && totalRawLineCount > 0 && (
               <div className="text-[11.5px] text-gray-400 tabular-nums mt-0.5">
-                {tickedCount} of {lineItems.length} ticked
+                {tickedCount} of {totalRawLineCount} ticked
               </div>
             )}
           </div>
@@ -1604,13 +1644,28 @@ export function PickerMyPicksBoard({
               <p className="text-[13px] text-gray-400 text-center py-10">No lines match.</p>
             ) : (
               filteredLineItems.map((li) => {
-                const isTicked = tickedLineIds.has(li.id);
+                // Every underlying line, or none — a merged row has ONE circle,
+                // so a half-ticked group must not be representable on screen.
+                const isTicked = li.lineIds.every((id) => tickedLineIds.has(id));
                 // ⚠ ONE place decides amber vs red — findingState(), shared.
                 const state = findingState(li.finding);
+                // A merged row (several raw lines behind one SKU — 2026-08-10).
+                const isMerged = li.lineIds.length > 1;
                 // Tappable when the mode is armed, OR when something is already
                 // recorded — the mockup's "always tappable" rule for a flagged
                 // row, which is also how he corrects a number he mistyped.
-                const rowTappable = recorder.recordMode || state !== "none";
+                //
+                // ⚠ NOT ON A MERGED ROW. pick_findings is UNIQUE on
+                // rawLineItemId, so a shortage recorded against a summed row
+                // would have to land on ONE of its lines, arbitrarily — and
+                // "found 22 of 31" says nothing about which batch was short.
+                // Recording against a merged row is DEFERRED pending a real
+                // design (spread the shortfall across the lines? a group-level
+                // findings row?); until that exists the honest behaviour is no
+                // entry point rather than a write to an arbitrary line. A row
+                // that already HAS a finding is never merged (the route splits
+                // it back out), so nothing recorded is hidden by this.
+                const rowTappable = !isMerged && (recorder.recordMode || state !== "none");
                 return (
                 <div
                   key={li.id}
@@ -1682,7 +1737,7 @@ export function PickerMyPicksBoard({
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
-                        toggleLineTick(li.id);
+                        toggleLineTick(li.lineIds);
                       }}
                       aria-label={isTicked ? "Remove tick from line" : "Tick line"}
                       aria-pressed={isTicked}
