@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
-import { fetchMailOrders, fetchSlotCutoffs, punchOrder, saveSoNumber, saveCustomer, getTodayIST, toggleLock, learnCustomer } from "@/lib/mail-orders/api";
+// `fetchSlotCutoffs` is NO LONGER IMPORTED (2026-08-10) — the call left the 30s
+// cycle. The helper stays exported in lib/mail-orders/api.ts with no caller.
+import { fetchMailOrders, punchOrder, saveSoNumber, saveCustomer, getTodayIST, toggleLock, learnCustomer } from "@/lib/mail-orders/api";
 import { getSlotFromTime, groupOrdersBySlot, buildClipboardText, buildBatchClipboardText, BATCH_COPY_LIMIT, buildReplyTemplate, getOrderFlags, getBillLabel, getSplitDisplayLabel, smartTitleCase, cleanSubject, isOdCiFlagged, getOrderVolume } from "@/lib/mail-orders/utils";
 import type { SlotCutoffs } from "@/lib/mail-orders/utils";
 import type { MoOrder, MoOrderLine } from "@/lib/mail-orders/types";
@@ -9,7 +11,6 @@ import { MailOrdersTable, ALL_COLUMNS } from "./mail-orders-table";
 import type { ColumnConfig } from "./mail-orders-table";
 import { UniversalHeader } from "@/components/universal-header";
 import { useSession } from "next-auth/react";
-import { SlotCompletionModal } from "./slot-completion-modal";
 import { ReviewView } from "./review-view";
 import { TutorialOverlay } from "./tutorial-overlay";
 import { Check, Copy } from "lucide-react";
@@ -177,12 +178,24 @@ export default function MailOrdersPage() {
   const [openCodePopoverId, setOpenCodePopoverId] = useState<number | null>(null);
   const [batchStates, setBatchStates] = useState<Record<number, number>>({});
   const [punchedVisible, setPunchedVisible] = useState(false);
-  const [autoComplete, setAutoComplete] = useState(true);
   const [skuPanelOrderId, setSkuPanelOrderId] = useState<number | null>(null);
-  const [dismissedSlots, setDismissedSlots] = useState<Set<string>>(new Set());
-  const [completedSlot, setCompletedSlot] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"table" | "focus">("focus");
-  const [slotCutoffs, setSlotCutoffs] = useState<SlotCutoffs | undefined>(undefined);
+  // ⚠ DELIBERATELY NEVER POPULATED (2026-08-10). The /api/system-config/slot-cutoffs
+  // fetch was removed from the 30s cycle once the last live reader outside the
+  // legacy 5-slot paths went (the `E` shortcut + the slot modal).
+  //
+  // The declaration STAYS so every legacy-path line below is byte-identical and
+  // still restorable by flipping billing_settings.rolloutStage. Those lines call
+  // getSlotFromTime(receivedAt, slotCutoffs) with `undefined`, which takes the
+  // hardcoded fallbacks in lib/mail-orders/utils.ts:100-103 (630/750/1020/1200
+  // = 10:30 / 12:30 / 17:00 / 20:00).
+  //
+  // Verified 2026-08-10 by read-only SELECT: all four live `system_config` rows
+  // hold EXACTLY those values, so restoring the legacy view today behaves
+  // identically. ⚠ The one real consequence: a FUTURE edit to a cutoff in admin
+  // settings would no longer reach this page. Re-add the fetch if that path is
+  // ever brought back into use.
+  const [slotCutoffs] = useState<SlotCutoffs | undefined>(undefined);
   // ── Billing v2 rollout ──────────────────────────────────────────────────────
   // Flag resolved server-side once (layout.tsx) and couriered down. The tab bar
   // itself lives at the top of ReviewView's RIGHT PANE — Floor Control's
@@ -233,29 +246,14 @@ export default function MailOrdersPage() {
   // ── Data fetch ───────────────────────────────────────────────────────────────
   const loadOrders = useCallback(async () => {
     try {
-      const [data, freshCutoffs] = await Promise.all([
-        fetchMailOrders(selectedDate),
-        fetchSlotCutoffs(),
-      ]);
+      // ONE request per cycle now. `fetchSlotCutoffs()` rode this same
+      // Promise.all — 393 calls on 2026-08-09, exactly matching this route's
+      // count — and was REMOVED 2026-08-10 once its last live reader went (see
+      // the `slotCutoffs` declaration for the full reasoning and the caveat).
+      const data = await fetchMailOrders(selectedDate);
       setOrders(data.orders);
       setDisabledTagKeys(new Set(data.disabledTags ?? []));
-      setSlotCutoffs(freshCutoffs);
       setError(false);
-      // Re-enable dismissed slots if new unpunched orders arrived
-      setDismissedSlots(prev => {
-        const next = new Set(prev);
-        let changed = false;
-        for (const slot of Array.from(prev)) {
-          const slotOrders = data.orders.filter(
-            (o: MoOrder) => getSlotFromTime(o.receivedAt, freshCutoffs) === slot
-          );
-          if (slotOrders.some((o: MoOrder) => o.status !== "punched")) {
-            next.delete(slot);
-            changed = true;
-          }
-        }
-        return changed ? next : prev;
-      });
     } catch {
       setError(true);
     } finally {
@@ -299,71 +297,28 @@ export default function MailOrdersPage() {
     return () => clearTimeout(timeout);
   }, []);
 
-  // ── Time-based slot email auto-trigger ──────────────────────────────────────
-  useEffect(() => {
-    if (!autoComplete) return;
-    if (!slotCutoffs) return;
-    if (selectedDate !== getTodayIST()) return;
-
-    function checkSlotTrigger() {
-      if (orders.length === 0) return;
-      if (completedSlot) return;
-
-      const now = new Date();
-      const istNow = new Date(now.getTime() + (5.5 * 60 * 60 * 1000));
-      const nowMinutes = istNow.getUTCHours() * 60 + istNow.getUTCMinutes();
-
-      const slotDefs: { name: string; cutoff: string }[] = [
-        { name: "Morning", cutoff: slotCutoffs!.morning },
-        { name: "Afternoon", cutoff: slotCutoffs!.afternoon },
-        { name: "Evening", cutoff: slotCutoffs!.evening },
-      ];
-
-      let triggered = false;
-      for (const { name, cutoff } of slotDefs) {
-        if (triggered) break;
-        const [h, m] = cutoff.split(":").map(Number);
-        const cutoffMinutes = h * 60 + m + 15; // cutoff + 15 min grace
-
-        if (nowMinutes < cutoffMinutes) continue;
-
-        const dateKey = `mo-slot-email-sent-${selectedDate}-${name}`;
-        if (localStorage.getItem(dateKey) === "true") continue;
-        if (dismissedSlots.has(name)) continue;
-
-        const slotOrders = orders.filter(
-          o => getSlotFromTime(o.receivedAt, slotCutoffs) === name
-        );
-        if (slotOrders.length === 0) continue;
-
-        localStorage.setItem(dateKey, "true");
-        setCompletedSlot(name);
-        triggered = true;
-        break;
-      }
-    }
-
-    checkSlotTrigger();
-    const interval = setInterval(checkSlotTrigger, 60_000);
-    return () => clearInterval(interval);
-  }, [orders, autoComplete, dismissedSlots, completedSlot, slotCutoffs, selectedDate]);
-
-  // Reset dismissed slots on date change
-  useEffect(() => {
-    setDismissedSlots(new Set());
-    setCompletedSlot(null);
-  }, [selectedDate]);
-
-  const handleDismissCompletion = useCallback(() => {
-    if (completedSlot) {
-      setDismissedSlots(prev => {
-        const next = new Set(prev);
-        next.add(completedSlot);
-        return next;
-      });
-      setCompletedSlot(null);
-    }
-  }, [completedSlot]);
+  // ── Slot summary email — FULLY REMOVED FROM THIS PAGE ───────────────────────
+  //
+  // Two passes, both 2026-08-10:
+  //   1. The timed AUTO-trigger went — a 60s client-side interval that opened the
+  //      slot-summary modal by itself ~15 min past each cutoff. With it went
+  //      `autoComplete` (a `useState(true)` that never had a writer) and
+  //      `dismissedSlots` (which only stopped a dismissed pop-up returning).
+  //   2. The MANUAL path went too — the `E` shortcut, the <SlotCompletionModal>
+  //      render, `completedSlot`, `handleDismissCompletion`, and the Esc branch
+  //      that closed it.
+  //
+  // Nothing was ever SENT by any of this. The modal made zero network calls; its
+  // "Send" button copied HTML to the clipboard and opened a `mailto:` with an
+  // EMPTY To: field, so a human addressed and sent every summary by hand. No
+  // outgoing email stopped when this was removed, and no data changed.
+  //
+  // The write-only localStorage key `mo-slot-email-sent-{date}-{slot}` has no
+  // reader left either; existing keys in operators' browsers are inert orphans.
+  //
+  // ORPHANED, left on disk per CORE §3: slot-completion-modal.tsx, and
+  // lib/mail-orders/email-template.ts's buildSlotSummaryHTML — whose only other
+  // caller, components/mail-orders/so-email-panel.tsx, was already orphaned.
 
   // ── Focus mode: auto-select first slot with orders ──────────────────────────
   useEffect(() => {
@@ -813,24 +768,36 @@ export default function MailOrdersPage() {
   }, [selectedDate, orders]);
 
   // ── Flat order list for keyboard navigation ──────────────────────────────────
-  // Only includes VISIBLE rows — excludes punched orders hidden behind collapsed divider
+  // Walks `filteredOrders` in ITS OWN order — the list the page already has,
+  // after the header filters and the 19-field search. No slot input, no sort.
+  //
+  // It used to walk `groupedOrders` slot-by-slot, which made the cursor order a
+  // function of the slot cutoffs (a network value) rather than of the list on
+  // screen. That coupling is gone: `slotCutoffs` is no longer an input here.
+  //
+  // Only VISIBLE rows — punched orders hidden behind the collapsed divider are
+  // skipped, exactly as before (same predicate, unchanged).
+  //
+  // ⚠ ONE BEHAVIOUR CHANGE, and it lands only on the legacy 5-slot Table view:
+  // there the rows are still RENDERED as slot sections (MailOrdersTable reads
+  // `groupedOrders`), so ↑/↓ and `N` now step in list order rather than in
+  // section order. That path is unreachable while billing_settings.rolloutStage
+  // is ALL_USERS. Flagged rather than branched — say the word and this becomes a
+  // one-line ternary on `viewMode`.
   const separatePunched = activeSlot !== null;
-  const flatOrders = useMemo(() => {
-    const result: MoOrder[] = [];
-    for (const slot of ["Morning", "Afternoon", "Evening", "Late Evening", "Night"] as const) {
-      const group = groupedOrders[slot];
-      if (!group) continue;
-      for (const o of group) {
-        // Skip punched orders hidden behind collapsed divider
-        if (separatePunched && !punchedVisible &&
-            o.status === "punched" && !recentlyPunchedIds.has(o.id)) {
-          continue;
-        }
-        result.push(o);
-      }
-    }
-    return result;
-  }, [groupedOrders, separatePunched, punchedVisible, recentlyPunchedIds]);
+  const flatOrders = useMemo(
+    () =>
+      filteredOrders.filter(
+        (o) =>
+          !(
+            separatePunched &&
+            !punchedVisible &&
+            o.status === "punched" &&
+            !recentlyPunchedIds.has(o.id)
+          ),
+      ),
+    [filteredOrders, separatePunched, punchedVisible, recentlyPunchedIds],
+  );
 
   // ── Keyboard: Ctrl+ shortcuts (separate effect — fires first, minimal deps) ──
   // Registered on document capture phase with stopImmediatePropagation to ensure
@@ -939,11 +906,9 @@ export default function MailOrdersPage() {
       if (e.ctrlKey || e.metaKey) return;
 
       // Esc — cascading close (works even when input focused)
+      // (The first rung used to be `completedSlot` → close the slot modal. Both
+      //  went 2026-08-10; the popover is now the highest rung.)
       if (e.key === "Escape") {
-        if (completedSlot) {
-          handleDismissCompletion();
-          return;
-        }
         if (openCodePopoverId !== null) {
           setOpenCodePopoverId(null);
           return;
@@ -966,24 +931,12 @@ export default function MailOrdersPage() {
         return;
       }
 
-      // E — Open slot completion / email modal (works in all modes)
-      if (e.key === "e" || e.key === "E") {
-        const tag = (document.activeElement?.tagName ?? "").toUpperCase();
-        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
-        e.preventDefault();
-        const targetSlot = activeSlot ?? (() => {
-          const slots = ["Morning", "Afternoon", "Evening", "Late Evening", "Night"];
-          for (const s of slots) {
-            const slotOrders = orders.filter(
-              o => getSlotFromTime(o.receivedAt, slotCutoffs) === s
-            );
-            if (slotOrders.length > 0) return s;
-          }
-          return null;
-        })();
-        if (targetSlot) setCompletedSlot(targetSlot);
-        return;
-      }
+      // (The `E` shortcut — "open slot completion / email modal" — was REMOVED
+      //  2026-08-10 along with the modal's render call. It was the last writer of
+      //  `completedSlot` and, via its target-slot inference, the last live reader
+      //  of `slotCutoffs` outside the legacy 5-slot paths. Removing it is what
+      //  allowed the /api/system-config/slot-cutoffs fetch to leave the 30s
+      //  cycle. The modal component file is still on disk, now orphaned.)
 
       if (viewMode !== "table" && viewMode !== "focus") return;
 
@@ -1123,7 +1076,10 @@ export default function MailOrdersPage() {
 
     window.addEventListener("keydown", onKeyDown, { capture: true });
     return () => window.removeEventListener("keydown", onKeyDown, { capture: true });
-  }, [flatOrders, focusedId, expandedId, handleExpand, handleFlag, openCodePopoverId, completedSlot, handleDismissCompletion, viewMode, smartCopyOrderId, smartCopyLineIdx, activeSlot, orders, slotCutoffs]);
+    // `completedSlot` / `handleDismissCompletion` / `slotCutoffs` left this list
+    // with the `E` shortcut and the Esc rung above (2026-08-10). `activeSlot` and
+    // `orders` stay — other branches still read them.
+  }, [flatOrders, focusedId, expandedId, handleExpand, handleFlag, openCodePopoverId, viewMode, smartCopyOrderId, smartCopyLineIdx, activeSlot, orders]);
 
   // ── Auto-scroll focused row into view ───────────────────────────────────────
   useEffect(() => {
@@ -1485,15 +1441,11 @@ export default function MailOrdersPage() {
         </div>
       )}
 
-      {completedSlot && (
-        <SlotCompletionModal
-          slot={completedSlot}
-          orders={orders.filter(
-            o => getSlotFromTime(o.receivedAt, slotCutoffs) === completedSlot
-          )}
-          onDismiss={handleDismissCompletion}
-        />
-      )}
+      {/* The <SlotCompletionModal> render sat here until 2026-08-10. Its only
+          opener was the `E` shortcut (removed above), so nothing could reach it.
+          components/…/slot-completion-modal.tsx is LEFT ON DISK and is now
+          ORPHANED — see the report's orphan list; retire it in a cleanup pass,
+          not here (CORE §3: never delete files unless instructed). */}
 
       {copiedReplyId !== null && (() => {
         const order = orders.find(o => o.id === copiedReplyId);
