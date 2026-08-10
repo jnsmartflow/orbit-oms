@@ -12,7 +12,7 @@
 // badge. TEAL: the live dot is the ONLY teal element on this bar (CLAUDE_UI §1).
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { usePickingMarker } from "@/lib/hooks/use-picking-marker";
+import { useBillingMarkerSubscription } from "@/components/billing/billing-marker-provider";
 
 export type BillingTab = "orders" | "picking";
 
@@ -65,16 +65,15 @@ export function BillingTabBar({
   }, [refreshCount]);
 
   // The marker tells us WHEN to re-read; refreshCount reads the count itself
-  // from the same endpoint. Reusing the shared hook rather than hand-rolling a
-  // second poller keeps the tab-hidden pause, the no-overlap guard and the
-  // silent-failure behaviour (lib/hooks/use-picking-marker.ts). `scope` is
-  // required by its type and ignored by the billing marker route, which serves
-  // one fixed set — the same arrangement Floor uses (floor-page.tsx:493).
-  usePickingMarker({
-    scope: "openPending",
-    url: MARKER_URL,
-    onChange: () => void refreshCount(),
-  });
+  // from the same endpoint.
+  //
+  // This used to run its OWN usePickingMarker. It now subscribes to the ONE
+  // poll owned by BillingMarkerProvider (2026-08-10) — because BillingPickingTab
+  // is a sibling that ran a second, independent timer against this same URL, so
+  // the Picking tab was probing twice for one answer. All the behaviour that
+  // mattered still comes from the same hook underneath: tab-hidden pause,
+  // no-overlap guard, silent failure.
+  useBillingMarkerSubscription(refreshCount);
 
   function pill(key: BillingTab, label: string, count: number | null, live: boolean) {
     const on = active === key;

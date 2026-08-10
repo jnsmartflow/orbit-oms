@@ -25,14 +25,18 @@
 // note on that cell — the two intents must not fire together.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { usePickingMarker } from "@/lib/hooks/use-picking-marker";
+import {
+  useBillingMarkerSubscription,
+  useBillingMarkerPause,
+} from "@/components/billing/billing-marker-provider";
 import { getTodayIST } from "@/lib/dates";
 import { smartTitleCase } from "@/lib/mail-orders/utils";
 import { BillingOrderDetailPanel } from "@/components/billing/billing-order-detail-panel";
 import { billingFlags, type BillingPickingList, type BillingPendingRow, type BillingDoneRow } from "@/lib/billing/types";
 
 const LIST_URL = "/api/billing/picking/list";
-const MARKER_URL = "/api/billing/picking/marker";
+// (MARKER_URL moved to billing-marker-provider.tsx with the poll itself — this
+//  tab no longer talks to the marker endpoint directly.)
 
 // Shared table constants — lifted verbatim from components/floor/cancelled-tab.tsx
 // so the two boards cannot drift apart visually.
@@ -136,22 +140,21 @@ export function BillingPickingTab({ date }: { date?: string }) {
     void load();
   }, [load]);
 
-  // Live sync. PAUSED while a selection is open: re-rendering the list under a
-  // half-made selection is exactly the "ground moving under the operator"
-  // failure the hook's `paused` flag exists for. The deferred change fires once
-  // as soon as the selection is cleared.
-  usePickingMarker({
-    scope: "openPending",
-    url: MARKER_URL,
-    // The hook appends `&date=` itself and RE-BASELINES when this changes
-    // (lib/hooks/use-picking-marker.ts) — so stepping the day stores a fresh
-    // baseline rather than firing a spurious refetch on the first probe of the
-    // new day. The marker route uses it to scope the union's informational arm;
-    // its `count` stays all-dates, like the Pending list.
-    date,
-    paused: selection.size > 0 || busy,
-    onChange: () => void load(),
-  });
+  // Live sync — now off the SHARED marker (2026-08-10). This used to run its own
+  // usePickingMarker against the same URL as BillingTabBar's, which meant two
+  // independent timers probing one endpoint whenever this tab was open. The
+  // single poll lives in BillingMarkerProvider, which also owns the `?date=`
+  // (passed to it by ReviewView, the same `selectedDate` this tab receives) and
+  // therefore the same re-baseline-on-day-change behaviour as before.
+  useBillingMarkerSubscription(load);
+
+  // PAUSED while a selection is open or a write is in flight: re-rendering the
+  // list under a half-made selection is exactly the "ground moving under the
+  // operator" failure the hook's `paused` flag exists for. Held under a named
+  // key on the shared marker, and released on unmount, so this tab cannot leave
+  // the tab bar's badge frozen after it closes. The deferred change still fires
+  // once as soon as the selection clears.
+  useBillingMarkerPause("picking-tab-selection", selection.size > 0 || busy);
 
   const pending = useMemo(() => data?.pending ?? [], [data]);
   const done = useMemo(() => data?.done ?? [], [data]);

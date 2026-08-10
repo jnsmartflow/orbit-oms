@@ -51,6 +51,17 @@ interface UsePickingMarkerOptions {
    * hidden / overlapping request). Picking passes nothing → no behaviour change.
    */
   onProbe?: (ok: boolean) => void;
+  /**
+   * Poll interval in ms. OPTIONAL — omitted, this is PICKING_MARKER_POLL_MS
+   * (15s), so every caller that does not pass it is byte-identical to before:
+   * Picking's two boards and Floor all omit it deliberately.
+   *
+   * Billing passes 30_000 (components/billing/billing-marker-provider.tsx): its
+   * board is a desk handoff list, not a live floor, and the count it drives
+   * moves a handful of times a day. Floor's 15s is load-bearing — the same poll
+   * feeds its connection strip via `onProbe` — so do NOT slow that one down.
+   */
+  pollMs?: number;
 }
 
 /**
@@ -81,6 +92,7 @@ export function usePickingMarker({
   paused = false,
   url,
   onProbe,
+  pollMs = PICKING_MARKER_POLL_MS,
 }: UsePickingMarkerOptions): void {
   // Refs let the poll effect stay mounted for the component's life without
   // re-subscribing every render when onChange/paused identities change.
@@ -168,7 +180,7 @@ export function usePickingMarker({
 
     function startInterval(): void {
       if (intervalId !== null) return;
-      intervalId = setInterval(() => void check(), PICKING_MARKER_POLL_MS);
+      intervalId = setInterval(() => void check(), pollMs);
     }
     function stopInterval(): void {
       if (intervalId !== null) {
@@ -201,5 +213,8 @@ export function usePickingMarker({
         document.removeEventListener("visibilitychange", handleVisibility);
       }
     };
-  }, [scope, date, pickerId, url]);
+    // `pollMs` joins the deps so a caller changing it re-subscribes with the new
+    // cadence. Every existing caller omits it, so it is the same constant on
+    // every render and this effect re-runs exactly as often as it did before.
+  }, [scope, date, pickerId, url, pollMs]);
 }

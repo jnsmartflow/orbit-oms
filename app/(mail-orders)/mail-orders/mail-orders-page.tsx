@@ -15,6 +15,7 @@ import { ReviewView } from "./review-view";
 import { TutorialOverlay } from "./tutorial-overlay";
 import { Check, Copy } from "lucide-react";
 import { useBillingV2 } from "@/components/billing/billing-v2-provider";
+import { BillingMarkerProvider } from "@/components/billing/billing-marker-provider";
 import { useInitialNotesFontSize } from "@/components/mail-orders/notes-font-size-provider";
 import type { BillingTab } from "@/components/billing/billing-tab-bar";
 import { HeaderFilter } from "@/components/header-filter";
@@ -1304,6 +1305,14 @@ export default function MailOrdersPage() {
           With the flag off this term is false and the expression is the original
           `orders.length > 0`, so the non-billing face is unchanged. */}
       {!loading && !error && (orders.length > 0 || billingV2) && viewMode === "focus" && (
+        // ONE marker poll for the billing face (2026-08-10). BillingTabBar and
+        // BillingPickingTab are siblings inside ReviewView and each used to run
+        // its own timer against /api/billing/picking/marker; this provider owns
+        // the single poll and fans it out. Renders no DOM, and with the flag off
+        // it is an inert pass-through — so the non-billing tree is unchanged.
+        // Mounted HERE rather than inside review-view.tsx to keep that shared
+        // component untouched (§23.1).
+        <BillingMarkerProvider enabled={billingV2} date={selectedDate}>
         <ReviewView
           orders={filteredOrders}
           allOrders={orders}
@@ -1343,6 +1352,7 @@ export default function MailOrdersPage() {
           notesFontSize={notesFontSize}
           onNotesFontSizeChange={handleNotesFontSizeChange}
         />
+        </BillingMarkerProvider>
       )}
 
       {/* Table mode — padded wrapper. Also shows loading/error/empty for focus mode. */}
