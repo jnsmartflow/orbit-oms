@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { formatPack } from "@/lib/place-order/pack";
+import { FAMILY_CATALOG_SELECT, resolveFamily } from "@/lib/picking/family-groups";
 
 // ── Catalog resolution for picking line items ───────────────────────────────
 // Extracted 2026-08-07 from app/api/picking/order/[orderId]/route.ts, which had
@@ -34,6 +35,18 @@ export interface CatalogEntry {
    * container type.
    */
   pack: string;
+  /**
+   * Product family — COALESCE(displayCategory, category), resolved by the SHARED
+   * rule in lib/picking/family-groups.ts, the same one the picking CARD's family
+   * chips use (lib/picking/queue.ts). null when the catalog row resolves blank.
+   *
+   * Added 2026-08-10 for the picker detail screen's family grouping. It rides
+   * THIS query rather than a second one because it is the same lookup on the
+   * same key — `material` — that name and pack already come from. A code missing
+   * from the returned Map has no family at all, which the detail screen renders
+   * as the "Other" bucket and the card counts into `unresolvedLineCount`.
+   */
+  family: string | null;
 }
 
 /**
@@ -58,10 +71,21 @@ export async function resolveCatalogByCode(
 
   const rows = await prisma.sku_master_v2.findMany({
     where: { material: { in: codes } },
-    select: { material: true, description: true, packCode: true, unit: true },
+    // ...FAMILY_CATALOG_SELECT rather than spelling out category/displayCategory
+    // here — it is the same two columns queue.ts's own catalog read uses, and
+    // sharing the fragment is what stops one query forgetting displayCategory
+    // (which would read as NULL and silently fall back to category, not error).
+    select: { material: true, description: true, packCode: true, unit: true, ...FAMILY_CATALOG_SELECT },
   });
 
   return new Map(
-    rows.map((r) => [r.material, { name: r.description, pack: formatPack(r.packCode, r.unit) }]),
+    rows.map((r) => [
+      r.material,
+      {
+        name: r.description,
+        pack: formatPack(r.packCode, r.unit),
+        family: resolveFamily(r),
+      },
+    ]),
   );
 }

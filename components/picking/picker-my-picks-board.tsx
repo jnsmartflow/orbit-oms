@@ -20,6 +20,7 @@ import { AgeBadge, CardShelf, CARD_SHADOW_V2, RouteDot } from "./card-atoms";
 import { usePickerBoard } from "./picking-mobile-shell";
 import { NO_BILL_SWIPE_ATTR, useBillPager } from "./use-bill-pager";
 import { sortPackLabels } from "@/lib/picking/pack-sort";
+import { groupLinesByFamily } from "@/lib/picking/family-groups";
 import type {
   CombinedPickResult,
   PickingDetailLine,
@@ -1072,6 +1073,24 @@ export function PickerMyPicksBoard({
     [lineItems, tickedLineIds],
   );
 
+  // ── Family groups (2026-08-10) ───────────────────────────────────────────
+  // Built from filteredLineItems, NOT lineItems — that is what makes a pack chip
+  // behave the way the mockup agreed: it narrows the view, and any family left
+  // with nothing simply stops appearing. No group-level filter logic exists or
+  // is needed; an empty bucket cannot be produced by groupLinesByFamily because
+  // it only creates a group when a line lands in it.
+  //
+  // ⚠ Runs AFTER the same-SKU merge, on the merged rows the route already
+  // returned — never on raw lines. Order in, order out: first-appearance for the
+  // groups and for the lines inside them, so this is a re-bucketing of the list
+  // the picker already knows, never a re-sort.
+  //
+  // Grouping is PURELY VISUAL. Ticking, Mark done, the counter, the pack chips
+  // and the bill swipe all still read lineItems / filteredLineItems and know
+  // nothing about families — see the row renderer below, which is the same JSX
+  // it was, only called from inside a group.
+  const familyGroups = useMemo(() => groupLinesByFamily(filteredLineItems), [filteredLineItems]);
+
   // Admin "view as" — re-runs the server component's scoped fetch for the
   // newly chosen picker via a query-param navigation. No client-side
   // fetch of another picker's data ever happens here.
@@ -1674,7 +1693,39 @@ export function PickerMyPicksBoard({
             ) : filteredLineItems.length === 0 ? (
               <p className="text-[13px] text-gray-400 text-center py-10">No lines match.</p>
             ) : (
-              filteredLineItems.map((li) => {
+              /* ── FAMILY GROUPS (2026-08-10) ──────────────────────────────
+                 One label strip per distinct family, first-appearance order,
+                 "Other" last. A group of ONE still gets its own strip — a strip
+                 that appeared at two lines and vanished at one would make the
+                 layout depend on the bill in a way he cannot predict.
+
+                 The strip is a plain DIVIDER and nothing else: it holds no tap
+                 target, no tick, no filter. Every interaction below is the
+                 unchanged row — ticking, the findings popup, Mark done and the
+                 bill swipe never learn that groups exist. Built from
+                 filteredLineItems, so a pack chip simply empties (and therefore
+                 hides) any family it excludes.
+
+                 ⚠ SUPERVISOR SCREEN STAYS FLAT. picking-board-mobile.tsx renders
+                 the same payload with no grouping, deliberately — it carries a
+                 `family` field it does not read. Do not mirror this there
+                 without being asked; the two faces answer different questions. */
+              familyGroups.map((group) => (
+              <div key={group.key}>
+                {/* Quiet, uppercase, tracked — a section rule, not a chip. It
+                    must not compete with the SKU code (17px bold mono), which
+                    is the loudest thing in the list and has to stay that way.
+                    The count sits on the right so a picker can see "6 tins of
+                    Gloss" without counting rows. */}
+                <div className="flex items-baseline justify-between gap-2 px-1 pt-1 pb-1.5">
+                  <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-[#8a929c] truncate">
+                    {group.label}
+                  </span>
+                  <span className="text-[11px] font-semibold text-[#b6bcc4] tabular-nums shrink-0">
+                    {group.lines.length}
+                  </span>
+                </div>
+              {group.lines.map((li) => {
                 // Every underlying line, or none — a merged row has ONE circle,
                 // so a half-ticked group must not be representable on screen.
                 const isTicked = li.lineIds.every((id) => tickedLineIds.has(id));
@@ -1796,7 +1847,9 @@ export function PickerMyPicksBoard({
                   )}
                 </div>
                 );
-              })
+              })}
+              </div>
+              ))
             )
           )}
         </div>

@@ -226,6 +226,21 @@ export interface PickingDetailLine {
    * header already reads that one, off PickingQueueRow.articleTag.
    */
   articleTag: string | null;
+  /**
+   * Product family — COALESCE(displayCategory, category) from `sku_master_v2`,
+   * resolved by the SHARED rule in lib/picking/family-groups.ts. The picker's
+   * detail screen groups its line list by this; the picking CARD's family chips
+   * come from the same helper, so a bill's chips and its own group strips cannot
+   * disagree.
+   *
+   * null means NO FAMILY — the code matched no catalog row (the ~27% gap,
+   * CLAUDE_CORE.md §13) or resolved blank. Those lines render under the "Other"
+   * bucket, last, and are the same population the card counts into
+   * `unresolvedLineCount`. Safe to take from the merged row's head: family
+   * resolves FROM the SAP code the merge is keyed on, so it is identical across
+   * every contributing line by construction.
+   */
+  family: string | null;
   finding: PickingLineFinding | null;
 }
 

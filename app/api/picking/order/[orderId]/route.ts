@@ -54,6 +54,28 @@ export const dynamic = "force-dynamic";
  * delivery_challan_formulas, tinter_issue_entries — are untouched and unaware.
  * app/api/billing/picking/order/[orderId]/route.ts mirrors this route but is
  * deliberately NOT merged: out of scope, still one row per raw line.
+ *
+ * 2026-08-10b — each row also carries `family`: COALESCE(displayCategory,
+ * category) from sku_master_v2, resolved by the SHARED rule in
+ * lib/picking/family-groups.ts — the very same helper the picking CARD's family
+ * chips now call (lib/picking/queue.ts). One rule, two screens, so a bill's
+ * chips can never disagree with its own group strips.
+ *
+ * It costs NO extra query. Family rides resolveCatalogByCode's existing
+ * sku_master_v2 read — the same lookup, on the same `material` key, that name
+ * and pack already come from — so this route still does exactly the three reads
+ * it did before (order, raw lines, findings) plus that one catalog read.
+ * A code that resolves to no family gets `family: null`, which the picker's
+ * detail screen renders as the "Other" bucket, last.
+ *
+ * ⚠ ONE KNOWN, PRE-EXISTING DIVERGENCE from the card, and it is about WHICH
+ * LINES are counted, not how family is resolved: queue.ts filters
+ * `rowStatus: 'valid'` as well as `lineStatus: 'active'`, this route filters
+ * only `lineStatus`. So a parse-rejected row appears here and not in the card's
+ * chip set. That predates this change and is deliberate — the detail screen
+ * shows the picker everything on the bill (see the note at the top of this
+ * file). Do not "fix" it by narrowing this route without deciding that
+ * separately.
  */
 export async function GET(
   _req: Request,

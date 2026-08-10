@@ -13,6 +13,7 @@ import { readFileSync } from "fs";
 import { PrismaClient } from "@prisma/client";
 import { groupPickingDetailLines } from "../lib/picking/group-lines";
 import { formatPack } from "../lib/place-order/pack";
+import { resolveFamily } from "../lib/picking/family-groups";
 import type { CatalogEntry } from "../lib/picking/resolve-lines";
 import type { PickingLineFinding } from "../lib/picking/types";
 
@@ -51,10 +52,18 @@ async function report(orderId: number): Promise<void> {
   const codes = Array.from(new Set(rawLines.map((l) => l.skuCodeRaw).filter(Boolean)));
   const catRows = await prisma.sku_master_v2.findMany({
     where: { material: { in: codes } },
-    select: { material: true, description: true, packCode: true, unit: true },
+    select: {
+      material: true, description: true, packCode: true, unit: true,
+      // Added 2026-08-10b when CatalogEntry gained `family`. scripts/_*.ts is
+      // EXCLUDED from tsconfig, so nothing would have flagged this going stale.
+      category: true, displayCategory: true,
+    },
   });
   const catalogByCode = new Map<string, CatalogEntry>(
-    catRows.map((r) => [r.material, { name: r.description, pack: formatPack(r.packCode, r.unit) }]),
+    catRows.map((r) => [
+      r.material,
+      { name: r.description, pack: formatPack(r.packCode, r.unit), family: resolveFamily(r) },
+    ]),
   );
 
   const findingRows = rawLines.length

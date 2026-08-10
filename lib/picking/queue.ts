@@ -13,6 +13,7 @@ import {
   PICKING_OPEN_STAGES,
 } from "@/lib/workflow-stages";
 import type { PickingQueueRow } from "./types";
+import { FAMILY_CATALOG_SELECT, buildFamilyByCode } from "./family-groups";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -502,21 +503,20 @@ export async function getPickingQueue(
     codes.length > 0
       ? await prisma.sku_master_v2.findMany({
           where: { material: { in: codes } },
-          select: { material: true, category: true, displayCategory: true },
+          select: { material: true, ...FAMILY_CATALOG_SELECT },
         })
       : [];
 
-  // family = COALESCE(displayCategory, category) — the SINGLE resolution point,
-  // so the deferred friendly-name swap is data-only later (displayCategory is
-  // empty today, so family === category for now). Trim-guarded: a resolved-but-
-  // blank family is treated as "no family" downstream (COALESCE only falls back
-  // on NULL, and category is NOT NULL, so this is belt-and-braces — a blank
-  // chip is worse than counting the line as unlisted).
-  const familyByCode = new Map<string, string>();
-  for (const c of catalogRows) {
-    const resolved = (c.displayCategory ?? c.category ?? "").trim();
-    if (resolved !== "") familyByCode.set(c.material, resolved);
-  }
+  // family = COALESCE(displayCategory, category), trim-guarded so a blank counts
+  // as "no family". THE RULE MOVED to lib/picking/family-groups.ts on 2026-08-10
+  // — extraction, not a behaviour change: same COALESCE, same trim, same
+  // blank-is-unresolved outcome, byte for byte what this loop did inline.
+  //
+  // It moved because the picker's DETAIL screen now groups its line list by the
+  // same family, and two copies of this rule is how the card's chips and the
+  // detail's group strips would come to disagree — one of them learning about
+  // displayCategory when the friendly-name swap lands, and the other not.
+  const familyByCode = buildFamilyByCode(catalogRows);
 
   // Group per OBD in one pass: distinct families (Set) + a raw count of active
   // lines that matched no family. unresolvedLineCount counts LINES, not

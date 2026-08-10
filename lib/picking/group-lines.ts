@@ -147,6 +147,12 @@ export function groupPickingDetailLines(
         // would be wrong. Only the order-level rollup is authoritative, and the
         // detail header already reads that one off PickingQueueRow.articleTag.
         articleTag: rows.length > 1 ? null : head.articleTag,
+        // Safe from the head even on a merged row — unlike articleTag above.
+        // articleTag is a PER-LINE value that genuinely differs between split
+        // lines; family resolves FROM the SAP code this group is keyed on, so it
+        // is the same for every contributing line by construction. null when the
+        // code is uncatalogued → the detail screen's "Other" bucket.
+        family: cat?.family ?? null,
         // null — not undefined and not an empty object — when nothing is
         // recorded, so a consumer can test `finding !== null` and be done. A
         // merged row is always null here by construction (see the guard above).
