@@ -1647,6 +1647,24 @@ model mo_orders {
   isLocked            Boolean            @default(false)
   notes               String?
   createdAt           DateTime           @default(now())
+  // Maintained by the DATABASE, not by Prisma. Live column is
+  // timestamptz NOT NULL DEFAULT now(), kept current by
+  // trigger trg_mo_orders_updated_at (BEFORE UPDATE →
+  // set_updated_at_mo_orders()). Verified against
+  // information_schema 2026-08-10 before this line was written.
+  //
+  // ⚠ Deliberately NOT `@updatedAt`. That directive makes the
+  // PRISMA CLIENT write the timestamp, which would only cover
+  // writes that go through Prisma — the trigger already covers
+  // every write, including raw SQL. Two writers for one column
+  // is how they drift; the trigger is the single owner.
+  //
+  // This is the OPPOSITE case to push_subscriptions.updatedAt
+  // (CORE §7.12 / §13), which is a plain @default(now()) with NO
+  // trigger and therefore needs an explicit `updatedAt: new Date()`
+  // on every write. Here the DB does it. Do not add either the
+  // directive or manual writes.
+  updatedAt           DateTime           @default(now())
   lines               mo_order_lines[]
   remarks_list        mo_order_remarks[]
 }
