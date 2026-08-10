@@ -19,6 +19,7 @@ import { MOBILE_NAV_CLEARANCE } from "@/components/shared/mobile-shell";
 import { AgeBadge, CardShelf, CARD_SHADOW_V2, RouteDot } from "./card-atoms";
 import { usePickerBoard } from "./picking-mobile-shell";
 import { NO_BILL_SWIPE_ATTR, useBillPager } from "./use-bill-pager";
+import { sortPackLabels } from "@/lib/picking/pack-sort";
 import type {
   CombinedPickResult,
   PickingDetailLine,
@@ -1015,12 +1016,24 @@ export function PickerMyPicksBoard({
     }
   }, [activePickerId, markingAll, combined, enabledBillIds, refetchQueue]);
 
+  // Distinct packs on this bill, for the pack-filter chip row — SMALLEST FIRST
+  // by real pack size, with "No pack" trailing last (an exception category, not
+  // a real pack value).
+  //
+  // ⚠ The ordering lives in lib/picking/pack-sort.ts, shared with the supervisor
+  // board — NOT inline here. The two faces build this same strip from the same
+  // payload and have drifted before; one helper is what stops them disagreeing
+  // about what order sizes go in.
+  //
+  // Was `a.localeCompare(b)` until 2026-08-10, which is alphabetical on the
+  // LABEL: a bill with 100ML / 1L / 20L / 4L / 500ML rendered its chips in
+  // exactly that order ("20L" before "4L" because "2" < "4"). See pack-sort.ts.
   const distinctPackKeys = useMemo(() => {
     if (!lineItems) return [];
     const set = new Set<string>();
     for (const li of lineItems) set.add(li.pack ?? NO_PACK_KEY);
     const keys = Array.from(set);
-    const real = keys.filter((k) => k !== NO_PACK_KEY).sort((a, b) => a.localeCompare(b));
+    const real = sortPackLabels(keys.filter((k) => k !== NO_PACK_KEY));
     return keys.includes(NO_PACK_KEY) ? [...real, NO_PACK_KEY] : real;
   }, [lineItems]);
 
