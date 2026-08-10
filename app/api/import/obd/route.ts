@@ -28,7 +28,8 @@ import type {
   ObdInput,
 } from "@/lib/import-upsert";
 import { parseSapFile, FileFormatError, FileParseError } from "@/lib/sap-parser";
-import { aggregateArticleTags, computeArticleInfo, loadPackCatalog } from "@/lib/article-tag";
+import { computeArticleInfo, loadPackCatalog, rollupArticleTagsBySku } from "@/lib/article-tag";
+import type { ArticleRollup, PackCatalog } from "@/lib/article-tag";
 
 export const dynamic = "force-dynamic";
 
@@ -550,10 +551,13 @@ async function createChallanForOrder(
 async function rebuildQuerySummaryForOrder(
   orderId:   number,
   obdNumber: string,
+  packCatalog: PackCatalog,
 ): Promise<void> {
   const lines = await prisma.import_raw_line_items.findMany({
     where:  { obdNumber, lineStatus: "active" },
-    select: { unitQty: true, volumeLine: true, isTinting: true, article: true, articleTag: true },
+    // skuCodeRaw joined the select 2026-08-10 for the SKU-grouped rollup —
+    // same query, one more column, no extra round trip.
+    select: { skuCodeRaw: true, unitQty: true, volumeLine: true, isTinting: true, article: true, articleTag: true },
   });
 
   const summary = await prisma.import_raw_summary.findFirst({
@@ -565,13 +569,15 @@ async function rebuildQuerySummaryForOrder(
   const totalLines   = lines.length;
   const totalUnitQty = lines.reduce((sum, l) => sum + l.unitQty,                 0);
   const totalVolume  = lines.reduce((sum, l) => sum + (l.volumeLine ?? 0),       0);
-  const totalArticle = lines.reduce((sum, l) => sum + (l.article ?? 0),          0);
   const hasTinting   = lines.some((l) => l.isTinting);
 
-  // articleTag aggregation — shared with the other two roll-up sites via
-  // lib/article-tag.ts. Handles multi-group line tags ("1 Carton 3 Tin",
-  // which the old inline parser dropped entirely) and the "N Pcs" type.
-  const articleTagStr = aggregateArticleTags(lines.map((l) => l.articleTag));
+  // articleTag + totalArticle — SKU-GROUPED (lib/article-tag.ts), shared with
+  // the other two roll-up sites. Groups duplicate-SKU lines and sums their
+  // quantities BEFORE tagging, so 1+5 of a 6-per-carton SKU reads "1 Carton"
+  // rather than "6 Tin". `packCatalog` is preloaded by the caller — no DB
+  // access in here (CORE §3).
+  const { articleTag: articleTagStr, totalArticle } =
+    await rollupArticleTagsBySku(lines, packCatalog);
 
   const totalUnitQtyResolved = totalLines > 0 ? totalUnitQty : (summary?.totalUnitQty ?? 0);
   const totalVolumeResolved  = totalLines > 0 ? totalVolume  : (summary?.volume       ?? 0);
@@ -1271,6 +1277,18 @@ async function handleConfirm(req: Request, session: Session): Promise<NextRespon
   }
 
   // ── STEP D3 — Bulk create import_obd_query_summary ───────────────────────
+  //
+  // Pack catalog + SKU-grouped rollups, computed BEFORE the map below: the map
+  // is synchronous and rollupArticleTagsBySku is async. ONE catalog read for
+  // the whole batch, then zero I/O per order (CORE §3).
+  const rollupCatalog = await loadPackCatalog(
+    orderInterims.flatMap((o) => o.validLines.map((l) => l.skuCodeRaw)),
+  );
+  const rollups = new Map<string, ArticleRollup>();
+  for (const o of orderInterims) {
+    rollups.set(o.obdNumber, await rollupArticleTagsBySku(o.validLines, rollupCatalog));
+  }
+
   const querySummaryData: Prisma.import_obd_query_summaryCreateManyInput[] =
     orderInterims.map((o) => {
       const orderId  = orderIdMap.get(o.obdNumber) ?? 0;
@@ -1278,13 +1296,11 @@ async function handleConfirm(req: Request, session: Session): Promise<NextRespon
       // find matching rawSummary for fallback totals
       const rs = rawSummaries.find((s) => s.obdNumber === o.obdNumber);
 
-      // Sum total articles across all valid lines
-      const totalArticle = o.validLines.reduce((sum, l) => sum + (l.article ?? 0), 0);
-
-      // Group by tag type and sum — e.g. "30 Drum, 2 Carton, 1 Tin".
-      // Shared parser (lib/article-tag.ts): handles multi-group line tags
-      // and the "N Pcs" type. Order: Drum → Bag → Carton → Tin → Pcs.
-      const articleTagStr = aggregateArticleTags(o.validLines.map((l) => l.articleTag));
+      // articleTag + totalArticle — SKU-GROUPED (lib/article-tag.ts). Duplicate
+      // -SKU lines are summed BEFORE tagging, so 1+5 of a 6-per-carton SKU
+      // reads "1 Carton" rather than "6 Tin". Catalog preloaded once above.
+      const { articleTag: articleTagStr, totalArticle } = rollups.get(o.obdNumber)
+        ?? { articleTag: null, totalArticle: 0 };
 
       return {
         obdNumber:    o.obdNumber,
@@ -1677,6 +1693,20 @@ async function handleManualSapConfirm(_req: Request, session: Session): Promise<
 
     const customerIdByCode = new Map(shadowCustomers.map((c) => [c.customerCode, c.id]));
 
+    // Pack catalog for the SKU-grouped query-summary rebuild further down. ONE
+    // read for the whole file — rebuildQuerySummaryForOrder runs per OBD in the
+    // effect loop, so loading it in there would be a query per order (CORE §3).
+    //
+    // UNION of two sources on purpose: the file's own materials AND the
+    // already-preloaded existing lines. The rebuild re-reads every ACTIVE line
+    // for an OBD, which on a patched order includes lines this file never
+    // mentioned; a material missing from the map would silently fall through to
+    // the packSize fallback instead of using its catalog pack count.
+    const rollupCatalog = await loadPackCatalog([
+      ...parseResult.obds.flatMap((o) => o.lines.map((l) => l.skuCodeRaw)),
+      ...shadowLines.map((l) => l.skuCodeRaw),
+    ]);
+
     // Per-OBD upsert loop.
     const now = new Date();
     type Counter = { created: number; patched: number; unchanged: number; errored: number };
@@ -1744,6 +1774,7 @@ async function handleManualSapConfirm(_req: Request, session: Session): Promise<
               await rebuildQuerySummaryForOrder(
                 eff.orderId,
                 String(eff.payload.obdNumber ?? r.obdNumber),
+                rollupCatalog,
               );
               break;
             case "customer-resolved":
@@ -3106,16 +3137,25 @@ async function processAutoImportRows(
   }
 
   // ── CONFIRM D3 — Bulk create import_obd_query_summary ────────────────────
+  //
+  // SKU-grouped rollups, computed before the synchronous map below. Reuses
+  // `packCatalog` from STEP C — no second catalog read on this path.
+  const autoRollups = new Map<string, ArticleRollup>();
+  for (const o of autoOrderInterims) {
+    autoRollups.set(o.obdNumber, await rollupArticleTagsBySku(o.validLines, packCatalog));
+  }
+
   const querySummaryData: Prisma.import_obd_query_summaryCreateManyInput[] =
     autoOrderInterims.map((o) => {
       const orderId  = orderIdMap.get(o.obdNumber) ?? 0;
       const hasLines = o.validLines.length > 0;
       const rs       = autoRawSummaries.find((s) => s.obdNumber === o.obdNumber);
 
-      const totalArticle = o.validLines.reduce((sum, l) => sum + (l.article ?? 0), 0);
-
-      // Shared parser (lib/article-tag.ts) — multi-group tags + "N Pcs".
-      const articleTagStr = aggregateArticleTags(o.validLines.map((l) => l.articleTag));
+      // articleTag + totalArticle — SKU-GROUPED (lib/article-tag.ts). See the
+      // manual-template site above; same rule, same helper, `packCatalog` is
+      // the one already loaded for this batch at STEP C.
+      const { articleTag: articleTagStr, totalArticle } = autoRollups.get(o.obdNumber)
+        ?? { articleTag: null, totalArticle: 0 };
 
       return {
         obdNumber:    o.obdNumber,

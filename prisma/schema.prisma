@@ -641,6 +641,11 @@ model import_raw_line_items {
   netWeight           Float?
   totalWeight         Float?
   isTinting           Boolean                     @default(false)
+  // Per-line tag is correct for that line alone. When the same SKU appears on
+  // multiple lines in one order, only the order-level rollup (via
+  // aggregateArticleTags) accounts for the combined quantity — this per-line
+  // value is not authoritative for duplicate-SKU orders.
+  // See lib/article-tag.ts rollupArticleTagsBySku() + CLAUDE_IMPORT.md §8.2.
   article             Int?
   articleTag          String?
   rowStatus           String                      @default("valid")

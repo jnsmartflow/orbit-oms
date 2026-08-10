@@ -261,3 +261,96 @@ export function aggregateArticleTags(tags: Array<string | null | undefined>): st
     .map((t) => `${totals[t]} ${t}`)
     .join(", ") || null;
 }
+
+// ─── Order-level rollup, grouped by SKU ───────────────────────────────────
+
+/** The only raw-line fields the SKU rollup reads. */
+export interface RollupLine {
+  skuCodeRaw: string;
+  unitQty:    number;
+  volumeLine: number | null;
+}
+
+export interface ArticleRollup {
+  /** Order-level display tag, or null when nothing resolved. */
+  articleTag:   string | null;
+  /** Order-level article count, consistent with `articleTag`. */
+  totalArticle: number;
+}
+
+/**
+ * Roll an order's ACTIVE raw lines up into one order-level {tag, count},
+ * GROUPING BY SKU FIRST.
+ *
+ * Why grouping matters — the bug this exists to fix (verified on OBD
+ * 9108721464, 2026-08-10): SAP routinely sends the same material on several
+ * lines of one delivery (the 9000xx "breakwall" series — separate item
+ * numbers, sometimes separate batch codes). Tagging each line on its own and
+ * then adding the strings loses whole cartons:
+ *
+ *   IN68010372 (piecesPerCarton 6) arrives as qty 1 + qty 5.
+ *     per-line, then add : "1 Tin" + "5 Tin"  -> "6 Tin"      WRONG
+ *     summed, then tag   : 6 units            -> "1 Carton"   RIGHT
+ *
+ * Six loose tins and one sealed carton are different things on a picking
+ * shelf. Summing the tag STRINGS cannot recover this — by then the carton/tin
+ * split is already decided per line and `piecesPerCarton` is long gone. The
+ * grouping has to happen BEFORE computeArticleInfo, which is why this helper
+ * exists rather than a smarter aggregateArticleTags().
+ *
+ * Measured over 90 days: 9.3% of orders (960 of 10,334) carry at least one
+ * duplicate-SKU group, and 366 of the 607 carton-bearing groups tag
+ * differently once summed — roughly 326 orders a quarter.
+ *
+ * `volumeLine` is summed alongside `unitQty` so the fallback packSize
+ * (volume ÷ qty) is preserved: 1L+5L over 1+5 units is still 1 L/unit. Nulls
+ * are skipped, and the sum is null only when every line's volume is null —
+ * the same "sum or null" semantics build-obd.ts uses for OBD totals. A group
+ * whose lines genuinely disagree on pack size (a data anomaly, not seen live)
+ * resolves to the quantity-weighted average, which is the best available
+ * answer without inventing one.
+ *
+ * NO DATABASE ACCESS. `catalog` must be preloaded by the caller via
+ * loadPackCatalog() — once per file/batch, never per line or per order
+ * (CLAUDE_CORE.md §3). A material missing from the map is treated exactly as
+ * computeArticleInfo already treats it: "not in the catalog", falling through
+ * to the packSize lists. Callers must therefore preload the union of every
+ * material the rollup can see, including pre-existing lines on a patched OBD.
+ *
+ * Per-line `import_raw_line_items.articleTag` is NOT touched by this — it
+ * stays correct for its own line and non-authoritative for the order.
+ */
+export async function rollupArticleTagsBySku(
+  lines:   RollupLine[],
+  catalog: PackCatalog,
+): Promise<ArticleRollup> {
+  // Group by trimmed SKU, preserving first-seen order so the resulting tag
+  // reads in the order the lines arrived.
+  const groups = new Map<string, { unitQty: number; volumeLine: number | null }>();
+  for (const l of lines) {
+    const key = (l.skuCodeRaw ?? "").trim();
+    if (!key) continue;
+    const g = groups.get(key);
+    if (!g) {
+      groups.set(key, { unitQty: l.unitQty, volumeLine: l.volumeLine });
+      continue;
+    }
+    g.unitQty += l.unitQty;
+    if (l.volumeLine !== null) g.volumeLine = (g.volumeLine ?? 0) + l.volumeLine;
+  }
+
+  // One computeArticleInfo per SKU group, not per raw line. Sequential awaits
+  // (CLAUDE_CORE.md §3) — with the catalog in memory these do no I/O.
+  const tags: Array<string | null> = [];
+  let totalArticle = 0;
+  for (const [material, g] of Array.from(groups.entries())) {
+    const info = await computeArticleInfo(
+      { material, unitQty: g.unitQty, volumeLine: g.volumeLine },
+      catalog,
+    );
+    tags.push(info.articleTag);
+    totalArticle += info.article ?? 0;
+  }
+
+  return { articleTag: aggregateArticleTags(tags), totalArticle };
+}
