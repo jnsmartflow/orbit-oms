@@ -16,6 +16,7 @@ import { TutorialOverlay } from "./tutorial-overlay";
 import { Check, Copy } from "lucide-react";
 import { useBillingV2 } from "@/components/billing/billing-v2-provider";
 import { BillingMarkerProvider } from "@/components/billing/billing-marker-provider";
+import { usePickingMarker } from "@/lib/hooks/use-picking-marker";
 import { useInitialNotesFontSize } from "@/components/mail-orders/notes-font-size-provider";
 import type { BillingTab } from "@/components/billing/billing-tab-bar";
 import { HeaderFilter } from "@/components/header-filter";
@@ -33,6 +34,18 @@ const MO_FILTER_GROUPS = [
   { label: "Lock", key: "lock", options: [{ value: "locked", label: "Locked" }, { value: "unlocked", label: "Unlocked" }] },
   { label: "Dealer", key: "keyDealer", options: [{ value: "key", label: "Key" }] },
 ];
+
+/**
+ * How often the board asks "has anything changed?" — the SAME 30s cadence the
+ * old blind `setInterval(loadOrders, …)` ran at, so nothing surfaces later than
+ * it did before. What changed is the COST of a tick: two aggregates instead of
+ * the full list payload (mo_orders + four nested includes + three batch lookups
+ * + tag settings).
+ *
+ * Passed explicitly rather than inherited: the hook's default is 15s (Floor and
+ * both Picking boards), which would DOUBLE this board's probe rate.
+ */
+const MAIL_ORDERS_MARKER_POLL_MS = 30_000;
 
 // This page's extra shortcut rows. Hoisted out of the JSX 2026-08-01 for the
 // same reason MO_FILTER_GROUPS was: the header's shortcuts popover and the
@@ -262,24 +275,44 @@ export default function MailOrdersPage() {
     }
   }, [selectedDate]);
 
+  // Initial load, and a fresh one whenever the viewed day changes. The ONGOING
+  // refresh is marker-gated below — this effect no longer owns a timer.
   useEffect(() => {
     setLoading(true);
     setOrders([]);
-    loadOrders();
-    const interval = setInterval(loadOrders, 30_000);
-
-    function handleVisibility() {
-      if (document.visibilityState === "visible") {
-        loadOrders();
-      }
-    }
-    document.addEventListener("visibilitychange", handleVisibility);
-
-    return () => {
-      clearInterval(interval);
-      document.removeEventListener("visibilitychange", handleVisibility);
-    };
+    void loadOrders();
   }, [loadOrders]);
+
+  // ── Live sync — marker-gated (2026-08-10) ───────────────────────────────────
+  //
+  // Was: `setInterval(loadOrders, 30_000)` — a blind full refetch every 30s
+  // whether anything had changed or not, plus this page's OWN `visibilitychange`
+  // listener firing another full reload on every tab focus.
+  //
+  // Now: the same cheap-probe pattern Floor, Picking and Billing already use.
+  // GET /api/mail-orders/marker is two aggregates; the expensive list fetch runs
+  // only when {count, latest} actually moves.
+  //
+  // The page's tab-focus handler is GONE on purpose — the hook already does a
+  // better version of it: on becoming visible it fires ONE cheap marker check
+  // and only then, if the marker moved, calls onChange. Coverage is unchanged
+  // because the hook compares against its last accepted baseline, so any change
+  // that landed while the tab was hidden is still caught by that first check.
+  //
+  // Cadence stays 30s deliberately: nothing is seen later than it was before.
+  // The saving is in what each tick COSTS, not in how often it happens. Now
+  // that a tick is two aggregates, a slower cadence is cheap if wanted.
+  //
+  // `date` makes the hook re-baseline when the day changes, so stepping the
+  // header stores a fresh baseline instead of firing a spurious refetch — and
+  // the effect above has already reloaded for the new day anyway.
+  usePickingMarker({
+    scope: "openPending",
+    url: "/api/mail-orders/marker",
+    date: selectedDate,
+    pollMs: MAIL_ORDERS_MARKER_POLL_MS,
+    onChange: loadOrders,
+  });
 
   // ── Auto logout at midnight IST ───────────────────────────────────────────
   useEffect(() => {
